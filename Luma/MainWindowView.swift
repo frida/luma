@@ -7,7 +7,7 @@ import SwiftUI
 #endif
 
 struct MainWindowView: View {
-    @State private var uiState = ProjectUIState()
+    @State private var uiState = ProjectUIStateValue()
     @StateObject private var workspace = Workspace()
 
     @State private var collapsedEventBaselineVersion: Int = 0
@@ -24,7 +24,6 @@ struct MainWindowView: View {
         } bottom: {
             eventStreamArea
         }
-        .id(ObjectIdentifier(uiState))
         .toolbarRole(.editor)
         .toolbar {
             WorkspaceToolbar(
@@ -44,12 +43,20 @@ struct MainWindowView: View {
         .task {
             let descriptor = FetchDescriptor<ProjectUIState>()
             if let existing = try? modelContext.fetch(descriptor).first {
-                uiState = existing
-            } else if uiState.modelContext == nil {
-                modelContext.insert(uiState)
+                uiState = ProjectUIStateValue(model: existing)
+            } else {
+                let model = ProjectUIState()
+                modelContext.insert(model)
+                uiState = ProjectUIStateValue(model: model)
             }
 
             await workspace.configurePersistence(modelContext: modelContext)
+        }
+        .onChange(of: uiState) { oldValue, newValue in
+            let descriptor = FetchDescriptor<ProjectUIState>()
+            if let model = try? modelContext.fetch(descriptor).first {
+                newValue.apply(to: model)
+            }
         }
         .onChange(of: workspace.eventsVersion) { _, newVersion in
             if uiState.isEventStreamCollapsed {
@@ -380,6 +387,34 @@ struct WorkspaceToolbar: ToolbarContent {
             .help("Show or hide the collaboration panel")
             .keyboardShortcut("c", modifiers: [.command, .option])
         }
+    }
+}
+
+private struct ProjectUIStateValue: Equatable {
+    var selectedItemID: SidebarItemID?
+    var isEventStreamCollapsed: Bool
+    var eventStreamBottomHeight: Double
+
+    init(
+        selectedItemID: SidebarItemID? = nil,
+        isEventStreamCollapsed: Bool = true,
+        eventStreamBottomHeight: Double = 0
+    ) {
+        self.selectedItemID = selectedItemID
+        self.isEventStreamCollapsed = isEventStreamCollapsed
+        self.eventStreamBottomHeight = eventStreamBottomHeight
+    }
+
+    init(model: ProjectUIState) {
+        self.selectedItemID = model.selectedItemID
+        self.isEventStreamCollapsed = model.isEventStreamCollapsed
+        self.eventStreamBottomHeight = model.eventStreamBottomHeight
+    }
+
+    func apply(to model: ProjectUIState) {
+        model.selectedItemID = selectedItemID
+        model.isEventStreamCollapsed = isEventStreamCollapsed
+        model.eventStreamBottomHeight = eventStreamBottomHeight
     }
 }
 
