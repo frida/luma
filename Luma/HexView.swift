@@ -85,6 +85,7 @@ struct HexView: View {
             }
         }
         .contentShape(Rectangle())
+        .textSelection(.disabled)
         .gesture(dragGesture)
         .contextMenu {
             if !bytes.isEmpty {
