@@ -509,6 +509,13 @@ func pngData(for icon: Icon) -> Data? {
             coordinator.lastIsCollapsed = nowCollapsed
 
             if didToggle {
+                if previousCollapsed && !nowCollapsed {
+                    let h = CGFloat(bottomHeight)
+                    if h > 0 {
+                        coordinator.lastBottomHeight = h
+                    }
+                }
+
                 coordinator.didPerformInitialLayout = true
 
                 coordinator.performProgrammaticLayout(
