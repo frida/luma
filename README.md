@@ -2,42 +2,50 @@
 
 ## Requirements
 
--   macOS >= 15.6
--   Xcode 26
+-   macOS ≥ 15.6
+-   Xcode ≥ 26
 
 ## Building
 
-Clone the following three repositories **side-by-side in the same parent
-directory**:
+### Option 1: Build using Xcode (recommended)
 
-``` sh
-git clone https://github.com/frida/luma.git
-git clone https://github.com/frida/frida-swift.git
-git clone https://github.com/oleavr/SwiftyMonaco.git
-```
+1.  Open the project:
 
-Your folder layout should look like:
+    ```sh
+    open luma/Luma.xcodeproj
+    ```
 
-    parent/
-    ├── luma/
-    ├── frida-swift/
-    └── SwiftyMonaco/
+2.  Ensure the build destination is set to **My Mac** (Luma currently
+    uses AppKit-only components and does not yet build for iOS).
 
-### 1. Build Frida's Swift bindings
+3.  Choose **Product → Build** (⌘B).
 
-``` sh
-cd frida-swift
+This performs an incremental build and is the most convenient workflow
+during development.
 
-# Optionally configure features:
-./configure -- -Dfrida-core:simmy_backend=disabled
+------------------------------------------------------------------------
 
+### Option 2: Build from the command line (also incremental)
+
+A `Makefile` is provided for building Luma without opening Xcode.
+This build is **also incremental**, because it uses a persistent Derived
+Data directory.
+
+The output app is produced in `./build/`, and intermediate build files
+are stored in `./build/.derived`.
+
+To build:
+
+```sh
 make
 ```
 
-### 2. Build Luma
+To clean:
 
-``` sh
-open luma/Luma.xcodeproj
+```sh
+make clean
 ```
 
-Then build from within Xcode.
+The resulting app will be located at:
+
+    build/Luma.app

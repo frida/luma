@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0C0CBFC32EE793CD00B3EDE8 /* Frida in Frameworks */ = {isa = PBXBuildFile; productRef = 0C0CBFC22EE793CD00B3EDE8 /* Frida */; };
+		0C0CBFC92EE7977500B3EDE8 /* SwiftyMonaco in Frameworks */ = {isa = PBXBuildFile; productRef = 0C0CBFC82EE7977500B3EDE8 /* SwiftyMonaco */; };
 		0CE0E52E2ED0A64C000B1E01 /* SwiftyMonaco in Frameworks */ = {isa = PBXBuildFile; productRef = 0CE0E52D2ED0A64C000B1E01 /* SwiftyMonaco */; };
 /* End PBXBuildFile section */
 
@@ -65,6 +67,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				0CE0E52E2ED0A64C000B1E01 /* SwiftyMonaco in Frameworks */,
+				0C0CBFC92EE7977500B3EDE8 /* SwiftyMonaco in Frameworks */,
+				0C0CBFC32EE793CD00B3EDE8 /* Frida in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -75,7 +79,6 @@
 			isa = PBXGroup;
 			children = (
 				0CAAF5F12ED4D41D00B8FD05 /* Luma */,
-				0CE0E5282ED0A3A0000B1E01 /* Frameworks */,
 				0CD209352EB511C400D027FC /* Products */,
 			);
 			sourceTree = "<group>";
@@ -86,13 +89,6 @@
 				0CD209342EB511C400D027FC /* Luma.app */,
 			);
 			name = Products;
-			sourceTree = "<group>";
-		};
-		0CE0E5282ED0A3A0000B1E01 /* Frameworks */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -118,6 +114,8 @@
 			name = Luma;
 			packageProductDependencies = (
 				0CE0E52D2ED0A64C000B1E01 /* SwiftyMonaco */,
+				0C0CBFC22EE793CD00B3EDE8 /* Frida */,
+				0C0CBFC82EE7977500B3EDE8 /* SwiftyMonaco */,
 			);
 			productName = Luma;
 			productReference = 0CD209342EB511C400D027FC /* Luma.app */;
@@ -131,7 +129,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2600;
-				LastUpgradeCheck = 2600;
+				LastUpgradeCheck = 2610;
 				TargetAttributes = {
 					0CD209332EB511C400D027FC = {
 						CreatedOnToolsVersion = 26.0;
@@ -148,7 +146,8 @@
 			mainGroup = 0CD2092B2EB511C400D027FC;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				0CE0E52C2ED0A64C000B1E01 /* XCLocalSwiftPackageReference "../SwiftyMonaco" */,
+				0C0CBFC12EE793CD00B3EDE8 /* XCRemoteSwiftPackageReference "frida-swift" */,
+				0C0CBFC72EE7977500B3EDE8 /* XCRemoteSwiftPackageReference "SwiftyMonaco" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 0CD209352EB511C400D027FC /* Products */;
@@ -219,6 +218,7 @@
 				AUTOMATION_APPLE_EVENTS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 753PE4AG6F;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
@@ -230,10 +230,6 @@
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/Luma/Frameworks",
-				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Luma/Info.plist;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
@@ -249,8 +245,6 @@
 				"INFOPLIST_KEY_UISupportsDocumentBrowser[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UISupportsDocumentBrowser[sdk=iphonesimulator*]" = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = re.frida.Luma;
@@ -283,6 +277,7 @@
 				AUTOMATION_APPLE_EVENTS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 753PE4AG6F;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
@@ -294,10 +289,6 @@
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/Luma/Frameworks",
-				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Luma/Info.plist;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
@@ -313,8 +304,6 @@
 				"INFOPLIST_KEY_UISupportsDocumentBrowser[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UISupportsDocumentBrowser[sdk=iphonesimulator*]" = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = re.frida.Luma;
@@ -373,6 +362,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 753PE4AG6F;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -396,6 +386,7 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
@@ -436,6 +427,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 753PE4AG6F;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -453,6 +445,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_VERSION = 6.0;
 			};
@@ -481,14 +474,36 @@
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCLocalSwiftPackageReference section */
-		0CE0E52C2ED0A64C000B1E01 /* XCLocalSwiftPackageReference "../SwiftyMonaco" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = ../SwiftyMonaco;
+/* Begin XCRemoteSwiftPackageReference section */
+		0C0CBFC12EE793CD00B3EDE8 /* XCRemoteSwiftPackageReference "frida-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/frida/frida-swift";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
 		};
-/* End XCLocalSwiftPackageReference section */
+		0C0CBFC72EE7977500B3EDE8 /* XCRemoteSwiftPackageReference "SwiftyMonaco" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/frida/SwiftyMonaco";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		0C0CBFC22EE793CD00B3EDE8 /* Frida */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0C0CBFC12EE793CD00B3EDE8 /* XCRemoteSwiftPackageReference "frida-swift" */;
+			productName = Frida;
+		};
+		0C0CBFC82EE7977500B3EDE8 /* SwiftyMonaco */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0C0CBFC72EE7977500B3EDE8 /* XCRemoteSwiftPackageReference "SwiftyMonaco" */;
+			productName = SwiftyMonaco;
+		};
 		0CE0E52D2ED0A64C000B1E01 /* SwiftyMonaco */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SwiftyMonaco;
