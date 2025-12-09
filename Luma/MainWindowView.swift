@@ -104,7 +104,10 @@ struct MainWindowView: View {
         .sheet(
             item: Binding(
                 get: { workspace.targetPickerContext },
-                set: { workspace.targetPickerContext = $0 }
+                set: { newValue in
+                    Task { @MainActor in
+                        workspace.targetPickerContext = newValue }
+                    }
             ),
             onDismiss: {
                 workspace.targetPickerContext = nil
