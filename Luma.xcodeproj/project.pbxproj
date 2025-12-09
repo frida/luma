@@ -9,10 +9,30 @@
 /* Begin PBXBuildFile section */
 		0C0CBFC32EE793CD00B3EDE8 /* Frida in Frameworks */ = {isa = PBXBuildFile; productRef = 0C0CBFC22EE793CD00B3EDE8 /* Frida */; };
 		0C0CBFC92EE7977500B3EDE8 /* SwiftyMonaco in Frameworks */ = {isa = PBXBuildFile; productRef = 0C0CBFC82EE7977500B3EDE8 /* SwiftyMonaco */; };
+		0C6420CA2EE8675100E4F780 /* Frida in Frameworks */ = {isa = PBXBuildFile; productRef = 0C6420C92EE8675100E4F780 /* Frida */; };
 		0CE0E52E2ED0A64C000B1E01 /* SwiftyMonaco in Frameworks */ = {isa = PBXBuildFile; productRef = 0CE0E52D2ED0A64C000B1E01 /* SwiftyMonaco */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		0C6420CB2EE8712300E4F780 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0CD2092C2EB511C400D027FC /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0C6420C02EE8672900E4F780;
+			remoteInfo = LumaBundleCompiler;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXCopyFilesBuildPhase section */
+		0C6420BF2EE8672900E4F780 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
 		0CE0E5262ED0A38A000B1E01 /* Embed Frameworks */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -26,6 +46,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0C6420C12EE8672900E4F780 /* LumaBundleCompiler */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = LumaBundleCompiler; sourceTree = BUILT_PRODUCTS_DIR; };
 		0CD209342EB511C400D027FC /* Luma.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Luma.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -50,6 +71,11 @@
 /* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		0C6420C22EE8672900E4F780 /* LumaBundleCompiler */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = LumaBundleCompiler;
+			sourceTree = "<group>";
+		};
 		0CAAF5F12ED4D41D00B8FD05 /* Luma */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -62,6 +88,14 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		0C6420BE2EE8672900E4F780 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0C6420CA2EE8675100E4F780 /* Frida in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		0CD209312EB511C400D027FC /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -75,10 +109,19 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0C6420C82EE8675100E4F780 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		0CD2092B2EB511C400D027FC = {
 			isa = PBXGroup;
 			children = (
 				0CAAF5F12ED4D41D00B8FD05 /* Luma */,
+				0C6420C22EE8672900E4F780 /* LumaBundleCompiler */,
+				0C6420C82EE8675100E4F780 /* Frameworks */,
 				0CD209352EB511C400D027FC /* Products */,
 			);
 			sourceTree = "<group>";
@@ -87,6 +130,7 @@
 			isa = PBXGroup;
 			children = (
 				0CD209342EB511C400D027FC /* Luma.app */,
+				0C6420C12EE8672900E4F780 /* LumaBundleCompiler */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -94,6 +138,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		0C6420C02EE8672900E4F780 /* LumaBundleCompiler */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0C6420C52EE8672900E4F780 /* Build configuration list for PBXNativeTarget "LumaBundleCompiler" */;
+			buildPhases = (
+				0C6420BD2EE8672900E4F780 /* Sources */,
+				0C6420BE2EE8672900E4F780 /* Frameworks */,
+				0C6420BF2EE8672900E4F780 /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				0C6420C22EE8672900E4F780 /* LumaBundleCompiler */,
+			);
+			name = LumaBundleCompiler;
+			packageProductDependencies = (
+				0C6420C92EE8675100E4F780 /* Frida */,
+			);
+			productName = LumaBundleCompiler;
+			productReference = 0C6420C12EE8672900E4F780 /* LumaBundleCompiler */;
+			productType = "com.apple.product-type.tool";
+		};
 		0CD209332EB511C400D027FC /* Luma */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 0CD209412EB511C700D027FC /* Build configuration list for PBXNativeTarget "Luma" */;
@@ -107,6 +174,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				0C6420CC2EE8712300E4F780 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				0CAAF5F12ED4D41D00B8FD05 /* Luma */,
@@ -128,9 +196,12 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2600;
+				LastSwiftUpdateCheck = 2610;
 				LastUpgradeCheck = 2610;
 				TargetAttributes = {
+					0C6420C02EE8672900E4F780 = {
+						CreatedOnToolsVersion = 26.1.1;
+					};
 					0CD209332EB511C400D027FC = {
 						CreatedOnToolsVersion = 26.0;
 					};
@@ -155,6 +226,7 @@
 			projectRoot = "";
 			targets = (
 				0CD209332EB511C400D027FC /* Luma */,
+				0C6420C02EE8672900E4F780 /* LumaBundleCompiler */,
 			);
 		};
 /* End PBXProject section */
@@ -195,11 +267,18 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/zsh;
-			shellScript = "set -euo pipefail\n\nif [ -x /usr/libexec/path_helper ]; then\n  eval \"$(/usr/libexec/path_helper -s)\"\nfi\n\nif [ -f \"${HOME}/.zprofile\" ]; then\n  . \"${HOME}/.zprofile\"\nfi\n\nif [ -f \"${HOME}/.zshrc\" ]; then\n  . \"${HOME}/.zshrc\"\nfi\n\n# 3) Sanity check: do we now see frida-compile?\nif ! command -v frida-compile >/dev/null 2>&1; then\n  echo \"error: frida-compile not found on PATH in Xcode build.\"\n  echo \"       PATH is: $PATH\"\n  echo \"       Make sure frida-compile is on your login PATH\"\n  echo \"       (e.g. via installer or by editing ~/.zprofile).\"\n  exit 1\nfi\n\nCORE_OUT_HEX=\"${DERIVED_FILE_DIR}/LumaAgent.hex\"\nTRACER_OUT_HEX=\"${DERIVED_FILE_DIR}/LumaTracer.hex\"\nCODESHARE_OUT_HEX=\"${DERIVED_FILE_DIR}/LumaCodeShare.hex\"\nDERIVED_SWIFT=\"${SRCROOT}/Luma/Generated/LumaAgent.swift\"\n\nmkdir -p \"${SRCROOT}/Luma/Generated\"\n\ncompile_instrument_ts_to_hex() {\n  input=\"$1\"\n  output=\"$2\"\n\n  frida-compile \"$input\" -S \\\n    | sed '1,3d' \\\n    | hexdump -v -e '1/1 \"0x%02x, \"' \\\n    | sed 's/, $/\\n/' \\\n    > \"$output\"\n}\n\nfrida-compile \"${SRCROOT}/Luma/Agent/core/luma.ts\" -o \"$CORE_OUT_HEX\" -F hex-bytes\n\ncompile_instrument_ts_to_hex \"${SRCROOT}/Luma/Agent/instruments/tracer.ts\" \"$TRACER_OUT_HEX\"\ncompile_instrument_ts_to_hex \"${SRCROOT}/Luma/Agent/instruments/codeshare.ts\" \"$CODESHARE_OUT_HEX\"\n\ncat > \"$DERIVED_SWIFT\" <<EOF\n// This file is auto-generated by the build script.\n// Do not edit by hand. Your changes will be overwritten.\n\nimport Foundation\n\nenum LumaAgent {\n    static let coreSource: String = { decode(coreBytes, name: \"/luma.js\") }()\n    static let tracerSource: String = { decode(tracerBytes, name: \"/builtin/tracer.js\") }()\n    static let codeShareSource: String = { decode(codeShareBytes, name: \"/builtin/codeshare.js\") }()\n\n    private static let coreBytes: [UInt8] = [\n$(sed -e 's/^/        /' \"$CORE_OUT_HEX\")\n    ]\n\n    private static let tracerBytes: [UInt8] = [\n$(sed -e 's/^/        /' \"$TRACER_OUT_HEX\")\n    ]\n\n    private static let codeShareBytes: [UInt8] = [\n$(sed -e 's/^/        /' \"$CODESHARE_OUT_HEX\")\n    ]\n\n    private static func decode(_ bytes: [UInt8], name: String) -> String {\n        guard let value = String(bytes: bytes, encoding: .utf8) else {\n            fatalError(\"LumaAgent: \\(name) is not valid UTF-8\")\n        }\n        return value\n    }\n}\nEOF\n";
+			shellScript = "set -euo pipefail\n\n\"${BUILT_PRODUCTS_DIR}/LumaBundleCompiler\" \\\n    --project-root     \"${SRCROOT}\" \\\n    --swift-out        \"${SRCROOT}/Luma/Generated/LumaAgent.swift\" \\\n    --agent  core      \"${SRCROOT}/Luma/Agent/core/luma.ts\" \\\n    --module tracer    \"${SRCROOT}/Luma/Agent/instruments/tracer.ts\" \\\n    --module codeShare \"${SRCROOT}/Luma/Agent/instruments/codeshare.ts\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		0C6420BD2EE8672900E4F780 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		0CD209302EB511C400D027FC /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -209,7 +288,49 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		0C6420CC2EE8712300E4F780 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0C6420C02EE8672900E4F780 /* LumaBundleCompiler */;
+			targetProxy = 0C6420CB2EE8712300E4F780 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		0C6420C62EE8672900E4F780 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 753PE4AG6F;
+				ENABLE_HARDENED_RUNTIME = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				PRODUCT_BUNDLE_IDENTIFIER = re.frida.LumaBundleCompiler;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		0C6420C72EE8672900E4F780 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 753PE4AG6F;
+				ENABLE_HARDENED_RUNTIME = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				PRODUCT_BUNDLE_IDENTIFIER = re.frida.LumaBundleCompiler;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 		0CD209422EB511C700D027FC /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -454,6 +575,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		0C6420C52EE8672900E4F780 /* Build configuration list for PBXNativeTarget "LumaBundleCompiler" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0C6420C62EE8672900E4F780 /* Debug */,
+				0C6420C72EE8672900E4F780 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		0CD2092F2EB511C400D027FC /* Build configuration list for PBXProject "Luma" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -503,6 +633,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 0C0CBFC72EE7977500B3EDE8 /* XCRemoteSwiftPackageReference "SwiftyMonaco" */;
 			productName = SwiftyMonaco;
+		};
+		0C6420C92EE8675100E4F780 /* Frida */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0C0CBFC12EE793CD00B3EDE8 /* XCRemoteSwiftPackageReference "frida-swift" */;
+			productName = Frida;
 		};
 		0CE0E52D2ED0A64C000B1E01 /* SwiftyMonaco */ = {
 			isa = XCSwiftPackageProductDependency;
