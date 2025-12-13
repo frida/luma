@@ -692,7 +692,12 @@ struct EventRow: View {
             valueView = AnyView(
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(Array(message.values.enumerated()), id: \.0) { _, value in
-                        JSInspectValueView(value: value)
+                        JSInspectValueView(
+                            value: value,
+                            sessionID: evt.process.sessionRecord.id,
+                            workspace: workspace,
+                            selection: $selection
+                        )
                     }
                 }
             )

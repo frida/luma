@@ -42,6 +42,9 @@ final class ProcessSession {
     @Relationship(deleteRule: .cascade)
     var instruments: [InstrumentInstance] = []
 
+    @Relationship(deleteRule: .cascade)
+    var insights: [AddressInsight] = []
+
     enum Kind: Codable {
         case spawn(SpawnConfig)
         case attach

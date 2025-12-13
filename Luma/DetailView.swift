@@ -15,13 +15,13 @@ struct DetailView: View {
                 NotebookEmptyStateView(workspace: workspace)
 
             case .some(.notebook):
-                NotebookView(workspace: workspace)
+                NotebookView(workspace: workspace, selection: $selection)
 
             case .some(.repl(let sessionID)):
                 if let session = try? modelContext.fetch(FetchDescriptor<ProcessSession>(predicate: #Predicate { $0.id == sessionID }))
                     .first
                 {
-                    REPLView(session: session, workspace: workspace)
+                    REPLView(session: session, workspace: workspace, selection: $selection)
                         .id(session.id)
                 } else {
                     EmptyView()
@@ -35,6 +35,19 @@ struct DetailView: View {
                     let inst = session.instruments.first(where: { $0.id == instID })!
                     InstrumentDetailView(instance: inst, workspace: workspace, selection: $selection)
                         .id(inst.id)
+                } else {
+                    EmptyView()
+                }
+
+            case .some(.insight(let sessionID, let insightID)):
+                if let session =
+                    try? modelContext
+                    .fetch(FetchDescriptor<ProcessSession>(predicate: #Predicate { $0.id == sessionID }))
+                    .first,
+                    let insight = session.insights.first(where: { $0.id == insightID })
+                {
+                    AddressInsightDetailView(session: session, insight: insight, workspace: workspace, selection: $selection)
+                        .id(insight.id)
                 } else {
                     EmptyView()
                 }

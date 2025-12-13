@@ -14,6 +14,17 @@ struct RuntimeEvent: Identifiable {
     let source: Source
     let payload: Any
     let data: [UInt8]?
+
+    var process: ProcessNode {
+        switch source {
+        case .processOutput(let process, _),
+            .script(let process),
+            .console(let process),
+            .repl(let process),
+            .instrument(let process, _):
+            return process
+        }
+    }
 }
 
 struct JSError: CustomStringConvertible {

@@ -3,21 +3,42 @@ import SwiftUI
 
 struct JSInspectValueView: View {
     let value: JSInspectValue
+
+    let sessionID: UUID
+    let workspace: Workspace
+    let selection: Binding<SidebarItemID?>
+
     private let circularTargets: Set<Int>
 
     @StateObject private var anchorStore = CircularAnchorStore()
 
-    init(value: JSInspectValue) {
+    init(
+        value: JSInspectValue,
+        sessionID: UUID,
+        workspace: Workspace,
+        selection: Binding<SidebarItemID?>
+    ) {
         self.value = value
+
+        self.sessionID = sessionID
+        self.workspace = workspace
+        self.selection = selection
+
         self.circularTargets = JSInspectValueView.collectCircularTargets(in: value)
     }
 
     var body: some View {
-        JSInspectNodeView(value: value, isRoot: true)
-            .environment(\.circularTargets, circularTargets)
-            .environmentObject(anchorStore)
-            .font(.system(.footnote, design: .monospaced))
-            .textSelection(.enabled)
+        JSInspectNodeView(
+            value: value,
+            isRoot: true,
+            sessionID: sessionID,
+            workspace: workspace,
+            selection: selection
+        )
+        .environment(\.circularTargets, circularTargets)
+        .environmentObject(anchorStore)
+        .font(.system(.footnote, design: .monospaced))
+        .textSelection(.enabled)
     }
 
     private static func collectCircularTargets(in value: JSInspectValue) -> Set<Int> {
@@ -30,26 +51,17 @@ struct JSInspectValueView: View {
                     walk(p.key)
                     walk(p.value)
                 }
-
             case .array(_, let elements):
-                for e in elements {
-                    walk(e)
-                }
-
+                for e in elements { walk(e) }
             case .map(_, let entries):
                 for e in entries {
                     walk(e.key)
                     walk(e.value)
                 }
-
             case .set(_, let elements):
-                for e in elements {
-                    walk(e)
-                }
-
+                for e in elements { walk(e) }
             case .circular(let id):
                 ids.insert(id)
-
             default:
                 break
             }
@@ -63,6 +75,10 @@ struct JSInspectValueView: View {
 private struct JSInspectNodeView: View {
     let value: JSInspectValue
     let isRoot: Bool
+
+    let sessionID: UUID
+    let workspace: Workspace
+    let selection: Binding<SidebarItemID?>
 
     @State private var isExpanded: Bool = true
     @State private var childLimit: Int = 50
@@ -99,7 +115,14 @@ private struct JSInspectNodeView: View {
                         HStack(alignment: .top, spacing: 4) {
                             Text(prop.displayKey + ":")
                                 .foregroundStyle(.green)
-                            JSInspectNodeView(value: prop.value, isRoot: false)
+
+                            JSInspectNodeView(
+                                value: prop.value,
+                                isRoot: false,
+                                sessionID: sessionID,
+                                workspace: workspace,
+                                selection: selection
+                            )
                         }
                     }
 
@@ -134,7 +157,14 @@ private struct JSInspectNodeView: View {
                         HStack(alignment: .top, spacing: 4) {
                             Text("[\(idx)]")
                                 .foregroundStyle(.secondary)
-                            JSInspectNodeView(value: elements[idx], isRoot: false)
+
+                            JSInspectNodeView(
+                                value: elements[idx],
+                                isRoot: false,
+                                sessionID: sessionID,
+                                workspace: workspace,
+                                selection: selection
+                            )
                         }
                     }
 
@@ -168,11 +198,25 @@ private struct JSInspectNodeView: View {
                     ForEach(0..<min(entries.count, childLimit), id: \.self) { idx in
                         let entry = entries[idx]
                         HStack(alignment: .top, spacing: 4) {
-                            JSInspectNodeView(value: entry.key, isRoot: false)
-                                .foregroundStyle(.green)
+                            JSInspectNodeView(
+                                value: entry.key,
+                                isRoot: false,
+                                sessionID: sessionID,
+                                workspace: workspace,
+                                selection: selection
+                            )
+                            .foregroundStyle(.green)
+
                             Text("→")
                                 .foregroundStyle(.secondary)
-                            JSInspectNodeView(value: entry.value, isRoot: false)
+
+                            JSInspectNodeView(
+                                value: entry.value,
+                                isRoot: false,
+                                sessionID: sessionID,
+                                workspace: workspace,
+                                selection: selection
+                            )
                         }
                     }
 
@@ -207,7 +251,14 @@ private struct JSInspectNodeView: View {
                         HStack(alignment: .top, spacing: 4) {
                             Text("•")
                                 .foregroundStyle(.secondary)
-                            JSInspectNodeView(value: elements[idx], isRoot: false)
+
+                            JSInspectNodeView(
+                                value: elements[idx],
+                                isRoot: false,
+                                sessionID: sessionID,
+                                workspace: workspace,
+                                selection: selection
+                            )
                         }
                     }
 
@@ -244,8 +295,43 @@ private struct JSInspectNodeView: View {
             }
 
         default:
-            Text(value.prettyAttributedDescription())
-                .fixedSize(horizontal: false, vertical: true)
+            if case .nativePointer = value,
+                let addr = value.nativePointerAddress
+            {
+                Text(value.prettyAttributedDescription())
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.disabled)
+                    .contextMenu {
+                        Button {
+                            Task { @MainActor in
+                                let insight = workspace.createInsight(
+                                    sessionID: sessionID,
+                                    pointer: addr,
+                                    kind: .memory
+                                )
+                                selection.wrappedValue = .insight(sessionID, insight.id)
+                            }
+                        } label: {
+                            Label("Open Memory", systemImage: "doc.text.magnifyingglass")
+                        }
+
+                        Button {
+                            Task { @MainActor in
+                                let insight = workspace.createInsight(
+                                    sessionID: sessionID,
+                                    pointer: addr,
+                                    kind: .disassembly
+                                )
+                                selection.wrappedValue = .insight(sessionID, insight.id)
+                            }
+                        } label: {
+                            Label("Open Disassembly", systemImage: "hammer")
+                        }
+                    }
+            } else {
+                Text(value.prettyAttributedDescription())
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -262,12 +348,8 @@ private struct JSInspectNodeView: View {
     }
 
     private func anchorSuffix() -> String {
-        guard let id = containerId() else {
-            return ""
-        }
-        guard circularTargets.contains(id) else {
-            return ""
-        }
+        guard let id = containerId() else { return "" }
+        guard circularTargets.contains(id) else { return "" }
         if !anchorStore.anchoredIds.contains(id) {
             anchorStore.anchoredIds.insert(id)
             return " *\(id)"
@@ -279,32 +361,28 @@ private struct JSInspectNodeView: View {
         switch value {
         case .object(_, let props):
             let preview =
-                props
-                .prefix(3)
+                props.prefix(3)
                 .map { "\($0.displayKey): \($0.value.inlineDescription)" }
                 .joined(separator: ", ")
             return props.isEmpty ? nil : "{\(preview)\(props.count > 3 ? ", …" : "")}"
 
         case .array(_, let elements):
             let preview =
-                elements
-                .prefix(3)
+                elements.prefix(3)
                 .map { $0.inlineDescription }
                 .joined(separator: ", ")
             return elements.isEmpty ? nil : "[\(preview)\(elements.count > 3 ? ", …" : "")]"
 
         case .map(_, let entries):
             let preview =
-                entries
-                .prefix(3)
+                entries.prefix(3)
                 .map { "\($0.key.inlineDescription) => \($0.value.inlineDescription)" }
                 .joined(separator: ", ")
             return entries.isEmpty ? nil : "{\(preview)\(entries.count > 3 ? ", …" : "")}"
 
         case .set(_, let elements):
             let preview =
-                elements
-                .prefix(3)
+                elements.prefix(3)
                 .map { $0.inlineDescription }
                 .joined(separator: ", ")
             return elements.isEmpty ? nil : "{\(preview)\(elements.count > 3 ? ", …" : "")}"

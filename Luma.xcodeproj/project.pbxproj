@@ -7,9 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0C0CBFC32EE793CD00B3EDE8 /* Frida in Frameworks */ = {isa = PBXBuildFile; productRef = 0C0CBFC22EE793CD00B3EDE8 /* Frida */; };
-		0C0CBFC92EE7977500B3EDE8 /* SwiftyMonaco in Frameworks */ = {isa = PBXBuildFile; productRef = 0C0CBFC82EE7977500B3EDE8 /* SwiftyMonaco */; };
-		0C6420CA2EE8675100E4F780 /* Frida in Frameworks */ = {isa = PBXBuildFile; productRef = 0C6420C92EE8675100E4F780 /* Frida */; };
+		0C0179152EEDDFEB00E2845D /* SwiftyR2 in Frameworks */ = {isa = PBXBuildFile; productRef = 0C0179142EEDDFEB00E2845D /* SwiftyR2 */; };
+		0C429ACF2EEB7F4C00C3AE41 /* SwiftyR2 in Frameworks */ = {isa = PBXBuildFile; productRef = 0C429ACE2EEB7F4C00C3AE41 /* SwiftyR2 */; };
+		0C75628D2EEB05560064E04E /* Frida in Frameworks */ = {isa = PBXBuildFile; productRef = 0C75628C2EEB05560064E04E /* Frida */; };
+		0C75628F2EEB05610064E04E /* Frida in Frameworks */ = {isa = PBXBuildFile; productRef = 0C75628E2EEB05610064E04E /* Frida */; };
+		0C7562922EEB05720064E04E /* SwiftyMonaco in Frameworks */ = {isa = PBXBuildFile; productRef = 0C7562912EEB05720064E04E /* SwiftyMonaco */; };
 		0CE0E52E2ED0A64C000B1E01 /* SwiftyMonaco in Frameworks */ = {isa = PBXBuildFile; productRef = 0CE0E52D2ED0A64C000B1E01 /* SwiftyMonaco */; };
 /* End PBXBuildFile section */
 
@@ -92,7 +94,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0C6420CA2EE8675100E4F780 /* Frida in Frameworks */,
+				0C75628F2EEB05610064E04E /* Frida in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -101,8 +103,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				0CE0E52E2ED0A64C000B1E01 /* SwiftyMonaco in Frameworks */,
-				0C0CBFC92EE7977500B3EDE8 /* SwiftyMonaco in Frameworks */,
-				0C0CBFC32EE793CD00B3EDE8 /* Frida in Frameworks */,
+				0C0179152EEDDFEB00E2845D /* SwiftyR2 in Frameworks */,
+				0C7562922EEB05720064E04E /* SwiftyMonaco in Frameworks */,
+				0C429ACF2EEB7F4C00C3AE41 /* SwiftyR2 in Frameworks */,
+				0C75628D2EEB05560064E04E /* Frida in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -155,7 +159,7 @@
 			);
 			name = LumaBundleCompiler;
 			packageProductDependencies = (
-				0C6420C92EE8675100E4F780 /* Frida */,
+				0C75628E2EEB05610064E04E /* Frida */,
 			);
 			productName = LumaBundleCompiler;
 			productReference = 0C6420C12EE8672900E4F780 /* LumaBundleCompiler */;
@@ -182,8 +186,10 @@
 			name = Luma;
 			packageProductDependencies = (
 				0CE0E52D2ED0A64C000B1E01 /* SwiftyMonaco */,
-				0C0CBFC22EE793CD00B3EDE8 /* Frida */,
-				0C0CBFC82EE7977500B3EDE8 /* SwiftyMonaco */,
+				0C75628C2EEB05560064E04E /* Frida */,
+				0C7562912EEB05720064E04E /* SwiftyMonaco */,
+				0C429ACE2EEB7F4C00C3AE41 /* SwiftyR2 */,
+				0C0179142EEDDFEB00E2845D /* SwiftyR2 */,
 			);
 			productName = Luma;
 			productReference = 0CD209342EB511C400D027FC /* Luma.app */;
@@ -217,8 +223,9 @@
 			mainGroup = 0CD2092B2EB511C400D027FC;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				0C0CBFC12EE793CD00B3EDE8 /* XCRemoteSwiftPackageReference "frida-swift" */,
-				0C0CBFC72EE7977500B3EDE8 /* XCRemoteSwiftPackageReference "SwiftyMonaco" */,
+				0C75628B2EEB05560064E04E /* XCRemoteSwiftPackageReference "frida-swift" */,
+				0C7562902EEB05720064E04E /* XCRemoteSwiftPackageReference "SwiftyMonaco" */,
+				0C0179132EEDDFEB00E2845D /* XCRemoteSwiftPackageReference "SwiftyR2" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 0CD209352EB511C400D027FC /* Products */;
@@ -605,7 +612,15 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		0C0CBFC12EE793CD00B3EDE8 /* XCRemoteSwiftPackageReference "frida-swift" */ = {
+		0C0179132EEDDFEB00E2845D /* XCRemoteSwiftPackageReference "SwiftyR2" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/radareorg/SwiftyR2";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+		0C75628B2EEB05560064E04E /* XCRemoteSwiftPackageReference "frida-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/frida/frida-swift";
 			requirement = {
@@ -613,7 +628,7 @@
 				kind = branch;
 			};
 		};
-		0C0CBFC72EE7977500B3EDE8 /* XCRemoteSwiftPackageReference "SwiftyMonaco" */ = {
+		0C7562902EEB05720064E04E /* XCRemoteSwiftPackageReference "SwiftyMonaco" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/frida/SwiftyMonaco";
 			requirement = {
@@ -624,20 +639,29 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		0C0CBFC22EE793CD00B3EDE8 /* Frida */ = {
+		0C0179142EEDDFEB00E2845D /* SwiftyR2 */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 0C0CBFC12EE793CD00B3EDE8 /* XCRemoteSwiftPackageReference "frida-swift" */;
+			package = 0C0179132EEDDFEB00E2845D /* XCRemoteSwiftPackageReference "SwiftyR2" */;
+			productName = SwiftyR2;
+		};
+		0C429ACE2EEB7F4C00C3AE41 /* SwiftyR2 */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SwiftyR2;
+		};
+		0C75628C2EEB05560064E04E /* Frida */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0C75628B2EEB05560064E04E /* XCRemoteSwiftPackageReference "frida-swift" */;
 			productName = Frida;
 		};
-		0C0CBFC82EE7977500B3EDE8 /* SwiftyMonaco */ = {
+		0C75628E2EEB05610064E04E /* Frida */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 0C0CBFC72EE7977500B3EDE8 /* XCRemoteSwiftPackageReference "SwiftyMonaco" */;
+			package = 0C75628B2EEB05560064E04E /* XCRemoteSwiftPackageReference "frida-swift" */;
+			productName = Frida;
+		};
+		0C7562912EEB05720064E04E /* SwiftyMonaco */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0C7562902EEB05720064E04E /* XCRemoteSwiftPackageReference "SwiftyMonaco" */;
 			productName = SwiftyMonaco;
-		};
-		0C6420C92EE8675100E4F780 /* Frida */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 0C0CBFC12EE793CD00B3EDE8 /* XCRemoteSwiftPackageReference "frida-swift" */;
-			productName = Frida;
 		};
 		0CE0E52D2ED0A64C000B1E01 /* SwiftyMonaco */ = {
 			isa = XCSwiftPackageProductDependency;

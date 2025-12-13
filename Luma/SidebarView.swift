@@ -138,6 +138,20 @@ struct SidebarSessionRow: View {
                         workspace: workspace
                     )
                 }
+
+                if !session.insights.isEmpty {
+                    Divider()
+                        .padding(.leading, 20)
+                        .padding(.vertical, 2)
+
+                    ForEach(session.insights.sorted(by: { $0.createdAt < $1.createdAt })) { insight in
+                        SidebarInsightRow(
+                            sessionID: session.id,
+                            insight: insight,
+                            selection: $selection
+                        )
+                    }
+                }
             }
         }
         .padding(.vertical, 2)
@@ -394,5 +408,33 @@ struct SidebarInstrumentRow: View {
         .onTapGesture {
             selection = .instrument(sessionID, instance.id)
         }
+    }
+}
+
+private struct SidebarInsightRow: View {
+    let sessionID: UUID
+    let insight: AddressInsight
+    @Binding var selection: SidebarItemID?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: insight.kind == .memory ? "doc.text.magnifyingglass" : "hammer")
+                .font(.system(size: 12))
+            Text(insight.title)
+            Spacer()
+        }
+        .font(.callout)
+        .contentShape(Rectangle())
+        .padding(.leading, 20)
+        .background(
+            (selection == .insight(sessionID, insight.id)
+                ? Color.accentColor.opacity(0.15)
+                : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+        )
+        .onTapGesture {
+            selection = .insight(sessionID, insight.id)
+        }
+        .help(insight.anchor.displayString)
     }
 }

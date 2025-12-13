@@ -1,5 +1,5 @@
 {
-  "originHash" : "1bcf083ff2efbc567e0246f2d44d56e9073a5e5f3f252c969b56c9d8eab0845d",
+  "originHash" : "2f4750a526e90d3865a3ffa26e20df6a47fb4b45a94d6cc8a1a8ededf21dc265",
   "pins" : [
     {
       "identity" : "frida-swift",
@@ -17,6 +17,15 @@
       "state" : {
         "branch" : "main",
         "revision" : "31a6b85179798a0ffe95f302eb98250725b48eeb"
+      }
+    },
+    {
+      "identity" : "swiftyr2",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/radareorg/SwiftyR2",
+      "state" : {
+        "branch" : "main",
+        "revision" : "c05b2f0b421f82a67051eda099c5b07457ce733d"
       }
     }
   ],

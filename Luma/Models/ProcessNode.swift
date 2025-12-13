@@ -2,6 +2,7 @@ import Combine
 import Foundation
 import Frida
 import SwiftData
+import SwiftyR2
 
 @MainActor
 final class ProcessNode: ObservableObject, Identifiable {
@@ -12,10 +13,14 @@ final class ProcessNode: ObservableObject, Identifiable {
     let session: Session
     let script: Script
 
+    let r2: R2Core
+    private var didOpenR2 = false
+
     let sessionRecord: ProcessSession
 
     var loadedPackageNames = Set<String>()
 
+    @Published var modules: [ProcessModule] = []
     @Published var instruments: [InstrumentRuntime] = []
 
     private let modelContext: ModelContext
@@ -35,6 +40,9 @@ final class ProcessNode: ObservableObject, Identifiable {
         self.process = process
         self.session = session
         self.script = script
+
+        self.r2 = R2Core()
+
         self.sessionRecord = sessionRecord
 
         self.modelContext = modelContext
@@ -111,6 +119,24 @@ final class ProcessNode: ObservableObject, Identifiable {
             }
 
             switch type {
+
+            case "module-added":
+                guard let moduleDict = dict["module"] as? [String: Any],
+                    let module = Self.decodeModuleDTO(moduleDict)
+                else { return false }
+
+                self.modules.append(module)
+                self.modules.sort { $0.base < $1.base }
+
+                return true
+
+            case "module-removed":
+                guard let moduleDict = dict["module"] as? [String: Any],
+                    let module = Self.decodeModuleDTO(moduleDict)
+                else { return false }
+
+                self.modules.removeAll { $0.base == module.base }
+                return true
 
             case "console":
                 guard let levelString = dict["level"] as? String,
@@ -386,6 +412,76 @@ final class ProcessNode: ObservableObject, Identifiable {
         }
 
         return []
+    }
+
+    func readRemoteMemory(at address: UInt64, count: Int) async throws -> [UInt8] {
+        let addr = String(format: "0x%llx", address)
+        let any = try await script.exports.readMemory(addr, count)
+        guard let bytes = any as? [UInt8] else {
+            throw Error.protocolViolation("Invalid reply")
+        }
+        return bytes
+    }
+
+    func anchor(for address: UInt64) -> AddressAnchor {
+        if let m = modules.first(where: { address >= $0.base && address < ($0.base + $0.size) }) {
+            return .module(name: m.name, offset: address - m.base)
+        }
+        return .absolute(address)
+    }
+
+    func resolve(_ anchor: AddressAnchor) -> UInt64? {
+        switch anchor {
+        case .absolute(let a):
+            return a
+        case .module(let name, let offset):
+            guard let m = modules.first(where: { $0.name == name }) else { return nil }
+            return m.base &+ offset
+        }
+    }
+
+    private static func decodeModuleDTO(_ dto: [String: Any]) -> ProcessModule? {
+        guard
+            let name = dto["name"] as? String,
+            let path = dto["path"] as? String,
+            let baseStr = dto["base"] as? String,
+            let size = dto["size"] as? Int
+        else { return nil }
+
+        let base = UInt64(baseStr.dropFirst(2), radix: 16) ?? 0
+        return ProcessModule(name: name, path: path, base: base, size: UInt64(size))
+    }
+
+    private func ensureR2Opened() async {
+        guard !didOpenR2 else { return }
+        didOpenR2 = true
+
+        await r2.registerIOPlugin(
+            asyncProvider: ProcessMemoryIOProvider(processNode: self),
+            uriSchemes: ["frida-mem://"]
+        )
+
+        await r2.config.set("scr.utf8", bool: true)
+        await r2.config.set("scr.color", colorMode: .mode16M)
+        await r2.config.set("cfg.json.num", string: "hex")
+        await r2.config.set("asm.emu", bool: true)
+        await r2.config.set("emu.str", bool: true)
+        await r2.config.set("anal.cc", string: "cdecl")
+
+        // FIXME: Stop hard-coding these:
+        await r2.config.set("asm.os", string: "linux")
+        await r2.config.set("asm.arch", string: "arm")
+        await r2.config.set("asm.bits", int: 64)
+
+        let uri = "frida-mem://0x0"
+        await r2.openFile(uri: uri)
+        await r2.cmd("=!")
+        await r2.binLoad(uri: uri)
+    }
+
+    func r2Cmd(_ command: String) async -> String {
+        await ensureR2Opened()
+        return await r2.cmd(command)
     }
 
     private func append(_ cell: REPLCell) {

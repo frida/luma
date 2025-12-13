@@ -14,6 +14,7 @@ class NotebookEntry {
     @Attribute(.externalStorage)
     var binaryData: Data?
 
+    var session: UUID?
     var processName: String?
     var isUserNote: Bool
 
@@ -36,6 +37,7 @@ class NotebookEntry {
         details: String,
         jsValue: JSInspectValue? = nil,
         binaryData: Data? = nil,
+        session: UUID? = nil,
         processName: String? = nil,
         isUserNote: Bool = false
     ) {
@@ -46,6 +48,7 @@ class NotebookEntry {
             details: details,
             jsValue: jsValue,
             binaryData: binaryData,
+            session: session,
             processName: processName,
             isUserNote: isUserNote,
         )
@@ -58,6 +61,7 @@ class NotebookEntry {
         details: String,
         jsValue: JSInspectValue? = nil,
         binaryData: Data? = nil,
+        session: UUID? = nil,
         processName: String? = nil,
         isUserNote: Bool = false
     ) {
@@ -66,6 +70,7 @@ class NotebookEntry {
         self.title = title
         self.details = details
         self.binaryData = binaryData
+        self.session = session
         self.processName = processName
         self.isUserNote = isUserNote
 

@@ -504,7 +504,7 @@ final class Workspace: ObservableObject {
                     )
                 )
             },
-            renderEvent: { event, _, _ in
+            renderEvent: { event, workspace, selection in
                 guard let v = event.payload as? JSInspectValue,
                     let ev = Workspace.parseTracerEvent(from: v)
                 else {
@@ -522,7 +522,12 @@ final class Workspace: ObservableObject {
                                 .font(.system(.footnote, design: .monospaced))
                                 .textSelection(.enabled)
                         } else {
-                            JSInspectValueView(value: ev.message)
+                            JSInspectValueView(
+                                value: ev.message,
+                                sessionID: event.process.sessionRecord.id,
+                                workspace: workspace,
+                                selection: selection
+                            )
                         }
                     }
                 )
@@ -656,12 +661,18 @@ final class Workspace: ObservableObject {
                         )
                     )
                 },
-                renderEvent: { event, _, _ in
+                renderEvent: { event, workspace, selection in
                     guard let v = event.payload as? JSInspectValue else {
                         return AnyView(Text(String(describing: event.payload)))
                     }
 
-                    return AnyView(JSInspectValueView(value: v))
+                    return AnyView(
+                        JSInspectValueView(
+                            value: v,
+                            sessionID: event.process.sessionRecord.id,
+                            workspace: workspace,
+                            selection: selection
+                        ))
                 },
                 makeEventContextMenuItems: { _, _, _ in [] },
                 summarizeEvent: { event in
@@ -714,9 +725,15 @@ final class Workspace: ObservableObject {
                     )
                 )
             },
-            renderEvent: { event, _, _ in
+            renderEvent: { event, workspace, selection in
                 if let v = event.payload as? JSInspectValue {
-                    return AnyView(JSInspectValueView(value: v))
+                    return AnyView(
+                        JSInspectValueView(
+                            value: v,
+                            sessionID: event.process.sessionRecord.id,
+                            workspace: workspace,
+                            selection: selection
+                        ))
                 }
                 return AnyView(Text(String(describing: event.payload)))
             },
@@ -819,18 +836,17 @@ final class Workspace: ObservableObject {
 
             sessionRecord.lastAttachedAt = Date()
 
-            let replScript = try await session.createScript(
+            let script = try await session.createScript(
                 LumaAgent.coreSource,
                 name: "luma",
                 runtime: .auto
             )
-            try await replScript.load()
 
             let node = ProcessNode(
                 device: device,
                 process: process,
                 session: session,
-                script: replScript,
+                script: script,
                 sessionRecord: sessionRecord,
                 modelContext: modelContext
             )
@@ -844,6 +860,8 @@ final class Workspace: ObservableObject {
             node.eventSink = { [weak self] evt in
                 self?.pushEvent(evt)
             }
+
+            try await script.load()
 
             await loadAllPackages(on: node)
 
@@ -947,6 +965,36 @@ final class Workspace: ObservableObject {
                 reason: "Quick re-establish failed for “\(sessionRecord.processName)”. Choose a new target."
             )
         }
+    }
+
+    func createInsight(
+        sessionID: UUID,
+        pointer: UInt64,
+        kind: AddressInsight.Kind
+    ) -> AddressInsight {
+        let session = try! modelContext.fetch(
+            FetchDescriptor<ProcessSession>(predicate: #Predicate { $0.id == sessionID })
+        ).first!
+
+        let anchor: AddressAnchor = {
+            guard let node = processNodes.first(where: { $0.sessionRecord.id == sessionID }) else {
+                return .absolute(pointer)
+            }
+            return node.anchor(for: pointer)
+        }()
+
+        let titlePrefix = (kind == .memory) ? "Memory" : "Disassembly"
+        let insight = AddressInsight(
+            title: "\(titlePrefix) \(anchor.displayString)",
+            kind: kind,
+            anchor: anchor
+        )
+
+        insight.session = session
+        session.insights.append(insight)
+        modelContext.insert(insight)
+
+        return insight
     }
 }
 

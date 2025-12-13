@@ -6,6 +6,7 @@ import SwiftUI
 struct REPLView: View {
     @Bindable var session: ProcessSession
     @ObservedObject var workspace: Workspace
+    @Binding var selection: SidebarItemID?
 
     @State private var inputCode: String = ""
     @State private var isInputFocused: Bool = false
@@ -30,8 +31,14 @@ struct REPLView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 4) {
                             ForEach(session.orderedReplCells) { cell in
-                                REPLCellView(cell: cell, processName: session.processName, workspace: workspace)
-                                    .id(cell.id)
+                                REPLCellView(
+                                    cell: cell,
+                                    processName: session.processName,
+                                    sessionID: session.id,
+                                    workspace: workspace,
+                                    selection: $selection
+                                )
+                                .id(cell.id)
                             }
                         }
                         .frame(
@@ -199,7 +206,9 @@ struct REPLView: View {
 private struct REPLCellView: View {
     let cell: REPLCell
     let processName: String
+    let sessionID: UUID
     @ObservedObject var workspace: Workspace
+    @Binding var selection: SidebarItemID?
 
     @Environment(\.modelContext) private var modelContext
 
@@ -243,7 +252,12 @@ private struct REPLCellView: View {
                                 .textSelection(.enabled)
 
                         case .js(let v):
-                            JSInspectValueView(value: v)
+                            JSInspectValueView(
+                                value: v,
+                                sessionID: sessionID,
+                                workspace: workspace,
+                                selection: $selection
+                            )
 
                         case .binary(let data, _):
                             HexView(data: data)

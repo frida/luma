@@ -106,8 +106,9 @@ struct MainWindowView: View {
                 get: { workspace.targetPickerContext },
                 set: { newValue in
                     Task { @MainActor in
-                        workspace.targetPickerContext = newValue }
+                        workspace.targetPickerContext = newValue
                     }
+                }
             ),
             onDismiss: {
                 workspace.targetPickerContext = nil
@@ -286,7 +287,8 @@ struct WorkspaceToolbar: ToolbarContent {
 
         case .repl(let sessionID),
             .instrument(let sessionID, _),
-            .instrumentComponent(let sessionID, _, _, _):
+            .instrumentComponent(let sessionID, _, _, _),
+            .insight(let sessionID, _):
 
             let descriptor = FetchDescriptor<ProcessSession>(
                 predicate: #Predicate { $0.id == sessionID }
@@ -310,7 +312,8 @@ struct WorkspaceToolbar: ToolbarContent {
             return nil
         case .repl(let sessionID),
             .instrument(let sessionID, _),
-            .instrumentComponent(let sessionID, _, _, _):
+            .instrumentComponent(let sessionID, _, _, _),
+            .insight(let sessionID, _):
             return workspace.processNodes.first { $0.sessionRecord.id == sessionID }
         }
     }

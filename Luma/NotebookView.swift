@@ -4,6 +4,7 @@ import SwiftUI
 
 struct NotebookView: View {
     @ObservedObject var workspace: Workspace
+    @Binding var selection: SidebarItemID?
 
     @Query(sort: \NotebookEntry.timestamp, order: .forward)
     private var entries: [NotebookEntry]
@@ -25,7 +26,11 @@ struct NotebookView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 16) {
                     ForEach(entries) { entry in
-                        NotebookEntryRow(entry: entry, workspace: workspace) {
+                        NotebookEntryRow(
+                            entry: entry,
+                            workspace: workspace,
+                            selection: $selection
+                        ) {
                             addUserNote(after: entry)
                         } deleteAction: {
                             workspace.notifyLocalNotebookEntryDeleted(entry)
@@ -67,6 +72,7 @@ struct NotebookView: View {
 struct NotebookEntryRow: View {
     @Bindable var entry: NotebookEntry
     @ObservedObject var workspace: Workspace
+    @Binding var selection: SidebarItemID?
 
     let addNoteBelow: () -> Void
     let deleteAction: () -> Void
@@ -213,7 +219,12 @@ struct NotebookEntryRow: View {
     @ViewBuilder
     private var systemEntryBody: some View {
         if let jsValue = entry.jsValue {
-            JSInspectValueView(value: jsValue)
+            JSInspectValueView(
+                value: jsValue,
+                sessionID: entry.session!,
+                workspace: workspace,
+                selection: $selection
+            )
         } else if !entry.details.isEmpty {
             Text(entry.details)
                 .font(.system(.body, design: .monospaced))

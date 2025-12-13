@@ -398,9 +398,15 @@ struct CodeShareProjectDetailView: View {
                     )
                 )
             },
-            renderEvent: { event, _, _ in
+            renderEvent: { event, workspace, selection in
                 if let v = event.payload as? JSInspectValue {
-                    return AnyView(JSInspectValueView(value: v))
+                    return AnyView(
+                        JSInspectValueView(
+                            value: v,
+                            sessionID: event.process.sessionRecord.id,
+                            workspace: workspace,
+                            selection: selection
+                        ))
                 }
                 return AnyView(Text(String(describing: event.payload)))
             },
