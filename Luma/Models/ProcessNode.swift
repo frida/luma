@@ -13,8 +13,8 @@ final class ProcessNode: ObservableObject, Identifiable {
     let session: Session
     let script: Script
 
-    let r2: R2Core
-    private var didOpenR2 = false
+    var r2: R2Core!
+    private var openR2Task: Task<Void, Never>?
 
     let sessionRecord: ProcessSession
 
@@ -40,8 +40,6 @@ final class ProcessNode: ObservableObject, Identifiable {
         self.process = process
         self.session = session
         self.script = script
-
-        self.r2 = R2Core()
 
         self.sessionRecord = sessionRecord
 
@@ -453,30 +451,42 @@ final class ProcessNode: ObservableObject, Identifiable {
     }
 
     private func ensureR2Opened() async {
-        guard !didOpenR2 else { return }
-        didOpenR2 = true
+        if let task = openR2Task {
+            await task.value
+            return
+        }
 
-        await r2.registerIOPlugin(
-            asyncProvider: ProcessMemoryIOProvider(processNode: self),
-            uriSchemes: ["frida-mem://"]
-        )
+        let task = Task { @MainActor in
+            let r2 = await R2Core.create()
+            self.r2 = r2
 
-        await r2.config.set("scr.utf8", bool: true)
-        await r2.config.set("scr.color", colorMode: .mode16M)
-        await r2.config.set("cfg.json.num", string: "hex")
-        await r2.config.set("asm.emu", bool: true)
-        await r2.config.set("emu.str", bool: true)
-        await r2.config.set("anal.cc", string: "cdecl")
+            await r2.registerIOPlugin(
+                asyncProvider: ProcessMemoryIOProvider(processNode: self),
+                uriSchemes: ["frida-mem://"]
+            )
 
-        // FIXME: Stop hard-coding these:
-        await r2.config.set("asm.os", string: "linux")
-        await r2.config.set("asm.arch", string: "arm")
-        await r2.config.set("asm.bits", int: 64)
+            await r2.setColorLimit(.mode16M)
 
-        let uri = "frida-mem://0x0"
-        await r2.openFile(uri: uri)
-        await r2.cmd("=!")
-        await r2.binLoad(uri: uri)
+            await r2.config.set("scr.utf8", bool: true)
+            await r2.config.set("scr.color", colorMode: .mode16M)
+            await r2.config.set("cfg.json.num", string: "hex")
+            await r2.config.set("asm.emu", bool: true)
+            await r2.config.set("emu.str", bool: true)
+            await r2.config.set("anal.cc", string: "cdecl")
+
+            // FIXME: Stop hard-coding these:
+            await r2.config.set("asm.os", string: "linux")
+            await r2.config.set("asm.arch", string: "arm")
+            await r2.config.set("asm.bits", int: 64)
+
+            let uri = "frida-mem://0x0"
+            await r2.openFile(uri: uri)
+            await r2.cmd("=!")
+            await r2.binLoad(uri: uri)
+        }
+
+        openR2Task = task
+        await task.value
     }
 
     func r2Cmd(_ command: String) async -> String {
