@@ -186,14 +186,7 @@ private struct DisasmRow: View {
     @Binding var hoveredAddr: UInt64?
 
     var body: some View {
-        let c =
-            (try? op.columns())
-            ?? R2DisasmOp.Columns(
-                addr: AttributedString(op.addr),
-                bytes: AttributedString(""),
-                asm: AttributedString(stripAnsi(op.text)),
-                comment: nil
-            )
+        let c = op.columns()
 
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(c.addr)
