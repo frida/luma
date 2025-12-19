@@ -118,22 +118,20 @@ final class ProcessNode: ObservableObject, Identifiable {
 
             switch type {
 
-            case "module-added":
-                guard let moduleDict = dict["module"] as? [String: Any],
-                    let module = Self.decodeModuleDTO(moduleDict)
-                else { return false }
+            case "modules-changed":
+                let addedDicts = (dict["added"] as? [[String: Any]]) ?? []
+                let removedDicts = (dict["removed"] as? [[String: Any]]) ?? []
 
-                self.modules.append(module)
-                self.modules.sort { $0.base < $1.base }
+                let added = addedDicts.compactMap { Self.decodeModuleDTO($0) }
+                let removed = removedDicts.compactMap { Self.decodeModuleDTO($0) }
 
-                return true
+                if !removed.isEmpty {
+                    let removedBases = Set(removed.map { $0.base })
+                    self.modules.removeAll { removedBases.contains($0.base) }
+                }
 
-            case "module-removed":
-                guard let moduleDict = dict["module"] as? [String: Any],
-                    let module = Self.decodeModuleDTO(moduleDict)
-                else { return false }
+                self.modules.append(contentsOf: added)
 
-                self.modules.removeAll { $0.base == module.base }
                 return true
 
             case "console":
@@ -160,6 +158,7 @@ final class ProcessNode: ObservableObject, Identifiable {
                     data: data.map { Array($0) }
                 )
                 self.eventSink?(evt)
+
                 return true
 
             case "instrument-event":
@@ -180,6 +179,7 @@ final class ProcessNode: ObservableObject, Identifiable {
                     data: data.map { Array($0) }
                 )
                 self.eventSink?(evt)
+
                 return true
 
             default:
