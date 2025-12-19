@@ -22,10 +22,6 @@ private enum State {
     case printable
     case escape
     case code
-    case mode
-    case red
-    case green
-    case blue
     case end
 }
 
@@ -66,173 +62,163 @@ private let CHR_M: Character = "m"
 
 func parseAnsi(_ input: String) throws -> AttributedString {
     var result = AttributedString()
-    var endIndex = result.endIndex
+
     var startIndex = result.startIndex
-    var state: State = .printable
-    var number = ""
-    var ansiAttribute: AnsiAttribute?
-    var color = AnsiColor()
-    var fColor: AnsiColor?
-    var bColor: AnsiColor?
-    var bgUIColor: Color?
+    var endIndex = result.endIndex
+
+    var fgColor: AnsiColor?
+    var bgColor: AnsiColor?
     var fgUIColor: Color?
-    try input.forEach { char in
-        switch state {
-        case .escape:
-            if char == CHR_BRACKET {
-                state = .code
-            } else {
-                throw AnsiError.invalidEscapeSequence
-            }
-        case .code:
-            if char.isNumber {
-                number.append(char)
-            } else if char == CHR_SEMI || char == CHR_M {
-                switch number {
-                case "38":
-                    ansiAttribute = .foregroundColor
-                case "48":
-                    ansiAttribute = .backgroundColor
-                case "0":
-                    ansiAttribute = .reset
-                case "7":
-                    ansiAttribute = .none
-                    break
-                default:
-                    throw AnsiError.unsupportedEscapeCode
-                }
+    var bgUIColor: Color?
+    var isBold = false
+    var isReverseVideo = false
 
-                number = ""
+    var state: State = .printable
 
-                if char == CHR_SEMI {
-                    state = .mode
-                } else {
-                    state = .end
-                }
-            } else {
-                throw AnsiError.invalidEscapeCode
-            }
-        case .mode:
-            if char.isNumber {
-                number.append(char)
-            } else if char == CHR_SEMI {
-                switch number {
-                case "2":
-                    state = .red
-                default:
-                    throw AnsiError.unsupportedEscapeColorMode
-                }
-                number = ""
-            } else {
-                throw AnsiError.invalidEscapeColorMode
-            }
-        case .red:
-            if char.isNumber {
-                number.append(char)
-            } else if char == CHR_SEMI {
-                color.red = number
-                number = ""
-                state = .green
-            } else {
-                throw AnsiError.invalidEscapeColor
-            }
-        case .green:
-            if char.isNumber {
-                number.append(char)
-            } else if char == CHR_SEMI {
-                color.green = number
-                number = ""
-                state = .blue
-            } else {
-                throw AnsiError.invalidEscapeColor
-            }
-        case .blue:
-            if char.isNumber {
-                number.append(char)
-            } else if char == CHR_M {
-                color.blue = number
-                number = ""
-                state = .end
-            } else {
-                throw AnsiError.invalidEscapeColor
-            }
-        case .end:
-            state = .printable
+    var paramBuffer = ""
+    var params: [String] = []
 
-            switch ansiAttribute {
-            case .backgroundColor:
-                if let color = bgUIColor {
-                    result[startIndex..<endIndex].backgroundColor = color
-                }
-                if let color = fgUIColor {
-                    result[startIndex..<endIndex].foregroundColor = color
-                }
-                startIndex = endIndex
-                bgUIColor = color.uiColor
-                bColor = color
+    func flushStyleRun() {
+        guard startIndex < endIndex else { return }
 
-                if let fColor = fColor, let bColor = bColor {
-                    let luminanceDiff = abs(fColor.luminance - bColor.luminance)
-                    if luminanceDiff < 0.1 {
-                        if bColor.luminance > 0.5 {
-                            bgUIColor = bColor.invertedUIColor
-                        }
-                    }
-                }
-            case .foregroundColor:
-                if let color = bgUIColor {
-                    result[startIndex..<endIndex].backgroundColor = color
-                }
-                if let color = fgUIColor {
-                    result[startIndex..<endIndex].foregroundColor = color
-                }
-                startIndex = endIndex
-                fgUIColor = color.uiColor
-                fColor = color
+        let effectiveFG = isReverseVideo ? bgUIColor : fgUIColor
+        let effectiveBG = isReverseVideo ? fgUIColor : bgUIColor
 
-                if let fColor = fColor, let bColor = bColor {
-                    let luminanceDiff = abs(fColor.luminance - bColor.luminance)
-                    if luminanceDiff < 0.1 {
-                        if bColor.luminance > 0.5 {
-                            bgUIColor = bColor.invertedUIColor
-                        }
-                    }
-                }
-            case .reset:
-                if let color = bgUIColor {
-                    result[startIndex..<endIndex].backgroundColor = color
-                }
-                if let color = fgUIColor {
-                    result[startIndex..<endIndex].foregroundColor = color
-                }
-                startIndex = endIndex
+        if let bg = effectiveBG {
+            result[startIndex..<endIndex].backgroundColor = bg
+        }
+        if let fg = effectiveFG {
+            result[startIndex..<endIndex].foregroundColor = fg
+        }
+
+        if isBold {
+            result[startIndex..<endIndex].font = .system(.body, design: .monospaced).bold()
+        } else {
+            result[startIndex..<endIndex].font = .system(.body, design: .monospaced)
+        }
+
+        startIndex = endIndex
+    }
+
+    func recomputeContrastIfNeeded() {
+        guard let f = fgColor, let b = bgColor else { return }
+        let luminanceDiff = abs(f.luminance - b.luminance)
+        if luminanceDiff < 0.1, b.luminance > 0.5 {
+            bgUIColor = b.invertedUIColor
+        }
+    }
+
+    func applySGR(_ rawParams: [String]) throws {
+        let normalized: [String] = rawParams.isEmpty ? ["0"] : rawParams.map { $0.isEmpty ? "0" : $0 }
+
+        var i = 0
+        while i < normalized.count {
+            let p = normalized[i]
+
+            switch p {
+            case "0":
+                fgColor = nil
+                bgColor = nil
                 fgUIColor = nil
                 bgUIColor = nil
-                bColor = nil
-                fColor = nil
-                break
-            case .none:
-                break
+                isBold = false
+                isReverseVideo = false
+            case "1":
+                isBold = true
+            case "22":
+                isBold = false
+            case "7":
+                isReverseVideo = true
+            case "27":
+                isReverseVideo = false
+
+            case "38", "48":
+                let isForeground = (p == "38")
+                guard i + 1 < normalized.count else { throw AnsiError.invalidEscapeColorMode }
+                let mode = normalized[i + 1]
+                guard mode == "2" else { throw AnsiError.unsupportedEscapeColorMode }
+
+                guard i + 4 < normalized.count else { throw AnsiError.invalidEscapeColor }
+                let r = normalized[i + 2]
+                let g = normalized[i + 3]
+                let b = normalized[i + 4]
+
+                func validateByte(_ s: String) throws -> String {
+                    guard let v = Int(s), (0...255).contains(v) else { throw AnsiError.invalidEscapeColor }
+                    return String(v)
+                }
+
+                var c = AnsiColor()
+                c.red = try validateByte(r)
+                c.green = try validateByte(g)
+                c.blue = try validateByte(b)
+
+                if isForeground {
+                    fgColor = c
+                    fgUIColor = c.uiColor
+                } else {
+                    bgColor = c
+                    bgUIColor = c.uiColor
+                }
+
+                recomputeContrastIfNeeded()
+                i += 4
+            case "39":
+                fgColor = nil
+                fgUIColor = nil
+            case "49":
+                bgColor = nil
+                bgUIColor = nil
+
+            default:
+                throw AnsiError.unsupportedEscapeCode
             }
 
-            fallthrough
+            i += 1
+        }
+    }
+
+    try input.forEach { char in
+        switch state {
         case .printable:
             if char == CHR_ESCAPE {
                 state = .escape
             } else {
                 result.append(AttributedString(String(char)))
+                endIndex = result.endIndex
             }
+
+        case .escape:
+            guard char == CHR_BRACKET else { throw AnsiError.invalidEscapeSequence }
+            params.removeAll(keepingCapacity: true)
+            paramBuffer.removeAll(keepingCapacity: true)
+            state = .code
+
+        case .code:
+            if char.isNumber {
+                paramBuffer.append(char)
+            } else if char == CHR_SEMI {
+                params.append(paramBuffer)
+                paramBuffer.removeAll(keepingCapacity: true)
+            } else if char == CHR_M {
+                params.append(paramBuffer)
+                paramBuffer.removeAll(keepingCapacity: true)
+
+                flushStyleRun()
+                try applySGR(params)
+
+                state = .printable
+            } else {
+                throw AnsiError.invalidEscapeCode
+            }
+
+        case .end:
+            throw AnsiError.internalError(reason: "Unexpected parser state: \(state)")
         }
-
-        endIndex = result.endIndex
     }
 
-    if let color = bgUIColor {
-        result[startIndex..<endIndex].backgroundColor = color
-    }
-    if let color = fgUIColor {
-        result[startIndex..<endIndex].foregroundColor = color
-    }
+    endIndex = result.endIndex
+    flushStyleRun()
 
     return result
 }
@@ -263,8 +249,6 @@ func stripAnsi(_ input: String) -> String {
             } else {
                 result.append(char)
             }
-        default:
-            break
         }
     }
 
