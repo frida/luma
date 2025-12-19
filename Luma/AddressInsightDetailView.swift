@@ -13,6 +13,8 @@ struct AddressInsightDetailView: View {
     @State private var output: AttributedString = AttributedString("")
     @State private var errorText: AttributedString?
 
+    @Environment(\.colorScheme) private var colorScheme
+
     private var node: ProcessNode? {
         workspace.processNodes.first { $0.sessionRecord == session }
     }
@@ -57,6 +59,12 @@ struct AddressInsightDetailView: View {
         .onChange(of: insight.kind) { refresh() }
         .onChange(of: insight.byteCount) { refresh() }
         .onChange(of: session.phase) { refresh() }
+        .task(id: colorScheme) {
+            await handleThemeChange(colorScheme)
+        }
+        .task(id: node?.id) {
+            await handleThemeChange(colorScheme)
+        }
     }
 
     private var header: some View {
@@ -139,6 +147,12 @@ struct AddressInsightDetailView: View {
                 disasmOps = try! JSONDecoder().decode([R2DisasmOp].self, from: Data(out.utf8))
             }
         }
+    }
+
+    private func handleThemeChange(_ scheme: ColorScheme) async {
+        guard let node else { return }
+        await node.applyR2Theme((scheme == .light) ? "iaito" : "default")
+        refresh()
     }
 }
 

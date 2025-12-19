@@ -489,6 +489,11 @@ final class ProcessNode: ObservableObject, Identifiable {
         await task.value
     }
 
+    func applyR2Theme(_ name: String) async {
+        await ensureR2Opened()
+        await r2.applyTheme(name)
+    }
+
     func r2Cmd(_ command: String) async -> String {
         await ensureR2Opened()
         return await r2.cmd(command)
