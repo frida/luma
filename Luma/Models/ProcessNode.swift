@@ -12,6 +12,14 @@ final class ProcessNode: ObservableObject, Identifiable {
     let process: ProcessDetails
     let session: Session
     let script: Script
+    private var moduleSnapshotState: ModuleSnapshotState = .pending
+    private var moduleSnapshotWaiters: [CheckedContinuation<Void, Swift.Error>] = []
+
+    private enum ModuleSnapshotState: Equatable {
+        case pending
+        case ready
+        case detached
+    }
 
     var r2: R2Core!
     private var openR2Task: Task<Void, Never>?
@@ -70,6 +78,7 @@ final class ProcessNode: ObservableObject, Identifiable {
             for await event in self.session.events {
                 switch event {
                 case .detached(let reason, _):
+                    self.failInitialModulesSnapshotWaitersIfNeeded()
                     self.onDestroyed?(self, reason)
                 }
             }
@@ -131,6 +140,8 @@ final class ProcessNode: ObservableObject, Identifiable {
                 }
 
                 self.modules.append(contentsOf: added)
+
+                self.markInitialModulesSnapshotReadyIfNeeded()
 
                 return true
 
@@ -213,6 +224,48 @@ final class ProcessNode: ObservableObject, Identifiable {
 
         default:
             return false
+        }
+    }
+
+    private func waitForInitialModulesSnapshotIfNeeded() async throws {
+        switch moduleSnapshotState {
+        case .ready:
+            return
+        case .detached:
+            throw Error.invalidOperation("Session detached")
+        case .pending:
+            break
+        }
+
+        try await withCheckedThrowingContinuation { cont in
+            switch moduleSnapshotState {
+            case .ready:
+                cont.resume()
+            case .detached:
+                cont.resume(throwing: Error.invalidOperation("Session detached"))
+            case .pending:
+                moduleSnapshotWaiters.append(cont)
+            }
+        }
+    }
+
+    private func markInitialModulesSnapshotReadyIfNeeded() {
+        guard moduleSnapshotState == .pending else { return }
+        moduleSnapshotState = .ready
+
+        let waiters = moduleSnapshotWaiters
+        moduleSnapshotWaiters.removeAll(keepingCapacity: false)
+        for w in waiters { w.resume() }
+    }
+
+    private func failInitialModulesSnapshotWaitersIfNeeded() {
+        guard moduleSnapshotState == .pending else { return }
+        moduleSnapshotState = .detached
+
+        let waiters = moduleSnapshotWaiters
+        moduleSnapshotWaiters.removeAll(keepingCapacity: false)
+        for w in waiters {
+            w.resume(throwing: Error.invalidOperation("Session detached"))
         }
     }
 
@@ -428,12 +481,17 @@ final class ProcessNode: ObservableObject, Identifiable {
         return .absolute(address)
     }
 
-    func resolve(_ anchor: AddressAnchor) -> UInt64? {
+    func resolve(_ anchor: AddressAnchor) async throws -> UInt64 {
+        try await waitForInitialModulesSnapshotIfNeeded()
+
         switch anchor {
         case .absolute(let a):
             return a
+
         case .module(let name, let offset):
-            guard let m = modules.first(where: { $0.name == name }) else { return nil }
+            guard let m = modules.first(where: { $0.name == name }) else {
+                throw Error.invalidArgument("Module '\(name)' not loaded in the current process")
+            }
             return m.base &+ offset
         }
     }

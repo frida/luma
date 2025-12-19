@@ -109,17 +109,10 @@ struct AddressInsightDetailView: View {
         errorText = nil
         output = AttributedString("")
 
-        guard let node else {
+        guard node != nil else {
             errorText = AttributedString("Session detached.")
             return
         }
-
-        guard let resolved = node.resolve(insight.anchor) else {
-            errorText = AttributedString("Could not resolve \(insight.anchor.displayString) in the current process.")
-            return
-        }
-
-        insight.lastResolvedAddress = resolved
 
         refreshTask?.cancel()
         refreshTask = Task { @MainActor in
@@ -128,8 +121,12 @@ struct AddressInsightDetailView: View {
                 return
             }
 
-            guard let resolved = node.resolve(insight.anchor) else {
-                errorText = AttributedString("Could not resolve \(insight.anchor.displayString) in the current process.")
+            let resolved: UInt64
+            do {
+                resolved = try await node.resolve(insight.anchor)
+            } catch {
+                if Task.isCancelled { return }
+                errorText = AttributedString(error.localizedDescription)
                 return
             }
 
