@@ -12,6 +12,7 @@ struct AddressInsightDetailView: View {
     @State private var disasmOps: [R2DisasmOp] = []
     @State private var output: AttributedString = AttributedString("")
     @State private var errorText: AttributedString?
+    @State private var isLoadingMore = false
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -47,7 +48,8 @@ struct AddressInsightDetailView: View {
                             ops: disasmOps,
                             sessionID: session.id,
                             workspace: workspace,
-                            selection: $selection
+                            selection: $selection,
+                            onNeedMore: { loadMoreDisasm() }
                         )
                     }
                 }
@@ -108,6 +110,7 @@ struct AddressInsightDetailView: View {
         disasmOps = []
         errorText = nil
         output = AttributedString("")
+        isLoadingMore = false
 
         guard node != nil else {
             errorText = AttributedString("Session detached.")
@@ -139,11 +142,48 @@ struct AddressInsightDetailView: View {
                 output = try! parseAnsi(out)
 
             case .disassembly:
-                let out = await node.r2Cmd("pdJ 64 @ 0x\(String(resolved, radix: 16))")
+                let ops = await fetchDisasm(node: node, start: resolved, count: 64)
                 guard !Task.isCancelled else { return }
-                disasmOps = try! JSONDecoder().decode([R2DisasmOp].self, from: Data(out.utf8))
+                disasmOps = ops
             }
         }
+    }
+
+    private func loadMoreDisasm() {
+        guard !isLoadingMore else { return }
+        guard insight.kind == .disassembly else { return }
+        guard let node else { return }
+        guard let last = disasmOps.last else { return }
+
+        isLoadingMore = true
+
+        Task { @MainActor in
+            defer { isLoadingMore = false }
+
+            let decoded = await fetchDisasm(
+                node: node,
+                start: last.addrValue,
+                count: 64
+            )
+
+            guard !Task.isCancelled else { return }
+            guard !decoded.isEmpty else { return }
+
+            var page = decoded
+            page.removeFirst()
+            guard !page.isEmpty else { return }
+
+            disasmOps.append(contentsOf: page)
+        }
+    }
+
+    private func fetchDisasm(
+        node: ProcessNode,
+        start: UInt64,
+        count: Int = 64
+    ) async -> [R2DisasmOp] {
+        let out = await node.r2Cmd("pdJ \(count) @ 0x\(String(start, radix: 16))")
+        return try! JSONDecoder().decode([R2DisasmOp].self, from: Data(out.utf8))
     }
 
     private func handleThemeChange(_ scheme: ColorScheme) async {
@@ -159,6 +199,7 @@ struct DisassemblyView: View {
     let sessionID: UUID
     let workspace: Workspace
     @Binding var selection: SidebarItemID?
+    let onNeedMore: () -> Void
 
     @State private var hoveredAddr: UInt64?
 
@@ -173,9 +214,15 @@ struct DisassemblyView: View {
                         selection: $selection,
                         hoveredAddr: $hoveredAddr
                     )
-                    Divider().opacity(0.25)
+                    .onAppear {
+                        if op.id == ops.last?.id {
+                            onNeedMore()
+                        }
+                    }
                 }
             }
+            .frame(maxWidth: 800, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, 54)
             .padding(.trailing, 12)
             .padding(.vertical, 8)
@@ -229,30 +276,41 @@ private struct DisasmRow: View {
                     .textSelection(.enabled)
 
                 if let target = op.arrowValue ?? op.callValue {
-                    Button {
-                        let insight = workspace.createInsight(
-                            sessionID: sessionID,
-                            pointer: target,
-                            kind: .disassembly
-                        )
-                        selection = .insight(sessionID, insight.id)
-                    } label: {
-                        Text(String(format: "→ 0x%llx", target))
-                            .font(.system(.footnote, design: .monospaced))
+                    if !containsPrintedTarget(c.asm, target: target) {
+                        Button {
+                            jump(to: target)
+                        } label: {
+                            Text(String(format: "@0x%llx", target))
+                                .font(.system(.footnote, design: .monospaced))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(.quaternary, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Button {
+                            jump(to: target)
+                        } label: {
+                            Image(systemName: "arrow.turn.down.right")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .opacity(0.6)
+                        .help("Jump to 0x\(String(target, radix: 16))")
                     }
-                    .buttonStyle(.link)
-                }
-
-                if let comment = c.comment {
-                    Text(comment)
-                        .font(.system(.footnote, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minWidth: 240, maxWidth: .infinity, alignment: .leading)
+
+            Text(c.comment ?? AttributedString(""))
+                .font(.system(.footnote, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .frame(width: 320, alignment: .leading)
         }
-        .padding(.vertical, 6)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
         .contentShape(Rectangle())
         .onHover { isHovering in
             hoveredAddr = isHovering ? op.addrValue : nil
@@ -264,6 +322,17 @@ private struct DisasmRow: View {
                     .fill(.quaternary)
             }
         }
+    }
+
+    private func jump(to target: UInt64) {
+        let insight = workspace.createInsight(sessionID: sessionID, pointer: target, kind: .disassembly)
+        selection = .insight(sessionID, insight.id)
+    }
+
+    private func containsPrintedTarget(_ asm: AttributedString, target: UInt64) -> Bool {
+        let s = String(asm.characters).lowercased()
+        let hex = String(format: "0x%llx", target).lowercased()
+        return s.contains(hex)
     }
 }
 
