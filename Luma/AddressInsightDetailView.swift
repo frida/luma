@@ -9,7 +9,7 @@ struct AddressInsightDetailView: View {
     @Binding var selection: SidebarItemID?
 
     @State private var refreshTask: Task<Void, Never>?
-    @State private var disasmOps: [R2DisasmOp] = []
+    @State private var disasmLines: [DisasmLine] = []
     @State private var output: AttributedString = AttributedString("")
     @State private var errorText: AttributedString?
     @State private var isLoadingMore = false
@@ -45,7 +45,7 @@ struct AddressInsightDetailView: View {
 
                     case .disassembly:
                         DisassemblyView(
-                            ops: disasmOps,
+                            lines: disasmLines,
                             sessionID: session.id,
                             workspace: workspace,
                             selection: $selection,
@@ -107,7 +107,7 @@ struct AddressInsightDetailView: View {
     }
 
     private func refresh() {
-        disasmOps = []
+        disasmLines = []
         errorText = nil
         output = AttributedString("")
         isLoadingMore = false
@@ -144,7 +144,7 @@ struct AddressInsightDetailView: View {
             case .disassembly:
                 let ops = await fetchDisasm(node: node, start: resolved, count: 64)
                 guard !Task.isCancelled else { return }
-                disasmOps = ops
+                disasmLines = ops
             }
         }
     }
@@ -153,7 +153,7 @@ struct AddressInsightDetailView: View {
         guard !isLoadingMore else { return }
         guard insight.kind == .disassembly else { return }
         guard let node else { return }
-        guard let last = disasmOps.last else { return }
+        guard let last = disasmLines.last else { return }
 
         isLoadingMore = true
 
@@ -173,7 +173,7 @@ struct AddressInsightDetailView: View {
             page.removeFirst()
             guard !page.isEmpty else { return }
 
-            disasmOps.append(contentsOf: page)
+            disasmLines.append(contentsOf: page)
         }
     }
 
@@ -181,9 +181,10 @@ struct AddressInsightDetailView: View {
         node: ProcessNode,
         start: UInt64,
         count: Int = 64
-    ) async -> [R2DisasmOp] {
+    ) async -> [DisasmLine] {
         let out = await node.r2Cmd("pdJ \(count) @ 0x\(String(start, radix: 16))")
-        return try! JSONDecoder().decode([R2DisasmOp].self, from: Data(out.utf8))
+        let ops = try! JSONDecoder().decode([R2DisasmOp].self, from: Data(out.utf8))
+        return ops.map(DisasmLine.init)
     }
 
     private func handleThemeChange(_ scheme: ColorScheme) async {
@@ -194,7 +195,7 @@ struct AddressInsightDetailView: View {
 }
 
 struct DisassemblyView: View {
-    let ops: [R2DisasmOp]
+    let lines: [DisasmLine]
 
     let sessionID: UUID
     let workspace: Workspace
@@ -203,19 +204,23 @@ struct DisassemblyView: View {
 
     @State private var hoveredAddr: UInt64?
 
+    let rowHeight: CGFloat = 20
+    let topInset: CGFloat = 8
+
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(ops) { op in
+                ForEach(lines) { line in
                     DisasmRow(
-                        op: op,
+                        line: line,
                         sessionID: sessionID,
                         workspace: workspace,
                         selection: $selection,
-                        hoveredAddr: $hoveredAddr
+                        hoveredAddr: $hoveredAddr,
+                        rowHeight: rowHeight
                     )
                     .onAppear {
-                        if op.id == ops.last?.id {
+                        if line.id == lines.last?.id {
                             onNeedMore()
                         }
                     }
@@ -226,8 +231,12 @@ struct DisassemblyView: View {
             .padding(.leading, 54)
             .padding(.trailing, 12)
             .padding(.vertical, 8)
-            .overlayPreferenceValue(RowCenterPreferenceKey.self) { centers in
-                DisasmFlowOverlay(ops: ops, centers: centers)
+            .overlay(alignment: .topLeading) {
+                DisasmFlowOverlay(
+                    lines: lines,
+                    rowHeight: rowHeight,
+                    topInset: topInset
+                )
             }
         }
         .textSelection(.disabled)
@@ -235,7 +244,7 @@ struct DisassemblyView: View {
 }
 
 private struct DisasmRow: View {
-    let op: R2DisasmOp
+    let line: DisasmLine
 
     let sessionID: UUID
     let workspace: Workspace
@@ -243,11 +252,13 @@ private struct DisasmRow: View {
 
     @Binding var hoveredAddr: UInt64?
 
-    var body: some View {
-        let c = op.columns()
+    let rowHeight: CGFloat
 
+    var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(c.addr)
+            Text(line.addr)
+                .lineLimit(1)
+                .truncationMode(.tail)
                 .font(.system(.footnote, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .frame(width: 110, alignment: .leading)
@@ -264,19 +275,23 @@ private struct DisasmRow: View {
                     // Button { selection = ... } label: { Label("Go to Hook", systemImage: "arrow.turn.down.right") }
                 }
 
-            Text(c.bytes)
+            Text(line.bytes)
+                .lineLimit(1)
+                .truncationMode(.tail)
                 .font(.system(.footnote, design: .monospaced))
                 .foregroundStyle(.tertiary)
                 .frame(width: 88, alignment: .leading)
 
             HStack(spacing: 6) {
-                Text(c.asm)
+                Text(line.asm)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                     .font(.system(.footnote, design: .monospaced))
                     .foregroundStyle(.primary)
                     .textSelection(.enabled)
 
-                if let target = op.arrowValue ?? op.callValue {
-                    if !containsPrintedTarget(c.asm, target: target) {
+                if let target = line.arrowValue ?? line.callValue {
+                    if !containsPrintedTarget(line.asm, target: target) {
                         Button {
                             jump(to: target)
                         } label: {
@@ -303,21 +318,23 @@ private struct DisasmRow: View {
             }
             .frame(minWidth: 240, maxWidth: .infinity, alignment: .leading)
 
-            Text(c.comment ?? AttributedString(""))
+            Text(line.comment ?? AttributedString(""))
+                .lineLimit(1)
+                .truncationMode(.tail)
                 .font(.system(.footnote, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .frame(width: 320, alignment: .leading)
         }
+        .frame(height: rowHeight, alignment: .center)
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
         .contentShape(Rectangle())
         .onHover { isHovering in
-            hoveredAddr = isHovering ? op.addrValue : nil
+            hoveredAddr = isHovering ? line.addrValue : nil
         }
-        .background(RowCenterReporter(addr: op.addrValue))
         .background {
-            if hoveredAddr == op.addrValue {
+            if hoveredAddr == line.addrValue {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(.quaternary)
             }
@@ -336,32 +353,21 @@ private struct DisasmRow: View {
     }
 }
 
-private struct RowCenterPreferenceKey: PreferenceKey {
-    static var defaultValue: [UInt64: Anchor<CGPoint>] = [:]
-    static func reduce(value: inout [UInt64: Anchor<CGPoint>], nextValue: () -> [UInt64: Anchor<CGPoint>]) {
-        value.merge(nextValue(), uniquingKeysWith: { $1 })
-    }
-}
-
-private struct RowCenterReporter: View {
-    let addr: UInt64
-    var body: some View {
-        GeometryReader { _ in
-            Color.clear
-                .anchorPreference(key: RowCenterPreferenceKey.self, value: .center) { [addr: $0] }
-        }
-    }
-}
-
 private struct DisasmFlowOverlay: View {
-    let ops: [R2DisasmOp]
-    let centers: [UInt64: Anchor<CGPoint>]
+    let lines: [DisasmLine]
+    let rowHeight: CGFloat
+    let topInset: CGFloat
 
     var body: some View {
         GeometryReader { proxy in
             Canvas { context, size in
                 let indexByAddr: [UInt64: Int] = Dictionary(
-                    uniqueKeysWithValues: ops.enumerated().map { ($0.element.addrValue, $0.offset) })
+                    uniqueKeysWithValues: lines.enumerated().map { ($0.element.addrValue, $0.offset) }
+                )
+
+                func centerY(forRow row: Int) -> CGFloat {
+                    topInset + CGFloat(row) * rowHeight + rowHeight * 0.5
+                }
 
                 struct Edge {
                     let src: UInt64
@@ -373,10 +379,10 @@ private struct DisasmFlowOverlay: View {
                 }
 
                 var edges: [Edge] = []
-                edges.reserveCapacity(ops.count)
-                for op in ops {
-                    guard let dst = op.arrowValue, let s = indexByAddr[op.addrValue], let d = indexByAddr[dst] else { continue }
-                    edges.append(Edge(src: op.addrValue, dst: dst, sRow: s, dRow: d, lo: min(s, d), hi: max(s, d)))
+                edges.reserveCapacity(lines.count)
+                for line in lines {
+                    guard let dst = line.arrowValue, let s = indexByAddr[line.addrValue], let d = indexByAddr[dst] else { continue }
+                    edges.append(Edge(src: line.addrValue, dst: dst, sRow: s, dRow: d, lo: min(s, d), hi: max(s, d)))
                 }
 
                 edges.sort { a, b in
@@ -440,24 +446,23 @@ private struct DisasmFlowOverlay: View {
 
                 for i in edges.indices {
                     let e = edges[i]
-                    guard let a1 = centers[e.src], let a2 = centers[e.dst] else { continue }
-                    let p1 = proxy[a1]
-                    let p2 = proxy[a2]
+                    let y1 = centerY(forRow: e.sRow)
+                    let y2 = centerY(forRow: e.dRow)
 
                     let lane = laneForEdge[i]
                     let x = elbowX(lane)
 
                     var path = Path()
-                    path.move(to: CGPoint(x: entryX, y: p1.y))
-                    path.addLine(to: CGPoint(x: x, y: p1.y))
-                    path.addLine(to: CGPoint(x: x, y: p2.y))
-                    path.addLine(to: CGPoint(x: entryX, y: p2.y))
+                    path.move(to: CGPoint(x: entryX, y: y1))
+                    path.addLine(to: CGPoint(x: x, y: y1))
+                    path.addLine(to: CGPoint(x: x, y: y2))
+                    path.addLine(to: CGPoint(x: entryX, y: y2))
 
                     let color = FlowPalette.light[colorForEdge[i]]
 
                     context.stroke(path, with: .color(color.opacity(0.9)), lineWidth: 1.25)
 
-                    let tip = CGPoint(x: entryX, y: p2.y)
+                    let tip = CGPoint(x: entryX, y: y2)
                     let arrowSize: CGFloat = 6
                     let left = CGPoint(x: tip.x - arrowSize, y: tip.y - arrowSize * 0.65)
                     let right = CGPoint(x: tip.x - arrowSize, y: tip.y + arrowSize * 0.65)
@@ -480,6 +485,31 @@ private enum FlowPalette {
         .red, .orange, .yellow, .green, .mint, .teal,
         .cyan, .blue, .indigo, .purple, .pink, .brown,
     ]
+}
+
+struct DisasmLine: Identifiable {
+    let id: UInt64
+
+    let addrValue: UInt64
+    let arrowValue: UInt64?
+    let callValue: UInt64?
+
+    let addr: AttributedString
+    let bytes: AttributedString
+    let asm: AttributedString
+    let comment: AttributedString?
+
+    init(op: R2DisasmOp) {
+        let c = op.columns()
+        self.id = op.addrValue
+        self.addrValue = op.addrValue
+        self.arrowValue = op.arrowValue
+        self.callValue = op.callValue
+        self.addr = c.addr
+        self.bytes = c.bytes
+        self.asm = c.asm
+        self.comment = c.comment
+    }
 }
 
 struct R2DisasmOp: Decodable, Identifiable {
