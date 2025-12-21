@@ -204,42 +204,73 @@ struct DisassemblyView: View {
 
     @State private var hoveredAddr: UInt64?
 
+    @State private var pulsingAddr: UInt64?
+    @State private var pulsePhase: Bool = false
+
     let rowHeight: CGFloat = 20
     let topInset: CGFloat = 8
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(lines) { line in
-                    DisasmRow(
-                        line: line,
-                        sessionID: sessionID,
-                        workspace: workspace,
-                        selection: $selection,
-                        hoveredAddr: $hoveredAddr,
-                        rowHeight: rowHeight
-                    )
-                    .onAppear {
-                        if line.id == lines.last?.id {
-                            onNeedMore()
+        ScrollViewReader { scrollProxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(lines) { line in
+                        DisasmRow(
+                            line: line,
+                            sessionID: sessionID,
+                            workspace: workspace,
+                            selection: $selection,
+                            rowHeight: rowHeight,
+                            hoveredAddr: $hoveredAddr,
+                            isPulsing: pulsingAddr == line.addrValue,
+                            pulsePhase: pulsePhase,
+                            onJump: { target in
+                                handleJump(target, scrollProxy: scrollProxy)
+                            },
+                        )
+                        .id(line.addrValue)
+                        .onAppear {
+                            if line.id == lines.last?.id {
+                                onNeedMore()
+                            }
                         }
                     }
                 }
+                .frame(maxWidth: 800, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 54)
+                .padding(.trailing, 12)
+                .padding(.vertical, 8)
+                .overlay(alignment: .topLeading) {
+                    DisasmFlowOverlay(
+                        lines: lines,
+                        rowHeight: rowHeight,
+                        topInset: topInset
+                    )
+                }
             }
-            .frame(maxWidth: 800, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, 54)
-            .padding(.trailing, 12)
-            .padding(.vertical, 8)
-            .overlay(alignment: .topLeading) {
-                DisasmFlowOverlay(
-                    lines: lines,
-                    rowHeight: rowHeight,
-                    topInset: topInset
-                )
-            }
+            .textSelection(.disabled)
         }
-        .textSelection(.disabled)
+    }
+
+    private func handleJump(_ target: UInt64, scrollProxy: ScrollViewProxy) {
+        if lines.contains(where: { $0.addrValue == target }) {
+            pulsingAddr = target
+
+            withAnimation(.snappy) {
+                scrollProxy.scrollTo(target, anchor: .center)
+            }
+
+            pulsePhase = false
+            DispatchQueue.main.async {
+                withAnimation(.easeInOut(duration: 0.35).repeatCount(6, autoreverses: true)) {
+                    pulsePhase = true
+                }
+            }
+        } else {
+            let insight = workspace.createInsight(sessionID: sessionID, pointer: target, kind: .disassembly)
+            selection = .insight(sessionID, insight.id)
+        }
     }
 }
 
@@ -250,9 +281,12 @@ private struct DisasmRow: View {
     let workspace: Workspace
     @Binding var selection: SidebarItemID?
 
-    @Binding var hoveredAddr: UInt64?
-
     let rowHeight: CGFloat
+    @Binding var hoveredAddr: UInt64?
+    let isPulsing: Bool
+    let pulsePhase: Bool
+
+    let onJump: (UInt64) -> Void
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -293,7 +327,7 @@ private struct DisasmRow: View {
                 if let target = line.arrowValue ?? line.callValue {
                     if !containsPrintedTarget(line.asm, target: target) {
                         Button {
-                            jump(to: target)
+                            onJump(target)
                         } label: {
                             Text(String(format: "@0x%llx", target))
                                 .font(.system(.footnote, design: .monospaced))
@@ -304,7 +338,7 @@ private struct DisasmRow: View {
                         .buttonStyle(.plain)
                     } else {
                         Button {
-                            jump(to: target)
+                            onJump(target)
                         } label: {
                             Image(systemName: "arrow.turn.down.right")
                                 .font(.footnote)
@@ -334,16 +368,14 @@ private struct DisasmRow: View {
             hoveredAddr = isHovering ? line.addrValue : nil
         }
         .background {
-            if hoveredAddr == line.addrValue {
+            if isPulsing {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.accentColor.opacity(pulsePhase ? 0.28 : 0.06))
+            } else if hoveredAddr == line.addrValue {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(.quaternary)
             }
         }
-    }
-
-    private func jump(to target: UInt64) {
-        let insight = workspace.createInsight(sessionID: sessionID, pointer: target, kind: .disassembly)
-        selection = .insight(sessionID, insight.id)
     }
 
     private func containsPrintedTarget(_ asm: AttributedString, target: UInt64) -> Bool {
