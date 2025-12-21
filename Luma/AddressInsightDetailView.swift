@@ -326,7 +326,7 @@ private struct DisasmRow: View {
                 .textSelection(.enabled)
                 .frame(width: 320, alignment: .leading)
         }
-        .frame(height: rowHeight, alignment: .center)
+        .frame(height: rowHeight - 4, alignment: .center)
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
         .contentShape(Rectangle())
