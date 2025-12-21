@@ -211,6 +211,8 @@ struct DisassemblyView: View {
     @State private var pulsePhase: Bool = false
     @State private var pulseTask: Task<Void, Never>?
 
+    @State private var requestedJumpTarget: UInt64?
+
     let rowHeight: CGFloat = 20
     let topInset: CGFloat = 8
 
@@ -234,8 +236,12 @@ struct DisassemblyView: View {
                                 isFocused = true
                             },
                             onJump: { target in
-                                handleJump(target, scrollProxy: scrollProxy)
+                                try handleJump(target, scrollProxy: scrollProxy)
                             },
+                            requestedJumpTarget: requestedJumpTarget,
+                            clearRequestedJump: {
+                                requestedJumpTarget = nil
+                            }
                         )
                         .id(line.addrValue)
                         .onAppear {
@@ -243,6 +249,7 @@ struct DisassemblyView: View {
                                 onNeedMore()
                             }
                         }
+                        .errorPopoverHost()
                     }
                 }
                 .frame(maxWidth: 800, alignment: .leading)
@@ -289,7 +296,7 @@ struct DisassemblyView: View {
         }
     }
 
-    private func handleJump(_ target: UInt64, scrollProxy: ScrollViewProxy) {
+    private func handleJump(_ target: UInt64, scrollProxy: ScrollViewProxy) throws {
         if lines.contains(where: { $0.addrValue == target }) {
             selectedAddr = target
             isFocused = true
@@ -327,7 +334,11 @@ struct DisassemblyView: View {
                 }
             }
         } else {
-            let insight = workspace.createInsight(sessionID: sessionID, pointer: target, kind: .disassembly)
+            let insight = try workspace.getOrCreateInsight(
+                sessionID: sessionID,
+                pointer: target,
+                kind: .disassembly
+            )
             selection = .insight(sessionID, insight.id)
         }
     }
@@ -361,7 +372,7 @@ struct DisassemblyView: View {
         guard let sel = selectedAddr else { return }
         guard let line = lines.first(where: { $0.addrValue == sel }) else { return }
         guard let target = line.arrowValue ?? line.callValue else { return }
-        handleJump(target, scrollProxy: scrollProxy)
+        requestedJumpTarget = target
     }
 }
 
@@ -378,7 +389,11 @@ private struct DisasmRow: View {
     let isPulsing: Bool
     let pulsePhase: Bool
     let onSelect: () -> Void
-    let onJump: (UInt64) -> Void
+    let onJump: (UInt64) throws -> Void
+    let requestedJumpTarget: UInt64?
+    let clearRequestedJump: () -> Void
+
+    @Environment(\.errorPresenter) private var errorPresenter
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -417,28 +432,30 @@ private struct DisasmRow: View {
                     .textSelection(.enabled)
 
                 if let target = line.arrowValue ?? line.callValue {
-                    if !containsPrintedTarget(line.asm, target: target) {
-                        Button {
-                            onJump(target)
-                        } label: {
-                            Text(String(format: "@0x%llx", target))
-                                .font(.system(.footnote, design: .monospaced))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(.quaternary, in: Capsule())
+                    Group {
+                        if !containsPrintedTarget(line.asm, target: target) {
+                            Button {
+                                jump(target)
+                            } label: {
+                                Text(String(format: "@0x%llx", target))
+                                    .font(.system(.footnote, design: .monospaced))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(.quaternary, in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            Button {
+                                jump(target)
+                            } label: {
+                                Image(systemName: "arrow.turn.down.right")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .opacity(0.6)
+                            .help("Jump to 0x\(String(target, radix: 16))")
                         }
-                        .buttonStyle(.plain)
-                    } else {
-                        Button {
-                            onJump(target)
-                        } label: {
-                            Image(systemName: "arrow.turn.down.right")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .opacity(0.6)
-                        .help("Jump to 0x\(String(target, radix: 16))")
                     }
                 }
             }
@@ -473,6 +490,20 @@ private struct DisasmRow: View {
         }
         .onHover { isHovering in
             hoveredAddr = isHovering ? line.addrValue : nil
+        }
+        .onChange(of: requestedJumpTarget) { _, newValue in
+            guard isSelected else { return }
+            guard let target = newValue else { return }
+            clearRequestedJump()
+            jump(target)
+        }
+    }
+
+    func jump(_ target: UInt64) {
+        do {
+            try onJump(target)
+        } catch {
+            errorPresenter.present("Can’t jump here", error.localizedDescription)
         }
     }
 

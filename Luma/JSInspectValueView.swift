@@ -39,6 +39,7 @@ struct JSInspectValueView: View {
         .environmentObject(anchorStore)
         .font(.system(.footnote, design: .monospaced))
         .textSelection(.enabled)
+        .errorPopoverHost()
     }
 
     private static func collectCircularTargets(in value: JSInspectValue) -> Set<Int> {
@@ -83,6 +84,7 @@ private struct JSInspectNodeView: View {
     @State private var isExpanded: Bool = true
     @State private var childLimit: Int = 50
 
+    @Environment(\.errorPresenter) private var errorPresenter
     @Environment(\.circularTargets) private var circularTargets
     @EnvironmentObject private var anchorStore: CircularAnchorStore
 
@@ -304,12 +306,16 @@ private struct JSInspectNodeView: View {
                     .contextMenu {
                         Button {
                             Task { @MainActor in
-                                let insight = workspace.createInsight(
-                                    sessionID: sessionID,
-                                    pointer: addr,
-                                    kind: .memory
-                                )
-                                selection.wrappedValue = .insight(sessionID, insight.id)
+                                do {
+                                    let insight = try workspace.getOrCreateInsight(
+                                        sessionID: sessionID,
+                                        pointer: addr,
+                                        kind: .memory
+                                    )
+                                    selection.wrappedValue = .insight(sessionID, insight.id)
+                                } catch {
+                                    errorPresenter.present("Can’t open memory", error.localizedDescription)
+                                }
                             }
                         } label: {
                             Label("Open Memory", systemImage: "doc.text.magnifyingglass")
@@ -317,12 +323,16 @@ private struct JSInspectNodeView: View {
 
                         Button {
                             Task { @MainActor in
-                                let insight = workspace.createInsight(
-                                    sessionID: sessionID,
-                                    pointer: addr,
-                                    kind: .disassembly
-                                )
-                                selection.wrappedValue = .insight(sessionID, insight.id)
+                                do {
+                                    let insight = try workspace.getOrCreateInsight(
+                                        sessionID: sessionID,
+                                        pointer: addr,
+                                        kind: .disassembly
+                                    )
+                                    selection.wrappedValue = .insight(sessionID, insight.id)
+                                } catch {
+                                    errorPresenter.present("Can’t open disassembly", error.localizedDescription)
+                                }
                             }
                         } label: {
                             Label("Open Disassembly", systemImage: "hammer")

@@ -967,22 +967,41 @@ final class Workspace: ObservableObject {
         }
     }
 
-    func createInsight(
+    func getOrCreateInsight(
         sessionID: UUID,
         pointer: UInt64,
         kind: AddressInsight.Kind
-    ) -> AddressInsight {
-        let session = try! modelContext.fetch(
-            FetchDescriptor<ProcessSession>(predicate: #Predicate { $0.id == sessionID })
+    ) throws -> AddressInsight {
+        let session = fetchSession(id: sessionID)
+
+        guard let node = processNodes.first(where: { $0.sessionRecord.id == sessionID }) else {
+            throw Error.invalidOperation(
+                "Cannot resolve address anchor without an attached process"
+            )
+        }
+
+        let anchor = node.anchor(for: pointer)
+
+        if let existing = session.insights.first(where: { $0.kind == kind && $0.anchor == anchor }) {
+            return existing
+        }
+
+        return insertInsight(session: session, kind: kind, anchor: anchor)
+    }
+
+    private func fetchSession(id sessionID: UUID) -> ProcessSession {
+        try! modelContext.fetch(
+            FetchDescriptor<ProcessSession>(
+                predicate: #Predicate { $0.id == sessionID }
+            )
         ).first!
+    }
 
-        let anchor: AddressAnchor = {
-            guard let node = processNodes.first(where: { $0.sessionRecord.id == sessionID }) else {
-                return .absolute(pointer)
-            }
-            return node.anchor(for: pointer)
-        }()
-
+    private func insertInsight(
+        session: ProcessSession,
+        kind: AddressInsight.Kind,
+        anchor: AddressAnchor
+    ) -> AddressInsight {
         let titlePrefix = (kind == .memory) ? "Memory" : "Disassembly"
         let insight = AddressInsight(
             title: "\(titlePrefix) \(anchor.displayString)",
