@@ -202,10 +202,14 @@ struct DisassemblyView: View {
     @Binding var selection: SidebarItemID?
     let onNeedMore: () -> Void
 
+    @State private var selectedAddr: UInt64?
+    @FocusState private var isFocused: Bool
+
     @State private var hoveredAddr: UInt64?
 
     @State private var pulsingAddr: UInt64?
     @State private var pulsePhase: Bool = false
+    @State private var pulseTask: Task<Void, Never>?
 
     let rowHeight: CGFloat = 20
     let topInset: CGFloat = 8
@@ -221,9 +225,14 @@ struct DisassemblyView: View {
                             workspace: workspace,
                             selection: $selection,
                             rowHeight: rowHeight,
+                            isSelected: selectedAddr == line.addrValue,
                             hoveredAddr: $hoveredAddr,
                             isPulsing: pulsingAddr == line.addrValue,
                             pulsePhase: pulsePhase,
+                            onSelect: {
+                                selectedAddr = line.addrValue
+                                isFocused = true
+                            },
                             onJump: { target in
                                 handleJump(target, scrollProxy: scrollProxy)
                             },
@@ -249,28 +258,110 @@ struct DisassemblyView: View {
                     )
                 }
             }
+            .focusable(true)
+            .focused($isFocused)
+            .focusEffectDisabled(true)
             .textSelection(.disabled)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                isFocused = true
+            }
+            .onKeyPress(.upArrow) {
+                moveSelection(-1, scrollProxy: scrollProxy)
+                return .handled
+            }
+            .onKeyPress(.downArrow) {
+                moveSelection(1, scrollProxy: scrollProxy)
+                return .handled
+            }
+            .onKeyPress("k") {
+                moveSelection(-1, scrollProxy: scrollProxy)
+                return .handled
+            }
+            .onKeyPress("j") {
+                moveSelection(1, scrollProxy: scrollProxy)
+                return .handled
+            }
+            .onKeyPress(.return) {
+                jumpSelection(scrollProxy: scrollProxy)
+                return .handled
+            }
         }
     }
 
     private func handleJump(_ target: UInt64, scrollProxy: ScrollViewProxy) {
         if lines.contains(where: { $0.addrValue == target }) {
-            pulsingAddr = target
+            selectedAddr = target
+            isFocused = true
 
             withAnimation(.snappy) {
                 scrollProxy.scrollTo(target, anchor: .center)
             }
 
+            pulseTask?.cancel()
+
+            pulsingAddr = target
             pulsePhase = false
-            DispatchQueue.main.async {
-                withAnimation(.easeInOut(duration: 0.35).repeatCount(6, autoreverses: true)) {
-                    pulsePhase = true
+
+            pulseTask = Task { @MainActor in
+                let myTarget = target
+
+                defer {
+                    if pulsingAddr == myTarget {
+                        pulsingAddr = nil
+                        pulsePhase = false
+                    }
+                }
+
+                let beats = 3
+                let half: Double = 0.18
+
+                for _ in 0..<beats {
+                    guard pulsingAddr == myTarget else { return }
+                    withAnimation(.easeInOut(duration: half)) { pulsePhase = true }
+                    try? await Task.sleep(nanoseconds: UInt64(half * 1_000_000_000))
+
+                    guard pulsingAddr == myTarget else { return }
+                    withAnimation(.easeInOut(duration: half)) { pulsePhase = false }
+                    try? await Task.sleep(nanoseconds: UInt64(half * 1_000_000_000))
                 }
             }
         } else {
             let insight = workspace.createInsight(sessionID: sessionID, pointer: target, kind: .disassembly)
             selection = .insight(sessionID, insight.id)
         }
+    }
+
+    private func moveSelection(_ delta: Int, scrollProxy: ScrollViewProxy) {
+        guard !lines.isEmpty else { return }
+
+        let indexByAddr = Dictionary(uniqueKeysWithValues: lines.enumerated().map { ($0.element.addrValue, $0.offset) })
+
+        let currentIndex: Int
+        if let sel = selectedAddr, let i = indexByAddr[sel] {
+            currentIndex = i
+        } else {
+            currentIndex = 0
+        }
+
+        let next = max(0, min(lines.count - 1, currentIndex + delta))
+        let addr = lines[next].addrValue
+
+        selectedAddr = addr
+        withAnimation(.snappy) {
+            scrollProxy.scrollTo(addr, anchor: .center)
+        }
+
+        if next >= lines.count - 1 {
+            onNeedMore()
+        }
+    }
+
+    private func jumpSelection(scrollProxy: ScrollViewProxy) {
+        guard let sel = selectedAddr else { return }
+        guard let line = lines.first(where: { $0.addrValue == sel }) else { return }
+        guard let target = line.arrowValue ?? line.callValue else { return }
+        handleJump(target, scrollProxy: scrollProxy)
     }
 }
 
@@ -282,10 +373,11 @@ private struct DisasmRow: View {
     @Binding var selection: SidebarItemID?
 
     let rowHeight: CGFloat
+    let isSelected: Bool
     @Binding var hoveredAddr: UInt64?
     let isPulsing: Bool
     let pulsePhase: Bool
-
+    let onSelect: () -> Void
     let onJump: (UInt64) -> Void
 
     var body: some View {
@@ -364,17 +456,23 @@ private struct DisasmRow: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
         .contentShape(Rectangle())
-        .onHover { isHovering in
-            hoveredAddr = isHovering ? line.addrValue : nil
-        }
         .background {
             if isPulsing {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color.accentColor.opacity(pulsePhase ? 0.28 : 0.06))
+            } else if isSelected {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.accentColor.opacity(0.14))
             } else if hoveredAddr == line.addrValue {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(.quaternary)
             }
+        }
+        .onTapGesture {
+            onSelect()
+        }
+        .onHover { isHovering in
+            hoveredAddr = isHovering ? line.addrValue : nil
         }
     }
 
