@@ -12,8 +12,8 @@ struct AddressInsightDetailView: View {
     @State private var refreshTask: Task<Void, Never>?
     @State private var showRefreshSpinner = false
     @State private var spinnerTask: Task<Void, Never>?
+    @State private var memoryData: Data = Data()
     @State private var disasmLines: [DisasmLine] = []
-    @State private var output: AttributedString = AttributedString("")
     @State private var errorText: AttributedString?
     @State private var isLoadingMore = false
 
@@ -37,10 +37,9 @@ struct AddressInsightDetailView: View {
                 } else {
                     switch insight.kind {
                     case .memory:
-                        ScrollView {
-                            Text(output)
-                                .font(.system(.body, design: .monospaced))
-                                .textSelection(.enabled)
+                        ScrollView([.vertical]) {
+                            HexView(data: memoryData)
+                                .padding(.vertical, 2)
                         }
                     case .disassembly:
                         DisassemblyView(
@@ -132,14 +131,14 @@ struct AddressInsightDetailView: View {
 
             switch kind {
             case .memory:
-                let out = await node.r2Cmd("px \(byteCount) @ 0x\(String(resolved, radix: 16))")
-                if Task.isCancelled { return }
-
                 do {
-                    let parsed = try parseAnsi(out)
-                    output = parsed
+                    let bytes = try await node.readRemoteMemory(at: resolved, count: byteCount)
+                    if Task.isCancelled { return }
+
                     disasmLines = []
+                    memoryData = Data(bytes)
                 } catch {
+                    if Task.isCancelled { return }
                     errorText = AttributedString(error.localizedDescription)
                 }
 
@@ -148,7 +147,7 @@ struct AddressInsightDetailView: View {
                 if Task.isCancelled { return }
 
                 disasmLines = ops
-                output = AttributedString("")
+                memoryData = Data()
             }
         }
     }
