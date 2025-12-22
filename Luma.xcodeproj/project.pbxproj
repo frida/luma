@@ -252,6 +252,7 @@
 			);
 			inputPaths = (
 				"$(SRCROOT)/Luma/Agent/core/console.ts",
+				"$(SRCROOT)/Luma/Agent/core/env.ts",
 				"$(SRCROOT)/Luma/Agent/core/instrument.ts",
 				"$(SRCROOT)/Luma/Agent/core/luma.ts",
 				"$(SRCROOT)/Luma/Agent/core/memory.ts",

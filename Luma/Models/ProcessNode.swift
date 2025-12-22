@@ -532,10 +532,16 @@ final class ProcessNode: ObservableObject, Identifiable {
             await r2.config.set("emu.str", bool: true)
             await r2.config.set("anal.cc", string: "cdecl")
 
-            // FIXME: Stop hard-coding these:
-            await r2.config.set("asm.os", string: "linux")
-            await r2.config.set("asm.arch", string: "arm")
-            await r2.config.set("asm.bits", int: 64)
+            guard let anyInfo = try? await script.exports.getProcessInfo(),
+                JSONSerialization.isValidJSONObject(anyInfo),
+                let data = try? JSONSerialization.data(withJSONObject: anyInfo),
+                let info = try? JSONDecoder().decode(FridaProcessInfo.self, from: data)
+            else {
+                return
+            }
+            await r2.config.set("asm.os", string: info.platform)
+            await r2.config.set("asm.arch", string: Self.r2Arch(fromFridaArch: info.arch))
+            await r2.config.set("asm.bits", int: info.pointerSize * 8)
 
             let uri = "frida-mem://0x0"
             await r2.openFile(uri: uri)
@@ -545,6 +551,23 @@ final class ProcessNode: ObservableObject, Identifiable {
 
         openR2Task = task
         await task.value
+    }
+
+    private struct FridaProcessInfo: Decodable {
+        let platform: String
+        let arch: String
+        let pointerSize: Int
+    }
+
+    private static func r2Arch(fromFridaArch arch: String) -> String {
+        switch arch {
+        case "ia32", "x64":
+            return "x86"
+        case "arm64":
+            return "arm"
+        default:
+            return arch
+        }
     }
 
     func applyR2Theme(_ name: String) async {
