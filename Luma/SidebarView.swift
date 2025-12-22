@@ -164,7 +164,6 @@ struct SidebarSessionRow: View {
                 sessionID == session.id,
                 let instrument = session.instruments.first(where: { $0.id == instrumentID })
             {
-
                 Button {
                     Task { @MainActor in
                         await workspace.setInstrumentEnabled(
@@ -191,6 +190,19 @@ struct SidebarSessionRow: View {
                     }
                 } label: {
                     Label("Delete Instrument", systemImage: "trash")
+                }
+
+                Divider()
+            }
+
+            if case .insight(let sessionID, let insightID) = selection,
+                sessionID == session.id,
+                let insight = session.insights.first(where: { $0.id == insightID })
+            {
+                Button(role: .destructive) {
+                    deleteInsight(insight)
+                } label: {
+                    Label("Delete Insight", systemImage: "trash")
                 }
 
                 Divider()
@@ -348,6 +360,21 @@ struct SidebarSessionRow: View {
         }
 
         modelContext.delete(instrument)
+    }
+
+    private func deleteInsight(_ insight: AddressInsight) {
+        if let idx = session.insights.firstIndex(where: { $0.id == insight.id }) {
+            session.insights.remove(at: idx)
+        }
+
+        if case .insight(let sessionID, let insightID) = selection,
+            sessionID == session.id,
+            insightID == insight.id
+        {
+            selection = .repl(session.id)
+        }
+
+        modelContext.delete(insight)
     }
 
     private func presentConfirmation(
