@@ -8,7 +8,10 @@ struct AddressInsightDetailView: View {
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 
+    @State private var refreshDebounce: Task<Void, Never>?
     @State private var refreshTask: Task<Void, Never>?
+    @State private var showRefreshSpinner = false
+    @State private var spinnerTask: Task<Void, Never>?
     @State private var disasmLines: [DisasmLine] = []
     @State private var output: AttributedString = AttributedString("")
     @State private var errorText: AttributedString?
@@ -42,7 +45,6 @@ struct AddressInsightDetailView: View {
                                 .font(.system(.body, design: .monospaced))
                                 .textSelection(.enabled)
                         }
-
                     case .disassembly:
                         DisassemblyView(
                             lines: disasmLines,
@@ -56,11 +58,21 @@ struct AddressInsightDetailView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding()
+            .overlay(alignment: .center) {
+                if showRefreshSpinner {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(8)
+                        .background(.regularMaterial, in: Capsule())
+                        .padding(8)
+                        .transition(.opacity)
+                }
+            }
+            .animation(.default, value: showRefreshSpinner)
         }
         .onAppear { refresh() }
         .onChange(of: insight.kind) { refresh() }
         .onChange(of: insight.byteCount) { refresh() }
-        .onChange(of: session.phase) { refresh() }
         .task(id: colorScheme) {
             await handleThemeChange(colorScheme)
         }
@@ -107,44 +119,78 @@ struct AddressInsightDetailView: View {
     }
 
     private func refresh() {
-        disasmLines = []
-        errorText = nil
-        output = AttributedString("")
-        isLoadingMore = false
+        refreshDebounce?.cancel()
+        refreshDebounce = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 5_000_000)
+            if Task.isCancelled {
+                return
+            }
+            doRefresh()
+        }
+    }
 
-        guard node != nil else {
+    private func doRefresh() {
+        guard let node = node else {
             errorText = AttributedString("Session detached.")
             return
         }
 
         refreshTask?.cancel()
+        spinnerTask?.cancel()
+        showRefreshSpinner = false
+
+        errorText = nil
+        isLoadingMore = false
+
+        spinnerTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            if Task.isCancelled { return }
+            if !(refreshTask?.isCancelled ?? true) {
+                showRefreshSpinner = true
+            }
+        }
+
+        let kind = insight.kind
+        let byteCount = insight.byteCount
+        let anchor = insight.anchor
+
         refreshTask = Task { @MainActor in
-            guard let node = workspace.processNodes.first(where: { $0.sessionRecord == session }) else {
-                errorText = AttributedString("Session detached.")
-                return
+            defer {
+                spinnerTask?.cancel()
+                showRefreshSpinner = false
             }
 
             let resolved: UInt64
             do {
-                resolved = try await node.resolve(insight.anchor)
+                resolved = try await node.resolve(anchor)
             } catch {
                 if Task.isCancelled { return }
                 errorText = AttributedString(error.localizedDescription)
                 return
             }
 
+            if Task.isCancelled { return }
             insight.lastResolvedAddress = resolved
 
-            switch insight.kind {
+            switch kind {
             case .memory:
-                let out = await node.r2Cmd("px \(insight.byteCount) @ 0x\(String(resolved, radix: 16))")
-                guard !Task.isCancelled else { return }
-                output = try! parseAnsi(out)
+                let out = await node.r2Cmd("px \(byteCount) @ 0x\(String(resolved, radix: 16))")
+                if Task.isCancelled { return }
+
+                do {
+                    let parsed = try parseAnsi(out)
+                    output = parsed
+                    disasmLines = []
+                } catch {
+                    errorText = AttributedString(error.localizedDescription)
+                }
 
             case .disassembly:
                 let ops = await fetchDisasm(node: node, start: resolved, count: 64)
-                guard !Task.isCancelled else { return }
+                if Task.isCancelled { return }
+
                 disasmLines = ops
+                output = AttributedString("")
             }
         }
     }
