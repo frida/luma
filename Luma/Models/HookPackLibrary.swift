@@ -21,7 +21,8 @@ final class HookPackLibrary: ObservableObject {
         let fm = FileManager.default
         guard
             let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-                .appendingPathComponent("Luma/HookPacks", isDirectory: true)
+                .appendingPathComponent(Bundle.main.bundleIdentifier!, isDirectory: true)
+                .appendingPathComponent("HookPacks", isDirectory: true)
         else {
             return []
         }

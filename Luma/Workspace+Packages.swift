@@ -62,7 +62,7 @@ extension Workspace {
 
         let root =
             base
-            .appendingPathComponent("Luma", isDirectory: true)
+            .appendingPathComponent(Bundle.main.bundleIdentifier!, isDirectory: true)
             .appendingPathComponent("Projects", isDirectory: true)
             .appendingPathComponent(projectPackages.id.uuidString, isDirectory: true)
             .appendingPathComponent("Workspace", isDirectory: true)
