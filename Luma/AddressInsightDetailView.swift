@@ -54,7 +54,7 @@ struct AddressInsightDetailView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding()
+            .padding(8)
             .overlay(alignment: .center) {
                 if showRefreshSpinner {
                     ProgressView()
@@ -218,7 +218,6 @@ struct DisassemblyView: View {
     @State private var requestedJumpTarget: UInt64?
 
     let rowHeight: CGFloat = 20
-    let topInset: CGFloat = 8
 
     var body: some View {
         ScrollViewReader { scrollProxy in
@@ -260,12 +259,10 @@ struct DisassemblyView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 54)
                 .padding(.trailing, 12)
-                .padding(.vertical, 8)
                 .overlay(alignment: .topLeading) {
                     DisasmFlowOverlay(
                         lines: lines,
                         rowHeight: rowHeight,
-                        topInset: topInset
                     )
                 }
             }
@@ -521,7 +518,6 @@ private struct DisasmRow: View {
 private struct DisasmFlowOverlay: View {
     let lines: [DisasmLine]
     let rowHeight: CGFloat
-    let topInset: CGFloat
 
     var body: some View {
         GeometryReader { proxy in
@@ -531,7 +527,7 @@ private struct DisasmFlowOverlay: View {
                 )
 
                 func centerY(forRow row: Int) -> CGFloat {
-                    topInset + CGFloat(row) * rowHeight + rowHeight * 0.5
+                    CGFloat(row) * rowHeight + rowHeight * 0.5
                 }
 
                 struct Edge {
