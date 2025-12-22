@@ -1002,9 +1002,8 @@ final class Workspace: ObservableObject {
         kind: AddressInsight.Kind,
         anchor: AddressAnchor
     ) -> AddressInsight {
-        let titlePrefix = (kind == .memory) ? "Memory" : "Disassembly"
         let insight = AddressInsight(
-            title: "\(titlePrefix) \(anchor.displayString)",
+            title: anchor.displayString,
             kind: kind,
             anchor: anchor
         )
