@@ -395,16 +395,25 @@ struct SidebarSessionRow: View {
             workspace.removeNode(node)
         }
 
+        let sessionID = session.id
+
         switch selection {
-        case .repl(let id) where id == session.id,
-            .instrument(let id, _) where id == session.id:
+        case .repl(let id) where id == sessionID,
+            .instrument(let id, _) where id == sessionID:
             selection = .notebook
         default:
             break
         }
 
-        // FIXME: fetch session first!
-        modelContext.delete(session)
+        modelContext.delete(
+            try! modelContext
+                .fetch(
+                    FetchDescriptor<ProcessSession>(
+                        predicate: #Predicate { $0.id == sessionID }
+                    )
+                )
+                .first!
+        )
     }
 }
 
