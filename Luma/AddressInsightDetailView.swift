@@ -481,12 +481,12 @@ private struct DisasmRow: View {
             if isPulsing {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color.accentColor.opacity(pulsePhase ? 0.28 : 0.06))
-            } else if isSelected {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.accentColor.opacity(0.14))
             } else if hoveredAddr == line.addrValue {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(.quaternary)
+            } else if isSelected {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.accentColor.opacity(0.14))
             }
         }
         .onTapGesture {
