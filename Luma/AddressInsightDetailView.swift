@@ -29,9 +29,6 @@ struct AddressInsightDetailView: View {
                 SessionDetachedBanner(session: session, workspace: workspace)
             }
 
-            header
-            Divider()
-
             Group {
                 if let err = errorText {
                     Text(err)
@@ -71,51 +68,12 @@ struct AddressInsightDetailView: View {
             .animation(.default, value: showRefreshSpinner)
         }
         .onAppear { refresh() }
-        .onChange(of: insight.kind) { refresh() }
-        .onChange(of: insight.byteCount) { refresh() }
         .task(id: colorScheme) {
             await handleThemeChange(colorScheme)
         }
         .task(id: node?.id) {
             await handleThemeChange(colorScheme)
         }
-    }
-
-    private var header: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(insight.title).font(.headline)
-                Text(insight.anchor.displayString)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            Picker("", selection: $insight.kind) {
-                Text("Memory").tag(AddressInsight.Kind.memory)
-                Text("Disassembly").tag(AddressInsight.Kind.disassembly)
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 240)
-
-            if insight.kind == .memory {
-                Stepper("", value: $insight.byteCount, in: 0x40...0x4000, step: 0x40)
-                    .labelsHidden()
-                    .help("Change dump size")
-            }
-
-            Button {
-                refresh()
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .buttonStyle(.borderless)
-            .help("Refresh")
-            .disabled(node == nil)
-        }
-        .padding()
-        .background(.bar)
     }
 
     private func refresh() {
