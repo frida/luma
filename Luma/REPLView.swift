@@ -307,6 +307,7 @@ private struct REPLCellView: View {
             title: cell.code,
             details: details,
             binaryData: binary,
+            session: sessionID,
             processName: processName
         )
 

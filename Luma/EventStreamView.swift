@@ -378,6 +378,7 @@ struct EventStreamView: View {
                 title: title,
                 details: prettyPayload(evt),
                 binaryData: evt.data.map { Data($0) },
+                session: evt.process.sessionRecord.id,
                 processName: processName
             ))
     }
