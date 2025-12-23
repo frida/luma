@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 struct GitHubSignInSheet: View {
@@ -39,8 +38,7 @@ struct GitHubSignInSheet: View {
                             .accessibilityLabel("Authentication code")
 
                         Button {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(code, forType: .string)
+                            Platform.copyToClipboard(code)
                             withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
                                 didCopyCode = true
                             }
@@ -58,7 +56,7 @@ struct GitHubSignInSheet: View {
                     }
 
                     Button("Open GitHub") {
-                        NSWorkspace.shared.open(verifyURL)
+                        Platform.openURL(verifyURL)
                     }
                     .buttonStyle(.borderedProminent)
 

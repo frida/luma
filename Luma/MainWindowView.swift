@@ -1,10 +1,7 @@
 import Frida
 import SwiftData
 import SwiftUI
-
-#if os(macOS)
-    import AppKit
-#endif
+import UniformTypeIdentifiers
 
 struct MainWindowView: View {
     @State private var uiState = ProjectUIStateValue()
@@ -425,15 +422,29 @@ private struct ProjectUIStateValue: Equatable {
 }
 
 func pngData(for icon: Icon) -> Data? {
-    let nsImage = icon.nsImage
+    switch icon {
+    case .png(let bytes):
+        return Data(bytes)
 
-    guard let tiff = nsImage.tiffRepresentation,
-        let rep = NSBitmapImageRep(data: tiff)
-    else {
-        return nil
+    case .rgba:
+        let image = icon.cgImage  // from Icon+CGImage
+        let data = NSMutableData()
+
+        guard
+            let dest = CGImageDestinationCreateWithData(
+                data as CFMutableData,
+                UTType.png.identifier as CFString,
+                1,
+                nil
+            )
+        else {
+            return nil
+        }
+
+        CGImageDestinationAddImage(dest, image, nil)
+        guard CGImageDestinationFinalize(dest) else { return nil }
+        return data as Data
     }
-
-    return rep.representation(using: .png, properties: [:])
 }
 
 #if os(macOS)

@@ -12,17 +12,39 @@ struct InstrumentIconView: View {
                     .font(.system(size: pointSize))
 
             case .file(let url):
-                if let nsImage = NSImage(contentsOf: url) {
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .interpolation(.high)
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: pointSize, height: pointSize)
-                } else {
-                    Image(systemName: "questionmark.square.dashed")
-                        .font(.system(size: pointSize))
-                }
+                fileImage(url: url)
             }
         }
+    }
+
+    @ViewBuilder
+    private func fileImage(url: URL) -> some View {
+        #if canImport(AppKit)
+            if let nsImage = NSImage(contentsOf: url) {
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: pointSize, height: pointSize)
+            } else {
+                fallback
+            }
+        #elseif canImport(UIKit)
+            if let uiImage = UIImage(contentsOfFile: url.path) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: pointSize, height: pointSize)
+            } else {
+                fallback
+            }
+        #else
+            fallback
+        #endif
+    }
+
+    private var fallback: some View {
+        Image(systemName: "questionmark.square.dashed")
+            .font(.system(size: pointSize))
     }
 }

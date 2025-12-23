@@ -1,4 +1,3 @@
-import AppKit
 import Frida
 import SwiftUI
 
@@ -152,9 +151,7 @@ struct CollaborationPanel: View {
                                 .textSelection(.enabled)
 
                             Button {
-                                let pb = NSPasteboard.general
-                                pb.clearContents()
-                                pb.setString(inviteURL, forType: .string)
+                                Platform.copyToClipboard(inviteURL)
                                 withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
                                     didCopyInvite = true
                                 }
@@ -374,7 +371,7 @@ struct CollaborationPanel: View {
     private func openGitHubProfile(for user: Workspace.UserInfo) {
         let urlString = "https://github.com/\(user.id)"
         guard let url = URL(string: urlString) else { return }
-        NSWorkspace.shared.open(url)
+        Platform.openURL(url)
     }
 }
 

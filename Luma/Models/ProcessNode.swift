@@ -399,53 +399,59 @@ final class ProcessNode: ObservableObject, Identifiable {
             ))
     }
 
-    private func runPipeline(_ command: String, input: Data) async throws -> Data {
-        try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    let process = Process()
-                    process.executableURL = URL(fileURLWithPath: "/bin/sh")
-                    process.arguments = ["-lc", command]
+    #if os(macOS)
+        private func runPipeline(_ command: String, input: Data) async throws -> Data {
+            try await withCheckedThrowingContinuation { continuation in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    do {
+                        let process = Process()
+                        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+                        process.arguments = ["-lc", command]
 
-                    let stdinPipe = Pipe()
-                    let stdoutPipe = Pipe()
-                    let stderrPipe = Pipe()
+                        let stdinPipe = Pipe()
+                        let stdoutPipe = Pipe()
+                        let stderrPipe = Pipe()
 
-                    process.standardInput = stdinPipe
-                    process.standardOutput = stdoutPipe
-                    process.standardError = stderrPipe
+                        process.standardInput = stdinPipe
+                        process.standardOutput = stdoutPipe
+                        process.standardError = stderrPipe
 
-                    try process.run()
+                        try process.run()
 
-                    stdinPipe.fileHandleForWriting.write(input)
-                    stdinPipe.fileHandleForWriting.closeFile()
+                        stdinPipe.fileHandleForWriting.write(input)
+                        stdinPipe.fileHandleForWriting.closeFile()
 
-                    process.waitUntilExit()
+                        process.waitUntilExit()
 
-                    let out = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-                    let err = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                        let out = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+                        let err = stderrPipe.fileHandleForReading.readDataToEndOfFile()
 
-                    if process.terminationStatus != 0 {
-                        let stderrText = String(data: err, encoding: .utf8) ?? ""
-                        let error = NSError(
-                            domain: "REPLPipeline",
-                            code: Int(process.terminationStatus),
-                            userInfo: [
-                                NSLocalizedDescriptionKey: "Pipeline “\(command)” failed with status \(process.terminationStatus)",
-                                "stderr": stderrText,
-                            ]
-                        )
+                        if process.terminationStatus != 0 {
+                            let stderrText = String(data: err, encoding: .utf8) ?? ""
+                            let error = NSError(
+                                domain: "REPLPipeline",
+                                code: Int(process.terminationStatus),
+                                userInfo: [
+                                    NSLocalizedDescriptionKey: "Pipeline “\(command)” failed with status \(process.terminationStatus)",
+                                    "stderr": stderrText,
+                                ]
+                            )
+                            continuation.resume(throwing: error)
+                            return
+                        }
+
+                        continuation.resume(returning: out)
+                    } catch {
                         continuation.resume(throwing: error)
-                        return
                     }
-
-                    continuation.resume(returning: out)
-                } catch {
-                    continuation.resume(throwing: error)
                 }
             }
         }
-    }
+    #else
+        private func runPipeline(_ command: String, input: Data) async throws -> Data {
+            throw Error.notSupported("Running shell pipelines is only supported on macOS")
+        }
+    #endif
 
     func completeInREPL(code: String, cursor: Int) async -> [String] {
         do {

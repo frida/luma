@@ -287,76 +287,84 @@ struct TracerConfigView: View {
     }
 
     private func expandedLayout(isNarrow: Bool) -> some View {
-        HSplitView {
-            Group {
-                if listSelection.count <= 1, selectedHook != nil {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Spacer()
-                            HStack(spacing: 6) {
-                                saveStatusIcon
-                                saveButton
-                            }
-                        }
-
-                        HookEditorView(
-                            draftCode: $draftCode,
-                            isDirty: $isDirty,
-                            selectedHook: selectedHook
-                        )
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if listSelection.count > 1 {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Multiple hooks selected")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        Text("Choose a single hook to edit its handler.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .padding()
-                } else {
-                    Text("Select a hook to edit its script.")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                }
-            }
-            .frame(minWidth: 320, idealWidth: 1024, maxHeight: .infinity)
-            .padding(.trailing, 10)
-
-            VStack(alignment: .leading, spacing: 8) {
-                expandedToolbar(showLayoutPicker: !isNarrow)
-
-                HooksListView(
-                    hooks: config.hooks,
-                    selection: $listSelection,
-                    onToggleEnabled: { hook, newValue in
-                        if let idx = config.hooks.firstIndex(where: { $0.id == hook.id }) {
-                            config.hooks[idx].isEnabled = newValue
-                        }
-                    },
-                    onDeleteSingle: { hook in
-                        hookToDelete = hook
-                        showDeleteConfirmation = true
-                    },
-                    onMultiDelete: {
-                        pendingMultiDeleteIDs = listSelection
-                        showMultiDeleteAlert = true
-                    },
-                    onSelectionChange: { newValue in
-                        if newValue.count == 1, let id = newValue.first {
-                            handleUserSelectionChange(id)
-                        } else if newValue.isEmpty {
-                            handleUserSelectionChange(nil)
-                        }
-                    }
-                )
-            }
-            .frame(minWidth: 320, idealWidth: 320, maxWidth: 500, maxHeight: .infinity)
+        PlatformHSplit {
+            leftPane(isNarrow: isNarrow)
+            rightPane(isNarrow: isNarrow)
         }
+    }
+
+    @ViewBuilder
+    private func leftPane(isNarrow: Bool) -> some View {
+        Group {
+            if listSelection.count <= 1, selectedHook != nil {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Spacer()
+                        HStack(spacing: 6) {
+                            saveStatusIcon
+                            saveButton
+                        }
+                    }
+
+                    HookEditorView(
+                        draftCode: $draftCode,
+                        isDirty: $isDirty,
+                        selectedHook: selectedHook
+                    )
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if listSelection.count > 1 {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Multiple hooks selected")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Text("Choose a single hook to edit its handler.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding()
+            } else {
+                Text("Select a hook to edit its script.")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            }
+        }
+        .frame(minWidth: 320, idealWidth: 1024, maxHeight: .infinity)
+        .padding(.trailing, 10)
+    }
+
+    private func rightPane(isNarrow: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            expandedToolbar(showLayoutPicker: !isNarrow)
+
+            HooksListView(
+                hooks: config.hooks,
+                selection: $listSelection,
+                onToggleEnabled: { hook, newValue in
+                    if let idx = config.hooks.firstIndex(where: { $0.id == hook.id }) {
+                        config.hooks[idx].isEnabled = newValue
+                    }
+                },
+                onDeleteSingle: { hook in
+                    hookToDelete = hook
+                    showDeleteConfirmation = true
+                },
+                onMultiDelete: {
+                    pendingMultiDeleteIDs = listSelection
+                    showMultiDeleteAlert = true
+                },
+                onSelectionChange: { newValue in
+                    if newValue.count == 1, let id = newValue.first {
+                        handleUserSelectionChange(id)
+                    } else if newValue.isEmpty {
+                        handleUserSelectionChange(nil)
+                    }
+                }
+            )
+        }
+        .frame(minWidth: 320, idealWidth: 320, maxWidth: 500, maxHeight: .infinity)
     }
 
     private func compactToolbar(showLayoutPicker: Bool) -> some View {
@@ -531,13 +539,13 @@ struct TracerConfigView: View {
                                 handleUserSelectionChange(hook.id)
                                 isShowingSearchPopover = false
                             }
-                            .buttonStyle(.link)
+                            .platformLinkButtonStyle()
                         } else {
                             Button("Add") {
                                 _ = addResultAsHook(api, select: false)
                                 isShowingSearchPopover = false
                             }
-                            .buttonStyle(.link)
+                            .platformLinkButtonStyle()
                         }
                     }
                     .contentShape(Rectangle())

@@ -5,67 +5,88 @@ import SwiftUI
 import SwiftyMonaco
 import UniformTypeIdentifiers
 
-@main
-struct LumaApp: App {
-    @NSApplicationDelegateAdaptor(LumaAppDelegate.self) var appDelegate
+#if os(macOS)
 
-    init() {
-        SwiftyMonaco.prewarmPool(profile: CodeShareEditorProfile.javascript, count: 2)
-        SwiftyMonaco.prewarmPool(profile: TracerEditorProfile.typescript, count: 2)
+    @main
+    struct LumaApp: App {
+        @NSApplicationDelegateAdaptor(LumaAppDelegate.self) var appDelegate
 
-        HookPackLibrary.shared.reload()
-    }
+        init() {
+            SwiftyMonaco.prewarmPool(profile: CodeShareEditorProfile.javascript, count: 2)
+            SwiftyMonaco.prewarmPool(profile: TracerEditorProfile.typescript, count: 2)
 
-    var body: some Scene {
-        DocumentGroup(editing: .project, migrationPlan: LumaMigrationPlan.self) {
-            MainWindowView()
+            HookPackLibrary.shared.reload()
         }
-        .defaultSize(width: 1100, height: 680)
-    }
-}
 
-class LumaAppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        NSWindow.allowsAutomaticWindowTabbing = false
-    }
-
-    func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls {
-            handle(url: url)
+        var body: some Scene {
+            DocumentGroup(editing: .project, migrationPlan: LumaMigrationPlan.self) {
+                MainWindowView()
+            }
+            .defaultSize(width: 1100, height: 680)
         }
     }
 
-    private func handle(url: URL) {
-        guard url.scheme == "luma", url.host == "join" else {
-            return
+    class LumaAppDelegate: NSObject, NSApplicationDelegate {
+        func applicationDidFinishLaunching(_ notification: Notification) {
+            NSWindow.allowsAutomaticWindowTabbing = false
         }
 
-        guard let roomID = roomID(from: url) else {
-            return
+        func application(_ application: NSApplication, open urls: [URL]) {
+            for url in urls {
+                handle(url: url)
+            }
         }
 
-        CollaborationJoinCoordinator.shared.enqueue(roomID: roomID)
+        private func handle(url: URL) {
+            guard url.scheme == "luma", url.host == "join" else {
+                return
+            }
 
-        do {
-            try NSDocumentController.shared.openUntitledDocumentAndDisplay(true)
-        } catch {
-            NSLog("Failed to open untitled document for collaboration link: \(error)")
+            guard let roomID = roomID(from: url) else {
+                return
+            }
+
+            CollaborationJoinCoordinator.shared.enqueue(roomID: roomID)
+
+            do {
+                try NSDocumentController.shared.openUntitledDocumentAndDisplay(true)
+            } catch {
+                NSLog("Failed to open untitled document for collaboration link: \(error)")
+            }
+        }
+
+        private func roomID(from url: URL) -> String? {
+            guard
+                let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                let roomItem = components.queryItems?.first(where: { $0.name == "room" }),
+                let roomID = roomItem.value,
+                !roomID.isEmpty
+            else {
+                return nil
+            }
+
+            return roomID
         }
     }
 
-    private func roomID(from url: URL) -> String? {
-        guard
-            let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-            let roomItem = components.queryItems?.first(where: { $0.name == "room" }),
-            let roomID = roomItem.value,
-            !roomID.isEmpty
-        else {
-            return nil
+#else
+
+    @main
+    struct LumaApp: App {
+        init() {
+            SwiftyMonaco.prewarmPool(profile: CodeShareEditorProfile.javascript, count: 2)
+            SwiftyMonaco.prewarmPool(profile: TracerEditorProfile.typescript, count: 2)
+            HookPackLibrary.shared.reload()
         }
 
-        return roomID
+        var body: some Scene {
+            DocumentGroup(editing: .project, migrationPlan: LumaMigrationPlan.self) {
+                MainWindowView()
+            }
+        }
     }
-}
+
+#endif
 
 final class CollaborationJoinCoordinator: ObservableObject {
     static let shared = CollaborationJoinCoordinator()

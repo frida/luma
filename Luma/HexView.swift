@@ -346,7 +346,6 @@ struct HexView: View {
             text = data.base64EncodedString()
         }
 
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        Platform.copyToClipboard(text)
     }
 }

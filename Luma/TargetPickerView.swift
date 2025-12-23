@@ -1,4 +1,3 @@
-import AppKit
 import Frida
 import SwiftData
 import SwiftUI
@@ -1027,18 +1026,19 @@ struct TargetPickerView: View {
             Text(title)
                 .font(.subheadline)
 
-            if multiline {
-                TextField(placeholder, text: text, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(3, reservesSpace: true)
-            } else {
-                TextField(placeholder, text: text)
-                    .textFieldStyle(.roundedBorder)
+            Group {
+                if multiline {
+                    TextField(placeholder, text: text, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(3, reservesSpace: true)
+                } else {
+                    TextField(placeholder, text: text)
+                        .textFieldStyle(.roundedBorder)
+                }
             }
-
             #if canImport(UIKit)
                 .disableAutocorrection(true)
-                    .textInputAutocapitalization(.never)
+                .textInputAutocapitalization(.never)
             #endif
         }
     }

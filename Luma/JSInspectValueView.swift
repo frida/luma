@@ -132,7 +132,7 @@ private struct JSInspectNodeView: View {
                         Button("Show all \(props.count) properties…") {
                             childLimit = props.count
                         }
-                        .buttonStyle(.link)
+                        platformLinkButtonStyle()
                     }
                 }
                 .padding(.leading, 12)
@@ -174,7 +174,7 @@ private struct JSInspectNodeView: View {
                         Button("Show all \(elements.count) items…") {
                             childLimit = elements.count
                         }
-                        .buttonStyle(.link)
+                        platformLinkButtonStyle()
                     }
                 }
                 .padding(.leading, 12)
@@ -226,7 +226,7 @@ private struct JSInspectNodeView: View {
                         Button("Show all \(entries.count) entries…") {
                             childLimit = entries.count
                         }
-                        .buttonStyle(.link)
+                        platformLinkButtonStyle()
                     }
                 }
                 .padding(.leading, 12)
@@ -268,7 +268,7 @@ private struct JSInspectNodeView: View {
                         Button("Show all \(elements.count) items…") {
                             childLimit = elements.count
                         }
-                        .buttonStyle(.link)
+                        platformLinkButtonStyle()
                     }
                 }
                 .padding(.leading, 12)

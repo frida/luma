@@ -60,7 +60,7 @@ struct CodeShareConfigView: View {
 
             if let project = config.project {
                 Button {
-                    NSWorkspace.shared.open(project.url)
+                    Platform.openURL(project.url)
                 } label: {
                     Image(systemName: "safari")
                 }

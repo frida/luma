@@ -1,4 +1,3 @@
-import AppKit
 import Frida
 import SwiftData
 import SwiftUI
@@ -70,7 +69,7 @@ struct REPLView: View {
                     .foregroundStyle(.secondary)
 
                 if let node {
-                    REPLInputFieldAppKit(
+                    REPLInputField(
                         text: $inputCode,
                         isFocused: $isInputFocused,
                         onCommit: { cmd in
@@ -90,7 +89,7 @@ struct REPLView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     ZStack(alignment: .leading) {
-                        REPLInputFieldAppKit(
+                        REPLInputField(
                             text: .constant(""),
                             isFocused: .constant(false),
                             onCommit: { _ in },
@@ -319,262 +318,305 @@ private struct REPLCellView: View {
     }
 }
 
-private struct REPLInputFieldAppKit: NSViewRepresentable {
+private struct REPLInputField: View {
     @Binding var text: String
     @Binding var isFocused: Bool
+
+    #if !canImport(AppKit)
+        @FocusState private var focused: Bool
+    #endif
 
     let onCommit: (String) -> Void
     let onHistoryUp: () -> Void
     let onHistoryDown: () -> Void
-
     let requestCompletions: (String, Int) async -> [String]
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
+    var body: some View {
+        #if canImport(AppKit)
+            REPLInputFieldAppKit(
+                text: $text,
+                isFocused: $isFocused,
+                onCommit: onCommit,
+                onHistoryUp: onHistoryUp,
+                onHistoryDown: onHistoryDown,
+                requestCompletions: requestCompletions
+            )
+        #else
+            TextField("", text: $text, axis: .horizontal)
+                .textInputAutocapitalization(.never)
+                .disableAutocorrection(true)
+                .focused($focused)
+                .onChange(of: isFocused) { _, newValue in
+                    focused = newValue
+                }
+                .onChange(of: focused) { _, newValue in
+                    isFocused = newValue
+                }
+                .onSubmit { onCommit(text) }
+        #endif
     }
+}
 
-    func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField()
+#if canImport(AppKit)
 
-        field.cell = REPLTextFieldCell()
-        field.isBordered = false
-        field.drawsBackground = false
-        field.font = NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
-        field.focusRingType = .none
-        field.lineBreakMode = .byClipping
-        field.usesSingleLineMode = true
-        field.isEditable = true
-        field.isBezeled = false
+    private struct REPLInputFieldAppKit: NSViewRepresentable {
+        @Binding var text: String
+        @Binding var isFocused: Bool
 
-        field.delegate = context.coordinator
-        field.isAutomaticTextCompletionEnabled = true
-        field.suggestionsDelegate = context.coordinator
+        let onCommit: (String) -> Void
+        let onHistoryUp: () -> Void
+        let onHistoryDown: () -> Void
 
-        context.coordinator.textField = field
-        return field
-    }
+        let requestCompletions: (String, Int) async -> [String]
 
-    func updateNSView(_ nsView: NSTextField, context: Context) {
-        if nsView.stringValue != text {
-            nsView.stringValue = text
-            moveInsertionToEnd(of: nsView)
+        func makeCoordinator() -> Coordinator {
+            Coordinator(self)
         }
 
-        if isFocused,
-            let window = nsView.window,
-            window.firstResponder != nsView.currentEditor()
-        {
-            nsView.becomeFirstResponder()
-            moveInsertionToEnd(of: nsView)
-        }
-    }
+        func makeNSView(context: Context) -> NSTextField {
+            let field = NSTextField()
 
-    private func moveInsertionToEnd(of field: NSTextField) {
-        guard let editor = field.currentEditor() else { return }
-        let end = editor.string.utf16.count
-        editor.selectedRange = NSRange(location: end, length: 0)
-    }
+            field.cell = REPLTextFieldCell()
+            field.isBordered = false
+            field.drawsBackground = false
+            field.font = NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+            field.focusRingType = .none
+            field.lineBreakMode = .byClipping
+            field.usesSingleLineMode = true
+            field.isEditable = true
+            field.isBezeled = false
 
-    class Coordinator: NSObject, NSTextFieldDelegate, NSTextSuggestionsDelegate {
-        typealias SuggestionItemType = String
+            field.delegate = context.coordinator
+            field.isAutomaticTextCompletionEnabled = true
+            field.suggestionsDelegate = context.coordinator
 
-        var parent: REPLInputFieldAppKit
-        weak var textField: NSTextField?
-
-        var completionBaseText: String?
-        var completionBaseCursor: Int?
-
-        init(_ parent: REPLInputFieldAppKit) {
-            self.parent = parent
+            context.coordinator.textField = field
+            return field
         }
 
-        func controlTextDidChange(_ obj: Notification) {
-            guard let field = textField else { return }
-            parent.text = field.stringValue
-        }
+        func updateNSView(_ nsView: NSTextField, context: Context) {
+            if nsView.stringValue != text {
+                nsView.stringValue = text
+                moveInsertionToEnd(of: nsView)
+            }
 
-        func control(
-            _ control: NSControl,
-            textView: NSTextView,
-            doCommandBy commandSelector: Selector
-        ) -> Bool {
-            if commandSelector == #selector(NSResponder.insertNewline(_:))
-                || commandSelector == #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:))
+            if isFocused,
+                let window = nsView.window,
+                window.firstResponder != nsView.currentEditor()
             {
+                nsView.becomeFirstResponder()
+                moveInsertionToEnd(of: nsView)
+            }
+        }
 
-                let current = textView.string
-                parent.onCommit(current)
+        private func moveInsertionToEnd(of field: NSTextField) {
+            guard let editor = field.currentEditor() else { return }
+            let end = editor.string.utf16.count
+            editor.selectedRange = NSRange(location: end, length: 0)
+        }
 
-                parent.text = ""
-                textField?.stringValue = ""
+        class Coordinator: NSObject, NSTextFieldDelegate, NSTextSuggestionsDelegate {
+            typealias SuggestionItemType = String
 
-                completionBaseText = nil
-                completionBaseCursor = nil
+            var parent: REPLInputFieldAppKit
+            weak var textField: NSTextField?
 
-                if let field = textField, let window = field.window {
-                    window.endEditing(for: nil)
+            var completionBaseText: String?
+            var completionBaseCursor: Int?
 
-                    window.makeFirstResponder(field)
+            init(_ parent: REPLInputFieldAppKit) {
+                self.parent = parent
+            }
 
-                    if let editor = field.currentEditor() {
-                        editor.string = ""
-                        editor.selectedRange = NSRange(location: 0, length: 0)
+            func controlTextDidChange(_ obj: Notification) {
+                guard let field = textField else { return }
+                parent.text = field.stringValue
+            }
+
+            func control(
+                _ control: NSControl,
+                textView: NSTextView,
+                doCommandBy commandSelector: Selector
+            ) -> Bool {
+                if commandSelector == #selector(NSResponder.insertNewline(_:))
+                    || commandSelector == #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:))
+                {
+
+                    let current = textView.string
+                    parent.onCommit(current)
+
+                    parent.text = ""
+                    textField?.stringValue = ""
+
+                    completionBaseText = nil
+                    completionBaseCursor = nil
+
+                    if let field = textField, let window = field.window {
+                        window.endEditing(for: nil)
+
+                        window.makeFirstResponder(field)
+
+                        if let editor = field.currentEditor() {
+                            editor.string = ""
+                            editor.selectedRange = NSRange(location: 0, length: 0)
+                        }
                     }
+
+                    parent.isFocused = true
+
+                    return true
                 }
 
-                parent.isFocused = true
+                if commandSelector == #selector(NSResponder.moveUp(_:)) {
+                    parent.onHistoryUp()
+                    return true
+                }
 
-                return true
+                if commandSelector == #selector(NSResponder.moveDown(_:)) {
+                    parent.onHistoryDown()
+                    return true
+                }
+
+                return false
             }
 
-            if commandSelector == #selector(NSResponder.moveUp(_:)) {
-                parent.onHistoryUp()
-                return true
-            }
-
-            if commandSelector == #selector(NSResponder.moveDown(_:)) {
-                parent.onHistoryDown()
-                return true
-            }
-
-            return false
-        }
-
-        func textField(
-            _ textField: NSTextField,
-            provideUpdatedSuggestions responseHandler: @escaping (ItemResponse) -> Void
-        ) {
-            guard let editor = textField.currentEditor() else {
-                var empty = ItemResponse(itemSections: [])
-                empty.phase = .final
-                responseHandler(empty)
-                return
-            }
-
-            let codeSnapshot = editor.string
-            let cursorSnapshot = editor.selectedRange.location
-
-            self.completionBaseText = codeSnapshot
-            self.completionBaseCursor = cursorSnapshot
-
-            if codeSnapshot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                var empty = ItemResponse(itemSections: [])
-                empty.phase = .final
-                responseHandler(empty)
-                return
-            }
-
-            Task { @MainActor in
-                let suggestions = await self.parent.requestCompletions(codeSnapshot, cursorSnapshot)
-
-                guard editor.string == codeSnapshot, !suggestions.isEmpty else {
+            func textField(
+                _ textField: NSTextField,
+                provideUpdatedSuggestions responseHandler: @escaping (ItemResponse) -> Void
+            ) {
+                guard let editor = textField.currentEditor() else {
                     var empty = ItemResponse(itemSections: [])
                     empty.phase = .final
                     responseHandler(empty)
                     return
                 }
 
-                let items: [Item] = suggestions.map { suggestion in
-                    NSSuggestionItem(representedValue: suggestion, title: suggestion)
+                let codeSnapshot = editor.string
+                let cursorSnapshot = editor.selectedRange.location
+
+                self.completionBaseText = codeSnapshot
+                self.completionBaseCursor = cursorSnapshot
+
+                if codeSnapshot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    var empty = ItemResponse(itemSections: [])
+                    empty.phase = .final
+                    responseHandler(empty)
+                    return
                 }
 
-                let section = NSSuggestionItemSection(items: items)
-                var response = ItemResponse(itemSections: [section])
-                response.phase = .final
-                responseHandler(response)
+                Task { @MainActor in
+                    let suggestions = await self.parent.requestCompletions(codeSnapshot, cursorSnapshot)
+
+                    guard editor.string == codeSnapshot, !suggestions.isEmpty else {
+                        var empty = ItemResponse(itemSections: [])
+                        empty.phase = .final
+                        responseHandler(empty)
+                        return
+                    }
+
+                    let items: [Item] = suggestions.map { suggestion in
+                        NSSuggestionItem(representedValue: suggestion, title: suggestion)
+                    }
+
+                    let section = NSSuggestionItemSection(items: items)
+                    var response = ItemResponse(itemSections: [section])
+                    response.phase = .final
+                    responseHandler(response)
+                }
             }
-        }
 
-        func textField(_ textField: NSTextField, textCompletionFor item: Item) -> String? {
-            guard let baseText = completionBaseText,
-                let baseCursor = completionBaseCursor
-            else {
-                return item.representedValue
-            }
+            func textField(_ textField: NSTextField, textCompletionFor item: Item) -> String? {
+                guard let baseText = completionBaseText,
+                    let baseCursor = completionBaseCursor
+                else {
+                    return item.representedValue
+                }
 
-            let nsText = baseText as NSString
-            let length = nsText.length
-            let cursor = min(max(baseCursor, 0), length)
+                let nsText = baseText as NSString
+                let length = nsText.length
+                let cursor = min(max(baseCursor, 0), length)
 
-            let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._$"))
+                let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._$"))
 
-            var start = cursor
-            while start > 0 {
-                let ch = nsText.character(at: start - 1)
-                if let scalar = UnicodeScalar(ch), allowed.contains(scalar) {
-                    start -= 1
+                var start = cursor
+                while start > 0 {
+                    let ch = nsText.character(at: start - 1)
+                    if let scalar = UnicodeScalar(ch), allowed.contains(scalar) {
+                        start -= 1
+                    } else {
+                        break
+                    }
+                }
+
+                var end = cursor
+                while end < length {
+                    let ch = nsText.character(at: end)
+                    if let scalar = UnicodeScalar(ch), allowed.contains(scalar) {
+                        end += 1
+                    } else {
+                        break
+                    }
+                }
+
+                let tokenRange = NSRange(location: start, length: end - start)
+                let token = nsText.substring(with: tokenRange)
+                let before = nsText.substring(to: start)
+                let after = nsText.substring(from: end)
+
+                let symbol: String = item.representedValue
+
+                let newToken: String
+                if let dotIndex = token.lastIndex(of: ".") {
+                    let baseExpr = String(token[..<dotIndex])
+                    if baseExpr.isEmpty {
+                        newToken = symbol
+                    } else {
+                        newToken = baseExpr + "." + symbol
+                    }
                 } else {
-                    break
-                }
-            }
-
-            var end = cursor
-            while end < length {
-                let ch = nsText.character(at: end)
-                if let scalar = UnicodeScalar(ch), allowed.contains(scalar) {
-                    end += 1
-                } else {
-                    break
-                }
-            }
-
-            let tokenRange = NSRange(location: start, length: end - start)
-            let token = nsText.substring(with: tokenRange)
-            let before = nsText.substring(to: start)
-            let after = nsText.substring(from: end)
-
-            let symbol: String = item.representedValue
-
-            let newToken: String
-            if let dotIndex = token.lastIndex(of: ".") {
-                let baseExpr = String(token[..<dotIndex])
-                if baseExpr.isEmpty {
                     newToken = symbol
-                } else {
-                    newToken = baseExpr + "." + symbol
                 }
-            } else {
-                newToken = symbol
+
+                return before + newToken + after
             }
 
-            return before + newToken + after
-        }
+            func textField(_ textField: NSTextField, didSelect item: Item) {
+                guard let editor = textField.currentEditor() else {
+                    parent.text = textField.stringValue
+                    parent.isFocused = true
+                    return
+                }
 
-        func textField(_ textField: NSTextField, didSelect item: Item) {
-            guard let editor = textField.currentEditor() else {
-                parent.text = textField.stringValue
-                parent.isFocused = true
-                return
+                let selection = editor.selectedRange
+                let end = selection.location + selection.length
+
+                editor.selectedRange = NSRange(location: end, length: 0)
+
+                parent.text = editor.string
             }
-
-            let selection = editor.selectedRange
-            let end = selection.location + selection.length
-
-            editor.selectedRange = NSRange(location: end, length: 0)
-
-            parent.text = editor.string
         }
     }
-}
 
-private final class REPLTextFieldCell: NSTextFieldCell {
-    private lazy var replEditorInstance: NSTextView = {
-        let editor = NSTextView()
-        editor.isRichText = false
-        editor.isAutomaticQuoteSubstitutionEnabled = false
-        editor.isAutomaticDashSubstitutionEnabled = false
-        editor.isAutomaticDataDetectionEnabled = false
-        editor.isAutomaticLinkDetectionEnabled = false
-        editor.isAutomaticSpellingCorrectionEnabled = false
-        editor.isContinuousSpellCheckingEnabled = false
-        return editor
-    }()
+    private final class REPLTextFieldCell: NSTextFieldCell {
+        private lazy var replEditorInstance: NSTextView = {
+            let editor = NSTextView()
+            editor.isRichText = false
+            editor.isAutomaticQuoteSubstitutionEnabled = false
+            editor.isAutomaticDashSubstitutionEnabled = false
+            editor.isAutomaticDataDetectionEnabled = false
+            editor.isAutomaticLinkDetectionEnabled = false
+            editor.isAutomaticSpellingCorrectionEnabled = false
+            editor.isContinuousSpellCheckingEnabled = false
+            return editor
+        }()
 
-    override func fieldEditor(for controlView: NSView) -> NSTextView? {
-        replEditorInstance
+        override func fieldEditor(for controlView: NSView) -> NSTextView? {
+            replEditorInstance
+        }
+
+        func replEditor() -> NSTextView {
+            replEditorInstance
+        }
     }
 
-    func replEditor() -> NSTextView {
-        replEditorInstance
-    }
-}
+#endif

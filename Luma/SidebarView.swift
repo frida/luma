@@ -291,10 +291,8 @@ struct SidebarSessionRow: View {
                 .interpolation(.high)
                 .aspectRatio(contentMode: .fit)
                 .cornerRadius(4)
-        } else if let data = session.iconPNGData,
-            let nsImage = NSImage(data: data)
-        {
-            Image(nsImage: nsImage)
+        } else if let data = session.iconPNGData {
+            Icon.png(data: Array(data)).swiftUIImage
                 .resizable()
                 .interpolation(.high)
                 .aspectRatio(contentMode: .fit)

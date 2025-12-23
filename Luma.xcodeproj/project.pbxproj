@@ -270,7 +270,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/zsh;
-			shellScript = "set -euo pipefail\n\n\"${BUILT_PRODUCTS_DIR}/LumaBundleCompiler\" \\\n    --project-root     \"${SRCROOT}\" \\\n    --swift-out        \"${SRCROOT}/Luma/Generated/LumaAgent.swift\" \\\n    --agent  core      \"${SRCROOT}/Luma/Agent/core/luma.ts\" \\\n    --module tracer    \"${SRCROOT}/Luma/Agent/instruments/tracer.ts\" \\\n    --module codeShare \"${SRCROOT}/Luma/Agent/instruments/codeshare.ts\"\n";
+			shellScript = "set -euo pipefail\n\n\"${BUILD_DIR}/${CONFIGURATION}/LumaBundleCompiler\" \\\n    --project-root     \"${SRCROOT}\" \\\n    --swift-out        \"${SRCROOT}/Luma/Generated/LumaAgent.swift\" \\\n    --agent  core      \"${SRCROOT}/Luma/Agent/core/luma.ts\" \\\n    --module tracer    \"${SRCROOT}/Luma/Agent/instruments/tracer.ts\" \\\n    --module codeShare \"${SRCROOT}/Luma/Agent/instruments/codeshare.ts\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
