@@ -318,6 +318,30 @@ final class Workspace: ObservableObject {
         return instance
     }
 
+    func removeInstrument(
+        _ instance: InstrumentInstance,
+        from session: ProcessSession
+    ) {
+        if let node = attachedNode(for: session),
+            let idx = node.instruments.firstIndex(where: { $0.instance == instance })
+        {
+            let runtime = node.instruments.remove(at: idx)
+            Task { @MainActor in
+                await runtime.dispose()
+            }
+        }
+
+        if let idx = session.instruments.firstIndex(where: { $0.id == instance.id }) {
+            session.instruments.remove(at: idx)
+        }
+
+        if instance.kind == .tracer {
+            rebuildAddressDecorations(for: session)
+        }
+
+        modelContext.delete(instance)
+    }
+
     func setInstrumentEnabled(_ instance: InstrumentInstance, enabled: Bool) async {
         instance.isEnabled = enabled
 

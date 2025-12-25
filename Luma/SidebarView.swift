@@ -335,24 +335,11 @@ private struct SidebarInstrumentRow: View {
     }
 
     private func deleteInstrument() {
-        if let node,
-            let idx = node.instruments.firstIndex(where: { $0.instance == instance })
-        {
-            let runtime = node.instruments.remove(at: idx)
-            Task { @MainActor in
-                await runtime.dispose()
-            }
-        }
-
-        if let idx = session.instruments.firstIndex(where: { $0.id == instance.id }) {
-            session.instruments.remove(at: idx)
-        }
+        workspace.removeInstrument(instance, from: session)
 
         if selection == .instrument(session.id, instance.id) {
             selection = .repl(session.id)
         }
-
-        modelContext.delete(instance)
     }
 }
 
