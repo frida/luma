@@ -12,6 +12,8 @@ final class ProcessNode: ObservableObject, Identifiable {
     let process: ProcessDetails
     let session: Session
     let script: Script
+    private var scriptEventsStarted: Bool = false
+    private var scriptEventsStartWaiters: [CheckedContinuation<Void, Never>] = []
     private var moduleSnapshotState: ModuleSnapshotState = .pending
     private var moduleSnapshotWaiters: [CheckedContinuation<Void, Swift.Error>] = []
 
@@ -90,6 +92,11 @@ final class ProcessNode: ObservableObject, Identifiable {
         Task { @MainActor [weak self] in
             guard let self else { return }
 
+            self.scriptEventsStarted = true
+            let waiters = self.scriptEventsStartWaiters
+            self.scriptEventsStartWaiters.removeAll(keepingCapacity: false)
+            for w in waiters { w.resume() }
+
             for await event in self.script.events {
                 switch event {
                 case .message(let message, let data):
@@ -105,6 +112,18 @@ final class ProcessNode: ObservableObject, Identifiable {
                 case .destroyed:
                     break
                 }
+            }
+        }
+    }
+
+    func waitForScriptEventsSubscription() async {
+        if scriptEventsStarted { return }
+
+        await withCheckedContinuation { cont in
+            if scriptEventsStarted {
+                cont.resume()
+            } else {
+                scriptEventsStartWaiters.append(cont)
             }
         }
     }

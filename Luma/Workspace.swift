@@ -960,6 +960,8 @@ final class Workspace: ObservableObject {
         sessionRecord.detachReason = .applicationRequested
         sessionRecord.lastError = nil
 
+        ensureDeviceEventsHooked(for: device)
+
         do {
             let pid = try await device.spawn(
                 config.programString,
@@ -1030,6 +1032,8 @@ final class Workspace: ObservableObject {
             sessionRecord.detachReason = .applicationRequested
             sessionRecord.lastError = nil
 
+            ensureDeviceEventsHooked(for: device)
+
             let session = try await device.attach(to: process.pid)
 
             sessionRecord.lastAttachedAt = Date()
@@ -1063,6 +1067,11 @@ final class Workspace: ObservableObject {
                 self?.pushEvent(evt)
             }
 
+            processNodes.append(node)
+
+            await node.waitForScriptEventsSubscription()
+            await Task.yield()
+
             try await script.load()
 
             await loadAllPackages(on: node)
@@ -1073,9 +1082,6 @@ final class Workspace: ObservableObject {
                     await loadRuntime(for: runtime, using: template, on: node)
                 }
             }
-
-            processNodes.append(node)
-            ensureDeviceEventsHooked(for: device)
         } catch {
             sessionRecord.lastError = error as? Error ?? .invalidOperation(error.localizedDescription)
         }
