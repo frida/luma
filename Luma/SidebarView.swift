@@ -27,12 +27,38 @@ struct SidebarView: View {
             Section("Sessions") {
                 ForEach(sessions) { session in
                     let node = workspace.processNodes.first(where: { $0.sessionRecord == session })
-                    SidebarSessionRow(
+
+                    SidebarSessionHeaderRow(
                         session: session,
                         node: node,
                         workspace: workspace,
                         selection: $selection
                     )
+
+                    SidebarSessionREPLRow(sessionID: session.id)
+                        .tag(SidebarItemID.repl(session.id))
+
+                    ForEach(session.instruments) { instance in
+                        let runtime = node?.instruments.first(where: { $0.id == instance.id })
+                        SidebarInstrumentRow(
+                            session: session,
+                            node: node,
+                            instance: instance,
+                            runtime: runtime,
+                            workspace: workspace,
+                            selection: $selection
+                        )
+                        .tag(SidebarItemID.instrument(session.id, instance.id))
+                    }
+
+                    ForEach(session.insights.sorted(by: { $0.createdAt < $1.createdAt })) { insight in
+                        SidebarInsightRow(
+                            session: session,
+                            insight: insight,
+                            selection: $selection
+                        )
+                        .tag(SidebarItemID.insight(session.id, insight.id))
+                    }
                 }
             }
 
@@ -49,27 +75,7 @@ struct SidebarView: View {
     }
 }
 
-struct SidebarPackageRow: View {
-    let package: InstalledPackage
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "shippingbox")
-                .foregroundStyle(.tint)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(package.name)
-                    .font(.headline)
-                Text(package.version)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .padding(.vertical, 2)
-    }
-}
-
-struct SidebarNotebookRow: View {
+private struct SidebarNotebookRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "book.pages")
@@ -79,7 +85,7 @@ struct SidebarNotebookRow: View {
     }
 }
 
-struct SidebarSessionRow: View {
+private struct SidebarSessionHeaderRow: View {
     let session: ProcessSession
     let node: ProcessNode?
     @ObservedObject var workspace: Workspace
@@ -94,132 +100,28 @@ struct SidebarSessionRow: View {
     @State private var pendingConfirmation: (() -> Void)?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                iconView
-                    .frame(width: 24, height: 24)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(displayProcessName)
-                        .font(.headline)
-                    Text(displayDeviceName)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-            }
-            .padding(.vertical, 4)
+        HStack(spacing: 8) {
+            iconView
+                .frame(width: 24, height: 24)
 
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Image(systemName: "terminal")
-                        .frame(width: subrowIconWidth, alignment: .center)
-                        .font(.system(size: 12))
-                    Text("REPL")
-                    Spacer()
-                }
-                .font(.callout)
-                .contentShape(Rectangle())
-                .padding(.leading, 20)
-                .background(
-                    selection == .repl(session.id)
-                        ? Color.accentColor.opacity(0.15).clipShape(RoundedRectangle(cornerRadius: 4))
-                        : nil
-                )
-                .onTapGesture {
-                    selection = .repl(session.id)
-                }
-
-                ForEach(session.instruments) { instance in
-                    let runtime = node?.instruments.first(where: { $0.id == instance.id })
-                    SidebarInstrumentRow(
-                        sessionID: session.id,
-                        instance: instance,
-                        runtime: runtime,
-                        selection: $selection,
-                        workspace: workspace
-                    )
-                }
-
-                if !session.insights.isEmpty {
-                    Divider()
-                        .padding(.leading, 20)
-                        .padding(.vertical, 2)
-
-                    ForEach(session.insights.sorted(by: { $0.createdAt < $1.createdAt })) { insight in
-                        SidebarInsightRow(
-                            sessionID: session.id,
-                            insight: insight,
-                            selection: $selection
-                        )
-                    }
-                }
+                Text(displayProcessName).font(.headline)
+                Text(displayDeviceName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
+
+            Spacer()
         }
-        .padding(.vertical, 2)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            selection = .repl(session.id)
-        }
+        .padding(.vertical, 4)
         .contextMenu {
-            if case .instrument(let sessionID, let instrumentID) = selection,
-                sessionID == session.id,
-                let instrument = session.instruments.first(where: { $0.id == instrumentID })
-            {
-                Button {
-                    Task { @MainActor in
-                        await workspace.setInstrumentEnabled(
-                            instrument,
-                            enabled: !instrument.isEnabled
-                        )
-                    }
-                } label: {
-                    Label(
-                        instrument.isEnabled
-                            ? "Disable “\(instrument.displayName)”"
-                            : "Enable “\(instrument.displayName)”",
-                        systemImage: instrument.isEnabled ? "pause.circle" : "play.circle"
-                    )
-                }
-
-                Button(role: .destructive) {
-                    presentConfirmation(
-                        title: "Delete Instrument?",
-                        message: "This will remove “\(instrument.displayName)” from this session.",
-                        destructiveLabel: "Delete Instrument"
-                    ) {
-                        deleteInstrument(instrument)
-                    }
-                } label: {
-                    Label("Delete Instrument", systemImage: "trash")
-                }
-
-                Divider()
-            }
-
-            if case .insight(let sessionID, let insightID) = selection,
-                sessionID == session.id,
-                let insight = session.insights.first(where: { $0.id == insightID })
-            {
-                Button(role: .destructive) {
-                    deleteInsight(insight)
-                } label: {
-                    Label("Delete Insight", systemImage: "trash")
-                }
-
-                Divider()
-            }
-
             if let node {
                 Button(role: .destructive) {
                     presentConfirmation(
                         title: "Kill Process?",
                         message: "This will force-terminate “\(displayProcessName)”.",
                         destructiveLabel: "Kill Process"
-                    ) {
-                        killProcess()
-                    }
+                    ) { killProcess() }
                 } label: {
                     Label("Kill Process", systemImage: "xmark.circle")
                 }
@@ -244,9 +146,7 @@ struct SidebarSessionRow: View {
                     title: "Delete Session?",
                     message: "This will remove the session and its history.",
                     destructiveLabel: "Delete Session"
-                ) {
-                    deleteSession()
-                }
+                ) { deleteSession() }
             } label: {
                 Label("Delete Session", systemImage: "trash")
             }
@@ -264,27 +164,12 @@ struct SidebarSessionRow: View {
                 pendingConfirmation = nil
             }
         } message: {
-            if let confirmationMessage {
-                Text(confirmationMessage)
-            }
+            if let confirmationMessage { Text(confirmationMessage) }
         }
     }
 
-    private var displayProcessName: String {
-        if let node {
-            return node.process.name
-        } else {
-            return session.processName
-        }
-    }
-
-    private var displayDeviceName: String {
-        if let node {
-            return node.device.name
-        } else {
-            return session.deviceName
-        }
-    }
+    private var displayProcessName: String { node?.process.name ?? session.processName }
+    private var displayDeviceName: String { node?.device.name ?? session.deviceName }
 
     @ViewBuilder
     private var iconView: some View {
@@ -326,81 +211,23 @@ struct SidebarSessionRow: View {
 
     private func killProcess() {
         guard let node else { return }
-
         Task { @MainActor in
             let pid = node.sessionRecord.lastKnownPID
-
-            do {
-                try await node.device.kill(pid)
-            } catch {
+            do { try await node.device.kill(pid) } catch {
                 node.sessionRecord.lastError =
                     error as? Error ?? .invalidOperation(error.localizedDescription)
             }
         }
     }
 
-    private func deleteInstrument(_ instrument: InstrumentInstance) {
-        if let node,
-            let idx = node.instruments.firstIndex(where: { $0.instance == instrument })
-        {
-            let runtime = node.instruments.remove(at: idx)
-            Task { @MainActor in
-                await runtime.dispose()
-            }
-        }
-
-        if let idx = session.instruments.firstIndex(where: { $0.id == instrument.id }) {
-            session.instruments.remove(at: idx)
-        }
-
-        if case .instrument(let sessionID, let instrumentID) = selection,
-            sessionID == session.id,
-            instrumentID == instrument.id
-        {
-            selection = .repl(session.id)
-        }
-
-        modelContext.delete(instrument)
-    }
-
-    private func deleteInsight(_ insight: AddressInsight) {
-        if let idx = session.insights.firstIndex(where: { $0.id == insight.id }) {
-            session.insights.remove(at: idx)
-        }
-
-        if case .insight(let sessionID, let insightID) = selection,
-            sessionID == session.id,
-            insightID == insight.id
-        {
-            selection = .repl(session.id)
-        }
-
-        modelContext.delete(insight)
-    }
-
-    private func presentConfirmation(
-        title: String,
-        message: String? = nil,
-        destructiveLabel: String,
-        action: @escaping () -> Void
-    ) {
-        confirmationTitle = title
-        confirmationMessage = message
-        confirmationDestructiveLabel = destructiveLabel
-        pendingConfirmation = action
-        isShowingConfirmation = true
-    }
-
     private func deleteSession() {
-        if let node {
-            workspace.removeNode(node)
-        }
-
+        if let node { workspace.removeNode(node) }
         let sessionID = session.id
 
         switch selection {
         case .repl(let id) where id == sessionID,
-            .instrument(let id, _) where id == sessionID:
+            .instrument(let id, _) where id == sessionID,
+            .insight(let id, _) where id == sessionID:
             selection = .notebook
         default:
             break
@@ -416,43 +243,125 @@ struct SidebarSessionRow: View {
                 .first!
         )
     }
+
+    private func presentConfirmation(
+        title: String,
+        message: String? = nil,
+        destructiveLabel: String,
+        action: @escaping () -> Void
+    ) {
+        confirmationTitle = title
+        confirmationMessage = message
+        confirmationDestructiveLabel = destructiveLabel
+        pendingConfirmation = action
+        isShowingConfirmation = true
+    }
 }
 
-struct SidebarInstrumentRow: View {
+private struct SidebarSessionREPLRow: View {
     let sessionID: UUID
+    private let iconWidth: CGFloat = 16
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "terminal")
+                .frame(width: iconWidth, alignment: .center)
+                .font(.system(size: 12))
+            Text("REPL")
+            Spacer()
+        }
+        .font(.callout)
+        .padding(.leading, 20)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct SidebarInstrumentRow: View {
+    let session: ProcessSession
+    let node: ProcessNode?
     let instance: InstrumentInstance
     let runtime: InstrumentRuntime?
-    @Binding var selection: SidebarItemID?
     @ObservedObject var workspace: Workspace
+    @Binding var selection: SidebarItemID?
+
+    @Environment(\.modelContext) private var modelContext
+    @State private var isShowingDeleteConfirm = false
 
     var body: some View {
         HStack(spacing: 6) {
             InstrumentIconView(icon: instance.displayIcon, pointSize: 12)
                 .frame(width: subrowIconWidth, alignment: .center)
             Text(instance.displayName)
-
             Spacer()
         }
         .font(.callout)
         .contentShape(Rectangle())
         .padding(.leading, 20)
         .opacity(instance.isEnabled ? 1 : 0.3)
-        .background(
-            (selection == .instrument(sessionID, instance.id)
-                ? Color.accentColor.opacity(0.15)
-                : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-        )
-        .onTapGesture {
-            selection = .instrument(sessionID, instance.id)
+        .contextMenu {
+            Button {
+                Task { @MainActor in
+                    await workspace.setInstrumentEnabled(instance, enabled: !instance.isEnabled)
+                }
+            } label: {
+                Label(
+                    instance.isEnabled
+                        ? "Disable “\(instance.displayName)”"
+                        : "Enable “\(instance.displayName)”",
+                    systemImage: instance.isEnabled ? "pause.circle" : "play.circle"
+                )
+            }
+
+            Divider()
+
+            Button(role: .destructive) {
+                isShowingDeleteConfirm = true
+            } label: {
+                Label("Delete Instrument", systemImage: "trash")
+            }
         }
+        .confirmationDialog(
+            "Delete Instrument?",
+            isPresented: $isShowingDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Instrument", role: .destructive) {
+                deleteInstrument()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will remove “\(instance.displayName)” from this session.")
+        }
+    }
+
+    private func deleteInstrument() {
+        if let node,
+            let idx = node.instruments.firstIndex(where: { $0.instance == instance })
+        {
+            let runtime = node.instruments.remove(at: idx)
+            Task { @MainActor in
+                await runtime.dispose()
+            }
+        }
+
+        if let idx = session.instruments.firstIndex(where: { $0.id == instance.id }) {
+            session.instruments.remove(at: idx)
+        }
+
+        if selection == .instrument(session.id, instance.id) {
+            selection = .repl(session.id)
+        }
+
+        modelContext.delete(instance)
     }
 }
 
 private struct SidebarInsightRow: View {
-    let sessionID: UUID
+    let session: ProcessSession
     let insight: AddressInsight
     @Binding var selection: SidebarItemID?
+
+    @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         HStack(spacing: 6) {
@@ -465,15 +374,45 @@ private struct SidebarInsightRow: View {
         .font(.callout)
         .contentShape(Rectangle())
         .padding(.leading, 20)
-        .background(
-            (selection == .insight(sessionID, insight.id)
-                ? Color.accentColor.opacity(0.15)
-                : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-        )
-        .onTapGesture {
-            selection = .insight(sessionID, insight.id)
-        }
         .help(insight.anchor.displayString)
+        .contextMenu {
+            Button(role: .destructive) {
+                deleteInsight()
+            } label: {
+                Label("Delete Insight", systemImage: "trash")
+            }
+        }
+    }
+
+    private func deleteInsight() {
+        if let idx = session.insights.firstIndex(where: { $0.id == insight.id }) {
+            session.insights.remove(at: idx)
+        }
+
+        if selection == .insight(session.id, insight.id) {
+            selection = .repl(session.id)
+        }
+
+        modelContext.delete(insight)
+    }
+}
+
+private struct SidebarPackageRow: View {
+    let package: InstalledPackage
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "shippingbox")
+                .foregroundStyle(.tint)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(package.name)
+                    .font(.headline)
+                Text(package.version)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.vertical, 2)
     }
 }
