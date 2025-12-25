@@ -405,6 +405,14 @@ private struct DisasmRow: View {
                 .frame(width: 110, alignment: .leading)
                 .contentShape(Rectangle())
                 .contextMenu {
+                    Button {
+                        Platform.copyToClipboard(String(format: "0x%llx", line.addrValue))
+                    } label: {
+                        Label("Copy Address", systemImage: "doc.on.doc")
+                    }
+
+                    Divider()
+
                     let items = workspace.addressContextMenuItems(
                         sessionID: sessionID,
                         address: line.addrValue,
