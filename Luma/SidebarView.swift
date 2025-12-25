@@ -2,6 +2,8 @@ import Frida
 import SwiftData
 import SwiftUI
 
+private let subrowIconWidth: CGFloat = 16
+
 struct SidebarView: View {
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
@@ -112,6 +114,7 @@ struct SidebarSessionRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Image(systemName: "terminal")
+                        .frame(width: subrowIconWidth, alignment: .center)
                         .font(.system(size: 12))
                     Text("REPL")
                     Spacer()
@@ -425,6 +428,7 @@ struct SidebarInstrumentRow: View {
     var body: some View {
         HStack(spacing: 6) {
             InstrumentIconView(icon: instance.displayIcon, pointSize: 12)
+                .frame(width: subrowIconWidth, alignment: .center)
             Text(instance.displayName)
 
             Spacer()
@@ -453,6 +457,7 @@ private struct SidebarInsightRow: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: insight.kind == .memory ? "doc.text.magnifyingglass" : "hammer")
+                .frame(width: subrowIconWidth, alignment: .center)
                 .font(.system(size: 12))
             Text(insight.title)
             Spacer()
