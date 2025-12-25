@@ -9,11 +9,6 @@ struct InstrumentDetailView: View {
 
     let template: InstrumentTemplate?
 
-    private var runtime: InstrumentRuntime? {
-        guard let node = self.node else { return nil }
-        return node.instruments.first { $0.instance == instance }
-    }
-
     private var node: ProcessNode? {
         let processSession = instance.session
         return workspace.processNodes.first { $0.sessionRecord == processSession }
@@ -31,8 +26,8 @@ struct InstrumentDetailView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if node == nil, let session = instance.session {
-                SessionDetachedBanner(session: session, workspace: workspace)
+            if node == nil {
+                SessionDetachedBanner(session: instance.session, workspace: workspace)
             }
 
             VStack(alignment: .leading, spacing: 0) {
@@ -41,11 +36,7 @@ struct InstrumentDetailView: View {
                         .environment(\.instrumentSession, instance.session)
                         .onChange(of: configJSON) { _, newValue in
                             Task { @MainActor in
-                                if let runtime {
-                                    await runtime.applyConfigJSON(newValue)
-                                } else {
-                                    instance.configJSON = newValue
-                                }
+                                await workspace.applyInstrumentConfig(instance, data: newValue)
                             }
                         }
                 } else {

@@ -34,6 +34,7 @@ final class ProcessNode: ObservableObject, Identifiable {
     private let modelContext: ModelContext
 
     var onDestroyed: ((ProcessNode, SessionDetachReason) -> Void)?
+    var onModulesSnapshotReady: ((ProcessNode) -> Void)?
     var eventSink: ((RuntimeEvent) -> Void)?
 
     init(
@@ -263,6 +264,8 @@ final class ProcessNode: ObservableObject, Identifiable {
     private func markInitialModulesSnapshotReadyIfNeeded() {
         guard moduleSnapshotState == .pending else { return }
         moduleSnapshotState = .ready
+
+        onModulesSnapshotReady?(self)
 
         let waiters = moduleSnapshotWaiters
         moduleSnapshotWaiters.removeAll(keepingCapacity: false)

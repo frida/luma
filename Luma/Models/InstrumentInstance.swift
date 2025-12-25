@@ -19,7 +19,7 @@ final class InstrumentInstance {
     var configJSON: Data
 
     @Relationship(inverse: \ProcessSession.instruments)
-    var session: ProcessSession?
+    var session: ProcessSession
 
     @MainActor
     var displayName: String {
@@ -36,7 +36,7 @@ final class InstrumentInstance {
         sourceIdentifier: String,
         isEnabled: Bool = true,
         configJSON: Data,
-        session: ProcessSession? = nil
+        session: ProcessSession
     ) {
         self.id = UUID()
         self.kind = kind

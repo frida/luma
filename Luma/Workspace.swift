@@ -10,6 +10,14 @@ final class Workspace: ObservableObject {
 
     @Published var processNodes: [ProcessNode] = []
 
+    private var addressAnnotationsBySession: [UUID: [UInt64: AddressAnnotation]] = [:]
+    private var tracerInstanceIDBySession: [UUID: UUID] = [:]
+
+    struct AddressAnnotation {
+        var decorations: [InstrumentAddressDecoration] = []
+        var tracerHookID: UUID? = nil
+    }
+
     @Published private(set) var events: [RuntimeEvent] = []
     @Published private(set) var eventsVersion: Int = 0
 
@@ -273,6 +281,10 @@ final class Workspace: ObservableObject {
 
     func removeNode(_ node: ProcessNode) {
         if let idx = processNodes.firstIndex(where: { $0.id == node.id }) {
+            let sessionID = node.sessionRecord.id
+            addressAnnotationsBySession[sessionID] = [:]
+            tracerInstanceIDBySession[sessionID] = nil
+
             processNodes.remove(at: idx)
             node.stop()
         }
@@ -309,7 +321,7 @@ final class Workspace: ObservableObject {
     func setInstrumentEnabled(_ instance: InstrumentInstance, enabled: Bool) async {
         instance.isEnabled = enabled
 
-        let session = instance.session!
+        let session = instance.session
 
         guard let node = processNodes.first(where: { $0.sessionRecord == session }) else {
             return
@@ -332,6 +344,23 @@ final class Workspace: ObservableObject {
             if runtime.isAttached {
                 await runtime.dispose()
             }
+        }
+    }
+
+    func applyInstrumentConfig(
+        _ instance: InstrumentInstance,
+        data: Data
+    ) async {
+        instance.configJSON = data
+
+        let session = instance.session
+
+        if let runtime = runtime(for: session, instrumentID: instance.id) {
+            await runtime.applyConfigJSON(data)
+        }
+
+        if instance.kind == .tracer {
+            rebuildAddressDecorations(for: session)
         }
     }
 
@@ -369,6 +398,8 @@ final class Workspace: ObservableObject {
                 ]))
 
             runtime.markAttached()
+
+            rebuildAddressDecorations(for: instance.session)
         } catch {
             print("Failed to load tracer instrument: \(error)")
         }
@@ -500,30 +531,20 @@ final class Workspace: ObservableObject {
                 )
             },
             makeAddressDecorations: { context, workspace in
-                guard let session = workspace.processSession(id: context.sessionID) else { return [] }
-
-                if workspace.existingTracerHookID(in: session, matching: context.address) != nil {
-                    return [
-                        InstrumentAddressDecoration(
-                            help: "Has instruction hook"
-                        )
-                    ]
-                }
-
-                return []
+                return workspace.addressAnnotationsBySession[context.sessionID]?[context.address]?.decorations ?? []
             },
             makeAddressContextMenuItems: { context, workspace, selection in
-                guard let session = workspace.processSession(id: context.sessionID) else { return [] }
+                let tracerID = workspace.tracerInstanceIDBySession[context.sessionID]
+                let hookID = workspace.addressAnnotationsBySession[context.sessionID]?[context.address]?.tracerHookID
 
-                if let hookID = workspace.existingTracerHookID(in: session, matching: context.address) {
+                if let tracerID, let hookID {
                     return [
                         InstrumentAddressMenuItem(
                             title: "Go to Hook",
                             systemImage: "arrow.turn.down.right",
                             role: .normal,
                             action: {
-                                guard let tracer = workspace.tracerInstance(for: session) else { return }
-                                selection.wrappedValue = .instrumentComponent(session.id, tracer.id, hookID, UUID())
+                                selection.wrappedValue = .instrumentComponent(context.sessionID, tracerID, hookID, UUID())
                             }
                         )
                     ]
@@ -673,11 +694,7 @@ final class Workspace: ObservableObject {
         config.hooks.append(newHook)
 
         let configData = config.encode()
-        tracer.configJSON = configData
-
-        if let runtime = runtime(for: session, instrumentID: tracer.id) {
-            await runtime.applyConfigJSON(configData)
-        }
+        await applyInstrumentConfig(tracer, data: configData)
 
         selection.wrappedValue = .instrumentComponent(session.id, tracer.id, newHook.id, UUID())
     }
@@ -879,13 +896,35 @@ final class Workspace: ObservableObject {
         sessionID: UUID,
         address: UInt64
     ) -> [InstrumentAddressDecoration] {
-        let context = InstrumentAddressContext(sessionID: sessionID, address: address)
+        addressAnnotationsBySession[sessionID]?[address]?.decorations ?? []
+    }
 
-        var decorations: [InstrumentAddressDecoration] = []
-        for template in allInstrumentTemplates {
-            decorations.append(contentsOf: template.makeAddressDecorations(context, self))
+    func rebuildAddressDecorations(for session: ProcessSession) {
+        guard let tracer = tracerInstance(for: session),
+            let node = attachedNode(for: session),
+            let config = try? TracerConfig.decode(from: tracer.configJSON)
+        else {
+            addressAnnotationsBySession[session.id] = [:]
+            tracerInstanceIDBySession[session.id] = nil
+            return
         }
-        return decorations
+
+        tracerInstanceIDBySession[session.id] = tracer.id
+
+        var map: [UInt64: AddressAnnotation] = [:]
+
+        for hook in config.hooks where hook.isEnabled {
+            guard let addr = try? node.resolveSyncIfReady(hook.addressAnchor) else { continue }
+
+            var ann = map[addr] ?? AddressAnnotation()
+            ann.decorations.append(
+                InstrumentAddressDecoration(help: "Has instruction hook")
+            )
+            ann.tracerHookID = hook.id
+            map[addr] = ann
+        }
+
+        addressAnnotationsBySession[session.id] = map
     }
 
     func addressContextMenuItems(
@@ -1015,6 +1054,10 @@ final class Workspace: ObservableObject {
             node.onDestroyed = { [weak self] node, reason in
                 sessionRecord.detachReason = reason
                 self?.removeNode(node)
+            }
+            node.onModulesSnapshotReady = { [weak self] node in
+                guard let self else { return }
+                self.rebuildAddressDecorations(for: node.sessionRecord)
             }
             node.eventSink = { [weak self] evt in
                 self?.pushEvent(evt)
