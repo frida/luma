@@ -398,6 +398,9 @@ struct CodeShareProjectDetailView: View {
                     )
                 )
             },
+            makeAddressContextMenuItems: { context, workspace, selection in
+                return []
+            },
             renderEvent: { event, workspace, selection in
                 if let v = event.payload as? JSInspectValue {
                     return AnyView(

@@ -227,6 +227,17 @@ final class ProcessNode: ObservableObject, Identifiable {
         }
     }
 
+    private func ensureInitialModulesSnapshotReady() throws {
+        switch moduleSnapshotState {
+        case .ready:
+            return
+        case .detached:
+            throw Error.invalidOperation("Session detached")
+        case .pending:
+            throw Error.invalidOperation("Initial modules snapshot not ready")
+        }
+    }
+
     private func waitForInitialModulesSnapshotIfNeeded() async throws {
         switch moduleSnapshotState {
         case .ready:
@@ -482,7 +493,7 @@ final class ProcessNode: ObservableObject, Identifiable {
 
     func anchor(for address: UInt64) -> AddressAnchor {
         if let m = modules.first(where: { address >= $0.base && address < ($0.base + $0.size) }) {
-            return .module(name: m.name, offset: address - m.base)
+            return .moduleOffset(name: m.name, offset: address - m.base)
         }
         return .absolute(address)
     }
@@ -494,11 +505,42 @@ final class ProcessNode: ObservableObject, Identifiable {
         case .absolute(let a):
             return a
 
-        case .module(let name, let offset):
+        case .moduleOffset(let name, let offset):
             guard let m = modules.first(where: { $0.name == name }) else {
                 throw Error.invalidArgument("Module '\(name)' not loaded in the current process")
             }
             return m.base &+ offset
+
+        case .moduleExport(let name, let export):
+            guard modules.first(where: { $0.name == name }) != nil else {
+                throw Error.invalidArgument("Module '\(name)' not loaded in the current process")
+            }
+
+            let raw = try await script.exports.lookupModuleExportAddress(name, export)
+
+            guard let rawString = raw as? String else {
+                throw Error.invalidArgument("Invalid return type from lookupModuleExportAddress")
+            }
+
+            return try parseAgentHexAddress(rawString)
+        }
+    }
+
+    func resolveSyncIfReady(_ anchor: AddressAnchor) throws -> UInt64 {
+        try ensureInitialModulesSnapshotReady()
+
+        switch anchor {
+        case .absolute(let a):
+            return a
+
+        case .moduleOffset(let name, let offset):
+            guard let m = modules.first(where: { $0.name == name }) else {
+                throw Error.invalidArgument("Module '\(name)' not loaded")
+            }
+            return m.base &+ offset
+
+        case .moduleExport:
+            throw Error.invalidOperation("moduleExport requires async resolution")
         }
     }
 
@@ -600,4 +642,16 @@ final class ProcessNode: ObservableObject, Identifiable {
                 isSessionBoundary: true
             ))
     }
+}
+
+func parseAgentHexAddress(_ s: String) throws -> UInt64 {
+    guard s.hasPrefix("0x") else {
+        throw Error.invalidArgument("Invalid address string from agent: '\(s)'")
+    }
+
+    guard let value = UInt64(s.dropFirst(2), radix: 16) else {
+        throw Error.invalidArgument("Invalid address string from agent: '\(s)'")
+    }
+
+    return value
 }

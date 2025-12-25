@@ -358,7 +358,7 @@ final class Workspace: ObservableObject {
         do {
             let instance = runtime.instance
 
-            let config = try JSONDecoder().decode(TracerConfig.self, from: instance.configJSON)
+            let config = try TracerConfig.decode(from: instance.configJSON)
 
             try await node.script.exports.loadInstrument(
                 JSValue([
@@ -479,20 +479,15 @@ final class Workspace: ObservableObject {
             icon: icon,
             makeInitialConfigJSON: {
                 let config = TracerConfig()
-                return try JSONEncoder().encode(config)
+                return try! JSONEncoder().encode(config)
             },
             makeConfigEditor: { jsonBinding, selection in
                 let configBinding = Binding<TracerConfig>(
                     get: {
-                        (try? JSONDecoder().decode(
-                            TracerConfig.self,
-                            from: jsonBinding.wrappedValue
-                        )) ?? TracerConfig()
+                        (try? TracerConfig.decode(from: jsonBinding.wrappedValue)) ?? TracerConfig()
                     },
                     set: { newValue in
-                        if let data = try? JSONEncoder().encode(newValue) {
-                            jsonBinding.wrappedValue = data
-                        }
+                        jsonBinding.wrappedValue = newValue.encode()
                     }
                 )
 
@@ -503,6 +498,40 @@ final class Workspace: ObservableObject {
                         selection: selection,
                     )
                 )
+            },
+            makeAddressContextMenuItems: { context, workspace, selection in
+                guard let session = workspace.processSession(id: context.sessionID) else { return [] }
+
+                if let hookID = workspace.existingTracerHookID(in: session, matching: context.address) {
+                    return [
+                        InstrumentAddressMenuItem(
+                            title: "Go to Hook",
+                            systemImage: "arrow.turn.down.right",
+                            role: .normal,
+                            action: {
+                                guard let tracer = workspace.tracerInstance(for: session) else { return }
+                                selection.wrappedValue = .instrumentComponent(session.id, tracer.id, hookID, UUID())
+                            }
+                        )
+                    ]
+                } else {
+                    return [
+                        InstrumentAddressMenuItem(
+                            title: "Add Instruction Hook…",
+                            systemImage: "pin",
+                            role: .normal,
+                            action: {
+                                Task { @MainActor in
+                                    await workspace.addTracerInstructionHook(
+                                        sessionID: context.sessionID,
+                                        address: context.address,
+                                        selection: selection
+                                    )
+                                }
+                            }
+                        )
+                    ]
+                }
             },
             renderEvent: { event, workspace, selection in
                 guard let v = event.payload as? JSInspectValue,
@@ -561,6 +590,83 @@ final class Workspace: ObservableObject {
         )
 
         return [template]
+    }
+
+    private func tracerInstance(for session: ProcessSession) -> InstrumentInstance? {
+        session.instruments.first(where: { $0.kind == .tracer })
+    }
+
+    private func existingTracerHookID(
+        in session: ProcessSession,
+        matching address: UInt64
+    ) -> UUID? {
+        guard let instance = tracerInstance(for: session) else { return nil }
+        guard let config = try? TracerConfig.decode(from: instance.configJSON) else { return nil }
+
+        if let node = attachedNode(for: session) {
+            for hook in config.hooks {
+                if let resolved = try? node.resolveSyncIfReady(hook.addressAnchor),
+                    resolved == address
+                {
+                    return hook.id
+                }
+            }
+        }
+
+        let absolute = AddressAnchor.absolute(address)
+        return config.hooks.first(where: { $0.addressAnchor == absolute })?.id
+    }
+
+    func addTracerInstructionHook(
+        sessionID: UUID,
+        address: UInt64,
+        selection: Binding<SidebarItemID?>
+    ) async {
+        guard let session = processSession(id: sessionID) else { return }
+
+        let tracer: InstrumentInstance
+        if let existing = tracerInstance(for: session) {
+            tracer = existing
+        } else {
+            guard let template = tracerTemplates().first(where: { $0.kind == .tracer }) else { return }
+            let initial = template.makeInitialConfigJSON()
+            tracer = await addInstrument(template: template, initialConfigJSON: initial, for: session)
+        }
+
+        let anchor: AddressAnchor
+        if let node = attachedNode(for: session) {
+            anchor = node.anchor(for: address)
+        } else {
+            anchor = .absolute(address)
+        }
+
+        var config = (try? TracerConfig.decode(from: tracer.configJSON)) ?? TracerConfig()
+
+        if let existingID = config.hooks.first(where: { $0.addressAnchor == anchor })?.id {
+            selection.wrappedValue = .instrumentComponent(session.id, tracer.id, existingID, UUID())
+            return
+        }
+
+        let stub = defaultTracerInstructionStub.replacingOccurrences(of: "INSTRUCTION", with: anchor.displayString)
+
+        let newHook = TracerConfig.Hook(
+            id: UUID(),
+            displayName: String(format: "0x%llx", address),
+            addressAnchor: anchor,
+            isEnabled: true,
+            code: stub,
+        )
+
+        config.hooks.append(newHook)
+
+        let configData = config.encode()
+        tracer.configJSON = configData
+
+        if let runtime = runtime(for: session, instrumentID: tracer.id) {
+            await runtime.applyConfigJSON(configData)
+        }
+
+        selection.wrappedValue = .instrumentComponent(session.id, tracer.id, newHook.id, UUID())
     }
 
     static func parseTracerEvent(from value: JSInspectValue) -> (type: String, id: UUID, message: JSInspectValue)? {
@@ -639,7 +745,7 @@ final class Workspace: ObservableObject {
                         packId: pack.manifest.id,
                         features: defaultEnabled
                     )
-                    return try JSONEncoder().encode(config)
+                    return try! JSONEncoder().encode(config)
                 },
                 makeConfigEditor: { jsonBinding, _ in
                     let configBinding = Binding<HookPackConfig>(
@@ -660,6 +766,9 @@ final class Workspace: ObservableObject {
                             config: configBinding
                         )
                     )
+                },
+                makeAddressContextMenuItems: { context, workspace, selection in
+                    return []
                 },
                 renderEvent: { event, workspace, selection in
                     guard let v = event.payload as? JSInspectValue else {
@@ -701,7 +810,7 @@ final class Workspace: ObservableObject {
             displayName: cfg.name,
             icon: icon,
             makeInitialConfigJSON: {
-                try JSONEncoder().encode(cfg)
+                try! JSONEncoder().encode(cfg)
             },
             makeConfigEditor: { jsonBinding, _ in
                 let cfgBinding = Binding<CodeShareConfig>(
@@ -725,6 +834,9 @@ final class Workspace: ObservableObject {
                     )
                 )
             },
+            makeAddressContextMenuItems: { context, workspace, selection in
+                return []
+            },
             renderEvent: { event, workspace, selection in
                 if let v = event.payload as? JSInspectValue {
                     return AnyView(
@@ -742,6 +854,21 @@ final class Workspace: ObservableObject {
                 String(describing: event.payload)
             }
         )
+    }
+
+    func addressContextMenuItems(
+        sessionID: UUID,
+        address: UInt64,
+        selection: Binding<SidebarItemID?>
+    ) -> [InstrumentAddressMenuItem] {
+        let context = InstrumentAddressContext(sessionID: sessionID, address: address)
+
+        var items: [InstrumentAddressMenuItem] = []
+        for template in allInstrumentTemplates {
+            items.append(contentsOf: template.makeAddressContextMenuItems(context, self, selection))
+        }
+
+        return items
     }
 
     func spawnAndAttach(
@@ -990,11 +1117,24 @@ final class Workspace: ObservableObject {
     }
 
     private func fetchSession(id sessionID: UUID) -> ProcessSession {
-        try! modelContext.fetch(
+        return processSession(id: sessionID)!
+    }
+
+    private func processSession(id sessionID: UUID) -> ProcessSession? {
+        try? modelContext.fetch(
             FetchDescriptor<ProcessSession>(
                 predicate: #Predicate { $0.id == sessionID }
             )
-        ).first!
+        ).first
+    }
+
+    private func attachedNode(for session: ProcessSession) -> ProcessNode? {
+        processNodes.first(where: { $0.sessionRecord == session })
+    }
+
+    private func runtime(for session: ProcessSession, instrumentID: UUID) -> InstrumentRuntime? {
+        guard let node = attachedNode(for: session) else { return nil }
+        return node.instruments.first(where: { $0.instance.id == instrumentID })
     }
 
     private func insertInsight(

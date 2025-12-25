@@ -7,8 +7,7 @@ struct TracerConfig: Codable, Equatable {
 
         var displayName: String
 
-        var moduleName: String?
-        var symbolName: String?
+        var addressAnchor: AddressAnchor
 
         var isEnabled: Bool
 
@@ -19,16 +18,14 @@ struct TracerConfig: Codable, Equatable {
         init(
             id: UUID = UUID(),
             displayName: String,
-            moduleName: String?,
-            symbolName: String?,
+            addressAnchor: AddressAnchor,
             isEnabled: Bool = true,
             code: String,
             isPinned: Bool = false
         ) {
             self.id = id
             self.displayName = displayName
-            self.moduleName = moduleName
-            self.symbolName = symbolName
+            self.addressAnchor = addressAnchor
             self.isEnabled = isEnabled
             self.code = code
             self.isPinned = isPinned
@@ -41,22 +38,25 @@ struct TracerConfig: Codable, Equatable {
         self.hooks = hooks
     }
 
+    static func decode(from data: Data) throws -> TracerConfig {
+        try JSONDecoder().decode(TracerConfig.self, from: data)
+    }
+
+    func encode() -> Data {
+        try! JSONEncoder().encode(self)
+    }
+
     func toJSON() -> JSONObject {
         [
             "hooks": hooks.map { hook in
                 var dict: JSONObject = [
                     "id": hook.id.uuidString,
                     "displayName": hook.displayName,
+                    "addressAnchor": hook.addressAnchor.toJSON(),
                     "isEnabled": hook.isEnabled,
                     "code": hook.code,
                 ]
 
-                if let module = hook.moduleName {
-                    dict["moduleName"] = module
-                }
-                if let symbol = hook.symbolName {
-                    dict["symbolName"] = symbol
-                }
                 if hook.isPinned {
                     dict["isPinned"] = true
                 }
@@ -78,23 +78,24 @@ enum TracerEditorProfile {
         .build()
 
     private static let tracerDeclarations = #"""
-        declare function defineHandler(handler: TraceHandler): TraceHandler;
+        declare function defineHandler(h: InvocationListenerCallbacks | InstructionProbeCallback): void;
         declare function log(...args: any[]): void;
-
-        interface TraceHandler {
-            onEnter?(this: InvocationContext, args: InvocationArguments): void;
-            onLeave?(this: InvocationContext, retval: InvocationReturnValue): void;
-        }
         """#
 }
 
-let defaultTracerStub = """
+let defaultTracerNativeStub = """
     defineHandler({
-      onEnter(args) {
-        log(`CALL(args[0]=${args[0]})`);
-      },
+        onEnter(args) {
+            log(`CALL(args[0]=${args[0]})`);
+        },
 
-      onLeave(retval) {
-      }
+        onLeave(retval) {
+        }
+    });
+    """
+
+let defaultTracerInstructionStub = """
+    defineHandler(function (args) {
+        log(`INSTRUCTION hit! sp=${this.context.sp}`);
     });
     """

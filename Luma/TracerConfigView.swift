@@ -197,9 +197,8 @@ struct TracerConfigView: View {
     }
 
     private func existingHook(for api: ResolvedApi) -> TracerConfig.Hook? {
-        config.hooks.first { hook in
-            hook.symbolName == api.symbolName && hook.moduleName == api.moduleName
-        }
+        let target = AddressAnchor.moduleExport(name: api.moduleName, export: api.symbolName)
+        return config.hooks.first(where: { $0.addressAnchor == target })
     }
 
     private func handleSelectionChangeFromOutside(_ newSelection: SidebarItemID?) {
@@ -527,11 +526,9 @@ struct TracerConfigView: View {
                         VStack(alignment: .leading) {
                             Text(api.symbolName)
                                 .font(.callout)
-                            if let module = api.moduleName {
-                                Text(module)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
+                            Text(api.moduleName)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                         }
                         Spacer()
                         if let hook = existingHook(for: api) {
@@ -651,13 +648,11 @@ struct TracerConfigView: View {
             return existing
         }
 
-        var stub = defaultTracerStub
-        stub = stub.replacingOccurrences(of: "CALL(args[0]", with: "\(api.symbolName)(args[0]")
+        let stub = defaultTracerNativeStub.replacingOccurrences(of: "CALL(args[0]", with: "\(api.symbolName)(args[0]")
 
         let hook = TracerConfig.Hook(
             displayName: api.symbolName,
-            moduleName: api.moduleName,
-            symbolName: api.symbolName,
+            addressAnchor: .moduleExport(name: api.moduleName, export: api.symbolName),
             isEnabled: true,
             code: stub
         )
@@ -698,8 +693,9 @@ struct TracerConfigView: View {
 
     struct ResolvedApi: Identifiable, Hashable {
         let id = UUID()
-        let moduleName: String?
+        let moduleName: String
         let symbolName: String
+        let address: UInt64
     }
 
     @MainActor
@@ -712,21 +708,27 @@ struct TracerConfigView: View {
         do {
             let raw = try await node.script.exports.resolveApis(searchQuery)
 
-            guard let arr = raw as? [JSONObject] else {
-                resolveResults = []
-                return
+            guard let arr = raw as? [[String: Any]] else {
+                throw Error.invalidArgument("resolveApis: expected array of objects")
             }
 
-            resolveResults = arr.compactMap { obj in
-                guard let symbol = (obj["symbolName"] as? String) ?? (obj["name"] as? String) else {
-                    return nil
-                }
-                let module = obj["moduleName"] as? String ?? obj["module"] as? String
-                return ResolvedApi(moduleName: module, symbolName: symbol)
+            resolveResults = try arr.map { obj in
+                let moduleName = try expectString(obj["moduleName"] as Any, "moduleName")
+                let symbolName = try expectString(obj["symbolName"] as Any, "symbolName")
+                let addressStr = try expectString(obj["address"] as Any, "address")
+                let address = try parseAgentHexAddress(addressStr)
+                return ResolvedApi(moduleName: moduleName, symbolName: symbolName, address: address)
             }
         } catch {
             resolveResults = []
         }
+    }
+
+    private func expectString(_ value: Any, _ field: String) throws -> String {
+        guard let s = value as? String else {
+            throw Error.invalidArgument("resolveApis: '\(field)' is not a String")
+        }
+        return s
     }
 }
 
@@ -760,8 +762,8 @@ private struct HooksListView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(hook.displayName)
-                        if let module = hook.moduleName {
-                            Text(module)
+                        if let sub = subtitle(for: hook) {
+                            Text(sub)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
@@ -795,6 +797,17 @@ private struct HooksListView: View {
         }
         .onChange(of: selection) { _, newValue in
             onSelectionChange(newValue)
+        }
+    }
+
+    private func subtitle(for hook: TracerConfig.Hook) -> String? {
+        let anchor = hook.addressAnchor
+        switch anchor {
+        case .absolute:
+            return anchor.displayString
+        case .moduleOffset(let name, _),
+            .moduleExport(let name, _):
+            return name
         }
     }
 }

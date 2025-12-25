@@ -44,18 +44,28 @@ final class InstrumentRuntime: ObservableObject, Identifiable {
 
         do {
             let jsonObject: Any
-            if data.isEmpty {
-                jsonObject = [:]
-            } else if let obj = try? JSONSerialization.jsonObject(with: data) {
-                jsonObject = obj
-            } else {
-                jsonObject = [:]
+            switch instance.kind {
+            case .tracer:
+                let config = (try? TracerConfig.decode(from: data)) ?? TracerConfig()
+                jsonObject = config.toJSON()
+
+            case .hookPack:
+                let config = (try? HookPackConfig.decode(from: data)) ?? HookPackConfig(packId: instance.sourceIdentifier, features: [:])
+                jsonObject = config.toJSON()
+
+            case .codeShare:
+                if data.isEmpty {
+                    jsonObject = [:]
+                } else {
+                    jsonObject = (try? JSONSerialization.jsonObject(with: data, options: [])) ?? [:]
+                }
             }
 
-            try await processNode.script.exports.updateInstrumentConfig([
-                "instanceId": instance.id.uuidString,
-                "config": jsonObject,
-            ])
+            try await processNode.script.exports.updateInstrumentConfig(
+                JSValue([
+                    "instanceId": instance.id.uuidString,
+                    "config": jsonObject,
+                ]))
         } catch {
             lastError = "Failed to update config: \(error)"
         }

@@ -1,18 +1,22 @@
 import type { Instrument, InstrumentContext } from '../core/instrument.js';
 
+interface TracerConfig {
+    hooks: TracerHookConfig[];
+}
+
 interface TracerHookConfig {
     id: string;
     displayName: string;
-    moduleName?: string;
-    symbolName?: string;
+    addressAnchor: AddressAnchor;
     isEnabled: boolean;
     code: string;
     isPinned?: boolean;
 }
 
-interface TracerConfig {
-    hooks: TracerHookConfig[];
-}
+type AddressAnchor =
+    | { type: "absolute"; address: string }
+    | { type: "moduleOffset"; name: string; offset: number }
+    | { type: "moduleExport"; name: string; export: string };
 
 export const instrument: Instrument<TracerConfig> = {
     async create(ctx, initialConfig) {
@@ -31,16 +35,22 @@ export const instrument: Instrument<TracerConfig> = {
 
             for (const hook of next.hooks) {
                 const existing = hooks.get(hook.id);
-                if (existing !== undefined && existing.config.code === hook.code && existing.config.isEnabled === hook.isEnabled) {
+                if (existing !== undefined &&
+                    existing.config.code === hook.code &&
+                    existing.config.isEnabled === hook.isEnabled &&
+                    JSON.stringify(existing.config.addressAnchor) === JSON.stringify(hook.addressAnchor)) {
                     continue;
                 }
+
                 if (existing !== undefined) {
                     existing.listener.detach();
                     hooks.delete(hook.id);
                 }
+
                 if (!hook.isEnabled) {
                     continue;
                 }
+
                 const runtime = createHookRuntime(ctx, hook);
                 if (runtime !== null) {
                     hooks.set(hook.id, runtime);
@@ -64,21 +74,23 @@ export const instrument: Instrument<TracerConfig> = {
             }
         };
     }
-}
+};
 
 function createHookRuntime(ctx: InstrumentContext, hook: TracerHookConfig) {
     const target = resolveTarget(hook);
     if (target === null) {
-        ctx.emit({ type: "tracer-error", id: hook.id, message: "Could not resolve symbol" });
+        ctx.emit({
+            type: "tracer-error",
+            id: hook.id,
+            message: "Could not resolve target"
+        });
         return null;
     }
 
-    let onEnter: any = null;
-    let onLeave: any = null;
+    let handler: InvocationListenerCallbacks | InstructionProbeCallback | null = null;
 
-    function defineHandler(def: { onEnter?: any; onLeave?: any }) {
-        onEnter = def.onEnter ?? null;
-        onLeave = def.onLeave ?? null;
+    function defineHandler(h: InvocationListenerCallbacks | InstructionProbeCallback) {
+        handler = h;
     }
 
     const log = (msg: string) =>
@@ -92,30 +104,41 @@ function createHookRuntime(ctx: InstrumentContext, hook: TracerHookConfig) {
         return null;
     }
 
-    const listener = Interceptor.attach(target, { onEnter, onLeave });
+    if (handler === null) {
+        throw new Error("Hook did not call defineHandler");
+    }
+
+    const listener = Interceptor.attach(target, handler);
 
     return { config: hook, listener };
 }
 
 function resolveTarget(hook: TracerHookConfig): NativePointer | null {
-    const { moduleName, symbolName } = hook;
+    const anchor = hook.addressAnchor;
 
-    if (moduleName !== undefined && symbolName !== undefined) {
-        const m = Process.findModuleByName(moduleName);
-        if (m === null)
+    switch (anchor.type) {
+        case "absolute": {
+            return ptr(anchor.address);
+        }
+
+        case "moduleOffset": {
+            const m = Process.findModuleByName(anchor.name);
+            if (m === null)
+                return null;
+            return m.base.add(anchor.offset);
+        }
+
+        case "moduleExport": {
+            const m = Process.findModuleByName(anchor.name);
+            if (m === null)
+                return null;
+            const e = m.findExportByName(anchor.export);
+            if (e === null)
+                return null;
+            return e;
+        }
+
+        default:
             return null;
-        const e = m.findExportByName(symbolName);
-        if (e === null)
-            return null;
-        return e;
     }
-
-    if (symbolName !== undefined) {
-        const sym = DebugSymbol.fromName(symbolName);
-        if (sym.name === null)
-            return null;
-        return sym.address;
-    }
-
-    return null;
 }

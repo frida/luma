@@ -8,13 +8,20 @@ struct InstrumentTemplate: Identifiable, Hashable {
     let displayName: String
     let icon: InstrumentIcon
 
-    let makeInitialConfigJSON: () throws -> Data
+    let makeInitialConfigJSON: () -> Data
 
     let makeConfigEditor:
         (
             _ configJSON: Binding<Data>,
             _ selection: Binding<SidebarItemID?>
         ) -> AnyView
+
+    let makeAddressContextMenuItems:
+        (
+            _ context: InstrumentAddressContext,
+            _ workspace: Workspace,
+            _ selection: Binding<SidebarItemID?>
+        ) -> [InstrumentAddressMenuItem]
 
     let renderEvent:
         (
@@ -39,6 +46,24 @@ struct InstrumentTemplate: Identifiable, Hashable {
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
+}
+
+struct InstrumentAddressContext: Hashable {
+    let sessionID: UUID
+    let address: UInt64
+}
+
+struct InstrumentAddressMenuItem: Identifiable {
+    enum Role {
+        case normal
+        case destructive
+    }
+
+    let id = UUID()
+    let title: String
+    let systemImage: String?
+    let role: Role
+    let action: () -> Void
 }
 
 struct InstrumentEventMenuItem: Identifiable {

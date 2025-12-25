@@ -405,15 +405,36 @@ private struct DisasmRow: View {
                 .frame(width: 110, alignment: .leading)
                 .contentShape(Rectangle())
                 .contextMenu {
-                    Button {
-                        // TODO: integrate with your “add instruction hook” flow
-                        // (likely creates/opens a tracer hook editor scoped to this address)
-                    } label: {
-                        Label("Add Instruction Hook…", systemImage: "pin")
-                    }
+                    let items = workspace.addressContextMenuItems(
+                        sessionID: sessionID,
+                        address: line.addrValue,
+                        selection: $selection
+                    )
 
-                    // TODO: If a hook already exists for op.addrValue:
-                    // Button { selection = ... } label: { Label("Go to Hook", systemImage: "arrow.turn.down.right") }
+                    if items.isEmpty {
+                        EmptyView()
+                    } else {
+                        ForEach(items) { item in
+                            switch item.role {
+                            case .normal:
+                                Button(action: item.action) {
+                                    if let systemImage = item.systemImage {
+                                        Label(item.title, systemImage: systemImage)
+                                    } else {
+                                        Text(item.title)
+                                    }
+                                }
+                            case .destructive:
+                                Button(role: .destructive, action: item.action) {
+                                    if let systemImage = item.systemImage {
+                                        Label(item.title, systemImage: systemImage)
+                                    } else {
+                                        Text(item.title)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
             Text(line.bytes)

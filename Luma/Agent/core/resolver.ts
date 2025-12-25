@@ -4,6 +4,10 @@ export interface ResolvedApi {
     address: string;
 }
 
+export function lookupModuleExportAddress(moduleName: string, exportName: string): NativePointer {
+    return Process.getModuleByName(moduleName).getExportByName(exportName);
+}
+
 export async function resolveApis(pattern: string): Promise<ResolvedApi[]> {
     const results: ResolvedApi[] = [];
 

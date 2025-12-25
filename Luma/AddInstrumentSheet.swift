@@ -66,7 +66,7 @@ struct AddInstrumentSheet: View {
                     let tpl = templates.first(where: { $0.id == id })
                 else { return }
 
-                initialConfigJSON = (try? tpl.makeInitialConfigJSON()) ?? Data()
+                initialConfigJSON = tpl.makeInitialConfigJSON()
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
