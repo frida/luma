@@ -16,6 +16,12 @@ struct InstrumentTemplate: Identifiable, Hashable {
             _ selection: Binding<SidebarItemID?>
         ) -> AnyView
 
+    let makeAddressDecorations:
+        (
+            _ context: InstrumentAddressContext,
+            _ workspace: Workspace
+        ) -> [InstrumentAddressDecoration]
+
     let makeAddressContextMenuItems:
         (
             _ context: InstrumentAddressContext,
@@ -51,6 +57,11 @@ struct InstrumentTemplate: Identifiable, Hashable {
 struct InstrumentAddressContext: Hashable {
     let sessionID: UUID
     let address: UInt64
+}
+
+struct InstrumentAddressDecoration: Identifiable {
+    let id = UUID()
+    let help: String?
 }
 
 struct InstrumentAddressMenuItem: Identifiable {

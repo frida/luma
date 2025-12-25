@@ -499,6 +499,19 @@ final class Workspace: ObservableObject {
                     )
                 )
             },
+            makeAddressDecorations: { context, workspace in
+                guard let session = workspace.processSession(id: context.sessionID) else { return [] }
+
+                if workspace.existingTracerHookID(in: session, matching: context.address) != nil {
+                    return [
+                        InstrumentAddressDecoration(
+                            help: "Has instruction hook"
+                        )
+                    ]
+                }
+
+                return []
+            },
             makeAddressContextMenuItems: { context, workspace, selection in
                 guard let session = workspace.processSession(id: context.sessionID) else { return [] }
 
@@ -767,6 +780,9 @@ final class Workspace: ObservableObject {
                         )
                     )
                 },
+                makeAddressDecorations: { context, workspace in
+                    return []
+                },
                 makeAddressContextMenuItems: { context, workspace, selection in
                     return []
                 },
@@ -834,6 +850,9 @@ final class Workspace: ObservableObject {
                     )
                 )
             },
+            makeAddressDecorations: { context, workspace in
+                return []
+            },
             makeAddressContextMenuItems: { context, workspace, selection in
                 return []
             },
@@ -854,6 +873,19 @@ final class Workspace: ObservableObject {
                 String(describing: event.payload)
             }
         )
+    }
+
+    func addressDecorations(
+        sessionID: UUID,
+        address: UInt64
+    ) -> [InstrumentAddressDecoration] {
+        let context = InstrumentAddressContext(sessionID: sessionID, address: address)
+
+        var decorations: [InstrumentAddressDecoration] = []
+        for template in allInstrumentTemplates {
+            decorations.append(contentsOf: template.makeAddressDecorations(context, self))
+        }
+        return decorations
     }
 
     func addressContextMenuItems(

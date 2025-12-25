@@ -398,6 +398,9 @@ struct CodeShareProjectDetailView: View {
                     )
                 )
             },
+            makeAddressDecorations: { context, workspace in
+                return []
+            },
             makeAddressContextMenuItems: { context, workspace, selection in
                 return []
             },

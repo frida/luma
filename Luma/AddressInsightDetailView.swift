@@ -404,6 +404,24 @@ private struct DisasmRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 110, alignment: .leading)
                 .contentShape(Rectangle())
+                .overlay(alignment: .leading) {
+                    let decorations = workspace.addressDecorations(
+                        sessionID: sessionID,
+                        address: line.addrValue
+                    )
+
+                    HStack(spacing: 3) {
+                        ForEach(decorations.prefix(3)) { deco in
+                            Circle()
+                                .frame(width: 5, height: 5)
+                                .foregroundStyle(.secondary)
+                                .opacity(0.45)
+                                .help(deco.help ?? "")
+                        }
+                    }
+                    .frame(width: 12, alignment: .trailing)
+                    .offset(x: -19)
+                }
                 .contextMenu {
                     Button {
                         Platform.copyToClipboard(String(format: "0x%llx", line.addrValue))
