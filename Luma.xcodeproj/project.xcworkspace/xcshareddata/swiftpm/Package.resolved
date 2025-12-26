@@ -1,5 +1,5 @@
 {
-  "originHash" : "2f4750a526e90d3865a3ffa26e20df6a47fb4b45a94d6cc8a1a8ededf21dc265",
+  "originHash" : "4acb367cfe02d5af5b5c51154dde317c003dfc088c682c004da1ea934933ab94",
   "pins" : [
     {
       "identity" : "frida-swift",
@@ -8,15 +8,6 @@
       "state" : {
         "branch" : "main",
         "revision" : "795f3d71e2d8296543f00ed1826fc4952946d8ff"
-      }
-    },
-    {
-      "identity" : "swiftymonaco",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/SwiftyMonaco",
-      "state" : {
-        "branch" : "main",
-        "revision" : "31a6b85179798a0ffe95f302eb98250725b48eeb"
       }
     },
     {

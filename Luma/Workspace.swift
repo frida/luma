@@ -3,6 +3,7 @@ import CryptoKit
 import Frida
 import SwiftData
 import SwiftUI
+import SwiftyMonaco
 
 @MainActor
 final class Workspace: ObservableObject {
@@ -35,6 +36,9 @@ final class Workspace: ObservableObject {
     var packageBundles: [String: String] = [:]
     var packageBundlesDirty: Bool = true
     @Published var lastCompilerDiagnostics: [String] = []
+    @Published var monacoFSSnapshot: MonacoFSSnapshot? = nil
+    var monacoFSSnapshotDirty: Bool = true
+    var monacoFSSnapshotVersion: Int = 0
 
     @Published var isAuthSheetPresented: Bool = false
     @Published var authState: GitHubAuthState = .signedOut

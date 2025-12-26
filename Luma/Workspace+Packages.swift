@@ -1,6 +1,7 @@
 import Foundation
 import Frida
 import SwiftData
+import SwiftyMonaco
 
 extension Workspace {
     @MainActor
@@ -112,6 +113,7 @@ extension Workspace {
 
                 self.compilerWorkspaceRoot = paths.root
                 self.packageBundlesDirty = true
+                self.monacoFSSnapshotDirty = true
             }
 
             if self.packageBundlesDirty {
@@ -120,6 +122,13 @@ extension Workspace {
                     paths: paths
                 )
                 self.packageBundlesDirty = false
+            }
+
+            if self.monacoFSSnapshotDirty {
+                let snapshot = try self.buildMonacoFSSnapshot(paths: paths)
+                self.monacoFSSnapshotVersion += 1
+                self.monacoFSSnapshot = snapshot.withVersion(self.monacoFSSnapshotVersion)
+                self.monacoFSSnapshotDirty = false
             }
 
             rootURL = self.compilerWorkspaceRoot ?? paths.root
@@ -187,6 +196,7 @@ extension Workspace {
         modelContext.insert(entry)
 
         packageBundlesDirty = true
+        monacoFSSnapshotDirty = true
 
         return entry
     }
@@ -239,6 +249,7 @@ extension Workspace {
             try self.loadManifestsFromDisk(into: projectPackages, paths: paths)
 
             self.packageBundlesDirty = true
+            self.monacoFSSnapshotDirty = true
         }
     }
 
@@ -420,6 +431,62 @@ extension Workspace {
         try? fm.removeItem(at: paths.nodeModules)
         try? fm.removeItem(at: paths.packageJSON)
         try? fm.removeItem(at: paths.packageLockJSON)
+    }
+
+    private func buildMonacoFSSnapshot(paths: CompilerWorkspacePaths) throws -> MonacoFSSnapshot {
+        let fm = FileManager.default
+        let root = paths.root
+        let nodeModules = paths.nodeModules
+
+        guard fm.fileExists(atPath: nodeModules.path) else {
+            return MonacoFSSnapshot(version: 0, files: [])
+        }
+
+        let workspaceRootURI = "file:///workspace/"
+
+        func toWorkspaceURI(_ fileURL: URL) -> String? {
+            guard fileURL.path.hasPrefix(root.path) else { return nil }
+            var rel = String(fileURL.path.dropFirst(root.path.count))
+            if rel.hasPrefix("/") {
+                rel.removeFirst()
+            }
+            return workspaceRootURI + rel.replacingOccurrences(of: " ", with: "%20")
+        }
+
+        let keys: [URLResourceKey] = [.isRegularFileKey, .nameKey]
+        let enumerator = fm.enumerator(
+            at: nodeModules,
+            includingPropertiesForKeys: keys,
+            options: [.skipsHiddenFiles]
+        )
+
+        var out: [MonacoFSSnapshotFile] = []
+        out.reserveCapacity(2048)
+
+        while let url = enumerator?.nextObject() as? URL {
+            let values = try url.resourceValues(forKeys: Set(keys))
+            guard values.isRegularFile == true else { continue }
+
+            let name = values.name ?? url.lastPathComponent
+
+            let isInteresting =
+                name == "package.json" ||
+                name.hasSuffix(".d.ts") ||
+                name.hasSuffix(".js") || name.hasSuffix(".mjs") || name.hasSuffix(".cjs")
+
+            if isInteresting == false {
+                continue
+            }
+
+            guard let uri = toWorkspaceURI(url) else { continue }
+
+            let data = try Data(contentsOf: url)
+            guard let text = String(data: data, encoding: .utf8) else { continue }
+
+            out.append(.init(path: uri, text: text))
+        }
+
+        return MonacoFSSnapshot(version: 0, files: out)
     }
 
     private func parseESMBundle(_ bundle: String) throws -> ESMModules {
