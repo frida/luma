@@ -384,20 +384,27 @@ final class Workspace: ObservableObject {
         let session = instance.session
 
         if let runtime = runtime(for: session, instrumentID: instance.id) {
+            let configObject: JSONObject
+
             switch instance.kind {
             case .tracer:
+                let config = (try? TracerConfig.decode(from: data)) ?? TracerConfig()
                 do {
-                    let config = (try? TracerConfig.decode(from: data)) ?? TracerConfig()
-                    let compiled = try await compileTracerConfigForRuntime(config)
-                    await runtime.applyConfigObject(compiled, rawConfigJSON: data)
+                    configObject = try await compileTracerConfigForRuntime(config)
                 } catch {
-                    print("Failed to compile tracer config: \(error)")
-                    await runtime.applyConfigJSON(data)
+                    runtime.lastError = "Failed to compile tracer config: \(error)"
+                    return
                 }
 
-            case .hookPack, .codeShare:
-                await runtime.applyConfigJSON(data)
+            case .hookPack:
+                let config = (try? HookPackConfig.decode(from: data)) ?? HookPackConfig(packId: instance.sourceIdentifier, features: [:])
+                configObject = config.toJSON()
+
+            case .codeShare:
+                configObject = (try? JSONSerialization.jsonObject(with: data, options: []) as? JSONObject) ?? [:]
             }
+
+            await runtime.applyConfigObject(configObject, rawConfigJSON: data)
         }
 
         if instance.kind == .tracer {
@@ -741,7 +748,7 @@ final class Workspace: ObservableObject {
         selection.wrappedValue = .instrumentComponent(session.id, tracer.id, newHook.id, UUID())
     }
 
-    func compileTracerConfigForRuntime(_ config: TracerConfig) async throws -> Any {
+    func compileTracerConfigForRuntime(_ config: TracerConfig) async throws -> JSONObject {
         _ = try await ensureCompilerWorkspaceReady()
         let paths = try compilerWorkspacePaths()
 

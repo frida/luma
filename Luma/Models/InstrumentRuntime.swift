@@ -37,40 +37,6 @@ final class InstrumentRuntime: ObservableObject, Identifiable {
         isAttached = false
     }
 
-    func applyConfigJSON(_ data: Data) async {
-        instance.configJSON = data
-
-        guard isAttached else { return }
-
-        do {
-            let jsonObject: Any
-            switch instance.kind {
-            case .tracer:
-                let config = (try? TracerConfig.decode(from: data)) ?? TracerConfig()
-                jsonObject = config.toJSON()
-
-            case .hookPack:
-                let config = (try? HookPackConfig.decode(from: data)) ?? HookPackConfig(packId: instance.sourceIdentifier, features: [:])
-                jsonObject = config.toJSON()
-
-            case .codeShare:
-                if data.isEmpty {
-                    jsonObject = [:]
-                } else {
-                    jsonObject = (try? JSONSerialization.jsonObject(with: data, options: [])) ?? [:]
-                }
-            }
-
-            try await processNode.script.exports.updateInstrumentConfig(
-                JSValue([
-                    "instanceId": instance.id.uuidString,
-                    "config": jsonObject,
-                ]))
-        } catch {
-            lastError = "Failed to update config: \(error)"
-        }
-    }
-
     func applyConfigObject(_ configObject: Any, rawConfigJSON: Data) async {
         instance.configJSON = rawConfigJSON
 
