@@ -3,6 +3,7 @@ import CryptoKit
 import Frida
 import SwiftData
 import SwiftUI
+import SwiftyMonaco
 
 @MainActor
 final class Workspace: ObservableObject {
@@ -35,6 +36,9 @@ final class Workspace: ObservableObject {
     var packageBundles: [String: String] = [:]
     var packageBundlesDirty: Bool = true
     @Published var lastCompilerDiagnostics: [String] = []
+    @Published var monacoFSSnapshot: MonacoFSSnapshot? = nil
+    var monacoFSSnapshotDirty: Bool = true
+    var monacoFSSnapshotVersion: Int = 0
 
     @Published var isAuthSheetPresented: Bool = false
     @Published var authState: GitHubAuthState = .signedOut
@@ -380,7 +384,20 @@ final class Workspace: ObservableObject {
         let session = instance.session
 
         if let runtime = runtime(for: session, instrumentID: instance.id) {
-            await runtime.applyConfigJSON(data)
+            switch instance.kind {
+            case .tracer:
+                do {
+                    let config = (try? TracerConfig.decode(from: data)) ?? TracerConfig()
+                    let compiled = try await compileTracerConfigForRuntime(config)
+                    await runtime.applyConfigObject(compiled, rawConfigJSON: data)
+                } catch {
+                    print("Failed to compile tracer config: \(error)")
+                    await runtime.applyConfigJSON(data)
+                }
+
+            case .hookPack, .codeShare:
+                await runtime.applyConfigJSON(data)
+            }
         }
 
         if instance.kind == .tracer {
@@ -412,13 +429,14 @@ final class Workspace: ObservableObject {
             let instance = runtime.instance
 
             let config = try TracerConfig.decode(from: instance.configJSON)
+            let compiled = try await compileTracerConfigForRuntime(config)
 
             try await node.script.exports.loadInstrument(
                 JSValue([
                     "instanceId": instance.id.uuidString,
                     "moduleName": "/builtin/tracer.js",
                     "source": LumaAgent.tracerSource,
-                    "config": config.toJSON(),
+                    "config": compiled,
                 ]))
 
             runtime.markAttached()
@@ -721,6 +739,101 @@ final class Workspace: ObservableObject {
         await applyInstrumentConfig(tracer, data: configData)
 
         selection.wrappedValue = .instrumentComponent(session.id, tracer.id, newHook.id, UUID())
+    }
+
+    func compileTracerConfigForRuntime(_ config: TracerConfig) async throws -> Any {
+        _ = try await ensureCompilerWorkspaceReady()
+        let paths = try compilerWorkspacePaths()
+
+        let results: [(Int, String, TracerConfig.Hook)] =
+            try await withThrowingTaskGroup(
+                of: (Int, String, TracerConfig.Hook).self
+            ) { group in
+                for (index, hook) in config.hooks.enumerated() {
+                    group.addTask {
+                        let js = try await self.compileTracerHook(
+                            id: hook.id,
+                            tsSource: hook.code,
+                            paths: paths
+                        )
+                        return (index, js, hook)
+                    }
+                }
+
+                var out: [(Int, String, TracerConfig.Hook)] = []
+                out.reserveCapacity(config.hooks.count)
+
+                for try await item in group {
+                    out.append(item)
+                }
+
+                return out
+            }
+
+        var hooksJSON: [JSONObject] = []
+        hooksJSON.reserveCapacity(results.count)
+
+        for (_, js, hook) in results.sorted(by: { $0.0 < $1.0 }) {
+            var dict: JSONObject = [
+                "id": hook.id.uuidString,
+                "displayName": hook.displayName,
+                "addressAnchor": hook.addressAnchor.toJSON(),
+                "isEnabled": hook.isEnabled,
+                "code": js,
+            ]
+
+            if hook.isPinned {
+                dict["isPinned"] = true
+            }
+
+            hooksJSON.append(dict)
+        }
+
+        return [
+            "hooks": hooksJSON
+        ]
+    }
+
+    private func compileTracerHook(
+        id: UUID,
+        tsSource: String,
+        paths: CompilerWorkspacePaths
+    ) async throws -> String {
+        let fm = FileManager.default
+
+        let dirRelPath = "TracerHooks"
+        let dirURL = paths.root.appendingPathComponent(dirRelPath, isDirectory: true)
+
+        if !fm.fileExists(atPath: dirURL.path) {
+            try fm.createDirectory(at: dirURL, withIntermediateDirectories: true)
+        }
+
+        let moduleRelPath = "\(dirRelPath)/\(id.uuidString).ts"
+        let entryRelPath = "\(dirRelPath)/\(id.uuidString).entry.ts"
+
+        let moduleURL = paths.root.appendingPathComponent(moduleRelPath)
+        let entryURL = paths.root.appendingPathComponent(entryRelPath)
+
+        try tsSource.write(to: moduleURL, atomically: true, encoding: .utf8)
+
+        let entrySource = """
+            import "./\(id.uuidString).ts";
+            export {};
+            """
+        try entrySource.write(to: entryURL, atomically: true, encoding: .utf8)
+
+        let options = BuildOptions()
+        options.projectRoot = paths.root.path
+        options.typeCheck = .none
+        options.sourceMaps = .omitted
+        options.compression = .terser
+
+        let bundle = try await withCompilerDiagnostics(label: "tracer hook \(id.uuidString)") { compiler in
+            try await compiler.build(entrypoint: entryRelPath, options: options)
+        }
+
+        let modules = try parseESMBundle(bundle)
+        return modules.modules[modules.order[0]]!
     }
 
     static func parseTracerEvent(from value: JSInspectValue) -> (type: String, id: UUID, message: JSInspectValue)? {

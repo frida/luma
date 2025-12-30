@@ -275,7 +275,8 @@ struct TracerConfigView: View {
                 HookEditorView(
                     draftCode: $draftCode,
                     isDirty: $isDirty,
-                    selectedHook: selectedHook
+                    selectedHook: selectedHook,
+                    workspace: workspace,
                 )
             } else {
                 Text("Select a hook to edit its script.")
@@ -308,7 +309,8 @@ struct TracerConfigView: View {
                     HookEditorView(
                         draftCode: $draftCode,
                         isDirty: $isDirty,
-                        selectedHook: selectedHook
+                        selectedHook: selectedHook,
+                        workspace: workspace,
                     )
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -736,11 +738,13 @@ private struct HookEditorView: View {
     @Binding var draftCode: String
     @Binding var isDirty: Bool
     let selectedHook: TracerConfig.Hook?
+    var workspace: Workspace
 
     var body: some View {
         CodeEditorView(
             text: $draftCode,
             profile: TracerEditorProfile.typescript,
+            workspace: workspace,
         )
         .onChange(of: draftCode) { _, _ in
             isDirty = (draftCode != selectedHook?.code)

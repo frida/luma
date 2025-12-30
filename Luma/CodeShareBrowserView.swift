@@ -251,7 +251,8 @@ struct CodeShareProjectDetailView: View {
                     CodeEditorView(
                         text: $source,
                         profile: CodeShareEditorProfile.javascript,
-                        introspector: monacoIntrospector
+                        introspector: monacoIntrospector,
+                        workspace: workspace,
                     )
                 }
             } else if isLoadingDetails {

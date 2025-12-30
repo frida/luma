@@ -70,4 +70,20 @@ final class InstrumentRuntime: ObservableObject, Identifiable {
             lastError = "Failed to update config: \(error)"
         }
     }
+
+    func applyConfigObject(_ configObject: Any, rawConfigJSON: Data) async {
+        instance.configJSON = rawConfigJSON
+
+        guard isAttached else { return }
+
+        do {
+            try await processNode.script.exports.updateInstrumentConfig(
+                JSValue([
+                    "instanceId": instance.id.uuidString,
+                    "config": configObject,
+                ]))
+        } catch {
+            lastError = "Failed to update config: \(error)"
+        }
+    }
 }

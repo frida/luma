@@ -137,6 +137,7 @@ struct CodeShareConfigView: View {
                 text: $draftSource,
                 profile: CodeShareEditorProfile.javascript,
                 introspector: monacoIntrospector,
+                workspace: workspace,
             )
         }
     }
