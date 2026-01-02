@@ -552,7 +552,7 @@ struct EventRow: View {
     }()
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
             if let delta = deltaText {
                 Text(delta)
                     .font(.system(size: 11, weight: .regular, design: .monospaced))
