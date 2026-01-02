@@ -60,7 +60,7 @@ private struct TracerBacktraceView: View {
                 if isLoading {
                     ProgressView()
                         .controlSize(.small)
-                } else {
+                } else if lastError != nil {
                     Button("Symbolicate") {
                         Task { await symbolicate() }
                     }
@@ -80,60 +80,25 @@ private struct TracerBacktraceView: View {
                         let addr = ptrValue.nativePointerAddress ?? 0
                         let anchor = process.anchor(for: addr)
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(alignment: .center, spacing: 8) {
-                                Text("#\(idx)")
-                                    .font(.system(.footnote, design: .monospaced))
-                                    .foregroundStyle(.secondary)
+                        HStack(alignment: .center, spacing: 8) {
+                            Text("#\(idx + 1)")
+                                .font(.system(.footnote, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                            Text(displayString(idx: idx, anchor: anchor))
+                                .font(.system(.footnote, design: .monospaced))
+                                .textSelection(.enabled)
 
-                                Text(anchor.displayString)
-                                    .font(.system(.footnote, design: .monospaced))
-                                    .textSelection(.enabled)
+                            Spacer(minLength: 0)
 
-                                Spacer()
-
-                                Button {
-                                    openDisassembly(at: addr)
-                                } label: {
-                                    Image(systemName: "arrow.right.circle")
-                                        .imageScale(.small)
-                                }
-                                .buttonStyle(.borderless)
-                                .help("Open Disassembly")
-                                .disabled(addr == 0)
-
-                                if idx >= symbols.count && isLoading {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                }
+                            Button {
+                                openDisassembly(at: addr)
+                            } label: {
+                                Image(systemName: "arrow.right.circle")
+                                    .imageScale(.small)
+                                    .padding(4)
                             }
-
-                            if idx < symbols.count {
-                                switch symbols[idx] {
-                                case .failure:
-                                    Text("(unresolved)")
-                                        .font(.system(.footnote, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-
-                                case .module(let moduleName, let name):
-                                    Text("\(moduleName)!\(name)")
-                                        .font(.system(.footnote, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                        .textSelection(.enabled)
-
-                                case .file(let moduleName, let name, let fileName, let lineNumber):
-                                    Text("\(moduleName)!\(name) — \(fileName):\(lineNumber)")
-                                        .font(.system(.footnote, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                        .textSelection(.enabled)
-
-                                case .fileColumn(let moduleName, let name, let fileName, let lineNumber, let column):
-                                    Text("\(moduleName)!\(name) — \(fileName):\(lineNumber):\(column)")
-                                        .font(.system(.footnote, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                        .textSelection(.enabled)
-                                }
-                            }
+                            .buttonStyle(.borderless)
+                            .help("Open Disassembly")
                         }
                         .padding(.vertical, 4)
 
@@ -147,8 +112,30 @@ private struct TracerBacktraceView: View {
         }
     }
 
+    private func displayString(
+        idx: Int,
+        anchor: AddressAnchor
+    ) -> String {
+        guard idx < symbols.count else {
+            return anchor.displayString
+        }
+
+        switch symbols[idx] {
+        case .failure:
+            return anchor.displayString
+
+        case .module(let moduleName, let name):
+            return "\(moduleName)!\(name)"
+
+        case .file(let moduleName, let name, let fileName, let lineNumber):
+            return "\(moduleName)!\(name) — \(fileName):\(lineNumber)"
+
+        case .fileColumn(let moduleName, let name, let fileName, let lineNumber, let column):
+            return "\(moduleName)!\(name) — \(fileName):\(lineNumber):\(column)"
+        }
+    }
+
     private func openDisassembly(at address: UInt64) {
-        guard address != 0 else { return }
         do {
             let insight = try workspace.getOrCreateInsight(
                 sessionID: process.sessionRecord.id,
@@ -167,9 +154,7 @@ private struct TracerBacktraceView: View {
         lastError = nil
 
         do {
-            let addrs = pointers.compactMap { $0.nativePointerAddress }
-            var fetched = try await process.symbolicate(addresses: addrs)
-            symbols = fetched
+            symbols = try await process.symbolicate(addresses: pointers.compactMap { $0.nativePointerAddress })
         } catch {
             lastError = "Symbolication failed: \(error)"
         }
