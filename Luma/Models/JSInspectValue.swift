@@ -342,48 +342,6 @@ enum JSInspectValue: nonisolated Codable, nonisolated Equatable {
         guard case .nativePointer(let s) = self else { return nil }
         return UInt64(s.dropFirst(2), radix: 16)
     }
-
-    static func parseTracerEvent(from value: JSInspectValue) -> (type: String, id: UUID, message: JSInspectValue)? {
-        guard case .object(_, let properties) = value else {
-            return nil
-        }
-
-        var typeString: String?
-        var idValue: UUID?
-        var messageValue: JSInspectValue?
-
-        for property in properties {
-            guard case .string(let keyString) = property.key else {
-                continue
-            }
-
-            switch keyString {
-            case "type":
-                if case .string(let t) = property.value {
-                    typeString = t
-                }
-            case "id":
-                if case .string(let rawId) = property.value,
-                    let uuid = UUID(uuidString: rawId)
-                {
-                    idValue = uuid
-                }
-            case "message":
-                messageValue = property.value
-            default:
-                break
-            }
-        }
-
-        guard let type = typeString,
-            let id = idValue,
-            let message = messageValue
-        else {
-            return nil
-        }
-
-        return (type, id, message)
-    }
 }
 
 extension JSInspectValue {

@@ -5,6 +5,7 @@ import * as memory from "./memory.js";
 import * as pkg from "./pkg.js";
 import * as repl from "./repl.js";
 import * as resolver from "./resolver.js";
+import * as symbolicate from "./symbolicate.js";
 
 rpc.exports = {
     ...env,
@@ -13,4 +14,5 @@ rpc.exports = {
     ...pkg,
     ...repl,
     ...resolver,
+    ...symbolicate,
 };

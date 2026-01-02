@@ -259,6 +259,7 @@
 				"$(SRCROOT)/Luma/Agent/core/pkg.ts",
 				"$(SRCROOT)/Luma/Agent/core/repl.ts",
 				"$(SRCROOT)/Luma/Agent/core/resolver.ts",
+				"$(SRCROOT)/Luma/Agent/core/symbolicate.ts",
 				"$(SRCROOT)/Luma/Agent/core/value.ts",
 				"$(SRCROOT)/Luma/Agent/instruments/codeshare.ts",
 				"$(SRCROOT)/Luma/Agent/instruments/tracer.ts",

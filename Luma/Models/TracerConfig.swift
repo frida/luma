@@ -78,24 +78,35 @@ enum TracerEditorProfile {
         .build()
 
     private static let tracerDeclarations = #"""
-        declare function defineHandler(h: InvocationListenerCallbacks | InstructionProbeCallback): void;
-        declare function log(...args: any[]): void;
+        declare function defineHandler(h: Handler): void;
+
+        type Handler = FunctionHandlers | InstructionHandler;
+
+        interface FunctionHandlers {
+            onEnter?: EnterHandler;
+            onLeave?: LeaveHandler;
+        }
+
+        type EnterHandler = (this: InvocationContext, log: LogHandler, args: InvocationArguments) => void;
+        type LeaveHandler = (this: InvocationContext, log: LogHandler, retval: InvocationReturnValue) => any;
+        type InstructionHandler = (this: InvocationContext, log: LogHandler, args: InvocationArguments) => void;
+        type LogHandler = (...args: any[]) => void;
         """#
 }
 
 let defaultTracerNativeStub = """
     defineHandler({
-        onEnter(args) {
+        onEnter(log, args) {
             log(`CALL(args[0]=${args[0]})`);
         },
 
-        onLeave(retval) {
+        onLeave(log, retval) {
         }
     });
     """
 
 let defaultTracerInstructionStub = """
-    defineHandler(function (args) {
+    defineHandler(function (log, args) {
         log(`INSTRUCTION hit! sp=${this.context.sp}`);
     });
     """

@@ -627,21 +627,36 @@ final class Workspace: ObservableObject {
                     )
                 }
 
-                return AnyView(
-                    Group {
-                        if case .string(let messageText) = ev.message {
+                let messageView: AnyView = {
+                    if case .array(_, let elems) = ev.message,
+                        elems.count == 1,
+                        case .string(let messageText) = elems[0]
+                    {
+                        return AnyView(
                             Text(messageText)
                                 .font(.system(.footnote, design: .monospaced))
                                 .textSelection(.enabled)
-                        } else {
+                        )
+                    } else {
+                        return AnyView(
                             JSInspectValueView(
                                 value: ev.message,
                                 sessionID: event.process.sessionRecord.id,
                                 workspace: workspace,
                                 selection: selection
                             )
-                        }
+                        )
                     }
+                }()
+
+                return AnyView(
+                    TracerEventRowView(
+                        messageView: messageView,
+                        process: event.process,
+                        backtrace: ev.backtrace,
+                        workspace: workspace,
+                        selection: selection
+                    )
                 )
             },
             makeEventContextMenuItems: { event, _, selection in
@@ -843,49 +858,81 @@ final class Workspace: ObservableObject {
         return modules.modules[modules.order[0]]!
     }
 
-    static func parseTracerEvent(from value: JSInspectValue) -> (type: String, id: UUID, message: JSInspectValue)? {
-        guard case .object(_, let properties) = value else {
+    static func parseTracerEvent(from value: JSInspectValue) -> (
+        id: UUID,
+        timestamp: Double,
+        threadId: Int,
+        depth: Int,
+        caller: JSInspectValue,
+        backtrace: [JSInspectValue]?,
+        message: JSInspectValue
+    )? {
+        guard case .array(_, let elements) = value else {
             return nil
         }
 
-        var typeString: String?
-        var idValue: UUID?
-        var messageValue: JSInspectValue?
-
-        for property in properties {
-            guard case .string(let keyString) = property.key else {
-                return nil
-            }
-
-            switch keyString {
-            case "type":
-                if case .string(let t) = property.value {
-                    typeString = t
-                }
-
-            case "id":
-                if case .string(let rawId) = property.value,
-                    let uuid = UUID(uuidString: rawId)
-                {
-                    idValue = uuid
-                }
-
-            case "message":
-                messageValue = property.value
-
-            default:
-                break
-            }
+        guard elements.count == 7 else {
+            return nil
         }
 
-        guard let type = typeString,
-            let id = idValue,
-            let message = messageValue
+        guard case .string(let rawId) = elements[0],
+            let id = UUID(uuidString: rawId)
         else {
             return nil
         }
 
-        return (type, id, message)
+        guard case .number(let timestamp) = elements[1] else {
+            return nil
+        }
+
+        guard case .number(let threadIdNum) = elements[2],
+            threadIdNum.isFinite,
+            threadIdNum.rounded(.towardZero) == threadIdNum
+        else {
+            return nil
+        }
+        let threadId = Int(threadIdNum)
+
+        guard case .number(let depthNum) = elements[3],
+            depthNum.isFinite,
+            depthNum.rounded(.towardZero) == depthNum
+        else {
+            return nil
+        }
+        let depth = Int(depthNum)
+
+        let caller = elements[4]
+        guard case .nativePointer = caller else {
+            return nil
+        }
+
+        guard case .array(_, let btElements) = elements[5] else {
+            return nil
+        }
+
+        var ptrs: [JSInspectValue] = []
+        ptrs.reserveCapacity(btElements.count)
+        for e in btElements {
+            guard case .nativePointer = e else {
+                return nil
+            }
+            ptrs.append(e)
+        }
+        let backtraceValue: [JSInspectValue]? = ptrs.isEmpty ? nil : ptrs
+
+        guard case .array(_, _) = elements[6] else {
+            return nil
+        }
+
+        return (
+            id: id,
+            timestamp: timestamp,
+            threadId: threadId,
+            depth: depth,
+            caller: caller,
+            backtrace: backtraceValue,
+            message: elements[6]
+        )
     }
 
     func hookPackTemplates() -> [InstrumentTemplate] {

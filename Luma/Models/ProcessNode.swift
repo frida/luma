@@ -578,6 +578,73 @@ final class ProcessNode: ObservableObject, Identifiable {
         return ProcessModule(name: name, path: path, base: base, size: UInt64(size))
     }
 
+    public enum SymbolicateResult: Hashable {
+        case failure
+        case module(moduleName: String, name: String)
+        case file(moduleName: String, name: String, fileName: String, lineNumber: Int)
+        case fileColumn(moduleName: String, name: String, fileName: String, lineNumber: Int, column: Int)
+    }
+
+    func symbolicate(addresses: [UInt64]) async throws -> [SymbolicateResult] {
+        let any = try await script.exports.symbolicate(addresses.map { String(format: "0x%llx", $0) })
+
+        guard let arr = any as? [Any],
+            arr.count == addresses.count
+        else {
+            throw Error.protocolViolation("Invalid reply")
+        }
+
+        var out: [SymbolicateResult] = []
+        out.reserveCapacity(arr.count)
+
+        for entry in arr {
+            if entry is JSONNull {
+                out.append(.failure)
+                continue
+            }
+
+            guard let tuple = entry as? [Any] else {
+                throw Error.protocolViolation("Invalid reply")
+            }
+
+            switch tuple.count {
+            case 2:
+                guard let moduleName = tuple[0] as? String,
+                    let name = tuple[1] as? String
+                else {
+                    throw Error.protocolViolation("Invalid reply")
+                }
+                out.append(.module(moduleName: moduleName, name: name))
+
+            case 4:
+                guard let moduleName = tuple[0] as? String,
+                    let name = tuple[1] as? String,
+                    let fileName = tuple[2] as? String,
+                    let lineNumber = tuple[3] as? Int
+                else {
+                    throw Error.protocolViolation("Invalid reply")
+                }
+                out.append(.file(moduleName: moduleName, name: name, fileName: fileName, lineNumber: lineNumber))
+
+            case 5:
+                guard let moduleName = tuple[0] as? String,
+                    let name = tuple[1] as? String,
+                    let fileName = tuple[2] as? String,
+                    let lineNumber = tuple[3] as? Int,
+                    let column = tuple[4] as? Int
+                else {
+                    throw Error.protocolViolation("Invalid reply")
+                }
+                out.append(.fileColumn(moduleName: moduleName, name: name, fileName: fileName, lineNumber: lineNumber, column: column))
+
+            default:
+                throw Error.protocolViolation("Invalid reply")
+            }
+        }
+
+        return out
+    }
+
     private func ensureR2Opened() async {
         if let task = openR2Task {
             await task.value
