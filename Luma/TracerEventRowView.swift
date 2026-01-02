@@ -19,8 +19,13 @@ struct TracerEventRowView: View {
                 Button {
                     showBacktracePopover.toggle()
                 } label: {
-                    Image(systemName: "list.bullet.rectangle")
-                        .imageScale(.small)
+                    Text("Backtrace")
+                        .font(.system(.footnote, design: .monospaced))
+                        .hidden()
+                        .overlay {
+                            Image(systemName: "list.bullet.rectangle")
+                                .imageScale(.small)
+                        }
                 }
                 .buttonStyle(.borderless)
                 .help("Show backtrace")
