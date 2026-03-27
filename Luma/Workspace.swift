@@ -436,7 +436,19 @@ final class Workspace: ObservableObject {
             let instance = runtime.instance
 
             let config = try TracerConfig.decode(from: instance.configJSON)
-            let compiled = try await compileTracerConfigForRuntime(config)
+            var compiled = try await compileTracerConfigForRuntime(config)
+
+            // Seed call counters from persisted captures so new traces
+            // continue from the right index.
+            var counters: [String: Int] = [:]
+            for capture in instance.session.itraceCaptures {
+                let key = capture.hookID.uuidString
+                counters[key] = max(counters[key] ?? 0, capture.callIndex + 1)
+            }
+            if !counters.isEmpty {
+                compiled["callCounters"] = counters
+            }
+
 
             try await node.script.exports.loadInstrument(
                 JSValue([
@@ -806,6 +818,10 @@ final class Workspace: ObservableObject {
 
             if hook.isPinned {
                 dict["isPinned"] = true
+            }
+
+            if hook.itraceEnabled {
+                dict["itraceEnabled"] = true
             }
 
             hooksJSON.append(dict)
@@ -1264,6 +1280,10 @@ final class Workspace: ObservableObject {
             await Task.yield()
 
             try await script.load()
+
+            await node.fetchAndPersistProcessInfoIfNeeded()
+
+            await node.setupITraceDraining()
 
             await loadAllPackages(on: node)
 

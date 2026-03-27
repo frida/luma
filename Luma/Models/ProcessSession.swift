@@ -32,6 +32,24 @@ final class ProcessSession {
     var lastKnownPID: UInt
     var lastAttachedAt: Date?
 
+    @Attribute(.externalStorage)
+    private var processInfoBlob: Data?
+
+    var processInfo: ProcessInfo? {
+        get {
+            processInfoBlob.flatMap { try? JSONDecoder().decode(ProcessInfo.self, from: $0) }
+        }
+        set {
+            processInfoBlob = newValue.flatMap { try? JSONEncoder().encode($0) }
+        }
+    }
+
+    struct ProcessInfo: Codable {
+        let platform: String
+        let arch: String
+        let pointerSize: Int
+    }
+
     @Relationship(deleteRule: .cascade)
     var replCells: [REPLCell] = []
 
@@ -44,6 +62,9 @@ final class ProcessSession {
 
     @Relationship(deleteRule: .cascade)
     var insights: [AddressInsight] = []
+
+    @Relationship(deleteRule: .cascade)
+    var itraceCaptures: [ITraceCapture] = []
 
     enum Kind: Codable {
         case spawn(SpawnConfig)

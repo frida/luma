@@ -42,7 +42,10 @@ struct LumaBundleCompiler {
 
         var projectRoot: String?
         var swiftOutPath: String?
+        var stagingDir: String?
         var entries: [Entry] = []
+        var packageSpecs: [String] = []
+        var localPackages: [(name: String, path: String)] = []
 
         func popValue(for flag: String) throws -> String {
             guard let idx = args.firstIndex(of: flag), idx + 1 < args.count else {
@@ -67,6 +70,22 @@ struct LumaBundleCompiler {
             case "--swift-out":
                 guard !args.isEmpty else { throw ToolError.usage("Missing value for --swift-out") }
                 swiftOutPath = args.removeFirst()
+
+            case "--staging-dir":
+                guard !args.isEmpty else { throw ToolError.usage("Missing value for --staging-dir") }
+                stagingDir = args.removeFirst()
+
+            case "--package":
+                guard !args.isEmpty else { throw ToolError.usage("Missing value for --package") }
+                packageSpecs.append(args.removeFirst())
+
+            case "--local-package":
+                guard args.count >= 2 else {
+                    throw ToolError.usage("Missing values for --local-package <name> <path>")
+                }
+                let name = args.removeFirst()
+                let path = args.removeFirst()
+                localPackages.append((name: name, path: path))
 
             case "--agent":
                 guard args.count >= 2 else {
@@ -105,11 +124,69 @@ struct LumaBundleCompiler {
             throw ToolError.usage("No --agent or --module entries provided.")
         }
 
+        let effectiveProjectRoot: String
+        if !packageSpecs.isEmpty || !localPackages.isEmpty {
+            guard let stagingDir else {
+                throw ToolError.usage("--staging-dir is required when using --package or --local-package.")
+            }
+
+            let fm = FileManager.default
+            if !fm.fileExists(atPath: stagingDir) {
+                try fm.createDirectory(atPath: stagingDir, withIntermediateDirectories: true)
+            }
+
+            fputs("[packages] installing: \(packageSpecs.joined(separator: ", "))\n", stderr)
+
+            let pm = PackageManager()
+            let opts = PackageInstallOptions()
+            opts.projectRoot = stagingDir
+            opts.role = .runtime
+            opts.specs = packageSpecs
+
+            _ = try await pm.install(options: opts)
+
+            fputs("[packages] done\n", stderr)
+
+            // Override with local packages if specified.
+            for local in localPackages {
+                let dst = URL(fileURLWithPath: stagingDir)
+                    .appendingPathComponent("node_modules", isDirectory: true)
+                    .appendingPathComponent(local.name, isDirectory: true)
+                let src = URL(fileURLWithPath: local.path).standardizedFileURL
+
+                if fm.fileExists(atPath: dst.path) || (try? fm.destinationOfSymbolicLink(atPath: dst.path)) != nil {
+                    try fm.removeItem(at: dst)
+                }
+                try fm.createSymbolicLink(at: dst, withDestinationURL: src)
+
+                fputs("[packages] overriding \(local.name) with \(local.path)\n", stderr)
+            }
+
+            // Copy source files into the staging area so the compiler
+            // can resolve both local imports and installed packages.
+            let sourceRoot = projectRoot ?? "."
+            for entry in entries {
+                let srcURL = URL(fileURLWithPath: entry.entrypoint, relativeTo: URL(fileURLWithPath: sourceRoot))
+                let dstURL = URL(fileURLWithPath: entry.entrypoint, relativeTo: URL(fileURLWithPath: stagingDir))
+
+                try fm.createDirectory(at: dstURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                if fm.fileExists(atPath: dstURL.path) {
+                    try fm.removeItem(at: dstURL)
+                }
+                try fm.copyItem(at: srcURL.standardizedFileURL, to: dstURL)
+            }
+
+            // Also copy any files that the entries import via relative paths.
+            try copyAgentSources(from: sourceRoot, to: stagingDir)
+
+            effectiveProjectRoot = stagingDir
+        } else {
+            effectiveProjectRoot = projectRoot ?? "."
+        }
+
         let compiler = Compiler()
         let options = BuildOptions()
-        if let projectRoot {
-            options.projectRoot = projectRoot
-        }
+        options.projectRoot = effectiveProjectRoot
         options.sourceMaps = .omitted
 
         let eventsTask = Task {
@@ -164,23 +241,62 @@ struct LumaBundleCompiler {
         let text = """
             Usage:
               \(prog) --swift-out <swift-file> [--project-root <path>] \\
-                      [--agent <swiftName> <entry.ts> <jsName>]... \\
-                      [--module <swiftName> <entry.ts> <jsName>]...
+                      [--staging-dir <path>] [--package <spec>]... \\
+                      [--agent <swiftName> <entry.ts>]... \\
+                      [--module <swiftName> <entry.ts>]...
 
             Kinds:
               agent   - keep Frida's compiled bundle container as a Swift string
               module  - unwrap Frida's 📦 bundle and embed only the module JS
 
+            Options:
+              --staging-dir <path>  Directory for package installation and compilation
+              --package <spec>      Install npm package into staging dir before compilation
+
             Examples:
               \(prog) --project-root /path/to/repo \\
                       --swift-out Luma/Generated/LumaAgent.swift \\
-                      --agent  core      Luma/Agent/core/luma.ts               /luma.js \\
-                      --module tracer    Luma/Agent/instruments/tracer.ts      /builtin/tracer.js \\
-                      --module codeShare Luma/Agent/instruments/codeshare.ts   /builtin/codeshare.js
+                      --staging-dir /path/to/build/.agent-staging \\
+                      --package frida-itrace \\
+                      --agent  core      Luma/Agent/core/luma.ts \\
+                      --agent  drain     Luma/Agent/instruments/drain-agent.ts \\
+                      --module tracer    Luma/Agent/instruments/tracer.ts \\
+                      --module codeShare Luma/Agent/instruments/codeshare.ts
 
             """
         fputs(text, success ? stdout : stderr)
         exit(success ? 0 : 1)
+    }
+
+    /// Copy the Agent source tree into the staging directory so the
+    /// compiler can resolve relative imports alongside installed packages.
+    static func copyAgentSources(from sourceRoot: String, to stagingDir: String) throws {
+        let fm = FileManager.default
+        let agentRelDir = "Luma/Agent"
+        let srcDir = URL(fileURLWithPath: agentRelDir, relativeTo: URL(fileURLWithPath: sourceRoot)).standardizedFileURL
+        let dstDir = URL(fileURLWithPath: agentRelDir, relativeTo: URL(fileURLWithPath: stagingDir))
+
+        guard fm.fileExists(atPath: srcDir.path) else { return }
+
+        let enumerator = fm.enumerator(
+            at: srcDir,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        )
+
+        while let url = enumerator?.nextObject() as? URL {
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey])
+            guard values.isRegularFile == true else { continue }
+
+            let relPath = url.path.replacingOccurrences(of: srcDir.path + "/", with: "")
+            let dst = dstDir.appendingPathComponent(relPath)
+
+            if fm.fileExists(atPath: dst.path) {
+                try fm.removeItem(at: dst)
+            }
+            try fm.createDirectory(at: dst.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fm.copyItem(at: url, to: dst)
+        }
     }
 }
 

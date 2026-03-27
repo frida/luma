@@ -1,7 +1,9 @@
 import type { Instrument, InstrumentContext } from '../core/instrument.js';
+import { startCapture, stopCapture } from './itrace-capture.js';
 
 interface TracerConfig {
     hooks: TracerHookConfig[];
+    callCounters?: Record<string, number>;
 }
 
 interface TracerHookConfig {
@@ -11,6 +13,7 @@ interface TracerHookConfig {
     isEnabled: boolean;
     code: string;
     isPinned?: boolean;
+    itraceEnabled?: boolean;
 }
 
 type HookID = string;
@@ -47,12 +50,21 @@ class Tracer {
     #config: TracerConfig;
 
     #hooks = new Map<string, Hook>();
+    #hookTargets = new Map<string, NativePointer>();
+    #prologueBackups = new Map<string, ArrayBuffer>();
     #stackDepth = new Map<ThreadId, number>();
+    #callCounters = new Map<string, number>();
     #started = Date.now();
 
     constructor(ctx: InstrumentContext, config: TracerConfig) {
         this.#ctx = ctx;
         this.#config = config;
+
+        if (config.callCounters !== undefined) {
+            for (const [id, count] of Object.entries(config.callCounters)) {
+                this.#callCounters.set(id, count);
+            }
+        }
 
         this.#apply(config);
     }
@@ -87,6 +99,7 @@ class Tracer {
                 const config = existing[1];
                 if (config.code === hookConfig.code &&
                     config.isEnabled === hookConfig.isEnabled &&
+                    config.itraceEnabled === hookConfig.itraceEnabled &&
                     JSON.stringify(config.addressAnchor) === JSON.stringify(hookConfig.addressAnchor)) {
                     continue;
                 }
@@ -143,6 +156,16 @@ class Tracer {
             hook = [null as unknown as InvocationListener, hookConfig, cbs.onEnter ?? noop, cbs.onLeave ?? noop] as FunctionHook;
         }
 
+        this.#hookTargets.set(hookConfig.id, target);
+
+        // Back up prologue bytes before Interceptor overwrites them.
+        if (hook.length === 4 && hookConfig.itraceEnabled) {
+            const backup = target.readByteArray(64);
+            if (backup !== null) {
+                this.#prologueBackups.set(target.toString(), backup);
+            }
+        }
+
         const listener = Interceptor.attach(target, (hook.length === 3)
             ? this.#makeNativeInstructionListener(hook)
             : this.#makeNativeFunctionListener(hook));
@@ -157,11 +180,26 @@ class Tracer {
         return {
             onEnter(args) {
                 const [_, config, onEnter, __] = hook;
+
+                if (config.itraceEnabled) {
+                    const callIndex = tracer.#nextCallIndex(config.id);
+                    const target = tracer.#hookTargets.get(config.id);
+                    const prologueBackup = target !== undefined
+                        ? tracer.#prologueBackups.get(target.toString()) ?? null
+                        : null;
+                    startCapture(this.threadId, config.id, callIndex, tracer.#ctx, {
+                        targetAddress: target?.toString() ?? null,
+                        prologueBytes: prologueBackup,
+                    });
+                }
+
                 tracer.#invokeNativeHandler(onEnter, config, this, args, ">");
             },
             onLeave(retval) {
                 const [_, config, __, onLeave] = hook;
                 tracer.#invokeNativeHandler(onLeave, config, this, retval, "<");
+
+                stopCapture(this.threadId);
             }
         };
     }
@@ -189,6 +227,12 @@ class Tracer {
         };
 
         callback.call(context, log, param);
+    }
+
+    #nextCallIndex(hookId: string): number {
+        const current = this.#callCounters.get(hookId) ?? 0;
+        this.#callCounters.set(hookId, current + 1);
+        return current;
     }
 
     #updateDepth(threadId: ThreadId, cutPoint: CutPoint): number {

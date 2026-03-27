@@ -59,6 +59,15 @@ struct SidebarView: View {
                         )
                         .tag(SidebarItemID.insight(session.id, insight.id))
                     }
+
+                    ForEach(session.itraceCaptures.sorted(by: { $0.capturedAt < $1.capturedAt })) { capture in
+                        SidebarITraceCaptureRow(
+                            session: session,
+                            capture: capture,
+                            selection: $selection
+                        )
+                        .tag(SidebarItemID.itraceCapture(session.id, capture.id))
+                    }
                 }
             }
 
@@ -227,7 +236,8 @@ private struct SidebarSessionHeaderRow: View {
         switch selection {
         case .repl(let id) where id == sessionID,
             .instrument(let id, _) where id == sessionID,
-            .insight(let id, _) where id == sessionID:
+            .insight(let id, _) where id == sessionID,
+            .itraceCapture(let id, _) where id == sessionID:
             selection = .notebook
         default:
             break
@@ -381,6 +391,46 @@ private struct SidebarInsightRow: View {
         }
 
         modelContext.delete(insight)
+    }
+}
+
+private struct SidebarITraceCaptureRow: View {
+    let session: ProcessSession
+    let capture: ITraceCapture
+    @Binding var selection: SidebarItemID?
+
+    @Environment(\.modelContext) private var modelContext
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "waveform.path")
+                .frame(width: subrowIconWidth, alignment: .center)
+                .font(.system(size: 12))
+            Text(capture.displayName)
+            Spacer()
+        }
+        .font(.callout)
+        .contentShape(Rectangle())
+        .padding(.leading, 20)
+        .contextMenu {
+            Button(role: .destructive) {
+                deleteCapture()
+            } label: {
+                Label("Delete Capture", systemImage: "trash")
+            }
+        }
+    }
+
+    private func deleteCapture() {
+        if let idx = session.itraceCaptures.firstIndex(where: { $0.id == capture.id }) {
+            session.itraceCaptures.remove(at: idx)
+        }
+
+        if selection == .itraceCapture(session.id, capture.id) {
+            selection = .repl(session.id)
+        }
+
+        modelContext.delete(capture)
     }
 }
 

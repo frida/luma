@@ -285,7 +285,8 @@ struct WorkspaceToolbar: ToolbarContent {
         case .repl(let sessionID),
             .instrument(let sessionID, _),
             .instrumentComponent(let sessionID, _, _, _),
-            .insight(let sessionID, _):
+            .insight(let sessionID, _),
+            .itraceCapture(let sessionID, _):
 
             let descriptor = FetchDescriptor<ProcessSession>(
                 predicate: #Predicate { $0.id == sessionID }
@@ -310,7 +311,8 @@ struct WorkspaceToolbar: ToolbarContent {
         case .repl(let sessionID),
             .instrument(let sessionID, _),
             .instrumentComponent(let sessionID, _, _, _),
-            .insight(let sessionID, _):
+            .insight(let sessionID, _),
+            .itraceCapture(let sessionID, _):
             return workspace.processNodes.first { $0.sessionRecord.id == sessionID }
         }
     }

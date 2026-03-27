@@ -39,6 +39,17 @@ struct DetailView: View {
                     EmptyView()
                 }
 
+            case .some(.itraceCapture(let sessionID, let captureID)):
+                if let session = try? modelContext.fetch(FetchDescriptor<ProcessSession>(predicate: #Predicate { $0.id == sessionID }))
+                    .first,
+                    let capture = session.itraceCaptures.first(where: { $0.id == captureID })
+                {
+                    ITraceDetailView(capture: capture, session: session, workspace: workspace, selection: $selection)
+                        .id(capture.id)
+                } else {
+                    EmptyView()
+                }
+
             case .some(.insight(let sessionID, let insightID)):
                 if let session =
                     try? modelContext

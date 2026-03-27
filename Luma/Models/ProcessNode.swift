@@ -39,6 +39,20 @@ final class ProcessNode: ObservableObject, Identifiable {
     var onModulesSnapshotReady: ((ProcessNode) -> Void)?
     var eventSink: ((RuntimeEvent) -> Void)?
 
+    private var systemSession: Session?
+    private var drainScript: Script?
+    private var drainTimer: Task<Void, Never>?
+    private var pendingCaptures: [String: PendingITraceCapture] = [:]
+
+    struct PendingITraceCapture {
+        let hookID: UUID
+        let callIndex: Int
+        var chunks: [Data]
+        var metadataJSON: Data?
+        var lost: Int
+        var useSystemDrain: Bool
+    }
+
     init(
         device: Device,
         process: ProcessDetails,
@@ -69,6 +83,8 @@ final class ProcessNode: ObservableObject, Identifiable {
             for runtime in self.instruments {
                 await runtime.dispose()
             }
+
+            await tearDownITrace()
 
             try? await session.detach()
         }
@@ -190,6 +206,49 @@ final class ProcessNode: ObservableObject, Identifiable {
                 )
                 self.eventSink?(evt)
 
+                return true
+
+            case "itrace:start":
+                if let hookId = dict["hookId"] as? String,
+                    let callIndex = dict["callIndex"] as? Int,
+                    let bufferLocation = dict["bufferLocation"] as? String
+                {
+                    Task { @MainActor in
+                        await self.handleITraceStart(
+                            hookId: hookId, callIndex: callIndex,
+                            bufferLocation: bufferLocation)
+                    }
+                }
+                return true
+
+            case "itrace:stop":
+                if let hookId = dict["hookId"] as? String,
+                    let callIndex = dict["callIndex"] as? Int
+                {
+                    let metadataJSON: Data
+                    if let jsonData = try? JSONSerialization.data(withJSONObject: dict) {
+                        metadataJSON = jsonData
+                    } else {
+                        metadataJSON = Data()
+                    }
+                    Task { @MainActor in
+                        await self.handleITraceStop(
+                            hookId: hookId, callIndex: callIndex,
+                            metadataJSON: metadataJSON, data: data)
+                    }
+                }
+                return true
+
+            case "itrace:chunk":
+                if let hookId = dict["hookId"] as? String,
+                    let callIndex = dict["callIndex"] as? Int,
+                    let chunkData = data
+                {
+                    let lost = dict["lost"] as? Int ?? 0
+                    self.handleITraceChunk(
+                        hookId: hookId, callIndex: callIndex,
+                        data: Array(chunkData), lost: lost)
+                }
                 return true
 
             case "instrument-event":
@@ -645,6 +704,166 @@ final class ProcessNode: ObservableObject, Identifiable {
         return out
     }
 
+    private static func captureKey(hookId: String, callIndex: Int) -> String {
+        "\(hookId):\(callIndex)"
+    }
+
+    // MARK: - ITrace Orchestration
+
+    func setupITraceDraining() async {
+        do {
+            let params = try await device.querySystemParameters()
+            guard (params["platform"] as? String) == "darwin",
+                (params["access"] as? String) == "full"
+            else {
+                return
+            }
+
+            let sysSession = try await device.attach(to: 0)
+            let script = try await sysSession.createScript(
+                LumaAgent.drainSource,
+                name: "itrace-drain",
+                runtime: .v8
+            )
+            try await script.load()
+
+            self.systemSession = sysSession
+            self.drainScript = script
+        } catch {
+            // System session not available; fall back to in-process draining.
+        }
+    }
+
+    var hasSystemSession: Bool {
+        drainScript != nil
+    }
+
+    func handleITraceStart(hookId: String, callIndex: Int, bufferLocation: String) async {
+        let captureKey = Self.captureKey(hookId: hookId, callIndex: callIndex)
+        pendingCaptures[captureKey] = PendingITraceCapture(
+            hookID: UUID(uuidString: hookId)!,
+            callIndex: callIndex,
+            chunks: [],
+            lost: 0,
+            useSystemDrain: false
+        )
+
+        if let drainScript {
+            do {
+                try await drainScript.exports.openBuffer(bufferLocation)
+                pendingCaptures[captureKey]?.useSystemDrain = true
+                startDrainTimer(for: captureKey)
+            } catch {
+                // System session can't access the task (e.g. SIP).
+                // The target agent will drain locally on stop.
+            }
+        }
+    }
+
+    func handleITraceStop(hookId: String, callIndex: Int, metadataJSON: Data, data: [UInt8]?) async {
+        let captureKey = Self.captureKey(hookId: hookId, callIndex: callIndex)
+
+        let usedSystemDrain = pendingCaptures[captureKey]?.useSystemDrain == true
+
+        if usedSystemDrain, let drainScript {
+            drainTimer?.cancel()
+            drainTimer = nil
+
+            do {
+                if let finalChunk = try await drainScript.exports.close() as? [UInt8], !finalChunk.isEmpty {
+                    pendingCaptures[captureKey]?.chunks.append(Data(finalChunk))
+                }
+                let lost = (try? await drainScript.exports.getLost()) as? Int ?? 0
+                pendingCaptures[captureKey]?.lost = lost
+            } catch {
+            }
+        }
+
+        if let data, !data.isEmpty {
+            pendingCaptures[captureKey]?.chunks.append(Data(data))
+        }
+
+        pendingCaptures[captureKey]?.metadataJSON = metadataJSON
+
+        finalizeCapture(key: captureKey)
+    }
+
+    func handleITraceChunk(hookId: String, callIndex: Int, data: [UInt8], lost: Int) {
+        let captureKey = Self.captureKey(hookId: hookId, callIndex: callIndex)
+        pendingCaptures[captureKey]?.chunks.append(Data(data))
+        pendingCaptures[captureKey]?.lost = lost
+    }
+
+    private func startDrainTimer(for captureKey: String) {
+        drainTimer?.cancel()
+        drainTimer = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+
+                guard let self, let drainScript = self.drainScript else { break }
+
+                do {
+                    if let chunk = try await drainScript.exports.drain() as? [UInt8], !chunk.isEmpty {
+                        self.pendingCaptures[captureKey]?.chunks.append(Data(chunk))
+                    }
+                } catch {
+                    break
+                }
+            }
+        }
+    }
+
+    private func finalizeCapture(key captureKey: String) {
+        guard let capture = pendingCaptures.removeValue(forKey: captureKey),
+            var metadataJSON = capture.metadataJSON
+        else {
+            return
+        }
+
+        var traceData = capture.chunks.reduce(into: Data()) { $0.append($1) }
+
+        ITraceDecoder.cleanupAfterCapture(traceData: &traceData, metadataJSON: &metadataJSON)
+
+        let hookName = instruments.lazy
+            .compactMap { runtime -> String? in
+                guard let config = try? TracerConfig.decode(from: runtime.instance.configJSON) else { return nil }
+                return config.hooks.first(where: { $0.id == capture.hookID })?.displayName
+            }
+            .first ?? capture.hookID.uuidString
+
+        let displayName = "\(hookName) call #\(capture.callIndex)"
+
+        let itraceCapture = ITraceCapture(
+            hookID: capture.hookID,
+            callIndex: capture.callIndex,
+            displayName: displayName,
+            traceData: traceData,
+            metadataJSON: metadataJSON,
+            lost: capture.lost
+        )
+
+        itraceCapture.session = sessionRecord
+        modelContext.insert(itraceCapture)
+    }
+
+    func tearDownITrace() async {
+        drainTimer?.cancel()
+        drainTimer = nil
+        pendingCaptures.removeAll()
+
+        if let drainScript {
+            try? await drainScript.unload()
+            self.drainScript = nil
+        }
+
+        if let systemSession {
+            try? await systemSession.detach()
+            self.systemSession = nil
+        }
+    }
+
+    // MARK: - R2 Integration
+
     private func ensureR2Opened() async {
         if let task = openR2Task {
             await task.value
@@ -669,13 +888,7 @@ final class ProcessNode: ObservableObject, Identifiable {
             await r2.config.set("emu.str", bool: true)
             await r2.config.set("anal.cc", string: "cdecl")
 
-            guard let anyInfo = try? await script.exports.getProcessInfo(),
-                JSONSerialization.isValidJSONObject(anyInfo),
-                let data = try? JSONSerialization.data(withJSONObject: anyInfo),
-                let info = try? JSONDecoder().decode(FridaProcessInfo.self, from: data)
-            else {
-                return
-            }
+            let info = self.sessionRecord.processInfo!
             await r2.config.set("asm.os", string: info.platform)
             await r2.config.set("asm.arch", string: Self.r2Arch(fromFridaArch: info.arch))
             await r2.config.set("asm.bits", int: info.pointerSize * 8)
@@ -690,13 +903,21 @@ final class ProcessNode: ObservableObject, Identifiable {
         await task.value
     }
 
-    private struct FridaProcessInfo: Decodable {
-        let platform: String
-        let arch: String
-        let pointerSize: Int
+    func fetchAndPersistProcessInfoIfNeeded() async {
+        guard sessionRecord.processInfo == nil else { return }
+
+        guard let anyInfo = try? await script.exports.getProcessInfo(),
+            JSONSerialization.isValidJSONObject(anyInfo),
+            let data = try? JSONSerialization.data(withJSONObject: anyInfo),
+            let info = try? JSONDecoder().decode(ProcessSession.ProcessInfo.self, from: data)
+        else {
+            return
+        }
+
+        sessionRecord.processInfo = info
     }
 
-    private static func r2Arch(fromFridaArch arch: String) -> String {
+    static func r2Arch(fromFridaArch arch: String) -> String {
         switch arch {
         case "ia32", "x64":
             return "x86"

@@ -10,6 +10,7 @@ export interface Instrument<C = unknown> {
 export interface InstrumentContext {
     instanceId: string;
     emit(payload: unknown): void;
+    post(type: string, payload: object, data?: ArrayBuffer | number[] | null): void;
 }
 
 export interface InstrumentHandle<C = unknown> {
@@ -85,6 +86,13 @@ function makeInstrumentContext(instanceId: string): InstrumentContext {
                 instance_id: instanceId,
                 payload: tree,
             }, blob);
+        },
+        post(type: string, payload: object, data?: ArrayBuffer | number[] | null) {
+            send({
+                type,
+                instance_id: instanceId,
+                ...payload,
+            }, data ?? null);
         },
     };
 }

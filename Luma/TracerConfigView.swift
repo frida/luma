@@ -396,6 +396,12 @@ struct TracerConfigView: View {
                 Toggle("Enabled", isOn: bindingForSelectedHookEnabled())
                     .toggleStyle(.switch)
                     .labelsHidden()
+
+                if selectedHookIsFunctionHook {
+                    Toggle("ITrace", isOn: bindingForSelectedHookITrace())
+                        .toggleStyle(.switch)
+                        .help("Capture instruction trace for each call")
+                }
             }
 
             Spacer()
@@ -602,6 +608,29 @@ struct TracerConfigView: View {
         pendingSelectionID = nil
     }
 
+    private var selectedHookIsFunctionHook: Bool {
+        guard let hook = selectedHook else { return false }
+        // Function hooks use defineHandler({onEnter/onLeave}),
+        // instruction hooks use defineHandler(function).
+        // Heuristic: check if the code contains "onEnter" or "onLeave".
+        return hook.code.contains("onEnter") || hook.code.contains("onLeave")
+    }
+
+    private func bindingForSelectedHookITrace() -> Binding<Bool> {
+        Binding(
+            get: {
+                guard let hook = selectedHook else { return false }
+                return config.hooks.first(where: { $0.id == hook.id })?.itraceEnabled ?? false
+            },
+            set: { newValue in
+                guard let hook = selectedHook,
+                    let idx = config.hooks.firstIndex(where: { $0.id == hook.id })
+                else { return }
+                config.hooks[idx].itraceEnabled = newValue
+            }
+        )
+    }
+
     private func bindingForSelectedHookEnabled() -> Binding<Bool> {
         Binding(
             get: {
@@ -765,7 +794,17 @@ private struct HooksListView: View {
             ForEach(hooks) { hook in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(hook.displayName)
+                        HStack(spacing: 4) {
+                            Text(hook.displayName)
+                            if hook.itraceEnabled {
+                                Text("IT")
+                                    .font(.system(.caption2, design: .monospaced).bold())
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .background(Color.orange, in: RoundedRectangle(cornerRadius: 3))
+                            }
+                        }
                         if let sub = subtitle(for: hook) {
                             Text(sub)
                                 .font(.caption2)

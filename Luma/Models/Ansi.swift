@@ -223,6 +223,116 @@ func parseAnsi(_ input: String) throws -> AttributedString {
     return result
 }
 
+#if os(macOS)
+    import AppKit
+
+    func parseAnsiToNSAttributedString(_ input: String, font: NSFont) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+
+        var fgNSColor: NSColor?
+        var isBold = false
+        var isReverseVideo = false
+
+        var currentRun = ""
+
+        func flushRun() {
+            guard !currentRun.isEmpty else { return }
+            var attrs: [NSAttributedString.Key: Any] = [
+                .font: isBold ? NSFont.monospacedSystemFont(ofSize: font.pointSize, weight: .bold) : font
+            ]
+            let effectiveFG = isReverseVideo ? nil : fgNSColor
+            if let fg = effectiveFG {
+                attrs[.foregroundColor] = fg
+            } else {
+                attrs[.foregroundColor] = NSColor(calibratedWhite: 0.7, alpha: 1.0)
+            }
+            result.append(NSAttributedString(string: currentRun, attributes: attrs))
+            currentRun = ""
+        }
+
+        func applySGR(_ params: [String]) {
+            let normalized: [String] = params.isEmpty ? ["0"] : params.map { $0.isEmpty ? "0" : $0 }
+            var i = 0
+            while i < normalized.count {
+                let p = normalized[i]
+                switch p {
+                case "0":
+                    fgNSColor = nil
+                    isBold = false
+                    isReverseVideo = false
+                case "1":
+                    isBold = true
+                case "22":
+                    isBold = false
+                case "7":
+                    isReverseVideo = true
+                case "27":
+                    isReverseVideo = false
+                case "38", "48":
+                    let isForeground = (p == "38")
+                    if i + 4 < normalized.count, normalized[i + 1] == "2" {
+                        let r = CGFloat(Int(normalized[i + 2]) ?? 0) / 255.0
+                        let g = CGFloat(Int(normalized[i + 3]) ?? 0) / 255.0
+                        let b = CGFloat(Int(normalized[i + 4]) ?? 0) / 255.0
+                        if isForeground {
+                            fgNSColor = NSColor(calibratedRed: r, green: g, blue: b, alpha: 1.0)
+                        }
+                        i += 4
+                    }
+                case "39":
+                    fgNSColor = nil
+                default:
+                    break
+                }
+                i += 1
+            }
+        }
+
+        var state: State = .printable
+        var paramBuffer = ""
+        var params: [String] = []
+
+        for char in input {
+            switch state {
+            case .printable:
+                if char == CHR_ESCAPE {
+                    flushRun()
+                    state = .escape
+                } else {
+                    currentRun.append(char)
+                }
+            case .escape:
+                if char == CHR_BRACKET {
+                    params.removeAll(keepingCapacity: true)
+                    paramBuffer.removeAll(keepingCapacity: true)
+                    state = .code
+                } else {
+                    state = .printable
+                }
+            case .code:
+                if char.isNumber {
+                    paramBuffer.append(char)
+                } else if char == CHR_SEMI {
+                    params.append(paramBuffer)
+                    paramBuffer.removeAll(keepingCapacity: true)
+                } else if char == CHR_M {
+                    params.append(paramBuffer)
+                    paramBuffer.removeAll(keepingCapacity: true)
+                    applySGR(params)
+                    state = .printable
+                } else {
+                    state = .printable
+                }
+            case .end:
+                state = .printable
+            }
+        }
+
+        flushRun()
+        return result
+    }
+#endif
+
 func stripAnsi(_ input: String) -> String {
     var result = ""
 

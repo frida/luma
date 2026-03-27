@@ -15,13 +15,16 @@ struct TracerConfig: Codable, Equatable {
 
         var isPinned: Bool
 
+        var itraceEnabled: Bool
+
         init(
             id: UUID = UUID(),
             displayName: String,
             addressAnchor: AddressAnchor,
             isEnabled: Bool = true,
             code: String,
-            isPinned: Bool = false
+            isPinned: Bool = false,
+            itraceEnabled: Bool = false
         ) {
             self.id = id
             self.displayName = displayName
@@ -29,6 +32,7 @@ struct TracerConfig: Codable, Equatable {
             self.isEnabled = isEnabled
             self.code = code
             self.isPinned = isPinned
+            self.itraceEnabled = itraceEnabled
         }
     }
 
@@ -59,6 +63,10 @@ struct TracerConfig: Codable, Equatable {
 
                 if hook.isPinned {
                     dict["isPinned"] = true
+                }
+
+                if hook.itraceEnabled {
+                    dict["itraceEnabled"] = true
                 }
 
                 return dict

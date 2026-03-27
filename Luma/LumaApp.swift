@@ -111,13 +111,16 @@ extension UTType {
 
 struct LumaMigrationPlan: SchemaMigrationPlan {
     static let schemas: [VersionedSchema.Type] = [
-        LumaVersionedSchema.self
+        LumaSchemaV1.self,
+        LumaVersionedSchema.self,
     ]
 
-    static let stages: [MigrationStage] = []
+    static let stages: [MigrationStage] = [
+        .lightweight(fromVersion: LumaSchemaV1.self, toVersion: LumaVersionedSchema.self),
+    ]
 }
 
-struct LumaVersionedSchema: VersionedSchema {
+enum LumaSchemaV1: VersionedSchema {
     static let versionIdentifier = Schema.Version(1, 0, 0)
 
     static let models: [any PersistentModel.Type] = [
@@ -130,5 +133,22 @@ struct LumaVersionedSchema: VersionedSchema {
         ProcessSession.self,
         RemoteDeviceConfig.self,
         REPLCell.self,
+    ]
+}
+
+struct LumaVersionedSchema: VersionedSchema {
+    static let versionIdentifier = Schema.Version(2, 0, 0)
+
+    static let models: [any PersistentModel.Type] = [
+        ProjectUIState.self,
+        ProjectPackagesState.self,
+        InstalledPackage.self,
+        ProjectCollaborationState.self,
+        NotebookEntry.self,
+        TargetPickerState.self,
+        ProcessSession.self,
+        RemoteDeviceConfig.self,
+        REPLCell.self,
+        ITraceCapture.self,
     ]
 }
