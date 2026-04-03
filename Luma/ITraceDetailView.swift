@@ -15,10 +15,12 @@ struct ITraceDetailView: View {
     @State private var isLoading = true
     @State private var errorText: String?
     @State private var selectedEntryIndex: Int?
+    @State private var selectedCallIndex: Int?
+    @State private var callChangeFromTimeline = false
     @State private var showRegisters = true
-    @State private var showCFG = false
     @State private var cfgGraph: CFGGraph?
-    @State private var cfgSelectedAddress: UInt64?
+    @State private var cfgSelectedNodeKey: CFGGraph.NodeKey?
+    @State private var cfgWindowRange: Range<Int> = 0..<0
     @State private var showDiffPicker = false
     @State private var diffTarget: ITraceCapture?
 
@@ -50,15 +52,33 @@ struct ITraceDetailView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else if let decoded {
                 VStack(spacing: 0) {
-                    if !decoded.entries.isEmpty {
-                        ITraceHeatStrip(entries: decoded.entries, selectedIndex: $selectedEntryIndex)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
+                    if !decoded.functionCalls.isEmpty {
+                        ITraceTimeline(
+                            functionCalls: decoded.functionCalls,
+                            totalEntryCount: decoded.entries.count,
+                            selectedCallIndex: Binding(
+                                get: { selectedCallIndex },
+                                set: { newValue in
+                                    callChangeFromTimeline = true
+                                    selectedCallIndex = newValue
+                                }
+                            )
+                        )
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .onChange(of: selectedCallIndex) { _, newIdx in
+                            if callChangeFromTimeline {
+                                syncEntrySelectionFromCall(newIdx, decoded: decoded)
+                                callChangeFromTimeline = false
+                            }
+                            rebuildCFGIfNeeded(decoded: decoded)
+                        }
                     }
 
-                    if showCFG, let cfgGraph {
+                    if let cfgGraph {
                         ITraceCFGView(
                             graph: cfgGraph,
+                            currentSection: selectedCallIndex ?? 0,
                             blockBytes: decoded.blockBytes,
                             disasmProvider: r2.map { r2 in
                                 { addr, size in
@@ -68,16 +88,18 @@ struct ITraceDetailView: View {
                                     return result
                                 }
                             },
-                            selectedAddress: $cfgSelectedAddress
-                        )
-                    } else {
-                        HSplitView {
-                            instructionList(decoded)
-
-                            if showRegisters, let idx = selectedEntryIndex, idx < decoded.entries.count {
-                                registerPanel(decoded.entries[idx])
+                            selectedNodeKey: $cfgSelectedNodeKey,
+                            onNavigateFunction: { direction in
+                                let newIdx = (selectedCallIndex ?? 0) + direction
+                                guard newIdx >= 0, newIdx < decoded.functionCalls.count else { return }
+                                selectedCallIndex = newIdx
+                            },
+                            onJumpToFunction: { index in
+                                let target = index < 0 ? decoded.functionCalls.count - 1 : index
+                                guard target >= 0, target < decoded.functionCalls.count else { return }
+                                selectedCallIndex = target
                             }
-                        }
+                        )
                     }
                 }
             }
@@ -113,19 +135,6 @@ struct ITraceDetailView: View {
             }
 
             Spacer()
-
-            Picker("", selection: $showCFG) {
-                Text("Disasm").tag(false)
-                Text("Graph").tag(true)
-            }
-            .labelsHidden()
-            .pickerStyle(.segmented)
-            .frame(width: 140)
-
-            if !showCFG {
-                Toggle("Registers", isOn: $showRegisters)
-                    .toggleStyle(.switch)
-            }
 
             Button("Compare…") {
                 showDiffPicker = true
@@ -216,6 +225,14 @@ struct ITraceDetailView: View {
             .onKeyPress(.pageDown) {
                 moveSelection(20, scrollProxy: scrollProxy)
                 return .handled
+            }
+            .onChange(of: selectedEntryIndex) { _, newIdx in
+                syncCallSelectionFromEntry(newIdx, decoded: decoded)
+                if let newIdx {
+                    withAnimation {
+                        scrollProxy.scrollTo(newIdx, anchor: .center)
+                    }
+                }
             }
         }
     }
@@ -321,12 +338,16 @@ struct ITraceDetailView: View {
                 await registerR2Flags(r2, from: result)
                 self.r2 = r2
 
-                cfgGraph = CFGGraph.build(from: result)
-
                 decoded = result
+
+                if !result.functionCalls.isEmpty {
+                    selectedCallIndex = 0
+                }
                 if !result.entries.isEmpty {
                     selectedEntryIndex = 0
                 }
+
+                rebuildCFG(decoded: result)
             } catch {
                 errorText = "Failed to decode trace: \(error.localizedDescription)"
             }
@@ -471,6 +492,63 @@ struct ITraceDetailView: View {
         if didChange, let data = try? JSONEncoder().encode(metadata) {
             capture.metadataJSON = data
         }
+    }
+
+    private func syncEntrySelectionFromCall(_ callIdx: Int?, decoded: DecodedITrace) {
+        guard let callIdx, callIdx < decoded.functionCalls.count else { return }
+        let call = decoded.functionCalls[callIdx]
+        selectedEntryIndex = call.startIndex
+        cfgSelectedNodeKey = CFGGraph.nodeKey(address: decoded.entries[call.startIndex].blockAddress, section: callIdx)
+    }
+
+    private func syncCallSelectionFromEntry(_ entryIdx: Int?, decoded: DecodedITrace) {
+        guard let entryIdx else { return }
+        for (i, call) in decoded.functionCalls.enumerated() {
+            if entryIdx >= call.startIndex && entryIdx < call.endIndex {
+                if selectedCallIndex != i {
+                    selectedCallIndex = i
+                }
+                return
+            }
+        }
+    }
+
+    private func rebuildCFGIfNeeded(decoded: DecodedITrace) {
+        guard let callIdx = selectedCallIndex else { return }
+        // Rebuild if the current selection is within 3 of the window edge,
+        // or if no graph exists yet.
+        let margin = 3
+        if cfgGraph != nil
+            && callIdx >= cfgWindowRange.lowerBound + margin
+            && callIdx < cfgWindowRange.upperBound - margin
+        {
+            return
+        }
+        rebuildCFG(decoded: decoded)
+    }
+
+    private func rebuildCFG(decoded: DecodedITrace) {
+        guard let callIdx = selectedCallIndex,
+            callIdx < decoded.functionCalls.count
+        else {
+            cfgGraph = nil
+            return
+        }
+
+        let calls = decoded.functionCalls
+        let windowSize = 10
+        let lo = max(0, callIdx - windowSize)
+        let hi = min(calls.count, callIdx + windowSize + 1)
+
+        cfgWindowRange = lo..<hi
+
+        var sections: [(entries: ArraySlice<TraceEntry>, section: Int)] = []
+        for i in lo..<hi {
+            let entries = decoded.entries[calls[i].startIndex..<calls[i].endIndex]
+            sections.append((entries: entries, section: i))
+        }
+
+        cfgGraph = CFGGraph.buildAllFunctions(sections: sections, currentSection: callIdx)
     }
 }
 

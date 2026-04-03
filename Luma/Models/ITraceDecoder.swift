@@ -5,6 +5,22 @@ struct DecodedITrace {
     let registerNames: [String]
     var entries: [TraceEntry]
     let blockBytes: [UInt64: Data]
+    let functionCalls: [TraceFunctionCall]
+}
+
+struct TraceFunctionCall {
+    let functionName: String
+    let startIndex: Int
+    let endIndex: Int
+
+    var entryCount: Int { endIndex - startIndex }
+
+    var shortName: String {
+        if let bang = functionName.firstIndex(of: "!") {
+            return String(functionName[functionName.index(after: bang)...])
+        }
+        return functionName
+    }
 }
 
 struct TraceEntry {
@@ -128,10 +144,13 @@ enum ITraceDecoder {
             ))
         }
 
+        let functionCalls = groupIntoFunctionCalls(entries)
+
         return DecodedITrace(
             registerNames: registerNames,
             entries: entries,
-            blockBytes: blockBytesMap
+            blockBytes: blockBytesMap,
+            functionCalls: functionCalls
         )
     }
 
@@ -291,6 +310,43 @@ enum ITraceDecoder {
     }
 
     // MARK: - Helpers
+
+    /// Group entries into contiguous runs of the same function.
+    private static func groupIntoFunctionCalls(_ entries: [TraceEntry]) -> [TraceFunctionCall] {
+        guard !entries.isEmpty else { return [] }
+
+        var calls: [TraceFunctionCall] = []
+        var currentSymbol = baseSymbol(of: entries[0].blockName)
+        var startIndex = 0
+
+        for i in 1..<entries.count {
+            let symbol = baseSymbol(of: entries[i].blockName)
+            if symbol != currentSymbol {
+                calls.append(TraceFunctionCall(
+                    functionName: currentSymbol,
+                    startIndex: startIndex,
+                    endIndex: i
+                ))
+                currentSymbol = symbol
+                startIndex = i
+            }
+        }
+
+        calls.append(TraceFunctionCall(
+            functionName: currentSymbol,
+            startIndex: startIndex,
+            endIndex: entries.count
+        ))
+
+        return calls
+    }
+
+    static func baseSymbol(of name: String) -> String {
+        if let plus = name.firstIndex(of: "+") {
+            return String(name[..<plus])
+        }
+        return name
+    }
 
     private static func readUInt64(_ bytes: [UInt8], at offset: Int) -> UInt64 {
         var value: UInt64 = 0

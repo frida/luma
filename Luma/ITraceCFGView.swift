@@ -5,9 +5,12 @@ import SwiftUI
 
 struct ITraceCFGView: NSViewRepresentable {
     let graph: CFGGraph
+    let currentSection: Int
     let blockBytes: [UInt64: Data]
     let disasmProvider: ((UInt64, Int) async -> String)?
-    @Binding var selectedAddress: UInt64?
+    @Binding var selectedNodeKey: CFGGraph.NodeKey?
+    var onNavigateFunction: ((Int) -> Void)?
+    var onJumpToFunction: ((Int) -> Void)?  // absolute index: 0 = first, -1 = last
     @Environment(\.colorScheme) private var colorScheme
 
     func makeNSView(context: Context) -> CFGContainerView {
@@ -32,31 +35,99 @@ struct ITraceCFGView: NSViewRepresentable {
         let click = NSClickGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleClick(_:)))
         container.addGestureRecognizer(click)
 
+        container.coordinator = context.coordinator
+
+        // Auto-focus for keyboard input.
+        DispatchQueue.main.async {
+            container.window?.makeFirstResponder(container)
+        }
+
         return container
     }
 
     func updateNSView(_ container: CFGContainerView, context: Context) {
         let coordinator = context.coordinator
-        coordinator.graph = graph
-        coordinator.selectedAddress = selectedAddress
         coordinator.disasmProvider = disasmProvider
         coordinator.blockBytes = blockBytes
+        coordinator.currentSection = currentSection
         coordinator.isDarkMode = colorScheme == .dark
-        coordinator.fetchDisasmForVisibleNodes()
+        coordinator.onNavigateFunction = onNavigateFunction
+        coordinator.onJumpToFunction = onJumpToFunction
 
-        if coordinator.isDarkMode {
-            container.metalView.clearColor = MTLClearColor(red: 0.1, green: 0.1, blue: 0.12, alpha: 1)
-        } else {
-            container.metalView.clearColor = MTLClearColor(red: 0.95, green: 0.95, blue: 0.96, alpha: 1)
+        let graphChanged = coordinator.graph.entryKey != graph.entryKey
+            || coordinator.graph.nodes.count != graph.nodes.count
+        let isFirstLoad = coordinator.graph.nodes.isEmpty
+        if graphChanged {
+            // Remember selected node position before rebuild.
+            let anchorKey = coordinator.selectedKey
+            let oldAnchorPos = anchorKey.flatMap { coordinator.graph.nodes[$0]?.position }
+
+            coordinator.graph = graph
+
+            let nodes = coordinator.graph.nodes
+            coordinator.graph.assignPositions { key in
+                coordinator.nodeHeight(for: nodes[key]!)
+            }
+
+            if isFirstLoad || coordinator.pendingFitAlignment != nil {
+                let alignment = coordinator.pendingFitAlignment ?? .leading
+                coordinator.pendingFitAlignment = nil
+                coordinator.fitToView(alignment: alignment)
+
+                if isFirstLoad {
+                    let first = coordinator.graph.nodes.values
+                        .filter { $0.section == coordinator.currentSection }
+                        .min(by: { $0.position.y < $1.position.y })
+                    if let first {
+                        coordinator.select(first.key)
+                    }
+                }
+            } else if let oldPos = oldAnchorPos,
+                let newPos = anchorKey.flatMap({ coordinator.graph.nodes[$0]?.position })
+            {
+                // Only compensate X. Y is managed by pendingNav/panToNode.
+                coordinator.camera.offset.x -= (newPos.x - oldPos.x) * coordinator.camera.zoom
+            }
+
+            coordinator.fetchDisasmForVisibleNodes()
         }
 
+        if let nav = coordinator.pendingNav {
+            let sectionNodes = coordinator.graph.nodes.values
+                .filter { $0.section == coordinator.currentSection }
+                .sorted { $0.position.y < $1.position.y }
+            if let node = (nav.direction < 0 ? sectionNodes.last : sectionNodes.first) {
+                coordinator.pendingNav = nil
+                coordinator.select(node.key)
+
+                // Ensure the node is visible, then align Y to section top.
+                coordinator.panToNode(node, axis: .both)
+                if nav.axis == .horizontal {
+                    let viewSize = container.bounds.size
+                    let section = coordinator.sectionBounds(coordinator.currentSection)
+                    let margin: CGFloat = 20
+                    coordinator.camera.offset.y = margin - section.minY * coordinator.camera.zoom - viewSize.height / 2
+                }
+            }
+            // If no nodes found for the section, keep pendingNav
+            // until the graph rebuilds with the right data.
+        } else if selectedNodeKey != coordinator.selectedKey {
+            coordinator.selectedKey = selectedNodeKey
+            if let key = selectedNodeKey, let node = coordinator.graph.nodes[key] {
+                coordinator.panToNode(node, axis: .both)
+            }
+        }
+
+        container.metalView.clearColor = coordinator.isDarkMode
+            ? MTLClearColor(red: 0.1, green: 0.1, blue: 0.12, alpha: 1)
+            : MTLClearColor(red: 0.95, green: 0.95, blue: 0.96, alpha: 1)
         container.metalView.needsDisplay = true
         container.textOverlay.isDarkMode = coordinator.isDarkMode
         container.textOverlay.needsDisplay = true
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(selectedAddress: $selectedAddress)
+        Coordinator(selectedNodeKey: $selectedNodeKey)
     }
 }
 
@@ -65,6 +136,42 @@ struct ITraceCFGView: NSViewRepresentable {
 class CFGContainerView: NSView {
     let metalView = MTKView()
     let textOverlay = CFGTextOverlayView()
+    weak var coordinator: ITraceCFGView.Coordinator?
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func keyDown(with event: NSEvent) {
+        guard let coordinator else {
+            super.keyDown(with: event)
+            return
+        }
+
+        switch event.keyCode {
+        case 123:  // left arrow
+            coordinator.pendingNav = (direction: 1, axis: .both)
+            coordinator.onNavigateFunction?(-1)
+        case 124:  // right arrow
+            coordinator.pendingNav = (direction: 1, axis: .both)
+            coordinator.onNavigateFunction?(1)
+        case 125:  // down arrow
+            coordinator.moveToNextNode()
+        case 126:  // up arrow
+            coordinator.moveToPreviousNode()
+        default:
+            if let chars = event.charactersIgnoringModifiers {
+                switch chars {
+                case "\u{F729}":  // Home
+                    coordinator.selectFirstNode()
+                case "\u{F72B}":  // End
+                    coordinator.selectLastNode()
+                default:
+                    super.keyDown(with: event)
+                }
+            } else {
+                super.keyDown(with: event)
+            }
+        }
+    }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -77,6 +184,9 @@ class CFGContainerView: NSView {
     }
 
     private func setupViews() {
+        wantsLayer = true
+        layer?.masksToBounds = true
+
         metalView.translatesAutoresizingMaskIntoConstraints = false
         textOverlay.translatesAutoresizingMaskIntoConstraints = false
 
@@ -127,7 +237,7 @@ class CFGTextOverlayView: NSView {
 
         let nameFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .bold)
         let padding: CGFloat = 4
-        let nameHeight: CGFloat = 14
+        let nameHeight: CGFloat = 16
 
         for label in labels {
             let screenRect = CGRect(
@@ -138,34 +248,27 @@ class CFGTextOverlayView: NSView {
             )
             guard screenRect.intersects(viewBounds) else { continue }
 
-            // Skip text when nodes are too small to read.
-            guard screenRect.height > 16 else { continue }
-
             ctx.saveGState()
             ctx.clip(to: label.worldRect)
 
-            // Draw name if there's enough room.
-            if screenRect.height > 12 {
-                let nameColor: NSColor = label.isSelected
-                    ? (isDarkMode ? .white : .white)
-                    : (isDarkMode ? NSColor(calibratedRed: 0.6, green: 0.85, blue: 1.0, alpha: 1.0)
-                                  : NSColor(calibratedRed: 0.1, green: 0.35, blue: 0.7, alpha: 1.0))
-                let nameAttrs: [NSAttributedString.Key: Any] = [
-                    .font: nameFont,
-                    .foregroundColor: nameColor,
-                ]
-                let nameStr = NSAttributedString(string: shortName(label.name), attributes: nameAttrs)
-                let nameRect = CGRect(
-                    x: label.worldRect.minX + padding,
-                    y: label.worldRect.minY + 2,
-                    width: 10000,
-                    height: nameHeight
-                )
-                nameStr.draw(with: nameRect, options: [.usesLineFragmentOrigin])
-            }
+            let nameColor: NSColor = label.isSelected
+                ? (isDarkMode ? .white : .white)
+                : (isDarkMode ? NSColor(calibratedRed: 0.6, green: 0.85, blue: 1.0, alpha: 1.0)
+                              : NSColor(calibratedRed: 0.1, green: 0.35, blue: 0.7, alpha: 1.0))
+            let nameAttrs: [NSAttributedString.Key: Any] = [
+                .font: nameFont,
+                .foregroundColor: nameColor,
+            ]
+            let nameStr = NSAttributedString(string: shortName(label.name), attributes: nameAttrs)
+            let nameRect = CGRect(
+                x: label.worldRect.minX + padding,
+                y: label.worldRect.minY + 2,
+                width: 10000,
+                height: nameHeight
+            )
+            nameStr.draw(with: nameRect, options: [.usesLineFragmentOrigin])
 
-            // Draw disasm only when zoomed in enough to read it.
-            if screenRect.height > 40, let disasm = label.cachedDisasm {
+            if let disasm = label.cachedDisasm {
                 let disasmRect = CGRect(
                     x: label.worldRect.minX + padding,
                     y: label.worldRect.minY + nameHeight + 2,
@@ -194,24 +297,31 @@ class CFGTextOverlayView: NSView {
 extension ITraceCFGView {
 
     class Coordinator: NSObject, MTKViewDelegate {
-        var graph: CFGGraph = CFGGraph(nodes: [:], edges: [], entryAddress: 0)
-        var selectedAddress: UInt64?
+        var graph: CFGGraph = CFGGraph(nodes: [:], edges: [], entryKey: 0)
+        var selectedKey: CFGGraph.NodeKey?
         var disasmProvider: ((UInt64, Int) async -> String)?
         var blockBytes: [UInt64: Data] = [:]
+        var currentSection: Int = 0
         var isDarkMode: Bool = true
+        var onNavigateFunction: ((Int) -> Void)?
+        var onJumpToFunction: ((Int) -> Void)?
+        var pendingNav: (direction: Int, axis: PanAxis)?
+        enum FitAlignment { case leading, trailing }
+        var pendingFitAlignment: FitAlignment?
+        var needsInitialFit = true
         weak var container: CFGContainerView?
 
-        private var selectedBinding: Binding<UInt64?>
+        var selectedBinding: Binding<CFGGraph.NodeKey?>
         private var disasmRaw: [UInt64: String] = [:]
         private var disasmRendered: [UInt64: NSAttributedString] = [:]
         private var nodeHeightCache: [UInt64: CGFloat] = [:]
-        private var layoutDebounce: Task<Void, Never>?
+        private var fetchTask: Task<Void, Never>?
 
         private var device: MTLDevice!
         private var commandQueue: MTLCommandQueue!
         private var pipelineState: MTLRenderPipelineState!
 
-        private var camera = Camera()
+        var camera = Camera()
 
         struct Camera {
             var offset: CGPoint = .zero
@@ -227,8 +337,8 @@ extension ITraceCFGView {
         private let nodeBaseHeight: CGFloat = 18
         private let disasmFont = NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
 
-        init(selectedAddress: Binding<UInt64?>) {
-            self.selectedBinding = selectedAddress
+        init(selectedNodeKey: Binding<CFGGraph.NodeKey?>) {
+            self.selectedBinding = selectedNodeKey
         }
 
         func setup(device: MTLDevice, view: MTKView) {
@@ -248,18 +358,18 @@ extension ITraceCFGView {
             pipelineState = try! device.makeRenderPipelineState(descriptor: desc)
         }
 
+        private let titleHeight: CGFloat = 16
+
         func nodeHeight(for node: CFGGraph.Node) -> CGFloat {
             if let cached = nodeHeightCache[node.address] { return cached }
 
             let h: CGFloat
             if let rendered = disasmRendered[node.address] {
-                let textHeight = rendered.boundingRect(
-                    with: CGSize(width: 10000, height: CGFloat.greatestFiniteMagnitude),
-                    options: [.usesLineFragmentOrigin]
-                ).height
-                h = nodeBaseHeight + textHeight + 2
+                let lineCount = rendered.string.components(separatedBy: "\n").count
+                let lineH = ceil(disasmFont.ascender - disasmFont.descender + disasmFont.leading)
+                h = titleHeight + CGFloat(max(1, lineCount)) * lineH + 4
             } else {
-                h = nodeBaseHeight + disasmFont.ascender - disasmFont.descender + disasmFont.leading
+                h = titleHeight + ceil(disasmFont.ascender - disasmFont.descender + disasmFont.leading) + 4
             }
 
             nodeHeightCache[node.address] = h
@@ -267,35 +377,55 @@ extension ITraceCFGView {
         }
 
         func fetchDisasmForVisibleNodes() {
-            for (addr, node) in graph.nodes {
+            var toFetch: [(UInt64, Int)] = []
+            for (_, node) in graph.nodes {
+                let addr = node.address
                 guard disasmRaw[addr] == nil else { continue }
-
                 let size = blockBytes[addr]?.count ?? node.size
-                if let provider = disasmProvider {
-                    Task { @MainActor in
-                        var result = await provider(addr, size)
-                        while result.hasSuffix("\n") { result.removeLast() }
-                        self.disasmRaw[addr] = result
-                        self.disasmRendered[addr] = self.renderDisasm(result)
-                        self.nodeHeightCache.removeValue(forKey: addr)
-                        self.scheduleRelayout()
-                    }
-                }
+                toFetch.append((addr, size))
             }
-        }
 
-        private func scheduleRelayout() {
-            layoutDebounce?.cancel()
-            layoutDebounce = Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 50_000_000)
+            guard !toFetch.isEmpty, let provider = disasmProvider else { return }
+
+            // Cancel any in-flight fetch to prevent concurrent relayouts.
+            fetchTask?.cancel()
+            fetchTask = Task { @MainActor in
+                for (addr, size) in toFetch {
+                    guard !Task.isCancelled else { return }
+                    guard self.disasmRaw[addr] == nil else { continue }
+                    var result = await provider(addr, size)
+                    while result.hasSuffix("\n") { result.removeLast() }
+                    self.disasmRaw[addr] = result
+                    self.disasmRendered[addr] = self.renderDisasm(result)
+                    self.nodeHeightCache.removeValue(forKey: addr)
+                }
+
                 guard !Task.isCancelled else { return }
 
+                // Remember selected node position before relayout.
+                let anchorNode = self.selectedKey.flatMap { self.graph.nodes[$0] }
+                let oldAnchorPos = anchorNode?.position
+
                 let nodes = self.graph.nodes
-                self.graph.assignPositions { addr in
-                    self.nodeHeight(for: nodes[addr]!)
+                self.graph.assignPositions { key in
+                    self.nodeHeight(for: nodes[key]!)
                 }
-                self.container?.metalView.needsDisplay = true
-                self.container?.textOverlay.needsDisplay = true
+
+                // Compensate both axes — content shifted due to height changes.
+                if let oldPos = oldAnchorPos,
+                    let newPos = self.selectedKey.flatMap({ self.graph.nodes[$0]?.position })
+                {
+                    self.camera.offset.x -= (newPos.x - oldPos.x) * self.camera.zoom
+                    self.camera.offset.y -= (newPos.y - oldPos.y) * self.camera.zoom
+                }
+
+                if self.needsInitialFit {
+                    self.needsInitialFit = false
+                    self.fitToView()
+                } else {
+                    self.container?.metalView.needsDisplay = true
+                    self.container?.textOverlay.needsDisplay = true
+                }
             }
         }
 
@@ -343,9 +473,16 @@ extension ITraceCFGView {
                 else { continue }
 
                 let intensity = Float(edge.count) / Float(maxCount)
-                let color: SIMD4<Float> = isDarkMode
-                    ? SIMD4(0.4, 0.6 + 0.4 * intensity, 1.0, 0.3 + 0.5 * intensity)
-                    : SIMD4(0.2, 0.3 + 0.3 * intensity, 0.8, 0.4 + 0.4 * intensity)
+                let color: SIMD4<Float>
+                if edge.isCrossSection {
+                    color = isDarkMode
+                        ? SIMD4(1.0, 0.7, 0.3, 0.6)
+                        : SIMD4(0.8, 0.5, 0.1, 0.6)
+                } else {
+                    color = isDarkMode
+                        ? SIMD4(0.4, 0.6 + 0.4 * intensity, 1.0, 0.3 + 0.5 * intensity)
+                        : SIMD4(0.2, 0.3 + 0.3 * intensity, 0.8, 0.4 + 0.4 * intensity)
+                }
 
                 let fromH = nodeHeight(for: fromNode)
                 let toH = nodeHeight(for: toNode)
@@ -387,7 +524,7 @@ extension ITraceCFGView {
             var textLabels: [CFGTextOverlayView.NodeLabel] = []
 
             for (_, node) in graph.nodes {
-                let isSelected = node.address == selectedAddress
+                let isSelected = node.key == selectedKey
                 let h = nodeHeight(for: node)
 
                 let topLeft = worldToScreen(CGPoint(x: node.position.x - nodeWidth / 2, y: node.position.y - h / 2))
@@ -486,20 +623,24 @@ extension ITraceCFGView {
             camera.offset.x += translation.x
             camera.offset.y -= translation.y
             gesture.setTranslation(.zero, in: gesture.view)
+            clampCamera()
             container?.metalView.needsDisplay = true
             container?.textOverlay.needsDisplay = true
         }
 
         @objc func handleMagnify(_ gesture: NSMagnificationGestureRecognizer) {
             camera.zoom *= 1 + gesture.magnification
-            camera.zoom = max(0.1, min(10, camera.zoom))
+            let minZoom = computeFitZoom() * 0.9
+            camera.zoom = max(minZoom, min(3, camera.zoom))
             gesture.magnification = 0
             container?.metalView.needsDisplay = true
             container?.textOverlay.needsDisplay = true
+            clampCamera()
         }
 
         @objc func handleClick(_ gesture: NSClickGestureRecognizer) {
             guard let view = gesture.view else { return }
+            view.window?.makeFirstResponder(view)
             let raw = gesture.location(in: view)
             let viewSize = view.bounds.size
             let loc = CGPoint(x: raw.x, y: viewSize.height - raw.y)
@@ -507,7 +648,7 @@ extension ITraceCFGView {
             let worldX = (loc.x - viewSize.width / 2 - camera.offset.x) / camera.zoom
             let worldY = (loc.y - viewSize.height / 2 - camera.offset.y) / camera.zoom
 
-            var bestAddr: UInt64?
+            var bestKey: CFGGraph.NodeKey?
             var bestDist: CGFloat = .greatestFiniteMagnitude
 
             for (_, node) in graph.nodes {
@@ -517,11 +658,204 @@ extension ITraceCFGView {
                 let dist = dx * dx + dy * dy
                 if dist < bestDist && abs(dx) < nodeWidth / 2 && abs(dy) < h / 2 {
                     bestDist = dist
-                    bestAddr = node.address
+                    bestKey = node.key
                 }
             }
 
-            selectedBinding.wrappedValue = bestAddr
+            select(bestKey)
+
+            if let key = bestKey, let node = graph.nodes[key], node.section != currentSection {
+                onJumpToFunction?(node.section)
+            }
+
+            container?.metalView.needsDisplay = true
+            container?.textOverlay.needsDisplay = true
+        }
+
+        // MARK: - Keyboard Navigation
+
+        func select(_ key: CFGGraph.NodeKey?) {
+            selectedKey = key
+            selectedBinding.wrappedValue = key
+        }
+
+        func selectFirstNode() {
+            pendingNav = (direction: 1, axis: .both)
+            pendingFitAlignment = .leading
+            onJumpToFunction?(0)
+        }
+
+        func selectLastNode() {
+            pendingNav = (direction: -1, axis: .both)
+            pendingFitAlignment = .trailing
+            onJumpToFunction?(-1)
+        }
+
+        func moveToNextNode() {
+            let sorted = currentSectionNodes().sorted { $0.position.y < $1.position.y }
+            selectNextIn(sorted, direction: 1)
+        }
+
+        func moveToPreviousNode() {
+            let sorted = currentSectionNodes().sorted { $0.position.y < $1.position.y }
+            selectNextIn(sorted, direction: -1)
+        }
+
+        private func computeFitZoom() -> CGFloat {
+            guard let viewSize = container?.bounds.size,
+                viewSize.width > 0, viewSize.height > 0
+            else { return 1.0 }
+
+            let bounds = sectionBounds(currentSection)
+            guard bounds.width > 0, bounds.height > 0 else { return 1.0 }
+
+            let margin: CGFloat = 20
+            let zoomX = (viewSize.width - margin * 2) / bounds.width
+            let zoomY = (viewSize.height - margin * 2) / bounds.height
+            return min(zoomX, zoomY, 1.0)
+        }
+
+        func fitToView(alignment: FitAlignment = .leading) {
+            guard let viewSize = container?.bounds.size else { return }
+            camera.zoom = computeFitZoom()
+
+            let section = sectionBounds(currentSection)
+            let margin: CGFloat = 20
+            let hw = viewSize.width / 2
+            let hh = viewSize.height / 2
+
+            let x: CGFloat
+            switch alignment {
+            case .leading:
+                x = margin - section.minX * camera.zoom - hw
+            case .trailing:
+                x = (viewSize.width - margin) - section.maxX * camera.zoom - hw
+            }
+
+            camera.offset = CGPoint(x: x, y: margin - section.minY * camera.zoom - hh)
+
+            container?.metalView.needsDisplay = true
+            container?.textOverlay.needsDisplay = true
+        }
+
+        func clampCamera() {
+            guard let viewSize = container?.bounds.size else { return }
+            let content = allNodesBounds()
+            guard content.width > 0 else { return }
+
+            let margin: CGFloat = 20
+            let hw = viewSize.width / 2
+            let hh = viewSize.height / 2
+
+            // worldToScreen: screen = world * zoom + viewSize/2 + offset
+            // Content left edge at screen `margin`:
+            //   margin = content.minX * zoom + hw + offset.x
+            //   offset.x = margin - content.minX * zoom - hw
+            let maxOffsetX = margin - content.minX * camera.zoom - hw
+            // Content right edge at screen `viewSize.width - margin`:
+            let minOffsetX = (viewSize.width - margin) - content.maxX * camera.zoom - hw
+            // Content top edge at screen `margin`:
+            let maxOffsetY = margin - content.minY * camera.zoom - hh
+            // Content bottom edge at screen `viewSize.height - margin`:
+            let minOffsetY = (viewSize.height - margin) - content.maxY * camera.zoom - hh
+
+            camera.offset.x = max(minOffsetX, min(maxOffsetX, camera.offset.x))
+            camera.offset.y = max(minOffsetY, min(maxOffsetY, camera.offset.y))
+        }
+
+        func sectionBounds(_ section: Int) -> CGRect {
+            let sectionNodes = graph.nodes.values.filter { $0.section == section }
+            guard !sectionNodes.isEmpty else {
+                // Fall back to all nodes.
+                return allNodesBounds()
+            }
+            return boundingRect(of: sectionNodes)
+        }
+
+        private func allNodesBounds() -> CGRect {
+            boundingRect(of: Array(graph.nodes.values))
+        }
+
+        private func boundingRect(of nodes: [CFGGraph.Node]) -> CGRect {
+            guard !nodes.isEmpty else { return .zero }
+
+            var minX: CGFloat = .greatestFiniteMagnitude
+            var maxX: CGFloat = -.greatestFiniteMagnitude
+            var minY: CGFloat = .greatestFiniteMagnitude
+            var maxY: CGFloat = -.greatestFiniteMagnitude
+
+            for node in nodes {
+                let h = nodeHeight(for: node)
+                minX = min(minX, node.position.x - nodeWidth / 2)
+                maxX = max(maxX, node.position.x + nodeWidth / 2)
+                minY = min(minY, node.position.y - h / 2)
+                maxY = max(maxY, node.position.y + h / 2)
+            }
+
+            return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        }
+
+        enum PanAxis { case both, horizontal, vertical }
+
+        func panToNode(_ node: CFGGraph.Node, axis: PanAxis = .both) {
+            guard let viewSize = container?.bounds.size else { return }
+
+            let screenX = node.position.x * camera.zoom + viewSize.width / 2 + camera.offset.x
+            let screenY = node.position.y * camera.zoom + viewSize.height / 2 + camera.offset.y
+            let halfW = nodeWidth / 2 * camera.zoom
+            let halfH = nodeHeight(for: node) / 2 * camera.zoom
+
+            let margin: CGFloat = 20
+            var dx: CGFloat = 0
+            var dy: CGFloat = 0
+
+            if axis != .vertical {
+                if screenX - halfW < margin {
+                    dx = margin - (screenX - halfW)
+                } else if screenX + halfW > viewSize.width - margin {
+                    dx = (viewSize.width - margin) - (screenX + halfW)
+                }
+            }
+
+            if axis != .horizontal {
+                if screenY - halfH < margin {
+                    dy = margin - (screenY - halfH)
+                } else if screenY + halfH > viewSize.height - margin {
+                    dy = (viewSize.height - margin) - (screenY + halfH)
+                }
+            }
+
+            if dx != 0 || dy != 0 {
+                camera.offset.x += dx
+                camera.offset.y += dy
+            }
+        }
+
+        private func currentSectionNodes() -> [CFGGraph.Node] {
+            let current = graph.nodes.values.filter { $0.section == currentSection }
+            return current.isEmpty ? Array(graph.nodes.values) : current
+        }
+
+        private func selectNextIn(_ sorted: [CFGGraph.Node], direction: Int) {
+            guard !sorted.isEmpty else { return }
+
+            let currentIdx = sorted.firstIndex { $0.key == selectedKey }
+            let nextIdx: Int
+            if let currentIdx {
+                let candidate = currentIdx + direction
+                if candidate < 0 || candidate >= sorted.count {
+                    pendingNav = (direction: direction, axis: .both)
+                    onNavigateFunction?(direction)
+                    return
+                }
+                nextIdx = candidate
+            } else {
+                nextIdx = direction > 0 ? 0 : sorted.count - 1
+            }
+
+            let node = sorted[nextIdx]
+            select(node.key)
+            panToNode(node, axis: .vertical)
             container?.metalView.needsDisplay = true
             container?.textOverlay.needsDisplay = true
         }
