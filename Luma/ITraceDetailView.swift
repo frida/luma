@@ -19,6 +19,7 @@ struct ITraceDetailView: View {
     @State private var callChangeFromTimeline = false
     @State private var showRegisters = true
     @State private var cfgGraph: CFGGraph?
+    @State private var cfgNodeRegisterInfo: [CFGGraph.NodeKey: NodeRegisterInfo] = [:]
     @State private var cfgSelectedNodeKey: CFGGraph.NodeKey?
     @State private var cfgWindowRange: Range<Int> = 0..<0
     @State private var showDiffPicker = false
@@ -80,6 +81,8 @@ struct ITraceDetailView: View {
                             graph: cfgGraph,
                             currentSection: selectedCallIndex ?? 0,
                             blockBytes: decoded.blockBytes,
+                            nodeRegisterInfo: cfgNodeRegisterInfo,
+                            registerNames: decoded.registerNames,
                             disasmProvider: r2.map { r2 in
                                 { addr, size in
                                     await r2.config.set("asm.flags", bool: false)
@@ -549,6 +552,25 @@ struct ITraceDetailView: View {
         }
 
         cfgGraph = CFGGraph.buildAllFunctions(sections: sections, currentSection: callIdx)
+
+        var infoMap: [CFGGraph.NodeKey: NodeRegisterInfo] = [:]
+        for i in lo..<hi {
+            let call = calls[i]
+            for entryIdx in call.startIndex..<call.endIndex {
+                guard entryIdx < decoded.registerStates.count else { continue }
+                let key = CFGGraph.nodeKey(
+                    address: decoded.entries[entryIdx].blockAddress, section: i)
+                let stateBefore = entryIdx > 0
+                    ? decoded.registerStates[entryIdx - 1]
+                    : RegisterState(values: [:], changed: [])
+                infoMap[key] = NodeRegisterInfo(
+                    stateBeforeBlock: stateBefore,
+                    stateAfterBlock: decoded.registerStates[entryIdx],
+                    writes: decoded.entries[entryIdx].registerWrites
+                )
+            }
+        }
+        cfgNodeRegisterInfo = infoMap
     }
 }
 

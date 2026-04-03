@@ -6,6 +6,12 @@ struct DecodedITrace {
     var entries: [TraceEntry]
     let blockBytes: [UInt64: Data]
     let functionCalls: [TraceFunctionCall]
+    let registerStates: [RegisterState]
+}
+
+struct RegisterState {
+    let values: [Int: UInt64]
+    let changed: Set<Int>
 }
 
 struct TraceFunctionCall {
@@ -145,12 +151,14 @@ enum ITraceDecoder {
         }
 
         let functionCalls = groupIntoFunctionCalls(entries)
+        let registerStates = computeRegisterStates(entries)
 
         return DecodedITrace(
             registerNames: registerNames,
             entries: entries,
             blockBytes: blockBytesMap,
-            functionCalls: functionCalls
+            functionCalls: functionCalls,
+            registerStates: registerStates
         )
     }
 
@@ -312,6 +320,23 @@ enum ITraceDecoder {
     // MARK: - Helpers
 
     /// Group entries into contiguous runs of the same function.
+    private static func computeRegisterStates(_ entries: [TraceEntry]) -> [RegisterState] {
+        var current: [Int: UInt64] = [:]
+        var states: [RegisterState] = []
+        states.reserveCapacity(entries.count)
+
+        for entry in entries {
+            var changed = Set<Int>()
+            for write in entry.registerWrites {
+                current[write.registerIndex] = write.value
+                changed.insert(write.registerIndex)
+            }
+            states.append(RegisterState(values: current, changed: changed))
+        }
+
+        return states
+    }
+
     private static func groupIntoFunctionCalls(_ entries: [TraceEntry]) -> [TraceFunctionCall] {
         guard !entries.isEmpty else { return [] }
 

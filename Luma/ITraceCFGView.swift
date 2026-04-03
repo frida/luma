@@ -3,10 +3,18 @@ import Metal
 import MetalKit
 import SwiftUI
 
+struct NodeRegisterInfo {
+    let stateBeforeBlock: RegisterState   // state entering this block
+    let stateAfterBlock: RegisterState    // state after all writes
+    let writes: [RegisterWrite]           // writes within this block
+}
+
 struct ITraceCFGView: NSViewRepresentable {
     let graph: CFGGraph
     let currentSection: Int
     let blockBytes: [UInt64: Data]
+    let nodeRegisterInfo: [CFGGraph.NodeKey: NodeRegisterInfo]
+    let registerNames: [String]
     let disasmProvider: ((UInt64, Int) async -> String)?
     @Binding var selectedNodeKey: CFGGraph.NodeKey?
     var onNavigateFunction: ((Int) -> Void)?
@@ -26,14 +34,14 @@ struct ITraceCFGView: NSViewRepresentable {
         context.coordinator.setup(device: metalView.device!, view: metalView)
         context.coordinator.container = container
 
+        let click = NSClickGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleClick(_:)))
+        container.addGestureRecognizer(click)
+
         let pan = NSPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
         container.addGestureRecognizer(pan)
 
         let magnify = NSMagnificationGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleMagnify(_:)))
         container.addGestureRecognizer(magnify)
-
-        let click = NSClickGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleClick(_:)))
-        container.addGestureRecognizer(click)
 
         container.coordinator = context.coordinator
 
@@ -49,6 +57,8 @@ struct ITraceCFGView: NSViewRepresentable {
         let coordinator = context.coordinator
         coordinator.disasmProvider = disasmProvider
         coordinator.blockBytes = blockBytes
+        coordinator.nodeRegisterInfo = nodeRegisterInfo
+        coordinator.registerNames = registerNames
         coordinator.currentSection = currentSection
         coordinator.isDarkMode = colorScheme == .dark
         coordinator.onNavigateFunction = onNavigateFunction
@@ -154,9 +164,13 @@ class CFGContainerView: NSView {
             coordinator.pendingNav = (direction: 1, axis: .both)
             coordinator.onNavigateFunction?(1)
         case 125:  // down arrow
-            coordinator.moveToNextNode()
+            coordinator.moveDown()
         case 126:  // up arrow
-            coordinator.moveToPreviousNode()
+            coordinator.moveUp()
+        case 36:  // Return
+            coordinator.showRegisterPopover()
+        case 53:  // Escape
+            coordinator.dismissRegisterPopover()
         default:
             if let chars = event.charactersIgnoringModifiers {
                 switch chars {
@@ -164,6 +178,10 @@ class CFGContainerView: NSView {
                     coordinator.selectFirstNode()
                 case "\u{F72B}":  // End
                     coordinator.selectLastNode()
+                case "\u{F72C}":  // Page Up
+                    coordinator.jumpToPreviousBlock()
+                case "\u{F72D}":  // Page Down
+                    coordinator.jumpToNextBlock()
                 default:
                     super.keyDown(with: event)
                 }
@@ -210,11 +228,14 @@ class CFGContainerView: NSView {
 
 class CFGTextOverlayView: NSView {
     struct NodeLabel {
-        let worldRect: CGRect      // In world coordinates (unscaled)
+        let worldRect: CGRect
         let name: String
         let cachedDisasm: NSAttributedString?
         let isSelected: Bool
+        let selectedLine: Int?  // instruction line within this node, if selected
     }
+
+    let disasmFont = NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
 
     var labels: [NodeLabel] = []
     var cameraOffset: CGPoint = .zero
@@ -269,9 +290,28 @@ class CFGTextOverlayView: NSView {
             nameStr.draw(with: nameRect, options: [.usesLineFragmentOrigin])
 
             if let disasm = label.cachedDisasm {
+                let disasmY = label.worldRect.minY + nameHeight + 2
+                let lineH = ceil(disasmFont.ascender - disasmFont.descender + disasmFont.leading)
+
+                // Highlight selected instruction line.
+                if let line = label.selectedLine {
+                    let highlightY = disasmY + CGFloat(line) * lineH
+                    let highlightRect = CGRect(
+                        x: label.worldRect.minX,
+                        y: highlightY,
+                        width: label.worldRect.width,
+                        height: lineH
+                    )
+                    let highlightColor = isDarkMode
+                        ? NSColor.white.withAlphaComponent(0.1)
+                        : NSColor.black.withAlphaComponent(0.08)
+                    highlightColor.setFill()
+                    NSBezierPath.fill(highlightRect)
+                }
+
                 let disasmRect = CGRect(
                     x: label.worldRect.minX + padding,
-                    y: label.worldRect.minY + nameHeight + 2,
+                    y: disasmY,
                     width: 10000,
                     height: label.worldRect.height - nameHeight - 4
                 )
@@ -299,8 +339,11 @@ extension ITraceCFGView {
     class Coordinator: NSObject, MTKViewDelegate {
         var graph: CFGGraph = CFGGraph(nodes: [:], edges: [], entryKey: 0)
         var selectedKey: CFGGraph.NodeKey?
+        var selectedInstructionLine: Int = 0  // line index within selected node's disasm
         var disasmProvider: ((UInt64, Int) async -> String)?
         var blockBytes: [UInt64: Data] = [:]
+        var nodeRegisterInfo: [CFGGraph.NodeKey: NodeRegisterInfo] = [:]
+        var registerNames: [String] = []
         var currentSection: Int = 0
         var isDarkMode: Bool = true
         var onNavigateFunction: ((Int) -> Void)?
@@ -585,7 +628,8 @@ extension ITraceCFGView {
                     worldRect: worldRect,
                     name: node.name,
                     cachedDisasm: disasmRendered[node.address],
-                    isSelected: isSelected
+                    isSelected: isSelected,
+                    selectedLine: isSelected ? selectedInstructionLine : nil
                 ))
             }
 
@@ -618,8 +662,24 @@ extension ITraceCFGView {
 
         // MARK: - Gestures
 
+        private var panStarted = false
+
         @objc func handlePan(_ gesture: NSPanGestureRecognizer) {
             let translation = gesture.translation(in: gesture.view)
+
+            if gesture.state == .began {
+                panStarted = false
+            }
+
+            // Require a minimum drag before panning, so small movements
+            // during a click don't hijack the interaction.
+            if !panStarted {
+                if abs(translation.x) < 3 && abs(translation.y) < 3 {
+                    return
+                }
+                panStarted = true
+            }
+
             camera.offset.x += translation.x
             camera.offset.y -= translation.y
             gesture.setTranslation(.zero, in: gesture.view)
@@ -662,7 +722,19 @@ extension ITraceCFGView {
                 }
             }
 
-            select(bestKey)
+            // Compute which instruction line was clicked.
+            var clickedLine = 0
+            if let key = bestKey, let node = graph.nodes[key] {
+                let nodeTop = node.position.y - nodeHeight(for: node) / 2
+                let disasmY = nodeTop + titleHeight + 2
+                let lineH = ceil(disasmFont.ascender - disasmFont.descender + disasmFont.leading)
+                let relY = worldY - disasmY
+                if relY > 0, lineH > 0 {
+                    clickedLine = max(0, min(instructionCount(for: node) - 1, Int(relY / lineH)))
+                }
+            }
+
+            select(bestKey, line: clickedLine)
 
             if let key = bestKey, let node = graph.nodes[key], node.section != currentSection {
                 onJumpToFunction?(node.section)
@@ -674,9 +746,97 @@ extension ITraceCFGView {
 
         // MARK: - Keyboard Navigation
 
-        func select(_ key: CFGGraph.NodeKey?) {
+        func select(_ key: CFGGraph.NodeKey?, line: Int = 0) {
             selectedKey = key
+            selectedInstructionLine = line
             selectedBinding.wrappedValue = key
+        }
+
+        private var popover: NSPopover?
+
+        func showRegisterPopover() {
+            guard let key = selectedKey, let node = graph.nodes[key],
+                let info = nodeRegisterInfo[key],
+                let viewSize = container?.bounds.size
+            else { return }
+
+            dismissRegisterPopover()
+
+            // Compute state at the selected instruction.
+            // On arm64 each instruction is 4 bytes.
+            let instrOffset = selectedInstructionLine * 4
+            var values = info.stateBeforeBlock.values
+            var changed = Set<Int>()
+            for write in info.writes where write.blockOffset <= instrOffset {
+                values[write.registerIndex] = write.value
+                if write.blockOffset == instrOffset {
+                    changed.insert(write.registerIndex)
+                }
+            }
+
+            // Build popover content.
+            let content = NSMutableAttributedString()
+            let normalAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ]
+            let changedAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .bold),
+                .foregroundColor: NSColor(calibratedRed: 1.0, green: 0.6, blue: 0.2, alpha: 1.0),
+            ]
+
+            let sorted = values.keys.sorted()
+            for idx in sorted {
+                guard idx < registerNames.count else { continue }
+                let name = registerNames[idx]
+                let value = values[idx]!
+                let attrs = changed.contains(idx) ? changedAttrs : normalAttrs
+                let line = String(format: "%-5s 0x%016llx\n", (name as NSString).utf8String!, value)
+                content.append(NSAttributedString(string: line, attributes: attrs))
+            }
+
+            let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 240, height: 400))
+            textView.isEditable = false
+            textView.drawsBackground = false
+            textView.textStorage?.setAttributedString(content)
+            textView.sizeToFit()
+
+            let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 260, height: min(400, textView.frame.height + 16)))
+            scrollView.documentView = textView
+            scrollView.hasVerticalScroller = true
+            scrollView.drawsBackground = false
+
+            let vc = NSViewController()
+            vc.view = scrollView
+
+            let pop = NSPopover()
+            pop.contentViewController = vc
+            pop.behavior = .transient
+
+            // Position at the selected instruction line.
+            let titleHeight: CGFloat = 16
+            let lineH = ceil(disasmFont.ascender - disasmFont.descender + disasmFont.leading)
+            let instrWorldY = node.position.y - nodeHeight(for: node) / 2 + titleHeight + 2 + CGFloat(selectedInstructionLine) * lineH + lineH / 2
+
+            let screenX = node.position.x * camera.zoom + viewSize.width / 2 + camera.offset.x
+            let screenY = instrWorldY * camera.zoom + viewSize.height / 2 + camera.offset.y
+
+            if let containerView = container {
+                let rect = NSRect(x: screenX + nodeWidth / 2 * camera.zoom, y: containerView.bounds.height - screenY - 5, width: 1, height: 10)
+                pop.show(relativeTo: rect, of: containerView, preferredEdge: .maxX)
+                self.popover = pop
+            }
+        }
+
+        func dismissRegisterPopover() {
+            popover?.close()
+            popover = nil
+        }
+
+        func instructionCount(for node: CFGGraph.Node) -> Int {
+            disasmRendered[node.address].map {
+                $0.string.components(separatedBy: "\n").count
+            } ?? 0
         }
 
         func selectFirstNode() {
@@ -691,12 +851,40 @@ extension ITraceCFGView {
             onJumpToFunction?(-1)
         }
 
-        func moveToNextNode() {
+        func jumpToNextBlock() {
             let sorted = currentSectionNodes().sorted { $0.position.y < $1.position.y }
             selectNextIn(sorted, direction: 1)
         }
 
-        func moveToPreviousNode() {
+        func jumpToPreviousBlock() {
+            let sorted = currentSectionNodes().sorted { $0.position.y < $1.position.y }
+            selectNextIn(sorted, direction: -1)
+        }
+
+        func moveDown() {
+            // Try moving to the next instruction within the current node.
+            if let key = selectedKey, let node = graph.nodes[key] {
+                let count = instructionCount(for: node)
+                if selectedInstructionLine + 1 < count {
+                    selectedInstructionLine += 1
+                    container?.metalView.needsDisplay = true
+                    container?.textOverlay.needsDisplay = true
+                    return
+                }
+            }
+            // At the last instruction — move to the next node.
+            let sorted = currentSectionNodes().sorted { $0.position.y < $1.position.y }
+            selectNextIn(sorted, direction: 1)
+        }
+
+        func moveUp() {
+            if selectedInstructionLine > 0 {
+                selectedInstructionLine -= 1
+                container?.metalView.needsDisplay = true
+                container?.textOverlay.needsDisplay = true
+                return
+            }
+            // At the first instruction — move to the previous node's last instruction.
             let sorted = currentSectionNodes().sorted { $0.position.y < $1.position.y }
             selectNextIn(sorted, direction: -1)
         }
@@ -854,10 +1042,12 @@ extension ITraceCFGView {
             }
 
             let node = sorted[nextIdx]
-            select(node.key)
+            let line = direction > 0 ? 0 : max(0, instructionCount(for: node) - 1)
+            select(node.key, line: line)
             panToNode(node, axis: .vertical)
             container?.metalView.needsDisplay = true
             container?.textOverlay.needsDisplay = true
         }
     }
 }
+
