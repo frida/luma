@@ -97,6 +97,7 @@ final class ProcessNode: ObservableObject, Identifiable {
             for await event in self.session.events {
                 switch event {
                 case .detached(let reason, _):
+                    self.persistModules()
                     self.failInitialModulesSnapshotWaitersIfNeeded()
                     self.onDestroyed?(self, reason)
                 }
@@ -785,7 +786,7 @@ final class ProcessNode: ObservableObject, Identifiable {
 
         pendingCaptures[captureKey]?.metadataJSON = metadataJSON
 
-        finalizeCapture(key: captureKey)
+        await finalizeCapture(key: captureKey)
     }
 
     func handleITraceChunk(hookId: String, callIndex: Int, data: [UInt8], lost: Int) {
@@ -813,7 +814,7 @@ final class ProcessNode: ObservableObject, Identifiable {
         }
     }
 
-    private func finalizeCapture(key captureKey: String) {
+    private func finalizeCapture(key captureKey: String) async {
         guard let capture = pendingCaptures.removeValue(forKey: captureKey),
             var metadataJSON = capture.metadataJSON
         else {
@@ -823,6 +824,40 @@ final class ProcessNode: ObservableObject, Identifiable {
         var traceData = capture.chunks.reduce(into: Data()) { $0.append($1) }
 
         ITraceDecoder.cleanupAfterCapture(traceData: &traceData, metadataJSON: &metadataJSON)
+
+        // Symbolicate block names while the process is still alive.
+        if var metadata = try? JSONDecoder().decode(ITraceMetadata.self, from: metadataJSON) {
+            let addresses = metadata.blocks.compactMap { ITraceDecoder.parseHexAddress($0.address) }
+            if !addresses.isEmpty {
+                var symbolicated = false
+                if let results = try? await symbolicate(addresses: addresses) {
+                    for (i, result) in results.enumerated() where i < metadata.blocks.count {
+                        let name: String?
+                        switch result {
+                        case .module(let m, let n): name = "\(m)!\(n)"
+                        case .file(let m, let n, _, _): name = "\(m)!\(n)"
+                        case .fileColumn(let m, let n, _, _, _): name = "\(m)!\(n)"
+                        case .failure: name = nil
+                        }
+                        if let name { metadata.blocks[i].name = name; symbolicated = true }
+                    }
+                }
+
+                // Fallback: use module list to produce module!0xoffset names.
+                if !symbolicated {
+                    for (i, addr) in addresses.enumerated() where i < metadata.blocks.count {
+                        if let mod = modules.first(where: { addr >= $0.base && addr < $0.base + $0.size }) {
+                            let offset = addr - mod.base
+                            metadata.blocks[i].name = "\(mod.name)!0x\(String(offset, radix: 16))"
+                        }
+                    }
+                }
+
+                if let data = try? JSONEncoder().encode(metadata) {
+                    metadataJSON = data
+                }
+            }
+        }
 
         let hookName = instruments.lazy
             .compactMap { runtime -> String? in
@@ -901,6 +936,12 @@ final class ProcessNode: ObservableObject, Identifiable {
 
         openR2Task = task
         await task.value
+    }
+
+    private func persistModules() {
+        sessionRecord.lastKnownModules = modules.map {
+            ProcessSession.PersistedModule(name: $0.name, base: $0.base, size: $0.size)
+        }
     }
 
     func fetchAndPersistProcessInfoIfNeeded() async {

@@ -288,10 +288,9 @@ struct ITraceDetailView: View {
     @ViewBuilder
     private func diffSheet(with target: ITraceCapture) -> some View {
         if let left = decoded,
-            var right = try? ITraceDecoder.decode(
+            let right = try? ITraceDecoder.decode(
                 traceData: target.traceData, metadataJSON: target.metadataJSON)
         {
-            let _ = applySymbolicatedNames(from: left, to: &right)
             ITraceDiffView(
                 left: left,
                 right: right,
@@ -302,18 +301,6 @@ struct ITraceDetailView: View {
         } else {
             Text("Failed to decode one or both traces.")
                 .padding()
-        }
-    }
-
-    private func applySymbolicatedNames(from source: DecodedITrace, to target: inout DecodedITrace) {
-        var nameByAddress: [UInt64: String] = [:]
-        for entry in source.entries {
-            nameByAddress[entry.blockAddress] = entry.blockName
-        }
-        for i in target.entries.indices {
-            if let name = nameByAddress[target.entries[i].blockAddress] {
-                target.entries[i].blockName = name
-            }
         }
     }
 
@@ -329,13 +316,6 @@ struct ITraceDetailView: View {
                     traceData: capture.traceData,
                     metadataJSON: capture.metadataJSON
                 )
-
-                if let node {
-                    let didUpdate = await symbolicateAll(&result, using: node)
-                    if didUpdate {
-                        persistSymbolicatedNames(result)
-                    }
-                }
 
                 let r2 = await setupR2(blockBytes: result.blockBytes)
                 await registerR2Flags(r2, from: result)
@@ -439,64 +419,6 @@ struct ITraceDetailView: View {
     }
 
     @discardableResult
-    private func symbolicateAll(_ trace: inout DecodedITrace, using node: ProcessNode) async -> Bool {
-        let uniqueAddresses = Array(Set(trace.entries.map(\.blockAddress)))
-        guard !uniqueAddresses.isEmpty else { return false }
-
-        guard let results = try? await node.symbolicate(addresses: uniqueAddresses) else { return false }
-
-        var nameByAddress: [UInt64: String] = [:]
-        for (address, result) in zip(uniqueAddresses, results) {
-            let name: String?
-            switch result {
-            case .module(let moduleName, let n):
-                name = "\(moduleName)!\(n)"
-            case .file(let moduleName, let n, _, _):
-                name = "\(moduleName)!\(n)"
-            case .fileColumn(let moduleName, let n, _, _, _):
-                name = "\(moduleName)!\(n)"
-            case .failure:
-                name = nil
-            }
-            if let name {
-                nameByAddress[address] = name
-            }
-        }
-
-        var didUpdate = false
-        for i in trace.entries.indices {
-            if let name = nameByAddress[trace.entries[i].blockAddress],
-                name != trace.entries[i].blockName
-            {
-                trace.entries[i].blockName = name
-                didUpdate = true
-            }
-        }
-
-        return didUpdate
-    }
-
-    private func persistSymbolicatedNames(_ trace: DecodedITrace) {
-        guard var metadata = try? JSONDecoder().decode(ITraceMetadata.self, from: capture.metadataJSON) else { return }
-
-        var nameByAddress: [String: String] = [:]
-        for entry in trace.entries {
-            nameByAddress[String(format: "0x%llx", entry.blockAddress)] = entry.blockName
-        }
-
-        var didChange = false
-        for i in metadata.blocks.indices {
-            if let name = nameByAddress[metadata.blocks[i].address], name != metadata.blocks[i].name {
-                metadata.blocks[i].name = name
-                didChange = true
-            }
-        }
-
-        if didChange, let data = try? JSONEncoder().encode(metadata) {
-            capture.metadataJSON = data
-        }
-    }
-
     private func syncEntrySelectionFromCall(_ callIdx: Int?, decoded: DecodedITrace) {
         guard let callIdx, callIdx < decoded.functionCalls.count else { return }
         let call = decoded.functionCalls[callIdx]

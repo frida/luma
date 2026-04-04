@@ -44,6 +44,24 @@ final class ProcessSession {
         }
     }
 
+    @Attribute(.externalStorage)
+    private var modulesBlob: Data?
+
+    var lastKnownModules: [PersistedModule]? {
+        get {
+            modulesBlob.flatMap { try? JSONDecoder().decode([PersistedModule].self, from: $0) }
+        }
+        set {
+            modulesBlob = newValue.flatMap { try? JSONEncoder().encode($0) }
+        }
+    }
+
+    struct PersistedModule: Codable {
+        let name: String
+        let base: UInt64
+        let size: UInt64
+    }
+
     struct ProcessInfo: Codable {
         let platform: String
         let arch: String
