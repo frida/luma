@@ -135,6 +135,17 @@ struct LumaBundleCompiler {
                 try fm.createDirectory(atPath: stagingDir, withIntermediateDirectories: true)
             }
 
+            // Remove any existing symlinks in node_modules before npm install,
+            // to prevent npm from deleting the symlink targets.
+            for local in localPackages {
+                let dst = URL(fileURLWithPath: stagingDir)
+                    .appendingPathComponent("node_modules", isDirectory: true)
+                    .appendingPathComponent(local.name, isDirectory: true)
+                if (try? fm.destinationOfSymbolicLink(atPath: dst.path)) != nil {
+                    try fm.removeItem(at: dst)
+                }
+            }
+
             fputs("[packages] installing: \(packageSpecs.joined(separator: ", "))\n", stderr)
 
             let pm = PackageManager()
@@ -154,7 +165,8 @@ struct LumaBundleCompiler {
                     .appendingPathComponent(local.name, isDirectory: true)
                 let src = URL(fileURLWithPath: local.path).standardizedFileURL
 
-                if fm.fileExists(atPath: dst.path) || (try? fm.destinationOfSymbolicLink(atPath: dst.path)) != nil {
+                // Remove the npm-installed version (regular directory, not symlink).
+                if fm.fileExists(atPath: dst.path) {
                     try fm.removeItem(at: dst)
                 }
                 try fm.createSymbolicLink(at: dst, withDestinationURL: src)
