@@ -774,33 +774,64 @@ extension ITraceCFGView {
             }
 
             // Build popover content.
-            let content = NSMutableAttributedString()
+            var content = NSMutableAttributedString()
+            let font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+            let boldFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .bold)
             let normalAttrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular),
-                .foregroundColor: NSColor.secondaryLabelColor,
+                .font: font,
+                .foregroundColor: NSColor.labelColor,
             ]
             let changedAttrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .bold),
-                .foregroundColor: NSColor(calibratedRed: 1.0, green: 0.6, blue: 0.2, alpha: 1.0),
+                .font: boldFont,
+                .foregroundColor: NSColor.systemBlue,
             ]
 
+            // Apple crash-log style: 4 registers per row, right-aligned names.
+            let cols = 4
             let sorted = values.keys.sorted()
+            var row: [(attrs: [NSAttributedString.Key: Any], name: String, value: UInt64)] = []
+
             for idx in sorted {
                 guard idx < registerNames.count else { continue }
                 let name = registerNames[idx]
                 let value = values[idx]!
                 let attrs = changed.contains(idx) ? changedAttrs : normalAttrs
-                let line = String(format: "%-5s 0x%016llx\n", (name as NSString).utf8String!, value)
-                content.append(NSAttributedString(string: line, attributes: attrs))
+                row.append((attrs: attrs, name: name, value: value))
+
+                if row.count == cols {
+                    appendRegisterRow(&content, row: row, normalAttrs: normalAttrs)
+                    row.removeAll()
+                }
+            }
+            if !row.isEmpty {
+                appendRegisterRow(&content, row: row, normalAttrs: normalAttrs)
             }
 
-            let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 240, height: 400))
-            textView.isEditable = false
-            textView.drawsBackground = false
-            textView.textStorage?.setAttributedString(content)
-            textView.sizeToFit()
+            // Trim trailing newline for accurate height measurement.
+            if content.length > 0, content.string.hasSuffix("\n") {
+                content.deleteCharacters(in: NSRange(location: content.length - 1, length: 1))
+            }
 
-            let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 260, height: min(400, textView.frame.height + 16)))
+            let inset = NSSize(width: 8, height: 6)
+            let lineFragmentPadding: CGFloat = 0
+
+            let textView = NSTextView(frame: .zero)
+            textView.isEditable = false
+            textView.isSelectable = true
+            textView.drawsBackground = false
+            textView.textContainerInset = inset
+            textView.textContainer?.lineFragmentPadding = lineFragmentPadding
+            textView.textContainer?.widthTracksTextView = false
+            textView.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            textView.textStorage?.setAttributedString(content)
+            textView.layoutManager?.ensureLayout(for: textView.textContainer!)
+
+            let usedRect = textView.layoutManager!.usedRect(for: textView.textContainer!)
+            let w = ceil(usedRect.width) + inset.width * 2
+            let h = ceil(usedRect.height) + inset.height * 2
+            textView.frame = NSRect(x: 0, y: 0, width: w, height: h)
+
+            let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: w, height: h))
             scrollView.documentView = textView
             scrollView.hasVerticalScroller = true
             scrollView.drawsBackground = false
@@ -825,6 +856,21 @@ extension ITraceCFGView {
                 pop.show(relativeTo: rect, of: containerView, preferredEdge: .maxX)
                 self.popover = pop
             }
+        }
+
+        private func appendRegisterRow(
+            _ content: inout NSMutableAttributedString,
+            row: [(attrs: [NSAttributedString.Key: Any], name: String, value: UInt64)],
+            normalAttrs: [NSAttributedString.Key: Any]
+        ) {
+            for (i, entry) in row.enumerated() {
+                let cell = String(format: "%5s: 0x%016llx", (entry.name as NSString).utf8String!, entry.value)
+                content.append(NSAttributedString(string: cell, attributes: entry.attrs))
+                if i < row.count - 1 {
+                    content.append(NSAttributedString(string: "  ", attributes: normalAttrs))
+                }
+            }
+            content.append(NSAttributedString(string: "\n", attributes: normalAttrs))
         }
 
         func dismissRegisterPopover() {
