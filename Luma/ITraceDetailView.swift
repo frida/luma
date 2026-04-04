@@ -312,7 +312,7 @@ struct ITraceDetailView: View {
             defer { isLoading = false }
 
             do {
-                var result = try ITraceDecoder.decode(
+                let result = try ITraceDecoder.decode(
                     traceData: capture.traceData,
                     metadataJSON: capture.metadataJSON
                 )
@@ -418,7 +418,6 @@ struct ITraceDetailView: View {
         }
     }
 
-    @discardableResult
     private func syncEntrySelectionFromCall(_ callIdx: Int?, decoded: DecodedITrace) {
         guard let callIdx, callIdx < decoded.functionCalls.count else { return }
         let call = decoded.functionCalls[callIdx]

@@ -162,6 +162,183 @@ enum ITraceDecoder {
         )
     }
 
+    // MARK: - Binary Buffer Parsing (frida-itrace v5)
+
+    /// Parse raw binary buffer chunks (v5 format) into separated
+    /// trace data and metadata JSON.
+    static func parseRawBuffer(
+        _ rawData: Data,
+        hookTarget: String?,
+        prologueBytes: String?
+    ) -> (traceData: Data, metadataJSON: Data) {
+        let bytes = [UInt8](rawData)
+        var offset = 0
+
+        var regSpecs: [[String: Any]] = []
+        var blocks: [[String: Any]] = []
+        var traceRecords = Data()
+        var blockRecordSizes: [UInt64: Int] = [:]
+
+        while offset + 8 <= bytes.count {
+            let sentinel = readUInt64(bytes, at: offset)
+
+            if sentinel != 0 {
+                // Trace record: sentinel is the block address.
+                guard let recordSize = blockRecordSizes[sentinel] else {
+                    break  // Unknown block — can't determine record size.
+                }
+                guard offset + recordSize <= bytes.count else { break }
+                traceRecords.append(contentsOf: bytes[offset..<(offset + recordSize)])
+                offset += recordSize
+            } else {
+                // Event header: [uint64 sentinel=0, uint32 type, uint32 payload_size]
+                guard offset + 16 <= bytes.count else { break }
+                let eventType = readUInt32(bytes, at: offset + 8)
+                let payloadSize = Int(readUInt32(bytes, at: offset + 12))
+                let payloadStart = offset + 16
+                guard payloadStart + payloadSize <= bytes.count else { break }
+
+                switch eventType {
+                case 1:  // compile
+                    let block = parseCompileEvent(bytes, at: payloadStart, size: payloadSize)
+                    if let addr = block["address"] as? UInt64,
+                        let recordSize = block["record_size"] as? Int
+                    {
+                        blockRecordSizes[addr] = recordSize
+                    }
+                    blocks.append(serializeBlockForJSON(block))
+
+                case 2:  // start
+                    regSpecs = parseStartEvent(bytes, at: payloadStart, size: payloadSize)
+
+                case 3:  // end
+                    break
+
+                case 4:  // panic
+                    let msg = String(bytes: bytes[payloadStart..<(payloadStart + payloadSize)], encoding: .utf8) ?? "unknown"
+                    print("[itrace] panic: \(msg)")
+
+                default:
+                    break
+                }
+
+                // Advance past header + payload (8-byte aligned).
+                offset = payloadStart + ((payloadSize + 7) & ~7)
+            }
+        }
+
+        // Build metadata JSON.
+        var metadata: [String: Any] = [
+            "hookId": "",
+            "callIndex": 0,
+            "regSpecs": regSpecs,
+            "blocks": blocks,
+        ]
+        if let hookTarget { metadata["hookTarget"] = hookTarget }
+        if let prologueBytes { metadata["prologueBytes"] = prologueBytes }
+
+        let metadataJSON = (try? JSONSerialization.data(withJSONObject: metadata)) ?? Data()
+
+        return (traceData: traceRecords, metadataJSON: metadataJSON)
+    }
+
+    private static func parseCompileEvent(_ bytes: [UInt8], at start: Int, size: Int) -> [String: Any] {
+        var o = start
+        let blockAddress = readUInt64(bytes, at: o); o += 8
+        let blockSize = readUInt32(bytes, at: o); o += 4
+        let recordSize = readUInt32(bytes, at: o); o += 4
+        let numWrites = Int(readUInt16(bytes, at: o)); o += 2
+        let nameSize = Int(readUInt16(bytes, at: o)); o += 2
+        _ = readUInt64(bytes, at: o); o += 8  // compiled_address
+        _ = readUInt32(bytes, at: o); o += 4  // compiled_size
+        let moduleBase = readUInt64(bytes, at: o); o += 8
+        let modulePathSize = Int(readUInt16(bytes, at: o)); o += 2
+        _ = readUInt16(bytes, at: o); o += 2  // reserved
+
+        var writes: [[Int]] = []
+        for _ in 0..<numWrites {
+            let blockOffset = Int(readUInt32(bytes, at: o)); o += 4
+            let regIndex = Int(readUInt32(bytes, at: o)); o += 4
+            writes.append([blockOffset, regIndex])
+        }
+
+        let name: String
+        if nameSize > 0, o + nameSize <= bytes.count {
+            name = String(bytes: bytes[o..<(o + nameSize)], encoding: .utf8) ?? ""
+            o += nameSize
+        } else {
+            name = String(format: "0x%llx", blockAddress)
+        }
+
+        var modulePath: String?
+        if modulePathSize > 0, o + modulePathSize <= bytes.count {
+            modulePath = String(bytes: bytes[o..<(o + modulePathSize)], encoding: .utf8)
+            o += modulePathSize
+        }
+
+        var result: [String: Any] = [
+            "address": blockAddress,
+            "record_size": Int(recordSize),
+            "name": name,
+            "size": Int(blockSize),
+            "writes": writes,
+        ]
+
+        // Read block bytes from process memory.
+        // (Not available at this point — will need to be recorded separately
+        // or read from the IO provider.)
+        result["bytes"] = ""
+
+        if moduleBase != 0 {
+            result["module"] = [
+                "path": modulePath ?? "",
+                "base": String(format: "0x%llx", moduleBase),
+            ]
+        }
+
+        return result
+    }
+
+    private static func serializeBlockForJSON(_ block: [String: Any]) -> [String: Any] {
+        var json = block
+        if let addr = json["address"] as? UInt64 {
+            json["address"] = String(format: "0x%llx", addr)
+        }
+        json.removeValue(forKey: "record_size")
+        return json
+    }
+
+    private static func parseStartEvent(_ bytes: [UInt8], at start: Int, size: Int) -> [[String: Any]] {
+        var o = start
+        let numRegs = Int(readUInt32(bytes, at: o)); o += 4
+        _ = readUInt32(bytes, at: o); o += 4  // context_size
+
+        var specs: [[String: Any]] = []
+        for _ in 0..<numRegs {
+            guard o + 8 <= bytes.count else { break }
+            let nameLen = Int(bytes[o]); o += 1
+            let nameBytes = bytes[o..<(o + min(nameLen, 6))]
+            let name = String(bytes: nameBytes, encoding: .utf8) ?? ""
+            o += 6
+            let regSize = Int(bytes[o]); o += 1
+            specs.append(["name": name, "size": regSize])
+        }
+
+        return specs
+    }
+
+    private static func readUInt32(_ bytes: [UInt8], at offset: Int) -> UInt32 {
+        var value: UInt32 = 0
+        for i in 0..<4 {
+            value |= UInt32(bytes[offset + i]) << (i * 8)
+        }
+        return value
+    }
+
+    private static func readUInt16(_ bytes: [UInt8], at offset: Int) -> UInt16 {
+        UInt16(bytes[offset]) | (UInt16(bytes[offset + 1]) << 8)
+    }
+
     /// Clean up raw capture metadata: remove Interceptor noise blocks,
     /// merge the trampoline prologue with the first real block, and
     /// rewrite the trace data to match. Called once at capture time.

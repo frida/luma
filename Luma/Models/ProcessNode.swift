@@ -47,12 +47,12 @@ final class ProcessNode: ObservableObject, Identifiable {
     struct PendingITraceCapture {
         let hookID: UUID
         let callIndex: Int
+        var hookTarget: String?
+        var prologueBytes: String?
         var chunks: [Data]
         var metadataJSON: Data?
         var lost: Int
         var useSystemDrain: Bool
-        var regSpecs: [[String: Any]]?
-        var blocks: [[String: Any]] = []
     }
 
     init(
@@ -217,10 +217,14 @@ final class ProcessNode: ObservableObject, Identifiable {
                     let callIndex = dict["callIndex"] as? Int,
                     let bufferLocation = dict["bufferLocation"] as? String
                 {
+                    let hookTarget = dict["hookTarget"] as? String
+                    let prologueBytes = dict["prologueBytes"] as? String
                     Task { @MainActor in
                         await self.handleITraceStart(
                             hookId: hookId, callIndex: callIndex,
-                            bufferLocation: bufferLocation)
+                            bufferLocation: bufferLocation,
+                            hookTarget: hookTarget,
+                            prologueBytes: prologueBytes)
                     }
                 }
                 return true
@@ -229,16 +233,11 @@ final class ProcessNode: ObservableObject, Identifiable {
                 if let hookId = dict["hookId"] as? String,
                     let callIndex = dict["callIndex"] as? Int
                 {
-                    let metadataJSON: Data
-                    if let jsonData = try? JSONSerialization.data(withJSONObject: dict) {
-                        metadataJSON = jsonData
-                    } else {
-                        metadataJSON = Data()
-                    }
+                    let lost = dict["lost"] as? Int ?? 0
                     Task { @MainActor in
                         await self.handleITraceStop(
                             hookId: hookId, callIndex: callIndex,
-                            metadataJSON: metadataJSON, data: data)
+                            lost: lost, data: data)
                     }
                 }
                 return true
@@ -252,26 +251,6 @@ final class ProcessNode: ObservableObject, Identifiable {
                     self.handleITraceChunk(
                         hookId: hookId, callIndex: callIndex,
                         data: Array(chunkData), lost: lost)
-                }
-                return true
-
-            case "itrace:regspecs":
-                if let hookId = dict["hookId"] as? String,
-                    let callIndex = dict["callIndex"] as? Int,
-                    let regSpecs = dict["regSpecs"] as? [[String: Any]]
-                {
-                    let key = Self.captureKey(hookId: hookId, callIndex: callIndex)
-                    pendingCaptures[key]?.regSpecs = regSpecs
-                }
-                return true
-
-            case "itrace:compile":
-                if let hookId = dict["hookId"] as? String,
-                    let callIndex = dict["callIndex"] as? Int,
-                    let block = dict["block"] as? [String: Any]
-                {
-                    let key = Self.captureKey(hookId: hookId, callIndex: callIndex)
-                    pendingCaptures[key]?.blocks.append(block)
                 }
                 return true
 
@@ -762,11 +741,16 @@ final class ProcessNode: ObservableObject, Identifiable {
         drainScript != nil
     }
 
-    func handleITraceStart(hookId: String, callIndex: Int, bufferLocation: String) async {
+    func handleITraceStart(
+        hookId: String, callIndex: Int, bufferLocation: String,
+        hookTarget: String?, prologueBytes: String?
+    ) async {
         let captureKey = Self.captureKey(hookId: hookId, callIndex: callIndex)
         pendingCaptures[captureKey] = PendingITraceCapture(
             hookID: UUID(uuidString: hookId)!,
             callIndex: callIndex,
+            hookTarget: hookTarget,
+            prologueBytes: prologueBytes,
             chunks: [],
             lost: 0,
             useSystemDrain: false
@@ -784,7 +768,7 @@ final class ProcessNode: ObservableObject, Identifiable {
         }
     }
 
-    func handleITraceStop(hookId: String, callIndex: Int, metadataJSON: Data, data: [UInt8]?) async {
+    func handleITraceStop(hookId: String, callIndex: Int, lost: Int, data: [UInt8]?) async {
         let captureKey = Self.captureKey(hookId: hookId, callIndex: callIndex)
 
         let usedSystemDrain = pendingCaptures[captureKey]?.useSystemDrain == true
@@ -797,8 +781,8 @@ final class ProcessNode: ObservableObject, Identifiable {
                 if let finalChunk = try await drainScript.exports.close() as? [UInt8], !finalChunk.isEmpty {
                     pendingCaptures[captureKey]?.chunks.append(Data(finalChunk))
                 }
-                let lost = (try? await drainScript.exports.getLost()) as? Int ?? 0
-                pendingCaptures[captureKey]?.lost = lost
+                let sysLost = (try? await drainScript.exports.getLost()) as? Int ?? 0
+                pendingCaptures[captureKey]?.lost = sysLost
             } catch {
             }
         }
@@ -807,7 +791,8 @@ final class ProcessNode: ObservableObject, Identifiable {
             pendingCaptures[captureKey]?.chunks.append(Data(data))
         }
 
-        pendingCaptures[captureKey]?.metadataJSON = metadataJSON
+        let currentLost = pendingCaptures[captureKey]?.lost ?? 0
+        pendingCaptures[captureKey]?.lost = max(currentLost, lost)
 
         await finalizeCapture(key: captureKey)
     }
@@ -838,13 +823,18 @@ final class ProcessNode: ObservableObject, Identifiable {
     }
 
     private func finalizeCapture(key captureKey: String) async {
-        guard let capture = pendingCaptures.removeValue(forKey: captureKey),
-            var metadataJSON = capture.metadataJSON
-        else {
+        guard let capture = pendingCaptures.removeValue(forKey: captureKey) else {
             return
         }
 
-        var traceData = capture.chunks.reduce(into: Data()) { $0.append($1) }
+        let rawData = capture.chunks.reduce(into: Data()) { $0.append($1) }
+
+        // Parse the v5 binary buffer into trace data + metadata.
+        var (traceData, metadataJSON) = ITraceDecoder.parseRawBuffer(
+            rawData,
+            hookTarget: capture.hookTarget,
+            prologueBytes: capture.prologueBytes
+        )
 
         ITraceDecoder.cleanupAfterCapture(traceData: &traceData, metadataJSON: &metadataJSON)
 
@@ -908,7 +898,7 @@ final class ProcessNode: ObservableObject, Identifiable {
         let keys = Array(pendingCaptures.keys)
         for key in keys {
             guard var capture = pendingCaptures[key],
-                capture.regSpecs != nil
+                !capture.chunks.isEmpty
             else {
                 pendingCaptures.removeValue(forKey: key)
                 continue
@@ -927,18 +917,7 @@ final class ProcessNode: ObservableObject, Identifiable {
                 } catch {}
             }
 
-            // Build metadata from accumulated regSpecs + blocks.
-            let metadataDict: [String: Any] = [
-                "hookId": capture.hookID.uuidString,
-                "callIndex": capture.callIndex,
-                "regSpecs": capture.regSpecs!,
-                "blocks": capture.blocks,
-            ]
-            if let jsonData = try? JSONSerialization.data(withJSONObject: metadataDict) {
-                capture.metadataJSON = jsonData
-            }
             pendingCaptures[key] = capture
-
             await finalizeCapture(key: key)
         }
     }

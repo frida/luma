@@ -606,7 +606,6 @@ extension ITraceCFGView {
                 } else {
                     borderColor = isSelected ? SIMD4(0.2, 0.5, 0.9, 1.0) : SIMD4(0.7, 0.75, 0.8, 0.8)
                 }
-                let bw: Float = 1 / Float(viewSize.width)
                 let bh: Float = 1 / Float(viewSize.height)
 
                 // Top
