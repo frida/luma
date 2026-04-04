@@ -76,6 +76,12 @@ export function startCapture(
 
     session.events.on("start", (regSpecs: RegisterSpec[], _regValues: ArrayBuffer) => {
         capture.regSpecs = regSpecs;
+
+        ctx.post("itrace:regspecs", {
+            hookId,
+            callIndex,
+            regSpecs,
+        });
     });
 
     session.events.on("compile", (block: BlockSpec) => {
@@ -85,6 +91,22 @@ export function startCapture(
         if (bytes !== null) {
             capture.blockBytes.set(block.address.toString(), bytes);
         }
+
+        ctx.post("itrace:compile", {
+            hookId,
+            callIndex,
+            block: {
+                name: block.name,
+                address: block.address.toString(),
+                size: block.size,
+                bytes: bytes !== null ? arrayBufferToHex(bytes) : "",
+                module: block.module !== undefined ? {
+                    path: block.module.path,
+                    base: block.module.base.toString(),
+                } : undefined,
+                writes: block.writes,
+            },
+        });
     });
 
     session.events.on("panic", (message: string) => {

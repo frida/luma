@@ -51,6 +51,8 @@ final class ProcessNode: ObservableObject, Identifiable {
         var metadataJSON: Data?
         var lost: Int
         var useSystemDrain: Bool
+        var regSpecs: [[String: Any]]?
+        var blocks: [[String: Any]] = []
     }
 
     init(
@@ -98,6 +100,7 @@ final class ProcessNode: ObservableObject, Identifiable {
                 switch event {
                 case .detached(let reason, _):
                     self.persistModules()
+                    await self.finalizePendingCapturesOnCrash()
                     self.failInitialModulesSnapshotWaitersIfNeeded()
                     self.onDestroyed?(self, reason)
                 }
@@ -249,6 +252,26 @@ final class ProcessNode: ObservableObject, Identifiable {
                     self.handleITraceChunk(
                         hookId: hookId, callIndex: callIndex,
                         data: Array(chunkData), lost: lost)
+                }
+                return true
+
+            case "itrace:regspecs":
+                if let hookId = dict["hookId"] as? String,
+                    let callIndex = dict["callIndex"] as? Int,
+                    let regSpecs = dict["regSpecs"] as? [[String: Any]]
+                {
+                    let key = Self.captureKey(hookId: hookId, callIndex: callIndex)
+                    pendingCaptures[key]?.regSpecs = regSpecs
+                }
+                return true
+
+            case "itrace:compile":
+                if let hookId = dict["hookId"] as? String,
+                    let callIndex = dict["callIndex"] as? Int,
+                    let block = dict["block"] as? [String: Any]
+                {
+                    let key = Self.captureKey(hookId: hookId, callIndex: callIndex)
+                    pendingCaptures[key]?.blocks.append(block)
                 }
                 return true
 
@@ -879,6 +902,45 @@ final class ProcessNode: ObservableObject, Identifiable {
 
         itraceCapture.session = sessionRecord
         modelContext.insert(itraceCapture)
+    }
+
+    private func finalizePendingCapturesOnCrash() async {
+        let keys = Array(pendingCaptures.keys)
+        for key in keys {
+            guard var capture = pendingCaptures[key],
+                capture.regSpecs != nil
+            else {
+                pendingCaptures.removeValue(forKey: key)
+                continue
+            }
+
+            // Do a final drain from the system session if available.
+            if capture.useSystemDrain, let drainScript {
+                drainTimer?.cancel()
+                drainTimer = nil
+                do {
+                    if let chunk = try await drainScript.exports.close() as? [UInt8], !chunk.isEmpty {
+                        capture.chunks.append(Data(chunk))
+                    }
+                    let lost = (try? await drainScript.exports.getLost()) as? Int ?? 0
+                    capture.lost = lost
+                } catch {}
+            }
+
+            // Build metadata from accumulated regSpecs + blocks.
+            let metadataDict: [String: Any] = [
+                "hookId": capture.hookID.uuidString,
+                "callIndex": capture.callIndex,
+                "regSpecs": capture.regSpecs!,
+                "blocks": capture.blocks,
+            ]
+            if let jsonData = try? JSONSerialization.data(withJSONObject: metadataDict) {
+                capture.metadataJSON = jsonData
+            }
+            pendingCaptures[key] = capture
+
+            await finalizeCapture(key: key)
+        }
     }
 
     func tearDownITrace() async {
