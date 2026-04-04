@@ -203,13 +203,17 @@ enum ITraceDecoder {
 
             if overwrittenSize > 0, overwrittenSize <= prologueData.count {
                 // Register restore block: all saved register values.
+                // Set all offsets to 0 — these represent the state at
+                // function entry, before the first instruction.
                 var restoreWrites: [RegisterWrite] = []
                 if firstMeaningfulIdx >= 2 {
                     let restoreEntry = rawTrace.entries[firstMeaningfulIdx - 2]
                     restoreWrites = deduplicateAndSort(Array(restoreEntry.registerWrites.dropFirst()))
+                        .map { RegisterWrite(blockOffset: 0, registerName: $0.registerName, registerIndex: $0.registerIndex, value: $0.value) }
                 }
 
                 // Trampoline block: drop first (LR) and last (X16) writes.
+                // Keep original offsets — these are from the relocated prologue.
                 let trampolineEntry = rawTrace.entries[firstMeaningfulIdx - 1]
                 var trampolineWrites = Array(trampolineEntry.registerWrites.dropFirst())
                 if trampolineWrites.last?.registerName == "x16" {
