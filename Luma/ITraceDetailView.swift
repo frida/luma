@@ -83,6 +83,7 @@ struct ITraceDetailView: View {
                             blockBytes: decoded.blockBytes,
                             nodeRegisterInfo: cfgNodeRegisterInfo,
                             registerNames: decoded.registerNames,
+                            arch: session.processInfo!.arch,
                             disasmProvider: r2.map { r2 in
                                 { addr, size in
                                     await r2.config.set("asm.flags", bool: false)

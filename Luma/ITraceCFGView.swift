@@ -15,6 +15,7 @@ struct ITraceCFGView: NSViewRepresentable {
     let blockBytes: [UInt64: Data]
     let nodeRegisterInfo: [CFGGraph.NodeKey: NodeRegisterInfo]
     let registerNames: [String]
+    let arch: String
     let disasmProvider: ((UInt64, Int) async -> String)?
     @Binding var selectedNodeKey: CFGGraph.NodeKey?
     var onNavigateFunction: ((Int) -> Void)?
@@ -59,6 +60,7 @@ struct ITraceCFGView: NSViewRepresentable {
         coordinator.blockBytes = blockBytes
         coordinator.nodeRegisterInfo = nodeRegisterInfo
         coordinator.registerNames = registerNames
+        coordinator.arch = arch
         coordinator.currentSection = currentSection
         coordinator.isDarkMode = colorScheme == .dark
         coordinator.onNavigateFunction = onNavigateFunction
@@ -358,6 +360,7 @@ extension ITraceCFGView {
         var blockBytes: [UInt64: Data] = [:]
         var nodeRegisterInfo: [CFGGraph.NodeKey: NodeRegisterInfo] = [:]
         var registerNames: [String] = []
+        var arch: String = ""
         var currentSection: Int = 0
         var isDarkMode: Bool = true
         var onNavigateFunction: ((Int) -> Void)?
@@ -810,7 +813,6 @@ extension ITraceCFGView {
             pop.behavior = .transient
 
             if let containerView = container {
-                // Pan so there's enough space on the right for the popover.
                 let viewWidth = containerView.bounds.width
                 let nodeRightScreen = node.position.x * camera.zoom + viewWidth / 2 + camera.offset.x
                     + nodeWidth / 2 * camera.zoom
@@ -865,7 +867,7 @@ extension ITraceCFGView {
                 }
             }
 
-            var content = NSMutableAttributedString()
+            let content = NSMutableAttributedString()
             let font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
             let boldFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .bold)
             let normalAttrs: [NSAttributedString.Key: Any] = [
@@ -877,31 +879,114 @@ extension ITraceCFGView {
                 .foregroundColor: NSColor.systemBlue,
             ]
 
-            let cols = 4
-            let sorted = values.keys.sorted()
-            var row: [(attrs: [NSAttributedString.Key: Any], name: String, value: UInt64)] = []
+            var nameToIdx: [String: Int] = [:]
+            for (i, name) in registerNames.enumerated() {
+                nameToIdx[name] = i
+            }
 
-            for idx in sorted {
-                guard idx < registerNames.count else { continue }
-                let name = registerNames[idx]
-                let value = values[idx]!
-                let attrs = changed.contains(idx) ? changedAttrs : normalAttrs
-                row.append((attrs: attrs, name: name, value: value))
+            let layout = registerLayout(nameToIdx: nameToIdx, values: values)
 
-                if row.count == cols {
-                    appendRegisterRow(&content, row: row, normalAttrs: normalAttrs)
-                    row.removeAll()
+            for (rowIdx, row) in layout.gpr.enumerated() {
+                for (colIdx, entry) in row.enumerated() {
+                    let attrs = changed.contains(entry.index) ? changedAttrs : normalAttrs
+                    let cell = String(format: "%5s: 0x%016llx", (entry.name as NSString).utf8String!, entry.value)
+                    content.append(NSAttributedString(string: cell, attributes: attrs))
+                    if colIdx < row.count - 1 {
+                        content.append(NSAttributedString(string: "  ", attributes: normalAttrs))
+                    }
+                }
+                if rowIdx < layout.gpr.count - 1 {
+                    content.append(NSAttributedString(string: "\n", attributes: normalAttrs))
                 }
             }
-            if !row.isEmpty {
-                appendRegisterRow(&content, row: row, normalAttrs: normalAttrs)
-            }
 
-            if content.length > 0, content.string.hasSuffix("\n") {
-                content.deleteCharacters(in: NSRange(location: content.length - 1, length: 1))
+            if !layout.vec.isEmpty {
+                content.append(NSAttributedString(string: "\n\n", attributes: normalAttrs))
+                for (rowIdx, row) in layout.vec.enumerated() {
+                    for (colIdx, entry) in row.enumerated() {
+                        let attrs = changed.contains(entry.index) ? changedAttrs : normalAttrs
+                        let cell = String(format: "%5s: 0x%016llx", (entry.name as NSString).utf8String!, entry.value)
+                        content.append(NSAttributedString(string: cell, attributes: attrs))
+                        if colIdx < row.count - 1 {
+                            content.append(NSAttributedString(string: "  ", attributes: normalAttrs))
+                        }
+                    }
+                    if rowIdx < layout.vec.count - 1 {
+                        content.append(NSAttributedString(string: "\n", attributes: normalAttrs))
+                    }
+                }
             }
 
             return content
+        }
+
+        private struct RegEntry {
+            let index: Int
+            let name: String
+            let value: UInt64
+        }
+
+        private struct RegisterLayout {
+            let gpr: [[RegEntry]]
+            let vec: [[RegEntry]]
+        }
+
+        private func registerLayout(
+            nameToIdx: [String: Int],
+            values: [Int: UInt64]
+        ) -> RegisterLayout {
+            func entry(_ name: String) -> RegEntry? {
+                guard let idx = nameToIdx[name], let val = values[idx] else { return nil }
+                return RegEntry(index: idx, name: name, value: val)
+            }
+
+            if arch == "arm64" {
+                let arm64GPROrder: [[String]] = [
+                    ["x0", "x1", "x2", "x3"],
+                    ["x4", "x5", "x6", "x7"],
+                    ["x8", "x9", "x10", "x11"],
+                    ["x12", "x13", "x14", "x15"],
+                    ["x16", "x17", "x18", "x19"],
+                    ["x20", "x21", "x22", "x23"],
+                    ["x24", "x25", "x26", "x27"],
+                    ["x28", "fp", "lr"],
+                    ["sp", "pc", "nzcv"],
+                ]
+                let gpr = arm64GPROrder.compactMap { names -> [RegEntry]? in
+                    let row = names.compactMap { entry($0) }
+                    return row.isEmpty ? nil : row
+                }
+
+                var vec: [[RegEntry]] = []
+                var vecRow: [RegEntry] = []
+                for i in 0...31 {
+                    if let e = entry("v\(i)") {
+                        vecRow.append(e)
+                        if vecRow.count == 4 {
+                            vec.append(vecRow)
+                            vecRow.removeAll()
+                        }
+                    }
+                }
+                if !vecRow.isEmpty { vec.append(vecRow) }
+
+                return RegisterLayout(gpr: gpr, vec: vec)
+            }
+
+            let sorted = values.keys.sorted()
+            var gpr: [[RegEntry]] = []
+            var row: [RegEntry] = []
+            for idx in sorted {
+                guard idx < registerNames.count else { continue }
+                row.append(RegEntry(index: idx, name: registerNames[idx], value: values[idx]!))
+                if row.count == 4 {
+                    gpr.append(row)
+                    row.removeAll()
+                }
+            }
+            if !row.isEmpty { gpr.append(row) }
+
+            return RegisterLayout(gpr: gpr, vec: [])
         }
 
         private func nodeEdgeRect(for node: CFGGraph.Node) -> NSRect {
@@ -942,20 +1027,7 @@ extension ITraceCFGView {
                 width: 1, height: 10)
         }
 
-        private func appendRegisterRow(
-            _ content: inout NSMutableAttributedString,
-            row: [(attrs: [NSAttributedString.Key: Any], name: String, value: UInt64)],
-            normalAttrs: [NSAttributedString.Key: Any]
-        ) {
-            for (i, entry) in row.enumerated() {
-                let cell = String(format: "%5s: 0x%016llx", (entry.name as NSString).utf8String!, entry.value)
-                content.append(NSAttributedString(string: cell, attributes: entry.attrs))
-                if i < row.count - 1 {
-                    content.append(NSAttributedString(string: "  ", attributes: normalAttrs))
-                }
-            }
-            content.append(NSAttributedString(string: "\n", attributes: normalAttrs))
-        }
+
 
         func dismissRegisterPopover() {
             popover?.close()
