@@ -76,6 +76,11 @@ Each module corresponds to a group of RPC methods: `env`,
 `console`, `pkg`, `value`. Built-in instruments live in
 `Luma/Agent/instruments/` (e.g. `tracer.ts`, `codeshare.ts`).
 
+## Commit Style
+
+- Subject line: max 50 characters
+- Body lines: max 72 characters
+
 ## Requirements
 
 - macOS 15.6+
