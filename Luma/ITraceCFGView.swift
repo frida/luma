@@ -108,7 +108,8 @@ struct ITraceCFGView: NSViewRepresentable {
                 .sorted { $0.position.y < $1.position.y }
             if let node = (nav.direction < 0 ? sectionNodes.last : sectionNodes.first) {
                 coordinator.pendingNav = nil
-                coordinator.select(node.key)
+                let line = nav.direction < 0 ? max(0, coordinator.instructionCount(for: node) - 1) : 0
+                coordinator.select(node.key, line: line)
 
                 // Ensure the node is visible, then align Y to section top.
                 coordinator.panToNode(node, axis: .both)
