@@ -183,6 +183,26 @@ class CFGContainerView: NSView {
         default:
             if let chars = event.charactersIgnoringModifiers {
                 switch chars {
+                case "h":
+                    coordinator.pendingNav = (direction: 1, axis: .both)
+                    coordinator.onNavigateFunction?(-1)
+                case "l":
+                    coordinator.pendingNav = (direction: 1, axis: .both)
+                    coordinator.onNavigateFunction?(1)
+                case "j":
+                    coordinator.moveDown()
+                    return
+                case "k":
+                    coordinator.moveUp()
+                    return
+                case "J":
+                    coordinator.jumpToNextBlock()
+                case "K":
+                    coordinator.jumpToPreviousBlock()
+                case "g":
+                    coordinator.selectFirstNode()
+                case "G":
+                    coordinator.selectLastNode()
                 case "\u{F729}":  // Home
                     coordinator.selectFirstNode()
                 case "\u{F72B}":  // End
