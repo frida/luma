@@ -135,8 +135,6 @@ struct LumaBundleCompiler {
                 try fm.createDirectory(atPath: stagingDir, withIntermediateDirectories: true)
             }
 
-            // Remove any existing symlinks in node_modules before npm install,
-            // to prevent npm from deleting the symlink targets.
             for local in localPackages {
                 let dst = URL(fileURLWithPath: stagingDir)
                     .appendingPathComponent("node_modules", isDirectory: true)
@@ -158,14 +156,12 @@ struct LumaBundleCompiler {
 
             fputs("[packages] done\n", stderr)
 
-            // Override with local packages if specified.
             for local in localPackages {
                 let dst = URL(fileURLWithPath: stagingDir)
                     .appendingPathComponent("node_modules", isDirectory: true)
                     .appendingPathComponent(local.name, isDirectory: true)
                 let src = URL(fileURLWithPath: local.path).standardizedFileURL
 
-                // Remove the npm-installed version (regular directory, not symlink).
                 if fm.fileExists(atPath: dst.path) {
                     try fm.removeItem(at: dst)
                 }
@@ -174,8 +170,6 @@ struct LumaBundleCompiler {
                 fputs("[packages] overriding \(local.name) with \(local.path)\n", stderr)
             }
 
-            // Copy source files into the staging area so the compiler
-            // can resolve both local imports and installed packages.
             let sourceRoot = projectRoot ?? "."
             for entry in entries {
                 let srcURL = URL(fileURLWithPath: entry.entrypoint, relativeTo: URL(fileURLWithPath: sourceRoot))
