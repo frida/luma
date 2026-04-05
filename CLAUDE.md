@@ -16,6 +16,11 @@ destination to **My Mac**).
 There are no tests or linting commands. Code formatting follows
 `.swift-format` (4-space indent, 140-char line length).
 
+Avoid "headline comments" that narrate what the next block does.
+Prefer aptly named variables and functions to make code
+self-explanatory. Only add comments as a last resort, for
+non-obvious *why* (hidden constraints, workarounds).
+
 ## Architecture
 
 Luma is a macOS SwiftUI application for interactive dynamic
