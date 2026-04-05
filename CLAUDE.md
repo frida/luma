@@ -79,7 +79,8 @@ Each module corresponds to a group of RPC methods: `env`,
 ## Commit Style
 
 - Subject line: max 50 characters
-- Body lines: max 72 characters
+- Body lines: wrap at 72 characters (use the full width, or
+  slightly less if it avoids making the next line awkward)
 
 ## Requirements
 
