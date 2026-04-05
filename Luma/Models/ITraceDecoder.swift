@@ -222,8 +222,7 @@ enum ITraceDecoder {
                     break
                 }
 
-                // Advance past header + payload (8-byte aligned).
-                offset = payloadStart + ((payloadSize + 7) & ~7)
+                offset = payloadStart + payloadSize
             }
         }
 
@@ -276,18 +275,22 @@ enum ITraceDecoder {
             o += modulePathSize
         }
 
+        // Read machine code bytes (code[block_size]).
+        let bSize = Int(blockSize)
+        var codeHex = ""
+        if bSize > 0, o + bSize <= bytes.count {
+            codeHex = Data(bytes[o..<(o + bSize)]).map { String(format: "%02x", $0) }.joined()
+            o += bSize
+        }
+
         var result: [String: Any] = [
             "address": blockAddress,
             "record_size": Int(recordSize),
             "name": name,
-            "size": Int(blockSize),
+            "size": bSize,
             "writes": writes,
+            "bytes": codeHex,
         ]
-
-        // Read block bytes from process memory.
-        // (Not available at this point — will need to be recorded separately
-        // or read from the IO provider.)
-        result["bytes"] = ""
 
         if moduleBase != 0 {
             result["module"] = [
