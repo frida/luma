@@ -157,6 +157,8 @@ class CFGContainerView: NSView {
             return
         }
 
+        let hadPopover = coordinator.popover?.isShown == true
+
         switch event.keyCode {
         case 123:  // left arrow
             coordinator.pendingNav = (direction: 1, axis: .both)
@@ -166,12 +168,16 @@ class CFGContainerView: NSView {
             coordinator.onNavigateFunction?(1)
         case 125:  // down arrow
             coordinator.moveDown()
+            return
         case 126:  // up arrow
             coordinator.moveUp()
+            return
         case 36:  // Return
             coordinator.showRegisterPopover()
+            return
         case 53:  // Escape
             coordinator.dismissRegisterPopover()
+            return
         default:
             if let chars = event.charactersIgnoringModifiers {
                 switch chars {
@@ -185,10 +191,17 @@ class CFGContainerView: NSView {
                     coordinator.jumpToNextBlock()
                 default:
                     super.keyDown(with: event)
+                    return
                 }
             } else {
                 super.keyDown(with: event)
+                return
             }
+        }
+
+        if hadPopover {
+            coordinator.dismissRegisterPopover()
+            DispatchQueue.main.async { [coordinator] in coordinator.showRegisterPopover() }
         }
     }
 
@@ -752,78 +765,30 @@ extension ITraceCFGView {
             selectedBinding.wrappedValue = key
         }
 
-        private var popover: NSPopover?
+        var popover: NSPopover?
+        private var popoverNodeKey: CFGGraph.NodeKey?
 
         func showRegisterPopover() {
             guard let key = selectedKey, let node = graph.nodes[key],
-                let info = nodeRegisterInfo[key],
-                let viewSize = container?.bounds.size
+                let _ = nodeRegisterInfo[key]
             else { return }
 
             dismissRegisterPopover()
 
-            // Compute state at the selected instruction.
-            // On arm64 each instruction is 4 bytes.
-            let instrOffset = selectedInstructionLine * 4
-            var values = info.stateBeforeBlock.values
-            var changed = Set<Int>()
-            for write in info.writes where write.blockOffset <= instrOffset {
-                values[write.registerIndex] = write.value
-                if write.blockOffset == instrOffset {
-                    changed.insert(write.registerIndex)
-                }
-            }
-
-            // Build popover content.
-            var content = NSMutableAttributedString()
-            let font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
-            let boldFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .bold)
-            let normalAttrs: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: NSColor.labelColor,
-            ]
-            let changedAttrs: [NSAttributedString.Key: Any] = [
-                .font: boldFont,
-                .foregroundColor: NSColor.systemBlue,
-            ]
-
-            // Apple crash-log style: 4 registers per row, right-aligned names.
-            let cols = 4
-            let sorted = values.keys.sorted()
-            var row: [(attrs: [NSAttributedString.Key: Any], name: String, value: UInt64)] = []
-
-            for idx in sorted {
-                guard idx < registerNames.count else { continue }
-                let name = registerNames[idx]
-                let value = values[idx]!
-                let attrs = changed.contains(idx) ? changedAttrs : normalAttrs
-                row.append((attrs: attrs, name: name, value: value))
-
-                if row.count == cols {
-                    appendRegisterRow(&content, row: row, normalAttrs: normalAttrs)
-                    row.removeAll()
-                }
-            }
-            if !row.isEmpty {
-                appendRegisterRow(&content, row: row, normalAttrs: normalAttrs)
-            }
-
-            // Trim trailing newline for accurate height measurement.
-            if content.length > 0, content.string.hasSuffix("\n") {
-                content.deleteCharacters(in: NSRange(location: content.length - 1, length: 1))
-            }
+            let content = buildRegisterContent()
 
             let inset = NSSize(width: 8, height: 6)
-            let lineFragmentPadding: CGFloat = 0
 
             let textView = NSTextView(frame: .zero)
             textView.isEditable = false
             textView.isSelectable = true
             textView.drawsBackground = false
             textView.textContainerInset = inset
-            textView.textContainer?.lineFragmentPadding = lineFragmentPadding
+            textView.textContainer?.lineFragmentPadding = 0
             textView.textContainer?.widthTracksTextView = false
-            textView.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            textView.textContainer?.containerSize = NSSize(
+                width: CGFloat.greatestFiniteMagnitude,
+                height: CGFloat.greatestFiniteMagnitude)
             textView.textStorage?.setAttributedString(content)
             textView.layoutManager?.ensureLayout(for: textView.textContainer!)
 
@@ -844,19 +809,137 @@ extension ITraceCFGView {
             pop.contentViewController = vc
             pop.behavior = .transient
 
-            // Position at the selected instruction line.
+            if let containerView = container {
+                // Pan so there's enough space on the right for the popover.
+                let viewWidth = containerView.bounds.width
+                let nodeRightScreen = node.position.x * camera.zoom + viewWidth / 2 + camera.offset.x
+                    + nodeWidth / 2 * camera.zoom
+                let popoverChrome: CGFloat = 30
+                let spaceNeeded = w + popoverChrome
+                let spaceAvailable = viewWidth - nodeRightScreen
+                if spaceAvailable < spaceNeeded {
+                    camera.offset.x -= spaceNeeded - spaceAvailable
+                    containerView.metalView.needsDisplay = true
+                    containerView.textOverlay.needsDisplay = true
+                }
+
+                let rect = nodeEdgeRect(for: node)
+                pop.show(relativeTo: rect, of: containerView, preferredEdge: .maxX)
+                self.popover = pop
+                self.popoverNodeKey = key
+                containerView.window?.makeFirstResponder(containerView)
+
+                if let popWindow = pop.contentViewController?.view.window {
+                    let savedFrame = popWindow.frame
+                    pop.positioningRect = popoverArrowRect()
+                    popWindow.setFrame(savedFrame, display: true)
+                }
+            }
+        }
+
+        private func updateRegisterPopover() {
+            guard let pop = popover, pop.isShown,
+                let scrollView = pop.contentViewController?.view as? NSScrollView,
+                let textView = scrollView.documentView as? NSTextView
+            else { return }
+
+            textView.textStorage?.setAttributedString(buildRegisterContent())
+            if let popWindow = pop.contentViewController?.view.window {
+                let savedFrame = popWindow.frame
+                pop.positioningRect = popoverArrowRect()
+                popWindow.setFrame(savedFrame, display: true)
+            }
+        }
+
+        private func buildRegisterContent() -> NSMutableAttributedString {
+            let key = selectedKey!
+            let info = nodeRegisterInfo[key]!
+
+            let instrOffset = selectedInstructionLine * 4
+            var values = info.stateBeforeBlock.values
+            var changed = Set<Int>()
+            for write in info.writes where write.blockOffset <= instrOffset {
+                values[write.registerIndex] = write.value
+                if write.blockOffset == instrOffset {
+                    changed.insert(write.registerIndex)
+                }
+            }
+
+            var content = NSMutableAttributedString()
+            let font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+            let boldFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .bold)
+            let normalAttrs: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: NSColor.labelColor,
+            ]
+            let changedAttrs: [NSAttributedString.Key: Any] = [
+                .font: boldFont,
+                .foregroundColor: NSColor.systemBlue,
+            ]
+
+            let cols = 4
+            let sorted = values.keys.sorted()
+            var row: [(attrs: [NSAttributedString.Key: Any], name: String, value: UInt64)] = []
+
+            for idx in sorted {
+                guard idx < registerNames.count else { continue }
+                let name = registerNames[idx]
+                let value = values[idx]!
+                let attrs = changed.contains(idx) ? changedAttrs : normalAttrs
+                row.append((attrs: attrs, name: name, value: value))
+
+                if row.count == cols {
+                    appendRegisterRow(&content, row: row, normalAttrs: normalAttrs)
+                    row.removeAll()
+                }
+            }
+            if !row.isEmpty {
+                appendRegisterRow(&content, row: row, normalAttrs: normalAttrs)
+            }
+
+            if content.length > 0, content.string.hasSuffix("\n") {
+                content.deleteCharacters(in: NSRange(location: content.length - 1, length: 1))
+            }
+
+            return content
+        }
+
+        private func nodeEdgeRect(for node: CFGGraph.Node) -> NSRect {
+            let viewSize = container!.bounds.size
+            let h = nodeHeight(for: node)
+            let topWorldY = node.position.y - h / 2
+            let botWorldY = node.position.y + h / 2
+
+            let screenX = node.position.x * camera.zoom + viewSize.width / 2 + camera.offset.x
+            let screenTop = topWorldY * camera.zoom + viewSize.height / 2 + camera.offset.y
+            let screenBot = botWorldY * camera.zoom + viewSize.height / 2 + camera.offset.y
+
+            let flippedTop = container!.bounds.height - screenBot
+            let flippedHeight = screenBot - screenTop
+
+            return NSRect(
+                x: screenX + nodeWidth / 2 * camera.zoom,
+                y: flippedTop,
+                width: 1, height: flippedHeight)
+        }
+
+        private func popoverArrowRect() -> NSRect {
+            let key = selectedKey!
+            let node = graph.nodes[key]!
+            let viewSize = container!.bounds.size
+
             let titleHeight: CGFloat = 16
             let lineH = ceil(disasmFont.ascender - disasmFont.descender + disasmFont.leading)
-            let instrWorldY = node.position.y - nodeHeight(for: node) / 2 + titleHeight + 2 + CGFloat(selectedInstructionLine) * lineH + lineH / 2
+            let instrWorldY = node.position.y - nodeHeight(for: node) / 2
+                + titleHeight + 2 + CGFloat(selectedInstructionLine) * lineH + lineH / 2
 
             let screenX = node.position.x * camera.zoom + viewSize.width / 2 + camera.offset.x
             let screenY = instrWorldY * camera.zoom + viewSize.height / 2 + camera.offset.y
 
-            if let containerView = container {
-                let rect = NSRect(x: screenX + nodeWidth / 2 * camera.zoom, y: containerView.bounds.height - screenY - 5, width: 1, height: 10)
-                pop.show(relativeTo: rect, of: containerView, preferredEdge: .maxX)
-                self.popover = pop
-            }
+            return NSRect(
+                x: screenX + nodeWidth / 2 * camera.zoom,
+                y: container!.bounds.height - screenY - 5,
+                width: 1, height: 10)
         }
 
         private func appendRegisterRow(
@@ -877,6 +960,7 @@ extension ITraceCFGView {
         func dismissRegisterPopover() {
             popover?.close()
             popover = nil
+            popoverNodeKey = nil
         }
 
         func instructionCount(for node: CFGGraph.Node) -> Int {
@@ -908,31 +992,38 @@ extension ITraceCFGView {
         }
 
         func moveDown() {
-            // Try moving to the next instruction within the current node.
+            let hadPopover = popover?.isShown == true
             if let key = selectedKey, let node = graph.nodes[key] {
                 let count = instructionCount(for: node)
                 if selectedInstructionLine + 1 < count {
                     selectedInstructionLine += 1
                     container?.metalView.needsDisplay = true
                     container?.textOverlay.needsDisplay = true
+                    if hadPopover { updateRegisterPopover() }
                     return
                 }
             }
-            // At the last instruction — move to the next node.
             let sorted = currentSectionNodes().sorted { $0.position.y < $1.position.y }
             selectNextIn(sorted, direction: 1)
+            if hadPopover {
+                DispatchQueue.main.async { [self] in showRegisterPopover() }
+            }
         }
 
         func moveUp() {
+            let hadPopover = popover?.isShown == true
             if selectedInstructionLine > 0 {
                 selectedInstructionLine -= 1
                 container?.metalView.needsDisplay = true
                 container?.textOverlay.needsDisplay = true
+                if hadPopover { updateRegisterPopover() }
                 return
             }
-            // At the first instruction — move to the previous node's last instruction.
             let sorted = currentSectionNodes().sorted { $0.position.y < $1.position.y }
             selectNextIn(sorted, direction: -1)
+            if hadPopover {
+                DispatchQueue.main.async { [self] in showRegisterPopover() }
+            }
         }
 
         private func computeFitZoom() -> CGFloat {
