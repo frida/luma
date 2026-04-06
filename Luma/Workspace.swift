@@ -135,6 +135,8 @@ final class Workspace: ObservableObject {
 
     let store: ProjectStore
 
+    private var observations: [AnyDatabaseCancellable] = []
+
     init(store: ProjectStore) {
         self.store = store
 
@@ -143,14 +145,19 @@ final class Workspace: ObservableObject {
     }
 
     func configurePersistence() async {
-        reloadSessions()
+        observations.append(
+            store.observeSessions { [weak self] sessions in
+                Task { @MainActor in self?.sessions = sessions }
+            }
+        )
+        observations.append(
+            store.observeNotebookEntries { [weak self] entries in
+                Task { @MainActor in self?.notebookEntries = entries }
+            }
+        )
+
         await loadRemoteDevices()
         bindProjectCollaboration()
-        notebookEntries = (try? store.fetchNotebookEntries()) ?? []
-    }
-
-    func reloadSessions() {
-        sessions = (try? store.fetchSessions()) ?? []
     }
 
     func loadRemoteDevices() async {
@@ -1254,7 +1261,6 @@ final class Workspace: ObservableObject {
         session_.lastError = nil
         session_.phase = .attaching
         try? store.save(session_)
-        reloadSessions()
 
         do {
             ensureDeviceEventsHooked(for: device)
@@ -1341,7 +1347,6 @@ final class Workspace: ObservableObject {
             session_.lastError = error.localizedDescription
             session_.phase = .idle
             try? store.save(session_)
-            reloadSessions()
         }
     }
 

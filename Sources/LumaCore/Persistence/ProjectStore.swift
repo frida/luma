@@ -11,6 +11,30 @@ public final class ProjectStore: Sendable {
         try migrator.migrate(dbPool)
     }
 
+    // MARK: - Observation
+
+    public func observeSessions(
+        onChange: @escaping @Sendable ([ProcessSession]) -> Void
+    ) -> AnyDatabaseCancellable {
+        ValueObservation
+            .tracking { db in
+                try Row.fetchAll(db, sql: "SELECT * FROM processSession ORDER BY createdAt DESC")
+                    .map { self.decodeSession($0) }
+            }
+            .start(in: dbPool, scheduling: .immediate, onError: { _ in }, onChange: onChange)
+    }
+
+    public func observeNotebookEntries(
+        onChange: @escaping @Sendable ([NotebookEntry]) -> Void
+    ) -> AnyDatabaseCancellable {
+        ValueObservation
+            .tracking { db in
+                try Row.fetchAll(db, sql: "SELECT * FROM notebookEntry ORDER BY timestamp ASC")
+                    .map { self.decodeNotebookEntry($0) }
+            }
+            .start(in: dbPool, scheduling: .immediate, onError: { _ in }, onChange: onChange)
+    }
+
     // MARK: - Process Sessions
 
     public func fetchSessions() throws -> [ProcessSession] {
