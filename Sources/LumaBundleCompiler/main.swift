@@ -278,7 +278,7 @@ struct LumaBundleCompiler {
     /// compiler can resolve relative imports alongside installed packages.
     static func copyAgentSources(from sourceRoot: String, to stagingDir: String) throws {
         let fm = FileManager.default
-        let agentRelDir = "Luma/Agent"
+        let agentRelDir = "Agent"
         let srcDir = URL(fileURLWithPath: agentRelDir, relativeTo: URL(fileURLWithPath: sourceRoot)).standardizedFileURL
         let dstDir = URL(fileURLWithPath: agentRelDir, relativeTo: URL(fileURLWithPath: stagingDir))
 

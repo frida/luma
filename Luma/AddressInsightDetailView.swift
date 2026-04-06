@@ -1,3 +1,4 @@
+import LumaCore
 import SwiftData
 import SwiftUI
 import SwiftyR2
@@ -19,7 +20,7 @@ struct AddressInsightDetailView: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
-    private var node: ProcessNode? {
+    private var node: ProcessNodeViewModel? {
         workspace.processNodes.first { $0.sessionRecord == session }
     }
 
@@ -119,7 +120,7 @@ struct AddressInsightDetailView: View {
 
             let resolved: UInt64
             do {
-                resolved = try await node.resolve(anchor)
+                resolved = try await node.core.resolve(anchor)
             } catch {
                 if Task.isCancelled { return }
                 errorText = AttributedString(error.localizedDescription)
@@ -132,7 +133,7 @@ struct AddressInsightDetailView: View {
             switch kind {
             case .memory:
                 do {
-                    let bytes = try await node.readRemoteMemory(at: resolved, count: byteCount)
+                    let bytes = try await node.core.readRemoteMemory(at: resolved, count: byteCount)
                     if Task.isCancelled { return }
 
                     disasmLines = []
@@ -181,7 +182,7 @@ struct AddressInsightDetailView: View {
     }
 
     private func fetchDisasm(
-        node: ProcessNode,
+        node: ProcessNodeViewModel,
         start: UInt64,
         count: Int = 64
     ) async -> [DisasmLine] {

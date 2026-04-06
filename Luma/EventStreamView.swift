@@ -341,7 +341,7 @@ struct EventStreamView: View {
             guard sourceFilter.matches(evt.source) else { return false }
 
             if let name = selectedProcessName {
-                guard processName(for: evt.source) == name else { return false }
+                guard processName(for: evt) == name else { return false }
             }
 
             if hasSearch {
@@ -349,7 +349,7 @@ struct EventStreamView: View {
                 if let cached = searchCache[evt.id] {
                     blob = cached
                 } else {
-                    let context = prettyContext(evt.source)
+                    let context = prettyContext(evt)
                     let payload = prettyPayload(evt)
                     let combined = [payload, context.title, context.process ?? ""]
                         .joined(separator: " ")
@@ -367,37 +367,31 @@ struct EventStreamView: View {
     }
 
     private var availableProcessNames: [String] {
-        let names = Set(displayedEvents.compactMap { processName(for: $0.source) })
+        let names = Set(displayedEvents.map { processName(for: $0) })
         return names.sorted()
     }
 
     private func pin(_ evt: RuntimeEvent) {
-        let (processName, title) = prettyContext(evt.source)
+        let (processName, title) = prettyContext(evt)
 
         workspace.addNotebookEntry(
             NotebookEntry(
                 title: title,
                 details: prettyPayload(evt),
                 binaryData: evt.data.map { Data($0) },
-                session: evt.process.sessionRecord.id,
+                session: evt.processNode.sessionRecord.id,
                 processName: processName
             ))
     }
 
-    private func processName(for src: RuntimeEvent.Source) -> String? {
-        switch src {
-        case .processOutput(let process, _),
-            .script(let process),
-            .console(let process),
-            .repl(let process),
-            .instrument(let process, _):
-            return process.sessionRecord.processName
-        }
+    private func processName(for evt: RuntimeEvent) -> String {
+        evt.processNode.sessionRecord.processName
     }
 
-    private func prettyContext(_ src: RuntimeEvent.Source) -> (process: String?, title: String) {
-        switch src {
-        case .processOutput(let process, let fd):
+    private func prettyContext(_ evt: RuntimeEvent) -> (process: String?, title: String) {
+        let processName = evt.processNode.sessionRecord.processName
+        switch evt.source {
+        case .processOutput(let fd):
             let channel: String = {
                 switch fd {
                 case 1: return "stdout"
@@ -405,39 +399,35 @@ struct EventStreamView: View {
                 default: return "fd\(fd)"
                 }
             }()
-            return (process.sessionRecord.processName, "Output on \(channel)")
+            return (processName, "Output on \(channel)")
 
-        case .script(let process):
-            let processName = process.sessionRecord.processName
+        case .script:
             return (processName, "Script Runtime (\(processName))")
 
-        case .console(let process):
-            let processName = process.sessionRecord.processName
+        case .console:
             return (processName, "Console (\(processName))")
 
-        case .repl(let process):
-            let processName = process.sessionRecord.processName
+        case .repl:
             return (processName, "REPL (\(processName))")
 
-        case .instrument(let process, let instrument):
-            return (
-                process.sessionRecord.processName,
-                "Instrument \(instrument.instance.displayName)"
-            )
+        case .instrument(_, let name):
+            return (processName, "Instrument \(name)")
         }
     }
 
     private func prettyPayload(_ evt: RuntimeEvent) -> String {
         switch evt.source {
         case .console:
-            if let message = evt.payload as? ConsoleMessage {
+            if case .consoleMessage(let message) = evt.payload {
                 let parts = message.values.map { $0.inlineDescription }
                 return parts.joined(separator: " ")
             }
             return String(describing: evt.payload)
 
-        case .instrument(_, let runtime):
-            if let template = workspace.template(for: runtime.instance) {
+        case .instrument:
+            if let instrument = evt.instrument,
+                let template = workspace.template(for: instrument.instance)
+            {
                 return template.summarizeEvent(evt)
             }
             return String(describing: evt.payload)
@@ -480,7 +470,7 @@ private enum EventSourceFilter: String, CaseIterable, Identifiable {
         }
     }
 
-    func matches(_ source: RuntimeEvent.Source) -> Bool {
+    func matches(_ source: LumaCore.RuntimeEvent.Source) -> Bool {
         switch self {
         case .all:
             return true
@@ -572,7 +562,7 @@ struct EventRow: View {
 
             Spacer(minLength: 8)
 
-            EventSourceBadge(source: evt.source)
+            EventSourceBadge(evt: evt)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -643,7 +633,7 @@ struct EventRow: View {
     }
 
     private var jsErrorEventView: AnyView? {
-        guard let error = evt.payload as? JSError else {
+        guard case .jsError(let error) = evt.payload else {
             return nil
         }
 
@@ -671,7 +661,7 @@ struct EventRow: View {
     }
 
     private var consoleEventView: AnyView? {
-        guard let message = evt.payload as? ConsoleMessage else {
+        guard case .consoleMessage(let message) = evt.payload else {
             return nil
         }
 
@@ -696,7 +686,7 @@ struct EventRow: View {
                     ForEach(Array(message.values.enumerated()), id: \.0) { _, value in
                         JSInspectValueView(
                             value: value,
-                            sessionID: evt.process.sessionRecord.id,
+                            sessionID: evt.processNode.sessionRecord.id,
                             workspace: workspace,
                             selection: $selection
                         )
@@ -721,8 +711,8 @@ struct EventRow: View {
     }
 
     private var instrumentEventView: AnyView? {
-        guard case .instrument(_, let runtime) = evt.source,
-            let template = workspace.template(for: runtime.instance)
+        guard let instrument = evt.instrument,
+            let template = workspace.template(for: instrument.instance)
         else {
             return nil
         }
@@ -731,8 +721,8 @@ struct EventRow: View {
     }
 
     private var instrumentMenuItems: [InstrumentEventMenuItem] {
-        guard case .instrument(_, let runtime) = evt.source,
-            let template = workspace.template(for: runtime.instance)
+        guard let instrument = evt.instrument,
+            let template = workspace.template(for: instrument.instance)
         else {
             return []
         }
@@ -742,7 +732,7 @@ struct EventRow: View {
 }
 
 private struct EventSourceBadge: View {
-    let source: RuntimeEvent.Source
+    let evt: RuntimeEvent
 
     var body: some View {
         Text(labelText)
@@ -754,9 +744,13 @@ private struct EventSourceBadge: View {
             .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 
+    private var processName: String {
+        evt.processNode.sessionRecord.processName
+    }
+
     private var labelText: String {
-        switch source {
-        case .processOutput(let process, let fd):
+        switch evt.source {
+        case .processOutput(let fd):
             let channel: String = {
                 switch fd {
                 case 1: return "stdout"
@@ -764,25 +758,25 @@ private struct EventSourceBadge: View {
                 default: return "fd\(fd)"
                 }
             }()
-            return "\(process.sessionRecord.processName) • \(channel)"
+            return "\(processName) • \(channel)"
 
-        case .script(let process):
-            return "\(process.sessionRecord.processName) • Script Runtime"
+        case .script:
+            return "\(processName) • Script Runtime"
 
-        case .console(let process):
-            return "\(process.sessionRecord.processName) • Console"
+        case .console:
+            return "\(processName) • Console"
 
-        case .repl(let process):
-            return "\(process.sessionRecord.processName) • REPL"
+        case .repl:
+            return "\(processName) • REPL"
 
-        case .instrument(let process, let instrument):
-            return "\(instrument.instance.displayName) • \(process.sessionRecord.processName)"
+        case .instrument(_, let name):
+            return "\(name) • \(processName)"
         }
     }
 
     private var backgroundColor: Color {
-        switch source {
-        case .processOutput(_, let fd):
+        switch evt.source {
+        case .processOutput(let fd):
             switch fd {
             case 1: return .gray
             case 2: return .orange

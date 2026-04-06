@@ -16,7 +16,7 @@ struct REPLView: View {
 
     @Environment(\.modelContext) private var modelContext
 
-    private var node: ProcessNode? {
+    private var node: ProcessNodeViewModel? {
         workspace.processNodes.first { $0.sessionRecord == session }
     }
 
@@ -83,7 +83,7 @@ struct REPLView: View {
                             historyNext()
                         },
                         requestCompletions: { code, cursor in
-                            await node.completeInREPL(code: code, cursor: cursor)
+                            await node.core.completeInREPL(code: code, cursor: cursor)
                         }
                     )
                     .frame(minHeight: 22)
@@ -167,7 +167,7 @@ struct REPLView: View {
         }
 
         Task { @MainActor in
-            await node!.evalInREPL(code)
+            await node!.core.evalInREPL(code)
             historyCursor = session.orderedReplCells.count
         }
 

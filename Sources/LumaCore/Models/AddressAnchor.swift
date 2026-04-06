@@ -2,7 +2,7 @@ import Foundation
 
 public typealias JSONObject = [String: Any]
 
-public enum AddressAnchor: Codable, Hashable {
+public enum AddressAnchor: Codable, Hashable, Sendable {
     case absolute(UInt64)
     case moduleOffset(name: String, offset: UInt64)
     case moduleExport(name: String, export: String)

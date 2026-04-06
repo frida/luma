@@ -1,10 +1,11 @@
 import Foundation
+import LumaCore
 import SwiftyR2
 
 final class ProcessMemoryIOProvider: R2IOAsyncProvider, @unchecked Sendable {
-    unowned let processNode: ProcessNode
+    unowned let processNode: ProcessNodeViewModel
 
-    init(processNode: ProcessNode) {
+    init(processNode: ProcessNodeViewModel) {
         self.processNode = processNode
     }
 
@@ -21,10 +22,10 @@ final class ProcessMemoryIOProvider: R2IOAsyncProvider, @unchecked Sendable {
 }
 
 final class ProcessMemoryIOFile: R2IOAsyncFile, @unchecked Sendable {
-    private unowned let processNode: ProcessNode
+    private unowned let processNode: ProcessNodeViewModel
     private let baseAddress: UInt64
 
-    init(processNode: ProcessNode, baseAddress: UInt64) {
+    init(processNode: ProcessNodeViewModel, baseAddress: UInt64) {
         self.processNode = processNode
         self.baseAddress = baseAddress
     }
@@ -32,7 +33,7 @@ final class ProcessMemoryIOFile: R2IOAsyncFile, @unchecked Sendable {
     func close() async throws {}
 
     func read(at offset: UInt64, count: Int) async throws -> [UInt8] {
-        try await processNode.readRemoteMemory(at: baseAddress &+ offset, count: count)
+        try await processNode.core.readRemoteMemory(at: baseAddress &+ offset, count: count)
     }
 
     func write(at offset: UInt64, bytes: [UInt8]) async throws -> Int {

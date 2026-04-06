@@ -3,7 +3,7 @@ import LumaCore
 
 struct TracerEventRowView: View {
     let messageView: AnyView
-    let process: ProcessNode
+    let process: ProcessNodeViewModel
     let backtrace: [JSInspectValue]?
     let workspace: Workspace
     @Binding var selection: SidebarItemID?
@@ -46,7 +46,7 @@ struct TracerEventRowView: View {
 }
 
 private struct TracerBacktraceView: View {
-    let process: ProcessNode
+    let process: ProcessNodeViewModel
     let pointers: [JSInspectValue]
     let workspace: Workspace
     @Binding var selection: SidebarItemID?
@@ -84,7 +84,7 @@ private struct TracerBacktraceView: View {
                 LazyVStack(alignment: .leading, spacing: 8) {
                     ForEach(Array(pointers.enumerated()), id: \.offset) { idx, ptrValue in
                         let addr = ptrValue.nativePointerAddress ?? 0
-                        let anchor = process.anchor(for: addr)
+                        let anchor = process.core.anchor(for: addr)
 
                         HStack(alignment: .center, spacing: 8) {
                             Text("#\(idx + 1)")
@@ -160,7 +160,7 @@ private struct TracerBacktraceView: View {
         lastError = nil
 
         do {
-            symbols = try await process.symbolicate(addresses: pointers.compactMap { $0.nativePointerAddress })
+            symbols = try await process.core.symbolicate(addresses: pointers.compactMap { $0.nativePointerAddress })
         } catch {
             lastError = "Symbolication failed: \(error)"
         }

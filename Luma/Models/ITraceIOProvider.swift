@@ -1,11 +1,12 @@
 import Foundation
+import LumaCore
 import SwiftyR2
 
 final class ITraceIOProvider: R2IOAsyncProvider, @unchecked Sendable {
     private let blockBytes: [UInt64: Data]
-    private weak var processNode: ProcessNode?
+    private weak var processNode: ProcessNodeViewModel?
 
-    init(blockBytes: [UInt64: Data], processNode: ProcessNode?) {
+    init(blockBytes: [UInt64: Data], processNode: ProcessNodeViewModel?) {
         self.blockBytes = blockBytes
         self.processNode = processNode
     }
@@ -21,9 +22,9 @@ final class ITraceIOProvider: R2IOAsyncProvider, @unchecked Sendable {
 
 private final class ITraceIOFile: R2IOAsyncFile, @unchecked Sendable {
     private let blockBytes: [UInt64: Data]
-    private weak var processNode: ProcessNode?
+    private weak var processNode: ProcessNodeViewModel?
 
-    init(blockBytes: [UInt64: Data], processNode: ProcessNode?) {
+    init(blockBytes: [UInt64: Data], processNode: ProcessNodeViewModel?) {
         self.blockBytes = blockBytes
         self.processNode = processNode
     }
@@ -91,7 +92,7 @@ private final class ITraceIOFile: R2IOAsyncFile, @unchecked Sendable {
         guard let processNode else {
             throw NSError(domain: "ITrace", code: 1, userInfo: [NSLocalizedDescriptionKey: "Process not available"])
         }
-        return try await processNode.readRemoteMemory(at: address, count: count)
+        return try await processNode.core.readRemoteMemory(at: address, count: count)
     }
 
     func write(at offset: UInt64, bytes: [UInt8]) async throws -> Int { 0 }

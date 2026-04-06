@@ -303,7 +303,7 @@ struct WorkspaceToolbar: ToolbarContent {
         }
     }
 
-    var selectedProcessNode: ProcessNode? {
+    var selectedProcessNode: ProcessNodeViewModel? {
         guard let id = selection else { return nil }
 
         switch id {

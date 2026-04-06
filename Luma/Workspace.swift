@@ -10,7 +10,7 @@ import LumaCore
 final class Workspace: ObservableObject {
     let deviceManager = DeviceManager()
 
-    @Published var processNodes: [ProcessNode] = []
+    @Published var processNodes: [ProcessNodeViewModel] = []
 
     private var addressAnnotationsBySession: [UUID: [UInt64: AddressAnnotation]] = [:]
     private var tracerInstanceIDBySession: [UUID: UUID] = [:]
@@ -232,11 +232,12 @@ final class Workspace: ObservableObject {
             String(bytes: data, encoding: .utf8)
             ?? "(\(data.count) bytes on fd \(fd))"
 
-        let evt = RuntimeEvent(
-            source: .processOutput(process: node, fd: fd),
-            payload: text,
+        let coreEvent = LumaCore.RuntimeEvent(
+            source: .processOutput(fd: fd),
+            payload: .raw(message: text, data: data),
             data: data
         )
+        let evt = RuntimeEvent(coreEvent: coreEvent, processNode: node)
         pushEvent(evt)
     }
 
@@ -284,7 +285,7 @@ final class Workspace: ObservableObject {
         eventsVersion = totalEventsReceived
     }
 
-    func removeNode(_ node: ProcessNode) {
+    func removeNode(_ node: ProcessNodeViewModel) {
         if let idx = processNodes.firstIndex(where: { $0.id == node.id }) {
             let sessionID = node.sessionRecord.id
             addressAnnotationsBySession[sessionID] = [:]
@@ -416,7 +417,7 @@ final class Workspace: ObservableObject {
     private func loadRuntime(
         for runtime: InstrumentRuntime,
         using template: InstrumentTemplate,
-        on node: ProcessNode
+        on node: ProcessNodeViewModel
     ) async {
         switch template.kind {
         case .tracer:
@@ -431,7 +432,7 @@ final class Workspace: ObservableObject {
     private func loadTracerRuntime(
         for runtime: InstrumentRuntime,
         template: InstrumentTemplate,
-        on node: ProcessNode
+        on node: ProcessNodeViewModel
     ) async {
         do {
             let instance = runtime.instance
@@ -470,7 +471,7 @@ final class Workspace: ObservableObject {
     private func loadHookPackRuntime(
         for runtime: InstrumentRuntime,
         template: InstrumentTemplate,
-        on node: ProcessNode
+        on node: ProcessNodeViewModel
     ) async {
         guard let pack = HookPackLibrary.shared.pack(withId: template.sourceIdentifier) else { return }
 
@@ -504,7 +505,7 @@ final class Workspace: ObservableObject {
     private func loadCodeShareRuntime(
         for runtime: InstrumentRuntime,
         template: InstrumentTemplate,
-        on node: ProcessNode
+        on node: ProcessNodeViewModel
     ) async {
         do {
             let instance = runtime.instance
@@ -630,7 +631,7 @@ final class Workspace: ObservableObject {
                 }
             },
             renderEvent: { event, workspace, selection in
-                guard let v = event.payload as? JSInspectValue,
+                guard case .jsValue(let v) = event.payload,
                     let ev = Workspace.parseTracerEvent(from: v)
                 else {
                     return AnyView(
@@ -654,7 +655,7 @@ final class Workspace: ObservableObject {
                         return AnyView(
                             JSInspectValueView(
                                 value: ev.message,
-                                sessionID: event.process.sessionRecord.id,
+                                sessionID: event.processNode.sessionRecord.id,
                                 workspace: workspace,
                                 selection: selection
                             )
@@ -665,7 +666,7 @@ final class Workspace: ObservableObject {
                 return AnyView(
                     TracerEventRowView(
                         messageView: messageView,
-                        process: event.process,
+                        process: event.processNode,
                         backtrace: ev.backtrace,
                         workspace: workspace,
                         selection: selection
@@ -673,12 +674,14 @@ final class Workspace: ObservableObject {
                 )
             },
             makeEventContextMenuItems: { event, _, selection in
-                guard case .instrument(let process, let instrument) = event.source,
-                    let v = event.payload as? JSInspectValue,
+                guard case .instrument(let instrumentID, _) = event.source,
+                    case .jsValue(let v) = event.payload,
                     let ev = Workspace.parseTracerEvent(from: v)
                 else {
                     return []
                 }
+
+                let processNode = event.processNode
 
                 return [
                     InstrumentEventMenuItem(
@@ -687,8 +690,8 @@ final class Workspace: ObservableObject {
                         role: .normal
                     ) {
                         selection.wrappedValue = .instrumentComponent(
-                            process.sessionRecord.id,
-                            instrument.instance.id,
+                            processNode.sessionRecord.id,
+                            instrumentID,
                             ev.id,
                             UUID()
                         )
@@ -716,7 +719,7 @@ final class Workspace: ObservableObject {
 
         if let node = attachedNode(for: session) {
             for hook in config.hooks {
-                if let resolved = try? node.resolveSyncIfReady(hook.addressAnchor),
+                if let resolved = try? node.core.resolveSyncIfReady(hook.addressAnchor),
                     resolved == address
                 {
                     return hook.id
@@ -746,7 +749,7 @@ final class Workspace: ObservableObject {
 
         let anchor: AddressAnchor
         if let node = attachedNode(for: session) {
-            anchor = node.anchor(for: address)
+            anchor = node.core.anchor(for: address)
         } else {
             anchor = .absolute(address)
         }
@@ -1012,14 +1015,14 @@ final class Workspace: ObservableObject {
                     return []
                 },
                 renderEvent: { event, workspace, selection in
-                    guard let v = event.payload as? JSInspectValue else {
+                    guard case .jsValue(let v) = event.payload else {
                         return AnyView(Text(String(describing: event.payload)))
                     }
 
                     return AnyView(
                         JSInspectValueView(
                             value: v,
-                            sessionID: event.process.sessionRecord.id,
+                            sessionID: event.processNode.sessionRecord.id,
                             workspace: workspace,
                             selection: selection
                         ))
@@ -1082,11 +1085,11 @@ final class Workspace: ObservableObject {
                 return []
             },
             renderEvent: { event, workspace, selection in
-                if let v = event.payload as? JSInspectValue {
+                if case .jsValue(let v) = event.payload {
                     return AnyView(
                         JSInspectValueView(
                             value: v,
-                            sessionID: event.process.sessionRecord.id,
+                            sessionID: event.processNode.sessionRecord.id,
                             workspace: workspace,
                             selection: selection
                         ))
@@ -1122,7 +1125,7 @@ final class Workspace: ObservableObject {
         var map: [UInt64: AddressAnnotation] = [:]
 
         for hook in config.hooks where hook.isEnabled {
-            guard let addr = try? node.resolveSyncIfReady(hook.addressAnchor) else { continue }
+            guard let addr = try? node.core.resolveSyncIfReady(hook.addressAnchor) else { continue }
 
             var ann = map[addr] ?? AddressAnnotation()
             ann.decorations.append(
@@ -1252,11 +1255,14 @@ final class Workspace: ObservableObject {
                 runtime: .auto
             )
 
-            let node = ProcessNode(
+            let coreNode = LumaCore.ProcessNode(
                 device: device,
                 process: process,
                 session: session,
-                script: script,
+                script: script
+            )
+            let node = ProcessNodeViewModel(
+                core: coreNode,
                 sessionRecord: sessionRecord,
                 modelContext: modelContext
             )
@@ -1271,20 +1277,21 @@ final class Workspace: ObservableObject {
                 guard let self else { return }
                 self.rebuildAddressDecorations(for: node.sessionRecord)
             }
-            node.eventSink = { [weak self] evt in
+            node.eventSink = { [weak self] coreEvent in
+                let evt = RuntimeEvent(coreEvent: coreEvent, processNode: node)
                 self?.pushEvent(evt)
             }
 
             processNodes.append(node)
 
-            await node.waitForScriptEventsSubscription()
+            await coreNode.waitForScriptEventsSubscription()
             await Task.yield()
 
             try await script.load()
 
             await node.fetchAndPersistProcessInfoIfNeeded()
 
-            await node.setupITraceDraining()
+            await coreNode.setupITraceDraining()
 
             await loadAllPackages(on: node)
 
@@ -1299,7 +1306,7 @@ final class Workspace: ObservableObject {
         }
     }
 
-    func resumeSpawnedProcess(node: ProcessNode) async {
+    func resumeSpawnedProcess(node: ProcessNodeViewModel) async {
         let pid = node.sessionRecord.lastKnownPID
 
         do {
@@ -1400,7 +1407,7 @@ final class Workspace: ObservableObject {
             )
         }
 
-        let anchor = node.anchor(for: pointer)
+        let anchor = node.core.anchor(for: pointer)
 
         if let existing = session.insights.first(where: { $0.kind == kind && $0.anchor == anchor }) {
             return existing
@@ -1421,7 +1428,7 @@ final class Workspace: ObservableObject {
         ).first
     }
 
-    private func attachedNode(for session: ProcessSession) -> ProcessNode? {
+    private func attachedNode(for session: ProcessSession) -> ProcessNodeViewModel? {
         processNodes.first(where: { $0.sessionRecord == session })
     }
 

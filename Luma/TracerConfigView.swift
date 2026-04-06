@@ -171,7 +171,7 @@ struct TracerConfigView: View {
         return config.hooks.first(where: { $0.id == id })
     }
 
-    private var attachedNode: ProcessNode? {
+    private var attachedNode: ProcessNodeViewModel? {
         guard let session = instrumentSession else { return nil }
         return workspace.processNodes.first { $0.sessionRecord.id == session.id }
     }

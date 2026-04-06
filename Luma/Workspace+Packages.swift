@@ -347,7 +347,7 @@ extension Workspace {
         }
     }
 
-    func loadAllPackages(on node: ProcessNode) async {
+    func loadAllPackages(on node: ProcessNodeViewModel) async {
         do {
             let bundles = try await currentPackageBundlesForAgent()
             guard !bundles.isEmpty else { return }
@@ -362,7 +362,7 @@ extension Workspace {
         }
     }
 
-    func loadPackage(_ package: InstalledPackage, on node: ProcessNode) async {
+    func loadPackage(_ package: InstalledPackage, on node: ProcessNodeViewModel) async {
         if node.loadedPackageNames.contains(package.name) {
             return
         }

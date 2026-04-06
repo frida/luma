@@ -1,7 +1,7 @@
 import Foundation
 import LumaCore
 
-struct DisplayEvent: Identifiable {
+struct RuntimeEvent: Identifiable {
     let id: UUID
     let timestamp: Date
     let processNode: ProcessNodeViewModel

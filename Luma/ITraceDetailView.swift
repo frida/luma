@@ -30,7 +30,7 @@ struct ITraceDetailView: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
-    private var node: ProcessNode? {
+    private var node: ProcessNodeViewModel? {
         workspace.processNodes.first { $0.sessionRecord == session }
     }
 
@@ -356,7 +356,7 @@ struct ITraceDetailView: View {
 
         let info = session.processInfo!
         await r2.config.set("asm.os", string: info.platform)
-        await r2.config.set("asm.arch", string: ProcessNode.r2Arch(fromFridaArch: info.arch))
+        await r2.config.set("asm.arch", string: ProcessNodeViewModel.r2Arch(fromFridaArch: info.arch))
         await r2.config.set("asm.bits", int: info.pointerSize * 8)
         await r2.config.set("anal.cc", string: "cdecl")
 

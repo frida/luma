@@ -1,4 +1,5 @@
 import Frida
+import LumaCore
 import SwiftData
 import SwiftUI
 
@@ -96,7 +97,7 @@ private struct SidebarNotebookRow: View {
 
 private struct SidebarSessionHeaderRow: View {
     let session: ProcessSession
-    let node: ProcessNode?
+    let node: ProcessNodeViewModel?
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 
@@ -288,7 +289,7 @@ private struct SidebarSessionREPLRow: View {
 
 private struct SidebarInstrumentRow: View {
     let session: ProcessSession
-    let node: ProcessNode?
+    let node: ProcessNodeViewModel?
     let instance: InstrumentInstance
     let runtime: InstrumentRuntime?
     @ObservedObject var workspace: Workspace

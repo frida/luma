@@ -7,13 +7,13 @@ import SwiftUI
 final class InstrumentRuntime: ObservableObject, Identifiable {
     let id: UUID
 
-    unowned let processNode: ProcessNode
+    unowned let processNode: ProcessNodeViewModel
     @Bindable var instance: InstrumentInstance
 
     @Published var isAttached: Bool = false
     @Published var lastError: String?
 
-    init(instance: InstrumentInstance, processNode: ProcessNode) {
+    init(instance: InstrumentInstance, processNode: ProcessNodeViewModel) {
         self.id = instance.id
         self.instance = instance
         self.processNode = processNode

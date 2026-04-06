@@ -1,7 +1,7 @@
 import Foundation
 
-public struct TracerConfig: Codable, Equatable {
-    public struct Hook: Codable, Equatable, Identifiable {
+public struct TracerConfig: Codable, Equatable, Sendable {
+    public struct Hook: Codable, Equatable, Identifiable, Sendable {
         public var id: UUID
 
         public var displayName: String

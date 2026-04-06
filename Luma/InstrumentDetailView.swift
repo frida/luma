@@ -9,7 +9,7 @@ struct InstrumentDetailView: View {
 
     let template: InstrumentTemplate?
 
-    private var node: ProcessNode? {
+    private var node: ProcessNodeViewModel? {
         let processSession = instance.session
         return workspace.processNodes.first { $0.sessionRecord == processSession }
     }
