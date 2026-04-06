@@ -766,7 +766,8 @@ private struct EventSourceBadge: View {
         case .repl:
             return "\(processName) • REPL"
 
-        case .instrument(_, let name):
+        case .instrument:
+            let name = evt.instrument?.displayName ?? "Instrument"
             return "\(name) • \(processName)"
         }
     }

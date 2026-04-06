@@ -1319,7 +1319,11 @@ final class Workspace: ObservableObject {
                 self.rebuildAddressDecorations(for: node.sessionRecord)
             }
             node.eventSink = { [weak self] coreEvent in
-                let evt = RuntimeEvent(coreEvent: coreEvent, processNode: node)
+                var instrument: InstrumentRuntime?
+                if case .instrument(let id, _) = coreEvent.source {
+                    instrument = node.instruments.first { $0.id == id }
+                }
+                let evt = RuntimeEvent(coreEvent: coreEvent, processNode: node, instrument: instrument)
                 self?.pushEvent(evt)
             }
 
