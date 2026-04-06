@@ -135,8 +135,10 @@ struct REPLView: View {
         }
         .onAppear {
             if cellsObservation == nil {
-                cellsObservation = workspace.store.observeREPLCells(sessionID: sessionID) { newCells in
-                    cells = newCells
+                cellsObservation = workspace.store.observeREPLCells(sessionID: sessionID) { [self] newCells in
+                    Task { @MainActor in
+                        self.cells = newCells
+                    }
                 }
             }
 
