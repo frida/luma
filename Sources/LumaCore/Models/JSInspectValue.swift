@@ -1,7 +1,7 @@
 import Foundation
 import Frida
 
-public enum JSInspectValue: nonisolated Codable, nonisolated Equatable {
+public enum JSInspectValue: nonisolated Codable, nonisolated Equatable, @unchecked Sendable {
     case number(Double)
     case string(String)
     case object(id: Int, properties: [Property])
