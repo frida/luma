@@ -1,6 +1,9 @@
 import Foundation
+import GRDB
 
-public struct TargetPickerState: Codable, Identifiable, Sendable {
+public struct TargetPickerState: Codable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
+    public static let databaseTableName = "target_picker_state"
+
     public var id: UUID
     public var lastSelectedDeviceID: String?
     public var lastModeRaw: String?
@@ -8,6 +11,16 @@ public struct TargetPickerState: Codable, Identifiable, Sendable {
     public var lastSpawnApplicationID: String?
     public var lastSpawnProgramPath: String?
     public var lastSelectedProcessName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case lastSelectedDeviceID = "last_selected_device_id"
+        case lastModeRaw = "last_mode_raw"
+        case lastSpawnSubmodeRaw = "last_spawn_submode_raw"
+        case lastSpawnApplicationID = "last_spawn_application_id"
+        case lastSpawnProgramPath = "last_spawn_program_path"
+        case lastSelectedProcessName = "last_selected_process_name"
+    }
 
     public init(
         id: UUID = UUID(),

@@ -1,7 +1,10 @@
 import Foundation
 import Frida
+import GRDB
 
-public struct ProcessSession: Codable, Identifiable, Sendable {
+public struct ProcessSession: Codable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
+    public static let databaseTableName = "process_session"
+
     public var id: UUID
     public var kind: Kind
     public var deviceID: String
@@ -19,6 +22,23 @@ public struct ProcessSession: Codable, Identifiable, Sendable {
 
     public var processInfo: ProcessInfo?
     public var lastKnownModules: [PersistedModule]?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case kind
+        case deviceID = "device_id"
+        case deviceName = "device_name"
+        case processName = "process_name"
+        case iconPNGData = "icon_png_data"
+        case phase
+        case detachReason = "detach_reason"
+        case lastError = "last_error"
+        case createdAt = "created_at"
+        case lastKnownPID = "last_known_pid"
+        case lastAttachedAt = "last_attached_at"
+        case processInfo = "process_info"
+        case lastKnownModules = "last_known_modules"
+    }
 
     public init(
         id: UUID = UUID(),

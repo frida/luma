@@ -1,12 +1,24 @@
 import Foundation
+import GRDB
 
-public struct REPLCell: Codable, Identifiable, Sendable {
+public struct REPLCell: Codable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
+    public static let databaseTableName = "repl_cell"
+
     public var id: UUID
     public var sessionID: UUID
     public var code: String
     public var result: Result
     public var timestamp: Date
     public var isSessionBoundary: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case sessionID = "session_id"
+        case code
+        case result
+        case timestamp
+        case isSessionBoundary = "is_session_boundary"
+    }
 
     public init(
         id: UUID = UUID(),

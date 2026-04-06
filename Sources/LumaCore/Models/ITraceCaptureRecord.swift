@@ -1,6 +1,9 @@
 import Foundation
+import GRDB
 
-public struct ITraceCaptureRecord: Codable, Identifiable, Sendable {
+public struct ITraceCaptureRecord: Codable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
+    public static let databaseTableName = "itrace_capture"
+
     public var id: UUID
     public var sessionID: UUID
     public var hookID: UUID
@@ -10,6 +13,18 @@ public struct ITraceCaptureRecord: Codable, Identifiable, Sendable {
     public var traceData: Data
     public var metadataJSON: Data
     public var lost: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case sessionID = "session_id"
+        case hookID = "hook_id"
+        case callIndex = "call_index"
+        case capturedAt = "captured_at"
+        case displayName = "display_name"
+        case traceData = "trace_data"
+        case metadataJSON = "metadata_json"
+        case lost
+    }
 
     public init(
         id: UUID = UUID(),

@@ -1,6 +1,9 @@
 import Foundation
+import GRDB
 
-public struct NotebookEntry: Codable, Identifiable, Sendable {
+public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
+    public static let databaseTableName = "notebook_entry"
+
     public var id: UUID
     public var timestamp: Date
     public var title: String
@@ -10,6 +13,18 @@ public struct NotebookEntry: Codable, Identifiable, Sendable {
     public var sessionID: UUID?
     public var processName: String?
     public var isUserNote: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case timestamp
+        case title
+        case details
+        case jsValue = "js_value"
+        case binaryData = "binary_data"
+        case sessionID = "session_id"
+        case processName = "process_name"
+        case isUserNote = "is_user_note"
+    }
 
     public init(
         id: UUID = UUID(),

@@ -1,6 +1,9 @@
 import Foundation
+import GRDB
 
-public struct RemoteDeviceConfig: Codable, Identifiable, Sendable {
+public struct RemoteDeviceConfig: Codable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
+    public static let databaseTableName = "remote_device_config"
+
     public var id: UUID
     public var address: String
     public var certificate: String?
@@ -26,7 +29,12 @@ public struct RemoteDeviceConfig: Codable, Identifiable, Sendable {
         self.keepaliveInterval = keepaliveInterval
     }
 
-    private enum CodingKeys: String, CodingKey {
-        case id, address, certificate, origin, token, keepaliveInterval
+    enum CodingKeys: String, CodingKey {
+        case id
+        case address
+        case certificate
+        case origin
+        case token
+        case keepaliveInterval = "keepalive_interval"
     }
 }

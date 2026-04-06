@@ -134,6 +134,7 @@ public final class CompilerWorkspace {
         packagesState.packages.removeAll { $0.name == name }
 
         let entry = InstalledPackage(
+            packagesStateID: packagesState.id,
             name: installedInfo.name,
             version: installedInfo.version,
             globalAlias: globalAlias

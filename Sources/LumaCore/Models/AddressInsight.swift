@@ -1,6 +1,9 @@
 import Foundation
+import GRDB
 
-public struct AddressInsight: Codable, Identifiable, Sendable {
+public struct AddressInsight: Codable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
+    public static let databaseTableName = "address_insight"
+
     public var id: UUID
     public var sessionID: UUID
     public var createdAt: Date
@@ -9,6 +12,17 @@ public struct AddressInsight: Codable, Identifiable, Sendable {
     public var anchor: AddressAnchor
     public var byteCount: Int
     public var lastResolvedAddress: UInt64?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case sessionID = "session_id"
+        case createdAt = "created_at"
+        case title
+        case kind
+        case anchor
+        case byteCount = "byte_count"
+        case lastResolvedAddress = "last_resolved_address"
+    }
 
     public init(
         id: UUID = UUID(),
