@@ -216,7 +216,7 @@ final class ProcessNodeViewModel: ObservableObject, Identifiable {
         }
     }
 
-    private func updateSession(_ mutate: (inout LumaCore.ProcessSession) -> Void) {
+    func updateSession(_ mutate: (inout LumaCore.ProcessSession) -> Void) {
         guard var s = try? store.fetchSession(id: sessionID) else { return }
         mutate(&s)
         try? store.save(s)

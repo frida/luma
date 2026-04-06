@@ -1,11 +1,12 @@
 import Foundation
 import Frida
+import LumaCore
 import SwiftyMonaco
 
 extension Workspace {
     @MainActor
-    func projectPackagesState() throws -> ProjectPackagesState {
-        return ProjectPackagesState()
+    func projectPackagesState() throws -> LumaCore.ProjectPackagesState {
+        try store.fetchPackagesState()
     }
 
     func currentPackageBundlesForAgent() async throws -> [[String: Any]] {
@@ -81,8 +82,6 @@ extension Workspace {
                     opts.role = .runtime
 
                     _ = try await self.packageManager.install(options: opts)
-
-                    try self.loadManifestsFromDisk(into: projectPackages, paths: paths)
                 } else if !projectPackages.packages.isEmpty {
                     let specs = projectPackages.packages.map { "\($0.name)@\($0.version)" }
 
@@ -92,8 +91,6 @@ extension Workspace {
                     opts.specs = specs
 
                     _ = try await self.packageManager.install(options: opts)
-
-                    try self.loadManifestsFromDisk(into: projectPackages, paths: paths)
                 }
 
                 self.compilerWorkspaceRoot = paths.root
@@ -126,8 +123,8 @@ extension Workspace {
         name: String,
         versionSpec: String? = nil,
         globalAlias: String? = nil
-    ) async throws -> InstalledPackage {
-        var installed: InstalledPackage!
+    ) async throws -> LumaCore.InstalledPackage {
+        var installed: LumaCore.InstalledPackage!
 
         try await packageOps.enqueue {
             installed = try await self._installPackage(
@@ -147,8 +144,8 @@ extension Workspace {
         name: String,
         versionSpec: String?,
         globalAlias: String?
-    ) async throws -> InstalledPackage {
-        let projectPackages = try projectPackagesState()
+    ) async throws -> LumaCore.InstalledPackage {
+        var projectPackages = try projectPackagesState()
         let paths = try compilerWorkspacePaths()
 
         let spec = versionSpec.map { "\(name)@\($0)" } ?? name
@@ -160,23 +157,27 @@ extension Workspace {
 
         let result = try await packageManager.install(options: opts)
 
-        try loadManifestsFromDisk(into: projectPackages, paths: paths)
+        let manifests = try readManifestsFromDisk(paths: paths)
+        projectPackages.packageJSON = manifests.packageJSON
+        projectPackages.packageLockJSON = manifests.packageLockJSON
 
-        guard let installed = result.packages.first(where: { $0.name == name }) else {
-            return projectPackages.packages.first(where: { $0.name == name })!
+        guard let installedInfo = result.packages.first(where: { $0.name == name }) else {
+            if let existing = projectPackages.packages.first(where: { $0.name == name }) {
+                return existing
+            }
+            throw LumaCoreError.invalidOperation("Package '\(name)' not found in install result")
         }
 
-        if let existing = projectPackages.packages.first(where: { $0.name == name }) {
-            projectPackages.packages.removeAll { $0.id == existing.id }
-        }
+        projectPackages.packages.removeAll { $0.name == name }
 
-        let entry = InstalledPackage(
-            name: installed.name,
-            version: installed.version,
-            globalAlias: globalAlias,
-            project: projectPackages
+        let entry = LumaCore.InstalledPackage(
+            name: installedInfo.name,
+            version: installedInfo.version,
+            globalAlias: globalAlias
         )
         projectPackages.packages.append(entry)
+
+        try store.save(projectPackages)
 
         packageBundlesDirty = true
         monacoFSSnapshotDirty = true
@@ -184,8 +185,8 @@ extension Workspace {
         return entry
     }
 
-    func upgradePackage(_ package: InstalledPackage) async throws -> InstalledPackage {
-        var upgraded: InstalledPackage!
+    func upgradePackage(_ package: LumaCore.InstalledPackage) async throws -> LumaCore.InstalledPackage {
+        var upgraded: LumaCore.InstalledPackage!
 
         try await packageOps.enqueue {
             upgraded = try await self._installPackage(
@@ -198,9 +199,9 @@ extension Workspace {
         return upgraded
     }
 
-    func removePackage(_ package: InstalledPackage) async throws {
+    func removePackage(_ package: LumaCore.InstalledPackage) async throws {
         try await packageOps.enqueue {
-            let projectPackages = try self.projectPackagesState()
+            var projectPackages = try self.projectPackagesState()
             let paths = try self.compilerWorkspacePaths()
 
             projectPackages.packages.removeAll { $0.id == package.id }
@@ -212,6 +213,7 @@ extension Workspace {
                 projectPackages.packageLockJSON = nil
                 self.packageBundles = [:]
                 self.packageBundlesDirty = false
+                try self.store.save(projectPackages)
                 return
             }
 
@@ -224,14 +226,21 @@ extension Workspace {
 
             _ = try await self.packageManager.install(options: opts)
 
-            try self.loadManifestsFromDisk(into: projectPackages, paths: paths)
+            let manifests = try self.readManifestsFromDisk(paths: paths)
+            projectPackages.packageJSON = manifests.packageJSON
+            projectPackages.packageLockJSON = manifests.packageLockJSON
+
+            try self.store.save(projectPackages)
 
             self.packageBundlesDirty = true
             self.monacoFSSnapshotDirty = true
         }
     }
 
-    private func buildAllPackageBundles(projectPackages: ProjectPackagesState, paths: CompilerWorkspacePaths) async throws {
+    private func buildAllPackageBundles(
+        projectPackages: LumaCore.ProjectPackagesState,
+        paths: CompilerWorkspacePaths
+    ) async throws {
         packageBundles.removeAll()
 
         for pkg in projectPackages.packages {
@@ -240,7 +249,10 @@ extension Workspace {
         }
     }
 
-    private func buildBundle(for package: InstalledPackage, paths: CompilerWorkspacePaths) async throws -> PackageBundleDescriptor {
+    private func buildBundle(
+        for package: LumaCore.InstalledPackage,
+        paths: CompilerWorkspacePaths
+    ) async throws -> PackageBundleDescriptor {
         let fm = FileManager.default
 
         let wrapperRelPath = "Packages/\(package.name).entry.js"
@@ -266,7 +278,7 @@ extension Workspace {
             return try await compiler.build(entrypoint: wrapperRelPath, options: options)
         }
 
-        let modules = try parseESMBundle(bundle)
+        let modules = try ESMBundleParser.parse(bundle)
 
         return PackageBundleDescriptor(
             name: package.name,
@@ -340,7 +352,7 @@ extension Workspace {
         }
     }
 
-    func loadPackage(_ package: InstalledPackage, on node: ProcessNodeViewModel) async {
+    func loadPackage(_ package: LumaCore.InstalledPackage, on node: ProcessNodeViewModel) async {
         if node.loadedPackageNames.contains(package.name) {
             return
         }
@@ -360,7 +372,7 @@ extension Workspace {
         }
     }
 
-    func propagateNewlyInstalledPackage(_ package: InstalledPackage) {
+    func propagateNewlyInstalledPackage(_ package: LumaCore.InstalledPackage) {
         Task { @MainActor in
             for node in self.processNodes {
                 await self.loadPackage(package, on: node)
@@ -372,23 +384,14 @@ extension Workspace {
         CompilerWorkspacePaths(root: try compilerWorkspaceDirectory())
     }
 
-    private func loadManifestsFromDisk(into projectPackages: ProjectPackagesState, paths: CompilerWorkspacePaths) throws {
+    private func readManifestsFromDisk(paths: CompilerWorkspacePaths) throws -> (packageJSON: Data?, packageLockJSON: Data?) {
         let fm = FileManager.default
-
-        if fm.fileExists(atPath: paths.packageJSON.path) {
-            projectPackages.packageJSON = try Data(contentsOf: paths.packageJSON)
-        } else {
-            projectPackages.packageJSON = nil
-        }
-
-        if fm.fileExists(atPath: paths.packageLockJSON.path) {
-            projectPackages.packageLockJSON = try Data(contentsOf: paths.packageLockJSON)
-        } else {
-            projectPackages.packageLockJSON = nil
-        }
+        let packageJSON = fm.fileExists(atPath: paths.packageJSON.path) ? try Data(contentsOf: paths.packageJSON) : nil
+        let packageLockJSON = fm.fileExists(atPath: paths.packageLockJSON.path) ? try Data(contentsOf: paths.packageLockJSON) : nil
+        return (packageJSON, packageLockJSON)
     }
 
-    private func writeManifestsToDisk(from projectPackages: ProjectPackagesState, paths: CompilerWorkspacePaths) throws {
+    private func writeManifestsToDisk(from projectPackages: LumaCore.ProjectPackagesState, paths: CompilerWorkspacePaths) throws {
         let fm = FileManager.default
 
         if let data = projectPackages.packageJSON {
@@ -461,177 +464,5 @@ extension Workspace {
         }
 
         return MonacoFSSnapshot(version: 0, files: out)
-    }
-
-    func parseESMBundle(_ bundle: String) throws -> ESMModules {
-        let headerPrefix = "📦\n"
-        let separator = "✄\n"
-
-        guard bundle.hasPrefix(headerPrefix) else {
-            throw ESMBundleError.invalidFormat
-        }
-
-        guard let separatorRange = bundle.range(of: "\n" + separator) else {
-            throw ESMBundleError.headerNotFound
-        }
-
-        let headerString = String(bundle[..<separatorRange.lowerBound])
-        let headerAndSepString = String(bundle[..<separatorRange.upperBound])
-
-        guard let bundleData = bundle.data(using: .utf8) else {
-            throw ESMBundleError.encodingError
-        }
-        let headerAndSepByteCount = headerAndSepString.utf8.count
-
-        let bodyBytes = bundleData[headerAndSepByteCount...]
-        let separatorData = separator.data(using: .utf8)!
-        let separatorLength = separatorData.count
-
-        var descriptors: [(path: String, size: Int)] = []
-
-        let headerLines = headerString.split(separator: "\n", omittingEmptySubsequences: false)
-        guard headerLines.first == "📦" else {
-            throw ESMBundleError.invalidFormat
-        }
-
-        for line in headerLines.dropFirst() {
-            if line.isEmpty {
-                throw ESMBundleError.invalidFormat
-            }
-
-            let parts = line.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: false)
-            guard parts.count == 2, let size = Int(parts[0]) else {
-                throw ESMBundleError.invalidHeaderLine(String(line))
-            }
-
-            let path = String(parts[1])
-            descriptors.append((path: path, size: size))
-        }
-
-        if descriptors.isEmpty {
-            throw ESMBundleError.emptyBundle
-        }
-
-        var modules: [String: String] = [:]
-        var order: [String] = []
-
-        var cursor = bodyBytes.startIndex
-
-        for (index, desc) in descriptors.enumerated() {
-            let remaining = bodyBytes.distance(from: cursor, to: bodyBytes.endIndex)
-            guard remaining >= desc.size else {
-                throw ESMBundleError.sizeOutOfRange
-            }
-
-            let start = cursor
-            let end = bodyBytes.index(start, offsetBy: desc.size)
-            let fileData = bodyBytes[start..<end]
-
-            guard let source = String(data: fileData, encoding: .utf8) else {
-                throw ESMBundleError.encodingError
-            }
-
-            modules[desc.path] = source
-            order.append(desc.path)
-
-            cursor = end
-
-            if index < descriptors.count - 1 {
-                let remainingAfterFile = bodyBytes.distance(from: cursor, to: bodyBytes.endIndex)
-                guard remainingAfterFile >= separatorLength else {
-                    throw ESMBundleError.invalidSeparator
-                }
-
-                let sepEnd = bodyBytes.index(cursor, offsetBy: separatorLength)
-                let sepSlice = bodyBytes[cursor..<sepEnd]
-                if sepSlice != separatorData {
-                    throw ESMBundleError.invalidSeparator
-                }
-
-                cursor = sepEnd
-            }
-        }
-
-        guard cursor == bodyBytes.endIndex else {
-            throw ESMBundleError.trailingData
-        }
-
-        return ESMModules(modules: modules, order: order)
-    }
-
-    struct ESMModules {
-        let modules: [String: String]
-        let order: [String]
-    }
-
-    private enum ESMBundleError: Swift.Error {
-        case invalidFormat
-        case headerNotFound
-        case invalidHeaderLine(String)
-        case emptyBundle
-        case encodingError
-        case sizeOutOfRange
-        case invalidSeparator
-        case trailingData
-    }
-}
-
-struct CompilerWorkspacePaths {
-    let root: URL
-
-    var nodeModules: URL {
-        root.appendingPathComponent("node_modules", isDirectory: true)
-    }
-
-    var packageJSON: URL {
-        root.appendingPathComponent("package.json")
-    }
-
-    var packageLockJSON: URL {
-        root.appendingPathComponent("package-lock.json")
-    }
-}
-
-@MainActor
-final class PackageOperationQueue {
-    private var pending: [() async throws -> Void] = []
-    private var isRunning = false
-
-    func enqueue(_ operation: @escaping @MainActor () async throws -> Void) async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            pending.append {
-                do {
-                    try await operation()
-                    continuation.resume()
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
-
-            if !isRunning {
-                Task { [self] in
-                    try await runNext()
-                }
-            }
-        }
-    }
-
-    private func runNext() async throws {
-        guard !pending.isEmpty else {
-            isRunning = false
-            return
-        }
-
-        isRunning = true
-        let op = pending.removeFirst()
-
-        do {
-            try await op()
-            try await runNext()
-        } catch {
-            isRunning = false
-            pending.removeAll()
-            throw error
-        }
     }
 }

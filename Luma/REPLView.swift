@@ -3,7 +3,7 @@ import SwiftUI
 import LumaCore
 
 struct REPLView: View {
-    @Bindable var session: ProcessSession
+    let sessionID: UUID
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 
@@ -13,13 +13,23 @@ struct REPLView: View {
     @State private var historyCursor: Int = 0
     @State private var historyCursorInitialized = false
 
+    @State private var cells: [LumaCore.REPLCell] = []
+
+    private var session: LumaCore.ProcessSession? {
+        workspace.processNodes.first { $0.sessionRecord.id == sessionID }?.sessionRecord
+    }
+
     private var node: ProcessNodeViewModel? {
-        workspace.processNodes.first { $0.sessionRecord == session }
+        workspace.processNodes.first { $0.sessionRecord.id == sessionID }
+    }
+
+    private var orderedCells: [LumaCore.REPLCell] {
+        cells.sorted { $0.timestamp < $1.timestamp }
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            if node == nil {
+            if node == nil, let session {
                 SessionDetachedBanner(session: session, workspace: workspace)
             }
 
@@ -27,11 +37,11 @@ struct REPLView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 4) {
-                            ForEach(session.orderedReplCells) { cell in
+                            ForEach(orderedCells) { cell in
                                 REPLCellView(
                                     cell: cell,
-                                    processName: session.processName,
-                                    sessionID: session.id,
+                                    processName: session?.processName ?? "",
+                                    sessionID: sessionID,
                                     workspace: workspace,
                                     selection: $selection
                                 )
@@ -50,9 +60,10 @@ struct REPLView: View {
                             .id("repl-bottom-anchor")
                     }
                     .onAppear {
+                        reloadCells()
                         scrollToBottom(proxy: proxy)
                     }
-                    .onChange(of: session.replCells.count) {
+                    .onChange(of: cells.count) {
                         scrollToBottom(proxy: proxy)
                     }
                 }
@@ -100,7 +111,7 @@ struct REPLView: View {
                         .frame(minHeight: 22)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                        Text("Session detached — click \(session.kind.reestablishLabel) to continue.")
+                        Text("Session detached — click \(session?.kind.reestablishLabel ?? "Re-Attach") to continue.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .padding(.leading, 4)
@@ -126,7 +137,7 @@ struct REPLView: View {
                 isInputFocused = node != nil
 
                 if !historyCursorInitialized {
-                    historyCursor = session.orderedReplCells.count
+                    historyCursor = orderedCells.count
                     historyCursorInitialized = true
                 }
             }
@@ -140,6 +151,10 @@ struct REPLView: View {
         }
     }
 
+    private func reloadCells() {
+        cells = (try? workspace.store.fetchREPLCells(sessionID: sessionID)) ?? []
+    }
+
     private func scrollToBottom(proxy: ScrollViewProxy) {
         withAnimation {
             proxy.scrollTo("repl-bottom-anchor", anchor: .bottom)
@@ -147,7 +162,7 @@ struct REPLView: View {
     }
 
     private func clearHistory() {
-        session.replCells.removeAll()
+        cells.removeAll()
         historyCursor = 0
     }
 
@@ -163,14 +178,15 @@ struct REPLView: View {
 
         Task { @MainActor in
             await node!.core.evalInREPL(code)
-            historyCursor = session.orderedReplCells.count
+            reloadCells()
+            historyCursor = orderedCells.count
         }
 
         isInputFocused = true
     }
 
     private func historyPrevious() {
-        let history = session.orderedReplCells
+        let history = orderedCells
         guard !history.isEmpty else {
             return
         }
@@ -183,7 +199,7 @@ struct REPLView: View {
     }
 
     private func historyNext() {
-        let history = session.orderedReplCells
+        let history = orderedCells
         guard !history.isEmpty else {
             return
         }
@@ -199,7 +215,7 @@ struct REPLView: View {
 }
 
 private struct REPLCellView: View {
-    let cell: REPLCell
+    let cell: LumaCore.REPLCell
     let processName: String
     let sessionID: UUID
     @ObservedObject var workspace: Workspace
@@ -276,7 +292,7 @@ private struct REPLCellView: View {
         }
     }
 
-    private func binaryMetaString(_ meta: REPLCell.Result.BinaryMeta?, dataCount: Int) -> String {
+    private func binaryMetaString(_ meta: LumaCore.REPLCell.Result.BinaryMeta?, dataCount: Int) -> String {
         var parts: [String] = []
         if let ta = meta?.typedArray { parts.append(ta) }
         return parts.joined(separator: " • ")
@@ -297,11 +313,11 @@ private struct REPLCellView: View {
             }
         }()
 
-        let entry = NotebookEntry(
+        var entry = LumaCore.NotebookEntry(
             title: cell.code,
             details: details,
             binaryData: binary,
-            session: sessionID,
+            sessionID: sessionID,
             processName: processName
         )
 

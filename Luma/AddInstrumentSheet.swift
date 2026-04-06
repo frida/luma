@@ -1,10 +1,11 @@
+import LumaCore
 import SwiftUI
 
 struct AddInstrumentSheet: View {
-    let session: ProcessSession
+    let session: LumaCore.ProcessSession
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
-    let onInstrumentAdded: ((InstrumentInstance) -> Void)?
+    let onInstrumentAdded: ((LumaCore.InstrumentInstance) -> Void)?
 
     @Environment(\.dismiss) private var dismiss
 

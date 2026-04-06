@@ -1,8 +1,9 @@
 import Frida
+import LumaCore
 import SwiftUI
 
 struct SessionDetachedBanner: View {
-    @Bindable var session: ProcessSession
+    let session: LumaCore.ProcessSession
     @ObservedObject var workspace: Workspace
 
     var body: some View {
@@ -65,41 +66,7 @@ struct SessionDetachedBanner: View {
     }
 
     private var errorText: String? {
-        guard let error = session.lastError else { return nil }
-        switch error {
-        case .serverNotRunning(let message):
-            return "Server is not running: \(message)"
-        case .executableNotFound(let message):
-            return "Executable not found: \(message)"
-        case .executableNotSupported(let message):
-            return "Executable not supported: \(message)"
-        case .processNotFound(let message):
-            return "Process not found: \(message)"
-        case .processNotResponding(let message):
-            return "Process is not responding: \(message)"
-        case .invalidArgument(let message):
-            return "Invalid argument: \(message)"
-        case .invalidOperation(let message):
-            return "Invalid operation: \(message)"
-        case .permissionDenied(let message):
-            return "Permission denied: \(message)"
-        case .addressInUse(let message):
-            return "Address already in use: \(message)"
-        case .timedOut(let message):
-            return "Operation timed out: \(message)"
-        case .notSupported(let message):
-            return "Operation not supported: \(message)"
-        case .protocolViolation(let message):
-            return "Protocol violation: \(message)"
-        case .transport(let message):
-            return "Transport error: \(message)"
-        case .rpcError(let message, let stackTrace):
-            if let stackTrace = stackTrace {
-                return "RPC error: \(message)\nStack trace:\n\(stackTrace)"
-            } else {
-                return "RPC error: \(message)"
-            }
-        }
+        session.lastError
     }
 
     private var detachReasonText: String? {

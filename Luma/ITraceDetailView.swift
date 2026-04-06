@@ -4,8 +4,8 @@ import SwiftUI
 import SwiftyR2
 
 struct ITraceDetailView: View {
-    let capture: ITraceCapture
-    @Bindable var session: ProcessSession
+    let capture: LumaCore.ITraceCaptureRecord
+    let session: LumaCore.ProcessSession
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 
@@ -23,14 +23,14 @@ struct ITraceDetailView: View {
     @State private var cfgSelectedNodeKey: CFGGraph.NodeKey?
     @State private var cfgWindowRange: Range<Int> = 0..<0
     @State private var showDiffPicker = false
-    @State private var diffTarget: ITraceCapture?
+    @State private var diffTarget: LumaCore.ITraceCaptureRecord?
 
     @FocusState private var isFocused: Bool
 
     @Environment(\.colorScheme) private var colorScheme
 
     private var node: ProcessNodeViewModel? {
-        workspace.processNodes.first { $0.sessionRecord == session }
+        workspace.processNodes.first { $0.sessionRecord.id == session.id }
     }
 
     var body: some View {
@@ -280,14 +280,15 @@ struct ITraceDetailView: View {
         .frame(minWidth: 200, idealWidth: 250, maxWidth: 300)
     }
 
-    private var otherCapturesForSameHook: [ITraceCapture] {
-        session.itraceCaptures
+    private var otherCapturesForSameHook: [LumaCore.ITraceCaptureRecord] {
+        let captures = (try? workspace.store.fetchITraceCaptures(sessionID: session.id)) ?? []
+        return captures
             .filter { $0.hookID == capture.hookID && $0.id != capture.id }
             .sorted(by: { $0.capturedAt < $1.capturedAt })
     }
 
     @ViewBuilder
-    private func diffSheet(with target: ITraceCapture) -> some View {
+    private func diffSheet(with target: LumaCore.ITraceCaptureRecord) -> some View {
         if let left = decoded,
             let right = try? ITraceDecoder.decode(
                 traceData: target.traceData, metadataJSON: target.metadataJSON)

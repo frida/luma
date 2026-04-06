@@ -3,8 +3,8 @@ import SwiftUI
 import SwiftyR2
 
 struct AddressInsightDetailView: View {
-    @Bindable var session: ProcessSession
-    @Bindable var insight: AddressInsight
+    let session: LumaCore.ProcessSession
+    @State var insight: LumaCore.AddressInsight
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 
@@ -20,7 +20,7 @@ struct AddressInsightDetailView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     private var node: ProcessNodeViewModel? {
-        workspace.processNodes.first { $0.sessionRecord == session }
+        workspace.processNodes.first { $0.sessionRecord.id == session.id }
     }
 
     var body: some View {

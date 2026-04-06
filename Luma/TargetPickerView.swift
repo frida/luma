@@ -1079,14 +1079,13 @@ struct TargetPickerView: View {
                 keepaliveInterval: keepalive
             )
 
-            let config = RemoteDeviceConfig(
+            let config = LumaCore.RemoteDeviceConfig(
                 address: address,
                 certificate: certificate,
                 origin: origin,
                 token: token,
                 keepaliveInterval: keepalive
             )
-            config.runtimeDeviceID = device.id
             remoteConfigs.append(config)
 
             showingAddRemoteSheet = false
@@ -1096,7 +1095,7 @@ struct TargetPickerView: View {
         }
     }
 
-    private func removeRemote(config: RemoteDeviceConfig) {
+    private func removeRemote(config: LumaCore.RemoteDeviceConfig) {
         remoteConfigs.removeAll { $0.id == config.id }
 
         Task {

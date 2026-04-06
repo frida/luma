@@ -372,11 +372,11 @@ struct EventStreamView: View {
         let (processName, title) = prettyContext(evt)
 
         workspace.addNotebookEntry(
-            NotebookEntry(
+            LumaCore.NotebookEntry(
                 title: title,
                 details: prettyPayload(evt),
                 binaryData: evt.data.map { Data($0) },
-                session: evt.processNode.sessionRecord.id,
+                sessionID: evt.processNode.sessionRecord.id,
                 processName: processName
             ))
     }

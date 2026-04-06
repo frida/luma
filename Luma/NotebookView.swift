@@ -1,11 +1,12 @@
 import Combine
+import LumaCore
 import SwiftUI
 
 struct NotebookView: View {
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 
-    private var entries: [NotebookEntry] {
+    private var entries: [LumaCore.NotebookEntry] {
         workspace.notebookEntries.sorted { $0.timestamp < $1.timestamp }
     }
 
@@ -55,8 +56,8 @@ struct NotebookView: View {
         }
     }
 
-    private func addUserNote(after entry: NotebookEntry?) {
-        let note = NotebookEntry(
+    private func addUserNote(after entry: LumaCore.NotebookEntry?) {
+        let note = LumaCore.NotebookEntry(
             title: "Note",
             details: "",
             binaryData: nil,
@@ -68,7 +69,7 @@ struct NotebookView: View {
 }
 
 struct NotebookEntryRow: View {
-    @Bindable var entry: NotebookEntry
+    let entry: LumaCore.NotebookEntry
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 
@@ -78,6 +79,8 @@ struct NotebookEntryRow: View {
     @FocusState private var isTitleFocused: Bool
     @FocusState private var isBodyFocused: Bool
     @State private var isEditingUserNote: Bool = false
+    @State private var editTitle: String = ""
+    @State private var editDetails: String = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -126,6 +129,8 @@ struct NotebookEntryRow: View {
             }
         }
         .onAppear {
+            editTitle = entry.title
+            editDetails = entry.details
             if entry.isUserNote && entry.details.isEmpty && entry.title == "Note" {
                 isEditingUserNote = true
                 DispatchQueue.main.async {
@@ -190,11 +195,11 @@ struct NotebookEntryRow: View {
     @ViewBuilder
     private var editableUserNoteBody: some View {
         VStack(alignment: .leading, spacing: 6) {
-            TextField("Title", text: $entry.title)
+            TextField("Title", text: $editTitle)
                 .font(.subheadline.weight(.semibold))
                 .focused($isTitleFocused)
 
-            TextEditor(text: $entry.details)
+            TextEditor(text: $editDetails)
                 .font(.system(.body, design: .default))
                 .frame(minHeight: 80)
                 .focused($isBodyFocused)
@@ -219,7 +224,7 @@ struct NotebookEntryRow: View {
         if let jsValue = entry.jsValue {
             JSInspectValueView(
                 value: jsValue,
-                sessionID: entry.session!,
+                sessionID: entry.sessionID ?? UUID(),
                 workspace: workspace,
                 selection: $selection
             )
@@ -238,13 +243,22 @@ struct NotebookEntryRow: View {
         {
             withAnimation(.easeOut(duration: 0.15)) {
                 isEditingUserNote = false
-                workspace.notifyLocalNotebookEntryUpdated(entry)
+                commitEdits()
             }
         }
     }
 
+    private func commitEdits() {
+        guard let idx = workspace.notebookEntries.firstIndex(where: { $0.id == entry.id }) else { return }
+        workspace.notebookEntries[idx].title = editTitle
+        workspace.notebookEntries[idx].details = editDetails
+        workspace.notifyLocalNotebookEntryUpdated(workspace.notebookEntries[idx])
+    }
+
     private func beginEditing(focusBody: Bool = false) {
         guard entry.isUserNote else { return }
+        editTitle = entry.title
+        editDetails = entry.details
 
         withAnimation(.easeInOut(duration: 0.15)) {
             isEditingUserNote = true

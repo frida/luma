@@ -235,10 +235,10 @@ struct WorkspaceToolbar: ToolbarContent {
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 
-    @State var showingAddInstrumentSheetForProcess: ProcessSession?
+    @State var showingAddInstrumentSheetForProcess: LumaCore.ProcessSession?
     @State private var isShowingPackageManager = false
 
-    var selectedProcessSession: ProcessSession? {
+    var selectedProcessSession: LumaCore.ProcessSession? {
         guard let id = selection else { return nil }
 
         switch id {

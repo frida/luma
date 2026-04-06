@@ -28,7 +28,7 @@ final class Workspace: ObservableObject {
     private let maxEventsInMemory = 10_000
     private var isEventFlushScheduled = false
 
-    @Published var notebookEntries: [NotebookEntry] = []
+    @Published var notebookEntries: [LumaCore.NotebookEntry] = []
 
     @Published var targetPickerContext: TargetPickerContext?
 
@@ -51,7 +51,7 @@ final class Workspace: ObservableObject {
         }
     }
 
-    var collaborationState: ProjectCollaborationState!
+    var collaborationState: LumaCore.ProjectCollaborationState?
     @Published var collaborationStatus: CollaborationStatus = .disconnected
     @Published var collaborationRoomID: String?
     @Published var collaborationUser: UserInfo?
@@ -309,21 +309,28 @@ final class Workspace: ObservableObject {
     func addInstrument(
         template: InstrumentTemplate,
         initialConfigJSON: Data,
-        for session: ProcessSession
-    ) async -> InstrumentInstance {
-        let instance = InstrumentInstance(
+        for session: LumaCore.ProcessSession
+    ) async -> LumaCore.InstrumentInstance {
+        let instance = LumaCore.InstrumentInstance(
+            sessionID: session.id,
             kind: template.kind,
             sourceIdentifier: template.sourceIdentifier,
             isEnabled: true,
-            configJSON: initialConfigJSON,
-            session: session
+            configJSON: initialConfigJSON
         )
 
-        session.instruments.append(instance)
+        try? store.save(instance)
 
-        guard let node = processNodes.first(where: { $0.sessionRecord == session }) else {
+        guard let node = processNodes.first(where: { $0.sessionRecord.id == session.id }) else {
             return instance
         }
+
+        node.core.addInstrument(LumaCore.ProcessNode.InstrumentRef(
+            id: instance.id, kind: instance.kind,
+            sourceIdentifier: instance.sourceIdentifier,
+            configJSON: instance.configJSON,
+            isEnabled: instance.isEnabled
+        ))
 
         let runtime = InstrumentRuntime(instance: instance, processNode: node)
         node.instruments.append(runtime)
@@ -334,48 +341,48 @@ final class Workspace: ObservableObject {
     }
 
     func removeInstrument(
-        _ instance: InstrumentInstance,
-        from session: ProcessSession
+        _ instance: LumaCore.InstrumentInstance,
+        from session: LumaCore.ProcessSession
     ) {
         if let node = attachedNode(for: session),
-            let idx = node.instruments.firstIndex(where: { $0.instance == instance })
+            let idx = node.instruments.firstIndex(where: { $0.instance.id == instance.id })
         {
             let runtime = node.instruments.remove(at: idx)
+            node.core.removeInstrument(id: instance.id)
             Task { @MainActor in
                 await runtime.dispose()
             }
         }
 
-        if let idx = session.instruments.firstIndex(where: { $0.id == instance.id }) {
-            session.instruments.remove(at: idx)
-        }
+        try? store.deleteInstrument(id: instance.id)
 
         if instance.kind == .tracer {
             rebuildAddressDecorations(for: session)
         }
     }
 
-    func setInstrumentEnabled(_ instance: InstrumentInstance, enabled: Bool) async {
-        instance.isEnabled = enabled
+    func setInstrumentEnabled(_ instance: LumaCore.InstrumentInstance, enabled: Bool) async {
+        var inst = instance
+        inst.isEnabled = enabled
+        try? store.save(inst)
 
-        let session = instance.session
-
-        guard let node = processNodes.first(where: { $0.sessionRecord == session }) else {
+        guard let node = processNodes.first(where: { $0.sessionRecord.id == inst.sessionID }) else {
             return
         }
 
         let runtime: InstrumentRuntime
-        if let existingRuntime = node.instruments.first(where: { $0.instance == instance }) {
+        if let existingRuntime = node.instruments.first(where: { $0.instance.id == inst.id }) {
+            existingRuntime.instance = inst
             runtime = existingRuntime
         } else {
-            runtime = InstrumentRuntime(instance: instance, processNode: node)
+            runtime = InstrumentRuntime(instance: inst, processNode: node)
             node.instruments.append(runtime)
         }
 
         if enabled {
             guard !runtime.isAttached else { return }
 
-            guard let template = template(for: instance) else { return }
+            guard let template = template(for: inst) else { return }
             await loadRuntime(for: runtime, using: template, on: node)
         } else {
             if runtime.isAttached {
@@ -385,14 +392,17 @@ final class Workspace: ObservableObject {
     }
 
     func applyInstrumentConfig(
-        _ instance: InstrumentInstance,
+        _ instance: LumaCore.InstrumentInstance,
         data: Data
     ) async {
-        instance.configJSON = data
+        var inst = instance
+        inst.configJSON = data
+        try? store.save(inst)
 
-        let session = instance.session
+        let sessionID = inst.sessionID
 
-        if let runtime = runtime(for: session, instrumentID: instance.id) {
+        if let runtime = runtime(forSessionID: sessionID, instrumentID: inst.id) {
+            runtime.instance = inst
             let configObject: JSONObject
 
             switch instance.kind {
@@ -406,7 +416,7 @@ final class Workspace: ObservableObject {
                 }
 
             case .hookPack:
-                let config = (try? HookPackConfig.decode(from: data)) ?? HookPackConfig(packId: instance.sourceIdentifier, features: [:])
+                let config = (try? HookPackConfig.decode(from: data)) ?? HookPackConfig(packId: inst.sourceIdentifier, features: [:])
                 configObject = config.toJSON()
 
             case .codeShare:
@@ -416,7 +426,7 @@ final class Workspace: ObservableObject {
             await runtime.applyConfigObject(configObject, rawConfigJSON: data)
         }
 
-        if instance.kind == .tracer {
+        if inst.kind == .tracer, let session = try? store.fetchSession(id: sessionID) {
             rebuildAddressDecorations(for: session)
         }
     }
@@ -447,10 +457,9 @@ final class Workspace: ObservableObject {
             let config = try TracerConfig.decode(from: instance.configJSON)
             var compiled = try await compileTracerConfigForRuntime(config)
 
-            // Seed call counters from persisted captures so new traces
-            // continue from the right index.
             var counters: [String: Int] = [:]
-            for capture in instance.session.itraceCaptures {
+            let captures = (try? store.fetchITraceCaptures(sessionID: instance.sessionID)) ?? []
+            for capture in captures {
                 let key = capture.hookID.uuidString
                 counters[key] = max(counters[key] ?? 0, capture.callIndex + 1)
             }
@@ -469,7 +478,9 @@ final class Workspace: ObservableObject {
 
             runtime.markAttached()
 
-            rebuildAddressDecorations(for: instance.session)
+            if let session = try? store.fetchSession(id: instance.sessionID) {
+                rebuildAddressDecorations(for: session)
+            }
         } catch {
             print("Failed to load tracer instrument: \(error)")
         }
@@ -558,7 +569,7 @@ final class Workspace: ObservableObject {
         tracerTemplates() + hookPackTemplates()
     }
 
-    func template(for instance: InstrumentInstance) -> InstrumentTemplate? {
+    func template(for instance: LumaCore.InstrumentInstance) -> InstrumentTemplate? {
         switch instance.kind {
         case .tracer, .hookPack:
             return allInstrumentTemplates.first {
@@ -713,12 +724,13 @@ final class Workspace: ObservableObject {
         return [template]
     }
 
-    private func tracerInstance(for session: ProcessSession) -> InstrumentInstance? {
-        session.instruments.first(where: { $0.kind == .tracer })
+    private func tracerInstance(for session: LumaCore.ProcessSession) -> LumaCore.InstrumentInstance? {
+        let instruments = (try? store.fetchInstruments(sessionID: session.id)) ?? []
+        return instruments.first(where: { $0.kind == .tracer })
     }
 
     private func existingTracerHookID(
-        in session: ProcessSession,
+        in session: LumaCore.ProcessSession,
         matching address: UInt64
     ) -> UUID? {
         guard let instance = tracerInstance(for: session) else { return nil }
@@ -745,7 +757,7 @@ final class Workspace: ObservableObject {
     ) async {
         guard let session = processSession(id: sessionID) else { return }
 
-        let tracer: InstrumentInstance
+        let tracer: LumaCore.InstrumentInstance
         if let existing = tracerInstance(for: session) {
             tracer = existing
         } else {
@@ -881,7 +893,7 @@ final class Workspace: ObservableObject {
             try await compiler.build(entrypoint: entryRelPath, options: options)
         }
 
-        let modules = try parseESMBundle(bundle)
+        let modules = try ESMBundleParser.parse(bundle)
         return modules.modules[modules.order[0]]!
     }
 
@@ -1042,7 +1054,7 @@ final class Workspace: ObservableObject {
         }
     }
 
-    private func codeShareTemplate(for instance: InstrumentInstance) -> InstrumentTemplate? {
+    private func codeShareTemplate(for instance: LumaCore.InstrumentInstance) -> InstrumentTemplate? {
         guard
             let cfg = try? JSONDecoder().decode(
                 CodeShareConfig.self,
@@ -1117,7 +1129,7 @@ final class Workspace: ObservableObject {
         addressAnnotationsBySession[sessionID]?[address]?.decorations ?? []
     }
 
-    func rebuildAddressDecorations(for session: ProcessSession) {
+    func rebuildAddressDecorations(for session: LumaCore.ProcessSession) {
         guard let tracer = tracerInstance(for: session),
             let node = attachedNode(for: session),
             let config = try? TracerConfig.decode(from: tracer.configJSON)
@@ -1343,21 +1355,18 @@ final class Workspace: ObservableObject {
 
         do {
             try await node.device.resume(pid)
-            node.sessionRecord.phase = .attached
+            node.updateSession { $0.phase = .attached }
         } catch {
-            node.sessionRecord.lastError = error as? Error ?? .invalidOperation(error.localizedDescription)
+            node.updateSession { $0.lastError = error.localizedDescription }
         }
     }
 
-    func reestablishSession(for sessionRecord: ProcessSession) async {
-        sessionRecord.phase = .attaching
-        defer {
-            if sessionRecord.phase == .attaching {
-                sessionRecord.phase = .idle
-            }
-        }
-        sessionRecord.detachReason = .applicationRequested
-        sessionRecord.lastError = nil
+    func reestablishSession(for sessionRecord: LumaCore.ProcessSession) async {
+        var s = sessionRecord
+        s.phase = .attaching
+        s.detachReason = .applicationRequested
+        s.lastError = nil
+        try? store.save(s)
 
         let deviceStore = DeviceListModel(manager: deviceManager)
 
@@ -1365,61 +1374,70 @@ final class Workspace: ObservableObject {
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
 
-        guard let device = deviceStore.devices.first(where: { $0.id == sessionRecord.deviceID }) else {
+        guard let device = deviceStore.devices.first(where: { $0.id == s.deviceID }) else {
+            s.phase = .idle
+            try? store.save(s)
             targetPickerContext = .reestablish(
-                session: sessionRecord,
+                session: s,
                 reason:
-                    "The saved device “\(sessionRecord.deviceName)” is not available. Choose a device and target to re-establish this session."
+                    “The saved device “\(s.deviceName)” is not available. Choose a device and target to re-establish this session.”
             )
             return
         }
 
-        if case .spawn(_) = sessionRecord.kind {
+        if case .spawn(_) = s.kind {
             await spawnAndAttach(
                 device: device,
-                sessionRecord: sessionRecord
+                sessionRecord: s
             )
             return
         }
 
         do {
             let processes = try await device.enumerateProcesses(scope: .full)
-            let matches = processes.filter { $0.name == sessionRecord.processName }
+            let matches = processes.filter { $0.name == s.processName }
 
             guard !matches.isEmpty else {
+                s.phase = .idle
+                try? store.save(s)
                 targetPickerContext = .reestablish(
-                    session: sessionRecord,
+                    session: s,
                     reason:
-                        "No running process named “\(sessionRecord.processName)” was found. Choose a new target to re-establish this session."
+                        “No running process named “\(s.processName)” was found. Choose a new target to re-establish this session.”
                 )
                 return
             }
 
             let chosen: ProcessDetails
-            if let exact = matches.first(where: { $0.pid == sessionRecord.lastKnownPID }) {
+            if let exact = matches.first(where: { $0.pid == s.lastKnownPID }) {
                 chosen = exact
             } else if matches.count == 1 {
                 chosen = matches[0]
             } else {
+                s.phase = .idle
+                try? store.save(s)
                 targetPickerContext = .reestablish(
-                    session: sessionRecord,
-                    reason: "Multiple processes named “\(sessionRecord.processName)” are running. Choose which one to attach to."
+                    session: s,
+                    reason: “Multiple processes named “\(s.processName)” are running. Choose which one to attach to.”
                 )
                 return
             }
 
-            sessionRecord.deviceName = device.name
+            s.deviceName = device.name
+            try? store.save(s)
 
             await performAttachToProcess(
                 device: device,
                 using: chosen,
-                sessionRecord: sessionRecord
+                sessionRecord: s
             )
         } catch {
-            sessionRecord.lastError = error as? Error ?? .invalidOperation(error.localizedDescription)
+            s.lastError = error.localizedDescription
+            s.phase = .idle
+            try? store.save(s)
             targetPickerContext = .reestablish(
-                session: sessionRecord,
-                reason: "Quick re-establish failed for “\(sessionRecord.processName)”. Choose a new target."
+                session: s,
+                reason: “Quick re-establish failed for “\(s.processName)”. Choose a new target.”
             )
         }
     }
@@ -1427,56 +1445,41 @@ final class Workspace: ObservableObject {
     func getOrCreateInsight(
         sessionID: UUID,
         pointer: UInt64,
-        kind: AddressInsight.Kind
-    ) throws -> AddressInsight {
-        let session = fetchSession(id: sessionID)
-
+        kind: LumaCore.AddressInsight.Kind
+    ) throws -> LumaCore.AddressInsight {
         guard let node = processNodes.first(where: { $0.sessionRecord.id == sessionID }) else {
-            throw Error.invalidOperation(
+            throw LumaCoreError.invalidOperation(
                 "Cannot resolve address anchor without an attached process"
             )
         }
 
         let anchor = node.core.anchor(for: pointer)
 
-        if let existing = session.insights.first(where: { $0.kind == kind && $0.anchor == anchor }) {
+        let existingInsights = (try? store.fetchInsights(sessionID: sessionID)) ?? []
+        if let existing = existingInsights.first(where: { $0.kind == kind && $0.anchor == anchor }) {
             return existing
         }
 
-        return insertInsight(session: session, kind: kind, anchor: anchor)
-    }
-
-    private func fetchSession(id sessionID: UUID) -> ProcessSession {
-        return processSession(id: sessionID)!
-    }
-
-    private func processSession(id sessionID: UUID) -> ProcessSession? {
-        processNodes.first { $0.sessionRecord.id == sessionID }?.sessionRecord
-    }
-
-    private func attachedNode(for session: ProcessSession) -> ProcessNodeViewModel? {
-        processNodes.first(where: { $0.sessionRecord == session })
-    }
-
-    private func runtime(for session: ProcessSession, instrumentID: UUID) -> InstrumentRuntime? {
-        guard let node = attachedNode(for: session) else { return nil }
-        return node.instruments.first(where: { $0.instance.id == instrumentID })
-    }
-
-    private func insertInsight(
-        session: ProcessSession,
-        kind: AddressInsight.Kind,
-        anchor: AddressAnchor
-    ) -> AddressInsight {
-        let insight = AddressInsight(
+        let insight = LumaCore.AddressInsight(
+            sessionID: sessionID,
             title: anchor.displayString,
             kind: kind,
             anchor: anchor
         )
-
-        insight.session = session
-        session.insights.append(insight)
-
+        try? store.save(insight)
         return insight
+    }
+
+    private func processSession(id sessionID: UUID) -> LumaCore.ProcessSession? {
+        processNodes.first { $0.sessionRecord.id == sessionID }?.sessionRecord
+    }
+
+    private func attachedNode(for session: LumaCore.ProcessSession) -> ProcessNodeViewModel? {
+        processNodes.first(where: { $0.sessionRecord.id == session.id })
+    }
+
+    private func runtime(forSessionID sessionID: UUID, instrumentID: UUID) -> InstrumentRuntime? {
+        guard let node = processNodes.first(where: { $0.sessionRecord.id == sessionID }) else { return nil }
+        return node.instruments.first(where: { $0.instance.id == instrumentID })
     }
 }

@@ -1,23 +1,27 @@
 import Combine
 import Frida
+import LumaCore
 import SwiftUI
 
 struct InstrumentDetailView: View {
-    @Bindable var instance: InstrumentInstance
+    let instance: LumaCore.InstrumentInstance
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 
     let template: InstrumentTemplate?
 
+    private var session: LumaCore.ProcessSession? {
+        try? workspace.store.fetchSession(id: instance.sessionID)
+    }
+
     private var node: ProcessNodeViewModel? {
-        let processSession = instance.session
-        return workspace.processNodes.first { $0.sessionRecord == processSession }
+        workspace.processNodes.first { $0.sessionRecord.id == instance.sessionID }
     }
 
     @State private var configJSON: Data
 
-    init(instance: InstrumentInstance, workspace: Workspace, selection: Binding<SidebarItemID?>) {
-        self._instance = Bindable(instance)
+    init(instance: LumaCore.InstrumentInstance, workspace: Workspace, selection: Binding<SidebarItemID?>) {
+        self.instance = instance
         self.workspace = workspace
         self.template = workspace.template(for: instance)
         self._selection = selection
@@ -26,21 +30,21 @@ struct InstrumentDetailView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if node == nil {
-                SessionDetachedBanner(session: instance.session, workspace: workspace)
+            if node == nil, let session {
+                SessionDetachedBanner(session: session, workspace: workspace)
             }
 
             VStack(alignment: .leading, spacing: 0) {
                 if let template {
                     template.makeConfigEditor($configJSON, $selection)
-                        .environment(\.instrumentSession, instance.session)
+                        .environment(\.instrumentSession, session)
                         .onChange(of: configJSON) { _, newValue in
                             Task { @MainActor in
                                 await workspace.applyInstrumentConfig(instance, data: newValue)
                             }
                         }
                 } else {
-                    Text("This instrument doesn’t expose any configurable settings yet.")
+                    Text("This instrument doesn't expose any configurable settings yet.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)

@@ -1,11 +1,12 @@
+import LumaCore
 import SwiftUI
 
 private struct InstrumentSessionKey: EnvironmentKey {
-    static let defaultValue: ProcessSession? = nil
+    static let defaultValue: LumaCore.ProcessSession? = nil
 }
 
 extension EnvironmentValues {
-    var instrumentSession: ProcessSession? {
+    var instrumentSession: LumaCore.ProcessSession? {
         get { self[InstrumentSessionKey.self] }
         set { self[InstrumentSessionKey.self] = newValue }
     }

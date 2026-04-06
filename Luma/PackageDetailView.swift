@@ -1,7 +1,8 @@
+import LumaCore
 import SwiftUI
 
 struct PackageDetailView: View {
-    let package: InstalledPackage
+    let package: LumaCore.InstalledPackage
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 

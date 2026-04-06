@@ -21,7 +21,10 @@ struct SidebarView: View {
 
             Section("Sessions") {
                 ForEach(sessions) { session in
-                    let node = workspace.processNodes.first(where: { $0.sessionRecord == session })
+                    let node = workspace.processNodes.first(where: { $0.sessionRecord.id == session.id })
+                    let instruments = (try? workspace.store.fetchInstruments(sessionID: session.id)) ?? []
+                    let insights = (try? workspace.store.fetchInsights(sessionID: session.id)) ?? []
+                    let captures = (try? workspace.store.fetchITraceCaptures(sessionID: session.id)) ?? []
 
                     SidebarSessionHeaderRow(
                         session: session,
@@ -33,7 +36,7 @@ struct SidebarView: View {
                     SidebarSessionREPLRow(sessionID: session.id)
                         .tag(SidebarItemID.repl(session.id))
 
-                    ForEach(session.instruments) { instance in
+                    ForEach(instruments) { instance in
                         let runtime = node?.instruments.first(where: { $0.id == instance.id })
                         SidebarInstrumentRow(
                             session: session,
@@ -46,19 +49,21 @@ struct SidebarView: View {
                         .tag(SidebarItemID.instrument(session.id, instance.id))
                     }
 
-                    ForEach(session.insights.sorted(by: { $0.createdAt < $1.createdAt })) { insight in
+                    ForEach(insights.sorted(by: { $0.createdAt < $1.createdAt })) { insight in
                         SidebarInsightRow(
                             session: session,
                             insight: insight,
+                            workspace: workspace,
                             selection: $selection
                         )
                         .tag(SidebarItemID.insight(session.id, insight.id))
                     }
 
-                    ForEach(session.itraceCaptures.sorted(by: { $0.capturedAt < $1.capturedAt })) { capture in
+                    ForEach(captures.sorted(by: { $0.capturedAt < $1.capturedAt })) { capture in
                         SidebarITraceCaptureRow(
                             session: session,
                             capture: capture,
+                            workspace: workspace,
                             selection: $selection
                         )
                         .tag(SidebarItemID.itraceCapture(session.id, capture.id))
@@ -90,7 +95,7 @@ private struct SidebarNotebookRow: View {
 }
 
 private struct SidebarSessionHeaderRow: View {
-    let session: ProcessSession
+    let session: LumaCore.ProcessSession
     let node: ProcessNodeViewModel?
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
@@ -121,7 +126,7 @@ private struct SidebarSessionHeaderRow: View {
                 Button(role: .destructive) {
                     presentConfirmation(
                         title: "Kill Process?",
-                        message: "This will force-terminate “\(displayProcessName)”.",
+                        message: "This will force-terminate "\(displayProcessName)".",
                         destructiveLabel: "Kill Process"
                     ) { killProcess() }
                 } label: {
@@ -216,8 +221,7 @@ private struct SidebarSessionHeaderRow: View {
         Task { @MainActor in
             let pid = node.sessionRecord.lastKnownPID
             do { try await node.device.kill(pid) } catch {
-                node.sessionRecord.lastError =
-                    error as? Error ?? .invalidOperation(error.localizedDescription)
+                node.updateSession { $0.lastError = error.localizedDescription }
             }
         }
     }
@@ -225,6 +229,8 @@ private struct SidebarSessionHeaderRow: View {
     private func deleteSession() {
         if let node { workspace.removeNode(node) }
         let sessionID = session.id
+
+        try? workspace.store.deleteSession(id: sessionID)
 
         switch selection {
         case .repl(let id) where id == sessionID,
@@ -270,9 +276,9 @@ private struct SidebarSessionREPLRow: View {
 }
 
 private struct SidebarInstrumentRow: View {
-    let session: ProcessSession
+    let session: LumaCore.ProcessSession
     let node: ProcessNodeViewModel?
-    let instance: InstrumentInstance
+    let instance: LumaCore.InstrumentInstance
     let runtime: InstrumentRuntime?
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
@@ -298,8 +304,8 @@ private struct SidebarInstrumentRow: View {
             } label: {
                 Label(
                     instance.isEnabled
-                        ? "Disable “\(instance.displayName)”"
-                        : "Enable “\(instance.displayName)”",
+                        ? "Disable "\(instance.displayName)""
+                        : "Enable "\(instance.displayName)"",
                     systemImage: instance.isEnabled ? "pause.circle" : "play.circle"
                 )
             }
@@ -322,7 +328,7 @@ private struct SidebarInstrumentRow: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This will remove “\(instance.displayName)” from this session.")
+            Text("This will remove "\(instance.displayName)" from this session.")
         }
     }
 
@@ -336,8 +342,9 @@ private struct SidebarInstrumentRow: View {
 }
 
 private struct SidebarInsightRow: View {
-    let session: ProcessSession
-    let insight: AddressInsight
+    let session: LumaCore.ProcessSession
+    let insight: LumaCore.AddressInsight
+    @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 
     var body: some View {
@@ -362,9 +369,7 @@ private struct SidebarInsightRow: View {
     }
 
     private func deleteInsight() {
-        if let idx = session.insights.firstIndex(where: { $0.id == insight.id }) {
-            session.insights.remove(at: idx)
-        }
+        try? workspace.store.deleteInsight(id: insight.id)
 
         if selection == .insight(session.id, insight.id) {
             selection = .repl(session.id)
@@ -373,8 +378,9 @@ private struct SidebarInsightRow: View {
 }
 
 private struct SidebarITraceCaptureRow: View {
-    let session: ProcessSession
-    let capture: ITraceCapture
+    let session: LumaCore.ProcessSession
+    let capture: LumaCore.ITraceCaptureRecord
+    @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 
     var body: some View {
@@ -398,10 +404,8 @@ private struct SidebarITraceCaptureRow: View {
     }
 
     private func deleteCapture() {
-        if let idx = session.itraceCaptures.firstIndex(where: { $0.id == capture.id }) {
-            session.itraceCaptures.remove(at: idx)
-        }
-
+        // ITraceCaptureRecord doesn't have a store.delete yet,
+        // but we can at least clean up the selection
         if selection == .itraceCapture(session.id, capture.id) {
             selection = .repl(session.id)
         }
@@ -409,7 +413,7 @@ private struct SidebarITraceCaptureRow: View {
 }
 
 private struct SidebarPackageRow: View {
-    let package: InstalledPackage
+    let package: LumaCore.InstalledPackage
 
     var body: some View {
         HStack(spacing: 8) {
@@ -425,5 +429,15 @@ private struct SidebarPackageRow: View {
             Spacer()
         }
         .padding(.vertical, 2)
+    }
+}
+
+extension LumaCore.InstrumentInstance {
+    var displayName: String {
+        InstrumentMetadataRegistry.shared.displayName(for: self)
+    }
+
+    var displayIcon: InstrumentIcon {
+        InstrumentMetadataRegistry.shared.icon(for: self)
     }
 }

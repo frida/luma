@@ -4,9 +4,9 @@ import SwiftyMonaco
 import LumaCore
 
 struct CodeShareBrowserView: View {
-    let session: ProcessSession
+    let session: LumaCore.ProcessSession
     @ObservedObject var workspace: Workspace
-    let onInstrumentAdded: ((InstrumentInstance) -> Void)?
+    let onInstrumentAdded: ((LumaCore.InstrumentInstance) -> Void)?
 
     @Environment(\.dismiss) private var dismiss
 
@@ -213,10 +213,10 @@ struct CodeShareBrowserView: View {
 struct CodeShareProjectDetailView: View {
     let project: CodeShareService.ProjectSummary
     @ObservedObject var workspace: Workspace
-    let session: ProcessSession
+    let session: LumaCore.ProcessSession
     let registerAddAction: (((() -> Void)?) -> Void)
     @Binding var isAddingInstrument: Bool
-    let onInstrumentAdded: (InstrumentInstance) -> Void
+    let onInstrumentAdded: (LumaCore.InstrumentInstance) -> Void
 
     @State private var details: CodeShareService.ProjectDetails?
     @State private var source: String = ""

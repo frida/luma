@@ -207,7 +207,7 @@ struct TracerConfigView: View {
             let session = instrumentSession,
             case .instrumentComponent(let sessionID, let instrumentID, let hookID, let navID) = newSelection,
             sessionID == session.id,
-            let thisInstrumentID = session.instruments.first(where: { $0.kind == .tracer })?.id,
+            let thisInstrumentID = (try? workspace.store.fetchInstruments(sessionID: session.id))?.first(where: { $0.kind == .tracer })?.id,
             thisInstrumentID == instrumentID
         else {
             return
@@ -741,7 +741,7 @@ struct TracerConfigView: View {
             let raw = try await node.script.exports.resolveApis(searchQuery)
 
             guard let arr = raw as? [[String: Any]] else {
-                throw Error.invalidArgument("resolveApis: expected array of objects")
+                throw LumaCoreError.invalidArgument("resolveApis: expected array of objects")
             }
 
             resolveResults = try arr.map { obj in
@@ -758,7 +758,7 @@ struct TracerConfigView: View {
 
     private func expectString(_ value: Any, _ field: String) throws -> String {
         guard let s = value as? String else {
-            throw Error.invalidArgument("resolveApis: '\(field)' is not a String")
+            throw LumaCoreError.invalidArgument("resolveApis: '\(field)' is not a String")
         }
         return s
     }

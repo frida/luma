@@ -4,12 +4,10 @@ import LumaCore
 
 extension Workspace {
     func bindProjectCollaboration() {
-        if collaborationState == nil {
-            collaborationState = ProjectCollaborationState()
-        }
+        var collabState = (try? store.fetchCollaborationState()) ?? LumaCore.ProjectCollaborationState()
 
         let roomFromLink = CollaborationJoinCoordinator.shared.consumeNextRoomID()
-        storedProjectRoomID = roomFromLink ?? collaborationState.roomID
+        storedProjectRoomID = roomFromLink ?? collabState.roomID
 
         if roomFromLink != nil {
             isCollaborationPanelVisible = true
@@ -227,7 +225,10 @@ extension Workspace {
             return
         }
 
-        collaborationState.roomID = roomID
+        var collabState = (try? store.fetchCollaborationState()) ?? LumaCore.ProjectCollaborationState()
+        collabState.roomID = roomID
+        try? store.save(collabState)
+
         collaborationRoomID = roomID
         collaborationStatus = .joined(roomID: roomID)
         collaborationParticipants = [localUser]
@@ -261,7 +262,7 @@ extension Workspace {
             return
         }
 
-        var snapshot: [NotebookEntry] = []
+        var snapshot: [LumaCore.NotebookEntry] = []
         for (i, obj) in notebookEntries.enumerated() {
             let indexInfo = binaryIndices[i]
 
@@ -279,7 +280,7 @@ extension Workspace {
                 binaryData = nil
             }
 
-            guard let entry = NotebookEntry.fromJSON(obj, binaryData: binaryData) else {
+            guard let entry = LumaCore.NotebookEntry.fromJSON(obj, binaryData: binaryData) else {
                 stopCollaboration()
                 return
             }
@@ -287,27 +288,33 @@ extension Workspace {
             snapshot.append(entry)
         }
 
-        collaborationState.roomID = roomID
+        var collabState = (try? store.fetchCollaborationState()) ?? LumaCore.ProjectCollaborationState()
+        collabState.roomID = roomID
+        try? store.save(collabState)
+
         collaborationRoomID = roomID
         collaborationStatus = .joined(roomID: roomID)
         collaborationParticipants = participants.compactMap { UserInfo.fromJSON($0) }
         collaborationChatMessages = chatMessages.compactMap { ChatMessage.fromJSON($0, localUser: collaborationUser!) }
 
         for entry in snapshot {
-            notebookEntries.append(entry)
+            self.notebookEntries.append(entry)
+            try? store.save(entry)
         }
     }
 
-    func addNotebookEntry(_ entry: NotebookEntry, after otherEntry: NotebookEntry? = nil) {
+    func addNotebookEntry(_ entry: LumaCore.NotebookEntry, after otherEntry: LumaCore.NotebookEntry? = nil) {
+        var e = entry
         if let otherEntry {
-            entry.timestamp = otherEntry.timestamp.addingTimeInterval(0.001)
+            e.timestamp = otherEntry.timestamp.addingTimeInterval(0.001)
         }
 
-        notebookEntries.append(entry)
-        notifyLocalNotebookEntryAdded(entry)
+        notebookEntries.append(e)
+        try? store.save(e)
+        notifyLocalNotebookEntryAdded(e)
     }
 
-    private func notifyLocalNotebookEntryAdded(_ entry: NotebookEntry) {
+    private func notifyLocalNotebookEntryAdded(_ entry: LumaCore.NotebookEntry) {
         guard case .joined = collaborationStatus, let device = portalDevice else { return }
         device.bus.post(
             [
@@ -318,7 +325,8 @@ extension Workspace {
             ], data: entry.binaryData.map { [UInt8]($0) })
     }
 
-    func notifyLocalNotebookEntryUpdated(_ entry: NotebookEntry) {
+    func notifyLocalNotebookEntryUpdated(_ entry: LumaCore.NotebookEntry) {
+        try? store.save(entry)
         guard case .joined = collaborationStatus, let device = portalDevice else { return }
         let full = entry.toJSON()
         var payload: JSONObject = ["entry-id": full["id"] ?? entry.id.uuidString]
@@ -329,7 +337,8 @@ extension Workspace {
         ])
     }
 
-    func notifyLocalNotebookEntryDeleted(_ entry: NotebookEntry) {
+    func notifyLocalNotebookEntryDeleted(_ entry: LumaCore.NotebookEntry) {
+        try? store.deleteNotebookEntry(id: entry.id)
         guard case .joined = collaborationStatus, let device = portalDevice else { return }
         device.bus.post([
             "type": "delete-entry",
@@ -340,37 +349,39 @@ extension Workspace {
     private func handleEntryAdded(payload: JSONObject, binaryData: [UInt8]?) async {
         guard
             let entryObj = payload["entry"] as? JSONObject,
-            let entry = NotebookEntry.fromJSON(entryObj, binaryData: binaryData)
+            let entry = LumaCore.NotebookEntry.fromJSON(entryObj, binaryData: binaryData)
         else {
             stopCollaboration()
             return
         }
 
-        guard fetchNotebookEntryBy(id: entry.id) == nil else {
+        guard !notebookEntries.contains(where: { $0.id == entry.id }) else {
             return
         }
 
         notebookEntries.append(entry)
+        try? store.save(entry)
     }
 
     private func handleEntryUpdated(payload: JSONObject, binaryData: [UInt8]?) async {
         guard
             let updatedObj = payload["entry"] as? JSONObject,
-            let updated = NotebookEntry.fromJSON(updatedObj, binaryData: binaryData)
+            let updated = LumaCore.NotebookEntry.fromJSON(updatedObj, binaryData: binaryData)
         else {
             stopCollaboration()
             return
         }
 
-        guard let existing = fetchNotebookEntryBy(id: updated.id) else {
+        guard let idx = notebookEntries.firstIndex(where: { $0.id == updated.id }) else {
             return
         }
 
-        existing.title = updated.title
-        existing.details = updated.details
-        existing.timestamp = updated.timestamp
-        existing.processName = updated.processName
-        existing.isUserNote = updated.isUserNote
+        notebookEntries[idx].title = updated.title
+        notebookEntries[idx].details = updated.details
+        notebookEntries[idx].timestamp = updated.timestamp
+        notebookEntries[idx].processName = updated.processName
+        notebookEntries[idx].isUserNote = updated.isUserNote
+        try? store.save(notebookEntries[idx])
     }
 
     private func handleEntryDeleted(payload: JSONObject) async {
@@ -383,11 +394,12 @@ extension Workspace {
             return
         }
 
-        guard fetchNotebookEntryBy(id: id) != nil else {
+        guard notebookEntries.contains(where: { $0.id == id }) else {
             return
         }
 
         notebookEntries.removeAll { $0.id == id }
+        try? store.deleteNotebookEntry(id: id)
     }
 
     private func handleEntriesReordered(payload: JSONObject) async {
@@ -404,15 +416,12 @@ extension Workspace {
 
         var t = Date()
         for id in order {
-            if let existing = fetchNotebookEntryBy(id: id) {
-                existing.timestamp = t
+            if let idx = notebookEntries.firstIndex(where: { $0.id == id }) {
+                notebookEntries[idx].timestamp = t
+                try? store.save(notebookEntries[idx])
                 t = t.addingTimeInterval(0.001)
             }
         }
-    }
-
-    private func fetchNotebookEntryBy(id: UUID) -> NotebookEntry? {
-        notebookEntries.first { $0.id == id }
     }
 
     private func handleParticipantJoined(payload: JSONObject) async {
