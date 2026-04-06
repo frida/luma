@@ -641,12 +641,6 @@ final class ProcessNode: ObservableObject, Identifiable {
         return ProcessModule(name: name, path: path, base: base, size: UInt64(size))
     }
 
-    public enum SymbolicateResult: Hashable {
-        case failure
-        case module(moduleName: String, name: String)
-        case file(moduleName: String, name: String, fileName: String, lineNumber: Int)
-        case fileColumn(moduleName: String, name: String, fileName: String, lineNumber: Int, column: Int)
-    }
 
     func symbolicate(addresses: [UInt64]) async throws -> [SymbolicateResult] {
         let any = try await script.exports.symbolicate(addresses.map { String(format: "0x%llx", $0) })
@@ -1037,14 +1031,3 @@ final class ProcessNode: ObservableObject, Identifiable {
     }
 }
 
-func parseAgentHexAddress(_ s: String) throws -> UInt64 {
-    guard s.hasPrefix("0x") else {
-        throw Error.invalidArgument("Invalid address string from agent: '\(s)'")
-    }
-
-    guard let value = UInt64(s.dropFirst(2), radix: 16) else {
-        throw Error.invalidArgument("Invalid address string from agent: '\(s)'")
-    }
-
-    return value
-}

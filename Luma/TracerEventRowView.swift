@@ -51,7 +51,7 @@ private struct TracerBacktraceView: View {
     let workspace: Workspace
     @Binding var selection: SidebarItemID?
 
-    @State private var symbols: [ProcessNode.SymbolicateResult] = []
+    @State private var symbols: [SymbolicateResult] = []
     @State private var isLoading = false
     @State private var lastError: String?
 

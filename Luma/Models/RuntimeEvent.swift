@@ -28,41 +28,4 @@ struct RuntimeEvent: Identifiable {
     }
 }
 
-struct JSError: CustomStringConvertible {
-    let text: String
-
-    let fileName: String?
-    let lineNumber: Int?
-    let columnNumber: Int?
-
-    let stack: String?
-
-    var description: String {
-        var base = text
-        if let fileName, let lineNumber {
-            base += " (\(fileName):\(lineNumber)"
-            if let columnNumber {
-                base += ":\(columnNumber)"
-            }
-            base += ")"
-        }
-        if let stack, !stack.isEmpty {
-            base += "\n" + stack
-        }
-        return base
-    }
-}
-
-struct ConsoleMessage: CustomStringConvertible {
-    let level: ConsoleLevel
-    let values: [JSInspectValue]
-
-    var description: String {
-        let body =
-            values
-            .map { String(describing: $0) }
-            .joined(separator: " ")
-        return "[\(level.rawValue)] \(body)"
-    }
-}
 
