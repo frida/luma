@@ -2,17 +2,17 @@ BUILD_DIR   := $(PWD)/build
 DERIVED_DIR := $(BUILD_DIR)/.derived
 APP         := $(BUILD_DIR)/Luma.app
 
-SOURCES := $(shell find Luma -type f \( \
+SOURCES := $(shell find Luma Sources Agent -type f \( \
     -name '*.swift' -o \
     -name '*.ts' -o \
     -name '*.plist' -o \
     -name '*.xcassets' -o \
     -name '*.pem' \
-\))
+\) 2>/dev/null)
 
 all: $(APP)
 
-$(APP): $(SOURCES) Luma.xcodeproj
+$(APP): $(SOURCES) Luma.xcodeproj Package.swift
 	mkdir -p "$(BUILD_DIR)"
 	xcodebuild \
 		-project Luma.xcodeproj \
@@ -23,7 +23,14 @@ $(APP): $(SOURCES) Luma.xcodeproj
 		build
 	@touch $@
 
+gtk:
+	cd LumaGtk && swift build
+
+gtk-release:
+	cd LumaGtk && swift build -c release
+
 clean:
 	rm -rf "$(BUILD_DIR)"
+	rm -rf .build LumaGtk/.build
 
-.PHONY: all clean
+.PHONY: all gtk gtk-release clean

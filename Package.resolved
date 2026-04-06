@@ -1,0 +1,33 @@
+{
+  "originHash" : "7a08a89d59af1df637cfcefe7a48b882860b7acfe9d457bdb1333cf0d0839b33",
+  "pins" : [
+    {
+      "identity" : "frida-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/frida/frida-swift",
+      "state" : {
+        "branch" : "main",
+        "revision" : "1917fc593f4317542862b08ad32c21a03652c8c7"
+      }
+    },
+    {
+      "identity" : "grdb.swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/groue/GRDB.swift",
+      "state" : {
+        "revision" : "36e30a6f1ef10e4194f6af0cff90888526f0c115",
+        "version" : "7.10.0"
+      }
+    },
+    {
+      "identity" : "swiftyr2",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/radareorg/SwiftyR2",
+      "state" : {
+        "branch" : "main",
+        "revision" : "93691158ba4e5a49e5530b4d377d6d671eedf6d7"
+      }
+    }
+  ],
+  "version" : 3
+}

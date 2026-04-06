@@ -11,6 +11,7 @@
 		0C8A0A712EF0B51400F0D7B2 /* SwiftyR2 in Frameworks */ = {isa = PBXBuildFile; productRef = 0C8A0A702EF0B51400F0D7B2 /* SwiftyR2 */; };
 		0C8A0A732EF0B51800F0D7B2 /* SwiftyMonaco in Frameworks */ = {isa = PBXBuildFile; productRef = 0C8A0A722EF0B51800F0D7B2 /* SwiftyMonaco */; };
 		0C8A0A752EF0B51C00F0D7B2 /* Frida in Frameworks */ = {isa = PBXBuildFile; productRef = 0C8A0A742EF0B51C00F0D7B2 /* Frida */; };
+		0CAA00012F00000000000001 /* LumaCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0CAA00022F00000000000001 /* LumaCore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -73,7 +74,7 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		0C6420C22EE8672900E4F780 /* LumaBundleCompiler */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = LumaBundleCompiler;
+			path = Sources/LumaBundleCompiler;
 			sourceTree = "<group>";
 		};
 		0CAAF5F12ED4D41D00B8FD05 /* Luma */ = {
@@ -103,6 +104,7 @@
 				0C8A0A712EF0B51400F0D7B2 /* SwiftyR2 in Frameworks */,
 				0C8A0A732EF0B51800F0D7B2 /* SwiftyMonaco in Frameworks */,
 				0C8A0A6F2EF0B51000F0D7B2 /* Frida in Frameworks */,
+				0CAA00012F00000000000001 /* LumaCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -120,7 +122,7 @@
 			isa = PBXGroup;
 			children = (
 				0CAAF5F12ED4D41D00B8FD05 /* Luma */,
-				0C6420C22EE8672900E4F780 /* LumaBundleCompiler */,
+				0C6420C22EE8672900E4F780 /* Sources/LumaBundleCompiler */,
 				0C6420C82EE8675100E4F780 /* Frameworks */,
 				0CD209352EB511C400D027FC /* Products */,
 			);
@@ -184,6 +186,7 @@
 				0C8A0A6E2EF0B51000F0D7B2 /* Frida */,
 				0C8A0A702EF0B51400F0D7B2 /* SwiftyR2 */,
 				0C8A0A722EF0B51800F0D7B2 /* SwiftyMonaco */,
+				0CAA00022F00000000000001 /* LumaCore */,
 			);
 			productName = Luma;
 			productReference = 0CD209342EB511C400D027FC /* Luma.app */;
@@ -220,6 +223,7 @@
 				0C8A0A6B2EF0B4E100F0D7B2 /* XCRemoteSwiftPackageReference "frida-swift" */,
 				0C8A0A6C2EF0B4F400F0D7B2 /* XCRemoteSwiftPackageReference "SwiftyR2" */,
 				0C8A0A6D2EF0B50600F0D7B2 /* XCRemoteSwiftPackageReference "SwiftyMonaco" */,
+				0CAA00032F00000000000001 /* XCLocalSwiftPackageReference "." */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 0CD209352EB511C400D027FC /* Products */;
@@ -251,20 +255,20 @@
 			inputFileListPaths = (
 			);
 			inputPaths = (
-				"$(SRCROOT)/Luma/Agent/core/console.ts",
-				"$(SRCROOT)/Luma/Agent/core/env.ts",
-				"$(SRCROOT)/Luma/Agent/core/instrument.ts",
-				"$(SRCROOT)/Luma/Agent/core/luma.ts",
-				"$(SRCROOT)/Luma/Agent/core/memory.ts",
-				"$(SRCROOT)/Luma/Agent/core/pkg.ts",
-				"$(SRCROOT)/Luma/Agent/core/repl.ts",
-				"$(SRCROOT)/Luma/Agent/core/resolver.ts",
-				"$(SRCROOT)/Luma/Agent/core/symbolicate.ts",
-				"$(SRCROOT)/Luma/Agent/core/value.ts",
-				"$(SRCROOT)/Luma/Agent/instruments/codeshare.ts",
-				"$(SRCROOT)/Luma/Agent/instruments/drain-agent.ts",
-				"$(SRCROOT)/Luma/Agent/instruments/itrace-capture.ts",
-				"$(SRCROOT)/Luma/Agent/instruments/tracer.ts",
+				"$(SRCROOT)/Agent/core/console.ts",
+				"$(SRCROOT)/Agent/core/env.ts",
+				"$(SRCROOT)/Agent/core/instrument.ts",
+				"$(SRCROOT)/Agent/core/luma.ts",
+				"$(SRCROOT)/Agent/core/memory.ts",
+				"$(SRCROOT)/Agent/core/pkg.ts",
+				"$(SRCROOT)/Agent/core/repl.ts",
+				"$(SRCROOT)/Agent/core/resolver.ts",
+				"$(SRCROOT)/Agent/core/symbolicate.ts",
+				"$(SRCROOT)/Agent/core/value.ts",
+				"$(SRCROOT)/Agent/instruments/codeshare.ts",
+				"$(SRCROOT)/Agent/instruments/drain-agent.ts",
+				"$(SRCROOT)/Agent/instruments/itrace-capture.ts",
+				"$(SRCROOT)/Agent/instruments/tracer.ts",
 			);
 			outputFileListPaths = (
 			);
@@ -273,7 +277,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/zsh;
-			shellScript = "set -euo pipefail\n\n\"${BUILD_DIR}/${CONFIGURATION}/LumaBundleCompiler\" \\\n    --project-root     \"${SRCROOT}\" \\\n    --swift-out        \"${SRCROOT}/Luma/Generated/LumaAgent.swift\" \\\n    --staging-dir      \"${BUILD_DIR}/AgentStaging\" \\\n    --package frida-itrace@6.0.0 \\\n    --agent  core      Luma/Agent/core/luma.ts \\\n    --agent  drain     Luma/Agent/instruments/drain-agent.ts \\\n    --module tracer    Luma/Agent/instruments/tracer.ts \\\n    --module codeShare Luma/Agent/instruments/codeshare.ts\n";
+			shellScript = "set -euo pipefail\n\n\"${BUILD_DIR}/${CONFIGURATION}/LumaBundleCompiler\" \\\n    --project-root     \"${SRCROOT}\" \\\n    --swift-out        \"${SRCROOT}/Luma/Generated/LumaAgent.swift\" \\\n    --staging-dir      \"${BUILD_DIR}/AgentStaging\" \\\n    --package frida-itrace@6.0.0 \\\n    --agent  core      Agent/core/luma.ts \\\n    --agent  drain     Agent/instruments/drain-agent.ts \\\n    --module tracer    Agent/instruments/tracer.ts \\\n    --module codeShare Agent/instruments/codeshare.ts\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -639,6 +643,13 @@
 		};
 /* End XCRemoteSwiftPackageReference section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		0CAA00032F00000000000001 /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		0C8A0A6E2EF0B51000F0D7B2 /* Frida */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -659,6 +670,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 0C8A0A6B2EF0B4E100F0D7B2 /* XCRemoteSwiftPackageReference "frida-swift" */;
 			productName = Frida;
+		};
+		0CAA00022F00000000000001 /* LumaCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = LumaCore;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

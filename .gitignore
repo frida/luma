@@ -2,3 +2,7 @@
 /Luma.xcodeproj/xcuserdata/
 /Luma/Generated/
 /build/
+/.build/
+/.swiftpm/
+/LumaGtk/.build/
+/LumaGtk/.swiftpm/
