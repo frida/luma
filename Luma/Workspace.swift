@@ -135,7 +135,7 @@ final class Workspace: ObservableObject {
 
     let store: ProjectStore
 
-    private var observations: [AnyDatabaseCancellable] = []
+    private var observations: [StoreObservation] = []
 
     init(store: ProjectStore) {
         self.store = store
@@ -1246,7 +1246,7 @@ final class Workspace: ObservableObject {
         await performAttachToProcess(
             device: device,
             using: process,
-            sessionRecord: s
+            sessionRecord: sessionRecord
         )
     }
 

@@ -15,26 +15,30 @@ public final class ProjectStore: Sendable {
 
     public func observeSessions(
         onChange: @escaping @Sendable ([ProcessSession]) -> Void
-    ) -> AnyDatabaseCancellable {
-        ValueObservation
-            .tracking { db in
-                try ProcessSession
-                    .order(Column("created_at").desc)
-                    .fetchAll(db)
-            }
-            .start(in: dbPool, scheduling: .immediate, onError: { _ in }, onChange: onChange)
+    ) -> StoreObservation {
+        StoreObservation(
+            ValueObservation
+                .tracking { db in
+                    try ProcessSession
+                        .order(Column("created_at").desc)
+                        .fetchAll(db)
+                }
+                .start(in: dbPool, scheduling: .immediate, onError: { _ in }, onChange: onChange)
+        )
     }
 
     public func observeNotebookEntries(
         onChange: @escaping @Sendable ([NotebookEntry]) -> Void
-    ) -> AnyDatabaseCancellable {
-        ValueObservation
-            .tracking { db in
-                try NotebookEntry
-                    .order(Column("timestamp").asc)
-                    .fetchAll(db)
-            }
-            .start(in: dbPool, scheduling: .immediate, onError: { _ in }, onChange: onChange)
+    ) -> StoreObservation {
+        StoreObservation(
+            ValueObservation
+                .tracking { db in
+                    try NotebookEntry
+                        .order(Column("timestamp").asc)
+                        .fetchAll(db)
+                }
+                .start(in: dbPool, scheduling: .immediate, onError: { _ in }, onChange: onChange)
+        )
     }
 
     // MARK: - Process Sessions
