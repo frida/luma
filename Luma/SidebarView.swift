@@ -333,7 +333,9 @@ private struct SidebarInstrumentRow: View {
     }
 
     private func deleteInstrument() {
-        workspace.removeInstrument(instance, from: session)
+        Task {
+            await workspace.removeInstrument(instance, from: session)
+        }
 
         if selection == .instrument(session.id, instance.id) {
             selection = .repl(session.id)

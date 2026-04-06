@@ -19,6 +19,8 @@ public final class Engine {
     private let tracerModuleSource: String
     private let codeShareModuleSource: String
 
+    public var hookPackSourceProvider: ((String) -> (entrySource: String, packID: String)?)?
+
     public init(
         store: ProjectStore,
         coreAgentSource: String,
@@ -184,6 +186,17 @@ public final class Engine {
 
             await loadAllPackages(on: node, sessionID: s.id)
 
+            for ref in node.instruments where ref.isEnabled {
+                await loadInstrumentOnNode(
+                    instanceID: ref.id,
+                    kind: ref.kind,
+                    sourceIdentifier: ref.sourceIdentifier,
+                    configJSON: ref.configJSON,
+                    node: node,
+                    sessionID: s.id
+                )
+            }
+
             updateSession(id: s.id) { $0.phase = .attached }
         } catch {
             NSLog("[Engine] attach failed: %@", String(describing: error))
@@ -219,14 +232,98 @@ public final class Engine {
         processNodes.first { $0.id == sessionID || nodeSessionID($0) == sessionID }
     }
 
-    // MARK: - Instrument Data Operations
+    public func sessionID(for node: ProcessNode) -> UUID {
+        nodeSessionID(node)
+    }
 
+    // MARK: - Reestablish Session
+
+    public enum ReestablishResult {
+        case attached
+        case needsUserInput(reason: String, session: ProcessSession)
+    }
+
+    public func reestablishSession(id sessionID: UUID) async -> ReestablishResult {
+        guard var s = try? store.fetchSession(id: sessionID) else {
+            return .needsUserInput(
+                reason: "Session not found.",
+                session: ProcessSession(kind: .attach, deviceID: "", deviceName: "", processName: "", lastKnownPID: 0)
+            )
+        }
+
+        s.phase = .attaching
+        s.detachReason = .applicationRequested
+        s.lastError = nil
+        try? store.save(s)
+
+        let devices = await deviceManager.currentDevices()
+
+        guard let device = devices.first(where: { $0.id == s.deviceID }) else {
+            s.phase = .idle
+            try? store.save(s)
+            return .needsUserInput(
+                reason: "The saved device \"\(s.deviceName)\" is not available. Choose a device and target to re-establish this session.",
+                session: s
+            )
+        }
+
+        if case .spawn(_) = s.kind {
+            await spawnAndAttach(device: device, session: s)
+            return .attached
+        }
+
+        do {
+            let processes = try await device.enumerateProcesses(scope: Scope.full)
+            let matches = processes.filter { $0.name == s.processName }
+
+            guard !matches.isEmpty else {
+                s.phase = .idle
+                try? store.save(s)
+                return .needsUserInput(
+                    reason: "No running process named \"\(s.processName)\" was found. Choose a new target to re-establish this session.",
+                    session: s
+                )
+            }
+
+            let chosen: ProcessDetails
+            if let exact = matches.first(where: { $0.pid == s.lastKnownPID }) {
+                chosen = exact
+            } else if matches.count == 1 {
+                chosen = matches[0]
+            } else {
+                s.phase = .idle
+                try? store.save(s)
+                return .needsUserInput(
+                    reason: "Multiple processes named \"\(s.processName)\" are running. Choose which one to attach to.",
+                    session: s
+                )
+            }
+
+            s.deviceName = device.name
+            try? store.save(s)
+
+            await performAttach(device: device, process: chosen, session: s)
+            return .attached
+        } catch {
+            s.lastError = error.localizedDescription
+            s.phase = .idle
+            try? store.save(s)
+            return .needsUserInput(
+                reason: "Quick re-establish failed for \"\(s.processName)\". Choose a new target.",
+                session: s
+            )
+        }
+    }
+
+    // MARK: - Instrument Lifecycle
+
+    @discardableResult
     public func addInstrument(
         kind: InstrumentKind,
         sourceIdentifier: String,
         configJSON: Data,
         sessionID: UUID
-    ) -> InstrumentInstance {
+    ) async -> InstrumentInstance {
         let instance = InstrumentInstance(
             sessionID: sessionID,
             kind: kind,
@@ -242,27 +339,223 @@ public final class Engine {
                 configJSON: instance.configJSON,
                 isEnabled: instance.isEnabled
             ))
+
+            await loadInstrumentOnNode(
+                instanceID: instance.id,
+                kind: instance.kind,
+                sourceIdentifier: instance.sourceIdentifier,
+                configJSON: instance.configJSON,
+                node: node,
+                sessionID: sessionID
+            )
         }
 
         return instance
     }
 
-    public func removeInstrument(id: UUID, sessionID: UUID) {
+    public func removeInstrument(id: UUID, sessionID: UUID) async {
         if let node = node(forSessionID: sessionID) {
+            if node.instruments.first(where: { $0.id == id })?.isAttached == true {
+                try? await node.script.exports.disposeInstrument(["instanceId": id.uuidString])
+            }
             node.removeInstrument(id: id)
         }
         try? store.deleteInstrument(id: id)
     }
 
-    public func setInstrumentEnabled(id: UUID, enabled: Bool) {
-        guard var inst = (try? store.fetchInstruments(sessionID: UUID()))?.first(where: { $0.id == id }) else { return }
+    public func setInstrumentEnabled(instanceID: UUID, sessionID: UUID, enabled: Bool) async {
+        guard var inst = try? store.fetchInstrument(id: instanceID) else { return }
         inst.isEnabled = enabled
         try? store.save(inst)
+
+        guard let node = node(forSessionID: sessionID) else { return }
+
+        if enabled {
+            guard node.instruments.first(where: { $0.id == instanceID })?.isAttached != true else { return }
+
+            await loadInstrumentOnNode(
+                instanceID: instanceID,
+                kind: inst.kind,
+                sourceIdentifier: inst.sourceIdentifier,
+                configJSON: inst.configJSON,
+                node: node,
+                sessionID: sessionID
+            )
+        } else {
+            if node.instruments.first(where: { $0.id == instanceID })?.isAttached == true {
+                try? await node.script.exports.disposeInstrument(["instanceId": instanceID.uuidString])
+                node.markInstrumentDetached(id: instanceID)
+            }
+        }
     }
 
-    public func updateInstrumentConfig(id: UUID, configJSON: Data) {
-        // Fetch all sessions' instruments to find this one
-        // (in practice the caller knows the sessionID)
+    public func applyInstrumentConfig(instanceID: UUID, sessionID: UUID, configJSON: Data) async {
+        guard var inst = try? store.fetchInstrument(id: instanceID) else { return }
+        inst.configJSON = configJSON
+        try? store.save(inst)
+
+        guard let node = node(forSessionID: sessionID) else { return }
+
+        node.updateInstrumentConfig(id: instanceID, configJSON: configJSON)
+
+        guard node.instruments.first(where: { $0.id == instanceID })?.isAttached == true else { return }
+
+        let configObject: JSONObject
+        switch inst.kind {
+        case .tracer:
+            let config = (try? TracerConfig.decode(from: configJSON)) ?? TracerConfig()
+            do {
+                let paths = try compilerWorkspacePaths()
+                configObject = try await compileTracerConfig(config, paths: paths)
+            } catch {
+                NSLog("[Engine] Failed to compile tracer config: %@", String(describing: error))
+                return
+            }
+
+        case .hookPack:
+            let config = (try? HookPackConfig.decode(from: configJSON))
+                ?? HookPackConfig(packId: inst.sourceIdentifier, features: [:])
+            configObject = config.toJSON()
+
+        case .codeShare:
+            configObject = (try? JSONSerialization.jsonObject(with: configJSON, options: []) as? JSONObject) ?? [:]
+        }
+
+        do {
+            try await node.script.exports.updateInstrumentConfig(
+                JSValue([
+                    "instanceId": instanceID.uuidString,
+                    "config": configObject,
+                ]))
+        } catch {
+            NSLog("[Engine] Failed to update instrument config: %@", String(describing: error))
+        }
+    }
+
+    private func loadInstrumentOnNode(
+        instanceID: UUID,
+        kind: InstrumentKind,
+        sourceIdentifier: String,
+        configJSON: Data,
+        node: ProcessNode,
+        sessionID: UUID
+    ) async {
+        do {
+            switch kind {
+            case .tracer:
+                try await loadTracerInstrument(
+                    instanceID: instanceID,
+                    config: (try? TracerConfig.decode(from: configJSON)) ?? TracerConfig(),
+                    sessionID: sessionID,
+                    paths: try compilerWorkspacePaths()
+                )
+
+            case .hookPack:
+                guard let provider = hookPackSourceProvider,
+                    let info = provider(sourceIdentifier)
+                else { return }
+
+                try await loadHookPackInstrument(
+                    instanceID: instanceID,
+                    packID: info.packID,
+                    entrySource: info.entrySource,
+                    configJSON: configJSON,
+                    on: node
+                )
+
+            case .codeShare:
+                let cfg = try JSONDecoder().decode(CodeShareConfig.self, from: configJSON)
+                try await loadCodeShareInstrument(
+                    instanceID: instanceID,
+                    config: cfg,
+                    configJSON: configJSON,
+                    on: node
+                )
+            }
+
+            node.markInstrumentAttached(id: instanceID)
+        } catch {
+            NSLog("[Engine] Failed to load instrument %@: %@", instanceID.uuidString, String(describing: error))
+        }
+    }
+
+    // MARK: - Tracer Instruction Hook
+
+    public func addTracerInstructionHook(
+        sessionID: UUID,
+        address: UInt64
+    ) async -> (instrumentID: UUID, hookID: UUID)? {
+        guard (try? store.fetchSession(id: sessionID)) != nil else { return nil }
+
+        let tracer: InstrumentInstance
+        if let existing = tracerInstance(forSessionID: sessionID) {
+            tracer = existing
+        } else {
+            let configJSON = TracerConfig().encode()
+            tracer = await addInstrument(
+                kind: .tracer,
+                sourceIdentifier: "builtin.tracer",
+                configJSON: configJSON,
+                sessionID: sessionID
+            )
+        }
+
+        let anchor: AddressAnchor
+        if let node = node(forSessionID: sessionID) {
+            anchor = node.anchor(for: address)
+        } else {
+            anchor = .absolute(address)
+        }
+
+        var config = (try? TracerConfig.decode(from: tracer.configJSON)) ?? TracerConfig()
+
+        if let existingID = config.hooks.first(where: { $0.addressAnchor == anchor })?.id {
+            return (instrumentID: tracer.id, hookID: existingID)
+        }
+
+        let stub = defaultTracerInstructionStub.replacingOccurrences(of: "INSTRUCTION", with: anchor.displayString)
+
+        let newHook = TracerConfig.Hook(
+            id: UUID(),
+            displayName: String(format: "0x%llx", address),
+            addressAnchor: anchor,
+            isEnabled: true,
+            code: stub
+        )
+
+        config.hooks.append(newHook)
+
+        let configData = config.encode()
+        await applyInstrumentConfig(instanceID: tracer.id, sessionID: sessionID, configJSON: configData)
+
+        return (instrumentID: tracer.id, hookID: newHook.id)
+    }
+
+    // MARK: - Tracer Hook Address Data
+
+    public func tracerHookAddresses(sessionID: UUID) -> [UInt64: UUID] {
+        guard let tracer = tracerInstance(forSessionID: sessionID),
+            let node = node(forSessionID: sessionID),
+            let config = try? TracerConfig.decode(from: tracer.configJSON)
+        else {
+            return [:]
+        }
+
+        var map: [UInt64: UUID] = [:]
+        for hook in config.hooks where hook.isEnabled {
+            guard let addr = try? node.resolveSyncIfReady(hook.addressAnchor) else { continue }
+            map[addr] = hook.id
+        }
+        return map
+    }
+
+    public func tracerInstanceID(sessionID: UUID) -> UUID? {
+        tracerInstance(forSessionID: sessionID)?.id
+    }
+
+    private func tracerInstance(forSessionID sessionID: UUID) -> InstrumentInstance? {
+        let instruments = (try? store.fetchInstruments(sessionID: sessionID)) ?? []
+        return instruments.first(where: { $0.kind == .tracer })
     }
 
     // MARK: - Tracer Compilation
@@ -538,6 +831,34 @@ public final class Engine {
             backtrace: ptrs.isEmpty ? nil : ptrs,
             message: elements[6]
         )
+    }
+
+    // MARK: - Compiler Workspace Paths
+
+    public func compilerWorkspacePaths() throws -> CompilerWorkspacePaths {
+        let packagesState = try store.fetchPackagesState()
+        let fm = FileManager.default
+
+        let base = try fm.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+
+        let bundleID = Bundle.main.bundleIdentifier ?? "re.frida.Luma"
+        let root =
+            base
+            .appendingPathComponent(bundleID, isDirectory: true)
+            .appendingPathComponent("Projects", isDirectory: true)
+            .appendingPathComponent(packagesState.id.uuidString, isDirectory: true)
+            .appendingPathComponent("Workspace", isDirectory: true)
+
+        if !fm.fileExists(atPath: root.path) {
+            try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        }
+
+        return CompilerWorkspacePaths(root: root)
     }
 
     // MARK: - Private Helpers

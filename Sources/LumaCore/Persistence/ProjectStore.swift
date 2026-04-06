@@ -87,6 +87,12 @@ public final class ProjectStore: Sendable {
 
     // MARK: - Instruments
 
+    public func fetchInstrument(id: UUID) throws -> InstrumentInstance? {
+        try db.read { db in
+            try InstrumentInstance.fetchOne(db, key: id)
+        }
+    }
+
     public func fetchInstruments(sessionID: UUID) throws -> [InstrumentInstance] {
         try db.read { db in
             try InstrumentInstance
