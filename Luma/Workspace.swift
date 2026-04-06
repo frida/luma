@@ -146,13 +146,7 @@ final class Workspace: ObservableObject {
 
     init(store: ProjectStore) {
         self.store = store
-        self.engine = Engine(
-            store: store,
-            coreAgentSource: LumaAgent.coreSource,
-            drainAgentSource: LumaAgent.drainSource,
-            tracerModuleSource: LumaAgent.tracerSource,
-            codeShareModuleSource: LumaAgent.codeShareSource
-        )
+        self.engine = Engine(store: store)
 
         engine.hookPackSourceProvider = { sourceIdentifier in
             guard let pack = HookPackLibrary.shared.pack(withId: sourceIdentifier) else { return nil }

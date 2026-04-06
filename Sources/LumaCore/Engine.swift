@@ -14,26 +14,11 @@ public final class Engine {
 
     private var deviceEventTasks: [String: Task<Void, Never>] = [:]
 
-    private let coreAgentSource: String
-    private let drainAgentSource: String?
-    private let tracerModuleSource: String
-    private let codeShareModuleSource: String
-
     public var hookPackSourceProvider: ((String) -> (entrySource: String, packID: String)?)?
 
-    public init(
-        store: ProjectStore,
-        coreAgentSource: String,
-        drainAgentSource: String? = nil,
-        tracerModuleSource: String = "",
-        codeShareModuleSource: String = ""
-    ) {
+    public init(store: ProjectStore) {
         self.store = store
         self.compilerWorkspace = CompilerWorkspace(store: store)
-        self.coreAgentSource = coreAgentSource
-        self.drainAgentSource = drainAgentSource
-        self.tracerModuleSource = tracerModuleSource
-        self.codeShareModuleSource = codeShareModuleSource
     }
 
     // MARK: - Session Orchestration
@@ -128,7 +113,7 @@ public final class Engine {
             updateSession(id: s.id) { $0.lastAttachedAt = Date() }
 
             let script = try await fridaSession.createScript(
-                coreAgentSource,
+                LumaAgent.coreSource,
                 name: "luma",
                 runtime: .auto
             )
@@ -149,7 +134,7 @@ public final class Engine {
                 session: fridaSession,
                 script: script,
                 instruments: instrumentRefs,
-                drainAgentSource: drainAgentSource
+                drainAgentSource: LumaAgent.drainSource
             )
 
             let existingCells = (try? store.fetchREPLCells(sessionID: s.id)) ?? []
@@ -676,7 +661,7 @@ public final class Engine {
             JSValue([
                 "instanceId": instanceID.uuidString,
                 "moduleName": "/builtin/tracer.js",
-                "source": tracerModuleSource,
+                "source": LumaAgent.tracerSource,
                 "config": compiled,
             ]))
     }
@@ -726,7 +711,7 @@ public final class Engine {
             JSValue([
                 "instanceId": instanceID.uuidString,
                 "moduleName": moduleName,
-                "source": codeShareModuleSource,
+                "source": LumaAgent.codeShareSource,
                 "config": configObject,
             ]))
     }

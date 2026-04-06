@@ -273,11 +273,11 @@
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(SRCROOT)/Luma/Generated/LumaAgent.swift",
+				"$(SRCROOT)/Sources/LumaCore/Generated/LumaAgent.swift",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/zsh;
-			shellScript = "set -euo pipefail\n\n\"${BUILD_DIR}/${CONFIGURATION}/LumaBundleCompiler\" \\\n    --project-root     \"${SRCROOT}\" \\\n    --swift-out        \"${SRCROOT}/Luma/Generated/LumaAgent.swift\" \\\n    --staging-dir      \"${BUILD_DIR}/AgentStaging\" \\\n    --package frida-itrace@6.0.0 \\\n    --agent  core      Agent/core/luma.ts \\\n    --agent  drain     Agent/instruments/drain-agent.ts \\\n    --module tracer    Agent/instruments/tracer.ts \\\n    --module codeShare Agent/instruments/codeshare.ts\n";
+			shellScript = "set -euo pipefail\n\n\"${BUILD_DIR}/${CONFIGURATION}/LumaBundleCompiler\" \\\n    --project-root     \"${SRCROOT}\" \\\n    --swift-out        \"${SRCROOT}/Sources/LumaCore/Generated/LumaAgent.swift\" \\\n    --staging-dir      \"${BUILD_DIR}/AgentStaging\" \\\n    --package frida-itrace@6.0.0 \\\n    --agent  core      Agent/core/luma.ts \\\n    --agent  drain     Agent/instruments/drain-agent.ts \\\n    --module tracer    Agent/instruments/tracer.ts \\\n    --module codeShare Agent/instruments/codeshare.ts\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
