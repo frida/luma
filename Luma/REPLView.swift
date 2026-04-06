@@ -14,6 +14,7 @@ struct REPLView: View {
     @State private var historyCursorInitialized = false
 
     @State private var cells: [LumaCore.REPLCell] = []
+    @State private var cellsObservation: StoreObservation?
 
     private var session: LumaCore.ProcessSession? {
         workspace.sessions.first { $0.id == sessionID }
@@ -133,6 +134,12 @@ struct REPLView: View {
             .background(.bar)
         }
         .onAppear {
+            if cellsObservation == nil {
+                cellsObservation = workspace.store.observeREPLCells(sessionID: sessionID) { newCells in
+                    cells = newCells
+                }
+            }
+
             DispatchQueue.main.async {
                 isInputFocused = node != nil
 

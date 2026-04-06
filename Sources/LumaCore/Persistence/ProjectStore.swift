@@ -41,6 +41,22 @@ public final class ProjectStore: Sendable {
         )
     }
 
+    public func observeREPLCells(
+        sessionID: UUID,
+        onChange: @escaping @Sendable ([REPLCell]) -> Void
+    ) -> StoreObservation {
+        StoreObservation(
+            ValueObservation
+                .tracking { db in
+                    try REPLCell
+                        .filter(Column("session_id") == sessionID)
+                        .order(Column("timestamp").asc)
+                        .fetchAll(db)
+                }
+                .start(in: db, scheduling: .async(onQueue: .main), onError: { _ in }, onChange: onChange)
+        )
+    }
+
     // MARK: - Process Sessions
 
     public func fetchSessions() throws -> [ProcessSession] {
