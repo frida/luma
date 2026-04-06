@@ -1,5 +1,6 @@
 import Combine
 import Frida
+import LumaCore
 import SwiftUI
 import SwiftyMonaco
 import UniformTypeIdentifiers
@@ -18,8 +19,8 @@ import UniformTypeIdentifiers
         }
 
         var body: some Scene {
-            WindowGroup {
-                MainWindowView()
+            DocumentGroup(newDocument: { LumaProject() }) { configuration in
+                MainWindowView(store: configuration.document.store)
             }
             .defaultSize(width: 1100, height: 680)
         }
@@ -73,8 +74,8 @@ import UniformTypeIdentifiers
         }
 
         var body: some Scene {
-            WindowGroup {
-                MainWindowView()
+            DocumentGroup(newDocument: { LumaProject() }) { configuration in
+                MainWindowView(store: configuration.document.store)
             }
         }
     }

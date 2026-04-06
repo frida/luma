@@ -4,8 +4,15 @@ import UniformTypeIdentifiers
 import LumaCore
 
 struct MainWindowView: View {
+    let store: ProjectStore
+
     @State private var uiState = ProjectUIStateValue()
-    @StateObject private var workspace = Workspace()
+    @StateObject private var workspace: Workspace
+
+    init(store: ProjectStore) {
+        self.store = store
+        self._workspace = StateObject(wrappedValue: Workspace(store: store))
+    }
 
     @State private var collapsedEventBaselineVersion: Int = 0
     @State private var collapsedNewEvents: Int = 0
@@ -116,7 +123,7 @@ struct MainWindowView: View {
 
     private func handleSpawn(device: Device, config: SpawnConfig) {
         Task { @MainActor in
-            var sessionRecord = LumaCore.ProcessSession(
+            let sessionRecord = LumaCore.ProcessSession(
                 kind: .spawn(config),
                 deviceID: device.id,
                 deviceName: device.name,

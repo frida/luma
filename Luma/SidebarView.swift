@@ -8,7 +8,7 @@ struct SidebarView: View {
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 
-    @State private var sessions: [LumaCore.ProcessSession] = []
+    var sessions: [LumaCore.ProcessSession] { workspace.sessions }
 
     @State private var packages: [LumaCore.InstalledPackage] = []
 
@@ -126,7 +126,7 @@ private struct SidebarSessionHeaderRow: View {
                 Button(role: .destructive) {
                     presentConfirmation(
                         title: "Kill Process?",
-                        message: "This will force-terminate "\(displayProcessName)".",
+                        message: "This will force-terminate \"\(displayProcessName)\".",
                         destructiveLabel: "Kill Process"
                     ) { killProcess() }
                 } label: {
@@ -304,8 +304,8 @@ private struct SidebarInstrumentRow: View {
             } label: {
                 Label(
                     instance.isEnabled
-                        ? "Disable "\(instance.displayName)""
-                        : "Enable "\(instance.displayName)"",
+                        ? "Disable \"\(instance.displayName)\""
+                        : "Enable \"\(instance.displayName)\"",
                     systemImage: instance.isEnabled ? "pause.circle" : "play.circle"
                 )
             }
@@ -328,7 +328,7 @@ private struct SidebarInstrumentRow: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This will remove "\(instance.displayName)" from this session.")
+            Text("This will remove \"\(instance.displayName)\" from this session.")
         }
     }
 

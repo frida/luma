@@ -128,7 +128,7 @@ struct TracerConfigView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { hook in
-            Text("Are you sure you want to delete “\(hook.displayName)”?")
+            Text("Are you sure you want to delete \"\(hook.displayName)\"?")
         }
         .alert("Delete \(pendingMultiDeleteIDs.count) Hooks?", isPresented: $showMultiDeleteAlert) {
             Button("Delete", role: .destructive) {

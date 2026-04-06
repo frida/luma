@@ -10,6 +10,7 @@ final class Workspace: ObservableObject {
     let deviceManager = DeviceManager()
 
     @Published var processNodes: [ProcessNodeViewModel] = []
+    @Published var sessions: [LumaCore.ProcessSession] = []
 
     private var addressAnnotationsBySession: [UUID: [UInt64: AddressAnnotation]] = [:]
     private var tracerInstanceIDBySession: [UUID: UUID] = [:]
@@ -134,22 +135,22 @@ final class Workspace: ObservableObject {
 
     let store: ProjectStore
 
-    init() {
-        let fm = FileManager.default
-        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let appDir = appSupport.appendingPathComponent("re.frida.Luma", isDirectory: true)
-        try! fm.createDirectory(at: appDir, withIntermediateDirectories: true)
-        let dbPath = appDir.appendingPathComponent("project.sqlite").path
-        self.store = try! ProjectStore(path: dbPath)
+    init(store: ProjectStore) {
+        self.store = store
 
         githubToken = (try? TokenStore.load(kind: .github)) ?? nil
         Task { await loadCurrentGitHubUser() }
     }
 
     func configurePersistence() async {
+        reloadSessions()
         await loadRemoteDevices()
         bindProjectCollaboration()
         notebookEntries = (try? store.fetchNotebookEntries()) ?? []
+    }
+
+    func reloadSessions() {
+        sessions = (try? store.fetchSessions()) ?? []
     }
 
     func loadRemoteDevices() async {
@@ -1235,24 +1236,11 @@ final class Workspace: ObservableObject {
         using process: ProcessDetails,
         sessionRecord: LumaCore.ProcessSession
     ) async {
-        var s = sessionRecord
-        s.phase = .attaching
-        try? store.save(s)
-
         await performAttachToProcess(
             device: device,
             using: process,
             sessionRecord: s
         )
-
-        s = (try? store.fetchSession(id: s.id)) ?? s
-        if s.phase == .attaching {
-            s.phase = .idle
-            try? store.save(s)
-        } else {
-            s.phase = .attached
-            try? store.save(s)
-        }
     }
 
     private func performAttachToProcess(
@@ -1264,7 +1252,9 @@ final class Workspace: ObservableObject {
         session_.lastKnownPID = process.pid
         session_.detachReason = .applicationRequested
         session_.lastError = nil
+        session_.phase = .attaching
         try? store.save(session_)
+        reloadSessions()
 
         do {
             ensureDeviceEventsHooked(for: device)
@@ -1344,9 +1334,14 @@ final class Workspace: ObservableObject {
                     await loadRuntime(for: runtime, using: template, on: node)
                 }
             }
-        } catch {
-            session_.lastError = error.localizedDescription
+            session_.phase = .attached
             try? store.save(session_)
+        } catch {
+            NSLog("[Workspace] attach failed: %@", String(describing: error))
+            session_.lastError = error.localizedDescription
+            session_.phase = .idle
+            try? store.save(session_)
+            reloadSessions()
         }
     }
 
@@ -1379,8 +1374,7 @@ final class Workspace: ObservableObject {
             try? store.save(s)
             targetPickerContext = .reestablish(
                 session: s,
-                reason:
-                    “The saved device “\(s.deviceName)” is not available. Choose a device and target to re-establish this session.”
+                reason: "The saved device \"\(s.deviceName)\" is not available. Choose a device and target to re-establish this session."
             )
             return
         }
@@ -1403,7 +1397,7 @@ final class Workspace: ObservableObject {
                 targetPickerContext = .reestablish(
                     session: s,
                     reason:
-                        “No running process named “\(s.processName)” was found. Choose a new target to re-establish this session.”
+                        "No running process named \"\(s.processName)\" was found. Choose a new target to re-establish this session."
                 )
                 return
             }
@@ -1418,7 +1412,7 @@ final class Workspace: ObservableObject {
                 try? store.save(s)
                 targetPickerContext = .reestablish(
                     session: s,
-                    reason: “Multiple processes named “\(s.processName)” are running. Choose which one to attach to.”
+                    reason: "Multiple processes named \"\(s.processName)\" are running. Choose which one to attach to."
                 )
                 return
             }
@@ -1437,7 +1431,7 @@ final class Workspace: ObservableObject {
             try? store.save(s)
             targetPickerContext = .reestablish(
                 session: s,
-                reason: “Quick re-establish failed for “\(s.processName)”. Choose a new target.”
+                reason: "Quick re-establish failed for \"\(s.processName)\". Choose a new target."
             )
         }
     }

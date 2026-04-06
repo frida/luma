@@ -4,7 +4,7 @@ import LumaCore
 
 extension Workspace {
     func bindProjectCollaboration() {
-        var collabState = (try? store.fetchCollaborationState()) ?? LumaCore.ProjectCollaborationState()
+        let collabState = (try? store.fetchCollaborationState()) ?? LumaCore.ProjectCollaborationState()
 
         let roomFromLink = CollaborationJoinCoordinator.shared.consumeNextRoomID()
         storedProjectRoomID = roomFromLink ?? collabState.roomID

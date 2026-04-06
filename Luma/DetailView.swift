@@ -25,7 +25,7 @@ struct DetailView: View {
 
             case .some(.instrument(let sessionID, let instID)),
                 .some(.instrumentComponent(let sessionID, let instID, _, _)):
-                if let node = workspace.processNodes.first(where: { $0.sessionRecord.id == sessionID }),
+                if let _ = workspace.processNodes.first(where: { $0.sessionRecord.id == sessionID }),
                     let inst = (try? workspace.store.fetchInstruments(sessionID: sessionID))?.first(where: { $0.id == instID })
                 {
                     InstrumentDetailView(instance: inst, workspace: workspace, selection: $selection)

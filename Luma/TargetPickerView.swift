@@ -856,10 +856,8 @@ struct TargetPickerView: View {
         VStack(spacing: 0) {
             deviceListHeaderView
 
-            List(
-                store.devices,
-                selection: $selectedDeviceID
-            ) { device in
+            List(selection: $selectedDeviceID) {
+                ForEach(store.devices, id: \.id) { device in
                 HStack(spacing: 8) {
                     if let icon = device.icon {
                         icon.swiftUIImage
@@ -889,6 +887,7 @@ struct TargetPickerView: View {
                             Label("Remove Remote Device", systemImage: "trash")
                         }
                     }
+                }
                 }
             }
         }
@@ -1071,7 +1070,7 @@ struct TargetPickerView: View {
         addRemoteError = nil
 
         do {
-            let device = try await deviceManager.addRemoteDevice(
+            _ = try await deviceManager.addRemoteDevice(
                 address: address,
                 certificate: certificate,
                 origin: origin,

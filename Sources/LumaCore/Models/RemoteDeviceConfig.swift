@@ -8,6 +8,8 @@ public struct RemoteDeviceConfig: Codable, Identifiable, Sendable {
     public var token: String?
     public var keepaliveInterval: Int?
 
+    public var runtimeDeviceID: String?
+
     public init(
         id: UUID = UUID(),
         address: String,
@@ -22,5 +24,9 @@ public struct RemoteDeviceConfig: Codable, Identifiable, Sendable {
         self.origin = origin
         self.token = token
         self.keepaliveInterval = keepaliveInterval
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, address, certificate, origin, token, keepaliveInterval
     }
 }

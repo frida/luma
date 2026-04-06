@@ -1,12 +1,10 @@
 import Foundation
 import LumaCore
 
-enum TargetPickerContext: Equatable {
+enum TargetPickerContext: Equatable, Identifiable {
     case newSession
     case reestablish(session: LumaCore.ProcessSession, reason: String)
-}
 
-extension TargetPickerContext: Identifiable {
     var id: String {
         switch self {
         case .newSession:
@@ -14,5 +12,9 @@ extension TargetPickerContext: Identifiable {
         case .reestablish(let session, let reason):
             return "reestablish-\(session.id.uuidString)-\(reason)"
         }
+    }
+
+    static func == (lhs: TargetPickerContext, rhs: TargetPickerContext) -> Bool {
+        lhs.id == rhs.id
     }
 }
