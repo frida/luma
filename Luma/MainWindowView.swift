@@ -116,13 +116,14 @@ struct MainWindowView: View {
 
     private func handleSpawn(device: Device, config: SpawnConfig) {
         Task { @MainActor in
-            let sessionRecord = ProcessSession(
+            var sessionRecord = LumaCore.ProcessSession(
                 kind: .spawn(config),
                 deviceID: device.id,
                 deviceName: device.name,
                 processName: config.defaultDisplayName,
                 lastKnownPID: 0
             )
+            try? workspace.store.save(sessionRecord)
 
             await workspace.spawnAndAttach(
                 device: device,
@@ -138,19 +139,19 @@ struct MainWindowView: View {
             if let existingNode = workspace.processNodes.first(where: {
                 $0.device.id == device.id && $0.process.pid == proc.pid
             }) {
-                uiState.selectedItemID = .repl(existingNode.sessionRecord.id)
+                uiState.selectedItemID = .repl(existingNode.sessionID)
                 return
             }
 
-            let reusedFromReestablish: ProcessSession? =
+            let reusedFromReestablish: LumaCore.ProcessSession? =
                 if case .reestablish(let session, _) = targetPickerContext { session } else { nil }
 
-            let sessionRecord: ProcessSession
+            var sessionRecord: LumaCore.ProcessSession
 
             if let reused = reusedFromReestablish {
                 sessionRecord = reused
             } else {
-                sessionRecord = ProcessSession(
+                sessionRecord = LumaCore.ProcessSession(
                     kind: .attach,
                     deviceID: device.id,
                     deviceName: device.name,
@@ -169,6 +170,8 @@ struct MainWindowView: View {
             {
                 sessionRecord.iconPNGData = pngData(for: icon)
             }
+
+            try? workspace.store.save(sessionRecord)
 
             await workspace.attachToProcess(
                 device: device,

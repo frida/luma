@@ -132,7 +132,16 @@ final class Workspace: ObservableObject {
 
     private var deviceEventTasks: [String: Task<Void, Never>] = [:]
 
+    let store: ProjectStore
+
     init() {
+        let fm = FileManager.default
+        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let appDir = appSupport.appendingPathComponent("re.frida.Luma", isDirectory: true)
+        try! fm.createDirectory(at: appDir, withIntermediateDirectories: true)
+        let dbPath = appDir.appendingPathComponent("project.sqlite").path
+        self.store = try! ProjectStore(path: dbPath)
+
         githubToken = (try? TokenStore.load(kind: .github)) ?? nil
         Task { await loadCurrentGitHubUser() }
     }
@@ -140,9 +149,23 @@ final class Workspace: ObservableObject {
     func configurePersistence() async {
         await loadRemoteDevices()
         bindProjectCollaboration()
+        notebookEntries = (try? store.fetchNotebookEntries()) ?? []
     }
 
     func loadRemoteDevices() async {
+        for config in (try? store.fetchRemoteDevices()) ?? [] {
+            do {
+                _ = try await deviceManager.addRemoteDevice(
+                    address: config.address,
+                    certificate: config.certificate,
+                    origin: config.origin,
+                    token: config.token,
+                    keepaliveInterval: config.keepaliveInterval
+                )
+            } catch {
+                print("Failed to add remote device \(config.address): \(error)")
+            }
+        }
     }
 
     private func loadCurrentGitHubUser() async {
@@ -1139,20 +1162,17 @@ final class Workspace: ObservableObject {
 
     func spawnAndAttach(
         device: Device,
-        sessionRecord: ProcessSession
+        sessionRecord: LumaCore.ProcessSession
     ) async {
         guard case .spawn(let config) = sessionRecord.kind else {
             fatalError("spawnAndAttach called with a non-spawn ProcessSession!")
         }
 
-        sessionRecord.phase = .attaching
-        defer {
-            if sessionRecord.phase == .attaching {
-                sessionRecord.phase = .idle
-            }
-        }
-        sessionRecord.detachReason = .applicationRequested
-        sessionRecord.lastError = nil
+        var s = sessionRecord
+        s.phase = .attaching
+        s.detachReason = .applicationRequested
+        s.lastError = nil
+        try? store.save(s)
 
         ensureDeviceEventsHooked(for: device)
 
@@ -1168,88 +1188,121 @@ final class Workspace: ObservableObject {
 
             let procs = try await device.enumerateProcesses(pids: [pid], scope: .full)
             guard let process = procs.first else {
-                sessionRecord.lastError = Error.processNotFound("Spawned pid \(pid) not found in enumerateProcesses(pids:)")
+                s.lastError = "Spawned pid \(pid) not found"
+                s.phase = .idle
+                try? store.save(s)
                 return
             }
 
-            sessionRecord.deviceName = device.name
+            s.deviceName = device.name
+            try? store.save(s)
 
             await performAttachToProcess(
                 device: device,
                 using: process,
-                sessionRecord: sessionRecord
+                sessionRecord: s
             )
 
+            s = (try? store.fetchSession(id: s.id)) ?? s
             if config.autoResume {
                 try await device.resume(pid)
-                sessionRecord.phase = .attached
+                s.phase = .attached
             } else {
-                sessionRecord.phase = .awaitingInitialResume
+                s.phase = .awaitingInitialResume
             }
+            try? store.save(s)
         } catch {
-            sessionRecord.lastError = error as? Error ?? .invalidOperation(error.localizedDescription)
+            s.lastError = error.localizedDescription
+            s.phase = .idle
+            try? store.save(s)
         }
     }
 
     func attachToProcess(
         device: Device,
         using process: ProcessDetails,
-        sessionRecord: ProcessSession
+        sessionRecord: LumaCore.ProcessSession
     ) async {
-        sessionRecord.phase = .attaching
-        defer {
-            if sessionRecord.phase == .attaching {
-                sessionRecord.phase = .idle
-            }
-        }
+        var s = sessionRecord
+        s.phase = .attaching
+        try? store.save(s)
 
         await performAttachToProcess(
             device: device,
             using: process,
-            sessionRecord: sessionRecord
+            sessionRecord: s
         )
 
-        sessionRecord.phase = .attached
+        s = (try? store.fetchSession(id: s.id)) ?? s
+        if s.phase == .attaching {
+            s.phase = .idle
+            try? store.save(s)
+        } else {
+            s.phase = .attached
+            try? store.save(s)
+        }
     }
 
     private func performAttachToProcess(
         device: Device,
         using process: ProcessDetails,
-        sessionRecord: ProcessSession
+        sessionRecord: LumaCore.ProcessSession
     ) async {
-        do {
-            sessionRecord.lastKnownPID = process.pid
-            sessionRecord.detachReason = .applicationRequested
-            sessionRecord.lastError = nil
+        var session_ = sessionRecord
+        session_.lastKnownPID = process.pid
+        session_.detachReason = .applicationRequested
+        session_.lastError = nil
+        try? store.save(session_)
 
+        do {
             ensureDeviceEventsHooked(for: device)
 
-            let session = try await device.attach(to: process.pid)
+            let fridaSession = try await device.attach(to: process.pid)
 
-            sessionRecord.lastAttachedAt = Date()
+            session_.lastAttachedAt = Date()
+            try? store.save(session_)
 
-            let script = try await session.createScript(
+            let script = try await fridaSession.createScript(
                 LumaAgent.coreSource,
                 name: "luma",
                 runtime: .auto
             )
 
+            let instruments = (try? store.fetchInstruments(sessionID: session_.id)) ?? []
+            let instrumentRefs = instruments.map {
+                LumaCore.ProcessNode.InstrumentRef(
+                    id: $0.id, kind: $0.kind,
+                    sourceIdentifier: $0.sourceIdentifier,
+                    configJSON: $0.configJSON,
+                    isEnabled: $0.isEnabled
+                )
+            }
+
             let coreNode = LumaCore.ProcessNode(
                 device: device,
                 process: process,
-                session: session,
-                script: script
+                session: fridaSession,
+                script: script,
+                instruments: instrumentRefs,
+                drainAgentSource: LumaAgent.drainSource
             )
             let node = ProcessNodeViewModel(
                 core: coreNode,
-                sessionRecord: sessionRecord
+                sessionID: session_.id,
+                store: store
             )
-            if !sessionRecord.replCells.isEmpty {
+
+            let existingCells = (try? store.fetchREPLCells(sessionID: session_.id)) ?? []
+            if !existingCells.isEmpty {
                 node.markSessionBoundary()
             }
+
             node.onDestroyed = { [weak self] node, reason in
-                sessionRecord.detachReason = reason
-                self?.removeNode(node)
+                guard let self else { return }
+                var s = node.sessionRecord
+                s.detachReason = reason
+                try? self.store.save(s)
+                self.removeNode(node)
             }
             node.onModulesSnapshotReady = { [weak self] node in
                 guard let self else { return }
@@ -1280,7 +1333,8 @@ final class Workspace: ObservableObject {
                 }
             }
         } catch {
-            sessionRecord.lastError = error as? Error ?? .invalidOperation(error.localizedDescription)
+            session_.lastError = error.localizedDescription
+            try? store.save(session_)
         }
     }
 

@@ -1,8 +1,9 @@
 import Foundation
+import LumaCore
 
 enum TargetPickerContext: Equatable {
     case newSession
-    case reestablish(session: ProcessSession, reason: String)
+    case reestablish(session: LumaCore.ProcessSession, reason: String)
 }
 
 extension TargetPickerContext: Identifiable {
