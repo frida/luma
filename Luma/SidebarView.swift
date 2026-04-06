@@ -433,11 +433,11 @@ private struct SidebarPackageRow: View {
 }
 
 extension LumaCore.InstrumentInstance {
-    var displayName: String {
+    @MainActor var displayName: String {
         InstrumentMetadataRegistry.shared.displayName(for: self)
     }
 
-    var displayIcon: InstrumentIcon {
+    @MainActor var displayIcon: InstrumentIcon {
         InstrumentMetadataRegistry.shared.icon(for: self)
     }
 }
