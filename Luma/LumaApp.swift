@@ -1,6 +1,5 @@
 import Combine
 import Frida
-import SwiftData
 import SwiftUI
 import SwiftyMonaco
 import UniformTypeIdentifiers
@@ -19,7 +18,7 @@ import UniformTypeIdentifiers
         }
 
         var body: some Scene {
-            DocumentGroup(editing: .project, migrationPlan: LumaMigrationPlan.self) {
+            WindowGroup {
                 MainWindowView()
             }
             .defaultSize(width: 1100, height: 680)
@@ -47,12 +46,6 @@ import UniformTypeIdentifiers
             }
 
             CollaborationJoinCoordinator.shared.enqueue(roomID: roomID)
-
-            do {
-                try NSDocumentController.shared.openUntitledDocumentAndDisplay(true)
-            } catch {
-                NSLog("Failed to open untitled document for collaboration link: \(error)")
-            }
         }
 
         private func roomID(from url: URL) -> String? {
@@ -80,7 +73,7 @@ import UniformTypeIdentifiers
         }
 
         var body: some Scene {
-            DocumentGroup(editing: .project, migrationPlan: LumaMigrationPlan.self) {
+            WindowGroup {
                 MainWindowView()
             }
         }
@@ -107,48 +100,4 @@ extension UTType {
     static var project: UTType {
         UTType(importedAs: "re.frida.luma-project")
     }
-}
-
-struct LumaMigrationPlan: SchemaMigrationPlan {
-    static let schemas: [VersionedSchema.Type] = [
-        LumaSchemaV1.self,
-        LumaVersionedSchema.self,
-    ]
-
-    static let stages: [MigrationStage] = [
-        .lightweight(fromVersion: LumaSchemaV1.self, toVersion: LumaVersionedSchema.self),
-    ]
-}
-
-enum LumaSchemaV1: VersionedSchema {
-    static let versionIdentifier = Schema.Version(1, 0, 0)
-
-    static let models: [any PersistentModel.Type] = [
-        ProjectUIState.self,
-        ProjectPackagesState.self,
-        InstalledPackage.self,
-        ProjectCollaborationState.self,
-        NotebookEntry.self,
-        TargetPickerState.self,
-        ProcessSession.self,
-        RemoteDeviceConfig.self,
-        REPLCell.self,
-    ]
-}
-
-struct LumaVersionedSchema: VersionedSchema {
-    static let versionIdentifier = Schema.Version(2, 0, 0)
-
-    static let models: [any PersistentModel.Type] = [
-        ProjectUIState.self,
-        ProjectPackagesState.self,
-        InstalledPackage.self,
-        ProjectCollaborationState.self,
-        NotebookEntry.self,
-        TargetPickerState.self,
-        ProcessSession.self,
-        RemoteDeviceConfig.self,
-        REPLCell.self,
-        ITraceCapture.self,
-    ]
 }

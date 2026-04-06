@@ -1,5 +1,4 @@
 import Frida
-import SwiftData
 import SwiftUI
 import LumaCore
 
@@ -13,8 +12,6 @@ struct REPLView: View {
 
     @State private var historyCursor: Int = 0
     @State private var historyCursorInitialized = false
-
-    @Environment(\.modelContext) private var modelContext
 
     private var node: ProcessNodeViewModel? {
         workspace.processNodes.first { $0.sessionRecord == session }
@@ -150,9 +147,7 @@ struct REPLView: View {
     }
 
     private func clearHistory() {
-        for cell in session.replCells {
-            modelContext.delete(cell)
-        }
+        session.replCells.removeAll()
         historyCursor = 0
     }
 
@@ -209,8 +204,6 @@ private struct REPLCellView: View {
     let sessionID: UUID
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
-
-    @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         if cell.isSessionBoundary {

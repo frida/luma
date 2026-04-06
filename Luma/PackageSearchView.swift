@@ -1,15 +1,11 @@
 import Frida
-import SwiftData
 import SwiftUI
 
 struct PackageSearchView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
 
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
-
-    @Query private var packageStates: [ProjectPackagesState]
 
     @State private var query: String = ""
     @State private var results: [Package] = []
@@ -36,15 +32,6 @@ struct PackageSearchView: View {
     }
 
     private let manager = PackageManager()
-
-    private var projectPackages: ProjectPackagesState {
-        if let state = packageStates.first {
-            return state
-        }
-        let newState = ProjectPackagesState()
-        modelContext.insert(newState)
-        return newState
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {

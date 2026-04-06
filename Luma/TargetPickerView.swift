@@ -1,5 +1,4 @@
 import Frida
-import SwiftData
 import SwiftUI
 import LumaCore
 
@@ -22,14 +21,12 @@ struct TargetPickerView: View {
     let onAttach: (Device, ProcessDetails) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
 
-    @Query private var pickerStates: [TargetPickerState]
     @State private var pickerState: TargetPickerState?
 
     @State private var selectedDeviceID: Device.ID?
 
-    @Query private var remoteConfigs: [RemoteDeviceConfig]
+    @State private var remoteConfigs: [LumaCore.RemoteDeviceConfig] = []
 
     @State private var mode: Mode = .attach
     @State private var spawnSubmode: SpawnSubmode = .application
@@ -169,12 +166,8 @@ struct TargetPickerView: View {
                 addRemoteSheet()
             }
             .task {
-                if let existing = pickerStates.first {
-                    pickerState = existing
-                } else {
-                    let newState = TargetPickerState()
-                    modelContext.insert(newState)
-                    pickerState = newState
+                if pickerState == nil {
+                    pickerState = TargetPickerState()
                 }
 
                 if let lastID = pickerState?.lastSelectedDeviceID,
@@ -1094,7 +1087,7 @@ struct TargetPickerView: View {
                 keepaliveInterval: keepalive
             )
             config.runtimeDeviceID = device.id
-            modelContext.insert(config)
+            remoteConfigs.append(config)
 
             showingAddRemoteSheet = false
             clearRemoteForm()
@@ -1104,7 +1097,7 @@ struct TargetPickerView: View {
     }
 
     private func removeRemote(config: RemoteDeviceConfig) {
-        modelContext.delete(config)
+        remoteConfigs.removeAll { $0.id == config.id }
 
         Task {
             try? await deviceManager.removeRemoteDevice(address: config.address)

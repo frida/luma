@@ -1,7 +1,6 @@
 import Combine
 import CryptoKit
 import Frida
-import SwiftData
 import SwiftUI
 import SwiftyMonaco
 import LumaCore
@@ -28,6 +27,8 @@ final class Workspace: ObservableObject {
     private let maxEventsVisible = 1_000
     private let maxEventsInMemory = 10_000
     private var isEventFlushScheduled = false
+
+    @Published var notebookEntries: [NotebookEntry] = []
 
     @Published var targetPickerContext: TargetPickerContext?
 
@@ -66,8 +67,6 @@ final class Workspace: ObservableObject {
 
     var portalDevice: Device?
     var portalBusTask: Task<Void, Never>?
-
-    var modelContext: ModelContext!
 
     enum GitHubAuthState: Equatable {
         case signedOut
@@ -138,24 +137,12 @@ final class Workspace: ObservableObject {
         Task { await loadCurrentGitHubUser() }
     }
 
-    func configurePersistence(modelContext: ModelContext) async {
-        self.modelContext = modelContext
-
+    func configurePersistence() async {
         await loadRemoteDevices()
         bindProjectCollaboration()
     }
 
     func loadRemoteDevices() async {
-        for config in try! modelContext.fetch(FetchDescriptor<RemoteDeviceConfig>()) {
-            let device = try! await deviceManager.addRemoteDevice(
-                address: config.address,
-                certificate: config.certificate,
-                origin: config.origin,
-                token: config.token,
-                keepaliveInterval: config.keepaliveInterval
-            )
-            config.runtimeDeviceID = device.id
-        }
     }
 
     private func loadCurrentGitHubUser() async {
@@ -310,7 +297,6 @@ final class Workspace: ObservableObject {
         )
 
         session.instruments.append(instance)
-        modelContext!.insert(instance)
 
         guard let node = processNodes.first(where: { $0.sessionRecord == session }) else {
             return instance
@@ -344,8 +330,6 @@ final class Workspace: ObservableObject {
         if instance.kind == .tracer {
             rebuildAddressDecorations(for: session)
         }
-
-        modelContext.delete(instance)
     }
 
     func setInstrumentEnabled(_ instance: InstrumentInstance, enabled: Bool) async {
@@ -1155,8 +1139,7 @@ final class Workspace: ObservableObject {
 
     func spawnAndAttach(
         device: Device,
-        sessionRecord: ProcessSession,
-        modelContext: ModelContext
+        sessionRecord: ProcessSession
     ) async {
         guard case .spawn(let config) = sessionRecord.kind else {
             fatalError("spawnAndAttach called with a non-spawn ProcessSession!")
@@ -1194,8 +1177,7 @@ final class Workspace: ObservableObject {
             await performAttachToProcess(
                 device: device,
                 using: process,
-                sessionRecord: sessionRecord,
-                modelContext: modelContext
+                sessionRecord: sessionRecord
             )
 
             if config.autoResume {
@@ -1212,8 +1194,7 @@ final class Workspace: ObservableObject {
     func attachToProcess(
         device: Device,
         using process: ProcessDetails,
-        sessionRecord: ProcessSession,
-        modelContext: ModelContext
+        sessionRecord: ProcessSession
     ) async {
         sessionRecord.phase = .attaching
         defer {
@@ -1225,8 +1206,7 @@ final class Workspace: ObservableObject {
         await performAttachToProcess(
             device: device,
             using: process,
-            sessionRecord: sessionRecord,
-            modelContext: modelContext
+            sessionRecord: sessionRecord
         )
 
         sessionRecord.phase = .attached
@@ -1235,8 +1215,7 @@ final class Workspace: ObservableObject {
     private func performAttachToProcess(
         device: Device,
         using process: ProcessDetails,
-        sessionRecord: ProcessSession,
-        modelContext: ModelContext
+        sessionRecord: ProcessSession
     ) async {
         do {
             sessionRecord.lastKnownPID = process.pid
@@ -1263,8 +1242,7 @@ final class Workspace: ObservableObject {
             )
             let node = ProcessNodeViewModel(
                 core: coreNode,
-                sessionRecord: sessionRecord,
-                modelContext: modelContext
+                sessionRecord: sessionRecord
             )
             if !sessionRecord.replCells.isEmpty {
                 node.markSessionBoundary()
@@ -1317,7 +1295,7 @@ final class Workspace: ObservableObject {
         }
     }
 
-    func reestablishSession(for sessionRecord: ProcessSession, modelContext: ModelContext) async {
+    func reestablishSession(for sessionRecord: ProcessSession) async {
         sessionRecord.phase = .attaching
         defer {
             if sessionRecord.phase == .attaching {
@@ -1345,8 +1323,7 @@ final class Workspace: ObservableObject {
         if case .spawn(_) = sessionRecord.kind {
             await spawnAndAttach(
                 device: device,
-                sessionRecord: sessionRecord,
-                modelContext: modelContext
+                sessionRecord: sessionRecord
             )
             return
         }
@@ -1382,8 +1359,7 @@ final class Workspace: ObservableObject {
             await performAttachToProcess(
                 device: device,
                 using: chosen,
-                sessionRecord: sessionRecord,
-                modelContext: modelContext
+                sessionRecord: sessionRecord
             )
         } catch {
             sessionRecord.lastError = error as? Error ?? .invalidOperation(error.localizedDescription)
@@ -1421,11 +1397,7 @@ final class Workspace: ObservableObject {
     }
 
     private func processSession(id sessionID: UUID) -> ProcessSession? {
-        try? modelContext.fetch(
-            FetchDescriptor<ProcessSession>(
-                predicate: #Predicate { $0.id == sessionID }
-            )
-        ).first
+        processNodes.first { $0.sessionRecord.id == sessionID }?.sessionRecord
     }
 
     private func attachedNode(for session: ProcessSession) -> ProcessNodeViewModel? {
@@ -1450,7 +1422,6 @@ final class Workspace: ObservableObject {
 
         insight.session = session
         session.insights.append(insight)
-        modelContext.insert(insight)
 
         return insight
     }

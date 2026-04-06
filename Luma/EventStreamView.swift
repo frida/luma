@@ -1,4 +1,3 @@
-import SwiftData
 import SwiftUI
 import LumaCore
 
@@ -7,8 +6,6 @@ struct EventStreamView: View {
     @Binding var selection: SidebarItemID?
 
     var onCollapseRequested: (() -> Void)?
-
-    @Environment(\.modelContext) private var modelContext
 
     @State private var displayedEvents: [RuntimeEvent] = []
     @State private var filteredEvents: [RuntimeEvent] = []

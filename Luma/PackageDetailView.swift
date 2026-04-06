@@ -1,8 +1,6 @@
 import SwiftUI
 
 struct PackageDetailView: View {
-    @Environment(\.modelContext) private var modelContext
-
     let package: InstalledPackage
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?

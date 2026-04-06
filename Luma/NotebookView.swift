@@ -1,15 +1,13 @@
 import Combine
-import SwiftData
 import SwiftUI
 
 struct NotebookView: View {
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 
-    @Query(sort: \NotebookEntry.timestamp, order: .forward)
-    private var entries: [NotebookEntry]
-
-    @Environment(\.modelContext) private var modelContext
+    private var entries: [NotebookEntry] {
+        workspace.notebookEntries.sorted { $0.timestamp < $1.timestamp }
+    }
 
     var body: some View {
         Group {
@@ -34,7 +32,7 @@ struct NotebookView: View {
                             addUserNote(after: entry)
                         } deleteAction: {
                             workspace.notifyLocalNotebookEntryDeleted(entry)
-                            modelContext.delete(entry)
+                            workspace.notebookEntries.removeAll { $0.id == entry.id }
                         }
                     }
                     .padding(.horizontal)

@@ -1,12 +1,9 @@
 import Combine
-import SwiftData
 import SwiftUI
 
 struct DetailView: View {
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
-
-    @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         Group {
@@ -18,21 +15,17 @@ struct DetailView: View {
                 NotebookView(workspace: workspace, selection: $selection)
 
             case .some(.repl(let sessionID)):
-                if let session = try? modelContext.fetch(FetchDescriptor<ProcessSession>(predicate: #Predicate { $0.id == sessionID }))
-                    .first
-                {
-                    REPLView(session: session, workspace: workspace, selection: $selection)
-                        .id(session.id)
+                if let node = workspace.processNodes.first(where: { $0.sessionRecord.id == sessionID }) {
+                    REPLView(session: node.sessionRecord, workspace: workspace, selection: $selection)
+                        .id(node.sessionRecord.id)
                 } else {
                     EmptyView()
                 }
 
             case .some(.instrument(let sessionID, let instID)),
                 .some(.instrumentComponent(let sessionID, let instID, _, _)):
-                if let session = try? modelContext.fetch(FetchDescriptor<ProcessSession>(predicate: #Predicate { $0.id == sessionID }))
-                    .first
-                {
-                    let inst = session.instruments.first(where: { $0.id == instID })!
+                if let node = workspace.processNodes.first(where: { $0.sessionRecord.id == sessionID }) {
+                    let inst = node.sessionRecord.instruments.first(where: { $0.id == instID })!
                     InstrumentDetailView(instance: inst, workspace: workspace, selection: $selection)
                         .id(inst.id)
                 } else {
@@ -40,39 +33,28 @@ struct DetailView: View {
                 }
 
             case .some(.itraceCapture(let sessionID, let captureID)):
-                if let session = try? modelContext.fetch(FetchDescriptor<ProcessSession>(predicate: #Predicate { $0.id == sessionID }))
-                    .first,
-                    let capture = session.itraceCaptures.first(where: { $0.id == captureID })
+                if let node = workspace.processNodes.first(where: { $0.sessionRecord.id == sessionID }),
+                    let capture = node.sessionRecord.itraceCaptures.first(where: { $0.id == captureID })
                 {
-                    ITraceDetailView(capture: capture, session: session, workspace: workspace, selection: $selection)
+                    ITraceDetailView(capture: capture, session: node.sessionRecord, workspace: workspace, selection: $selection)
                         .id(capture.id)
                 } else {
                     EmptyView()
                 }
 
             case .some(.insight(let sessionID, let insightID)):
-                if let session =
-                    try? modelContext
-                    .fetch(FetchDescriptor<ProcessSession>(predicate: #Predicate { $0.id == sessionID }))
-                    .first,
-                    let insight = session.insights.first(where: { $0.id == insightID })
+                if let node = workspace.processNodes.first(where: { $0.sessionRecord.id == sessionID }),
+                    let insight = node.sessionRecord.insights.first(where: { $0.id == insightID })
                 {
-                    AddressInsightDetailView(session: session, insight: insight, workspace: workspace, selection: $selection)
+                    AddressInsightDetailView(
+                        session: node.sessionRecord, insight: insight, workspace: workspace, selection: $selection)
                         .id(insight.id)
                 } else {
                     EmptyView()
                 }
 
-            case .some(.package(let packageID)):
-                if let pkg =
-                    try? modelContext
-                    .fetch(FetchDescriptor<InstalledPackage>(predicate: #Predicate { $0.id == packageID }))
-                    .first
-                {
-                    PackageDetailView(package: pkg, workspace: workspace, selection: $selection)
-                } else {
-                    EmptyView()
-                }
+            case .some(.package(_)):
+                EmptyView()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

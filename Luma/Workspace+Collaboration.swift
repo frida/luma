@@ -1,17 +1,11 @@
 import Foundation
 import Frida
-import SwiftData
 import LumaCore
 
 extension Workspace {
     func bindProjectCollaboration() {
-        let projectStates = try! modelContext.fetch(FetchDescriptor<ProjectCollaborationState>())
-        if let existing = projectStates.first {
-            collaborationState = existing
-        } else {
-            let newState = ProjectCollaborationState()
-            modelContext.insert(newState)
-            collaborationState = newState
+        if collaborationState == nil {
+            collaborationState = ProjectCollaborationState()
         }
 
         let roomFromLink = CollaborationJoinCoordinator.shared.consumeNextRoomID()
@@ -239,16 +233,14 @@ extension Workspace {
         collaborationParticipants = [localUser]
         storedProjectRoomID = roomID
 
-        if let entries = try? modelContext.fetch(FetchDescriptor<NotebookEntry>(sortBy: [.init(\.timestamp)])) {
-            for entry in entries {
-                portalDevice!.bus.post(
-                    [
-                        "type": "add-entry",
-                        "payload": [
-                            "entry": entry.toJSON()
-                        ],
-                    ], data: entry.binaryData.map { [UInt8]($0) })
-            }
+        for entry in notebookEntries {
+            portalDevice!.bus.post(
+                [
+                    "type": "add-entry",
+                    "payload": [
+                        "entry": entry.toJSON()
+                    ],
+                ], data: entry.binaryData.map { [UInt8]($0) })
         }
     }
 
@@ -302,7 +294,7 @@ extension Workspace {
         collaborationChatMessages = chatMessages.compactMap { ChatMessage.fromJSON($0, localUser: collaborationUser!) }
 
         for entry in snapshot {
-            modelContext.insert(entry)
+            notebookEntries.append(entry)
         }
     }
 
@@ -311,7 +303,7 @@ extension Workspace {
             entry.timestamp = otherEntry.timestamp.addingTimeInterval(0.001)
         }
 
-        modelContext.insert(entry)
+        notebookEntries.append(entry)
         notifyLocalNotebookEntryAdded(entry)
     }
 
@@ -358,7 +350,7 @@ extension Workspace {
             return
         }
 
-        modelContext.insert(entry)
+        notebookEntries.append(entry)
     }
 
     private func handleEntryUpdated(payload: JSONObject, binaryData: [UInt8]?) async {
@@ -391,11 +383,11 @@ extension Workspace {
             return
         }
 
-        guard let existing = fetchNotebookEntryBy(id: id) else {
+        guard fetchNotebookEntryBy(id: id) != nil else {
             return
         }
 
-        modelContext.delete(existing)
+        notebookEntries.removeAll { $0.id == id }
     }
 
     private func handleEntriesReordered(payload: JSONObject) async {
@@ -420,9 +412,7 @@ extension Workspace {
     }
 
     private func fetchNotebookEntryBy(id: UUID) -> NotebookEntry? {
-        var d = FetchDescriptor<NotebookEntry>(predicate: #Predicate { e in e.id == id })
-        d.fetchLimit = 1
-        return try? modelContext.fetch(d).first
+        notebookEntries.first { $0.id == id }
     }
 
     private func handleParticipantJoined(payload: JSONObject) async {

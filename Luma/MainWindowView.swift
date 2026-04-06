@@ -1,5 +1,4 @@
 import Frida
-import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 import LumaCore
@@ -10,8 +9,6 @@ struct MainWindowView: View {
 
     @State private var collapsedEventBaselineVersion: Int = 0
     @State private var collapsedNewEvents: Int = 0
-
-    @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         CollapsibleVSplitView(
@@ -39,22 +36,7 @@ struct MainWindowView: View {
             alignment: .topLeading
         )
         .task {
-            let descriptor = FetchDescriptor<ProjectUIState>()
-            if let existing = try? modelContext.fetch(descriptor).first {
-                uiState = ProjectUIStateValue(model: existing)
-            } else {
-                let model = ProjectUIState()
-                modelContext.insert(model)
-                uiState = ProjectUIStateValue(model: model)
-            }
-
-            await workspace.configurePersistence(modelContext: modelContext)
-        }
-        .onChange(of: uiState) { oldValue, newValue in
-            let descriptor = FetchDescriptor<ProjectUIState>()
-            if let model = try? modelContext.fetch(descriptor).first {
-                newValue.apply(to: model)
-            }
+            await workspace.configurePersistence()
         }
         .onChange(of: workspace.eventsVersion) { _, newVersion in
             if uiState.isEventStreamCollapsed {
@@ -141,12 +123,10 @@ struct MainWindowView: View {
                 processName: config.defaultDisplayName,
                 lastKnownPID: 0
             )
-            modelContext.insert(sessionRecord)
 
             await workspace.spawnAndAttach(
                 device: device,
-                sessionRecord: sessionRecord,
-                modelContext: modelContext
+                sessionRecord: sessionRecord
             )
         }
     }
@@ -164,28 +144,11 @@ struct MainWindowView: View {
 
             let reusedFromReestablish: ProcessSession? =
                 if case .reestablish(let session, _) = targetPickerContext { session } else { nil }
-            let existingForPid: ProcessSession? = {
-                guard reusedFromReestablish == nil else { return nil }
-                do {
-                    let deviceID = device.id
-                    let procPID = proc.pid
-                    let descriptor = FetchDescriptor<ProcessSession>(
-                        predicate: #Predicate { session in
-                            session.deviceID == deviceID && session.lastKnownPID == procPID
-                        }
-                    )
-                    return try modelContext.fetch(descriptor).first
-                } catch {
-                    return nil
-                }
-            }()
 
             let sessionRecord: ProcessSession
 
             if let reused = reusedFromReestablish {
                 sessionRecord = reused
-            } else if let existing = existingForPid {
-                sessionRecord = existing
             } else {
                 sessionRecord = ProcessSession(
                     kind: .attach,
@@ -194,7 +157,6 @@ struct MainWindowView: View {
                     processName: proc.name,
                     lastKnownPID: proc.pid
                 )
-                modelContext.insert(sessionRecord)
             }
 
             sessionRecord.deviceID = device.id
@@ -211,8 +173,7 @@ struct MainWindowView: View {
             await workspace.attachToProcess(
                 device: device,
                 using: proc,
-                sessionRecord: sessionRecord,
-                modelContext: modelContext
+                sessionRecord: sessionRecord
             )
 
             uiState.selectedItemID = .repl(sessionRecord.id)
@@ -274,8 +235,6 @@ struct WorkspaceToolbar: ToolbarContent {
     @State var showingAddInstrumentSheetForProcess: ProcessSession?
     @State private var isShowingPackageManager = false
 
-    @Environment(\.modelContext) private var modelContext
-
     var selectedProcessSession: ProcessSession? {
         guard let id = selection else { return nil }
 
@@ -288,18 +247,7 @@ struct WorkspaceToolbar: ToolbarContent {
             .instrumentComponent(let sessionID, _, _, _),
             .insight(let sessionID, _),
             .itraceCapture(let sessionID, _):
-
-            let descriptor = FetchDescriptor<ProcessSession>(
-                predicate: #Predicate { $0.id == sessionID }
-            )
-
-            guard let results = try? modelContext.fetch(descriptor),
-                let session = results.first
-            else {
-                return nil
-            }
-
-            return session
+            return workspace.processNodes.first { $0.sessionRecord.id == sessionID }?.sessionRecord
         }
     }
 
@@ -409,18 +357,6 @@ private struct ProjectUIStateValue: Equatable {
         self.selectedItemID = selectedItemID
         self.isEventStreamCollapsed = isEventStreamCollapsed
         self.eventStreamBottomHeight = eventStreamBottomHeight
-    }
-
-    init(model: ProjectUIState) {
-        self.selectedItemID = model.selectedItemID
-        self.isEventStreamCollapsed = model.isEventStreamCollapsed
-        self.eventStreamBottomHeight = model.eventStreamBottomHeight
-    }
-
-    func apply(to model: ProjectUIState) {
-        model.selectedItemID = selectedItemID
-        model.isEventStreamCollapsed = isEventStreamCollapsed
-        model.eventStreamBottomHeight = eventStreamBottomHeight
     }
 }
 

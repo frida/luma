@@ -7,7 +7,7 @@ final class InstrumentMetadataRegistry {
 
     private init() {}
 
-    func displayName(for instance: InstrumentInstance) -> String {
+    func displayName(for instance: LumaCore.InstrumentInstance) -> String {
         switch instance.kind {
         case .tracer:
             return "Tracer"
@@ -27,7 +27,7 @@ final class InstrumentMetadataRegistry {
         }
     }
 
-    func icon(for instance: InstrumentInstance) -> InstrumentIcon {
+    func icon(for instance: LumaCore.InstrumentInstance) -> InstrumentIcon {
         switch instance.kind {
         case .tracer:
             return .system("arrow.triangle.branch")

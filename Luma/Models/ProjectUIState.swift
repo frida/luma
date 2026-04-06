@@ -1,17 +1,15 @@
 import Foundation
-import SwiftData
+import LumaCore
 
-@Model
-final class ProjectUIState {
+struct ProjectUIState: Codable {
     var selectedItemID: SidebarItemID?
-
     var isEventStreamCollapsed: Bool
     var eventStreamBottomHeight: Double
 
     init(
         selectedItemID: SidebarItemID? = nil,
         isEventStreamCollapsed: Bool = true,
-        eventStreamBottomHeight: Double = 0,
+        eventStreamBottomHeight: Double = 0
     ) {
         self.selectedItemID = selectedItemID
         self.isEventStreamCollapsed = isEventStreamCollapsed

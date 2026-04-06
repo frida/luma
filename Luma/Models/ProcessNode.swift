@@ -2,22 +2,20 @@ import Combine
 import Foundation
 import Frida
 import LumaCore
-import SwiftData
 import SwiftyR2
 
 @MainActor
 final class ProcessNodeViewModel: ObservableObject, Identifiable {
     let core: LumaCore.ProcessNode
 
-    let sessionRecord: ProcessSession
+    var sessionID: UUID
+    private let store: ProjectStore
 
     @Published var modules: [ProcessModule] = []
     @Published var instruments: [InstrumentRuntime] = []
 
     var r2: R2Core!
     private var openR2Task: Task<Void, Never>?
-
-    private let modelContext: ModelContext
 
     var onDestroyed: ((ProcessNodeViewModel, SessionDetachReason) -> Void)?
     var onModulesSnapshotReady: ((ProcessNodeViewModel) -> Void)?
@@ -33,16 +31,21 @@ final class ProcessNodeViewModel: ObservableObject, Identifiable {
         set { core.loadedPackageNames = newValue }
     }
 
+    var sessionRecord: LumaCore.ProcessSession {
+        try! store.fetchSession(id: sessionID)!
+    }
+
     init(
         core: LumaCore.ProcessNode,
-        sessionRecord: ProcessSession,
-        modelContext: ModelContext
+        sessionID: UUID,
+        store: ProjectStore
     ) {
         self.core = core
-        self.sessionRecord = sessionRecord
-        self.modelContext = modelContext
+        self.sessionID = sessionID
+        self.store = store
 
-        self.instruments = sessionRecord.instruments.map {
+        let instances = (try? store.fetchInstruments(sessionID: sessionID)) ?? []
+        self.instruments = instances.map {
             InstrumentRuntime(instance: $0, processNode: self)
         }
 
@@ -63,7 +66,7 @@ final class ProcessNodeViewModel: ObservableObject, Identifiable {
             guard let self else { return }
             for await reason in self.core.detachEvents {
                 self.persistModules()
-                self.sessionRecord.detachReason = reason
+                self.updateSession { $0.detachReason = reason }
                 self.onDestroyed?(self, reason)
             }
         }
@@ -78,7 +81,7 @@ final class ProcessNodeViewModel: ObservableObject, Identifiable {
         Task { @MainActor [weak self] in
             guard let self else { return }
             for await result in self.core.replResults {
-                self.appendREPLCell(result)
+                self.persistREPLResult(result)
             }
         }
 
@@ -95,25 +98,26 @@ final class ProcessNodeViewModel: ObservableObject, Identifiable {
     }
 
     func markSessionBoundary() {
-        let cell = REPLCell(
+        let cell = LumaCore.REPLCell(
+            sessionID: sessionID,
             code: "New process attached",
             result: .text(""),
-            timestamp: Date(),
             isSessionBoundary: true
         )
-        cell.session = sessionRecord
-        modelContext.insert(cell)
+        try? store.save(cell)
     }
 
     func fetchAndPersistProcessInfoIfNeeded() async {
         guard sessionRecord.processInfo == nil else { return }
 
         if let info = await core.fetchProcessInfo() {
-            sessionRecord.processInfo = ProcessSession.ProcessInfo(
-                platform: info.platform,
-                arch: info.arch,
-                pointerSize: info.pointerSize
-            )
+            updateSession {
+                $0.processInfo = LumaCore.ProcessSession.ProcessInfo(
+                    platform: info.platform,
+                    arch: info.arch,
+                    pointerSize: info.pointerSize
+                )
+            }
         }
     }
 
@@ -179,10 +183,10 @@ final class ProcessNodeViewModel: ObservableObject, Identifiable {
         return await r2.cmd(command)
     }
 
-    // MARK: - Persistence
+    // MARK: - Persistence Helpers
 
-    private func appendREPLCell(_ result: REPLResult) {
-        let resultValue: REPLCell.Result
+    private func persistREPLResult(_ result: LumaCore.REPLResult) {
+        let resultValue: LumaCore.REPLCell.Result
         switch result.value {
         case .js(let v):
             resultValue = .js(v)
@@ -190,31 +194,31 @@ final class ProcessNodeViewModel: ObservableObject, Identifiable {
             resultValue = .text(t)
         }
 
-        let cell = REPLCell(
+        let cell = LumaCore.REPLCell(
+            sessionID: sessionID,
             code: result.code,
             result: resultValue,
             timestamp: result.timestamp
         )
-        cell.session = sessionRecord
-        modelContext.insert(cell)
+        try? store.save(cell)
     }
 
     private func persistCapture(_ capture: CapturedITrace) {
-        let itraceCapture = ITraceCapture(
-            hookID: capture.hookID,
-            callIndex: capture.callIndex,
-            displayName: capture.displayName,
-            traceData: capture.traceData,
-            metadataJSON: capture.metadataJSON,
-            lost: capture.lost
-        )
-        itraceCapture.session = sessionRecord
-        modelContext.insert(itraceCapture)
+        let record = ITraceCaptureRecord(from: capture, sessionID: sessionID)
+        try? store.save(record)
     }
 
     private func persistModules() {
-        sessionRecord.lastKnownModules = modules.map {
-            ProcessSession.PersistedModule(name: $0.name, base: $0.base, size: $0.size)
+        updateSession {
+            $0.lastKnownModules = self.modules.map {
+                LumaCore.ProcessSession.PersistedModule(name: $0.name, base: $0.base, size: $0.size)
+            }
         }
+    }
+
+    private func updateSession(_ mutate: (inout LumaCore.ProcessSession) -> Void) {
+        guard var s = try? store.fetchSession(id: sessionID) else { return }
+        mutate(&s)
+        try? store.save(s)
     }
 }

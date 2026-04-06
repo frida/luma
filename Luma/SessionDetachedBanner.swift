@@ -5,8 +5,6 @@ struct SessionDetachedBanner: View {
     @Bindable var session: ProcessSession
     @ObservedObject var workspace: Workspace
 
-    @Environment(\.modelContext) private var modelContext
-
     var body: some View {
         LumaBanner(style: bannerStyle) {
             HStack {
@@ -121,7 +119,7 @@ struct SessionDetachedBanner: View {
 
     private func reestablish() {
         Task { @MainActor in
-            await workspace.reestablishSession(for: session, modelContext: modelContext)
+            await workspace.reestablishSession(for: session)
         }
     }
 }

@@ -1,6 +1,5 @@
 import Frida
 import LumaCore
-import SwiftData
 import SwiftUI
 
 private let subrowIconWidth: CGFloat = 16
@@ -9,14 +8,9 @@ struct SidebarView: View {
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 
-    @Query(sort: \ProcessSession.createdAt, order: .forward)
-    private var sessions: [ProcessSession]
+    @State private var sessions: [LumaCore.ProcessSession] = []
 
-    @Query private var packageStates: [ProjectPackagesState]
-
-    private var projectPackages: ProjectPackagesState? {
-        packageStates.first
-    }
+    @State private var packages: [LumaCore.InstalledPackage] = []
 
     var body: some View {
         List(selection: $selection) {
@@ -72,9 +66,9 @@ struct SidebarView: View {
                 }
             }
 
-            if let projectPackages {
+            if !packages.isEmpty {
                 Section("Packages") {
-                    ForEach(projectPackages.packages) { pkg in
+                    ForEach(packages) { pkg in
                         SidebarPackageRow(package: pkg)
                             .tag(SidebarItemID.package(pkg.id))
                     }
@@ -100,8 +94,6 @@ private struct SidebarSessionHeaderRow: View {
     let node: ProcessNodeViewModel?
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
-
-    @Environment(\.modelContext) private var modelContext
 
     @State private var isShowingConfirmation = false
     @State private var confirmationTitle: String = ""
@@ -215,7 +207,7 @@ private struct SidebarSessionHeaderRow: View {
 
     private func reestablish() {
         Task { @MainActor in
-            await workspace.reestablishSession(for: session, modelContext: modelContext)
+            await workspace.reestablishSession(for: session)
         }
     }
 
@@ -243,16 +235,6 @@ private struct SidebarSessionHeaderRow: View {
         default:
             break
         }
-
-        modelContext.delete(
-            try! modelContext
-                .fetch(
-                    FetchDescriptor<ProcessSession>(
-                        predicate: #Predicate { $0.id == sessionID }
-                    )
-                )
-                .first!
-        )
     }
 
     private func presentConfirmation(
@@ -295,7 +277,6 @@ private struct SidebarInstrumentRow: View {
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 
-    @Environment(\.modelContext) private var modelContext
     @State private var isShowingDeleteConfirm = false
 
     var body: some View {
@@ -359,8 +340,6 @@ private struct SidebarInsightRow: View {
     let insight: AddressInsight
     @Binding var selection: SidebarItemID?
 
-    @Environment(\.modelContext) private var modelContext
-
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: insight.kind == .memory ? "doc.text.magnifyingglass" : "hammer")
@@ -390,8 +369,6 @@ private struct SidebarInsightRow: View {
         if selection == .insight(session.id, insight.id) {
             selection = .repl(session.id)
         }
-
-        modelContext.delete(insight)
     }
 }
 
@@ -399,8 +376,6 @@ private struct SidebarITraceCaptureRow: View {
     let session: ProcessSession
     let capture: ITraceCapture
     @Binding var selection: SidebarItemID?
-
-    @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         HStack(spacing: 6) {
@@ -430,8 +405,6 @@ private struct SidebarITraceCaptureRow: View {
         if selection == .itraceCapture(session.id, capture.id) {
             selection = .repl(session.id)
         }
-
-        modelContext.delete(capture)
     }
 }
 

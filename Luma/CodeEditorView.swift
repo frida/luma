@@ -1,4 +1,4 @@
-import SwiftData
+import LumaCore
 import SwiftUI
 import SwiftyMonaco
 
@@ -8,10 +8,8 @@ struct CodeEditorView: View {
     var introspector: MonacoIntrospector? = nil
     @ObservedObject var workspace: Workspace
 
-    @Query private var projectPackageStates: [ProjectPackagesState]
-
     var body: some View {
-        let packages = projectPackageStates.flatMap { $0.packages }
+        let packages: [LumaCore.InstalledPackage] = []
         let injectedProfile = profileWithGlobalAliasTypings(from: profile, packages: packages)
 
         var editor = SwiftyMonaco(text: $text, profile: injectedProfile)

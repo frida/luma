@@ -1,26 +1,11 @@
 import Foundation
 import Frida
-import SwiftData
 import SwiftyMonaco
 
 extension Workspace {
     @MainActor
     func projectPackagesState() throws -> ProjectPackagesState {
-        guard let modelContext else {
-            fatalError("Workspace.modelContext is not configured")
-        }
-
-        if let existing =
-            try modelContext
-            .fetch(FetchDescriptor<ProjectPackagesState>())
-            .first
-        {
-            return existing
-        }
-
-        let state = ProjectPackagesState()
-        modelContext.insert(state)
-        return state
+        return ProjectPackagesState()
     }
 
     func currentPackageBundlesForAgent() async throws -> [[String: Any]] {
@@ -183,7 +168,6 @@ extension Workspace {
 
         if let existing = projectPackages.packages.first(where: { $0.name == name }) {
             projectPackages.packages.removeAll { $0.id == existing.id }
-            modelContext.delete(existing)
         }
 
         let entry = InstalledPackage(
@@ -193,7 +177,6 @@ extension Workspace {
             project: projectPackages
         )
         projectPackages.packages.append(entry)
-        modelContext.insert(entry)
 
         packageBundlesDirty = true
         monacoFSSnapshotDirty = true
@@ -210,10 +193,6 @@ extension Workspace {
                 versionSpec: nil,
                 globalAlias: package.globalAlias
             )
-
-            if upgraded.id != package.id {
-                self.modelContext.delete(package)
-            }
         }
 
         return upgraded
@@ -225,7 +204,6 @@ extension Workspace {
             let paths = try self.compilerWorkspacePaths()
 
             projectPackages.packages.removeAll { $0.id == package.id }
-            self.modelContext.delete(package)
 
             try self.deleteWorkspaceManifestsAndNodeModules(paths: paths)
 

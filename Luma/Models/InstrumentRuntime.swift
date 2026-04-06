@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import Frida
+import LumaCore
 import SwiftUI
 
 @MainActor
@@ -8,15 +9,23 @@ final class InstrumentRuntime: ObservableObject, Identifiable {
     let id: UUID
 
     unowned let processNode: ProcessNodeViewModel
-    @Bindable var instance: InstrumentInstance
+    var instance: LumaCore.InstrumentInstance
 
     @Published var isAttached: Bool = false
     @Published var lastError: String?
 
-    init(instance: InstrumentInstance, processNode: ProcessNodeViewModel) {
+    init(instance: LumaCore.InstrumentInstance, processNode: ProcessNodeViewModel) {
         self.id = instance.id
         self.instance = instance
         self.processNode = processNode
+    }
+
+    var displayName: String {
+        InstrumentMetadataRegistry.shared.displayName(for: instance)
+    }
+
+    var displayIcon: InstrumentIcon {
+        InstrumentMetadataRegistry.shared.icon(for: instance)
     }
 
     func markAttached() {
@@ -39,6 +48,7 @@ final class InstrumentRuntime: ObservableObject, Identifiable {
 
     func applyConfigObject(_ configObject: Any, rawConfigJSON: Data) async {
         instance.configJSON = rawConfigJSON
+        processNode.core.updateInstrumentConfig(id: instance.id, configJSON: rawConfigJSON)
 
         guard isAttached else { return }
 
