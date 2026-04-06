@@ -2,13 +2,13 @@ import Foundation
 import GRDB
 
 public final class ProjectStore: Sendable {
-    private let dbPool: DatabasePool
+    private let db: DatabaseQueue
 
     public init(path: String) throws {
         var config = Configuration()
         config.foreignKeysEnabled = true
-        dbPool = try DatabasePool(path: path, configuration: config)
-        try migrator.migrate(dbPool)
+        db = try DatabaseQueue(path: path, configuration: config)
+        try migrator.migrate(db)
     }
 
     // MARK: - Observation
@@ -23,7 +23,7 @@ public final class ProjectStore: Sendable {
                         .order(Column("created_at").desc)
                         .fetchAll(db)
                 }
-                .start(in: dbPool, scheduling: .async(onQueue: .main), onError: { _ in }, onChange: onChange)
+                .start(in: db, scheduling: .async(onQueue: .main), onError: { _ in }, onChange: onChange)
         )
     }
 
@@ -37,14 +37,14 @@ public final class ProjectStore: Sendable {
                         .order(Column("timestamp").asc)
                         .fetchAll(db)
                 }
-                .start(in: dbPool, scheduling: .async(onQueue: .main), onError: { _ in }, onChange: onChange)
+                .start(in: db, scheduling: .async(onQueue: .main), onError: { _ in }, onChange: onChange)
         )
     }
 
     // MARK: - Process Sessions
 
     public func fetchSessions() throws -> [ProcessSession] {
-        try dbPool.read { db in
+        try db.read { db in
             try ProcessSession
                 .order(Column("created_at").desc)
                 .fetchAll(db)
@@ -52,19 +52,19 @@ public final class ProjectStore: Sendable {
     }
 
     public func fetchSession(id: UUID) throws -> ProcessSession? {
-        try dbPool.read { db in
+        try db.read { db in
             try ProcessSession.fetchOne(db, key: id)
         }
     }
 
     public func save(_ session: ProcessSession) throws {
-        try dbPool.write { db in
+        try db.write { db in
             try session.save(db)
         }
     }
 
     public func deleteSession(id: UUID) throws {
-        try dbPool.write { db in
+        try db.write { db in
             _ = try ProcessSession.deleteOne(db, key: id)
         }
     }
@@ -72,7 +72,7 @@ public final class ProjectStore: Sendable {
     // MARK: - Instruments
 
     public func fetchInstruments(sessionID: UUID) throws -> [InstrumentInstance] {
-        try dbPool.read { db in
+        try db.read { db in
             try InstrumentInstance
                 .filter(Column("session_id") == sessionID)
                 .fetchAll(db)
@@ -80,13 +80,13 @@ public final class ProjectStore: Sendable {
     }
 
     public func save(_ instance: InstrumentInstance) throws {
-        try dbPool.write { db in
+        try db.write { db in
             try instance.save(db)
         }
     }
 
     public func deleteInstrument(id: UUID) throws {
-        try dbPool.write { db in
+        try db.write { db in
             _ = try InstrumentInstance.deleteOne(db, key: id)
         }
     }
@@ -94,7 +94,7 @@ public final class ProjectStore: Sendable {
     // MARK: - REPL Cells
 
     public func fetchREPLCells(sessionID: UUID) throws -> [REPLCell] {
-        try dbPool.read { db in
+        try db.read { db in
             try REPLCell
                 .filter(Column("session_id") == sessionID)
                 .order(Column("timestamp").asc)
@@ -103,7 +103,7 @@ public final class ProjectStore: Sendable {
     }
 
     public func save(_ cell: REPLCell) throws {
-        try dbPool.write { db in
+        try db.write { db in
             try cell.save(db)
         }
     }
@@ -111,7 +111,7 @@ public final class ProjectStore: Sendable {
     // MARK: - Notebook
 
     public func fetchNotebookEntries() throws -> [NotebookEntry] {
-        try dbPool.read { db in
+        try db.read { db in
             try NotebookEntry
                 .order(Column("timestamp").asc)
                 .fetchAll(db)
@@ -119,19 +119,19 @@ public final class ProjectStore: Sendable {
     }
 
     public func fetchNotebookEntry(id: UUID) throws -> NotebookEntry? {
-        try dbPool.read { db in
+        try db.read { db in
             try NotebookEntry.fetchOne(db, key: id)
         }
     }
 
     public func save(_ entry: NotebookEntry) throws {
-        try dbPool.write { db in
+        try db.write { db in
             try entry.save(db)
         }
     }
 
     public func deleteNotebookEntry(id: UUID) throws {
-        try dbPool.write { db in
+        try db.write { db in
             _ = try NotebookEntry.deleteOne(db, key: id)
         }
     }
@@ -139,7 +139,7 @@ public final class ProjectStore: Sendable {
     // MARK: - ITrace Captures
 
     public func fetchITraceCaptures(sessionID: UUID) throws -> [ITraceCaptureRecord] {
-        try dbPool.read { db in
+        try db.read { db in
             try ITraceCaptureRecord
                 .filter(Column("session_id") == sessionID)
                 .order(Column("captured_at").asc)
@@ -148,7 +148,7 @@ public final class ProjectStore: Sendable {
     }
 
     public func save(_ capture: ITraceCaptureRecord) throws {
-        try dbPool.write { db in
+        try db.write { db in
             try capture.save(db)
         }
     }
@@ -156,7 +156,7 @@ public final class ProjectStore: Sendable {
     // MARK: - Address Insights
 
     public func fetchInsights(sessionID: UUID) throws -> [AddressInsight] {
-        try dbPool.read { db in
+        try db.read { db in
             try AddressInsight
                 .filter(Column("session_id") == sessionID)
                 .fetchAll(db)
@@ -164,13 +164,13 @@ public final class ProjectStore: Sendable {
     }
 
     public func save(_ insight: AddressInsight) throws {
-        try dbPool.write { db in
+        try db.write { db in
             try insight.save(db)
         }
     }
 
     public func deleteInsight(id: UUID) throws {
-        try dbPool.write { db in
+        try db.write { db in
             _ = try AddressInsight.deleteOne(db, key: id)
         }
     }
@@ -178,19 +178,19 @@ public final class ProjectStore: Sendable {
     // MARK: - Remote Devices
 
     public func fetchRemoteDevices() throws -> [RemoteDeviceConfig] {
-        try dbPool.read { db in
+        try db.read { db in
             try RemoteDeviceConfig.fetchAll(db)
         }
     }
 
     public func save(_ config: RemoteDeviceConfig) throws {
-        try dbPool.write { db in
+        try db.write { db in
             try config.save(db)
         }
     }
 
     public func deleteRemoteDevice(id: UUID) throws {
-        try dbPool.write { db in
+        try db.write { db in
             _ = try RemoteDeviceConfig.deleteOne(db, key: id)
         }
     }
@@ -198,7 +198,7 @@ public final class ProjectStore: Sendable {
     // MARK: - Packages State
 
     public func fetchPackagesState() throws -> ProjectPackagesState {
-        try dbPool.read { db in
+        try db.read { db in
             guard var state = try ProjectPackagesState.fetchOne(db) else {
                 return ProjectPackagesState()
             }
@@ -211,7 +211,7 @@ public final class ProjectStore: Sendable {
     }
 
     public func save(_ state: ProjectPackagesState) throws {
-        try dbPool.write { db in
+        try db.write { db in
             try state.save(db)
 
             try InstalledPackage
@@ -227,13 +227,13 @@ public final class ProjectStore: Sendable {
     // MARK: - Collaboration State
 
     public func fetchCollaborationState() throws -> ProjectCollaborationState {
-        try dbPool.read { db in
+        try db.read { db in
             try ProjectCollaborationState.fetchOne(db) ?? ProjectCollaborationState()
         }
     }
 
     public func save(_ state: ProjectCollaborationState) throws {
-        try dbPool.write { db in
+        try db.write { db in
             try state.save(db)
         }
     }
@@ -241,13 +241,13 @@ public final class ProjectStore: Sendable {
     // MARK: - Target Picker State
 
     public func fetchTargetPickerState() throws -> TargetPickerState {
-        try dbPool.read { db in
+        try db.read { db in
             try TargetPickerState.fetchOne(db) ?? TargetPickerState()
         }
     }
 
     public func save(_ state: TargetPickerState) throws {
-        try dbPool.write { db in
+        try db.write { db in
             try state.save(db)
         }
     }
