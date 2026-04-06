@@ -16,11 +16,11 @@ struct REPLView: View {
     @State private var cells: [LumaCore.REPLCell] = []
 
     private var session: LumaCore.ProcessSession? {
-        workspace.processNodes.first { $0.sessionRecord.id == sessionID }?.sessionRecord
+        workspace.sessions.first { $0.id == sessionID }
     }
 
     private var node: ProcessNodeViewModel? {
-        workspace.processNodes.first { $0.sessionRecord.id == sessionID }
+        workspace.processNodes.first { $0.sessionID == sessionID }
     }
 
     private var orderedCells: [LumaCore.REPLCell] {
@@ -29,7 +29,7 @@ struct REPLView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if node == nil, let session {
+            if let session, node == nil || session.lastError != nil {
                 SessionDetachedBanner(session: session, workspace: workspace)
             }
 

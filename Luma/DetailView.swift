@@ -16,44 +16,36 @@ struct DetailView: View {
                 NotebookView(workspace: workspace, selection: $selection)
 
             case .some(.repl(let sessionID)):
-                if let node = workspace.processNodes.first(where: { $0.sessionRecord.id == sessionID }) {
+                if let session = workspace.sessions.first(where: { $0.id == sessionID }) {
                     REPLView(sessionID: sessionID, workspace: workspace, selection: $selection)
-                        .id(node.sessionRecord.id)
-                } else {
-                    EmptyView()
+                        .id(session.id)
                 }
 
             case .some(.instrument(let sessionID, let instID)),
                 .some(.instrumentComponent(let sessionID, let instID, _, _)):
-                if let _ = workspace.processNodes.first(where: { $0.sessionRecord.id == sessionID }),
-                    let inst = (try? workspace.store.fetchInstruments(sessionID: sessionID))?.first(where: { $0.id == instID })
-                {
+                if let inst = (try? workspace.store.fetchInstruments(sessionID: sessionID))?.first(where: { $0.id == instID }) {
                     InstrumentDetailView(instance: inst, workspace: workspace, selection: $selection)
                         .id(inst.id)
-                } else {
-                    EmptyView()
                 }
 
             case .some(.itraceCapture(let sessionID, let captureID)):
-                if let node = workspace.processNodes.first(where: { $0.sessionRecord.id == sessionID }),
+                let session = workspace.sessions.first(where: { $0.id == sessionID })
+                if let session,
                     let capture = (try? workspace.store.fetchITraceCaptures(sessionID: sessionID))?.first(where: { $0.id == captureID })
                 {
                     ITraceDetailView(
-                        capture: capture, session: node.sessionRecord, workspace: workspace, selection: $selection)
+                        capture: capture, session: session, workspace: workspace, selection: $selection)
                         .id(capture.id)
-                } else {
-                    EmptyView()
                 }
 
             case .some(.insight(let sessionID, let insightID)):
-                if let node = workspace.processNodes.first(where: { $0.sessionRecord.id == sessionID }),
+                let session = workspace.sessions.first(where: { $0.id == sessionID })
+                if let session,
                     let insight = (try? workspace.store.fetchInsights(sessionID: sessionID))?.first(where: { $0.id == insightID })
                 {
                     AddressInsightDetailView(
-                        session: node.sessionRecord, insight: insight, workspace: workspace, selection: $selection)
+                        session: session, insight: insight, workspace: workspace, selection: $selection)
                         .id(insight.id)
-                } else {
-                    EmptyView()
                 }
 
             case .some(.package(_)):
