@@ -1,31 +1,22 @@
 import Foundation
 import LumaCore
 
-struct RuntimeEvent: Identifiable {
-    enum Source {
-        case processOutput(process: ProcessNode, fd: Int)
-        case script(process: ProcessNode)
-        case console(process: ProcessNode)
-        case repl(process: ProcessNode)
-        case instrument(process: ProcessNode, instrument: InstrumentRuntime)
+struct DisplayEvent: Identifiable {
+    let id: UUID
+    let timestamp: Date
+    let processNode: ProcessNodeViewModel
+    let instrument: InstrumentRuntime?
+    let coreEvent: LumaCore.RuntimeEvent
+
+    init(coreEvent: LumaCore.RuntimeEvent, processNode: ProcessNodeViewModel, instrument: InstrumentRuntime? = nil) {
+        self.id = coreEvent.id
+        self.timestamp = coreEvent.timestamp
+        self.processNode = processNode
+        self.instrument = instrument
+        self.coreEvent = coreEvent
     }
 
-    let id = UUID()
-    let timestamp = Date()
-    let source: Source
-    let payload: Any
-    let data: [UInt8]?
-
-    var process: ProcessNode {
-        switch source {
-        case .processOutput(let process, _),
-            .script(let process),
-            .console(let process),
-            .repl(let process),
-            .instrument(let process, _):
-            return process
-        }
-    }
+    var source: LumaCore.RuntimeEvent.Source { coreEvent.source }
+    var payload: LumaCore.RuntimeEvent.Payload { coreEvent.payload }
+    var data: [UInt8]? { coreEvent.data }
 }
-
-

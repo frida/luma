@@ -1,941 +1,125 @@
 import Combine
 import Foundation
 import Frida
+import LumaCore
 import SwiftData
 import SwiftyR2
-import LumaCore
 
 @MainActor
-final class ProcessNode: ObservableObject, Identifiable {
-    let id = UUID()
-
-    let device: Device
-    let process: ProcessDetails
-    let session: Session
-    let script: Script
-    private var scriptEventsStarted: Bool = false
-    private var scriptEventsStartWaiters: [CheckedContinuation<Void, Never>] = []
-    private var moduleSnapshotState: ModuleSnapshotState = .pending
-    private var moduleSnapshotWaiters: [CheckedContinuation<Void, Swift.Error>] = []
-
-    private enum ModuleSnapshotState: Equatable {
-        case pending
-        case ready
-        case detached
-    }
-
-    var r2: R2Core!
-    private var openR2Task: Task<Void, Never>?
+final class ProcessNodeViewModel: ObservableObject, Identifiable {
+    let core: LumaCore.ProcessNode
 
     let sessionRecord: ProcessSession
-
-    var loadedPackageNames = Set<String>()
 
     @Published var modules: [ProcessModule] = []
     @Published var instruments: [InstrumentRuntime] = []
 
+    var r2: R2Core!
+    private var openR2Task: Task<Void, Never>?
+
     private let modelContext: ModelContext
 
-    var onDestroyed: ((ProcessNode, SessionDetachReason) -> Void)?
-    var onModulesSnapshotReady: ((ProcessNode) -> Void)?
-    var eventSink: ((RuntimeEvent) -> Void)?
+    var onDestroyed: ((ProcessNodeViewModel, SessionDetachReason) -> Void)?
+    var onModulesSnapshotReady: ((ProcessNodeViewModel) -> Void)?
+    var eventSink: ((LumaCore.RuntimeEvent) -> Void)?
 
-    private var systemSession: Session?
-    private var drainScript: Script?
-    private var drainTimer: Task<Void, Never>?
-    private var pendingCaptures: [String: PendingITraceCapture] = [:]
-
-    struct PendingITraceCapture {
-        let hookID: UUID
-        let callIndex: Int
-        var hookTarget: String?
-        var prologueBytes: String?
-        var chunks: [Data]
-        var metadataJSON: Data?
-        var lost: Int
-        var useSystemDrain: Bool
+    var id: UUID { core.id }
+    var device: Device { core.device }
+    var process: ProcessDetails { core.process }
+    var session: Session { core.session }
+    var script: Script { core.script }
+    var loadedPackageNames: Set<String> {
+        get { core.loadedPackageNames }
+        set { core.loadedPackageNames = newValue }
     }
 
     init(
-        device: Device,
-        process: ProcessDetails,
-        session: Session,
-        script: Script,
+        core: LumaCore.ProcessNode,
         sessionRecord: ProcessSession,
         modelContext: ModelContext
     ) {
-        self.device = device
-        self.process = process
-        self.session = session
-        self.script = script
-
+        self.core = core
         self.sessionRecord = sessionRecord
-
         self.modelContext = modelContext
 
         self.instruments = sessionRecord.instruments.map {
             InstrumentRuntime(instance: $0, processNode: self)
         }
 
-        startObservingSessionState()
-        startObservingScriptMessages()
+        subscribeToStreams()
+    }
+
+    private func subscribeToStreams() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            for await modules in self.core.moduleSnapshots {
+                self.modules = modules
+                self.persistModules()
+                self.onModulesSnapshotReady?(self)
+            }
+        }
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            for await reason in self.core.detachEvents {
+                self.persistModules()
+                self.sessionRecord.detachReason = reason
+                self.onDestroyed?(self, reason)
+            }
+        }
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            for await event in self.core.events {
+                self.eventSink?(event)
+            }
+        }
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            for await result in self.core.replResults {
+                self.appendREPLCell(result)
+            }
+        }
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            for await capture in self.core.captures {
+                self.persistCapture(capture)
+            }
+        }
     }
 
     func stop() {
-        Task { @MainActor in
-            for runtime in self.instruments {
-                await runtime.dispose()
-            }
-
-            await tearDownITrace()
-
-            try? await session.detach()
-        }
+        core.stop()
     }
 
-    private func startObservingSessionState() {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-
-            for await event in self.session.events {
-                switch event {
-                case .detached(let reason, _):
-                    self.persistModules()
-                    await self.finalizePendingCapturesOnCrash()
-                    self.failInitialModulesSnapshotWaitersIfNeeded()
-                    self.onDestroyed?(self, reason)
-                }
-            }
-        }
-    }
-
-    private func startObservingScriptMessages() {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-
-            self.scriptEventsStarted = true
-            let waiters = self.scriptEventsStartWaiters
-            self.scriptEventsStartWaiters.removeAll(keepingCapacity: false)
-            for w in waiters { w.resume() }
-
-            for await event in self.script.events {
-                switch event {
-                case .message(let message, let data):
-                    if !tryHandleMessage(message, data: data) {
-                        let evt = RuntimeEvent(
-                            source: .repl(process: self),
-                            payload: message,
-                            data: data.map { Array($0) }
-                        )
-                        self.eventSink?(evt)
-                    }
-
-                case .destroyed:
-                    break
-                }
-            }
-        }
-    }
-
-    func waitForScriptEventsSubscription() async {
-        if scriptEventsStarted { return }
-
-        await withCheckedContinuation { cont in
-            if scriptEventsStarted {
-                cont.resume()
-            } else {
-                scriptEventsStartWaiters.append(cont)
-            }
-        }
-    }
-
-    func tryHandleMessage(_ message: Any, data: [UInt8]?) -> Bool {
-        guard let envelope = message as? [String: Any],
-            let envelopeType = envelope["type"] as? String
-        else {
-            return false
-        }
-
-        switch envelopeType {
-
-        case "send":
-            guard let inner = envelope["payload"],
-                let dict = inner as? [String: Any],
-                let type = dict["type"] as? String
-            else {
-                return false
-            }
-
-            switch type {
-
-            case "modules-changed":
-                let addedDicts = (dict["added"] as? [[String: Any]]) ?? []
-                let removedDicts = (dict["removed"] as? [[String: Any]]) ?? []
-
-                let added = addedDicts.compactMap { Self.decodeModuleDTO($0) }
-                let removed = removedDicts.compactMap { Self.decodeModuleDTO($0) }
-
-                if !removed.isEmpty {
-                    let removedBases = Set(removed.map { $0.base })
-                    self.modules.removeAll { removedBases.contains($0.base) }
-                }
-
-                self.modules.append(contentsOf: added)
-
-                self.markInitialModulesSnapshotReadyIfNeeded()
-
-                return true
-
-            case "console":
-                guard let levelString = dict["level"] as? String,
-                    let level = ConsoleLevel(rawValue: levelString),
-                    let encodedArgs = dict["args"] as? [Any]
-                else {
-                    return false
-                }
-
-                var values: [JSInspectValue] = []
-                for encoded in encodedArgs {
-                    guard let value = try? JSInspectValue.decodePacked(tree: encoded, blobBytes: data) else {
-                        return false
-                    }
-                    values.append(value)
-                }
-
-                let consoleMessage = ConsoleMessage(level: level, values: values)
-
-                let evt = RuntimeEvent(
-                    source: .console(process: self),
-                    payload: consoleMessage,
-                    data: data.map { Array($0) }
-                )
-                self.eventSink?(evt)
-
-                return true
-
-            case "itrace:start":
-                if let hookId = dict["hookId"] as? String,
-                    let callIndex = dict["callIndex"] as? Int,
-                    let bufferLocation = dict["bufferLocation"] as? String
-                {
-                    let hookTarget = dict["hookTarget"] as? String
-                    let prologueBytes = dict["prologueBytes"] as? String
-                    Task { @MainActor in
-                        await self.handleITraceStart(
-                            hookId: hookId, callIndex: callIndex,
-                            bufferLocation: bufferLocation,
-                            hookTarget: hookTarget,
-                            prologueBytes: prologueBytes)
-                    }
-                }
-                return true
-
-            case "itrace:stop":
-                if let hookId = dict["hookId"] as? String,
-                    let callIndex = dict["callIndex"] as? Int
-                {
-                    let lost = dict["lost"] as? Int ?? 0
-                    Task { @MainActor in
-                        await self.handleITraceStop(
-                            hookId: hookId, callIndex: callIndex,
-                            lost: lost, data: data)
-                    }
-                }
-                return true
-
-            case "itrace:chunk":
-                if let hookId = dict["hookId"] as? String,
-                    let callIndex = dict["callIndex"] as? Int,
-                    let chunkData = data
-                {
-                    let lost = dict["lost"] as? Int ?? 0
-                    self.handleITraceChunk(
-                        hookId: hookId, callIndex: callIndex,
-                        data: Array(chunkData), lost: lost)
-                }
-                return true
-
-            case "instrument-event":
-                guard let instanceId = dict["instance_id"] as? String,
-                    let instrumentRuntime = self.instruments.first(where: { $0.id.uuidString == instanceId }),
-                    let encodedPayload = dict["payload"]
-                else {
-                    return false
-                }
-
-                guard let payload = try? JSInspectValue.decodePacked(tree: encodedPayload, blobBytes: data) else {
-                    return false
-                }
-
-                let evt = RuntimeEvent(
-                    source: .instrument(process: self, instrument: instrumentRuntime),
-                    payload: payload,
-                    data: data.map { Array($0) }
-                )
-                self.eventSink?(evt)
-
-                return true
-
-            default:
-                return false
-            }
-
-        case "error":
-            guard let text = envelope["description"] as? String else {
-                return false
-            }
-            let fileName = envelope["fileName"] as? String
-            let lineNumber = envelope["lineNumber"] as? Int
-            let columnNumber = envelope["columnNumber"] as? Int
-            let stack = envelope["stack"] as? String
-
-            let error = JSError(
-                text: text,
-                fileName: fileName,
-                lineNumber: lineNumber,
-                columnNumber: columnNumber,
-                stack: stack
-            )
-
-            let evt = RuntimeEvent(
-                source: .script(process: self),
-                payload: error,
-                data: data.map { Array($0) }
-            )
-            self.eventSink?(evt)
-            return true
-
-        default:
-            return false
-        }
-    }
-
-    private func ensureInitialModulesSnapshotReady() throws {
-        switch moduleSnapshotState {
-        case .ready:
-            return
-        case .detached:
-            throw Error.invalidOperation("Session detached")
-        case .pending:
-            throw Error.invalidOperation("Initial modules snapshot not ready")
-        }
-    }
-
-    private func waitForInitialModulesSnapshotIfNeeded() async throws {
-        switch moduleSnapshotState {
-        case .ready:
-            return
-        case .detached:
-            throw Error.invalidOperation("Session detached")
-        case .pending:
-            break
-        }
-
-        try await withCheckedThrowingContinuation { cont in
-            switch moduleSnapshotState {
-            case .ready:
-                cont.resume()
-            case .detached:
-                cont.resume(throwing: Error.invalidOperation("Session detached"))
-            case .pending:
-                moduleSnapshotWaiters.append(cont)
-            }
-        }
-    }
-
-    private func markInitialModulesSnapshotReadyIfNeeded() {
-        guard moduleSnapshotState == .pending else { return }
-        moduleSnapshotState = .ready
-
-        onModulesSnapshotReady?(self)
-
-        let waiters = moduleSnapshotWaiters
-        moduleSnapshotWaiters.removeAll(keepingCapacity: false)
-        for w in waiters { w.resume() }
-    }
-
-    private func failInitialModulesSnapshotWaitersIfNeeded() {
-        guard moduleSnapshotState == .pending else { return }
-        moduleSnapshotState = .detached
-
-        let waiters = moduleSnapshotWaiters
-        moduleSnapshotWaiters.removeAll(keepingCapacity: false)
-        for w in waiters {
-            w.resume(throwing: Error.invalidOperation("Session detached"))
-        }
-    }
-
-    func evalInREPL(_ code: String) async {
-        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        let (jsCode, pipeline) = splitCodeAndPipeline(trimmed)
-
-        do {
-            let anyResult = try await self.script.exports.evaluate(jsCode, ["raw": pipeline != nil])
-
-            if let pipeline {
-                try await handlePipelineResult(anyResult, originalCode: trimmed, pipeline: pipeline)
-                return
-            }
-
-            guard let jsValue = try? JSInspectValue.decodePacked(from: anyResult) else {
-                return
-            }
-
-            append(
-                REPLCell(
-                    code: trimmed,
-                    result: .js(jsValue),
-                    timestamp: Date()
-                ))
-        } catch {
-            append(
-                REPLCell(
-                    code: trimmed,
-                    result: .text("Error: \(error)"),
-                    timestamp: Date()
-                ))
-        }
-    }
-
-    private func splitCodeAndPipeline(_ code: String) -> (jsCode: String, pipeline: String?) {
-        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if let range = trimmed.range(of: "|>") {
-            let jsPart = trimmed[..<range.lowerBound]
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            let pipePart = trimmed[range.upperBound...]
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-
-            if !jsPart.isEmpty, !pipePart.isEmpty {
-                return (jsPart, pipePart)
-            }
-        }
-
-        return (trimmed, nil)
-    }
-
-    private func handlePipelineResult(
-        _ anyResult: Any?,
-        originalCode: String,
-        pipeline: String
-    ) async throws {
-        if let dict = anyResult as? JSONObject,
-            let kind = dict["kind"] as? String,
-            kind == "error"
-        {
-            let text = (dict["text"] as? String) ?? "Unknown error"
-            append(
-                REPLCell(
-                    code: originalCode,
-                    result: .text(text),
-                    timestamp: Date()
-                ))
-            return
-        }
-
-        if let pair = anyResult as? [Any], pair.count == 2, let bytes = pair[1] as? [UInt8] {
-            let data = Data(bytes)
-            let outputData = try await runPipeline(pipeline, input: data)
-            let outputString =
-                String(data: outputData, encoding: .utf8)
-                ?? "(\(outputData.count) bytes from pipeline)"
-
-            append(
-                REPLCell(
-                    code: originalCode,
-                    result: .text(outputString),
-                    timestamp: Date()
-                ))
-            return
-        }
-
-        if let bytes = anyResult as? [UInt8] {
-            let data = Data(bytes)
-            let outputData = try await runPipeline(pipeline, input: data)
-            let outputString =
-                String(data: outputData, encoding: .utf8)
-                ?? "(\(outputData.count) bytes from pipeline)"
-
-            append(
-                REPLCell(
-                    code: originalCode,
-                    result: .text(outputString),
-                    timestamp: Date()
-                ))
-            return
-        }
-
-        if let value = anyResult,
-            JSONSerialization.isValidJSONObject(value),
-            let inputData = try? JSONSerialization.data(withJSONObject: value)
-        {
-
-            let outputData = try await runPipeline(pipeline, input: inputData)
-            let outputString =
-                String(data: outputData, encoding: .utf8)
-                ?? "(\(outputData.count) bytes from pipeline)"
-
-            append(
-                REPLCell(
-                    code: originalCode,
-                    result: .text(outputString),
-                    timestamp: Date()
-                ))
-            return
-        }
-
-        let s = anyResult.map { String(describing: $0) } ?? "null"
-        append(
-            REPLCell(
-                code: originalCode,
-                result: .text(s),
-                timestamp: Date()
-            ))
-    }
-
-    #if os(macOS)
-        private func runPipeline(_ command: String, input: Data) async throws -> Data {
-            try await withCheckedThrowingContinuation { continuation in
-                DispatchQueue.global(qos: .userInitiated).async {
-                    do {
-                        let process = Process()
-                        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-                        process.arguments = ["-lc", command]
-
-                        let stdinPipe = Pipe()
-                        let stdoutPipe = Pipe()
-                        let stderrPipe = Pipe()
-
-                        process.standardInput = stdinPipe
-                        process.standardOutput = stdoutPipe
-                        process.standardError = stderrPipe
-
-                        try process.run()
-
-                        stdinPipe.fileHandleForWriting.write(input)
-                        stdinPipe.fileHandleForWriting.closeFile()
-
-                        process.waitUntilExit()
-
-                        let out = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-                        let err = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-
-                        if process.terminationStatus != 0 {
-                            let stderrText = String(data: err, encoding: .utf8) ?? ""
-                            let error = NSError(
-                                domain: "REPLPipeline",
-                                code: Int(process.terminationStatus),
-                                userInfo: [
-                                    NSLocalizedDescriptionKey: "Pipeline “\(command)” failed with status \(process.terminationStatus)",
-                                    "stderr": stderrText,
-                                ]
-                            )
-                            continuation.resume(throwing: error)
-                            return
-                        }
-
-                        continuation.resume(returning: out)
-                    } catch {
-                        continuation.resume(throwing: error)
-                    }
-                }
-            }
-        }
-    #else
-        private func runPipeline(_ command: String, input: Data) async throws -> Data {
-            throw Error.notSupported("Running shell pipelines is only supported on macOS")
-        }
-    #endif
-
-    func completeInREPL(code: String, cursor: Int) async -> [String] {
-        do {
-            let anyResult = try await script.exports.complete(code, cursor)
-
-            if let strings = anyResult as? [String] {
-                return strings
-            }
-
-            if let anyArray = anyResult as? [Any] {
-                return anyArray.compactMap { $0 as? String }
-            }
-        } catch {
-            print("REPL completion RPC failed: \(error)")
-        }
-
-        return []
-    }
-
-    func readRemoteMemory(at address: UInt64, count: Int) async throws -> [UInt8] {
-        let addr = String(format: "0x%llx", address)
-        let any = try await script.exports.readMemory(addr, count)
-        guard let bytes = any as? [UInt8] else {
-            throw Error.protocolViolation("Invalid reply")
-        }
-        return bytes
-    }
-
-    func anchor(for address: UInt64) -> AddressAnchor {
-        if let m = modules.first(where: { address >= $0.base && address < ($0.base + $0.size) }) {
-            return .moduleOffset(name: m.name, offset: address - m.base)
-        }
-        return .absolute(address)
-    }
-
-    func resolve(_ anchor: AddressAnchor) async throws -> UInt64 {
-        try await waitForInitialModulesSnapshotIfNeeded()
-
-        switch anchor {
-        case .absolute(let a):
-            return a
-
-        case .moduleOffset(let name, let offset):
-            guard let m = modules.first(where: { $0.name == name }) else {
-                throw Error.invalidArgument("Module '\(name)' not loaded in the current process")
-            }
-            return m.base &+ offset
-
-        case .moduleExport(let name, let export):
-            guard modules.first(where: { $0.name == name }) != nil else {
-                throw Error.invalidArgument("Module '\(name)' not loaded in the current process")
-            }
-
-            let raw = try await script.exports.lookupModuleExportAddress(name, export)
-
-            guard let rawString = raw as? String else {
-                throw Error.invalidArgument("Invalid return type from lookupModuleExportAddress")
-            }
-
-            return try parseAgentHexAddress(rawString)
-        }
-    }
-
-    func resolveSyncIfReady(_ anchor: AddressAnchor) throws -> UInt64 {
-        try ensureInitialModulesSnapshotReady()
-
-        switch anchor {
-        case .absolute(let a):
-            return a
-
-        case .moduleOffset(let name, let offset):
-            guard let m = modules.first(where: { $0.name == name }) else {
-                throw Error.invalidArgument("Module '\(name)' not loaded")
-            }
-            return m.base &+ offset
-
-        case .moduleExport:
-            throw Error.invalidOperation("moduleExport requires async resolution")
-        }
-    }
-
-    private static func decodeModuleDTO(_ dto: [String: Any]) -> ProcessModule? {
-        guard
-            let name = dto["name"] as? String,
-            let path = dto["path"] as? String,
-            let baseStr = dto["base"] as? String,
-            let size = dto["size"] as? Int
-        else { return nil }
-
-        let base = UInt64(baseStr.dropFirst(2), radix: 16) ?? 0
-        return ProcessModule(name: name, path: path, base: base, size: UInt64(size))
-    }
-
-
-    func symbolicate(addresses: [UInt64]) async throws -> [SymbolicateResult] {
-        let any = try await script.exports.symbolicate(addresses.map { String(format: "0x%llx", $0) })
-
-        guard let arr = any as? [Any],
-            arr.count == addresses.count
-        else {
-            throw Error.protocolViolation("Invalid reply")
-        }
-
-        var out: [SymbolicateResult] = []
-        out.reserveCapacity(arr.count)
-
-        for entry in arr {
-            if entry is JSONNull {
-                out.append(.failure)
-                continue
-            }
-
-            guard let tuple = entry as? [Any] else {
-                throw Error.protocolViolation("Invalid reply")
-            }
-
-            switch tuple.count {
-            case 2:
-                guard let moduleName = tuple[0] as? String,
-                    let name = tuple[1] as? String
-                else {
-                    throw Error.protocolViolation("Invalid reply")
-                }
-                out.append(.module(moduleName: moduleName, name: name))
-
-            case 4:
-                guard let moduleName = tuple[0] as? String,
-                    let name = tuple[1] as? String,
-                    let fileName = tuple[2] as? String,
-                    let lineNumber = tuple[3] as? Int
-                else {
-                    throw Error.protocolViolation("Invalid reply")
-                }
-                out.append(.file(moduleName: moduleName, name: name, fileName: fileName, lineNumber: lineNumber))
-
-            case 5:
-                guard let moduleName = tuple[0] as? String,
-                    let name = tuple[1] as? String,
-                    let fileName = tuple[2] as? String,
-                    let lineNumber = tuple[3] as? Int,
-                    let column = tuple[4] as? Int
-                else {
-                    throw Error.protocolViolation("Invalid reply")
-                }
-                out.append(.fileColumn(moduleName: moduleName, name: name, fileName: fileName, lineNumber: lineNumber, column: column))
-
-            default:
-                throw Error.protocolViolation("Invalid reply")
-            }
-        }
-
-        return out
-    }
-
-    private static func captureKey(hookId: String, callIndex: Int) -> String {
-        "\(hookId):\(callIndex)"
-    }
-
-    // MARK: - ITrace Orchestration
-
-    func setupITraceDraining() async {
-        do {
-            let params = try await device.querySystemParameters()
-            guard (params["platform"] as? String) == "darwin",
-                (params["access"] as? String) == "full"
-            else {
-                return
-            }
-
-            let sysSession = try await device.attach(to: 0)
-            let script = try await sysSession.createScript(
-                LumaAgent.drainSource,
-                name: "itrace-drain",
-                runtime: .v8
-            )
-            try await script.load()
-
-            self.systemSession = sysSession
-            self.drainScript = script
-        } catch {
-            // System session not available; fall back to in-process draining.
-        }
-    }
-
-    var hasSystemSession: Bool {
-        drainScript != nil
-    }
-
-    func handleITraceStart(
-        hookId: String, callIndex: Int, bufferLocation: String,
-        hookTarget: String?, prologueBytes: String?
-    ) async {
-        let captureKey = Self.captureKey(hookId: hookId, callIndex: callIndex)
-        pendingCaptures[captureKey] = PendingITraceCapture(
-            hookID: UUID(uuidString: hookId)!,
-            callIndex: callIndex,
-            hookTarget: hookTarget,
-            prologueBytes: prologueBytes,
-            chunks: [],
-            lost: 0,
-            useSystemDrain: false
+    func markSessionBoundary() {
+        let cell = REPLCell(
+            code: "New process attached",
+            result: .text(""),
+            timestamp: Date(),
+            isSessionBoundary: true
         )
-
-        if let drainScript {
-            do {
-                try await drainScript.exports.openBuffer(bufferLocation)
-                pendingCaptures[captureKey]?.useSystemDrain = true
-                startDrainTimer(for: captureKey)
-            } catch {
-                // System session can't access the task (e.g. SIP).
-                // The target agent will drain locally on stop.
-            }
-        }
+        cell.session = sessionRecord
+        modelContext.insert(cell)
     }
 
-    func handleITraceStop(hookId: String, callIndex: Int, lost: Int, data: [UInt8]?) async {
-        let captureKey = Self.captureKey(hookId: hookId, callIndex: callIndex)
+    func fetchAndPersistProcessInfoIfNeeded() async {
+        guard sessionRecord.processInfo == nil else { return }
 
-        let usedSystemDrain = pendingCaptures[captureKey]?.useSystemDrain == true
-
-        if usedSystemDrain, let drainScript {
-            drainTimer?.cancel()
-            drainTimer = nil
-
-            do {
-                if let finalChunk = try await drainScript.exports.close() as? [UInt8], !finalChunk.isEmpty {
-                    pendingCaptures[captureKey]?.chunks.append(Data(finalChunk))
-                }
-                let sysLost = (try? await drainScript.exports.getLost()) as? Int ?? 0
-                pendingCaptures[captureKey]?.lost = sysLost
-            } catch {
-            }
-        }
-
-        if let data, !data.isEmpty {
-            pendingCaptures[captureKey]?.chunks.append(Data(data))
-        }
-
-        let currentLost = pendingCaptures[captureKey]?.lost ?? 0
-        pendingCaptures[captureKey]?.lost = max(currentLost, lost)
-
-        await finalizeCapture(key: captureKey)
-    }
-
-    func handleITraceChunk(hookId: String, callIndex: Int, data: [UInt8], lost: Int) {
-        let captureKey = Self.captureKey(hookId: hookId, callIndex: callIndex)
-        pendingCaptures[captureKey]?.chunks.append(Data(data))
-        pendingCaptures[captureKey]?.lost = lost
-    }
-
-    private func startDrainTimer(for captureKey: String) {
-        drainTimer?.cancel()
-        drainTimer = Task { @MainActor [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 50_000_000)
-
-                guard let self, let drainScript = self.drainScript else { break }
-
-                do {
-                    if let chunk = try await drainScript.exports.drain() as? [UInt8], !chunk.isEmpty {
-                        self.pendingCaptures[captureKey]?.chunks.append(Data(chunk))
-                    }
-                } catch {
-                    break
-                }
-            }
-        }
-    }
-
-    private func finalizeCapture(key captureKey: String) async {
-        guard let capture = pendingCaptures.removeValue(forKey: captureKey) else {
-            return
-        }
-
-        let rawData = capture.chunks.reduce(into: Data()) { $0.append($1) }
-
-        // Parse the v5 binary buffer into trace data + metadata.
-        var (traceData, metadataJSON) = ITraceDecoder.parseRawBuffer(
-            rawData,
-            hookTarget: capture.hookTarget,
-            prologueBytes: capture.prologueBytes
-        )
-
-        ITraceDecoder.cleanupAfterCapture(traceData: &traceData, metadataJSON: &metadataJSON)
-
-        // Symbolicate block names while the process is still alive.
-        if var metadata = try? JSONDecoder().decode(ITraceMetadata.self, from: metadataJSON) {
-            let addresses = metadata.blocks.compactMap { ITraceDecoder.parseHexAddress($0.address) }
-            if !addresses.isEmpty {
-                var symbolicated = false
-                if let results = try? await symbolicate(addresses: addresses) {
-                    for (i, result) in results.enumerated() where i < metadata.blocks.count {
-                        let name: String?
-                        switch result {
-                        case .module(let m, let n): name = "\(m)!\(n)"
-                        case .file(let m, let n, _, _): name = "\(m)!\(n)"
-                        case .fileColumn(let m, let n, _, _, _): name = "\(m)!\(n)"
-                        case .failure: name = nil
-                        }
-                        if let name { metadata.blocks[i].name = name; symbolicated = true }
-                    }
-                }
-
-                // Fallback: use module list to produce module!0xoffset names.
-                if !symbolicated {
-                    for (i, addr) in addresses.enumerated() where i < metadata.blocks.count {
-                        if let mod = modules.first(where: { addr >= $0.base && addr < $0.base + $0.size }) {
-                            let offset = addr - mod.base
-                            metadata.blocks[i].name = "\(mod.name)!0x\(String(offset, radix: 16))"
-                        }
-                    }
-                }
-
-                if let data = try? JSONEncoder().encode(metadata) {
-                    metadataJSON = data
-                }
-            }
-        }
-
-        let hookName = instruments.lazy
-            .compactMap { runtime -> String? in
-                guard let config = try? TracerConfig.decode(from: runtime.instance.configJSON) else { return nil }
-                return config.hooks.first(where: { $0.id == capture.hookID })?.displayName
-            }
-            .first ?? capture.hookID.uuidString
-
-        let displayName = "\(hookName) call #\(capture.callIndex)"
-
-        let itraceCapture = ITraceCapture(
-            hookID: capture.hookID,
-            callIndex: capture.callIndex,
-            displayName: displayName,
-            traceData: traceData,
-            metadataJSON: metadataJSON,
-            lost: capture.lost
-        )
-
-        itraceCapture.session = sessionRecord
-        modelContext.insert(itraceCapture)
-    }
-
-    private func finalizePendingCapturesOnCrash() async {
-        let keys = Array(pendingCaptures.keys)
-        for key in keys {
-            guard var capture = pendingCaptures[key],
-                !capture.chunks.isEmpty
-            else {
-                pendingCaptures.removeValue(forKey: key)
-                continue
-            }
-
-            // Do a final drain from the system session if available.
-            if capture.useSystemDrain, let drainScript {
-                drainTimer?.cancel()
-                drainTimer = nil
-                do {
-                    if let chunk = try await drainScript.exports.close() as? [UInt8], !chunk.isEmpty {
-                        capture.chunks.append(Data(chunk))
-                    }
-                    let lost = (try? await drainScript.exports.getLost()) as? Int ?? 0
-                    capture.lost = lost
-                } catch {}
-            }
-
-            pendingCaptures[key] = capture
-            await finalizeCapture(key: key)
-        }
-    }
-
-    func tearDownITrace() async {
-        drainTimer?.cancel()
-        drainTimer = nil
-        pendingCaptures.removeAll()
-
-        if let drainScript {
-            try? await drainScript.unload()
-            self.drainScript = nil
-        }
-
-        if let systemSession {
-            try? await systemSession.detach()
-            self.systemSession = nil
+        if let info = await core.fetchProcessInfo() {
+            sessionRecord.processInfo = ProcessSession.ProcessInfo(
+                platform: info.platform,
+                arch: info.arch,
+                pointerSize: info.pointerSize
+            )
         }
     }
 
     // MARK: - R2 Integration
 
-    private func ensureR2Opened() async {
+    func ensureR2Opened() async {
         if let task = openR2Task {
             await task.value
             return
@@ -974,26 +158,6 @@ final class ProcessNode: ObservableObject, Identifiable {
         await task.value
     }
 
-    private func persistModules() {
-        sessionRecord.lastKnownModules = modules.map {
-            ProcessSession.PersistedModule(name: $0.name, base: $0.base, size: $0.size)
-        }
-    }
-
-    func fetchAndPersistProcessInfoIfNeeded() async {
-        guard sessionRecord.processInfo == nil else { return }
-
-        guard let anyInfo = try? await script.exports.getProcessInfo(),
-            JSONSerialization.isValidJSONObject(anyInfo),
-            let data = try? JSONSerialization.data(withJSONObject: anyInfo),
-            let info = try? JSONDecoder().decode(ProcessSession.ProcessInfo.self, from: data)
-        else {
-            return
-        }
-
-        sessionRecord.processInfo = info
-    }
-
     static func r2Arch(fromFridaArch arch: String) -> String {
         switch arch {
         case "ia32", "x64":
@@ -1015,19 +179,42 @@ final class ProcessNode: ObservableObject, Identifiable {
         return await r2.cmd(command)
     }
 
-    private func append(_ cell: REPLCell) {
+    // MARK: - Persistence
+
+    private func appendREPLCell(_ result: REPLResult) {
+        let resultValue: REPLCell.Result
+        switch result.value {
+        case .js(let v):
+            resultValue = .js(v)
+        case .text(let t):
+            resultValue = .text(t)
+        }
+
+        let cell = REPLCell(
+            code: result.code,
+            result: resultValue,
+            timestamp: result.timestamp
+        )
         cell.session = sessionRecord
         modelContext.insert(cell)
     }
 
-    func markSessionBoundary() {
-        append(
-            REPLCell(
-                code: "New process attached",
-                result: .text(""),
-                timestamp: Date(),
-                isSessionBoundary: true
-            ))
+    private func persistCapture(_ capture: CapturedITrace) {
+        let itraceCapture = ITraceCapture(
+            hookID: capture.hookID,
+            callIndex: capture.callIndex,
+            displayName: capture.displayName,
+            traceData: capture.traceData,
+            metadataJSON: capture.metadataJSON,
+            lost: capture.lost
+        )
+        itraceCapture.session = sessionRecord
+        modelContext.insert(itraceCapture)
+    }
+
+    private func persistModules() {
+        sessionRecord.lastKnownModules = modules.map {
+            ProcessSession.PersistedModule(name: $0.name, base: $0.base, size: $0.size)
+        }
     }
 }
-

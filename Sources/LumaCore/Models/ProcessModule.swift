@@ -1,4 +1,4 @@
-public struct ProcessModule: Hashable, Identifiable, Codable {
+public struct ProcessModule: Hashable, Identifiable, Codable, Sendable {
     public var id: String { "\(path)@0x\(String(base, radix: 16))" }
     public let name: String
     public let path: String
