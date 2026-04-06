@@ -1,4 +1,5 @@
 import SwiftUI
+import LumaCore
 
 struct InstrumentIconView: View {
     let icon: InstrumentIcon

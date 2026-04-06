@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import LumaCore
 
 @MainActor
 final class HookPackLibrary: ObservableObject {

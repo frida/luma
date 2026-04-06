@@ -1,6 +1,7 @@
 import Frida
 import SwiftData
 import SwiftUI
+import LumaCore
 
 struct TargetPickerView: View {
     enum Mode: String {

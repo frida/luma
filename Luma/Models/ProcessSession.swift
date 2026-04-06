@@ -1,6 +1,7 @@
 import Foundation
 import Frida
 import SwiftData
+import LumaCore
 
 @Model
 final class ProcessSession {

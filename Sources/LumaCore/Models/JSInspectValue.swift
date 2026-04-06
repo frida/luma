@@ -1,7 +1,7 @@
 import Foundation
 import Frida
 
-enum JSInspectValue: nonisolated Codable, nonisolated Equatable {
+public enum JSInspectValue: nonisolated Codable, nonisolated Equatable {
     case number(Double)
     case string(String)
     case object(id: Int, properties: [Property])
@@ -25,40 +25,40 @@ enum JSInspectValue: nonisolated Codable, nonisolated Equatable {
     case depthLimit(container: ContainerKind)
     case circular(id: Int)
 
-    struct Property: nonisolated Codable, nonisolated Equatable {
-        let key: JSInspectValue
-        let value: JSInspectValue
+    public struct Property: nonisolated Codable, nonisolated Equatable {
+        public let key: JSInspectValue
+        public let value: JSInspectValue
 
-        nonisolated init(key: JSInspectValue, value: JSInspectValue) {
+        nonisolated public init(key: JSInspectValue, value: JSInspectValue) {
             self.key = key
             self.value = value
         }
 
-        nonisolated init(from decoder: Decoder) throws {
+        nonisolated public init(from decoder: Decoder) throws {
             var container = try decoder.unkeyedContainer()
             let key = try container.decode(JSInspectValue.self)
             let value = try container.decode(JSInspectValue.self)
             self.init(key: key, value: value)
         }
 
-        nonisolated func encode(to encoder: Encoder) throws {
+        nonisolated public func encode(to encoder: Encoder) throws {
             var container = encoder.unkeyedContainer()
             try container.encode(key)
             try container.encode(value)
         }
     }
 
-    struct Bytes: nonisolated Equatable {
-        let data: Data
-        let kind: BytesKind
+    public struct Bytes: nonisolated Equatable {
+        public let data: Data
+        public let kind: BytesKind
 
-        nonisolated init(data: Data, kind: BytesKind) {
+        nonisolated public init(data: Data, kind: BytesKind) {
             self.data = data
             self.kind = kind
         }
     }
 
-    enum BytesKind: String, nonisolated Codable, nonisolated Equatable {
+    public enum BytesKind: String, nonisolated Codable, nonisolated Equatable {
         case arrayBuffer = "ArrayBuffer"
         case dataView = "DataView"
 
@@ -75,7 +75,7 @@ enum JSInspectValue: nonisolated Codable, nonisolated Equatable {
         case bigUint64Array = "BigUint64Array"
     }
 
-    enum ContainerKind: nonisolated Equatable {
+    public enum ContainerKind: nonisolated Equatable {
         case object
         case array
         case map
@@ -107,7 +107,7 @@ enum JSInspectValue: nonisolated Codable, nonisolated Equatable {
         case circular = 21
     }
 
-    nonisolated init(from decoder: Decoder) throws {
+    nonisolated public init(from decoder: Decoder) throws {
         var container = try decoder.unkeyedContainer()
         let rawKind = try container.decode(Int.self)
 
@@ -230,7 +230,7 @@ enum JSInspectValue: nonisolated Codable, nonisolated Equatable {
         }
     }
 
-    nonisolated func encode(to encoder: Encoder) throws {
+    nonisolated public func encode(to encoder: Encoder) throws {
         var container = encoder.unkeyedContainer()
 
         switch self {
@@ -338,14 +338,14 @@ enum JSInspectValue: nonisolated Codable, nonisolated Equatable {
         }
     }
 
-    var nativePointerAddress: UInt64? {
+    public var nativePointerAddress: UInt64? {
         guard case .nativePointer(let s) = self else { return nil }
         return UInt64(s.dropFirst(2), radix: 16)
     }
 }
 
 extension JSInspectValue {
-    enum DecodePackedError: Swift.Error {
+    public enum DecodePackedError: Swift.Error {
         case invalidRoot
         case invalidBlob
         case invalidNode
@@ -353,7 +353,7 @@ extension JSInspectValue {
         case invalidBytesRange
     }
 
-    nonisolated static func decodePacked(from root: Any) throws -> JSInspectValue {
+    nonisolated public static func decodePacked(from root: Any) throws -> JSInspectValue {
         guard let pair = root as? [Any], pair.count == 2 else {
             throw DecodePackedError.invalidRoot
         }
@@ -375,11 +375,11 @@ extension JSInspectValue {
         return try decodePacked(tree: tree, blobData: blobData)
     }
 
-    nonisolated static func decodePacked(tree: Any, blobBytes: [UInt8]?) throws -> JSInspectValue {
+    nonisolated public static func decodePacked(tree: Any, blobBytes: [UInt8]?) throws -> JSInspectValue {
         return try decodePacked(tree: tree, blobData: Data(blobBytes ?? []))
     }
 
-    nonisolated static func decodePacked(tree: Any, blobData: Data) throws -> JSInspectValue {
+    nonisolated public static func decodePacked(tree: Any, blobData: Data) throws -> JSInspectValue {
         func intFrom(_ any: Any) throws -> Int {
             if let i = any as? Int { return i }
             if let n = any as? NSNumber { return n.intValue }

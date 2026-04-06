@@ -2,6 +2,7 @@ import Frida
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
+import LumaCore
 
 struct MainWindowView: View {
     @State private var uiState = ProjectUIStateValue()

@@ -1,5 +1,6 @@
 import Foundation
 import SwiftyMonaco
+import LumaCore
 
 struct TracerConfig: Codable, Equatable {
     struct Hook: Codable, Equatable, Identifiable {

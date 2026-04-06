@@ -1,81 +1,126 @@
-import CoreGraphics
 import Foundation
 
-struct DecodedITrace {
-    let registerNames: [String]
-    var entries: [TraceEntry]
-    let blockBytes: [UInt64: Data]
-    let functionCalls: [TraceFunctionCall]
-    let registerStates: [RegisterState]
+public struct DecodedITrace {
+    public let registerNames: [String]
+    public var entries: [TraceEntry]
+    public let blockBytes: [UInt64: Data]
+    public let functionCalls: [TraceFunctionCall]
+    public let registerStates: [RegisterState]
+
+    public init(
+        registerNames: [String],
+        entries: [TraceEntry],
+        blockBytes: [UInt64: Data],
+        functionCalls: [TraceFunctionCall],
+        registerStates: [RegisterState]
+    ) {
+        self.registerNames = registerNames
+        self.entries = entries
+        self.blockBytes = blockBytes
+        self.functionCalls = functionCalls
+        self.registerStates = registerStates
+    }
 }
 
-struct RegisterState {
-    let values: [Int: UInt64]
-    let changed: Set<Int>
+public struct RegisterState {
+    public let values: [Int: UInt64]
+    public let changed: Set<Int>
+
+    public init(values: [Int: UInt64], changed: Set<Int>) {
+        self.values = values
+        self.changed = changed
+    }
 }
 
-struct TraceFunctionCall {
-    let functionName: String
-    let startIndex: Int
-    let endIndex: Int
+public struct TraceFunctionCall {
+    public let functionName: String
+    public let startIndex: Int
+    public let endIndex: Int
 
-    var entryCount: Int { endIndex - startIndex }
+    public var entryCount: Int { endIndex - startIndex }
 
-    var shortName: String {
+    public var shortName: String {
         if let bang = functionName.firstIndex(of: "!") {
             return String(functionName[functionName.index(after: bang)...])
         }
         return functionName
     }
+
+    public init(functionName: String, startIndex: Int, endIndex: Int) {
+        self.functionName = functionName
+        self.startIndex = startIndex
+        self.endIndex = endIndex
+    }
 }
 
-struct TraceEntry {
-    let blockAddress: UInt64
-    let blockSize: Int
-    var blockName: String
-    let registerWrites: [RegisterWrite]
+public struct TraceEntry {
+    public let blockAddress: UInt64
+    public let blockSize: Int
+    public var blockName: String
+    public let registerWrites: [RegisterWrite]
+
+    public init(blockAddress: UInt64, blockSize: Int, blockName: String, registerWrites: [RegisterWrite]) {
+        self.blockAddress = blockAddress
+        self.blockSize = blockSize
+        self.blockName = blockName
+        self.registerWrites = registerWrites
+    }
 }
 
-struct RegisterWrite {
-    let blockOffset: Int
-    let registerName: String
-    let registerIndex: Int
-    let value: UInt64
+public struct RegisterWrite {
+    public let blockOffset: Int
+    public let registerName: String
+    public let registerIndex: Int
+    public let value: UInt64
+
+    public init(blockOffset: Int, registerName: String, registerIndex: Int, value: UInt64) {
+        self.blockOffset = blockOffset
+        self.registerName = registerName
+        self.registerIndex = registerIndex
+        self.value = value
+    }
 }
 
-struct ITraceMetadata: Codable {
-    let hookId: String
-    let callIndex: Int
-    let hookTarget: String?
-    let prologueBytes: String?
-    let regSpecs: [RegisterSpec]
-    var blocks: [BlockSpec]
+public struct ITraceMetadata: Codable {
+    public let hookId: String
+    public let callIndex: Int
+    public let hookTarget: String?
+    public let prologueBytes: String?
+    public let regSpecs: [RegisterSpec]
+    public var blocks: [BlockSpec]
 
-    struct RegisterSpec: Codable {
-        let name: String
-        let size: Int
+    public struct RegisterSpec: Codable {
+        public let name: String
+        public let size: Int
     }
 
-    struct BlockSpec: Codable {
-        var name: String
-        let address: String
-        let size: Int
-        let bytes: String?
-        let module: ModuleRef?
-        let writes: [[Int]]
+    public struct BlockSpec: Codable {
+        public var name: String
+        public let address: String
+        public let size: Int
+        public let bytes: String?
+        public let module: ModuleRef?
+        public let writes: [[Int]]
 
-        struct ModuleRef: Codable {
-            let path: String
-            let base: String
+        public struct ModuleRef: Codable {
+            public let path: String
+            public let base: String
+        }
+
+        public init(name: String, address: String, size: Int, bytes: String?, module: ModuleRef?, writes: [[Int]]) {
+            self.name = name
+            self.address = address
+            self.size = size
+            self.bytes = bytes
+            self.module = module
+            self.writes = writes
         }
     }
 }
 
-enum ITraceDecoder {
+public enum ITraceDecoder {
 
-    /// Decode trace data and metadata into a structured trace.
-    /// Expects already-cleaned metadata (noise trimmed, prologue merged).
-    static func decode(traceData: Data, metadataJSON: Data) throws -> DecodedITrace {
+    public static func decode(traceData: Data, metadataJSON: Data) throws -> DecodedITrace {
         let metadata = try JSONDecoder().decode(ITraceMetadata.self, from: metadataJSON)
 
         let registerNames = metadata.regSpecs.map(\.name)
@@ -164,9 +209,7 @@ enum ITraceDecoder {
 
     // MARK: - Binary Buffer Parsing (frida-itrace v5)
 
-    /// Parse raw binary buffer chunks (v5 format) into separated
-    /// trace data and metadata JSON.
-    static func parseRawBuffer(
+    public static func parseRawBuffer(
         _ rawData: Data,
         hookTarget: String?,
         prologueBytes: String?
@@ -183,15 +226,13 @@ enum ITraceDecoder {
             let sentinel = readUInt64(bytes, at: offset)
 
             if sentinel != 0 {
-                // Trace record: sentinel is the block address.
                 guard let recordSize = blockRecordSizes[sentinel] else {
-                    break  // Unknown block — can't determine record size.
+                    break
                 }
                 guard offset + recordSize <= bytes.count else { break }
                 traceRecords.append(contentsOf: bytes[offset..<(offset + recordSize)])
                 offset += recordSize
             } else {
-                // Event header: [uint64 sentinel=0, uint32 type, uint32 payload_size]
                 guard offset + 16 <= bytes.count else { break }
                 let eventType = readUInt32(bytes, at: offset + 8)
                 let payloadSize = Int(readUInt32(bytes, at: offset + 12))
@@ -199,7 +240,7 @@ enum ITraceDecoder {
                 guard payloadStart + payloadSize <= bytes.count else { break }
 
                 switch eventType {
-                case 1:  // compile
+                case 1:
                     let block = parseCompileEvent(bytes, at: payloadStart, size: payloadSize)
                     if let addr = block["address"] as? UInt64,
                         let recordSize = block["record_size"] as? Int
@@ -208,13 +249,13 @@ enum ITraceDecoder {
                     }
                     blocks.append(serializeBlockForJSON(block))
 
-                case 2:  // start
+                case 2:
                     regSpecs = parseStartEvent(bytes, at: payloadStart, size: payloadSize)
 
-                case 3:  // end
+                case 3:
                     break
 
-                case 4:  // panic
+                case 4:
                     let msg = String(bytes: bytes[payloadStart..<(payloadStart + payloadSize)], encoding: .utf8) ?? "unknown"
                     print("[itrace] panic: \(msg)")
 
@@ -226,7 +267,6 @@ enum ITraceDecoder {
             }
         }
 
-        // Build metadata JSON.
         var metadata: [String: Any] = [
             "hookId": "",
             "callIndex": 0,
@@ -248,11 +288,11 @@ enum ITraceDecoder {
         let recordSize = readUInt32(bytes, at: o); o += 4
         let numWrites = Int(readUInt16(bytes, at: o)); o += 2
         let nameSize = Int(readUInt16(bytes, at: o)); o += 2
-        _ = readUInt64(bytes, at: o); o += 8  // compiled_address
-        _ = readUInt32(bytes, at: o); o += 4  // compiled_size
+        _ = readUInt64(bytes, at: o); o += 8
+        _ = readUInt32(bytes, at: o); o += 4
         let moduleBase = readUInt64(bytes, at: o); o += 8
         let modulePathSize = Int(readUInt16(bytes, at: o)); o += 2
-        _ = readUInt16(bytes, at: o); o += 2  // reserved
+        _ = readUInt16(bytes, at: o); o += 2
 
         var writes: [[Int]] = []
         for _ in 0..<numWrites {
@@ -275,7 +315,6 @@ enum ITraceDecoder {
             o += modulePathSize
         }
 
-        // Read machine code bytes (code[block_size]).
         let bSize = Int(blockSize)
         var codeHex = ""
         if bSize > 0, o + bSize <= bytes.count {
@@ -314,7 +353,7 @@ enum ITraceDecoder {
     private static func parseStartEvent(_ bytes: [UInt8], at start: Int, size: Int) -> [[String: Any]] {
         var o = start
         let numRegs = Int(readUInt32(bytes, at: o)); o += 4
-        _ = readUInt32(bytes, at: o); o += 4  // context_size
+        _ = readUInt32(bytes, at: o); o += 4
 
         var specs: [[String: Any]] = []
         for _ in 0..<numRegs {
@@ -342,10 +381,7 @@ enum ITraceDecoder {
         UInt16(bytes[offset]) | (UInt16(bytes[offset + 1]) << 8)
     }
 
-    /// Clean up raw capture metadata: remove Interceptor noise blocks,
-    /// merge the trampoline prologue with the first real block, and
-    /// rewrite the trace data to match. Called once at capture time.
-    static func cleanupAfterCapture(
+    public static func cleanupAfterCapture(
         traceData: inout Data,
         metadataJSON: inout Data
     ) {
@@ -354,7 +390,6 @@ enum ITraceDecoder {
         let hookTarget = metadata.hookTarget.flatMap { parseHexAddress($0) }
         let prologueData = metadata.prologueBytes.flatMap { hexToData($0) }
 
-        // Identify meaningful blocks (those with a module name).
         let meaningfulAddresses = Set(
             metadata.blocks
                 .filter { $0.name.contains("!") }
@@ -363,7 +398,6 @@ enum ITraceDecoder {
 
         guard !meaningfulAddresses.isEmpty else { return }
 
-        // Decode the raw trace to find the entry boundaries.
         let rawTrace = try? decode(traceData: traceData, metadataJSON: metadataJSON)
         guard let rawTrace, !rawTrace.entries.isEmpty else { return }
 
@@ -371,10 +405,8 @@ enum ITraceDecoder {
         let lastMeaningfulIdx = rawTrace.entries.lastIndex { $0.blockName.contains("!") }
         guard let firstMeaningfulIdx, let lastMeaningfulIdx else { return }
 
-        // Trim entries to meaningful range.
         var cleanEntries = Array(rawTrace.entries[firstMeaningfulIdx...lastMeaningfulIdx])
 
-        // Merge the trampoline prologue with the first real block.
         if let hookTarget, let prologueData,
             firstMeaningfulIdx > 0
         {
@@ -382,9 +414,6 @@ enum ITraceDecoder {
             let overwrittenSize = Int(firstEntry.blockAddress - hookTarget)
 
             if overwrittenSize > 0, overwrittenSize <= prologueData.count {
-                // Register restore block: all saved register values.
-                // Set all offsets to 0 — these represent the state at
-                // function entry, before the first instruction.
                 var restoreWrites: [RegisterWrite] = []
                 if firstMeaningfulIdx >= 2 {
                     let restoreEntry = rawTrace.entries[firstMeaningfulIdx - 2]
@@ -392,8 +421,6 @@ enum ITraceDecoder {
                         .map { RegisterWrite(blockOffset: 0, registerName: $0.registerName, registerIndex: $0.registerIndex, value: $0.value) }
                 }
 
-                // Trampoline block: drop first (LR) and last (X16) writes.
-                // Keep original offsets — these are from the relocated prologue.
                 let trampolineEntry = rawTrace.entries[firstMeaningfulIdx - 1]
                 var trampolineWrites = Array(trampolineEntry.registerWrites.dropFirst())
                 if trampolineWrites.last?.registerName == "x16" {
@@ -401,7 +428,6 @@ enum ITraceDecoder {
                 }
                 trampolineWrites = deduplicateAndSort(trampolineWrites)
 
-                // First meaningful block: drop first (LR), shift offsets.
                 let shiftedWrites = Array(firstEntry.registerWrites.dropFirst()).map { write in
                     RegisterWrite(
                         blockOffset: write.blockOffset + overwrittenSize,
@@ -413,7 +439,6 @@ enum ITraceDecoder {
 
                 let mergedWrites = restoreWrites + trampolineWrites + shiftedWrites
 
-                // Build merged block bytes.
                 var mergedBytesData = Data(prologueData.prefix(overwrittenSize))
                 if let realHex = metadata.blocks.first(where: { parseHexAddress($0.address) == firstEntry.blockAddress })?.bytes,
                     let realBytes = hexToData(realHex)
@@ -421,14 +446,12 @@ enum ITraceDecoder {
                     mergedBytesData.append(realBytes)
                 }
 
-                // Derive merged name.
                 let bangIdx = firstEntry.blockName.firstIndex(of: "!")!
                 let moduleName = firstEntry.blockName[...firstEntry.blockName.index(before: bangIdx)]
                 let origOffset = parseHexAddress(
                     String(firstEntry.blockName[firstEntry.blockName.index(after: bangIdx)...]))!
                 let mergedName = "\(moduleName)!0x\(String(origOffset - UInt64(overwrittenSize), radix: 16))"
 
-                // Build merged block spec for the metadata.
                 let mergedBlockSpec = ITraceMetadata.BlockSpec(
                     name: mergedName,
                     address: String(format: "0x%llx", hookTarget),
@@ -445,7 +468,6 @@ enum ITraceDecoder {
                     registerWrites: mergedWrites
                 )
 
-                // Replace metadata blocks: merged first + remaining meaningful.
                 var cleanBlocks = [mergedBlockSpec]
                 for block in metadata.blocks where block.name.contains("!") {
                     let addr = parseHexAddress(block.address)
@@ -456,36 +478,29 @@ enum ITraceDecoder {
                 metadata.blocks = cleanBlocks
             }
         } else {
-            // No merge needed; just keep meaningful blocks.
             metadata.blocks = metadata.blocks.filter { $0.name.contains("!") }
         }
 
-        // Rebuild trace data from clean entries.
         traceData = rebuildTraceData(entries: cleanEntries, metadata: metadata)
 
-        // Persist cleaned metadata.
         if let data = try? JSONEncoder().encode(metadata) {
             metadataJSON = data
         }
     }
 
-    /// Rebuild binary trace data from decoded entries.
     private static func rebuildTraceData(entries: [TraceEntry], metadata: ITraceMetadata) -> Data {
         var out = Data()
 
         for entry in entries {
-            // Block address (8 bytes, little-endian).
             var addr = entry.blockAddress
             out.append(Data(bytes: &addr, count: 8))
 
-            // Register writes.
             for write in entry.registerWrites {
                 guard write.registerIndex < metadata.regSpecs.count else { continue }
                 let size = metadata.regSpecs[write.registerIndex].size
                 var value = write.value
                 out.append(Data(bytes: &value, count: min(size, 8)))
                 if size > 8 {
-                    // Pad vector registers with zeros.
                     out.append(Data(repeating: 0, count: size - 8))
                 }
             }
@@ -494,7 +509,6 @@ enum ITraceDecoder {
         return out
     }
 
-    /// Keep only the last write per register, then sort by register index.
     private static func deduplicateAndSort(_ writes: [RegisterWrite]) -> [RegisterWrite] {
         var lastByIndex: [Int: RegisterWrite] = [:]
         for w in writes { lastByIndex[w.registerIndex] = w }
@@ -503,7 +517,6 @@ enum ITraceDecoder {
 
     // MARK: - Helpers
 
-    /// Group entries into contiguous runs of the same function.
     private static func computeRegisterStates(_ entries: [TraceEntry]) -> [RegisterState] {
         var current: [Int: UInt64] = [:]
         var states: [RegisterState] = []
@@ -550,7 +563,7 @@ enum ITraceDecoder {
         return calls
     }
 
-    static func baseSymbol(of name: String) -> String {
+    public static func baseSymbol(of name: String) -> String {
         if let plus = name.firstIndex(of: "+") {
             return String(name[..<plus])
         }
@@ -573,7 +586,7 @@ enum ITraceDecoder {
         return value
     }
 
-    static func parseHexAddress(_ s: String) -> UInt64? {
+    public static func parseHexAddress(_ s: String) -> UInt64? {
         let str = s.hasPrefix("0x") ? String(s.dropFirst(2)) : s
         return UInt64(str, radix: 16)
     }

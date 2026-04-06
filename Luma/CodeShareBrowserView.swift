@@ -1,6 +1,7 @@
 import CryptoKit
 import SwiftUI
 import SwiftyMonaco
+import LumaCore
 
 struct CodeShareBrowserView: View {
     let session: ProcessSession

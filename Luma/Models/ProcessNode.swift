@@ -3,6 +3,7 @@ import Foundation
 import Frida
 import SwiftData
 import SwiftyR2
+import LumaCore
 
 @MainActor
 final class ProcessNode: ObservableObject, Identifiable {

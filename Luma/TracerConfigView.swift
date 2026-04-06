@@ -1,6 +1,7 @@
 import Frida
 import SwiftUI
 import SwiftyMonaco
+import LumaCore
 
 struct TracerConfigView: View {
     @Binding var config: TracerConfig

@@ -1,4 +1,5 @@
 import SwiftUI
+import LumaCore
 
 struct TracerEventRowView: View {
     let messageView: AnyView

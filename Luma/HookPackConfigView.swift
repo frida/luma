@@ -1,4 +1,5 @@
 import SwiftUI
+import LumaCore
 
 struct HookPackConfigView: View {
     let manifest: HookPackManifest

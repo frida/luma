@@ -1,11 +1,6 @@
 import Foundation
+import LumaCore
 import SwiftData
-
-enum InstrumentKind: String, Codable {
-    case tracer
-    case hookPack
-    case codeShare
-}
 
 @Model
 final class InstrumentInstance {

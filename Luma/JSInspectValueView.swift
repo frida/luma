@@ -1,5 +1,6 @@
 import Combine
 import SwiftUI
+import LumaCore
 
 struct JSInspectValueView: View {
     let value: JSInspectValue

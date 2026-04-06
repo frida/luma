@@ -1,3 +1,4 @@
+import LumaCore
 import SwiftUI
 
 struct ITraceTimeline: View {

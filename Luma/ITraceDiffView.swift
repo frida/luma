@@ -1,4 +1,5 @@
 import Frida
+import LumaCore
 import SwiftUI
 
 struct ITraceDiffView: View {

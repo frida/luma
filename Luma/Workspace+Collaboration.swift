@@ -1,6 +1,7 @@
 import Foundation
 import Frida
 import SwiftData
+import LumaCore
 
 extension Workspace {
     func bindProjectCollaboration() {

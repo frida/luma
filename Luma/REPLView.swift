@@ -1,6 +1,7 @@
 import Frida
 import SwiftData
 import SwiftUI
+import LumaCore
 
 struct REPLView: View {
     @Bindable var session: ProcessSession

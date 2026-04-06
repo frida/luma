@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import LumaCore
 
 struct EventStreamView: View {
     @ObservedObject var workspace: Workspace

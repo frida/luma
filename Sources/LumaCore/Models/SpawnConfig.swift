@@ -1,8 +1,8 @@
 import Foundation
 import Frida
 
-struct SpawnConfig: nonisolated Codable {
-    enum Target: Codable {
+public struct SpawnConfig: nonisolated Codable {
+    public enum Target: Codable {
         case application(identifier: String, name: String)
         case program(path: String)
 
@@ -18,7 +18,7 @@ struct SpawnConfig: nonisolated Codable {
             case program
         }
 
-        func encode(to encoder: Encoder) throws {
+        public func encode(to encoder: Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
 
             switch self {
@@ -32,7 +32,7 @@ struct SpawnConfig: nonisolated Codable {
             }
         }
 
-        init(from decoder: Decoder) throws {
+        public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             let kind = try container.decode(Kind.self, forKey: .kind)
 
@@ -48,14 +48,30 @@ struct SpawnConfig: nonisolated Codable {
         }
     }
 
-    var target: Target
-    var arguments: [String]
-    var environment: [String: String]
-    var workingDirectory: String?
-    var stdio: Stdio
-    var autoResume: Bool
+    public var target: Target
+    public var arguments: [String]
+    public var environment: [String: String]
+    public var workingDirectory: String?
+    public var stdio: Stdio
+    public var autoResume: Bool
 
-    var defaultDisplayName: String {
+    public init(
+        target: Target,
+        arguments: [String],
+        environment: [String: String],
+        workingDirectory: String?,
+        stdio: Stdio,
+        autoResume: Bool
+    ) {
+        self.target = target
+        self.arguments = arguments
+        self.environment = environment
+        self.workingDirectory = workingDirectory
+        self.stdio = stdio
+        self.autoResume = autoResume
+    }
+
+    public var defaultDisplayName: String {
         switch target {
         case .application(_, let name):
             return name
@@ -67,7 +83,7 @@ struct SpawnConfig: nonisolated Codable {
         }
     }
 
-    var programString: String {
+    public var programString: String {
         switch target {
         case .application(let identifier, _):
             return identifier
@@ -76,15 +92,15 @@ struct SpawnConfig: nonisolated Codable {
         }
     }
 
-    var argvParam: [String]? {
+    public var argvParam: [String]? {
         arguments.isEmpty ? nil : arguments
     }
 
-    var envParam: [String: String]? {
+    public var envParam: [String: String]? {
         environment.isEmpty ? nil : environment
     }
 
-    var cwdParam: String? {
+    public var cwdParam: String? {
         guard
             let cwd = workingDirectory?
                 .trimmingCharacters(in: .whitespacesAndNewlines),

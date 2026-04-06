@@ -1,4 +1,5 @@
 import AppKit
+import LumaCore
 import Metal
 import MetalKit
 import SwiftUI

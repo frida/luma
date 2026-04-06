@@ -1,4 +1,5 @@
 import SwiftUI
+import LumaCore
 
 extension JSInspectValue {
     var inlineDescription: String {

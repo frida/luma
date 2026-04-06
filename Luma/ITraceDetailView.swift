@@ -1,4 +1,5 @@
 import Frida
+import LumaCore
 import SwiftData
 import SwiftUI
 import SwiftyR2

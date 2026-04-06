@@ -1,4 +1,5 @@
 import Foundation
+import LumaCore
 
 struct RuntimeEvent: Identifiable {
     enum Source {
@@ -65,9 +66,3 @@ struct ConsoleMessage: CustomStringConvertible {
     }
 }
 
-enum ConsoleLevel: String {
-    case info
-    case debug
-    case warning
-    case error
-}

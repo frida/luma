@@ -1,4 +1,5 @@
 import SwiftUI
+import LumaCore
 
 struct InstrumentTemplate: Identifiable, Hashable {
     let id: String

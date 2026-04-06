@@ -1,44 +1,74 @@
-import CoreGraphics
 import Foundation
 
-struct CFGGraph {
-    /// Unique key for a node: encodes section to avoid collisions
-    /// when the same address appears in multiple functions.
-    typealias NodeKey = UInt64
+public struct CFGGraph {
+    public typealias NodeKey = UInt64
 
-    static func nodeKey(address: UInt64, section: Int) -> NodeKey {
-        // Encode section in the top 2 bits. Addresses never use them on arm64.
+    public struct Point2D: Sendable, Hashable {
+        public var x: Double
+        public var y: Double
+
+        public static let zero = Point2D(x: 0, y: 0)
+
+        public init(x: Double, y: Double) {
+            self.x = x
+            self.y = y
+        }
+    }
+
+    public static func nodeKey(address: UInt64, section: Int) -> NodeKey {
         address | (UInt64(section) << 62)
     }
 
-    static func nodeAddress(_ key: NodeKey) -> UInt64 {
+    public static func nodeAddress(_ key: NodeKey) -> UInt64 {
         key & 0x3FFF_FFFF_FFFF_FFFF
     }
 
-    struct Node {
-        let key: NodeKey
-        let address: UInt64
-        let name: String
-        let size: Int
-        let visitCount: Int
-        let section: Int
-        var position: CGPoint = .zero
-        var layer: Int = 0
+    public struct Node {
+        public let key: NodeKey
+        public let address: UInt64
+        public let name: String
+        public let size: Int
+        public let visitCount: Int
+        public let section: Int
+        public var position: Point2D = .zero
+        public var layer: Int = 0
+
+        public init(key: NodeKey, address: UInt64, name: String, size: Int, visitCount: Int, section: Int) {
+            self.key = key
+            self.address = address
+            self.name = name
+            self.size = size
+            self.visitCount = visitCount
+            self.section = section
+        }
     }
 
-    struct Edge {
-        let from: NodeKey
-        let to: NodeKey
-        let count: Int
-        let isCrossSection: Bool
+    public struct Edge {
+        public let from: NodeKey
+        public let to: NodeKey
+        public let count: Int
+        public let isCrossSection: Bool
+
+        public init(from: NodeKey, to: NodeKey, count: Int, isCrossSection: Bool) {
+            self.from = from
+            self.to = to
+            self.count = count
+            self.isCrossSection = isCrossSection
+        }
     }
 
-    var nodes: [NodeKey: Node]
-    var edges: [Edge]
-    var entryKey: NodeKey
-    var sectionCount: Int = 1
+    public var nodes: [NodeKey: Node]
+    public var edges: [Edge]
+    public var entryKey: NodeKey
+    public var sectionCount: Int = 1
 
-    static func build<S: Collection>(from entries: S, section: Int = 0) -> CFGGraph where S.Element == TraceEntry {
+    public init(nodes: [NodeKey: Node], edges: [Edge], entryKey: NodeKey) {
+        self.nodes = nodes
+        self.edges = edges
+        self.entryKey = entryKey
+    }
+
+    public static func build<S: Collection>(from entries: S, section: Int = 0) -> CFGGraph where S.Element == TraceEntry {
         var nodeCounts: [NodeKey: Int] = [:]
         var nodeInfo: [NodeKey: (address: UInt64, name: String, size: Int)] = [:]
 
@@ -85,8 +115,7 @@ struct CFGGraph {
         return graph
     }
 
-    /// Build a graph showing all function calls side by side.
-    static func buildAllFunctions(
+    public static func buildAllFunctions(
         sections: [(entries: ArraySlice<TraceEntry>, section: Int)],
         currentSection: Int
     ) -> CFGGraph {
@@ -104,7 +133,6 @@ struct CFGGraph {
 
         combined.sectionCount = sections.count
 
-        // Cross-section edges between consecutive functions.
         for i in 0..<(sections.count - 1) {
             let (prevEntries, prevSection) = sections[i]
             let (nextEntries, nextSection) = sections[i + 1]
@@ -125,26 +153,22 @@ struct CFGGraph {
 
     // MARK: - Layout
 
-    mutating func layout() {
+    public mutating func layout() {
         assignLayers()
         assignPositions()
     }
 
-    /// Assign layers using longest path from entry on the DAG
-    /// (back edges from loops are excluded to prevent cycles).
     private mutating func assignLayers() {
         var adjacency: [NodeKey: [NodeKey]] = [:]
         for edge in edges where !edge.isCrossSection {
             adjacency[edge.from, default: []].append(edge.to)
         }
 
-        // DFS to find back edges (cycles).
         struct EdgePair: Hashable { let from: NodeKey; let to: NodeKey }
         var backEdges = Set<EdgePair>()
         var visited = Set<NodeKey>()
         var onStack = Set<NodeKey>()
 
-        // Iterative DFS to avoid stack overflow on deep graphs.
         func dfs(start: NodeKey) {
             var stack: [(node: NodeKey, neighborIdx: Int)] = [(start, 0)]
             visited.insert(start)
@@ -176,7 +200,6 @@ struct CFGGraph {
             dfs(start: key)
         }
 
-        // Longest path on the DAG (excluding back edges).
         for key in nodes.keys {
             nodes[key]?.layer = 0
         }
@@ -198,63 +221,56 @@ struct CFGGraph {
         }
     }
 
-    /// Position nodes in a grid: Y = layer, X = order within layer.
-    /// Sections are laid out horizontally with spacing between them.
-    mutating func assignPositions(nodeHeights: ((UInt64) -> CGFloat)? = nil) {
-        let nodeWidth: CGFloat = 360
-        let hSpacing: CGFloat = 40
-        let vSpacing: CGFloat = 20
-        let sectionGap: CGFloat = 80
+    public mutating func assignPositions(nodeHeights: ((UInt64) -> Double)? = nil) {
+        let nodeWidth: Double = 360
+        let hSpacing: Double = 40
+        let vSpacing: Double = 20
+        let sectionGap: Double = 80
 
-        // Group nodes by section, then by layer within each section.
         var sectionNodes: [Int: [Int: [UInt64]]] = [:]
         for (addr, node) in nodes {
             sectionNodes[node.section, default: [:]][node.layer, default: []].append(addr)
         }
 
-        // Compute the width of each section.
-        var sectionWidths: [Int: CGFloat] = [:]
+        var sectionWidths: [Int: Double] = [:]
         for (section, layers) in sectionNodes {
-            var maxLayerWidth: CGFloat = 0
+            var maxLayerWidth: Double = 0
             for (_, addrs) in layers {
-                let w = CGFloat(addrs.count) * (nodeWidth + hSpacing) - hSpacing
+                let w = Double(addrs.count) * (nodeWidth + hSpacing) - hSpacing
                 maxLayerWidth = max(maxLayerWidth, w)
             }
             sectionWidths[section] = maxLayerWidth
         }
 
-        // Assign X offsets per section.
         let sortedSections = sectionNodes.keys.sorted()
-        var sectionOffsets: [Int: CGFloat] = [:]
-        var xCursor: CGFloat = 0
+        var sectionOffsets: [Int: Double] = [:]
+        var xCursor: Double = 0
         for section in sortedSections {
             let w = sectionWidths[section] ?? 0
             sectionOffsets[section] = xCursor + w / 2
             xCursor += w + sectionGap
         }
-        // Center around 0.
         let totalWidth = xCursor - sectionGap
         let centerOffset = totalWidth / 2
 
-        // Position nodes within each section.
         for section in sortedSections {
             let layers = sectionNodes[section]!
             let sectionCenterX = (sectionOffsets[section] ?? 0) - centerOffset
 
-            var y: CGFloat = 0
+            var y: Double = 0
             for layer in layers.keys.sorted() {
                 let addrs = layers[layer]!.sorted()
-                let layerWidth = CGFloat(addrs.count) * (nodeWidth + hSpacing) - hSpacing
+                let layerWidth = Double(addrs.count) * (nodeWidth + hSpacing) - hSpacing
                 let startX = sectionCenterX - layerWidth / 2
 
-                var maxHeight: CGFloat = 0
+                var maxHeight: Double = 0
                 for addr in addrs {
                     maxHeight = max(maxHeight, nodeHeights?(addr) ?? 160)
                 }
 
                 for (i, addr) in addrs.enumerated() {
-                    let x = startX + CGFloat(i) * (nodeWidth + hSpacing) + nodeWidth / 2
-                    nodes[addr]?.position = CGPoint(x: x, y: y + maxHeight / 2)
+                    let x = startX + Double(i) * (nodeWidth + hSpacing) + nodeWidth / 2
+                    nodes[addr]?.position = Point2D(x: x, y: y + maxHeight / 2)
                 }
 
                 y += maxHeight + vSpacing

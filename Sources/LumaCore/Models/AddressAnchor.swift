@@ -1,11 +1,13 @@
 import Foundation
 
-enum AddressAnchor: Codable, Hashable {
+public typealias JSONObject = [String: Any]
+
+public enum AddressAnchor: Codable, Hashable {
     case absolute(UInt64)
     case moduleOffset(name: String, offset: UInt64)
     case moduleExport(name: String, export: String)
 
-    var displayString: String {
+    public var displayString: String {
         switch self {
         case .absolute(let a):
             return String(format: "0x%llx", a)
@@ -18,7 +20,7 @@ enum AddressAnchor: Codable, Hashable {
         }
     }
 
-    func toJSON() -> JSONObject {
+    public func toJSON() -> JSONObject {
         switch self {
         case .absolute(let a):
             return [

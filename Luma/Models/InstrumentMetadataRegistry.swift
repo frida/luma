@@ -1,4 +1,5 @@
 import Foundation
+import LumaCore
 
 @MainActor
 final class InstrumentMetadataRegistry {

@@ -4,6 +4,7 @@ import Frida
 import SwiftData
 import SwiftUI
 import SwiftyMonaco
+import LumaCore
 
 @MainActor
 final class Workspace: ObservableObject {
@@ -1447,5 +1448,3 @@ final class Workspace: ObservableObject {
         return insight
     }
 }
-
-typealias JSONObject = [String: Any]
