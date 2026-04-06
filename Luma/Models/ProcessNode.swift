@@ -57,38 +57,6 @@ final class ProcessNodeViewModel: ObservableObject, Identifiable {
             guard let self else { return }
             for await modules in self.core.moduleSnapshots {
                 self.modules = modules
-                self.persistModules()
-                self.onModulesSnapshotReady?(self)
-            }
-        }
-
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            for await reason in self.core.detachEvents {
-                self.persistModules()
-                self.updateSession { $0.detachReason = reason }
-                self.onDestroyed?(self, reason)
-            }
-        }
-
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            for await event in self.core.events {
-                self.eventSink?(event)
-            }
-        }
-
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            for await result in self.core.replResults {
-                self.persistREPLResult(result)
-            }
-        }
-
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            for await capture in self.core.captures {
-                self.persistCapture(capture)
             }
         }
     }
@@ -184,37 +152,6 @@ final class ProcessNodeViewModel: ObservableObject, Identifiable {
     }
 
     // MARK: - Persistence Helpers
-
-    private func persistREPLResult(_ result: LumaCore.REPLResult) {
-        let resultValue: LumaCore.REPLCell.Result
-        switch result.value {
-        case .js(let v):
-            resultValue = .js(v)
-        case .text(let t):
-            resultValue = .text(t)
-        }
-
-        let cell = LumaCore.REPLCell(
-            sessionID: sessionID,
-            code: result.code,
-            result: resultValue,
-            timestamp: result.timestamp
-        )
-        try? store.save(cell)
-    }
-
-    private func persistCapture(_ capture: CapturedITrace) {
-        let record = ITraceCaptureRecord(from: capture, sessionID: sessionID)
-        try? store.save(record)
-    }
-
-    private func persistModules() {
-        updateSession {
-            $0.lastKnownModules = self.modules.map {
-                LumaCore.ProcessSession.PersistedModule(name: $0.name, base: $0.base, size: $0.size)
-            }
-        }
-    }
 
     func updateSession(_ mutate: (inout LumaCore.ProcessSession) -> Void) {
         guard var s = try? store.fetchSession(id: sessionID) else { return }
