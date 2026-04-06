@@ -1,5 +1,5 @@
 {
-  "originHash" : "7a08a89d59af1df637cfcefe7a48b882860b7acfe9d457bdb1333cf0d0839b33",
+  "originHash" : "c1b3127b517adff70d9b70822802e549062c7396a75535fd37f3f049e6f185c8",
   "pins" : [
     {
       "identity" : "frida-swift",
@@ -17,6 +17,24 @@
       "state" : {
         "revision" : "36e30a6f1ef10e4194f6af0cff90888526f0c115",
         "version" : "7.10.0"
+      }
+    },
+    {
+      "identity" : "swift-asn1",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-asn1.git",
+      "state" : {
+        "revision" : "9f542610331815e29cc3821d3b6f488db8715517",
+        "version" : "1.6.0"
+      }
+    },
+    {
+      "identity" : "swift-crypto",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-crypto",
+      "state" : {
+        "revision" : "95ba0316a9b733e92bb6b071255ff46263bbe7dc",
+        "version" : "3.15.1"
       }
     },
     {

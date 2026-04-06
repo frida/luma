@@ -10,8 +10,6 @@ struct CodeShareBrowserView: View {
 
     @Environment(\.dismiss) private var dismiss
 
-    @StateObject private var service = CodeShareService.shared
-
     @State private var mode: CodeShareService.Mode = .popular
     @State private var searchQuery: String = ""
     @State private var projects: [CodeShareService.ProjectSummary] = []
@@ -172,7 +170,7 @@ struct CodeShareBrowserView: View {
         isLoading = true
         loadError = nil
         do {
-            let items = try await service.fetchPopular()
+            let items = try await CodeShareService.fetchPopular()
             projects = items
             if selectedProject == nil {
                 selectedProject = projects.first
@@ -190,7 +188,7 @@ struct CodeShareBrowserView: View {
         isLoading = true
         loadError = nil
         do {
-            let items = try await service.searchProjects(query: searchQuery)
+            let items = try await CodeShareService.searchProjects(query: searchQuery)
             projects = items
             if selectedProject == nil {
                 selectedProject = projects.first
@@ -306,7 +304,7 @@ struct CodeShareProjectDetailView: View {
         }
 
         do {
-            let d = try await CodeShareService.shared.fetchProjectDetails(
+            let d = try await CodeShareService.fetchProjectDetails(
                 owner: project.owner,
                 slug: project.slug
             )

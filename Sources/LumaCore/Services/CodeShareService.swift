@@ -1,22 +1,24 @@
-import Combine
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
-@MainActor
-final class CodeShareService: ObservableObject {
-    static let shared = CodeShareService()
+public enum CodeShareService {
+    private static let baseURL = URL(string: "https://codeshare.frida.re")!
 
-    private let baseURL = URL(string: "https://codeshare.frida.re")!
+    public enum Mode: Sendable {
+        case popular
+        case search(query: String)
+    }
 
-    private init() {}
-
-    struct ProjectSummary: Identifiable, Decodable, Hashable {
-        let id: String
-        let owner: String
-        let slug: String
-        let name: String
-        let description: String
-        let fridaVersion: String
-        let likes: Int
+    public struct ProjectSummary: Identifiable, Decodable, Hashable, Sendable {
+        public let id: String
+        public let owner: String
+        public let slug: String
+        public let name: String
+        public let description: String
+        public let fridaVersion: String
+        public let likes: Int
 
         enum CodingKeys: String, CodingKey {
             case id
@@ -29,15 +31,15 @@ final class CodeShareService: ObservableObject {
         }
     }
 
-    struct ProjectDetails: Decodable {
-        let id: String
-        let owner: String
-        let slug: String
-        let name: String
-        let description: String
-        let source: String
-        let fridaVersion: String
-        let likes: Int
+    public struct ProjectDetails: Decodable, Sendable {
+        public let id: String
+        public let owner: String
+        public let slug: String
+        public let name: String
+        public let description: String
+        public let source: String
+        public let fridaVersion: String
+        public let likes: Int
 
         enum CodingKeys: String, CodingKey {
             case id
@@ -51,12 +53,7 @@ final class CodeShareService: ObservableObject {
         }
     }
 
-    enum Mode {
-        case popular
-        case search(query: String)
-    }
-
-    func fetchPopular() async throws -> [ProjectSummary] {
+    public static func fetchPopular() async throws -> [ProjectSummary] {
         let url = baseURL.appendingPathComponent("api/projects/popular")
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
@@ -66,7 +63,7 @@ final class CodeShareService: ObservableObject {
         }
     }
 
-    func searchProjects(query: String) async throws -> [ProjectSummary] {
+    public static func searchProjects(query: String) async throws -> [ProjectSummary] {
         guard !query.isEmpty else { return [] }
         var comps = URLComponents(
             url: baseURL.appendingPathComponent("api/projects/search"),
@@ -81,7 +78,7 @@ final class CodeShareService: ObservableObject {
         }
     }
 
-    func fetchProjectDetails(owner: String, slug: String) async throws -> ProjectDetails {
+    public static func fetchProjectDetails(owner: String, slug: String) async throws -> ProjectDetails {
         let url = baseURL.appendingPathComponent("api/project/\(owner)/\(slug)")
         do {
             let (data, _) = try await URLSession.shared.data(from: url)

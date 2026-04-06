@@ -62,11 +62,3 @@ final class HookPackLibrary: ObservableObject {
     }
 }
 
-struct HookPack {
-    let manifest: HookPackManifest
-    let folderURL: URL
-
-    var entryURL: URL {
-        folderURL.appendingPathComponent(manifest.entry)
-    }
-}

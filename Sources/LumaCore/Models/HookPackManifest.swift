@@ -1,7 +1,7 @@
 import Foundation
 
-public struct HookPackManifest: Decodable {
-    public struct Icon: Decodable {
+public struct HookPackManifest: Decodable, Sendable {
+    public struct Icon: Decodable, Sendable {
         public var systemName: String?
         public var file: String?
 
@@ -11,7 +11,7 @@ public struct HookPackManifest: Decodable {
         }
     }
 
-    public struct Feature: Decodable, Identifiable {
+    public struct Feature: Decodable, Identifiable, Sendable {
         public let id: String
         public let name: String
         public let defaultEnabled: Bool
