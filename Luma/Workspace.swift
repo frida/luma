@@ -1,5 +1,4 @@
 import Combine
-import CryptoKit
 import Frida
 import SwiftUI
 import SwiftyMonaco
@@ -7,7 +6,9 @@ import LumaCore
 
 @MainActor
 final class Workspace: ObservableObject {
-    let deviceManager = DeviceManager()
+    let engine: Engine
+
+    var deviceManager: DeviceManager { engine.deviceManager }
 
     @Published var processNodes: [ProcessNodeViewModel] = []
     @Published var sessions: [LumaCore.ProcessSession] = []
@@ -139,6 +140,13 @@ final class Workspace: ObservableObject {
 
     init(store: ProjectStore) {
         self.store = store
+        self.engine = Engine(
+            store: store,
+            coreAgentSource: LumaAgent.coreSource,
+            drainAgentSource: LumaAgent.drainSource,
+            tracerModuleSource: LumaAgent.tracerSource,
+            codeShareModuleSource: LumaAgent.codeShareSource
+        )
 
         githubToken = (try? TokenStore.load(kind: .github)) ?? nil
         Task { await loadCurrentGitHubUser() }
@@ -214,15 +222,11 @@ final class Workspace: ObservableObject {
             for await devEvent in device.events {
                 switch devEvent {
                 case .output(let data, let fd, let pid):
-                    self.handleDeviceOutput(
-                        device: device,
-                        data: data,
-                        fd: fd,
-                        pid: pid
-                    )
+                    self.handleDeviceOutput(device: device, data: data, fd: fd, pid: pid)
 
                 case .lost:
-                    self.handleDeviceLost(device)
+                    self.deviceEventTasks[device.id]?.cancel()
+                    self.deviceEventTasks[device.id] = nil
                     return
 
                 default:
@@ -232,12 +236,7 @@ final class Workspace: ObservableObject {
         }
     }
 
-    private func handleDeviceOutput(
-        device: Device,
-        data: [UInt8],
-        fd: Int,
-        pid: UInt
-    ) {
+    private func handleDeviceOutput(device: Device, data: [UInt8], fd: Int, pid: UInt) {
         guard
             let node = processNodes.first(where: {
                 $0.device.id == device.id && $0.process.pid == pid
@@ -246,22 +245,15 @@ final class Workspace: ObservableObject {
             return
         }
 
-        let text =
-            String(bytes: data, encoding: .utf8)
-            ?? "(\(data.count) bytes on fd \(fd))"
-
         let coreEvent = LumaCore.RuntimeEvent(
             source: .processOutput(fd: fd),
-            payload: .raw(message: text, data: data),
+            payload: .raw(
+                message: String(bytes: data, encoding: .utf8) ?? "(\(data.count) bytes on fd \(fd))",
+                data: data
+            ),
             data: data
         )
-        let evt = RuntimeEvent(coreEvent: coreEvent, processNode: node)
-        pushEvent(evt)
-    }
-
-    private func handleDeviceLost(_ device: Device) {
-        deviceEventTasks[device.id]?.cancel()
-        deviceEventTasks[device.id] = nil
+        pushEvent(RuntimeEvent(coreEvent: coreEvent, processNode: node))
     }
 
     func clearEvents() {
@@ -326,7 +318,6 @@ final class Workspace: ObservableObject {
             isEnabled: true,
             configJSON: initialConfigJSON
         )
-
         try? store.save(instance)
 
         guard let node = processNodes.first(where: { $0.sessionRecord.id == session.id }) else {
@@ -417,7 +408,9 @@ final class Workspace: ObservableObject {
             case .tracer:
                 let config = (try? TracerConfig.decode(from: data)) ?? TracerConfig()
                 do {
-                    configObject = try await compileTracerConfigForRuntime(config)
+                    _ = try await ensureCompilerWorkspaceReady()
+                    let paths = try compilerWorkspacePaths()
+                    configObject = try await engine.compileTracerConfig(config, paths: paths)
                 } catch {
                     runtime.lastError = "Failed to compile tracer config: \(error)"
                     return
@@ -446,24 +439,26 @@ final class Workspace: ObservableObject {
     ) async {
         switch template.kind {
         case .tracer:
-            await loadTracerRuntime(for: runtime, template: template, on: node)
+            await loadTracerRuntime(for: runtime, on: node)
         case .hookPack:
             await loadHookPackRuntime(for: runtime, template: template, on: node)
         case .codeShare:
-            await loadCodeShareRuntime(for: runtime, template: template, on: node)
+            await loadCodeShareRuntime(for: runtime, on: node)
         }
     }
 
     private func loadTracerRuntime(
         for runtime: InstrumentRuntime,
-        template: InstrumentTemplate,
         on node: ProcessNodeViewModel
     ) async {
         do {
             let instance = runtime.instance
-
             let config = try TracerConfig.decode(from: instance.configJSON)
-            var compiled = try await compileTracerConfigForRuntime(config)
+
+            _ = try await ensureCompilerWorkspaceReady()
+            let paths = try compilerWorkspacePaths()
+
+            var compiled = try await engine.compileTracerConfig(config, paths: paths)
 
             var counters: [String: Int] = [:]
             let captures = (try? store.fetchITraceCaptures(sessionID: instance.sessionID)) ?? []
@@ -474,7 +469,6 @@ final class Workspace: ObservableObject {
             if !counters.isEmpty {
                 compiled["callCounters"] = counters
             }
-
 
             try await node.script.exports.loadInstrument(
                 JSValue([
@@ -503,17 +497,15 @@ final class Workspace: ObservableObject {
 
         do {
             let instance = runtime.instance
-
             let source = try String(contentsOf: pack.entryURL, encoding: .utf8)
-            let config = try InstrumentConfigCodec.decode(HookPackConfig.self, from: instance.configJSON)
 
-            try await node.script.exports.loadInstrument(
-                JSValue([
-                    "instanceId": instance.id.uuidString,
-                    "moduleName": hookPackModuleName(packId: pack.manifest.id, source: source),
-                    "source": source,
-                    "config": config.toJSON(),
-                ]))
+            try await engine.loadHookPackInstrument(
+                instanceID: instance.id,
+                packID: pack.manifest.id,
+                entrySource: source,
+                configJSON: instance.configJSON,
+                on: node.core
+            )
 
             runtime.markAttached()
         } catch {
@@ -521,56 +513,25 @@ final class Workspace: ObservableObject {
         }
     }
 
-    private func hookPackModuleName(packId: String, source: String) -> String {
-        let data = Data(source.utf8)
-        let digest = SHA256.hash(data: data)
-        let hashHex = digest.map { String(format: "%02x", $0) }.joined()
-        return "/hookpacks/\(packId)/\(hashHex).js"
-    }
-
     private func loadCodeShareRuntime(
         for runtime: InstrumentRuntime,
-        template: InstrumentTemplate,
         on node: ProcessNodeViewModel
     ) async {
         do {
             let instance = runtime.instance
+            let cfg = try JSONDecoder().decode(CodeShareConfig.self, from: instance.configJSON)
 
-            let cfg = try JSONDecoder().decode(
-                CodeShareConfig.self,
-                from: instance.configJSON)
-
-            let configObject: Any
-            if instance.configJSON.isEmpty {
-                configObject = [:]
-            } else {
-                configObject = try JSONSerialization.jsonObject(
-                    with: instance.configJSON,
-                    options: [])
-            }
-
-            try await node.script.exports.loadInstrument(
-                JSValue([
-                    "instanceId": instance.id.uuidString,
-                    "moduleName": codeShareModuleName(
-                        slug: cfg.project?.slug ?? cfg.name,
-                        source: cfg.source
-                    ),
-                    "source": LumaAgent.codeShareSource,
-                    "config": configObject,
-                ]))
+            try await engine.loadCodeShareInstrument(
+                instanceID: instance.id,
+                config: cfg,
+                configJSON: instance.configJSON,
+                on: node.core
+            )
 
             runtime.markAttached()
         } catch {
-            print("Failed to load codeshare instrument \(template.sourceIdentifier): \(error)")
+            print("Failed to load codeshare instrument: \(error)")
         }
-    }
-
-    private func codeShareModuleName(slug: String, source: String) -> String {
-        let data = Data(source.utf8)
-        let digest = SHA256.hash(data: data)
-        let hashHex = digest.map { String(format: "%02x", $0) }.joined()
-        return "/codeshare/\(slug)/\(hashHex).js"
     }
 
     var allInstrumentTemplates: [InstrumentTemplate] {
@@ -658,7 +619,7 @@ final class Workspace: ObservableObject {
             },
             renderEvent: { event, workspace, selection in
                 guard case .jsValue(let v) = event.payload,
-                    let ev = Workspace.parseTracerEvent(from: v)
+                    let ev = Engine.parseTracerEvent(from: v)
                 else {
                     return AnyView(
                         Text(String(describing: event.payload))
@@ -702,7 +663,7 @@ final class Workspace: ObservableObject {
             makeEventContextMenuItems: { event, _, selection in
                 guard case .instrument(let instrumentID, _) = event.source,
                     case .jsValue(let v) = event.payload,
-                    let ev = Workspace.parseTracerEvent(from: v)
+                    let ev = Engine.parseTracerEvent(from: v)
                 else {
                     return []
                 }
@@ -806,182 +767,6 @@ final class Workspace: ObservableObject {
         selection.wrappedValue = .instrumentComponent(session.id, tracer.id, newHook.id, UUID())
     }
 
-    func compileTracerConfigForRuntime(_ config: TracerConfig) async throws -> JSONObject {
-        _ = try await ensureCompilerWorkspaceReady()
-        let paths = try compilerWorkspacePaths()
-
-        let results: [(Int, String, TracerConfig.Hook)] =
-            try await withThrowingTaskGroup(
-                of: (Int, String, TracerConfig.Hook).self
-            ) { group in
-                for (index, hook) in config.hooks.enumerated() {
-                    group.addTask {
-                        let js = try await self.compileTracerHook(
-                            id: hook.id,
-                            tsSource: hook.code,
-                            paths: paths
-                        )
-                        return (index, js, hook)
-                    }
-                }
-
-                var out: [(Int, String, TracerConfig.Hook)] = []
-                out.reserveCapacity(config.hooks.count)
-
-                for try await item in group {
-                    out.append(item)
-                }
-
-                return out
-            }
-
-        var hooksJSON: [JSONObject] = []
-        hooksJSON.reserveCapacity(results.count)
-
-        for (_, js, hook) in results.sorted(by: { $0.0 < $1.0 }) {
-            var dict: JSONObject = [
-                "id": hook.id.uuidString,
-                "displayName": hook.displayName,
-                "addressAnchor": hook.addressAnchor.toJSON(),
-                "isEnabled": hook.isEnabled,
-                "code": js,
-            ]
-
-            if hook.isPinned {
-                dict["isPinned"] = true
-            }
-
-            if hook.itraceEnabled {
-                dict["itraceEnabled"] = true
-            }
-
-            hooksJSON.append(dict)
-        }
-
-        return [
-            "hooks": hooksJSON
-        ]
-    }
-
-    private func compileTracerHook(
-        id: UUID,
-        tsSource: String,
-        paths: CompilerWorkspacePaths
-    ) async throws -> String {
-        let fm = FileManager.default
-
-        let dirRelPath = "TracerHooks"
-        let dirURL = paths.root.appendingPathComponent(dirRelPath, isDirectory: true)
-
-        if !fm.fileExists(atPath: dirURL.path) {
-            try fm.createDirectory(at: dirURL, withIntermediateDirectories: true)
-        }
-
-        let moduleRelPath = "\(dirRelPath)/\(id.uuidString).ts"
-        let entryRelPath = "\(dirRelPath)/\(id.uuidString).entry.ts"
-
-        let moduleURL = paths.root.appendingPathComponent(moduleRelPath)
-        let entryURL = paths.root.appendingPathComponent(entryRelPath)
-
-        try tsSource.write(to: moduleURL, atomically: true, encoding: .utf8)
-
-        let entrySource = """
-            import "./\(id.uuidString).ts";
-            export {};
-            """
-        try entrySource.write(to: entryURL, atomically: true, encoding: .utf8)
-
-        let options = BuildOptions()
-        options.projectRoot = paths.root.path
-        options.typeCheck = .none
-        options.sourceMaps = .omitted
-        options.compression = .terser
-
-        let bundle = try await withCompilerDiagnostics(label: "tracer hook \(id.uuidString)") { compiler in
-            try await compiler.build(entrypoint: entryRelPath, options: options)
-        }
-
-        let modules = try ESMBundleParser.parse(bundle)
-        return modules.modules[modules.order[0]]!
-    }
-
-    static func parseTracerEvent(from value: JSInspectValue) -> (
-        id: UUID,
-        timestamp: Double,
-        threadId: Int,
-        depth: Int,
-        caller: JSInspectValue,
-        backtrace: [JSInspectValue]?,
-        message: JSInspectValue
-    )? {
-        guard case .array(_, let elements) = value else {
-            return nil
-        }
-
-        guard elements.count == 7 else {
-            return nil
-        }
-
-        guard case .string(let rawId) = elements[0],
-            let id = UUID(uuidString: rawId)
-        else {
-            return nil
-        }
-
-        guard case .number(let timestamp) = elements[1] else {
-            return nil
-        }
-
-        guard case .number(let threadIdNum) = elements[2],
-            threadIdNum.isFinite,
-            threadIdNum.rounded(.towardZero) == threadIdNum
-        else {
-            return nil
-        }
-        let threadId = Int(threadIdNum)
-
-        guard case .number(let depthNum) = elements[3],
-            depthNum.isFinite,
-            depthNum.rounded(.towardZero) == depthNum
-        else {
-            return nil
-        }
-        let depth = Int(depthNum)
-
-        let caller = elements[4]
-        guard case .nativePointer = caller else {
-            return nil
-        }
-
-        guard case .array(_, let btElements) = elements[5] else {
-            return nil
-        }
-
-        var ptrs: [JSInspectValue] = []
-        ptrs.reserveCapacity(btElements.count)
-        for e in btElements {
-            guard case .nativePointer = e else {
-                return nil
-            }
-            ptrs.append(e)
-        }
-        let backtraceValue: [JSInspectValue]? = ptrs.isEmpty ? nil : ptrs
-
-        guard case .array(_, _) = elements[6] else {
-            return nil
-        }
-
-        return (
-            id: id,
-            timestamp: timestamp,
-            threadId: threadId,
-            depth: depth,
-            caller: caller,
-            backtrace: backtraceValue,
-            message: elements[6]
-        )
-    }
-
     func hookPackTemplates() -> [InstrumentTemplate] {
         HookPackLibrary.shared.packs.map { pack in
             let icon: InstrumentIcon
@@ -1016,7 +801,7 @@ final class Workspace: ObservableObject {
                     return try! JSONEncoder().encode(config)
                 },
                 makeConfigEditor: { jsonBinding, _ in
-                    let configBinding = Binding<HookPackConfig>(
+                    let cfgBinding = Binding<HookPackConfig>(
                         get: {
                             (try? JSONDecoder().decode(HookPackConfig.self, from: jsonBinding.wrappedValue))
                                 ?? HookPackConfig(packId: pack.manifest.id, features: [:])
@@ -1031,7 +816,7 @@ final class Workspace: ObservableObject {
                     return AnyView(
                         HookPackConfigView(
                             manifest: pack.manifest,
-                            config: configBinding
+                            config: cfgBinding
                         )
                     )
                 },
@@ -1454,16 +1239,14 @@ final class Workspace: ObservableObject {
         kind: LumaCore.AddressInsight.Kind
     ) throws -> LumaCore.AddressInsight {
         guard let node = processNodes.first(where: { $0.sessionRecord.id == sessionID }) else {
-            throw LumaCoreError.invalidOperation(
-                "Cannot resolve address anchor without an attached process"
-            )
+            throw LumaCoreError.invalidOperation("No attached process")
         }
 
         let anchor = node.core.anchor(for: pointer)
 
-        let existingInsights = (try? store.fetchInsights(sessionID: sessionID)) ?? []
-        if let existing = existingInsights.first(where: { $0.kind == kind && $0.anchor == anchor }) {
-            return existing
+        let existing = (try? store.fetchInsights(sessionID: sessionID)) ?? []
+        if let match = existing.first(where: { $0.kind == kind && $0.anchor == anchor }) {
+            return match
         }
 
         let insight = LumaCore.AddressInsight(
