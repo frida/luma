@@ -1267,8 +1267,10 @@ final class Workspace: ObservableObject {
 
             let fridaSession = try await device.attach(to: process.pid)
 
-            session_.lastAttachedAt = Date()
-            try? store.save(session_)
+            if var s = try? store.fetchSession(id: session_.id) {
+                s.lastAttachedAt = Date()
+                try? store.save(s)
+            }
 
             let script = try await fridaSession.createScript(
                 LumaAgent.coreSource,
@@ -1340,13 +1342,14 @@ final class Workspace: ObservableObject {
                     await loadRuntime(for: runtime, using: template, on: node)
                 }
             }
-            session_.phase = .attached
-            try? store.save(session_)
+            node.updateSession { $0.phase = .attached }
         } catch {
             NSLog("[Workspace] attach failed: %@", String(describing: error))
-            session_.lastError = error.localizedDescription
-            session_.phase = .idle
-            try? store.save(session_)
+            if var s = try? store.fetchSession(id: session_.id) {
+                s.lastError = error.localizedDescription
+                s.phase = .idle
+                try? store.save(s)
+            }
         }
     }
 
