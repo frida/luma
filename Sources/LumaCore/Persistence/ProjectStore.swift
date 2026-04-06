@@ -23,7 +23,7 @@ public final class ProjectStore: Sendable {
                         .order(Column("created_at").desc)
                         .fetchAll(db)
                 }
-                .start(in: dbPool, scheduling: .immediate, onError: { _ in }, onChange: onChange)
+                .start(in: dbPool, scheduling: .async(onQueue: .main), onError: { _ in }, onChange: onChange)
         )
     }
 
@@ -37,7 +37,7 @@ public final class ProjectStore: Sendable {
                         .order(Column("timestamp").asc)
                         .fetchAll(db)
                 }
-                .start(in: dbPool, scheduling: .immediate, onError: { _ in }, onChange: onChange)
+                .start(in: dbPool, scheduling: .async(onQueue: .main), onError: { _ in }, onChange: onChange)
         )
     }
 
