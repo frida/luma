@@ -58,8 +58,10 @@ final class InstrumentConfigEditor {
         paned.position = 240
         paned.hexpand = true
         paned.vexpand = true
-        paned.startChild = WidgetRef(buildTracerHookList(config: config))
-        paned.endChild = WidgetRef(buildTracerHookEditor(config: config))
+        let hookList = buildTracerHookList(config: config)
+        let hookEditor = buildTracerHookEditor(config: config)
+        paned.startChild = WidgetRef(hookList)
+        paned.endChild = WidgetRef(hookEditor)
         widget.append(child: paned)
     }
 

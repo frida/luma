@@ -95,8 +95,10 @@ final class MainWindow {
 
         let topPaned = Paned(orientation: .horizontal)
         topPaned.position = 280
-        topPaned.startChild = WidgetRef(buildSidebar())
-        topPaned.endChild = WidgetRef(buildDetailPane())
+        let sidebar = buildSidebar()
+        let detail = buildDetailPane()
+        topPaned.startChild = WidgetRef(sidebar)
+        topPaned.endChild = WidgetRef(detail)
         topPaned.hexpand = true
         topPaned.vexpand = true
 

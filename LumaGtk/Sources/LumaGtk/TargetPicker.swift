@@ -72,8 +72,10 @@ final class TargetPicker {
 
         let paned = Paned(orientation: .horizontal)
         paned.position = 240
-        paned.startChild = WidgetRef(buildDevicePane())
-        paned.endChild = WidgetRef(buildProcessPane())
+        let devicePane = buildDevicePane()
+        let processPane = buildProcessPane()
+        paned.startChild = WidgetRef(devicePane)
+        paned.endChild = WidgetRef(processPane)
         paned.hexpand = true
         paned.vexpand = true
 
