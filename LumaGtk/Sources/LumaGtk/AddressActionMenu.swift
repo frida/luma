@@ -57,6 +57,22 @@ enum AddressActionMenu {
         }
         box.append(child: detailsButton)
 
+        let memoryButton = Button(label: "Show memory\u{2026}")
+        memoryButton.add(cssClass: "flat")
+        memoryButton.onClicked { [weak popover, weak anchor] _ in
+            MainActor.assumeIsolated {
+                popover?.popdown()
+                guard let anchor else { return }
+                HexView.present(
+                    from: anchor,
+                    engine: engine,
+                    sessionID: sessionID,
+                    address: address
+                )
+            }
+        }
+        box.append(child: memoryButton)
+
         if engine.node(forSessionID: sessionID) != nil {
             let actions = engine.addressActions(sessionID: sessionID, address: address)
             if !actions.isEmpty {
