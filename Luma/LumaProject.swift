@@ -1,4 +1,3 @@
-import Combine
 import Foundation
 import LumaCore
 import SwiftUI
@@ -8,67 +7,51 @@ final class LumaProject: ReferenceFileDocument, ObservableObject {
     let store: ProjectStore
 
     nonisolated static var readableContentTypes: [UTType] {
-        [UTType(importedAs: "re.frida.luma-project")]
+        [UTType.project]
     }
     nonisolated static var writableContentTypes: [UTType] {
-        [UTType(importedAs: "re.frida.luma-project")]
+        [UTType.project]
     }
 
-    private let packageURL: URL
+    private let temporaryDirectory: URL
+    private let temporaryDBURL: URL
 
     init() {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("re.frida.Luma.\(UUID().uuidString)", isDirectory: true)
         try! FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-
-        let dbPath = tempDir.appendingPathComponent("project.sqlite").path
-        self.store = try! ProjectStore(path: dbPath)
-        self.packageURL = tempDir
+        let dbURL = tempDir.appendingPathComponent("project.sqlite")
+        self.temporaryDirectory = tempDir
+        self.temporaryDBURL = dbURL
+        self.store = try! ProjectStore(path: dbURL.path)
     }
 
     required nonisolated init(configuration: ReadConfiguration) throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("re.frida.Luma.\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        let dbURL = tempDir.appendingPathComponent("project.sqlite")
 
-        let dbPath = tempDir.appendingPathComponent("project.sqlite")
-
-        if let dbWrapper = configuration.file.fileWrappers?["project.sqlite"],
-            let data = dbWrapper.regularFileContents
-        {
-            try data.write(to: dbPath)
+        if let data = configuration.file.regularFileContents {
+            try data.write(to: dbURL)
         }
 
-        self.store = try ProjectStore(path: dbPath.path)
-        self.packageURL = tempDir
+        self.temporaryDirectory = tempDir
+        self.temporaryDBURL = dbURL
+        self.store = try ProjectStore(path: dbURL.path)
     }
 
-    nonisolated func snapshot(contentType: UTType) throws -> PackageSnapshot {
-        let dbPath = packageURL.appendingPathComponent("project.sqlite")
-        let data = try Data(contentsOf: dbPath)
-        return PackageSnapshot(sqliteData: data)
+    nonisolated func snapshot(contentType: UTType) throws -> Data {
+        try Data(contentsOf: temporaryDBURL)
     }
 
-    nonisolated func fileWrapper(snapshot: PackageSnapshot, configuration: WriteConfiguration) throws -> FileWrapper {
-        let dir: FileWrapper
-        if let existing = configuration.existingFile {
-            dir = existing
-            dir.fileWrappers?
-                .filter { $0.key == "project.sqlite" }
-                .forEach { dir.removeFileWrapper($0.value) }
-        } else {
-            dir = FileWrapper(directoryWithFileWrappers: [:])
-        }
-
-        dir.addRegularFile(
-            withContents: snapshot.sqliteData,
-            preferredFilename: "project.sqlite"
-        )
-
-        return dir
+    nonisolated func fileWrapper(snapshot: Data, configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: snapshot)
     }
+}
 
-    struct PackageSnapshot: Sendable {
-        let sqliteData: Data
+extension UTType {
+    static var project: UTType {
+        UTType(exportedAs: "re.frida.luma")
     }
 }

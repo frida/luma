@@ -80,8 +80,3 @@ import UniformTypeIdentifiers
 
 #endif
 
-extension UTType {
-    static var project: UTType {
-        UTType(importedAs: "re.frida.luma-project")
-    }
-}
