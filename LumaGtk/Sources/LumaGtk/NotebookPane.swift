@@ -67,6 +67,8 @@ final class NotebookPane {
         emptyState.vexpand = true
 
         contentBox.append(child: emptyState)
+        contentBox.append(child: scroll)
+        scroll.visible = false
 
         overlay = Overlay()
         overlay.hexpand = true
@@ -113,13 +115,16 @@ final class NotebookPane {
         guard let engine else { return }
         let entries = engine.notebookEntries.sorted { $0.timestamp < $1.timestamp }
 
-        clearChildren(of: contentBox)
         clearChildren(of: entriesBox)
 
         if entries.isEmpty {
-            contentBox.append(child: emptyState)
+            emptyState.visible = true
+            scroll.visible = false
             return
         }
+
+        emptyState.visible = false
+        scroll.visible = true
 
         for entry in entries {
             if entry.isUserNote
@@ -132,7 +137,6 @@ final class NotebookPane {
             }
             entriesBox.append(child: makeRow(for: entry))
         }
-        contentBox.append(child: scroll)
     }
 
     // MARK: - Actions
