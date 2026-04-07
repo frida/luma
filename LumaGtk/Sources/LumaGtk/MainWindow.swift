@@ -27,7 +27,6 @@ final class MainWindow {
     private var sessionsRowKinds: [SessionsRow] = []
     private var selection: SidebarSelection = .notebook
     private var addInstrumentButton: Button!
-    private var browseCodeShareButton: Button!
     private var installPackageButton: Button!
     private var collaborationButton: Button!
     private var collaborationPanel: CollaborationPanel?
@@ -37,12 +36,16 @@ final class MainWindow {
     private enum SidebarSelection: Equatable {
         case notebook
         case session(UUID)
+        case repl(UUID)
+        case itrace(UUID)
         case instrument(sessionID: UUID, instrumentID: UUID)
         case package(UUID)
     }
 
     private enum SessionsRow {
         case session(UUID)
+        case repl(UUID)
+        case itrace(UUID)
         case instrument(sessionID: UUID, instrumentID: UUID)
     }
 
@@ -77,11 +80,6 @@ final class MainWindow {
         addInstrumentButton.sensitive = false
         header.packStart(child: addInstrumentButton)
         self.addInstrumentButton = addInstrumentButton
-
-        let browseCodeShareButton = Button(label: "Browse CodeShare…")
-        browseCodeShareButton.sensitive = false
-        header.packStart(child: browseCodeShareButton)
-        self.browseCodeShareButton = browseCodeShareButton
 
         let installPackageButton = Button(label: "Install Package…")
         header.packStart(child: installPackageButton)
@@ -123,12 +121,6 @@ final class MainWindow {
         addInstrumentButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.openAddInstrumentDialog()
-            }
-        }
-        browseCodeShareButton.onClicked { [weak self, weak browseCodeShareButton] _ in
-            MainActor.assumeIsolated {
-                guard let button = browseCodeShareButton else { return }
-                self?.openCodeShareBrowser(anchor: button)
             }
         }
         installPackageButton.onClicked { [weak self, weak installPackageButton] _ in
@@ -275,6 +267,10 @@ final class MainWindow {
                 switch self.sessionsRowKinds[index] {
                 case .session(let id):
                     self.select(.session(id))
+                case .repl(let id):
+                    self.select(.repl(id))
+                case .itrace(let id):
+                    self.select(.itrace(id))
                 case .instrument(let sid, let iid):
                     self.select(.instrument(sessionID: sid, instrumentID: iid))
                 }
@@ -347,6 +343,18 @@ final class MainWindow {
             } else {
                 widget = makePlaceholder(title: "Session", subtitle: "(no longer in store)")
             }
+        case .repl(let id):
+            if let session = sessions.first(where: { $0.id == id }), let engine {
+                widget = makeREPLDetail(session: session, engine: engine)
+            } else {
+                widget = makePlaceholder(title: "REPL", subtitle: "(session no longer in store)")
+            }
+        case .itrace(let id):
+            if let session = sessions.first(where: { $0.id == id }), let engine {
+                widget = ITraceCapturesPane(engine: engine, sessionID: session.id).widget
+            } else {
+                widget = makePlaceholder(title: "ITrace", subtitle: "(session no longer in store)")
+            }
         case .instrument(let sid, let iid):
             if let session = sessions.first(where: { $0.id == sid }),
                 let instrument = (instrumentsBySession[sid] ?? []).first(where: { $0.id == iid })
@@ -368,12 +376,11 @@ final class MainWindow {
         }
         replaceDetail(with: widget)
         addInstrumentButton.sensitive = currentSessionID() != nil
-        browseCodeShareButton.sensitive = currentSessionID() != nil
     }
 
     private func currentSessionID() -> UUID? {
         switch selection {
-        case .session(let id), .instrument(let id, _):
+        case .session(let id), .repl(let id), .itrace(let id), .instrument(let id, _):
             return id
         default:
             return nil
@@ -473,33 +480,25 @@ final class MainWindow {
             column.append(child: banner)
         }
 
-        if let engine {
-            let notebook = Notebook()
-            notebook.hexpand = true
-            notebook.vexpand = true
+        let subtitle = "\(session.deviceName) · pid \(session.lastKnownPID)"
+        column.append(child: makePlaceholder(title: session.processName, subtitle: subtitle))
+        return column
+    }
 
-            let repl = REPLPane(engine: engine, sessionID: session.id)
-            let replPage = Box(orientation: .vertical, spacing: 0)
-            replPage.hexpand = true
-            replPage.vexpand = true
-            replPage.append(child: repl.widget)
-            let replTab = Box(orientation: .horizontal, spacing: 0)
-            replTab.append(child: Label(str: "REPL"))
-            _ = notebook.appendPage(child: replPage, tabLabel: replTab)
+    private func makeREPLDetail(session: LumaCore.ProcessSession, engine: Engine) -> Box {
+        let column = Box(orientation: .vertical, spacing: 0)
+        column.hexpand = true
+        column.vexpand = true
 
-            let itracePane = ITraceCapturesPane(engine: engine, sessionID: session.id)
-            let itracePage = Box(orientation: .vertical, spacing: 0)
-            itracePage.hexpand = true
-            itracePage.vexpand = true
-            itracePage.append(child: itracePane.widget)
-            let itraceTab = Box(orientation: .horizontal, spacing: 0)
-            itraceTab.append(child: Label(str: "ITrace"))
-            _ = notebook.appendPage(child: itracePage, tabLabel: itraceTab)
-
-            column.append(child: notebook)
-        } else {
-            column.append(child: makePlaceholder(title: session.processName, subtitle: "Engine not ready."))
+        if SessionDetachedBanner.shouldShow(for: session) {
+            let banner = SessionDetachedBanner.make(for: session) { [weak self] in
+                self?.reestablishSession(id: session.id)
+            }
+            column.append(child: banner)
         }
+
+        let repl = REPLPane(engine: engine, sessionID: session.id)
+        column.append(child: repl.widget)
         return column
     }
 
@@ -507,7 +506,12 @@ final class MainWindow {
 
     private func openAddInstrumentDialog() {
         guard let engine, let sessionID = currentSessionID() else { return }
-        let dialog = AddInstrumentDialog(parent: window, descriptors: engine.descriptors) { [weak self] descriptor in
+        let dialog = AddInstrumentDialog(
+            parent: window,
+            engine: engine,
+            sessionID: sessionID,
+            descriptors: engine.descriptors
+        ) { [weak self] descriptor in
             self?.addInstrument(descriptor: descriptor, sessionID: sessionID)
         }
         dialog.present()
@@ -581,12 +585,16 @@ final class MainWindow {
         case .notebook:
             sessionsList.unselectAll()
             packagesList.unselectAll()
-        case .session(let id), .instrument(let id, _):
+        case .session(let id), .repl(let id), .itrace(let id), .instrument(let id, _):
             notebookListBox.unselectAll()
             packagesList.unselectAll()
             if let row = sessionsRowKinds.firstIndex(where: { rowKind in
                 switch (rowKind, newValue) {
                 case (.session(let s), .session(let want)):
+                    return s == want
+                case (.repl(let s), .repl(let want)):
+                    return s == want
+                case (.itrace(let s), .itrace(let want)):
                     return s == want
                 case (.instrument(_, let i), .instrument(_, let want)):
                     return i == want
@@ -661,6 +669,28 @@ final class MainWindow {
             sessionsList.append(child: row)
             sessionsRowKinds.append(.session(session.id))
 
+            let replRow = ListBoxRow()
+            let replLabel = Label(str: "↳  REPL")
+            replLabel.halign = .start
+            replLabel.marginStart = 24
+            replLabel.marginEnd = 12
+            replLabel.marginTop = 2
+            replLabel.marginBottom = 2
+            replRow.set(child: replLabel)
+            sessionsList.append(child: replRow)
+            sessionsRowKinds.append(.repl(session.id))
+
+            let itraceRow = ListBoxRow()
+            let itraceLabel = Label(str: "↳  ITrace")
+            itraceLabel.halign = .start
+            itraceLabel.marginStart = 24
+            itraceLabel.marginEnd = 12
+            itraceLabel.marginTop = 2
+            itraceLabel.marginBottom = 2
+            itraceRow.set(child: itraceLabel)
+            sessionsList.append(child: itraceRow)
+            sessionsRowKinds.append(.itrace(session.id))
+
             for instrument in instrumentsBySession[session.id] ?? [] {
                 let irow = ListBoxRow()
                 let descriptor = engine?.descriptor(for: instrument)
@@ -694,6 +724,16 @@ final class MainWindow {
                 if case .session(let s) = $0 { return s == id }
                 return false
             }
+        case .repl(let id):
+            return sessionsRowKinds.firstIndex {
+                if case .repl(let s) = $0 { return s == id }
+                return false
+            }
+        case .itrace(let id):
+            return sessionsRowKinds.firstIndex {
+                if case .itrace(let s) = $0 { return s == id }
+                return false
+            }
         case .instrument(_, let id):
             return sessionsRowKinds.firstIndex {
                 if case .instrument(_, let i) = $0 { return i == id }
@@ -719,11 +759,6 @@ final class MainWindow {
             packagesList.append(child: row)
         }
         packagesSection.visible = !snapshot.isEmpty
-    }
-
-    private func openCodeShareBrowser(anchor: Button) {
-        guard let engine, let sessionID = currentSessionID() else { return }
-        CodeShareBrowser.present(from: anchor, engine: engine, sessionID: sessionID)
     }
 
     private func openPackageSearch(anchor: Button) {

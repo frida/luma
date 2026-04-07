@@ -9,15 +9,25 @@ final class AddInstrumentDialog {
     private let window: Window
     private let descriptors: [LumaCore.InstrumentDescriptor]
     private let onPick: OnPick
+    private let engine: Engine?
+    private let sessionID: UUID?
 
     private let listBox: ListBox
     private let addButton: Button
 
     private var selectedIndex: Int?
 
-    init(parent: Window, descriptors: [LumaCore.InstrumentDescriptor], onPick: @escaping OnPick) {
+    init(
+        parent: Window,
+        engine: Engine? = nil,
+        sessionID: UUID? = nil,
+        descriptors: [LumaCore.InstrumentDescriptor],
+        onPick: @escaping OnPick
+    ) {
         self.descriptors = descriptors
         self.onPick = onPick
+        self.engine = engine
+        self.sessionID = sessionID
 
         window = Window()
         window.title = "Add Instrument"
@@ -40,6 +50,16 @@ final class AddInstrumentDialog {
             MainActor.assumeIsolated { self?.close() }
         }
         header.packStart(child: cancelButton)
+        if engine != nil, sessionID != nil {
+            let browseButton = Button(label: "Browse CodeShare\u{2026}")
+            browseButton.onClicked { [weak self, weak browseButton] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let browseButton else { return }
+                    self.openCodeShareBrowser(anchor: browseButton)
+                }
+            }
+            header.packStart(child: browseButton)
+        }
         header.packEnd(child: addButton)
         window.set(titlebar: WidgetRef(header))
 
@@ -90,6 +110,12 @@ final class AddInstrumentDialog {
     private func commit() {
         guard let index = selectedIndex, index < descriptors.count else { return }
         onPick(descriptors[index])
+        close()
+    }
+
+    private func openCodeShareBrowser(anchor: Widget) {
+        guard let engine, let sessionID else { return }
+        CodeShareBrowser.present(from: anchor, engine: engine, sessionID: sessionID)
         close()
     }
 }
