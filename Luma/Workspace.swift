@@ -71,7 +71,18 @@ final class Workspace: ObservableObject {
 
     init(store: ProjectStore) {
         self.store = store
-        self.engine = Engine(store: store)
+        let fm = FileManager.default
+        let appSupport = try! fm.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        let dataDirectory = appSupport
+            .appendingPathComponent(Bundle.main.bundleIdentifier ?? "re.frida.Luma", isDirectory: true)
+        try! fm.createDirectory(at: dataDirectory, withIntermediateDirectories: true)
+
+        self.engine = Engine(store: store, dataDirectory: dataDirectory)
 
         engine.hookPackSourceProvider = { sourceIdentifier in
             guard let pack = HookPackLibrary.shared.pack(withId: sourceIdentifier) else { return nil }

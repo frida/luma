@@ -23,9 +23,11 @@ public final class Engine {
     public var hookPackDescriptorProvider: (() -> [InstrumentDescriptor])?
 
     public let collaboration: CollaborationSession
+    public let dataDirectory: URL
 
-    public init(store: ProjectStore) {
+    public init(store: ProjectStore, dataDirectory: URL) {
         self.store = store
+        self.dataDirectory = dataDirectory
         self.compilerWorkspace = CompilerWorkspace(store: store)
         self.collaboration = CollaborationSession(
             deviceManager: deviceManager,
@@ -996,17 +998,7 @@ public final class Engine {
         let packagesState = try store.fetchPackagesState()
         let fm = FileManager.default
 
-        let base = try fm.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )
-
-        let bundleID = Bundle.main.bundleIdentifier ?? "re.frida.Luma"
-        let root =
-            base
-            .appendingPathComponent(bundleID, isDirectory: true)
+        let root = dataDirectory
             .appendingPathComponent("Projects", isDirectory: true)
             .appendingPathComponent(packagesState.id.uuidString, isDirectory: true)
             .appendingPathComponent("Workspace", isDirectory: true)
