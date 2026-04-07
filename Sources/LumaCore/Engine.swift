@@ -125,7 +125,7 @@ public final class Engine {
                     keepaliveInterval: config.keepaliveInterval
                 )
             } catch {
-                NSLog("[Engine] failed to add remote device %@: %@", config.address, String(describing: error))
+                print("[Engine] failed to add remote device \(config.address): \(String(describing: error)))")
             }
         }
     }
@@ -173,7 +173,7 @@ public final class Engine {
                 node.loadedPackageNames.insert(entry["name"] as! String)
             }
         } catch {
-            NSLog("[Engine] failed to load packages: %@", String(describing: error))
+            print("[Engine] failed to load packages: \(String(describing: error)))")
         }
     }
 
@@ -191,7 +191,7 @@ public final class Engine {
             try await node.script.exports.loadPackages(JSValue([entry]))
             node.loadedPackageNames.insert(entry["name"] as! String)
         } catch {
-            NSLog("[Engine] failed to load package %@: %@", package.name, String(describing: error))
+            print("[Engine] failed to load package \(package.name): \(String(describing: error)))")
         }
     }
 
@@ -431,7 +431,7 @@ public final class Engine {
 
             updateSession(id: s.id) { $0.phase = .attached }
         } catch {
-            NSLog("[Engine] attach failed: %@", String(describing: error))
+            print("[Engine] attach failed: \(String(describing: error)))")
             updateSession(id: s.id) {
                 $0.lastError = error.localizedDescription
                 $0.phase = .idle
@@ -640,7 +640,7 @@ public final class Engine {
                 let paths = try compilerWorkspacePaths()
                 configObject = try await compileTracerConfig(config, paths: paths)
             } catch {
-                NSLog("[Engine] Failed to compile tracer config: %@", String(describing: error))
+                print("[Engine] Failed to compile tracer config: \(String(describing: error)))")
                 return
             }
 
@@ -660,7 +660,7 @@ public final class Engine {
                     "config": configObject,
                 ]))
         } catch {
-            NSLog("[Engine] Failed to update instrument config: %@", String(describing: error))
+            print("[Engine] Failed to update instrument config: \(String(describing: error)))")
         }
     }
 
@@ -707,7 +707,7 @@ public final class Engine {
 
             node.markInstrumentAttached(id: instanceID)
         } catch {
-            NSLog("[Engine] Failed to load instrument %@: %@", instanceID.uuidString, String(describing: error))
+            print("[Engine] Failed to load instrument \(instanceID.uuidString): \(String(describing: error)))")
         }
     }
 
