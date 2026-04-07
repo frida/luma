@@ -1,3 +1,4 @@
+import CWebKit
 import Foundation
 import Frida
 import Gtk
@@ -7,7 +8,9 @@ import Observation
 @MainActor
 final class MainWindow {
     private let app: Application
-    private let window: ApplicationWindow
+    private weak var application: LumaApplication?
+    let window: ApplicationWindow
+    private(set) var document: LumaDocument
 
     private var engine: Engine?
 
@@ -49,10 +52,13 @@ final class MainWindow {
         case instrument(sessionID: UUID, instrumentID: UUID)
     }
 
-    init(app: Application) {
+    init(app: Application, application: LumaApplication, document: LumaDocument) {
         self.app = app
+        self.application = application
+        self.document = document
         self.window = ApplicationWindow(application: app)
-        window.title = "Luma"
+        self.outerPaned = Paned(orientation: .horizontal)
+        window.title = "Luma — \(document.displayName)"
         window.setDefaultSize(width: 1200, height: 800)
 
         let notebookListBox = ListBox()
@@ -62,7 +68,6 @@ final class MainWindow {
         let packagesSection = Box(orientation: .vertical, spacing: 0)
         let detailContainer = Box(orientation: .vertical, spacing: 0)
         let eventStreamPane = EventStreamPane()
-        self.outerPaned = Paned(orientation: .horizontal)
         self.notebookListBox = notebookListBox
         self.notebookRow = notebookRow
         self.sessionsList = sessionsList
@@ -88,6 +93,16 @@ final class MainWindow {
         let collaborationButton = Button(label: "Collaboration")
         header.packStart(child: collaborationButton)
         self.collaborationButton = collaborationButton
+
+        let primaryMenuButton = MenuButton()
+        primaryMenuButton.set(iconName: "open-menu-symbolic")
+        primaryMenuButton.tooltipText = "Main menu"
+        if let menuModelPtr = MainWindow.buildPrimaryMenuModel(),
+            let menuButtonPtr = primaryMenuButton.menu_button_ptr.map(UnsafeMutableRawPointer.init)
+        {
+            luma_menu_button_set_menu(menuButtonPtr, menuModelPtr)
+        }
+        header.packEnd(child: primaryMenuButton)
 
         window.set(titlebar: WidgetRef(header))
 
@@ -136,8 +151,11 @@ final class MainWindow {
             }
         }
 
-        let closeHandler: (WindowRef) -> Bool = { [weak app] _ in
-            MainActor.assumeIsolated { app?.quit() }
+        let closeHandler: (WindowRef) -> Bool = { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.application?.windowDidClose(self)
+            }
             return false
         }
         window.onCloseRequest(handler: closeHandler)
@@ -151,6 +169,38 @@ final class MainWindow {
     func present() {
         window.present()
         renderDetail()
+    }
+
+    func documentDidChange() {
+        if let updated = application?.documentForWindow(self) {
+            self.document = updated
+        }
+        window.title = "Luma — \(document.displayName)"
+    }
+
+    private static func buildPrimaryMenuModel() -> UnsafeMutableRawPointer? {
+        guard let menu = luma_menu_new() else { return nil }
+        "New Window".withCString { label in
+            "app.new-window".withCString { action in
+                luma_menu_append(menu, label, action)
+            }
+        }
+        "Open\u{2026}".withCString { label in
+            "app.open".withCString { action in
+                luma_menu_append(menu, label, action)
+            }
+        }
+        "Save As\u{2026}".withCString { label in
+            "app.save-as".withCString { action in
+                luma_menu_append(menu, label, action)
+            }
+        }
+        "Close Window".withCString { label in
+            "app.close-window".withCString { action in
+                luma_menu_append(menu, label, action)
+            }
+        }
+        return menu
     }
 
     func attach(engine: Engine) {

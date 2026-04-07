@@ -1,3 +1,4 @@
+import CWebKit
 import Foundation
 import Gtk
 import LumaCore
@@ -5,8 +6,14 @@ import LumaCore
 @MainActor
 final class LumaApplication {
     let app: Application
-    private var mainWindow: MainWindow?
-    private var engine: Engine?
+
+    private struct OpenDocument {
+        let window: MainWindow
+        let engine: Engine
+        var document: LumaDocument
+    }
+
+    private var openDocuments: [ObjectIdentifier: OpenDocument] = [:]
 
     init() {
         guard let app = Application(id: "re.frida.Luma") else {
@@ -30,36 +37,262 @@ final class LumaApplication {
             MonacoDemo.present(in: app)
             return
         }
-        let window = MainWindow(app: app)
-        window.present()
-        mainWindow = window
 
-        Task { @MainActor in
-            await self.boot()
+        installActions()
+
+        let cliPaths = parseDocumentPaths(from: CommandLine.arguments)
+        if !cliPaths.isEmpty {
+            for path in cliPaths {
+                openWindow(forFile: URL(fileURLWithPath: path))
+            }
+            return
         }
+
+        let lastPath = LumaState.shared.lastDocumentPath
+        if let lastPath, FileManager.default.fileExists(atPath: lastPath) {
+            openWindow(forFile: URL(fileURLWithPath: lastPath))
+            return
+        }
+
+        openNewUntitledWindow()
     }
 
-    private func boot() async {
-        let dataDirectory = Self.makeDataDirectory()
-        let storePath = dataDirectory.appendingPathComponent("project.sqlite").path
+    func openNewUntitledWindow() {
         do {
-            let store = try ProjectStore(path: storePath)
-            let engine = Engine(store: store, dataDirectory: dataDirectory)
-            self.engine = engine
-            await engine.start()
-            mainWindow?.attach(engine: engine)
+            let document = try LumaDocumentLoader.makeUntitled(in: Self.untitledDirectory)
+            openWindow(for: document)
         } catch {
-            mainWindow?.showFatalError("Failed to start engine: \(error)")
+            FileHandle.standardError.write(
+                "Failed to create untitled document: \(error)\n".data(using: .utf8)!
+            )
         }
     }
 
-    private static func makeDataDirectory() -> URL {
+    func openWindow(forFile url: URL) {
+        do {
+            let document = try LumaDocumentLoader.open(at: url)
+            openWindow(for: document)
+        } catch {
+            FileHandle.standardError.write(
+                "Failed to open \(url.path): \(error)\n".data(using: .utf8)!
+            )
+        }
+    }
+
+    func openWindow(for document: LumaDocument) {
+        let window = MainWindow(app: app, application: self, document: document)
+        let key = ObjectIdentifier(window)
+
+        do {
+            let store = try ProjectStore(path: document.sqlitePath)
+            let engine = Engine(store: store, dataDirectory: Self.dataDirectory)
+            openDocuments[key] = OpenDocument(window: window, engine: engine, document: document)
+            window.present()
+
+            Task { @MainActor in
+                await engine.start()
+                window.attach(engine: engine)
+            }
+
+            if !document.isUntitled {
+                LumaState.shared.lastDocumentPath = document.url.path
+                LumaState.shared.recordRecent(path: document.url.path)
+            }
+        } catch {
+            window.present()
+            window.showFatalError("Failed to open project: \(error)")
+            openDocuments[key] = nil
+        }
+    }
+
+    func documentForWindow(_ window: MainWindow) -> LumaDocument? {
+        openDocuments[ObjectIdentifier(window)]?.document
+    }
+
+    func updateDocumentForWindow(_ window: MainWindow, to document: LumaDocument) {
+        let key = ObjectIdentifier(window)
+        guard var entry = openDocuments[key] else { return }
+        entry.document = document
+        openDocuments[key] = entry
+        if !document.isUntitled {
+            LumaState.shared.lastDocumentPath = document.url.path
+            LumaState.shared.recordRecent(path: document.url.path)
+        }
+    }
+
+    func windowDidClose(_ window: MainWindow) {
+        openDocuments[ObjectIdentifier(window)] = nil
+    }
+
+    func saveAs(window: MainWindow, destination: URL) {
+        let key = ObjectIdentifier(window)
+        guard let entry = openDocuments[key] else { return }
+        do {
+            let updated = try LumaDocumentLoader.saveAs(entry.document, to: destination)
+            updateDocumentForWindow(window, to: updated)
+            window.documentDidChange()
+        } catch {
+            FileHandle.standardError.write(
+                "Save As failed: \(error)\n".data(using: .utf8)!
+            )
+        }
+    }
+
+    fileprivate func handleOpenPath(_ path: String) {
+        openWindow(forFile: URL(fileURLWithPath: path))
+    }
+
+    fileprivate func handleSaveAsPath(window: MainWindow, _ path: String) {
+        var destination = URL(fileURLWithPath: path)
+        if destination.pathExtension != LumaDocumentLoader.fileExtension {
+            destination = destination.appendingPathExtension(LumaDocumentLoader.fileExtension)
+        }
+        saveAs(window: window, destination: destination)
+    }
+
+    fileprivate func presentOpenDialog() {
+        guard let active = activeWindow() else { return }
+        guard let parentPtr = active.window.window_ptr.map(UnsafeMutableRawPointer.init) else { return }
+        let context = Unmanaged.passRetained(self).toOpaque()
+        "Open Project".withCString { title in
+            luma_file_dialog_open(parentPtr, title, lumaOpenPathThunk, context)
+        }
+    }
+
+    fileprivate func presentSaveAsDialog() {
+        guard let active = activeWindow() else { return }
+        guard let parentPtr = active.window.window_ptr.map(UnsafeMutableRawPointer.init) else { return }
+        let suggested = "\(active.document.displayName).\(LumaDocumentLoader.fileExtension)"
+        let context = Unmanaged.passRetained(SaveAsContext(app: self, window: active)).toOpaque()
+        "Save Project As".withCString { title in
+            suggested.withCString { name in
+                luma_file_dialog_save(parentPtr, title, name, lumaSavePathThunk, context)
+            }
+        }
+    }
+
+    fileprivate func activeWindow() -> MainWindow? {
+        openDocuments.values.first?.window
+    }
+
+    private func installActions() {
+        guard let appPtr = app.application_ptr.map(UnsafeMutableRawPointer.init) else { return }
+        installAction(appPtr: appPtr, name: "new-window") { [weak self] in
+            self?.openNewUntitledWindow()
+        }
+        installAction(appPtr: appPtr, name: "open") { [weak self] in
+            self?.presentOpenDialog()
+        }
+        installAction(appPtr: appPtr, name: "save-as") { [weak self] in
+            self?.presentSaveAsDialog()
+        }
+        installAction(appPtr: appPtr, name: "close-window") { [weak self] in
+            self?.activeWindow()?.window.close()
+        }
+
+        setAccel(appPtr: appPtr, action: "app.new-window", accel: "<Primary>n")
+        setAccel(appPtr: appPtr, action: "app.open", accel: "<Primary>o")
+        setAccel(appPtr: appPtr, action: "app.save-as", accel: "<Primary><Shift>s")
+        setAccel(appPtr: appPtr, action: "app.close-window", accel: "<Primary>w")
+    }
+
+    private func installAction(
+        appPtr: UnsafeMutableRawPointer,
+        name: String,
+        handler: @escaping () -> Void
+    ) {
+        let box = ActionHandlerBox(handler: handler)
+        let context = Unmanaged.passRetained(box).toOpaque()
+        name.withCString { cstr in
+            luma_action_install(appPtr, cstr, lumaActionThunk, context)
+        }
+    }
+
+    private func setAccel(
+        appPtr: UnsafeMutableRawPointer,
+        action: String,
+        accel: String
+    ) {
+        action.withCString { actionCstr in
+            accel.withCString { accelCstr in
+                luma_app_set_accels(appPtr, actionCstr, accelCstr)
+            }
+        }
+    }
+
+    private func parseDocumentPaths(from arguments: [String]) -> [String] {
+        arguments.dropFirst().filter { arg in
+            !arg.hasPrefix("-") && arg.hasSuffix(".\(LumaDocumentLoader.fileExtension)")
+        }
+    }
+
+    static var dataDirectory: URL {
         let xdg = ProcessInfo.processInfo.environment["XDG_DATA_HOME"]
             .map(URL.init(fileURLWithPath:))
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".local/share")
         let dir = xdg.appendingPathComponent("re.frida.Luma", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
+    }
+
+    static var untitledDirectory: URL {
+        let dir = dataDirectory.appendingPathComponent("Untitled", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+}
+
+private final class ActionHandlerBox {
+    let handler: () -> Void
+    init(handler: @escaping () -> Void) { self.handler = handler }
+}
+
+private final class SaveAsContext {
+    let app: LumaApplication
+    let window: MainWindow
+    init(app: LumaApplication, window: MainWindow) {
+        self.app = app
+        self.window = window
+    }
+}
+
+private let lumaActionThunk: @convention(c) (UnsafeMutableRawPointer?) -> Void = { userData in
+    guard let userData else { return }
+    let raw = UInt(bitPattern: userData)
+    MainActor.assumeIsolated {
+        let ptr = UnsafeMutableRawPointer(bitPattern: raw)!
+        let box = Unmanaged<ActionHandlerBox>.fromOpaque(ptr).takeUnretainedValue()
+        box.handler()
+    }
+}
+
+private let lumaOpenPathThunk: @convention(c) (
+    UnsafePointer<CChar>?, UnsafeMutableRawPointer?
+) -> Void = { pathPtr, userData in
+    guard let userData else { return }
+    let raw = UInt(bitPattern: userData)
+    let pathString: String? = pathPtr.map { String(cString: $0) }
+    MainActor.assumeIsolated {
+        let ptr = UnsafeMutableRawPointer(bitPattern: raw)!
+        let appRef = Unmanaged<LumaApplication>.fromOpaque(ptr).takeRetainedValue()
+        if let pathString {
+            appRef.handleOpenPath(pathString)
+        }
+    }
+}
+
+private let lumaSavePathThunk: @convention(c) (
+    UnsafePointer<CChar>?, UnsafeMutableRawPointer?
+) -> Void = { pathPtr, userData in
+    guard let userData else { return }
+    let raw = UInt(bitPattern: userData)
+    let pathString: String? = pathPtr.map { String(cString: $0) }
+    MainActor.assumeIsolated {
+        let ptr = UnsafeMutableRawPointer(bitPattern: raw)!
+        let ctx = Unmanaged<SaveAsContext>.fromOpaque(ptr).takeRetainedValue()
+        if let pathString {
+            ctx.app.handleSaveAsPath(window: ctx.window, pathString)
+        }
     }
 }
 
