@@ -34,6 +34,7 @@ final class MainWindow {
     private var collaborationButton: Button!
     private var collaborationPanel: CollaborationPanel?
     private let outerPaned: Paned
+    private var topPaned: Paned!
     private var isCollaborationPanelVisible: Bool = false
 
     private enum SidebarSelection: Equatable {
@@ -59,7 +60,11 @@ final class MainWindow {
         self.window = ApplicationWindow(application: app)
         self.outerPaned = Paned(orientation: .horizontal)
         window.title = MainWindow.makeTitle(for: document)
-        window.setDefaultSize(width: 1200, height: 800)
+        let state = LumaState.shared
+        window.setDefaultSize(width: state.windowWidth, height: state.windowHeight)
+        if state.windowMaximized {
+            window.maximize()
+        }
 
         let notebookListBox = ListBox()
         let notebookRow = ListBoxRow()
@@ -107,15 +112,16 @@ final class MainWindow {
         window.set(titlebar: WidgetRef(header))
 
         let topPaned = Paned(orientation: .horizontal)
-        topPaned.position = 280
+        topPaned.position = state.sidebarSashPosition
         let sidebar = buildSidebar()
         let detail = buildDetailPane()
         topPaned.startChild = WidgetRef(sidebar)
         topPaned.endChild = WidgetRef(detail)
         topPaned.hexpand = true
         topPaned.vexpand = true
+        self.topPaned = topPaned
 
-        outerPaned.position = 880
+        outerPaned.position = state.collaborationSashPosition
         outerPaned.startChild = WidgetRef(topPaned)
         outerPaned.hexpand = true
         outerPaned.vexpand = true
@@ -154,6 +160,7 @@ final class MainWindow {
         let closeHandler: (WindowRef) -> Bool = { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
+                self.persistWindowState()
                 self.application?.windowDidClose(self)
             }
             return false
@@ -183,6 +190,22 @@ final class MainWindow {
             return "Luma — ● \(document.displayName)"
         }
         return "Luma — \(document.displayName)"
+    }
+
+    private func persistWindowState() {
+        var width: Int32 = 0
+        var height: Int32 = 0
+        window.getDefaultSize(width: &width, height: &height)
+        let state = LumaState.shared
+        state.saveWindowGeometry(
+            width: Int(width),
+            height: Int(height),
+            maximized: window.isMaximized
+        )
+        state.saveSashes(
+            sidebar: Int(topPaned.position),
+            collaboration: Int(outerPaned.position)
+        )
     }
 
 

@@ -26,9 +26,52 @@ final class LumaState {
         persist()
     }
 
+    var windowWidth: Int {
+        get { stored.windowWidth ?? 1200 }
+        set { stored.windowWidth = newValue; persist() }
+    }
+
+    var windowHeight: Int {
+        get { stored.windowHeight ?? 800 }
+        set { stored.windowHeight = newValue; persist() }
+    }
+
+    var windowMaximized: Bool {
+        get { stored.windowMaximized ?? false }
+        set { stored.windowMaximized = newValue; persist() }
+    }
+
+    var sidebarSashPosition: Int {
+        get { stored.sidebarSashPosition ?? 280 }
+        set { stored.sidebarSashPosition = newValue; persist() }
+    }
+
+    var collaborationSashPosition: Int {
+        get { stored.collaborationSashPosition ?? 880 }
+        set { stored.collaborationSashPosition = newValue; persist() }
+    }
+
+    func saveWindowGeometry(width: Int, height: Int, maximized: Bool) {
+        stored.windowWidth = width
+        stored.windowHeight = height
+        stored.windowMaximized = maximized
+        persist()
+    }
+
+    func saveSashes(sidebar: Int, collaboration: Int) {
+        stored.sidebarSashPosition = sidebar
+        stored.collaborationSashPosition = collaboration
+        persist()
+    }
+
     private struct Stored: Codable {
         var lastDocumentPath: String?
         var recentPaths: [String] = []
+        var windowWidth: Int?
+        var windowHeight: Int?
+        var windowMaximized: Bool?
+        var sidebarSashPosition: Int?
+        var collaborationSashPosition: Int?
     }
 
     private var stored: Stored
