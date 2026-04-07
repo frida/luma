@@ -347,7 +347,7 @@ struct DisassemblyView: View {
         }
 
         let next = max(0, min(lines.count - 1, currentIndex + delta))
-        let addr = lines[next].addrValue
+        let addr = lines[next].address
 
         selectedAddr = addr
         withAnimation(.snappy) {
