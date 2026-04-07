@@ -27,6 +27,7 @@ final class MainWindow {
     private var sessionsRowKinds: [SessionsRow] = []
     private var selection: SidebarSelection = .notebook
     private var addInstrumentButton: Button!
+    private var browseCodeShareButton: Button!
     private var collaborationButton: Button!
     private var collaborationPanel: CollaborationPanel?
     private let outerPaned: Paned
@@ -76,6 +77,11 @@ final class MainWindow {
         header.packStart(child: addInstrumentButton)
         self.addInstrumentButton = addInstrumentButton
 
+        let browseCodeShareButton = Button(label: "Browse CodeShare…")
+        browseCodeShareButton.sensitive = false
+        header.packStart(child: browseCodeShareButton)
+        self.browseCodeShareButton = browseCodeShareButton
+
         let collaborationButton = Button(label: "Collaboration")
         header.packStart(child: collaborationButton)
         self.collaborationButton = collaborationButton
@@ -110,6 +116,12 @@ final class MainWindow {
         addInstrumentButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.openAddInstrumentDialog()
+            }
+        }
+        browseCodeShareButton.onClicked { [weak self, weak browseCodeShareButton] _ in
+            MainActor.assumeIsolated {
+                guard let button = browseCodeShareButton else { return }
+                self?.openCodeShareBrowser(anchor: button)
             }
         }
         collaborationButton.onClicked { [weak self] _ in
@@ -333,6 +345,7 @@ final class MainWindow {
         }
         replaceDetail(with: widget)
         addInstrumentButton.sensitive = currentSessionID() != nil
+        browseCodeShareButton.sensitive = currentSessionID() != nil
     }
 
     private func currentSessionID() -> UUID? {
@@ -438,8 +451,29 @@ final class MainWindow {
         }
 
         if let engine {
+            let notebook = Notebook()
+            notebook.hexpand = true
+            notebook.vexpand = true
+
             let repl = REPLPane(engine: engine, sessionID: session.id)
-            column.append(child: repl.widget)
+            let replPage = Box(orientation: .vertical, spacing: 0)
+            replPage.hexpand = true
+            replPage.vexpand = true
+            replPage.append(child: repl.widget)
+            let replTab = Box(orientation: .horizontal, spacing: 0)
+            replTab.append(child: Label(str: "REPL"))
+            _ = notebook.appendPage(child: replPage, tabLabel: replTab)
+
+            let itracePane = ITraceCapturesPane(engine: engine, sessionID: session.id)
+            let itracePage = Box(orientation: .vertical, spacing: 0)
+            itracePage.hexpand = true
+            itracePage.vexpand = true
+            itracePage.append(child: itracePane.widget)
+            let itraceTab = Box(orientation: .horizontal, spacing: 0)
+            itraceTab.append(child: Label(str: "ITrace"))
+            _ = notebook.appendPage(child: itracePage, tabLabel: itraceTab)
+
+            column.append(child: notebook)
         } else {
             column.append(child: makePlaceholder(title: session.processName, subtitle: "Engine not ready."))
         }
@@ -662,5 +696,10 @@ final class MainWindow {
             packagesList.append(child: row)
         }
         packagesSection.visible = !snapshot.isEmpty
+    }
+
+    private func openCodeShareBrowser(anchor: Button) {
+        guard let engine, let sessionID = currentSessionID() else { return }
+        CodeShareBrowser.present(from: anchor, engine: engine, sessionID: sessionID)
     }
 }
