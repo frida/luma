@@ -21,6 +21,14 @@ let package = Package(
             path: "Sources/LumaGtk",
             swiftSettings: [
                 .swiftLanguageMode(.v6),
+            ],
+            linkerSettings: [
+                // Fedora's Swift 6.2 ships libswiftObservation.so with an unresolved
+                // reference to swift::threading::fatal that no other shipped library
+                // exports. Until upstream fixes the packaging, allow the dynamic
+                // linker to defer the symbol — it's only ever called on a fatal
+                // assertion path inside Observation.
+                .unsafeFlags(["-Xlinker", "--allow-shlib-undefined"]),
             ]
         ),
     ]
