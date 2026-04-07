@@ -46,7 +46,23 @@ final class NotebookPane {
         scroll.vexpand = true
         scroll.set(child: entriesBox)
 
-        emptyState = NotebookPane.makeEmptyState()
+        emptyState = MainWindow.makeEmptyState(
+            icon: "document-new-symbolic",
+            title: "Notebook is empty",
+            subtitle: "Pin REPL output, JS values, or notes here.",
+            actionLabel: "New Note",
+            onAction: { [weak engine] in
+                guard let engine else { return }
+                let note = LumaCore.NotebookEntry(
+                    title: "Note",
+                    details: "",
+                    binaryData: nil,
+                    processName: nil,
+                    isUserNote: true
+                )
+                engine.addNotebookEntry(note, after: nil)
+            }
+        )
         emptyState.hexpand = true
         emptyState.vexpand = true
 
@@ -413,42 +429,6 @@ final class NotebookPane {
         buffer.getStart(iter: start)
         buffer.getEnd(iter: end)
         return buffer.getText(start: start, end: end, includeHiddenChars: true) ?? ""
-    }
-
-    // MARK: - Empty state
-
-    private static func makeEmptyState() -> Box {
-        let outer = Box(orientation: .vertical, spacing: 0)
-        outer.hexpand = true
-        outer.vexpand = true
-        outer.halign = .center
-        outer.valign = .center
-
-        let stack = Box(orientation: .vertical, spacing: 12)
-        stack.halign = .center
-        stack.valign = .center
-        stack.marginStart = 24
-        stack.marginEnd = 24
-        stack.marginTop = 24
-        stack.marginBottom = 24
-
-        let title = Label(str: "Notebook")
-        title.add(cssClass: "title-2")
-        title.halign = .center
-        stack.append(child: title)
-
-        let hint = Label(
-            str: "Capture interesting findings here. Pin events from the bottom event stream or add a manual note."
-        )
-        hint.add(cssClass: "dim-label")
-        hint.wrap = true
-        hint.justify = .center
-        hint.halign = .center
-        hint.setSizeRequest(width: 360, height: -1)
-        stack.append(child: hint)
-
-        outer.append(child: stack)
-        return outer
     }
 
     // MARK: - Helpers

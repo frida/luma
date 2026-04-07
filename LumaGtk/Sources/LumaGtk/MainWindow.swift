@@ -17,6 +17,10 @@ final class MainWindow {
     private let sessionsList: ListBox
     private let packagesList: ListBox
     private let packagesSection: Box
+    private var sessionsHeaderLabel: Label!
+    private var packagesHeaderLabel: Label!
+    private var sessionsEmptyHint: Label!
+    private var packagesEmptyHint: Label!
     private let notebookListBox: ListBox
     private let notebookRow: ListBoxRow
     private let detailContainer: Box
@@ -341,9 +345,32 @@ final class MainWindow {
             }
         }
 
+        let body = Box(orientation: .vertical, spacing: 0)
+        let hint = Label(str: "No sessions yet")
+        hint.halign = .start
+        hint.marginStart = 16
+        hint.marginEnd = 12
+        hint.marginTop = 4
+        hint.marginBottom = 8
+        hint.add(cssClass: "dim-label")
+        sessionsEmptyHint = hint
+        body.append(child: hint)
+        body.append(child: sessionsList)
+
+        let headerLabel = Label(str: "SESSIONS (0)")
+        headerLabel.halign = .start
+        headerLabel.add(cssClass: "luma-sidebar-section-header")
+        sessionsHeaderLabel = headerLabel
+
+        let expander = Expander(label: "")
+        expander.set(labelWidget: headerLabel)
+        expander.set(child: body)
+        expander.expanded = true
+        expander.marginStart = 4
+        expander.marginEnd = 4
+
         let column = Box(orientation: .vertical, spacing: 0)
-        column.append(child: sectionHeader("Sessions"))
-        column.append(child: sessionsList)
+        column.append(child: expander)
         return column
     }
 
@@ -359,9 +386,31 @@ final class MainWindow {
             }
         }
 
-        packagesSection.append(child: sectionHeader("Packages"))
-        packagesSection.append(child: packagesList)
-        packagesSection.visible = false
+        let body = Box(orientation: .vertical, spacing: 0)
+        let hint = Label(str: "No packages installed")
+        hint.halign = .start
+        hint.marginStart = 16
+        hint.marginEnd = 12
+        hint.marginTop = 4
+        hint.marginBottom = 8
+        hint.add(cssClass: "dim-label")
+        packagesEmptyHint = hint
+        body.append(child: hint)
+        body.append(child: packagesList)
+
+        let headerLabel = Label(str: "PACKAGES (0)")
+        headerLabel.halign = .start
+        headerLabel.add(cssClass: "luma-sidebar-section-header")
+        packagesHeaderLabel = headerLabel
+
+        let expander = Expander(label: "")
+        expander.set(labelWidget: headerLabel)
+        expander.set(child: body)
+        expander.expanded = true
+        expander.marginStart = 4
+        expander.marginEnd = 4
+
+        packagesSection.append(child: expander)
         return packagesSection
     }
 
@@ -405,19 +454,31 @@ final class MainWindow {
             if let session = sessions.first(where: { $0.id == id }) {
                 widget = makeSessionDetail(session: session)
             } else {
-                widget = makePlaceholder(title: "Session", subtitle: "(no longer in store)")
+                widget = MainWindow.makeEmptyState(
+                    icon: "computer-symbolic",
+                    title: "Session unavailable",
+                    subtitle: "This session is no longer in the store."
+                )
             }
         case .repl(let id):
             if let session = sessions.first(where: { $0.id == id }), let engine {
                 widget = makeREPLDetail(session: session, engine: engine)
             } else {
-                widget = makePlaceholder(title: "REPL", subtitle: "(session no longer in store)")
+                widget = MainWindow.makeEmptyState(
+                    icon: "utilities-terminal-symbolic",
+                    title: "REPL unavailable",
+                    subtitle: "The owning session is no longer in the store."
+                )
             }
         case .itrace(let id):
             if let session = sessions.first(where: { $0.id == id }), let engine {
                 widget = ITraceCapturesPane(engine: engine, sessionID: session.id).widget
             } else {
-                widget = makePlaceholder(title: "ITrace", subtitle: "(session no longer in store)")
+                widget = MainWindow.makeEmptyState(
+                    icon: "media-playback-start-symbolic",
+                    title: "ITrace unavailable",
+                    subtitle: "The owning session is no longer in the store."
+                )
             }
         case .instrument(let sid, let iid):
             if let session = sessions.first(where: { $0.id == sid }),
@@ -425,7 +486,11 @@ final class MainWindow {
             {
                 widget = makeInstrumentDetail(session: session, instrument: instrument)
             } else {
-                widget = makePlaceholder(title: "Instrument", subtitle: "(no longer in store)")
+                widget = MainWindow.makeEmptyState(
+                    icon: "applications-development-symbolic",
+                    title: "Instrument unavailable",
+                    subtitle: "This instrument is no longer in the store."
+                )
             }
         case .package(let id):
             if let package = installedPackages.first(where: { $0.id == id }), let engine {
@@ -436,7 +501,11 @@ final class MainWindow {
                 }
                 widget = pane.widget
             } else {
-                widget = makePlaceholder(title: "Package", subtitle: "(no longer installed)")
+                widget = MainWindow.makeEmptyState(
+                    icon: "package-x-generic-symbolic",
+                    title: "Package unavailable",
+                    subtitle: "This package is no longer installed."
+                )
             }
         }
         replaceDetail(with: widget)
@@ -619,6 +688,65 @@ final class MainWindow {
         return stack
     }
 
+    static func makeEmptyState(
+        icon: String,
+        title: String,
+        subtitle: String,
+        actionLabel: String? = nil,
+        onAction: (() -> Void)? = nil
+    ) -> Box {
+        let outer = Box(orientation: .vertical, spacing: 0)
+        outer.hexpand = true
+        outer.vexpand = true
+        outer.halign = .center
+        outer.valign = .center
+
+        let stack = Box(orientation: .vertical, spacing: 12)
+        stack.halign = .center
+        stack.valign = .center
+        stack.marginStart = 24
+        stack.marginEnd = 24
+        stack.marginTop = 24
+        stack.marginBottom = 24
+        stack.add(cssClass: "luma-empty-state")
+
+        let image = Gtk.Image(iconName: icon)
+        image.pixelSize = 64
+        image.halign = .center
+        image.add(cssClass: "dim-label")
+        stack.append(child: image)
+
+        let titleLabel = Label(str: title)
+        titleLabel.add(cssClass: "title-2")
+        titleLabel.halign = .center
+        stack.append(child: titleLabel)
+
+        let subtitleLabel = Label(str: subtitle)
+        subtitleLabel.add(cssClass: "dim-label")
+        subtitleLabel.wrap = true
+        subtitleLabel.justify = .center
+        subtitleLabel.halign = .center
+        subtitleLabel.setSizeRequest(width: 360, height: -1)
+        stack.append(child: subtitleLabel)
+
+        if let actionLabel, let onAction {
+            let button = Button(label: actionLabel)
+            button.add(cssClass: "suggested-action")
+            button.add(cssClass: "pill")
+            button.halign = .center
+            button.marginTop = 6
+            button.onClicked { _ in
+                MainActor.assumeIsolated {
+                    onAction()
+                }
+            }
+            stack.append(child: button)
+        }
+
+        outer.append(child: stack)
+        return outer
+    }
+
     private func replaceDetail<T: WidgetProtocol>(with widget: T) {
         var child = detailContainer.firstChild
         while let current = child {
@@ -714,6 +842,9 @@ final class MainWindow {
     private func rebuildSessionsList() {
         sessionsList.removeAll()
         sessionsRowKinds.removeAll()
+        sessionsHeaderLabel?.label = "SESSIONS (\(sessions.count))"
+        sessionsEmptyHint?.visible = sessions.isEmpty
+        sessionsList.visible = !sessions.isEmpty
         for session in sessions {
             let row = ListBoxRow()
             let label = Label(str: "\(session.processName) — \(session.deviceName)")
@@ -822,7 +953,9 @@ final class MainWindow {
             row.set(child: label)
             packagesList.append(child: row)
         }
-        packagesSection.visible = !snapshot.isEmpty
+        packagesHeaderLabel?.label = "PACKAGES (\(snapshot.count))"
+        packagesEmptyHint?.visible = snapshot.isEmpty
+        packagesList.visible = !snapshot.isEmpty
     }
 
     private func openPackageSearch(anchor: Button) {

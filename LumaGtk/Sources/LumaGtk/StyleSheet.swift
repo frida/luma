@@ -63,6 +63,33 @@ enum StyleSheet {
         box-shadow: 0 2px 6px alpha(black, 0.3);
         padding: 0;
     }
+
+    .luma-empty-state {
+        opacity: 0.95;
+    }
+
+    .luma-empty-state image {
+        opacity: 0.55;
+        margin-bottom: 6px;
+    }
+
+    .luma-sidebar-section-header {
+        padding: 6px 8px 4px 4px;
+        color: alpha(@theme_fg_color, 0.55);
+        font-size: 0.78em;
+        font-weight: 600;
+    }
+    expander title:hover .luma-sidebar-section-header {
+        color: @theme_fg_color;
+    }
+    expander title {
+        border-radius: 6px;
+        padding: 2px 6px;
+        margin: 0 8px;
+    }
+    expander title:hover {
+        background: alpha(@theme_fg_color, 0.05);
+    }
     """
 
     static func install() {

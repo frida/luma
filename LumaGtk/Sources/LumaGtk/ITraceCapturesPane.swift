@@ -38,12 +38,11 @@ final class ITraceCapturesPane {
         captures = (try? engine.store.fetchITraceCaptures(sessionID: sessionID)) ?? []
 
         if captures.isEmpty {
-            let empty = Label(str: "No ITrace captures yet.")
-            empty.halign = .center
-            empty.valign = .center
-            empty.hexpand = true
-            empty.vexpand = true
-            empty.add(cssClass: "dim-label")
+            let empty = MainWindow.makeEmptyState(
+                icon: "media-playback-start-symbolic",
+                title: "No ITrace captures yet",
+                subtitle: "Capture-based recordings appear here as your hooks fire."
+            )
             widget.append(child: empty)
             return
         }
