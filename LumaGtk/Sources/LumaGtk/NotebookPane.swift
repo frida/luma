@@ -19,6 +19,8 @@ final class NotebookPane {
 
     private var editingEntries: Set<UUID> = []
     private var autoEditedEntries: Set<UUID> = []
+    private var draftEntries: Set<UUID> = []
+    private let emptyStateActionHolder = ActionHolder()
 
     init(engine: Engine) {
         self.engine = engine
@@ -51,16 +53,8 @@ final class NotebookPane {
             title: "Notebook is empty",
             subtitle: "Pin REPL output, JS values, or notes here.",
             actionLabel: "New Note",
-            onAction: { [weak engine] in
-                guard let engine else { return }
-                let note = LumaCore.NotebookEntry(
-                    title: "Note",
-                    details: "",
-                    binaryData: nil,
-                    processName: nil,
-                    isUserNote: true
-                )
-                engine.addNotebookEntry(note, after: nil)
+            onAction: { [emptyStateActionHolder] in
+                emptyStateActionHolder.action?()
             }
         )
         emptyState.hexpand = true
@@ -82,6 +76,7 @@ final class NotebookPane {
         newNoteButton.valign = .end
         newNoteButton.marginEnd = 20
         newNoteButton.marginBottom = 20
+        newNoteButton.visible = false
         overlay.addOverlay(widget: newNoteButton)
 
         widget.append(child: overlay)
@@ -90,6 +85,10 @@ final class NotebookPane {
             MainActor.assumeIsolated {
                 self?.addUserNote()
             }
+        }
+
+        emptyStateActionHolder.action = { [weak self] in
+            self?.addUserNote()
         }
 
         observe()
@@ -115,26 +114,23 @@ final class NotebookPane {
         guard let engine else { return }
         let entries = engine.notebookEntries.sorted { $0.timestamp < $1.timestamp }
 
+        clearWindowFocus()
         clearChildren(of: entriesBox)
+
+        let anyEditing = entries.contains { editingEntries.contains($0.id) }
 
         if entries.isEmpty {
             emptyState.visible = true
             scroll.visible = false
+            newNoteButton.visible = false
             return
         }
 
         emptyState.visible = false
         scroll.visible = true
+        newNoteButton.visible = !anyEditing
 
         for entry in entries {
-            if entry.isUserNote
-                && entry.title == "Note"
-                && entry.details.isEmpty
-                && !autoEditedEntries.contains(entry.id)
-            {
-                autoEditedEntries.insert(entry.id)
-                editingEntries.insert(entry.id)
-            }
             entriesBox.append(child: makeRow(for: entry))
         }
     }
@@ -150,6 +146,9 @@ final class NotebookPane {
             processName: other?.processName,
             isUserNote: true
         )
+        editingEntries.insert(note.id)
+        autoEditedEntries.insert(note.id)
+        draftEntries.insert(note.id)
         engine.addNotebookEntry(note, after: other)
     }
 
@@ -161,7 +160,9 @@ final class NotebookPane {
 
     private func beginEditing(_ entry: LumaCore.NotebookEntry) {
         editingEntries.insert(entry.id)
-        refresh()
+        Task { @MainActor [weak self] in
+            self?.refresh()
+        }
     }
 
     private func presentContextMenu(anchor: Widget, entry: LumaCore.NotebookEntry) {
@@ -223,6 +224,7 @@ final class NotebookPane {
         updated.title = title
         updated.details = details
         editingEntries.remove(original.id)
+        draftEntries.remove(original.id)
         engine?.updateNotebookEntry(updated)
     }
 
@@ -247,18 +249,18 @@ final class NotebookPane {
                     self?.beginEditing(entry)
                 }
             }
-            card.add(controller: dblClick)
+            card.install(controller: dblClick)
         }
 
         let rightClick = GestureClick()
         rightClick.set(button: 3)
-        rightClick.onPressed { [weak self, weak card] _, _, _, _ in
+        rightClick.onPressed { [weak self, card] _, _, _, _ in
             MainActor.assumeIsolated {
-                guard let self, let card else { return }
-                self.presentContextMenu(anchor: card, entry: entry)
+                self?.presentContextMenu(anchor: card, entry: entry)
             }
         }
-        card.add(controller: rightClick)
+        card.install(controller: rightClick)
+
 
         let inner = Box(orientation: .vertical, spacing: 6)
         inner.marginStart = 12
@@ -469,8 +471,14 @@ final class NotebookPane {
         cancelButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
+                _ = self.entriesBox.grabFocus()
                 self.editingEntries.remove(entry.id)
-                self.refresh()
+                if self.draftEntries.remove(entry.id) != nil {
+                    self.engine?.deleteNotebookEntry(entry)
+                }
+                Task { @MainActor [weak self] in
+                    self?.refresh()
+                }
             }
         }
 
@@ -503,6 +511,12 @@ final class NotebookPane {
 
     // MARK: - Helpers
 
+    private func clearWindowFocus() {
+        guard let rootPtr = widget.root?.ptr else { return }
+        let window = WindowRef(raw: rootPtr)
+        window.focus = nil
+    }
+
     private func clearChildren(of container: Box) {
         var child = container.firstChild
         while let current = child {
@@ -510,4 +524,9 @@ final class NotebookPane {
             container.remove(child: current)
         }
     }
+}
+
+@MainActor
+private final class ActionHolder {
+    var action: (() -> Void)?
 }
