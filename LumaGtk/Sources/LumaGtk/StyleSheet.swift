@@ -35,6 +35,11 @@ enum StyleSheet {
     .luma-itrace-fn-5 { background-image: none; background-color: alpha(#8c564b, 0.55); color: white; }
     .luma-itrace-fn-6 { background-image: none; background-color: alpha(#e377c2, 0.55); color: white; }
     .luma-itrace-fn-7 { background-image: none; background-color: alpha(#17becf, 0.55); color: white; }
+
+    .luma-diff-same { color: @theme_fg_color; }
+    .luma-diff-added { background-color: alpha(#26a269, 0.15); }
+    .luma-diff-removed { background-color: alpha(#c01c28, 0.15); }
+    .luma-diff-changed { background-color: alpha(#e5a50a, 0.15); }
     """
 
     static func install() {

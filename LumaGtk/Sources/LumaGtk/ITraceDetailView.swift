@@ -7,13 +7,15 @@ final class ITraceDetailView {
     let widget: Box
 
     private let capture: ITraceCaptureRecord
+    private let otherCaptures: [ITraceCaptureRecord]
     private let bodyContainer: Box
     private let entriesBox: Box
     private let entriesScroll: ScrolledWindow
     private var entryRows: [ListBoxRow] = []
 
-    init(capture: ITraceCaptureRecord) {
+    init(capture: ITraceCaptureRecord, otherCaptures: [ITraceCaptureRecord] = []) {
         self.capture = capture
+        self.otherCaptures = otherCaptures
 
         widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
@@ -38,6 +40,28 @@ final class ITraceDetailView {
         captionLabel.add(cssClass: "dim-label")
         captionLabel.add(cssClass: "caption")
         widget.append(child: captionLabel)
+
+        if !otherCaptures.isEmpty {
+            let compareRow = Box(orientation: .horizontal, spacing: 8)
+            compareRow.marginTop = 6
+            let compareButton = Button(label: "Compare with\u{2026}")
+            let captureForCompare = capture
+            let othersForCompare = otherCaptures
+            let formatterForCompare = formatter
+            compareButton.onClicked { [weak compareButton] _ in
+                MainActor.assumeIsolated {
+                    guard let compareButton else { return }
+                    Self.presentComparePopover(
+                        anchor: compareButton,
+                        capture: captureForCompare,
+                        others: othersForCompare,
+                        formatter: formatterForCompare
+                    )
+                }
+            }
+            compareRow.append(child: compareButton)
+            widget.append(child: compareRow)
+        }
 
         bodyContainer = Box(orientation: .vertical, spacing: 8)
         bodyContainer.hexpand = true
@@ -162,6 +186,52 @@ final class ITraceDetailView {
     private func jumpToEntry(index: Int) {
         guard index >= 0, index < entryRows.count else { return }
         _ = entryRows[index].grabFocus()
+    }
+
+    private static func presentComparePopover(
+        anchor: Widget,
+        capture: ITraceCaptureRecord,
+        others: [ITraceCaptureRecord],
+        formatter: DateFormatter
+    ) {
+        let popover = Popover()
+        popover.autohide = true
+
+        let listBox = ListBox()
+        listBox.selectionMode = .single
+        listBox.add(cssClass: "navigation-sidebar")
+
+        for other in others {
+            let row = ListBoxRow()
+            let label = Label(
+                str: "\(other.displayName) \u{00B7} \(formatter.string(from: other.capturedAt))"
+            )
+            label.halign = .start
+            label.marginStart = 8
+            label.marginEnd = 8
+            label.marginTop = 4
+            label.marginBottom = 4
+            row.set(child: label)
+            listBox.append(child: row)
+        }
+
+        listBox.onRowSelected { [weak popover, weak anchor] _, row in
+            MainActor.assumeIsolated {
+                guard let row, let anchor else { return }
+                let index = Int(row.index)
+                guard index >= 0, index < others.count else { return }
+                popover?.popdown()
+                ITraceDiffView.present(from: anchor, left: capture, right: others[index])
+            }
+        }
+
+        let scroll = ScrolledWindow()
+        scroll.setSizeRequest(width: 320, height: 240)
+        scroll.set(child: listBox)
+
+        popover.set(child: WidgetRef(scroll.widget_ptr))
+        popover.set(parent: anchor)
+        popover.popup()
     }
 
     private func stableHash(_ s: String) -> Int {
