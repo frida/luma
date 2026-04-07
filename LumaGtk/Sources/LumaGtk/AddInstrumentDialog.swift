@@ -123,6 +123,7 @@ final class AddInstrumentDialog {
     }
 
     func present() {
+        installEscapeShortcut(on: window)
         window.present()
     }
 

@@ -6,6 +6,8 @@ import LumaCore
 
 @MainActor
 final class TargetPicker {
+    private static var retained: [ObjectIdentifier: TargetPicker] = [:]
+
     typealias OnAttach = (_ device: Frida.Device, _ process: ProcessDetails) -> Void
     typealias OnSpawn = (_ device: Frida.Device, _ config: SpawnConfig) -> Void
 
@@ -286,10 +288,16 @@ final class TargetPicker {
             }
         }
 
+        let key = ObjectIdentifier(window)
+        TargetPicker.retained[key] = self
         window.onCloseRequest { [weak self] _ in
-            MainActor.assumeIsolated { self?.persistState() }
+            MainActor.assumeIsolated {
+                self?.persistState()
+                TargetPicker.retained[key] = nil
+            }
             return false
         }
+        installEscapeShortcut(on: window)
 
         if mode == .attach {
             attachToggle.active = true
@@ -958,14 +966,15 @@ final class TargetPicker {
 
         let header = HeaderBar()
         let cancelButton = Button(label: "Cancel")
-        cancelButton.onClicked { [weak sheet] _ in
-            MainActor.assumeIsolated { sheet?.destroy() }
+        cancelButton.onClicked { [sheet] _ in
+            MainActor.assumeIsolated { sheet.destroy() }
         }
         header.packStart(child: cancelButton)
         let connectButton = Button(label: "Connect")
         connectButton.add(cssClass: "suggested-action")
         header.packEnd(child: connectButton)
         sheet.set(titlebar: WidgetRef(header))
+        installEscapeShortcut(on: sheet)
 
         let body = Box(orientation: .vertical, spacing: 8)
         body.marginStart = 16
@@ -1018,7 +1027,7 @@ final class TargetPicker {
 
         sheet.set(child: body)
 
-        connectButton.onClicked { [weak self, weak sheet] _ in
+        connectButton.onClicked { [weak self, sheet] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 let address = addressEntry.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1053,7 +1062,7 @@ final class TargetPicker {
                             keepaliveInterval: keepalive
                         )
                         try? self.engine.store.save(config)
-                        sheet?.destroy()
+                        sheet.destroy()
                     } catch {
                         errorLabel.setText(str: "\(error)")
                         errorLabel.visible = true

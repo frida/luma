@@ -235,10 +235,10 @@ extension GitHubSignInSheet {
 
         let header = HeaderBar()
         let cancelButton = Button(label: "Cancel")
-        cancelButton.onClicked { [weak window] _ in
+        cancelButton.onClicked { [window] _ in
             MainActor.assumeIsolated {
                 gitHubAuth.cancelSignIn()
-                window?.destroy()
+                window.destroy()
             }
         }
         header.packStart(child: cancelButton)
@@ -253,6 +253,7 @@ extension GitHubSignInSheet {
         sheet.refresh()
         sheet.observe()
 
+        installEscapeShortcut(on: window)
         window.present()
     }
 

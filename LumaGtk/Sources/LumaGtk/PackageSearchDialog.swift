@@ -312,17 +312,20 @@ final class PackageSearchDialog {
 
         let header = HeaderBar()
         let cancelButton = Button(label: "Cancel")
-        cancelButton.onClicked { [weak window] _ in
-            MainActor.assumeIsolated { window?.destroy() }
+        cancelButton.onClicked { [window] _ in
+            MainActor.assumeIsolated { window.destroy() }
         }
         header.packStart(child: cancelButton)
         window.set(titlebar: WidgetRef(header))
+
+        installEscapeShortcut(on: window)
 
         window.set(child: dialog.widget)
 
         dialog.hostWindow = window
         Self.retain(dialog: dialog, window: window)
 
+        installEscapeShortcut(on: window)
         window.present()
     }
 

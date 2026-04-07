@@ -165,8 +165,8 @@ extension MemoryViewerWindow {
 
         let header = HeaderBar()
         let closeButton = Button(label: "Close")
-        closeButton.onClicked { [weak window] _ in
-            MainActor.assumeIsolated { window?.destroy() }
+        closeButton.onClicked { [window] _ in
+            MainActor.assumeIsolated { window.destroy() }
         }
         header.packEnd(child: closeButton)
         window.set(titlebar: WidgetRef(header))
@@ -175,6 +175,7 @@ extension MemoryViewerWindow {
 
         Self.retain(view: view, window: window)
 
+        installEscapeShortcut(on: window)
         window.present()
     }
 
