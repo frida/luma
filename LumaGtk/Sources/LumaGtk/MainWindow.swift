@@ -19,6 +19,7 @@ final class MainWindow {
     private let detailContainer: Box
     private let eventStreamPane: EventStreamPane
     private var notebookPane: NotebookPane?
+    private weak var currentTracerEditor: InstrumentConfigEditor?
 
     private var sessions: [LumaCore.ProcessSession] = []
     private var installedPackages: [LumaCore.InstalledPackage] = []
@@ -135,6 +136,9 @@ final class MainWindow {
         renderPackages((try? engine.store.fetchPackagesState())?.packages ?? [])
         observeSessions()
         eventStreamPane.attach(engine: engine)
+        eventStreamPane.onNavigateToHook = { [weak self] sessionID, instrumentID, hookID in
+            self?.navigateToHook(sessionID: sessionID, instrumentID: instrumentID, hookID: hookID)
+        }
         let panel = CollaborationPanel(engine: engine, onClose: { [weak self] in
             self?.setCollaborationVisible(false)
         })
@@ -368,6 +372,9 @@ final class MainWindow {
         if let engine {
             let editor = InstrumentConfigEditor(engine: engine, instrument: instrument)
             column.append(child: editor.widget)
+            if instrument.kind == .tracer {
+                currentTracerEditor = editor
+            }
         }
 
         let actions = Box(orientation: .horizontal, spacing: 8)
@@ -504,6 +511,11 @@ final class MainWindow {
     }
 
     // MARK: - Selection
+
+    private func navigateToHook(sessionID: UUID, instrumentID: UUID, hookID: UUID) {
+        select(.instrument(sessionID: sessionID, instrumentID: instrumentID))
+        currentTracerEditor?.selectTracerHook(id: hookID)
+    }
 
     private func select(_ newValue: SidebarSelection) {
         guard selection != newValue else { return }

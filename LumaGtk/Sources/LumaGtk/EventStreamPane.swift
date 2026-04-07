@@ -14,6 +14,8 @@ final class EventStreamPane {
     private let eventListBox: Box
     private let dateFormatter: DateFormatter
 
+    var onNavigateToHook: ((UUID, UUID, UUID) -> Void)?
+
     private var isCollapsed: Bool = true
     private var pendingNewEvents: Int = 0
     private var lastSeenTotal: Int = 0
@@ -180,15 +182,31 @@ final class EventStreamPane {
     }
 
     private func makeTracerPayload(for event: RuntimeEvent) -> Widget? {
-        guard case .instrument = event.source,
+        guard case .instrument(let instrumentID, _) = event.source,
             case .jsValue(let v) = event.payload,
             let parsed = Engine.parseTracerEvent(from: v),
             let sessionID = event.sessionID,
             let node = engine?.node(forSessionID: sessionID)
         else { return nil }
 
+        let hookID = parsed.id
+
         let column = Box(orientation: .horizontal, spacing: 8)
         column.hexpand = true
+
+        let rightClick = GestureClick()
+        rightClick.set(button: 3)
+        rightClick.onPressed { [weak self] _, _, _, _ in
+            MainActor.assumeIsolated {
+                self?.presentHookContextMenu(
+                    anchor: column,
+                    sessionID: sessionID,
+                    instrumentID: instrumentID,
+                    hookID: hookID
+                )
+            }
+        }
+        column.add(controller: rightClick)
 
         let messageText: String = {
             if case .array(_, let elems) = parsed.message,
@@ -220,6 +238,36 @@ final class EventStreamPane {
         }
 
         return column
+    }
+
+    private func presentHookContextMenu(
+        anchor: Widget,
+        sessionID: UUID,
+        instrumentID: UUID,
+        hookID: UUID
+    ) {
+        let popover = Popover()
+        popover.autohide = true
+
+        let box = Box(orientation: .vertical, spacing: 2)
+        box.marginStart = 6
+        box.marginEnd = 6
+        box.marginTop = 6
+        box.marginBottom = 6
+
+        let goButton = Button(label: "Go to Hook")
+        goButton.add(cssClass: "flat")
+        goButton.onClicked { [weak self, weak popover] _ in
+            MainActor.assumeIsolated {
+                popover?.popdown()
+                self?.onNavigateToHook?(sessionID, instrumentID, hookID)
+            }
+        }
+        box.append(child: goButton)
+
+        popover.set(child: box)
+        popover.set(parent: anchor)
+        popover.popup()
     }
 
     private func presentBacktrace(
