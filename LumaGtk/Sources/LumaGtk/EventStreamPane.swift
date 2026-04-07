@@ -337,6 +337,7 @@ final class EventStreamPane {
         column.append(child: scroll)
 
         let addresses = pointers.compactMap { $0.nativePointerAddress }
+        var lineLabels: [Label] = []
         for (idx, addr) in addresses.enumerated() {
             let row = Box(orientation: .horizontal, spacing: 8)
             row.marginTop = 3
@@ -351,6 +352,7 @@ final class EventStreamPane {
             line.hexpand = true
             line.selectable = true
             row.append(child: line)
+            lineLabels.append(line)
             listBox.append(child: row)
             if idx < addresses.count - 1 {
                 listBox.append(child: Separator(orientation: .horizontal))
@@ -364,27 +366,10 @@ final class EventStreamPane {
             defer { spinner.spinning = false }
             do {
                 let symbols = try await node.symbolicate(addresses: addresses)
-                var idx = 0
-                var child = listBox.firstChild
-                while let current = child {
-                    child = current.nextSibling
-                    guard let row = current as? Box else { continue }
-                    if idx >= symbols.count { break }
-                    let label = symbolLabel(for: symbols[idx], fallback: node.anchor(for: addresses[idx]).displayString)
-                    // Row layout is: [num Label][line Label]; pick the second.
-                    var inner = row.firstChild
-                    var labelCount = 0
-                    while let n = inner {
-                        if let l = n as? Label {
-                            labelCount += 1
-                            if labelCount == 2 {
-                                l.setText(str: label)
-                                break
-                            }
-                        }
-                        inner = n.nextSibling
-                    }
-                    idx += 1
+                for (idx, symbol) in symbols.enumerated() {
+                    guard idx < lineLabels.count else { break }
+                    let fallback = node.anchor(for: addresses[idx]).displayString
+                    lineLabels[idx].setText(str: symbolLabel(for: symbol, fallback: fallback))
                 }
             } catch {
                 // leave anchor strings as-is on failure
