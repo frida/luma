@@ -71,13 +71,7 @@ final class Workspace: ObservableObject {
 
     init(store: ProjectStore) {
         self.store = store
-        self.engine = Engine(
-            store: store,
-            collaborationConfig: Engine.CollaborationConfig(
-                portalAddress: BackendConfig.portalAddress,
-                portalCertificate: BackendConfig.certificate
-            )
-        )
+        self.engine = Engine(store: store)
 
         engine.hookPackSourceProvider = { sourceIdentifier in
             guard let pack = HookPackLibrary.shared.pack(withId: sourceIdentifier) else { return nil }
