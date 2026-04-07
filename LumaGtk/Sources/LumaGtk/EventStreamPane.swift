@@ -165,14 +165,164 @@ final class EventStreamPane {
         context.setSizeRequest(width: 160, height: -1)
         row.append(child: context)
 
-        let payload = Label(str: payloadString(for: event))
+        if let tracerWidget = makeTracerPayload(for: event) {
+            row.append(child: tracerWidget)
+        } else {
+            let payload = Label(str: payloadString(for: event))
+            payload.halign = .start
+            payload.hexpand = true
+            payload.ellipsize = .end
+            payload.add(cssClass: "monospace")
+            row.append(child: payload)
+        }
+
+        return row
+    }
+
+    private func makeTracerPayload(for event: RuntimeEvent) -> Widget? {
+        guard case .instrument = event.source,
+            case .jsValue(let v) = event.payload,
+            let parsed = Engine.parseTracerEvent(from: v),
+            let sessionID = event.sessionID,
+            let node = engine?.node(forSessionID: sessionID)
+        else { return nil }
+
+        let column = Box(orientation: .horizontal, spacing: 8)
+        column.hexpand = true
+
+        let messageText: String = {
+            if case .array(_, let elems) = parsed.message,
+                elems.count == 1,
+                case .string(let s) = elems[0]
+            {
+                return s
+            }
+            return parsed.message.inlineDescription
+        }()
+
+        let payload = Label(str: messageText)
         payload.halign = .start
         payload.hexpand = true
         payload.ellipsize = .end
         payload.add(cssClass: "monospace")
-        row.append(child: payload)
+        column.append(child: payload)
 
-        return row
+        if let backtrace = parsed.backtrace, !backtrace.isEmpty {
+            let button = Button(label: "⋯ bt")
+            button.hasFrame = false
+            button.add(cssClass: "flat")
+            button.onClicked { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.presentBacktrace(button: button, node: node, pointers: backtrace)
+                }
+            }
+            column.append(child: button)
+        }
+
+        return column
+    }
+
+    private func presentBacktrace(
+        button: Button,
+        node: LumaCore.ProcessNode,
+        pointers: [JSInspectValue]
+    ) {
+        let popover = Popover()
+        popover.set(parent: WidgetRef(button))
+        popover.autohide = true
+
+        let column = Box(orientation: .vertical, spacing: 6)
+        column.marginStart = 12
+        column.marginEnd = 12
+        column.marginTop = 10
+        column.marginBottom = 10
+        column.setSizeRequest(width: 520, height: 320)
+
+        let header = Box(orientation: .horizontal, spacing: 8)
+        let title = Label(str: "Backtrace")
+        title.add(cssClass: "heading")
+        title.halign = .start
+        title.hexpand = true
+        header.append(child: title)
+        let spinner = Spinner()
+        spinner.spinning = true
+        header.append(child: spinner)
+        column.append(child: header)
+
+        let scroll = ScrolledWindow()
+        scroll.hexpand = true
+        scroll.vexpand = true
+        let listBox = Box(orientation: .vertical, spacing: 0)
+        scroll.set(child: listBox)
+        column.append(child: scroll)
+
+        let addresses = pointers.compactMap { $0.nativePointerAddress }
+        for (idx, addr) in addresses.enumerated() {
+            let row = Box(orientation: .horizontal, spacing: 8)
+            row.marginTop = 3
+            row.marginBottom = 3
+            let num = Label(str: "#\(idx + 1)")
+            num.add(cssClass: "dim-label")
+            num.add(cssClass: "monospace")
+            row.append(child: num)
+            let line = Label(str: node.anchor(for: addr).displayString)
+            line.add(cssClass: "monospace")
+            line.halign = .start
+            line.hexpand = true
+            line.selectable = true
+            row.append(child: line)
+            listBox.append(child: row)
+            if idx < addresses.count - 1 {
+                listBox.append(child: Separator(orientation: .horizontal))
+            }
+        }
+
+        popover.set(child: column)
+        popover.popup()
+
+        Task { @MainActor in
+            defer { spinner.spinning = false }
+            do {
+                let symbols = try await node.symbolicate(addresses: addresses)
+                var idx = 0
+                var child = listBox.firstChild
+                while let current = child {
+                    child = current.nextSibling
+                    guard let row = current as? Box else { continue }
+                    if idx >= symbols.count { break }
+                    let label = symbolLabel(for: symbols[idx], fallback: node.anchor(for: addresses[idx]).displayString)
+                    // Row layout is: [num Label][line Label]; pick the second.
+                    var inner = row.firstChild
+                    var labelCount = 0
+                    while let n = inner {
+                        if let l = n as? Label {
+                            labelCount += 1
+                            if labelCount == 2 {
+                                l.setText(str: label)
+                                break
+                            }
+                        }
+                        inner = n.nextSibling
+                    }
+                    idx += 1
+                }
+            } catch {
+                // leave anchor strings as-is on failure
+            }
+        }
+    }
+
+    private func symbolLabel(for result: SymbolicateResult, fallback: String) -> String {
+        switch result {
+        case .failure:
+            return fallback
+        case .module(let module, let name):
+            return "\(module)!\(name)"
+        case .file(let module, let name, let file, let line):
+            return "\(module)!\(name) — \(file):\(line)"
+        case .fileColumn(let module, let name, let file, let line, let col):
+            return "\(module)!\(name) — \(file):\(line):\(col)"
+        }
     }
 
     private func contextString(for event: RuntimeEvent) -> String {
@@ -205,7 +355,7 @@ final class EventStreamPane {
         case .jsError(let error):
             return "JSError: \(error.text)"
         case .jsValue(let value):
-            return String(describing: value)
+            return value.inlineDescription
         case .raw(let message, _):
             return String(describing: message)
         }
