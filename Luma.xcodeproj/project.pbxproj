@@ -14,6 +14,21 @@
 		0CAA00012F00000000000001 /* LumaCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0CAA00022F00000000000001 /* LumaCore */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXAggregateTarget section */
+		0CAB00010000000000000001 /* AgentBundle */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = 0CAB00010000000000000002 /* Build configuration list for PBXAggregateTarget "AgentBundle" */;
+			buildPhases = (
+				0CE0E3DD2ECA3CBE000B1E01 /* ShellScript */,
+			);
+			dependencies = (
+				0CAB00010000000000000005 /* PBXTargetDependency */,
+			);
+			name = AgentBundle;
+			productName = AgentBundle;
+		};
+/* End PBXAggregateTarget section */
+
 /* Begin PBXContainerItemProxy section */
 		0C6420CB2EE8712300E4F780 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -21,6 +36,20 @@
 			proxyType = 1;
 			remoteGlobalIDString = 0C6420C02EE8672900E4F780;
 			remoteInfo = LumaBundleCompiler;
+		};
+		0CAB00010000000000000006 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0CD2092C2EB511C400D027FC /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0C6420C02EE8672900E4F780;
+			remoteInfo = LumaBundleCompiler;
+		};
+		0CAB00010000000000000008 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0CD2092C2EB511C400D027FC /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0CAB00010000000000000001;
+			remoteInfo = AgentBundle;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -167,7 +196,6 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 0CD209412EB511C700D027FC /* Build configuration list for PBXNativeTarget "Luma" */;
 			buildPhases = (
-				0CE0E3DD2ECA3CBE000B1E01 /* ShellScript */,
 				0CD209302EB511C400D027FC /* Sources */,
 				0CD209312EB511C400D027FC /* Frameworks */,
 				0CD209322EB511C400D027FC /* Resources */,
@@ -176,7 +204,7 @@
 			buildRules = (
 			);
 			dependencies = (
-				0C6420CC2EE8712300E4F780 /* PBXTargetDependency */,
+				0CAB00010000000000000007 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				0CAAF5F12ED4D41D00B8FD05 /* Luma */,
@@ -231,6 +259,7 @@
 			projectRoot = "";
 			targets = (
 				0CD209332EB511C400D027FC /* Luma */,
+				0CAB00010000000000000001 /* AgentBundle */,
 				0C6420C02EE8672900E4F780 /* LumaBundleCompiler */,
 			);
 		};
@@ -304,9 +333,33 @@
 			target = 0C6420C02EE8672900E4F780 /* LumaBundleCompiler */;
 			targetProxy = 0C6420CB2EE8712300E4F780 /* PBXContainerItemProxy */;
 		};
+		0CAB00010000000000000005 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0C6420C02EE8672900E4F780 /* LumaBundleCompiler */;
+			targetProxy = 0CAB00010000000000000006 /* PBXContainerItemProxy */;
+		};
+		0CAB00010000000000000007 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0CAB00010000000000000001 /* AgentBundle */;
+			targetProxy = 0CAB00010000000000000008 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		0CAB00010000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		0CAB00010000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
 		0C6420C62EE8672900E4F780 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -587,6 +640,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		0CAB00010000000000000002 /* Build configuration list for PBXAggregateTarget "AgentBundle" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0CAB00010000000000000003 /* Debug */,
+				0CAB00010000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		0C6420C52EE8672900E4F780 /* Build configuration list for PBXNativeTarget "LumaBundleCompiler" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
