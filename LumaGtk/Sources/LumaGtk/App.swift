@@ -16,7 +16,8 @@ final class LumaApplication {
     }
 
     func run(_ arguments: [String] = CommandLine.arguments) -> Int {
-        return app.run(arguments: arguments) { [weak self] _ in
+        let filtered = arguments.filter { $0 != "--monaco-demo" }
+        return app.run(arguments: filtered) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.activate()
             }
@@ -25,6 +26,10 @@ final class LumaApplication {
 
     private func activate() {
         StyleSheet.install()
+        if CommandLine.arguments.contains("--monaco-demo") {
+            MonacoDemo.present(in: app)
+            return
+        }
         let window = MainWindow(app: app)
         window.present()
         mainWindow = window

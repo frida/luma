@@ -12,13 +12,22 @@ let package = Package(
         .package(url: "https://github.com/rhx/SwiftGtk", branch: "gtk4"),
     ],
     targets: [
+        .systemLibrary(
+            name: "CWebKit",
+            path: "Sources/CWebKit",
+            pkgConfig: "webkitgtk-6.0"
+        ),
         .executableTarget(
             name: "LumaGtk",
             dependencies: [
                 .product(name: "LumaCore", package: "luma"),
                 .product(name: "Gtk", package: "SwiftGtk"),
+                "CWebKit",
             ],
             path: "Sources/LumaGtk",
+            resources: [
+                .copy("Resources/MonacoWeb"),
+            ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
             ],
