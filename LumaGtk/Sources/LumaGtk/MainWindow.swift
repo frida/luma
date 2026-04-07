@@ -31,6 +31,9 @@ final class MainWindow {
     private var sessions: [LumaCore.ProcessSession] = []
     private var installedPackages: [LumaCore.InstalledPackage] = []
     private var instrumentsBySession: [UUID: [LumaCore.InstrumentInstance]] = [:]
+    private var insightsBySession: [UUID: [LumaCore.AddressInsight]] = [:]
+    private var capturesBySession: [UUID: [LumaCore.ITraceCaptureRecord]] = [:]
+    private var sessionIconTempFiles: [UUID: URL] = [:]
     private var sessionsRowKinds: [SessionsRow] = []
     private var selection: SidebarSelection = .notebook
     private var addInstrumentButton: Button!
@@ -46,16 +49,18 @@ final class MainWindow {
         case notebook
         case session(UUID)
         case repl(UUID)
-        case itrace(UUID)
         case instrument(sessionID: UUID, instrumentID: UUID)
+        case insight(sessionID: UUID, insightID: UUID)
+        case itraceCapture(sessionID: UUID, captureID: UUID)
         case package(UUID)
     }
 
     private enum SessionsRow {
         case session(UUID)
         case repl(UUID)
-        case itrace(UUID)
         case instrument(sessionID: UUID, instrumentID: UUID)
+        case insight(sessionID: UUID, insightID: UUID)
+        case itraceCapture(sessionID: UUID, captureID: UUID)
     }
 
     init(app: Application, application: LumaApplication, document: LumaDocument) {
@@ -337,10 +342,12 @@ final class MainWindow {
                     self.select(.session(id))
                 case .repl(let id):
                     self.select(.repl(id))
-                case .itrace(let id):
-                    self.select(.itrace(id))
                 case .instrument(let sid, let iid):
                     self.select(.instrument(sessionID: sid, instrumentID: iid))
+                case .insight(let sid, let iid):
+                    self.select(.insight(sessionID: sid, insightID: iid))
+                case .itraceCapture(let sid, let cid):
+                    self.select(.itraceCapture(sessionID: sid, captureID: cid))
                 }
             }
         }
@@ -470,14 +477,37 @@ final class MainWindow {
                     subtitle: "The owning session is no longer in the store."
                 )
             }
-        case .itrace(let id):
-            if let session = sessions.first(where: { $0.id == id }), let engine {
-                widget = ITraceCapturesPane(engine: engine, sessionID: session.id).widget
+        case .insight(let sid, let iid):
+            let cached = insightsBySession[sid]?.first { $0.id == iid }
+            let insight = cached ?? (try? engine?.store.fetchInsights(sessionID: sid))?.first { $0.id == iid }
+            if let insight, let engine {
+                let address = insight.lastResolvedAddress ?? 0
+                let panel = AddressDetailsPanel(engine: engine, sessionID: sid, address: address)
+                widget = panel.widget
             } else {
                 widget = MainWindow.makeEmptyState(
-                    icon: "media-playback-start-symbolic",
-                    title: "ITrace unavailable",
-                    subtitle: "The owning session is no longer in the store."
+                    icon: "text-x-generic-symbolic",
+                    title: "Insight not found",
+                    subtitle: "This insight is no longer in the store."
+                )
+            }
+        case .itraceCapture(let sid, let cid):
+            let cached = capturesBySession[sid]
+            let allCaptures = cached ?? (try? engine?.store.fetchITraceCaptures(sessionID: sid)) ?? []
+            if let capture = allCaptures.first(where: { $0.id == cid }), let engine {
+                let others = allCaptures.filter { $0.id != cid }
+                let detail = ITraceDetailView(
+                    capture: capture,
+                    otherCaptures: others,
+                    engine: engine,
+                    sessionID: sid
+                )
+                widget = detail.widget
+            } else {
+                widget = MainWindow.makeEmptyState(
+                    icon: "audio-x-generic-symbolic",
+                    title: "Capture unavailable",
+                    subtitle: "This ITrace capture is no longer in the store."
                 )
             }
         case .instrument(let sid, let iid):
@@ -514,7 +544,9 @@ final class MainWindow {
 
     private func currentSessionID() -> UUID? {
         switch selection {
-        case .session(let id), .repl(let id), .itrace(let id), .instrument(let id, _):
+        case .session(let id), .repl(let id):
+            return id
+        case .instrument(let id, _), .insight(let id, _), .itraceCapture(let id, _):
             return id
         default:
             return nil
@@ -770,26 +802,14 @@ final class MainWindow {
         case .notebook:
             sessionsList.unselectAll()
             packagesList.unselectAll()
-        case .session(let id), .repl(let id), .itrace(let id), .instrument(let id, _):
+        case .session, .repl, .instrument, .insight, .itraceCapture:
             notebookListBox.unselectAll()
             packagesList.unselectAll()
-            if let row = sessionsRowKinds.firstIndex(where: { rowKind in
-                switch (rowKind, newValue) {
-                case (.session(let s), .session(let want)):
-                    return s == want
-                case (.repl(let s), .repl(let want)):
-                    return s == want
-                case (.itrace(let s), .itrace(let want)):
-                    return s == want
-                case (.instrument(_, let i), .instrument(_, let want)):
-                    return i == want
-                default:
-                    return false
-                }
-            }).flatMap({ sessionsList.getRowAt(index: $0) }) {
+            if let idx = currentSelectionRowIndex(),
+                let row = sessionsList.getRowAt(index: idx)
+            {
                 sessionsList.select(row: row)
             }
-            _ = id
         case .package:
             notebookListBox.unselectAll()
             sessionsList.unselectAll()
@@ -818,7 +838,9 @@ final class MainWindow {
 
         let stillExists: Bool
         switch selection {
-        case .session(let id), .instrument(let id, _):
+        case .session(let id), .repl(let id):
+            stillExists = snapshot.contains(where: { $0.id == id })
+        case .instrument(let id, _), .insight(let id, _), .itraceCapture(let id, _):
             stillExists = snapshot.contains(where: { $0.id == id })
         default:
             stillExists = true
@@ -832,9 +854,17 @@ final class MainWindow {
     private func refreshInstruments() {
         guard let engine else { return }
         instrumentsBySession.removeAll()
+        insightsBySession.removeAll()
+        capturesBySession.removeAll()
         for session in sessions {
-            let list = (try? engine.store.fetchInstruments(sessionID: session.id)) ?? []
-            instrumentsBySession[session.id] = list
+            instrumentsBySession[session.id] =
+                (try? engine.store.fetchInstruments(sessionID: session.id)) ?? []
+            insightsBySession[session.id] =
+                ((try? engine.store.fetchInsights(sessionID: session.id)) ?? [])
+                .sorted { $0.createdAt < $1.createdAt }
+            capturesBySession[session.id] =
+                ((try? engine.store.fetchITraceCaptures(sessionID: session.id)) ?? [])
+                .sorted { $0.capturedAt < $1.capturedAt }
         }
         rebuildSessionsList()
     }
@@ -845,39 +875,54 @@ final class MainWindow {
         sessionsHeaderLabel?.label = "SESSIONS (\(sessions.count))"
         sessionsEmptyHint?.visible = sessions.isEmpty
         sessionsList.visible = !sessions.isEmpty
+
         for session in sessions {
-            let row = ListBoxRow()
-            let label = Label(str: "\(session.processName) — \(session.deviceName)")
-            label.halign = .start
-            label.marginStart = 12
-            label.marginEnd = 12
-            label.marginTop = 4
-            label.marginBottom = 4
-            row.set(child: label)
-            sessionsList.append(child: row)
+            let headerRow = ListBoxRow()
+            let headerBox = Box(orientation: .horizontal, spacing: 8)
+            headerBox.marginStart = 8
+            headerBox.marginEnd = 12
+            headerBox.marginTop = 4
+            headerBox.marginBottom = 4
+
+            let icon = makeSessionIcon(for: session)
+            icon.pixelSize = 24
+            icon.add(cssClass: "luma-session-icon")
+            headerBox.append(child: icon)
+
+            let titles = Box(orientation: .vertical, spacing: 2)
+            titles.halign = .start
+            titles.hexpand = true
+            let nameLabel = Label(str: session.processName)
+            nameLabel.halign = .start
+            nameLabel.add(cssClass: "title-4")
+            titles.append(child: nameLabel)
+            let deviceLabel = Label(str: session.deviceName)
+            deviceLabel.halign = .start
+            deviceLabel.add(cssClass: "caption")
+            deviceLabel.add(cssClass: "dim-label")
+            titles.append(child: deviceLabel)
+            headerBox.append(child: titles)
+
+            headerRow.set(child: headerBox)
+            attachSessionContextMenu(row: headerRow, anchor: headerBox, session: session)
+            sessionsList.append(child: headerRow)
             sessionsRowKinds.append(.session(session.id))
 
             let replRow = ListBoxRow()
-            let replLabel = Label(str: "↳  REPL")
+            let replBox = Box(orientation: .horizontal, spacing: 6)
+            replBox.marginStart = 28
+            replBox.marginEnd = 12
+            replBox.marginTop = 2
+            replBox.marginBottom = 2
+            let replIcon = Gtk.Image(iconName: "utilities-terminal-symbolic")
+            replIcon.pixelSize = 16
+            replBox.append(child: replIcon)
+            let replLabel = Label(str: "REPL")
             replLabel.halign = .start
-            replLabel.marginStart = 24
-            replLabel.marginEnd = 12
-            replLabel.marginTop = 2
-            replLabel.marginBottom = 2
-            replRow.set(child: replLabel)
+            replBox.append(child: replLabel)
+            replRow.set(child: replBox)
             sessionsList.append(child: replRow)
             sessionsRowKinds.append(.repl(session.id))
-
-            let itraceRow = ListBoxRow()
-            let itraceLabel = Label(str: "↳  ITrace")
-            itraceLabel.halign = .start
-            itraceLabel.marginStart = 24
-            itraceLabel.marginEnd = 12
-            itraceLabel.marginTop = 2
-            itraceLabel.marginBottom = 2
-            itraceRow.set(child: itraceLabel)
-            sessionsList.append(child: itraceRow)
-            sessionsRowKinds.append(.itrace(session.id))
 
             for instrument in instrumentsBySession[session.id] ?? [] {
                 let irow = ListBoxRow()
@@ -885,7 +930,7 @@ final class MainWindow {
                 let title = descriptor?.displayName ?? "Instrument"
                 let rowBox = Box(orientation: .horizontal, spacing: 6)
                 rowBox.halign = .start
-                rowBox.marginStart = 24
+                rowBox.marginStart = 28
                 rowBox.marginEnd = 12
                 rowBox.marginTop = 2
                 rowBox.marginBottom = 2
@@ -900,8 +945,52 @@ final class MainWindow {
                 }
                 rowBox.append(child: ilabel)
                 irow.set(child: rowBox)
+                attachInstrumentContextMenu(row: irow, anchor: rowBox, instrument: instrument)
                 sessionsList.append(child: irow)
                 sessionsRowKinds.append(.instrument(sessionID: session.id, instrumentID: instrument.id))
+            }
+
+            for insight in insightsBySession[session.id] ?? [] {
+                let irow = ListBoxRow()
+                let rowBox = Box(orientation: .horizontal, spacing: 6)
+                rowBox.halign = .start
+                rowBox.marginStart = 28
+                rowBox.marginEnd = 12
+                rowBox.marginTop = 2
+                rowBox.marginBottom = 2
+                let iconName = insight.kind == .memory
+                    ? "text-x-generic-symbolic"
+                    : "applications-engineering-symbolic"
+                let iconImage = Gtk.Image(iconName: iconName)
+                iconImage.pixelSize = 16
+                rowBox.append(child: iconImage)
+                let lbl = Label(str: insight.title)
+                lbl.halign = .start
+                rowBox.append(child: lbl)
+                irow.set(child: rowBox)
+                attachInsightContextMenu(row: irow, anchor: rowBox, insight: insight)
+                sessionsList.append(child: irow)
+                sessionsRowKinds.append(.insight(sessionID: session.id, insightID: insight.id))
+            }
+
+            for capture in capturesBySession[session.id] ?? [] {
+                let crow = ListBoxRow()
+                let rowBox = Box(orientation: .horizontal, spacing: 6)
+                rowBox.halign = .start
+                rowBox.marginStart = 28
+                rowBox.marginEnd = 12
+                rowBox.marginTop = 2
+                rowBox.marginBottom = 2
+                let iconImage = Gtk.Image(iconName: "audio-x-generic-symbolic")
+                iconImage.pixelSize = 16
+                rowBox.append(child: iconImage)
+                let lbl = Label(str: capture.displayName)
+                lbl.halign = .start
+                rowBox.append(child: lbl)
+                crow.set(child: rowBox)
+                attachCaptureContextMenu(row: crow, anchor: rowBox, capture: capture)
+                sessionsList.append(child: crow)
+                sessionsRowKinds.append(.itraceCapture(sessionID: session.id, captureID: capture.id))
             }
         }
 
@@ -910,6 +999,274 @@ final class MainWindow {
         {
             sessionsList.select(row: row)
         }
+    }
+
+    private func makeSessionIcon(for session: LumaCore.ProcessSession) -> Gtk.Image {
+        if let data = session.iconPNGData {
+            let url: URL
+            if let cached = sessionIconTempFiles[session.id] {
+                url = cached
+            } else {
+                let dir = URL(fileURLWithPath: "/tmp/luma-icons", isDirectory: true)
+                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                let target = dir.appendingPathComponent("\(session.id.uuidString).png")
+                try? data.write(to: target)
+                sessionIconTempFiles[session.id] = target
+                url = target
+            }
+            return Gtk.Image(file: url.path)
+        }
+        return Gtk.Image(iconName: "application-x-executable-symbolic")
+    }
+
+    // MARK: - Sidebar context menus
+
+    private func attachSessionContextMenu(
+        row: ListBoxRow,
+        anchor: Widget,
+        session: LumaCore.ProcessSession
+    ) {
+        let click = GestureClick()
+        click.set(button: 3)
+        click.onPressed { [weak self, weak anchor] _, _, _, _ in
+            MainActor.assumeIsolated {
+                guard let self, let anchor else { return }
+                self.presentSessionContextMenu(anchor: anchor, session: session)
+            }
+        }
+        row.add(controller: click)
+    }
+
+    private func presentSessionContextMenu(anchor: Widget, session: LumaCore.ProcessSession) {
+        let popover = Popover()
+        popover.autohide = true
+
+        let box = Box(orientation: .vertical, spacing: 2)
+        box.marginStart = 6
+        box.marginEnd = 6
+        box.marginTop = 6
+        box.marginBottom = 6
+
+        let node = engine?.node(forSessionID: session.id)
+        if node != nil {
+            let killButton = Button(label: "Kill Process")
+            killButton.add(cssClass: "flat")
+            killButton.add(cssClass: "destructive-action")
+            killButton.onClicked { [weak self, weak popover] _ in
+                MainActor.assumeIsolated {
+                    popover?.popdown()
+                    // TODO: wire device.kill(pid) once Frida API is plumbed.
+                    self?.showToast("Kill not yet implemented")
+                }
+            }
+            box.append(child: killButton)
+
+            let detachButton = Button(label: "Detach Session")
+            detachButton.add(cssClass: "flat")
+            detachButton.onClicked { [weak self, weak popover] _ in
+                MainActor.assumeIsolated {
+                    popover?.popdown()
+                    if let node = self?.engine?.node(forSessionID: session.id) {
+                        self?.engine?.removeNode(node)
+                        self?.showToast("Detached \(session.processName)")
+                    }
+                }
+            }
+            box.append(child: detachButton)
+        } else {
+            let reButton = Button(label: "Reestablish…")
+            reButton.add(cssClass: "flat")
+            reButton.onClicked { [weak self, weak popover] _ in
+                MainActor.assumeIsolated {
+                    popover?.popdown()
+                    self?.reestablishSession(id: session.id)
+                }
+            }
+            box.append(child: reButton)
+        }
+
+        box.append(child: Separator(orientation: .horizontal))
+
+        let deleteButton = Button(label: "Delete Session")
+        deleteButton.add(cssClass: "flat")
+        deleteButton.add(cssClass: "destructive-action")
+        deleteButton.onClicked { [weak self, weak popover] _ in
+            MainActor.assumeIsolated {
+                popover?.popdown()
+                guard let self else { return }
+                if let node = self.engine?.node(forSessionID: session.id) {
+                    self.engine?.removeNode(node)
+                }
+                try? self.engine?.store.deleteSession(id: session.id)
+                if self.currentSessionID() == session.id {
+                    self.select(.notebook)
+                    self.notebookListBox.select(row: self.notebookRow)
+                }
+                self.refreshInstruments()
+                self.showToast("Deleted \(session.processName)")
+            }
+        }
+        box.append(child: deleteButton)
+
+        popover.set(child: box)
+        popover.set(parent: anchor)
+        popover.popup()
+    }
+
+    private func attachInstrumentContextMenu(
+        row: ListBoxRow,
+        anchor: Widget,
+        instrument: LumaCore.InstrumentInstance
+    ) {
+        let click = GestureClick()
+        click.set(button: 3)
+        click.onPressed { [weak self, weak anchor] _, _, _, _ in
+            MainActor.assumeIsolated {
+                guard let self, let anchor else { return }
+                self.presentInstrumentContextMenu(anchor: anchor, instrument: instrument)
+            }
+        }
+        row.add(controller: click)
+    }
+
+    private func presentInstrumentContextMenu(
+        anchor: Widget,
+        instrument: LumaCore.InstrumentInstance
+    ) {
+        let popover = Popover()
+        popover.autohide = true
+        let box = Box(orientation: .vertical, spacing: 2)
+        box.marginStart = 6
+        box.marginEnd = 6
+        box.marginTop = 6
+        box.marginBottom = 6
+
+        let toggleLabel = instrument.isEnabled ? "Disable" : "Enable"
+        let toggleButton = Button(label: toggleLabel)
+        toggleButton.add(cssClass: "flat")
+        toggleButton.onClicked { [weak self, weak popover] _ in
+            MainActor.assumeIsolated {
+                popover?.popdown()
+                self?.toggleInstrument(instrument)
+            }
+        }
+        box.append(child: toggleButton)
+
+        box.append(child: Separator(orientation: .horizontal))
+
+        let deleteButton = Button(label: "Delete Instrument")
+        deleteButton.add(cssClass: "flat")
+        deleteButton.add(cssClass: "destructive-action")
+        deleteButton.onClicked { [weak self, weak popover] _ in
+            MainActor.assumeIsolated {
+                popover?.popdown()
+                self?.deleteInstrument(instrument)
+            }
+        }
+        box.append(child: deleteButton)
+
+        popover.set(child: box)
+        popover.set(parent: anchor)
+        popover.popup()
+    }
+
+    private func attachInsightContextMenu(
+        row: ListBoxRow,
+        anchor: Widget,
+        insight: LumaCore.AddressInsight
+    ) {
+        let click = GestureClick()
+        click.set(button: 3)
+        click.onPressed { [weak self, weak anchor] _, _, _, _ in
+            MainActor.assumeIsolated {
+                guard let self, let anchor else { return }
+                self.presentInsightContextMenu(anchor: anchor, insight: insight)
+            }
+        }
+        row.add(controller: click)
+    }
+
+    private func presentInsightContextMenu(
+        anchor: Widget,
+        insight: LumaCore.AddressInsight
+    ) {
+        let popover = Popover()
+        popover.autohide = true
+        let box = Box(orientation: .vertical, spacing: 2)
+        box.marginStart = 6
+        box.marginEnd = 6
+        box.marginTop = 6
+        box.marginBottom = 6
+
+        let deleteButton = Button(label: "Delete Insight")
+        deleteButton.add(cssClass: "flat")
+        deleteButton.add(cssClass: "destructive-action")
+        deleteButton.onClicked { [weak self, weak popover] _ in
+            MainActor.assumeIsolated {
+                popover?.popdown()
+                guard let self else { return }
+                try? self.engine?.store.deleteInsight(id: insight.id)
+                if case .insight(_, let id) = self.selection, id == insight.id {
+                    self.select(.repl(insight.sessionID))
+                }
+                self.refreshInstruments()
+                self.showToast("Deleted insight")
+            }
+        }
+        box.append(child: deleteButton)
+
+        popover.set(child: box)
+        popover.set(parent: anchor)
+        popover.popup()
+    }
+
+    private func attachCaptureContextMenu(
+        row: ListBoxRow,
+        anchor: Widget,
+        capture: LumaCore.ITraceCaptureRecord
+    ) {
+        let click = GestureClick()
+        click.set(button: 3)
+        click.onPressed { [weak self, weak anchor] _, _, _, _ in
+            MainActor.assumeIsolated {
+                guard let self, let anchor else { return }
+                self.presentCaptureContextMenu(anchor: anchor, capture: capture)
+            }
+        }
+        row.add(controller: click)
+    }
+
+    private func presentCaptureContextMenu(
+        anchor: Widget,
+        capture: LumaCore.ITraceCaptureRecord
+    ) {
+        let popover = Popover()
+        popover.autohide = true
+        let box = Box(orientation: .vertical, spacing: 2)
+        box.marginStart = 6
+        box.marginEnd = 6
+        box.marginTop = 6
+        box.marginBottom = 6
+
+        let deleteButton = Button(label: "Delete Capture")
+        deleteButton.add(cssClass: "flat")
+        deleteButton.add(cssClass: "destructive-action")
+        deleteButton.onClicked { [weak self, weak popover] _ in
+            MainActor.assumeIsolated {
+                popover?.popdown()
+                guard let self else { return }
+                // TODO: ProjectStore has no deleteCapture API yet — clear selection only.
+                if case .itraceCapture(_, let id) = self.selection, id == capture.id {
+                    self.select(.repl(capture.sessionID))
+                }
+                self.showToast("Capture deletion not yet implemented")
+            }
+        }
+        box.append(child: deleteButton)
+
+        popover.set(child: box)
+        popover.set(parent: anchor)
+        popover.popup()
     }
 
     private func currentSelectionRowIndex() -> Int? {
@@ -924,14 +1281,19 @@ final class MainWindow {
                 if case .repl(let s) = $0 { return s == id }
                 return false
             }
-        case .itrace(let id):
-            return sessionsRowKinds.firstIndex {
-                if case .itrace(let s) = $0 { return s == id }
-                return false
-            }
         case .instrument(_, let id):
             return sessionsRowKinds.firstIndex {
                 if case .instrument(_, let i) = $0 { return i == id }
+                return false
+            }
+        case .insight(_, let id):
+            return sessionsRowKinds.firstIndex {
+                if case .insight(_, let i) = $0 { return i == id }
+                return false
+            }
+        case .itraceCapture(_, let id):
+            return sessionsRowKinds.firstIndex {
+                if case .itraceCapture(_, let c) = $0 { return c == id }
                 return false
             }
         default:

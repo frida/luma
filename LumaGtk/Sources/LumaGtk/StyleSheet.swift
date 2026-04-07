@@ -90,6 +90,11 @@ enum StyleSheet {
     expander title:hover {
         background: alpha(@theme_fg_color, 0.05);
     }
+
+    .luma-session-icon {
+        border-radius: 4px;
+        border: 1px solid alpha(@accent_bg_color, 0.4);
+    }
     """
 
     static func install() {
