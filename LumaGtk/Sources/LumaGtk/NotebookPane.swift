@@ -192,14 +192,14 @@ final class NotebookPane {
                 inner.append(child: body)
             }
         } else {
-            if let jsValue = entry.jsValue {
-                let body = Label(str: String(describing: jsValue))
-                body.add(cssClass: "monospace")
-                body.halign = .start
-                body.hexpand = true
-                body.wrap = true
-                body.selectable = true
-                inner.append(child: body)
+            if let jsValue = entry.jsValue, let engine {
+                let valueWidget = JSInspectValueWidget.make(
+                    value: jsValue,
+                    engine: engine,
+                    sessionID: UUID()
+                )
+                valueWidget.hexpand = true
+                inner.append(child: valueWidget)
             } else if !entry.details.isEmpty {
                 let body = Label(str: entry.details)
                 body.add(cssClass: "monospace")
@@ -212,14 +212,63 @@ final class NotebookPane {
         }
 
         if let data = entry.binaryData, !data.isEmpty {
-            let binaryLabel = Label(str: "<\(data.count) bytes binary>")
+            let dump = NotebookPane.formatHexdumpPreview(data: data, maxLines: 8)
+            let binaryLabel = Label(str: dump)
             binaryLabel.add(cssClass: "monospace")
-            binaryLabel.add(cssClass: "dim-label")
             binaryLabel.halign = .start
+            binaryLabel.xalign = 0
+            binaryLabel.selectable = true
             inner.append(child: binaryLabel)
         }
 
         return card
+    }
+
+    private static func formatHexdumpPreview(data: Data, maxLines: Int) -> String {
+        let bytes = [UInt8](data)
+        let total = bytes.count
+        let cap = min(total, maxLines * 16)
+        var out = ""
+        var i = 0
+        while i < cap {
+            out += String(format: "0x%08x  ", i)
+            var hexPart = ""
+            var asciiPart = ""
+            for col in 0..<16 {
+                let idx = i + col
+                if col == 8 {
+                    hexPart += " "
+                }
+                if idx < cap {
+                    let b = bytes[idx]
+                    hexPart += String(format: "%02x", b)
+                    if (0x20...0x7e).contains(b) {
+                        asciiPart.append(Character(UnicodeScalar(b)))
+                    } else {
+                        asciiPart.append(".")
+                    }
+                } else {
+                    hexPart += "  "
+                    asciiPart.append(" ")
+                }
+                if col != 15 {
+                    hexPart += " "
+                }
+            }
+            out += hexPart
+            out += "  |"
+            out += asciiPart
+            out += "|"
+            i += 16
+            if i < cap {
+                out += "\n"
+            }
+        }
+        if total > cap {
+            if !out.isEmpty { out += "\n" }
+            out += "… (total \(total) bytes)"
+        }
+        return out
     }
 
     private func makeHeader(for entry: LumaCore.NotebookEntry, isEditing: Bool) -> Box {
