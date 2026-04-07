@@ -63,7 +63,7 @@ enum AddressActionMenu {
             MainActor.assumeIsolated {
                 popover?.popdown()
                 guard let anchor else { return }
-                HexView.present(
+                MemoryViewerWindow.present(
                     from: anchor,
                     engine: engine,
                     sessionID: sessionID,

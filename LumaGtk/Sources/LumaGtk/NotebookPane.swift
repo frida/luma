@@ -300,7 +300,7 @@ final class NotebookPane {
         }
 
         if let data = entry.binaryData, !data.isEmpty {
-            inner.append(child: HexBytesView.make(bytes: data))
+            inner.append(child: HexView(bytes: data).widget)
         }
 
         return card
