@@ -160,6 +160,56 @@ final class NotebookPane {
         refresh()
     }
 
+    private func presentContextMenu(anchor: Widget, entry: LumaCore.NotebookEntry) {
+        let popover = Popover()
+        popover.autohide = true
+
+        let box = Box(orientation: .vertical, spacing: 2)
+        box.marginStart = 6
+        box.marginEnd = 6
+        box.marginTop = 6
+        box.marginBottom = 6
+
+        if entry.isUserNote {
+            let editButton = Button(label: "Edit")
+            editButton.add(cssClass: "flat")
+            editButton.onClicked { [weak self, weak popover] _ in
+                MainActor.assumeIsolated {
+                    popover?.popdown()
+                    self?.beginEditing(entry)
+                }
+            }
+            box.append(child: editButton)
+        }
+
+        let insertButton = Button(label: "Insert Note Below")
+        insertButton.add(cssClass: "flat")
+        insertButton.onClicked { [weak self, weak popover] _ in
+            MainActor.assumeIsolated {
+                popover?.popdown()
+                self?.addUserNote(after: entry)
+            }
+        }
+        box.append(child: insertButton)
+
+        box.append(child: Separator(orientation: .horizontal))
+
+        let deleteButton = Button(label: "Delete")
+        deleteButton.add(cssClass: "flat")
+        deleteButton.add(cssClass: "destructive-action")
+        deleteButton.onClicked { [weak self, weak popover] _ in
+            MainActor.assumeIsolated {
+                popover?.popdown()
+                self?.deleteEntry(entry)
+            }
+        }
+        box.append(child: deleteButton)
+
+        popover.set(child: box)
+        popover.set(parent: anchor)
+        popover.popup()
+    }
+
     private func commitEdits(
         original: LumaCore.NotebookEntry,
         title: String,
@@ -183,6 +233,28 @@ final class NotebookPane {
         card.marginTop = 0
         card.marginBottom = 0
         card.hexpand = true
+
+        if entry.isUserNote {
+            let dblClick = GestureClick()
+            dblClick.set(button: 1)
+            dblClick.onPressed { [weak self] _, nPress, _, _ in
+                MainActor.assumeIsolated {
+                    guard nPress >= 2 else { return }
+                    self?.beginEditing(entry)
+                }
+            }
+            card.add(controller: dblClick)
+        }
+
+        let rightClick = GestureClick()
+        rightClick.set(button: 3)
+        rightClick.onPressed { [weak self, weak card] _, _, _, _ in
+            MainActor.assumeIsolated {
+                guard let self, let card else { return }
+                self.presentContextMenu(anchor: card, entry: entry)
+            }
+        }
+        card.add(controller: rightClick)
 
         let inner = Box(orientation: .vertical, spacing: 6)
         inner.marginStart = 12
@@ -228,13 +300,7 @@ final class NotebookPane {
         }
 
         if let data = entry.binaryData, !data.isEmpty {
-            let dump = NotebookPane.formatHexdumpPreview(data: data, maxLines: 8)
-            let binaryLabel = Label(str: dump)
-            binaryLabel.add(cssClass: "monospace")
-            binaryLabel.halign = .start
-            binaryLabel.xalign = 0
-            binaryLabel.selectable = true
-            inner.append(child: binaryLabel)
+            inner.append(child: HexBytesView.make(bytes: data))
         }
 
         return card

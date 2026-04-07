@@ -1,3 +1,4 @@
+import CWebKit
 import Foundation
 import Frida
 import Gtk
@@ -36,6 +37,8 @@ final class TargetPicker {
     private let appSearchEntry: SearchEntry
     private let appStatus: Label
     private let programPathEntry: Entry
+    private let programBrowseButton: Button
+    private let programPathRow: Box
     private let argumentsEntry: Entry
     private let workingDirEntry: Entry
     private let envEntry: Entry
@@ -122,9 +125,15 @@ final class TargetPicker {
         appStatus = Label(str: "Select a device to list applications\u{2026}")
         programPathEntry = Entry()
         programPathEntry.placeholderText = "Absolute program path, e.g. /usr/bin/foo"
+        programPathEntry.hexpand = true
         if let p = pickerState.lastSpawnProgramPath {
             programPathEntry.text = p
         }
+        programBrowseButton = Button(label: "Browse\u{2026}")
+        programBrowseButton.visible = false
+        programPathRow = Box(orientation: .horizontal, spacing: 6)
+        programPathRow.append(child: programPathEntry)
+        programPathRow.append(child: programBrowseButton)
         argumentsEntry = Entry()
         argumentsEntry.placeholderText = "Arguments (space-separated, optional)"
         workingDirEntry = Entry()
@@ -262,6 +271,11 @@ final class TargetPicker {
                 self?.refreshSpawnButtonSensitivity()
             }
         }
+        programBrowseButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.presentProgramBrowseDialog()
+            }
+        }
 
         window.onCloseRequest { [weak self] _ in
             MainActor.assumeIsolated { self?.persistState() }
@@ -297,6 +311,20 @@ final class TargetPicker {
         processFetchTask?.cancel()
         appFetchTask?.cancel()
         window.destroy()
+    }
+
+    private func presentProgramBrowseDialog() {
+        guard let parentPtr = window.window_ptr.map(UnsafeMutableRawPointer.init) else { return }
+        let context = Unmanaged.passRetained(self).toOpaque()
+        "Select program".withCString { title in
+            luma_file_dialog_open(parentPtr, title, targetPickerProgramPathThunk, context)
+        }
+    }
+
+    fileprivate func handleProgramPath(_ path: String) {
+        programPathEntry.text = path
+        pickerState.lastSpawnProgramPath = path
+        refreshSpawnButtonSensitivity()
     }
 
     private func persistState() {
@@ -413,11 +441,11 @@ final class TargetPicker {
         programNote.marginEnd = 12
         programNote.marginTop = 4
         programNote.marginBottom = 4
-        programPathEntry.marginStart = 12
-        programPathEntry.marginEnd = 12
-        programPathEntry.marginBottom = 6
+        programPathRow.marginStart = 12
+        programPathRow.marginEnd = 12
+        programPathRow.marginBottom = 6
         programFormBox.append(child: programNote)
-        programFormBox.append(child: programPathEntry)
+        programFormBox.append(child: programPathRow)
         programFormBox.hexpand = true
         programFormBox.vexpand = true
 
@@ -585,12 +613,14 @@ final class TargetPicker {
     private func handleDeviceRow(_ row: ListBoxRowRef?) {
         guard let row else {
             selectedDeviceID = nil
+            programBrowseButton.visible = false
             return
         }
         let index = Int(row.index)
         guard index >= 0, index < devices.count else { return }
         let device = devices[index]
         selectedDeviceID = device.id
+        programBrowseButton.visible = (device.id == "local")
         loadProcesses(for: device)
         if mode == .spawn {
             loadApplications(for: device)
@@ -934,5 +964,20 @@ final class TargetPicker {
         entry.hexpand = true
         row.append(child: entry)
         return row
+    }
+}
+
+private let targetPickerProgramPathThunk: @convention(c) (
+    UnsafePointer<CChar>?, UnsafeMutableRawPointer?
+) -> Void = { pathPtr, userData in
+    guard let userData else { return }
+    let raw = UInt(bitPattern: userData)
+    let pathString: String? = pathPtr.map { String(cString: $0) }
+    MainActor.assumeIsolated {
+        let ptr = UnsafeMutableRawPointer(bitPattern: raw)!
+        let picker = Unmanaged<TargetPicker>.fromOpaque(ptr).takeRetainedValue()
+        if let pathString {
+            picker.handleProgramPath(pathString)
+        }
     }
 }

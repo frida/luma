@@ -592,6 +592,13 @@ final class MainWindow {
         column.hexpand = true
         column.vexpand = true
 
+        if SessionDetachedBanner.shouldShow(for: session) {
+            let banner = SessionDetachedBanner.make(for: session) { [weak self] in
+                self?.reestablishSession(id: session.id)
+            }
+            column.append(child: banner)
+        }
+
         let descriptor = engine?.descriptor(for: instrument)
         let title = descriptor?.displayName ?? "Instrument"
         let subtitleLines: [String] = [
