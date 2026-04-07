@@ -169,6 +169,8 @@ final class EventStreamPane {
 
         if let tracerWidget = makeTracerPayload(for: event) {
             row.append(child: tracerWidget)
+        } else if let expandable = makeExpandablePayload(for: event) {
+            row.append(child: expandable)
         } else {
             let payload = Label(str: payloadString(for: event))
             payload.halign = .start
@@ -179,6 +181,32 @@ final class EventStreamPane {
         }
 
         return row
+    }
+
+    private func makeExpandablePayload(for event: RuntimeEvent) -> Widget? {
+        guard case .jsValue(let value) = event.payload,
+            let engine,
+            let sessionID = event.sessionID,
+            isStructured(value)
+        else { return nil }
+
+        let expander = Expander(label: value.inlineDescription)
+        expander.hexpand = true
+        let body = JSInspectValueWidget.make(value: value, engine: engine, sessionID: sessionID)
+        body.marginStart = 12
+        body.marginTop = 4
+        body.marginBottom = 4
+        expander.set(child: body)
+        return expander
+    }
+
+    private func isStructured(_ value: JSInspectValue) -> Bool {
+        switch value {
+        case .object, .array, .map, .set, .error:
+            return true
+        default:
+            return false
+        }
     }
 
     private func makeTracerPayload(for event: RuntimeEvent) -> Widget? {
@@ -208,22 +236,26 @@ final class EventStreamPane {
         }
         column.add(controller: rightClick)
 
-        let messageText: String = {
-            if case .array(_, let elems) = parsed.message,
-                elems.count == 1,
-                case .string(let s) = elems[0]
-            {
-                return s
-            }
-            return parsed.message.inlineDescription
-        }()
-
-        let payload = Label(str: messageText)
-        payload.halign = .start
-        payload.hexpand = true
-        payload.ellipsize = .end
-        payload.add(cssClass: "monospace")
-        column.append(child: payload)
+        if case .array(_, let elems) = parsed.message,
+            elems.count == 1,
+            case .string(let s) = elems[0]
+        {
+            let payload = Label(str: s)
+            payload.halign = .start
+            payload.hexpand = true
+            payload.ellipsize = .end
+            payload.add(cssClass: "monospace")
+            column.append(child: payload)
+        } else {
+            let expander = Expander(label: parsed.message.inlineDescription)
+            expander.hexpand = true
+            let body = JSInspectValueWidget.make(value: parsed.message, engine: engine!, sessionID: sessionID)
+            body.marginStart = 12
+            body.marginTop = 4
+            body.marginBottom = 4
+            expander.set(child: body)
+            column.append(child: expander)
+        }
 
         if let backtrace = parsed.backtrace, !backtrace.isEmpty {
             let button = Button(label: "⋯ bt")
