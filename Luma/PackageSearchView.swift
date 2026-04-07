@@ -215,7 +215,7 @@ struct PackageSearchView: View {
             defer { isInstalling = false }
 
             do {
-                let installed = try await workspace.installPackage(
+                let installed = try await workspace.engine.installPackage(
                     name: name,
                     versionSpec: versionSpec,
                     globalAlias: alias

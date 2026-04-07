@@ -20,7 +20,7 @@ struct CodeEditorView: View {
         }
 
         return editor.task {
-            _ = try? await workspace.ensureCompilerWorkspaceReady()
+            await workspace.rebuildMonacoFSSnapshotIfNeeded()
         }
     }
 

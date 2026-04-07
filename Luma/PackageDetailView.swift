@@ -103,7 +103,7 @@ struct PackageDetailView: View {
             defer { isBusy = false }
 
             do {
-                let upgraded = try await workspace.upgradePackage(package)
+                let upgraded = try await workspace.engine.upgradePackage(package)
 
                 if upgraded.version == currentVersion {
                     statusMessage = "\(package.name) is already up to date."
@@ -128,7 +128,7 @@ struct PackageDetailView: View {
             defer { isBusy = false }
 
             do {
-                try await workspace.removePackage(package)
+                try await workspace.engine.removePackage(package)
                 statusMessage = "Package removed."
                 selection = nextSelection
             } catch {
@@ -139,7 +139,7 @@ struct PackageDetailView: View {
 
     @MainActor
     private func nextSidebarSelectionAfterRemovingCurrentPackage() -> SidebarItemID? {
-        guard let projectPackages = try? workspace.projectPackagesState() else {
+        guard let projectPackages = try? workspace.store.fetchPackagesState() else {
             return .notebook
         }
 
@@ -170,7 +170,8 @@ struct PackageDetailView: View {
         }
 
         do {
-            let root = try await workspace.ensureCompilerWorkspaceReady()
+            let paths = try workspace.engine.compilerWorkspacePaths()
+            let root = try await workspace.engine.compilerWorkspace.ensureReady(paths: paths)
 
             let fm = FileManager.default
             let packageRoot =

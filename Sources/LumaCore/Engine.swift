@@ -128,6 +128,77 @@ public final class Engine {
         }
     }
 
+    // MARK: - Package Management
+
+    public func installPackage(
+        name: String,
+        versionSpec: String? = nil,
+        globalAlias: String? = nil
+    ) async throws -> InstalledPackage {
+        let paths = try compilerWorkspacePaths()
+        let installed = try await compilerWorkspace.installPackage(
+            name: name,
+            versionSpec: versionSpec,
+            globalAlias: globalAlias,
+            paths: paths
+        )
+        await propagatePackage(installed)
+        return installed
+    }
+
+    public func upgradePackage(_ package: InstalledPackage) async throws -> InstalledPackage {
+        try await installPackage(
+            name: package.name,
+            versionSpec: nil,
+            globalAlias: package.globalAlias
+        )
+    }
+
+    public func removePackage(_ package: InstalledPackage) async throws {
+        let paths = try compilerWorkspacePaths()
+        try await compilerWorkspace.removePackage(package, paths: paths)
+    }
+
+    public func loadAllPackages(on node: ProcessNode) async {
+        do {
+            let paths = try compilerWorkspacePaths()
+            let bundles = try await compilerWorkspace.currentPackageBundlesForAgent(paths: paths)
+            guard !bundles.isEmpty else { return }
+
+            try await node.script.exports.loadPackages(JSValue(bundles))
+
+            for entry in bundles {
+                node.loadedPackageNames.insert(entry["name"] as! String)
+            }
+        } catch {
+            NSLog("[Engine] failed to load packages: %@", String(describing: error))
+        }
+    }
+
+    public func loadPackage(_ package: InstalledPackage, on node: ProcessNode) async {
+        if node.loadedPackageNames.contains(package.name) { return }
+
+        do {
+            let paths = try compilerWorkspacePaths()
+            let bundles = try await compilerWorkspace.currentPackageBundlesForAgent(paths: paths)
+
+            guard let entry = bundles.first(where: { ($0["name"] as? String) == package.name }) else {
+                return
+            }
+
+            try await node.script.exports.loadPackages(JSValue([entry]))
+            node.loadedPackageNames.insert(entry["name"] as! String)
+        } catch {
+            NSLog("[Engine] failed to load package %@: %@", package.name, String(describing: error))
+        }
+    }
+
+    private func propagatePackage(_ package: InstalledPackage) async {
+        for node in processNodes {
+            await loadPackage(package, on: node)
+        }
+    }
+
     // MARK: - Descriptor Registry
 
     public func registerDescriptor(_ descriptor: InstrumentDescriptor) {
@@ -343,7 +414,7 @@ public final class Engine {
 
             await node.setupITraceDraining()
 
-            await loadAllPackages(on: node, sessionID: s.id)
+            await loadAllPackages(on: node)
 
             for ref in node.instruments where ref.isEnabled {
                 await loadInstrumentOnNode(
@@ -888,24 +959,6 @@ public final class Engine {
                 "source": LumaAgent.codeShareSource,
                 "config": configObject,
             ]))
-    }
-
-    // MARK: - Package Loading
-
-    public func loadAllPackages(on node: ProcessNode, sessionID: UUID) async {
-        do {
-            guard let paths = compilerWorkspace.workspaceRoot.map({ CompilerWorkspacePaths(root: $0) }) else { return }
-            let bundles = try await compilerWorkspace.currentPackageBundlesForAgent(paths: paths)
-            guard !bundles.isEmpty else { return }
-
-            try await node.script.exports.loadPackages(JSValue(bundles))
-
-            for entry in bundles {
-                node.loadedPackageNames.insert(entry["name"] as! String)
-            }
-        } catch {
-            NSLog("[Engine] failed to load packages: %@", String(describing: error))
-        }
     }
 
     // MARK: - Insight Management

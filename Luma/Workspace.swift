@@ -29,21 +29,6 @@ final class Workspace: ObservableObject {
 
     @Published var targetPickerContext: TargetPickerContext?
 
-    var compilerWorkspaceRoot: URL? {
-        get { engine.compilerWorkspace.workspaceRoot }
-        set { engine.compilerWorkspace.workspaceRoot = newValue }
-    }
-    var packageBundles: [String: String] {
-        get { engine.compilerWorkspace.packageBundles }
-        set { engine.compilerWorkspace.packageBundles = newValue }
-    }
-    var packageBundlesDirty: Bool {
-        get { engine.compilerWorkspace.packageBundlesDirty }
-        set { engine.compilerWorkspace.packageBundlesDirty = newValue }
-    }
-    var packageManager: PackageManager { engine.compilerWorkspace.packageManager }
-    var packageOps: PackageOperationQueue { engine.compilerWorkspace.packageOps }
-    @Published var lastCompilerDiagnostics: [String] = []
     @Published var monacoFSSnapshot: MonacoFSSnapshot? = nil
     var monacoFSSnapshotDirty: Bool = true
     var monacoFSSnapshotVersion: Int = 0
