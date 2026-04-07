@@ -10,17 +10,35 @@ final class EventStreamPane {
     private weak var engine: Engine?
     private let toggleButton: Button
     private let statusLabel: Label
+    private let filterBar: Box
+    private let sourceFilterButton: MenuButton
+    private let processFilterButton: MenuButton
+    private let searchEntry: Entry
+    private let pauseButton: ToggleButton
+    private let clearButton: Button
+    private let liveIndicator: Label
     private let scroll: ScrolledWindow
+    private let listOverlay: Overlay
     private let eventListBox: Box
+    private let emptyStateLabel: Label
+    private let pendingPillButton: Button
     private let dateFormatter: DateFormatter
 
     var onNavigateToHook: ((UUID, UUID, UUID) -> Void)?
 
     private var isCollapsed: Bool = true
+    private var isPaused: Bool = false
     private var pendingNewEvents: Int = 0
     private var lastSeenTotal: Int = 0
     private let collapsedHeightRequest: Int = 36
-    private let expandedHeightRequest: Int = 240
+    private let expandedHeightRequest: Int = 320
+
+    private var displayedEvents: [RuntimeEvent] = []
+    private var filteredEvents: [RuntimeEvent] = []
+
+    private var enabledSources: Set<EventSourceFilter> = Set(EventSourceFilter.allCases)
+    private var selectedProcessName: String?
+    private var searchText: String = ""
 
     init() {
         widget = Box(orientation: .vertical, spacing: 0)
@@ -45,15 +63,77 @@ final class EventStreamPane {
         statusLabel.hexpand = true
         bar.append(child: statusLabel)
 
+        filterBar = Box(orientation: .horizontal, spacing: 6)
+        filterBar.marginStart = 12
+        filterBar.marginEnd = 12
+        filterBar.marginTop = 2
+        filterBar.marginBottom = 4
+        filterBar.visible = false
+        widget.append(child: filterBar)
+
+        sourceFilterButton = MenuButton()
+        sourceFilterButton.label = "All Sources"
+        sourceFilterButton.add(cssClass: "flat")
+        filterBar.append(child: sourceFilterButton)
+
+        processFilterButton = MenuButton()
+        processFilterButton.label = "All Processes"
+        processFilterButton.add(cssClass: "flat")
+        filterBar.append(child: processFilterButton)
+
+        let spacer = Box(orientation: .horizontal, spacing: 0)
+        spacer.hexpand = true
+        filterBar.append(child: spacer)
+
+        searchEntry = Entry()
+        searchEntry.placeholderText = "Search\u{2026}"
+        searchEntry.setSizeRequest(width: 200, height: -1)
+        filterBar.append(child: searchEntry)
+
+        liveIndicator = Label(str: "● Live")
+        liveIndicator.add(cssClass: "dim-label")
+        liveIndicator.add(cssClass: "caption")
+        filterBar.append(child: liveIndicator)
+
+        pauseButton = ToggleButton()
+        pauseButton.label = "Pause"
+        pauseButton.add(cssClass: "flat")
+        filterBar.append(child: pauseButton)
+
+        clearButton = Button(label: "Clear")
+        clearButton.add(cssClass: "flat")
+        filterBar.append(child: clearButton)
+
         eventListBox = Box(orientation: .vertical, spacing: 0)
         eventListBox.hexpand = true
+        eventListBox.vexpand = true
 
         scroll = ScrolledWindow()
         scroll.hexpand = true
         scroll.vexpand = true
         scroll.set(child: eventListBox)
-        scroll.visible = false
-        widget.append(child: scroll)
+
+        emptyStateLabel = Label(str: "Waiting for events\u{2026}")
+        emptyStateLabel.add(cssClass: "dim-label")
+        emptyStateLabel.halign = .center
+        emptyStateLabel.valign = .center
+        emptyStateLabel.canTarget = false
+
+        pendingPillButton = Button(label: "0 new events while paused")
+        pendingPillButton.add(cssClass: "luma-event-pending-pill")
+        pendingPillButton.halign = .center
+        pendingPillButton.valign = .end
+        pendingPillButton.marginBottom = 12
+        pendingPillButton.visible = false
+
+        listOverlay = Overlay()
+        listOverlay.hexpand = true
+        listOverlay.vexpand = true
+        listOverlay.set(child: WidgetRef(scroll))
+        listOverlay.addOverlay(widget: emptyStateLabel)
+        listOverlay.addOverlay(widget: pendingPillButton)
+        listOverlay.visible = false
+        widget.append(child: listOverlay)
 
         dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "HH:mm:ss"
@@ -63,13 +143,43 @@ final class EventStreamPane {
                 self?.toggleCollapsed()
             }
         }
+
+        searchEntry.onChanged { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.searchText = self.searchEntry.text ?? ""
+                self.rebuildFiltered()
+            }
+        }
+
+        pauseButton.onToggled { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.isPaused = self.pauseButton.active
+                self.pauseButton.label = self.isPaused ? "Resume" : "Pause"
+                if !self.isPaused {
+                    self.syncSnapshot()
+                }
+                self.updateLiveIndicator()
+                self.updatePendingPill()
+            }
+        }
+
+        clearButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.clearEvents()
+            }
+        }
+
+        rebuildSourceFilterMenu()
+        rebuildProcessFilterMenu()
     }
 
     func attach(engine: Engine) {
         self.engine = engine
         lastSeenTotal = engine.eventLog.totalReceived
         observe()
-        refresh()
+        syncSnapshot()
     }
 
     private func toggleCollapsed() {
@@ -77,12 +187,10 @@ final class EventStreamPane {
         applyCollapsedState()
         if !isCollapsed {
             pendingNewEvents = 0
-            if let engine {
-                lastSeenTotal = engine.eventLog.totalReceived
-            }
-            refresh()
+            syncSnapshot()
         }
         updateBar()
+        updatePendingPill()
     }
 
     private func applyCollapsedState() {
@@ -90,7 +198,8 @@ final class EventStreamPane {
             width: -1,
             height: isCollapsed ? collapsedHeightRequest : expandedHeightRequest
         )
-        scroll.visible = !isCollapsed
+        listOverlay.visible = !isCollapsed
+        filterBar.visible = !isCollapsed
     }
 
     private func observe() {
@@ -109,23 +218,88 @@ final class EventStreamPane {
     private func handleLogChanged() {
         guard let engine else { return }
         let total = engine.eventLog.totalReceived
+        let delta = max(0, total - lastSeenTotal)
         if isCollapsed {
-            pendingNewEvents += max(0, total - lastSeenTotal)
+            pendingNewEvents += delta
             lastSeenTotal = total
             updateBar()
-        } else {
-            lastSeenTotal = total
-            refresh()
+            return
         }
+        if isPaused {
+            pendingNewEvents += delta
+            lastSeenTotal = total
+            updatePendingPill()
+            return
+        }
+        lastSeenTotal = total
+        syncSnapshot()
     }
 
-    private func refresh() {
-        guard let engine else { return }
-        clearChildren(of: eventListBox)
-        for event in engine.eventLog.events {
-            eventListBox.append(child: makeRow(for: event))
+    private func syncSnapshot() {
+        guard let engine else {
+            displayedEvents = []
+            rebuildFiltered()
+            return
         }
+        displayedEvents = engine.eventLog.events
+        lastSeenTotal = engine.eventLog.totalReceived
+        pendingNewEvents = 0
+        rebuildSourceFilterMenu()
+        rebuildProcessFilterMenu()
+        rebuildFiltered()
+        updatePendingPill()
+        scrollToBottomSoon()
+    }
+
+    private func clearEvents() {
+        engine?.eventLog.clear()
+        displayedEvents.removeAll()
+        filteredEvents.removeAll()
+        pendingNewEvents = 0
+        lastSeenTotal = engine?.eventLog.totalReceived ?? 0
+        refreshRows()
         updateBar()
+        updatePendingPill()
+    }
+
+    private func rebuildFiltered() {
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasSearch = !trimmed.isEmpty
+
+        filteredEvents = displayedEvents.filter { evt in
+            let kind = EventSourceFilter.from(evt.source)
+            guard enabledSources.contains(kind) else { return false }
+            if let name = selectedProcessName {
+                guard processName(for: evt) == name else { return false }
+            }
+            if hasSearch {
+                let haystack = "\(payloadString(for: evt)) \(contextString(for: evt))"
+                if haystack.range(of: trimmed, options: .caseInsensitive) == nil {
+                    return false
+                }
+            }
+            return true
+        }
+
+        refreshRows()
+        updateBar()
+    }
+
+    private func refreshRows() {
+        clearChildren(of: eventListBox)
+        var prevTimestamp: Date? = nil
+        for event in filteredEvents {
+            eventListBox.append(child: makeRow(for: event, previousTimestamp: prevTimestamp))
+            prevTimestamp = event.timestamp
+        }
+        emptyStateLabel.visible = filteredEvents.isEmpty
+        if filteredEvents.isEmpty {
+            if displayedEvents.isEmpty {
+                emptyStateLabel.setText(str: "Waiting for events\u{2026}")
+            } else {
+                emptyStateLabel.setText(str: "No events match the current filters.")
+            }
+        }
     }
 
     private func updateBar() {
@@ -141,34 +315,170 @@ final class EventStreamPane {
         } else {
             toggleButton.label = "▼  Hide Event Stream"
             widget.remove(cssClass: "has-pending-events")
-            let count = engine?.eventLog.events.count ?? 0
-            statusLabel.setText(str: count == 0 ? "no events yet" : "\(count) events")
+            let count = filteredEvents.count
+            let total = displayedEvents.count
+            if count == total {
+                statusLabel.setText(str: count == 0 ? "" : "\(count) events")
+            } else {
+                statusLabel.setText(str: "\(count) of \(total)")
+            }
+        }
+        updateLiveIndicator()
+    }
+
+    private func updateLiveIndicator() {
+        liveIndicator.setText(str: isPaused ? "⏸ Paused" : "● Live")
+    }
+
+    private func updatePendingPill() {
+        let show = !isCollapsed && isPaused && pendingNewEvents > 0
+        pendingPillButton.visible = show
+        if show {
+            let plural = pendingNewEvents == 1 ? "" : "s"
+            pendingPillButton.label = "Show \(pendingNewEvents) new event\(plural)"
+        }
+        pendingPillButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.isPaused = false
+                self.pauseButton.active = false
+                self.pauseButton.label = "Pause"
+                self.syncSnapshot()
+                self.updateLiveIndicator()
+            }
+        }
+    }
+
+    private func scrollToBottomSoon() {
+        Task { @MainActor in
+            guard let adj = scroll.vadjustment else { return }
+            let target = adj.upper - adj.pageSize
+            if target > adj.value {
+                adj.value = target
+            }
+        }
+    }
+
+    // MARK: - Filter menus
+
+    private func rebuildSourceFilterMenu() {
+        let popover = Popover()
+        popover.autohide = true
+        let box = Box(orientation: .vertical, spacing: 2)
+        box.marginStart = 8
+        box.marginEnd = 8
+        box.marginTop = 8
+        box.marginBottom = 8
+
+        for filter in EventSourceFilter.allCases {
+            let check = CheckButton(label: filter.menuTitle)
+            check.active = enabledSources.contains(filter)
+            check.onToggled { [weak self, weak check] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let check else { return }
+                    if check.active {
+                        self.enabledSources.insert(filter)
+                    } else {
+                        self.enabledSources.remove(filter)
+                    }
+                    self.updateSourceFilterButtonLabel()
+                    self.rebuildFiltered()
+                }
+            }
+            box.append(child: check)
+        }
+
+        popover.set(child: box)
+        sourceFilterButton.set(popover: popover)
+        updateSourceFilterButtonLabel()
+    }
+
+    private func updateSourceFilterButtonLabel() {
+        if enabledSources.count == EventSourceFilter.allCases.count {
+            sourceFilterButton.label = "All Sources"
+        } else if enabledSources.isEmpty {
+            sourceFilterButton.label = "No Sources"
+        } else if enabledSources.count == 1, let only = enabledSources.first {
+            sourceFilterButton.label = only.menuTitle
+        } else {
+            sourceFilterButton.label = "\(enabledSources.count) Sources"
+        }
+    }
+
+    private func rebuildProcessFilterMenu() {
+        let popover = Popover()
+        popover.autohide = true
+        let box = Box(orientation: .vertical, spacing: 2)
+        box.marginStart = 8
+        box.marginEnd = 8
+        box.marginTop = 8
+        box.marginBottom = 8
+
+        let allButton = Button(label: "All Processes")
+        allButton.add(cssClass: "flat")
+        allButton.onClicked { [weak self, weak popover] _ in
+            MainActor.assumeIsolated {
+                self?.selectedProcessName = nil
+                self?.processFilterButton.label = "All Processes"
+                self?.rebuildFiltered()
+                popover?.popdown()
+            }
+        }
+        box.append(child: allButton)
+
+        let names = Set(displayedEvents.map { processName(for: $0) }).filter { !$0.isEmpty }.sorted()
+        if !names.isEmpty {
+            box.append(child: Separator(orientation: .horizontal))
+        }
+        for name in names {
+            let item = Button(label: name)
+            item.add(cssClass: "flat")
+            item.onClicked { [weak self, weak popover] _ in
+                MainActor.assumeIsolated {
+                    self?.selectedProcessName = name
+                    self?.processFilterButton.label = name
+                    self?.rebuildFiltered()
+                    popover?.popdown()
+                }
+            }
+            box.append(child: item)
+        }
+
+        popover.set(child: box)
+        processFilterButton.set(popover: popover)
+
+        if let sel = selectedProcessName, !names.contains(sel) {
+            selectedProcessName = nil
+            processFilterButton.label = "All Processes"
         }
     }
 
     // MARK: - Row formatting
 
-    private func makeRow(for event: RuntimeEvent) -> Widget {
+    private func makeRow(for event: RuntimeEvent, previousTimestamp: Date?) -> Widget {
         let row = Box(orientation: .horizontal, spacing: 8)
         row.marginStart = 12
         row.marginEnd = 12
         row.marginTop = 2
         row.marginBottom = 2
 
-        let time = Label(str: dateFormatter.string(from: event.timestamp))
-        time.add(cssClass: "dim-label")
-        time.add(cssClass: "monospace")
-        time.halign = .start
-        row.append(child: time)
+        let delta = Label(str: deltaText(from: previousTimestamp, to: event.timestamp) ?? " ")
+        delta.add(cssClass: "dim-label")
+        delta.add(cssClass: "monospace")
+        delta.add(cssClass: "luma-event-delta")
+        delta.halign = .start
+        delta.setSizeRequest(width: 64, height: -1)
+        row.append(child: delta)
 
-        let context = Label(str: contextString(for: event))
-        context.add(cssClass: "dim-label")
-        context.halign = .start
-        context.setSizeRequest(width: 160, height: -1)
-        row.append(child: context)
+        let badge = makeSourceBadge(for: event)
+        row.append(child: badge)
 
         if let tracerWidget = makeTracerPayload(for: event) {
             row.append(child: tracerWidget)
+        } else if let errorWidget = makeJSErrorPayload(for: event) {
+            row.append(child: errorWidget)
+        } else if let consoleWidget = makeConsolePayload(for: event) {
+            row.append(child: consoleWidget)
         } else if let expandable = makeExpandablePayload(for: event) {
             row.append(child: expandable)
         } else {
@@ -180,7 +490,146 @@ final class EventStreamPane {
             row.append(child: payload)
         }
 
+        attachRowContextMenu(to: row, event: event)
         return row
+    }
+
+    private func deltaText(from previous: Date?, to current: Date) -> String? {
+        guard let previous else { return nil }
+        let dt = current.timeIntervalSince(previous)
+        guard dt > 0 else { return nil }
+        let ms = dt * 1000.0
+        if ms < 1.0 { return nil }
+        if ms < 1000.0 {
+            return String(format: "+%.0f ms", ms)
+        } else if dt < 60.0 {
+            return String(format: "+%.2f s", dt)
+        } else {
+            return String(format: "+%.0f s", dt)
+        }
+    }
+
+    private func makeSourceBadge(for event: RuntimeEvent) -> Widget {
+        let text = shortSourceName(for: event)
+        let label = Label(str: text)
+        label.add(cssClass: "luma-event-badge")
+        label.add(cssClass: "luma-event-source-\(colorIndex(for: text))")
+        label.halign = .start
+        label.valign = .center
+        return label
+    }
+
+    private func colorIndex(for key: String) -> Int {
+        var hash: UInt32 = 5381
+        for byte in key.utf8 {
+            hash = (hash &* 33) &+ UInt32(byte)
+        }
+        return Int(hash % 8)
+    }
+
+    private func shortSourceName(for event: RuntimeEvent) -> String {
+        switch event.source {
+        case .processOutput(let fd):
+            switch fd {
+            case 1: return "stdout"
+            case 2: return "stderr"
+            default: return "fd\(fd)"
+            }
+        case .script: return "script"
+        case .console: return "console"
+        case .repl: return "repl"
+        case .instrument(_, let name): return name
+        }
+    }
+
+    private func makeJSErrorPayload(for event: RuntimeEvent) -> Widget? {
+        guard case .jsError(let error) = event.payload else { return nil }
+        let column = Box(orientation: .vertical, spacing: 2)
+        column.hexpand = true
+
+        let textLabel = Label(str: error.text)
+        textLabel.add(cssClass: "monospace")
+        textLabel.add(cssClass: "luma-event-jserror")
+        textLabel.halign = .start
+        textLabel.hexpand = true
+        textLabel.wrap = true
+        textLabel.selectable = true
+        column.append(child: textLabel)
+
+        if let fileName = error.fileName, let line = error.lineNumber {
+            let colSuffix = error.columnNumber.map { ":\($0)" } ?? ""
+            let loc = Label(str: "\(fileName):\(line)\(colSuffix)")
+            loc.add(cssClass: "dim-label")
+            loc.add(cssClass: "caption")
+            loc.halign = .start
+            loc.marginStart = 12
+            column.append(child: loc)
+        }
+
+        if let stack = error.stack, !stack.isEmpty {
+            let stackLabel = Label(str: stack)
+            stackLabel.add(cssClass: "monospace")
+            stackLabel.add(cssClass: "dim-label")
+            stackLabel.halign = .start
+            stackLabel.marginStart = 12
+            stackLabel.wrap = true
+            stackLabel.selectable = true
+            column.append(child: stackLabel)
+        }
+
+        return column
+    }
+
+    private func makeConsolePayload(for event: RuntimeEvent) -> Widget? {
+        guard case .consoleMessage(let message) = event.payload else { return nil }
+        let row = Box(orientation: .horizontal, spacing: 8)
+        row.hexpand = true
+
+        let level = message.level
+        let badge = Label(str: levelBadgeText(level).uppercased())
+        badge.add(cssClass: "luma-event-badge")
+        badge.add(cssClass: "luma-event-level-\(levelClass(level))")
+        badge.valign = .start
+        row.append(child: badge)
+
+        let allStrings = message.values.compactMap { value -> String? in
+            if case .string(let s) = value { return s }
+            return nil
+        }
+
+        let text: String
+        if !message.values.isEmpty && allStrings.count == message.values.count {
+            text = allStrings.joined(separator: " ")
+        } else {
+            text = message.values.map { $0.inlineDescription }.joined(separator: " ")
+        }
+
+        let payload = Label(str: text)
+        payload.add(cssClass: "monospace")
+        payload.halign = .start
+        payload.hexpand = true
+        payload.ellipsize = .end
+        payload.selectable = true
+        row.append(child: payload)
+        return row
+    }
+
+    private func levelBadgeText(_ level: ConsoleLevel) -> String {
+        switch level {
+        case .info: return "info"
+        case .debug: return "debug"
+        case .warning: return "warn"
+        case .error: return "error"
+        }
+    }
+
+    private func levelClass(_ level: ConsoleLevel) -> String {
+        switch level {
+        case .info: return "info"
+        case .debug: return "debug"
+        case .warning: return "warn"
+        case .error: return "error"
+        }
     }
 
     private func makeExpandablePayload(for event: RuntimeEvent) -> Widget? {
@@ -230,7 +679,8 @@ final class EventStreamPane {
                     anchor: column,
                     sessionID: sessionID,
                     instrumentID: instrumentID,
-                    hookID: hookID
+                    hookID: hookID,
+                    event: event
                 )
             }
         }
@@ -272,11 +722,85 @@ final class EventStreamPane {
         return column
     }
 
+    private func attachRowContextMenu(to row: Box, event: RuntimeEvent) {
+        let gesture = GestureClick()
+        gesture.set(button: 3)
+        gesture.onPressed { [weak self, weak row] _, _, _, _ in
+            MainActor.assumeIsolated {
+                guard let self, let row else { return }
+                self.presentRowContextMenu(at: row, event: event)
+            }
+        }
+        row.add(controller: gesture)
+    }
+
+    private func presentRowContextMenu(at anchor: Widget, event: RuntimeEvent) {
+        let popover = Popover()
+        popover.autohide = true
+
+        let box = Box(orientation: .vertical, spacing: 2)
+        box.marginStart = 6
+        box.marginEnd = 6
+        box.marginTop = 6
+        box.marginBottom = 6
+
+        let pinButton = Button(label: "Pin to Notebook")
+        pinButton.add(cssClass: "flat")
+        pinButton.onClicked { [weak self, weak popover] _ in
+            MainActor.assumeIsolated {
+                popover?.popdown()
+                self?.pinToNotebook(event)
+            }
+        }
+        box.append(child: pinButton)
+
+        popover.set(child: box)
+        popover.set(parent: anchor)
+        popover.popup()
+    }
+
+    private func pinToNotebook(_ event: RuntimeEvent) {
+        guard let engine else { return }
+        let process = engine.session(id: event.sessionID ?? UUID())?.processName ?? ""
+        let title: String
+        switch event.source {
+        case .processOutput(let fd):
+            let channel: String
+            switch fd {
+            case 1: channel = "stdout"
+            case 2: channel = "stderr"
+            default: channel = "fd\(fd)"
+            }
+            title = "Output on \(channel)"
+        case .script: title = "Script Runtime (\(process))"
+        case .console: title = "Console (\(process))"
+        case .repl: title = "REPL (\(process))"
+        case .instrument(_, let name): title = "Instrument \(name)"
+        }
+
+        var jsValue: JSInspectValue? = nil
+        if case .jsValue(let v) = event.payload {
+            jsValue = v
+        }
+
+        var entry = LumaCore.NotebookEntry(
+            title: title,
+            details: payloadString(for: event),
+            sessionID: event.sessionID ?? UUID(),
+            processName: process
+        )
+        if let jsValue {
+            entry.jsValue = jsValue
+        }
+        engine.addNotebookEntry(entry)
+    }
+
     private func presentHookContextMenu(
         anchor: Widget,
         sessionID: UUID,
         instrumentID: UUID,
-        hookID: UUID
+        hookID: UUID,
+        event: RuntimeEvent
     ) {
         let popover = Popover()
         popover.autohide = true
@@ -286,6 +810,16 @@ final class EventStreamPane {
         box.marginEnd = 6
         box.marginTop = 6
         box.marginBottom = 6
+
+        let pinButton = Button(label: "Pin to Notebook")
+        pinButton.add(cssClass: "flat")
+        pinButton.onClicked { [weak self, weak popover] _ in
+            MainActor.assumeIsolated {
+                popover?.popdown()
+                self?.pinToNotebook(event)
+            }
+        }
+        box.append(child: pinButton)
 
         let goButton = Button(label: "Go to Hook")
         goButton.add(cssClass: "flat")
@@ -390,6 +924,10 @@ final class EventStreamPane {
         }
     }
 
+    private func processName(for event: RuntimeEvent) -> String {
+        engine?.session(id: event.sessionID ?? UUID())?.processName ?? ""
+    }
+
     private func contextString(for event: RuntimeEvent) -> String {
         let process = engine?.session(id: event.sessionID ?? UUID())?.processName
         let processSuffix = process.map { " · \($0)" } ?? ""
@@ -431,6 +969,34 @@ final class EventStreamPane {
         while let current = child {
             child = current.nextSibling
             container.remove(child: current)
+        }
+    }
+}
+
+private enum EventSourceFilter: String, CaseIterable, Hashable {
+    case processOutput
+    case script
+    case console
+    case repl
+    case instrument
+
+    var menuTitle: String {
+        switch self {
+        case .processOutput: return "Process Output"
+        case .script: return "Script Runtime"
+        case .console: return "Console"
+        case .repl: return "REPL"
+        case .instrument: return "Instruments"
+        }
+    }
+
+    static func from(_ source: LumaCore.RuntimeEvent.Source) -> EventSourceFilter {
+        switch source {
+        case .processOutput: return .processOutput
+        case .script: return .script
+        case .console: return .console
+        case .repl: return .repl
+        case .instrument: return .instrument
         }
     }
 }
