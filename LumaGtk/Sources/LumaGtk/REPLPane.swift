@@ -255,24 +255,21 @@ final class REPLPane {
         codeRow.append(child: codeLabel)
         column.append(child: codeRow)
 
-        let resultLabel = Label(str: format(result: cell.result))
-        resultLabel.add(cssClass: "monospace")
-        resultLabel.halign = .start
-        resultLabel.hexpand = true
-        resultLabel.marginStart = 16
-        resultLabel.wrap = true
-        resultLabel.selectable = true
-        column.append(child: resultLabel)
-
-        // Only the top-level cell value is wired to the address-action menu;
-        // nativePointers nested inside arrays/objects are not yet clickable.
-        if let engine,
-            case .js(let value) = cell.result,
-            case .nativePointer = value,
-            let address = value.nativePointerAddress
-        {
-            AddressActionMenu.attach(to: resultLabel, engine: engine, sessionID: sessionID, address: address)
+        let resultWidget: Widget
+        if case .js(let value) = cell.result, let engine {
+            resultWidget = JSInspectValueWidget.make(value: value, engine: engine, sessionID: sessionID)
+        } else {
+            let label = Label(str: format(result: cell.result))
+            label.add(cssClass: "monospace")
+            label.halign = .start
+            label.hexpand = true
+            label.wrap = true
+            label.selectable = true
+            resultWidget = label
         }
+        resultWidget.marginStart = 16
+        resultWidget.halign = .start
+        column.append(child: resultWidget)
 
         return column
     }
