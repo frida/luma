@@ -41,7 +41,11 @@ final class TargetPicker {
     private let programPathRow: Box
     private let argumentsEntry: Entry
     private let workingDirEntry: Entry
-    private let envEntry: Entry
+    private let envListBox: Box
+    private var envRowWidgets: [(row: Box, key: Entry, value: Entry)] = []
+    private var envPairs: [(String, String)] = []
+    private let stdioInheritToggle: ToggleButton
+    private let stdioPipeToggle: ToggleButton
     private let autoResumeSwitch: Switch
     private let spawnFormStack: Box
     private let appFormBox: Box
@@ -60,6 +64,8 @@ final class TargetPicker {
     private var selectedApplicationIdentifier: String?
 
     private var pickerState: TargetPickerState
+    private var pendingCertificateEntry: Entry?
+    private weak var addRemoteSheet: Window?
     private var mode: Mode = .attach
     private var spawnSubmode: SpawnSubmode = .application
 
@@ -138,8 +144,11 @@ final class TargetPicker {
         argumentsEntry.placeholderText = "Arguments (space-separated, optional)"
         workingDirEntry = Entry()
         workingDirEntry.placeholderText = "Working directory (optional)"
-        envEntry = Entry()
-        envEntry.placeholderText = "KEY=value KEY2=value2 (optional)"
+        envListBox = Box(orientation: .vertical, spacing: 4)
+        stdioInheritToggle = ToggleButton()
+        stdioInheritToggle.label = "Inherit"
+        stdioPipeToggle = ToggleButton()
+        stdioPipeToggle.label = "Pipe"
         autoResumeSwitch = Switch()
         autoResumeSwitch.active = true
         autoResumeSwitch.valign = .center
@@ -476,13 +485,42 @@ final class TargetPicker {
         advBody.marginBottom = 6
 
         let envRow = Box(orientation: .horizontal, spacing: 8)
+        envRow.valign = .start
         let envLabel = Label(str: "Environment")
         envLabel.halign = .start
+        envLabel.valign = .start
         envLabel.setSizeRequest(width: 110, height: -1)
         envRow.append(child: envLabel)
-        envEntry.hexpand = true
-        envRow.append(child: envEntry)
+        let envColumn = Box(orientation: .vertical, spacing: 4)
+        envColumn.hexpand = true
+        envListBox.hexpand = true
+        envColumn.append(child: envListBox)
+        let addEnvButton = Button(label: "Add Variable")
+        addEnvButton.halign = .start
+        addEnvButton.add(cssClass: "flat")
+        addEnvButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.appendEnvRow(key: "", value: "")
+            }
+        }
+        envColumn.append(child: addEnvButton)
+        envRow.append(child: envColumn)
         advBody.append(child: envRow)
+        rebuildEnvRows()
+
+        let stdioRow = Box(orientation: .horizontal, spacing: 8)
+        let stdioLabel = Label(str: "Stdio")
+        stdioLabel.halign = .start
+        stdioLabel.setSizeRequest(width: 110, height: -1)
+        stdioRow.append(child: stdioLabel)
+        let stdioToggles = Box(orientation: .horizontal, spacing: 0)
+        stdioToggles.add(cssClass: "linked")
+        stdioPipeToggle.set(group: ToggleButtonRef(stdioInheritToggle.toggle_button_ptr))
+        stdioInheritToggle.active = true
+        stdioToggles.append(child: stdioInheritToggle)
+        stdioToggles.append(child: stdioPipeToggle)
+        stdioRow.append(child: stdioToggles)
+        advBody.append(child: stdioRow)
 
         let cwdRow = Box(orientation: .horizontal, spacing: 8)
         let cwdLabel = Label(str: "Working dir")
@@ -784,6 +822,71 @@ final class TargetPicker {
         refreshSpawnButtonSensitivity()
     }
 
+    // MARK: - Environment editor
+
+    private func rebuildEnvRows() {
+        for entry in envRowWidgets {
+            envListBox.remove(child: entry.row)
+        }
+        envRowWidgets.removeAll(keepingCapacity: true)
+        for (index, pair) in envPairs.enumerated() {
+            insertEnvRowWidget(at: index, key: pair.0, value: pair.1)
+        }
+    }
+
+    private func appendEnvRow(key: String, value: String) {
+        let index = envPairs.count
+        envPairs.append((key, value))
+        insertEnvRowWidget(at: index, key: key, value: value)
+    }
+
+    private func insertEnvRowWidget(at index: Int, key: String, value: String) {
+        let row = Box(orientation: .horizontal, spacing: 4)
+        row.hexpand = true
+        let keyEntry = Entry()
+        keyEntry.placeholderText = "KEY"
+        keyEntry.text = key
+        keyEntry.hexpand = true
+        let valueEntry = Entry()
+        valueEntry.placeholderText = "value"
+        valueEntry.text = value
+        valueEntry.hexpand = true
+        let removeButton = Button(label: "\u{2715}")
+        removeButton.add(cssClass: "flat")
+        let rowRef = row
+        keyEntry.onChanged { [weak self] entry in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if let i = self.envRowWidgets.firstIndex(where: { $0.row === rowRef }) {
+                    self.envPairs[i].0 = entry.text
+                }
+            }
+        }
+        valueEntry.onChanged { [weak self] entry in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if let i = self.envRowWidgets.firstIndex(where: { $0.row === rowRef }) {
+                    self.envPairs[i].1 = entry.text
+                }
+            }
+        }
+        removeButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if let i = self.envRowWidgets.firstIndex(where: { $0.row === rowRef }) {
+                    self.envPairs.remove(at: i)
+                    self.envListBox.remove(child: rowRef)
+                    self.envRowWidgets.remove(at: i)
+                }
+            }
+        }
+        row.append(child: keyEntry)
+        row.append(child: valueEntry)
+        row.append(child: removeButton)
+        envListBox.append(child: row)
+        envRowWidgets.insert((row: row, key: keyEntry, value: valueEntry), at: index)
+    }
+
     // MARK: - Commit
 
     private func commitAttach() {
@@ -819,20 +922,20 @@ final class TargetPicker {
             .split(whereSeparator: { $0.isWhitespace })
             .map(String.init)
         var environment: [String: String] = [:]
-        for token in envEntry.text.split(whereSeparator: { $0.isWhitespace }) {
-            let pair = token.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
-            guard pair.count == 2 else { continue }
-            let key = String(pair[0]).trimmingCharacters(in: .whitespaces)
+        for (rawKey, value) in envPairs {
+            let key = rawKey.trimmingCharacters(in: .whitespaces)
             guard !key.isEmpty else { continue }
-            environment[key] = String(pair[1])
+            environment[key] = value
         }
+        // TODO: Persist environment once TargetPickerState gains a field for it.
         let cwd = workingDirEntry.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stdio: Frida.Stdio = stdioPipeToggle.active ? .pipe : .inherit
         let config = SpawnConfig(
             target: target,
             arguments: arguments,
             environment: environment,
             workingDirectory: cwd.isEmpty ? nil : cwd,
-            stdio: .inherit,
+            stdio: stdio,
             autoResume: autoResumeSwitch.active
         )
         persistState()
@@ -881,7 +984,15 @@ final class TargetPicker {
 
         let certificateEntry = Entry()
         certificateEntry.placeholderText = "PEM file path (optional)"
-        body.append(child: labeledRow("Certificate", entry: certificateEntry))
+        let certificateBrowseButton = Button(label: "Browse\u{2026}")
+        certificateBrowseButton.onClicked { [weak self, weak certificateEntry] _ in
+            MainActor.assumeIsolated {
+                guard let self, let certificateEntry else { return }
+                self.presentCertificateBrowseDialog(into: certificateEntry)
+            }
+        }
+        body.append(child: labeledRow("Certificate", entry: certificateEntry, trailing: certificateBrowseButton))
+        self.addRemoteSheet = sheet
 
         let advBody = Box(orientation: .vertical, spacing: 8)
         let originEntry = Entry()
@@ -955,7 +1066,7 @@ final class TargetPicker {
         sheet.present()
     }
 
-    private func labeledRow(_ title: String, entry: Entry) -> Box {
+    private func labeledRow(_ title: String, entry: Entry, trailing: Button? = nil) -> Box {
         let row = Box(orientation: .horizontal, spacing: 8)
         let label = Label(str: title)
         label.halign = .start
@@ -963,7 +1074,29 @@ final class TargetPicker {
         row.append(child: label)
         entry.hexpand = true
         row.append(child: entry)
+        if let trailing {
+            row.append(child: trailing)
+        }
         return row
+    }
+
+    private func presentCertificateBrowseDialog(into entry: Entry) {
+        let parentWindow = addRemoteSheet ?? window
+        guard let parentPtr = parentWindow.window_ptr.map(UnsafeMutableRawPointer.init) else { return }
+        pendingCertificateEntry = entry
+        let context = Unmanaged.passRetained(self).toOpaque()
+        "Select certificate".withCString { title in
+            luma_file_dialog_open(parentPtr, title, targetPickerCertificatePathThunk, context)
+        }
+    }
+
+    fileprivate func handleCertificatePath(_ path: String) {
+        pendingCertificateEntry?.text = path
+        pendingCertificateEntry = nil
+    }
+
+    fileprivate func clearPendingCertificateEntry() {
+        pendingCertificateEntry = nil
     }
 }
 
@@ -978,6 +1111,23 @@ private let targetPickerProgramPathThunk: @convention(c) (
         let picker = Unmanaged<TargetPicker>.fromOpaque(ptr).takeRetainedValue()
         if let pathString {
             picker.handleProgramPath(pathString)
+        }
+    }
+}
+
+private let targetPickerCertificatePathThunk: @convention(c) (
+    UnsafePointer<CChar>?, UnsafeMutableRawPointer?
+) -> Void = { pathPtr, userData in
+    guard let userData else { return }
+    let raw = UInt(bitPattern: userData)
+    let pathString: String? = pathPtr.map { String(cString: $0) }
+    MainActor.assumeIsolated {
+        let ptr = UnsafeMutableRawPointer(bitPattern: raw)!
+        let picker = Unmanaged<TargetPicker>.fromOpaque(ptr).takeRetainedValue()
+        if let pathString {
+            picker.handleCertificatePath(pathString)
+        } else {
+            picker.clearPendingCertificateEntry()
         }
     }
 }
