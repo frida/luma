@@ -55,6 +55,14 @@ enum StyleSheet {
     .luma-cfg-section-current { box-shadow: 0 0 0 2px alpha(@accent_bg_color, 0.6); }
     .luma-cfg-instr { padding: 0 4px; }
     .luma-cfg-regdiff { color: alpha(@accent_fg_color, 0.9); }
+
+    .luma-toast {
+        border-radius: 999px;
+        background-color: alpha(@theme_fg_color, 0.85);
+        color: @theme_bg_color;
+        box-shadow: 0 2px 6px alpha(black, 0.3);
+        padding: 0;
+    }
     """
 
     static func install() {

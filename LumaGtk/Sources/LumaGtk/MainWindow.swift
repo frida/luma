@@ -35,6 +35,7 @@ final class MainWindow {
     private var collaborationPanel: CollaborationPanel?
     private let outerPaned: Paned
     private var topPaned: Paned!
+    private var toastOverlay: ToastOverlay!
     private var isCollaborationPanelVisible: Bool = false
 
     private enum SidebarSelection: Equatable {
@@ -132,7 +133,9 @@ final class MainWindow {
         column.append(child: outerPaned)
         column.append(child: separator)
         column.append(child: eventStreamPane.widget)
-        window.set(child: column)
+        let toastOverlay = ToastOverlay(content: column)
+        self.toastOverlay = toastOverlay
+        window.set(child: toastOverlay.widget)
 
         newSessionButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
@@ -178,11 +181,16 @@ final class MainWindow {
         renderDetail()
     }
 
+    func showToast(_ message: String) {
+        toastOverlay?.show(message)
+    }
+
     func documentDidChange() {
         if let updated = application?.documentForWindow(self) {
             self.document = updated
         }
         window.title = MainWindow.makeTitle(for: document)
+        showToast("Saved as \(document.displayName).luma")
     }
 
     private static func makeTitle(for document: LumaDocument) -> String {
@@ -424,6 +432,7 @@ final class MainWindow {
                 let pane = PackageDetailPane(engine: engine, package: package)
                 pane.onChanged = { [weak self] in
                     self?.refreshPackages()
+                    self?.showToast("Updated \(package.name)")
                 }
                 widget = pane.widget
             } else {
@@ -513,6 +522,8 @@ final class MainWindow {
 
     private func deleteInstrument(_ instrument: LumaCore.InstrumentInstance) {
         guard let engine else { return }
+        let descriptor = engine.descriptor(for: instrument)
+        let title = descriptor?.displayName ?? "Instrument"
         Task { @MainActor in
             await engine.removeInstrument(instrument)
             self.refreshInstruments()
@@ -521,6 +532,7 @@ final class MainWindow {
             } else {
                 self.renderDetail()
             }
+            self.showToast("Removed \(title)")
         }
     }
 
@@ -571,6 +583,8 @@ final class MainWindow {
             guard let self else { return }
             self.refreshInstruments()
             self.select(.instrument(sessionID: sessionID, instrumentID: instance.id))
+            let title = engine.descriptor(for: instance)?.displayName ?? "Instrument"
+            self.showToast("Added \(title)")
         }
         dialog.present()
     }
@@ -815,6 +829,7 @@ final class MainWindow {
         guard let engine else { return }
         PackageSearchDialog.present(from: anchor, engine: engine) { [weak self] in
             self?.refreshPackages()
+            self?.showToast("Package installed")
         }
     }
 
