@@ -17,6 +17,7 @@ final class ITraceDetailView {
     private var decoded: DecodedITrace?
     private var disassembler: TraceDisassembler?
     private var cfgView: ITraceCFGView?
+    private var timeline: ITraceTimeline?
     private var selectedCallIndex: Int = 0
     private var modeSwitcher: Box?
     private var listToggle: ToggleButton?
@@ -141,7 +142,19 @@ final class ITraceDetailView {
                     liveNode: engine.node(forSessionID: sessionID)
                 )
             }
-            bodyContainer.append(child: makeTimeline(functionCalls: decoded.functionCalls))
+            let timeline = ITraceTimeline(
+                functionCalls: decoded.functionCalls,
+                totalEntryCount: decoded.entries.count
+            )
+            timeline.onSelect = { [weak self] callIndex in
+                guard let self, let decoded = self.decoded else { return }
+                let call = decoded.functionCalls[callIndex]
+                self.jumpToEntry(index: call.startIndex)
+                self.selectedCallIndex = callIndex
+                self.cfgView?.setSelectedCall(index: callIndex)
+            }
+            self.timeline = timeline
+            bodyContainer.append(child: timeline.widget)
             bodyContainer.append(child: makeModeSwitcher())
             populateEntries(decoded.entries)
             bodyContainer.append(child: entriesScroll)
@@ -232,36 +245,6 @@ final class ITraceDetailView {
         }
     }
 
-    private func makeTimeline(functionCalls: [TraceFunctionCall]) -> ScrolledWindow {
-        let row = Box(orientation: .horizontal, spacing: 2)
-        row.marginTop = 4
-        row.marginBottom = 4
-
-        for (callIndex, call) in functionCalls.enumerated() {
-            let button = Button(label: "\(call.shortName) · \(call.entryCount)")
-            let width = max(40, call.entryCount * 4)
-            button.setSizeRequest(width: width, height: 28)
-            let bucket = abs(stableHash(call.functionName)) % 8
-            button.add(cssClass: "luma-itrace-fn-\(bucket)")
-            let startIndex = call.startIndex
-            button.onClicked { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.jumpToEntry(index: startIndex)
-                    self.selectedCallIndex = callIndex
-                    self.cfgView?.setSelectedCall(index: callIndex)
-                }
-            }
-            row.append(child: button)
-        }
-
-        let scroll = ScrolledWindow()
-        scroll.hexpand = true
-        scroll.setSizeRequest(width: -1, height: 44)
-        scroll.set(child: row)
-        return scroll
-    }
-
     private func populateEntries(_ entries: [TraceEntry]) {
         var child = entriesBox.firstChild
         while let current = child {
@@ -346,12 +329,4 @@ final class ITraceDetailView {
         popover.popup()
     }
 
-    private func stableHash(_ s: String) -> Int {
-        var hash: UInt64 = 1469598103934665603
-        for byte in s.utf8 {
-            hash ^= UInt64(byte)
-            hash = hash &* 1099511628211
-        }
-        return Int(truncatingIfNeeded: hash)
-    }
 }
