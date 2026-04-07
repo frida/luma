@@ -255,10 +255,41 @@ final class MainWindow {
 
     private func openTargetPicker(reusing existing: LumaCore.ProcessSession? = nil, reason: String? = nil) {
         guard let engine else { return }
-        let picker = TargetPicker(parent: window, engine: engine, reason: reason) { [weak self] device, process in
-            self?.attach(device: device, process: process, reusing: existing)
-        }
+        let picker = TargetPicker(
+            parent: window,
+            engine: engine,
+            reason: reason,
+            onAttach: { [weak self] device, process in
+                self?.attach(device: device, process: process, reusing: existing)
+            },
+            onSpawn: { [weak self] device, config in
+                self?.spawn(device: device, config: config, reusing: existing)
+            }
+        )
         picker.present()
+    }
+
+    private func spawn(
+        device: Frida.Device,
+        config: SpawnConfig,
+        reusing existing: LumaCore.ProcessSession? = nil
+    ) {
+        guard let engine else { return }
+        var session = existing ?? LumaCore.ProcessSession(
+            kind: .spawn(config),
+            deviceID: device.id,
+            deviceName: device.name,
+            processName: config.defaultDisplayName,
+            lastKnownPID: 0
+        )
+        session.kind = .spawn(config)
+        session.deviceID = device.id
+        session.deviceName = device.name
+        session.processName = config.defaultDisplayName
+        try? engine.store.save(session)
+        Task { @MainActor in
+            await engine.spawnAndAttach(device: device, session: session)
+        }
     }
 
     private func attach(
