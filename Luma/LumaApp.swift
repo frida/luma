@@ -15,7 +15,6 @@ import UniformTypeIdentifiers
             SwiftyMonaco.prewarmPool(profile: CodeShareEditorProfile.javascript, count: 2)
             SwiftyMonaco.prewarmPool(profile: TracerEditorProfile.typescript, count: 2)
 
-            HookPackLibrary.shared.reload()
         }
 
         var body: some Scene {
@@ -46,7 +45,7 @@ import UniformTypeIdentifiers
                 return
             }
 
-            CollaborationJoinCoordinator.shared.enqueue(roomID: roomID)
+            CollaborationJoinQueue.shared.enqueue(roomID: roomID)
         }
 
         private func roomID(from url: URL) -> String? {
@@ -70,7 +69,6 @@ import UniformTypeIdentifiers
         init() {
             SwiftyMonaco.prewarmPool(profile: CodeShareEditorProfile.javascript, count: 2)
             SwiftyMonaco.prewarmPool(profile: TracerEditorProfile.typescript, count: 2)
-            HookPackLibrary.shared.reload()
         }
 
         var body: some Scene {
@@ -81,21 +79,6 @@ import UniformTypeIdentifiers
     }
 
 #endif
-
-final class CollaborationJoinCoordinator: ObservableObject {
-    static let shared = CollaborationJoinCoordinator()
-
-    private var pendingRoomIDs: [String] = []
-
-    func enqueue(roomID: String) {
-        pendingRoomIDs.append(roomID)
-    }
-
-    func consumeNextRoomID() -> String? {
-        guard !pendingRoomIDs.isEmpty else { return nil }
-        return pendingRoomIDs.removeFirst()
-    }
-}
 
 extension UTType {
     static var project: UTType {

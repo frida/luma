@@ -8,7 +8,7 @@ struct SidebarView: View {
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 
-    var sessions: [LumaCore.ProcessSession] { workspace.sessions }
+    var sessions: [LumaCore.ProcessSession] { workspace.engine.sessions }
 
     @State private var packages: [LumaCore.InstalledPackage] = []
 
@@ -21,7 +21,7 @@ struct SidebarView: View {
 
             Section("Sessions") {
                 ForEach(sessions) { session in
-                    let node = workspace.processNodes.first(where: { $0.sessionRecord.id == session.id })
+                    let node = workspace.engine.node(forSessionID: session.id)
                     let instruments = (try? workspace.store.fetchInstruments(sessionID: session.id)) ?? []
                     let insights = (try? workspace.store.fetchInsights(sessionID: session.id)) ?? []
                     let captures = (try? workspace.store.fetchITraceCaptures(sessionID: session.id)) ?? []
@@ -37,12 +37,10 @@ struct SidebarView: View {
                         .tag(SidebarItemID.repl(session.id))
 
                     ForEach(instruments) { instance in
-                        let runtime = node?.instruments.first(where: { $0.id == instance.id })
                         SidebarInstrumentRow(
                             session: session,
                             node: node,
                             instance: instance,
-                            runtime: runtime,
                             workspace: workspace,
                             selection: $selection
                         )
@@ -96,7 +94,7 @@ private struct SidebarNotebookRow: View {
 
 private struct SidebarSessionHeaderRow: View {
     let session: LumaCore.ProcessSession
-    let node: ProcessNodeViewModel?
+    let node: LumaCore.ProcessNode?
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 
@@ -134,7 +132,7 @@ private struct SidebarSessionHeaderRow: View {
                 }
 
                 Button {
-                    workspace.engine.removeNode(node.core)
+                    workspace.engine.removeNode(node)
                 } label: {
                     Label("Detach Session", systemImage: "bolt.slash")
                 }
@@ -212,22 +210,25 @@ private struct SidebarSessionHeaderRow: View {
 
     private func reestablish() {
         Task { @MainActor in
-            await workspace.reestablishSession(for: session)
+            let result = await workspace.engine.reestablishSession(id: session.id)
+            if case .needsUserInput(let reason, let session) = result {
+                workspace.targetPickerContext = .reestablish(session: session, reason: reason)
+            }
         }
     }
 
     private func killProcess() {
         guard let node else { return }
         Task { @MainActor in
-            let pid = node.sessionRecord.lastKnownPID
+            let pid = session.lastKnownPID
             do { try await node.device.kill(pid) } catch {
-                node.updateSession { $0.lastError = error.localizedDescription }
+                workspace.engine.updateSession(id: session.id) { $0.lastError = error.localizedDescription }
             }
         }
     }
 
     private func deleteSession() {
-        if let node { workspace.engine.removeNode(node.core) }
+        if let node { workspace.engine.removeNode(node) }
         let sessionID = session.id
 
         try? workspace.store.deleteSession(id: sessionID)
@@ -277,19 +278,26 @@ private struct SidebarSessionREPLRow: View {
 
 private struct SidebarInstrumentRow: View {
     let session: LumaCore.ProcessSession
-    let node: ProcessNodeViewModel?
+    let node: LumaCore.ProcessNode?
     let instance: LumaCore.InstrumentInstance
-    let runtime: InstrumentRuntime?
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 
     @State private var isShowingDeleteConfirm = false
 
+    private var descriptor: InstrumentDescriptor? {
+        workspace.engine.descriptor(for: instance)
+    }
+
+    private var displayName: String {
+        descriptor?.displayName ?? "Instrument"
+    }
+
     var body: some View {
         HStack(spacing: 6) {
-            InstrumentIconView(icon: instance.displayIcon, pointSize: 12)
+            InstrumentIconView(icon: descriptor?.icon ?? .system("puzzlepiece.extension"), pointSize: 12)
                 .frame(width: subrowIconWidth, alignment: .center)
-            Text(instance.displayName)
+            Text(displayName)
             Spacer()
         }
         .font(.callout)
@@ -304,8 +312,8 @@ private struct SidebarInstrumentRow: View {
             } label: {
                 Label(
                     instance.isEnabled
-                        ? "Disable \"\(instance.displayName)\""
-                        : "Enable \"\(instance.displayName)\"",
+                        ? "Disable \"\(displayName)\""
+                        : "Enable \"\(displayName)\"",
                     systemImage: instance.isEnabled ? "pause.circle" : "play.circle"
                 )
             }
@@ -328,7 +336,7 @@ private struct SidebarInstrumentRow: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This will remove \"\(instance.displayName)\" from this session.")
+            Text("This will remove \"\(displayName)\" from this session.")
         }
     }
 
@@ -434,12 +442,3 @@ private struct SidebarPackageRow: View {
     }
 }
 
-extension LumaCore.InstrumentInstance {
-    @MainActor var displayName: String {
-        InstrumentMetadataRegistry.shared.displayName(for: self)
-    }
-
-    @MainActor var displayIcon: InstrumentIcon {
-        InstrumentMetadataRegistry.shared.icon(for: self)
-    }
-}

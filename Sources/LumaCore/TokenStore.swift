@@ -64,6 +64,33 @@ public struct KeychainTokenStore: TokenStore {
 }
 #endif
 
+public struct FileTokenStore: TokenStore {
+    private let directory: URL
+
+    public init(directory: URL) {
+        self.directory = directory
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+
+    private func fileURL(service: String, account: String) -> URL {
+        directory.appendingPathComponent("\(service).\(account).token")
+    }
+
+    public func get(service: String, account: String) async throws -> String? {
+        let url = fileURL(service: service, account: account)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    public func set(service: String, account: String, token: String) async throws {
+        try Data(token.utf8).write(to: fileURL(service: service, account: account), options: .atomic)
+    }
+
+    public func delete(service: String, account: String) async throws {
+        try? FileManager.default.removeItem(at: fileURL(service: service, account: account))
+    }
+}
+
 public enum TokenStoreError: Error {
     #if canImport(Security)
     case keychainError(OSStatus)

@@ -36,8 +36,13 @@ struct CollaborationPanel: View {
         .frame(maxHeight: .infinity, alignment: .top)
         .padding(12)
         .background(.ultraThickMaterial)
-        .sheet(isPresented: $workspace.isAuthSheetPresented) {
-            GitHubSignInSheet(workspace: workspace)
+        .sheet(
+            isPresented: Binding(
+                get: { workspace.engine.gitHubAuth.isPresentingSignIn },
+                set: { if !$0 { workspace.engine.gitHubAuth.dismissSignIn() } }
+            )
+        ) {
+            GitHubSignInSheet(auth: workspace.engine.gitHubAuth)
         }
         .onAppear {
             if case .joined = collaboration.status {
@@ -52,13 +57,16 @@ struct CollaborationPanel: View {
             Text("Collaboration")
                 .font(.headline)
             Spacer()
-            if let user = workspace.currentGitHubUser {
+            if let user = workspace.engine.gitHubAuth.currentUser {
                 Menu {
                     Button("View GitHub Profile") {
                         openGitHubProfile(for: user)
                     }
                     Button("Sign out", role: .destructive) {
-                        workspace.signOut()
+                        Task { @MainActor in
+                            await workspace.engine.gitHubAuth.signOut()
+                            await workspace.engine.collaboration.stop()
+                        }
                     }
                 } label: {
                     AsyncImage(url: avatarSizeURL(user, size: 20)) { image in
@@ -110,14 +118,14 @@ struct CollaborationPanel: View {
                         .padding(.top, 2)
                 }
 
-                if let user = workspace.currentGitHubUser {
+                if let user = workspace.engine.gitHubAuth.currentUser {
                     Button("Enable collaboration as @\(user.id)") {
-                        workspace.startCollaboration()
+                        workspace.engine.startCollaboration()
                     }
                     .buttonStyle(.borderedProminent)
                 } else {
                     Button("Enable collaboration") {
-                        workspace.startCollaboration()
+                        workspace.engine.startCollaboration()
                     }
                     .buttonStyle(.borderedProminent)
                 }
@@ -209,7 +217,7 @@ struct CollaborationPanel: View {
                 }
 
                 Button("Disable collaboration") {
-                    workspace.stopCollaboration()
+                    Task { @MainActor in await workspace.engine.collaboration.stop() }
                 }
                 .buttonStyle(.bordered)
 
@@ -219,7 +227,7 @@ struct CollaborationPanel: View {
                     .foregroundStyle(.yellow)
 
                 Button("Retry") {
-                    workspace.startCollaboration()
+                    workspace.engine.startCollaboration()
                 }
                 .buttonStyle(.borderedProminent)
             }

@@ -3,7 +3,7 @@ import LumaCore
 
 struct TracerEventRowView: View {
     let messageView: AnyView
-    let process: ProcessNodeViewModel
+    let process: LumaCore.ProcessNode
     let backtrace: [JSInspectValue]?
     let workspace: Workspace
     @Binding var selection: SidebarItemID?
@@ -46,7 +46,7 @@ struct TracerEventRowView: View {
 }
 
 private struct TracerBacktraceView: View {
-    let process: ProcessNodeViewModel
+    let process: LumaCore.ProcessNode
     let pointers: [JSInspectValue]
     let workspace: Workspace
     @Binding var selection: SidebarItemID?
@@ -84,7 +84,7 @@ private struct TracerBacktraceView: View {
                 LazyVStack(alignment: .leading, spacing: 8) {
                     ForEach(Array(pointers.enumerated()), id: \.offset) { idx, ptrValue in
                         let addr = ptrValue.nativePointerAddress ?? 0
-                        let anchor = process.core.anchor(for: addr)
+                        let anchor = process.anchor(for: addr)
 
                         HStack(alignment: .center, spacing: 8) {
                             Text("#\(idx + 1)")
@@ -142,13 +142,14 @@ private struct TracerBacktraceView: View {
     }
 
     private func openDisassembly(at address: UInt64) {
+        let sessionID = workspace.engine.sessionID(for: process)
         do {
             let insight = try workspace.engine.getOrCreateInsight(
-                sessionID: process.sessionRecord.id,
+                sessionID: sessionID,
                 pointer: address,
                 kind: .disassembly
             )
-            selection = .insight(process.sessionRecord.id, insight.id)
+            selection = .insight(sessionID, insight.id)
         } catch {
             lastError = "Can’t open disassembly: \(error.localizedDescription)"
         }
@@ -160,7 +161,7 @@ private struct TracerBacktraceView: View {
         lastError = nil
 
         do {
-            symbols = try await process.core.symbolicate(addresses: pointers.compactMap { $0.nativePointerAddress })
+            symbols = try await process.symbolicate(addresses: pointers.compactMap { $0.nativePointerAddress })
         } catch {
             lastError = "Symbolication failed: \(error)"
         }

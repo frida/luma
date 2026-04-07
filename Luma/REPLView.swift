@@ -17,11 +17,11 @@ struct REPLView: View {
     @State private var cellsObservation: StoreObservation?
 
     private var session: LumaCore.ProcessSession? {
-        workspace.sessions.first { $0.id == sessionID }
+        workspace.engine.sessions.first { $0.id == sessionID }
     }
 
-    private var node: ProcessNodeViewModel? {
-        workspace.processNodes.first { $0.sessionID == sessionID }
+    private var node: LumaCore.ProcessNode? {
+        workspace.engine.node(forSessionID: sessionID)
     }
 
     private var orderedCells: [LumaCore.REPLCell] {
@@ -92,7 +92,7 @@ struct REPLView: View {
                             historyNext()
                         },
                         requestCompletions: { code, cursor in
-                            await node.core.completeInREPL(code: code, cursor: cursor)
+                            await node.completeInREPL(code: code, cursor: cursor)
                         }
                     )
                     .frame(minHeight: 22)

@@ -46,7 +46,7 @@ struct CodeShareUI: InstrumentUI {
             return AnyView(
                 JSInspectValueView(
                     value: v,
-                    sessionID: event.processNode.sessionRecord.id,
+                    sessionID: event.sessionID ?? UUID(),
                     workspace: workspace,
                     selection: selection
                 )

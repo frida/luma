@@ -31,7 +31,8 @@ struct TracerUI: InstrumentUI {
         selection: Binding<SidebarItemID?>
     ) -> AnyView {
         guard case .jsValue(let v) = event.payload,
-            let ev = Engine.parseTracerEvent(from: v)
+            let ev = Engine.parseTracerEvent(from: v),
+            let processNode = workspace.processNode(for: event)
         else {
             return AnyView(
                 Text(String(describing: event.payload))
@@ -54,7 +55,7 @@ struct TracerUI: InstrumentUI {
                 return AnyView(
                     JSInspectValueView(
                         value: ev.message,
-                        sessionID: event.processNode.sessionRecord.id,
+                        sessionID: event.sessionID ?? UUID(),
                         workspace: workspace,
                         selection: selection
                     )
@@ -65,7 +66,7 @@ struct TracerUI: InstrumentUI {
         return AnyView(
             TracerEventRowView(
                 messageView: messageView,
-                process: event.processNode,
+                process: processNode,
                 backtrace: ev.backtrace,
                 workspace: workspace,
                 selection: selection
@@ -80,12 +81,11 @@ struct TracerUI: InstrumentUI {
     ) -> [InstrumentEventMenuItem] {
         guard case .instrument(let instrumentID, _) = event.source,
             case .jsValue(let v) = event.payload,
-            let ev = Engine.parseTracerEvent(from: v)
+            let ev = Engine.parseTracerEvent(from: v),
+            let sessionID = event.sessionID
         else {
             return []
         }
-
-        let processNode = event.processNode
 
         return [
             InstrumentEventMenuItem(
@@ -94,7 +94,7 @@ struct TracerUI: InstrumentUI {
                 role: .normal
             ) {
                 selection.wrappedValue = .instrumentComponent(
-                    processNode.sessionRecord.id,
+                    sessionID,
                     instrumentID,
                     ev.id,
                     UUID()
@@ -103,52 +103,4 @@ struct TracerUI: InstrumentUI {
         ]
     }
 
-    func makeAddressDecorations(
-        context: InstrumentAddressContext,
-        workspace: Workspace
-    ) -> [InstrumentAddressDecoration] {
-        workspace.addressAnnotationsBySession[context.sessionID]?[context.address]?.decorations ?? []
-    }
-
-    func makeAddressContextMenuItems(
-        context: InstrumentAddressContext,
-        workspace: Workspace,
-        selection: Binding<SidebarItemID?>
-    ) -> [InstrumentAddressMenuItem] {
-        let tracerID = workspace.tracerInstanceIDBySession[context.sessionID]
-        let hookID = workspace.addressAnnotationsBySession[context.sessionID]?[context.address]?.tracerHookID
-
-        if let tracerID, let hookID {
-            return [
-                InstrumentAddressMenuItem(
-                    title: "Go to Hook",
-                    systemImage: "arrow.turn.down.right",
-                    role: .normal,
-                    action: {
-                        selection.wrappedValue = .instrumentComponent(context.sessionID, tracerID, hookID, UUID())
-                    }
-                ),
-            ]
-        } else {
-            return [
-                InstrumentAddressMenuItem(
-                    title: "Add Instruction Hook\u{2026}",
-                    systemImage: "pin",
-                    role: .normal,
-                    action: {
-                        Task { @MainActor in
-                            if let result = await workspace.engine.addTracerInstructionHook(
-                                sessionID: context.sessionID,
-                                address: context.address
-                            ) {
-                                selection.wrappedValue = .instrumentComponent(
-                                    context.sessionID, result.instrumentID, result.hookID, UUID()
-                                )
-                            }
-                        }
-                    }
-                ),
-            ]
-        }
-    }
 }

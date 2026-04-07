@@ -69,7 +69,7 @@ struct EventStreamView: View {
                         isAtBottom = true
                         scrollToLastToken &+= 1
                     }
-                    .onChange(of: workspace.eventsVersion) { _, newVersion in
+                    .onChange(of: workspace.engine.eventLog.totalReceived) { _, newVersion in
                         handleEventVersionChange(newVersion)
                     }
                     .onChange(of: scrollToLastToken) { _, _ in
@@ -163,7 +163,7 @@ struct EventStreamView: View {
             .help(isPaused ? "Resume live tail" : "Pause event stream")
 
             Button {
-                workspace.clearEvents()
+                workspace.engine.eventLog.clear()
                 resetAllEventState()
                 isPaused = false
                 isAtBottom = true
@@ -256,7 +256,7 @@ struct EventStreamView: View {
 
     private func syncSnapshotFromWorkspace() {
         displayedEvents = workspace.events
-        lastEventsVersion = workspace.eventsVersion
+        lastEventsVersion = workspace.engine.eventLog.totalReceived
         rebuildFilteredEvents()
     }
 
@@ -376,17 +376,17 @@ struct EventStreamView: View {
                 title: title,
                 details: prettyPayload(evt),
                 binaryData: evt.data.map { Data($0) },
-                sessionID: evt.processNode.sessionRecord.id,
+                sessionID: evt.sessionID ?? UUID(),
                 processName: processName
             ))
     }
 
     private func processName(for evt: RuntimeEvent) -> String {
-        evt.processNode.sessionRecord.processName
+        workspace.engine.session(id: evt.sessionID ?? UUID())?.processName ?? ""
     }
 
     private func prettyContext(_ evt: RuntimeEvent) -> (process: String?, title: String) {
-        let processName = evt.processNode.sessionRecord.processName
+        let processName = workspace.engine.session(id: evt.sessionID ?? UUID())?.processName ?? ""
         switch evt.source {
         case .processOutput(let fd):
             let channel: String = {
@@ -422,10 +422,10 @@ struct EventStreamView: View {
             return String(describing: evt.payload)
 
         case .instrument:
-            if let instrument = evt.instrument,
+            if let instrument = workspace.instrument(for: evt),
                 let descriptor = workspace.engine.descriptor(for: instrument.instance)
             {
-                return descriptor.summarizeEvent(evt.coreEvent)
+                return descriptor.summarizeEvent(evt)
             }
             return String(describing: evt.payload)
 
@@ -559,7 +559,7 @@ struct EventRow: View {
 
             Spacer(minLength: 8)
 
-            EventSourceBadge(evt: evt)
+            EventSourceBadge(evt: evt, workspace: workspace)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -683,7 +683,7 @@ struct EventRow: View {
                     ForEach(Array(message.values.enumerated()), id: \.0) { _, value in
                         JSInspectValueView(
                             value: value,
-                            sessionID: evt.processNode.sessionRecord.id,
+                            sessionID: evt.sessionID ?? UUID(),
                             workspace: workspace,
                             selection: $selection
                         )
@@ -708,8 +708,8 @@ struct EventRow: View {
     }
 
     private var instrumentEventView: AnyView? {
-        guard let instrument = evt.instrument,
-            let ui = InstrumentUIRegistry.shared.ui(for: instrument.instance)
+        guard let instrument = workspace.instrument(for: evt),
+            let ui = InstrumentUIRegistry.shared.ui(for: instrument)
         else {
             return nil
         }
@@ -718,8 +718,8 @@ struct EventRow: View {
     }
 
     private var instrumentMenuItems: [InstrumentEventMenuItem] {
-        guard let instrument = evt.instrument,
-            let ui = InstrumentUIRegistry.shared.ui(for: instrument.instance)
+        guard let instrument = workspace.instrument(for: evt),
+            let ui = InstrumentUIRegistry.shared.ui(for: instrument)
         else {
             return []
         }
@@ -730,6 +730,7 @@ struct EventRow: View {
 
 private struct EventSourceBadge: View {
     let evt: RuntimeEvent
+    @ObservedObject var workspace: Workspace
 
     var body: some View {
         Text(labelText)
@@ -742,7 +743,7 @@ private struct EventSourceBadge: View {
     }
 
     private var processName: String {
-        evt.processNode.sessionRecord.processName
+        workspace.engine.session(id: evt.sessionID ?? UUID())?.processName ?? ""
     }
 
     private var labelText: String {
@@ -767,7 +768,7 @@ private struct EventSourceBadge: View {
             return "\(processName) • REPL"
 
         case .instrument:
-            let name = evt.instrument?.displayName ?? "Instrument"
+            let name = workspace.instrument(for: evt).flatMap { workspace.engine.descriptor(for: $0)?.displayName } ?? "Instrument"
             return "\(name) • \(processName)"
         }
     }

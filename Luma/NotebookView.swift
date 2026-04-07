@@ -7,7 +7,7 @@ struct NotebookView: View {
     @Binding var selection: SidebarItemID?
 
     private var entries: [LumaCore.NotebookEntry] {
-        workspace.notebookEntries.sorted { $0.timestamp < $1.timestamp }
+        workspace.engine.notebookEntries.sorted { $0.timestamp < $1.timestamp }
     }
 
     var body: some View {

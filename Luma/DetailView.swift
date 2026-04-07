@@ -16,7 +16,7 @@ struct DetailView: View {
                 NotebookView(workspace: workspace, selection: $selection)
 
             case .some(.repl(let sessionID)):
-                if let session = workspace.sessions.first(where: { $0.id == sessionID }) {
+                if let session = workspace.engine.sessions.first(where: { $0.id == sessionID }) {
                     REPLView(sessionID: sessionID, workspace: workspace, selection: $selection)
                         .id(session.id)
                 }
@@ -29,7 +29,7 @@ struct DetailView: View {
                 }
 
             case .some(.itraceCapture(let sessionID, let captureID)):
-                let session = workspace.sessions.first(where: { $0.id == sessionID })
+                let session = workspace.engine.sessions.first(where: { $0.id == sessionID })
                 if let session,
                     let capture = (try? workspace.store.fetchITraceCaptures(sessionID: sessionID))?.first(where: { $0.id == captureID })
                 {
@@ -39,7 +39,7 @@ struct DetailView: View {
                 }
 
             case .some(.insight(let sessionID, let insightID)):
-                let session = workspace.sessions.first(where: { $0.id == sessionID })
+                let session = workspace.engine.sessions.first(where: { $0.id == sessionID })
                 if let session,
                     let insight = (try? workspace.store.fetchInsights(sessionID: sessionID))?.first(where: { $0.id == insightID })
                 {

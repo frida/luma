@@ -1,7 +1,8 @@
+import LumaCore
 import SwiftUI
 
 struct GitHubSignInSheet: View {
-    @ObservedObject var workspace: Workspace
+    let auth: GitHubAuth
     @State private var didCopyCode = false
 
     var body: some View {
@@ -13,12 +14,10 @@ struct GitHubSignInSheet: View {
             Text("Sign in with GitHub")
                 .font(.headline)
 
-            switch workspace.authState {
+            switch auth.state {
             case .signedOut:
                 Button("Sign in with GitHub") {
-                    Task {
-                        await GitHubAuthenticator.shared.beginSignIn(workspace: workspace)
-                    }
+                    auth.beginSignIn()
                 }
                 .buttonStyle(.borderedProminent)
 
@@ -60,7 +59,7 @@ struct GitHubSignInSheet: View {
                     }
                     .buttonStyle(.borderedProminent)
 
-                    ProgressView("Waiting for authorization…")
+                    ProgressView("Waiting for authorization\u{2026}")
                         .padding(.top, 6)
                 }
                 .overlay(alignment: .top) {
@@ -81,40 +80,25 @@ struct GitHubSignInSheet: View {
                 }
 
             case .waitingForApproval:
-                ProgressView("Contacting GitHub…")
+                ProgressView("Contacting GitHub\u{2026}")
 
             case .authenticated:
-                Label("Signed in!", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                Button("Continue") {
-                    workspace.authState = .signedOut
-                    workspace.startCollaboration()
-                }
+                ProgressView()
 
             case .failed(let reason):
                 Label("Failed: \(reason)", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.red)
                 Button("Retry") {
-                    workspace.authState = .signedOut
+                    auth.resetState()
                 }
             }
 
             Button("Cancel") {
-                GitHubAuthenticator.shared.cancel()
-                workspace.isAuthSheetPresented = false
+                auth.cancelSignIn()
             }
             .keyboardShortcut(.cancelAction)
         }
         .padding(24)
         .frame(width: 320)
-        .onChange(of: workspace.authState) { _, newValue in
-            if case .authenticated = newValue {
-                workspace.isAuthSheetPresented = false
-                workspace.authState = .signedOut
-                if workspace.githubToken != nil {
-                    workspace.startCollaboration()
-                }
-            }
-        }
     }
 }

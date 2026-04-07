@@ -17,7 +17,7 @@ struct ITraceCFGView: NSViewRepresentable {
     let nodeRegisterInfo: [CFGGraph.NodeKey: NodeRegisterInfo]
     let registerNames: [String]
     let arch: String
-    let disasmProvider: ((UInt64, Int) async -> String)?
+    let disasmProvider: ((UInt64, Int) async -> StyledText)?
     @Binding var selectedNodeKey: CFGGraph.NodeKey?
     var onNavigateFunction: ((Int) -> Void)?
     var onJumpToFunction: ((Int) -> Void)?  // absolute index: 0 = first, -1 = last
@@ -377,7 +377,7 @@ extension ITraceCFGView {
         var graph: CFGGraph = CFGGraph(nodes: [:], edges: [], entryKey: 0)
         var selectedKey: CFGGraph.NodeKey?
         var selectedInstructionLine: Int = 0  // line index within selected node's disasm
-        var disasmProvider: ((UInt64, Int) async -> String)?
+        var disasmProvider: ((UInt64, Int) async -> StyledText)?
         var blockBytes: [UInt64: Data] = [:]
         var nodeRegisterInfo: [CFGGraph.NodeKey: NodeRegisterInfo] = [:]
         var registerNames: [String] = []
@@ -393,7 +393,7 @@ extension ITraceCFGView {
         weak var container: CFGContainerView?
 
         var selectedBinding: Binding<CFGGraph.NodeKey?>
-        private var disasmRaw: [UInt64: String] = [:]
+        private var disasmRaw: [UInt64: StyledText] = [:]
         private var disasmRendered: [UInt64: NSAttributedString] = [:]
         private var nodeHeightCache: [UInt64: CGFloat] = [:]
         private var fetchTask: Task<Void, Never>?
@@ -474,10 +474,9 @@ extension ITraceCFGView {
                 for (addr, size) in toFetch {
                     guard !Task.isCancelled else { return }
                     guard self.disasmRaw[addr] == nil else { continue }
-                    var result = await provider(addr, size)
-                    while result.hasSuffix("\n") { result.removeLast() }
+                    let result = await provider(addr, size)
                     self.disasmRaw[addr] = result
-                    self.disasmRendered[addr] = self.renderDisasm(result)
+                    self.disasmRendered[addr] = result.nsAttributed(font: self.disasmFont)
                     self.nodeHeightCache.removeValue(forKey: addr)
                 }
 
@@ -508,10 +507,6 @@ extension ITraceCFGView {
                     self.container?.textOverlay.needsDisplay = true
                 }
             }
-        }
-
-        private func renderDisasm(_ raw: String) -> NSAttributedString {
-            parseAnsiToNSAttributedString(raw, font: disasmFont)
         }
 
         // MARK: - MTKViewDelegate

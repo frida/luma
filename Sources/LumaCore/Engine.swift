@@ -21,16 +21,30 @@ public final class Engine {
     private var deviceEventTasks: [String: Task<Void, Never>] = [:]
     private var eventLogTask: Task<Void, Never>?
 
-    public var hookPackSourceProvider: ((String) -> (entrySource: String, packID: String)?)?
-    public var hookPackDescriptorProvider: (() -> [InstrumentDescriptor])?
+    public let hookPacks: HookPackLibrary
+
+    @ObservationIgnored private var disassemblers: [UUID: Disassembler] = [:]
 
     public let collaboration: CollaborationSession
+    public let gitHubAuth: GitHubAuth
     public let dataDirectory: URL
 
-    public init(store: ProjectStore, dataDirectory: URL) {
+    public private(set) var addressAnnotations: [UUID: [UInt64: AddressAnnotation]] = [:]
+    public private(set) var tracerInstanceIDBySession: [UUID: UUID] = [:]
+    public private(set) var sessions: [ProcessSession] = []
+    public private(set) var notebookEntries: [NotebookEntry] = []
+
+    private var addressActionProviders: [AddressActionProvider] = []
+    @ObservationIgnored private var sessionsObservation: StoreObservation?
+    @ObservationIgnored private var notebookObservation: StoreObservation?
+
+    public init(store: ProjectStore, dataDirectory: URL, tokenStore: TokenStore? = nil) {
         self.store = store
         self.dataDirectory = dataDirectory
         self.compilerWorkspace = CompilerWorkspace(store: store)
+        let hookPacksDir = dataDirectory.appendingPathComponent("HookPacks", isDirectory: true)
+        try? FileManager.default.createDirectory(at: hookPacksDir, withIntermediateDirectories: true)
+        self.hookPacks = HookPackLibrary(directory: hookPacksDir)
         self.collaboration = CollaborationSession(
             deviceManager: deviceManager,
             store: store,
@@ -38,8 +52,29 @@ public final class Engine {
             portalCertificate: BackendConfig.certificate
         )
 
+        let resolvedTokenStore: TokenStore = {
+            if let tokenStore { return tokenStore }
+            #if canImport(Security)
+            return KeychainTokenStore()
+            #else
+            return FileTokenStore(directory: dataDirectory.appendingPathComponent("tokens"))
+            #endif
+        }()
+        self.gitHubAuth = GitHubAuth(tokenStore: resolvedTokenStore)
+
         registerDescriptor(Self.tracerDescriptor)
+        for desc in hookPacks.descriptors() {
+            registerDescriptor(desc)
+        }
         bindCollaborationCallbacks()
+
+        registerAddressActionProvider { [weak self] sessionID, address in
+            self?.tracerAddressActions(sessionID: sessionID, address: address) ?? []
+        }
+
+        Task { @MainActor [gitHubAuth] in
+            await gitHubAuth.loadPersistedToken()
+        }
 
         eventLogTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -47,6 +82,21 @@ public final class Engine {
                 self.eventLog.append(event)
             }
         }
+    }
+
+    // MARK: - Collaboration
+
+    public func startCollaboration(joiningRoom roomID: String? = nil) {
+        let existing = roomID ?? (try? store.fetchCollaborationState())?.roomID
+        Task { @MainActor in
+            guard let token = await gitHubAuth.requestToken() else { return }
+            await collaboration.start(token: token, existingRoomID: existing)
+        }
+    }
+
+    public func signOut() async {
+        await gitHubAuth.signOut()
+        await collaboration.stop()
     }
 
     // MARK: - Notebook Operations
@@ -114,7 +164,21 @@ public final class Engine {
         }
     }
 
-    public func loadRemoteDevices() async {
+    public func start() async {
+        sessionsObservation = store.observeSessions { [weak self] sessions in
+            Task { @MainActor in self?.sessions = sessions }
+        }
+        notebookObservation = store.observeNotebookEntries { [weak self] entries in
+            Task { @MainActor in self?.notebookEntries = entries }
+        }
+
+        await loadRemoteDevices()
+        if let roomID = CollaborationJoinQueue.shared.consumeNext() {
+            startCollaboration(joiningRoom: roomID)
+        }
+    }
+
+    private func loadRemoteDevices() async {
         for config in (try? store.fetchRemoteDevices()) ?? [] {
             do {
                 _ = try await deviceManager.addRemoteDevice(
@@ -212,16 +276,14 @@ public final class Engine {
         descriptorsByID[descriptor.id] = descriptor
     }
 
-    public func reloadHookPackDescriptors() {
+    public func reloadHookPacks() {
+        hookPacks.reload()
         descriptors.removeAll { $0.kind == .hookPack }
         for key in descriptorsByID.keys where key.hasPrefix("hook-pack:") {
             descriptorsByID.removeValue(forKey: key)
         }
-
-        if let provider = hookPackDescriptorProvider {
-            for desc in provider() {
-                registerDescriptor(desc)
-            }
+        for desc in hookPacks.descriptors() {
+            registerDescriptor(desc)
         }
     }
 
@@ -455,13 +517,45 @@ public final class Engine {
 
     public func removeNode(_ node: ProcessNode) {
         if let idx = processNodes.firstIndex(where: { $0.id == node.id }) {
+            let sid = nodeSessionID(node)
             processNodes.remove(at: idx)
             node.stop()
+            addressAnnotations[sid] = nil
+            tracerInstanceIDBySession[sid] = nil
+            disassemblers[sid] = nil
         }
     }
 
     public func node(forSessionID sessionID: UUID) -> ProcessNode? {
         processNodes.first { $0.id == sessionID || nodeSessionID($0) == sessionID }
+    }
+
+    public func instrument(id: UUID, sessionID: UUID) -> InstrumentInstance? {
+        try? store.fetchInstrument(id: id)
+    }
+
+    public func session(id: UUID) -> ProcessSession? {
+        sessions.first { $0.id == id } ?? (try? store.fetchSession(id: id))
+    }
+
+    public func session(forNode node: ProcessNode) -> ProcessSession? {
+        session(id: nodeSessionID(node))
+    }
+
+    public func disassembler(forSessionID sessionID: UUID) -> Disassembler? {
+        if let existing = disassemblers[sessionID] { return existing }
+        guard let node = node(forSessionID: sessionID),
+            let info = session(id: sessionID)?.processInfo
+        else { return nil }
+        let d = Disassembler(node: node, processInfo: info)
+        disassemblers[sessionID] = d
+        return d
+    }
+
+    public func updateSession(id: UUID, _ mutate: (inout ProcessSession) -> Void) {
+        guard var s = try? store.fetchSession(id: id) else { return }
+        mutate(&s)
+        try? store.save(s)
     }
 
     public func sessionID(for node: ProcessNode) -> UUID {
@@ -593,6 +687,7 @@ public final class Engine {
             node.removeInstrument(id: instance.id)
         }
         try? store.deleteInstrument(id: instance.id)
+        rebuildAddressAnnotations(sessionID: instance.sessionID)
     }
 
     public func setInstrumentEnabled(_ instance: InstrumentInstance, enabled: Bool) async {
@@ -662,6 +757,10 @@ public final class Engine {
         } catch {
             print("[Engine] Failed to update instrument config: \(String(describing: error)))")
         }
+
+        if inst.kind == .tracer {
+            rebuildAddressAnnotations(sessionID: inst.sessionID)
+        }
     }
 
     private func loadInstrumentOnNode(
@@ -683,14 +782,14 @@ public final class Engine {
                 )
 
             case .hookPack:
-                guard let provider = hookPackSourceProvider,
-                    let info = provider(sourceIdentifier)
+                guard let pack = hookPacks.pack(withId: sourceIdentifier),
+                    let entrySource = try? String(contentsOf: pack.entryURL, encoding: .utf8)
                 else { return }
 
                 try await loadHookPackInstrument(
                     instanceID: instanceID,
-                    packID: info.packID,
-                    entrySource: info.entrySource,
+                    packID: pack.manifest.id,
+                    entrySource: entrySource,
                     configJSON: configJSON,
                     on: node
                 )
@@ -763,26 +862,72 @@ public final class Engine {
         return (instrumentID: tracer.id, hookID: newHook.id)
     }
 
-    // MARK: - Tracer Hook Address Data
+    // MARK: - Address Actions
 
-    public func tracerHookAddresses(sessionID: UUID) -> [UInt64: UUID] {
+    public func registerAddressActionProvider(_ provider: @escaping AddressActionProvider) {
+        addressActionProviders.append(provider)
+    }
+
+    public func addressActions(sessionID: UUID, address: UInt64) -> [AddressAction] {
+        addressActionProviders.flatMap { $0(sessionID, address) }
+    }
+
+    private func tracerAddressActions(sessionID: UUID, address: UInt64) -> [AddressAction] {
+        if let tracerID = tracerInstanceIDBySession[sessionID],
+            let hookID = addressAnnotations[sessionID]?[address]?.tracerHookID
+        {
+            return [
+                AddressAction(
+                    title: "Go to Hook",
+                    systemImage: "arrow.turn.down.right",
+                    perform: {
+                        .instrumentComponent(sessionID: sessionID, instrumentID: tracerID, componentID: hookID)
+                    }
+                )
+            ]
+        }
+
+        return [
+            AddressAction(
+                title: "Add Instruction Hook\u{2026}",
+                systemImage: "pin",
+                perform: { [weak self] in
+                    guard let self,
+                        let result = await self.addTracerInstructionHook(sessionID: sessionID, address: address)
+                    else { return nil }
+                    return .instrumentComponent(
+                        sessionID: sessionID,
+                        instrumentID: result.instrumentID,
+                        componentID: result.hookID
+                    )
+                }
+            )
+        ]
+    }
+
+    // MARK: - Address Annotations
+
+    public func rebuildAddressAnnotations(sessionID: UUID) {
         guard let tracer = tracerInstance(forSessionID: sessionID),
             let node = node(forSessionID: sessionID),
             let config = try? TracerConfig.decode(from: tracer.configJSON)
         else {
-            return [:]
+            addressAnnotations[sessionID] = [:]
+            tracerInstanceIDBySession[sessionID] = nil
+            return
         }
 
-        var map: [UInt64: UUID] = [:]
+        tracerInstanceIDBySession[sessionID] = tracer.id
+
+        var map: [UInt64: AddressAnnotation] = [:]
         for hook in config.hooks where hook.isEnabled {
             guard let addr = try? node.resolveSyncIfReady(hook.addressAnchor) else { continue }
-            map[addr] = hook.id
+            var ann = map[addr] ?? AddressAnnotation()
+            ann.decorations.append(InstrumentAddressDecoration(help: "Has instruction hook"))
+            ann.tracerHookID = hook.id
+            map[addr] = ann
         }
-        return map
-    }
-
-    public func tracerInstanceID(sessionID: UUID) -> UUID? {
-        tracerInstance(forSessionID: sessionID)?.id
+        addressAnnotations[sessionID] = map
     }
 
     private func tracerInstance(forSessionID sessionID: UUID) -> InstrumentInstance? {
@@ -1087,7 +1232,8 @@ public final class Engine {
 
         Task { @MainActor [weak self, weak node] in
             guard let node else { return }
-            for await event in node.events {
+            for await var event in node.events {
+                event.sessionID = sessionID
                 self?._events.yield(event)
             }
         }
@@ -1126,15 +1272,11 @@ public final class Engine {
                         ProcessSession.PersistedModule(name: $0.name, base: $0.base, size: $0.size)
                     }
                 }
+                self?.rebuildAddressAnnotations(sessionID: sessionID)
             }
         }
     }
 
-    private func updateSession(id: UUID, _ mutate: (inout ProcessSession) -> Void) {
-        guard var s = try? store.fetchSession(id: id) else { return }
-        mutate(&s)
-        try? store.save(s)
-    }
 
     private func ensureDeviceEventsHooked(for device: Device) {
         guard deviceEventTasks[device.id] == nil else { return }
@@ -1160,9 +1302,10 @@ public final class Engine {
     }
 
     private func handleDeviceOutput(device: Device, data: [UInt8], fd: Int, pid: UInt) {
-        guard processNodes.first(where: { $0.device.id == device.id && $0.process.pid == pid }) != nil else { return }
+        guard let node = processNodes.first(where: { $0.device.id == device.id && $0.process.pid == pid }) else { return }
 
         _events.yield(RuntimeEvent(
+            sessionID: nodeSessionID(node),
             source: .processOutput(fd: fd),
             payload: .raw(
                 message: String(bytes: data, encoding: .utf8) ?? "(\(data.count) bytes on fd \(fd))",

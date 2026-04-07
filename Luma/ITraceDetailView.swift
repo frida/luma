@@ -1,7 +1,6 @@
 import Frida
 import LumaCore
 import SwiftUI
-import SwiftyR2
 
 struct ITraceDetailView: View {
     let capture: LumaCore.ITraceCaptureRecord
@@ -10,7 +9,7 @@ struct ITraceDetailView: View {
     @Binding var selection: SidebarItemID?
 
     @State private var decoded: DecodedITrace?
-    @State private var r2: R2Core?
+    @State private var disassembler: TraceDisassembler?
     @State private var disasmCache: [UInt64: AttributedString] = [:]
     @State private var isLoading = true
     @State private var errorText: String?
@@ -29,8 +28,8 @@ struct ITraceDetailView: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
-    private var node: ProcessNodeViewModel? {
-        workspace.processNodes.first { $0.sessionRecord.id == session.id }
+    private var node: LumaCore.ProcessNode? {
+        workspace.engine.node(forSessionID: session.id)
     }
 
     var body: some View {
@@ -84,12 +83,9 @@ struct ITraceDetailView: View {
                             nodeRegisterInfo: cfgNodeRegisterInfo,
                             registerNames: decoded.registerNames,
                             arch: session.processInfo!.arch,
-                            disasmProvider: r2.map { r2 in
-                                { addr, size in
-                                    await r2.config.set("asm.flags", bool: false)
-                                    let result = await r2.cmd("pD \(size) @ 0x\(String(addr, radix: 16))")
-                                    await r2.config.set("asm.flags", bool: true)
-                                    return result
+                            disasmProvider: disassembler.map { d in
+                                { [colorScheme] addr, size in
+                                    await d.disassemble(at: addr, size: size, isDarkMode: colorScheme == .dark, withFlags: false)
                                 }
                             },
                             selectedNodeKey: $cfgSelectedNodeKey,
@@ -109,10 +105,8 @@ struct ITraceDetailView: View {
             }
         }
         .onAppear { decodeTrace() }
-        .task(id: colorScheme) {
-            guard let r2 else { return }
-            let theme = (colorScheme == .light) ? "iaito" : "default"
-            await r2.applyTheme(theme)
+        .onChange(of: colorScheme) { _, _ in
+            disasmCache.removeAll()
         }
     }
 
@@ -319,9 +313,11 @@ struct ITraceDetailView: View {
                     metadataJSON: capture.metadataJSON
                 )
 
-                let r2 = await setupR2(blockBytes: result.blockBytes)
-                await registerR2Flags(r2, from: result)
-                self.r2 = r2
+                disassembler = TraceDisassembler(
+                    decoded: result,
+                    processInfo: session.processInfo!,
+                    liveNode: node
+                )
 
                 decoded = result
 
@@ -339,84 +335,17 @@ struct ITraceDetailView: View {
         }
     }
 
-    private func setupR2(blockBytes: [UInt64: Data]) async -> R2Core {
-        let r2 = await R2Core.create()
-
-        let provider = ITraceIOProvider(blockBytes: blockBytes, processNode: node)
-        await r2.registerIOPlugin(asyncProvider: provider, uriSchemes: ["itrace://"])
-
-        await r2.setColorLimit(.mode16M)
-
-        await r2.config.set("scr.utf8", bool: true)
-        await r2.config.set("scr.color", colorMode: .mode16M)
-        await r2.config.set("cfg.json.num", string: "hex")
-        await r2.config.set("asm.lines", bool: false)
-        await r2.config.set("asm.emu", bool: true)
-        await r2.config.set("emu.str", bool: true)
-
-        let info = session.processInfo!
-        await r2.config.set("asm.os", string: info.platform)
-        await r2.config.set("asm.arch", string: ProcessNodeViewModel.r2Arch(fromFridaArch: info.arch))
-        await r2.config.set("asm.bits", int: info.pointerSize * 8)
-        await r2.config.set("anal.cc", string: "cdecl")
-
-        let uri = "itrace://0x0"
-        await r2.openFile(uri: uri)
-        await r2.cmd("=!")
-        await r2.binLoad(uri: uri)
-
-        let theme = (colorScheme == .light) ? "iaito" : "default"
-        await r2.applyTheme(theme)
-
-        return r2
-    }
-
-    private func registerR2Flags(_ r2: R2Core, from trace: DecodedITrace) async {
-        var seen = Set<UInt64>()
-        var usedNames = Set<String>()
-
-        for entry in trace.entries {
-            guard seen.insert(entry.blockAddress).inserted else { continue }
-            guard let bangIdx = entry.blockName.firstIndex(of: "!") else { continue }
-
-            var symbol = String(entry.blockName[entry.blockName.index(after: bangIdx)...])
-            symbol = symbol.replacingOccurrences(of: "0x", with: "")
-            var name = sanitizeR2FlagName(symbol)
-            guard !name.isEmpty else { continue }
-
-            if usedNames.contains(name) {
-                var i = 2
-                while usedNames.contains("\(name)_\(i)") { i += 1 }
-                name = "\(name)_\(i)"
-            }
-            usedNames.insert(name)
-
-            _ = await r2.cmd("f \(name) @ 0x\(String(entry.blockAddress, radix: 16))")
-        }
-    }
-
-    private func sanitizeR2FlagName(_ name: String) -> String {
-        var result = ""
-        for ch in name {
-            if ch.isLetter || ch.isNumber || ch == "_" || ch == "." {
-                result.append(ch)
-            } else {
-                result.append("_")
-            }
-        }
-        return result
-    }
-
     private func fetchDisasmIfNeeded(for entry: TraceEntry) {
-        guard disasmCache[entry.blockAddress] == nil, let r2 else { return }
+        guard disasmCache[entry.blockAddress] == nil, let disassembler else { return }
 
         Task { @MainActor in
-            let addr = String(entry.blockAddress, radix: 16)
             let size = decoded?.blockBytes[entry.blockAddress]?.count ?? entry.blockSize
-            var raw = await r2.cmd("pD \(size) @ 0x\(addr)")
-            while raw.hasSuffix("\n") { raw.removeLast() }
-            let attributed = (try? parseAnsi(raw)) ?? AttributedString(raw)
-            disasmCache[entry.blockAddress] = attributed
+            let styled = await disassembler.disassemble(
+                at: entry.blockAddress,
+                size: size,
+                isDarkMode: colorScheme == .dark
+            )
+            disasmCache[entry.blockAddress] = styled.attributed
         }
     }
 

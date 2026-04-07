@@ -86,7 +86,10 @@ struct SessionDetachedBanner: View {
 
     private func reestablish() {
         Task { @MainActor in
-            await workspace.reestablishSession(for: session)
+            let result = await workspace.engine.reestablishSession(id: session.id)
+            if case .needsUserInput(let reason, let session) = result {
+                workspace.targetPickerContext = .reestablish(session: session, reason: reason)
+            }
         }
     }
 }

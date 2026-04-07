@@ -35,13 +35,3 @@ public struct InstrumentDescriptor: Identifiable, Hashable, Sendable {
         hasher.combine(id)
     }
 }
-
-public struct InstrumentAddressContext: Hashable, Sendable {
-    public let sessionID: UUID
-    public let address: UInt64
-
-    public init(sessionID: UUID, address: UInt64) {
-        self.sessionID = sessionID
-        self.address = address
-    }
-}

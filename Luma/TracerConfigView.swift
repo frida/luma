@@ -171,9 +171,9 @@ struct TracerConfigView: View {
         return config.hooks.first(where: { $0.id == id })
     }
 
-    private var attachedNode: ProcessNodeViewModel? {
+    private var attachedNode: LumaCore.ProcessNode? {
         guard let session = instrumentSession else { return nil }
-        return workspace.processNodes.first { $0.sessionRecord.id == session.id }
+        return workspace.engine.node(forSessionID: session.id)
     }
 
     private var canResolve: Bool {

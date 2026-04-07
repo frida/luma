@@ -19,35 +19,9 @@ protocol InstrumentUI {
         workspace: Workspace,
         selection: Binding<SidebarItemID?>
     ) -> [InstrumentEventMenuItem]
-
-    func makeAddressDecorations(
-        context: InstrumentAddressContext,
-        workspace: Workspace
-    ) -> [InstrumentAddressDecoration]
-
-    func makeAddressContextMenuItems(
-        context: InstrumentAddressContext,
-        workspace: Workspace,
-        selection: Binding<SidebarItemID?>
-    ) -> [InstrumentAddressMenuItem]
 }
 
 extension InstrumentUI {
-    func makeAddressDecorations(
-        context: InstrumentAddressContext,
-        workspace: Workspace
-    ) -> [InstrumentAddressDecoration] {
-        []
-    }
-
-    func makeAddressContextMenuItems(
-        context: InstrumentAddressContext,
-        workspace: Workspace,
-        selection: Binding<SidebarItemID?>
-    ) -> [InstrumentAddressMenuItem] {
-        []
-    }
-
     func makeEventContextMenuItems(
         _ event: RuntimeEvent,
         workspace: Workspace,

@@ -45,7 +45,7 @@ struct MainWindowView: View {
         .task {
             await workspace.configurePersistence()
         }
-        .onChange(of: workspace.eventsVersion) { _, newVersion in
+        .onChange(of: workspace.engine.eventLog.totalReceived) { _, newVersion in
             if uiState.isEventStreamCollapsed {
                 let delta = max(0, newVersion - collapsedEventBaselineVersion)
                 collapsedNewEvents += delta
@@ -56,7 +56,7 @@ struct MainWindowView: View {
             }
         }
         .onChange(of: uiState.isEventStreamCollapsed) { _, isCollapsed in
-            collapsedEventBaselineVersion = workspace.eventsVersion
+            collapsedEventBaselineVersion = workspace.engine.eventLog.totalReceived
             if !isCollapsed {
                 collapsedNewEvents = 0
             }
@@ -143,10 +143,10 @@ struct MainWindowView: View {
         let targetPickerContext = workspace.targetPickerContext
 
         Task { @MainActor in
-            if let existingNode = workspace.processNodes.first(where: {
+            if let existingNode = workspace.engine.processNodes.first(where: {
                 $0.device.id == device.id && $0.process.pid == proc.pid
             }) {
-                uiState.selectedItemID = .repl(existingNode.sessionID)
+                uiState.selectedItemID = .repl(workspace.engine.sessionID(for: existingNode))
                 return
             }
 
@@ -212,7 +212,7 @@ struct MainWindowView: View {
             Button {
                 uiState.isEventStreamCollapsed = false
                 collapsedNewEvents = 0
-                collapsedEventBaselineVersion = workspace.eventsVersion
+                collapsedEventBaselineVersion = workspace.engine.eventLog.totalReceived
             } label: {
                 if collapsedNewEvents > 0 {
                     Label(
@@ -257,11 +257,11 @@ struct WorkspaceToolbar: ToolbarContent {
             .instrumentComponent(let sessionID, _, _, _),
             .insight(let sessionID, _),
             .itraceCapture(let sessionID, _):
-            return workspace.processNodes.first { $0.sessionRecord.id == sessionID }?.sessionRecord
+            return workspace.engine.session(id: sessionID)
         }
     }
 
-    var selectedProcessNode: ProcessNodeViewModel? {
+    var selectedProcessNode: LumaCore.ProcessNode? {
         guard let id = selection else { return nil }
 
         switch id {
@@ -272,7 +272,7 @@ struct WorkspaceToolbar: ToolbarContent {
             .instrumentComponent(let sessionID, _, _, _),
             .insight(let sessionID, _),
             .itraceCapture(let sessionID, _):
-            return workspace.processNodes.first { $0.sessionRecord.id == sessionID }
+            return workspace.engine.node(forSessionID: sessionID)
         }
     }
 
@@ -311,7 +311,7 @@ struct WorkspaceToolbar: ToolbarContent {
             {
                 Button {
                     Task { @MainActor in
-                        await workspace.engine.resumeSpawnedProcess(node: node.core)
+                        await workspace.engine.resumeSpawnedProcess(node: node)
                     }
                 } label: {
                     Label("Resume Process", systemImage: "play.fill")

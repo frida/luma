@@ -10,8 +10,8 @@ struct InstrumentDetailView: View {
         try? workspace.store.fetchSession(id: instance.sessionID)
     }
 
-    private var node: ProcessNodeViewModel? {
-        workspace.processNodes.first { $0.sessionRecord.id == instance.sessionID }
+    private var node: LumaCore.ProcessNode? {
+        workspace.engine.node(forSessionID: instance.sessionID)
     }
 
     @State private var configJSON: Data

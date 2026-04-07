@@ -1,6 +1,5 @@
 import LumaCore
 import SwiftUI
-import SwiftyR2
 
 struct AddressInsightDetailView: View {
     let session: LumaCore.ProcessSession
@@ -13,14 +12,14 @@ struct AddressInsightDetailView: View {
     @State private var showRefreshSpinner = false
     @State private var spinnerTask: Task<Void, Never>?
     @State private var memoryData: Data = Data()
-    @State private var disasmLines: [DisasmLine] = []
+    @State private var disasmLines: [DisassemblyLine] = []
     @State private var errorText: AttributedString?
     @State private var isLoadingMore = false
 
     @Environment(\.colorScheme) private var colorScheme
 
-    private var node: ProcessNodeViewModel? {
-        workspace.processNodes.first { $0.sessionRecord.id == session.id }
+    private var node: LumaCore.ProcessNode? {
+        workspace.engine.node(forSessionID: session.id)
     }
 
     var body: some View {
@@ -67,12 +66,7 @@ struct AddressInsightDetailView: View {
             .animation(.default, value: showRefreshSpinner)
         }
         .onAppear { refresh() }
-        .task(id: colorScheme) {
-            await handleThemeChange(colorScheme)
-        }
-        .task(id: node?.id) {
-            await handleThemeChange(colorScheme)
-        }
+        .onChange(of: colorScheme) { _, _ in refresh() }
     }
 
     private func refresh() {
@@ -119,7 +113,7 @@ struct AddressInsightDetailView: View {
 
             let resolved: UInt64
             do {
-                resolved = try await node.core.resolve(anchor)
+                resolved = try await node.resolve(anchor)
             } catch {
                 if Task.isCancelled { return }
                 errorText = AttributedString(error.localizedDescription)
@@ -132,7 +126,7 @@ struct AddressInsightDetailView: View {
             switch kind {
             case .memory:
                 do {
-                    let bytes = try await node.core.readRemoteMemory(at: resolved, count: byteCount)
+                    let bytes = try await node.readRemoteMemory(at: resolved, count: byteCount)
                     if Task.isCancelled { return }
 
                     disasmLines = []
@@ -165,7 +159,7 @@ struct AddressInsightDetailView: View {
 
             let decoded = await fetchDisasm(
                 node: node,
-                start: last.addrValue,
+                start: last.address,
                 count: 64
             )
 
@@ -181,24 +175,21 @@ struct AddressInsightDetailView: View {
     }
 
     private func fetchDisasm(
-        node: ProcessNodeViewModel,
+        node: LumaCore.ProcessNode,
         start: UInt64,
         count: Int = 64
-    ) async -> [DisasmLine] {
-        let out = await node.r2Cmd("pdJ \(count) @ 0x\(String(start, radix: 16))")
-        let ops = try! JSONDecoder().decode([R2DisasmOp].self, from: Data(out.utf8))
-        return ops.map(DisasmLine.init)
-    }
-
-    private func handleThemeChange(_ scheme: ColorScheme) async {
-        guard let node else { return }
-        await node.applyR2Theme((scheme == .light) ? "iaito" : "default")
-        refresh()
+    ) async -> [DisassemblyLine] {
+        guard let disassembler = workspace.engine.disassembler(forSessionID: session.id) else {
+            return []
+        }
+        return await disassembler.disassemble(
+            DisassemblyRequest(address: start, count: count, isDarkMode: colorScheme == .dark)
+        )
     }
 }
 
 struct DisassemblyView: View {
-    let lines: [DisasmLine]
+    let lines: [DisassemblyLine]
 
     let sessionID: UUID
     let workspace: Workspace
@@ -229,12 +220,12 @@ struct DisassemblyView: View {
                             workspace: workspace,
                             selection: $selection,
                             rowHeight: rowHeight,
-                            isSelected: selectedAddr == line.addrValue,
+                            isSelected: selectedAddr == line.address,
                             hoveredAddr: $hoveredAddr,
-                            isPulsing: pulsingAddr == line.addrValue,
+                            isPulsing: pulsingAddr == line.address,
                             pulsePhase: pulsePhase,
                             onSelect: {
-                                selectedAddr = line.addrValue
+                                selectedAddr = line.address
                                 isFocused = true
                             },
                             onJump: { target in
@@ -245,7 +236,7 @@ struct DisassemblyView: View {
                                 requestedJumpTarget = nil
                             }
                         )
-                        .id(line.addrValue)
+                        .id(line.address)
                         .onAppear {
                             if line.id == lines.last?.id {
                                 onNeedMore()
@@ -297,7 +288,7 @@ struct DisassemblyView: View {
     }
 
     private func handleJump(_ target: UInt64, scrollProxy: ScrollViewProxy) throws {
-        if lines.contains(where: { $0.addrValue == target }) {
+        if lines.contains(where: { $0.address == target }) {
             selectedAddr = target
             isFocused = true
 
@@ -346,7 +337,7 @@ struct DisassemblyView: View {
     private func moveSelection(_ delta: Int, scrollProxy: ScrollViewProxy) {
         guard !lines.isEmpty else { return }
 
-        let indexByAddr = Dictionary(uniqueKeysWithValues: lines.enumerated().map { ($0.element.addrValue, $0.offset) })
+        let indexByAddr = Dictionary(uniqueKeysWithValues: lines.enumerated().map { ($0.element.address, $0.offset) })
 
         let currentIndex: Int
         if let sel = selectedAddr, let i = indexByAddr[sel] {
@@ -370,14 +361,14 @@ struct DisassemblyView: View {
 
     private func jumpSelection(scrollProxy: ScrollViewProxy) {
         guard let sel = selectedAddr else { return }
-        guard let line = lines.first(where: { $0.addrValue == sel }) else { return }
-        guard let target = line.arrowValue ?? line.callValue else { return }
+        guard let line = lines.first(where: { $0.address == sel }) else { return }
+        guard let target = line.branchTarget ?? line.callTarget else { return }
         requestedJumpTarget = target
     }
 }
 
 private struct DisasmRow: View {
-    let line: DisasmLine
+    let line: DisassemblyLine
 
     let sessionID: UUID
     let workspace: Workspace
@@ -397,7 +388,7 @@ private struct DisasmRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(line.addr)
+            Text(line.addressText.attributed)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .font(.system(.footnote, design: .monospaced))
@@ -405,10 +396,7 @@ private struct DisasmRow: View {
                 .frame(width: 110, alignment: .leading)
                 .contentShape(Rectangle())
                 .overlay(alignment: .leading) {
-                    let decorations = workspace.addressDecorations(
-                        sessionID: sessionID,
-                        address: line.addrValue
-                    )
+                    let decorations = workspace.engine.addressAnnotations[sessionID]?[line.address]?.decorations ?? []
 
                     HStack(spacing: 3) {
                         ForEach(decorations.prefix(3)) { deco in
@@ -424,46 +412,31 @@ private struct DisasmRow: View {
                 }
                 .contextMenu {
                     Button {
-                        Platform.copyToClipboard(String(format: "0x%llx", line.addrValue))
+                        Platform.copyToClipboard(String(format: "0x%llx", line.address))
                     } label: {
                         Label("Copy Address", systemImage: "doc.on.doc")
                     }
 
                     Divider()
 
-                    let items = workspace.addressContextMenuItems(
-                        sessionID: sessionID,
-                        address: line.addrValue,
-                        selection: $selection
-                    )
-
-                    if items.isEmpty {
-                        EmptyView()
-                    } else {
-                        ForEach(items) { item in
-                            switch item.role {
-                            case .normal:
-                                Button(action: item.action) {
-                                    if let systemImage = item.systemImage {
-                                        Label(item.title, systemImage: systemImage)
-                                    } else {
-                                        Text(item.title)
-                                    }
+                    ForEach(workspace.engine.addressActions(sessionID: sessionID, address: line.address)) { action in
+                        Button(role: action.role == .destructive ? .destructive : nil) {
+                            Task { @MainActor in
+                                if let target = await action.perform() {
+                                    selection = workspace.sidebarItem(for: target)
                                 }
-                            case .destructive:
-                                Button(role: .destructive, action: item.action) {
-                                    if let systemImage = item.systemImage {
-                                        Label(item.title, systemImage: systemImage)
-                                    } else {
-                                        Text(item.title)
-                                    }
-                                }
+                            }
+                        } label: {
+                            if let systemImage = action.systemImage {
+                                Label(action.title, systemImage: systemImage)
+                            } else {
+                                Text(action.title)
                             }
                         }
                     }
                 }
 
-            Text(line.bytes)
+            Text(line.bytesText.attributed)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .font(.system(.footnote, design: .monospaced))
@@ -471,16 +444,16 @@ private struct DisasmRow: View {
                 .frame(width: 88, alignment: .leading)
 
             HStack(spacing: 6) {
-                Text(line.asm)
+                Text(line.asmText.attributed)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .font(.system(.footnote, design: .monospaced))
                     .foregroundStyle(.primary)
                     .textSelection(.enabled)
 
-                if let target = line.arrowValue ?? line.callValue {
+                if let target = line.branchTarget ?? line.callTarget {
                     Group {
-                        if !containsPrintedTarget(line.asm, target: target) {
+                        if !containsPrintedTarget(line.asmText, target: target) {
                             Button {
                                 jump(target)
                             } label: {
@@ -508,7 +481,7 @@ private struct DisasmRow: View {
             }
             .frame(minWidth: 240, maxWidth: .infinity, alignment: .leading)
 
-            Text(line.comment ?? AttributedString(""))
+            Text(line.commentText?.attributed ?? AttributedString(""))
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .font(.system(.footnote, design: .monospaced))
@@ -524,7 +497,7 @@ private struct DisasmRow: View {
             if isPulsing {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color.accentColor.opacity(pulsePhase ? 0.28 : 0.06))
-            } else if hoveredAddr == line.addrValue {
+            } else if hoveredAddr == line.address {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(.quaternary)
             } else if isSelected {
@@ -536,7 +509,7 @@ private struct DisasmRow: View {
             onSelect()
         }
         .onHover { isHovering in
-            hoveredAddr = isHovering ? line.addrValue : nil
+            hoveredAddr = isHovering ? line.address : nil
         }
         .onChange(of: requestedJumpTarget) { _, newValue in
             guard isSelected else { return }
@@ -554,22 +527,22 @@ private struct DisasmRow: View {
         }
     }
 
-    private func containsPrintedTarget(_ asm: AttributedString, target: UInt64) -> Bool {
-        let s = String(asm.characters).lowercased()
+    private func containsPrintedTarget(_ asm: StyledText, target: UInt64) -> Bool {
+        let s = asm.plainText.lowercased()
         let hex = String(format: "0x%llx", target).lowercased()
         return s.contains(hex)
     }
 }
 
 private struct DisasmFlowOverlay: View {
-    let lines: [DisasmLine]
+    let lines: [DisassemblyLine]
     let rowHeight: CGFloat
 
     var body: some View {
         GeometryReader { proxy in
             Canvas { context, size in
                 let indexByAddr: [UInt64: Int] = Dictionary(
-                    uniqueKeysWithValues: lines.enumerated().map { ($0.element.addrValue, $0.offset) }
+                    uniqueKeysWithValues: lines.enumerated().map { ($0.element.address, $0.offset) }
                 )
 
                 func centerY(forRow row: Int) -> CGFloat {
@@ -588,8 +561,8 @@ private struct DisasmFlowOverlay: View {
                 var edges: [Edge] = []
                 edges.reserveCapacity(lines.count)
                 for line in lines {
-                    guard let dst = line.arrowValue, let s = indexByAddr[line.addrValue], let d = indexByAddr[dst] else { continue }
-                    edges.append(Edge(src: line.addrValue, dst: dst, sRow: s, dRow: d, lo: min(s, d), hi: max(s, d)))
+                    guard let dst = line.branchTarget, let s = indexByAddr[line.address], let d = indexByAddr[dst] else { continue }
+                    edges.append(Edge(src: line.address, dst: dst, sRow: s, dRow: d, lo: min(s, d), hi: max(s, d)))
                 }
 
                 edges.sort { a, b in
@@ -694,140 +667,3 @@ private enum FlowPalette {
     ]
 }
 
-struct DisasmLine: Identifiable {
-    let id: UInt64
-
-    let addrValue: UInt64
-    let arrowValue: UInt64?
-    let callValue: UInt64?
-
-    let addr: AttributedString
-    let bytes: AttributedString
-    let asm: AttributedString
-    let comment: AttributedString?
-
-    init(op: R2DisasmOp) {
-        let c = op.columns()
-        self.id = op.addrValue
-        self.addrValue = op.addrValue
-        self.arrowValue = op.arrowValue
-        self.callValue = op.callValue
-        self.addr = c.addr
-        self.bytes = c.bytes
-        self.asm = c.asm
-        self.comment = c.comment
-    }
-}
-
-struct R2DisasmOp: Decodable, Identifiable {
-    struct Esil: Decodable {
-        let expr: String
-    }
-
-    let addr: String
-    let text: String
-    let arrow: String?
-    let call: String?
-    let esil: Esil?
-
-    var id: UInt64 { addrValue }
-
-    var addrValue: UInt64 {
-        UInt64(addr.dropFirst(2), radix: 16) ?? 0
-    }
-
-    var arrowValue: UInt64? {
-        guard let arrow else { return nil }
-        return UInt64(arrow.dropFirst(2), radix: 16)
-    }
-
-    var callValue: UInt64? {
-        guard let call else { return nil }
-        return UInt64(call.dropFirst(2), radix: 16)
-    }
-
-    struct Columns {
-        let addr: AttributedString
-        let bytes: AttributedString
-        let asm: AttributedString
-        let comment: AttributedString?
-    }
-
-    func columns() -> Columns {
-        let attributed = try! parseAnsi(text)
-        let plain = String(attributed.characters)
-
-        let addrR = plain.range(of: addr)!
-
-        let afterAddr = plain[addrR.upperBound...]
-        let afterAddrStart = plain.distance(from: plain.startIndex, to: addrR.upperBound)
-
-        let trimmedAfterAddr = afterAddr.drop(while: { $0 == " " || $0 == "\t" })
-        let bytesStartInAfter = afterAddr.distance(from: afterAddr.startIndex, to: trimmedAfterAddr.startIndex)
-        let bytesStart = afterAddrStart + bytesStartInAfter
-
-        let bytesToken = trimmedAfterAddr.prefix { $0 != " " && $0 != "\t" }
-        let bytesLen = bytesToken.count
-        let bytesEnd = bytesStart + bytesLen
-
-        var remStart = bytesEnd
-        while remStart < plain.count {
-            let idx = plain.index(plain.startIndex, offsetBy: remStart)
-            let ch = plain[idx]
-            if ch == " " || ch == "\t" { remStart += 1 } else { break }
-        }
-
-        let remainder = String(plain.dropFirst(remStart))
-
-        let asmPlain: String
-        let commentPlain: String?
-        if let semi = remainder.firstIndex(of: ";") {
-            asmPlain = remainder[..<semi].trimmingCharacters(in: .whitespaces)
-            commentPlain = remainder[semi...].trimmingCharacters(in: .whitespaces)
-        } else {
-            asmPlain = remainder.trimmingCharacters(in: .whitespaces)
-            commentPlain = nil
-        }
-
-        let addrStart = plain.distance(from: plain.startIndex, to: addrR.lowerBound)
-        let addrEnd = plain.distance(from: plain.startIndex, to: addrR.upperBound)
-
-        let asmOffsetInRem = remainder.range(of: asmPlain)?.lowerBound ?? remainder.startIndex
-        let asmStart = remStart + remainder.distance(from: remainder.startIndex, to: asmOffsetInRem)
-        let asmEnd = asmStart + asmPlain.count
-
-        let commentAS: AttributedString?
-        if let commentPlain, let cr = remainder.range(of: commentPlain) {
-            let cStart = remStart + remainder.distance(from: remainder.startIndex, to: cr.lowerBound)
-            let cEnd = cStart + commentPlain.count
-            commentAS = attributed.slice(charRange: cStart..<cEnd)
-        } else {
-            commentAS = nil
-        }
-
-        return Columns(
-            addr: attributed.slice(charRange: addrStart..<addrEnd),
-            bytes: attributed.slice(charRange: bytesStart..<bytesEnd),
-            asm: attributed.slice(charRange: asmStart..<asmEnd),
-            comment: commentAS
-        )
-    }
-}
-
-extension AttributedString {
-    fileprivate func index(atCharacterOffset offset: Int) -> AttributedString.Index {
-        var i = startIndex
-        var remaining = offset
-        while remaining > 0 && i < endIndex {
-            i = characters.index(after: i)
-            remaining -= 1
-        }
-        return i
-    }
-
-    fileprivate func slice(charRange: Range<Int>) -> AttributedString {
-        let a = index(atCharacterOffset: charRange.lowerBound)
-        let b = index(atCharacterOffset: charRange.upperBound)
-        return AttributedString(self[a..<b])
-    }
-}
