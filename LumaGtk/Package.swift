@@ -62,7 +62,6 @@ let package = Package(
             path: "Sources/LumaGtk",
             resources: [
                 .copy("Resources/MonacoWeb"),
-                .copy("Resources/Typings"),
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),

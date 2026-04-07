@@ -1,6 +1,7 @@
 import CWebKit
 import Foundation
 import Gtk
+import LumaCore
 
 public struct MonacoExtraLib: Equatable {
     public let content: String
@@ -250,9 +251,7 @@ private let monacoEditorTextChanged: @convention(c) (
 @MainActor
 public enum MonacoTypings {
     public static let fridaGum: MonacoExtraLib? = {
-        guard let url = Bundle.module.url(forResource: "frida-gum", withExtension: "d.ts", subdirectory: "Typings"),
-            let content = try? String(contentsOf: url, encoding: .utf8)
-        else { return nil }
-        return MonacoExtraLib(content, filePath: "/frida-gum.d.ts")
+        guard let typing = TypeScriptTypings.fridaGum else { return nil }
+        return MonacoExtraLib(typing.content, filePath: typing.filePath)
     }()
 }

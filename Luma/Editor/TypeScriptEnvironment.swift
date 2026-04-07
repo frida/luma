@@ -1,4 +1,5 @@
 import Foundation
+import LumaCore
 import SwiftyMonaco
 
 public enum TypeScriptEnvironment {
@@ -10,14 +11,9 @@ public enum TypeScriptEnvironment {
     )
 
     public static let gumTypeLib: MonacoExtraLib = {
-        guard let url = Bundle.main.url(forResource: "frida-gum", withExtension: "d.ts") else {
-            fatalError("frida-gum.d.ts is missing from the app bundle. This is required.")
+        guard let typing = LumaCore.TypeScriptTypings.fridaGum else {
+            fatalError("frida-gum.d.ts is missing from LumaCore resources. This is required.")
         }
-
-        guard let content = try? String(contentsOf: url, encoding: .utf8) else {
-            fatalError("Unable to read frida-gum.d.ts from app bundle.")
-        }
-
-        return MonacoExtraLib(content, filePath: "@types/frida-gum/index.d.ts")
+        return MonacoExtraLib(typing.content, filePath: typing.filePath)
     }()
 }

@@ -95,7 +95,6 @@
 			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
 			buildPhase = 0CD209322EB511C400D027FC /* Resources */;
 			membershipExceptions = (
-				"Resources/Typings/frida-gum.d.ts",
 			);
 		};
 /* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
