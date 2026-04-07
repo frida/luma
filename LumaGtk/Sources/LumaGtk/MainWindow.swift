@@ -511,25 +511,12 @@ final class MainWindow {
             engine: engine,
             sessionID: sessionID,
             descriptors: engine.descriptors
-        ) { [weak self] descriptor in
-            self?.addInstrument(descriptor: descriptor, sessionID: sessionID)
-        }
-        dialog.present()
-    }
-
-    private func addInstrument(descriptor: LumaCore.InstrumentDescriptor, sessionID: UUID) {
-        guard let engine else { return }
-        let configJSON = descriptor.makeInitialConfigJSON()
-        Task { @MainActor in
-            let instance = await engine.addInstrument(
-                kind: descriptor.kind,
-                sourceIdentifier: descriptor.sourceIdentifier,
-                configJSON: configJSON,
-                sessionID: sessionID
-            )
+        ) { [weak self] instance in
+            guard let self else { return }
             self.refreshInstruments()
             self.select(.instrument(sessionID: sessionID, instrumentID: instance.id))
         }
+        dialog.present()
     }
 
     private func reestablishSession(id: UUID) {
@@ -695,16 +682,23 @@ final class MainWindow {
                 let irow = ListBoxRow()
                 let descriptor = engine?.descriptor(for: instrument)
                 let title = descriptor?.displayName ?? "Instrument"
-                let ilabel = Label(str: "↳  \(title)")
+                let rowBox = Box(orientation: .horizontal, spacing: 6)
+                rowBox.halign = .start
+                rowBox.marginStart = 24
+                rowBox.marginEnd = 12
+                rowBox.marginTop = 2
+                rowBox.marginBottom = 2
+                if let descriptor {
+                    let iconBox = InstrumentIconView.make(for: descriptor)
+                    rowBox.append(child: iconBox)
+                }
+                let ilabel = Label(str: title)
                 ilabel.halign = .start
-                ilabel.marginStart = 24
-                ilabel.marginEnd = 12
-                ilabel.marginTop = 2
-                ilabel.marginBottom = 2
                 if !instrument.isEnabled {
                     ilabel.add(cssClass: "dim-label")
                 }
-                irow.set(child: ilabel)
+                rowBox.append(child: ilabel)
+                irow.set(child: rowBox)
                 sessionsList.append(child: irow)
                 sessionsRowKinds.append(.instrument(sessionID: session.id, instrumentID: instrument.id))
             }
