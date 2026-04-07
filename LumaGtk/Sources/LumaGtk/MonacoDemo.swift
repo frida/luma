@@ -1,4 +1,3 @@
-import CWebKit
 import Foundation
 import Gtk
 
@@ -9,27 +8,36 @@ enum MonacoDemo {
         window.title = "Monaco Demo"
         window.setDefaultSize(width: 1100, height: 760)
 
-        guard let resourceDir = Bundle.module.url(forResource: "MonacoWeb", withExtension: nil) else {
-            fatalError("MonacoWeb resources not found in bundle")
-        }
-        let indexURL = resourceDir.appendingPathComponent("index.html")
-
-        guard let view = luma_monaco_view_new() else {
-            fatalError("luma_monaco_view_new returned null")
-        }
-        guard let widgetRaw = luma_monaco_view_widget(view) else {
-            fatalError("luma_monaco_view_widget returned null")
+        var profile = MonacoEditorProfile(
+            languageId: "typescript",
+            theme: .dark,
+            fontSize: 14
+        )
+        if let gum = MonacoTypings.fridaGum {
+            profile.tsExtraLibs.append(gum)
         }
 
-        luma_monaco_view_set_load_finished(view, monacoBootstrap, UnsafeMutableRawPointer(view))
-        luma_monaco_view_set_text_handler(view, monacoTextReceived, nil)
+        let initialText = """
+        // Frida-aware TypeScript IntelliSense, hosted in WebKitWebView.
+        // Try: Interceptor.attach(<Ctrl-Space>
+        const onEnter: NativeCallback = new NativeCallback((arg) => {
+            console.log('onEnter called with', arg);
+        }, 'void', ['pointer']);
 
-        luma_monaco_view_load_uri(view, indexURL.absoluteString)
+        Interceptor.attach(Module.getGlobalExportByName('open'), {
+            onEnter(args) {
+                const path = args[0].readUtf8String();
+                console.log(`open(${path})`);
+            }
+        });
+        """
 
-        let widget = WidgetRef(raw: widgetRaw)
-        widget.hexpand = true
-        widget.vexpand = true
-        window.set(child: widget)
+        let editor = MonacoEditor(profile: profile, initialText: initialText)
+        editor.widget.hexpand = true
+        editor.widget.vexpand = true
+        retainedEditor = editor
+
+        window.set(child: editor.widget)
 
         let closeHandler: (WindowRef) -> Bool = { _ in true }
         _ = window.onCloseRequest(handler: closeHandler)
@@ -37,26 +45,5 @@ enum MonacoDemo {
     }
 }
 
-private let bootstrapJS = """
-editor.setLanguageId('typescript');
-editor.setText('// Welcome to Monaco in LumaGtk\\nfunction hello(name: string): string {\\n    return `Hi ${name}`;\\n}\\n\\nhello("world");\\n');
-editor.create({ automaticLayout: true, theme: 'vs-dark', fontSize: 14 });
-document.body.style.opacity = '1';
-console.log('[monaco] editor.create dispatched');
-"""
-
-private let monacoBootstrap: @convention(c) (
-    OpaquePointer?,
-    UnsafeMutableRawPointer?
-) -> Void = { view, _ in
-    guard let view else { return }
-    luma_monaco_view_evaluate(view, bootstrapJS)
-}
-
-private let monacoTextReceived: @convention(c) (
-    UnsafePointer<CChar>?,
-    UnsafeMutableRawPointer?
-) -> Void = { _, _ in
-    // Phase 3 will surface the text via an AsyncStream; for now we silently
-    // swallow updates so we don't pump stderr on every keystroke.
-}
+@MainActor
+private var retainedEditor: MonacoEditor?
