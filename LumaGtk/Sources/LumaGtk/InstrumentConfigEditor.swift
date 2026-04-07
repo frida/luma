@@ -10,7 +10,6 @@ final class InstrumentConfigEditor {
 
     private weak var engine: Engine?
     private var instrument: LumaCore.InstrumentInstance
-    private var isReapplyingHighlighting = false
 
     init(engine: Engine, instrument: LumaCore.InstrumentInstance) {
         self.engine = engine
@@ -220,24 +219,17 @@ final class InstrumentConfigEditor {
         codeHeader.add(cssClass: "heading")
         column.append(child: codeHeader)
 
-        let textView = TextView()
-        textView.hexpand = true
-        textView.vexpand = true
-        textView.monospace = true
-        textView.topMargin = 6
-        textView.bottomMargin = 6
-        textView.leftMargin = 6
-        textView.rightMargin = 6
-        hook.code.withCString { cstr in
-            textView.buffer.set(text: cstr, len: -1)
-        }
-        applyJSHighlighting(to: textView.buffer)
-        let codeScroll = ScrolledWindow()
-        codeScroll.hexpand = true
-        codeScroll.vexpand = true
-        codeScroll.setSizeRequest(width: -1, height: 220)
-        codeScroll.set(child: textView)
-        column.append(child: codeScroll)
+        var profile = MonacoEditorProfile(languageId: "typescript", theme: .dark, fontSize: 13)
+        if let gum = MonacoTypings.fridaGum { profile.tsExtraLibs.append(gum) }
+        let editor = MonacoEditor(profile: profile, initialText: hook.code)
+        var currentCode = hook.code
+
+        let editorHost = Box(orientation: .vertical, spacing: 0)
+        editorHost.hexpand = true
+        editorHost.vexpand = true
+        editorHost.setSizeRequest(width: -1, height: 280)
+        editorHost.append(child: editor.widget)
+        column.append(child: editorHost)
 
         let actions = Box(orientation: .horizontal, spacing: 8)
         let spacer = Label(str: "")
@@ -259,34 +251,25 @@ final class InstrumentConfigEditor {
 
         column.append(child: actions)
 
-        let updateDirty = { [weak self] in
-            guard let self else { return }
-            let codeNow = readText(from: textView)
+        let updateDirty = {
             let nameNow = nameEntry.text ?? ""
             let dirty =
-                codeNow != hook.code
+                currentCode != hook.code
                 || nameNow != hook.displayName
                 || enabledSwitch.active != hook.isEnabled
                 || pinnedSwitch.active != hook.isPinned
                 || itraceSwitch.active != hook.itraceEnabled
             saveButton.sensitive = dirty
             discardButton.sensitive = dirty
-            _ = self
+        }
+
+        editor.onTextChanged = { text in
+            currentCode = text
+            updateDirty()
         }
 
         nameEntry.onChanged { _ in
             MainActor.assumeIsolated { updateDirty() }
-        }
-        textView.buffer?.onChanged { [weak self] _ in
-            MainActor.assumeIsolated {
-                updateDirty()
-                guard let self, !self.isReapplyingHighlighting else { return }
-                if let buffer = textView.buffer {
-                    self.isReapplyingHighlighting = true
-                    self.applyJSHighlighting(to: buffer)
-                    self.isReapplyingHighlighting = false
-                }
-            }
         }
         let toggleHandler: (SwitchRef, Bool) -> Bool = { _, _ in
             MainActor.assumeIsolated { updateDirty() }
@@ -302,7 +285,7 @@ final class InstrumentConfigEditor {
                 self.mutateTracer { cfg in
                     guard let idx = cfg.hooks.firstIndex(where: { $0.id == hookID }) else { return }
                     cfg.hooks[idx].displayName = nameEntry.text ?? ""
-                    cfg.hooks[idx].code = readText(from: textView)
+                    cfg.hooks[idx].code = currentCode
                     cfg.hooks[idx].isEnabled = enabledSwitch.active
                     cfg.hooks[idx].isPinned = pinnedSwitch.active
                     cfg.hooks[idx].itraceEnabled = itraceSwitch.active
@@ -310,15 +293,11 @@ final class InstrumentConfigEditor {
             }
         }
 
-        discardButton.onClicked { [weak self] _ in
+        discardButton.onClicked { _ in
             MainActor.assumeIsolated {
                 nameEntry.text = hook.displayName
-                hook.code.withCString { cstr in
-                    textView.buffer?.set(text: cstr, len: -1)
-                }
-                if let buffer = textView.buffer {
-                    self?.applyJSHighlighting(to: buffer)
-                }
+                editor.setText(hook.code)
+                currentCode = hook.code
                 enabledSwitch.active = hook.isEnabled
                 pinnedSwitch.active = hook.isPinned
                 itraceSwitch.active = hook.itraceEnabled
@@ -829,133 +808,6 @@ final class InstrumentConfigEditor {
         label.add(cssClass: "error")
         label.halign = .start
         return label
-    }
-
-    private func applyJSHighlighting(to buffer: TextBufferRef) {
-        guard let tagTable = buffer.tagTable else { return }
-        ensureJSTag(name: "luma-js-keyword", foreground: "#3584e4", in: tagTable)
-        ensureJSTag(name: "luma-js-string", foreground: "#26a269", in: tagTable)
-        ensureJSTag(name: "luma-js-comment", foreground: "#9a9996", in: tagTable)
-
-        let startPtr = UnsafeMutablePointer<GtkTextIter>.allocate(capacity: 1)
-        let endPtr = UnsafeMutablePointer<GtkTextIter>.allocate(capacity: 1)
-        defer {
-            startPtr.deallocate()
-            endPtr.deallocate()
-        }
-        let startIter = TextIter(startPtr)
-        let endIter = TextIter(endPtr)
-        buffer.getStart(iter: startIter)
-        buffer.getEnd(iter: endIter)
-
-        for tagName in ["luma-js-keyword", "luma-js-string", "luma-js-comment"] {
-            tagName.withCString { cstr in
-                buffer.removeTagBy(name: cstr, start: startIter, end: endIter)
-            }
-        }
-
-        let text = buffer.getText(start: startIter, end: endIter, includeHiddenChars: true) ?? ""
-        let scalars = Array(text.unicodeScalars)
-        let count = scalars.count
-
-        let isIdentChar: (Unicode.Scalar) -> Bool = { s in
-            let c = s.value
-            return (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A) || (c >= 0x30 && c <= 0x39) || c == 0x5F || c == 0x24
-        }
-        let isIdentStart: (Unicode.Scalar) -> Bool = { s in
-            let c = s.value
-            return (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A) || c == 0x5F || c == 0x24
-        }
-
-        let keywords: Set<String> = [
-            "function", "var", "let", "const", "if", "else", "return", "for", "while", "do",
-            "switch", "case", "break", "continue", "new", "delete", "typeof", "instanceof",
-            "in", "of", "null", "undefined", "true", "false", "try", "catch", "finally",
-            "throw", "class", "extends", "super", "this", "import", "export", "from", "as",
-            "async", "await", "yield",
-        ]
-
-        let apply: (String, Int, Int) -> Void = { tagName, startOffset, endOffset in
-            let s = UnsafeMutablePointer<GtkTextIter>.allocate(capacity: 1)
-            let e = UnsafeMutablePointer<GtkTextIter>.allocate(capacity: 1)
-            defer {
-                s.deallocate()
-                e.deallocate()
-            }
-            let si = TextIter(s)
-            let ei = TextIter(e)
-            buffer.getIterAtOffset(iter: si, charOffset: startOffset)
-            buffer.getIterAtOffset(iter: ei, charOffset: endOffset)
-            tagName.withCString { cstr in
-                buffer.applyTagBy(name: cstr, start: si, end: ei)
-            }
-        }
-
-        var i = 0
-        while i < count {
-            let c = scalars[i]
-            if c == "/" && i + 1 < count && scalars[i + 1] == "/" {
-                let start = i
-                i += 2
-                while i < count && scalars[i] != "\n" { i += 1 }
-                apply("luma-js-comment", start, i)
-                continue
-            }
-            if c == "/" && i + 1 < count && scalars[i + 1] == "*" {
-                let start = i
-                i += 2
-                while i + 1 < count && !(scalars[i] == "*" && scalars[i + 1] == "/") { i += 1 }
-                if i + 1 < count { i += 2 } else { i = count }
-                apply("luma-js-comment", start, i)
-                continue
-            }
-            if c == "\"" || c == "'" || c == "`" {
-                let quote = c
-                let start = i
-                i += 1
-                while i < count {
-                    let ch = scalars[i]
-                    if ch == "\\" && i + 1 < count {
-                        i += 2
-                        continue
-                    }
-                    if ch == quote {
-                        i += 1
-                        break
-                    }
-                    i += 1
-                }
-                apply("luma-js-string", start, i)
-                continue
-            }
-            if isIdentStart(c) {
-                let start = i
-                i += 1
-                while i < count && isIdentChar(scalars[i]) { i += 1 }
-                let prevIsIdent = start > 0 && isIdentChar(scalars[start - 1])
-                if !prevIsIdent {
-                    let word = String(String.UnicodeScalarView(scalars[start..<i]))
-                    if keywords.contains(word) {
-                        apply("luma-js-keyword", start, i)
-                    }
-                }
-                continue
-            }
-            i += 1
-        }
-    }
-
-    private func ensureJSTag(name: String, foreground: String, in tagTable: TextTagTableRef) {
-        let existing = name.withCString { cstr in
-            tagTable.lookup(name: cstr)
-        }
-        if existing != nil { return }
-        let tag = name.withCString { cstr in
-            TextTag(name: cstr)
-        }
-        let value = GLibObject.Value(foreground)
-        tag.set(property: .foreground, value: value)
-        _ = tagTable.add(tag: tag)
     }
 
     func selectTracerHook(id: UUID) {
