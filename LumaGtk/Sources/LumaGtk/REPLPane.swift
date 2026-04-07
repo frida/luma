@@ -1,4 +1,5 @@
 import Foundation
+import Gdk
 import Gtk
 import LumaCore
 
@@ -16,6 +17,9 @@ final class REPLPane {
 
     private var cells: [LumaCore.REPLCell] = []
     private var observation: StoreObservation?
+    private var historyCursor: Int = 0
+    private var draftBeforeHistory: String = ""
+    private var completionTask: Task<Void, Never>?
 
     init(engine: Engine, sessionID: UUID) {
         self.engine = engine
@@ -76,6 +80,14 @@ final class REPLPane {
             }
         }
 
+        let keyController = EventControllerKey()
+        keyController.onKeyPressed { [weak self] _, keyval, _, _ in
+            MainActor.assumeIsolated {
+                self?.handleKeyPress(keyval: keyval) ?? false
+            }
+        }
+        inputEntry.add(controller: keyController)
+
         loadCells()
         observation = engine.store.observeREPLCells(sessionID: sessionID) { [weak self] newCells in
             Task { @MainActor in
@@ -102,6 +114,13 @@ final class REPLPane {
     private func loadCells() {
         guard let engine else { return }
         cells = (try? engine.store.fetchREPLCells(sessionID: sessionID)) ?? []
+        historyCursor = orderedHistory.count
+    }
+
+    private var orderedHistory: [LumaCore.REPLCell] {
+        cells
+            .filter { !$0.isSessionBoundary }
+            .sorted { $0.timestamp < $1.timestamp }
     }
 
     private func submit() {
@@ -111,9 +130,89 @@ final class REPLPane {
             return
         }
         inputEntry.text = ""
+        historyCursor = orderedHistory.count + 1
+        draftBeforeHistory = ""
         Task { @MainActor in
             await node.evalInREPL(code)
         }
+    }
+
+    // MARK: - History + completion
+
+    private func handleKeyPress(keyval: UInt) -> Bool {
+        let key = Int32(keyval)
+        if key == Gdk.keyUp {
+            historyPrevious()
+            return true
+        }
+        if key == Gdk.keyDown {
+            historyNext()
+            return true
+        }
+        if key == Gdk.keyTab {
+            requestCompletion()
+            return true
+        }
+        return false
+    }
+
+    private func historyPrevious() {
+        let history = orderedHistory
+        guard !history.isEmpty else { return }
+        if historyCursor == history.count {
+            draftBeforeHistory = inputEntry.text ?? ""
+        }
+        if historyCursor > 0 {
+            historyCursor -= 1
+        }
+        replaceInput(with: history[historyCursor].code)
+    }
+
+    private func historyNext() {
+        let history = orderedHistory
+        guard !history.isEmpty else { return }
+        if historyCursor < history.count - 1 {
+            historyCursor += 1
+            replaceInput(with: history[historyCursor].code)
+        } else {
+            historyCursor = history.count
+            replaceInput(with: draftBeforeHistory)
+            draftBeforeHistory = ""
+        }
+    }
+
+    private func replaceInput(with text: String) {
+        inputEntry.text = text
+        inputEntry.position = -1
+    }
+
+    private func requestCompletion() {
+        guard let node = engine?.node(forSessionID: sessionID) else { return }
+        let code = inputEntry.text ?? ""
+        let cursor = code.count
+        completionTask?.cancel()
+        completionTask = Task { @MainActor in
+            let suggestions = await node.completeInREPL(code: code, cursor: cursor)
+            guard !Task.isCancelled, !suggestions.isEmpty else { return }
+            // Insert the longest common prefix of all suggestions, or the
+            // single suggestion if only one was returned. The SwiftUI app
+            // shows a popdown picker; we keep it minimal here.
+            let common = longestCommonPrefix(suggestions)
+            guard !common.isEmpty else { return }
+            self.replaceInput(with: code + common)
+        }
+    }
+
+    private func longestCommonPrefix(_ strings: [String]) -> String {
+        guard let first = strings.first else { return "" }
+        var prefix = first
+        for s in strings.dropFirst() {
+            while !s.hasPrefix(prefix) {
+                prefix = String(prefix.dropLast())
+                if prefix.isEmpty { return "" }
+            }
+        }
+        return prefix
     }
 
     private func refresh() {
@@ -173,7 +272,7 @@ final class REPLPane {
         case .text(let s):
             return s
         case .js(let value):
-            return String(describing: value)
+            return value.prettyDescription()
         case .binary(let data, let meta):
             let kind = meta?.typedArray ?? "binary"
             return "<\(kind) \(data.count) bytes>"

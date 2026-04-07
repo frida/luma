@@ -18,6 +18,7 @@ final class MainWindow {
     private let notebookRow: ListBoxRow
     private let detailContainer: Box
     private let eventStreamPane: EventStreamPane
+    private var notebookPane: NotebookPane?
 
     private var sessions: [LumaCore.ProcessSession] = []
     private var installedPackages: [LumaCore.InstalledPackage] = []
@@ -89,6 +90,10 @@ final class MainWindow {
         renderPackages((try? engine.store.fetchPackagesState())?.packages ?? [])
         observeSessions()
         eventStreamPane.attach(engine: engine)
+        notebookPane = NotebookPane(engine: engine)
+        if case .notebook = selection {
+            renderDetail()
+        }
     }
 
     func showFatalError(_ message: String) {
@@ -237,10 +242,14 @@ final class MainWindow {
         let widget: Widget
         switch selection {
         case .notebook:
-            widget = makePlaceholder(
-                title: "Notebook",
-                subtitle: "Pinned events and notes will appear here."
-            )
+            if let pane = notebookPane {
+                widget = pane.widget
+            } else {
+                widget = makePlaceholder(
+                    title: "Notebook",
+                    subtitle: "Pinned events and notes will appear here."
+                )
+            }
         case .session(let id):
             if let session = sessions.first(where: { $0.id == id }) {
                 widget = makeSessionDetail(session: session)
