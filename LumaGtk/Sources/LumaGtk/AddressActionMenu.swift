@@ -41,6 +41,22 @@ enum AddressActionMenu {
         }
         box.append(child: copyButton)
 
+        let detailsButton = Button(label: "Show details\u{2026}")
+        detailsButton.add(cssClass: "flat")
+        detailsButton.onClicked { [weak popover, weak anchor] _ in
+            MainActor.assumeIsolated {
+                popover?.popdown()
+                guard let anchor else { return }
+                AddressDetailsPanel.present(
+                    from: anchor,
+                    engine: engine,
+                    sessionID: sessionID,
+                    address: address
+                )
+            }
+        }
+        box.append(child: detailsButton)
+
         if engine.node(forSessionID: sessionID) != nil {
             let actions = engine.addressActions(sessionID: sessionID, address: address)
             if !actions.isEmpty {
