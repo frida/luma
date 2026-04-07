@@ -1,4 +1,5 @@
 import Foundation
+import Gdk
 import Gtk
 import LumaCore
 import Observation
@@ -21,6 +22,13 @@ final class CollaborationPanel {
     private let chatSendButton: Button
 
     private let timeFormatter: DateFormatter
+    private let chatTimeFormatter: DateFormatter
+
+    private var copiedToastLabel: Label?
+    private var copiedToastResetTask: Task<Void, Never>?
+    private var isPinnedToBottom = true
+    private var lastChatCount = 0
+    private var suppressScrollPinUpdate = false
 
     init(engine: Engine, onClose: @escaping () -> Void) {
         self.engine = engine
@@ -38,6 +46,8 @@ final class CollaborationPanel {
 
         timeFormatter = DateFormatter()
         timeFormatter.dateFormat = "HH:mm:ss"
+        chatTimeFormatter = DateFormatter()
+        chatTimeFormatter.dateFormat = "HH:mm"
 
         let header = Box(orientation: .horizontal, spacing: 8)
         let title = Label(str: "Collaboration")
@@ -116,6 +126,17 @@ final class CollaborationPanel {
         chatSendButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.sendChat()
+            }
+        }
+
+        if let vadj = chatScroll.vadjustment {
+            vadj.onValueChanged { [weak self] adj in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    if self.suppressScrollPinUpdate { return }
+                    let atBottom = (adj.upper - (adj.value + adj.pageSize)) < 4.0
+                    self.isPinnedToBottom = atBottom
+                }
             }
         }
 
@@ -234,10 +255,34 @@ final class CollaborationPanel {
 
     private func refreshRoom() {
         clearChildren(of: roomSection)
+        copiedToastLabel = nil
+        copiedToastResetTask?.cancel()
+        copiedToastResetTask = nil
         guard let engine else { return }
 
         switch engine.collaboration.status {
         case .disconnected:
+            let storedRoomID = (try? engine.store.fetchCollaborationState())?.roomID
+            if let stored = storedRoomID {
+                let hint = Box(orientation: .vertical, spacing: 4)
+                hint.add(cssClass: "luma-linked-room-hint")
+                let hintLabel = Label(str: "This project is already linked to room \(truncatedRoomID(stored)).")
+                hintLabel.halign = .start
+                hintLabel.wrap = true
+                hintLabel.add(cssClass: "caption")
+                hintLabel.add(cssClass: "dim-label")
+                hint.append(child: hintLabel)
+                let reconnect = Button(label: "Reconnect")
+                reconnect.halign = .start
+                reconnect.onClicked { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        self?.engine?.startCollaboration(joiningRoom: stored)
+                    }
+                }
+                hint.append(child: reconnect)
+                roomSection.append(child: hint)
+            }
+
             let info = Label(str: "Not connected")
             info.halign = .start
             info.add(cssClass: "dim-label")
@@ -265,11 +310,59 @@ final class CollaborationPanel {
             roomSection.append(child: row)
 
         case .joined(let roomID):
+            let roleLabel = Label(str: engine.collaboration.isHost ? "You are hosting this room" : "You joined this room")
+            roleLabel.halign = .start
+            roleLabel.add(cssClass: "caption")
+            roleLabel.add(cssClass: "dim-label")
+            roomSection.append(child: roleLabel)
+
             let label = Label(str: "Room: \(truncatedRoomID(roomID))")
             label.halign = .start
             label.selectable = true
             label.add(cssClass: "monospace")
             roomSection.append(child: label)
+
+            let inviteURL = "luma://join?room=\(roomID)"
+            let inviteFrame = Box(orientation: .vertical, spacing: 4)
+            inviteFrame.add(cssClass: "luma-invite-frame")
+
+            let inviteHeader = Label(str: "Invite link")
+            inviteHeader.halign = .start
+            inviteHeader.add(cssClass: "caption-heading")
+            inviteFrame.append(child: inviteHeader)
+
+            let inviteRow = Box(orientation: .horizontal, spacing: 6)
+            let urlLabel = Label(str: inviteURL)
+            urlLabel.halign = .start
+            urlLabel.hexpand = true
+            urlLabel.selectable = true
+            urlLabel.ellipsize = .middle
+            urlLabel.add(cssClass: "monospace")
+            urlLabel.add(cssClass: "caption")
+            inviteRow.append(child: urlLabel)
+
+            let copyButton = Button(label: "Copy")
+            copyButton.hasFrame = false
+            copyButton.onClicked { [weak self] _ in
+                MainActor.assumeIsolated {
+                    if let display = Display.getDefault() {
+                        display.clipboard.set(text: inviteURL)
+                    }
+                    self?.showInviteCopiedToast()
+                }
+            }
+            inviteRow.append(child: copyButton)
+            inviteFrame.append(child: inviteRow)
+
+            let toast = Label(str: "Copied!")
+            toast.halign = .start
+            toast.add(cssClass: "caption")
+            toast.add(cssClass: "accent")
+            toast.visible = false
+            inviteFrame.append(child: toast)
+            copiedToastLabel = toast
+
+            roomSection.append(child: inviteFrame)
 
             let leave = Button(label: "Leave")
             leave.onClicked { [weak self] _ in
@@ -318,22 +411,97 @@ final class CollaborationPanel {
     private func refreshChat() {
         guard let engine else { return }
         chatListBox.removeAll()
-        for message in engine.collaboration.chatMessages {
+        let messages = engine.collaboration.chatMessages
+        for message in messages {
             let row = ListBoxRow()
-            let line = Label(str: "\(message.sender.name.isEmpty ? "@\(message.sender.id)" : message.sender.name): \(message.text)")
-            line.halign = .start
-            line.wrap = true
-            line.marginStart = 6
-            line.marginEnd = 6
-            line.marginTop = 2
-            line.marginBottom = 2
+            row.selectable = false
+            row.activatable = false
+
+            let outer = Box(orientation: .horizontal, spacing: 0)
+            outer.marginStart = 4
+            outer.marginEnd = 4
+            outer.marginTop = 2
+            outer.marginBottom = 2
+
+            let bubble = Box(orientation: .vertical, spacing: 2)
+            bubble.add(cssClass: message.isLocal ? "luma-chat-bubble-local" : "luma-chat-bubble-remote")
+            bubble.hexpand = false
+            bubble.halign = message.isLocal ? .end : .start
+
+            let header = Box(orientation: .horizontal, spacing: 6)
+            let senderName = message.isLocal
+                ? "You"
+                : (message.sender.name.isEmpty ? "@\(message.sender.id)" : message.sender.name)
+            let senderLabel = Label(str: senderName)
+            senderLabel.halign = .start
+            senderLabel.hexpand = true
+            senderLabel.add(cssClass: "caption-heading")
+            header.append(child: senderLabel)
+
+            let timeLabel = Label(str: chatTimeFormatter.string(from: message.timestamp))
+            timeLabel.halign = .end
+            timeLabel.add(cssClass: "caption")
+            timeLabel.add(cssClass: "dim-label")
+            header.append(child: timeLabel)
+            bubble.append(child: header)
+
+            let body = Label(str: message.text)
+            body.halign = .start
+            body.wrap = true
+            body.xalign = 0
+            body.add(cssClass: "caption")
+            bubble.append(child: body)
+
             if message.isLocal {
-                line.add(cssClass: "accent")
+                let spacer = Box(orientation: .horizontal, spacing: 0)
+                spacer.hexpand = true
+                outer.append(child: spacer)
+                outer.append(child: bubble)
+            } else {
+                outer.append(child: bubble)
+                let spacer = Box(orientation: .horizontal, spacing: 0)
+                spacer.hexpand = true
+                outer.append(child: spacer)
             }
-            row.set(child: line)
+
+            row.set(child: outer)
             chatListBox.append(child: row)
         }
+
+        if messages.count != lastChatCount {
+            lastChatCount = messages.count
+            if isPinnedToBottom {
+                scrollChatToBottomSoon()
+            }
+        }
+
         refreshChatInputState()
+    }
+
+    private func scrollChatToBottomSoon() {
+        Task { @MainActor in
+            guard let adj = chatScroll.vadjustment else { return }
+            let target = adj.upper - adj.pageSize
+            if target > adj.value {
+                self.suppressScrollPinUpdate = true
+                adj.value = target
+                self.suppressScrollPinUpdate = false
+                self.isPinnedToBottom = true
+            }
+        }
+    }
+
+    private func showInviteCopiedToast() {
+        guard let toast = copiedToastLabel else { return }
+        toast.visible = true
+        copiedToastResetTask?.cancel()
+        copiedToastResetTask = Task { @MainActor [weak self, weak toast] in
+            try? await Task.sleep(nanoseconds: 1_600_000_000)
+            guard let self else { return }
+            if self.copiedToastLabel === toast {
+                toast?.visible = false
+            }
+        }
     }
 
     private func refreshChatInputState() {

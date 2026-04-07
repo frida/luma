@@ -95,6 +95,41 @@ enum StyleSheet {
         border-radius: 4px;
         border: 1px solid alpha(@accent_bg_color, 0.4);
     }
+
+    .luma-event-badge {
+        border-radius: 4px;
+        padding: 1px 6px;
+        font-size: 0.78em;
+    }
+    .luma-event-source-0 { background-color: alpha(#1f77b4, 0.18); color: #1f77b4; }
+    .luma-event-source-1 { background-color: alpha(#ff7f0e, 0.18); color: #ff7f0e; }
+    .luma-event-source-2 { background-color: alpha(#2ca02c, 0.18); color: #2ca02c; }
+    .luma-event-source-3 { background-color: alpha(#d62728, 0.18); color: #d62728; }
+    .luma-event-source-4 { background-color: alpha(#9467bd, 0.18); color: #9467bd; }
+    .luma-event-source-5 { background-color: alpha(#8c564b, 0.18); color: #8c564b; }
+    .luma-event-source-6 { background-color: alpha(#e377c2, 0.18); color: #e377c2; }
+    .luma-event-source-7 { background-color: alpha(#17becf, 0.18); color: #17becf; }
+
+    .luma-event-level-info { background-color: alpha(@accent_bg_color, 0.18); color: @accent_bg_color; }
+    .luma-event-level-debug { background-color: alpha(#3584e4, 0.18); color: #3584e4; }
+    .luma-event-level-warn { background-color: alpha(#e5a50a, 0.22); color: #c64600; }
+    .luma-event-level-error { background-color: alpha(#c01c28, 0.22); color: #c01c28; }
+
+    .luma-event-jserror { color: #c01c28; }
+    .luma-event-delta { font-size: 0.78em; }
+
+    .luma-event-pending-pill {
+        border-radius: 999px;
+        padding: 4px 12px;
+        background-color: alpha(@accent_bg_color, 0.85);
+        color: white;
+        box-shadow: 0 2px 6px alpha(black, 0.3);
+    }
+
+    .luma-chat-bubble-local { background-color: alpha(@accent_bg_color, 0.20); border-radius: 12px; padding: 6px 10px; }
+    .luma-chat-bubble-remote { background-color: alpha(@theme_fg_color, 0.08); border-radius: 12px; padding: 6px 10px; }
+    .luma-invite-frame { border: 1px solid alpha(@theme_fg_color, 0.15); border-radius: 6px; padding: 8px 12px; }
+    .luma-linked-room-hint { border: 1px solid alpha(@theme_fg_color, 0.15); border-radius: 6px; padding: 6px 10px; }
     """
 
     static func install() {
