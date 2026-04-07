@@ -264,6 +264,16 @@ final class REPLPane {
         resultLabel.selectable = true
         column.append(child: resultLabel)
 
+        // Only the top-level cell value is wired to the address-action menu;
+        // nativePointers nested inside arrays/objects are not yet clickable.
+        if let engine,
+            case .js(let value) = cell.result,
+            case .nativePointer = value,
+            let address = value.nativePointerAddress
+        {
+            AddressActionMenu.attach(to: resultLabel, engine: engine, sessionID: sessionID, address: address)
+        }
+
         return column
     }
 
