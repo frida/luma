@@ -9,30 +9,30 @@ struct AddInstrumentSheet: View {
 
     @Environment(\.dismiss) private var dismiss
 
-    @State private var selectedTemplateID: InstrumentTemplate.ID?
+    @State private var selectedDescriptorID: InstrumentDescriptor.ID?
     @State private var initialConfigJSON = Data()
     @State private var isShowingCodeShareBrowser = false
 
-    var templates: [InstrumentTemplate] {
-        workspace.allInstrumentTemplates
+    var descriptors: [InstrumentDescriptor] {
+        workspace.engine.descriptors
     }
 
-    private var selectedTemplate: InstrumentTemplate? {
-        guard let id = selectedTemplateID else { return nil }
-        return templates.first { $0.id == id }
+    private var selectedDescriptor: InstrumentDescriptor? {
+        guard let id = selectedDescriptorID else { return nil }
+        return descriptors.first { $0.id == id }
     }
 
     var body: some View {
         NavigationStack {
             NavigationSplitView {
-                List(selection: $selectedTemplateID) {
-                    ForEach(templates) { template in
+                List(selection: $selectedDescriptorID) {
+                    ForEach(descriptors) { descriptor in
                         HStack {
-                            InstrumentIconView(icon: template.icon, pointSize: 12)
-                            Text(template.displayName)
+                            InstrumentIconView(icon: descriptor.icon, pointSize: 12)
+                            Text(descriptor.displayName)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .tag(template.id)
+                        .tag(descriptor.id)
                     }
                 }
                 .frame(minWidth: 240, idealWidth: 260)
@@ -40,15 +40,20 @@ struct AddInstrumentSheet: View {
                 .navigationTitle("Add Instrument")
             } detail: {
                 Group {
-                    if let template = selectedTemplate {
-                        template
-                            .makeConfigEditor($initialConfigJSON, $selection)
-                            .environment(\.instrumentSession, session)
-                            .frame(
-                                maxWidth: .infinity,
-                                maxHeight: .infinity,
-                                alignment: .topLeading
-                            )
+                    if let descriptor = selectedDescriptor,
+                        let ui = InstrumentUIRegistry.shared.ui(for: descriptor.id)
+                    {
+                        ui.makeConfigEditor(
+                            configJSON: $initialConfigJSON,
+                            workspace: workspace,
+                            selection: $selection
+                        )
+                        .environment(\.instrumentSession, session)
+                        .frame(
+                            maxWidth: .infinity,
+                            maxHeight: .infinity,
+                            alignment: .topLeading
+                        )
                     } else {
                         Text("Select an instrument to configure.")
                             .foregroundStyle(.secondary)
@@ -61,13 +66,13 @@ struct AddInstrumentSheet: View {
                 }
                 .padding()
             }
-            .onChange(of: selectedTemplateID) { _, newID in
+            .onChange(of: selectedDescriptorID) { _, newID in
                 guard
                     let id = newID,
-                    let tpl = templates.first(where: { $0.id == id })
+                    let desc = descriptors.first(where: { $0.id == id })
                 else { return }
 
-                initialConfigJSON = tpl.makeInitialConfigJSON()
+                initialConfigJSON = desc.makeInitialConfigJSON()
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -78,9 +83,9 @@ struct AddInstrumentSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {
                         Task { @MainActor in
-                            if let template = selectedTemplate {
+                            if let descriptor = selectedDescriptor {
                                 let newInstrument = await workspace.addInstrument(
-                                    template: template,
+                                    descriptor: descriptor,
                                     initialConfigJSON: initialConfigJSON,
                                     for: session
                                 )
@@ -89,7 +94,7 @@ struct AddInstrumentSheet: View {
                             dismiss()
                         }
                     }
-                    .disabled(selectedTemplate == nil)
+                    .disabled(selectedDescriptor == nil)
                 }
                 ToolbarItem(placement: .automatic) {
                     Button("Browse CodeShare…") {

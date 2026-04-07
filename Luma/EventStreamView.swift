@@ -423,9 +423,9 @@ struct EventStreamView: View {
 
         case .instrument:
             if let instrument = evt.instrument,
-                let template = workspace.template(for: instrument.instance)
+                let descriptor = workspace.engine.descriptor(for: instrument.instance)
             {
-                return template.summarizeEvent(evt)
+                return descriptor.summarizeEvent(evt.coreEvent)
             }
             return String(describing: evt.payload)
 
@@ -709,22 +709,22 @@ struct EventRow: View {
 
     private var instrumentEventView: AnyView? {
         guard let instrument = evt.instrument,
-            let template = workspace.template(for: instrument.instance)
+            let ui = InstrumentUIRegistry.shared.ui(for: instrument.instance)
         else {
             return nil
         }
 
-        return template.renderEvent(evt, workspace, $selection)
+        return ui.renderEvent(evt, workspace: workspace, selection: $selection)
     }
 
     private var instrumentMenuItems: [InstrumentEventMenuItem] {
         guard let instrument = evt.instrument,
-            let template = workspace.template(for: instrument.instance)
+            let ui = InstrumentUIRegistry.shared.ui(for: instrument.instance)
         else {
             return []
         }
 
-        return template.makeEventContextMenuItems(evt, workspace, $selection)
+        return ui.makeEventContextMenuItems(evt, workspace: workspace, selection: $selection)
     }
 }
 

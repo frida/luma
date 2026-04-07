@@ -6,7 +6,7 @@ import CryptoKit
 import Crypto
 #endif
 
-public struct CodeShareConfig: Codable, Equatable {
+public struct CodeShareConfig: Codable, Equatable, Sendable {
     public var name: String
     public var description: String
     public var source: String
@@ -49,7 +49,7 @@ public struct CodeShareConfig: Codable, Equatable {
     }
 }
 
-public struct CodeShareProjectRef: Codable, Equatable {
+public struct CodeShareProjectRef: Codable, Equatable, Sendable {
     public let id: String
     public let owner: String
     public let slug: String

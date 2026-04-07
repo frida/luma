@@ -14,8 +14,8 @@ final class Workspace: ObservableObject {
     @Published var processNodes: [ProcessNodeViewModel] = []
     @Published var sessions: [LumaCore.ProcessSession] = []
 
-    private var addressAnnotationsBySession: [UUID: [UInt64: AddressAnnotation]] = [:]
-    private var tracerInstanceIDBySession: [UUID: UUID] = [:]
+    private(set) var addressAnnotationsBySession: [UUID: [UInt64: AddressAnnotation]] = [:]
+    private(set) var tracerInstanceIDBySession: [UUID: UUID] = [:]
 
     struct AddressAnnotation {
         var decorations: [InstrumentAddressDecoration] = []
@@ -154,10 +154,64 @@ final class Workspace: ObservableObject {
             return (entrySource: source, packID: pack.manifest.id)
         }
 
+        engine.hookPackDescriptorProvider = {
+            HookPackLibrary.shared.packs.map { pack in
+                let icon: InstrumentIcon
+                if let iconMeta = pack.manifest.icon {
+                    if let file = iconMeta.file {
+                        icon = .file(pack.folderURL.appendingPathComponent(file))
+                    } else if let system = iconMeta.systemName {
+                        icon = .system(system)
+                    } else {
+                        icon = .system("puzzlepiece.extension")
+                    }
+                } else {
+                    icon = .system("puzzlepiece.extension")
+                }
+
+                let packID = pack.manifest.id
+                let defaultEnabled = Dictionary(
+                    uniqueKeysWithValues: pack.manifest.features
+                        .filter(\.defaultEnabled)
+                        .map { ($0.id, FeatureConfig()) }
+                )
+
+                return InstrumentDescriptor(
+                    id: "hook-pack:\(packID)",
+                    kind: .hookPack,
+                    sourceIdentifier: packID,
+                    displayName: pack.manifest.name,
+                    icon: icon,
+                    makeInitialConfigJSON: {
+                        try! JSONEncoder().encode(
+                            HookPackConfig(packId: packID, features: defaultEnabled)
+                        )
+                    }
+                )
+            }
+        }
+        engine.reloadHookPackDescriptors()
+
+        registerInstrumentUIs()
+
         githubToken = (try? TokenStore.load(kind: .github)) ?? nil
         Task { await loadCurrentGitHubUser() }
 
         subscribeToEngineEvents()
+    }
+
+    private func registerInstrumentUIs() {
+        let registry = InstrumentUIRegistry.shared
+
+        registry.register(for: "tracer", ui: TracerUI())
+        registry.register(for: "codeshare", ui: CodeShareUI())
+
+        for pack in HookPackLibrary.shared.packs {
+            registry.register(
+                for: "hook-pack:\(pack.manifest.id)",
+                ui: HookPackUI(manifest: pack.manifest)
+            )
+        }
     }
 
     // MARK: - Persistence
@@ -348,13 +402,13 @@ final class Workspace: ObservableObject {
     // MARK: - Instrument Lifecycle (thin delegates)
 
     func addInstrument(
-        template: InstrumentTemplate,
+        descriptor: InstrumentDescriptor,
         initialConfigJSON: Data,
         for session: LumaCore.ProcessSession
     ) async -> LumaCore.InstrumentInstance {
         let instance = await engine.addInstrument(
-            kind: template.kind,
-            sourceIdentifier: template.sourceIdentifier,
+            kind: descriptor.kind,
+            sourceIdentifier: descriptor.sourceIdentifier,
             configJSON: initialConfigJSON,
             sessionID: session.id
         )
@@ -480,10 +534,13 @@ final class Workspace: ObservableObject {
         selection: Binding<SidebarItemID?>
     ) -> [InstrumentAddressMenuItem] {
         let context = InstrumentAddressContext(sessionID: sessionID, address: address)
+        let registry = InstrumentUIRegistry.shared
 
         var items: [InstrumentAddressMenuItem] = []
-        for template in allInstrumentTemplates {
-            items.append(contentsOf: template.makeAddressContextMenuItems(context, self, selection))
+        for descriptor in engine.descriptors {
+            if let ui = registry.ui(for: descriptor.id) {
+                items.append(contentsOf: ui.makeAddressContextMenuItems(context: context, workspace: self, selection: selection))
+            }
         }
 
         return items
@@ -503,315 +560,6 @@ final class Workspace: ObservableObject {
         }
 
         selection.wrappedValue = .instrumentComponent(sessionID, result.instrumentID, result.hookID, UUID())
-    }
-
-    // MARK: - Instrument Templates (UI)
-
-    var allInstrumentTemplates: [InstrumentTemplate] {
-        tracerTemplates() + hookPackTemplates()
-    }
-
-    func template(for instance: LumaCore.InstrumentInstance) -> InstrumentTemplate? {
-        switch instance.kind {
-        case .tracer, .hookPack:
-            return allInstrumentTemplates.first {
-                $0.kind == instance.kind && $0.sourceIdentifier == instance.sourceIdentifier
-            }
-        case .codeShare:
-            return codeShareTemplate(for: instance)
-        }
-    }
-
-    func tracerTemplates() -> [InstrumentTemplate] {
-        let icon = InstrumentIcon.system("arrow.triangle.branch")
-
-        let template = InstrumentTemplate(
-            id: "tracer",
-            kind: .tracer,
-            sourceIdentifier: "builtin.tracer",
-            displayName: "Tracer",
-            icon: icon,
-            makeInitialConfigJSON: {
-                let config = TracerConfig()
-                return try! JSONEncoder().encode(config)
-            },
-            makeConfigEditor: { jsonBinding, selection in
-                let configBinding = Binding<TracerConfig>(
-                    get: {
-                        (try? TracerConfig.decode(from: jsonBinding.wrappedValue)) ?? TracerConfig()
-                    },
-                    set: { newValue in
-                        jsonBinding.wrappedValue = newValue.encode()
-                    }
-                )
-
-                return AnyView(
-                    TracerConfigView(
-                        config: configBinding,
-                        workspace: self,
-                        selection: selection,
-                    )
-                )
-            },
-            makeAddressDecorations: { context, workspace in
-                return workspace.addressAnnotationsBySession[context.sessionID]?[context.address]?.decorations ?? []
-            },
-            makeAddressContextMenuItems: { context, workspace, selection in
-                let tracerID = workspace.tracerInstanceIDBySession[context.sessionID]
-                let hookID = workspace.addressAnnotationsBySession[context.sessionID]?[context.address]?.tracerHookID
-
-                if let tracerID, let hookID {
-                    return [
-                        InstrumentAddressMenuItem(
-                            title: "Go to Hook",
-                            systemImage: "arrow.turn.down.right",
-                            role: .normal,
-                            action: {
-                                selection.wrappedValue = .instrumentComponent(context.sessionID, tracerID, hookID, UUID())
-                            }
-                        )
-                    ]
-                } else {
-                    return [
-                        InstrumentAddressMenuItem(
-                            title: "Add Instruction Hook…",
-                            systemImage: "pin",
-                            role: .normal,
-                            action: {
-                                Task { @MainActor in
-                                    await workspace.addTracerInstructionHook(
-                                        sessionID: context.sessionID,
-                                        address: context.address,
-                                        selection: selection
-                                    )
-                                }
-                            }
-                        )
-                    ]
-                }
-            },
-            renderEvent: { event, workspace, selection in
-                guard case .jsValue(let v) = event.payload,
-                    let ev = Engine.parseTracerEvent(from: v)
-                else {
-                    return AnyView(
-                        Text(String(describing: event.payload))
-                            .font(.system(.footnote, design: .monospaced))
-                            .textSelection(.enabled)
-                    )
-                }
-
-                let messageView: AnyView = {
-                    if case .array(_, let elems) = ev.message,
-                        elems.count == 1,
-                        case .string(let messageText) = elems[0]
-                    {
-                        return AnyView(
-                            Text(messageText)
-                                .font(.system(.footnote, design: .monospaced))
-                                .textSelection(.enabled)
-                        )
-                    } else {
-                        return AnyView(
-                            JSInspectValueView(
-                                value: ev.message,
-                                sessionID: event.processNode.sessionRecord.id,
-                                workspace: workspace,
-                                selection: selection
-                            )
-                        )
-                    }
-                }()
-
-                return AnyView(
-                    TracerEventRowView(
-                        messageView: messageView,
-                        process: event.processNode,
-                        backtrace: ev.backtrace,
-                        workspace: workspace,
-                        selection: selection
-                    )
-                )
-            },
-            makeEventContextMenuItems: { event, _, selection in
-                guard case .instrument(let instrumentID, _) = event.source,
-                    case .jsValue(let v) = event.payload,
-                    let ev = Engine.parseTracerEvent(from: v)
-                else {
-                    return []
-                }
-
-                let processNode = event.processNode
-
-                return [
-                    InstrumentEventMenuItem(
-                        title: "Go to Hook",
-                        systemImage: "arrow.turn.down.right",
-                        role: .normal
-                    ) {
-                        selection.wrappedValue = .instrumentComponent(
-                            processNode.sessionRecord.id,
-                            instrumentID,
-                            ev.id,
-                            UUID()
-                        )
-                    }
-                ]
-            },
-            summarizeEvent: { event in
-                return String(describing: event.payload)
-            },
-        )
-
-        return [template]
-    }
-
-    func hookPackTemplates() -> [InstrumentTemplate] {
-        HookPackLibrary.shared.packs.map { pack in
-            let icon: InstrumentIcon
-            if let iconMeta = pack.manifest.icon {
-                if let file = iconMeta.file {
-                    icon = .file(pack.folderURL.appendingPathComponent(file))
-                } else if let system = iconMeta.systemName {
-                    icon = .system(system)
-                } else {
-                    icon = .system("puzzlepiece.extension")
-                }
-            } else {
-                icon = .system("puzzlepiece.extension")
-            }
-
-            return InstrumentTemplate(
-                id: "hook-pack:\(pack.manifest.id)",
-                kind: .hookPack,
-                sourceIdentifier: pack.manifest.id,
-                displayName: pack.manifest.name,
-                icon: icon,
-                makeInitialConfigJSON: {
-                    let defaultEnabled = Dictionary(
-                        uniqueKeysWithValues: pack.manifest.features
-                            .filter(\.defaultEnabled)
-                            .map { ($0.id, FeatureConfig()) }
-                    )
-                    let config = HookPackConfig(
-                        packId: pack.manifest.id,
-                        features: defaultEnabled
-                    )
-                    return try! JSONEncoder().encode(config)
-                },
-                makeConfigEditor: { jsonBinding, _ in
-                    let cfgBinding = Binding<HookPackConfig>(
-                        get: {
-                            (try? JSONDecoder().decode(HookPackConfig.self, from: jsonBinding.wrappedValue))
-                                ?? HookPackConfig(packId: pack.manifest.id, features: [:])
-                        },
-                        set: { newValue in
-                            if let data = try? JSONEncoder().encode(newValue) {
-                                jsonBinding.wrappedValue = data
-                            }
-                        }
-                    )
-
-                    return AnyView(
-                        HookPackConfigView(
-                            manifest: pack.manifest,
-                            config: cfgBinding
-                        )
-                    )
-                },
-                makeAddressDecorations: { context, workspace in
-                    return []
-                },
-                makeAddressContextMenuItems: { context, workspace, selection in
-                    return []
-                },
-                renderEvent: { event, workspace, selection in
-                    guard case .jsValue(let v) = event.payload else {
-                        return AnyView(Text(String(describing: event.payload)))
-                    }
-
-                    return AnyView(
-                        JSInspectValueView(
-                            value: v,
-                            sessionID: event.processNode.sessionRecord.id,
-                            workspace: workspace,
-                            selection: selection
-                        ))
-                },
-                makeEventContextMenuItems: { _, _, _ in [] },
-                summarizeEvent: { event in
-                    return String(describing: event.payload)
-                },
-            )
-        }
-    }
-
-    private func codeShareTemplate(for instance: LumaCore.InstrumentInstance) -> InstrumentTemplate? {
-        guard
-            let cfg = try? JSONDecoder().decode(
-                CodeShareConfig.self,
-                from: instance.configJSON
-            )
-        else {
-            return nil
-        }
-
-        let icon = InstrumentIcon.system("cloud")
-
-        return InstrumentTemplate(
-            id: "codeshare:\(instance.sourceIdentifier)",
-            kind: .codeShare,
-            sourceIdentifier: instance.sourceIdentifier,
-            displayName: cfg.name,
-            icon: icon,
-            makeInitialConfigJSON: {
-                try! JSONEncoder().encode(cfg)
-            },
-            makeConfigEditor: { jsonBinding, _ in
-                let cfgBinding = Binding<CodeShareConfig>(
-                    get: {
-                        (try? JSONDecoder().decode(
-                            CodeShareConfig.self,
-                            from: jsonBinding.wrappedValue
-                        )) ?? cfg
-                    },
-                    set: { newValue in
-                        if let data = try? JSONEncoder().encode(newValue) {
-                            jsonBinding.wrappedValue = data
-                        }
-                    }
-                )
-
-                return AnyView(
-                    CodeShareConfigView(
-                        config: cfgBinding,
-                        workspace: self
-                    )
-                )
-            },
-            makeAddressDecorations: { context, workspace in
-                return []
-            },
-            makeAddressContextMenuItems: { context, workspace, selection in
-                return []
-            },
-            renderEvent: { event, workspace, selection in
-                if case .jsValue(let v) = event.payload {
-                    return AnyView(
-                        JSInspectValueView(
-                            value: v,
-                            sessionID: event.processNode.sessionRecord.id,
-                            workspace: workspace,
-                            selection: selection
-                        ))
-                }
-                return AnyView(Text(String(describing: event.payload)))
-            },
-            makeEventContextMenuItems: { _, _, _ in [] },
-            summarizeEvent: { event in
-                String(describing: event.payload)
-            }
-        )
     }
 
     // MARK: - Helpers

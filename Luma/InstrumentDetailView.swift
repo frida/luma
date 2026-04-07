@@ -1,5 +1,3 @@
-import Combine
-import Frida
 import LumaCore
 import SwiftUI
 
@@ -7,8 +5,6 @@ struct InstrumentDetailView: View {
     let instance: LumaCore.InstrumentInstance
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
-
-    let template: InstrumentTemplate?
 
     private var session: LumaCore.ProcessSession? {
         try? workspace.store.fetchSession(id: instance.sessionID)
@@ -23,7 +19,6 @@ struct InstrumentDetailView: View {
     init(instance: LumaCore.InstrumentInstance, workspace: Workspace, selection: Binding<SidebarItemID?>) {
         self.instance = instance
         self.workspace = workspace
-        self.template = workspace.template(for: instance)
         self._selection = selection
         _configJSON = State(initialValue: instance.configJSON)
     }
@@ -35,8 +30,8 @@ struct InstrumentDetailView: View {
             }
 
             VStack(alignment: .leading, spacing: 0) {
-                if let template {
-                    template.makeConfigEditor($configJSON, $selection)
+                if let ui = InstrumentUIRegistry.shared.ui(for: instance) {
+                    ui.makeConfigEditor(configJSON: $configJSON, workspace: workspace, selection: $selection)
                         .environment(\.instrumentSession, session)
                         .onChange(of: configJSON) { _, newValue in
                             Task { @MainActor in

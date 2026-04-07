@@ -367,63 +367,20 @@ struct CodeShareProjectDetailView: View {
 
         let sourceIdentifier = "@\(details.owner)/\(details.slug)"
 
-        let template = InstrumentTemplate(
+        let descriptor = InstrumentDescriptor(
             id: "codeshare:\(sourceIdentifier)",
             kind: .codeShare,
             sourceIdentifier: sourceIdentifier,
             displayName: cfg.name,
             icon: .system("cloud"),
-            makeInitialConfigJSON: {
-                configData
-            },
-            makeConfigEditor: { jsonBinding, _ in
-                let cfgBinding = Binding<CodeShareConfig>(
-                    get: {
-                        (try? JSONDecoder().decode(
-                            CodeShareConfig.self,
-                            from: jsonBinding.wrappedValue
-                        )) ?? cfg
-                    },
-                    set: { newValue in
-                        if let data = try? JSONEncoder().encode(newValue) {
-                            jsonBinding.wrappedValue = data
-                        }
-                    }
-                )
-
-                return AnyView(
-                    CodeShareConfigView(
-                        config: cfgBinding,
-                        workspace: workspace
-                    )
-                )
-            },
-            makeAddressDecorations: { context, workspace in
-                return []
-            },
-            makeAddressContextMenuItems: { context, workspace, selection in
-                return []
-            },
-            renderEvent: { event, workspace, selection in
-                if case .jsValue(let v) = event.payload {
-                    return AnyView(
-                        JSInspectValueView(
-                            value: v,
-                            sessionID: event.processNode.sessionRecord.id,
-                            workspace: workspace,
-                            selection: selection
-                        ))
-                }
-                return AnyView(Text(String(describing: event.payload)))
-            },
-            makeEventContextMenuItems: { _, _, _ in [] },
-            summarizeEvent: { event in
-                String(describing: event.payload)
-            }
+            makeInitialConfigJSON: { configData }
         )
 
+        workspace.engine.registerDescriptor(descriptor)
+        InstrumentUIRegistry.shared.register(for: descriptor.id, ui: CodeShareUI())
+
         let newInstrument = await workspace.addInstrument(
-            template: template,
+            descriptor: descriptor,
             initialConfigJSON: configData,
             for: session
         )

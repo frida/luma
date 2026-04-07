@@ -8,6 +8,8 @@ public final class Engine {
     public let compilerWorkspace: CompilerWorkspace
 
     public private(set) var processNodes: [ProcessNode] = []
+    public private(set) var descriptors: [InstrumentDescriptor] = []
+    private var descriptorsByID: [String: InstrumentDescriptor] = [:]
 
     private let _events = AsyncEventSource<RuntimeEvent>()
     public var events: AsyncStream<RuntimeEvent> { _events.makeStream() }
@@ -15,11 +17,81 @@ public final class Engine {
     private var deviceEventTasks: [String: Task<Void, Never>] = [:]
 
     public var hookPackSourceProvider: ((String) -> (entrySource: String, packID: String)?)?
+    public var hookPackDescriptorProvider: (() -> [InstrumentDescriptor])?
 
     public init(store: ProjectStore) {
         self.store = store
         self.compilerWorkspace = CompilerWorkspace(store: store)
+
+        registerDescriptor(Self.tracerDescriptor)
     }
+
+    // MARK: - Descriptor Registry
+
+    public func registerDescriptor(_ descriptor: InstrumentDescriptor) {
+        if let idx = descriptors.firstIndex(where: { $0.id == descriptor.id }) {
+            descriptors[idx] = descriptor
+        } else {
+            descriptors.append(descriptor)
+        }
+        descriptorsByID[descriptor.id] = descriptor
+    }
+
+    public func reloadHookPackDescriptors() {
+        descriptors.removeAll { $0.kind == .hookPack }
+        for key in descriptorsByID.keys where key.hasPrefix("hook-pack:") {
+            descriptorsByID.removeValue(forKey: key)
+        }
+
+        if let provider = hookPackDescriptorProvider {
+            for desc in provider() {
+                registerDescriptor(desc)
+            }
+        }
+    }
+
+    public func descriptor(for instance: InstrumentInstance) -> InstrumentDescriptor? {
+        switch instance.kind {
+        case .tracer:
+            return descriptorsByID["tracer"]
+        case .hookPack:
+            return descriptorsByID["hook-pack:\(instance.sourceIdentifier)"]
+        case .codeShare:
+            return descriptorsByID["codeshare:\(instance.sourceIdentifier)"]
+                ?? makeCodeShareDescriptor(for: instance)
+        }
+    }
+
+    private func makeCodeShareDescriptor(for instance: InstrumentInstance) -> InstrumentDescriptor? {
+        guard
+            let cfg = try? JSONDecoder().decode(CodeShareConfig.self, from: instance.configJSON)
+        else {
+            return nil
+        }
+
+        return InstrumentDescriptor(
+            id: "codeshare:\(instance.sourceIdentifier)",
+            kind: .codeShare,
+            sourceIdentifier: instance.sourceIdentifier,
+            displayName: cfg.name,
+            icon: .system("cloud"),
+            makeInitialConfigJSON: { try! JSONEncoder().encode(cfg) }
+        )
+    }
+
+    public static let tracerDescriptor = InstrumentDescriptor(
+        id: "tracer",
+        kind: .tracer,
+        sourceIdentifier: "builtin.tracer",
+        displayName: "Tracer",
+        icon: .system("arrow.triangle.branch"),
+        makeInitialConfigJSON: {
+            try! JSONEncoder().encode(TracerConfig())
+        },
+        summarizeEvent: { event in
+            String(describing: event.payload)
+        }
+    )
 
     // MARK: - Session Orchestration
 
