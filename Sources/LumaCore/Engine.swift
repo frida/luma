@@ -14,7 +14,10 @@ public final class Engine {
     private let _events = AsyncEventSource<RuntimeEvent>()
     public var events: AsyncStream<RuntimeEvent> { _events.makeStream() }
 
+    public let eventLog = EventLog()
+
     private var deviceEventTasks: [String: Task<Void, Never>] = [:]
+    private var eventLogTask: Task<Void, Never>?
 
     public var hookPackSourceProvider: ((String) -> (entrySource: String, packID: String)?)?
     public var hookPackDescriptorProvider: (() -> [InstrumentDescriptor])?
@@ -24,6 +27,29 @@ public final class Engine {
         self.compilerWorkspace = CompilerWorkspace(store: store)
 
         registerDescriptor(Self.tracerDescriptor)
+
+        eventLogTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            for await event in self._events.makeStream() {
+                self.eventLog.append(event)
+            }
+        }
+    }
+
+    public func loadRemoteDevices() async {
+        for config in (try? store.fetchRemoteDevices()) ?? [] {
+            do {
+                _ = try await deviceManager.addRemoteDevice(
+                    address: config.address,
+                    certificate: config.certificate,
+                    origin: config.origin,
+                    token: config.token,
+                    keepaliveInterval: config.keepaliveInterval
+                )
+            } catch {
+                NSLog("[Engine] failed to add remote device %@: %@", config.address, String(describing: error))
+            }
+        }
     }
 
     // MARK: - Descriptor Registry

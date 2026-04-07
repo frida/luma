@@ -19,7 +19,6 @@ final class ProcessNodeViewModel: ObservableObject, Identifiable {
 
     var onDestroyed: ((ProcessNodeViewModel, SessionDetachReason) -> Void)?
     var onModulesSnapshotReady: ((ProcessNodeViewModel) -> Void)?
-    var eventSink: ((LumaCore.RuntimeEvent) -> Void)?
 
     var id: UUID { core.id }
     var device: Device { core.device }

@@ -25,12 +25,6 @@ final class Workspace: ObservableObject {
     @Published private(set) var events: [RuntimeEvent] = []
     @Published private(set) var eventsVersion: Int = 0
 
-    private var allEvents: [RuntimeEvent] = []
-    private var totalEventsReceived: Int = 0
-    private let maxEventsVisible = 1_000
-    private let maxEventsInMemory = 10_000
-    private var isEventFlushScheduled = false
-
     @Published var notebookEntries: [LumaCore.NotebookEntry] = []
 
     @Published var targetPickerContext: TargetPickerContext?
@@ -228,91 +222,49 @@ final class Workspace: ObservableObject {
             }
         )
 
-        await loadRemoteDevices()
+        await engine.loadRemoteDevices()
         bindProjectCollaboration()
+        subscribeToEngineEvents()
     }
 
-    func loadRemoteDevices() async {
-        for config in (try? store.fetchRemoteDevices()) ?? [] {
-            do {
-                _ = try await deviceManager.addRemoteDevice(
-                    address: config.address,
-                    certificate: config.certificate,
-                    origin: config.origin,
-                    token: config.token,
-                    keepaliveInterval: config.keepaliveInterval
-                )
-            } catch {
-                print("Failed to add remote device \(config.address): \(error)")
-            }
-        }
-    }
-
-    // MARK: - Engine Event Subscription
+    // MARK: - Event Log Observation
 
     private func subscribeToEngineEvents() {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            for await coreEvent in self.engine.events {
-                let node = self.processNodes.first {
-                    if case .processOutput = coreEvent.source {
-                        return true
-                    }
-                    if case .instrument(let id, _) = coreEvent.source {
-                        return $0.instruments.contains { $0.id == id }
-                    }
-                    return true
-                }
-                guard let node else { continue }
-
-                var instrument: InstrumentRuntime?
-                if case .instrument(let id, _) = coreEvent.source {
-                    instrument = node.instruments.first { $0.id == id }
-                }
-                let evt = RuntimeEvent(coreEvent: coreEvent, processNode: node, instrument: instrument)
-                self.pushEvent(evt)
+            for await _ in self.engine.eventLog.changes {
+                self.refreshEventsFromLog()
             }
         }
     }
 
-    // MARK: - Event Stream
+    private func refreshEventsFromLog() {
+        events = engine.eventLog.events.map { coreEvent in
+            wrapCoreEvent(coreEvent)
+        }
+        eventsVersion = engine.eventLog.totalReceived
+    }
+
+    private func wrapCoreEvent(_ coreEvent: LumaCore.RuntimeEvent) -> RuntimeEvent {
+        let node = processNodes.first { vm in
+            if case .instrument(let id, _) = coreEvent.source {
+                return vm.instruments.contains { $0.id == id }
+            }
+            return true
+        }
+        var instrument: InstrumentRuntime?
+        if case .instrument(let id, _) = coreEvent.source {
+            instrument = node?.instruments.first { $0.id == id }
+        }
+        return RuntimeEvent(
+            coreEvent: coreEvent,
+            processNode: node ?? processNodes.first!,
+            instrument: instrument
+        )
+    }
 
     func clearEvents() {
-        allEvents.removeAll()
-        events.removeAll()
-        totalEventsReceived = 0
-        eventsVersion = 0
-        isEventFlushScheduled = false
-    }
-
-    func pushEvent(_ event: RuntimeEvent) {
-        totalEventsReceived += 1
-        allEvents.append(event)
-
-        if allEvents.count > maxEventsInMemory {
-            let overflow = allEvents.count - maxEventsInMemory
-            allEvents.removeFirst(overflow)
-        }
-
-        scheduleEventFlush()
-    }
-
-    private func scheduleEventFlush() {
-        guard !isEventFlushScheduled else { return }
-        isEventFlushScheduled = true
-
-        Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 16_000_000)
-            self?.flushEventsNow()
-        }
-    }
-
-    private func flushEventsNow() {
-        isEventFlushScheduled = false
-
-        let slice = allEvents.suffix(maxEventsVisible)
-        events = Array(slice)
-        eventsVersion = totalEventsReceived
+        engine.eventLog.clear()
     }
 
     // MARK: - Session Orchestration (thin delegates)
@@ -374,25 +326,12 @@ final class Workspace: ObservableObject {
                 store: store
             )
 
-            vm.onDestroyed = { [weak self] node, reason in
-                guard let self else { return }
-                var s = node.sessionRecord
-                s.detachReason = reason
-                try? self.store.save(s)
-                self.removeNode(node)
+            vm.onDestroyed = { [weak self] node, _ in
+                self?.removeNode(node)
             }
             vm.onModulesSnapshotReady = { [weak self] node in
                 guard let self else { return }
                 self.rebuildAddressDecorations(for: node.sessionRecord)
-            }
-            vm.eventSink = { [weak self] coreEvent in
-                guard let self else { return }
-                var instrument: InstrumentRuntime?
-                if case .instrument(let id, _) = coreEvent.source {
-                    instrument = vm.instruments.first { $0.id == id }
-                }
-                let evt = RuntimeEvent(coreEvent: coreEvent, processNode: vm, instrument: instrument)
-                self.pushEvent(evt)
             }
 
             processNodes.append(vm)
