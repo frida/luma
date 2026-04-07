@@ -27,7 +27,8 @@ final class CodeShareBrowser {
     private let titleLabel: Label
     private let ownerLabel: Label
     private let descriptionLabel: Label
-    private let sourceTextView: TextView
+    private var sourceEditor: MonacoEditor?
+    private let sourceContainer: Box
     private let addButton: Button
     private let detailErrorLabel: Label
 
@@ -149,21 +150,17 @@ final class CodeShareBrowser {
         sourceHeader.marginTop = 8
         detailContainer.append(child: sourceHeader)
 
-        sourceTextView = TextView()
-        sourceTextView.monospace = true
-        sourceTextView.editable = false
-        sourceTextView.cursorVisible = false
-        sourceTextView.topMargin = 6
-        sourceTextView.bottomMargin = 6
-        sourceTextView.leftMargin = 6
-        sourceTextView.rightMargin = 6
+        sourceContainer = Box(orientation: .vertical, spacing: 0)
+        sourceContainer.hexpand = true
+        sourceContainer.vexpand = true
+        sourceContainer.setSizeRequest(width: -1, height: 360)
+        detailContainer.append(child: sourceContainer)
 
-        let sourceScroll = ScrolledWindow()
-        sourceScroll.hexpand = true
-        sourceScroll.vexpand = true
-        sourceScroll.setSizeRequest(width: -1, height: 320)
-        sourceScroll.set(child: sourceTextView)
-        detailContainer.append(child: sourceScroll)
+        var monacoProfile = MonacoEditorProfile(languageId: "javascript", theme: .dark, fontSize: 13, readOnly: true)
+        if let gum = MonacoTypings.fridaGum { monacoProfile.jsExtraLibs.append(gum) }
+        let editor = MonacoEditor(profile: monacoProfile, initialText: "")
+        sourceEditor = editor
+        sourceContainer.append(child: editor.widget)
 
         let actions = Box(orientation: .horizontal, spacing: 8)
         let actionsSpacer = Label(str: "")
@@ -337,7 +334,7 @@ final class CodeShareBrowser {
         titleLabel.setText(str: "")
         ownerLabel.setText(str: "")
         descriptionLabel.setText(str: "Select a snippet to preview and add it as an instrument.")
-        sourceTextView.buffer.set(text: "", len: 0)
+        sourceEditor?.setText("")
         addButton.sensitive = false
         detailErrorLabel.visible = false
         detailSpinner.spinning = false
@@ -354,7 +351,7 @@ final class CodeShareBrowser {
         titleLabel.setText(str: project.name)
         ownerLabel.setText(str: "@\(project.owner)/\(project.slug)  •  ♥ \(project.likes)")
         descriptionLabel.setText(str: project.description)
-        sourceTextView.buffer.set(text: "", len: 0)
+        sourceEditor?.setText("")
 
         detailSpinner.spinning = true
         detailSpinner.start()
@@ -375,9 +372,7 @@ final class CodeShareBrowser {
                 self.currentDetails = details
                 self.currentSource = details.source
                 self.descriptionLabel.setText(str: details.description)
-                details.source.withCString { cstr in
-                    self.sourceTextView.buffer.set(text: cstr, len: -1)
-                }
+                self.sourceEditor?.setText(details.source)
                 self.addButton.sensitive = true
             } catch is CancellationError {
                 return
