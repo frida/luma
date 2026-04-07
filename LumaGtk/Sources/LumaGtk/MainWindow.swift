@@ -58,7 +58,7 @@ final class MainWindow {
         self.document = document
         self.window = ApplicationWindow(application: app)
         self.outerPaned = Paned(orientation: .horizontal)
-        window.title = "Luma — \(document.displayName)"
+        window.title = MainWindow.makeTitle(for: document)
         window.setDefaultSize(width: 1200, height: 800)
 
         let notebookListBox = ListBox()
@@ -97,7 +97,7 @@ final class MainWindow {
         let primaryMenuButton = MenuButton()
         primaryMenuButton.set(iconName: "open-menu-symbolic")
         primaryMenuButton.tooltipText = "Main menu"
-        if let menuModelPtr = MainWindow.buildPrimaryMenuModel(),
+        if let menuModelPtr = application.primaryMenuPtr,
             let menuButtonPtr = primaryMenuButton.menu_button_ptr.map(UnsafeMutableRawPointer.init)
         {
             luma_menu_button_set_menu(menuButtonPtr, menuModelPtr)
@@ -175,33 +175,16 @@ final class MainWindow {
         if let updated = application?.documentForWindow(self) {
             self.document = updated
         }
-        window.title = "Luma — \(document.displayName)"
+        window.title = MainWindow.makeTitle(for: document)
     }
 
-    private static func buildPrimaryMenuModel() -> UnsafeMutableRawPointer? {
-        guard let menu = luma_menu_new() else { return nil }
-        "New Window".withCString { label in
-            "app.new-window".withCString { action in
-                luma_menu_append(menu, label, action)
-            }
+    private static func makeTitle(for document: LumaDocument) -> String {
+        if document.isUntitled {
+            return "Luma — ● \(document.displayName)"
         }
-        "Open\u{2026}".withCString { label in
-            "app.open".withCString { action in
-                luma_menu_append(menu, label, action)
-            }
-        }
-        "Save As\u{2026}".withCString { label in
-            "app.save-as".withCString { action in
-                luma_menu_append(menu, label, action)
-            }
-        }
-        "Close Window".withCString { label in
-            "app.close-window".withCString { action in
-                luma_menu_append(menu, label, action)
-            }
-        }
-        return menu
+        return "Luma — \(document.displayName)"
     }
+
 
     func attach(engine: Engine) {
         self.engine = engine

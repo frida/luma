@@ -14,6 +14,8 @@ final class LumaApplication {
     }
 
     private var openDocuments: [ObjectIdentifier: OpenDocument] = [:]
+    private(set) var primaryMenuPtr: UnsafeMutableRawPointer?
+    private let maxRecentSlots = 10
 
     init() {
         guard let app = Application(id: "re.frida.Luma") else {
@@ -97,6 +99,7 @@ final class LumaApplication {
             if !document.isUntitled {
                 LumaState.shared.lastDocumentPath = document.url.path
                 LumaState.shared.recordRecent(path: document.url.path)
+                rebuildPrimaryMenu()
             }
         } catch {
             window.present()
@@ -117,6 +120,7 @@ final class LumaApplication {
         if !document.isUntitled {
             LumaState.shared.lastDocumentPath = document.url.path
             LumaState.shared.recordRecent(path: document.url.path)
+            rebuildPrimaryMenu()
         }
     }
 
@@ -189,11 +193,72 @@ final class LumaApplication {
         installAction(appPtr: appPtr, name: "close-window") { [weak self] in
             self?.activeWindow()?.window.close()
         }
+        for slot in 0..<maxRecentSlots {
+            installAction(appPtr: appPtr, name: "open-recent-\(slot)") { [weak self] in
+                self?.openRecent(slot: slot)
+            }
+        }
 
         setAccel(appPtr: appPtr, action: "app.new-window", accel: "<Primary>n")
         setAccel(appPtr: appPtr, action: "app.open", accel: "<Primary>o")
         setAccel(appPtr: appPtr, action: "app.save-as", accel: "<Primary><Shift>s")
         setAccel(appPtr: appPtr, action: "app.close-window", accel: "<Primary>w")
+
+        primaryMenuPtr = luma_menu_new()
+        rebuildPrimaryMenu()
+    }
+
+    private func openRecent(slot: Int) {
+        let recents = LumaState.shared.recentPaths
+        guard slot < recents.count else { return }
+        openWindow(forFile: URL(fileURLWithPath: recents[slot]))
+    }
+
+    func rebuildPrimaryMenu() {
+        guard let menu = primaryMenuPtr else { return }
+        luma_menu_remove_all(menu)
+
+        let topSection = luma_menu_new()
+        appendItem(toMenu: topSection!, label: "New Window", action: "app.new-window")
+        appendItem(toMenu: topSection!, label: "Open\u{2026}", action: "app.open")
+
+        let recents = LumaState.shared.recentPaths.prefix(maxRecentSlots)
+        if !recents.isEmpty {
+            let recentMenu = luma_menu_new()!
+            for (i, path) in recents.enumerated() {
+                let label = (path as NSString).lastPathComponent
+                appendItem(toMenu: recentMenu, label: label, action: "app.open-recent-\(i)")
+            }
+            "Open Recent".withCString { label in
+                luma_menu_append_submenu(topSection, label, recentMenu)
+            }
+            luma_menu_unref(recentMenu)
+        }
+
+        luma_menu_append_section(menu, topSection)
+        luma_menu_unref(topSection)
+
+        let docSection = luma_menu_new()!
+        appendItem(toMenu: docSection, label: "Save As\u{2026}", action: "app.save-as")
+        luma_menu_append_section(menu, docSection)
+        luma_menu_unref(docSection)
+
+        let windowSection = luma_menu_new()!
+        appendItem(toMenu: windowSection, label: "Close Window", action: "app.close-window")
+        luma_menu_append_section(menu, windowSection)
+        luma_menu_unref(windowSection)
+    }
+
+    private func appendItem(
+        toMenu menu: UnsafeMutableRawPointer,
+        label: String,
+        action: String
+    ) {
+        label.withCString { l in
+            action.withCString { a in
+                luma_menu_append(menu, l, a)
+            }
+        }
     }
 
     private func installAction(
