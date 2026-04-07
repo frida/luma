@@ -26,6 +26,10 @@ final class MainWindow {
     private var sessionsRowKinds: [SessionsRow] = []
     private var selection: SidebarSelection = .notebook
     private var addInstrumentButton: Button!
+    private var collaborationButton: Button!
+    private var collaborationPanel: CollaborationPanel?
+    private let outerPaned: Paned
+    private var isCollaborationPanelVisible: Bool = false
 
     private enum SidebarSelection: Equatable {
         case notebook
@@ -52,6 +56,7 @@ final class MainWindow {
         let packagesSection = Box(orientation: .vertical, spacing: 0)
         let detailContainer = Box(orientation: .vertical, spacing: 0)
         let eventStreamPane = EventStreamPane()
+        self.outerPaned = Paned(orientation: .horizontal)
         self.notebookListBox = notebookListBox
         self.notebookRow = notebookRow
         self.sessionsList = sessionsList
@@ -70,6 +75,10 @@ final class MainWindow {
         header.packStart(child: addInstrumentButton)
         self.addInstrumentButton = addInstrumentButton
 
+        let collaborationButton = Button(label: "Collaboration")
+        header.packStart(child: collaborationButton)
+        self.collaborationButton = collaborationButton
+
         window.set(titlebar: WidgetRef(header))
 
         let topPaned = Paned(orientation: .horizontal)
@@ -79,10 +88,15 @@ final class MainWindow {
         topPaned.hexpand = true
         topPaned.vexpand = true
 
+        outerPaned.position = 880
+        outerPaned.startChild = WidgetRef(topPaned)
+        outerPaned.hexpand = true
+        outerPaned.vexpand = true
+
         let separator = Separator(orientation: .horizontal)
 
         let column = Box(orientation: .vertical, spacing: 0)
-        column.append(child: topPaned)
+        column.append(child: outerPaned)
         column.append(child: separator)
         column.append(child: eventStreamPane.widget)
         window.set(child: column)
@@ -97,6 +111,17 @@ final class MainWindow {
                 self?.openAddInstrumentDialog()
             }
         }
+        collaborationButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.setCollaborationVisible(!self.isCollaborationPanelVisible)
+            }
+        }
+    }
+
+    private func setCollaborationVisible(_ visible: Bool) {
+        isCollaborationPanelVisible = visible
+        collaborationPanel?.widget.visible = visible
     }
 
     func present() {
@@ -110,6 +135,12 @@ final class MainWindow {
         renderPackages((try? engine.store.fetchPackagesState())?.packages ?? [])
         observeSessions()
         eventStreamPane.attach(engine: engine)
+        let panel = CollaborationPanel(engine: engine, onClose: { [weak self] in
+            self?.setCollaborationVisible(false)
+        })
+        collaborationPanel = panel
+        outerPaned.endChild = WidgetRef(panel.widget)
+        panel.widget.visible = isCollaborationPanelVisible
         notebookPane = NotebookPane(engine: engine)
         if case .notebook = selection {
             renderDetail()
@@ -334,17 +365,10 @@ final class MainWindow {
         configHeader.add(cssClass: "heading")
         column.append(child: configHeader)
 
-        let configText = String(data: instrument.configJSON, encoding: .utf8) ?? "(non-UTF8)"
-        let configLabel = Label(str: configText)
-        configLabel.halign = .start
-        configLabel.add(cssClass: "monospace")
-        configLabel.wrap = true
-        configLabel.selectable = true
-        configLabel.marginStart = 24
-        configLabel.marginEnd = 24
-        configLabel.marginTop = 4
-        configLabel.marginBottom = 12
-        column.append(child: configLabel)
+        if let engine {
+            let editor = InstrumentConfigEditor(engine: engine, instrument: instrument)
+            column.append(child: editor.widget)
+        }
 
         let actions = Box(orientation: .horizontal, spacing: 8)
         actions.marginStart = 24
