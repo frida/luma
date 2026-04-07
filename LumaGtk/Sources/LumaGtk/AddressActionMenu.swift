@@ -14,7 +14,7 @@ enum AddressActionMenu {
                 present(at: anchor, engine: engine, sessionID: sessionID, address: address)
             }
         }
-        anchor.add(controller: gesture)
+        anchor.install(controller: gesture)
     }
 
     private static func present(at anchor: Widget, engine: Engine, sessionID: UUID, address: UInt64) {

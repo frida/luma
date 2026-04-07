@@ -96,7 +96,7 @@ final class REPLPane {
                 self?.handleKeyPress(keyval: keyval) ?? false
             }
         }
-        inputEntry.add(controller: keyController)
+        inputEntry.install(controller: keyController)
 
         loadCells()
         observation = engine.store.observeREPLCells(sessionID: sessionID) { [weak self] newCells in
@@ -337,7 +337,7 @@ final class REPLPane {
                 self.presentCellContextMenu(at: anchor, cell: cell)
             }
         }
-        anchor.add(controller: gesture)
+        anchor.install(controller: gesture)
     }
 
     private func presentCellContextMenu(at anchor: Widget, cell: LumaCore.REPLCell) {

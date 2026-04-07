@@ -294,7 +294,7 @@ public final class HexView {
                 }
             }
         }
-        drawingArea.add(controller: leftClick)
+        drawingArea.install(controller: leftClick)
 
         let drag = GestureDrag()
         drag.set(button: 1)
@@ -326,7 +326,7 @@ public final class HexView {
                 self?.dragStartIndex = nil
             }
         }
-        drawingArea.add(controller: drag)
+        drawingArea.install(controller: drag)
 
         let rightClick = GestureClick()
         rightClick.set(button: 3)
@@ -341,7 +341,7 @@ public final class HexView {
                 self.presentContextMenu(at: x, y: y)
             }
         }
-        drawingArea.add(controller: rightClick)
+        drawingArea.install(controller: rightClick)
     }
 
     private func installKeyController() {
@@ -352,7 +352,7 @@ public final class HexView {
                 return self.handleKey(keyval: keyval, state: state)
             }
         }
-        drawingArea.add(controller: key)
+        drawingArea.install(controller: key)
     }
 
     private func handleKey(keyval: UInt, state: Gdk.ModifierType) -> Bool {

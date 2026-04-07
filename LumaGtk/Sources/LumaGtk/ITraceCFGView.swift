@@ -259,7 +259,7 @@ final class ITraceCFGView {
                 _ = self?.container.grabFocus()
             }
         }
-        box.add(controller: click)
+        box.install(controller: click)
 
         let motion = EventControllerMotion()
         motion.onEnter { [weak self] _, _, _ in
@@ -272,7 +272,7 @@ final class ITraceCFGView {
                 self?.cancelHover(key: key)
             }
         }
-        box.add(controller: motion)
+        box.install(controller: motion)
 
         return box
     }
@@ -566,7 +566,7 @@ final class ITraceCFGView {
                 self.drawingArea.queueDraw()
             }
         }
-        container.add(controller: drag)
+        container.install(controller: drag)
 
         let scroll = EventControllerScroll(flags: .bothAxes)
         let motionForPos = EventControllerMotion()
@@ -578,7 +578,7 @@ final class ITraceCFGView {
                 lastMouseY = y
             }
         }
-        container.add(controller: motionForPos)
+        container.install(controller: motionForPos)
 
         scroll.onScroll { [weak self] controller, dx, dy in
             MainActor.assumeIsolated {
@@ -606,7 +606,7 @@ final class ITraceCFGView {
                 return true
             }
         }
-        container.add(controller: scroll)
+        container.install(controller: scroll)
     }
 
     private func resetView() {
@@ -712,7 +712,7 @@ final class ITraceCFGView {
                 }
             }
         }
-        container.add(controller: key)
+        container.install(controller: key)
     }
 
     private func moveSelection(dx: Int, dy: Int) {

@@ -117,7 +117,7 @@ final class AddressDetailsPanel {
                 self?.handleDisasmKey(keyval: keyval) ?? false
             }
         }
-        disasmBox.add(controller: keyController)
+        disasmBox.install(controller: keyController)
 
         refresh()
     }
@@ -403,7 +403,7 @@ final class AddressDetailsPanel {
                 }
             }
         }
-        row.add(controller: click)
+        row.install(controller: click)
 
         return row
     }
@@ -429,8 +429,8 @@ final class AddressDetailsPanel {
 
         let header = HeaderBar()
         let closeButton = Button(label: "Close")
-        closeButton.onClicked { [weak window] _ in
-            MainActor.assumeIsolated { window?.destroy() }
+        closeButton.onClicked { [window] _ in
+            MainActor.assumeIsolated { window.destroy() }
         }
         header.packEnd(child: closeButton)
         window.set(titlebar: WidgetRef(header))
@@ -443,6 +443,7 @@ final class AddressDetailsPanel {
 
         Self.retain(panel: panel, window: window)
 
+        installEscapeShortcut(on: window)
         window.present()
     }
 

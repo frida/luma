@@ -1072,7 +1072,7 @@ final class MainWindow {
                 self.presentSessionContextMenu(anchor: anchor, session: session)
             }
         }
-        row.add(controller: click)
+        row.install(controller: click)
     }
 
     private func presentSessionContextMenu(anchor: Widget, session: LumaCore.ProcessSession) {
@@ -1153,7 +1153,7 @@ final class MainWindow {
                 self.presentInstrumentContextMenu(anchor: anchor, instrument: instrument)
             }
         }
-        row.add(controller: click)
+        row.install(controller: click)
     }
 
     private func presentInstrumentContextMenu(
@@ -1210,7 +1210,7 @@ final class MainWindow {
                 self.presentInsightContextMenu(anchor: anchor, insight: insight)
             }
         }
-        row.add(controller: click)
+        row.install(controller: click)
     }
 
     private func presentInsightContextMenu(
@@ -1254,7 +1254,7 @@ final class MainWindow {
                 self.presentCaptureContextMenu(anchor: anchor, capture: capture)
             }
         }
-        row.add(controller: click)
+        row.install(controller: click)
     }
 
     private func presentCaptureContextMenu(
