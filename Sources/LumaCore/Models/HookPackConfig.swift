@@ -1,6 +1,6 @@
 import Foundation
 
-public struct HookPackConfig: Codable, Equatable {
+public struct HookPackConfig: Codable, Equatable, Sendable {
     public let packId: String
     public var features: [String: FeatureConfig]
 
@@ -25,7 +25,7 @@ public struct HookPackConfig: Codable, Equatable {
     }
 }
 
-public struct FeatureConfig: Codable, Hashable {
+public struct FeatureConfig: Codable, Hashable, Sendable {
     public init() {}
 
     public func toJSON() -> [String: String] {
