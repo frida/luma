@@ -22,9 +22,30 @@ public final class Engine {
     public var hookPackSourceProvider: ((String) -> (entrySource: String, packID: String)?)?
     public var hookPackDescriptorProvider: (() -> [InstrumentDescriptor])?
 
-    public init(store: ProjectStore) {
+    public let collaboration: CollaborationSession
+
+    public struct CollaborationConfig: Sendable {
+        public let portalAddress: String
+        public let portalCertificate: String
+
+        public init(portalAddress: String, portalCertificate: String) {
+            self.portalAddress = portalAddress
+            self.portalCertificate = portalCertificate
+        }
+    }
+
+    public init(
+        store: ProjectStore,
+        collaborationConfig: CollaborationConfig
+    ) {
         self.store = store
         self.compilerWorkspace = CompilerWorkspace(store: store)
+        self.collaboration = CollaborationSession(
+            deviceManager: deviceManager,
+            store: store,
+            portalAddress: collaborationConfig.portalAddress,
+            portalCertificate: collaborationConfig.portalCertificate
+        )
 
         registerDescriptor(Self.tracerDescriptor)
 

@@ -71,9 +71,6 @@ final class Workspace: ObservableObject {
 
     @Published var isCollaborationHost: Bool = false
 
-    var portalDevice: Device?
-    var portalBusTask: Task<Void, Never>?
-
     enum GitHubAuthState: Equatable {
         case signedOut
         case requestingCode(code: String, verifyURL: URL)
@@ -140,7 +137,13 @@ final class Workspace: ObservableObject {
 
     init(store: ProjectStore) {
         self.store = store
-        self.engine = Engine(store: store)
+        self.engine = Engine(
+            store: store,
+            collaborationConfig: Engine.CollaborationConfig(
+                portalAddress: BackendConfig.portalAddress,
+                portalCertificate: BackendConfig.certificate
+            )
+        )
 
         engine.hookPackSourceProvider = { sourceIdentifier in
             guard let pack = HookPackLibrary.shared.pack(withId: sourceIdentifier) else { return nil }
