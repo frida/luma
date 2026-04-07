@@ -43,6 +43,18 @@ enum StyleSheet {
 
     .luma-cfg-node { border: 1px solid alpha(@theme_fg_color, 0.4); border-radius: 6px; padding: 6px 10px; background-color: alpha(@theme_bg_color, 0.85); }
     .luma-cfg-node.selected { border-color: @accent_bg_color; background-color: alpha(@accent_bg_color, 0.18); }
+
+    .luma-cfg-section-0 { border-left: 3px solid #1f77b4; }
+    .luma-cfg-section-1 { border-left: 3px solid #ff7f0e; }
+    .luma-cfg-section-2 { border-left: 3px solid #2ca02c; }
+    .luma-cfg-section-3 { border-left: 3px solid #d62728; }
+    .luma-cfg-section-4 { border-left: 3px solid #9467bd; }
+    .luma-cfg-section-5 { border-left: 3px solid #8c564b; }
+    .luma-cfg-section-6 { border-left: 3px solid #e377c2; }
+    .luma-cfg-section-7 { border-left: 3px solid #17becf; }
+    .luma-cfg-section-current { box-shadow: 0 0 0 2px alpha(@accent_bg_color, 0.6); }
+    .luma-cfg-instr { padding: 0 4px; }
+    .luma-cfg-regdiff { color: alpha(@accent_fg_color, 0.9); }
     """
 
     static func install() {

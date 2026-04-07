@@ -101,7 +101,12 @@ final class ITraceCapturesPane {
             detailContainer.remove(child: current)
         }
         let others = captures.enumerated().compactMap { $0.offset == index ? nil : $0.element }
-        let detail = ITraceDetailView(capture: captures[index], otherCaptures: others)
+        let detail = ITraceDetailView(
+            capture: captures[index],
+            otherCaptures: others,
+            engine: engine,
+            sessionID: sessionID
+        )
         currentDetail = detail
         detailContainer.append(child: detail.widget)
     }

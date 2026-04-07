@@ -8,19 +8,30 @@ final class ITraceDetailView {
 
     private let capture: ITraceCaptureRecord
     private let otherCaptures: [ITraceCaptureRecord]
+    private let engine: Engine
+    private let sessionID: UUID
     private let bodyContainer: Box
     private let entriesBox: Box
     private let entriesScroll: ScrolledWindow
     private var entryRows: [ListBoxRow] = []
     private var decoded: DecodedITrace?
+    private var disassembler: TraceDisassembler?
     private var cfgView: ITraceCFGView?
+    private var selectedCallIndex: Int = 0
     private var modeSwitcher: Box?
     private var listToggle: ToggleButton?
     private var graphToggle: ToggleButton?
 
-    init(capture: ITraceCaptureRecord, otherCaptures: [ITraceCaptureRecord] = []) {
+    init(
+        capture: ITraceCaptureRecord,
+        otherCaptures: [ITraceCaptureRecord] = [],
+        engine: Engine,
+        sessionID: UUID
+    ) {
         self.capture = capture
         self.otherCaptures = otherCaptures
+        self.engine = engine
+        self.sessionID = sessionID
 
         widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
@@ -123,6 +134,13 @@ final class ITraceDetailView {
 
         case .success(let decoded):
             self.decoded = decoded
+            if let session = engine.session(id: sessionID), let processInfo = session.processInfo {
+                self.disassembler = TraceDisassembler(
+                    decoded: decoded,
+                    processInfo: processInfo,
+                    liveNode: engine.node(forSessionID: sessionID)
+                )
+            }
             bodyContainer.append(child: makeTimeline(functionCalls: decoded.functionCalls))
             bodyContainer.append(child: makeModeSwitcher())
             populateEntries(decoded.entries)
@@ -183,33 +201,35 @@ final class ITraceDetailView {
 
     private func buildCFGView(from decoded: DecodedITrace) {
         guard !decoded.functionCalls.isEmpty else { return }
-        var sections: [(entries: ArraySlice<TraceEntry>, section: Int)] = []
-        for (i, call) in decoded.functionCalls.enumerated() {
-            let slice = decoded.entries[call.startIndex..<call.endIndex]
-            sections.append((entries: slice, section: i))
-        }
-        let graph = CFGGraph.buildAllFunctions(sections: sections, currentSection: 0)
 
-        var infoMap: [CFGGraph.NodeKey: NodeRegisterInfo] = [:]
-        for (i, call) in decoded.functionCalls.enumerated() {
-            for entryIdx in call.startIndex..<call.endIndex {
-                guard entryIdx < decoded.registerStates.count else { continue }
-                let key = CFGGraph.nodeKey(
-                    address: decoded.entries[entryIdx].blockAddress, section: i)
-                let stateBefore = entryIdx > 0
-                    ? decoded.registerStates[entryIdx - 1]
-                    : RegisterState(values: [:], changed: [])
-                infoMap[key] = NodeRegisterInfo(
-                    stateBeforeBlock: stateBefore,
-                    stateAfterBlock: decoded.registerStates[entryIdx],
-                    writes: decoded.entries[entryIdx].registerWrites
-                )
+        let disassembler = self.disassembler
+        let provider: ((UInt64, Int) async -> StyledText)? = disassembler.map { d in
+            { addr, size in
+                await d.disassemble(at: addr, size: size, isDarkMode: true, withFlags: false)
             }
         }
 
-        let view = ITraceCFGView(graph: graph, nodeRegisterInfo: infoMap)
+        let view = ITraceCFGView(
+            decoded: decoded,
+            selectedCallIndex: selectedCallIndex,
+            disasmProvider: provider
+        )
+        view.onSelect = { [weak self] key in
+            MainActor.assumeIsolated {
+                self?.scrollToEntry(matchingNodeKey: key)
+            }
+        }
         cfgView = view
         bodyContainer.append(child: view.widget)
+    }
+
+    private func scrollToEntry(matchingNodeKey key: CFGGraph.NodeKey) {
+        guard let decoded else { return }
+        let addr = CFGGraph.nodeAddress(key)
+        for (i, entry) in decoded.entries.enumerated() where entry.blockAddress == addr {
+            jumpToEntry(index: i)
+            return
+        }
     }
 
     private func makeTimeline(functionCalls: [TraceFunctionCall]) -> ScrolledWindow {
@@ -217,7 +237,7 @@ final class ITraceDetailView {
         row.marginTop = 4
         row.marginBottom = 4
 
-        for call in functionCalls {
+        for (callIndex, call) in functionCalls.enumerated() {
             let button = Button(label: "\(call.shortName) · \(call.entryCount)")
             let width = max(40, call.entryCount * 4)
             button.setSizeRequest(width: width, height: 28)
@@ -226,7 +246,10 @@ final class ITraceDetailView {
             let startIndex = call.startIndex
             button.onClicked { [weak self] _ in
                 MainActor.assumeIsolated {
-                    self?.jumpToEntry(index: startIndex)
+                    guard let self else { return }
+                    self.jumpToEntry(index: startIndex)
+                    self.selectedCallIndex = callIndex
+                    self.cfgView?.setSelectedCall(index: callIndex)
                 }
             }
             row.append(child: button)
