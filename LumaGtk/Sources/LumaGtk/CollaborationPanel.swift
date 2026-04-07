@@ -211,34 +211,19 @@ final class CollaborationPanel {
             row.append(child: signOut)
             identitySection.append(child: row)
         } else {
-            let signIn = Button(label: "Sign in with GitHub")
+            let signIn = Button(label: "Sign in to GitHub\u{2026}")
             signIn.add(cssClass: "suggested-action")
-            signIn.onClicked { [weak self] _ in
+            signIn.onClicked { [weak self, weak signIn] _ in
                 MainActor.assumeIsolated {
-                    self?.engine?.gitHubAuth.beginSignIn()
+                    guard let engine = self?.engine, let anchor = signIn else { return }
+                    GitHubSignInSheet.present(from: anchor, gitHubAuth: engine.gitHubAuth)
+                    engine.gitHubAuth.beginSignIn()
                 }
             }
             identitySection.append(child: signIn)
         }
 
-        if case .requestingCode(let code, let verifyURL) = engine.gitHubAuth.state {
-            let codeLabel = Label(str: "Code: \(code)")
-            codeLabel.halign = .start
-            codeLabel.selectable = true
-            codeLabel.add(cssClass: "monospace")
-            identitySection.append(child: codeLabel)
-
-            let urlLabel = Label(str: verifyURL.absoluteString)
-            urlLabel.halign = .start
-            urlLabel.selectable = true
-            urlLabel.wrap = true
-            identitySection.append(child: urlLabel)
-        } else if case .waitingForApproval = engine.gitHubAuth.state {
-            let waiting = Label(str: "Waiting for approval\u{2026}")
-            waiting.halign = .start
-            waiting.add(cssClass: "dim-label")
-            identitySection.append(child: waiting)
-        } else if case .failed(let reason) = engine.gitHubAuth.state {
+        if case .failed(let reason) = engine.gitHubAuth.state {
             let err = Label(str: reason)
             err.halign = .start
             err.add(cssClass: "error")
