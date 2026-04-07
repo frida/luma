@@ -24,35 +24,88 @@ public final class Engine {
 
     public let collaboration: CollaborationSession
 
-    public struct CollaborationConfig: Sendable {
-        public let portalAddress: String
-        public let portalCertificate: String
-
-        public init(portalAddress: String, portalCertificate: String) {
-            self.portalAddress = portalAddress
-            self.portalCertificate = portalCertificate
-        }
-    }
-
-    public init(
-        store: ProjectStore,
-        collaborationConfig: CollaborationConfig
-    ) {
+    public init(store: ProjectStore) {
         self.store = store
         self.compilerWorkspace = CompilerWorkspace(store: store)
         self.collaboration = CollaborationSession(
             deviceManager: deviceManager,
             store: store,
-            portalAddress: collaborationConfig.portalAddress,
-            portalCertificate: collaborationConfig.portalCertificate
+            portalAddress: BackendConfig.portalAddress,
+            portalCertificate: BackendConfig.certificate
         )
 
         registerDescriptor(Self.tracerDescriptor)
+        bindCollaborationCallbacks()
 
         eventLogTask = Task { @MainActor [weak self] in
             guard let self else { return }
             for await event in self._events.makeStream() {
                 self.eventLog.append(event)
+            }
+        }
+    }
+
+    // MARK: - Notebook Operations
+
+    public func addNotebookEntry(_ entry: NotebookEntry, after otherEntry: NotebookEntry? = nil) {
+        var e = entry
+        if let otherEntry {
+            e.timestamp = otherEntry.timestamp.addingTimeInterval(0.001)
+        }
+        try? store.save(e)
+        collaboration.notifyEntryAdded(e)
+    }
+
+    public func updateNotebookEntry(_ entry: NotebookEntry) {
+        try? store.save(entry)
+        collaboration.notifyEntryUpdated(entry)
+    }
+
+    public func deleteNotebookEntry(_ entry: NotebookEntry) {
+        try? store.deleteNotebookEntry(id: entry.id)
+        collaboration.notifyEntryDeleted(id: entry.id)
+    }
+
+    public func bindCollaborationCallbacks() {
+        collaboration.onNotebookEntriesReceived = { [weak self] entries in
+            guard let self else { return }
+            for entry in entries {
+                try? self.store.save(entry)
+            }
+        }
+
+        collaboration.onNotebookEntryAdded = { [weak self] entry in
+            guard let self else { return }
+            if (try? self.store.fetchNotebookEntry(id: entry.id)) == nil {
+                try? self.store.save(entry)
+            }
+        }
+
+        collaboration.onNotebookEntryUpdated = { [weak self] updated in
+            guard let self else { return }
+            if var existing = try? self.store.fetchNotebookEntry(id: updated.id) {
+                existing.title = updated.title
+                existing.details = updated.details
+                existing.timestamp = updated.timestamp
+                existing.processName = updated.processName
+                existing.isUserNote = updated.isUserNote
+                try? self.store.save(existing)
+            }
+        }
+
+        collaboration.onNotebookEntryDeleted = { [weak self] id in
+            try? self?.store.deleteNotebookEntry(id: id)
+        }
+
+        collaboration.onEntriesReordered = { [weak self] order in
+            guard let self else { return }
+            var t = Date()
+            for id in order {
+                if var entry = try? self.store.fetchNotebookEntry(id: id) {
+                    entry.timestamp = t
+                    try? self.store.save(entry)
+                    t = t.addingTimeInterval(0.001)
+                }
             }
         }
     }

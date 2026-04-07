@@ -1,6 +1,8 @@
 import Foundation
 import Frida
+import Observation
 
+@Observable
 @MainActor
 public final class CollaborationSession {
     public enum Status: Equatable, Sendable {

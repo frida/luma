@@ -334,7 +334,7 @@ private struct REPLCellView: View {
             entry.jsValue = jsValue
         }
 
-        workspace.addNotebookEntry(entry)
+        workspace.engine.addNotebookEntry(entry)
     }
 }
 

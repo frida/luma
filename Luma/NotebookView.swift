@@ -32,8 +32,7 @@ struct NotebookView: View {
                         ) {
                             addUserNote(after: entry)
                         } deleteAction: {
-                            workspace.notifyLocalNotebookEntryDeleted(entry)
-                            workspace.notebookEntries.removeAll { $0.id == entry.id }
+                            workspace.engine.deleteNotebookEntry(entry)
                         }
                     }
                     .padding(.horizontal)
@@ -64,7 +63,7 @@ struct NotebookView: View {
             processName: entry?.processName,
             isUserNote: true
         )
-        workspace.addNotebookEntry(note, after: entry)
+        workspace.engine.addNotebookEntry(note, after: entry)
     }
 }
 
@@ -249,10 +248,10 @@ struct NotebookEntryRow: View {
     }
 
     private func commitEdits() {
-        guard let idx = workspace.notebookEntries.firstIndex(where: { $0.id == entry.id }) else { return }
-        workspace.notebookEntries[idx].title = editTitle
-        workspace.notebookEntries[idx].details = editDetails
-        workspace.notifyLocalNotebookEntryUpdated(workspace.notebookEntries[idx])
+        var updated = entry
+        updated.title = editTitle
+        updated.details = editDetails
+        workspace.engine.updateNotebookEntry(updated)
     }
 
     private func beginEditing(focusBody: Bool = false) {

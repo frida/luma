@@ -50,26 +50,14 @@ final class Workspace: ObservableObject {
 
     @Published var isAuthSheetPresented: Bool = false
     @Published var authState: GitHubAuthState = .signedOut
-    @Published var currentGitHubUser: UserInfo?
+    @Published var currentGitHubUser: CollaborationSession.UserInfo?
     @Published var githubToken: String? {
         didSet {
             Task { await loadCurrentGitHubUser() }
         }
     }
 
-    var collaborationState: LumaCore.ProjectCollaborationState?
-    @Published var collaborationStatus: CollaborationStatus = .disconnected
-    @Published var collaborationRoomID: String?
-    @Published var collaborationUser: UserInfo?
-    @Published var collaborationParticipants: [UserInfo] = []
-    @Published var collaborationChatMessages: [ChatMessage] = []
-
     @Published var isCollaborationPanelVisible: Bool = false
-
-    @Published var storedProjectRoomID: String?
-    private var updateStoredProjectRoomID: ((String?) -> Void)?
-
-    @Published var isCollaborationHost: Bool = false
 
     enum GitHubAuthState: Equatable {
         case signedOut
@@ -77,60 +65,6 @@ final class Workspace: ObservableObject {
         case waitingForApproval
         case authenticated
         case failed(reason: String)
-    }
-
-    enum CollaborationStatus: Equatable {
-        case disconnected
-        case connecting
-        case joined(roomID: String)
-        case error(message: String)
-    }
-
-    struct UserInfo: Identifiable, Hashable {
-        let id: String
-        let displayName: String
-        let avatarURL: String
-
-        static func fromJSON(_ obj: JSONObject) -> UserInfo? {
-            guard
-                let id = obj["id"] as? String,
-                let name = obj["name"] as? String,
-                let avatar = obj["avatar"] as? String
-            else {
-                return nil
-            }
-            return UserInfo(id: id, displayName: name, avatarURL: avatar)
-        }
-    }
-
-    struct ChatMessage: Identifiable, Hashable {
-        let id = UUID()
-        let user: UserInfo
-        let text: String
-        let timestamp: Date
-        let isLocalUser: Bool
-
-        static func fromJSON(_ obj: JSONObject, localUser: UserInfo) -> ChatMessage? {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
-            guard
-                let userObj = obj["user"] as? JSONObject,
-                let user = UserInfo.fromJSON(userObj),
-                let text = obj["text"] as? String,
-                let timestampString = obj["timestamp"] as? String,
-                let ts = formatter.date(from: timestampString)
-            else {
-                return nil
-            }
-
-            return ChatMessage(
-                user: user,
-                text: text,
-                timestamp: ts,
-                isLocalUser: user.id == localUser.id
-            )
-        }
     }
 
     private var observations: [StoreObservation] = []
@@ -228,6 +162,49 @@ final class Workspace: ObservableObject {
         await engine.loadRemoteDevices()
         bindProjectCollaboration()
         subscribeToEngineEvents()
+    }
+
+    // MARK: - Collaboration UI
+
+    func bindProjectCollaboration() {
+        let collabState = (try? store.fetchCollaborationState()) ?? LumaCore.ProjectCollaborationState()
+
+        let roomFromLink = CollaborationJoinCoordinator.shared.consumeNextRoomID()
+        let initialRoomID = roomFromLink ?? collabState.roomID
+
+        if let roomID = roomFromLink ?? initialRoomID, roomFromLink != nil {
+            isCollaborationPanelVisible = true
+            startCollaboration(joiningRoom: roomID)
+        }
+    }
+
+    func startCollaboration(joiningRoom roomID: String? = nil) {
+        guard let token = githubToken else {
+            authState = .signedOut
+            isAuthSheetPresented = true
+            return
+        }
+
+        let existing = roomID ?? (try? store.fetchCollaborationState())?.roomID
+        Task { @MainActor in
+            await engine.collaboration.start(token: token, existingRoomID: existing)
+        }
+    }
+
+    func stopCollaboration() {
+        Task { @MainActor in
+            await engine.collaboration.stop()
+        }
+    }
+
+    func signOut() {
+        Task {
+            TokenStore.delete(kind: .github)
+            githubToken = nil
+            currentGitHubUser = nil
+            authState = .signedOut
+            await engine.collaboration.stop()
+        }
     }
 
     // MARK: - Event Log Observation
@@ -540,10 +517,10 @@ final class Workspace: ObservableObject {
             }
             let me = try JSONDecoder().decode(Me.self, from: data)
 
-            currentGitHubUser = UserInfo(
+            currentGitHubUser = CollaborationSession.UserInfo(
                 id: me.login,
-                displayName: me.name ?? me.login,
-                avatarURL: me.avatar_url
+                name: me.name ?? me.login,
+                avatarURL: URL(string: me.avatar_url)
             )
         } catch {
             currentGitHubUser = nil

@@ -1,4 +1,5 @@
 import Frida
+import LumaCore
 import SwiftUI
 
 struct CollaborationPanel: View {
@@ -10,13 +11,22 @@ struct CollaborationPanel: View {
     @State private var isPinnedToBottom = true
     private let chatBottomID = "CHAT_BOTTOM_ANCHOR"
 
+    private var collaboration: CollaborationSession {
+        workspace.engine.collaboration
+    }
+
+    private var isActive: Bool {
+        if case .joined = collaboration.status { return true }
+        return false
+    }
+
     var body: some View {
         VStack(spacing: 12) {
             header
             Divider()
             roomSection
 
-            if workspace.isCollaborationActive {
+            if isActive {
                 Divider()
                 participantsSection
                 Divider()
@@ -30,7 +40,7 @@ struct CollaborationPanel: View {
             GitHubSignInSheet(workspace: workspace)
         }
         .onAppear {
-            if case .joined = workspace.collaborationStatus {
+            if case .joined = collaboration.status {
                 focusChatField = true
             }
         }
@@ -51,7 +61,7 @@ struct CollaborationPanel: View {
                         workspace.signOut()
                     }
                 } label: {
-                    AsyncImage(url: URL(string: user.avatarURL + "&s=20")) { image in
+                    AsyncImage(url: avatarSizeURL(user, size: 20)) { image in
                         image.resizable().scaledToFill()
                     } placeholder: {
                         Image(systemName: "person.crop.circle")
@@ -77,9 +87,10 @@ struct CollaborationPanel: View {
             Text("Project collaboration")
                 .font(.subheadline).bold()
 
-            switch workspace.collaborationStatus {
+            switch collaboration.status {
             case .disconnected:
-                if let stored = workspace.storedProjectRoomID {
+                let storedRoomID = (try? workspace.store.fetchCollaborationState())?.roomID
+                if let stored = storedRoomID {
                     Text("This project is already linked to a shared notebook (room \(truncatedRoomID(stored))).")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -121,9 +132,9 @@ struct CollaborationPanel: View {
                 }
 
             case .joined:
-                if let roomID = workspace.collaborationRoomID {
+                if let roomID = collaboration.roomID {
                     HStack {
-                        Text(workspace.isCollaborationHost ? "You are hosting this room." : "You joined this room.")
+                        Text(collaboration.isHost ? "You are hosting this room." : "You joined this room.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
@@ -232,7 +243,7 @@ struct CollaborationPanel: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
-                    ForEach(workspace.collaborationParticipants) { user in
+                    ForEach(collaboration.participants) { user in
                         avatarView(for: user)
                     }
                 }
@@ -251,16 +262,16 @@ struct CollaborationPanel: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 4) {
-                            ForEach(workspace.collaborationChatMessages) { msg in
+                            ForEach(collaboration.chatMessages) { msg in
                                 HStack(alignment: .top, spacing: 4) {
-                                    if msg.isLocalUser {
+                                    if msg.isLocal {
                                         Spacer()
                                     }
 
                                     VStack(alignment: .leading, spacing: 2) {
                                         HStack(spacing: 4) {
-                                            avatarView(for: msg.user)
-                                            Text("@\(msg.user.id)")
+                                            avatarView(for: msg.sender)
+                                            Text("@\(msg.sender.id)")
                                                 .font(.caption2)
                                                 .foregroundStyle(.secondary)
                                             Spacer()
@@ -274,13 +285,13 @@ struct CollaborationPanel: View {
                                     }
                                     .padding(6)
                                     .background(
-                                        msg.isLocalUser
+                                        msg.isLocal
                                             ? Color.accentColor.opacity(0.2)
                                             : Color.secondary.opacity(0.1)
                                     )
                                     .clipShape(RoundedRectangle(cornerRadius: 6))
 
-                                    if !msg.isLocalUser {
+                                    if !msg.isLocal {
                                         Spacer()
                                     }
                                 }
@@ -299,7 +310,7 @@ struct CollaborationPanel: View {
                             isPinnedToBottom = false
                         }
                     )
-                    .onChange(of: workspace.collaborationChatMessages.count) { _, _ in
+                    .onChange(of: collaboration.chatMessages.count) { _, _ in
                         if isPinnedToBottom {
                             withAnimation(.easeOut(duration: 0.2)) {
                                 proxy.scrollTo(chatBottomID, anchor: .bottom)
@@ -322,9 +333,14 @@ struct CollaborationPanel: View {
         }
     }
 
-    private func avatarView(for user: Workspace.UserInfo) -> some View {
+    private func avatarSizeURL(_ user: CollaborationSession.UserInfo, size: Int) -> URL? {
+        guard let base = user.avatarURL else { return nil }
+        return URL(string: "\(base.absoluteString)&s=\(size)")
+    }
+
+    private func avatarView(for user: CollaborationSession.UserInfo) -> some View {
         Group {
-            if let url = URL(string: user.avatarURL + "&s=40") {
+            if let url = avatarSizeURL(user, size: 40) {
                 AsyncImage(url: url) { phase in
                     switch phase {
                     case .empty:
@@ -362,13 +378,13 @@ struct CollaborationPanel: View {
             Circle()
                 .strokeBorder(Color.secondary.opacity(0.3), lineWidth: 0.5)
         )
-        .help(user.displayName)
+        .help(user.name)
         .onTapGesture {
             openGitHubProfile(for: user)
         }
     }
 
-    private func openGitHubProfile(for user: Workspace.UserInfo) {
+    private func openGitHubProfile(for user: CollaborationSession.UserInfo) {
         let urlString = "https://github.com/\(user.id)"
         guard let url = URL(string: urlString) else { return }
         Platform.openURL(url)
@@ -380,6 +396,15 @@ private struct ChatInputRow: View {
     @Binding var isFocused: Bool
     @State private var draft: String = ""
     @FocusState private var textFieldFocused: Bool
+
+    private var collaboration: CollaborationSession {
+        workspace.engine.collaboration
+    }
+
+    private var isActive: Bool {
+        if case .joined = collaboration.status { return true }
+        return false
+    }
 
     var body: some View {
         HStack {
@@ -420,16 +445,14 @@ private struct ChatInputRow: View {
     }
 
     private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && workspace.isCollaborationActive
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && isActive
     }
 
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        guard workspace.isCollaborationActive else { return }
+        guard !text.isEmpty, isActive else { return }
 
-        workspace.sendChatMessage(text)
+        collaboration.sendChat(text)
         draft = ""
     }
 }

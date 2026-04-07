@@ -29,6 +29,9 @@ let package = Package(
                 .product(name: "SwiftyR2", package: "SwiftyR2"),
             ],
             path: "Sources/LumaCore",
+            resources: [
+                .process("Resources"),
+            ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
             ]

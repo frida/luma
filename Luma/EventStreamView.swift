@@ -371,7 +371,7 @@ struct EventStreamView: View {
     private func pin(_ evt: RuntimeEvent) {
         let (processName, title) = prettyContext(evt)
 
-        workspace.addNotebookEntry(
+        workspace.engine.addNotebookEntry(
             LumaCore.NotebookEntry(
                 title: title,
                 details: prettyPayload(evt),
