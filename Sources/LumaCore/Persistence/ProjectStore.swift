@@ -175,6 +175,12 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    public func deleteCapture(id: UUID) throws {
+        try db.write { db in
+            _ = try ITraceCaptureRecord.deleteOne(db, key: id)
+        }
+    }
+
     // MARK: - Address Insights
 
     public func fetchInsights(sessionID: UUID) throws -> [AddressInsight] {

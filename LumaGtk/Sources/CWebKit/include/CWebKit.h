@@ -56,4 +56,15 @@ void luma_file_dialog_save(void *parent_window,
                             LumaPathCallback callback,
                             void *user_data);
 
+// Simple destructive confirmation alert. The callback receives 1 if the
+// destructive button was selected, 0 otherwise (cancel / dismiss).
+typedef void (*LumaConfirmCallback)(int confirmed, void *user_data);
+
+void luma_alert_confirm(void *parent_window,
+                         const char *message,
+                         const char *detail,
+                         const char *destructive_label,
+                         LumaConfirmCallback callback,
+                         void *user_data);
+
 #endif

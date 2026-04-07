@@ -1055,8 +1055,7 @@ final class MainWindow {
             killButton.onClicked { [weak self, weak popover] _ in
                 MainActor.assumeIsolated {
                     popover?.popdown()
-                    // TODO: wire device.kill(pid) once Frida API is plumbed.
-                    self?.showToast("Kill not yet implemented")
+                    self?.confirmKillProcess(session: session)
                 }
             }
             box.append(child: killButton)
@@ -1093,17 +1092,7 @@ final class MainWindow {
         deleteButton.onClicked { [weak self, weak popover] _ in
             MainActor.assumeIsolated {
                 popover?.popdown()
-                guard let self else { return }
-                if let node = self.engine?.node(forSessionID: session.id) {
-                    self.engine?.removeNode(node)
-                }
-                try? self.engine?.store.deleteSession(id: session.id)
-                if self.currentSessionID() == session.id {
-                    self.select(.notebook)
-                    self.notebookListBox.select(row: self.notebookRow)
-                }
-                self.refreshInstruments()
-                self.showToast("Deleted \(session.processName)")
+                self?.confirmDeleteSession(session)
             }
         }
         box.append(child: deleteButton)
@@ -1160,7 +1149,7 @@ final class MainWindow {
         deleteButton.onClicked { [weak self, weak popover] _ in
             MainActor.assumeIsolated {
                 popover?.popdown()
-                self?.deleteInstrument(instrument)
+                self?.confirmDeleteInstrument(instrument)
             }
         }
         box.append(child: deleteButton)
@@ -1204,13 +1193,7 @@ final class MainWindow {
         deleteButton.onClicked { [weak self, weak popover] _ in
             MainActor.assumeIsolated {
                 popover?.popdown()
-                guard let self else { return }
-                try? self.engine?.store.deleteInsight(id: insight.id)
-                if case .insight(_, let id) = self.selection, id == insight.id {
-                    self.select(.repl(insight.sessionID))
-                }
-                self.refreshInstruments()
-                self.showToast("Deleted insight")
+                self?.confirmDeleteInsight(insight)
             }
         }
         box.append(child: deleteButton)
@@ -1254,12 +1237,7 @@ final class MainWindow {
         deleteButton.onClicked { [weak self, weak popover] _ in
             MainActor.assumeIsolated {
                 popover?.popdown()
-                guard let self else { return }
-                // TODO: ProjectStore has no deleteCapture API yet — clear selection only.
-                if case .itraceCapture(_, let id) = self.selection, id == capture.id {
-                    self.select(.repl(capture.sessionID))
-                }
-                self.showToast("Capture deletion not yet implemented")
+                self?.confirmDeleteCapture(capture)
             }
         }
         box.append(child: deleteButton)
@@ -1267,6 +1245,113 @@ final class MainWindow {
         popover.set(child: box)
         popover.set(parent: anchor)
         popover.popup()
+    }
+
+    // MARK: - Destructive confirmation helpers
+
+    private func confirmKillProcess(session: LumaCore.ProcessSession) {
+        confirmDestructive(
+            message: "Kill \(session.processName)?",
+            detail: "This will force-terminate the process. Any unsaved work in the target will be lost.",
+            destructiveLabel: "Kill"
+        ) { [weak self] in
+            guard let self, let node = self.engine?.node(forSessionID: session.id) else { return }
+            let pid = session.lastKnownPID
+            let device = node.device
+            Task { @MainActor in
+                do {
+                    try await device.kill(pid)
+                    self.showToast("Killed \(session.processName)")
+                } catch {
+                    self.showToast("Kill failed: \(error)")
+                }
+            }
+        }
+    }
+
+    private func confirmDeleteSession(_ session: LumaCore.ProcessSession) {
+        confirmDestructive(
+            message: "Delete session “\(session.processName)”?",
+            detail: "This removes the session and its history from the project.",
+            destructiveLabel: "Delete"
+        ) { [weak self] in
+            guard let self else { return }
+            if let node = self.engine?.node(forSessionID: session.id) {
+                self.engine?.removeNode(node)
+            }
+            try? self.engine?.store.deleteSession(id: session.id)
+            if self.currentSessionID() == session.id {
+                self.select(.notebook)
+                self.notebookListBox.select(row: self.notebookRow)
+            }
+            self.refreshInstruments()
+            self.showToast("Deleted \(session.processName)")
+        }
+    }
+
+    private func confirmDeleteInstrument(_ instrument: LumaCore.InstrumentInstance) {
+        let title = engine?.descriptor(for: instrument)?.displayName ?? "Instrument"
+        confirmDestructive(
+            message: "Delete instrument “\(title)”?",
+            detail: nil,
+            destructiveLabel: "Delete"
+        ) { [weak self] in
+            self?.deleteInstrument(instrument)
+        }
+    }
+
+    private func confirmDeleteInsight(_ insight: LumaCore.AddressInsight) {
+        confirmDestructive(
+            message: "Delete insight “\(insight.title)”?",
+            detail: nil,
+            destructiveLabel: "Delete"
+        ) { [weak self] in
+            guard let self else { return }
+            try? self.engine?.store.deleteInsight(id: insight.id)
+            if case .insight(_, let id) = self.selection, id == insight.id {
+                self.select(.repl(insight.sessionID))
+            }
+            self.refreshInstruments()
+            self.showToast("Deleted insight")
+        }
+    }
+
+    private func confirmDeleteCapture(_ capture: LumaCore.ITraceCaptureRecord) {
+        confirmDestructive(
+            message: "Delete capture “\(capture.displayName)”?",
+            detail: "This removes the recorded ITrace data from the project.",
+            destructiveLabel: "Delete"
+        ) { [weak self] in
+            guard let self else { return }
+            try? self.engine?.store.deleteCapture(id: capture.id)
+            if case .itraceCapture(_, let id) = self.selection, id == capture.id {
+                self.select(.repl(capture.sessionID))
+            }
+            self.refreshInstruments()
+            self.showToast("Deleted capture")
+        }
+    }
+
+    private func confirmDestructive(
+        message: String,
+        detail: String?,
+        destructiveLabel: String,
+        action: @escaping () -> Void
+    ) {
+        guard let parentPtr = window.window_ptr.map(UnsafeMutableRawPointer.init) else { return }
+        let box = ConfirmCallbackBox(action: action)
+        let context = Unmanaged.passRetained(box).toOpaque()
+        message.withCString { messageCstr in
+            destructiveLabel.withCString { labelCstr in
+                if let detail {
+                    detail.withCString { detailCstr in
+                        luma_alert_confirm(parentPtr, messageCstr, detailCstr, labelCstr, lumaConfirmThunk, context)
+                    }
+                } else {
+                    luma_alert_confirm(parentPtr, messageCstr, nil, labelCstr, lumaConfirmThunk, context)
+                }
+            }
+        }
     }
 
     private func currentSelectionRowIndex() -> Int? {
@@ -1337,6 +1422,25 @@ final class MainWindow {
             notebookListBox.select(row: notebookRow)
         } else {
             renderDetail()
+        }
+    }
+}
+
+private final class ConfirmCallbackBox {
+    let action: () -> Void
+    init(action: @escaping () -> Void) { self.action = action }
+}
+
+private let lumaConfirmThunk: @convention(c) (
+    Int32, UnsafeMutableRawPointer?
+) -> Void = { confirmed, userData in
+    guard let userData else { return }
+    let raw = UInt(bitPattern: userData)
+    MainActor.assumeIsolated {
+        let ptr = UnsafeMutableRawPointer(bitPattern: raw)!
+        let box = Unmanaged<ConfirmCallbackBox>.fromOpaque(ptr).takeRetainedValue()
+        if confirmed != 0 {
+            box.action()
         }
     }
 }
