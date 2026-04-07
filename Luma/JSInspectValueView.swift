@@ -308,7 +308,7 @@ private struct JSInspectNodeView: View {
                         Button {
                             Task { @MainActor in
                                 do {
-                                    let insight = try workspace.getOrCreateInsight(
+                                    let insight = try workspace.engine.getOrCreateInsight(
                                         sessionID: sessionID,
                                         pointer: addr,
                                         kind: .memory
@@ -325,7 +325,7 @@ private struct JSInspectNodeView: View {
                         Button {
                             Task { @MainActor in
                                 do {
-                                    let insight = try workspace.getOrCreateInsight(
+                                    let insight = try workspace.engine.getOrCreateInsight(
                                         sessionID: sessionID,
                                         pointer: addr,
                                         kind: .disassembly

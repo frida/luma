@@ -1,6 +1,8 @@
 import Foundation
 import Frida
+import Observation
 
+@Observable
 @MainActor
 public final class ProcessNode: Identifiable {
     public let id = UUID()

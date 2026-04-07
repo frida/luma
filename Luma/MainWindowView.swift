@@ -132,9 +132,9 @@ struct MainWindowView: View {
             )
             try? workspace.store.save(sessionRecord)
 
-            await workspace.spawnAndAttach(
+            await workspace.engine.spawnAndAttach(
                 device: device,
-                sessionRecord: sessionRecord
+                session: sessionRecord
             )
         }
     }
@@ -180,10 +180,10 @@ struct MainWindowView: View {
 
             try? workspace.store.save(sessionRecord)
 
-            await workspace.attachToProcess(
+            await workspace.engine.attach(
                 device: device,
-                using: proc,
-                sessionRecord: sessionRecord
+                process: proc,
+                session: sessionRecord
             )
 
             uiState.selectedItemID = .repl(sessionRecord.id)
@@ -311,7 +311,7 @@ struct WorkspaceToolbar: ToolbarContent {
             {
                 Button {
                     Task { @MainActor in
-                        await workspace.resumeSpawnedProcess(node: node)
+                        await workspace.engine.resumeSpawnedProcess(node: node.core)
                     }
                 } label: {
                     Label("Resume Process", systemImage: "play.fill")

@@ -35,7 +35,7 @@ struct InstrumentDetailView: View {
                         .environment(\.instrumentSession, session)
                         .onChange(of: configJSON) { _, newValue in
                             Task { @MainActor in
-                                await workspace.applyInstrumentConfig(instance, data: newValue)
+                                await workspace.engine.applyInstrumentConfig(instance, configJSON: newValue)
                             }
                         }
                 } else {

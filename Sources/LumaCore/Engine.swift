@@ -1,6 +1,8 @@
 import Foundation
 import Frida
+import Observation
 
+@Observable
 @MainActor
 public final class Engine {
     public let deviceManager = DeviceManager()
@@ -583,52 +585,52 @@ public final class Engine {
         return instance
     }
 
-    public func removeInstrument(id: UUID, sessionID: UUID) async {
-        if let node = node(forSessionID: sessionID) {
-            if node.instruments.first(where: { $0.id == id })?.isAttached == true {
-                try? await node.script.exports.disposeInstrument(["instanceId": id.uuidString])
+    public func removeInstrument(_ instance: InstrumentInstance) async {
+        if let node = node(forSessionID: instance.sessionID) {
+            if node.instruments.first(where: { $0.id == instance.id })?.isAttached == true {
+                try? await node.script.exports.disposeInstrument(["instanceId": instance.id.uuidString])
             }
-            node.removeInstrument(id: id)
+            node.removeInstrument(id: instance.id)
         }
-        try? store.deleteInstrument(id: id)
+        try? store.deleteInstrument(id: instance.id)
     }
 
-    public func setInstrumentEnabled(instanceID: UUID, sessionID: UUID, enabled: Bool) async {
-        guard var inst = try? store.fetchInstrument(id: instanceID) else { return }
+    public func setInstrumentEnabled(_ instance: InstrumentInstance, enabled: Bool) async {
+        var inst = instance
         inst.isEnabled = enabled
         try? store.save(inst)
 
-        guard let node = node(forSessionID: sessionID) else { return }
+        guard let node = node(forSessionID: inst.sessionID) else { return }
 
         if enabled {
-            guard node.instruments.first(where: { $0.id == instanceID })?.isAttached != true else { return }
+            guard node.instruments.first(where: { $0.id == inst.id })?.isAttached != true else { return }
 
             await loadInstrumentOnNode(
-                instanceID: instanceID,
+                instanceID: inst.id,
                 kind: inst.kind,
                 sourceIdentifier: inst.sourceIdentifier,
                 configJSON: inst.configJSON,
                 node: node,
-                sessionID: sessionID
+                sessionID: inst.sessionID
             )
         } else {
-            if node.instruments.first(where: { $0.id == instanceID })?.isAttached == true {
-                try? await node.script.exports.disposeInstrument(["instanceId": instanceID.uuidString])
-                node.markInstrumentDetached(id: instanceID)
+            if node.instruments.first(where: { $0.id == inst.id })?.isAttached == true {
+                try? await node.script.exports.disposeInstrument(["instanceId": inst.id.uuidString])
+                node.markInstrumentDetached(id: inst.id)
             }
         }
     }
 
-    public func applyInstrumentConfig(instanceID: UUID, sessionID: UUID, configJSON: Data) async {
-        guard var inst = try? store.fetchInstrument(id: instanceID) else { return }
+    public func applyInstrumentConfig(_ instance: InstrumentInstance, configJSON: Data) async {
+        var inst = instance
         inst.configJSON = configJSON
         try? store.save(inst)
 
-        guard let node = node(forSessionID: sessionID) else { return }
+        guard let node = node(forSessionID: inst.sessionID) else { return }
 
-        node.updateInstrumentConfig(id: instanceID, configJSON: configJSON)
+        node.updateInstrumentConfig(id: inst.id, configJSON: configJSON)
 
-        guard node.instruments.first(where: { $0.id == instanceID })?.isAttached == true else { return }
+        guard node.instruments.first(where: { $0.id == inst.id })?.isAttached == true else { return }
 
         let configObject: JSONObject
         switch inst.kind {
@@ -654,7 +656,7 @@ public final class Engine {
         do {
             try await node.script.exports.updateInstrumentConfig(
                 JSValue([
-                    "instanceId": instanceID.uuidString,
+                    "instanceId": inst.id.uuidString,
                     "config": configObject,
                 ]))
         } catch {
@@ -756,7 +758,7 @@ public final class Engine {
         config.hooks.append(newHook)
 
         let configData = config.encode()
-        await applyInstrumentConfig(instanceID: tracer.id, sessionID: sessionID, configJSON: configData)
+        await applyInstrumentConfig(tracer, configJSON: configData)
 
         return (instrumentID: tracer.id, hookID: newHook.id)
     }

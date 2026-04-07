@@ -84,10 +84,11 @@ struct AddInstrumentSheet: View {
                     Button("Add") {
                         Task { @MainActor in
                             if let descriptor = selectedDescriptor {
-                                let newInstrument = await workspace.addInstrument(
-                                    descriptor: descriptor,
-                                    initialConfigJSON: initialConfigJSON,
-                                    for: session
+                                let newInstrument = await workspace.engine.addInstrument(
+                                    kind: descriptor.kind,
+                                    sourceIdentifier: descriptor.sourceIdentifier,
+                                    configJSON: initialConfigJSON,
+                                    sessionID: session.id
                                 )
                                 onInstrumentAdded?(newInstrument)
                             }

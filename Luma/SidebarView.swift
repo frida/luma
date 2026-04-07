@@ -134,7 +134,7 @@ private struct SidebarSessionHeaderRow: View {
                 }
 
                 Button {
-                    workspace.removeNode(node)
+                    workspace.engine.removeNode(node.core)
                 } label: {
                     Label("Detach Session", systemImage: "bolt.slash")
                 }
@@ -227,7 +227,7 @@ private struct SidebarSessionHeaderRow: View {
     }
 
     private func deleteSession() {
-        if let node { workspace.removeNode(node) }
+        if let node { workspace.engine.removeNode(node.core) }
         let sessionID = session.id
 
         try? workspace.store.deleteSession(id: sessionID)
@@ -299,7 +299,7 @@ private struct SidebarInstrumentRow: View {
         .contextMenu {
             Button {
                 Task { @MainActor in
-                    await workspace.setInstrumentEnabled(instance, enabled: !instance.isEnabled)
+                    await workspace.engine.setInstrumentEnabled(instance, enabled: !instance.isEnabled)
                 }
             } label: {
                 Label(
@@ -334,7 +334,7 @@ private struct SidebarInstrumentRow: View {
 
     private func deleteInstrument() {
         Task {
-            await workspace.removeInstrument(instance, from: session)
+            await workspace.engine.removeInstrument(instance)
         }
 
         if selection == .instrument(session.id, instance.id) {

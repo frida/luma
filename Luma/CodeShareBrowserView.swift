@@ -379,10 +379,11 @@ struct CodeShareProjectDetailView: View {
         workspace.engine.registerDescriptor(descriptor)
         InstrumentUIRegistry.shared.register(for: descriptor.id, ui: CodeShareUI())
 
-        let newInstrument = await workspace.addInstrument(
-            descriptor: descriptor,
-            initialConfigJSON: configData,
-            for: session
+        let newInstrument = await workspace.engine.addInstrument(
+            kind: descriptor.kind,
+            sourceIdentifier: descriptor.sourceIdentifier,
+            configJSON: configData,
+            sessionID: session.id
         )
 
         onInstrumentAdded(newInstrument)

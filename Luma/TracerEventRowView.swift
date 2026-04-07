@@ -143,7 +143,7 @@ private struct TracerBacktraceView: View {
 
     private func openDisassembly(at address: UInt64) {
         do {
-            let insight = try workspace.getOrCreateInsight(
+            let insight = try workspace.engine.getOrCreateInsight(
                 sessionID: process.sessionRecord.id,
                 pointer: address,
                 kind: .disassembly

@@ -334,7 +334,7 @@ struct DisassemblyView: View {
                 }
             }
         } else {
-            let insight = try workspace.getOrCreateInsight(
+            let insight = try workspace.engine.getOrCreateInsight(
                 sessionID: sessionID,
                 pointer: target,
                 kind: .disassembly

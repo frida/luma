@@ -137,11 +137,14 @@ struct TracerUI: InstrumentUI {
                     role: .normal,
                     action: {
                         Task { @MainActor in
-                            await workspace.addTracerInstructionHook(
+                            if let result = await workspace.engine.addTracerInstructionHook(
                                 sessionID: context.sessionID,
-                                address: context.address,
-                                selection: selection
-                            )
+                                address: context.address
+                            ) {
+                                selection.wrappedValue = .instrumentComponent(
+                                    context.sessionID, result.instrumentID, result.hookID, UUID()
+                                )
+                            }
                         }
                     }
                 ),
