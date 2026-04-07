@@ -1,4 +1,5 @@
 import Foundation
+import Frida
 import Gtk
 import LumaCore
 
@@ -50,14 +51,20 @@ final class LumaApplication {
             self.engine = engine
             await engine.start()
 
-            let devices = await engine.deviceManager.currentDevices()
-            let lines = devices.map { "\($0.name) [\($0.id)]" }
-            let summary = lines.isEmpty ? "no devices" : lines.joined(separator: "\n")
-            status.setText(str: "Devices:\n\(summary)")
-            print("[LumaGtk] devices: \(lines)")
+            func render(_ devices: [Frida.Device]) {
+                let lines = devices.map { "\($0.name) [\($0.id)]" }
+                let summary = lines.isEmpty ? "no devices yet" : lines.joined(separator: "\n")
+                status.setText(str: "Devices:\n\(summary)")
+            }
+
+            let stream = await engine.deviceManager.snapshots()
+            render(await engine.deviceManager.currentDevices())
+
+            for await devices in stream {
+                render(devices)
+            }
         } catch {
             status.setText(str: "Failed to start engine: \(error)")
-            print("[LumaGtk] start failed: \(error)")
         }
     }
 
@@ -71,9 +78,18 @@ final class LumaApplication {
     }
 }
 
+// Tell Frida to use the host's existing GLib main loop instead of spawning
+// its own background thread that fights us for g_main_context_default().
+@_silgen_name("frida_init_with_runtime")
+private func frida_init_with_runtime(_ runtime: Int32)
+
+private let FRIDA_RUNTIME_GLIB: Int32 = 0
+
 @main
 struct LumaGtkMain {
     static func main() {
+        frida_init_with_runtime(FRIDA_RUNTIME_GLIB)
+        GLibMainExecutor.install()
         let app = LumaApplication()
         let status = app.run()
         if status != 0 {
