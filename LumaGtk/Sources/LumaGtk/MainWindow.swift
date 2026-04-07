@@ -1,4 +1,5 @@
 import Foundation
+import Frida
 import Gtk
 import LumaCore
 import Observation
@@ -16,6 +17,7 @@ final class MainWindow {
     private let notebookListBox: ListBox
     private let notebookRow: ListBoxRow
     private let detailContainer: Box
+    private let eventStreamPane: EventStreamPane
 
     private var sessions: [LumaCore.ProcessSession] = []
     private var installedPackages: [LumaCore.InstalledPackage] = []
@@ -39,18 +41,41 @@ final class MainWindow {
         let packagesList = ListBox()
         let packagesSection = Box(orientation: .vertical, spacing: 0)
         let detailContainer = Box(orientation: .vertical, spacing: 0)
+        let eventStreamPane = EventStreamPane()
         self.notebookListBox = notebookListBox
         self.notebookRow = notebookRow
         self.sessionsList = sessionsList
         self.packagesList = packagesList
         self.packagesSection = packagesSection
         self.detailContainer = detailContainer
+        self.eventStreamPane = eventStreamPane
 
-        let paned = Paned(orientation: .horizontal)
-        paned.position = 280
-        paned.startChild = WidgetRef(buildSidebar())
-        paned.endChild = WidgetRef(buildDetailPane())
-        window.set(child: paned)
+        let header = HeaderBar()
+        let newSessionButton = Button(label: "New Session…")
+        newSessionButton.add(cssClass: "suggested-action")
+        header.packStart(child: newSessionButton)
+        window.set(titlebar: WidgetRef(header))
+
+        let topPaned = Paned(orientation: .horizontal)
+        topPaned.position = 280
+        topPaned.startChild = WidgetRef(buildSidebar())
+        topPaned.endChild = WidgetRef(buildDetailPane())
+        topPaned.hexpand = true
+        topPaned.vexpand = true
+
+        let separator = Separator(orientation: .horizontal)
+
+        let column = Box(orientation: .vertical, spacing: 0)
+        column.append(child: topPaned)
+        column.append(child: separator)
+        column.append(child: eventStreamPane.widget)
+        window.set(child: column)
+
+        newSessionButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.openTargetPicker()
+            }
+        }
     }
 
     func present() {
@@ -63,10 +88,44 @@ final class MainWindow {
         renderSessions(engine.sessions)
         renderPackages((try? engine.store.fetchPackagesState())?.packages ?? [])
         observeSessions()
+        eventStreamPane.attach(engine: engine)
     }
 
     func showFatalError(_ message: String) {
         replaceDetail(with: Label(str: message))
+    }
+
+    // MARK: - Target picker
+
+    private func openTargetPicker(reusing existing: LumaCore.ProcessSession? = nil, reason: String? = nil) {
+        guard let engine else { return }
+        let picker = TargetPicker(parent: window, engine: engine, reason: reason) { [weak self] device, process in
+            self?.attach(device: device, process: process, reusing: existing)
+        }
+        picker.present()
+    }
+
+    private func attach(
+        device: Frida.Device,
+        process: ProcessDetails,
+        reusing existing: LumaCore.ProcessSession? = nil
+    ) {
+        guard let engine else { return }
+        var session = existing ?? LumaCore.ProcessSession(
+            kind: .attach,
+            deviceID: device.id,
+            deviceName: device.name,
+            processName: process.name,
+            lastKnownPID: process.pid
+        )
+        session.deviceID = device.id
+        session.deviceName = device.name
+        session.processName = process.name
+        session.lastKnownPID = process.pid
+        try? engine.store.save(session)
+        Task { @MainActor in
+            await engine.attach(device: device, process: process, session: session)
+        }
     }
 
     // MARK: - Sidebar build
@@ -184,13 +243,7 @@ final class MainWindow {
             )
         case .session(let id):
             if let session = sessions.first(where: { $0.id == id }) {
-                let lines = [
-                    "Process: \(session.processName)",
-                    "Device: \(session.deviceName)",
-                    "Phase: \(session.phase)",
-                    "Created: \(session.createdAt)",
-                ]
-                widget = makePlaceholder(title: session.processName, subtitle: lines.joined(separator: "\n"))
+                widget = makeSessionDetail(session: session)
             } else {
                 widget = makePlaceholder(title: "Session", subtitle: "(no longer in store)")
             }
@@ -202,6 +255,37 @@ final class MainWindow {
             }
         }
         replaceDetail(with: widget)
+    }
+
+    private func makeSessionDetail(session: LumaCore.ProcessSession) -> Box {
+        let column = Box(orientation: .vertical, spacing: 0)
+        column.hexpand = true
+        column.vexpand = true
+
+        if SessionDetachedBanner.shouldShow(for: session) {
+            let banner = SessionDetachedBanner.make(for: session) { [weak self] in
+                self?.reestablishSession(id: session.id)
+            }
+            column.append(child: banner)
+        }
+
+        if let engine {
+            let repl = REPLPane(engine: engine, sessionID: session.id)
+            column.append(child: repl.widget)
+        } else {
+            column.append(child: makePlaceholder(title: session.processName, subtitle: "Engine not ready."))
+        }
+        return column
+    }
+
+    private func reestablishSession(id: UUID) {
+        guard let engine else { return }
+        Task { @MainActor in
+            let result = await engine.reestablishSession(id: id)
+            if case .needsUserInput(let reason, let session) = result {
+                self.openTargetPicker(reusing: session, reason: reason)
+            }
+        }
     }
 
     private func makePlaceholder(title: String, subtitle: String) -> Box {

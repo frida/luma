@@ -24,6 +24,7 @@ final class LumaApplication {
     }
 
     private func activate() {
+        StyleSheet.install()
         let window = MainWindow(app: app)
         window.present()
         mainWindow = window
