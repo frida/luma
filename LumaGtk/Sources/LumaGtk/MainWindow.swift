@@ -28,6 +28,7 @@ final class MainWindow {
     private var selection: SidebarSelection = .notebook
     private var addInstrumentButton: Button!
     private var browseCodeShareButton: Button!
+    private var installPackageButton: Button!
     private var collaborationButton: Button!
     private var collaborationPanel: CollaborationPanel?
     private let outerPaned: Paned
@@ -82,6 +83,10 @@ final class MainWindow {
         header.packStart(child: browseCodeShareButton)
         self.browseCodeShareButton = browseCodeShareButton
 
+        let installPackageButton = Button(label: "Install Package…")
+        header.packStart(child: installPackageButton)
+        self.installPackageButton = installPackageButton
+
         let collaborationButton = Button(label: "Collaboration")
         header.packStart(child: collaborationButton)
         self.collaborationButton = collaborationButton
@@ -122,6 +127,12 @@ final class MainWindow {
             MainActor.assumeIsolated {
                 guard let button = browseCodeShareButton else { return }
                 self?.openCodeShareBrowser(anchor: button)
+            }
+        }
+        installPackageButton.onClicked { [weak self, weak installPackageButton] _ in
+            MainActor.assumeIsolated {
+                guard let button = installPackageButton else { return }
+                self?.openPackageSearch(anchor: button)
             }
         }
         collaborationButton.onClicked { [weak self] _ in
@@ -337,8 +348,12 @@ final class MainWindow {
                 widget = makePlaceholder(title: "Instrument", subtitle: "(no longer in store)")
             }
         case .package(let id):
-            if let package = installedPackages.first(where: { $0.id == id }) {
-                widget = makePlaceholder(title: package.name, subtitle: "version \(package.version)")
+            if let package = installedPackages.first(where: { $0.id == id }), let engine {
+                let pane = PackageDetailPane(engine: engine, package: package)
+                pane.onChanged = { [weak self] in
+                    self?.refreshPackages()
+                }
+                widget = pane.widget
             } else {
                 widget = makePlaceholder(title: "Package", subtitle: "(no longer installed)")
             }
@@ -701,5 +716,24 @@ final class MainWindow {
     private func openCodeShareBrowser(anchor: Button) {
         guard let engine, let sessionID = currentSessionID() else { return }
         CodeShareBrowser.present(from: anchor, engine: engine, sessionID: sessionID)
+    }
+
+    private func openPackageSearch(anchor: Button) {
+        guard let engine else { return }
+        PackageSearchDialog.present(from: anchor, engine: engine) { [weak self] in
+            self?.refreshPackages()
+        }
+    }
+
+    private func refreshPackages() {
+        guard let engine else { return }
+        let snapshot = (try? engine.store.fetchPackagesState())?.packages ?? []
+        renderPackages(snapshot)
+        if case .package(let id) = selection, !snapshot.contains(where: { $0.id == id }) {
+            select(.notebook)
+            notebookListBox.select(row: notebookRow)
+        } else {
+            renderDetail()
+        }
     }
 }
