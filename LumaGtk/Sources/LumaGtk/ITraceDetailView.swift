@@ -12,6 +12,11 @@ final class ITraceDetailView {
     private let entriesBox: Box
     private let entriesScroll: ScrolledWindow
     private var entryRows: [ListBoxRow] = []
+    private var decoded: DecodedITrace?
+    private var cfgView: ITraceCFGView?
+    private var modeSwitcher: Box?
+    private var listToggle: ToggleButton?
+    private var graphToggle: ToggleButton?
 
     init(capture: ITraceCaptureRecord, otherCaptures: [ITraceCaptureRecord] = []) {
         self.capture = capture
@@ -117,10 +122,94 @@ final class ITraceDetailView {
             bodyContainer.append(child: errorLabel)
 
         case .success(let decoded):
+            self.decoded = decoded
             bodyContainer.append(child: makeTimeline(functionCalls: decoded.functionCalls))
+            bodyContainer.append(child: makeModeSwitcher())
             populateEntries(decoded.entries)
             bodyContainer.append(child: entriesScroll)
         }
+    }
+
+    private func makeModeSwitcher() -> Box {
+        let row = Box(orientation: .horizontal, spacing: 0)
+        row.halign = .start
+        row.marginTop = 4
+        row.add(cssClass: "linked")
+
+        let list = ToggleButton()
+        list.label = "List"
+        list.active = true
+        let graph = ToggleButton()
+        graph.label = "Graph"
+        graph.set(group: ToggleButtonRef(list.toggle_button_ptr))
+
+        list.onToggled { [weak self] btn in
+            MainActor.assumeIsolated {
+                guard btn.active else { return }
+                self?.showListMode()
+            }
+        }
+        graph.onToggled { [weak self] btn in
+            MainActor.assumeIsolated {
+                guard btn.active else { return }
+                self?.showGraphMode()
+            }
+        }
+
+        row.append(child: list)
+        row.append(child: graph)
+        listToggle = list
+        graphToggle = graph
+        modeSwitcher = row
+        return row
+    }
+
+    private func showListMode() {
+        if let cfgWidget = cfgView?.widget {
+            cfgWidget.visible = false
+        }
+        entriesScroll.visible = true
+    }
+
+    private func showGraphMode() {
+        if cfgView == nil, let decoded {
+            buildCFGView(from: decoded)
+        }
+        entriesScroll.visible = false
+        if let cfgWidget = cfgView?.widget {
+            cfgWidget.visible = true
+        }
+    }
+
+    private func buildCFGView(from decoded: DecodedITrace) {
+        guard !decoded.functionCalls.isEmpty else { return }
+        var sections: [(entries: ArraySlice<TraceEntry>, section: Int)] = []
+        for (i, call) in decoded.functionCalls.enumerated() {
+            let slice = decoded.entries[call.startIndex..<call.endIndex]
+            sections.append((entries: slice, section: i))
+        }
+        let graph = CFGGraph.buildAllFunctions(sections: sections, currentSection: 0)
+
+        var infoMap: [CFGGraph.NodeKey: NodeRegisterInfo] = [:]
+        for (i, call) in decoded.functionCalls.enumerated() {
+            for entryIdx in call.startIndex..<call.endIndex {
+                guard entryIdx < decoded.registerStates.count else { continue }
+                let key = CFGGraph.nodeKey(
+                    address: decoded.entries[entryIdx].blockAddress, section: i)
+                let stateBefore = entryIdx > 0
+                    ? decoded.registerStates[entryIdx - 1]
+                    : RegisterState(values: [:], changed: [])
+                infoMap[key] = NodeRegisterInfo(
+                    stateBeforeBlock: stateBefore,
+                    stateAfterBlock: decoded.registerStates[entryIdx],
+                    writes: decoded.entries[entryIdx].registerWrites
+                )
+            }
+        }
+
+        let view = ITraceCFGView(graph: graph, nodeRegisterInfo: infoMap)
+        cfgView = view
+        bodyContainer.append(child: view.widget)
     }
 
     private func makeTimeline(functionCalls: [TraceFunctionCall]) -> ScrolledWindow {

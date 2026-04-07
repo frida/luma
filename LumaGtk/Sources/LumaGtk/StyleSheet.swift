@@ -40,6 +40,9 @@ enum StyleSheet {
     .luma-diff-added { background-color: alpha(#26a269, 0.15); }
     .luma-diff-removed { background-color: alpha(#c01c28, 0.15); }
     .luma-diff-changed { background-color: alpha(#e5a50a, 0.15); }
+
+    .luma-cfg-node { border: 1px solid alpha(@theme_fg_color, 0.4); border-radius: 6px; padding: 6px 10px; background-color: alpha(@theme_bg_color, 0.85); }
+    .luma-cfg-node.selected { border-color: @accent_bg_color; background-color: alpha(@accent_bg_color, 0.18); }
     """
 
     static func install() {
