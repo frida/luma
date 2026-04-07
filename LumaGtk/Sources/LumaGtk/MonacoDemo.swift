@@ -56,11 +56,7 @@ private let monacoBootstrap: @convention(c) (
 private let monacoTextReceived: @convention(c) (
     UnsafePointer<CChar>?,
     UnsafeMutableRawPointer?
-) -> Void = { textPtr, _ in
-    guard let textPtr else { return }
-    let b64 = String(cString: textPtr)
-    guard let data = Data(base64Encoded: b64),
-        let text = String(data: data, encoding: .utf8)
-    else { return }
-    FileHandle.standardError.write("[monaco] text changed (\(text.count) chars)\n".data(using: .utf8)!)
+) -> Void = { _, _ in
+    // Phase 3 will surface the text via an AsyncStream; for now we silently
+    // swallow updates so we don't pump stderr on every keystroke.
 }

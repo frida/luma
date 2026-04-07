@@ -73,7 +73,10 @@ private let FRIDA_RUNTIME_GLIB: Int32 = 0
 @main
 struct LumaGtkMain {
     static func main() {
-        frida_init_with_runtime(FRIDA_RUNTIME_GLIB)
+        let isMonacoDemo = CommandLine.arguments.contains("--monaco-demo")
+        if !isMonacoDemo {
+            frida_init_with_runtime(FRIDA_RUNTIME_GLIB)
+        }
         GLibMainExecutor.install()
         let app = LumaApplication()
         let status = app.run()
