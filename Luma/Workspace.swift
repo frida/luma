@@ -13,10 +13,6 @@ final class Workspace: ObservableObject {
 
     @Published var targetPickerContext: TargetPickerContext?
 
-    @Published var monacoFSSnapshot: MonacoFSSnapshot? = nil
-    var monacoFSSnapshotDirty: Bool = true
-    var monacoFSSnapshotVersion: Int = 0
-
     @Published var isCollaborationPanelVisible: Bool = false
 
     init(store: ProjectStore) {

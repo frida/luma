@@ -28,34 +28,10 @@ struct CodeEditorView: View {
         from base: MonacoEditorProfile,
         packages: [InstalledPackage]
     ) -> MonacoEditorProfile {
-        let aliased = packages.compactMap { pkg -> (alias: String, module: String)? in
-            guard let alias = pkg.globalAlias, !alias.isEmpty else { return nil }
-            return (alias: alias, module: pkg.name)
+        guard let generated = MonacoPackageAliasTypings.makeLib(packages: packages) else {
+            return base
         }
-
-        guard !aliased.isEmpty else { return base }
-
-        var dts = """
-            type LumaPackageAlias<T> = T extends { default: infer D } ? D : T;
-
-            declare global {
-
-            """
-
-        for (alias, moduleName) in aliased {
-            dts += """
-                    const \(alias): LumaPackageAlias<typeof import("\(moduleName)")>;\n
-                """
-        }
-
-        dts += """
-            }
-
-            export {};
-            """
-
-        let lib = MonacoExtraLib(dts, filePath: "file:///workspace/luma-package-aliases.d.ts")
-
+        let lib = MonacoExtraLib(generated.content, filePath: generated.filePath)
         var copy = base
         copy.tsExtraLibs.append(lib)
         copy.jsExtraLibs.append(lib)

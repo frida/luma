@@ -221,7 +221,17 @@ final class InstrumentConfigEditor {
 
         var profile = MonacoEditorProfile(languageId: "typescript", theme: .dark, fontSize: 13)
         if let gum = MonacoTypings.fridaGum { profile.tsExtraLibs.append(gum) }
+        let installedPackages = (try? engine?.store.fetchPackagesState().packages) ?? []
+        if let aliasLib = MonacoPackageAliasTypings.makeLib(packages: installedPackages) {
+            profile.tsExtraLibs.append(MonacoExtraLib(aliasLib.content, filePath: aliasLib.filePath))
+        }
         let editor = MonacoEditor(profile: profile, initialText: hook.code)
+        if let engine {
+            Task { @MainActor in
+                await engine.rebuildMonacoFSSnapshotIfNeeded()
+                editor.setFSSnapshot(engine.monacoFSSnapshot)
+            }
+        }
         var currentCode = hook.code
 
         let editorHost = Box(orientation: .vertical, spacing: 0)

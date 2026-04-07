@@ -33,6 +33,9 @@ public final class Engine {
     public private(set) var tracerInstanceIDBySession: [UUID: UUID] = [:]
     public private(set) var sessions: [ProcessSession] = []
     public private(set) var notebookEntries: [NotebookEntry] = []
+    public private(set) var monacoFSSnapshot: MonacoFSSnapshot?
+    @ObservationIgnored public var monacoFSSnapshotDirty: Bool = true
+    @ObservationIgnored private var monacoFSSnapshotVersion: Int = 0
 
     private var addressActionProviders: [AddressActionProvider] = []
     @ObservationIgnored private var sessionsObservation: StoreObservation?
@@ -212,6 +215,64 @@ public final class Engine {
         return installed
     }
 
+    public func rebuildMonacoFSSnapshotIfNeeded() async {
+        guard monacoFSSnapshotDirty else { return }
+        do {
+            let paths = try compilerWorkspacePaths()
+            _ = try await compilerWorkspace.ensureReady(paths: paths)
+            let snapshot = try Self.buildMonacoFSSnapshot(paths: paths)
+            monacoFSSnapshotVersion += 1
+            monacoFSSnapshot = snapshot.withVersion(monacoFSSnapshotVersion)
+            monacoFSSnapshotDirty = false
+        } catch {
+            print("Failed to rebuild Monaco FS snapshot: \(error)")
+        }
+    }
+
+    private static func buildMonacoFSSnapshot(paths: CompilerWorkspacePaths) throws -> MonacoFSSnapshot {
+        let fm = FileManager.default
+        let root = paths.root
+        let nodeModules = paths.nodeModules
+
+        guard fm.fileExists(atPath: nodeModules.path) else {
+            return MonacoFSSnapshot(version: 0, files: [])
+        }
+
+        let workspaceRootURI = "file:///workspace/"
+
+        func toWorkspaceURI(_ fileURL: URL) -> String? {
+            guard fileURL.path.hasPrefix(root.path) else { return nil }
+            var rel = String(fileURL.path.dropFirst(root.path.count))
+            if rel.hasPrefix("/") {
+                rel.removeFirst()
+            }
+            return workspaceRootURI + rel.replacingOccurrences(of: " ", with: "%20")
+        }
+
+        let keys: [URLResourceKey] = [.isRegularFileKey, .nameKey]
+        let enumerator = fm.enumerator(
+            at: nodeModules,
+            includingPropertiesForKeys: keys,
+            options: [.skipsHiddenFiles]
+        )
+
+        var out: [MonacoFSSnapshotFile] = []
+        out.reserveCapacity(2048)
+
+        while let url = enumerator?.nextObject() as? URL {
+            let values = try url.resourceValues(forKeys: Set(keys))
+            guard values.isRegularFile == true else { continue }
+            let name = values.name ?? url.lastPathComponent
+            guard name == "package.json" || name.hasSuffix(".d.ts") else { continue }
+            guard let uri = toWorkspaceURI(url) else { continue }
+            let data = try Data(contentsOf: url)
+            guard let text = String(data: data, encoding: .utf8) else { continue }
+            out.append(.init(path: uri, text: text))
+        }
+
+        return MonacoFSSnapshot(version: 0, files: out)
+    }
+
     public func upgradePackage(_ package: InstalledPackage) async throws -> InstalledPackage {
         try await installPackage(
             name: package.name,
@@ -223,6 +284,7 @@ public final class Engine {
     public func removePackage(_ package: InstalledPackage) async throws {
         let paths = try compilerWorkspacePaths()
         try await compilerWorkspace.removePackage(package, paths: paths)
+        monacoFSSnapshotDirty = true
     }
 
     public func loadAllPackages(on node: ProcessNode) async {
@@ -260,6 +322,7 @@ public final class Engine {
     }
 
     private func propagatePackage(_ package: InstalledPackage) async {
+        monacoFSSnapshotDirty = true
         for node in processNodes {
             await loadPackage(package, on: node)
         }

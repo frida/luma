@@ -110,6 +110,7 @@ public final class MonacoEditor {
     private let view: OpaquePointer
     private var profile: MonacoEditorProfile
     private var pendingText: String
+    private var pendingSnapshot: MonacoFSSnapshot?
     private var isLoaded = false
 
     private static var instances: [ObjectIdentifier: MonacoEditor] = [:]
@@ -153,6 +154,13 @@ public final class MonacoEditor {
         }
     }
 
+    public func setFSSnapshot(_ snapshot: MonacoFSSnapshot?) {
+        pendingSnapshot = snapshot
+        if isLoaded, let script = snapshotScript(snapshot) {
+            evaluate(script)
+        }
+    }
+
     public func setProfile(_ newProfile: MonacoEditorProfile) {
         profile = newProfile
         if isLoaded {
@@ -182,6 +190,14 @@ public final class MonacoEditor {
         return "editor.setText(atob('\(b64)'));"
     }
 
+    private func snapshotScript(_ snapshot: MonacoFSSnapshot?) -> String? {
+        guard let snapshot else { return "editor.setFSSnapshot(null);" }
+        guard let data = try? JSONEncoder().encode(snapshot),
+            let json = String(data: data, encoding: .utf8)
+        else { return nil }
+        return "editor.setFSSnapshot(\(json));"
+    }
+
     private func initialBootstrapScript() -> String {
         var lines: [String] = []
         lines.append("editor.updateDefaultTypescriptCompilerOptions(\(profile.tsCompilerOptions.toJavaScriptObjectLiteral()));")
@@ -191,6 +207,9 @@ public final class MonacoEditor {
         lines.append("editor.updateDefaultJavascriptCompilerOptions(\(profile.jsCompilerOptions.toJavaScriptObjectLiteral()));")
         if !profile.jsExtraLibs.isEmpty {
             lines.append("editor.updateDefaultJavascriptExtraLibs([\(profile.jsExtraLibs.map { $0.toJavaScriptObjectLiteral() }.joined(separator: ", "))]);")
+        }
+        if let snapScript = snapshotScript(pendingSnapshot) {
+            lines.append(snapScript)
         }
         lines.append("editor.setLanguageId('\(profile.languageId)');")
         lines.append(setTextScript(pendingText))
