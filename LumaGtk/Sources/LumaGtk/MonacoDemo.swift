@@ -14,14 +14,19 @@ enum MonacoDemo {
         }
         let indexURL = resourceDir.appendingPathComponent("index.html")
 
-        guard let widgetPtr = webkit_web_view_new() else {
-            fatalError("webkit_web_view_new returned null")
+        guard let view = luma_monaco_view_new() else {
+            fatalError("luma_monaco_view_new returned null")
         }
-        let webViewPtr = UnsafeMutableRawPointer(widgetPtr).assumingMemoryBound(to: WebKitWebView.self)
+        guard let widgetRaw = luma_monaco_view_widget(view) else {
+            fatalError("luma_monaco_view_widget returned null")
+        }
 
-        webkit_web_view_load_uri(webViewPtr, indexURL.absoluteString)
+        luma_monaco_view_set_load_finished(view, monacoBootstrap, UnsafeMutableRawPointer(view))
+        luma_monaco_view_set_text_handler(view, monacoTextReceived, nil)
 
-        let widget = WidgetRef(raw: UnsafeMutableRawPointer(widgetPtr))
+        luma_monaco_view_load_uri(view, indexURL.absoluteString)
+
+        let widget = WidgetRef(raw: widgetRaw)
         widget.hexpand = true
         widget.vexpand = true
         window.set(child: widget)
@@ -30,4 +35,32 @@ enum MonacoDemo {
         _ = window.onCloseRequest(handler: closeHandler)
         window.present()
     }
+}
+
+private let bootstrapJS = """
+editor.setLanguageId('typescript');
+editor.setText('// Welcome to Monaco in LumaGtk\\nfunction hello(name: string): string {\\n    return `Hi ${name}`;\\n}\\n\\nhello("world");\\n');
+editor.create({ automaticLayout: true, theme: 'vs-dark', fontSize: 14 });
+document.body.style.opacity = '1';
+console.log('[monaco] editor.create dispatched');
+"""
+
+private let monacoBootstrap: @convention(c) (
+    OpaquePointer?,
+    UnsafeMutableRawPointer?
+) -> Void = { view, _ in
+    guard let view else { return }
+    luma_monaco_view_evaluate(view, bootstrapJS)
+}
+
+private let monacoTextReceived: @convention(c) (
+    UnsafePointer<CChar>?,
+    UnsafeMutableRawPointer?
+) -> Void = { textPtr, _ in
+    guard let textPtr else { return }
+    let b64 = String(cString: textPtr)
+    guard let data = Data(base64Encoded: b64),
+        let text = String(data: data, encoding: .utf8)
+    else { return }
+    FileHandle.standardError.write("[monaco] text changed (\(text.count) chars)\n".data(using: .utf8)!)
 }

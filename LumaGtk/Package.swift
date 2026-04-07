@@ -27,10 +27,30 @@ let package = Package(
         .package(name: "SwiftGtk", path: "../../swift-gtk-fork/SwiftGtk"),
     ],
     targets: [
-        .systemLibrary(
+        .target(
             name: "CWebKit",
             path: "Sources/CWebKit",
-            pkgConfig: "webkitgtk-6.0"
+            publicHeadersPath: "include",
+            cSettings: [
+                .unsafeFlags([
+                    "-I/usr/include/webkitgtk-6.0",
+                    "-I/usr/include/glib-2.0",
+                    "-I/usr/lib64/glib-2.0/include",
+                    "-I/usr/include/gtk-4.0",
+                    "-I/usr/include/pango-1.0",
+                    "-I/usr/include/harfbuzz",
+                    "-I/usr/include/cairo",
+                    "-I/usr/include/gdk-pixbuf-2.0",
+                    "-I/usr/include/graphene-1.0",
+                    "-I/usr/lib64/graphene-1.0/include",
+                    "-I/usr/include/libsoup-3.0",
+                    "-I/usr/include/sysprof-6",
+                ]),
+            ],
+            linkerSettings: [
+                .linkedLibrary("webkitgtk-6.0"),
+                .linkedLibrary("javascriptcoregtk-6.0"),
+            ]
         ),
         .executableTarget(
             name: "LumaGtk",
