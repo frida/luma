@@ -1,4 +1,5 @@
 import Foundation
+import Gdk
 import Gtk
 import LumaCore
 
@@ -19,6 +20,8 @@ final class AddressDetailsPanel {
     private let refreshButton: Button
 
     private var disasmLines: [DisassemblyLine] = []
+    private var disasmRows: [Box] = []
+    private var selectedIndex: Int? = nil
     private var loadTask: Task<Void, Never>?
     private var isLoadingMore = false
 
@@ -86,6 +89,7 @@ final class AddressDetailsPanel {
         widget.append(child: disasmHeader)
 
         disasmBox = Box(orientation: .vertical, spacing: 0)
+        disasmBox.focusable = true
 
         let scroll = ScrolledWindow()
         scroll.hexpand = true
@@ -107,13 +111,112 @@ final class AddressDetailsPanel {
             MainActor.assumeIsolated { self?.loadMore() }
         }
 
+        let keyController = EventControllerKey()
+        keyController.onKeyPressed { [weak self] _, keyval, _, _ in
+            MainActor.assumeIsolated {
+                self?.handleDisasmKey(keyval: keyval) ?? false
+            }
+        }
+        disasmBox.add(controller: keyController)
+
         refresh()
+    }
+
+    private func handleDisasmKey(keyval: UInt) -> Bool {
+        let key = Int32(keyval)
+        guard !disasmLines.isEmpty else { return false }
+        if key == Gdk.keyUp {
+            moveSelection(by: -1)
+            return true
+        }
+        if key == Gdk.keyDown {
+            moveSelection(by: 1)
+            return true
+        }
+        if key == Gdk.keyPageUp {
+            moveSelection(by: -10)
+            return true
+        }
+        if key == Gdk.keyPageDown {
+            moveSelection(by: 10)
+            return true
+        }
+        if key == Gdk.keyReturn {
+            if let idx = selectedIndex {
+                jumpFromLine(at: idx)
+            }
+            return true
+        }
+        return false
+    }
+
+    private func moveSelection(by delta: Int) {
+        guard !disasmLines.isEmpty else { return }
+        let current = selectedIndex ?? -1
+        var next = current + delta
+        if next < 0 { next = 0 }
+        if next >= disasmLines.count { next = disasmLines.count - 1 }
+        selectRow(at: next, focus: true)
+    }
+
+    private func selectRow(at index: Int, focus: Bool) {
+        guard index >= 0, index < disasmRows.count else { return }
+        if let prev = selectedIndex, prev >= 0, prev < disasmRows.count {
+            disasmRows[prev].remove(cssClass: "selected")
+        }
+        selectedIndex = index
+        let row = disasmRows[index]
+        row.add(cssClass: "selected")
+        if focus {
+            _ = row.grabFocus()
+        }
+    }
+
+    private func candidateTarget(for line: DisassemblyLine) -> UInt64? {
+        if let t = line.branchTarget { return t }
+        if let t = line.callTarget { return t }
+        let asm = line.asmText.plainText
+        return Self.firstHexAddress(in: asm)
+    }
+
+    private static func firstHexAddress(in s: String) -> UInt64? {
+        let chars = Array(s)
+        var i = 0
+        while i < chars.count {
+            if i + 1 < chars.count, chars[i] == "0", (chars[i + 1] == "x" || chars[i + 1] == "X") {
+                var j = i + 2
+                let start = j
+                while j < chars.count, chars[j].isHexDigit {
+                    j += 1
+                }
+                if j > start {
+                    let hex = String(chars[start..<j])
+                    if let v = UInt64(hex, radix: 16) {
+                        return v
+                    }
+                }
+                i = j
+            } else {
+                i += 1
+            }
+        }
+        return nil
+    }
+
+    private func jumpFromLine(at index: Int) {
+        guard index >= 0, index < disasmLines.count else { return }
+        let line = disasmLines[index]
+        guard let target = candidateTarget(for: line) else { return }
+        guard let destIndex = disasmLines.firstIndex(where: { $0.address == target }) else { return }
+        selectRow(at: destIndex, focus: true)
     }
 
     func refresh() {
         loadTask?.cancel()
         isLoadingMore = false
         disasmLines = []
+        disasmRows = []
+        selectedIndex = nil
         clearChildren(of: disasmBox)
         clearChildren(of: insightsBox)
         loadMoreButton.sensitive = false
@@ -152,7 +255,12 @@ final class AddressDetailsPanel {
 
             self.disasmLines = lines
             for line in lines {
-                self.disasmBox.append(child: self.makeDisasmRow(line: line))
+                let row = self.makeDisasmRow(line: line, index: self.disasmRows.count)
+                self.disasmRows.append(row)
+                self.disasmBox.append(child: row)
+            }
+            if !lines.isEmpty {
+                self.selectRow(at: 0, focus: false)
             }
             self.loadMoreButton.sensitive = !lines.isEmpty
         }
@@ -237,17 +345,21 @@ final class AddressDetailsPanel {
             var page = decoded
             page.removeFirst()
             for line in page {
+                let row = makeDisasmRow(line: line, index: disasmRows.count)
                 disasmLines.append(line)
-                disasmBox.append(child: makeDisasmRow(line: line))
+                disasmRows.append(row)
+                disasmBox.append(child: row)
             }
             loadMoreButton.sensitive = !page.isEmpty
         }
     }
 
-    private func makeDisasmRow(line: DisassemblyLine) -> Box {
+    private func makeDisasmRow(line: DisassemblyLine, index: Int) -> Box {
         let row = Box(orientation: .horizontal, spacing: 12)
         row.marginStart = 6
         row.marginEnd = 6
+        row.add(cssClass: "luma-disasm-row")
+        row.focusable = true
 
         let addrLabel = Label(str: line.addressText.plainText)
         addrLabel.add(cssClass: "monospace")
@@ -263,20 +375,35 @@ final class AddressDetailsPanel {
         bytesLabel.setSizeRequest(width: 100, height: -1)
         row.append(child: bytesLabel)
 
-        let asmLabel = Label(str: line.asmText.plainText)
+        let asmLabel = Label(str: "")
+        asmLabel.setMarkup(str: StyledTextPango.markup(for: line.asmText))
         asmLabel.add(cssClass: "monospace")
         asmLabel.halign = .start
         asmLabel.hexpand = true
-        asmLabel.selectable = true
         row.append(child: asmLabel)
 
         if let comment = line.commentText, !comment.isEmpty {
-            let commentLabel = Label(str: comment.plainText)
+            let commentLabel = Label(str: "")
+            commentLabel.setMarkup(str: StyledTextPango.markup(for: comment))
             commentLabel.add(cssClass: "monospace")
             commentLabel.add(cssClass: "dim-label")
             commentLabel.halign = .start
             row.append(child: commentLabel)
         }
+
+        let click = GestureClick()
+        click.set(button: 1)
+        click.onPressed { [weak self] _, nPress, _, _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                guard let rowIndex = self.disasmRows.firstIndex(where: { $0 === row }) else { return }
+                self.selectRow(at: rowIndex, focus: true)
+                if nPress >= 2 {
+                    self.jumpFromLine(at: rowIndex)
+                }
+            }
+        }
+        row.add(controller: click)
 
         return row
     }

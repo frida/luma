@@ -22,6 +22,10 @@ enum StyleSheet {
         background-color: alpha(@error_bg_color, 0.20);
         border-bottom-color: alpha(@error_bg_color, 0.5);
     }
+
+    .luma-disasm-row.selected {
+        background-color: alpha(@accent_bg_color, 0.25);
+    }
     """
 
     static func install() {
