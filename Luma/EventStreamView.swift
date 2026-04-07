@@ -423,7 +423,7 @@ struct EventStreamView: View {
 
         case .instrument:
             if let instrument = workspace.instrument(for: evt),
-                let descriptor = workspace.engine.descriptor(for: instrument.instance)
+                let descriptor = workspace.engine.descriptor(for: instrument)
             {
                 return descriptor.summarizeEvent(evt)
             }

@@ -186,7 +186,7 @@ struct REPLView: View {
         }
 
         Task { @MainActor in
-            await node!.core.evalInREPL(code)
+            await node!.evalInREPL(code)
             reloadCells()
             historyCursor = orderedCells.count
         }
