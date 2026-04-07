@@ -66,6 +66,28 @@ final class InstrumentConfigEditor {
         column.hexpand = true
         column.vexpand = true
 
+        let toolbar = Box(orientation: .horizontal, spacing: 6)
+        toolbar.marginStart = 6
+        toolbar.marginEnd = 6
+        toolbar.marginTop = 6
+        toolbar.marginBottom = 6
+
+        let addButton = Button(label: "Add Hook\u{2026}")
+        addButton.add(cssClass: "flat")
+        let attached = engine?.node(forSessionID: instrument.sessionID) != nil
+        addButton.sensitive = attached
+        if !attached {
+            addButton.tooltipText = "Attach to a process to search APIs."
+        }
+        addButton.onClicked { [weak self, weak addButton] _ in
+            MainActor.assumeIsolated {
+                guard let self, let addButton else { return }
+                self.presentApiSearchPopover(anchor: addButton)
+            }
+        }
+        toolbar.append(child: addButton)
+        column.append(child: toolbar)
+
         let listBox = ListBox()
         listBox.selectionMode = .single
         listBox.add(cssClass: "navigation-sidebar")
@@ -307,6 +329,227 @@ final class InstrumentConfigEditor {
         apply(configJSON: config.encode())
     }
 
+    // MARK: - Tracer API search
+
+    private struct ResolvedApi {
+        let moduleName: String
+        let symbolName: String
+        let address: UInt64
+    }
+
+    private func presentApiSearchPopover(anchor: Widget) {
+        guard let engine, engine.node(forSessionID: instrument.sessionID) != nil else { return }
+
+        let popover = Popover()
+        popover.autohide = true
+
+        let box = Box(orientation: .vertical, spacing: 6)
+        box.marginStart = 8
+        box.marginEnd = 8
+        box.marginTop = 8
+        box.marginBottom = 8
+        box.setSizeRequest(width: 360, height: 360)
+
+        let queryRow = Box(orientation: .horizontal, spacing: 6)
+        let entry = Entry()
+        entry.hexpand = true
+        entry.placeholderText = "e.g. exports:*!CFRetain"
+        queryRow.append(child: entry)
+
+        let searchButton = Button(label: "Search")
+        searchButton.add(cssClass: "suggested-action")
+        queryRow.append(child: searchButton)
+
+        let spinner = Spinner()
+        spinner.spinning = false
+        spinner.valign = .center
+        queryRow.append(child: spinner)
+
+        box.append(child: queryRow)
+
+        let listBox = ListBox()
+        listBox.selectionMode = .single
+        listBox.add(cssClass: "boxed-list")
+
+        let scroll = ScrolledWindow()
+        scroll.hexpand = true
+        scroll.vexpand = true
+        scroll.set(child: listBox)
+        box.append(child: scroll)
+
+        let status = Label(str: "Enter a query and press Search.")
+        status.add(cssClass: "dim-label")
+        status.add(cssClass: "caption")
+        status.halign = .start
+        box.append(child: status)
+
+        let actions = Box(orientation: .horizontal, spacing: 6)
+        let spacer = Label(str: "")
+        spacer.hexpand = true
+        actions.append(child: spacer)
+
+        let addAllButton = Button(label: "Add All")
+        addAllButton.sensitive = false
+        actions.append(child: addAllButton)
+
+        let addSelectedButton = Button(label: "Add")
+        addSelectedButton.add(cssClass: "suggested-action")
+        addSelectedButton.sensitive = false
+        actions.append(child: addSelectedButton)
+
+        box.append(child: actions)
+
+        var results: [ResolvedApi] = []
+
+        let rebuildList: () -> Void = {
+            var child = listBox.firstChild
+            while let current = child {
+                child = current.nextSibling
+                listBox.remove(child: current)
+            }
+            for api in results {
+                let row = ListBoxRow()
+                let inner = Box(orientation: .vertical, spacing: 2)
+                inner.marginStart = 10
+                inner.marginEnd = 10
+                inner.marginTop = 4
+                inner.marginBottom = 4
+
+                let title = Label(str: "\(api.moduleName)!\(api.symbolName)")
+                title.halign = .start
+                inner.append(child: title)
+
+                let subtitle = Label(str: String(format: "0x%llx", api.address))
+                subtitle.halign = .start
+                subtitle.add(cssClass: "caption")
+                subtitle.add(cssClass: "dim-label")
+                subtitle.add(cssClass: "monospace")
+                inner.append(child: subtitle)
+
+                row.set(child: inner)
+                listBox.append(child: row)
+            }
+            addAllButton.sensitive = !results.isEmpty
+            addSelectedButton.sensitive = false
+            if !results.isEmpty, let first = listBox.getRowAt(index: 0) {
+                listBox.select(row: first)
+                addSelectedButton.sensitive = true
+            }
+        }
+
+        listBox.onRowSelected { _, row in
+            MainActor.assumeIsolated {
+                addSelectedButton.sensitive = row != nil
+            }
+        }
+
+        let runSearch: () -> Void = { [weak self] in
+            guard let self else { return }
+            let query = entry.text ?? ""
+            guard !query.isEmpty else { return }
+            guard let node = self.engine?.node(forSessionID: self.instrument.sessionID) else {
+                status.label = "Not attached."
+                return
+            }
+            spinner.spinning = true
+            spinner.start()
+            searchButton.sensitive = false
+            status.label = "Searching\u{2026}"
+            Task { @MainActor in
+                defer {
+                    spinner.spinning = false
+                    searchButton.sensitive = true
+                }
+                do {
+                    let raw = try await node.script.exports.resolveApis(query)
+                    guard let arr = raw as? [[String: Any]] else {
+                        results = []
+                        rebuildList()
+                        status.label = "resolveApis: unexpected response"
+                        return
+                    }
+                    var decoded: [ResolvedApi] = []
+                    decoded.reserveCapacity(arr.count)
+                    for obj in arr {
+                        guard let moduleName = obj["moduleName"] as? String,
+                            let symbolName = obj["symbolName"] as? String,
+                            let addressStr = obj["address"] as? String,
+                            let address = try? parseAgentHexAddress(addressStr)
+                        else { continue }
+                        decoded.append(ResolvedApi(moduleName: moduleName, symbolName: symbolName, address: address))
+                    }
+                    results = decoded
+                    rebuildList()
+                    status.label = decoded.isEmpty ? "No results." : "\(decoded.count) result\(decoded.count == 1 ? "" : "s")"
+                } catch {
+                    results = []
+                    rebuildList()
+                    status.label = "Search failed: \(error.localizedDescription)"
+                }
+            }
+        }
+
+        searchButton.onClicked { _ in
+            MainActor.assumeIsolated { runSearch() }
+        }
+        entry.onActivate { _ in
+            MainActor.assumeIsolated { runSearch() }
+        }
+
+        addSelectedButton.onClicked { [weak self, weak popover] _ in
+            MainActor.assumeIsolated {
+                guard let self, let row = listBox.selectedRow else { return }
+                let idx = Int(row.index)
+                guard idx >= 0, idx < results.count else { return }
+                self.appendTracerHook(for: results[idx])
+                popover?.popdown()
+            }
+        }
+
+        addAllButton.onClicked { [weak self, weak popover] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.mutateTracer { cfg in
+                    for api in results {
+                        let stub = defaultTracerNativeStub.replacingOccurrences(
+                            of: "CALL(args[0]",
+                            with: "\(api.symbolName)(args[0]"
+                        )
+                        let hook = TracerConfig.Hook(
+                            displayName: api.symbolName,
+                            addressAnchor: .moduleExport(name: api.moduleName, export: api.symbolName),
+                            isEnabled: true,
+                            code: stub
+                        )
+                        cfg.hooks.append(hook)
+                    }
+                }
+                popover?.popdown()
+            }
+        }
+
+        popover.set(child: WidgetRef(box.widget_ptr))
+        popover.set(parent: WidgetRef(anchor))
+        popover.popup()
+        _ = entry.grabFocus()
+    }
+
+    private func appendTracerHook(for api: ResolvedApi) {
+        let stub = defaultTracerNativeStub.replacingOccurrences(
+            of: "CALL(args[0]",
+            with: "\(api.symbolName)(args[0]"
+        )
+        let hook = TracerConfig.Hook(
+            displayName: api.symbolName,
+            addressAnchor: .moduleExport(name: api.moduleName, export: api.symbolName),
+            isEnabled: true,
+            code: stub
+        )
+        mutateTracer { cfg in
+            cfg.hooks.append(hook)
+        }
+    }
+
     // MARK: - Hook pack
 
     private func buildHookPack() {
@@ -541,6 +784,15 @@ final class InstrumentConfigEditor {
         label.add(cssClass: "error")
         label.halign = .start
         return label
+    }
+
+    func selectTracerHook(id: UUID) {
+        guard instrument.kind == .tracer,
+            let config = try? TracerConfig.decode(from: instrument.configJSON),
+            config.hooks.contains(where: { $0.id == id })
+        else { return }
+        tracerSelectedHookID = id
+        rebuild()
     }
 }
 
