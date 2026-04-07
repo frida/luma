@@ -1,11 +1,11 @@
 import Foundation
-import Frida
 import Gtk
 import LumaCore
 
 @MainActor
 final class LumaApplication {
     let app: Application
+    private var mainWindow: MainWindow?
     private var engine: Engine?
 
     init() {
@@ -24,25 +24,16 @@ final class LumaApplication {
     }
 
     private func activate() {
-        let window = ApplicationWindow(application: app)
-        window.title = "Luma"
-        window.setDefaultSize(width: 1200, height: 800)
-
-        let box = Box(orientation: .vertical, spacing: 8)
-        let header = Label(str: "Luma — GTK frontend")
-        let status = Label(str: "Booting engine\u{2026}")
-        box.append(child: header)
-        box.append(child: status)
-        window.set(child: box)
-
+        let window = MainWindow(app: app)
         window.present()
+        mainWindow = window
 
         Task { @MainActor in
-            await self.boot(status: status)
+            await self.boot()
         }
     }
 
-    private func boot(status: Label) async {
+    private func boot() async {
         let dataDirectory = Self.makeDataDirectory()
         let storePath = dataDirectory.appendingPathComponent("project.sqlite").path
         do {
@@ -50,21 +41,9 @@ final class LumaApplication {
             let engine = Engine(store: store, dataDirectory: dataDirectory)
             self.engine = engine
             await engine.start()
-
-            func render(_ devices: [Frida.Device]) {
-                let lines = devices.map { "\($0.name) [\($0.id)]" }
-                let summary = lines.isEmpty ? "no devices yet" : lines.joined(separator: "\n")
-                status.setText(str: "Devices:\n\(summary)")
-            }
-
-            let stream = await engine.deviceManager.snapshots()
-            render(await engine.deviceManager.currentDevices())
-
-            for await devices in stream {
-                render(devices)
-            }
+            mainWindow?.attach(engine: engine)
         } catch {
-            status.setText(str: "Failed to start engine: \(error)")
+            mainWindow?.showFatalError("Failed to start engine: \(error)")
         }
     }
 
