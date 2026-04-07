@@ -23,7 +23,7 @@ final class AddInstrumentDialog {
         window.title = "Add Instrument"
         window.setDefaultSize(width: 480, height: 360)
         window.modal = true
-        window.transientFor = WindowRef(parent)
+        window.setTransientFor(parent: parent)
         window.destroyWithParent = true
 
         listBox = ListBox()

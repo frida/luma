@@ -40,7 +40,7 @@ final class TargetPicker {
         window.title = reason == nil ? "New Session" : "Re-Establish Session"
         window.setDefaultSize(width: 720, height: 480)
         window.modal = true
-        window.transientFor = WindowRef(parent)
+        window.setTransientFor(parent: parent)
         window.destroyWithParent = true
 
         deviceList = ListBox()

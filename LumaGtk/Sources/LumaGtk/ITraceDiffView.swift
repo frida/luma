@@ -248,7 +248,7 @@ final class ITraceDiffView {
         window.destroyWithParent = true
 
         if let rootPtr = anchor.root?.ptr {
-            window.transientFor = WindowRef(raw: rootPtr)
+            window.setTransientFor(parent: WindowRef(raw: rootPtr))
         }
 
         let header = HeaderBar()

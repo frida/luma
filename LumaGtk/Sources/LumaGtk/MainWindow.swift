@@ -143,6 +143,12 @@ final class MainWindow {
                 self.setCollaborationVisible(!self.isCollaborationPanelVisible)
             }
         }
+
+        let closeHandler: (WindowRef) -> Bool = { [weak app] _ in
+            MainActor.assumeIsolated { app?.quit() }
+            return false
+        }
+        window.onCloseRequest(handler: closeHandler)
     }
 
     private func setCollaborationVisible(_ visible: Bool) {
