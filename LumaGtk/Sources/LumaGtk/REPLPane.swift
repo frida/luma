@@ -26,7 +26,7 @@ final class REPLPane {
     private var draftBeforeHistory: String = ""
     private var completionTask: Task<Void, Never>?
     private var completionDebounceTask: Task<Void, Never>?
-    private var suppressNextChange: Bool = false
+    private var suppressUntilText: String?
     private var completionPopover: Popover?
     private var completionList: ListBox?
     private var completionItems: [String] = []
@@ -96,13 +96,14 @@ final class REPLPane {
         inputEntry.onChanged { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                if self.suppressNextChange {
-                    self.suppressNextChange = false
+                let current = self.inputEntry.text ?? ""
+                if let locked = self.suppressUntilText, current == locked {
                     self.completionDebounceTask?.cancel()
                     self.completionTask?.cancel()
                     self.dismissCompletionPopover()
                     return
                 }
+                self.suppressUntilText = nil
                 self.scheduleCompletionRequest()
             }
         }
@@ -203,7 +204,9 @@ final class REPLPane {
                 moveCompletionSelection(delta: 1)
                 return true
             }
-            if key == Gdk.keyReturn || key == Gdk.keyKPEnter || key == Gdk.keyISOEnter || key == Gdk.keyTab {
+            if key == Gdk.keyTab || key == Gdk.keyISOLeftTab
+                || key == Gdk.keyReturn || key == Gdk.keyKPEnter || key == Gdk.keyISOEnter
+            {
                 acceptSelectedCompletion()
                 return true
             }
@@ -253,7 +256,7 @@ final class REPLPane {
     }
 
     private func replaceInput(with text: String) {
-        suppressNextChange = true
+        suppressUntilText = text
         inputEntry.text = text
         inputEntry.position = -1
         inputEntry.selectRegion(startPos: -1, endPos: -1)
@@ -326,7 +329,7 @@ final class REPLPane {
 
         let scroll = ScrolledWindow()
         scroll.setPolicy(hscrollbarPolicy: GTK_POLICY_NEVER, vscrollbarPolicy: GTK_POLICY_AUTOMATIC)
-        scroll.setSizeRequest(width: 280, height: min(220, 24 * suggestions.count + 8))
+        scroll.setSizeRequest(width: 280, height: min(160, 24 * suggestions.count + 8))
 
         let listBox = ListBox()
         listBox.selectionMode = .single
@@ -428,6 +431,10 @@ final class REPLPane {
     }
 
     private func dismissCompletionPopover() {
+        completionDebounceTask?.cancel()
+        completionDebounceTask = nil
+        completionTask?.cancel()
+        completionTask = nil
         completionPopover?.popdown()
         completionPopover = nil
         completionList = nil
@@ -582,7 +589,7 @@ final class REPLPane {
         box.marginBottom = 6
 
         let addButton = Button(label: "Add to Notebook")
-        addButton.add(cssClass: "flat")
+        addButton.add(cssClass: "luma-menu-item")
         addButton.onClicked { [popover, weak self] _ in
             MainActor.assumeIsolated {
                 popover.popdown()

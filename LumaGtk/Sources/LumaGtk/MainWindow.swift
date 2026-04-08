@@ -1163,7 +1163,7 @@ final class MainWindow {
         let node = engine?.node(forSessionID: session.id)
         if node != nil {
             let killButton = Button(label: "Kill Process")
-            killButton.add(cssClass: "flat")
+            killButton.add(cssClass: "luma-menu-item")
             killButton.add(cssClass: "luma-menu-destructive")
             killButton.onClicked { [weak self, popover] _ in
                 MainActor.assumeIsolated {
@@ -1174,7 +1174,7 @@ final class MainWindow {
             box.append(child: killButton)
 
             let detachButton = Button(label: "Detach Session")
-            detachButton.add(cssClass: "flat")
+            detachButton.add(cssClass: "luma-menu-item")
             detachButton.onClicked { [weak self, popover] _ in
                 MainActor.assumeIsolated {
                     popover.popdown()
@@ -1187,7 +1187,7 @@ final class MainWindow {
             box.append(child: detachButton)
         } else {
             let reButton = Button(label: "Reestablish…")
-            reButton.add(cssClass: "flat")
+            reButton.add(cssClass: "luma-menu-item")
             reButton.onClicked { [weak self, popover] _ in
                 MainActor.assumeIsolated {
                     popover.popdown()
@@ -1200,7 +1200,7 @@ final class MainWindow {
         box.append(child: Separator(orientation: .horizontal))
 
         let deleteButton = Button(label: "Delete Session")
-        deleteButton.add(cssClass: "flat")
+        deleteButton.add(cssClass: "luma-menu-item")
         deleteButton.add(cssClass: "luma-menu-destructive")
         deleteButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
@@ -1248,7 +1248,7 @@ final class MainWindow {
 
         let toggleLabel = instrument.isEnabled ? "Disable" : "Enable"
         let toggleButton = Button(label: toggleLabel)
-        toggleButton.add(cssClass: "flat")
+        toggleButton.add(cssClass: "luma-menu-item")
         toggleButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
                 popover.popdown()
@@ -1260,7 +1260,7 @@ final class MainWindow {
         box.append(child: Separator(orientation: .horizontal))
 
         let deleteButton = Button(label: "Delete Instrument")
-        deleteButton.add(cssClass: "flat")
+        deleteButton.add(cssClass: "luma-menu-item")
         deleteButton.add(cssClass: "luma-menu-destructive")
         deleteButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
@@ -1307,7 +1307,7 @@ final class MainWindow {
         box.marginBottom = 6
 
         let deleteButton = Button(label: "Delete Insight")
-        deleteButton.add(cssClass: "flat")
+        deleteButton.add(cssClass: "luma-menu-item")
         deleteButton.add(cssClass: "luma-menu-destructive")
         deleteButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
@@ -1354,7 +1354,7 @@ final class MainWindow {
         box.marginBottom = 6
 
         let deleteButton = Button(label: "Delete Capture")
-        deleteButton.add(cssClass: "flat")
+        deleteButton.add(cssClass: "luma-menu-item")
         deleteButton.add(cssClass: "luma-menu-destructive")
         deleteButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {

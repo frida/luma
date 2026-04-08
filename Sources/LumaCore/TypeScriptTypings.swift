@@ -12,11 +12,7 @@ public struct TypeScriptTypingFile: Sendable, Equatable {
 
 public enum TypeScriptTypings {
     public static let fridaGum: TypeScriptTypingFile? = {
-        guard let url = Bundle.module.url(
-            forResource: "frida-gum",
-            withExtension: "d.ts",
-            subdirectory: "Typings"
-        ),
+        guard let url = Bundle.module.url(forResource: "frida-gum", withExtension: "d.ts"),
             let content = try? String(contentsOf: url, encoding: .utf8)
         else { return nil }
         return TypeScriptTypingFile(filePath: "@types/frida-gum/index.d.ts", content: content)

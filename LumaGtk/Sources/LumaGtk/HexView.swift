@@ -417,7 +417,7 @@ public final class HexView {
         box.marginBottom = 6
 
         let hexButton = Button(label: "Copy Hex")
-        hexButton.add(cssClass: "flat")
+        hexButton.add(cssClass: "luma-menu-item")
         hexButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
                 self?.copySelection(.hex)
@@ -427,7 +427,7 @@ public final class HexView {
         box.append(child: hexButton)
 
         let asciiButton = Button(label: "Copy ASCII")
-        asciiButton.add(cssClass: "flat")
+        asciiButton.add(cssClass: "luma-menu-item")
         asciiButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
                 self?.copySelection(.ascii)
@@ -437,7 +437,7 @@ public final class HexView {
         box.append(child: asciiButton)
 
         let base64Button = Button(label: "Copy Base64")
-        base64Button.add(cssClass: "flat")
+        base64Button.add(cssClass: "luma-menu-item")
         base64Button.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
                 self?.copySelection(.base64)

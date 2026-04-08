@@ -272,39 +272,9 @@ private let monacoEditorTextChanged: @convention(c) (
 @MainActor
 public enum MonacoTypings {
     public static let fridaGum: MonacoExtraLib? = {
-        if let typing = TypeScriptTypings.fridaGum {
-            return MonacoExtraLib(typing.content, filePath: typing.filePath)
-        }
-        return loadFridaGumFromSiblingBundle()
+        guard let typing = TypeScriptTypings.fridaGum else { return nil }
+        return MonacoExtraLib(typing.content, filePath: typing.filePath)
     }()
-
-    private static func loadFridaGumFromSiblingBundle() -> MonacoExtraLib? {
-        let fm = FileManager.default
-        let ownBundleURL = Bundle.module.bundleURL
-        let parent = ownBundleURL.deletingLastPathComponent()
-        let candidates = [
-            parent.appendingPathComponent("luma_LumaCore.resources"),
-            parent.appendingPathComponent("LumaCore_LumaCore.resources"),
-        ]
-        for candidate in candidates {
-            let direct = candidate.appendingPathComponent("frida-gum.d.ts")
-            if let content = try? String(contentsOf: direct, encoding: .utf8) {
-                return MonacoExtraLib(content, filePath: "@types/frida-gum/index.d.ts")
-            }
-            let nested = candidate.appendingPathComponent("Typings/frida-gum.d.ts")
-            if let content = try? String(contentsOf: nested, encoding: .utf8) {
-                return MonacoExtraLib(content, filePath: "@types/frida-gum/index.d.ts")
-            }
-        }
-        if let enumerator = fm.enumerator(at: parent, includingPropertiesForKeys: nil) {
-            for case let url as URL in enumerator where url.lastPathComponent == "frida-gum.d.ts" {
-                if let content = try? String(contentsOf: url, encoding: .utf8) {
-                    return MonacoExtraLib(content, filePath: "@types/frida-gum/index.d.ts")
-                }
-            }
-        }
-        return nil
-    }
 
     public static let fridaCompilerOptions = TypeScriptCompilerOptions(
         target: 9,

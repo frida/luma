@@ -215,8 +215,17 @@ final class LumaApplication {
         openWindow(forFile: URL(fileURLWithPath: recents[slot]))
     }
 
+    private var lastBuiltRecentsSignature: String = ""
+    private var primaryMenuBuilt: Bool = false
+
     func rebuildPrimaryMenu() {
         guard let menu = primaryMenuPtr else { return }
+        let signature = LumaState.shared.recentPaths.joined(separator: "\u{1f}")
+        if primaryMenuBuilt && signature == lastBuiltRecentsSignature {
+            return
+        }
+        lastBuiltRecentsSignature = signature
+        primaryMenuBuilt = true
         luma_menu_remove_all(menu)
 
         let topSection = luma_menu_new()

@@ -18,7 +18,9 @@ final class TracerConfigEditor {
     private let contentSlot: Box
     private var hooksList: HooksList?
     private var editorPane: EditorPane?
-    private var emptyStateSearch: EmptyStateSearch?
+    private var emptyStateSearch: TracerHookSearch?
+    private var popoverSearch: TracerHookSearch?
+    private var addPopover: Popover?
 
     init(
         engine: Engine,
@@ -70,11 +72,13 @@ final class TracerConfigEditor {
         hooksList = nil
         editorPane = nil
         emptyStateSearch = nil
+        dismissAddPopover()
 
         if config.hooks.isEmpty {
-            let search = EmptyStateSearch(
+            let search = TracerHookSearch(
                 engine: engine,
                 sessionID: sessionID,
+                layout: .emptyState,
                 onPick: { [weak self] api in
                     self?.appendHook(for: api)
                 }
@@ -109,6 +113,9 @@ final class TracerConfigEditor {
             },
             onDelete: { [weak self] id in
                 self?.deleteHook(id: id)
+            },
+            onAddRequested: { [weak self] anchor in
+                self?.presentAddPopover(anchor: anchor)
             },
             attached: engine?.node(forSessionID: sessionID) != nil
         )
@@ -161,6 +168,35 @@ final class TracerConfigEditor {
         let address: UInt64
     }
 
+    private func presentAddPopover(anchor: WidgetRef) {
+        dismissAddPopover()
+        let popover = Popover()
+        popover.autohide = true
+        let search = TracerHookSearch(
+            engine: engine,
+            sessionID: sessionID,
+            layout: .popover,
+            onPick: { [weak self] api in
+                self?.appendHook(for: api)
+                self?.dismissAddPopover()
+            }
+        )
+        popover.set(child: search.widget)
+        popover.set(parent: anchor)
+        addPopover = popover
+        popoverSearch = search
+        popover.popup()
+    }
+
+    private func dismissAddPopover() {
+        if let popover = addPopover {
+            popover.popdown()
+            popover.unparent()
+        }
+        addPopover = nil
+        popoverSearch = nil
+    }
+
     fileprivate func appendHook(for api: ResolvedApi) {
         let stub = defaultTracerNativeStub.replacingOccurrences(
             of: "CALL(args[0]",
@@ -180,7 +216,12 @@ final class TracerConfigEditor {
 }
 
 @MainActor
-private final class EmptyStateSearch {
+private final class TracerHookSearch {
+    enum Layout {
+        case emptyState
+        case popover
+    }
+
     let widget: Box
 
     private weak var engine: Engine?
@@ -200,6 +241,7 @@ private final class EmptyStateSearch {
     init(
         engine: Engine?,
         sessionID: UUID,
+        layout: Layout,
         onPick: @escaping (TracerConfigEditor.ResolvedApi) -> Void
     ) {
         self.engine = engine
@@ -209,28 +251,39 @@ private final class EmptyStateSearch {
         widget = Box(orientation: .vertical, spacing: 12)
         widget.hexpand = true
         widget.vexpand = true
-        widget.valign = .center
-        widget.halign = .center
-        widget.setSizeRequest(width: 480, height: -1)
-        widget.marginStart = 24
-        widget.marginEnd = 24
-        widget.marginTop = 24
-        widget.marginBottom = 24
+        switch layout {
+        case .emptyState:
+            widget.valign = .center
+            widget.halign = .center
+            widget.setSizeRequest(width: 480, height: -1)
+            widget.marginStart = 24
+            widget.marginEnd = 24
+            widget.marginTop = 24
+            widget.marginBottom = 24
+        case .popover:
+            widget.setSizeRequest(width: 360, height: 360)
+            widget.marginStart = 10
+            widget.marginEnd = 10
+            widget.marginTop = 10
+            widget.marginBottom = 10
+        }
 
-        let icon = Image(iconName: "edit-find-symbolic")
-        icon.set(pixelSize: 48)
-        icon.add(cssClass: "dim-label")
-        widget.append(child: icon)
+        if layout == .emptyState {
+            let icon = Image(iconName: "edit-find-symbolic")
+            icon.set(pixelSize: 48)
+            icon.add(cssClass: "dim-label")
+            widget.append(child: icon)
 
-        let title = Label(str: "Start tracing functions")
-        title.add(cssClass: "title-3")
-        widget.append(child: title)
+            let title = Label(str: "Start tracing functions")
+            title.add(cssClass: "title-3")
+            widget.append(child: title)
 
-        let subtitleLabel = Label(str: "Search for functions in the attached process and add them as hooks.")
-        subtitleLabel.add(cssClass: "dim-label")
-        subtitleLabel.wrap = true
-        subtitleLabel.justify = .center
-        widget.append(child: subtitleLabel)
+            let subtitleLabel = Label(str: "Search for functions in the attached process and add them as hooks.")
+            subtitleLabel.add(cssClass: "dim-label")
+            subtitleLabel.wrap = true
+            subtitleLabel.justify = .center
+            widget.append(child: subtitleLabel)
+        }
 
         let attached = engine?.node(forSessionID: sessionID) != nil
 
@@ -261,7 +314,9 @@ private final class EmptyStateSearch {
         scroll = ScrolledWindow()
         scroll.hexpand = true
         scroll.vexpand = true
-        scroll.setSizeRequest(width: -1, height: 280)
+        if layout == .emptyState {
+            scroll.setSizeRequest(width: -1, height: 280)
+        }
         scroll.set(child: listBox)
         scroll.visible = false
         widget.append(child: scroll)
@@ -418,6 +473,7 @@ private final class HooksList {
         onSelect: @escaping (UUID?) -> Void,
         onToggleEnabled: @escaping (UUID, Bool) -> Void,
         onDelete: @escaping (UUID) -> Void,
+        onAddRequested: @escaping (WidgetRef) -> Void,
         attached: Bool
     ) {
         widget = Box(orientation: .vertical, spacing: 6)
@@ -442,6 +498,12 @@ private final class HooksList {
         addButton.add(cssClass: "flat")
         addButton.tooltipText = attached ? "Add hooks by searching functions" : "Attach to a process to search APIs."
         addButton.sensitive = attached
+        addButton.onClicked { [anchor = addButton] _ in
+            MainActor.assumeIsolated {
+                guard let ref = WidgetRef(anchor.widget_ptr) else { return }
+                onAddRequested(ref)
+            }
+        }
         header.append(child: addButton)
         widget.append(child: header)
 

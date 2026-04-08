@@ -33,7 +33,7 @@ enum AddressActionMenu {
         box.marginBottom = 6
 
         let openMemoryButton = Button(label: "Open Memory")
-        openMemoryButton.add(cssClass: "flat")
+        openMemoryButton.add(cssClass: "luma-menu-item")
         openMemoryButton.onClicked { [popover] _ in
             MainActor.assumeIsolated {
                 popover.popdown()
@@ -43,7 +43,7 @@ enum AddressActionMenu {
         box.append(child: openMemoryButton)
 
         let openDisassemblyButton = Button(label: "Open Disassembly")
-        openDisassemblyButton.add(cssClass: "flat")
+        openDisassemblyButton.add(cssClass: "luma-menu-item")
         openDisassemblyButton.onClicked { [popover] _ in
             MainActor.assumeIsolated {
                 popover.popdown()

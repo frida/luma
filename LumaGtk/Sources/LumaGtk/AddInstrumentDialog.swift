@@ -41,7 +41,7 @@ final class AddInstrumentDialog {
 
         window = Window()
         window.title = "Add Instrument"
-        window.setDefaultSize(width: 900, height: 600)
+        window.setDefaultSize(width: 960, height: 720)
         window.modal = true
         window.setTransientFor(parent: parent)
         window.destroyWithParent = true
@@ -313,21 +313,88 @@ final class AddInstrumentDialog {
     }
 
     private func buildCodeShareEditor(descriptor: LumaCore.InstrumentDescriptor) {
+        guard let config = try? JSONDecoder().decode(CodeShareConfig.self, from: pendingConfigJSON) else {
+            showPlaceholder(message: "Failed to decode codeshare config")
+            return
+        }
+
+        if config.source.isEmpty {
+            showCodeShareEmptyState()
+            return
+        }
+
+        buildCodeShareForm(descriptor: descriptor, initialConfig: config)
+    }
+
+    private func showCodeShareEmptyState() {
+        clearDetail()
+        addButton.sensitive = false
+
+        let box = Box(orientation: .vertical, spacing: 12)
+        box.halign = .center
+        box.valign = .center
+        box.hexpand = true
+        box.vexpand = true
+        box.marginStart = 24
+        box.marginEnd = 24
+        box.marginTop = 24
+        box.marginBottom = 24
+
+        let icon = Image(iconName: "cloud-symbolic")
+        icon.pixelSize = 48
+        icon.add(cssClass: "dim-label")
+        box.append(child: icon)
+
+        let title = Label(str: "No snippet loaded")
+        title.add(cssClass: "title-3")
+        box.append(child: title)
+
+        let hint = Label(str: "Browse CodeShare to pick a snippet to instrument.")
+        hint.add(cssClass: "dim-label")
+        hint.wrap = true
+        hint.justify = .center
+        box.append(child: hint)
+
+        let browse = Button(label: "Browse CodeShare\u{2026}")
+        browse.add(cssClass: "suggested-action")
+        browse.halign = .center
+        browse.onClicked { [weak self] _ in
+            MainActor.assumeIsolated { self?.openCodeShareBrowser() }
+        }
+        box.append(child: browse)
+
+        detailContainer.append(child: box)
+    }
+
+    private func buildCodeShareForm(
+        descriptor: LumaCore.InstrumentDescriptor,
+        initialConfig: CodeShareConfig
+    ) {
+        var config = initialConfig
         detailContainer.marginStart = 24
         detailContainer.marginEnd = 24
         detailContainer.marginTop = 16
         detailContainer.marginBottom = 16
         detailContainer.spacing = 8
 
-        guard var config = try? JSONDecoder().decode(CodeShareConfig.self, from: pendingConfigJSON) else {
-            detailContainer.append(child: errorLabel("Failed to decode codeshare config"))
-            return
-        }
-
-        let title = Label(str: descriptor.displayName)
+        let title = Label(str: config.name.isEmpty ? descriptor.displayName : config.name)
         title.halign = .start
         title.add(cssClass: "title-3")
         detailContainer.append(child: title)
+
+        if let project = config.project {
+            let sub = Label(str: "@\(project.owner)/\(project.slug)")
+            sub.halign = .start
+            sub.add(cssClass: "caption")
+            sub.add(cssClass: "dim-label")
+            detailContainer.append(child: sub)
+        } else {
+            let sub = Label(str: "Local snippet (not published)")
+            sub.halign = .start
+            sub.add(cssClass: "caption")
+            sub.add(cssClass: "dim-label")
+            detailContainer.append(child: sub)
+        }
 
         let nameRow = Box(orientation: .horizontal, spacing: 8)
         nameRow.append(child: Label(str: "Name"))
@@ -354,7 +421,7 @@ final class AddInstrumentDialog {
         let editorContainer = Box(orientation: .vertical, spacing: 0)
         editorContainer.hexpand = true
         editorContainer.vexpand = true
-        editorContainer.setSizeRequest(width: -1, height: 360)
+        editorContainer.setSizeRequest(width: -1, height: 320)
         detailContainer.append(child: editorContainer)
 
         var monacoProfile = MonacoEditorProfile(languageId: "javascript", theme: .dark, fontSize: 13)

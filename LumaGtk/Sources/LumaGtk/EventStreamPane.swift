@@ -695,12 +695,21 @@ final class EventStreamPane {
         let rightClick = GestureClick()
         rightClick.set(button: 3)
         let anchor = widget
-        rightClick.onPressed { [weak self, anchor] _, _, x, y in
+        rightClick.onPressed { [weak self, column, anchor] _, _, x, y in
             MainActor.assumeIsolated {
+                var tx: Double = 0
+                var ty: Double = 0
+                column.translateCoordinates(
+                    destWidget: anchor,
+                    srcX: x,
+                    srcY: y,
+                    destX: &tx,
+                    destY: &ty
+                )
                 self?.presentHookContextMenu(
                     anchor: anchor,
-                    x: x,
-                    y: y,
+                    x: tx,
+                    y: ty,
                     sessionID: sessionID,
                     instrumentID: instrumentID,
                     hookID: hookID,
@@ -752,10 +761,19 @@ final class EventStreamPane {
         let gesture = GestureClick()
         gesture.set(button: 3)
         let anchor = widget
-        gesture.onPressed { [weak self, anchor] _, _, x, y in
+        gesture.onPressed { [weak self, row, anchor] _, _, x, y in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.presentRowContextMenu(at: anchor, x: x, y: y, event: event)
+                var translatedX: Double = 0
+                var translatedY: Double = 0
+                row.translateCoordinates(
+                    destWidget: anchor,
+                    srcX: x,
+                    srcY: y,
+                    destX: &translatedX,
+                    destY: &translatedY
+                )
+                self.presentRowContextMenu(at: anchor, x: translatedX, y: translatedY, event: event)
             }
         }
         row.install(controller: gesture)
@@ -773,7 +791,7 @@ final class EventStreamPane {
         box.marginBottom = 6
 
         let pinButton = Button(label: "Pin to Notebook")
-        pinButton.add(cssClass: "flat")
+        pinButton.add(cssClass: "luma-menu-item")
         pinButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
                 popover.popdown()
@@ -843,7 +861,7 @@ final class EventStreamPane {
         box.marginBottom = 6
 
         let pinButton = Button(label: "Pin to Notebook")
-        pinButton.add(cssClass: "flat")
+        pinButton.add(cssClass: "luma-menu-item")
         pinButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
                 popover.popdown()
@@ -853,7 +871,7 @@ final class EventStreamPane {
         box.append(child: pinButton)
 
         let goButton = Button(label: "Go to Hook")
-        goButton.add(cssClass: "flat")
+        goButton.add(cssClass: "luma-menu-item")
         goButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
                 popover.popdown()

@@ -180,7 +180,7 @@ final class NotebookPane {
 
         if entry.isUserNote {
             let editButton = Button(label: "Edit")
-            editButton.add(cssClass: "flat")
+            editButton.add(cssClass: "luma-menu-item")
             editButton.onClicked { [weak self, popover] _ in
                 MainActor.assumeIsolated {
                     popover.popdown()
@@ -191,7 +191,7 @@ final class NotebookPane {
         }
 
         let insertButton = Button(label: "Insert Note Below")
-        insertButton.add(cssClass: "flat")
+        insertButton.add(cssClass: "luma-menu-item")
         insertButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
                 popover.popdown()
@@ -203,7 +203,7 @@ final class NotebookPane {
         box.append(child: Separator(orientation: .horizontal))
 
         let deleteButton = Button(label: "Delete")
-        deleteButton.add(cssClass: "flat")
+        deleteButton.add(cssClass: "luma-menu-item")
         deleteButton.add(cssClass: "luma-menu-destructive")
         deleteButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {

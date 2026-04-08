@@ -168,6 +168,13 @@ public final class Engine {
     }
 
     public func start() async {
+        if let loaded = try? store.fetchSessions() {
+            for var session in loaded where session.phase != .idle {
+                session.phase = .idle
+                try? store.save(session)
+            }
+        }
+
         sessionsObservation = store.observeSessions { [weak self] sessions in
             Task { @MainActor in self?.sessions = sessions }
         }

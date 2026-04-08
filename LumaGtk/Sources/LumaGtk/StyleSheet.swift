@@ -98,38 +98,40 @@ enum StyleSheet {
         padding: 4px;
         min-width: 200px;
     }
-    box.luma-menu > button.flat,
-    box.luma-menu > button {
+    button.luma-menu-item {
         padding: 6px 10px;
         border-radius: 6px;
-        background: transparent;
+        background: none;
         background-image: none;
+        background-color: transparent;
         border: none;
         box-shadow: none;
         color: @theme_fg_color;
+        text-shadow: none;
+        -gtk-icon-shadow: none;
+        min-width: 180px;
     }
-    box.luma-menu > button.flat > label,
-    box.luma-menu > button > label {
+    button.luma-menu-item label {
         color: @theme_fg_color;
     }
-    box.luma-menu > button.flat:hover,
-    box.luma-menu > button:hover {
+    button.luma-menu-item:hover,
+    button.luma-menu-item:focus,
+    button.luma-menu-item:focus:hover {
+        background: none;
+        background-image: none;
         background-color: alpha(@accent_bg_color, 0.18);
+    }
+    button.luma-menu-item.luma-menu-destructive,
+    button.luma-menu-item.luma-menu-destructive label {
+        color: #e01b24;
+    }
+    button.luma-menu-item.luma-menu-destructive:hover,
+    button.luma-menu-item.luma-menu-destructive:focus:hover {
+        background: none;
         background-image: none;
-    }
-    box.luma-menu > button.luma-menu-destructive,
-    box.luma-menu > button.luma-menu-destructive.flat {
-        color: #e01b24;
-    }
-    box.luma-menu > button.luma-menu-destructive > label {
-        color: #e01b24;
-    }
-    box.luma-menu > button.luma-menu-destructive:hover,
-    box.luma-menu > button.luma-menu-destructive.flat:hover {
         background-color: alpha(#e01b24, 0.18);
-        background-image: none;
     }
-    box.luma-menu > separator {
+    .luma-menu separator {
         background-color: alpha(@theme_fg_color, 0.15);
         margin: 4px 2px;
         min-height: 1px;
