@@ -24,10 +24,10 @@ $(APP): $(SOURCES) Luma.xcodeproj Package.swift
 	@touch $@
 
 gtk:
-	cd LumaGtk && swift build
+	$(MAKE) -C LumaGtk build
 
 gtk-release:
-	cd LumaGtk && swift build -c release
+	$(MAKE) -C LumaGtk build SWIFT_BUILD_FLAGS=-c\ release
 
 clean:
 	rm -rf "$(BUILD_DIR)"

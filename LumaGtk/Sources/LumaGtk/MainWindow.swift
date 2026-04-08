@@ -26,14 +26,17 @@ final class MainWindow {
     private let detailContainer: Box
     private let eventStreamPane: EventStreamPane
     private var notebookPane: NotebookPane?
-    private weak var currentTracerEditor: InstrumentConfigEditor?
+    private var currentInstrumentDetail: InstrumentDetailPane?
+    private var currentREPLPane: REPLPane?
+    private var currentREPLSessionID: UUID?
+    private var currentInsightDetail: InsightDetailView?
+    private var currentInsightID: UUID?
 
     private var sessions: [LumaCore.ProcessSession] = []
     private var installedPackages: [LumaCore.InstalledPackage] = []
     private var instrumentsBySession: [UUID: [LumaCore.InstrumentInstance]] = [:]
     private var insightsBySession: [UUID: [LumaCore.AddressInsight]] = [:]
     private var capturesBySession: [UUID: [LumaCore.ITraceCaptureRecord]] = [:]
-    private var sessionIconTempFiles: [UUID: URL] = [:]
     private var sessionsRowKinds: [SessionsRow] = []
     private var selection: SidebarSelection = .notebook
     private var addInstrumentButton: Button!
@@ -42,6 +45,9 @@ final class MainWindow {
     private var collaborationPanel: CollaborationPanel?
     private let outerPaned: Paned
     private var topPaned: Paned!
+    private var eventStreamPaned: Paned!
+    private var eventStreamHost: Box!
+    private var detailHost: Widget!
     private var toastOverlay: ToastOverlay!
     private var isCollaborationPanelVisible: Bool = false
 
@@ -136,12 +142,25 @@ final class MainWindow {
         outerPaned.hexpand = true
         outerPaned.vexpand = true
 
-        let separator = Separator(orientation: .horizontal)
+        let eventStreamPaned = Paned(orientation: .vertical)
+        eventStreamPaned.resizeStartChild = true
+        eventStreamPaned.resizeEndChild = true
+        eventStreamPaned.shrinkStartChild = false
+        eventStreamPaned.shrinkEndChild = false
+        eventStreamPaned.hexpand = true
+        eventStreamPaned.vexpand = true
+        self.eventStreamPaned = eventStreamPaned
+        self.detailHost = outerPaned
 
         let column = Box(orientation: .vertical, spacing: 0)
-        column.append(child: outerPaned)
-        column.append(child: separator)
-        column.append(child: eventStreamPane.widget)
+        column.hexpand = true
+        column.vexpand = true
+        self.eventStreamHost = column
+        applyEventStreamLayout()
+
+        eventStreamPane.onCollapsedChanged = { [weak self] _ in
+            self?.applyEventStreamLayout()
+        }
         let toastOverlay = ToastOverlay(content: column)
         self.toastOverlay = toastOverlay
         window.set(child: toastOverlay.widget)
@@ -219,10 +238,48 @@ final class MainWindow {
             height: Int(height),
             maximized: window.isMaximized
         )
+        let eventStreamSash: Int?
+        if eventStreamPane.collapsed {
+            eventStreamSash = nil
+        } else {
+            eventStreamSash = Int(eventStreamPaned.position)
+        }
         state.saveSashes(
             sidebar: Int(topPaned.position),
-            collaboration: Int(outerPaned.position)
+            collaboration: Int(outerPaned.position),
+            eventStream: eventStreamSash
         )
+    }
+
+    private func applyEventStreamLayout() {
+        let host = eventStreamHost!
+        var c = host.firstChild
+        while let cur = c {
+            c = cur.nextSibling
+            host.remove(child: cur)
+        }
+        // Detach children from any prior parent (Paned holds raw refs).
+        let detail = detailHost!
+        let stream = eventStreamPane.widget
+        if let p = detail.parent { (p as? Box)?.remove(child: detail) }
+        eventStreamPaned.startChild = nil
+        eventStreamPaned.endChild = nil
+
+        if eventStreamPane.collapsed {
+            host.append(child: detail)
+            host.append(child: stream)
+        } else {
+            eventStreamPaned.startChild = WidgetRef(detail)
+            eventStreamPaned.endChild = WidgetRef(stream)
+            var totalHeight = Int(eventStreamPaned.allocatedHeight)
+            if totalHeight <= 0 {
+                totalHeight = LumaState.shared.windowHeight
+            }
+            let saved = LumaState.shared.eventStreamSashPosition
+            let defaultPosition = max(0, (totalHeight * 7) / 10)
+            eventStreamPaned.position = Int(saved ?? defaultPosition)
+            host.append(child: eventStreamPaned)
+        }
     }
 
 
@@ -234,6 +291,14 @@ final class MainWindow {
         eventStreamPane.attach(engine: engine)
         eventStreamPane.onNavigateToHook = { [weak self] sessionID, instrumentID, hookID in
             self?.navigateToHook(sessionID: sessionID, instrumentID: instrumentID, hookID: hookID)
+        }
+        AddressActionMenu.navigator = { [weak self] sessionID, insightID in
+            guard let self else { return }
+            self.refreshInstruments()
+            self.select(.insight(sessionID: sessionID, insightID: insightID))
+        }
+        AddressActionMenu.errorReporter = { [weak self] message in
+            self?.showToast(message)
         }
         let panel = CollaborationPanel(engine: engine, onClose: { [weak self] in
             self?.setCollaborationVisible(false)
@@ -287,8 +352,11 @@ final class MainWindow {
         session.deviceName = device.name
         session.processName = config.defaultDisplayName
         try? engine.store.save(session)
+        ensureSessionVisible(session)
+        select(.repl(session.id))
         Task { @MainActor in
             await engine.spawnAndAttach(device: device, session: session)
+            self.refreshAfterAttach(sessionID: session.id)
         }
     }
 
@@ -310,8 +378,24 @@ final class MainWindow {
         session.processName = process.name
         session.lastKnownPID = process.pid
         try? engine.store.save(session)
+        ensureSessionVisible(session)
+        select(.repl(session.id))
         Task { @MainActor in
             await engine.attach(device: device, process: process, session: session)
+            self.refreshAfterAttach(sessionID: session.id)
+        }
+    }
+
+    private func ensureSessionVisible(_ session: LumaCore.ProcessSession) {
+        if !sessions.contains(where: { $0.id == session.id }) {
+            sessions.append(session)
+        }
+    }
+
+    private func refreshAfterAttach(sessionID: UUID) {
+        Task { @MainActor in
+            guard currentREPLSessionID == sessionID, let pane = currentREPLPane else { return }
+            pane.focusInput()
         }
     }
 
@@ -477,6 +561,31 @@ final class MainWindow {
     }
 
     private func renderDetail() {
+        if case .repl(let id) = selection {
+            if currentREPLSessionID != id {
+                currentREPLPane = nil
+                currentREPLSessionID = nil
+            }
+        } else {
+            currentREPLPane = nil
+            currentREPLSessionID = nil
+        }
+        if case .instrument(_, let iid) = selection {
+            if currentInstrumentDetail?.instrumentID != iid {
+                currentInstrumentDetail = nil
+            }
+        } else {
+            currentInstrumentDetail = nil
+        }
+        if case .insight(_, let iid) = selection {
+            if currentInsightID != iid {
+                currentInsightDetail = nil
+                currentInsightID = nil
+            }
+        } else {
+            currentInsightDetail = nil
+            currentInsightID = nil
+        }
         let widget: Widget
         switch selection {
         case .notebook:
@@ -512,9 +621,15 @@ final class MainWindow {
             let cached = insightsBySession[sid]?.first { $0.id == iid }
             let insight = cached ?? (try? engine?.store.fetchInsights(sessionID: sid))?.first { $0.id == iid }
             if let insight, let engine {
-                let address = insight.lastResolvedAddress ?? 0
-                let panel = AddressDetailsPanel(engine: engine, sessionID: sid, address: address)
-                widget = panel.widget
+                let detail: InsightDetailView
+                if let existing = currentInsightDetail, currentInsightID == iid {
+                    detail = existing
+                } else {
+                    detail = InsightDetailView(engine: engine, sessionID: sid, insight: insight)
+                    currentInsightDetail = detail
+                    currentInsightID = iid
+                }
+                widget = detail.widget
             } else {
                 widget = MainWindow.makeEmptyState(
                     icon: "text-x-generic-symbolic",
@@ -587,67 +702,21 @@ final class MainWindow {
     private func makeInstrumentDetail(
         session: LumaCore.ProcessSession,
         instrument: LumaCore.InstrumentInstance
-    ) -> Box {
-        let column = Box(orientation: .vertical, spacing: 0)
-        column.hexpand = true
-        column.vexpand = true
-
-        if SessionDetachedBanner.shouldShow(for: session) {
-            let banner = SessionDetachedBanner.make(for: session) { [weak self] in
-                self?.reestablishSession(id: session.id)
-            }
-            column.append(child: banner)
+    ) -> Widget {
+        guard let engine else {
+            return MainWindow.makeEmptyState(
+                icon: "applications-development-symbolic",
+                title: "Instrument unavailable",
+                subtitle: "Engine is not attached."
+            )
         }
-
-        let descriptor = engine?.descriptor(for: instrument)
-        let title = descriptor?.displayName ?? "Instrument"
-        let subtitleLines: [String] = [
-            "Session: \(session.processName)",
-            "Kind: \(instrument.kind)",
-            "Source: \(instrument.sourceIdentifier)",
-            "Enabled: \(instrument.isEnabled)",
-        ]
-        column.append(child: makePlaceholder(title: title, subtitle: subtitleLines.joined(separator: "\n")))
-
-        let configHeader = Label(str: "Configuration")
-        configHeader.halign = .start
-        configHeader.marginStart = 24
-        configHeader.marginTop = 8
-        configHeader.add(cssClass: "heading")
-        column.append(child: configHeader)
-
-        if let engine {
-            let editor = InstrumentConfigEditor(engine: engine, instrument: instrument)
-            column.append(child: editor.widget)
-            if instrument.kind == .tracer {
-                currentTracerEditor = editor
-            }
+        if let existing = currentInstrumentDetail, existing.instrumentID == instrument.id {
+            existing.applySessionState()
+            return existing.widget
         }
-
-        let actions = Box(orientation: .horizontal, spacing: 8)
-        actions.marginStart = 24
-        actions.marginEnd = 24
-        actions.marginBottom = 16
-        let toggleLabel = instrument.isEnabled ? "Disable" : "Enable"
-        let toggleButton = Button(label: toggleLabel)
-        toggleButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.toggleInstrument(instrument)
-            }
-        }
-        actions.append(child: toggleButton)
-
-        let deleteButton = Button(label: "Remove")
-        deleteButton.add(cssClass: "destructive-action")
-        deleteButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.deleteInstrument(instrument)
-            }
-        }
-        actions.append(child: deleteButton)
-        column.append(child: actions)
-
-        return column
+        let pane = InstrumentDetailPane(engine: engine, session: session, instrument: instrument, owner: self)
+        currentInstrumentDetail = pane
+        return pane.widget
     }
 
     private func toggleInstrument(_ instrument: LumaCore.InstrumentInstance) {
@@ -697,15 +766,14 @@ final class MainWindow {
         column.hexpand = true
         column.vexpand = true
 
-        if SessionDetachedBanner.shouldShow(for: session) {
-            let banner = SessionDetachedBanner.make(for: session) { [weak self] in
-                self?.reestablishSession(id: session.id)
-            }
-            column.append(child: banner)
-        }
-
-        let repl = REPLPane(engine: engine, sessionID: session.id)
+        let repl = REPLPane(engine: engine, sessionID: session.id, owner: self)
+        currentREPLPane = repl
+        currentREPLSessionID = session.id
         column.append(child: repl.widget)
+        Task { @MainActor [weak self] in
+            guard let self, self.currentREPLPane === repl else { return }
+            repl.focusInput()
+        }
         return column
     }
 
@@ -713,11 +781,14 @@ final class MainWindow {
 
     private func openAddInstrumentDialog() {
         guard let engine, let sessionID = currentSessionID() else { return }
+        let existing = (try? engine.store.fetchInstruments(sessionID: sessionID)) ?? []
+        let disabledDescriptorIDs = Set(existing.compactMap { engine.descriptor(for: $0)?.id })
         let dialog = AddInstrumentDialog(
             parent: window,
             engine: engine,
             sessionID: sessionID,
-            descriptors: engine.descriptors
+            descriptors: engine.descriptors,
+            disabledDescriptorIDs: disabledDescriptorIDs
         ) { [weak self] instance in
             guard let self else { return }
             self.refreshInstruments()
@@ -728,7 +799,7 @@ final class MainWindow {
         dialog.present()
     }
 
-    private func reestablishSession(id: UUID) {
+    func reestablishSession(id: UUID) {
         guard let engine else { return }
         Task { @MainActor in
             let result = await engine.reestablishSession(id: id)
@@ -830,7 +901,7 @@ final class MainWindow {
 
     private func navigateToHook(sessionID: UUID, instrumentID: UUID, hookID: UUID) {
         select(.instrument(sessionID: sessionID, instrumentID: instrumentID))
-        currentTracerEditor?.selectTracerHook(id: hookID)
+        currentInstrumentDetail?.selectTracerHook(id: hookID)
     }
 
     private func select(_ newValue: SidebarSelection) {
@@ -873,6 +944,10 @@ final class MainWindow {
     private func renderSessions(_ snapshot: [LumaCore.ProcessSession]) {
         sessions = snapshot
         refreshInstruments()
+        if let id = currentREPLSessionID, snapshot.contains(where: { $0.id == id }) {
+            currentREPLPane?.applySessionState()
+        }
+        currentInstrumentDetail?.applySessionState()
 
         let stillExists: Bool
         switch selection {
@@ -922,7 +997,7 @@ final class MainWindow {
             headerBox.marginTop = 4
             headerBox.marginBottom = 4
 
-            let icon = makeSessionIcon(for: session)
+            let icon = makeSessionIcon(for: session, node: engine?.node(forSessionID: session.id))
             icon.pixelSize = 24
             icon.add(cssClass: "luma-session-icon")
             headerBox.append(child: icon)
@@ -1039,20 +1114,19 @@ final class MainWindow {
         }
     }
 
-    private func makeSessionIcon(for session: LumaCore.ProcessSession) -> Gtk.Image {
-        if let data = session.iconPNGData {
-            let url: URL
-            if let cached = sessionIconTempFiles[session.id] {
-                url = cached
-            } else {
-                let dir = URL(fileURLWithPath: "/tmp/luma-icons", isDirectory: true)
-                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                let target = dir.appendingPathComponent("\(session.id.uuidString).png")
-                try? data.write(to: target)
-                sessionIconTempFiles[session.id] = target
-                url = target
-            }
-            return Gtk.Image(file: url.path)
+    private func makeSessionIcon(
+        for session: LumaCore.ProcessSession,
+        node: LumaCore.ProcessNode?
+    ) -> Gtk.Image {
+        if let lastIcon = node?.process.icons.last,
+            let image = IconPixbuf.makeImage(from: lastIcon, pixelSize: 24)
+        {
+            return image
+        }
+        if let data = session.iconPNGData,
+            let image = IconPixbuf.makeImage(fromPNGData: data, pixelSize: 24)
+        {
+            return image
         }
         return Gtk.Image(iconName: "application-x-executable-symbolic")
     }
@@ -1066,20 +1140,21 @@ final class MainWindow {
     ) {
         let click = GestureClick()
         click.set(button: 3)
-        click.onPressed { [weak self, weak anchor] _, _, _, _ in
+        click.onPressed { [weak self, anchor] _, _, x, y in
             MainActor.assumeIsolated {
-                guard let self, let anchor else { return }
-                self.presentSessionContextMenu(anchor: anchor, session: session)
+                guard let self else { return }
+                self.presentSessionContextMenu(anchor: anchor, x: x, y: y, session: session)
             }
         }
         row.install(controller: click)
     }
 
-    private func presentSessionContextMenu(anchor: Widget, session: LumaCore.ProcessSession) {
+    private func presentSessionContextMenu(anchor: Widget, x: Double, y: Double, session: LumaCore.ProcessSession) {
         let popover = Popover()
         popover.autohide = true
 
         let box = Box(orientation: .vertical, spacing: 2)
+        box.add(cssClass: "luma-menu")
         box.marginStart = 6
         box.marginEnd = 6
         box.marginTop = 6
@@ -1089,10 +1164,10 @@ final class MainWindow {
         if node != nil {
             let killButton = Button(label: "Kill Process")
             killButton.add(cssClass: "flat")
-            killButton.add(cssClass: "destructive-action")
-            killButton.onClicked { [weak self, weak popover] _ in
+            killButton.add(cssClass: "luma-menu-destructive")
+            killButton.onClicked { [weak self, popover] _ in
                 MainActor.assumeIsolated {
-                    popover?.popdown()
+                    popover.popdown()
                     self?.confirmKillProcess(session: session)
                 }
             }
@@ -1100,9 +1175,9 @@ final class MainWindow {
 
             let detachButton = Button(label: "Detach Session")
             detachButton.add(cssClass: "flat")
-            detachButton.onClicked { [weak self, weak popover] _ in
+            detachButton.onClicked { [weak self, popover] _ in
                 MainActor.assumeIsolated {
-                    popover?.popdown()
+                    popover.popdown()
                     if let node = self?.engine?.node(forSessionID: session.id) {
                         self?.engine?.removeNode(node)
                         self?.showToast("Detached \(session.processName)")
@@ -1113,9 +1188,9 @@ final class MainWindow {
         } else {
             let reButton = Button(label: "Reestablish…")
             reButton.add(cssClass: "flat")
-            reButton.onClicked { [weak self, weak popover] _ in
+            reButton.onClicked { [weak self, popover] _ in
                 MainActor.assumeIsolated {
-                    popover?.popdown()
+                    popover.popdown()
                     self?.reestablishSession(id: session.id)
                 }
             }
@@ -1126,10 +1201,10 @@ final class MainWindow {
 
         let deleteButton = Button(label: "Delete Session")
         deleteButton.add(cssClass: "flat")
-        deleteButton.add(cssClass: "destructive-action")
-        deleteButton.onClicked { [weak self, weak popover] _ in
+        deleteButton.add(cssClass: "luma-menu-destructive")
+        deleteButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
-                popover?.popdown()
+                popover.popdown()
                 self?.confirmDeleteSession(session)
             }
         }
@@ -1137,7 +1212,7 @@ final class MainWindow {
 
         popover.set(child: box)
         popover.set(parent: anchor)
-        popover.popup()
+        popover.presentPointing(at: x, y: y)
     }
 
     private func attachInstrumentContextMenu(
@@ -1147,10 +1222,10 @@ final class MainWindow {
     ) {
         let click = GestureClick()
         click.set(button: 3)
-        click.onPressed { [weak self, weak anchor] _, _, _, _ in
+        click.onPressed { [weak self, anchor] _, _, x, y in
             MainActor.assumeIsolated {
-                guard let self, let anchor else { return }
-                self.presentInstrumentContextMenu(anchor: anchor, instrument: instrument)
+                guard let self else { return }
+                self.presentInstrumentContextMenu(anchor: anchor, x: x, y: y, instrument: instrument)
             }
         }
         row.install(controller: click)
@@ -1158,11 +1233,14 @@ final class MainWindow {
 
     private func presentInstrumentContextMenu(
         anchor: Widget,
+        x: Double,
+        y: Double,
         instrument: LumaCore.InstrumentInstance
     ) {
         let popover = Popover()
         popover.autohide = true
         let box = Box(orientation: .vertical, spacing: 2)
+        box.add(cssClass: "luma-menu")
         box.marginStart = 6
         box.marginEnd = 6
         box.marginTop = 6
@@ -1171,9 +1249,9 @@ final class MainWindow {
         let toggleLabel = instrument.isEnabled ? "Disable" : "Enable"
         let toggleButton = Button(label: toggleLabel)
         toggleButton.add(cssClass: "flat")
-        toggleButton.onClicked { [weak self, weak popover] _ in
+        toggleButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
-                popover?.popdown()
+                popover.popdown()
                 self?.toggleInstrument(instrument)
             }
         }
@@ -1183,10 +1261,10 @@ final class MainWindow {
 
         let deleteButton = Button(label: "Delete Instrument")
         deleteButton.add(cssClass: "flat")
-        deleteButton.add(cssClass: "destructive-action")
-        deleteButton.onClicked { [weak self, weak popover] _ in
+        deleteButton.add(cssClass: "luma-menu-destructive")
+        deleteButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
-                popover?.popdown()
+                popover.popdown()
                 self?.confirmDeleteInstrument(instrument)
             }
         }
@@ -1194,7 +1272,7 @@ final class MainWindow {
 
         popover.set(child: box)
         popover.set(parent: anchor)
-        popover.popup()
+        popover.presentPointing(at: x, y: y)
     }
 
     private func attachInsightContextMenu(
@@ -1204,10 +1282,10 @@ final class MainWindow {
     ) {
         let click = GestureClick()
         click.set(button: 3)
-        click.onPressed { [weak self, weak anchor] _, _, _, _ in
+        click.onPressed { [weak self, anchor] _, _, x, y in
             MainActor.assumeIsolated {
-                guard let self, let anchor else { return }
-                self.presentInsightContextMenu(anchor: anchor, insight: insight)
+                guard let self else { return }
+                self.presentInsightContextMenu(anchor: anchor, x: x, y: y, insight: insight)
             }
         }
         row.install(controller: click)
@@ -1215,11 +1293,14 @@ final class MainWindow {
 
     private func presentInsightContextMenu(
         anchor: Widget,
+        x: Double,
+        y: Double,
         insight: LumaCore.AddressInsight
     ) {
         let popover = Popover()
         popover.autohide = true
         let box = Box(orientation: .vertical, spacing: 2)
+        box.add(cssClass: "luma-menu")
         box.marginStart = 6
         box.marginEnd = 6
         box.marginTop = 6
@@ -1227,10 +1308,10 @@ final class MainWindow {
 
         let deleteButton = Button(label: "Delete Insight")
         deleteButton.add(cssClass: "flat")
-        deleteButton.add(cssClass: "destructive-action")
-        deleteButton.onClicked { [weak self, weak popover] _ in
+        deleteButton.add(cssClass: "luma-menu-destructive")
+        deleteButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
-                popover?.popdown()
+                popover.popdown()
                 self?.confirmDeleteInsight(insight)
             }
         }
@@ -1238,7 +1319,7 @@ final class MainWindow {
 
         popover.set(child: box)
         popover.set(parent: anchor)
-        popover.popup()
+        popover.presentPointing(at: x, y: y)
     }
 
     private func attachCaptureContextMenu(
@@ -1248,10 +1329,10 @@ final class MainWindow {
     ) {
         let click = GestureClick()
         click.set(button: 3)
-        click.onPressed { [weak self, weak anchor] _, _, _, _ in
+        click.onPressed { [weak self, anchor] _, _, x, y in
             MainActor.assumeIsolated {
-                guard let self, let anchor else { return }
-                self.presentCaptureContextMenu(anchor: anchor, capture: capture)
+                guard let self else { return }
+                self.presentCaptureContextMenu(anchor: anchor, x: x, y: y, capture: capture)
             }
         }
         row.install(controller: click)
@@ -1259,11 +1340,14 @@ final class MainWindow {
 
     private func presentCaptureContextMenu(
         anchor: Widget,
+        x: Double,
+        y: Double,
         capture: LumaCore.ITraceCaptureRecord
     ) {
         let popover = Popover()
         popover.autohide = true
         let box = Box(orientation: .vertical, spacing: 2)
+        box.add(cssClass: "luma-menu")
         box.marginStart = 6
         box.marginEnd = 6
         box.marginTop = 6
@@ -1271,10 +1355,10 @@ final class MainWindow {
 
         let deleteButton = Button(label: "Delete Capture")
         deleteButton.add(cssClass: "flat")
-        deleteButton.add(cssClass: "destructive-action")
-        deleteButton.onClicked { [weak self, weak popover] _ in
+        deleteButton.add(cssClass: "luma-menu-destructive")
+        deleteButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
-                popover?.popdown()
+                popover.popdown()
                 self?.confirmDeleteCapture(capture)
             }
         }
@@ -1282,7 +1366,7 @@ final class MainWindow {
 
         popover.set(child: box)
         popover.set(parent: anchor)
-        popover.popup()
+        popover.presentPointing(at: x, y: y)
     }
 
     // MARK: - Destructive confirmation helpers

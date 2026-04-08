@@ -1,3 +1,4 @@
+import CGtk
 import Foundation
 import Gdk
 import Gtk
@@ -9,26 +10,40 @@ final class REPLPane {
 
     private weak var engine: Engine?
     private let sessionID: UUID
+    private let bannerSlot: Box
+    private var currentBanner: Widget?
     private let cellsBox: Box
     private let cellsScroll: ScrolledWindow
     private let inputEntry: Entry
-    private let clearButton: Button
     private let runButton: Button
     private let timeFormatter: DateFormatter
+    private weak var owner: MainWindow?
 
     private var cells: [LumaCore.REPLCell] = []
+    private var rowKeepers: [Any] = []
     private var observation: StoreObservation?
     private var historyCursor: Int = 0
     private var draftBeforeHistory: String = ""
     private var completionTask: Task<Void, Never>?
+    private var completionDebounceTask: Task<Void, Never>?
+    private var suppressNextChange: Bool = false
+    private var completionPopover: Popover?
+    private var completionList: ListBox?
+    private var completionItems: [String] = []
+    private var completionBaseCode: String = ""
 
-    init(engine: Engine, sessionID: UUID) {
+    init(engine: Engine, sessionID: UUID, owner: MainWindow? = nil) {
         self.engine = engine
         self.sessionID = sessionID
+        self.owner = owner
 
         widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
         widget.vexpand = true
+
+        bannerSlot = Box(orientation: .vertical, spacing: 0)
+        bannerSlot.hexpand = true
+        widget.append(child: bannerSlot)
 
         cellsBox = Box(orientation: .vertical, spacing: 4)
         cellsBox.marginStart = 16
@@ -36,6 +51,8 @@ final class REPLPane {
         cellsBox.marginTop = 12
         cellsBox.marginBottom = 12
         cellsBox.hexpand = true
+        cellsBox.vexpand = true
+        cellsBox.valign = .end
 
         cellsScroll = ScrolledWindow()
         cellsScroll.hexpand = true
@@ -59,11 +76,8 @@ final class REPLPane {
         inputEntry = Entry()
         inputEntry.hexpand = true
         inputEntry.placeholderText = "Enter JavaScript\u{2026}"
+        inputEntry.add(cssClass: "monospace")
         inputRow.append(child: inputEntry)
-
-        clearButton = Button(label: "Clear")
-        clearButton.add(cssClass: "flat")
-        inputRow.append(child: clearButton)
 
         runButton = Button(label: "Run")
         runButton.add(cssClass: "suggested-action")
@@ -79,21 +93,31 @@ final class REPLPane {
                 self?.submit()
             }
         }
+        inputEntry.onChanged { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if self.suppressNextChange {
+                    self.suppressNextChange = false
+                    self.completionDebounceTask?.cancel()
+                    self.completionTask?.cancel()
+                    self.dismissCompletionPopover()
+                    return
+                }
+                self.scheduleCompletionRequest()
+            }
+        }
         runButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.submit()
             }
         }
-        clearButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.clearHistory()
-            }
-        }
 
         let keyController = EventControllerKey()
+        keyController.propagationPhase = GTK_PHASE_CAPTURE
         keyController.onKeyPressed { [weak self] _, keyval, _, _ in
-            MainActor.assumeIsolated {
-                self?.handleKeyPress(keyval: keyval) ?? false
+            return MainActor.assumeIsolated {
+                guard let self else { return false }
+                return self.handleKeyPress(keyval: keyval)
             }
         }
         inputEntry.install(controller: keyController)
@@ -106,18 +130,33 @@ final class REPLPane {
             }
         }
         refresh()
-        updateInputState()
+        applySessionState()
     }
 
+    func applySessionState() {
+        guard let engine else { return }
+        let session = engine.sessions.first(where: { $0.id == sessionID })
+        let isAttached = engine.node(forSessionID: sessionID) != nil
 
-    func updateInputState() {
-        let isAttached = engine?.node(forSessionID: sessionID) != nil
         inputEntry.sensitive = isAttached
         runButton.sensitive = isAttached
-        if !isAttached {
-            inputEntry.placeholderText = "Session detached — re-establish to continue."
-        } else {
-            inputEntry.placeholderText = "Enter JavaScript\u{2026}"
+        inputEntry.placeholderText =
+            isAttached
+            ? "Enter JavaScript\u{2026}"
+            : "Session detached — re-establish to continue."
+
+        if let session, SessionDetachedBanner.shouldShow(for: session) {
+            let banner = SessionDetachedBanner.make(for: session) { [weak self] in
+                self?.owner?.reestablishSession(id: session.id)
+            }
+            if let existing = currentBanner {
+                bannerSlot.remove(child: existing)
+            }
+            bannerSlot.append(child: banner)
+            currentBanner = banner
+        } else if let existing = currentBanner {
+            bannerSlot.remove(child: existing)
+            currentBanner = nil
         }
     }
 
@@ -151,6 +190,28 @@ final class REPLPane {
 
     private func handleKeyPress(keyval: UInt) -> Bool {
         let key = Int32(keyval)
+        if completionPopover != nil {
+            if key == Gdk.keyEscape {
+                dismissCompletionPopover()
+                return true
+            }
+            if key == Gdk.keyUp {
+                moveCompletionSelection(delta: -1)
+                return true
+            }
+            if key == Gdk.keyDown {
+                moveCompletionSelection(delta: 1)
+                return true
+            }
+            if key == Gdk.keyReturn || key == Gdk.keyKPEnter || key == Gdk.keyISOEnter || key == Gdk.keyTab {
+                acceptSelectedCompletion()
+                return true
+            }
+        }
+        if key == Gdk.keyReturn || key == Gdk.keyKPEnter || key == Gdk.keyISOEnter {
+            submit()
+            return true
+        }
         if key == Gdk.keyUp {
             historyPrevious()
             return true
@@ -159,7 +220,7 @@ final class REPLPane {
             historyNext()
             return true
         }
-        if key == Gdk.keyTab {
+        if key == Gdk.keyTab || key == Gdk.keyISOLeftTab {
             requestCompletion()
             return true
         }
@@ -192,21 +253,40 @@ final class REPLPane {
     }
 
     private func replaceInput(with text: String) {
+        suppressNextChange = true
         inputEntry.text = text
         inputEntry.position = -1
+        inputEntry.selectRegion(startPos: -1, endPos: -1)
     }
 
-    private func requestCompletion() {
+    private func scheduleCompletionRequest() {
+        completionDebounceTask?.cancel()
+        let text = inputEntry.text ?? ""
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            completionTask?.cancel()
+            dismissCompletionPopover()
+            return
+        }
+        completionDebounceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard !Task.isCancelled else { return }
+            self?.requestCompletion(showPopoverOnly: true)
+        }
+    }
+
+    private func requestCompletion(showPopoverOnly: Bool = false) {
         guard let node = engine?.node(forSessionID: sessionID) else { return }
         let code = inputEntry.text ?? ""
         let cursor = code.count
         completionTask?.cancel()
         completionTask = Task { @MainActor in
             let suggestions = await node.completeInREPL(code: code, cursor: cursor)
-            guard !Task.isCancelled, !suggestions.isEmpty else { return }
-            let common = longestCommonPrefix(suggestions)
-            guard !common.isEmpty else { return }
-            self.applyCompletion(to: code, suggestion: common)
+            guard !Task.isCancelled, (inputEntry.text ?? "") == code else { return }
+            guard !suggestions.isEmpty else {
+                self.dismissCompletionPopover()
+                return
+            }
+            self.showCompletionPopover(suggestions: suggestions)
         }
     }
 
@@ -237,11 +317,125 @@ final class REPLPane {
         replaceInput(with: before + newToken)
     }
 
-    private func clearHistory() {
-        cells.removeAll()
-        historyCursor = 0
-        draftBeforeHistory = ""
-        refresh()
+    private func showCompletionPopover(suggestions: [String]) {
+        dismissCompletionPopover()
+
+        let popover = Popover()
+        popover.autohide = false
+        popover.canFocus = false
+
+        let scroll = ScrolledWindow()
+        scroll.setPolicy(hscrollbarPolicy: GTK_POLICY_NEVER, vscrollbarPolicy: GTK_POLICY_AUTOMATIC)
+        scroll.setSizeRequest(width: 280, height: min(220, 24 * suggestions.count + 8))
+
+        let listBox = ListBox()
+        listBox.selectionMode = .single
+        listBox.canFocus = false
+        listBox.add(cssClass: "boxed-list")
+        for suggestion in suggestions {
+            let row = ListBoxRow()
+            row.canFocus = false
+            let label = Label(str: suggestion)
+            label.add(cssClass: "monospace")
+            label.halign = .start
+            label.marginStart = 8
+            label.marginEnd = 8
+            label.marginTop = 4
+            label.marginBottom = 4
+            row.set(child: label)
+            listBox.append(child: row)
+        }
+        listBox.onRowActivated { [weak self] _, _ in
+            MainActor.assumeIsolated {
+                self?.acceptSelectedCompletion()
+            }
+        }
+
+        scroll.set(child: listBox)
+        popover.set(child: scroll)
+        popover.set(parent: inputEntry)
+        popover.position = GTK_POS_BOTTOM
+
+        completionPopover = popover
+        completionList = listBox
+        completionItems = suggestions
+        completionBaseCode = inputEntry.text ?? ""
+
+        if let first = listBox.getRowAt(index: 0) {
+            listBox.select(row: first)
+        }
+
+        let caret = caretRectInEntry()
+        var rect = GdkRectangle(
+            x: gint(caret.x),
+            y: gint(caret.y),
+            width: gint(caret.width),
+            height: gint(caret.height)
+        )
+        withUnsafeMutablePointer(to: &rect) { ptr in
+            gtk_popover_set_pointing_to(popover.popover_ptr, ptr)
+        }
+        popover.popup()
+    }
+
+    private func caretRectInEntry() -> (x: Double, y: Double, width: Double, height: Double) {
+        let text = inputEntry.text ?? ""
+        let position = Int(inputEntry.position)
+        let clamped = max(0, min(position, text.count))
+        let prefix = String(text.prefix(clamped))
+
+        let layoutPtr = gtk_widget_create_pango_layout(inputEntry.widget_ptr, prefix)
+        defer { if let p = layoutPtr { g_object_unref(p) } }
+
+        var prefixWidth: Int32 = 0
+        var unusedHeight: Int32 = 0
+        if let layoutPtr {
+            pango_layout_get_pixel_size(layoutPtr, &prefixWidth, &unusedHeight)
+        }
+
+        let height = inputEntry.allocatedHeight
+        let approxLeftPadding: Int32 = 8
+        return (
+            x: Double(prefixWidth + approxLeftPadding),
+            y: Double(height),
+            width: 1,
+            height: 1
+        )
+    }
+
+    private func moveCompletionSelection(delta: Int) {
+        guard let listBox = completionList, !completionItems.isEmpty else { return }
+        let current = listBox.selectedRow.map { Int($0.index) } ?? -1
+        var next = current + delta
+        if next < 0 { next = completionItems.count - 1 }
+        if next >= completionItems.count { next = 0 }
+        if let row = listBox.getRowAt(index: next) {
+            listBox.select(row: row)
+        }
+    }
+
+    private func acceptSelectedCompletion() {
+        guard let listBox = completionList else { return }
+        let idx = listBox.selectedRow.map { Int($0.index) } ?? 0
+        guard idx >= 0, idx < completionItems.count else {
+            dismissCompletionPopover()
+            return
+        }
+        let suggestion = completionItems[idx]
+        let base = completionBaseCode
+        dismissCompletionPopover()
+        applyCompletion(to: base, suggestion: suggestion)
+    }
+
+    private func dismissCompletionPopover() {
+        completionPopover?.popdown()
+        completionPopover = nil
+        completionList = nil
+        completionItems = []
+    }
+
+    func focusInput() {
+        _ = inputEntry.grabFocus()
     }
 
     private func longestCommonPrefix(_ strings: [String]) -> String {
@@ -258,6 +452,7 @@ final class REPLPane {
 
     private func refresh() {
         clearChildren(of: cellsBox)
+        rowKeepers.removeAll()
         for cell in cells.sorted(by: { $0.timestamp < $1.timestamp }) {
             cellsBox.append(child: makeRow(for: cell))
         }
@@ -307,44 +502,80 @@ final class REPLPane {
         codeRow.append(child: codeLabel)
         column.append(child: codeRow)
 
+        let resultRow = Box(orientation: .horizontal, spacing: 8)
+        resultRow.hexpand = true
+        let resultArrow = Label(str: "←")
+        resultArrow.add(cssClass: "monospace")
+        resultArrow.add(cssClass: "dim-label")
+        resultArrow.valign = .start
+        resultRow.append(child: resultArrow)
+
         let resultWidget: Widget
-        if case .js(let value) = cell.result, let engine {
-            resultWidget = JSInspectValueWidget.make(value: value, engine: engine, sessionID: sessionID)
-        } else {
-            let label = Label(str: format(result: cell.result))
-            label.add(cssClass: "monospace")
-            label.halign = .start
-            label.hexpand = true
-            label.wrap = true
-            label.selectable = true
-            resultWidget = label
+        switch cell.result {
+        case .js(let value):
+            if let engine {
+                let wrapper = JSInspectValueWidget.make(value: value, engine: engine, sessionID: sessionID)
+                rowKeepers.append(wrapper)
+                resultWidget = wrapper.widget
+            } else {
+                resultWidget = makePlainResultLabel(text: format(result: cell.result))
+            }
+        case .binary(let data, let meta):
+            let column2 = Box(orientation: .vertical, spacing: 4)
+            column2.hexpand = true
+            column2.halign = .start
+            let kind = meta?.typedArray ?? "binary"
+            let header = Label(str: "<\(kind) \(data.count) bytes>")
+            header.add(cssClass: "monospace")
+            header.halign = .start
+            column2.append(child: header)
+            let hex = HexView(bytes: data)
+            rowKeepers.append(hex)
+            hex.widget.hexpand = true
+            hex.widget.vexpand = false
+            hex.widget.halign = .start
+            column2.append(child: hex.widget)
+            resultWidget = column2
+        case .text:
+            resultWidget = makePlainResultLabel(text: format(result: cell.result))
         }
-        resultWidget.marginStart = 16
+        resultWidget.hexpand = true
         resultWidget.halign = .start
-        column.append(child: resultWidget)
+        resultRow.append(child: resultWidget)
+        column.append(child: resultRow)
 
         attachContextMenu(to: column, cell: cell)
 
         return column
     }
 
+    private func makePlainResultLabel(text: String) -> Widget {
+        let label = Label(str: text)
+        label.add(cssClass: "monospace")
+        label.halign = .start
+        label.hexpand = true
+        label.wrap = true
+        label.selectable = true
+        return label
+    }
+
     private func attachContextMenu(to anchor: Box, cell: LumaCore.REPLCell) {
         let gesture = GestureClick()
         gesture.set(button: 3)
-        gesture.onPressed { [weak anchor, weak self] _, _, _, _ in
+        gesture.onPressed { [anchor, weak self] _, _, x, y in
             MainActor.assumeIsolated {
-                guard let anchor, let self else { return }
-                self.presentCellContextMenu(at: anchor, cell: cell)
+                self?.presentCellContextMenu(at: anchor, x: x, y: y, cell: cell)
             }
         }
         anchor.install(controller: gesture)
     }
 
-    private func presentCellContextMenu(at anchor: Widget, cell: LumaCore.REPLCell) {
+    private func presentCellContextMenu(at anchor: Widget, x: Double, y: Double, cell: LumaCore.REPLCell) {
         let popover = Popover()
         popover.autohide = true
 
         let box = Box(orientation: .vertical, spacing: 2)
+        box.add(cssClass: "luma-menu")
         box.marginStart = 6
         box.marginEnd = 6
         box.marginTop = 6
@@ -352,9 +583,9 @@ final class REPLPane {
 
         let addButton = Button(label: "Add to Notebook")
         addButton.add(cssClass: "flat")
-        addButton.onClicked { [weak popover, weak self] _ in
+        addButton.onClicked { [popover, weak self] _ in
             MainActor.assumeIsolated {
-                popover?.popdown()
+                popover.popdown()
                 self?.addCellToNotebook(cell)
             }
         }
@@ -362,7 +593,7 @@ final class REPLPane {
 
         popover.set(child: WidgetRef(box.widget_ptr))
         popover.set(parent: anchor)
-        popover.popup()
+        popover.presentPointing(at: x, y: y)
     }
 
     private func addCellToNotebook(_ cell: LumaCore.REPLCell) {

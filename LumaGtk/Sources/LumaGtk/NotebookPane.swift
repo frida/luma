@@ -20,6 +20,7 @@ final class NotebookPane {
     private var editingEntries: Set<UUID> = []
     private var autoEditedEntries: Set<UUID> = []
     private var draftEntries: Set<UUID> = []
+    private var jsValueKeepers: [JSInspectValueWidget] = []
     private let emptyStateActionHolder = ActionHolder()
 
     init(engine: Engine) {
@@ -116,6 +117,7 @@ final class NotebookPane {
 
         clearWindowFocus()
         clearChildren(of: entriesBox)
+        jsValueKeepers.removeAll()
 
         let anyEditing = entries.contains { editingEntries.contains($0.id) }
 
@@ -165,11 +167,12 @@ final class NotebookPane {
         }
     }
 
-    private func presentContextMenu(anchor: Widget, entry: LumaCore.NotebookEntry) {
+    private func presentContextMenu(anchor: Widget, x: Double, y: Double, entry: LumaCore.NotebookEntry) {
         let popover = Popover()
         popover.autohide = true
 
         let box = Box(orientation: .vertical, spacing: 2)
+        box.add(cssClass: "luma-menu")
         box.marginStart = 6
         box.marginEnd = 6
         box.marginTop = 6
@@ -178,9 +181,9 @@ final class NotebookPane {
         if entry.isUserNote {
             let editButton = Button(label: "Edit")
             editButton.add(cssClass: "flat")
-            editButton.onClicked { [weak self, weak popover] _ in
+            editButton.onClicked { [weak self, popover] _ in
                 MainActor.assumeIsolated {
-                    popover?.popdown()
+                    popover.popdown()
                     self?.beginEditing(entry)
                 }
             }
@@ -189,9 +192,9 @@ final class NotebookPane {
 
         let insertButton = Button(label: "Insert Note Below")
         insertButton.add(cssClass: "flat")
-        insertButton.onClicked { [weak self, weak popover] _ in
+        insertButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
-                popover?.popdown()
+                popover.popdown()
                 self?.addUserNote(after: entry)
             }
         }
@@ -201,10 +204,10 @@ final class NotebookPane {
 
         let deleteButton = Button(label: "Delete")
         deleteButton.add(cssClass: "flat")
-        deleteButton.add(cssClass: "destructive-action")
-        deleteButton.onClicked { [weak self, weak popover] _ in
+        deleteButton.add(cssClass: "luma-menu-destructive")
+        deleteButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
-                popover?.popdown()
+                popover.popdown()
                 self?.deleteEntry(entry)
             }
         }
@@ -212,7 +215,7 @@ final class NotebookPane {
 
         popover.set(child: box)
         popover.set(parent: anchor)
-        popover.popup()
+        popover.presentPointing(at: x, y: y)
     }
 
     private func commitEdits(
@@ -254,9 +257,9 @@ final class NotebookPane {
 
         let rightClick = GestureClick()
         rightClick.set(button: 3)
-        rightClick.onPressed { [weak self, card] _, _, _, _ in
+        rightClick.onPressed { [weak self, card] _, _, x, y in
             MainActor.assumeIsolated {
-                self?.presentContextMenu(anchor: card, entry: entry)
+                self?.presentContextMenu(anchor: card, x: x, y: y, entry: entry)
             }
         }
         card.install(controller: rightClick)
@@ -287,11 +290,13 @@ final class NotebookPane {
             }
         } else {
             if let jsValue = entry.jsValue, let engine {
-                let valueWidget = JSInspectValueWidget.make(
+                let wrapper = JSInspectValueWidget.make(
                     value: jsValue,
                     engine: engine,
                     sessionID: UUID()
                 )
+                jsValueKeepers.append(wrapper)
+                let valueWidget = wrapper.widget
                 valueWidget.hexpand = true
                 inner.append(child: valueWidget)
             } else if !entry.details.isEmpty {
@@ -410,7 +415,7 @@ final class NotebookPane {
         let deleteButton = Button(label: "Delete")
         deleteButton.hasFrame = false
         deleteButton.add(cssClass: "flat")
-        deleteButton.add(cssClass: "destructive-action")
+        deleteButton.add(cssClass: "luma-menu-destructive")
         deleteButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.deleteEntry(entry)

@@ -1,7 +1,15 @@
 import Foundation
-import Frida
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import Gtk
 import LumaCore
+
+struct NpmPackageResult: Sendable {
+    let name: String
+    let version: String
+    let descriptionText: String?
+}
 
 @MainActor
 final class PackageSearchDialog {
@@ -11,7 +19,6 @@ final class PackageSearchDialog {
 
     private let widget: Box
     private let searchEntry: Entry
-    private let searchButton: Button
     private let searchSpinner: Spinner
     private let listBox: ListBox
     private let statusLabel: Label
@@ -23,10 +30,12 @@ final class PackageSearchDialog {
     private let installButton: Button
     private let installSpinner: Spinner
 
-    private var results: [Frida.Package] = []
+    private var results: [NpmPackageResult] = []
     private var selectedIndex: Int? = nil
     private var searchTask: Task<Void, Never>?
+    private var debounceTask: Task<Void, Never>?
     private var isInstalling = false
+    private var currentQuery: String = ""
 
     init(engine: Engine) {
         self.engine = engine
@@ -45,11 +54,9 @@ final class PackageSearchDialog {
         searchEntry.hexpand = true
         searchRow.append(child: searchEntry)
 
-        searchButton = Button(label: "Search")
-        searchRow.append(child: searchButton)
-
         searchSpinner = Spinner()
         searchSpinner.spinning = false
+        searchSpinner.setSizeRequest(width: 16, height: 16)
         searchRow.append(child: searchSpinner)
         widget.append(child: searchRow)
 
@@ -77,7 +84,13 @@ final class PackageSearchDialog {
         listScroll.vexpand = true
         listScroll.setSizeRequest(width: -1, height: 260)
         listScroll.set(child: listBox)
-        widget.append(child: listScroll)
+
+        let listRow = Box(orientation: .horizontal, spacing: 8)
+        listRow.append(child: listScroll)
+        let listTrailingSpacer = Box(orientation: .horizontal, spacing: 0)
+        listTrailingSpacer.setSizeRequest(width: 16, height: -1)
+        listRow.append(child: listTrailingSpacer)
+        widget.append(child: listRow)
 
         formBox = Box(orientation: .vertical, spacing: 6)
 
@@ -120,10 +133,10 @@ final class PackageSearchDialog {
         widget.append(child: formBox)
 
         searchEntry.onActivate { [weak self] _ in
-            MainActor.assumeIsolated { self?.performSearch() }
+            MainActor.assumeIsolated { self?.scheduleSearch(debounce: false) }
         }
-        searchButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.performSearch() }
+        searchEntry.onChanged { [weak self] _ in
+            MainActor.assumeIsolated { self?.scheduleSearch(debounce: true) }
         }
         listBox.onRowSelected { [weak self] _, row in
             MainActor.assumeIsolated {
@@ -141,6 +154,7 @@ final class PackageSearchDialog {
 
     deinit {
         searchTask?.cancel()
+        debounceTask?.cancel()
     }
 
     private func showStatus(_ message: String?) {
@@ -161,49 +175,113 @@ final class PackageSearchDialog {
         }
     }
 
-    private func performSearch() {
-        guard let engine else { return }
+    private func scheduleSearch(debounce: Bool) {
         let query = (searchEntry.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        currentQuery = query
+
+        debounceTask?.cancel()
+        searchTask?.cancel()
+
         guard !query.isEmpty else {
+            showError(nil)
+            showStatus(nil)
             results = []
             rebuildList()
-            showStatus(nil)
-            showError(nil)
+            searchSpinner.spinning = false
+            searchSpinner.stop()
             return
         }
 
-        searchTask?.cancel()
+        if debounce {
+            debounceTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                if Task.isCancelled { return }
+                guard let self, self.currentQuery == query else { return }
+                self.performSearch(query: query)
+            }
+        } else {
+            performSearch(query: query)
+        }
+    }
+
+    private func performSearch(query: String) {
         showError(nil)
         showStatus("Searching…")
         searchSpinner.spinning = true
         searchSpinner.start()
 
-        let manager = engine.compilerWorkspace.packageManager
-        searchTask = Task { @MainActor in
-            defer {
-                self.searchSpinner.spinning = false
-                self.searchSpinner.stop()
-            }
+        searchTask = Task { @MainActor [weak self] in
+            let outcome: Result<[NpmPackageResult], Error>
             do {
-                let options = PackageSearchOptions()
-                options.limit = 25
-                let result = try await manager.search(query: query, options: options)
-                if Task.isCancelled { return }
-                self.results = result.packages
+                let pkgs = try await Self.fetchNpmSearch(query: query, limit: 25)
+                outcome = .success(pkgs)
+            } catch {
+                outcome = .failure(error)
+            }
+
+            guard let self else { return }
+            if Task.isCancelled || self.currentQuery != query { return }
+
+            self.searchSpinner.spinning = false
+            self.searchSpinner.stop()
+
+            switch outcome {
+            case .success(let pkgs):
+                self.results = pkgs
                 self.rebuildList()
-                if result.packages.isEmpty {
+                if pkgs.isEmpty {
                     self.showStatus("No packages found.")
                 } else {
-                    self.showStatus("Found \(result.packages.count) packages.")
+                    self.showStatus("Found \(pkgs.count) packages.")
                 }
-            } catch is CancellationError {
-                return
-            } catch {
+            case .failure(let error):
+                if error is CancellationError { return }
                 self.results = []
                 self.rebuildList()
                 self.showStatus(nil)
                 self.showError("Search failed: \(error.localizedDescription)")
             }
+        }
+    }
+
+    private static func fetchNpmSearch(query: String, limit: Int) async throws -> [NpmPackageResult] {
+        var components = URLComponents(string: "https://registry.npmjs.org/-/v1/search")!
+        components.queryItems = [
+            URLQueryItem(name: "text", value: "\(query) keywords:frida-gum"),
+            URLQueryItem(name: "from", value: "0"),
+            URLQueryItem(name: "size", value: String(limit)),
+        ]
+        guard let url = components.url else {
+            throw NSError(domain: "PackageSearchDialog", code: 1, userInfo: [NSLocalizedDescriptionKey: "invalid URL"])
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw NSError(
+                domain: "PackageSearchDialog",
+                code: http.statusCode,
+                userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode) from npm registry"])
+        }
+
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let objects = root["objects"] as? [[String: Any]]
+        else {
+            throw NSError(
+                domain: "PackageSearchDialog",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "unexpected npm response shape"])
+        }
+
+        return objects.compactMap { object -> NpmPackageResult? in
+            guard let pkg = object["package"] as? [String: Any],
+                  let name = pkg["name"] as? String,
+                  let version = pkg["version"] as? String
+            else { return nil }
+            let desc = pkg["description"] as? String
+            return NpmPackageResult(name: name, version: version, descriptionText: desc)
         }
     }
 
@@ -241,7 +319,7 @@ final class PackageSearchDialog {
         }
     }
 
-    private func onResultSelected(_ pkg: Frida.Package) {
+    private func onResultSelected(_ pkg: NpmPackageResult) {
         formBox.visible = true
         installButton.sensitive = !isInstalling
         if (versionEntry.text ?? "").isEmpty {

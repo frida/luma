@@ -1,3 +1,4 @@
+import CGtk
 import Foundation
 import Gdk
 import Gtk
@@ -5,100 +6,69 @@ import LumaCore
 
 @MainActor
 enum AddressActionMenu {
+    static var navigator: ((UUID, UUID) -> Void)?
+    static var errorReporter: ((String) -> Void)?
+
     static func attach(to anchor: Widget, engine: Engine, sessionID: UUID, address: UInt64) {
         let gesture = GestureClick()
         gesture.set(button: 3)
-        gesture.onPressed { [weak anchor] _, _, _, _ in
+        gesture.propagationPhase = GTK_PHASE_CAPTURE
+        gesture.onPressed { [anchor] _, _, x, y in
             MainActor.assumeIsolated {
-                guard let anchor else { return }
-                present(at: anchor, engine: engine, sessionID: sessionID, address: address)
+                present(at: anchor, x: x, y: y, engine: engine, sessionID: sessionID, address: address)
             }
         }
         anchor.install(controller: gesture)
     }
 
-    private static func present(at anchor: Widget, engine: Engine, sessionID: UUID, address: UInt64) {
+    private static func present(at anchor: Widget, x: Double, y: Double, engine: Engine, sessionID: UUID, address: UInt64) {
         let popover = Popover()
         popover.autohide = true
 
         let box = Box(orientation: .vertical, spacing: 2)
+        box.add(cssClass: "luma-menu")
         box.marginStart = 6
         box.marginEnd = 6
         box.marginTop = 6
         box.marginBottom = 6
 
-        let hexString = String(format: "0x%llx", address)
-
-        let copyButton = Button(label: "Copy address (\(hexString))")
-        copyButton.add(cssClass: "flat")
-        copyButton.onClicked { [weak popover] _ in
+        let openMemoryButton = Button(label: "Open Memory")
+        openMemoryButton.add(cssClass: "flat")
+        openMemoryButton.onClicked { [popover] _ in
             MainActor.assumeIsolated {
-                if let display = Display.getDefault() {
-                    display.clipboard.set(text: hexString)
-                }
-                popover?.popdown()
+                popover.popdown()
+                openInsight(engine: engine, sessionID: sessionID, address: address, kind: .memory, failureLabel: "Can\u{2019}t open memory")
             }
         }
-        box.append(child: copyButton)
+        box.append(child: openMemoryButton)
 
-        let detailsButton = Button(label: "Show details\u{2026}")
-        detailsButton.add(cssClass: "flat")
-        detailsButton.onClicked { [weak popover, weak anchor] _ in
+        let openDisassemblyButton = Button(label: "Open Disassembly")
+        openDisassemblyButton.add(cssClass: "flat")
+        openDisassemblyButton.onClicked { [popover] _ in
             MainActor.assumeIsolated {
-                popover?.popdown()
-                guard let anchor else { return }
-                AddressDetailsPanel.present(
-                    from: anchor,
-                    engine: engine,
-                    sessionID: sessionID,
-                    address: address
-                )
+                popover.popdown()
+                openInsight(engine: engine, sessionID: sessionID, address: address, kind: .disassembly, failureLabel: "Can\u{2019}t open disassembly")
             }
         }
-        box.append(child: detailsButton)
-
-        let memoryButton = Button(label: "Show memory\u{2026}")
-        memoryButton.add(cssClass: "flat")
-        memoryButton.onClicked { [weak popover, weak anchor] _ in
-            MainActor.assumeIsolated {
-                popover?.popdown()
-                guard let anchor else { return }
-                MemoryViewerWindow.present(
-                    from: anchor,
-                    engine: engine,
-                    sessionID: sessionID,
-                    address: address
-                )
-            }
-        }
-        box.append(child: memoryButton)
-
-        if engine.node(forSessionID: sessionID) != nil {
-            let actions = engine.addressActions(sessionID: sessionID, address: address)
-            if !actions.isEmpty {
-                box.append(child: Separator(orientation: .horizontal))
-            }
-            for action in actions {
-                let button = Button(label: action.title)
-                button.add(cssClass: "flat")
-                if action.role == .destructive {
-                    button.add(cssClass: "destructive-action")
-                }
-                let perform = action.perform
-                button.onClicked { [weak popover] _ in
-                    MainActor.assumeIsolated {
-                        popover?.popdown()
-                        Task { @MainActor in
-                            _ = await perform()
-                        }
-                    }
-                }
-                box.append(child: button)
-            }
-        }
+        box.append(child: openDisassemblyButton)
 
         popover.set(child: WidgetRef(box.widget_ptr))
         popover.set(parent: anchor)
-        popover.popup()
+        popover.presentPointing(at: x, y: y)
+    }
+
+    private static func openInsight(
+        engine: Engine,
+        sessionID: UUID,
+        address: UInt64,
+        kind: AddressInsight.Kind,
+        failureLabel: String
+    ) {
+        do {
+            let insight = try engine.getOrCreateInsight(sessionID: sessionID, pointer: address, kind: kind)
+            navigator?(sessionID, insight.id)
+        } catch {
+            errorReporter?("\(failureLabel): \(error.localizedDescription)")
+        }
     }
 }

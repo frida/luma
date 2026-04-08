@@ -25,6 +25,9 @@ final class EventStreamPane {
     private let dateFormatter: DateFormatter
 
     var onNavigateToHook: ((UUID, UUID, UUID) -> Void)?
+    var onCollapsedChanged: ((Bool) -> Void)?
+
+    var collapsed: Bool { isCollapsed }
 
     private var isCollapsed: Bool = true
     private var isPaused: Bool = false
@@ -46,7 +49,7 @@ final class EventStreamPane {
         widget.setSizeRequest(width: -1, height: 36)
 
         let bar = Box(orientation: .horizontal, spacing: 8)
-        bar.marginStart = 12
+        bar.marginStart = 4
         bar.marginEnd = 12
         bar.marginTop = 4
         bar.marginBottom = 4
@@ -191,12 +194,13 @@ final class EventStreamPane {
         }
         updateBar()
         updatePendingPill()
+        onCollapsedChanged?(isCollapsed)
     }
 
     private func applyCollapsedState() {
         widget.setSizeRequest(
             width: -1,
-            height: isCollapsed ? collapsedHeightRequest : expandedHeightRequest
+            height: isCollapsed ? collapsedHeightRequest : -1
         )
         listOverlay.visible = !isCollapsed
         filterBar.visible = !isCollapsed
@@ -244,7 +248,6 @@ final class EventStreamPane {
         displayedEvents = engine.eventLog.events
         lastSeenTotal = engine.eventLog.totalReceived
         pendingNewEvents = 0
-        rebuildSourceFilterMenu()
         rebuildProcessFilterMenu()
         rebuildFiltered()
         updatePendingPill()
@@ -273,7 +276,7 @@ final class EventStreamPane {
                 guard processName(for: evt) == name else { return false }
             }
             if hasSearch {
-                let haystack = "\(payloadString(for: evt)) \(contextString(for: evt))"
+                let haystack = "\(searchBlob(for: evt)) \(contextString(for: evt))"
                 if haystack.range(of: trimmed, options: .caseInsensitive) == nil {
                     return false
                 }
@@ -285,8 +288,11 @@ final class EventStreamPane {
         updateBar()
     }
 
+    private var jsValueKeepers: [JSInspectValueWidget] = []
+
     private func refreshRows() {
         clearChildren(of: eventListBox)
+        jsValueKeepers.removeAll()
         var prevTimestamp: Date? = nil
         for event in filteredEvents {
             eventListBox.append(child: makeRow(for: event, previousTimestamp: prevTimestamp))
@@ -416,12 +422,12 @@ final class EventStreamPane {
 
         let allButton = Button(label: "All Processes")
         allButton.add(cssClass: "flat")
-        allButton.onClicked { [weak self, weak popover] _ in
+        allButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
                 self?.selectedProcessName = nil
                 self?.processFilterButton.label = "All Processes"
                 self?.rebuildFiltered()
-                popover?.popdown()
+                popover.popdown()
             }
         }
         box.append(child: allButton)
@@ -433,12 +439,12 @@ final class EventStreamPane {
         for name in names {
             let item = Button(label: name)
             item.add(cssClass: "flat")
-            item.onClicked { [weak self, weak popover] _ in
+            item.onClicked { [weak self, popover] _ in
                 MainActor.assumeIsolated {
                     self?.selectedProcessName = name
                     self?.processFilterButton.label = name
                     self?.rebuildFiltered()
-                    popover?.popdown()
+                    popover.popdown()
                 }
             }
             box.append(child: item)
@@ -538,8 +544,21 @@ final class EventStreamPane {
         case .script: return "script"
         case .console: return "console"
         case .repl: return "repl"
-        case .instrument(_, let name): return name
+        case .instrument:
+            if let instance = instrument(for: event),
+                let descriptor = engine?.descriptor(for: instance)
+            {
+                return descriptor.displayName
+            }
+            return "Instrument"
         }
+    }
+
+    private func instrument(for event: RuntimeEvent) -> LumaCore.InstrumentInstance? {
+        guard case .instrument(let id, _) = event.source,
+            let sid = event.sessionID
+        else { return nil }
+        return engine?.instrument(id: id, sessionID: sid)
     }
 
     private func makeJSErrorPayload(for event: RuntimeEvent) -> Widget? {
@@ -641,7 +660,9 @@ final class EventStreamPane {
 
         let expander = Expander(label: value.inlineDescription)
         expander.hexpand = true
-        let body = JSInspectValueWidget.make(value: value, engine: engine, sessionID: sessionID)
+        let wrapper = JSInspectValueWidget.make(value: value, engine: engine, sessionID: sessionID)
+        jsValueKeepers.append(wrapper)
+        let body = wrapper.widget
         body.marginStart = 12
         body.marginTop = 4
         body.marginBottom = 4
@@ -673,10 +694,13 @@ final class EventStreamPane {
 
         let rightClick = GestureClick()
         rightClick.set(button: 3)
-        rightClick.onPressed { [weak self] _, _, _, _ in
+        let anchor = widget
+        rightClick.onPressed { [weak self, anchor] _, _, x, y in
             MainActor.assumeIsolated {
                 self?.presentHookContextMenu(
-                    anchor: column,
+                    anchor: anchor,
+                    x: x,
+                    y: y,
                     sessionID: sessionID,
                     instrumentID: instrumentID,
                     hookID: hookID,
@@ -699,7 +723,9 @@ final class EventStreamPane {
         } else {
             let expander = Expander(label: parsed.message.inlineDescription)
             expander.hexpand = true
-            let body = JSInspectValueWidget.make(value: parsed.message, engine: engine!, sessionID: sessionID)
+            let wrapper = JSInspectValueWidget.make(value: parsed.message, engine: engine!, sessionID: sessionID)
+            jsValueKeepers.append(wrapper)
+            let body = wrapper.widget
             body.marginStart = 12
             body.marginTop = 4
             body.marginBottom = 4
@@ -725,20 +751,22 @@ final class EventStreamPane {
     private func attachRowContextMenu(to row: Box, event: RuntimeEvent) {
         let gesture = GestureClick()
         gesture.set(button: 3)
-        gesture.onPressed { [weak self, weak row] _, _, _, _ in
+        let anchor = widget
+        gesture.onPressed { [weak self, anchor] _, _, x, y in
             MainActor.assumeIsolated {
-                guard let self, let row else { return }
-                self.presentRowContextMenu(at: row, event: event)
+                guard let self else { return }
+                self.presentRowContextMenu(at: anchor, x: x, y: y, event: event)
             }
         }
         row.install(controller: gesture)
     }
 
-    private func presentRowContextMenu(at anchor: Widget, event: RuntimeEvent) {
+    private func presentRowContextMenu(at anchor: Widget, x: Double, y: Double, event: RuntimeEvent) {
         let popover = Popover()
         popover.autohide = true
 
         let box = Box(orientation: .vertical, spacing: 2)
+        box.add(cssClass: "luma-menu")
         box.marginStart = 6
         box.marginEnd = 6
         box.marginTop = 6
@@ -746,9 +774,9 @@ final class EventStreamPane {
 
         let pinButton = Button(label: "Pin to Notebook")
         pinButton.add(cssClass: "flat")
-        pinButton.onClicked { [weak self, weak popover] _ in
+        pinButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
-                popover?.popdown()
+                popover.popdown()
                 self?.pinToNotebook(event)
             }
         }
@@ -756,7 +784,7 @@ final class EventStreamPane {
 
         popover.set(child: box)
         popover.set(parent: anchor)
-        popover.popup()
+        popover.presentPointing(at: x, y: y)
     }
 
     private func pinToNotebook(_ event: RuntimeEvent) {
@@ -797,6 +825,8 @@ final class EventStreamPane {
 
     private func presentHookContextMenu(
         anchor: Widget,
+        x: Double,
+        y: Double,
         sessionID: UUID,
         instrumentID: UUID,
         hookID: UUID,
@@ -806,6 +836,7 @@ final class EventStreamPane {
         popover.autohide = true
 
         let box = Box(orientation: .vertical, spacing: 2)
+        box.add(cssClass: "luma-menu")
         box.marginStart = 6
         box.marginEnd = 6
         box.marginTop = 6
@@ -813,9 +844,9 @@ final class EventStreamPane {
 
         let pinButton = Button(label: "Pin to Notebook")
         pinButton.add(cssClass: "flat")
-        pinButton.onClicked { [weak self, weak popover] _ in
+        pinButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
-                popover?.popdown()
+                popover.popdown()
                 self?.pinToNotebook(event)
             }
         }
@@ -823,9 +854,9 @@ final class EventStreamPane {
 
         let goButton = Button(label: "Go to Hook")
         goButton.add(cssClass: "flat")
-        goButton.onClicked { [weak self, weak popover] _ in
+        goButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
-                popover?.popdown()
+                popover.popdown()
                 self?.onNavigateToHook?(sessionID, instrumentID, hookID)
             }
         }
@@ -833,7 +864,7 @@ final class EventStreamPane {
 
         popover.set(child: box)
         popover.set(parent: anchor)
-        popover.popup()
+        popover.presentPointing(at: x, y: y)
     }
 
     private func presentBacktrace(
@@ -946,8 +977,32 @@ final class EventStreamPane {
             return "console\(processSuffix)"
         case .repl:
             return "repl\(processSuffix)"
-        case .instrument(_, let name):
+        case .instrument:
+            let name: String
+            if let instance = instrument(for: event),
+                let descriptor = engine?.descriptor(for: instance)
+            {
+                name = descriptor.displayName
+            } else {
+                name = "Instrument"
+            }
             return "\(name)\(processSuffix)"
+        }
+    }
+
+    private func searchBlob(for event: RuntimeEvent) -> String {
+        switch event.payload {
+        case .consoleMessage(let message):
+            return message.values.map { $0.prettyDescription() }.joined(separator: " ")
+        case .jsError(let error):
+            var parts = [error.text]
+            if let stack = error.stack { parts.append(stack) }
+            if let fileName = error.fileName { parts.append(fileName) }
+            return parts.joined(separator: " ")
+        case .jsValue(let value):
+            return value.prettyDescription()
+        case .raw(let message, _):
+            return String(describing: message)
         }
     }
 

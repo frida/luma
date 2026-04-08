@@ -1,4 +1,5 @@
 import CCairo
+import CGtk
 import Cairo
 import Foundation
 import Gdk
@@ -46,7 +47,9 @@ public final class HexView {
 
         let sw = ScrolledWindow()
         sw.hexpand = true
-        sw.vexpand = true
+        sw.vexpand = false
+        sw.setPolicy(hscrollbarPolicy: GTK_POLICY_NEVER, vscrollbarPolicy: GTK_POLICY_NEVER)
+        sw.propagateNaturalHeight = true
         sw.set(child: WidgetRef(area.widget_ptr))
         self.scroll = sw
         self.widget = sw
@@ -104,13 +107,16 @@ public final class HexView {
     private func recomputeContentSize() {
         let rows = max(1, (bytes.count + bytesPerRow - 1) / bytesPerRow)
         let width = Int(
-            marginX * 2 + offsetColumnWidth + groupSpacing
-                + Double(bytesPerRow) * cellWidth + Double(bytesPerRow - 1) * hexSpacing
-                + groupSpacing + Double(bytesPerRow) * asciiCellWidth
-        )
+            ceil(
+                marginX * 2 + offsetColumnWidth + groupSpacing
+                    + Double(bytesPerRow) * cellWidth + Double(bytesPerRow - 1) * hexSpacing
+                    + groupSpacing + Double(bytesPerRow) * asciiCellWidth
+            )
+        ) + 8
         let height = Int(marginY * 2 + Double(rows) * rowHeight)
-        drawingArea.contentWidth = max(400, width)
+        drawingArea.contentWidth = width
         drawingArea.contentHeight = max(40, height)
+        scroll.setSizeRequest(width: width, height: -1)
     }
 
     // MARK: - Hit testing
@@ -148,7 +154,11 @@ public final class HexView {
     // MARK: - Drawing
 
     private func draw(ctx: Cairo.ContextRef) {
+        let wasReady = metricsReady
         ensureMetrics(ctx: ctx)
+        if !wasReady {
+            recomputeContentSize()
+        }
         configureFont(ctx: ctx)
 
         if bytes.isEmpty {
@@ -400,6 +410,7 @@ public final class HexView {
         popover.autohide = true
 
         let box = Box(orientation: .vertical, spacing: 2)
+        box.add(cssClass: "luma-menu")
         box.marginStart = 6
         box.marginEnd = 6
         box.marginTop = 6
@@ -407,39 +418,37 @@ public final class HexView {
 
         let hexButton = Button(label: "Copy Hex")
         hexButton.add(cssClass: "flat")
-        hexButton.onClicked { [weak self, weak popover] _ in
+        hexButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
                 self?.copySelection(.hex)
-                popover?.popdown()
+                popover.popdown()
             }
         }
         box.append(child: hexButton)
 
         let asciiButton = Button(label: "Copy ASCII")
         asciiButton.add(cssClass: "flat")
-        asciiButton.onClicked { [weak self, weak popover] _ in
+        asciiButton.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
                 self?.copySelection(.ascii)
-                popover?.popdown()
+                popover.popdown()
             }
         }
         box.append(child: asciiButton)
 
         let base64Button = Button(label: "Copy Base64")
         base64Button.add(cssClass: "flat")
-        base64Button.onClicked { [weak self, weak popover] _ in
+        base64Button.onClicked { [weak self, popover] _ in
             MainActor.assumeIsolated {
                 self?.copySelection(.base64)
-                popover?.popdown()
+                popover.popdown()
             }
         }
         box.append(child: base64Button)
 
-        _ = x
-        _ = y
         popover.set(child: WidgetRef(box.widget_ptr))
         popover.set(parent: drawingArea)
-        popover.popup()
+        popover.presentPointing(at: x, y: y)
     }
 
     private func copySelection(_ format: CopyFormat) {

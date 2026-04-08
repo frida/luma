@@ -1,3 +1,4 @@
+import CGtk
 import Foundation
 import Gtk
 import LumaCore
@@ -7,7 +8,9 @@ final class AddInstrumentDialog {
     typealias OnAdded = (LumaCore.InstrumentInstance) -> Void
 
     private let window: Window
+    private let parentWindow: Window
     private let descriptors: [LumaCore.InstrumentDescriptor]
+    private let disabledDescriptorIDs: Set<String>
     private let onAdded: OnAdded?
     private let engine: Engine
     private let sessionID: UUID
@@ -17,18 +20,24 @@ final class AddInstrumentDialog {
     private let detailContainer: Box
 
     private var selectedIndex: Int?
+    private var pendingConfigJSON: Data = Data()
+    private var tracerEditor: TracerConfigEditor?
+    private var monacoEditor: MonacoEditor?
 
     init(
         parent: Window,
         engine: Engine,
         sessionID: UUID,
         descriptors: [LumaCore.InstrumentDescriptor],
+        disabledDescriptorIDs: Set<String> = [],
         onAdded: OnAdded? = nil
     ) {
         self.descriptors = descriptors
+        self.disabledDescriptorIDs = disabledDescriptorIDs
         self.onAdded = onAdded
         self.engine = engine
         self.sessionID = sessionID
+        self.parentWindow = parent
 
         window = Window()
         window.title = "Add Instrument"
@@ -56,16 +65,12 @@ final class AddInstrumentDialog {
         }
         header.packStart(child: cancelButton)
         let browseButton = Button(label: "Browse CodeShare\u{2026}")
-        browseButton.onClicked { [weak self, weak browseButton] _ in
-            MainActor.assumeIsolated {
-                guard let self, let browseButton else { return }
-                self.openCodeShareBrowser(anchor: browseButton)
-            }
+        browseButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated { self?.openCodeShareBrowser() }
         }
         header.packStart(child: browseButton)
         header.packEnd(child: addButton)
-        let headerRef = header
-        window.set(titlebar: WidgetRef(headerRef))
+        window.set(titlebar: WidgetRef(header))
 
         let listScroll = ScrolledWindow()
         listScroll.hexpand = false
@@ -82,21 +87,33 @@ final class AddInstrumentDialog {
         paned.position = 280
         paned.hexpand = true
         paned.vexpand = true
-        let listScrollLocal = listScroll
-        let detailScrollLocal = detailScroll
-        paned.startChild = WidgetRef(listScrollLocal)
-        paned.endChild = WidgetRef(detailScrollLocal)
+        paned.startChild = WidgetRef(listScroll)
+        paned.endChild = WidgetRef(detailScroll)
         window.set(child: paned)
 
         for descriptor in descriptors {
             let row = ListBoxRow()
+            let isDisabled = disabledDescriptorIDs.contains(descriptor.id)
+            let rowBox = Box(orientation: .vertical, spacing: 2)
+            rowBox.marginStart = 12
+            rowBox.marginEnd = 12
+            rowBox.marginTop = 8
+            rowBox.marginBottom = 8
             let label = Label(str: descriptor.displayName)
             label.halign = .start
-            label.marginStart = 12
-            label.marginEnd = 12
-            label.marginTop = 8
-            label.marginBottom = 8
-            row.set(child: label)
+            rowBox.append(child: label)
+            if isDisabled {
+                let hint = Label(str: "Already added")
+                hint.halign = .start
+                hint.add(cssClass: "caption")
+                hint.add(cssClass: "dim-label")
+                rowBox.append(child: hint)
+            }
+            row.set(child: rowBox)
+            if isDisabled {
+                row.sensitive = false
+                row.selectable = false
+            }
             listBox.append(child: row)
         }
 
@@ -112,6 +129,7 @@ final class AddInstrumentDialog {
                 } else {
                     self.selectedIndex = nil
                     self.addButton.sensitive = false
+                    self.tracerEditor = nil
                     self.showPlaceholder(message: "Select an instrument to configure.")
                 }
             }
@@ -123,8 +141,23 @@ final class AddInstrumentDialog {
     }
 
     func present() {
+        Self.retain(dialog: self, window: window)
         installEscapeShortcut(on: window)
         window.present()
+    }
+
+    private static var retained: [ObjectIdentifier: AddInstrumentDialog] = [:]
+
+    private static func retain(dialog: AddInstrumentDialog, window: Window) {
+        let key = ObjectIdentifier(window)
+        retained[key] = dialog
+        let handler: (WindowRef) -> Bool = { _ in
+            MainActor.assumeIsolated {
+                _ = retained.removeValue(forKey: key)
+            }
+            return false
+        }
+        window.onCloseRequest(handler: handler)
     }
 
     private func close() {
@@ -132,9 +165,16 @@ final class AddInstrumentDialog {
     }
 
     private func clearDetail() {
+        tracerEditor = nil
+        monacoEditor = nil
         while let child = detailContainer.firstChild {
             detailContainer.remove(child: child)
         }
+        detailContainer.marginStart = 0
+        detailContainer.marginEnd = 0
+        detailContainer.marginTop = 0
+        detailContainer.marginBottom = 0
+        detailContainer.spacing = 0
     }
 
     private func showPlaceholder(message: String) {
@@ -158,34 +198,200 @@ final class AddInstrumentDialog {
             return
         }
         let descriptor = descriptors[index]
+        pendingConfigJSON = descriptor.makeInitialConfigJSON()
 
         clearDetail()
 
-        let stack = Box(orientation: .vertical, spacing: 12)
-        stack.marginStart = 24
-        stack.marginEnd = 24
-        stack.marginTop = 24
-        stack.marginBottom = 24
-        stack.hexpand = true
-        stack.vexpand = true
+        switch descriptor.kind {
+        case .tracer:
+            buildTracerEditor(descriptor: descriptor)
+        case .hookPack:
+            buildHookPackEditor(descriptor: descriptor)
+        case .codeShare:
+            buildCodeShareEditor(descriptor: descriptor)
+        }
+    }
+
+    private func buildTracerEditor(descriptor: LumaCore.InstrumentDescriptor) {
+        guard let config = try? TracerConfig.decode(from: pendingConfigJSON) else {
+            showPlaceholder(message: "Failed to decode tracer config.")
+            return
+        }
+        let editor = TracerConfigEditor(
+            engine: engine,
+            sessionID: sessionID,
+            config: config,
+            apply: { [weak self] data in
+                MainActor.assumeIsolated { self?.pendingConfigJSON = data }
+            }
+        )
+        tracerEditor = editor
+        detailContainer.append(child: editor.widget)
+    }
+
+    private func buildHookPackEditor(descriptor: LumaCore.InstrumentDescriptor) {
+        let outer = Box(orientation: .vertical, spacing: 8)
+        outer.hexpand = true
+        outer.marginStart = 24
+        outer.marginEnd = 24
+        outer.marginTop = 16
+        outer.marginBottom = 16
+        detailContainer.append(child: outer)
+
+        guard
+            var config = try? JSONDecoder().decode(HookPackConfig.self, from: pendingConfigJSON),
+            let pack = engine.hookPacks.pack(withId: descriptor.sourceIdentifier)
+        else {
+            outer.append(child: errorLabel("Failed to load hook pack"))
+            return
+        }
+
+        let title = Label(str: pack.manifest.name)
+        title.halign = .start
+        title.add(cssClass: "title-3")
+        outer.append(child: title)
+
+        let idLabel = Label(str: pack.manifest.id)
+        idLabel.halign = .start
+        idLabel.add(cssClass: "caption")
+        idLabel.add(cssClass: "dim-label")
+        outer.append(child: idLabel)
+
+        let header = Label(str: "Features")
+        header.halign = .start
+        header.add(cssClass: "heading")
+        header.marginTop = 8
+        outer.append(child: header)
+
+        if pack.manifest.features.isEmpty {
+            let dim = Label(str: "This hook-pack does not define any configurable features.")
+            dim.add(cssClass: "dim-label")
+            dim.halign = .start
+            outer.append(child: dim)
+            try? pendingConfigJSON = JSONEncoder().encode(config)
+            return
+        }
+
+        for feature in pack.manifest.features {
+            let row = Box(orientation: .horizontal, spacing: 8)
+            row.hexpand = true
+
+            let toggle = Switch()
+            toggle.active = config.features[feature.id] != nil
+            toggle.valign = .center
+            row.append(child: toggle)
+
+            let name = Label(str: feature.name)
+            name.halign = .start
+            name.hexpand = true
+            row.append(child: name)
+
+            let featureID = feature.id
+            toggle.onStateSet { [weak self] _, state in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    if state {
+                        if config.features[featureID] == nil {
+                            config.features[featureID] = FeatureConfig()
+                        }
+                    } else {
+                        config.features.removeValue(forKey: featureID)
+                    }
+                    if let data = try? JSONEncoder().encode(config) {
+                        self.pendingConfigJSON = data
+                    }
+                }
+                return false
+            }
+
+            outer.append(child: row)
+        }
+
+        if let data = try? JSONEncoder().encode(config) {
+            pendingConfigJSON = data
+        }
+    }
+
+    private func buildCodeShareEditor(descriptor: LumaCore.InstrumentDescriptor) {
+        detailContainer.marginStart = 24
+        detailContainer.marginEnd = 24
+        detailContainer.marginTop = 16
+        detailContainer.marginBottom = 16
+        detailContainer.spacing = 8
+
+        guard var config = try? JSONDecoder().decode(CodeShareConfig.self, from: pendingConfigJSON) else {
+            detailContainer.append(child: errorLabel("Failed to decode codeshare config"))
+            return
+        }
 
         let title = Label(str: descriptor.displayName)
         title.halign = .start
-        title.add(cssClass: "title-2")
-        stack.append(child: title)
+        title.add(cssClass: "title-3")
+        detailContainer.append(child: title)
 
-        let kindLabel = Label(str: "Kind: \(descriptor.kind.rawValue)")
-        kindLabel.halign = .start
-        kindLabel.add(cssClass: "dim-label")
-        stack.append(child: kindLabel)
+        let nameRow = Box(orientation: .horizontal, spacing: 8)
+        nameRow.append(child: Label(str: "Name"))
+        let nameEntry = Entry()
+        nameEntry.text = config.name
+        nameEntry.hexpand = true
+        nameRow.append(child: nameEntry)
+        detailContainer.append(child: nameRow)
 
-        let hint = Label(str: "Click Add to add this instrument. You can configure it from the sidebar afterwards.")
-        hint.halign = .start
-        hint.wrap = true
-        hint.xalign = 0
-        stack.append(child: hint)
+        let descRow = Box(orientation: .horizontal, spacing: 8)
+        descRow.append(child: Label(str: "Description"))
+        let descEntry = Entry()
+        descEntry.text = config.description
+        descEntry.hexpand = true
+        descRow.append(child: descEntry)
+        detailContainer.append(child: descRow)
 
-        detailContainer.append(child: stack)
+        let codeHeader = Label(str: "Source")
+        codeHeader.halign = .start
+        codeHeader.add(cssClass: "heading")
+        codeHeader.marginTop = 8
+        detailContainer.append(child: codeHeader)
+
+        let editorContainer = Box(orientation: .vertical, spacing: 0)
+        editorContainer.hexpand = true
+        editorContainer.vexpand = true
+        editorContainer.setSizeRequest(width: -1, height: 360)
+        detailContainer.append(child: editorContainer)
+
+        var monacoProfile = MonacoEditorProfile(languageId: "javascript", theme: .dark, fontSize: 13)
+        monacoProfile.jsCompilerOptions = MonacoTypings.fridaCompilerOptions
+        if let gum = MonacoTypings.fridaGum { monacoProfile.jsExtraLibs.append(gum) }
+        let editor = MonacoEditor(profile: monacoProfile, initialText: config.source)
+        monacoEditor = editor
+        editorContainer.append(child: editor.widget)
+
+        var currentSource = config.source
+        let sync: () -> Void = { [weak self] in
+            guard let self else { return }
+            config.name = nameEntry.text ?? ""
+            config.description = descEntry.text ?? ""
+            config.source = currentSource
+            config.lastReviewedHash = config.currentSourceHash
+            if let data = try? JSONEncoder().encode(config) {
+                self.pendingConfigJSON = data
+            }
+        }
+        nameEntry.onChanged { _ in MainActor.assumeIsolated { sync() } }
+        descEntry.onChanged { _ in MainActor.assumeIsolated { sync() } }
+        editor.onTextChanged = { text in
+            MainActor.assumeIsolated {
+                currentSource = text
+                sync()
+            }
+        }
+
+        sync()
+    }
+
+    private func errorLabel(_ text: String) -> Label {
+        let label = Label(str: text)
+        label.add(cssClass: "error")
+        label.halign = .start
+        return label
     }
 
     private func commit() {
@@ -194,7 +400,7 @@ final class AddInstrumentDialog {
         let engine = self.engine
         let sessionID = self.sessionID
         let onAdded = self.onAdded
-        let configJSON = descriptor.makeInitialConfigJSON()
+        let configJSON = pendingConfigJSON
         Task { @MainActor in
             let instance = await engine.addInstrument(
                 kind: descriptor.kind,
@@ -207,8 +413,10 @@ final class AddInstrumentDialog {
         close()
     }
 
-    private func openCodeShareBrowser(anchor: Widget) {
-        CodeShareBrowser.present(from: anchor, engine: engine, sessionID: sessionID)
+    private func openCodeShareBrowser() {
+        let parent = parentWindow
         close()
+        CodeShareBrowser.present(from: parent, engine: engine, sessionID: sessionID)
     }
 }
+

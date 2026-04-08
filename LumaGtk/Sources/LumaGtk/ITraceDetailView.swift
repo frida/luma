@@ -310,12 +310,12 @@ final class ITraceDetailView {
             listBox.append(child: row)
         }
 
-        listBox.onRowSelected { [weak popover, weak anchor] _, row in
+        listBox.onRowSelected { [popover, weak anchor] _, row in
             MainActor.assumeIsolated {
                 guard let row, let anchor else { return }
                 let index = Int(row.index)
                 guard index >= 0, index < others.count else { return }
-                popover?.popdown()
+                popover.popdown()
                 ITraceDiffView.present(from: anchor, left: capture, right: others[index])
             }
         }

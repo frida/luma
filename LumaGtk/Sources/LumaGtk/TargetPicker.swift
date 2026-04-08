@@ -21,6 +21,10 @@ final class TargetPicker {
     private let deviceList: ListBox
     private let processList: ListBox
     private let processStatus: Label
+    private let processLoading: Box
+    private let processLoadingSpinner: Spinner
+    private let processLoadingLabel: Label
+    private let processContent: Box
     private let processSearchEntry: SearchEntry
     private let attachButton: Button
     private let spawnButton: Button
@@ -38,6 +42,10 @@ final class TargetPicker {
     private let appList: ListBox
     private let appSearchEntry: SearchEntry
     private let appStatus: Label
+    private let appLoading: Box
+    private let appLoadingSpinner: Spinner
+    private let appLoadingLabel: Label
+    private let appContent: Box
     private let programPathEntry: Entry
     private let programBrowseButton: Button
     private let programPathRow: Box
@@ -114,6 +122,10 @@ final class TargetPicker {
         deviceList = ListBox()
         processList = ListBox()
         processStatus = Label(str: "Select a device to list processes\u{2026}")
+        processLoading = Box(orientation: .vertical, spacing: 8)
+        processLoadingSpinner = Spinner()
+        processLoadingLabel = Label(str: "Enumerating processes\u{2026}")
+        processContent = Box(orientation: .vertical, spacing: 0)
         processSearchEntry = SearchEntry()
         attachButton = Button(label: "Attach")
         spawnButton = Button(label: "Spawn & Attach")
@@ -131,6 +143,10 @@ final class TargetPicker {
         appList = ListBox()
         appSearchEntry = SearchEntry()
         appStatus = Label(str: "Select a device to list applications\u{2026}")
+        appLoading = Box(orientation: .vertical, spacing: 8)
+        appLoadingSpinner = Spinner()
+        appLoadingLabel = Label(str: "Enumerating applications\u{2026}")
+        appContent = Box(orientation: .vertical, spacing: 0)
         programPathEntry = Entry()
         programPathEntry.placeholderText = "Absolute program path, e.g. /usr/bin/foo"
         programPathEntry.hexpand = true
@@ -407,12 +423,28 @@ final class TargetPicker {
         scroll.vexpand = true
         scroll.set(child: processList)
 
+        processContent.hexpand = true
+        processContent.vexpand = true
+        processContent.append(child: processStatus)
+        processContent.append(child: processSearchEntry)
+        processContent.append(child: scroll)
+
+        processLoadingSpinner.setSizeRequest(width: 24, height: 24)
+        processLoadingLabel.add(cssClass: "dim-label")
+        processLoadingLabel.add(cssClass: "caption")
+        processLoading.halign = .center
+        processLoading.valign = .center
+        processLoading.hexpand = true
+        processLoading.vexpand = true
+        processLoading.append(child: processLoadingSpinner)
+        processLoading.append(child: processLoadingLabel)
+        processLoading.visible = false
+
         let column = Box(orientation: .vertical, spacing: 0)
         column.hexpand = true
         column.vexpand = true
-        column.append(child: processStatus)
-        column.append(child: processSearchEntry)
-        column.append(child: scroll)
+        column.append(child: processContent)
+        column.append(child: processLoading)
         return column
     }
 
@@ -444,9 +476,25 @@ final class TargetPicker {
         appScroll.hexpand = true
         appScroll.vexpand = true
         appScroll.set(child: appList)
-        appFormBox.append(child: appStatus)
-        appFormBox.append(child: appSearchEntry)
-        appFormBox.append(child: appScroll)
+        appContent.hexpand = true
+        appContent.vexpand = true
+        appContent.append(child: appStatus)
+        appContent.append(child: appSearchEntry)
+        appContent.append(child: appScroll)
+
+        appLoadingSpinner.setSizeRequest(width: 24, height: 24)
+        appLoadingLabel.add(cssClass: "dim-label")
+        appLoadingLabel.add(cssClass: "caption")
+        appLoading.halign = .center
+        appLoading.valign = .center
+        appLoading.hexpand = true
+        appLoading.vexpand = true
+        appLoading.append(child: appLoadingSpinner)
+        appLoading.append(child: appLoadingLabel)
+        appLoading.visible = false
+
+        appFormBox.append(child: appContent)
+        appFormBox.append(child: appLoading)
         appFormBox.hexpand = true
         appFormBox.vexpand = true
 
@@ -622,13 +670,18 @@ final class TargetPicker {
             hbox.marginEnd = 12
             hbox.marginTop = 6
             hbox.marginBottom = 6
-            let kindIcon: String
-            switch device.kind {
-            case .local: kindIcon = "computer-symbolic"
-            case .usb: kindIcon = "drive-harddisk-usb-symbolic"
-            case .remote: kindIcon = "network-wired-symbolic"
+            let icon: Gtk.Image
+            if let fridaIcon = device.icon, let img = IconPixbuf.makeImage(from: fridaIcon, pixelSize: 24) {
+                icon = img
+            } else {
+                let kindIcon: String
+                switch device.kind {
+                case .local: kindIcon = "computer-symbolic"
+                case .usb: kindIcon = "drive-harddisk-usb-symbolic"
+                case .remote: kindIcon = "network-wired-symbolic"
+                }
+                icon = Gtk.Image(iconName: kindIcon)
             }
-            let icon = Image(iconName: kindIcon)
             hbox.append(child: icon)
             let textBox = Box(orientation: .vertical, spacing: 0)
             let nameLabel = Label(str: device.name)
@@ -682,24 +735,48 @@ final class TargetPicker {
         filteredProcesses = []
         selectedProcessIndex = nil
         attachButton.sensitive = false
-        processStatus.setText(str: "Loading processes for \(device.name)\u{2026}")
+        setProcessLoading(true, deviceName: device.name)
 
         processFetchTask?.cancel()
         let capturedID = device.id
         processFetchTask = Task { @MainActor in
             do {
-                let result = try await device.enumerateProcesses()
+                let result = try await device.enumerateProcesses(scope: .full)
                 guard !Task.isCancelled, self.selectedDeviceID == capturedID else { return }
+                self.setProcessLoading(false, deviceName: device.name)
                 self.renderProcesses(result, for: device)
             } catch {
                 guard !Task.isCancelled, self.selectedDeviceID == capturedID else { return }
+                self.setProcessLoading(false, deviceName: device.name)
                 self.processStatus.setText(str: "Failed to enumerate processes: \(error)")
             }
         }
     }
 
+    private func setProcessLoading(_ loading: Bool, deviceName: String) {
+        if loading {
+            processLoadingLabel.setText(str: "Enumerating processes on \(deviceName)\u{2026}")
+            processLoadingSpinner.start()
+            processLoadingSpinner.spinning = true
+            processLoading.visible = true
+            processContent.visible = false
+        } else {
+            processLoadingSpinner.stop()
+            processLoadingSpinner.spinning = false
+            processLoading.visible = false
+            processContent.visible = true
+        }
+    }
+
     private func renderProcesses(_ snapshot: [ProcessDetails], for device: Frida.Device) {
-        let sorted = snapshot.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        let sorted = snapshot.sorted {
+            let aHasIcon = !$0.icons.isEmpty
+            let bHasIcon = !$1.icons.isEmpty
+            if aHasIcon != bHasIcon {
+                return aHasIcon
+            }
+            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
         processes = sorted
         applyProcessFilter(query: processSearchEntry.text)
         processStatus.setText(str: "\(device.name) — \(sorted.count) processes")
@@ -724,13 +801,18 @@ final class TargetPicker {
         processList.removeAll()
         for proc in filteredProcesses {
             let row = ListBoxRow()
+            let hbox = Box(orientation: .horizontal, spacing: 8)
+            hbox.marginStart = 12
+            hbox.marginEnd = 12
+            hbox.marginTop = 4
+            hbox.marginBottom = 4
+            if let fridaIcon = proc.icons.last, let img = IconPixbuf.makeImage(from: fridaIcon, pixelSize: 24) {
+                hbox.append(child: img)
+            }
             let label = Label(str: "\(proc.name)  ·  pid \(proc.pid)")
             label.halign = .start
-            label.marginStart = 12
-            label.marginEnd = 12
-            label.marginTop = 4
-            label.marginBottom = 4
-            row.set(child: label)
+            hbox.append(child: label)
+            row.set(child: hbox)
             processList.append(child: row)
         }
         selectedProcessIndex = nil
@@ -755,19 +837,36 @@ final class TargetPicker {
         appList.removeAll()
         applications = []
         filteredApplications = []
-        appStatus.setText(str: "Loading applications for \(device.name)\u{2026}")
+        setAppLoading(true, deviceName: device.name)
 
         appFetchTask?.cancel()
         let capturedID = device.id
         appFetchTask = Task { @MainActor in
             do {
-                let result = try await device.enumerateApplications()
+                let result = try await device.enumerateApplications(scope: .full)
                 guard !Task.isCancelled, self.selectedDeviceID == capturedID else { return }
+                self.setAppLoading(false, deviceName: device.name)
                 self.renderApplications(result, for: device)
             } catch {
                 guard !Task.isCancelled, self.selectedDeviceID == capturedID else { return }
+                self.setAppLoading(false, deviceName: device.name)
                 self.appStatus.setText(str: "Failed to enumerate applications: \(error)")
             }
+        }
+    }
+
+    private func setAppLoading(_ loading: Bool, deviceName: String) {
+        if loading {
+            appLoadingLabel.setText(str: "Enumerating applications on \(deviceName)\u{2026}")
+            appLoadingSpinner.start()
+            appLoadingSpinner.spinning = true
+            appLoading.visible = true
+            appContent.visible = false
+        } else {
+            appLoadingSpinner.stop()
+            appLoadingSpinner.spinning = false
+            appLoading.visible = false
+            appContent.visible = true
         }
     }
 
@@ -800,11 +899,15 @@ final class TargetPicker {
         appList.removeAll()
         for app in filteredApplications {
             let row = ListBoxRow()
+            let hbox = Box(orientation: .horizontal, spacing: 8)
+            hbox.marginStart = 12
+            hbox.marginEnd = 12
+            hbox.marginTop = 4
+            hbox.marginBottom = 4
+            if let fridaIcon = app.icons.last, let img = IconPixbuf.makeImage(from: fridaIcon, pixelSize: 24) {
+                hbox.append(child: img)
+            }
             let textBox = Box(orientation: .vertical, spacing: 0)
-            textBox.marginStart = 12
-            textBox.marginEnd = 12
-            textBox.marginTop = 4
-            textBox.marginBottom = 4
             let nameLabel = Label(str: app.name)
             nameLabel.halign = .start
             let idLabel = Label(str: app.identifier)
@@ -813,7 +916,8 @@ final class TargetPicker {
             idLabel.add(cssClass: "caption")
             textBox.append(child: nameLabel)
             textBox.append(child: idLabel)
-            row.set(child: textBox)
+            hbox.append(child: textBox)
+            row.set(child: hbox)
             appList.append(child: row)
         }
     }

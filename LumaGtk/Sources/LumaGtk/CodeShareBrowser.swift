@@ -448,6 +448,18 @@ final class CodeShareBrowser {
     }
 
     static func present(from anchor: Widget, engine: Engine, sessionID: UUID) {
+        if let rootPtr = anchor.root?.ptr {
+            present(from: WindowRef(raw: rootPtr), engine: engine, sessionID: sessionID)
+        } else {
+            present(from: nil as Window?, engine: engine, sessionID: sessionID)
+        }
+    }
+
+    static func present(from parent: Window?, engine: Engine, sessionID: UUID) {
+        present(from: parent.map { WindowRef(raw: $0.ptr) }, engine: engine, sessionID: sessionID)
+    }
+
+    static func present(from parent: WindowRef?, engine: Engine, sessionID: UUID) {
         let browser = CodeShareBrowser(engine: engine, sessionID: sessionID)
 
         let window = Window()
@@ -456,8 +468,8 @@ final class CodeShareBrowser {
         window.modal = false
         window.destroyWithParent = true
 
-        if let rootPtr = anchor.root?.ptr {
-            window.setTransientFor(parent: WindowRef(raw: rootPtr))
+        if let parent {
+            window.setTransientFor(parent: parent)
         }
 
         let header = HeaderBar()

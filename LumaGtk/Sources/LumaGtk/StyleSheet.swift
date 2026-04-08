@@ -4,9 +4,12 @@ import Gtk
 @MainActor
 enum StyleSheet {
     static let css = """
+    .event-stream-pane {
+        border-top: 1px solid alpha(@theme_fg_color, 0.18);
+    }
     .event-stream-pane.has-pending-events {
         background-color: alpha(@accent_bg_color, 0.18);
-        border-top: 1px solid alpha(@accent_bg_color, 0.45);
+        border-top-color: alpha(@accent_bg_color, 0.45);
     }
 
     .luma-banner {
@@ -89,6 +92,47 @@ enum StyleSheet {
     }
     expander title:hover {
         background: alpha(@theme_fg_color, 0.05);
+    }
+
+    box.luma-menu {
+        padding: 4px;
+        min-width: 200px;
+    }
+    box.luma-menu > button.flat,
+    box.luma-menu > button {
+        padding: 6px 10px;
+        border-radius: 6px;
+        background: transparent;
+        background-image: none;
+        border: none;
+        box-shadow: none;
+        color: @theme_fg_color;
+    }
+    box.luma-menu > button.flat > label,
+    box.luma-menu > button > label {
+        color: @theme_fg_color;
+    }
+    box.luma-menu > button.flat:hover,
+    box.luma-menu > button:hover {
+        background-color: alpha(@accent_bg_color, 0.18);
+        background-image: none;
+    }
+    box.luma-menu > button.luma-menu-destructive,
+    box.luma-menu > button.luma-menu-destructive.flat {
+        color: #e01b24;
+    }
+    box.luma-menu > button.luma-menu-destructive > label {
+        color: #e01b24;
+    }
+    box.luma-menu > button.luma-menu-destructive:hover,
+    box.luma-menu > button.luma-menu-destructive.flat:hover {
+        background-color: alpha(#e01b24, 0.18);
+        background-image: none;
+    }
+    box.luma-menu > separator {
+        background-color: alpha(@theme_fg_color, 0.15);
+        margin: 4px 2px;
+        min-height: 1px;
     }
 
     .luma-session-icon {
