@@ -24,7 +24,12 @@ private func dispatchGetMainQueueHandle() -> Int32
 @_silgen_name("_dispatch_main_queue_callback_4CF")
 private func dispatchMainQueueCallback(_ msg: UnsafeMutableRawPointer?)
 
-private let drainCallback: GIOFunc = { _, _, _ in
+private let drainCallback: GIOFunc = { channel, _, _ in
+    var value: UInt64 = 0
+    let fd = g_io_channel_unix_get_fd(channel)
+    _ = withUnsafeMutablePointer(to: &value) { ptr -> Int in
+        read(fd, UnsafeMutableRawPointer(ptr), MemoryLayout<UInt64>.size)
+    }
     dispatchMainQueueCallback(nil)
     return 1  // G_SOURCE_CONTINUE
 }
@@ -42,7 +47,7 @@ enum GLibMainExecutor {
         let channel = g_io_channel_unix_new(fd)
         g_io_add_watch_full(
             channel,
-            Int32(G_PRIORITY_DEFAULT_IDLE),
+            Int32(G_PRIORITY_LOW),
             G_IO_IN,
             drainCallback,
             nil,
