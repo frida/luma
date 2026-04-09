@@ -74,9 +74,6 @@ enum ContextMenu {
         }
 
         popover.set(parent: anchor)
-        popover.onClosed { popover in
-            popover.unparent()
-        }
         popover.presentPointing(at: x, y: y)
     }
 }
