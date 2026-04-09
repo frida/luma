@@ -132,12 +132,11 @@ final class REPLPane {
             ? "Enter JavaScript\u{2026}"
             : "Session detached — re-establish to continue."
 
-        let wantsBanner = session.map { SessionDetachedBanner.shouldShow(for: $0) } ?? false
-        let bannerChanging = wantsBanner != (currentBanner != nil)
-        if bannerChanging, let rootPtr = widget.root?.ptr {
+        if let rootPtr = widget.root?.ptr {
             WindowRef(raw: rootPtr).focus = nil
         }
 
+        let wantsBanner = session.map { SessionDetachedBanner.shouldShow(for: $0) } ?? false
         if let session, wantsBanner {
             let banner = SessionDetachedBanner.make(for: session) { [weak self] in
                 self?.owner?.reestablishSession(id: session.id)
