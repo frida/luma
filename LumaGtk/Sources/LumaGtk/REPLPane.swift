@@ -12,6 +12,8 @@ final class REPLPane {
     private let sessionID: UUID
     private let bannerSlot: Box
     private var currentBanner: Widget?
+    private var lastBannerPhase: LumaCore.ProcessSession.Phase?
+    private var lastBannerError: String?
     private let cellsBox: Box
     private let cellsScroll: ScrolledWindow
     private let inputEntry: Entry
@@ -132,23 +134,28 @@ final class REPLPane {
             ? "Enter JavaScript\u{2026}"
             : "Session detached — re-establish to continue."
 
-        if let rootPtr = widget.root?.ptr {
-            WindowRef(raw: rootPtr).focus = nil
-        }
-
         let wantsBanner = session.map { SessionDetachedBanner.shouldShow(for: $0) } ?? false
-        if let session, wantsBanner {
-            let banner = SessionDetachedBanner.make(for: session) { [weak self] in
-                self?.owner?.reestablishSession(id: session.id)
+        let phase = session?.phase
+        let error = session?.lastError
+        let bannerDirty = wantsBanner != (currentBanner != nil) || phase != lastBannerPhase || error != lastBannerError
+        lastBannerPhase = phase
+        lastBannerError = error
+
+        if bannerDirty {
+            if let rootPtr = widget.root?.ptr {
+                WindowRef(raw: rootPtr).focus = nil
             }
             if let existing = currentBanner {
                 bannerSlot.remove(child: existing)
+                currentBanner = nil
             }
-            bannerSlot.append(child: banner)
-            currentBanner = banner
-        } else if let existing = currentBanner {
-            bannerSlot.remove(child: existing)
-            currentBanner = nil
+            if let session, wantsBanner {
+                let banner = SessionDetachedBanner.make(for: session) { [weak self] in
+                    self?.owner?.reestablishSession(id: session.id)
+                }
+                bannerSlot.append(child: banner)
+                currentBanner = banner
+            }
         }
     }
 
@@ -431,6 +438,7 @@ final class REPLPane {
         completionTask?.cancel()
         completionTask = nil
         completionPopover?.popdown()
+        completionPopover?.unparent()
         completionPopover = nil
         completionList = nil
         completionItems = []
