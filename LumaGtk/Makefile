@@ -1,4 +1,4 @@
-.PHONY: build run clean bundle
+.PHONY: build run clean bundle screenshots
 
 # SwiftPM's bundled .pc finder only consults the directories listed in
 # PKG_CONFIG_PATH and the toolchain's primary compiled-in path; it
@@ -37,6 +37,10 @@ build: bundle
 
 run: build
 	./.build/debug/LumaGtk
+
+screenshots: build
+	mkdir -p screenshots
+	scripts/capture-screenshots.sh screenshots
 
 clean:
 	swift package clean
