@@ -1,5 +1,6 @@
 import CWebKit
 import Foundation
+import GLibObject
 import Gtk
 import LumaCore
 
@@ -105,6 +106,7 @@ public struct MonacoEditorProfile: Equatable {
 @MainActor
 public final class MonacoEditor {
     public let widget: WidgetRef
+    private nonisolated(unsafe) let widgetRawPtr: UnsafeMutableRawPointer
     public var onTextChanged: ((String) -> Void)?
     public private(set) var isReady = false
     public var onReady: (() -> Void)?
@@ -128,6 +130,8 @@ public final class MonacoEditor {
             fatalError("luma_monaco_view_widget returned null")
         }
         self.view = view
+        _ = GLibObject.ObjectRef(raw: widgetRaw).ref()
+        self.widgetRawPtr = widgetRaw
         self.widget = WidgetRef(raw: widgetRaw)
         self.widget.hexpand = true
         self.widget.vexpand = true
@@ -148,7 +152,11 @@ public final class MonacoEditor {
 
     deinit {
         let key = ObjectIdentifier(self)
-        MainActor.assumeIsolated { Self.instances[key] = nil }
+        let widgetPtr = widgetRawPtr
+        MainActor.assumeIsolated {
+            Self.instances[key] = nil
+            GLibObject.ObjectRef(raw: widgetPtr).unref()
+        }
     }
 
     public func reparent(into container: Box) {
