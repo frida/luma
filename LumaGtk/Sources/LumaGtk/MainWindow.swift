@@ -295,6 +295,8 @@ final class MainWindow {
     func attach(engine: Engine) {
         self.engine = engine
         engine.onSessionListChanged = { [weak self] change in self?.handleSessionListChange(change) }
+        engine.onREPLCellAdded = { [weak self] cell in self?.currentREPLPane?.appendCell(cell) }
+        engine.onNotebookChanged = { [weak self] change in self?.notebookPane?.handleNotebookChange(change) }
         engine.populateSessionList()
         renderPackages((try? engine.store.fetchPackagesState())?.packages ?? [])
         eventStreamPane.attach(engine: engine)

@@ -182,27 +182,18 @@ final class CollaborationPanel {
 
     private func observeParticipants() {
         guard let engine else { return }
-        withObservationTracking {
-            _ = engine.collaboration.participants
-        } onChange: { [weak self] in
-            Task { @MainActor in
-                guard let self else { return }
-                self.refreshParticipants()
-                self.observeParticipants()
-            }
+        engine.collaboration.onParticipantJoined = { [weak self] user in
+            self?.appendParticipant(user)
+        }
+        engine.collaboration.onParticipantLeft = { [weak self] userID in
+            self?.removeParticipant(userID)
         }
     }
 
     private func observeChat() {
         guard let engine else { return }
-        withObservationTracking {
-            _ = engine.collaboration.chatMessages
-        } onChange: { [weak self] in
-            Task { @MainActor in
-                guard let self else { return }
-                self.refreshChat()
-                self.observeChat()
-            }
+        engine.collaboration.onChatMessageReceived = { [weak self] message in
+            self?.appendChatMessage(message)
         }
     }
 
@@ -475,6 +466,90 @@ final class CollaborationPanel {
             }
         }
 
+        refreshChatInputState()
+    }
+
+    private func appendParticipant(_ user: LumaCore.CollaborationSession.UserInfo) {
+        let row = ListBoxRow()
+        let label = Label(str: user.name.isEmpty ? "@\(user.id)" : user.name)
+        label.halign = .start
+        label.marginStart = 8
+        label.marginEnd = 8
+        label.marginTop = 2
+        label.marginBottom = 2
+        row.set(child: label)
+        participantsList.append(child: row)
+    }
+
+    private func removeParticipant(_ userID: String) {
+        guard let engine else { return }
+        let participants = engine.collaboration.participants
+        // Find by absence — the participant was already removed from the model
+        participantsList.removeAll()
+        for user in participants {
+            appendParticipant(user)
+        }
+    }
+
+    private func appendChatMessage(_ message: LumaCore.CollaborationSession.ChatMessage) {
+        let row = ListBoxRow()
+        row.selectable = false
+        row.activatable = false
+
+        let outer = Box(orientation: .horizontal, spacing: 0)
+        outer.marginStart = 4
+        outer.marginEnd = 4
+        outer.marginTop = 2
+        outer.marginBottom = 2
+
+        let bubble = Box(orientation: .vertical, spacing: 2)
+        bubble.add(cssClass: message.isLocal ? "luma-chat-bubble-local" : "luma-chat-bubble-remote")
+        bubble.hexpand = false
+        bubble.halign = message.isLocal ? .end : .start
+
+        let header = Box(orientation: .horizontal, spacing: 6)
+        let senderName = message.isLocal
+            ? "You"
+            : (message.sender.name.isEmpty ? "@\(message.sender.id)" : message.sender.name)
+        let senderLabel = Label(str: senderName)
+        senderLabel.halign = .start
+        senderLabel.hexpand = true
+        senderLabel.add(cssClass: "caption-heading")
+        header.append(child: senderLabel)
+
+        let timeLabel = Label(str: chatTimeFormatter.string(from: message.timestamp))
+        timeLabel.halign = .end
+        timeLabel.add(cssClass: "caption")
+        timeLabel.add(cssClass: "dim-label")
+        header.append(child: timeLabel)
+        bubble.append(child: header)
+
+        let body = Label(str: message.text)
+        body.halign = .start
+        body.wrap = true
+        body.xalign = 0
+        body.add(cssClass: "caption")
+        bubble.append(child: body)
+
+        if message.isLocal {
+            let spacer = Box(orientation: .horizontal, spacing: 0)
+            spacer.hexpand = true
+            outer.append(child: spacer)
+            outer.append(child: bubble)
+        } else {
+            outer.append(child: bubble)
+            let spacer = Box(orientation: .horizontal, spacing: 0)
+            spacer.hexpand = true
+            outer.append(child: spacer)
+        }
+
+        row.set(child: outer)
+        chatListBox.append(child: row)
+
+        lastChatCount += 1
+        if isPinnedToBottom {
+            scrollChatToBottomSoon()
+        }
         refreshChatInputState()
     }
 

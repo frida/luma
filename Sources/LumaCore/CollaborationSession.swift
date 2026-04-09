@@ -77,6 +77,9 @@ public final class CollaborationSession {
     public var onNotebookEntryUpdated: ((NotebookEntry) -> Void)?
     public var onNotebookEntryDeleted: ((UUID) -> Void)?
     public var onEntriesReordered: (([UUID]) -> Void)?
+    public var onParticipantJoined: ((UserInfo) -> Void)?
+    public var onParticipantLeft: ((String) -> Void)?
+    public var onChatMessageReceived: ((ChatMessage) -> Void)?
 
     public init(
         deviceManager: DeviceManager,
@@ -326,11 +329,13 @@ public final class CollaborationSession {
         case "participant-joined":
             if let userObj = payload["user"] as? JSONObject, let user = UserInfo.fromJSON(userObj) {
                 participants.append(user)
+                onParticipantJoined?(user)
             }
 
         case "participant-left":
             if let userObj = payload["user"] as? JSONObject, let userID = userObj["id"] as? String {
                 participants.removeAll { $0.id == userID }
+                onParticipantLeft?(userID)
             }
 
         case "chat-message":
@@ -339,6 +344,7 @@ public final class CollaborationSession {
                 let message = ChatMessage.fromJSON(messageObj, localUser: localUser)
             {
                 chatMessages.append(message)
+                onChatMessageReceived?(message)
             }
 
         case "error":

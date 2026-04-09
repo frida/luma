@@ -2,8 +2,6 @@ import CGtk
 import Foundation
 import Gtk
 import LumaCore
-import Observation
-
 @MainActor
 final class NotebookPane {
     let widget: Box
@@ -21,6 +19,7 @@ final class NotebookPane {
     private var autoEditedEntries: Set<UUID> = []
     private var draftEntries: Set<UUID> = []
     private var jsValueKeepers: [JSInspectValueWidget] = []
+    private var entryRows: [UUID: Widget] = [:]
     private let emptyStateActionHolder = ActionHolder()
 
     init(engine: Engine) {
@@ -92,49 +91,88 @@ final class NotebookPane {
             self?.addUserNote()
         }
 
-        observe()
-        refresh()
+        populateEntries()
     }
 
-    // MARK: - Observation
+    // MARK: - Change handling
 
-    private func observe() {
-        guard let engine else { return }
-        withObservationTracking {
-            _ = engine.notebookEntries
-        } onChange: { [weak self] in
-            Task { @MainActor in
-                guard let self else { return }
-                self.refresh()
-                self.observe()
+    func handleNotebookChange(_ change: LumaCore.NotebookChange) {
+        switch change {
+        case .added(let entry):
+            let row = makeRow(for: entry)
+            entryRows[entry.id] = row
+            insertEntryRow(row, for: entry)
+        case .updated(let entry):
+            if let existing = entryRows[entry.id] {
+                let parent = entriesBox
+                let next = existing.nextSibling
+                parent.remove(child: existing)
+                let row = makeRow(for: entry)
+                entryRows[entry.id] = row
+                gtk_box_insert_child_after(parent.box_ptr, row.widget_ptr, next?.prevSibling?.widget_ptr)
             }
+        case .removed(let id):
+            if let row = entryRows.removeValue(forKey: id) {
+                entriesBox.remove(child: row)
+            }
+            editingEntries.remove(id)
+            autoEditedEntries.remove(id)
+            draftEntries.remove(id)
+        case .reordered:
+            rebuildEntries()
         }
+        updateVisibility()
     }
 
-    private func refresh() {
+    private func populateEntries() {
         guard let engine else { return }
-        let entries = engine.notebookEntries.sorted { $0.timestamp < $1.timestamp }
+        for entry in engine.notebookEntries.sorted(by: { $0.timestamp < $1.timestamp }) {
+            let row = makeRow(for: entry)
+            entryRows[entry.id] = row
+            entriesBox.append(child: row)
+        }
+        updateVisibility()
+    }
 
+    private func rebuildEntries() {
+        guard let engine else { return }
         clearWindowFocus()
         clearChildren(of: entriesBox)
         jsValueKeepers.removeAll()
+        entryRows.removeAll()
+        for entry in engine.notebookEntries.sorted(by: { $0.timestamp < $1.timestamp }) {
+            let row = makeRow(for: entry)
+            entryRows[entry.id] = row
+            entriesBox.append(child: row)
+        }
+        updateVisibility()
+    }
 
-        let anyEditing = entries.contains { editingEntries.contains($0.id) }
-
-        if entries.isEmpty {
-            emptyState.visible = true
-            scroll.visible = false
-            newNoteButton.visible = false
+    private func insertEntryRow(_ row: Widget, for entry: LumaCore.NotebookEntry) {
+        guard let engine else {
+            entriesBox.append(child: row)
             return
         }
-
-        emptyState.visible = false
-        scroll.visible = true
-        newNoteButton.visible = !anyEditing
-
-        for entry in entries {
-            entriesBox.append(child: makeRow(for: entry))
+        let sorted = engine.notebookEntries.sorted { $0.timestamp < $1.timestamp }
+        guard let targetIdx = sorted.firstIndex(where: { $0.id == entry.id }) else {
+            entriesBox.append(child: row)
+            return
         }
+        if let nextEntry = sorted.dropFirst(targetIdx + 1).first(where: { entryRows[$0.id] != nil }),
+            let sibling = entryRows[nextEntry.id]
+        {
+            gtk_box_insert_child_after(entriesBox.box_ptr, row.widget_ptr, sibling.prevSibling?.widget_ptr)
+        } else {
+            entriesBox.append(child: row)
+        }
+    }
+
+    private func updateVisibility() {
+        let hasEntries = !entryRows.isEmpty
+        let anyEditing = !editingEntries.isEmpty
+        emptyState.visible = !hasEntries
+        scroll.visible = hasEntries
+        newNoteButton.visible = hasEntries && !anyEditing
     }
 
     // MARK: - Actions
@@ -163,7 +201,7 @@ final class NotebookPane {
     private func beginEditing(_ entry: LumaCore.NotebookEntry) {
         editingEntries.insert(entry.id)
         Task { @MainActor [weak self] in
-            self?.refresh()
+            self?.rebuildEntries()
         }
     }
 
@@ -444,7 +482,7 @@ final class NotebookPane {
                     self.engine?.deleteNotebookEntry(entry)
                 }
                 Task { @MainActor [weak self] in
-                    self?.refresh()
+                    self?.rebuildEntries()
                 }
             }
         }

@@ -332,8 +332,22 @@ final class TargetPicker {
         window.present()
         snapshotTask = Task { @MainActor in
             renderDevices(await engine.deviceManager.currentDevices())
-            for await snapshot in await engine.deviceManager.snapshots() {
-                renderDevices(snapshot)
+            for await change in await engine.deviceManager.changes() {
+                switch change {
+                case .appeared(let device):
+                    devices.append(device)
+                    deviceList.append(child: makeDeviceRow(device))
+                    if devices.count == 1, let row = deviceList.getRowAt(index: 0) {
+                        deviceList.select(row: row)
+                    }
+                case .disappeared(let device):
+                    if let idx = devices.firstIndex(where: { $0.id == device.id }) {
+                        devices.remove(at: idx)
+                        if let row = deviceList.getRowAt(index: idx) {
+                            deviceList.remove(child: row)
+                        }
+                    }
+                }
             }
         }
     }
@@ -664,37 +678,7 @@ final class TargetPicker {
         devices = snapshot
         deviceList.removeAll()
         for device in snapshot {
-            let row = ListBoxRow()
-            let hbox = Box(orientation: .horizontal, spacing: 8)
-            hbox.marginStart = 12
-            hbox.marginEnd = 12
-            hbox.marginTop = 6
-            hbox.marginBottom = 6
-            let icon: Gtk.Image
-            if let fridaIcon = device.icon, let img = IconPixbuf.makeImage(from: fridaIcon, pixelSize: 24) {
-                icon = img
-            } else {
-                let kindIcon: String
-                switch device.kind {
-                case .local: kindIcon = "computer-symbolic"
-                case .usb: kindIcon = "drive-harddisk-usb-symbolic"
-                case .remote: kindIcon = "network-wired-symbolic"
-                }
-                icon = Gtk.Image(iconName: kindIcon)
-            }
-            hbox.append(child: icon)
-            let textBox = Box(orientation: .vertical, spacing: 0)
-            let nameLabel = Label(str: device.name)
-            nameLabel.halign = .start
-            let idLabel = Label(str: device.id)
-            idLabel.halign = .start
-            idLabel.add(cssClass: "dim-label")
-            idLabel.add(cssClass: "caption")
-            textBox.append(child: nameLabel)
-            textBox.append(child: idLabel)
-            hbox.append(child: textBox)
-            row.set(child: hbox)
-            deviceList.append(child: row)
+            deviceList.append(child: makeDeviceRow(device))
         }
         let preferredID =
             selectedDeviceID
@@ -707,6 +691,40 @@ final class TargetPicker {
         {
             deviceList.select(row: row)
         }
+    }
+
+    private func makeDeviceRow(_ device: Frida.Device) -> ListBoxRow {
+        let row = ListBoxRow()
+        let hbox = Box(orientation: .horizontal, spacing: 8)
+        hbox.marginStart = 12
+        hbox.marginEnd = 12
+        hbox.marginTop = 6
+        hbox.marginBottom = 6
+        let icon: Gtk.Image
+        if let fridaIcon = device.icon, let img = IconPixbuf.makeImage(from: fridaIcon, pixelSize: 24) {
+            icon = img
+        } else {
+            let kindIcon: String
+            switch device.kind {
+            case .local: kindIcon = "computer-symbolic"
+            case .usb: kindIcon = "drive-harddisk-usb-symbolic"
+            case .remote: kindIcon = "network-wired-symbolic"
+            }
+            icon = Gtk.Image(iconName: kindIcon)
+        }
+        hbox.append(child: icon)
+        let textBox = Box(orientation: .vertical, spacing: 0)
+        let nameLabel = Label(str: device.name)
+        nameLabel.halign = .start
+        let idLabel = Label(str: device.id)
+        idLabel.halign = .start
+        idLabel.add(cssClass: "dim-label")
+        idLabel.add(cssClass: "caption")
+        textBox.append(child: nameLabel)
+        textBox.append(child: idLabel)
+        hbox.append(child: textBox)
+        row.set(child: hbox)
+        return row
     }
 
     private func handleDeviceRow(_ row: ListBoxRowRef?) {

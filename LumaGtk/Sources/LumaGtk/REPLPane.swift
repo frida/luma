@@ -21,7 +21,6 @@ final class REPLPane {
 
     private var cells: [LumaCore.REPLCell] = []
     private var rowKeepers: [Any] = []
-    private var observation: StoreObservation?
     private var historyCursor: Int = 0
     private var draftBeforeHistory: String = ""
     private var completionTask: Task<Void, Never>?
@@ -117,12 +116,6 @@ final class REPLPane {
         inputEntry.install(controller: keyController)
 
         loadCells()
-        observation = engine.store.observeREPLCells(sessionID: sessionID) { [weak self] newCells in
-            Task { @MainActor in
-                self?.cells = newCells
-                self?.refresh()
-            }
-        }
         refresh()
         applySessionState()
     }
@@ -454,10 +447,15 @@ final class REPLPane {
         return prefix
     }
 
+    func appendCell(_ cell: LumaCore.REPLCell) {
+        guard cell.sessionID == sessionID else { return }
+        cells.append(cell)
+        historyCursor = orderedHistory.count
+        cellsBox.append(child: makeRow(for: cell))
+        scrollToBottomSoon()
+    }
+
     private func refresh() {
-        if let rootPtr = widget.root?.ptr {
-            WindowRef(raw: rootPtr).focus = nil
-        }
         clearChildren(of: cellsBox)
         rowKeepers.removeAll()
         for cell in cells.sorted(by: { $0.timestamp < $1.timestamp }) {

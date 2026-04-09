@@ -162,6 +162,7 @@ final class EventStreamPane {
                 self.pauseButton.label = self.isPaused ? "Resume" : "Pause"
                 if !self.isPaused {
                     self.syncSnapshot()
+                    self.pendingNewEvents = 0
                 }
                 self.updateLiveIndicator()
                 self.updatePendingPill()
@@ -181,7 +182,14 @@ final class EventStreamPane {
     func attach(engine: Engine) {
         self.engine = engine
         lastSeenTotal = engine.eventLog.totalReceived
-        observe()
+
+        engine.eventLog.onEventsAppended = { [weak self] newEvents in
+            self?.handleEventsAppended(newEvents)
+        }
+        engine.eventLog.onEventsCleared = { [weak self] in
+            self?.clearEvents()
+        }
+
         syncSnapshot()
     }
 
@@ -206,37 +214,44 @@ final class EventStreamPane {
         filterBar.visible = !isCollapsed
     }
 
-    private func observe() {
+    private func handleEventsAppended(_ newEvents: ArraySlice<RuntimeEvent>) {
         guard let engine else { return }
-        withObservationTracking {
-            _ = engine.eventLog.totalReceived
-        } onChange: { [weak self] in
-            Task { @MainActor in
-                guard let self else { return }
-                self.handleLogChanged()
-                self.observe()
-            }
-        }
-    }
+        let delta = newEvents.count
 
-    private func handleLogChanged() {
-        guard let engine else { return }
-        let total = engine.eventLog.totalReceived
-        let delta = max(0, total - lastSeenTotal)
-        if isCollapsed {
+        if isCollapsed || isPaused {
             pendingNewEvents += delta
-            lastSeenTotal = total
-            updateBar()
+            lastSeenTotal = engine.eventLog.totalReceived
+            if isCollapsed { updateBar() } else { updatePendingPill() }
             return
         }
-        if isPaused {
-            pendingNewEvents += delta
-            lastSeenTotal = total
-            updatePendingPill()
-            return
+
+        lastSeenTotal = engine.eventLog.totalReceived
+        displayedEvents.append(contentsOf: newEvents)
+
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasSearch = !trimmed.isEmpty
+        var appended = false
+
+        for event in newEvents {
+            let kind = EventSourceFilter.from(event.source)
+            guard enabledSources.contains(kind) else { continue }
+            if let name = selectedProcessName, processName(for: event) != name { continue }
+            if hasSearch {
+                let haystack = "\(searchBlob(for: event)) \(contextString(for: event))"
+                if haystack.range(of: trimmed, options: .caseInsensitive) == nil { continue }
+            }
+            filteredEvents.append(event)
+            let prev = filteredEvents.dropLast().last?.timestamp
+            eventListBox.append(child: makeRow(for: event, previousTimestamp: prev))
+            appended = true
         }
-        lastSeenTotal = total
-        syncSnapshot()
+
+        if appended {
+            emptyStateLabel.visible = false
+            scrollToBottomSoon()
+        }
+        updateBar()
+        updatePendingPill()
     }
 
     private func syncSnapshot() {

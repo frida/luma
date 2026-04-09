@@ -39,6 +39,8 @@ public final class Engine {
 
     private var addressActionProviders: [AddressActionProvider] = []
     @ObservationIgnored public var onSessionListChanged: (@MainActor (SessionListChange) -> Void)?
+    @ObservationIgnored public var onREPLCellAdded: (@MainActor (REPLCell) -> Void)?
+    @ObservationIgnored public var onNotebookChanged: (@MainActor (NotebookChange) -> Void)?
     @ObservationIgnored private var sessionsObservation: StoreObservation?
     @ObservationIgnored private var notebookObservation: StoreObservation?
 
@@ -111,16 +113,24 @@ public final class Engine {
             e.timestamp = otherEntry.timestamp.addingTimeInterval(0.001)
         }
         try? store.save(e)
+        notebookEntries.append(e)
+        onNotebookChanged?(.added(e))
         collaboration.notifyEntryAdded(e)
     }
 
     public func updateNotebookEntry(_ entry: NotebookEntry) {
         try? store.save(entry)
+        if let i = notebookEntries.firstIndex(where: { $0.id == entry.id }) {
+            notebookEntries[i] = entry
+        }
+        onNotebookChanged?(.updated(entry))
         collaboration.notifyEntryUpdated(entry)
     }
 
     public func deleteNotebookEntry(_ entry: NotebookEntry) {
         try? store.deleteNotebookEntry(id: entry.id)
+        notebookEntries.removeAll { $0.id == entry.id }
+        onNotebookChanged?(.removed(entry.id))
         collaboration.notifyEntryDeleted(id: entry.id)
     }
 
@@ -129,6 +139,8 @@ public final class Engine {
             guard let self else { return }
             for entry in entries {
                 try? self.store.save(entry)
+                self.notebookEntries.append(entry)
+                self.onNotebookChanged?(.added(entry))
             }
         }
 
@@ -136,6 +148,8 @@ public final class Engine {
             guard let self else { return }
             if (try? self.store.fetchNotebookEntry(id: entry.id)) == nil {
                 try? self.store.save(entry)
+                self.notebookEntries.append(entry)
+                self.onNotebookChanged?(.added(entry))
             }
         }
 
@@ -148,11 +162,17 @@ public final class Engine {
                 existing.processName = updated.processName
                 existing.isUserNote = updated.isUserNote
                 try? self.store.save(existing)
+                if let i = self.notebookEntries.firstIndex(where: { $0.id == existing.id }) {
+                    self.notebookEntries[i] = existing
+                }
+                self.onNotebookChanged?(.updated(existing))
             }
         }
 
         collaboration.onNotebookEntryDeleted = { [weak self] id in
             try? self?.store.deleteNotebookEntry(id: id)
+            self?.notebookEntries.removeAll { $0.id == id }
+            self?.onNotebookChanged?(.removed(id))
         }
 
         collaboration.onEntriesReordered = { [weak self] order in
@@ -162,9 +182,13 @@ public final class Engine {
                 if var entry = try? self.store.fetchNotebookEntry(id: id) {
                     entry.timestamp = t
                     try? self.store.save(entry)
+                    if let i = self.notebookEntries.firstIndex(where: { $0.id == id }) {
+                        self.notebookEntries[i] = entry
+                    }
                     t = t.addingTimeInterval(0.001)
                 }
             }
+            self.onNotebookChanged?(.reordered)
         }
     }
 
@@ -527,6 +551,7 @@ public final class Engine {
                     isSessionBoundary: true
                 )
                 try? store.save(cell)
+                onREPLCellAdded?(cell)
             }
 
             subscribeToNodeStreams(node, sessionID: s.id)
@@ -1381,6 +1406,7 @@ public final class Engine {
                     timestamp: result.timestamp
                 )
                 try? self?.store.save(cell)
+                self?.onREPLCellAdded?(cell)
             }
         }
 
