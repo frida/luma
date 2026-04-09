@@ -620,6 +620,7 @@ public final class Engine {
             addressAnnotations[sid] = nil
             tracerInstanceIDBySession[sid] = nil
             disassemblers[sid] = nil
+            updateSession(id: sid) { $0.phase = .idle }
         }
     }
 
