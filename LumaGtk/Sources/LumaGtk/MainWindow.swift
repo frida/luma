@@ -983,6 +983,9 @@ final class MainWindow {
     }
 
     private func rebuildSessionsList() {
+        if let rootPtr = sessionsList.root?.ptr {
+            WindowRef(raw: rootPtr).focus = nil
+        }
         sessionsList.removeAll()
         sessionsRowKinds.removeAll()
         sessionsHeaderLabel?.label = "SESSIONS (\(sessions.count))"
