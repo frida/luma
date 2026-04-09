@@ -572,6 +572,14 @@ final class MainWindow {
         return scroll
     }
 
+    private func reclaimSharedEditors() {
+        for editor in [sharedTracerEditor, sharedCodeShareEditor] {
+            if editor.widget.parent != nil {
+                editor.widget.unparent()
+            }
+        }
+    }
+
     private func renderDetail() {
         if case .repl(let id) = selection {
             if currentREPLSessionID != id {
@@ -584,9 +592,11 @@ final class MainWindow {
         }
         if case .instrument(_, let iid) = selection {
             if currentInstrumentDetail?.instrumentID != iid {
+                reclaimSharedEditors()
                 currentInstrumentDetail = nil
             }
         } else {
+            reclaimSharedEditors()
             currentInstrumentDetail = nil
         }
         if case .insight(_, let iid) = selection {
