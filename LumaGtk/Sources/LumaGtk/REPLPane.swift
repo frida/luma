@@ -26,7 +26,8 @@ final class REPLPane {
     private var draftBeforeHistory: String = ""
     private var completionTask: Task<Void, Never>?
     private var completionDebounceTask: Task<Void, Never>?
-    private var suppressUntilText: String?
+    private var completionGeneration: UInt = 0
+    private var suppressingChanged = false
     private var completionPopover: Popover?
     private var completionList: ListBox?
     private var completionItems: [String] = []
@@ -95,15 +96,7 @@ final class REPLPane {
         }
         inputEntry.onChanged { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self else { return }
-                let current = self.inputEntry.text ?? ""
-                if let locked = self.suppressUntilText, current == locked {
-                    self.completionDebounceTask?.cancel()
-                    self.completionTask?.cancel()
-                    self.dismissCompletionPopover()
-                    return
-                }
-                self.suppressUntilText = nil
+                guard let self, !self.suppressingChanged else { return }
                 self.scheduleCompletionRequest()
             }
         }
@@ -256,7 +249,8 @@ final class REPLPane {
     }
 
     private func replaceInput(with text: String) {
-        suppressUntilText = text
+        suppressingChanged = true
+        defer { suppressingChanged = false }
         inputEntry.text = text
         inputEntry.position = -1
         inputEntry.selectRegion(startPos: -1, endPos: -1)
@@ -270,9 +264,10 @@ final class REPLPane {
             dismissCompletionPopover()
             return
         }
+        let gen = completionGeneration
         completionDebounceTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 200_000_000)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, self?.completionGeneration == gen else { return }
             self?.requestCompletion(showPopoverOnly: true)
         }
     }
@@ -282,9 +277,10 @@ final class REPLPane {
         let code = inputEntry.text ?? ""
         let cursor = code.count
         completionTask?.cancel()
+        let gen = completionGeneration
         completionTask = Task { @MainActor in
             let suggestions = await node.completeInREPL(code: code, cursor: cursor)
-            guard !Task.isCancelled, (inputEntry.text ?? "") == code else { return }
+            guard !Task.isCancelled, self.completionGeneration == gen, (inputEntry.text ?? "") == code else { return }
             guard !suggestions.isEmpty else {
                 self.dismissCompletionPopover()
                 return
@@ -431,6 +427,7 @@ final class REPLPane {
     }
 
     private func dismissCompletionPopover() {
+        completionGeneration &+= 1
         completionDebounceTask?.cancel()
         completionDebounceTask = nil
         completionTask?.cancel()
