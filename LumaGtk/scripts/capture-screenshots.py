@@ -220,7 +220,7 @@ def main():
     script = session.create_script(AGENT)
     script.on("message", on_message)
     script.load()
-    time.sleep(1)
+    time.sleep(0.3)
 
     w, h = script.exports_sync.get_window_size()
     print(f"Window: {w}x{h}", flush=True)
@@ -242,7 +242,7 @@ def main():
             slug = f"{base}-{n}"
         seen.add(slug)
         script.exports_sync.select_item(item["lb"], item["index"])
-        time.sleep(2)
+        time.sleep(0.3)
         capture(script, outdir, w, h, slug)
 
     session.detach()

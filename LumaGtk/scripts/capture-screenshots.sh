@@ -28,7 +28,7 @@ exec dbus-run-session -- bash -c '
 
   "$BINARY" 2>/dev/null &
   APP_PID=$!
-  sleep 5
+  sleep 2
 
   if ! kill -0 "$APP_PID" 2>/dev/null; then
     echo "App failed to start" >&2
