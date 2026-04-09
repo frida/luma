@@ -11,6 +11,7 @@ final class TracerConfigEditor {
     private weak var engine: Engine?
     private let sessionID: UUID
     private let apply: (Data) -> Void
+    private let sharedEditor: MonacoEditor
 
     private var config: TracerConfig
     private var selectedHookID: UUID?
@@ -26,11 +27,13 @@ final class TracerConfigEditor {
         engine: Engine,
         sessionID: UUID,
         config: TracerConfig,
+        tracerEditor: MonacoEditor,
         apply: @escaping (Data) -> Void
     ) {
         self.engine = engine
         self.sessionID = sessionID
         self.config = config
+        self.sharedEditor = tracerEditor
         self.apply = apply
         self.selectedHookID = config.hooks.first?.id
 
@@ -96,6 +99,7 @@ final class TracerConfigEditor {
         let editorPane = EditorPane(
             engine: engine,
             hook: selectedHook,
+            sharedEditor: sharedEditor,
             onSave: { [weak self] updated in
                 self?.saveHook(updated)
             }
@@ -621,7 +625,7 @@ private final class HooksList {
 // MARK: - Editor pane (left side in SwiftUI expanded layout)
 
 @MainActor
-private final class EditorPane {
+final class EditorPane {
     static let tracerDeclarations = #"""
         declare function defineHandler(h: Handler): void;
 
@@ -657,10 +661,17 @@ private final class EditorPane {
     private let editorHost: Box
     private let placeholder: Label
     private let monaco: MonacoEditor
+    private let loadingSpinner: Spinner
 
-    init(engine: Engine?, hook: TracerConfig.Hook?, onSave: @escaping (TracerConfig.Hook) -> Void) {
+    init(
+        engine: Engine?,
+        hook: TracerConfig.Hook?,
+        sharedEditor: MonacoEditor,
+        onSave: @escaping (TracerConfig.Hook) -> Void
+    ) {
         self.engine = engine
         self.hook = hook
+        self.monaco = sharedEditor
         self.onSave = onSave
 
         widget = Box(orientation: .vertical, spacing: 8)
@@ -723,27 +734,12 @@ private final class EditorPane {
         editorHost.vexpand = true
         editorHost.setSizeRequest(width: -1, height: 320)
 
-        var profile = MonacoEditorProfile(languageId: "typescript", theme: .dark, fontSize: 13)
-        profile.tsCompilerOptions = MonacoTypings.fridaCompilerOptions
-        if let gum = MonacoTypings.fridaGum { profile.tsExtraLibs.append(gum) }
-        profile.tsExtraLibs.append(
-            MonacoExtraLib(Self.tracerDeclarations, filePath: "@types/frida-luma/tracer.d.ts")
-        )
-        let installedPackages = (try? engine?.store.fetchPackagesState().packages) ?? []
-        if let aliasLib = MonacoPackageAliasTypings.makeLib(packages: installedPackages) {
-            profile.tsExtraLibs.append(MonacoExtraLib(aliasLib.content, filePath: aliasLib.filePath))
-        }
-        let monacoEditor = MonacoEditor(profile: profile, initialText: hook?.code ?? "")
-        monaco = monacoEditor
-        monacoEditor.widget.hexpand = true
-        monacoEditor.widget.vexpand = true
-        if let engine {
-            Task { @MainActor in
-                await engine.rebuildMonacoFSSnapshotIfNeeded()
-                monacoEditor.setFSSnapshot(engine.monacoFSSnapshot)
-            }
-        }
-        editorHost.append(child: monaco.widget)
+        loadingSpinner = Spinner()
+        loadingSpinner.halign = .center
+        loadingSpinner.valign = .center
+        loadingSpinner.hexpand = true
+        loadingSpinner.vexpand = true
+
         widget.append(child: editorHost)
 
         placeholder = Label(str: "Select a hook to edit its script.")
@@ -771,6 +767,22 @@ private final class EditorPane {
         saveButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.commit() }
         }
+
+        if sharedEditor.isReady {
+            sharedEditor.reparent(into: editorHost)
+        } else {
+            loadingSpinner.spinning = true
+            loadingSpinner.start()
+            editorHost.append(child: loadingSpinner)
+            sharedEditor.onReady = { [weak self] in
+                guard let self else { return }
+                self.editorHost.remove(child: self.loadingSpinner)
+                self.loadingSpinner.spinning = false
+                self.loadingSpinner.stop()
+                self.monaco.reparent(into: self.editorHost)
+            }
+        }
+        sharedEditor.setText(hook?.code ?? "")
 
         applyHookToUI()
     }

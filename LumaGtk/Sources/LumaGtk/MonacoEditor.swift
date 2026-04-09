@@ -106,6 +106,8 @@ public struct MonacoEditorProfile: Equatable {
 public final class MonacoEditor {
     public let widget: WidgetRef
     public var onTextChanged: ((String) -> Void)?
+    public private(set) var isReady = false
+    public var onReady: (() -> Void)?
 
     private let view: OpaquePointer
     private var profile: MonacoEditorProfile
@@ -149,6 +151,13 @@ public final class MonacoEditor {
         MainActor.assumeIsolated { Self.instances[key] = nil }
     }
 
+    public func reparent(into container: Box) {
+        if let parent = widget.parent {
+            Box(raw: parent.ptr).remove(child: widget)
+        }
+        container.append(child: widget)
+    }
+
     public func setText(_ text: String) {
         pendingText = text
         if isLoaded {
@@ -173,6 +182,8 @@ public final class MonacoEditor {
     fileprivate func handleLoadFinished() {
         isLoaded = true
         evaluate(initialBootstrapScript())
+        isReady = true
+        onReady?()
     }
 
     fileprivate func handleTextChanged(_ base64: String) {

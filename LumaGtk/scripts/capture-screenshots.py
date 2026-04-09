@@ -50,105 +50,8 @@ const gsk_render_node_unref = fn(gtk, 'gsk_render_node_unref', 'void', ['pointer
 const GTK_TYPE_LIST_BOX = g_type_from_name(Memory.allocUtf8String('GtkListBox'));
 const GTK_TYPE_LABEL = g_type_from_name(Memory.allocUtf8String('GtkLabel'));
 
-function find(prefix) {
-    const m = Process.enumerateModules().find(m => m.name.startsWith(prefix));
-    if (!m) throw new Error('Module not found: ' + prefix);
-    return m;
-}
-
-function fn(mod, name, ret, args) {
-    return new NativeFunction(mod.getExportByName(name), ret, args);
-}
-
-function scheduleOnMainThread(callback) {
-    return new Promise((resolve, reject) => {
-        const idle = new NativeCallback(() => {
-            pinned.splice(pinned.indexOf(idle), 1);
-            try { resolve(callback()); } catch (e) { reject(e); }
-            return 0;
-        }, 'int', ['pointer']);
-        pinned.push(idle);
-        g_idle_add(idle, NULL);
-    });
-}
-
-function getWindow() {
-    return gtk_application_get_active_window(g_application_get_default());
-}
-
-function firstLabel(widget) {
-    if (g_type_check_instance_is_a(widget, GTK_TYPE_LABEL)) return widget;
-    for (let child = gtk_widget_get_first_child(widget);
-         !child.isNull();
-         child = gtk_widget_get_next_sibling(child)) {
-        const found = firstLabel(child);
-        if (found !== null) return found;
-    }
-    return null;
-}
-
-function labelText(row) {
-    const lbl = firstLabel(row);
-    if (lbl === null) return '';
-    const t = gtk_label_get_text(lbl);
-    return t.isNull() ? '' : t.readUtf8String();
-}
-
-function allListBoxes(root) {
-    const out = [];
-    const stack = [root];
-    while (stack.length > 0) {
-        const widget = stack.pop();
-        if (g_type_check_instance_is_a(widget, GTK_TYPE_LIST_BOX)) out.push(widget);
-        for (let child = gtk_widget_get_first_child(widget);
-             !child.isNull();
-             child = gtk_widget_get_next_sibling(child)) {
-            stack.push(child);
-        }
-    }
-    return out;
-}
-
 let captureResolve = null;
 let capturePendingNode = null;
-
-Interceptor.attach(gtk.getExportByName('gsk_renderer_render'), {
-    onEnter(args) {
-        if (captureResolve !== null) {
-            capturePendingNode = args[1];
-            gsk_render_node_ref(capturePendingNode);
-        }
-    },
-    onLeave() {
-        if (capturePendingNode === null || captureResolve === null) return;
-
-        const node = capturePendingNode;
-        capturePendingNode = null;
-
-        const cairo = gsk_cairo_renderer_new();
-        gsk_renderer_realize_for_display(cairo, gdk_display_get_default(), NULL);
-        const texture = gsk_renderer_render_texture(cairo, node, NULL);
-        gsk_render_node_unref(node);
-        gsk_renderer_unrealize(cairo);
-        g_object_unref(cairo);
-
-        if (texture.isNull()) {
-            captureResolve(null);
-            captureResolve = null;
-            return;
-        }
-
-        const w = gdk_texture_get_width(texture);
-        const h = gdk_texture_get_height(texture);
-        const stride = w * 4;
-        const buf = Memory.alloc(stride * h);
-        gdk_texture_download(texture, buf, stride);
-        g_object_unref(texture);
-
-        captureResolve(buf.readByteArray(stride * h));
-        captureResolve = null;
-    }
-});
 
 rpc.exports = {
     getWindowSize() {
@@ -161,15 +64,11 @@ rpc.exports = {
     captureScreenshot() {
         return new Promise(resolve => {
             captureResolve = resolve;
-            const idle = new NativeCallback(() => {
-                pinned.splice(pinned.indexOf(idle), 1);
+            scheduleIdle(() => {
                 const win = getWindow();
                 gtk_widget_queue_draw(win);
                 gdk_surface_queue_render(gtk_native_get_surface(win));
-                return 0;
-            }, 'int', ['pointer']);
-            pinned.push(idle);
-            g_idle_add(idle, NULL);
+            });
             setTimeout(() => {
                 if (captureResolve !== null) {
                     captureResolve(null);
@@ -182,7 +81,7 @@ rpc.exports = {
     listSidebar() {
         return scheduleOnMainThread(() => {
             const items = [];
-            for (const lb of allListBoxes(getWindow())) {
+            for (const lb of collectListBoxes(getWindow())) {
                 for (let i = 0; ; i++) {
                     const row = gtk_list_box_get_row_at_index(lb, i);
                     if (row.isNull()) break;
@@ -203,20 +102,112 @@ rpc.exports = {
         });
     },
 };
+
+Interceptor.attach(gtk.getExportByName('gsk_renderer_render'), {
+    onEnter(args) {
+        if (captureResolve !== null) {
+            capturePendingNode = args[1];
+            gsk_render_node_ref(capturePendingNode);
+        }
+    },
+    onLeave() {
+        if (capturePendingNode === null || captureResolve === null) return;
+
+        const node = capturePendingNode;
+        capturePendingNode = null;
+
+        const resolve = captureResolve;
+        captureResolve = null;
+
+        resolve(renderNodeToRgba(node));
+    }
+});
+
+function renderNodeToRgba(node) {
+    const cairo = gsk_cairo_renderer_new();
+    gsk_renderer_realize_for_display(cairo, gdk_display_get_default(), NULL);
+    const texture = gsk_renderer_render_texture(cairo, node, NULL);
+    gsk_render_node_unref(node);
+    gsk_renderer_unrealize(cairo);
+    g_object_unref(cairo);
+
+    if (texture.isNull()) return null;
+
+    const w = gdk_texture_get_width(texture);
+    const h = gdk_texture_get_height(texture);
+    const stride = w * 4;
+    const buf = Memory.alloc(stride * h);
+    gdk_texture_download(texture, buf, stride);
+    g_object_unref(texture);
+
+    return buf.readByteArray(stride * h);
+}
+
+function getWindow() {
+    return gtk_application_get_active_window(g_application_get_default());
+}
+
+function scheduleOnMainThread(callback) {
+    return new Promise((resolve, reject) => {
+        scheduleIdle(() => {
+            try { resolve(callback()); } catch (e) { reject(e); }
+        });
+    });
+}
+
+function scheduleIdle(callback) {
+    const idle = new NativeCallback(() => {
+        pinned.splice(pinned.indexOf(idle), 1);
+        callback();
+        return 0;
+    }, 'int', ['pointer']);
+    pinned.push(idle);
+    g_idle_add(idle, NULL);
+}
+
+function collectListBoxes(root) {
+    const out = [];
+    const stack = [root];
+    while (stack.length > 0) {
+        const widget = stack.pop();
+        if (g_type_check_instance_is_a(widget, GTK_TYPE_LIST_BOX)) out.push(widget);
+        for (let child = gtk_widget_get_first_child(widget);
+             !child.isNull();
+             child = gtk_widget_get_next_sibling(child)) {
+            stack.push(child);
+        }
+    }
+    return out;
+}
+
+function labelText(row) {
+    const lbl = firstLabel(row);
+    if (lbl === null) return '';
+    const t = gtk_label_get_text(lbl);
+    return t.isNull() ? '' : t.readUtf8String();
+}
+
+function firstLabel(widget) {
+    if (g_type_check_instance_is_a(widget, GTK_TYPE_LABEL)) return widget;
+    for (let child = gtk_widget_get_first_child(widget);
+         !child.isNull();
+         child = gtk_widget_get_next_sibling(child)) {
+        const found = firstLabel(child);
+        if (found !== null) return found;
+    }
+    return null;
+}
+
+function find(prefix) {
+    const m = Process.enumerateModules().find(m => m.name.startsWith(prefix));
+    if (!m) throw new Error('Module not found: ' + prefix);
+    return m;
+}
+
+function fn(mod, name, ret, args) {
+    return new NativeFunction(mod.getExportByName(name), ret, args);
+}
 """
-
-
-def write_png(width, height, rgba_data):
-    def chunk(ctype, data):
-        c = ctype + data
-        return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
-    raw = b""
-    stride = width * 4
-    for y in range(height):
-        raw += b"\x00" + rgba_data[y * stride:(y + 1) * stride]
-    sig = b"\x89PNG\r\n\x1a\n"
-    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
-    return sig + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
 
 
 def main():
@@ -227,11 +218,6 @@ def main():
     local = [d for d in frida.get_device_manager().enumerate_devices() if d.type == "local"][0]
     session = local.attach(pid)
     script = session.create_script(AGENT)
-
-    def on_message(msg, data):
-        if msg.get("type") == "error":
-            print(f"  agent error: {msg.get('description', msg)}", flush=True)
-
     script.on("message", on_message)
     script.load()
     time.sleep(1)
@@ -239,36 +225,14 @@ def main():
     w, h = script.exports_sync.get_window_size()
     print(f"Window: {w}x{h}", flush=True)
 
-    def capture(name):
-        path = os.path.join(outdir, f"{name}.png")
-        rgba = script.exports_sync.capture_screenshot()
-        if rgba is None:
-            print(f"  {name}: FAILED (timeout)", flush=True)
-            return
-        png = write_png(w, h, rgba)
-        with open(path, "wb") as f:
-            f.write(png)
-        print(f"  {name}: {len(png)} bytes", flush=True)
+    capture(script, outdir, w, h, "notebook")
 
-    capture("notebook")
-
-    # Poll sidebar until sessions appear
-    items = []
-    for _ in range(20):
-        items = script.exports_sync.list_sidebar()
-        if len(items) > 1:
-            break
-        time.sleep(0.5)
-
+    items = poll_sidebar(script)
     print(f"Sidebar: {[i['label'] for i in items]}", flush=True)
 
     seen = {"notebook"}
     for item in items:
-        label = item.get("label", "")
-        if not label:
-            continue
-        slug = "".join(c if c.isascii() and c.isalnum() else "-" for c in label).strip("-").lower()
-        slug = "-".join(s for s in slug.split("-") if s)
+        slug = slugify(item.get("label", ""))
         if not slug:
             continue
         base = slug
@@ -278,12 +242,58 @@ def main():
             slug = f"{base}-{n}"
         seen.add(slug)
         script.exports_sync.select_item(item["lb"], item["index"])
-        # Extra wait for views with async content (e.g. Monaco editor)
         time.sleep(2)
-        capture(slug)
+        capture(script, outdir, w, h, slug)
 
     session.detach()
     print("Done.", flush=True)
+
+
+def capture(script, outdir, w, h, name):
+    path = os.path.join(outdir, f"{name}.png")
+    rgba = script.exports_sync.capture_screenshot()
+    if rgba is None:
+        print(f"  {name}: FAILED (timeout)", flush=True)
+        return
+    png = encode_png(w, h, rgba)
+    with open(path, "wb") as f:
+        f.write(png)
+    print(f"  {name}: {len(png)} bytes", flush=True)
+
+
+def poll_sidebar(script):
+    items = []
+    for _ in range(20):
+        items = script.exports_sync.list_sidebar()
+        if len(items) > 1:
+            return items
+        time.sleep(0.5)
+    return items
+
+
+def slugify(label):
+    slug = "".join(c if c.isascii() and c.isalnum() else "-" for c in label)
+    return "-".join(s for s in slug.strip("-").lower().split("-") if s)
+
+
+def on_message(msg, data):
+    if msg.get("type") == "error":
+        print(f"  agent error: {msg.get('description', msg)}", flush=True)
+
+
+def encode_png(width, height, rgba_data):
+    stride = width * 4
+    raw = b""
+    for y in range(height):
+        raw += b"\x00" + rgba_data[y * stride:(y + 1) * stride]
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    return sig + png_chunk(b"IHDR", ihdr) + png_chunk(b"IDAT", zlib.compress(raw)) + png_chunk(b"IEND", b"")
+
+
+def png_chunk(ctype, data):
+    c = ctype + data
+    return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
 
 
 if __name__ == "__main__":

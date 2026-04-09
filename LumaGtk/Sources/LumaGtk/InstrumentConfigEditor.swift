@@ -11,10 +11,12 @@ final class InstrumentConfigEditor {
     private weak var engine: Engine?
     private var instrument: LumaCore.InstrumentInstance
     private var tracerEditor: TracerConfigEditor?
+    private let sharedTracerMonaco: MonacoEditor
 
-    init(engine: Engine, instrument: LumaCore.InstrumentInstance) {
+    init(engine: Engine, instrument: LumaCore.InstrumentInstance, tracerEditor: MonacoEditor) {
         self.engine = engine
         self.instrument = instrument
+        self.sharedTracerMonaco = tracerEditor
 
         widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
@@ -58,6 +60,7 @@ final class InstrumentConfigEditor {
             engine: engine,
             sessionID: instrument.sessionID,
             config: config,
+            tracerEditor: sharedTracerMonaco,
             apply: { [weak self] data in
                 self?.apply(configJSON: data)
             }

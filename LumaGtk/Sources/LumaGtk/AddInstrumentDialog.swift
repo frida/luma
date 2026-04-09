@@ -22,7 +22,8 @@ final class AddInstrumentDialog {
     private var selectedIndex: Int?
     private var pendingConfigJSON: Data = Data()
     private var tracerEditor: TracerConfigEditor?
-    private var monacoEditor: MonacoEditor?
+    private let sharedTracerMonaco: MonacoEditor
+    private let sharedCodeShareMonaco: MonacoEditor
 
     init(
         parent: Window,
@@ -30,6 +31,8 @@ final class AddInstrumentDialog {
         sessionID: UUID,
         descriptors: [LumaCore.InstrumentDescriptor],
         disabledDescriptorIDs: Set<String> = [],
+        tracerEditor: MonacoEditor,
+        codeShareEditor: MonacoEditor,
         onAdded: OnAdded? = nil
     ) {
         self.descriptors = descriptors
@@ -38,6 +41,8 @@ final class AddInstrumentDialog {
         self.engine = engine
         self.sessionID = sessionID
         self.parentWindow = parent
+        self.sharedTracerMonaco = tracerEditor
+        self.sharedCodeShareMonaco = codeShareEditor
 
         window = Window()
         window.title = "Add Instrument"
@@ -166,7 +171,6 @@ final class AddInstrumentDialog {
 
     private func clearDetail() {
         tracerEditor = nil
-        monacoEditor = nil
         while let child = detailContainer.firstChild {
             detailContainer.remove(child: child)
         }
@@ -221,6 +225,7 @@ final class AddInstrumentDialog {
             engine: engine,
             sessionID: sessionID,
             config: config,
+            tracerEditor: sharedTracerMonaco,
             apply: { [weak self] data in
                 MainActor.assumeIsolated { self?.pendingConfigJSON = data }
             }
@@ -424,12 +429,33 @@ final class AddInstrumentDialog {
         editorContainer.setSizeRequest(width: -1, height: 320)
         detailContainer.append(child: editorContainer)
 
-        var monacoProfile = MonacoEditorProfile(languageId: "javascript", theme: .dark, fontSize: 13)
-        monacoProfile.jsCompilerOptions = MonacoTypings.fridaCompilerOptions
-        if let gum = MonacoTypings.fridaGum { monacoProfile.jsExtraLibs.append(gum) }
-        let editor = MonacoEditor(profile: monacoProfile, initialText: config.source)
-        monacoEditor = editor
-        editorContainer.append(child: editor.widget)
+        let editor = sharedCodeShareMonaco
+        editor.setProfile(MonacoEditorProfile(
+            languageId: "javascript", theme: .dark, fontSize: 13,
+            jsCompilerOptions: MonacoTypings.fridaCompilerOptions,
+            jsExtraLibs: MonacoTypings.fridaGum.map { [$0] } ?? []
+        ))
+        editor.setText(config.source)
+
+        if editor.isReady {
+            editor.reparent(into: editorContainer)
+        } else {
+            let spinner = Spinner()
+            spinner.halign = .center
+            spinner.valign = .center
+            spinner.hexpand = true
+            spinner.vexpand = true
+            spinner.spinning = true
+            spinner.start()
+            editorContainer.append(child: spinner)
+            editor.onReady = { [weak editorContainer] in
+                guard let editorContainer else { return }
+                editorContainer.remove(child: spinner)
+                spinner.spinning = false
+                spinner.stop()
+                editor.reparent(into: editorContainer)
+            }
+        }
 
         var currentSource = config.source
         let sync: () -> Void = { [weak self] in
@@ -482,8 +508,9 @@ final class AddInstrumentDialog {
 
     private func openCodeShareBrowser() {
         let parent = parentWindow
+        let editor = sharedCodeShareMonaco
         close()
-        CodeShareBrowser.present(from: parent, engine: engine, sessionID: sessionID)
+        CodeShareBrowser.present(from: parent, engine: engine, sessionID: sessionID, codeShareEditor: editor)
     }
 }
 

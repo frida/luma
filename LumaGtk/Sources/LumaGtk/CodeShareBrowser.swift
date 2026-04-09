@@ -27,8 +27,9 @@ final class CodeShareBrowser {
     private let titleLabel: Label
     private let ownerLabel: Label
     private let descriptionLabel: Label
-    private var sourceEditor: MonacoEditor?
+    private let sourceEditor: MonacoEditor
     private let sourceContainer: Box
+    private let loadingSpinner: Spinner
     private let addButton: Button
     private let detailErrorLabel: Label
 
@@ -48,9 +49,10 @@ final class CodeShareBrowser {
     private var detailsTask: Task<Void, Never>?
     private var isAdding = false
 
-    init(engine: Engine, sessionID: UUID) {
+    init(engine: Engine, sessionID: UUID, codeShareEditor: MonacoEditor) {
         self.engine = engine
         self.sessionID = sessionID
+        self.sourceEditor = codeShareEditor
 
         widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
@@ -156,11 +158,11 @@ final class CodeShareBrowser {
         sourceContainer.setSizeRequest(width: -1, height: 360)
         detailContainer.append(child: sourceContainer)
 
-        var monacoProfile = MonacoEditorProfile(languageId: "javascript", theme: .dark, fontSize: 13, readOnly: true)
-        if let gum = MonacoTypings.fridaGum { monacoProfile.jsExtraLibs.append(gum) }
-        let editor = MonacoEditor(profile: monacoProfile, initialText: "")
-        sourceEditor = editor
-        sourceContainer.append(child: editor.widget)
+        loadingSpinner = Spinner()
+        loadingSpinner.halign = .center
+        loadingSpinner.valign = .center
+        loadingSpinner.hexpand = true
+        loadingSpinner.vexpand = true
 
         let actions = Box(orientation: .horizontal, spacing: 8)
         let actionsSpacer = Label(str: "")
@@ -201,6 +203,27 @@ final class CodeShareBrowser {
         }
         addButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.addAsInstrument() }
+        }
+
+        codeShareEditor.setProfile(MonacoEditorProfile(
+            languageId: "javascript", theme: .dark, fontSize: 13, readOnly: true,
+            jsCompilerOptions: MonacoTypings.fridaCompilerOptions,
+            jsExtraLibs: MonacoTypings.fridaGum.map { [$0] } ?? []
+        ))
+        codeShareEditor.setText("")
+        if codeShareEditor.isReady {
+            codeShareEditor.reparent(into: sourceContainer)
+        } else {
+            loadingSpinner.spinning = true
+            loadingSpinner.start()
+            sourceContainer.append(child: loadingSpinner)
+            codeShareEditor.onReady = { [weak self] in
+                guard let self else { return }
+                self.sourceContainer.remove(child: self.loadingSpinner)
+                self.loadingSpinner.spinning = false
+                self.loadingSpinner.stop()
+                self.sourceEditor.reparent(into: self.sourceContainer)
+            }
         }
 
         loadPopular()
@@ -334,7 +357,7 @@ final class CodeShareBrowser {
         titleLabel.setText(str: "")
         ownerLabel.setText(str: "")
         descriptionLabel.setText(str: "Select a snippet to preview and add it as an instrument.")
-        sourceEditor?.setText("")
+        sourceEditor.setText("")
         addButton.sensitive = false
         detailErrorLabel.visible = false
         detailSpinner.spinning = false
@@ -351,7 +374,7 @@ final class CodeShareBrowser {
         titleLabel.setText(str: project.name)
         ownerLabel.setText(str: "@\(project.owner)/\(project.slug)  •  ♥ \(project.likes)")
         descriptionLabel.setText(str: project.description)
-        sourceEditor?.setText("")
+        sourceEditor.setText("")
 
         detailSpinner.spinning = true
         detailSpinner.start()
@@ -372,7 +395,7 @@ final class CodeShareBrowser {
                 self.currentDetails = details
                 self.currentSource = details.source
                 self.descriptionLabel.setText(str: details.description)
-                self.sourceEditor?.setText(details.source)
+                self.sourceEditor.setText(details.source)
                 self.addButton.sensitive = true
             } catch is CancellationError {
                 return
@@ -447,20 +470,25 @@ final class CodeShareBrowser {
         }
     }
 
-    static func present(from anchor: Widget, engine: Engine, sessionID: UUID) {
+    static func present(from anchor: Widget, engine: Engine, sessionID: UUID, codeShareEditor: MonacoEditor) {
         if let rootPtr = anchor.root?.ptr {
-            present(from: WindowRef(raw: rootPtr), engine: engine, sessionID: sessionID)
+            present(from: WindowRef(raw: rootPtr), engine: engine, sessionID: sessionID, codeShareEditor: codeShareEditor)
         } else {
-            present(from: nil as Window?, engine: engine, sessionID: sessionID)
+            present(from: nil as Window?, engine: engine, sessionID: sessionID, codeShareEditor: codeShareEditor)
         }
     }
 
-    static func present(from parent: Window?, engine: Engine, sessionID: UUID) {
-        present(from: parent.map { WindowRef(raw: $0.ptr) }, engine: engine, sessionID: sessionID)
+    static func present(from parent: Window?, engine: Engine, sessionID: UUID, codeShareEditor: MonacoEditor) {
+        present(
+            from: parent.map { WindowRef(raw: $0.ptr) },
+            engine: engine,
+            sessionID: sessionID,
+            codeShareEditor: codeShareEditor
+        )
     }
 
-    static func present(from parent: WindowRef?, engine: Engine, sessionID: UUID) {
-        let browser = CodeShareBrowser(engine: engine, sessionID: sessionID)
+    static func present(from parent: WindowRef?, engine: Engine, sessionID: UUID, codeShareEditor: MonacoEditor) {
+        let browser = CodeShareBrowser(engine: engine, sessionID: sessionID, codeShareEditor: codeShareEditor)
 
         let window = Window()
         window.title = "CodeShare"

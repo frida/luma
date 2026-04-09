@@ -31,6 +31,8 @@ final class MainWindow {
     private var currentREPLSessionID: UUID?
     private var currentInsightDetail: InsightDetailView?
     private var currentInsightID: UUID?
+    private(set) lazy var sharedTracerEditor: MonacoEditor = makeSharedTracerEditor()
+    private(set) lazy var sharedCodeShareEditor: MonacoEditor = makeSharedCodeShareEditor()
 
     private var sessions: [LumaCore.ProcessSession] = []
     private var installedPackages: [LumaCore.InstalledPackage] = []
@@ -728,7 +730,13 @@ final class MainWindow {
             existing.applySessionState()
             return existing.widget
         }
-        let pane = InstrumentDetailPane(engine: engine, session: session, instrument: instrument, owner: self)
+        let pane = InstrumentDetailPane(
+            engine: engine,
+            session: session,
+            instrument: instrument,
+            owner: self,
+            tracerEditor: sharedTracerEditor
+        )
         currentInstrumentDetail = pane
         return pane.widget
     }
@@ -800,7 +808,9 @@ final class MainWindow {
             engine: engine,
             sessionID: sessionID,
             descriptors: engine.descriptors,
-            disabledDescriptorIDs: disabledDescriptorIDs
+            disabledDescriptorIDs: disabledDescriptorIDs,
+            tracerEditor: sharedTracerEditor,
+            codeShareEditor: sharedCodeShareEditor
         ) { [weak self] instance in
             guard let self else { return }
             self.select(.instrument(sessionID: sessionID, instrumentID: instance.id))
@@ -1479,6 +1489,34 @@ final class MainWindow {
         } else {
             renderDetail()
         }
+    }
+
+    private func makeSharedTracerEditor() -> MonacoEditor {
+        var profile = MonacoEditorProfile(languageId: "typescript", theme: .dark, fontSize: 13)
+        profile.tsCompilerOptions = MonacoTypings.fridaCompilerOptions
+        if let gum = MonacoTypings.fridaGum { profile.tsExtraLibs.append(gum) }
+        profile.tsExtraLibs.append(
+            MonacoExtraLib(EditorPane.tracerDeclarations, filePath: "@types/frida-luma/tracer.d.ts")
+        )
+        let installedPackages = (try? engine?.store.fetchPackagesState().packages) ?? []
+        if let aliasLib = MonacoPackageAliasTypings.makeLib(packages: installedPackages) {
+            profile.tsExtraLibs.append(MonacoExtraLib(aliasLib.content, filePath: aliasLib.filePath))
+        }
+        let editor = MonacoEditor(profile: profile)
+        if let engine {
+            Task { @MainActor in
+                await engine.rebuildMonacoFSSnapshotIfNeeded()
+                editor.setFSSnapshot(engine.monacoFSSnapshot)
+            }
+        }
+        return editor
+    }
+
+    private func makeSharedCodeShareEditor() -> MonacoEditor {
+        var profile = MonacoEditorProfile(languageId: "javascript", theme: .dark, fontSize: 13)
+        profile.jsCompilerOptions = MonacoTypings.fridaCompilerOptions
+        if let gum = MonacoTypings.fridaGum { profile.jsExtraLibs.append(gum) }
+        return MonacoEditor(profile: profile)
     }
 }
 

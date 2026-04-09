@@ -14,7 +14,13 @@ final class InstrumentDetailPane {
     private var currentBanner: Widget?
     private let editor: InstrumentConfigEditor
 
-    init(engine: Engine, session: LumaCore.ProcessSession, instrument: LumaCore.InstrumentInstance, owner: MainWindow) {
+    init(
+        engine: Engine,
+        session: LumaCore.ProcessSession,
+        instrument: LumaCore.InstrumentInstance,
+        owner: MainWindow,
+        tracerEditor: MonacoEditor
+    ) {
         self.engine = engine
         self.sessionID = session.id
         self.instrumentID = instrument.id
@@ -28,7 +34,7 @@ final class InstrumentDetailPane {
         bannerSlot.hexpand = true
         widget.append(child: bannerSlot)
 
-        editor = InstrumentConfigEditor(engine: engine, instrument: instrument)
+        editor = InstrumentConfigEditor(engine: engine, instrument: instrument, tracerEditor: tracerEditor)
         widget.append(child: editor.widget)
 
         applySessionState()
