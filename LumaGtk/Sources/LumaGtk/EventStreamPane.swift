@@ -780,29 +780,9 @@ final class EventStreamPane {
     }
 
     private func presentRowContextMenu(at anchor: Widget, x: Double, y: Double, event: RuntimeEvent) {
-        let popover = Popover()
-        popover.autohide = true
-
-        let box = Box(orientation: .vertical, spacing: 2)
-        box.add(cssClass: "luma-menu")
-        box.marginStart = 6
-        box.marginEnd = 6
-        box.marginTop = 6
-        box.marginBottom = 6
-
-        let pinButton = Button(label: "Pin to Notebook")
-        pinButton.add(cssClass: "luma-menu-item")
-        pinButton.onClicked { [weak self, popover] _ in
-            MainActor.assumeIsolated {
-                popover.popdown()
-                self?.pinToNotebook(event)
-            }
-        }
-        box.append(child: pinButton)
-
-        popover.set(child: box)
-        popover.set(parent: anchor)
-        popover.presentPointing(at: x, y: y)
+        ContextMenu.present([
+            [.init("Pin to Notebook") { [weak self] in self?.pinToNotebook(event) }],
+        ], at: anchor, x: x, y: y)
     }
 
     private func pinToNotebook(_ event: RuntimeEvent) {
@@ -850,39 +830,12 @@ final class EventStreamPane {
         hookID: UUID,
         event: RuntimeEvent
     ) {
-        let popover = Popover()
-        popover.autohide = true
-
-        let box = Box(orientation: .vertical, spacing: 2)
-        box.add(cssClass: "luma-menu")
-        box.marginStart = 6
-        box.marginEnd = 6
-        box.marginTop = 6
-        box.marginBottom = 6
-
-        let pinButton = Button(label: "Pin to Notebook")
-        pinButton.add(cssClass: "luma-menu-item")
-        pinButton.onClicked { [weak self, popover] _ in
-            MainActor.assumeIsolated {
-                popover.popdown()
-                self?.pinToNotebook(event)
-            }
-        }
-        box.append(child: pinButton)
-
-        let goButton = Button(label: "Go to Hook")
-        goButton.add(cssClass: "luma-menu-item")
-        goButton.onClicked { [weak self, popover] _ in
-            MainActor.assumeIsolated {
-                popover.popdown()
-                self?.onNavigateToHook?(sessionID, instrumentID, hookID)
-            }
-        }
-        box.append(child: goButton)
-
-        popover.set(child: box)
-        popover.set(parent: anchor)
-        popover.presentPointing(at: x, y: y)
+        ContextMenu.present([
+            [
+                .init("Pin to Notebook") { [weak self] in self?.pinToNotebook(event) },
+                .init("Go to Hook") { [weak self] in self?.onNavigateToHook?(sessionID, instrumentID, hookID) },
+            ],
+        ], at: anchor, x: x, y: y)
     }
 
     private func presentBacktrace(

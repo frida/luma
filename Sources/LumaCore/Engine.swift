@@ -38,6 +38,7 @@ public final class Engine {
     @ObservationIgnored private var monacoFSSnapshotVersion: Int = 0
 
     private var addressActionProviders: [AddressActionProvider] = []
+    @ObservationIgnored public var onSessionListChanged: (@MainActor (SessionListChange) -> Void)?
     @ObservationIgnored private var sessionsObservation: StoreObservation?
     @ObservationIgnored private var notebookObservation: StoreObservation?
 
@@ -174,6 +175,7 @@ public final class Engine {
                 try? store.save(session)
             }
         }
+        sessions = (try? store.fetchSessions()) ?? []
 
         sessionsObservation = store.observeSessions { [weak self] sessions in
             Task { @MainActor in self?.sessions = sessions }
@@ -414,7 +416,7 @@ public final class Engine {
         s.phase = .attaching
         s.detachReason = .applicationRequested
         s.lastError = nil
-        try? store.save(s)
+        saveSession(s)
 
         ensureDeviceEventsHooked(for: device)
 
@@ -432,12 +434,12 @@ public final class Engine {
             guard let process = procs.first else {
                 s.lastError = "Spawned pid \(pid) not found"
                 s.phase = .idle
-                try? store.save(s)
+                saveSession(s)
                 return
             }
 
             s.deviceName = device.name
-            try? store.save(s)
+            saveSession(s)
 
             await performAttach(
                 device: device,
@@ -452,11 +454,11 @@ public final class Engine {
             } else {
                 s.phase = .awaitingInitialResume
             }
-            try? store.save(s)
+            saveSession(s)
         } catch {
             s.lastError = error.localizedDescription
             s.phase = .idle
-            try? store.save(s)
+            saveSession(s)
         }
     }
 
@@ -482,7 +484,7 @@ public final class Engine {
         s.detachReason = .applicationRequested
         s.lastError = nil
         s.phase = .attaching
-        try? store.save(s)
+        saveSession(s)
 
         do {
             ensureDeviceEventsHooked(for: device)
@@ -625,7 +627,55 @@ public final class Engine {
     public func updateSession(id: UUID, _ mutate: (inout ProcessSession) -> Void) {
         guard var s = try? store.fetchSession(id: id) else { return }
         mutate(&s)
-        try? store.save(s)
+        saveSession(s)
+    }
+
+    public func createSession(_ session: ProcessSession) {
+        try? store.save(session)
+        sessions.insert(session, at: 0)
+        onSessionListChanged?(.sessionAdded(session))
+    }
+
+    public func deleteSession(id: UUID) {
+        if let node = node(forSessionID: id) {
+            removeNode(node)
+        }
+        try? store.deleteSession(id: id)
+        sessions.removeAll { $0.id == id }
+        onSessionListChanged?(.sessionRemoved(id))
+    }
+
+    public func deleteInsight(id: UUID, sessionID: UUID) {
+        try? store.deleteInsight(id: id)
+        onSessionListChanged?(.insightRemoved(id: id, sessionID: sessionID))
+    }
+
+    public func deleteCapture(id: UUID, sessionID: UUID) {
+        try? store.deleteCapture(id: id)
+        onSessionListChanged?(.captureRemoved(id: id, sessionID: sessionID))
+    }
+
+    private func saveSession(_ session: ProcessSession) {
+        try? store.save(session)
+        if let i = sessions.firstIndex(where: { $0.id == session.id }) {
+            sessions[i] = session
+        }
+        onSessionListChanged?(.sessionUpdated(session))
+    }
+
+    public func populateSessionList() {
+        for session in sessions {
+            onSessionListChanged?(.sessionAdded(session))
+            for inst in (try? store.fetchInstruments(sessionID: session.id)) ?? [] {
+                onSessionListChanged?(.instrumentAdded(inst))
+            }
+            for insight in ((try? store.fetchInsights(sessionID: session.id)) ?? []).sorted(by: { $0.createdAt < $1.createdAt }) {
+                onSessionListChanged?(.insightAdded(insight))
+            }
+            for capture in ((try? store.fetchITraceCaptures(sessionID: session.id)) ?? []).sorted(by: { $0.capturedAt < $1.capturedAt }) {
+                onSessionListChanged?(.captureAdded(capture))
+            }
+        }
     }
 
     public func sessionID(for node: ProcessNode) -> UUID {
@@ -650,13 +700,13 @@ public final class Engine {
         s.phase = .attaching
         s.detachReason = .applicationRequested
         s.lastError = nil
-        try? store.save(s)
+        saveSession(s)
 
         let devices = await deviceManager.currentDevices()
 
         guard let device = devices.first(where: { $0.id == s.deviceID }) else {
             s.phase = .idle
-            try? store.save(s)
+            saveSession(s)
             return .needsUserInput(
                 reason: "The saved device \"\(s.deviceName)\" is not available. Choose a device and target to re-establish this session.",
                 session: s
@@ -674,7 +724,7 @@ public final class Engine {
 
             guard !matches.isEmpty else {
                 s.phase = .idle
-                try? store.save(s)
+                saveSession(s)
                 return .needsUserInput(
                     reason: "No running process named \"\(s.processName)\" was found. Choose a new target to re-establish this session.",
                     session: s
@@ -688,7 +738,7 @@ public final class Engine {
                 chosen = matches[0]
             } else {
                 s.phase = .idle
-                try? store.save(s)
+                saveSession(s)
                 return .needsUserInput(
                     reason: "Multiple processes named \"\(s.processName)\" are running. Choose which one to attach to.",
                     session: s
@@ -696,14 +746,14 @@ public final class Engine {
             }
 
             s.deviceName = device.name
-            try? store.save(s)
+            saveSession(s)
 
             await performAttach(device: device, process: chosen, session: s)
             return .attached
         } catch {
             s.lastError = error.localizedDescription
             s.phase = .idle
-            try? store.save(s)
+            saveSession(s)
             return .needsUserInput(
                 reason: "Quick re-establish failed for \"\(s.processName)\". Choose a new target.",
                 session: s
@@ -727,6 +777,7 @@ public final class Engine {
             configJSON: configJSON
         )
         try? store.save(instance)
+        onSessionListChanged?(.instrumentAdded(instance))
 
         if let node = node(forSessionID: sessionID) {
             node.addInstrument(ProcessNode.InstrumentRef(
@@ -757,6 +808,7 @@ public final class Engine {
             node.removeInstrument(id: instance.id)
         }
         try? store.deleteInstrument(id: instance.id)
+        onSessionListChanged?(.instrumentRemoved(id: instance.id, sessionID: instance.sessionID))
         rebuildAddressAnnotations(sessionID: instance.sessionID)
     }
 
@@ -764,6 +816,7 @@ public final class Engine {
         var inst = instance
         inst.isEnabled = enabled
         try? store.save(inst)
+        onSessionListChanged?(.instrumentUpdated(inst))
 
         guard let node = node(forSessionID: inst.sessionID) else { return }
 
@@ -790,6 +843,7 @@ public final class Engine {
         var inst = instance
         inst.configJSON = configJSON
         try? store.save(inst)
+        onSessionListChanged?(.instrumentUpdated(inst))
 
         guard let node = node(forSessionID: inst.sessionID) else { return }
 
@@ -1203,6 +1257,7 @@ public final class Engine {
             anchor: anchor
         )
         try store.save(insight)
+        onSessionListChanged?(.insightAdded(insight))
         return insight
     }
 
@@ -1295,7 +1350,10 @@ public final class Engine {
             guard let node else { return }
             for await reason in node.detachEvents {
                 guard let self else { return }
-                self.updateSession(id: sessionID) { $0.detachReason = reason }
+                self.updateSession(id: sessionID) {
+                    $0.detachReason = reason
+                    $0.phase = .idle
+                }
                 self.removeNode(node)
             }
         }
@@ -1331,6 +1389,7 @@ public final class Engine {
             for await capture in node.captures {
                 let record = ITraceCaptureRecord(from: capture, sessionID: sessionID)
                 try? self?.store.save(record)
+                self?.onSessionListChanged?(.captureAdded(record))
             }
         }
 

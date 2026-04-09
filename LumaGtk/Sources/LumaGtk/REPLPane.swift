@@ -455,6 +455,9 @@ final class REPLPane {
     }
 
     private func refresh() {
+        if let rootPtr = widget.root?.ptr {
+            WindowRef(raw: rootPtr).focus = nil
+        }
         clearChildren(of: cellsBox)
         rowKeepers.removeAll()
         for cell in cells.sorted(by: { $0.timestamp < $1.timestamp }) {
@@ -575,29 +578,13 @@ final class REPLPane {
     }
 
     private func presentCellContextMenu(at anchor: Widget, x: Double, y: Double, cell: LumaCore.REPLCell) {
-        let popover = Popover()
-        popover.autohide = true
-
-        let box = Box(orientation: .vertical, spacing: 2)
-        box.add(cssClass: "luma-menu")
-        box.marginStart = 6
-        box.marginEnd = 6
-        box.marginTop = 6
-        box.marginBottom = 6
-
-        let addButton = Button(label: "Add to Notebook")
-        addButton.add(cssClass: "luma-menu-item")
-        addButton.onClicked { [popover, weak self] _ in
-            MainActor.assumeIsolated {
-                popover.popdown()
-                self?.addCellToNotebook(cell)
-            }
-        }
-        box.append(child: addButton)
-
-        popover.set(child: WidgetRef(box.widget_ptr))
-        popover.set(parent: anchor)
-        popover.presentPointing(at: x, y: y)
+        ContextMenu.present([
+            [
+                .init("Add to Notebook") { [weak self] in
+                    self?.addCellToNotebook(cell)
+                },
+            ],
+        ], at: anchor, x: x, y: y)
     }
 
     private func addCellToNotebook(_ cell: LumaCore.REPLCell) {

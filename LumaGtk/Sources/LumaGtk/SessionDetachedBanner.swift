@@ -96,9 +96,8 @@ enum SessionDetachedBanner {
     }
 
     static func shouldShow(for session: LumaCore.ProcessSession) -> Bool {
-        if session.phase != .attached { return true }
-        if let err = session.lastError, !err.isEmpty { return true }
-        if session.detachReason != .applicationRequested { return true }
-        return false
+        if session.phase == .attached { return false }
+        if session.phase == .attaching && session.lastAttachedAt == nil { return false }
+        return true
     }
 }

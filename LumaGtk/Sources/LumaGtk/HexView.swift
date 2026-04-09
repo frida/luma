@@ -405,50 +405,13 @@ public final class HexView {
 
     private func presentContextMenu(at x: Double, y: Double) {
         guard !bytes.isEmpty else { return }
-
-        let popover = Popover()
-        popover.autohide = true
-
-        let box = Box(orientation: .vertical, spacing: 2)
-        box.add(cssClass: "luma-menu")
-        box.marginStart = 6
-        box.marginEnd = 6
-        box.marginTop = 6
-        box.marginBottom = 6
-
-        let hexButton = Button(label: "Copy Hex")
-        hexButton.add(cssClass: "luma-menu-item")
-        hexButton.onClicked { [weak self, popover] _ in
-            MainActor.assumeIsolated {
-                self?.copySelection(.hex)
-                popover.popdown()
-            }
-        }
-        box.append(child: hexButton)
-
-        let asciiButton = Button(label: "Copy ASCII")
-        asciiButton.add(cssClass: "luma-menu-item")
-        asciiButton.onClicked { [weak self, popover] _ in
-            MainActor.assumeIsolated {
-                self?.copySelection(.ascii)
-                popover.popdown()
-            }
-        }
-        box.append(child: asciiButton)
-
-        let base64Button = Button(label: "Copy Base64")
-        base64Button.add(cssClass: "luma-menu-item")
-        base64Button.onClicked { [weak self, popover] _ in
-            MainActor.assumeIsolated {
-                self?.copySelection(.base64)
-                popover.popdown()
-            }
-        }
-        box.append(child: base64Button)
-
-        popover.set(child: WidgetRef(box.widget_ptr))
-        popover.set(parent: drawingArea)
-        popover.presentPointing(at: x, y: y)
+        ContextMenu.present([
+            [
+                .init("Copy Hex") { [weak self] in self?.copySelection(.hex) },
+                .init("Copy ASCII") { [weak self] in self?.copySelection(.ascii) },
+                .init("Copy Base64") { [weak self] in self?.copySelection(.base64) },
+            ],
+        ], at: drawingArea, x: x, y: y)
     }
 
     private func copySelection(_ format: CopyFormat) {

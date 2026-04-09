@@ -305,7 +305,7 @@ final class LumaApplication {
         let xdg = ProcessInfo.processInfo.environment["XDG_DATA_HOME"]
             .map(URL.init(fileURLWithPath:))
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".local/share")
-        let dir = xdg.appendingPathComponent("re.frida.Luma", isDirectory: true)
+        let dir = xdg.appendingPathComponent("luma", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }

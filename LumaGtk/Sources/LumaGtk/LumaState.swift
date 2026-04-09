@@ -91,7 +91,7 @@ final class LumaState {
         let xdg = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"]
             .map(URL.init(fileURLWithPath:))
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".config")
-        let configDir = xdg.appendingPathComponent("re.frida.Luma", isDirectory: true)
+        let configDir = xdg.appendingPathComponent("luma", isDirectory: true)
         try? FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
         self.stateURL = configDir.appendingPathComponent("state.json")
 

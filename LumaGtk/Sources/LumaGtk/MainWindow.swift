@@ -38,6 +38,8 @@ final class MainWindow {
     private var insightsBySession: [UUID: [LumaCore.AddressInsight]] = [:]
     private var capturesBySession: [UUID: [LumaCore.ITraceCaptureRecord]] = [:]
     private var sessionsRowKinds: [SessionsRow] = []
+    private var sessionNameLabels: [UUID: Label] = [:]
+    private var sessionDeviceLabels: [UUID: Label] = [:]
     private var selection: SidebarSelection = .notebook
     private var addInstrumentButton: Button!
     private var installPackageButton: Button!
@@ -61,12 +63,19 @@ final class MainWindow {
         case package(UUID)
     }
 
-    private enum SessionsRow {
+    private enum SessionsRow: Equatable {
         case session(UUID)
         case repl(UUID)
         case instrument(sessionID: UUID, instrumentID: UUID)
         case insight(sessionID: UUID, insightID: UUID)
         case itraceCapture(sessionID: UUID, captureID: UUID)
+
+        var sessionID: UUID {
+            switch self {
+            case .session(let id), .repl(let id): return id
+            case .instrument(let id, _), .insight(let id, _), .itraceCapture(let id, _): return id
+            }
+        }
     }
 
     init(app: Application, application: LumaApplication, document: LumaDocument) {
@@ -285,16 +294,15 @@ final class MainWindow {
 
     func attach(engine: Engine) {
         self.engine = engine
-        renderSessions(engine.sessions)
+        engine.onSessionListChanged = { [weak self] change in self?.handleSessionListChange(change) }
+        engine.populateSessionList()
         renderPackages((try? engine.store.fetchPackagesState())?.packages ?? [])
-        observeSessions()
         eventStreamPane.attach(engine: engine)
         eventStreamPane.onNavigateToHook = { [weak self] sessionID, instrumentID, hookID in
             self?.navigateToHook(sessionID: sessionID, instrumentID: instrumentID, hookID: hookID)
         }
         AddressActionMenu.navigator = { [weak self] sessionID, insightID in
             guard let self else { return }
-            self.refreshInstruments()
             self.select(.insight(sessionID: sessionID, insightID: insightID))
         }
         AddressActionMenu.errorReporter = { [weak self] message in
@@ -351,8 +359,11 @@ final class MainWindow {
         session.deviceID = device.id
         session.deviceName = device.name
         session.processName = config.defaultDisplayName
-        try? engine.store.save(session)
-        ensureSessionVisible(session)
+        if existing != nil {
+            engine.updateSession(id: session.id) { s in s = session }
+        } else {
+            engine.createSession(session)
+        }
         select(.repl(session.id))
         Task { @MainActor in
             await engine.spawnAndAttach(device: device, session: session)
@@ -377,18 +388,15 @@ final class MainWindow {
         session.deviceName = device.name
         session.processName = process.name
         session.lastKnownPID = process.pid
-        try? engine.store.save(session)
-        ensureSessionVisible(session)
+        if existing != nil {
+            engine.updateSession(id: session.id) { s in s = session }
+        } else {
+            engine.createSession(session)
+        }
         select(.repl(session.id))
         Task { @MainActor in
             await engine.attach(device: device, process: process, session: session)
             self.refreshAfterAttach(sessionID: session.id)
-        }
-    }
-
-    private func ensureSessionVisible(_ session: LumaCore.ProcessSession) {
-        if !sessions.contains(where: { $0.id == session.id }) {
-            sessions.append(session)
         }
     }
 
@@ -685,7 +693,11 @@ final class MainWindow {
             }
         }
         replaceDetail(with: widget)
-        addInstrumentButton.sensitive = currentSessionID() != nil
+        if let sid = currentSessionID() {
+            addInstrumentButton.sensitive = engine?.node(forSessionID: sid) != nil
+        } else {
+            addInstrumentButton.sensitive = false
+        }
     }
 
     private func currentSessionID() -> UUID? {
@@ -723,7 +735,6 @@ final class MainWindow {
         guard let engine else { return }
         Task { @MainActor in
             await engine.setInstrumentEnabled(instrument, enabled: !instrument.isEnabled)
-            self.refreshInstruments()
             self.renderDetail()
         }
     }
@@ -734,7 +745,6 @@ final class MainWindow {
         let title = descriptor?.displayName ?? "Instrument"
         Task { @MainActor in
             await engine.removeInstrument(instrument)
-            self.refreshInstruments()
             if case .instrument(_, let id) = self.selection, id == instrument.id {
                 self.select(.session(instrument.sessionID))
             } else {
@@ -791,7 +801,6 @@ final class MainWindow {
             disabledDescriptorIDs: disabledDescriptorIDs
         ) { [weak self] instance in
             guard let self else { return }
-            self.refreshInstruments()
             self.select(.instrument(sessionID: sessionID, instrumentID: instance.id))
             let title = engine.descriptor(for: instance)?.displayName ?? "Instrument"
             self.showToast("Added \(title)")
@@ -928,193 +937,245 @@ final class MainWindow {
 
     // MARK: - Engine bindings
 
-    private func observeSessions() {
-        guard let engine else { return }
-        withObservationTracking {
-            _ = engine.sessions
-        } onChange: { [weak self] in
-            Task { @MainActor in
-                guard let self, let engine = self.engine else { return }
-                self.renderSessions(engine.sessions)
-                self.observeSessions()
+    private func handleSessionListChange(_ change: LumaCore.SessionListChange) {
+        switch change {
+        case .sessionAdded(let session):
+            sessions.insert(session, at: 0)
+            insertSessionRows(session, at: 0)
+        case .sessionUpdated(let session):
+            if let i = sessions.firstIndex(where: { $0.id == session.id }) {
+                sessions[i] = session
+            }
+            sessionNameLabels[session.id]?.label = session.processName
+            sessionDeviceLabels[session.id]?.label = session.deviceName
+            if currentREPLSessionID == session.id {
+                currentREPLPane?.applySessionState()
+            }
+            currentInstrumentDetail?.applySessionState()
+        case .sessionRemoved(let id):
+            removeSessionRows(id)
+            sessions.removeAll { $0.id == id }
+            instrumentsBySession.removeValue(forKey: id)
+            insightsBySession.removeValue(forKey: id)
+            capturesBySession.removeValue(forKey: id)
+            sessionNameLabels.removeValue(forKey: id)
+            sessionDeviceLabels.removeValue(forKey: id)
+            switch selection {
+            case .session(let sid), .repl(let sid), .instrument(let sid, _), .insight(let sid, _), .itraceCapture(let sid, _):
+                if sid == id {
+                    select(.notebook)
+                    notebookListBox.select(row: notebookRow)
+                }
+            default: break
+            }
+        case .instrumentAdded(let instrument):
+            instrumentsBySession[instrument.sessionID, default: []].append(instrument)
+            insertChildRow(makeInstrumentRow(instrument), kind: .instrument(sessionID: instrument.sessionID, instrumentID: instrument.id), sessionID: instrument.sessionID)
+        case .instrumentUpdated(let instrument):
+            if let arr = instrumentsBySession[instrument.sessionID],
+                let i = arr.firstIndex(where: { $0.id == instrument.id })
+            {
+                instrumentsBySession[instrument.sessionID]![i] = instrument
+            }
+        case .instrumentRemoved(let id, let sessionID):
+            instrumentsBySession[sessionID]?.removeAll { $0.id == id }
+            removeChildRow(kind: .instrument(sessionID: sessionID, instrumentID: id))
+        case .insightAdded(let insight):
+            insightsBySession[insight.sessionID, default: []].append(insight)
+            insertChildRow(makeInsightRow(insight), kind: .insight(sessionID: insight.sessionID, insightID: insight.id), sessionID: insight.sessionID)
+        case .insightRemoved(let id, let sessionID):
+            insightsBySession[sessionID]?.removeAll { $0.id == id }
+            removeChildRow(kind: .insight(sessionID: sessionID, insightID: id))
+            if case .insight(_, let iid) = selection, iid == id {
+                select(.repl(sessionID))
+            }
+        case .captureAdded(let capture):
+            capturesBySession[capture.sessionID, default: []].append(capture)
+            insertChildRow(makeCaptureRow(capture), kind: .itraceCapture(sessionID: capture.sessionID, captureID: capture.id), sessionID: capture.sessionID)
+        case .captureRemoved(let id, let sessionID):
+            capturesBySession[sessionID]?.removeAll { $0.id == id }
+            removeChildRow(kind: .itraceCapture(sessionID: sessionID, captureID: id))
+            if case .itraceCapture(_, let cid) = selection, cid == id {
+                select(.repl(sessionID))
             }
         }
-    }
-
-    private func renderSessions(_ snapshot: [LumaCore.ProcessSession]) {
-        sessions = snapshot
-        refreshInstruments()
-        if let id = currentREPLSessionID, snapshot.contains(where: { $0.id == id }) {
-            currentREPLPane?.applySessionState()
-        }
-        currentInstrumentDetail?.applySessionState()
-
-        let stillExists: Bool
-        switch selection {
-        case .session(let id), .repl(let id):
-            stillExists = snapshot.contains(where: { $0.id == id })
-        case .instrument(let id, _), .insight(let id, _), .itraceCapture(let id, _):
-            stillExists = snapshot.contains(where: { $0.id == id })
-        default:
-            stillExists = true
-        }
-        if !stillExists {
-            select(.notebook)
-            notebookListBox.select(row: notebookRow)
-        }
-    }
-
-    private func refreshInstruments() {
-        guard let engine else { return }
-        instrumentsBySession.removeAll()
-        insightsBySession.removeAll()
-        capturesBySession.removeAll()
-        for session in sessions {
-            instrumentsBySession[session.id] =
-                (try? engine.store.fetchInstruments(sessionID: session.id)) ?? []
-            insightsBySession[session.id] =
-                ((try? engine.store.fetchInsights(sessionID: session.id)) ?? [])
-                .sorted { $0.createdAt < $1.createdAt }
-            capturesBySession[session.id] =
-                ((try? engine.store.fetchITraceCaptures(sessionID: session.id)) ?? [])
-                .sorted { $0.capturedAt < $1.capturedAt }
-        }
-        rebuildSessionsList()
-    }
-
-    private func rebuildSessionsList() {
-        if let rootPtr = sessionsList.root?.ptr {
-            WindowRef(raw: rootPtr).focus = nil
-        }
-        sessionsList.removeAll()
-        sessionsRowKinds.removeAll()
         sessionsHeaderLabel?.label = "SESSIONS (\(sessions.count))"
         sessionsEmptyHint?.visible = sessions.isEmpty
         sessionsList.visible = !sessions.isEmpty
+    }
 
-        for session in sessions {
-            let headerRow = ListBoxRow()
-            let headerBox = Box(orientation: .horizontal, spacing: 8)
-            headerBox.marginStart = 8
-            headerBox.marginEnd = 12
-            headerBox.marginTop = 4
-            headerBox.marginBottom = 4
-
-            let icon = makeSessionIcon(for: session, node: engine?.node(forSessionID: session.id))
-            icon.pixelSize = 24
-            icon.add(cssClass: "luma-session-icon")
-            headerBox.append(child: icon)
-
-            let titles = Box(orientation: .vertical, spacing: 2)
-            titles.halign = .start
-            titles.hexpand = true
-            let nameLabel = Label(str: session.processName)
-            nameLabel.halign = .start
-            nameLabel.add(cssClass: "title-4")
-            titles.append(child: nameLabel)
-            let deviceLabel = Label(str: session.deviceName)
-            deviceLabel.halign = .start
-            deviceLabel.add(cssClass: "caption")
-            deviceLabel.add(cssClass: "dim-label")
-            titles.append(child: deviceLabel)
-            headerBox.append(child: titles)
-
-            headerRow.set(child: headerBox)
-            attachSessionContextMenu(row: headerRow, anchor: headerBox, session: session)
-            sessionsList.append(child: headerRow)
-            sessionsRowKinds.append(.session(session.id))
-
-            let replRow = ListBoxRow()
-            let replBox = Box(orientation: .horizontal, spacing: 6)
-            replBox.marginStart = 28
-            replBox.marginEnd = 12
-            replBox.marginTop = 2
-            replBox.marginBottom = 2
-            let replIcon = Gtk.Image(iconName: "utilities-terminal-symbolic")
-            replIcon.pixelSize = 16
-            replBox.append(child: replIcon)
-            let replLabel = Label(str: "REPL")
-            replLabel.halign = .start
-            replBox.append(child: replLabel)
-            replRow.set(child: replBox)
-            sessionsList.append(child: replRow)
-            sessionsRowKinds.append(.repl(session.id))
-
-            for instrument in instrumentsBySession[session.id] ?? [] {
-                let irow = ListBoxRow()
-                let descriptor = engine?.descriptor(for: instrument)
-                let title = descriptor?.displayName ?? "Instrument"
-                let rowBox = Box(orientation: .horizontal, spacing: 6)
-                rowBox.halign = .start
-                rowBox.marginStart = 28
-                rowBox.marginEnd = 12
-                rowBox.marginTop = 2
-                rowBox.marginBottom = 2
-                if let descriptor {
-                    let iconBox = InstrumentIconView.make(for: descriptor)
-                    rowBox.append(child: iconBox)
-                }
-                let ilabel = Label(str: title)
-                ilabel.halign = .start
-                if !instrument.isEnabled {
-                    ilabel.add(cssClass: "dim-label")
-                }
-                rowBox.append(child: ilabel)
-                irow.set(child: rowBox)
-                attachInstrumentContextMenu(row: irow, anchor: rowBox, instrument: instrument)
-                sessionsList.append(child: irow)
-                sessionsRowKinds.append(.instrument(sessionID: session.id, instrumentID: instrument.id))
-            }
-
-            for insight in insightsBySession[session.id] ?? [] {
-                let irow = ListBoxRow()
-                let rowBox = Box(orientation: .horizontal, spacing: 6)
-                rowBox.halign = .start
-                rowBox.marginStart = 28
-                rowBox.marginEnd = 12
-                rowBox.marginTop = 2
-                rowBox.marginBottom = 2
-                let iconName = insight.kind == .memory
-                    ? "text-x-generic-symbolic"
-                    : "applications-engineering-symbolic"
-                let iconImage = Gtk.Image(iconName: iconName)
-                iconImage.pixelSize = 16
-                rowBox.append(child: iconImage)
-                let lbl = Label(str: insight.title)
-                lbl.halign = .start
-                rowBox.append(child: lbl)
-                irow.set(child: rowBox)
-                attachInsightContextMenu(row: irow, anchor: rowBox, insight: insight)
-                sessionsList.append(child: irow)
-                sessionsRowKinds.append(.insight(sessionID: session.id, insightID: insight.id))
-            }
-
-            for capture in capturesBySession[session.id] ?? [] {
-                let crow = ListBoxRow()
-                let rowBox = Box(orientation: .horizontal, spacing: 6)
-                rowBox.halign = .start
-                rowBox.marginStart = 28
-                rowBox.marginEnd = 12
-                rowBox.marginTop = 2
-                rowBox.marginBottom = 2
-                let iconImage = Gtk.Image(iconName: "audio-x-generic-symbolic")
-                iconImage.pixelSize = 16
-                rowBox.append(child: iconImage)
-                let lbl = Label(str: capture.displayName)
-                lbl.halign = .start
-                rowBox.append(child: lbl)
-                crow.set(child: rowBox)
-                attachCaptureContextMenu(row: crow, anchor: rowBox, capture: capture)
-                sessionsList.append(child: crow)
-                sessionsRowKinds.append(.itraceCapture(sessionID: session.id, captureID: capture.id))
-            }
+    private func insertSessionRows(_ session: LumaCore.ProcessSession, at sessionIndex: Int) {
+        var pos = 0
+        for i in 0..<sessionIndex {
+            pos += rowCount(forSessionID: sessions[i].id)
         }
 
-        if let idx = currentSelectionRowIndex(),
-            let row = sessionsList.getRowAt(index: idx)
-        {
-            sessionsList.select(row: row)
+        let headerRow = ListBoxRow()
+        let headerBox = Box(orientation: .horizontal, spacing: 8)
+        headerBox.marginStart = 8
+        headerBox.marginEnd = 12
+        headerBox.marginTop = 4
+        headerBox.marginBottom = 4
+
+        let icon = makeSessionIcon(for: session, node: engine?.node(forSessionID: session.id))
+        icon.pixelSize = 24
+        icon.add(cssClass: "luma-session-icon")
+        headerBox.append(child: icon)
+
+        let titles = Box(orientation: .vertical, spacing: 2)
+        titles.halign = .start
+        titles.hexpand = true
+        let nameLabel = Label(str: session.processName)
+        nameLabel.halign = .start
+        nameLabel.add(cssClass: "title-4")
+        titles.append(child: nameLabel)
+        let deviceLabel = Label(str: session.deviceName)
+        deviceLabel.halign = .start
+        deviceLabel.add(cssClass: "caption")
+        deviceLabel.add(cssClass: "dim-label")
+        titles.append(child: deviceLabel)
+        headerBox.append(child: titles)
+        sessionNameLabels[session.id] = nameLabel
+        sessionDeviceLabels[session.id] = deviceLabel
+
+        headerRow.set(child: headerBox)
+        attachSessionContextMenu(row: headerRow, anchor: headerBox, session: session)
+        sessionsList.insert(child: headerRow, position: pos)
+        sessionsRowKinds.insert(.session(session.id), at: pos)
+
+        let replRow = ListBoxRow()
+        let replBox = Box(orientation: .horizontal, spacing: 6)
+        replBox.marginStart = 28
+        replBox.marginEnd = 12
+        replBox.marginTop = 2
+        replBox.marginBottom = 2
+        let replIcon = Gtk.Image(iconName: "utilities-terminal-symbolic")
+        replIcon.pixelSize = 16
+        replBox.append(child: replIcon)
+        let replLabel = Label(str: "REPL")
+        replLabel.halign = .start
+        replBox.append(child: replLabel)
+        replRow.set(child: replBox)
+        sessionsList.insert(child: replRow, position: pos + 1)
+        sessionsRowKinds.insert(.repl(session.id), at: pos + 1)
+    }
+
+    private func removeSessionRows(_ sessionID: UUID) {
+        if let rootPtr = sessionsList.root?.ptr {
+            WindowRef(raw: rootPtr).focus = nil
         }
+        while let idx = sessionsRowKinds.firstIndex(where: { $0.sessionID == sessionID }) {
+            if let row = sessionsList.getRowAt(index: idx) {
+                sessionsList.remove(child: row)
+            }
+            sessionsRowKinds.remove(at: idx)
+        }
+    }
+
+    private func insertChildRow(_ row: ListBoxRow, kind: SessionsRow, sessionID: UUID) {
+        let pos = insertPosition(for: kind, sessionID: sessionID)
+        sessionsList.insert(child: row, position: pos)
+        sessionsRowKinds.insert(kind, at: pos)
+    }
+
+    private func removeChildRow(kind: SessionsRow) {
+        guard let idx = sessionsRowKinds.firstIndex(where: { $0 == kind }) else { return }
+        if let row = sessionsList.getRowAt(index: idx) {
+            sessionsList.remove(child: row)
+        }
+        sessionsRowKinds.remove(at: idx)
+    }
+
+    private func rowCount(forSessionID id: UUID) -> Int {
+        sessionsRowKinds.filter { $0.sessionID == id }.count
+    }
+
+    private func insertPosition(for kind: SessionsRow, sessionID: UUID) -> Int {
+        guard let start = sessionsRowKinds.firstIndex(where: { if case .session(let id) = $0 { return id == sessionID }; return false }) else {
+            return sessionsRowKinds.count
+        }
+        let kindOrder: (SessionsRow) -> Int = { k in
+            switch k {
+            case .session: return 0
+            case .repl: return 1
+            case .instrument: return 2
+            case .insight: return 3
+            case .itraceCapture: return 4
+            }
+        }
+        let target = kindOrder(kind)
+        var pos = start + 1
+        while pos < sessionsRowKinds.count {
+            let existing = sessionsRowKinds[pos]
+            guard existing.sessionID == sessionID else { break }
+            if kindOrder(existing) > target { break }
+            pos += 1
+        }
+        return pos
+    }
+
+    private func makeInstrumentRow(_ instrument: LumaCore.InstrumentInstance) -> ListBoxRow {
+        let row = ListBoxRow()
+        let descriptor = engine?.descriptor(for: instrument)
+        let title = descriptor?.displayName ?? "Instrument"
+        let rowBox = Box(orientation: .horizontal, spacing: 6)
+        rowBox.halign = .start
+        rowBox.marginStart = 28
+        rowBox.marginEnd = 12
+        rowBox.marginTop = 2
+        rowBox.marginBottom = 2
+        if let descriptor {
+            let iconBox = InstrumentIconView.make(for: descriptor)
+            rowBox.append(child: iconBox)
+        }
+        let ilabel = Label(str: title)
+        ilabel.halign = .start
+        if !instrument.isEnabled {
+            ilabel.add(cssClass: "dim-label")
+        }
+        rowBox.append(child: ilabel)
+        row.set(child: rowBox)
+        attachInstrumentContextMenu(row: row, anchor: rowBox, instrument: instrument)
+        return row
+    }
+
+    private func makeInsightRow(_ insight: LumaCore.AddressInsight) -> ListBoxRow {
+        let row = ListBoxRow()
+        let rowBox = Box(orientation: .horizontal, spacing: 6)
+        rowBox.halign = .start
+        rowBox.marginStart = 28
+        rowBox.marginEnd = 12
+        rowBox.marginTop = 2
+        rowBox.marginBottom = 2
+        let iconName = insight.kind == .memory ? "text-x-generic-symbolic" : "applications-engineering-symbolic"
+        let iconImage = Gtk.Image(iconName: iconName)
+        iconImage.pixelSize = 16
+        rowBox.append(child: iconImage)
+        let lbl = Label(str: insight.title)
+        lbl.halign = .start
+        rowBox.append(child: lbl)
+        row.set(child: rowBox)
+        attachInsightContextMenu(row: row, anchor: rowBox, insight: insight)
+        return row
+    }
+
+    private func makeCaptureRow(_ capture: LumaCore.ITraceCaptureRecord) -> ListBoxRow {
+        let row = ListBoxRow()
+        let rowBox = Box(orientation: .horizontal, spacing: 6)
+        rowBox.halign = .start
+        rowBox.marginStart = 28
+        rowBox.marginEnd = 12
+        rowBox.marginTop = 2
+        rowBox.marginBottom = 2
+        let iconImage = Gtk.Image(iconName: "audio-x-generic-symbolic")
+        iconImage.pixelSize = 16
+        rowBox.append(child: iconImage)
+        let lbl = Label(str: capture.displayName)
+        lbl.halign = .start
+        rowBox.append(child: lbl)
+        row.set(child: rowBox)
+        attachCaptureContextMenu(row: row, anchor: rowBox, capture: capture)
+        return row
     }
 
     private func makeSessionIcon(
@@ -1153,69 +1214,27 @@ final class MainWindow {
     }
 
     private func presentSessionContextMenu(anchor: Widget, x: Double, y: Double, session: LumaCore.ProcessSession) {
-        let popover = Popover()
-        popover.autohide = true
-
-        let box = Box(orientation: .vertical, spacing: 2)
-        box.add(cssClass: "luma-menu")
-        box.marginStart = 6
-        box.marginEnd = 6
-        box.marginTop = 6
-        box.marginBottom = 6
-
         let node = engine?.node(forSessionID: session.id)
+        var topSection: [ContextMenu.Item] = []
         if node != nil {
-            let killButton = Button(label: "Kill Process")
-            killButton.add(cssClass: "luma-menu-item")
-            killButton.add(cssClass: "luma-menu-destructive")
-            killButton.onClicked { [weak self, popover] _ in
-                MainActor.assumeIsolated {
-                    popover.popdown()
-                    self?.confirmKillProcess(session: session)
+            topSection.append(.init("Kill Process", destructive: true) { [weak self] in
+                self?.confirmKillProcess(session: session)
+            })
+            topSection.append(.init("Detach Session") { [weak self] in
+                if let node = self?.engine?.node(forSessionID: session.id) {
+                    self?.engine?.removeNode(node)
+                    self?.showToast("Detached \(session.processName)")
                 }
-            }
-            box.append(child: killButton)
-
-            let detachButton = Button(label: "Detach Session")
-            detachButton.add(cssClass: "luma-menu-item")
-            detachButton.onClicked { [weak self, popover] _ in
-                MainActor.assumeIsolated {
-                    popover.popdown()
-                    if let node = self?.engine?.node(forSessionID: session.id) {
-                        self?.engine?.removeNode(node)
-                        self?.showToast("Detached \(session.processName)")
-                    }
-                }
-            }
-            box.append(child: detachButton)
+            })
         } else {
-            let reButton = Button(label: "Reestablish…")
-            reButton.add(cssClass: "luma-menu-item")
-            reButton.onClicked { [weak self, popover] _ in
-                MainActor.assumeIsolated {
-                    popover.popdown()
-                    self?.reestablishSession(id: session.id)
-                }
-            }
-            box.append(child: reButton)
+            topSection.append(.init("Reestablish…") { [weak self] in
+                self?.reestablishSession(id: session.id)
+            })
         }
-
-        box.append(child: Separator(orientation: .horizontal))
-
-        let deleteButton = Button(label: "Delete Session")
-        deleteButton.add(cssClass: "luma-menu-item")
-        deleteButton.add(cssClass: "luma-menu-destructive")
-        deleteButton.onClicked { [weak self, popover] _ in
-            MainActor.assumeIsolated {
-                popover.popdown()
-                self?.confirmDeleteSession(session)
-            }
-        }
-        box.append(child: deleteButton)
-
-        popover.set(child: box)
-        popover.set(parent: anchor)
-        popover.presentPointing(at: x, y: y)
+        ContextMenu.present([
+            topSection,
+            [.init("Delete Session", destructive: true) { [weak self] in self?.confirmDeleteSession(session) }],
+        ], at: anchor, x: x, y: y)
     }
 
     private func attachInstrumentContextMenu(
@@ -1240,42 +1259,11 @@ final class MainWindow {
         y: Double,
         instrument: LumaCore.InstrumentInstance
     ) {
-        let popover = Popover()
-        popover.autohide = true
-        let box = Box(orientation: .vertical, spacing: 2)
-        box.add(cssClass: "luma-menu")
-        box.marginStart = 6
-        box.marginEnd = 6
-        box.marginTop = 6
-        box.marginBottom = 6
-
         let toggleLabel = instrument.isEnabled ? "Disable" : "Enable"
-        let toggleButton = Button(label: toggleLabel)
-        toggleButton.add(cssClass: "luma-menu-item")
-        toggleButton.onClicked { [weak self, popover] _ in
-            MainActor.assumeIsolated {
-                popover.popdown()
-                self?.toggleInstrument(instrument)
-            }
-        }
-        box.append(child: toggleButton)
-
-        box.append(child: Separator(orientation: .horizontal))
-
-        let deleteButton = Button(label: "Delete Instrument")
-        deleteButton.add(cssClass: "luma-menu-item")
-        deleteButton.add(cssClass: "luma-menu-destructive")
-        deleteButton.onClicked { [weak self, popover] _ in
-            MainActor.assumeIsolated {
-                popover.popdown()
-                self?.confirmDeleteInstrument(instrument)
-            }
-        }
-        box.append(child: deleteButton)
-
-        popover.set(child: box)
-        popover.set(parent: anchor)
-        popover.presentPointing(at: x, y: y)
+        ContextMenu.present([
+            [.init(toggleLabel) { [weak self] in self?.toggleInstrument(instrument) }],
+            [.init("Delete Instrument", destructive: true) { [weak self] in self?.confirmDeleteInstrument(instrument) }],
+        ], at: anchor, x: x, y: y)
     }
 
     private func attachInsightContextMenu(
@@ -1300,29 +1288,9 @@ final class MainWindow {
         y: Double,
         insight: LumaCore.AddressInsight
     ) {
-        let popover = Popover()
-        popover.autohide = true
-        let box = Box(orientation: .vertical, spacing: 2)
-        box.add(cssClass: "luma-menu")
-        box.marginStart = 6
-        box.marginEnd = 6
-        box.marginTop = 6
-        box.marginBottom = 6
-
-        let deleteButton = Button(label: "Delete Insight")
-        deleteButton.add(cssClass: "luma-menu-item")
-        deleteButton.add(cssClass: "luma-menu-destructive")
-        deleteButton.onClicked { [weak self, popover] _ in
-            MainActor.assumeIsolated {
-                popover.popdown()
-                self?.confirmDeleteInsight(insight)
-            }
-        }
-        box.append(child: deleteButton)
-
-        popover.set(child: box)
-        popover.set(parent: anchor)
-        popover.presentPointing(at: x, y: y)
+        ContextMenu.present([
+            [.init("Delete Insight", destructive: true) { [weak self] in self?.confirmDeleteInsight(insight) }],
+        ], at: anchor, x: x, y: y)
     }
 
     private func attachCaptureContextMenu(
@@ -1347,29 +1315,9 @@ final class MainWindow {
         y: Double,
         capture: LumaCore.ITraceCaptureRecord
     ) {
-        let popover = Popover()
-        popover.autohide = true
-        let box = Box(orientation: .vertical, spacing: 2)
-        box.add(cssClass: "luma-menu")
-        box.marginStart = 6
-        box.marginEnd = 6
-        box.marginTop = 6
-        box.marginBottom = 6
-
-        let deleteButton = Button(label: "Delete Capture")
-        deleteButton.add(cssClass: "luma-menu-item")
-        deleteButton.add(cssClass: "luma-menu-destructive")
-        deleteButton.onClicked { [weak self, popover] _ in
-            MainActor.assumeIsolated {
-                popover.popdown()
-                self?.confirmDeleteCapture(capture)
-            }
-        }
-        box.append(child: deleteButton)
-
-        popover.set(child: box)
-        popover.set(parent: anchor)
-        popover.presentPointing(at: x, y: y)
+        ContextMenu.present([
+            [.init("Delete Capture", destructive: true) { [weak self] in self?.confirmDeleteCapture(capture) }],
+        ], at: anchor, x: x, y: y)
     }
 
     // MARK: - Destructive confirmation helpers
@@ -1400,17 +1348,8 @@ final class MainWindow {
             detail: "This removes the session and its history from the project.",
             destructiveLabel: "Delete"
         ) { [weak self] in
-            guard let self else { return }
-            if let node = self.engine?.node(forSessionID: session.id) {
-                self.engine?.removeNode(node)
-            }
-            try? self.engine?.store.deleteSession(id: session.id)
-            if self.currentSessionID() == session.id {
-                self.select(.notebook)
-                self.notebookListBox.select(row: self.notebookRow)
-            }
-            self.refreshInstruments()
-            self.showToast("Deleted \(session.processName)")
+            self?.engine?.deleteSession(id: session.id)
+            self?.showToast("Deleted \(session.processName)")
         }
     }
 
@@ -1427,33 +1366,23 @@ final class MainWindow {
 
     private func confirmDeleteInsight(_ insight: LumaCore.AddressInsight) {
         confirmDestructive(
-            message: "Delete insight “\(insight.title)”?",
+            message: "Delete insight \(insight.title)?",
             detail: nil,
             destructiveLabel: "Delete"
         ) { [weak self] in
-            guard let self else { return }
-            try? self.engine?.store.deleteInsight(id: insight.id)
-            if case .insight(_, let id) = self.selection, id == insight.id {
-                self.select(.repl(insight.sessionID))
-            }
-            self.refreshInstruments()
-            self.showToast("Deleted insight")
+            self?.engine?.deleteInsight(id: insight.id, sessionID: insight.sessionID)
+            self?.showToast("Deleted insight")
         }
     }
 
     private func confirmDeleteCapture(_ capture: LumaCore.ITraceCaptureRecord) {
         confirmDestructive(
-            message: "Delete capture “\(capture.displayName)”?",
+            message: "Delete capture \(capture.displayName)?",
             detail: "This removes the recorded ITrace data from the project.",
             destructiveLabel: "Delete"
         ) { [weak self] in
-            guard let self else { return }
-            try? self.engine?.store.deleteCapture(id: capture.id)
-            if case .itraceCapture(_, let id) = self.selection, id == capture.id {
-                self.select(.repl(capture.sessionID))
-            }
-            self.refreshInstruments()
-            self.showToast("Deleted capture")
+            self?.engine?.deleteCapture(id: capture.id, sessionID: capture.sessionID)
+            self?.showToast("Deleted capture")
         }
     }
 

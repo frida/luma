@@ -168,54 +168,16 @@ final class NotebookPane {
     }
 
     private func presentContextMenu(anchor: Widget, x: Double, y: Double, entry: LumaCore.NotebookEntry) {
-        let popover = Popover()
-        popover.autohide = true
-
-        let box = Box(orientation: .vertical, spacing: 2)
-        box.add(cssClass: "luma-menu")
-        box.marginStart = 6
-        box.marginEnd = 6
-        box.marginTop = 6
-        box.marginBottom = 6
-
+        var topSection: [ContextMenu.Item] = []
         if entry.isUserNote {
-            let editButton = Button(label: "Edit")
-            editButton.add(cssClass: "luma-menu-item")
-            editButton.onClicked { [weak self, popover] _ in
-                MainActor.assumeIsolated {
-                    popover.popdown()
-                    self?.beginEditing(entry)
-                }
-            }
-            box.append(child: editButton)
+            topSection.append(.init("Edit") { [weak self] in self?.beginEditing(entry) })
         }
+        topSection.append(.init("Insert Note Below") { [weak self] in self?.addUserNote(after: entry) })
 
-        let insertButton = Button(label: "Insert Note Below")
-        insertButton.add(cssClass: "luma-menu-item")
-        insertButton.onClicked { [weak self, popover] _ in
-            MainActor.assumeIsolated {
-                popover.popdown()
-                self?.addUserNote(after: entry)
-            }
-        }
-        box.append(child: insertButton)
-
-        box.append(child: Separator(orientation: .horizontal))
-
-        let deleteButton = Button(label: "Delete")
-        deleteButton.add(cssClass: "luma-menu-item")
-        deleteButton.add(cssClass: "luma-menu-destructive")
-        deleteButton.onClicked { [weak self, popover] _ in
-            MainActor.assumeIsolated {
-                popover.popdown()
-                self?.deleteEntry(entry)
-            }
-        }
-        box.append(child: deleteButton)
-
-        popover.set(child: box)
-        popover.set(parent: anchor)
-        popover.presentPointing(at: x, y: y)
+        ContextMenu.present([
+            topSection,
+            [.init("Delete", destructive: true) { [weak self] in self?.deleteEntry(entry) }],
+        ], at: anchor, x: x, y: y)
     }
 
     private func commitEdits(
@@ -415,7 +377,7 @@ final class NotebookPane {
         let deleteButton = Button(label: "Delete")
         deleteButton.hasFrame = false
         deleteButton.add(cssClass: "flat")
-        deleteButton.add(cssClass: "luma-menu-destructive")
+        deleteButton.add(cssClass: "error")
         deleteButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.deleteEntry(entry)

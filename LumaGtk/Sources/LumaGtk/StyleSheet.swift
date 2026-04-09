@@ -94,49 +94,6 @@ enum StyleSheet {
         background: alpha(@theme_fg_color, 0.05);
     }
 
-    box.luma-menu {
-        padding: 4px;
-        min-width: 200px;
-    }
-    button.luma-menu-item {
-        padding: 6px 10px;
-        border-radius: 6px;
-        background: none;
-        background-image: none;
-        background-color: transparent;
-        border: none;
-        box-shadow: none;
-        color: @theme_fg_color;
-        text-shadow: none;
-        -gtk-icon-shadow: none;
-        min-width: 180px;
-    }
-    button.luma-menu-item label {
-        color: @theme_fg_color;
-    }
-    button.luma-menu-item:hover,
-    button.luma-menu-item:focus,
-    button.luma-menu-item:focus:hover {
-        background: none;
-        background-image: none;
-        background-color: alpha(@accent_bg_color, 0.18);
-    }
-    button.luma-menu-item.luma-menu-destructive,
-    button.luma-menu-item.luma-menu-destructive label {
-        color: #e01b24;
-    }
-    button.luma-menu-item.luma-menu-destructive:hover,
-    button.luma-menu-item.luma-menu-destructive:focus:hover {
-        background: none;
-        background-image: none;
-        background-color: alpha(#e01b24, 0.18);
-    }
-    .luma-menu separator {
-        background-color: alpha(@theme_fg_color, 0.15);
-        margin: 4px 2px;
-        min-height: 1px;
-    }
-
     .luma-session-icon {
         border-radius: 4px;
         border: 1px solid alpha(@accent_bg_color, 0.4);
