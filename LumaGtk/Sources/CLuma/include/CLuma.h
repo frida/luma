@@ -1,5 +1,5 @@
-#ifndef LUMA_CWEBKIT_H
-#define LUMA_CWEBKIT_H
+#ifndef LUMA_CLUMA_H
+#define LUMA_CLUMA_H
 
 #include <stdbool.h>
 #include <stddef.h>

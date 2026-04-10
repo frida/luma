@@ -1,7 +1,9 @@
 import CGLib
 import Dispatch
 import Foundation
+#if canImport(Glibc)
 import Glibc
+#endif
 
 // Swift's main-actor executor on Linux dispatches to libdispatch's main queue
 // (via swift-corelibs-libdispatch). g_application_run does not call

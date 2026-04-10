@@ -1,4 +1,4 @@
-import CWebKit
+import CLuma
 import Foundation
 import Frida
 import Gtk

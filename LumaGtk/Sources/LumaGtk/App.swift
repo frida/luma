@@ -1,5 +1,5 @@
 import CGLib
-import CWebKit
+import CLuma
 import Foundation
 import Gtk
 import LumaCore
