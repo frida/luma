@@ -1,0 +1,262 @@
+name: Build
+
+on:
+  push:
+    branches: [main, cross-platform]
+  pull_request:
+
+env:
+  FRIDA_VERSION: "17.9.1"
+  RADARE2_VERSION: "5.9.8"
+  SWIFT_VERSION: "6.0.3"
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build
+        run: make
+
+      - name: Create DMG
+        run: |
+          mkdir -p dmg-staging
+          cp -r build/Luma.app dmg-staging/
+          ln -s /Applications dmg-staging/Applications
+          hdiutil create \
+            -volname Luma \
+            -srcfolder dmg-staging \
+            -ov \
+            -format UDZO \
+            Luma.dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Luma-macOS.dmg
+          path: Luma.dmg
+
+  fedora:
+    runs-on: ubuntu-latest
+    container: fedora:43
+    steps:
+      - name: Install system dependencies
+        run: |
+          dnf install -y \
+            gtk4-devel \
+            webkitgtk6.0-devel \
+            glib2-devel \
+            pango-devel \
+            cairo-devel \
+            harfbuzz-devel \
+            gdk-pixbuf2-devel \
+            graphene-devel \
+            libsoup3-devel \
+            gobject-introspection-devel \
+            libxml2-devel \
+            nodejs \
+            npm \
+            gcc-c++ \
+            make \
+            git \
+            which \
+            curl \
+            pkg-config \
+            rpm-build
+
+      - name: Install Swift ${{ env.SWIFT_VERSION }}
+        run: |
+          curl -sL "https://download.swift.org/swift-${SWIFT_VERSION}-release/fedora39/swift-${SWIFT_VERSION}-RELEASE/swift-${SWIFT_VERSION}-RELEASE-fedora39.x86_64.rpm" \
+            -o swift.rpm && dnf install -y ./swift.rpm && rm swift.rpm \
+            || {
+              curl -sL "https://download.swift.org/swift-${SWIFT_VERSION}-release/fedora39/swift-${SWIFT_VERSION}-RELEASE/swift-${SWIFT_VERSION}-RELEASE-fedora39.tar.gz" \
+                -o swift.tar.gz
+              tar xzf swift.tar.gz -C /usr/local --strip-components=2
+              rm swift.tar.gz
+            }
+          swift --version
+
+      - name: Install frida-core devkit
+        run: |
+          curl -sL "https://github.com/frida/frida/releases/download/${FRIDA_VERSION}/frida-core-devkit-${FRIDA_VERSION}-linux-x86_64.tar.xz" \
+            -o frida-devkit.tar.xz
+          mkdir -p /usr/local/lib/pkgconfig /usr/local/include/frida-1.0 /tmp/frida-devkit
+          tar xJf frida-devkit.tar.xz -C /tmp/frida-devkit
+          cp /tmp/frida-devkit/libfrida-core.a /usr/local/lib/
+          cp /tmp/frida-devkit/frida-core.h /usr/local/include/frida-1.0/
+          printf 'prefix=/usr/local\nlibdir=${prefix}/lib\nincludedir=${prefix}/include\n\nName: Frida Core\nDescription: Frida core library\nVersion: %s\nLibs: -L${libdir} -lfrida-core-1.0\nCflags: -I${includedir}/frida-1.0\n' \
+            "$FRIDA_VERSION" > /usr/local/lib/pkgconfig/frida-core-1.0.pc
+          rm -rf frida-devkit.tar.xz /tmp/frida-devkit
+
+      - name: Install radare2
+        run: |
+          dnf install -y radare2-devel || {
+            curl -sL "https://github.com/radareorg/radare2/releases/download/${RADARE2_VERSION}/radare2-${RADARE2_VERSION}.tar.xz" \
+              -o radare2.tar.xz
+            tar xJf radare2.tar.xz
+            cd radare2-${RADARE2_VERSION}
+            ./configure --prefix=/usr/local
+            make -j$(nproc)
+            make install
+            cd ..
+            rm -rf radare2.tar.xz radare2-${RADARE2_VERSION}
+          }
+
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: cd LumaGtk && make build SWIFT_BUILD_FLAGS="-c release"
+
+      - name: Package
+        run: |
+          mkdir -p pkg/usr/local/{bin,share/applications,share/mime/packages}
+          cp LumaGtk/.build/release/LumaGtk pkg/usr/local/bin/luma-gtk
+          cp LumaGtk/data/re.frida.Luma.desktop pkg/usr/local/share/applications/
+          cp LumaGtk/data/re.frida.Luma.xml pkg/usr/local/share/mime/packages/
+          tar czf luma-gtk-fedora-43.tar.gz -C pkg .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: luma-gtk-fedora-43.tar.gz
+          path: luma-gtk-fedora-43.tar.gz
+
+  ubuntu:
+    runs-on: ubuntu-latest
+    container: ubuntu:25.10
+    steps:
+      - name: Install system dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y \
+            libgtk-4-dev \
+            libwebkitgtk-6.0-dev \
+            libglib2.0-dev \
+            libpango1.0-dev \
+            libcairo2-dev \
+            libharfbuzz-dev \
+            libgdk-pixbuf-2.0-dev \
+            libgraphene-1.0-dev \
+            libsoup-3.0-dev \
+            gobject-introspection \
+            libgirepository1.0-dev \
+            libxml2-dev \
+            pkg-config \
+            dpkg-dev \
+            nodejs \
+            npm \
+            curl \
+            git \
+            make
+
+      - name: Install Swift ${{ env.SWIFT_VERSION }}
+        run: |
+          curl -sL "https://download.swift.org/swift-${SWIFT_VERSION}-release/ubuntu2410/swift-${SWIFT_VERSION}-RELEASE/swift-${SWIFT_VERSION}-RELEASE-ubuntu24.10.tar.gz" \
+            -o swift.tar.gz
+          tar xzf swift.tar.gz -C /usr/local --strip-components=2
+          rm swift.tar.gz
+          swift --version
+
+      - name: Install frida-core devkit
+        run: |
+          curl -sL "https://github.com/frida/frida/releases/download/${FRIDA_VERSION}/frida-core-devkit-${FRIDA_VERSION}-linux-x86_64.tar.xz" \
+            -o frida-devkit.tar.xz
+          mkdir -p /usr/local/lib/pkgconfig /usr/local/include/frida-1.0 /tmp/frida-devkit
+          tar xJf frida-devkit.tar.xz -C /tmp/frida-devkit
+          cp /tmp/frida-devkit/libfrida-core.a /usr/local/lib/
+          cp /tmp/frida-devkit/frida-core.h /usr/local/include/frida-1.0/
+          printf 'prefix=/usr/local\nlibdir=${prefix}/lib\nincludedir=${prefix}/include\n\nName: Frida Core\nDescription: Frida core library\nVersion: %s\nLibs: -L${libdir} -lfrida-core-1.0\nCflags: -I${includedir}/frida-1.0\n' \
+            "$FRIDA_VERSION" > /usr/local/lib/pkgconfig/frida-core-1.0.pc
+          rm -rf frida-devkit.tar.xz /tmp/frida-devkit
+
+      - name: Install radare2
+        run: |
+          curl -sL "https://github.com/radareorg/radare2/releases/download/${RADARE2_VERSION}/radare2-${RADARE2_VERSION}.tar.xz" \
+            -o radare2.tar.xz
+          tar xJf radare2.tar.xz
+          cd radare2-${RADARE2_VERSION}
+          ./configure --prefix=/usr/local
+          make -j$(nproc)
+          make install
+          ldconfig
+          cd ..
+          rm -rf radare2.tar.xz radare2-${RADARE2_VERSION}
+
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: cd LumaGtk && make build SWIFT_BUILD_FLAGS="-c release"
+
+      - name: Package as .deb
+        run: |
+          PKG=luma-gtk_0.1.0_amd64
+          mkdir -p $PKG/DEBIAN
+          mkdir -p $PKG/usr/local/{bin,share/applications,share/mime/packages}
+          cat > $PKG/DEBIAN/control << 'CTRL'
+          Package: luma-gtk
+          Version: 0.1.0
+          Section: devel
+          Priority: optional
+          Architecture: amd64
+          Depends: libgtk-4-1, libwebkitgtk-6.0-4, libsoup-3.0-0
+          Maintainer: Ole Andre Vadla Ravnas <oleavr@frida.re>
+          Description: Luma - Dynamic instrumentation toolkit
+           Interactive dynamic instrumentation app built on Frida.
+          CTRL
+          sed -i 's/^          //' $PKG/DEBIAN/control
+          cp LumaGtk/.build/release/LumaGtk $PKG/usr/local/bin/luma-gtk
+          cp LumaGtk/data/re.frida.Luma.desktop $PKG/usr/local/share/applications/
+          cp LumaGtk/data/re.frida.Luma.xml $PKG/usr/local/share/mime/packages/
+          dpkg-deb --build $PKG
+          mv ${PKG}.deb luma-gtk-ubuntu-25.10.deb
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: luma-gtk-ubuntu-25.10.deb
+          path: luma-gtk-ubuntu-25.10.deb
+
+  flatpak:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Flatpak and flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak install -y flathub org.gnome.Platform//47 org.gnome.Sdk//47
+
+      - name: Build Flatpak
+        run: |
+          flatpak-builder \
+            --force-clean \
+            --repo=flatpak-repo \
+            flatpak-build \
+            LumaGtk/re.frida.Luma.flatpak.json
+          flatpak build-bundle flatpak-repo luma-gtk.flatpak re.frida.Luma
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: luma-gtk.flatpak
+          path: luma-gtk.flatpak
+
+  snap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: snapcore/action-build@v1
+        id: snapcraft
+        with:
+          path: LumaGtk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: luma-gtk.snap
+          path: ${{ steps.snapcraft.outputs.snap }}

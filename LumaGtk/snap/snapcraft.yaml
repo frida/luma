@@ -1,0 +1,103 @@
+name: luma-gtk
+base: core22
+version: '0.1.0'
+summary: Dynamic instrumentation toolkit built on Frida
+description: |
+  Luma is an interactive dynamic instrumentation app built on Frida.
+  This is the GTK4/Adwaita frontend for Linux. Attach to running
+  processes, instrument functions, trace calls, and explore memory
+  with a graphical interface.
+
+grade: devel
+confinement: devmode
+
+architectures:
+  - build-on: amd64
+
+apps:
+  luma-gtk:
+    command: usr/local/bin/luma-gtk
+    extensions: [gnome]
+    plugs:
+      - home
+      - network
+      - process-control
+      - system-observe
+
+parts:
+  swift:
+    plugin: nil
+    override-build: |
+      curl -sL "https://download.swift.org/swift-6.0.3-release/ubuntu2204/swift-6.0.3-RELEASE/swift-6.0.3-RELEASE-ubuntu22.04.tar.gz" \
+        -o swift.tar.gz
+      tar xzf swift.tar.gz --strip-components=2 -C "$CRAFT_STAGE"
+      rm swift.tar.gz
+    build-packages:
+      - curl
+
+  frida-core:
+    plugin: nil
+    override-build: |
+      curl -sL "https://github.com/frida/frida/releases/download/17.9.1/frida-core-devkit-17.9.1-linux-x86_64.tar.xz" \
+        -o frida-core-devkit.tar.xz
+      mkdir -p devkit
+      tar xJf frida-core-devkit.tar.xz -C devkit
+      install -Dm644 devkit/libfrida-core.a "$CRAFT_STAGE/usr/local/lib/libfrida-core.a"
+      install -Dm644 devkit/frida-core.h "$CRAFT_STAGE/usr/local/include/frida/frida-core.h"
+      mkdir -p "$CRAFT_STAGE/usr/local/lib/pkgconfig"
+      cat > "$CRAFT_STAGE/usr/local/lib/pkgconfig/frida-core-1.0.pc" <<EOF
+      prefix=/usr/local
+      libdir=\${prefix}/lib
+      includedir=\${prefix}/include/frida
+
+      Name: frida-core
+      Description: Frida core library
+      Version: 17.9.1
+      Libs: -L\${libdir} -lfrida-core -lresolv -ldl -lrt -lm -lpthread
+      Cflags: -I\${includedir}
+      EOF
+    build-packages:
+      - curl
+      - xz-utils
+
+  radare2:
+    plugin: autotools
+    source: https://github.com/radareorg/radare2/releases/download/5.9.8/radare2-5.9.8.tar.xz
+    autotools-configure-parameters:
+      - --prefix=/usr/local
+    build-packages:
+      - pkg-config
+
+  luma-gtk:
+    after: [swift, frida-core, radare2]
+    plugin: nil
+    source: .
+    source-type: local
+    override-build: |
+      export PATH="$CRAFT_STAGE/usr/bin:$CRAFT_STAGE/bin:$PATH"
+      export PKG_CONFIG_PATH="$CRAFT_STAGE/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH"
+      cd LumaGtk
+      make build SWIFT_BUILD_FLAGS="-c release"
+      install -Dm755 .build/release/LumaGtk "$CRAFT_PART_INSTALL/usr/local/bin/luma-gtk"
+      install -Dm644 data/re.frida.Luma.desktop "$CRAFT_PART_INSTALL/usr/local/share/applications/re.frida.Luma.desktop"
+      install -Dm644 data/re.frida.Luma.xml "$CRAFT_PART_INSTALL/usr/local/share/mime/packages/re.frida.Luma.xml"
+    build-packages:
+      - libgtk-4-dev
+      - libwebkitgtk-6.0-dev
+      - libglib2.0-dev
+      - libpango1.0-dev
+      - libcairo2-dev
+      - libharfbuzz-dev
+      - libgdk-pixbuf-2.0-dev
+      - libgraphene-1.0-dev
+      - libsoup-3.0-dev
+      - gobject-introspection
+      - libgirepository1.0-dev
+      - libxml2-dev
+      - nodejs
+      - npm
+      - pkg-config
+    stage-packages:
+      - libgtk-4-1
+      - libwebkitgtk-6.0-4
+      - libsoup-3.0-0
