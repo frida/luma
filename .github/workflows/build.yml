@@ -178,10 +178,7 @@ jobs:
             libgee-0.8-dev \
             libjson-glib-dev \
             libunwind-dev \
-            libdwarf-dev \
             libnice-dev \
-            libdwarf-dev \
-            libelf-dev \
             valac \
             meson \
             ninja-build \
