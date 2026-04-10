@@ -210,6 +210,13 @@ jobs:
           ldconfig
           swift --version
 
+      - name: Fix libdwarf include path
+        run: |
+          if [ -d /usr/include/libdwarf ] && [ ! -f /usr/include/dwarf.h ]; then
+            ln -s libdwarf/dwarf.h /usr/include/dwarf.h
+            ln -s libdwarf/libdwarf.h /usr/include/libdwarf.h 2>/dev/null || true
+          fi
+
       - name: Build frida-core (shared)
         run: |
           git clone --depth 1 -b $FRIDA_CORE_REF https://github.com/frida/frida-core.git /tmp/frida-core
