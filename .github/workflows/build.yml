@@ -214,6 +214,7 @@ jobs:
 
       - name: Build ngtcp2
         run: |
+          apt-get install -y libssl-dev pkg-config
           git clone --depth 1 -b v1.9.1 https://github.com/ngtcp2/ngtcp2.git /tmp/ngtcp2
           cd /tmp/ngtcp2
           autoreconf -i

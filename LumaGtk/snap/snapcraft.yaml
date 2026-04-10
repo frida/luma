@@ -57,7 +57,8 @@ parts:
       - libunwind-dev
       - libdwarf-dev
       - libnice-dev
-      - libngtcp2-crypto-ossl-dev
+      - libssl-dev
+      - libngtcp2-dev
 
   radare2:
     plugin: meson
