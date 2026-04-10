@@ -150,7 +150,6 @@ jobs:
           path: luma-fedora-43.tar.gz
 
   ubuntu:
-    if: false  # TODO: enable after Fedora passes
     runs-on: ubuntu-latest
     container: ubuntu:25.10
     steps:
