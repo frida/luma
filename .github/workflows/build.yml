@@ -217,11 +217,7 @@ jobs:
         run: |
           git clone --depth 1 -b $FRIDA_CORE_REF https://github.com/frida/frida-core.git /tmp/frida-core
           cd /tmp/frida-core
-          apt-get install -y libssl-dev
-          ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr/local \
-            -- --force-fallback-for=openssl,ngtcp2,ngtcp2_crypto_quictls \
-               -Dopenssl:default_library=static \
-               -Dngtcp2:default_library=static
+          ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr/local
           make -j$(nproc)
           make install
           ldconfig
