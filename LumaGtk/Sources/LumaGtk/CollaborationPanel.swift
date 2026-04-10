@@ -134,7 +134,7 @@ final class CollaborationPanel {
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     if self.suppressScrollPinUpdate { return }
-                    let atBottom = (adj.upper - (adj.value + adj.pageSize)) < 4.0
+                    let atBottom = (adj.upper - (adj.value + adj.pageSize)) < 20.0
                     self.isPinnedToBottom = atBottom
                 }
             }

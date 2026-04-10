@@ -432,6 +432,16 @@ final class NotebookPane {
         titleEntry.hexpand = true
         column.append(child: titleEntry)
 
+        let selectAll = autoEditedEntries.remove(entry.id) != nil
+        Task { @MainActor in
+            _ = titleEntry.grabFocus()
+            if selectAll {
+                let editable = UnsafeMutableRawPointer(titleEntry.widget_ptr)
+                    .assumingMemoryBound(to: GtkEditable.self)
+                gtk_editable_select_region(editable, 0, -1)
+            }
+        }
+
         let textView = TextView()
         textView.hexpand = true
         textView.vexpand = true
@@ -472,13 +482,14 @@ final class NotebookPane {
         cancelButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                _ = self.entriesBox.grabFocus()
                 self.editingEntries.remove(entry.id)
                 if self.draftEntries.remove(entry.id) != nil {
                     self.engine?.deleteNotebookEntry(entry)
                 }
                 Task { @MainActor [weak self] in
-                    self?.rebuildEntries()
+                    guard let self else { return }
+                    self.rebuildEntries()
+                    _ = self.newNoteButton.grabFocus()
                 }
             }
         }
@@ -489,6 +500,7 @@ final class NotebookPane {
                 let newTitle = titleEntry.text ?? ""
                 let newDetails = NotebookPane.text(from: textView)
                 self.commitEdits(original: entry, title: newTitle, details: newDetails)
+                _ = self.newNoteButton.grabFocus()
             }
         }
 

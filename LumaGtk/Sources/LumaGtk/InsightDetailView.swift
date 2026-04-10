@@ -7,6 +7,8 @@ import LumaCore
 
 @MainActor
 final class InsightDetailView {
+    static var copyFeedback: ((String) -> Void)?
+
     let widget: Box
 
     private weak var engine: Engine?
@@ -23,6 +25,7 @@ final class InsightDetailView {
     private let memoryHost: Box
     private let disasmHost: Box
     private let disasmBox: Box
+    private let disasmScroll: ScrolledWindow
     private let loadMoreButton: Button
     private var hexView: HexView?
 
@@ -103,7 +106,7 @@ final class InsightDetailView {
 
         disasmBox = Box(orientation: .vertical, spacing: 0)
         disasmBox.focusable = true
-        let disasmScroll = ScrolledWindow()
+        disasmScroll = ScrolledWindow()
         disasmScroll.hexpand = true
         disasmScroll.vexpand = true
         disasmScroll.setSizeRequest(width: 720, height: 360)
@@ -369,6 +372,17 @@ final class InsightDetailView {
         if focus {
             _ = row.grabFocus()
         }
+        scrollToCenter(index: index)
+    }
+
+    private func scrollToCenter(index: Int) {
+        guard let adj = disasmScroll.vadjustment else { return }
+        guard !disasmRows.isEmpty else { return }
+        let rowHeight = Double(disasmRows[0].allocatedHeight)
+        guard rowHeight > 0 else { return }
+        let rowMidY = (Double(index) + 0.5) * rowHeight
+        let target = rowMidY - adj.pageSize / 2.0
+        adj.value = max(0, min(target, adj.upper - adj.pageSize))
     }
 
     private func candidateTarget(for line: DisassemblyLine) -> UInt64? {
@@ -472,6 +486,7 @@ final class InsightDetailView {
                 guard let display = gdk_display_get_default() else { return }
                 let clipboard = gdk_display_get_clipboard(display)
                 hex.withCString { gdk_clipboard_set_text(clipboard, $0) }
+                InsightDetailView.copyFeedback?("Copied!")
             },
         ])
 

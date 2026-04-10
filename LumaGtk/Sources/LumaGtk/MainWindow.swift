@@ -44,6 +44,7 @@ final class MainWindow {
     private var sessionDeviceLabels: [UUID: Label] = [:]
     private var selection: SidebarSelection = .notebook
     private var addInstrumentButton: Button!
+    private var resumeProcessButton: Button!
     private var installPackageButton: Button!
     private var collaborationButton: Button!
     private var collaborationPanel: CollaborationPanel?
@@ -118,6 +119,13 @@ final class MainWindow {
         header.packStart(child: addInstrumentButton)
         self.addInstrumentButton = addInstrumentButton
 
+        let resumeProcessButton = Button(label: "Resume Process")
+        resumeProcessButton.set(iconName: "media-playback-start-symbolic")
+        resumeProcessButton.tooltipText = "Resume spawned process"
+        resumeProcessButton.visible = false
+        header.packStart(child: resumeProcessButton)
+        self.resumeProcessButton = resumeProcessButton
+
         let installPackageButton = Button(label: "Install Package…")
         header.packStart(child: installPackageButton)
         self.installPackageButton = installPackageButton
@@ -186,6 +194,11 @@ final class MainWindow {
                 self?.openAddInstrumentDialog()
             }
         }
+        resumeProcessButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.resumeProcess()
+            }
+        }
         installPackageButton.onClicked { [weak self, weak installPackageButton] _ in
             MainActor.assumeIsolated {
                 guard let button = installPackageButton else { return }
@@ -225,6 +238,16 @@ final class MainWindow {
         }
     }
 
+    private func updateResumeButtonVisibility() {
+        guard let sessionID = currentSessionID(),
+            let session = sessions.first(where: { $0.id == sessionID })
+        else {
+            resumeProcessButton.visible = false
+            return
+        }
+        resumeProcessButton.visible = session.phase == .awaitingInitialResume
+    }
+
     private func setCollaborationVisible(_ visible: Bool) {
         isCollaborationPanelVisible = visible
         collaborationPanel?.widget.visible = visible
@@ -235,8 +258,8 @@ final class MainWindow {
         renderDetail()
     }
 
-    func showToast(_ message: String) {
-        toastOverlay?.show(message)
+    func showToast(_ message: String, durationSeconds: Double = 3.0) {
+        toastOverlay?.show(message, durationSeconds: durationSeconds)
     }
 
     func documentDidChange() {
@@ -326,6 +349,9 @@ final class MainWindow {
         }
         AddressActionMenu.errorReporter = { [weak self] message in
             self?.showToast(message)
+        }
+        InsightDetailView.copyFeedback = { [weak self] message in
+            self?.showToast(message, durationSeconds: 1.0)
         }
         let panel = CollaborationPanel(engine: engine, onClose: { [weak self] in
             self?.setCollaborationVisible(false)
@@ -977,6 +1003,7 @@ final class MainWindow {
             notebookListBox.unselectAll()
             sessionsList.unselectAll()
         }
+        updateResumeButtonVisibility()
         renderDetail()
     }
 
@@ -997,6 +1024,7 @@ final class MainWindow {
                 currentREPLPane?.applySessionState()
             }
             currentInstrumentDetail?.applySessionState()
+            updateResumeButtonVisibility()
         case .sessionRemoved(let id):
             removeSessionRows(id)
             sessions.removeAll { $0.id == id }
