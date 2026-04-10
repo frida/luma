@@ -12,9 +12,17 @@
 @property (nonatomic, assign) LumaMonacoView *owner;
 @end
 
+@interface LumaEditorPanel : NSPanel
+@end
+
+@implementation LumaEditorPanel
+- (BOOL)canBecomeKeyWindow { return YES; }
+@end
+
 struct LumaMonacoView {
     GtkWidget *placeholder;
     WKWebView *web_view;
+    NSPanel *overlay_panel;
     LumaMonacoDelegate *delegate;
     gboolean overlay_installed;
 };
@@ -49,6 +57,21 @@ struct LumaMonacoView {
 
 static void sync_overlay_frame(LumaMonacoView *self);
 
+static NSWindow *
+find_parent_window(LumaMonacoView *self)
+{
+    GtkNative *native = gtk_widget_get_native(self->placeholder);
+    if (native == NULL) {
+        return nil;
+    }
+    GdkSurface *surface = gtk_native_get_surface(native);
+    if (surface == NULL || !GDK_IS_MACOS_SURFACE(surface)) {
+        return nil;
+    }
+
+    return (__bridge NSWindow *)gdk_macos_surface_get_native_window(GDK_MACOS_SURFACE(surface));
+}
+
 static void
 install_overlay(LumaMonacoView *self)
 {
@@ -56,21 +79,24 @@ install_overlay(LumaMonacoView *self)
         return;
     }
 
-    GtkNative *native = gtk_widget_get_native(self->placeholder);
-    if (native == NULL) {
-        return;
-    }
-    GdkSurface *surface = gtk_native_get_surface(native);
-    if (surface == NULL || !GDK_IS_MACOS_SURFACE(surface)) {
+    NSWindow *parent = find_parent_window(self);
+    if (parent == nil) {
         return;
     }
 
-    NSWindow *nswindow = (__bridge NSWindow *)gdk_macos_surface_get_native_window(GDK_MACOS_SURFACE(surface));
-    if (nswindow == nil) {
-        return;
-    }
+    self->overlay_panel = [[LumaEditorPanel alloc]
+        initWithContentRect:NSZeroRect
+                  styleMask:NSWindowStyleMaskBorderless
+                    backing:NSBackingStoreBuffered
+                      defer:NO];
+    self->overlay_panel.opaque = NO;
+    self->overlay_panel.backgroundColor = [NSColor clearColor];
+    self->overlay_panel.hasShadow = NO;
+    self->overlay_panel.level = NSNormalWindowLevel;
+    self->overlay_panel.ignoresMouseEvents = NO;
+    self->overlay_panel.contentView = self->web_view;
 
-    [nswindow.contentView addSubview:self->web_view];
+    [parent addChildWindow:self->overlay_panel ordered:NSWindowAbove];
     self->overlay_installed = TRUE;
 
     sync_overlay_frame(self);
@@ -80,6 +106,11 @@ static void
 sync_overlay_frame(LumaMonacoView *self)
 {
     if (!self->overlay_installed) {
+        return;
+    }
+
+    NSWindow *parent = find_parent_window(self);
+    if (parent == nil) {
         return;
     }
 
@@ -100,11 +131,18 @@ sync_overlay_frame(LumaMonacoView *self)
         return;
     }
 
-    NSView *contentView = [self->web_view superview];
-    CGFloat contentH = contentView.bounds.size.height;
+    double surface_dx, surface_dy;
+    gtk_native_get_surface_transform(native, &surface_dx, &surface_dy);
 
-    NSRect frame = NSMakeRect(root_pt.x, contentH - root_pt.y - h, w, h);
-    [self->web_view setFrame:frame];
+    CGFloat sx = root_pt.x + surface_dx;
+    CGFloat sy = root_pt.y + surface_dy;
+
+    NSRect contentRect = parent.contentView.bounds;
+    CGFloat contentH = contentRect.size.height;
+
+    NSRect localRect = NSMakeRect(sx, contentH - sy - h, w, h);
+    NSRect screenRect = [parent convertRectToScreen:localRect];
+    [self->overlay_panel setFrame:screenRect display:YES];
 }
 
 static void
@@ -129,7 +167,12 @@ on_placeholder_unrealize(GtkWidget *widget, gpointer user_data)
     (void)widget;
     LumaMonacoView *self = (LumaMonacoView *)user_data;
     if (self->overlay_installed) {
-        [self->web_view removeFromSuperview];
+        NSWindow *parent = find_parent_window(self);
+        if (parent != nil) {
+            [parent removeChildWindow:self->overlay_panel];
+        }
+        [self->overlay_panel orderOut:nil];
+        self->overlay_panel = nil;
         self->overlay_installed = FALSE;
     }
 }
