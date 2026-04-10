@@ -37,7 +37,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Luma-macOS.dmg
+          name: Luma.dmg
           path: Luma.dmg
 
   fedora:
@@ -117,12 +117,12 @@ jobs:
           cp LumaGtk/.build/release/LumaGtk pkg/usr/local/bin/luma-gtk
           cp LumaGtk/data/re.frida.Luma.desktop pkg/usr/local/share/applications/
           cp LumaGtk/data/re.frida.Luma.xml pkg/usr/local/share/mime/packages/
-          tar czf luma-gtk-fedora-43.tar.gz -C pkg .
+          tar czf luma-fedora-43.tar.gz -C pkg .
 
       - uses: actions/upload-artifact@v4
         with:
-          name: luma-gtk-fedora-43.tar.gz
-          path: luma-gtk-fedora-43.tar.gz
+          name: luma-fedora-43.tar.gz
+          path: luma-fedora-43.tar.gz
 
   ubuntu:
     runs-on: ubuntu-latest
@@ -213,12 +213,12 @@ jobs:
           cp LumaGtk/data/re.frida.Luma.desktop $PKG/usr/local/share/applications/
           cp LumaGtk/data/re.frida.Luma.xml $PKG/usr/local/share/mime/packages/
           dpkg-deb --build $PKG
-          mv ${PKG}.deb luma-gtk-ubuntu-25.10.deb
+          mv ${PKG}.deb luma-ubuntu-25.10.deb
 
       - uses: actions/upload-artifact@v4
         with:
-          name: luma-gtk-ubuntu-25.10.deb
-          path: luma-gtk-ubuntu-25.10.deb
+          name: luma-ubuntu-25.10.deb
+          path: luma-ubuntu-25.10.deb
 
   flatpak:
     runs-on: ubuntu-latest
@@ -239,12 +239,12 @@ jobs:
             --repo=flatpak-repo \
             flatpak-build \
             LumaGtk/re.frida.Luma.flatpak.json
-          flatpak build-bundle flatpak-repo luma-gtk.flatpak re.frida.Luma
+          flatpak build-bundle flatpak-repo luma.flatpak re.frida.Luma
 
       - uses: actions/upload-artifact@v4
         with:
-          name: luma-gtk.flatpak
-          path: luma-gtk.flatpak
+          name: luma.flatpak
+          path: luma.flatpak
 
   snap:
     runs-on: ubuntu-latest
@@ -258,5 +258,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: luma-gtk.snap
+          name: luma.snap
           path: ${{ steps.snapcraft.outputs.snap }}
