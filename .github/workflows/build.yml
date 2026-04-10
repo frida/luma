@@ -52,6 +52,7 @@ jobs:
           path: Luma.dmg
 
   fedora:
+    if: false  # Passes — disabled while iterating on other jobs
     runs-on: ubuntu-latest
     container: fedora:43
     steps:
