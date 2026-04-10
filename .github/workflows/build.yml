@@ -22,16 +22,16 @@ jobs:
 
       - name: Build
         run: |
-          export PATH="$(dirname $(which node)):$PATH"
           xcodebuild \
             -project Luma.xcodeproj \
             -scheme Luma \
             -configuration Release \
             -derivedDataPath build/.derived \
-            CONFIGURATION_BUILD_DIR="$(pwd)/build" \
             CODE_SIGN_IDENTITY=- \
             CODE_SIGNING_ALLOWED=NO \
             build
+          mkdir -p build
+          cp -r build/.derived/Build/Products/Release/Luma.app build/
 
       - name: Create DMG
         run: |
@@ -154,7 +154,6 @@ jobs:
             gobject-introspection \
             libgirepository1.0-dev \
             libxml2-dev \
-            libxml2 \
             pkg-config \
             dpkg-dev \
             nodejs \

@@ -26,7 +26,7 @@
                 {
                     "type": "file",
                     "url": "https://download.swift.org/swift-6.1-release/ubuntu2404/swift-6.1-RELEASE/swift-6.1-RELEASE-ubuntu24.04.tar.gz",
-                    "sha256": "de061db6089cc1321ba9062b8aa9a0adaaa7a4d25128aab37a2a44e71a939829",
+                    "sha256": "57dbe6e85af6813b6013423d406e840bbb5ef14d7ef29eac1bfdb83d33e32c59",
                     "dest-filename": "swift.tar.gz"
                 }
             ]
@@ -41,7 +41,7 @@
                 {
                     "type": "archive",
                     "url": "https://github.com/radareorg/radare2/releases/download/5.9.8/radare2-5.9.8.tar.xz",
-                    "sha256": "4543670b589593f8fa5f106111fd5139081da42bb165a9239f05195e405f240a"
+                    "sha256": "de061db6089cc1321ba9062b8aa9a0adaaa7a4d25128aab37a2a44e71a939829"
                 }
             ]
         },
@@ -75,7 +75,7 @@
                 {
                     "type": "file",
                     "url": "https://nodejs.org/dist/v20.18.0/node-v20.18.0-linux-x64.tar.xz",
-                    "sha256": "57dbe6e85af6813b6013423d406e840bbb5ef14d7ef29eac1bfdb83d33e32c59",
+                    "sha256": "4543670b589593f8fa5f106111fd5139081da42bb165a9239f05195e405f240a",
                     "dest-filename": "node.tar.xz"
                 }
             ]
