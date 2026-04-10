@@ -217,7 +217,8 @@ jobs:
         run: |
           git clone --depth 1 -b $FRIDA_CORE_REF https://github.com/frida/frida-core.git /tmp/frida-core
           cd /tmp/frida-core
-          ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr/local
+          ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr/local \
+            -- -Dsubprojects:default_library=static
           make -j$(nproc)
           make install
           ldconfig
