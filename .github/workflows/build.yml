@@ -219,8 +219,9 @@ jobs:
           cd /tmp/frida-core
           apt-get install -y libssl-dev
           ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr/local \
-            -- -Dsubprojects:default_library=static \
-               --force-fallback-for=openssl,ngtcp2,ngtcp2_crypto_quictls
+            -- --force-fallback-for=openssl,ngtcp2,ngtcp2_crypto_quictls \
+               -Dopenssl:default_library=static \
+               -Dngtcp2:default_library=static
           make -j$(nproc)
           make install
           ldconfig
