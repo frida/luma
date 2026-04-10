@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=Luma
 Comment=Dynamic instrumentation toolkit
-Exec=luma-gtk %U
+Exec=luma %U
 Icon=re.frida.Luma
 Terminal=false
 Type=Application

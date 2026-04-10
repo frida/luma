@@ -114,7 +114,7 @@ jobs:
       - name: Package
         run: |
           mkdir -p pkg/usr/local/{bin,share/applications,share/mime/packages}
-          cp LumaGtk/.build/release/LumaGtk pkg/usr/local/bin/luma-gtk
+          cp LumaGtk/.build/release/LumaGtk pkg/usr/local/bin/luma
           cp LumaGtk/data/re.frida.Luma.desktop pkg/usr/local/share/applications/
           cp LumaGtk/data/re.frida.Luma.xml pkg/usr/local/share/mime/packages/
           tar czf luma-fedora-43.tar.gz -C pkg .
@@ -194,11 +194,11 @@ jobs:
 
       - name: Package as .deb
         run: |
-          PKG=luma-gtk_0.1.0_amd64
+          PKG=luma_0.1.0_amd64
           mkdir -p $PKG/DEBIAN
           mkdir -p $PKG/usr/local/{bin,share/applications,share/mime/packages}
           cat > $PKG/DEBIAN/control << 'CTRL'
-          Package: luma-gtk
+          Package: luma
           Version: 0.1.0
           Section: devel
           Priority: optional
@@ -209,7 +209,7 @@ jobs:
            Interactive dynamic instrumentation app built on Frida.
           CTRL
           sed -i 's/^          //' $PKG/DEBIAN/control
-          cp LumaGtk/.build/release/LumaGtk $PKG/usr/local/bin/luma-gtk
+          cp LumaGtk/.build/release/LumaGtk $PKG/usr/local/bin/luma
           cp LumaGtk/data/re.frida.Luma.desktop $PKG/usr/local/share/applications/
           cp LumaGtk/data/re.frida.Luma.xml $PKG/usr/local/share/mime/packages/
           dpkg-deb --build $PKG

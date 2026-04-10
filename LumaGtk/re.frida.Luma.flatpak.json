@@ -3,7 +3,7 @@
     "runtime": "org.gnome.Platform",
     "runtime-version": "47",
     "sdk": "org.gnome.Sdk",
-    "command": "luma-gtk",
+    "command": "luma",
     "finish-args": [
         "--share=ipc",
         "--share=network",
@@ -85,11 +85,11 @@
             ]
         },
         {
-            "name": "luma-gtk",
+            "name": "luma",
             "buildsystem": "simple",
             "build-commands": [
                 "cd LumaGtk && make build SWIFT_BUILD_FLAGS='-c release'",
-                "install -Dm755 LumaGtk/.build/release/LumaGtk /app/bin/luma-gtk",
+                "install -Dm755 LumaGtk/.build/release/LumaGtk /app/bin/luma",
                 "install -Dm644 LumaGtk/data/re.frida.Luma.desktop /app/share/applications/re.frida.Luma.desktop",
                 "install -Dm644 LumaGtk/data/re.frida.Luma.xml /app/share/mime/packages/re.frida.Luma.xml"
             ],

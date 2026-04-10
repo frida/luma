@@ -1,4 +1,4 @@
-name: luma-gtk
+name: luma
 base: core22
 version: '0.1.0'
 summary: Dynamic instrumentation toolkit built on Frida
@@ -15,8 +15,8 @@ architectures:
   - build-on: amd64
 
 apps:
-  luma-gtk:
-    command: usr/local/bin/luma-gtk
+  luma:
+    command: usr/local/bin/luma
     extensions: [gnome]
     plugs:
       - home
@@ -68,7 +68,7 @@ parts:
     build-packages:
       - pkg-config
 
-  luma-gtk:
+  luma:
     after: [swift, frida-core, radare2]
     plugin: nil
     source: .
@@ -78,7 +78,7 @@ parts:
       export PKG_CONFIG_PATH="$CRAFT_STAGE/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH"
       cd LumaGtk
       make build SWIFT_BUILD_FLAGS="-c release"
-      install -Dm755 .build/release/LumaGtk "$CRAFT_PART_INSTALL/usr/local/bin/luma-gtk"
+      install -Dm755 .build/release/LumaGtk "$CRAFT_PART_INSTALL/usr/local/bin/luma"
       install -Dm644 data/re.frida.Luma.desktop "$CRAFT_PART_INSTALL/usr/local/share/applications/re.frida.Luma.desktop"
       install -Dm644 data/re.frida.Luma.xml "$CRAFT_PART_INSTALL/usr/local/share/mime/packages/re.frida.Luma.xml"
     build-packages:

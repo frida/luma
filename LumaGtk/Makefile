@@ -47,14 +47,14 @@ BINDIR := $(PREFIX)/bin
 DATADIR := $(PREFIX)/share
 
 install: build
-	install -Dm755 .build/debug/LumaGtk $(DESTDIR)$(BINDIR)/luma-gtk
+	install -Dm755 .build/debug/LumaGtk $(DESTDIR)$(BINDIR)/luma
 	install -Dm644 data/re.frida.Luma.desktop $(DESTDIR)$(DATADIR)/applications/re.frida.Luma.desktop
 	install -Dm644 data/re.frida.Luma.xml $(DESTDIR)$(DATADIR)/mime/packages/re.frida.Luma.xml
 	-update-mime-database $(DESTDIR)$(DATADIR)/mime 2>/dev/null
 	-update-desktop-database $(DESTDIR)$(DATADIR)/applications 2>/dev/null
 
 uninstall:
-	rm -f $(DESTDIR)$(BINDIR)/luma-gtk
+	rm -f $(DESTDIR)$(BINDIR)/luma
 	rm -f $(DESTDIR)$(DATADIR)/applications/re.frida.Luma.desktop
 	rm -f $(DESTDIR)$(DATADIR)/mime/packages/re.frida.Luma.xml
 	-update-mime-database $(DESTDIR)$(DATADIR)/mime 2>/dev/null
