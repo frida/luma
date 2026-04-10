@@ -32,20 +32,9 @@ let lumaGtkLinkerSettings: [LinkerSetting] = []
 #else
 let cLumaSources: [String] = ["shim_gtk.c", "shim_webkitgtk.c"]
 let cLumaCSettings: [CSetting] = [
-    .unsafeFlags([
-        "-I/usr/include/webkitgtk-6.0",
-        "-I/usr/include/glib-2.0",
-        "-I/usr/lib64/glib-2.0/include",
-        "-I/usr/include/gtk-4.0",
-        "-I/usr/include/pango-1.0",
-        "-I/usr/include/harfbuzz",
-        "-I/usr/include/cairo",
-        "-I/usr/include/gdk-pixbuf-2.0",
-        "-I/usr/include/graphene-1.0",
-        "-I/usr/lib64/graphene-1.0/include",
-        "-I/usr/include/libsoup-3.0",
-        "-I/usr/include/sysprof-6",
-    ]),
+    .unsafeFlags(
+        pkgConfigFlags(["webkitgtk-6.0", "gtk4", "libsoup-3.0"])
+    ),
 ]
 let cLumaLinkerSettings: [LinkerSetting] = [
     .linkedLibrary("webkitgtk-6.0"),
