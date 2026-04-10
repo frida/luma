@@ -197,9 +197,7 @@ jobs:
             make \
             binutils \
             python3-pip \
-            autoconf \
-            automake \
-            libtool \
+            cmake \
             gcc \
             g++
 
@@ -214,13 +212,13 @@ jobs:
 
       - name: Build ngtcp2
         run: |
-          apt-get install -y libssl-dev pkg-config
           git clone --depth 1 -b v1.9.1 https://github.com/ngtcp2/ngtcp2.git /tmp/ngtcp2
           cd /tmp/ngtcp2
-          autoreconf -i
-          ./configure --prefix=/usr/local --enable-lib-only --with-openssl
-          make -j$(nproc)
-          make install
+          cmake -B build -DCMAKE_INSTALL_PREFIX=/usr/local \
+            -DENABLE_SHARED_LIB=ON -DENABLE_STATIC_LIB=ON \
+            -DENABLE_OPENSSL=ON -DENABLE_LIB_ONLY=ON
+          cmake --build build -j$(nproc)
+          cmake --install build
           ldconfig
 
       - name: Build frida-core (shared)

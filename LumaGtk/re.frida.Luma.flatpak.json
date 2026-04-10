@@ -39,12 +39,12 @@
                 {
                     "name": "libgee",
                     "buildsystem": "meson",
-                    "sources": [{ "type": "git", "url": "https://gitlab.gnome.org/GNOME/libgee.git", "branch": "main" }]
+                    "sources": [{ "type": "git", "url": "https://gitlab.gnome.org/GNOME/libgee.git", "tag": "0.20.8" }]
                 },
                 {
                     "name": "json-glib",
                     "buildsystem": "meson",
-                    "sources": [{ "type": "git", "url": "https://gitlab.gnome.org/GNOME/json-glib.git", "branch": "main" }]
+                    "sources": [{ "type": "git", "url": "https://gitlab.gnome.org/GNOME/json-glib.git", "tag": "1.10.6" }]
                 }
             ]
         },
