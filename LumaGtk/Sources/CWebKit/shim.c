@@ -348,3 +348,34 @@ luma_alert_confirm(void *parent_window,
     gtk_alert_dialog_choose(dialog, GTK_WINDOW(parent_window), NULL, on_confirm_finished, ctx);
     g_object_unref(dialog);
 }
+
+typedef struct {
+    LumaOpenFilesCallback callback;
+    void *user_data;
+} LumaOpenCtx;
+
+static void
+on_app_open(GApplication *app, GFile **files, int n_files, const char *hint, gpointer user_data)
+{
+    (void)app;
+    (void)hint;
+    LumaOpenCtx *ctx = (LumaOpenCtx *)user_data;
+    for (int i = 0; i < n_files; i++) {
+        char *path = g_file_get_path(files[i]);
+        if (path) {
+            ctx->callback(path, ctx->user_data);
+            g_free(path);
+        }
+    }
+}
+
+void
+luma_app_set_open_handler(void *gobject_application,
+                           LumaOpenFilesCallback callback,
+                           void *user_data)
+{
+    LumaOpenCtx *ctx = g_new0(LumaOpenCtx, 1);
+    ctx->callback = callback;
+    ctx->user_data = user_data;
+    g_signal_connect(G_APPLICATION(gobject_application), "open", G_CALLBACK(on_app_open), ctx);
+}

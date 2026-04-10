@@ -67,4 +67,10 @@ void luma_alert_confirm(void *parent_window,
                          LumaConfirmCallback callback,
                          void *user_data);
 
+// GApplication::open signal wrapper.
+typedef void (*LumaOpenFilesCallback)(const char *path, void *user_data);
+void luma_app_set_open_handler(void *gobject_application,
+                                LumaOpenFilesCallback callback,
+                                void *user_data);
+
 #endif

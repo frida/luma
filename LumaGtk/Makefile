@@ -1,4 +1,4 @@
-.PHONY: build run clean bundle screenshots
+.PHONY: build run clean bundle screenshots install uninstall
 
 # SwiftPM's bundled .pc finder only consults the directories listed in
 # PKG_CONFIG_PATH and the toolchain's primary compiled-in path; it
@@ -41,6 +41,24 @@ run: build
 screenshots: build
 	mkdir -p screenshots
 	scripts/capture-screenshots.sh screenshots
+
+PREFIX ?= /usr/local
+BINDIR := $(PREFIX)/bin
+DATADIR := $(PREFIX)/share
+
+install: build
+	install -Dm755 .build/debug/LumaGtk $(DESTDIR)$(BINDIR)/luma-gtk
+	install -Dm644 data/re.frida.Luma.desktop $(DESTDIR)$(DATADIR)/applications/re.frida.Luma.desktop
+	install -Dm644 data/re.frida.Luma.xml $(DESTDIR)$(DATADIR)/mime/packages/re.frida.Luma.xml
+	-update-mime-database $(DESTDIR)$(DATADIR)/mime 2>/dev/null
+	-update-desktop-database $(DESTDIR)$(DATADIR)/applications 2>/dev/null
+
+uninstall:
+	rm -f $(DESTDIR)$(BINDIR)/luma-gtk
+	rm -f $(DESTDIR)$(DATADIR)/applications/re.frida.Luma.desktop
+	rm -f $(DESTDIR)$(DATADIR)/mime/packages/re.frida.Luma.xml
+	-update-mime-database $(DESTDIR)$(DATADIR)/mime 2>/dev/null
+	-update-desktop-database $(DESTDIR)$(DATADIR)/applications 2>/dev/null
 
 clean:
 	swift package clean

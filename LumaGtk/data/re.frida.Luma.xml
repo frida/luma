@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-luma-project">
+    <comment>Luma project</comment>
+    <glob pattern="*.luma"/>
+    <icon name="re.frida.Luma"/>
+  </mime-type>
+</mime-info>

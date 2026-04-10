@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Luma
+Comment=Dynamic instrumentation toolkit
+Exec=luma-gtk %U
+Icon=re.frida.Luma
+Terminal=false
+Type=Application
+Categories=Development;Debugger;
+MimeType=application/x-luma-project;
+StartupNotify=true

@@ -19,7 +19,7 @@ final class LumaApplication {
     private let maxRecentSlots = 10
 
     init() {
-        guard let app = Application(id: "re.frida.Luma") else {
+        guard let app = Application(id: "re.frida.Luma", flags: .handlesOpen) else {
             fatalError("Unable to create Gtk application")
         }
         self.app = app
@@ -27,6 +27,12 @@ final class LumaApplication {
 
     func run(_ arguments: [String] = CommandLine.arguments) -> Int {
         let filtered = arguments.filter { $0 != "--monaco-demo" }
+        let context = Unmanaged.passRetained(self).toOpaque()
+        luma_app_set_open_handler(
+            UnsafeMutableRawPointer(app.application_ptr),
+            lumaOpenFilesThunk,
+            context
+        )
         return app.run(arguments: filtered) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.activate()
@@ -388,6 +394,19 @@ private let lumaSavePathThunk: @convention(c) (
         if let pathString {
             ctx.app.handleSaveAsPath(window: ctx.window, pathString)
         }
+    }
+}
+
+private let lumaOpenFilesThunk: @convention(c) (
+    UnsafePointer<CChar>?, UnsafeMutableRawPointer?
+) -> Void = { pathPtr, userData in
+    guard let pathPtr, let userData else { return }
+    let path = String(cString: pathPtr)
+    let raw = UInt(bitPattern: userData)
+    MainActor.assumeIsolated {
+        let ptr = UnsafeMutableRawPointer(bitPattern: raw)!
+        let app = Unmanaged<LumaApplication>.fromOpaque(ptr).takeUnretainedValue()
+        app.openWindow(forFile: URL(fileURLWithPath: path))
     }
 }
 
