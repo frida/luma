@@ -250,7 +250,11 @@ jobs:
            Interactive dynamic instrumentation app built on Frida.
           CTRL
           sed -i 's/^          //' $PKG/DEBIAN/control
-          find LumaGtk/.build -name LumaGtk -type f -perm /111 | head -1 | xargs -I{} cp {} $PKG/usr/local/bin/luma
+          ls -la LumaGtk/.build/release/ 2>/dev/null || true
+          ls -la LumaGtk/.build/x86_64-unknown-linux-gnu/release/ 2>/dev/null || true
+          BINARY=$(find LumaGtk/.build -name LumaGtk -type f 2>/dev/null | grep release | head -1)
+          echo "Found binary: $BINARY"
+          cp "$BINARY" $PKG/usr/local/bin/luma
           cp LumaGtk/data/re.frida.Luma.desktop $PKG/usr/local/share/applications/
           cp LumaGtk/data/re.frida.Luma.xml $PKG/usr/local/share/mime/packages/
           dpkg-deb --build $PKG
