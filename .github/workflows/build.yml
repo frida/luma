@@ -74,6 +74,7 @@ jobs:
             json-glib-devel \
             libunwind-devel \
             libdwarf-devel \
+            elfutils-devel \
             libnice-devel \
             ngtcp2-devel \
             ngtcp2-crypto-ossl-devel \
