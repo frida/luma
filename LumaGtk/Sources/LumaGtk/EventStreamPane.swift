@@ -42,6 +42,7 @@ final class EventStreamPane {
     private var enabledSources: Set<EventSourceFilter> = Set(EventSourceFilter.allCases)
     private var selectedProcessName: String?
     private var searchText: String = ""
+    private var isAutoScrolling: Bool = false
 
     init() {
         widget = Box(orientation: .vertical, spacing: 0)
@@ -163,6 +164,7 @@ final class EventStreamPane {
                 if !self.isPaused {
                     self.syncSnapshot()
                     self.pendingNewEvents = 0
+                    self.scrollToBottomSoon()
                 }
                 self.updateLiveIndicator()
                 self.updatePendingPill()
@@ -172,6 +174,31 @@ final class EventStreamPane {
         clearButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.clearEvents()
+            }
+        }
+
+        if let vadj = scroll.vadjustment {
+            vadj.onValueChanged { [weak self] adj in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    if self.isAutoScrolling { return }
+                    let atBottom = (adj.upper - (adj.value + adj.pageSize)) < 20.0
+                    if atBottom {
+                        if self.isPaused {
+                            self.isPaused = false
+                            self.pauseButton.active = false
+                            self.pauseButton.label = "Pause"
+                            self.syncSnapshot()
+                            self.updateLiveIndicator()
+                        }
+                    } else if !self.isPaused {
+                        self.isPaused = true
+                        self.pauseButton.active = true
+                        self.pauseButton.label = "Resume"
+                        self.updateLiveIndicator()
+                        self.updatePendingPill()
+                    }
+                }
             }
         }
 
@@ -375,7 +402,9 @@ final class EventStreamPane {
             guard let adj = scroll.vadjustment else { return }
             let target = adj.upper - adj.pageSize
             if target > adj.value {
+                isAutoScrolling = true
                 adj.value = target
+                isAutoScrolling = false
             }
         }
     }
@@ -506,6 +535,8 @@ final class EventStreamPane {
             let payload = Label(str: payloadString(for: event))
             payload.halign = .start
             payload.hexpand = true
+            payload.lines = 3
+            payload.wrap = true
             payload.ellipsize = .end
             payload.add(cssClass: "monospace")
             row.append(child: payload)
@@ -631,20 +662,39 @@ final class EventStreamPane {
             return nil
         }
 
-        let text: String
         if !message.values.isEmpty && allStrings.count == message.values.count {
-            text = allStrings.joined(separator: " ")
+            let payload = Label(str: allStrings.joined(separator: " "))
+            payload.add(cssClass: "monospace")
+            payload.halign = .start
+            payload.hexpand = true
+            payload.lines = 3
+            payload.wrap = true
+            payload.ellipsize = .end
+            payload.selectable = true
+            row.append(child: payload)
+        } else if let engine, let sessionID = event.sessionID {
+            let column = Box(orientation: .vertical, spacing: 4)
+            column.hexpand = true
+            for value in message.values {
+                let wrapper = JSInspectValueWidget.make(value: value, engine: engine, sessionID: sessionID)
+                jsValueKeepers.append(wrapper)
+                wrapper.widget.halign = .start
+                wrapper.widget.hexpand = true
+                column.append(child: wrapper.widget)
+            }
+            row.append(child: column)
         } else {
-            text = message.values.map { $0.inlineDescription }.joined(separator: " ")
+            let payload = Label(str: message.values.map { $0.inlineDescription }.joined(separator: " "))
+            payload.add(cssClass: "monospace")
+            payload.halign = .start
+            payload.hexpand = true
+            payload.lines = 3
+            payload.wrap = true
+            payload.ellipsize = .end
+            payload.selectable = true
+            row.append(child: payload)
         }
 
-        let payload = Label(str: text)
-        payload.add(cssClass: "monospace")
-        payload.halign = .start
-        payload.hexpand = true
-        payload.ellipsize = .end
-        payload.selectable = true
-        row.append(child: payload)
         return row
     }
 
@@ -741,6 +791,8 @@ final class EventStreamPane {
             let payload = Label(str: s)
             payload.halign = .start
             payload.hexpand = true
+            payload.lines = 3
+            payload.wrap = true
             payload.ellipsize = .end
             payload.add(cssClass: "monospace")
             column.append(child: payload)

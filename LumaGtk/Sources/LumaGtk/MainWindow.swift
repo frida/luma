@@ -210,6 +210,21 @@ final class MainWindow {
         window.onCloseRequest(handler: closeHandler)
     }
 
+    func toggleCollaboration() {
+        setCollaborationVisible(!isCollaborationPanelVisible)
+    }
+
+    func resumeProcess() {
+        guard let engine, let sessionID = currentSessionID(),
+              let node = engine.node(forSessionID: sessionID),
+              let session = try? engine.store.fetchSession(id: sessionID),
+              session.phase == .awaitingInitialResume
+        else { return }
+        Task { @MainActor in
+            await engine.resumeSpawnedProcess(node: node)
+        }
+    }
+
     private func setCollaborationVisible(_ visible: Bool) {
         isCollaborationPanelVisible = visible
         collaborationPanel?.widget.visible = visible
@@ -329,6 +344,10 @@ final class MainWindow {
     }
 
     // MARK: - Target picker
+
+    func newSession() {
+        openTargetPicker()
+    }
 
     private func openTargetPicker(reusing existing: LumaCore.ProcessSession? = nil, reason: String? = nil) {
         guard let engine else { return }
@@ -809,6 +828,10 @@ final class MainWindow {
 
     // MARK: - Instruments
 
+    func addInstrument() {
+        openAddInstrumentDialog()
+    }
+
     private func openAddInstrumentDialog() {
         guard let engine, let sessionID = currentSessionID() else { return }
         let existing = (try? engine.store.fetchInstruments(sessionID: sessionID)) ?? []
@@ -1147,15 +1170,18 @@ final class MainWindow {
         rowBox.marginTop = 2
         rowBox.marginBottom = 2
         if let descriptor {
-            let iconBox = InstrumentIconView.make(for: descriptor)
-            rowBox.append(child: iconBox)
+            rowBox.append(child: InstrumentIconView.make(for: descriptor))
+        } else {
+            let fallbackIcon = Gtk.Image(iconName: instrumentIconName(for: instrument.kind))
+            fallbackIcon.pixelSize = 16
+            rowBox.append(child: fallbackIcon)
         }
         let ilabel = Label(str: title)
         ilabel.halign = .start
-        if !instrument.isEnabled {
-            ilabel.add(cssClass: "dim-label")
-        }
         rowBox.append(child: ilabel)
+        if !instrument.isEnabled {
+            rowBox.opacity = 0.3
+        }
         row.set(child: rowBox)
         attachInstrumentContextMenu(row: row, anchor: rowBox, instrument: instrument)
         return row
@@ -1215,6 +1241,14 @@ final class MainWindow {
             return image
         }
         return Gtk.Image(iconName: "application-x-executable-symbolic")
+    }
+
+    private func instrumentIconName(for kind: LumaCore.InstrumentKind) -> String {
+        switch kind {
+        case .tracer: return "media-playlist-consecutive-symbolic"
+        case .hookPack: return "application-x-addon-symbolic"
+        case .codeShare: return "cloud-symbolic"
+        }
     }
 
     // MARK: - Sidebar context menus
@@ -1479,6 +1513,10 @@ final class MainWindow {
         packagesHeaderLabel?.label = "PACKAGES (\(snapshot.count))"
         packagesEmptyHint?.visible = snapshot.isEmpty
         packagesList.visible = !snapshot.isEmpty
+    }
+
+    func managePackages() {
+        openPackageSearch(anchor: installPackageButton)
     }
 
     private func openPackageSearch(anchor: Button) {

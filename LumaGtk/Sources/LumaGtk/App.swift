@@ -194,6 +194,21 @@ final class LumaApplication {
         installAction(appPtr: appPtr, name: "close-window") { [weak self] in
             self?.activeWindow()?.window.close()
         }
+        installAction(appPtr: appPtr, name: "new-session") { [weak self] in
+            self?.activeWindow()?.newSession()
+        }
+        installAction(appPtr: appPtr, name: "add-instrument") { [weak self] in
+            self?.activeWindow()?.addInstrument()
+        }
+        installAction(appPtr: appPtr, name: "resume-process") { [weak self] in
+            self?.activeWindow()?.resumeProcess()
+        }
+        installAction(appPtr: appPtr, name: "manage-packages") { [weak self] in
+            self?.activeWindow()?.managePackages()
+        }
+        installAction(appPtr: appPtr, name: "toggle-collaboration") { [weak self] in
+            self?.activeWindow()?.toggleCollaboration()
+        }
         for slot in 0..<maxRecentSlots {
             installAction(appPtr: appPtr, name: "open-recent-\(slot)") { [weak self] in
                 self?.openRecent(slot: slot)
@@ -204,6 +219,11 @@ final class LumaApplication {
         setAccel(appPtr: appPtr, action: "app.open", accel: "<Primary>o")
         setAccel(appPtr: appPtr, action: "app.save-as", accel: "<Primary><Shift>s")
         setAccel(appPtr: appPtr, action: "app.close-window", accel: "<Primary>w")
+        setAccel(appPtr: appPtr, action: "app.new-session", accel: "<Primary><Alt>n")
+        setAccel(appPtr: appPtr, action: "app.add-instrument", accel: "<Primary><Shift>i")
+        setAccel(appPtr: appPtr, action: "app.resume-process", accel: "<Primary>r")
+        setAccel(appPtr: appPtr, action: "app.manage-packages", accel: "<Primary><Alt>p")
+        setAccel(appPtr: appPtr, action: "app.toggle-collaboration", accel: "<Primary><Alt>c")
 
         primaryMenuPtr = luma_menu_new()
         rebuildPrimaryMenu()

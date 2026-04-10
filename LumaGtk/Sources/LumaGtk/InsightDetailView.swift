@@ -1,5 +1,7 @@
+import CGtk
 import Foundation
 import Gdk
+import GLibObject
 import Gtk
 import LumaCore
 
@@ -29,6 +31,8 @@ final class InsightDetailView {
     private var selectedIndex: Int? = nil
     private var loadTask: Task<Void, Never>?
     private var isLoadingMore = false
+    private var isDarkMode = false
+    private var themeSignalID: gulong = 0
 
     private static let initialChunk = 64
     private static let moreChunk = 64
@@ -127,7 +131,32 @@ final class InsightDetailView {
         }
         disasmBox.install(controller: keyController)
 
+        isDarkMode = Self.detectDarkMode()
+        if let settings = gtk_settings_get_default() {
+            themeSignalID = g_signal_connect_data(
+                settings,
+                "notify::gtk-theme-name",
+                unsafeBitCast(themeChangedCallback, to: GCallback.self),
+                Unmanaged.passUnretained(self).toOpaque(),
+                nil,
+                GConnectFlags(rawValue: 0)
+            )
+        }
+
         refresh()
+    }
+
+    deinit {
+        if themeSignalID != 0, let settings = gtk_settings_get_default() {
+            g_signal_handler_disconnect(settings, themeSignalID)
+        }
+    }
+
+    private static func detectDarkMode() -> Bool {
+        guard let settings = Settings.getDefault() else { return false }
+        let value = settings.get(property: .gtkThemeName)
+        guard let name = value.string else { return false }
+        return name.localizedCaseInsensitiveContains("dark")
     }
 
     private func setContent(_ child: Widget) {
@@ -213,7 +242,7 @@ final class InsightDetailView {
                     return
                 }
                 let lines = await disassembler.disassemble(
-                    DisassemblyRequest(address: resolved, count: Self.initialChunk, isDarkMode: true)
+                    DisassemblyRequest(address: resolved, count: Self.initialChunk, isDarkMode: self.isDarkMode)
                 )
                 if Task.isCancelled { return }
 
@@ -279,7 +308,7 @@ final class InsightDetailView {
             }
 
             let decoded = await disassembler.disassemble(
-                DisassemblyRequest(address: start, count: Self.moreChunk, isDarkMode: true)
+                DisassemblyRequest(address: start, count: Self.moreChunk, isDarkMode: self.isDarkMode)
             )
             if Task.isCancelled { return }
             guard !decoded.isEmpty else { return }
@@ -299,10 +328,10 @@ final class InsightDetailView {
     private func handleDisasmKey(keyval: UInt) -> Bool {
         let key = Int32(keyval)
         guard !disasmLines.isEmpty else { return false }
-        if key == Gdk.keyUp {
+        if key == Gdk.keyUp || key == Gdk.keyk {
             moveSelection(by: -1); return true
         }
-        if key == Gdk.keyDown {
+        if key == Gdk.keyDown || key == Gdk.keyj {
             moveSelection(by: 1); return true
         }
         if key == Gdk.keyPageUp {
@@ -352,8 +381,17 @@ final class InsightDetailView {
         guard index >= 0, index < disasmLines.count else { return }
         let line = disasmLines[index]
         guard let target = candidateTarget(for: line) else { return }
-        guard let destIndex = disasmLines.firstIndex(where: { $0.address == target }) else { return }
-        selectRow(at: destIndex, focus: true)
+        if let destIndex = disasmLines.firstIndex(where: { $0.address == target }) {
+            selectRow(at: destIndex, focus: true)
+            return
+        }
+        guard let engine else { return }
+        do {
+            let newInsight = try engine.getOrCreateInsight(sessionID: sessionID, pointer: target, kind: .disassembly)
+            AddressActionMenu.navigator?(sessionID, newInsight.id)
+        } catch {
+            AddressActionMenu.errorReporter?("Can\u{2019}t jump here: \(error.localizedDescription)")
+        }
     }
 
     private func makeDisasmRow(line: DisassemblyLine) -> Box {
@@ -368,6 +406,18 @@ final class InsightDetailView {
         addrLabel.add(cssClass: "dim-label")
         addrLabel.halign = .start
         addrLabel.setSizeRequest(width: 120, height: -1)
+
+        let address = line.address
+        let addrGesture = GestureClick()
+        addrGesture.set(button: 3)
+        addrGesture.propagationPhase = GTK_PHASE_CAPTURE
+        addrGesture.onPressed { [weak self] _, _, x, y in
+            MainActor.assumeIsolated {
+                self?.showAddressMenu(at: addrLabel, x: x, y: y, address: address)
+            }
+        }
+        addrLabel.install(controller: addrGesture)
+
         row.append(child: addrLabel)
 
         let bytesLabel = Label(str: line.bytesText.plainText)
@@ -410,9 +460,78 @@ final class InsightDetailView {
         return row
     }
 
+    private func showAddressMenu(at anchor: Widget, x: Double, y: Double, address: UInt64) {
+        guard let engine else { return }
+
+        let sessionID = self.sessionID
+        var sections: [[ContextMenu.Item]] = []
+
+        sections.append([
+            .init("Copy Address") {
+                let hex = String(format: "0x%llx", address)
+                guard let display = gdk_display_get_default() else { return }
+                let clipboard = gdk_display_get_clipboard(display)
+                hex.withCString { gdk_clipboard_set_text(clipboard, $0) }
+            },
+        ])
+
+        var insightItems: [ContextMenu.Item] = [
+            .init("Open Memory") {
+                Self.navigateToInsight(engine: engine, sessionID: sessionID, address: address, kind: .memory)
+            },
+            .init("Open Disassembly") {
+                Self.navigateToInsight(engine: engine, sessionID: sessionID, address: address, kind: .disassembly)
+            },
+        ]
+
+        let actions = engine.addressActions(sessionID: sessionID, address: address)
+        for action in actions {
+            insightItems.append(ContextMenu.Item(action.title, destructive: action.role == .destructive) {
+                Task { @MainActor in
+                    _ = await action.perform()
+                }
+            })
+        }
+
+        sections.append(insightItems)
+
+        ContextMenu.present(sections, at: anchor, x: x, y: y)
+    }
+
+    private static func navigateToInsight(engine: Engine, sessionID: UUID, address: UInt64, kind: AddressInsight.Kind) {
+        do {
+            let insight = try engine.getOrCreateInsight(sessionID: sessionID, pointer: address, kind: kind)
+            AddressActionMenu.navigator?(sessionID, insight.id)
+        } catch {
+            AddressActionMenu.errorReporter?("Can\u{2019}t open insight: \(error.localizedDescription)")
+        }
+    }
+
+    fileprivate func handleThemeChanged() {
+        let wasDark = isDarkMode
+        isDarkMode = Self.detectDarkMode()
+        if isDarkMode != wasDark {
+            refresh()
+        }
+    }
+
     private func clearChildren(of box: Box) {
         while let child = box.firstChild {
             box.remove(child: child)
         }
+    }
+}
+
+private let themeChangedCallback: @convention(c) (
+    UnsafeMutableRawPointer,
+    UnsafeMutableRawPointer?,
+    UnsafeMutableRawPointer?
+) -> Void = { _, _, userData in
+    guard let userData else { return }
+    let raw = UInt(bitPattern: userData)
+    MainActor.assumeIsolated {
+        let ptr = UnsafeMutableRawPointer(bitPattern: raw)!
+        let view = Unmanaged<InsightDetailView>.fromOpaque(ptr).takeUnretainedValue()
+        view.handleThemeChanged()
     }
 }

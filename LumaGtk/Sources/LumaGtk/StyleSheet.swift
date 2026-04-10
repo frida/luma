@@ -26,6 +26,10 @@ enum StyleSheet {
         border-bottom-color: alpha(@error_bg_color, 0.5);
     }
 
+    .luma-disasm-row:hover {
+        background-color: alpha(@theme_fg_color, 0.05);
+    }
+
     .luma-disasm-row.selected {
         background-color: alpha(@accent_bg_color, 0.25);
     }

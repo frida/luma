@@ -117,6 +117,16 @@ final class REPLPane {
         }
         inputEntry.install(controller: keyController)
 
+        let scrollGesture = GestureClick()
+        scrollGesture.set(button: 3)
+        scrollGesture.onPressed { [weak self] _, _, x, y in
+            MainActor.assumeIsolated {
+                guard let self, !self.cells.isEmpty else { return }
+                self.presentScrollAreaContextMenu(at: self.cellsScroll, x: x, y: y)
+            }
+        }
+        cellsScroll.install(controller: scrollGesture)
+
         loadCells()
         refresh()
         applySessionState()
@@ -595,7 +605,28 @@ final class REPLPane {
                     self?.addCellToNotebook(cell)
                 },
             ],
+            [
+                .init("Clear History", destructive: true) { [weak self] in
+                    self?.clearHistory()
+                },
+            ],
         ], at: anchor, x: x, y: y)
+    }
+
+    private func presentScrollAreaContextMenu(at anchor: Widget, x: Double, y: Double) {
+        ContextMenu.present([
+            [
+                .init("Clear History", destructive: true) { [weak self] in
+                    self?.clearHistory()
+                },
+            ],
+        ], at: anchor, x: x, y: y)
+    }
+
+    private func clearHistory() {
+        cells.removeAll()
+        historyCursor = 0
+        refresh()
     }
 
     private func addCellToNotebook(_ cell: LumaCore.REPLCell) {

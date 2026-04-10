@@ -76,6 +76,7 @@ final class TracerConfigEditor {
         editorPane = nil
         emptyStateSearch = nil
         dismissAddPopover()
+        dismissUnsavedChangesDialog()
 
         if config.hooks.isEmpty {
             let search = TracerHookSearch(
@@ -118,6 +119,9 @@ final class TracerConfigEditor {
             onDelete: { [weak self] id in
                 self?.deleteHook(id: id)
             },
+            onDeleteSelected: { [weak self] ids in
+                self?.deleteHooks(ids: ids)
+            },
             onAddRequested: { [weak self] anchor in
                 self?.presentAddPopover(anchor: anchor)
             },
@@ -137,6 +141,101 @@ final class TracerConfigEditor {
 
     private func handleSelect(_ id: UUID?) {
         guard id != selectedHookID else { return }
+
+        if let editorPane, editorPane.isDirty {
+            pendingSelectionID = id
+            showUnsavedChangesDialog()
+            return
+        }
+
+        selectedHookID = id
+        editorPane?.setHook(selectedHook)
+    }
+
+    private var pendingSelectionID: UUID?
+    private var unsavedChangesPopover: Popover?
+
+    private func showUnsavedChangesDialog() {
+        dismissUnsavedChangesDialog()
+
+        guard let editorPane else { return }
+
+        let popover = Popover()
+        popover.autohide = true
+
+        let content = Box(orientation: .vertical, spacing: 12)
+        content.marginStart = 16
+        content.marginEnd = 16
+        content.marginTop = 16
+        content.marginBottom = 16
+        content.setSizeRequest(width: 280, height: -1)
+
+        let title = Label(str: "Unsaved Changes")
+        title.add(cssClass: "title-4")
+        title.halign = .start
+        content.append(child: title)
+
+        let message = Label(str: "You have unsaved changes to this hook\u{2019}s script.")
+        message.wrap = true
+        message.halign = .start
+        message.add(cssClass: "dim-label")
+        content.append(child: message)
+
+        let buttons = Box(orientation: .horizontal, spacing: 8)
+        buttons.halign = .end
+
+        let cancelButton = Button(label: "Cancel")
+        cancelButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.pendingSelectionID = nil
+                self.dismissUnsavedChangesDialog()
+                self.hooksList?.restoreSelection(id: self.selectedHookID)
+            }
+        }
+        buttons.append(child: cancelButton)
+
+        let discardButton = Button(label: "Discard")
+        discardButton.add(cssClass: "destructive-action")
+        discardButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.dismissUnsavedChangesDialog()
+                self.applyPendingSelection()
+            }
+        }
+        buttons.append(child: discardButton)
+
+        let saveButton = Button(label: "Save")
+        saveButton.add(cssClass: "suggested-action")
+        saveButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.editorPane?.commit()
+                self.dismissUnsavedChangesDialog()
+                self.applyPendingSelection()
+            }
+        }
+        buttons.append(child: saveButton)
+
+        content.append(child: buttons)
+        popover.set(child: content)
+        popover.set(parent: WidgetRef(editorPane.saveButton))
+        unsavedChangesPopover = popover
+        popover.popup()
+    }
+
+    private func dismissUnsavedChangesDialog() {
+        if let popover = unsavedChangesPopover {
+            popover.popdown()
+            popover.unparent()
+        }
+        unsavedChangesPopover = nil
+    }
+
+    private func applyPendingSelection() {
+        let id = pendingSelectionID
+        pendingSelectionID = nil
         selectedHookID = id
         editorPane?.setHook(selectedHook)
     }
@@ -154,8 +253,12 @@ final class TracerConfigEditor {
     }
 
     private func deleteHook(id: UUID) {
-        config.hooks.removeAll { $0.id == id }
-        if selectedHookID == id {
+        deleteHooks(ids: [id])
+    }
+
+    private func deleteHooks(ids: Set<UUID>) {
+        config.hooks.removeAll { ids.contains($0.id) }
+        if let sel = selectedHookID, ids.contains(sel) {
             selectedHookID = config.hooks.first?.id
         }
         emit()
@@ -235,6 +338,7 @@ private final class TracerHookSearch {
     private let entry: Entry
     private let spinner: Spinner
     private let status: Label
+    private let addAllButton: Button
     private let listBox: ListBox
     private let scroll: ScrolledWindow
 
@@ -305,11 +409,22 @@ private final class TracerHookSearch {
         queryRow.append(child: spinner)
         widget.append(child: queryRow)
 
+        let statusRow = Box(orientation: .horizontal, spacing: 6)
+        statusRow.hexpand = true
         status = Label(str: attached ? "Type a query to search." : "Attach to a process to search APIs.")
         status.add(cssClass: "dim-label")
         status.add(cssClass: "caption")
         status.halign = .start
-        widget.append(child: status)
+        status.hexpand = true
+        statusRow.append(child: status)
+
+        addAllButton = Button(label: "Add All")
+        addAllButton.add(cssClass: "flat")
+        addAllButton.add(cssClass: "caption")
+        addAllButton.tooltipText = "Add all results as hooks"
+        addAllButton.visible = false
+        statusRow.append(child: addAllButton)
+        widget.append(child: statusRow)
 
         listBox = ListBox()
         listBox.selectionMode = .none
@@ -330,6 +445,15 @@ private final class TracerHookSearch {
         }
         entry.onActivate { [anchor = self] _ in
             MainActor.assumeIsolated { anchor.runSearchNow() }
+        }
+
+        addAllButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                for api in self.results {
+                    self.onPick(api)
+                }
+            }
         }
 
         if attached {
@@ -422,6 +546,7 @@ private final class TracerHookSearch {
         }
 
         scroll.visible = !results.isEmpty
+        addAllButton.visible = !results.isEmpty
 
         for (idx, api) in results.enumerated() {
             let row = ListBoxRow()
@@ -471,15 +596,24 @@ private final class TracerHookSearch {
 private final class HooksList {
     let widget: Box
 
+    private let listBox: ListBox
+    private let deleteSelectedButton: Button
+    private var rowToHookID: [Int: UUID] = [:]
+    private var hookIDToRow: [UUID: ListBoxRow] = [:]
+    private let onSelect: (UUID?) -> Void
+
     init(
         hooks: [TracerConfig.Hook],
         selectedID: UUID?,
         onSelect: @escaping (UUID?) -> Void,
         onToggleEnabled: @escaping (UUID, Bool) -> Void,
         onDelete: @escaping (UUID) -> Void,
+        onDeleteSelected: @escaping (Set<UUID>) -> Void,
         onAddRequested: @escaping (WidgetRef) -> Void,
         attached: Bool
     ) {
+        self.onSelect = onSelect
+
         widget = Box(orientation: .vertical, spacing: 6)
         widget.hexpand = true
         widget.vexpand = true
@@ -496,6 +630,15 @@ private final class HooksList {
         title.hexpand = true
         header.append(child: title)
 
+        deleteSelectedButton = Button()
+        let deleteIcon = Image(iconName: "user-trash-symbolic")
+        deleteSelectedButton.set(child: deleteIcon)
+        deleteSelectedButton.add(cssClass: "flat")
+        deleteSelectedButton.add(cssClass: "error")
+        deleteSelectedButton.tooltipText = "Delete selected hooks"
+        deleteSelectedButton.visible = false
+        header.append(child: deleteSelectedButton)
+
         let addButton = Button()
         let addIcon = Image(iconName: "list-add-symbolic")
         addButton.set(child: addIcon)
@@ -511,11 +654,12 @@ private final class HooksList {
         header.append(child: addButton)
         widget.append(child: header)
 
-        let listBox = ListBox()
-        listBox.selectionMode = .single
+        listBox = ListBox()
+        listBox.selectionMode = .multiple
         listBox.add(cssClass: "boxed-list")
 
         var rowToHookID: [Int: UUID] = [:]
+        var hookIDToRow: [UUID: ListBoxRow] = [:]
         var initialRow: ListBoxRow?
 
         for (idx, hook) in hooks.enumerated() {
@@ -570,19 +714,37 @@ private final class HooksList {
             row.set(child: inner)
             listBox.append(child: row)
             rowToHookID[idx] = hook.id
+            hookIDToRow[hook.id] = row
             if hook.id == selectedID {
                 initialRow = row
             }
         }
+        self.rowToHookID = rowToHookID
+        self.hookIDToRow = hookIDToRow
 
-        listBox.onRowSelected { _, row in
+        listBox.onSelectedRowsChanged { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let row else {
-                    onSelect(nil)
-                    return
+                guard let self else { return }
+                let selectedIDs = self.collectSelectedIDs()
+                let count = selectedIDs.count
+                self.deleteSelectedButton.visible = count > 1
+                if count > 1 {
+                    self.deleteSelectedButton.tooltipText = "Delete \(count) selected hooks"
                 }
-                let idx = Int(row.index)
-                onSelect(rowToHookID[idx])
+                if count == 1, let id = selectedIDs.first {
+                    onSelect(id)
+                } else if count == 0 {
+                    onSelect(nil)
+                }
+            }
+        }
+
+        deleteSelectedButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let ids = self.collectSelectedIDs()
+                guard ids.count > 1 else { return }
+                onDeleteSelected(ids)
             }
         }
 
@@ -596,19 +758,40 @@ private final class HooksList {
             listBox.select(row: initialRow)
         }
 
-        // Right-click to delete the hovered row.
         let gesture = GestureClick()
         gesture.button = 3
-        gesture.onPressed { [weak listBox] _, _, x, y in
+        gesture.onPressed { [weak self, weak listBox] _, _, x, y in
             MainActor.assumeIsolated {
-                guard let listBox else { return }
-                guard let row = listBox.getRowAt(y: Int(y)) else { return }
-                let idx = Int(row.index)
-                guard let hookID = rowToHookID[idx] else { return }
-                onDelete(hookID)
+                guard let self, let listBox else { return }
+                let selectedIDs = self.collectSelectedIDs()
+                if selectedIDs.count > 1 {
+                    onDeleteSelected(selectedIDs)
+                } else if let row = listBox.getRowAt(y: Int(y)) {
+                    let idx = Int(row.index)
+                    if let hookID = self.rowToHookID[idx] {
+                        onDelete(hookID)
+                    }
+                }
             }
         }
         listBox.install(controller: gesture)
+    }
+
+    func restoreSelection(id: UUID?) {
+        guard let id, let row = hookIDToRow[id] else { return }
+        listBox.select(row: row)
+    }
+
+    private func collectSelectedIDs() -> Set<UUID> {
+        var ids = Set<UUID>()
+        guard let rows = listBox.selectedRows else { return ids }
+        for rowRef in rows {
+            let idx = Int(rowRef.index)
+            if let hookID = rowToHookID[idx] {
+                ids.insert(hookID)
+            }
+        }
+        return ids
     }
 
     private func subtitle(for hook: TracerConfig.Hook) -> String? {
@@ -649,7 +832,7 @@ final class EditorPane {
 
     private var hook: TracerConfig.Hook?
     private var draftCode: String = ""
-    private var isDirty: Bool = false
+    private(set) var isDirty: Bool = false
 
     private let toolbar: Box
     private let titleLabel: Label
@@ -657,7 +840,7 @@ final class EditorPane {
     private let enabledSwitch: Switch
     private let itraceSwitch: Switch
     private let dirtyIndicator: Image
-    private let saveButton: Button
+    let saveButton: Button
     private let editorHost: Box
     private let placeholder: Label
     private let monaco: MonacoEditor
@@ -828,7 +1011,7 @@ final class EditorPane {
         dirtyIndicator.visible = isDirty
     }
 
-    private func commit() {
+    func commit() {
         guard var hook else { return }
         hook.code = draftCode
         hook.isEnabled = enabledSwitch.active

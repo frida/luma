@@ -48,12 +48,8 @@ final class NotebookPane {
         scroll.vexpand = true
         scroll.set(child: entriesBox)
 
-        emptyState = MainWindow.makeEmptyState(
-            icon: "document-new-symbolic",
-            title: "Notebook is empty",
-            subtitle: "Pin REPL output, JS values, or notes here.",
-            actionLabel: "New Note",
-            onAction: { [emptyStateActionHolder] in
+        emptyState = NotebookPane.makeWalkthroughEmptyState(
+            onNewNote: { [emptyStateActionHolder] in
                 emptyStateActionHolder.action?()
             }
         )
@@ -520,6 +516,79 @@ final class NotebookPane {
         guard let rootPtr = widget.root?.ptr else { return }
         let window = WindowRef(raw: rootPtr)
         window.focus = nil
+    }
+
+    private static func makeWalkthroughEmptyState(onNewNote: @escaping () -> Void) -> Box {
+        let outer = Box(orientation: .vertical, spacing: 0)
+        outer.hexpand = true
+        outer.vexpand = true
+        outer.halign = .center
+        outer.valign = .center
+
+        let stack = Box(orientation: .vertical, spacing: 12)
+        stack.halign = .center
+        stack.valign = .center
+        stack.marginStart = 24
+        stack.marginEnd = 24
+        stack.marginTop = 24
+        stack.marginBottom = 24
+        stack.add(cssClass: "luma-empty-state")
+
+        let image = Gtk.Image(iconName: "accessories-dictionary-symbolic")
+        image.pixelSize = 64
+        image.halign = .center
+        image.add(cssClass: "dim-label")
+        stack.append(child: image)
+
+        let titleLabel = Label(str: "Notebook")
+        titleLabel.add(cssClass: "title-2")
+        titleLabel.halign = .center
+        stack.append(child: titleLabel)
+
+        let subtitleLabel = Label(str: "Capture interesting findings here.")
+        subtitleLabel.add(cssClass: "dim-label")
+        subtitleLabel.wrap = true
+        subtitleLabel.justify = .center
+        subtitleLabel.halign = .center
+        subtitleLabel.setSizeRequest(width: 360, height: -1)
+        stack.append(child: subtitleLabel)
+
+        let steps = Box(orientation: .vertical, spacing: 6)
+        steps.halign = .center
+        steps.marginTop = 8
+        steps.setSizeRequest(width: 360, height: -1)
+
+        let step1 = Label(str: "1. Attach to a running app or process.")
+        step1.halign = .start
+        step1.wrap = true
+        steps.append(child: step1)
+
+        let step2 = Label(str: "2. Add instruments to observe behavior.")
+        step2.halign = .start
+        step2.wrap = true
+        steps.append(child: step2)
+
+        let step3 = Label(str: "3. Pin any output to save it here.")
+        step3.halign = .start
+        step3.wrap = true
+        steps.append(child: step3)
+
+        stack.append(child: steps)
+
+        let button = Button(label: "New Note")
+        button.add(cssClass: "suggested-action")
+        button.add(cssClass: "pill")
+        button.halign = .center
+        button.marginTop = 6
+        button.onClicked { _ in
+            MainActor.assumeIsolated {
+                onNewNote()
+            }
+        }
+        stack.append(child: button)
+
+        outer.append(child: stack)
+        return outer
     }
 
     private func clearChildren(of container: Box) {
