@@ -6,5 +6,5 @@ Icon=re.frida.Luma
 Terminal=false
 Type=Application
 Categories=Development;Debugger;
-MimeType=application/x-luma-project;
+MimeType=application/x-luma-project;x-scheme-handler/luma;
 StartupNotify=true

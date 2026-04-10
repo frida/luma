@@ -365,6 +365,12 @@ on_app_open(GApplication *app, GFile **files, int n_files, const char *hint, gpo
         if (path) {
             ctx->callback(path, ctx->user_data);
             g_free(path);
+        } else {
+            char *uri = g_file_get_uri(files[i]);
+            if (uri) {
+                ctx->callback(uri, ctx->user_data);
+                g_free(uri);
+            }
         }
     }
 }

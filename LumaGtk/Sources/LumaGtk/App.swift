@@ -153,6 +153,17 @@ final class LumaApplication {
         openWindow(forFile: URL(fileURLWithPath: path))
     }
 
+    fileprivate func handleCollaborationURL(_ urlString: String) {
+        guard let url = URL(string: urlString),
+            url.scheme == "luma",
+            url.host == "join",
+            let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+            let roomID = components.queryItems?.first(where: { $0.name == "room" })?.value,
+            !roomID.isEmpty
+        else { return }
+        CollaborationJoinQueue.shared.enqueue(roomID: roomID)
+    }
+
     fileprivate func handleSaveAsPath(window: MainWindow, _ path: String) {
         var destination = URL(fileURLWithPath: path)
         if destination.pathExtension != LumaDocumentLoader.fileExtension {
@@ -401,12 +412,16 @@ private let lumaOpenFilesThunk: @convention(c) (
     UnsafePointer<CChar>?, UnsafeMutableRawPointer?
 ) -> Void = { pathPtr, userData in
     guard let pathPtr, let userData else { return }
-    let path = String(cString: pathPtr)
+    let str = String(cString: pathPtr)
     let raw = UInt(bitPattern: userData)
     MainActor.assumeIsolated {
         let ptr = UnsafeMutableRawPointer(bitPattern: raw)!
         let app = Unmanaged<LumaApplication>.fromOpaque(ptr).takeUnretainedValue()
-        app.openWindow(forFile: URL(fileURLWithPath: path))
+        if str.hasPrefix("luma://") {
+            app.handleCollaborationURL(str)
+        } else {
+            app.openWindow(forFile: URL(fileURLWithPath: str))
+        }
     }
 }
 
