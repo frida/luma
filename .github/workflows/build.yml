@@ -8,7 +8,7 @@ on:
 env:
   FRIDA_CORE_REF: "main"
   RADARE2_REF: "65ee12a4f0d67f24a1b968111c536de3bb5bb4e3"
-  SWIFT_VERSION: "6.1"
+  SWIFT_VERSION: "6.2"
 
 jobs:
   macos:
@@ -99,11 +99,9 @@ jobs:
             python3-pip \
             python3-setuptools
 
-      - name: Install Swift ${{ env.SWIFT_VERSION }}
+      - name: Install Swift
         run: |
-          curl -sLO "https://download.swift.org/swift-${SWIFT_VERSION}-release/fedora39/swift-${SWIFT_VERSION}-RELEASE/swift-${SWIFT_VERSION}-RELEASE-fedora39.tar.gz"
-          tar xzf swift-*.tar.gz -C /usr/local --strip-components=2
-          rm swift-*.tar.gz
+          dnf install -y swiftlang
           swift --version
 
       - name: Build frida-core (shared)
