@@ -180,7 +180,6 @@ jobs:
             libunwind-dev \
             libdwarf-dev \
             libnice-dev \
-            libngtcp2-crypto-gnutls-dev \
             libdwarf-dev \
             libelf-dev \
             valac \
@@ -218,7 +217,7 @@ jobs:
         run: |
           git clone --depth 1 -b $FRIDA_CORE_REF https://github.com/frida/frida-core.git /tmp/frida-core
           cd /tmp/frida-core
-          ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr/local
+          ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr/local -- --force-fallback-for=openssl
           make -j$(nproc)
           make install
           ldconfig
