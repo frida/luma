@@ -180,6 +180,7 @@ jobs:
             libunwind-dev \
             libdwarf-dev \
             libnice-dev \
+            libngtcp2-crypto-gnutls-dev \
             libdwarf-dev \
             libelf-dev \
             valac \
