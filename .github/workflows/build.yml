@@ -6,8 +6,8 @@ on:
   pull_request:
 
 env:
-  FRIDA_VERSION: "17.9.1"
-  RADARE2_VERSION: "5.9.8"
+  FRIDA_CORE_REF: "main"
+  RADARE2_REF: "65ee12a4f0d67f24a1b968111c536de3bb5bb4e3"
   SWIFT_VERSION: "6.1"
 
 jobs:
@@ -69,6 +69,14 @@ jobs:
             gobject-introspection-devel \
             atk-devel \
             libxml2-devel \
+            libgee-devel \
+            json-glib-devel \
+            libunwind-devel \
+            libdwarf-devel \
+            libnice-devel \
+            ngtcp2-crypto-ossl-devel \
+            vala \
+            meson \
             nodejs \
             npm \
             gcc-c++ \
@@ -77,7 +85,8 @@ jobs:
             which \
             curl \
             pkg-config \
-            rpm-build
+            rpm-build \
+            python3-pip
 
       - name: Install Swift
         run: |
@@ -89,31 +98,26 @@ jobs:
             }
           swift --version
 
-      - name: Install frida-core devkit
+      - name: Build frida-core (shared)
         run: |
-          curl -sL "https://github.com/frida/frida/releases/download/${FRIDA_VERSION}/frida-core-devkit-${FRIDA_VERSION}-linux-x86_64.tar.xz" \
-            -o frida-devkit.tar.xz
-          mkdir -p /usr/local/lib/pkgconfig /usr/local/include/frida-1.0 /tmp/frida-devkit
-          tar xJf frida-devkit.tar.xz -C /tmp/frida-devkit
-          cp /tmp/frida-devkit/libfrida-core.a /usr/local/lib/
-          cp /tmp/frida-devkit/frida-core.h /usr/local/include/frida-1.0/
-          printf 'prefix=/usr/local\nlibdir=${prefix}/lib\nincludedir=${prefix}/include\n\nName: Frida Core\nDescription: Frida core library\nVersion: %s\nLibs: -L${libdir} -lfrida-core-1.0\nCflags: -I${includedir}/frida-1.0\n' \
-            "$FRIDA_VERSION" > /usr/local/lib/pkgconfig/frida-core-1.0.pc
-          rm -rf frida-devkit.tar.xz /tmp/frida-devkit
+          git clone --depth 1 -b $FRIDA_CORE_REF https://github.com/frida/frida-core.git /tmp/frida-core
+          cd /tmp/frida-core
+          ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr/local
+          make -j$(nproc)
+          make install
+          ldconfig
+          pkg-config --modversion frida-core-1.0
 
-      - name: Install radare2
+      - name: Build radare2 (static)
         run: |
-          dnf install -y radare2-devel || {
-            curl -sL "https://github.com/radareorg/radare2/releases/download/${RADARE2_VERSION}/radare2-${RADARE2_VERSION}.tar.xz" \
-              -o radare2.tar.xz
-            tar xJf radare2.tar.xz
-            cd radare2-${RADARE2_VERSION}
-            ./configure --prefix=/usr/local
-            make -j$(nproc)
-            make install
-            cd ..
-            rm -rf radare2.tar.xz radare2-${RADARE2_VERSION}
-          }
+          git clone https://github.com/radareorg/radare2.git /tmp/radare2
+          cd /tmp/radare2
+          git checkout $RADARE2_REF
+          meson setup build --prefix=/usr/local --default-library=static -Dstatic_runtime=true
+          ninja -C build
+          ninja -C build install
+          ldconfig
+          pkg-config --modversion r_core
 
       - uses: actions/checkout@v4
 
@@ -155,6 +159,15 @@ jobs:
             gobject-introspection \
             libgirepository1.0-dev \
             libxml2-dev \
+            libgee-0.8-dev \
+            libjson-glib-dev \
+            libunwind-dev \
+            libdwarf-dev \
+            libnice-dev \
+            libngtcp2-crypto-ossl-dev \
+            valac \
+            meson \
+            ninja-build \
             pkg-config \
             dpkg-dev \
             nodejs \
@@ -162,7 +175,8 @@ jobs:
             curl \
             git \
             make \
-            binutils
+            binutils \
+            python3-pip
 
       - name: Install Swift
         run: |
@@ -173,30 +187,26 @@ jobs:
           ldconfig
           swift --version
 
-      - name: Install frida-core devkit
+      - name: Build frida-core (shared)
         run: |
-          curl -sL "https://github.com/frida/frida/releases/download/${FRIDA_VERSION}/frida-core-devkit-${FRIDA_VERSION}-linux-x86_64.tar.xz" \
-            -o frida-devkit.tar.xz
-          mkdir -p /usr/local/lib/pkgconfig /usr/local/include/frida-1.0 /tmp/frida-devkit
-          tar xJf frida-devkit.tar.xz -C /tmp/frida-devkit
-          cp /tmp/frida-devkit/libfrida-core.a /usr/local/lib/
-          cp /tmp/frida-devkit/frida-core.h /usr/local/include/frida-1.0/
-          printf 'prefix=/usr/local\nlibdir=${prefix}/lib\nincludedir=${prefix}/include\n\nName: Frida Core\nDescription: Frida core library\nVersion: %s\nLibs: -L${libdir} -lfrida-core-1.0\nCflags: -I${includedir}/frida-1.0\n' \
-            "$FRIDA_VERSION" > /usr/local/lib/pkgconfig/frida-core-1.0.pc
-          rm -rf frida-devkit.tar.xz /tmp/frida-devkit
-
-      - name: Install radare2
-        run: |
-          curl -sL "https://github.com/radareorg/radare2/releases/download/${RADARE2_VERSION}/radare2-${RADARE2_VERSION}.tar.xz" \
-            -o radare2.tar.xz
-          tar xJf radare2.tar.xz
-          cd radare2-${RADARE2_VERSION}
-          ./configure --prefix=/usr/local
+          git clone --depth 1 -b $FRIDA_CORE_REF https://github.com/frida/frida-core.git /tmp/frida-core
+          cd /tmp/frida-core
+          ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr/local
           make -j$(nproc)
           make install
           ldconfig
-          cd ..
-          rm -rf radare2.tar.xz radare2-${RADARE2_VERSION}
+          pkg-config --modversion frida-core-1.0
+
+      - name: Build radare2 (static)
+        run: |
+          git clone https://github.com/radareorg/radare2.git /tmp/radare2
+          cd /tmp/radare2
+          git checkout $RADARE2_REF
+          meson setup build --prefix=/usr/local --default-library=static -Dstatic_runtime=true
+          ninja -C build
+          ninja -C build install
+          ldconfig
+          pkg-config --modversion r_core
 
       - uses: actions/checkout@v4
 

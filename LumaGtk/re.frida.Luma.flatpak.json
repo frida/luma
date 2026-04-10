@@ -32,13 +32,19 @@
             ]
         },
         {
-            "name": "radare2",
-            "buildsystem": "meson",
-            "sources": [
+            "name": "frida-core-deps",
+            "buildsystem": "simple",
+            "build-commands": ["true"],
+            "modules": [
                 {
-                    "type": "archive",
-                    "url": "https://github.com/radareorg/radare2/releases/download/5.9.8/radare2-5.9.8.tar.xz",
-                    "sha256": "de061db6089cc1321ba9062b8aa9a0adaaa7a4d25128aab37a2a44e71a939829"
+                    "name": "libgee",
+                    "buildsystem": "meson",
+                    "sources": [{ "type": "git", "url": "https://gitlab.gnome.org/GNOME/libgee.git", "branch": "main" }]
+                },
+                {
+                    "name": "json-glib",
+                    "buildsystem": "meson",
+                    "sources": [{ "type": "git", "url": "https://gitlab.gnome.org/GNOME/json-glib.git", "branch": "main" }]
                 }
             ]
         },
@@ -46,18 +52,27 @@
             "name": "frida-core",
             "buildsystem": "simple",
             "build-commands": [
-                "tar xJf frida-core-devkit.tar.xz",
-                "install -Dm644 libfrida-core.a /app/lib/libfrida-core-1.0.a",
-                "install -Dm644 frida-core.h /app/include/frida-1.0/frida-core.h",
-                "mkdir -p /app/lib/pkgconfig",
-                "printf 'prefix=/app\\nlibdir=${prefix}/lib\\nincludedir=${prefix}/include\\n\\nName: Frida Core\\nDescription: Frida core library\\nVersion: 17.9.1\\nLibs: -L${libdir} -lfrida-core-1.0\\nCflags: -I${includedir}/frida-1.0\\n' > /app/lib/pkgconfig/frida-core-1.0.pc"
+                "./configure --enable-shared --without-prebuilds=sdk --prefix=/app",
+                "make -j$(nproc)",
+                "make install"
             ],
             "sources": [
                 {
-                    "type": "file",
-                    "url": "https://github.com/frida/frida/releases/download/17.9.1/frida-core-devkit-17.9.1-linux-x86_64.tar.xz",
-                    "sha256": "f78664ee89dea5d35511e0dbf959f887af345285c264f7995be786a5a52b9f02",
-                    "dest-filename": "frida-core-devkit.tar.xz"
+                    "type": "git",
+                    "url": "https://github.com/frida/frida-core.git",
+                    "branch": "main"
+                }
+            ]
+        },
+        {
+            "name": "radare2",
+            "buildsystem": "meson",
+            "config-opts": ["-Ddefault_library=static", "-Dstatic_runtime=true"],
+            "sources": [
+                {
+                    "type": "git",
+                    "url": "https://github.com/radareorg/radare2.git",
+                    "commit": "65ee12a4f0d67f24a1b968111c536de3bb5bb4e3"
                 }
             ]
         },
