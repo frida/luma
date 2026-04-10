@@ -68,6 +68,7 @@ jobs:
             graphene-devel \
             libsoup3-devel \
             gobject-introspection-devel \
+            atk-devel \
             libxml2-devel \
             nodejs \
             npm \
