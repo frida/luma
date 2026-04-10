@@ -12,8 +12,7 @@ env:
 
 jobs:
   macos:
-    runs-on: macos-15
-    continue-on-error: true  # Needs Xcode 26+ (not yet on GitHub runners)
+    runs-on: macos-16
     steps:
       - uses: actions/checkout@v4
 
