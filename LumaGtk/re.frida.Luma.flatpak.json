@@ -34,9 +34,6 @@
         {
             "name": "radare2",
             "buildsystem": "meson",
-            "config-opts": [
-                "-Dprefix=/app"
-            ],
             "sources": [
                 {
                     "type": "archive",

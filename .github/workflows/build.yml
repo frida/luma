@@ -13,6 +13,7 @@ env:
 jobs:
   macos:
     runs-on: macos-15
+    continue-on-error: true  # Needs Xcode 26+ (not yet on GitHub runners)
     steps:
       - uses: actions/checkout@v4
 
@@ -165,9 +166,11 @@ jobs:
 
       - name: Install Swift
         run: |
+          apt-get install -y libncurses6 libcurl4-openssl-dev
           curl -sLO "https://download.swift.org/swift-${SWIFT_VERSION}-release/ubuntu2404/swift-${SWIFT_VERSION}-RELEASE/swift-${SWIFT_VERSION}-RELEASE-ubuntu24.04.tar.gz"
           tar xzf swift-*.tar.gz -C /usr/local --strip-components=2
           rm swift-*.tar.gz
+          ldconfig
           swift --version
 
       - name: Install frida-core devkit
