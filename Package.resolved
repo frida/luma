@@ -1,5 +1,5 @@
 {
-  "originHash" : "c1b3127b517adff70d9b70822802e549062c7396a75535fd37f3f049e6f185c8",
+  "originHash" : "fb5bbffc425de7507da2f26e207337fe4bc586f688300f30370108aa8b4ef638",
   "pins" : [
     {
       "identity" : "frida-swift",
@@ -7,7 +7,7 @@
       "location" : "https://github.com/frida/frida-swift",
       "state" : {
         "branch" : "main",
-        "revision" : "1917fc593f4317542862b08ad32c21a03652c8c7"
+        "revision" : "40a4bf89ce49b65e677b6cc775f09f46ebe9f87b"
       }
     },
     {
