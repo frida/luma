@@ -14,7 +14,7 @@ let package = Package(
         .executable(name: "luma-bundle-compiler", targets: ["LumaBundleCompiler"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/frida/frida-swift", branch: "main"),
+        .package(url: "https://github.com/frida/frida-swift", revision: "1917fc593f4317542862b08ad32c21a03652c8c7"),
         .package(url: "https://github.com/apple/swift-crypto", .upToNextMajor(from: "3.0.0")),
         .package(url: "https://github.com/groue/GRDB.swift", .upToNextMajor(from: "7.0.0")),
         .package(url: "https://github.com/radareorg/SwiftyR2", branch: "main"),
