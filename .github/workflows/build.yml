@@ -184,6 +184,8 @@ jobs:
             libunwind-dev \
             libdwarf-dev \
             libnice-dev \
+            libdwarf-dev \
+            libelf-dev \
             valac \
             meson \
             ninja-build \
