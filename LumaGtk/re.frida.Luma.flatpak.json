@@ -25,13 +25,9 @@
             "sources": [
                 {
                     "type": "file",
-                    "url": "https://download.swift.org/swift-6.0.3-release/ubuntu2404/swift-6.0.3-RELEASE/swift-6.0.3-RELEASE-ubuntu24.04.tar.gz",
-                    "sha256": "",
-                    "dest-filename": "swift.tar.gz",
-                    "x-checker-data": {
-                        "type": "html",
-                        "comment": "Update SHA256 after downloading"
-                    }
+                    "url": "https://download.swift.org/swift-6.1-release/ubuntu2404/swift-6.1-RELEASE/swift-6.1-RELEASE-ubuntu24.04.tar.gz",
+                    "sha256": "de061db6089cc1321ba9062b8aa9a0adaaa7a4d25128aab37a2a44e71a939829",
+                    "dest-filename": "swift.tar.gz"
                 }
             ]
         },
@@ -45,7 +41,7 @@
                 {
                     "type": "archive",
                     "url": "https://github.com/radareorg/radare2/releases/download/5.9.8/radare2-5.9.8.tar.xz",
-                    "sha256": ""
+                    "sha256": "4543670b589593f8fa5f106111fd5139081da42bb165a9239f05195e405f240a"
                 }
             ]
         },
@@ -54,16 +50,16 @@
             "buildsystem": "simple",
             "build-commands": [
                 "tar xJf frida-core-devkit.tar.xz",
-                "install -Dm644 libfrida-core.a /app/lib/libfrida-core.a",
-                "install -Dm644 frida-core.h /app/include/frida/frida-core.h",
+                "install -Dm644 libfrida-core.a /app/lib/libfrida-core-1.0.a",
+                "install -Dm644 frida-core.h /app/include/frida-1.0/frida-core.h",
                 "mkdir -p /app/lib/pkgconfig",
-                "cat > /app/lib/pkgconfig/frida-core-1.0.pc <<EOF\nprefix=/app\nlibdir=${prefix}/lib\nincludedir=${prefix}/include/frida\n\nName: frida-core\nDescription: Frida core library\nVersion: 17.9.1\nLibs: -L${libdir} -lfrida-core -lresolv -ldl -lrt -lm -lpthread\nCflags: -I${includedir}\nEOF"
+                "printf 'prefix=/app\\nlibdir=${prefix}/lib\\nincludedir=${prefix}/include\\n\\nName: Frida Core\\nDescription: Frida core library\\nVersion: 17.9.1\\nLibs: -L${libdir} -lfrida-core-1.0\\nCflags: -I${includedir}/frida-1.0\\n' > /app/lib/pkgconfig/frida-core-1.0.pc"
             ],
             "sources": [
                 {
                     "type": "file",
                     "url": "https://github.com/frida/frida/releases/download/17.9.1/frida-core-devkit-17.9.1-linux-x86_64.tar.xz",
-                    "sha256": "",
+                    "sha256": "f78664ee89dea5d35511e0dbf959f887af345285c264f7995be786a5a52b9f02",
                     "dest-filename": "frida-core-devkit.tar.xz"
                 }
             ]
@@ -79,7 +75,7 @@
                 {
                     "type": "file",
                     "url": "https://nodejs.org/dist/v20.18.0/node-v20.18.0-linux-x64.tar.xz",
-                    "sha256": "",
+                    "sha256": "57dbe6e85af6813b6013423d406e840bbb5ef14d7ef29eac1bfdb83d33e32c59",
                     "dest-filename": "node.tar.xz"
                 }
             ]
