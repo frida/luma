@@ -12,7 +12,7 @@ env:
 
 jobs:
   macos:
-    runs-on: macos-16
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 
