@@ -74,11 +74,15 @@ jobs:
             libunwind-devel \
             libdwarf-devel \
             libnice-devel \
+            ngtcp2-devel \
             ngtcp2-crypto-ossl-devel \
+            openssl-devel \
             vala \
             meson \
+            ninja-build \
             nodejs \
             npm \
+            gcc \
             gcc-c++ \
             make \
             git \
@@ -86,7 +90,8 @@ jobs:
             curl \
             pkg-config \
             rpm-build \
-            python3-pip
+            python3-pip \
+            python3-setuptools
 
       - name: Install Swift
         run: |
@@ -164,7 +169,8 @@ jobs:
             libunwind-dev \
             libdwarf-dev \
             libnice-dev \
-            libngtcp2-crypto-ossl-dev \
+            libngtcp2-dev \
+            libssl-dev \
             valac \
             meson \
             ninja-build \
