@@ -184,7 +184,6 @@ jobs:
             libunwind-dev \
             libdwarf-dev \
             libnice-dev \
-            libssl-dev \
             valac \
             meson \
             ninja-build \
@@ -197,7 +196,6 @@ jobs:
             make \
             binutils \
             python3-pip \
-            cmake \
             gcc \
             g++
 
@@ -209,17 +207,6 @@ jobs:
           rm swift-*.tar.gz
           ldconfig
           swift --version
-
-      - name: Build ngtcp2
-        run: |
-          git clone --depth 1 -b v1.9.1 https://github.com/ngtcp2/ngtcp2.git /tmp/ngtcp2
-          cd /tmp/ngtcp2
-          cmake -B build -DCMAKE_INSTALL_PREFIX=/usr/local \
-            -DENABLE_SHARED_LIB=ON -DENABLE_STATIC_LIB=ON \
-            -DENABLE_OPENSSL=ON -DENABLE_LIB_ONLY=ON
-          cmake --build build -j$(nproc)
-          cmake --install build
-          ldconfig
 
       - name: Build frida-core (shared)
         run: |
