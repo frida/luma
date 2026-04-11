@@ -39,7 +39,7 @@ parts:
     override-build: |
       git clone --depth 1 https://github.com/frida/frida-core.git src
       cd src
-      ./configure --enable-shared --without-prebuilds=sdk --prefix="$CRAFT_STAGE/usr/local" -- --force-fallback-for=openssl
+      ./configure --enable-shared --without-prebuilds=sdk --prefix="$CRAFT_STAGE/usr/local" -- --force-fallback-for=openssl -Dcompat=disabled
       make -j$(nproc)
       make install
     build-packages:
