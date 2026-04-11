@@ -31,6 +31,8 @@ final class MainWindow {
     private var currentREPLSessionID: UUID?
     private var currentInsightDetail: InsightDetailView?
     private var currentInsightID: UUID?
+    private var currentITraceDetail: ITraceDetailView?
+    private var currentITraceCaptureID: UUID?
     private(set) lazy var sharedTracerEditor: MonacoEditor = makeSharedTracerEditor()
     private(set) lazy var sharedCodeShareEditor: MonacoEditor = makeSharedCodeShareEditor()
 
@@ -653,6 +655,15 @@ final class MainWindow {
             currentInsightDetail = nil
             currentInsightID = nil
         }
+        if case .itraceCapture(_, let cid) = selection {
+            if currentITraceCaptureID != cid {
+                currentITraceDetail = nil
+                currentITraceCaptureID = nil
+            }
+        } else {
+            currentITraceDetail = nil
+            currentITraceCaptureID = nil
+        }
         let widget: Widget
         switch selection {
         case .notebook:
@@ -708,13 +719,20 @@ final class MainWindow {
             let cached = capturesBySession[sid]
             let allCaptures = cached ?? (try? engine?.store.fetchITraceCaptures(sessionID: sid)) ?? []
             if let capture = allCaptures.first(where: { $0.id == cid }), let engine {
-                let others = allCaptures.filter { $0.id != cid }
-                let detail = ITraceDetailView(
-                    capture: capture,
-                    otherCaptures: others,
-                    engine: engine,
-                    sessionID: sid
-                )
+                let detail: ITraceDetailView
+                if let existing = currentITraceDetail, currentITraceCaptureID == cid {
+                    detail = existing
+                } else {
+                    let others = allCaptures.filter { $0.id != cid }
+                    detail = ITraceDetailView(
+                        capture: capture,
+                        otherCaptures: others,
+                        engine: engine,
+                        sessionID: sid
+                    )
+                    currentITraceDetail = detail
+                    currentITraceCaptureID = cid
+                }
                 widget = detail.widget
             } else {
                 widget = MainWindow.makeEmptyState(
