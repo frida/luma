@@ -18,6 +18,7 @@ final class ITraceCFGView {
     var onSelect: ((CFGGraph.NodeKey) -> Void)?
 
     private let decoded: DecodedITrace
+    private let arch: String
     private let windowRadius: Int
     private let disasmProvider: ((UInt64, Int) async -> StyledText)?
 
@@ -32,9 +33,13 @@ final class ITraceCFGView {
     private let container: Box
 
     private var nodeWidgets: [CFGGraph.NodeKey: Box] = [:]
-    private var nodeInstructionBox: [CFGGraph.NodeKey: Box] = [:]
+    private var nodeInstructionList: [CFGGraph.NodeKey: ListBox] = [:]
+    private var nodeInstructionRows: [CFGGraph.NodeKey: [ListBoxRow]] = [:]
+    private var suppressRowSelection = false
     private var nodeHeights: [CFGGraph.NodeKey: Double] = [:]
     private var selectedKey: CFGGraph.NodeKey?
+    private var selectedInstructionLine: Int = 0
+    private var registerPopover: Popover?
 
     private var disasmCache: [UInt64: StyledText] = [:]
     private var disasmFetchTask: Task<Void, Never>?
@@ -58,11 +63,13 @@ final class ITraceCFGView {
 
     init(
         decoded: DecodedITrace,
+        arch: String,
         selectedCallIndex: Int,
         windowRadius: Int = 10,
         disasmProvider: ((UInt64, Int) async -> StyledText)?
     ) {
         self.decoded = decoded
+        self.arch = arch
         self.selectedCallIndex = selectedCallIndex
         self.windowRadius = windowRadius
         self.disasmProvider = disasmProvider
@@ -191,13 +198,16 @@ final class ITraceCFGView {
     // MARK: - Node widgets
 
     private func clearNodes() {
+        dismissRegisterPopover()
         for (_, box) in nodeWidgets {
             fixed.remove(widget: box)
         }
         nodeWidgets.removeAll(keepingCapacity: true)
-        nodeInstructionBox.removeAll(keepingCapacity: true)
+        nodeInstructionList.removeAll(keepingCapacity: true)
+        nodeInstructionRows.removeAll(keepingCapacity: true)
         nodeHeights.removeAll(keepingCapacity: true)
         selectedKey = nil
+        selectedInstructionLine = 0
     }
 
     private func buildNodeWidgets(currentSection: Int) {
@@ -245,22 +255,23 @@ final class ITraceCFGView {
             box.append(child: regLabel)
         }
 
-        let instructions = Box(orientation: .vertical, spacing: 0)
-        instructions.halign = .start
-        box.append(child: instructions)
-        nodeInstructionBox[node.key] = instructions
-
-        let click = GestureClick()
-        click.button = 1
-        let key = node.key
-        click.onPressed { [weak self] _, _, _, _ in
+        let instructions = ListBox()
+        instructions.selectionMode = .single
+        instructions.add(cssClass: "luma-cfg-instr-list")
+        instructions.hexpand = true
+        let listKey = node.key
+        instructions.onRowSelected { [weak self] _, row in
             MainActor.assumeIsolated {
-                self?.select(key: key, notify: true)
-                _ = self?.container.grabFocus()
+                guard let self, !self.suppressRowSelection, let row else { return }
+                let line = Int(row.index)
+                self.selectLine(key: listKey, line: line, notify: true)
+                _ = self.container.grabFocus()
             }
         }
-        box.install(controller: click)
+        box.append(child: instructions)
+        nodeInstructionList[node.key] = instructions
 
+        let key = node.key
         let motion = EventControllerMotion()
         motion.onEnter { [weak self] _, _, _ in
             MainActor.assumeIsolated {
@@ -304,16 +315,9 @@ final class ITraceCFGView {
         }
         _ = keys
 
-        let (minX, minY, maxX, maxY) = boundsOfGraph()
+        let (minX, minY, _, _) = boundsOfGraph()
         offsetBaseX = padding - minX
         offsetBaseY = padding - minY
-
-        let contentW = Int((maxX - minX) + 2 * padding)
-        let contentH = Int((maxY - minY) + 2 * padding)
-        drawingArea.contentWidth = contentW
-        drawingArea.contentHeight = contentH
-        fixed.setSizeRequest(width: contentW, height: contentH)
-        overlay.setSizeRequest(width: contentW, height: contentH)
 
         repositionNodes()
         drawingArea.queueDraw()
@@ -382,26 +386,39 @@ final class ITraceCFGView {
     }
 
     private func applyDisasm(key: CFGGraph.NodeKey, styled: StyledText, relayoutAfter: Bool) {
-        guard let instrBox = nodeInstructionBox[key] else { return }
+        guard let instrList = nodeInstructionList[key] else { return }
 
-        var child = instrBox.firstChild
-        while let current = child {
-            child = current.nextSibling
-            instrBox.remove(child: current)
+        suppressRowSelection = true
+        defer { suppressRowSelection = false }
+
+        while let row = instrList.firstChild {
+            instrList.remove(child: row)
         }
 
         let lines = splitLines(styled)
+        var rows: [ListBoxRow] = []
+        rows.reserveCapacity(lines.count)
         for line in lines {
+            let row = ListBoxRow()
+            row.add(cssClass: "luma-cfg-instr")
             let label = Label(str: "")
             label.setMarkup(str: StyledTextPango.markup(for: line))
             label.halign = .start
             label.xalign = 0
+            label.hexpand = true
             label.add(cssClass: "monospace")
             label.add(cssClass: "caption")
-            label.add(cssClass: "luma-cfg-instr")
             label.ellipsize = .end
-            label.setSizeRequest(width: Int(nodeWidth) - 16, height: -1)
-            instrBox.append(child: label)
+            label.marginStart = 4
+            label.marginEnd = 4
+            row.set(child: label)
+            instrList.append(child: row)
+            rows.append(row)
+        }
+        nodeInstructionRows[key] = rows
+
+        if selectedKey == key {
+            applyLineHighlight(key: key)
         }
 
         let lineCount = max(1, lines.count)
@@ -416,6 +433,24 @@ final class ITraceCFGView {
         if relayoutAfter {
             relayout()
         }
+    }
+
+    private func applyLineHighlight(key: CFGGraph.NodeKey) {
+        guard let list = nodeInstructionList[key],
+            let rows = nodeInstructionRows[key],
+            selectedInstructionLine >= 0,
+            selectedInstructionLine < rows.count
+        else { return }
+        suppressRowSelection = true
+        list.select(row: rows[selectedInstructionLine])
+        suppressRowSelection = false
+    }
+
+    private func clearLineHighlight(key: CFGGraph.NodeKey) {
+        guard let list = nodeInstructionList[key] else { return }
+        suppressRowSelection = true
+        list.unselectAll()
+        suppressRowSelection = false
     }
 
     private func splitLines(_ styled: StyledText) -> [StyledText] {
@@ -452,18 +487,32 @@ final class ITraceCFGView {
 
     // MARK: - Selection
 
-    private func select(key: CFGGraph.NodeKey?, notify: Bool) {
+    private func select(key: CFGGraph.NodeKey?, line: Int = 0, notify: Bool) {
         if let prev = selectedKey, let prevBox = nodeWidgets[prev] {
             prevBox.remove(cssClass: "selected")
+            clearLineHighlight(key: prev)
         }
         selectedKey = key
+        selectedInstructionLine = line
         if let key, let box = nodeWidgets[key] {
             box.add(cssClass: "selected")
+            applyLineHighlight(key: key)
         }
         drawingArea.queueDraw()
+        if registerPopover != nil { updateRegisterPopover() }
         if notify, let key {
             onSelect?(key)
         }
+    }
+
+    private func selectLine(key: CFGGraph.NodeKey, line: Int, notify: Bool) {
+        if selectedKey == key {
+            selectedInstructionLine = line
+            applyLineHighlight(key: key)
+            if registerPopover != nil { updateRegisterPopover() }
+            return
+        }
+        select(key: key, line: line, notify: notify)
     }
 
     // MARK: - Drawing (edges)
@@ -700,13 +749,17 @@ final class ITraceCFGView {
                 switch keyval {
                 case 0xff51: self.moveSelection(dx: -1, dy: 0); return true
                 case 0xff53: self.moveSelection(dx: 1, dy: 0); return true
-                case 0xff52: self.moveSelection(dx: 0, dy: -1); return true
-                case 0xff54: self.moveSelection(dx: 0, dy: 1); return true
+                case 0xff52: self.moveLine(by: -1); return true
+                case 0xff54: self.moveLine(by: 1); return true
                 case 0xff0d:
-                    if let k = self.selectedKey { self.onSelect?(k) }
+                    self.toggleRegisterPopover()
                     return true
                 case 0xff1b:
-                    self.select(key: nil, notify: false)
+                    if self.registerPopover != nil {
+                        self.dismissRegisterPopover()
+                    } else {
+                        self.select(key: nil, notify: false)
+                    }
                     return true
                 default:
                     return false
@@ -714,6 +767,31 @@ final class ITraceCFGView {
             }
         }
         container.install(controller: key)
+    }
+
+    private func moveLine(by delta: Int) {
+        guard !graph.nodes.isEmpty else { return }
+        guard let currentKey = selectedKey,
+            let rows = nodeInstructionRows[currentKey],
+            !rows.isEmpty
+        else {
+            // Fall back to node selection if no current line context.
+            moveSelection(dx: 0, dy: delta > 0 ? 1 : -1)
+            return
+        }
+        let target = selectedInstructionLine + delta
+        if target >= 0, target < rows.count {
+            selectLine(key: currentKey, line: target, notify: false)
+            return
+        }
+        // Edge of node — fall through to neighbour.
+        let prevKey = currentKey
+        moveSelection(dx: 0, dy: delta > 0 ? 1 : -1)
+        guard let newKey = selectedKey, newKey != prevKey,
+            let newRows = nodeInstructionRows[newKey], !newRows.isEmpty
+        else { return }
+        let newLine = delta > 0 ? 0 : newRows.count - 1
+        selectLine(key: newKey, line: newLine, notify: false)
     }
 
     private func moveSelection(dx: Int, dy: Int) {
@@ -745,5 +823,172 @@ final class ITraceCFGView {
         if let best {
             select(key: best.key, notify: true)
         }
+    }
+
+    // MARK: - Register popover
+
+    private func toggleRegisterPopover() {
+        if registerPopover != nil {
+            dismissRegisterPopover()
+        } else {
+            showRegisterPopover()
+        }
+    }
+
+    private func showRegisterPopover() {
+        guard let key = selectedKey,
+            nodeRegisterInfo[key] != nil,
+            let anchor = nodeWidgets[key]
+        else { return }
+
+        dismissRegisterPopover()
+
+        let pop = Popover()
+        pop.autohide = true
+        pop.position = .right
+        pop.set(child: WidgetRef(buildRegisterContent(for: key).widget_ptr))
+        pop.set(parent: anchor)
+        pop.popup()
+        registerPopover = pop
+    }
+
+    private func updateRegisterPopover() {
+        guard let pop = registerPopover, let key = selectedKey,
+            nodeRegisterInfo[key] != nil
+        else { return }
+        pop.set(child: WidgetRef(buildRegisterContent(for: key).widget_ptr))
+    }
+
+    private func dismissRegisterPopover() {
+        registerPopover?.popdown()
+        registerPopover = nil
+    }
+
+    private func buildRegisterContent(for key: CFGGraph.NodeKey) -> Box {
+        let info = nodeRegisterInfo[key]!
+
+        let instrOffset = selectedInstructionLine * 4
+        var values = info.stateBeforeBlock.values
+        var changed = Set<Int>()
+        for write in info.writes where write.blockOffset <= instrOffset {
+            values[write.registerIndex] = write.value
+            if write.blockOffset == instrOffset {
+                changed.insert(write.registerIndex)
+            }
+        }
+
+        var nameToIdx: [String: Int] = [:]
+        for (i, name) in decoded.registerNames.enumerated() {
+            nameToIdx[name] = i
+        }
+        let layout = registerLayout(nameToIdx: nameToIdx, values: values)
+
+        let outer = Box(orientation: .vertical, spacing: 6)
+        outer.marginStart = 10
+        outer.marginEnd = 10
+        outer.marginTop = 8
+        outer.marginBottom = 8
+
+        appendRegisterRows(layout.gpr, into: outer, changed: changed)
+        if !layout.vec.isEmpty {
+            let separator = Separator(orientation: .horizontal)
+            separator.marginTop = 4
+            separator.marginBottom = 4
+            outer.append(child: separator)
+            appendRegisterRows(layout.vec, into: outer, changed: changed)
+        }
+        return outer
+    }
+
+    private func appendRegisterRows(
+        _ rows: [[RegEntry]],
+        into container: Box,
+        changed: Set<Int>
+    ) {
+        for row in rows {
+            let rowBox = Box(orientation: .horizontal, spacing: 12)
+            for entry in row {
+                let cell = Label(
+                    str: String(format: "%4s: 0x%016llx", (entry.name as NSString).utf8String!, entry.value)
+                )
+                cell.add(cssClass: "monospace")
+                cell.add(cssClass: "caption")
+                if changed.contains(entry.index) {
+                    cell.add(cssClass: "luma-cfg-reg-changed")
+                }
+                cell.xalign = 0
+                rowBox.append(child: cell)
+            }
+            container.append(child: rowBox)
+        }
+    }
+
+    private struct RegEntry {
+        let index: Int
+        let name: String
+        let value: UInt64
+    }
+
+    private struct RegisterLayout {
+        let gpr: [[RegEntry]]
+        let vec: [[RegEntry]]
+    }
+
+    private func registerLayout(
+        nameToIdx: [String: Int],
+        values: [Int: UInt64]
+    ) -> RegisterLayout {
+        func entry(_ name: String) -> RegEntry? {
+            guard let idx = nameToIdx[name], let val = values[idx] else { return nil }
+            return RegEntry(index: idx, name: name, value: val)
+        }
+
+        if arch == "arm64" {
+            let arm64GPROrder: [[String]] = [
+                ["x0", "x1", "x2", "x3"],
+                ["x4", "x5", "x6", "x7"],
+                ["x8", "x9", "x10", "x11"],
+                ["x12", "x13", "x14", "x15"],
+                ["x16", "x17", "x18", "x19"],
+                ["x20", "x21", "x22", "x23"],
+                ["x24", "x25", "x26", "x27"],
+                ["x28", "fp", "lr"],
+                ["sp", "pc", "nzcv"],
+            ]
+            let gpr = arm64GPROrder.compactMap { names -> [RegEntry]? in
+                let row = names.compactMap { entry($0) }
+                return row.isEmpty ? nil : row
+            }
+
+            var vec: [[RegEntry]] = []
+            var vecRow: [RegEntry] = []
+            for i in 0...31 {
+                if let e = entry("v\(i)") {
+                    vecRow.append(e)
+                    if vecRow.count == 4 {
+                        vec.append(vecRow)
+                        vecRow.removeAll()
+                    }
+                }
+            }
+            if !vecRow.isEmpty { vec.append(vecRow) }
+
+            return RegisterLayout(gpr: gpr, vec: vec)
+        }
+
+        let sorted = values.keys.sorted()
+        var gpr: [[RegEntry]] = []
+        var row: [RegEntry] = []
+        for idx in sorted {
+            guard idx < decoded.registerNames.count else { continue }
+            row.append(RegEntry(index: idx, name: decoded.registerNames[idx], value: values[idx]!))
+            if row.count == 4 {
+                gpr.append(row)
+                row.removeAll()
+            }
+        }
+        if !row.isEmpty { gpr.append(row) }
+
+        return RegisterLayout(gpr: gpr, vec: [])
     }
 }

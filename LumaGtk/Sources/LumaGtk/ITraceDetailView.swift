@@ -224,8 +224,10 @@ final class ITraceDetailView {
             }
         }
 
+        let arch = engine.session(id: sessionID)?.processInfo?.arch ?? ""
         let view = ITraceCFGView(
             decoded: decoded,
+            arch: arch,
             selectedCallIndex: selectedCallIndex,
             disasmProvider: provider
         )
