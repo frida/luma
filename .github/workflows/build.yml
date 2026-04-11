@@ -14,6 +14,9 @@ jobs:
   macos:
     runs-on: macos-26
     continue-on-error: true
+    strategy:
+      matrix:
+        arch: [arm64, x86_64]
     steps:
       - uses: actions/checkout@v4
 
@@ -28,6 +31,7 @@ jobs:
             -scheme Luma \
             -configuration Release \
             -derivedDataPath build/.derived \
+            -arch ${{ matrix.arch }} \
             CODE_SIGN_IDENTITY=- \
             CODE_SIGNING_ALLOWED=NO \
             build
@@ -44,12 +48,12 @@ jobs:
             -srcfolder dmg-staging \
             -ov \
             -format UDZO \
-            Luma.dmg
+            Luma-${{ matrix.arch }}.dmg
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Luma.dmg
-          path: Luma.dmg
+          name: Luma-${{ matrix.arch }}.dmg
+          path: Luma-${{ matrix.arch }}.dmg
 
   fedora:
     runs-on: ubuntu-latest
@@ -111,7 +115,7 @@ jobs:
         run: |
           git clone --depth 1 -b $FRIDA_CORE_REF https://github.com/frida/frida-core.git /tmp/frida-core
           cd /tmp/frida-core
-          ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr/local
+          ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr
           make -j$(nproc)
           make install
           ldconfig
@@ -125,7 +129,7 @@ jobs:
           git clone https://github.com/radareorg/radare2.git /tmp/radare2
           cd /tmp/radare2
           git checkout $RADARE2_REF
-          meson setup build --prefix=/usr/local --default-library=static -Dstatic_runtime=true
+          meson setup build --prefix=/usr --default-library=static -Dstatic_runtime=true -Dcli=disabled
           ninja -C build
           ninja -C build install
           ldconfig
@@ -138,10 +142,11 @@ jobs:
 
       - name: Package
         run: |
-          mkdir -p pkg/usr/local/{bin,share/applications,share/mime/packages}
-          cp LumaGtk/.build/release/LumaGtk pkg/usr/local/bin/luma
-          cp LumaGtk/data/re.frida.Luma.desktop pkg/usr/local/share/applications/
-          cp LumaGtk/data/re.frida.Luma.xml pkg/usr/local/share/mime/packages/
+          mkdir -p pkg/usr/{bin,share/applications,share/mime/packages}
+          cp LumaGtk/.build/release/LumaGtk pkg/usr/bin/luma
+          strip --strip-unneeded pkg/usr/bin/luma
+          cp LumaGtk/data/re.frida.Luma.desktop pkg/usr/share/applications/
+          cp LumaGtk/data/re.frida.Luma.xml pkg/usr/share/mime/packages/
           tar czf luma-fedora-43.tar.gz -C pkg .
 
       - uses: actions/upload-artifact@v4
@@ -209,7 +214,7 @@ jobs:
         run: |
           git clone --depth 1 -b $FRIDA_CORE_REF https://github.com/frida/frida-core.git /tmp/frida-core
           cd /tmp/frida-core
-          ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr/local \
+          ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr \
             -- --force-fallback-for=openssl
           make -j$(nproc)
           make install
@@ -221,7 +226,7 @@ jobs:
           git clone https://github.com/radareorg/radare2.git /tmp/radare2
           cd /tmp/radare2
           git checkout $RADARE2_REF
-          meson setup build --prefix=/usr/local --default-library=static -Dstatic_runtime=true
+          meson setup build --prefix=/usr --default-library=static -Dstatic_runtime=true -Dcli=disabled
           ninja -C build
           ninja -C build install
           ldconfig
@@ -235,11 +240,12 @@ jobs:
       - name: Package as .deb
         run: |
           PKG=luma_0.1.0_amd64
-          mkdir -p $PKG/DEBIAN $PKG/usr/local/bin $PKG/usr/local/share/applications $PKG/usr/local/share/mime/packages
+          mkdir -p $PKG/DEBIAN $PKG/usr/bin $PKG/usr/share/applications $PKG/usr/share/mime/packages
           printf 'Package: luma\nVersion: 0.1.0\nSection: devel\nPriority: optional\nArchitecture: amd64\nDepends: libgtk-4-1, libwebkitgtk-6.0-4, libsoup-3.0-0\nMaintainer: Ole Andre Vadla Ravnas <oleavr@frida.re>\nDescription: Luma - Dynamic instrumentation toolkit\n Interactive dynamic instrumentation app built on Frida.\n' > $PKG/DEBIAN/control
-          cp LumaGtk/.build/x86_64-unknown-linux-gnu/release/LumaGtk $PKG/usr/local/bin/luma
-          cp LumaGtk/data/re.frida.Luma.desktop $PKG/usr/local/share/applications/
-          cp LumaGtk/data/re.frida.Luma.xml $PKG/usr/local/share/mime/packages/
+          cp LumaGtk/.build/x86_64-unknown-linux-gnu/release/LumaGtk $PKG/usr/bin/luma
+          strip --strip-unneeded $PKG/usr/bin/luma
+          cp LumaGtk/data/re.frida.Luma.desktop $PKG/usr/share/applications/
+          cp LumaGtk/data/re.frida.Luma.xml $PKG/usr/share/mime/packages/
           dpkg-deb --build $PKG
           mv ${PKG}.deb luma-ubuntu-25.10.deb
 

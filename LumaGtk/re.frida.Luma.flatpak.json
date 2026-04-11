@@ -20,6 +20,50 @@
             "PKG_CONFIG_PATH": "/app/lib64/pkgconfig"
         }
     },
+    "cleanup": [
+        "/bin/clang*",
+        "/bin/lld*",
+        "/bin/lldb*",
+        "/bin/llvm-*",
+        "/bin/swift*",
+        "/bin/swiftc*",
+        "/bin/sourcekit-lsp",
+        "/bin/docc",
+        "/bin/wasmkit*",
+        "/bin/plutil",
+        "/bin/repl_swift",
+        "/bin/sdk-module-lists",
+        "/bin/node",
+        "/bin/npm",
+        "/bin/npx",
+        "/bin/corepack",
+        "/bin/frida-server",
+        "/bin/frida-portal",
+        "/bin/frida-inject",
+        "/include",
+        "/lib/liblldb*",
+        "/lib/libsourcekitdInProc*",
+        "/lib/libclang*",
+        "/lib/libLTO*",
+        "/lib/libIndexStore*",
+        "/lib/libSwiftSourceKit*",
+        "/lib/libswiftDemangle*",
+        "/lib/swift/embedded",
+        "/lib/swift/host",
+        "/lib/swift_static",
+        "/lib/swift/musl",
+        "/lib/clang",
+        "/lib/node_modules",
+        "/lib64/pkgconfig",
+        "/share/vala",
+        "/share/docc",
+        "/share/man",
+        "/share/gir-1.0",
+        "/lib64/girepository-1.0",
+        "*.a",
+        "*.la",
+        "*.pc"
+    ],
     "modules": [
         {
             "name": "nodejs",
@@ -73,7 +117,11 @@
         {
             "name": "radare2",
             "buildsystem": "meson",
-            "config-opts": [],
+            "config-opts": [
+                "--default-library=static",
+                "-Dstatic_runtime=true",
+                "-Dcli=disabled"
+            ],
             "sources": [
                 {
                     "type": "archive",
@@ -89,6 +137,7 @@
             "build-commands": [
                 "cd LumaGtk && make build SWIFT_BUILD_FLAGS='-c release'",
                 "install -Dm755 LumaGtk/.build/x86_64-unknown-linux-gnu/release/LumaGtk /app/bin/luma",
+                "strip --strip-unneeded /app/bin/luma",
                 "install -Dm644 LumaGtk/data/re.frida.Luma.desktop /app/share/applications/re.frida.Luma.desktop",
                 "install -Dm644 LumaGtk/data/re.frida.Luma.xml /app/share/mime/packages/re.frida.Luma.xml"
             ],

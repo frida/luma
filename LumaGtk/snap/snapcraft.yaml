@@ -58,6 +58,9 @@ parts:
       DESTDIR="$PWD/_destdir" python3 releng/meson/meson.py install -C build --skip-subprojects --no-rebuild
       mkdir -p "$CRAFT_STAGE/usr/local"
       cp -a "_destdir/$CRAFT_STAGE/usr/local/." "$CRAFT_STAGE/usr/local/"
+      mkdir -p "$CRAFT_PART_INSTALL/usr/local/lib/x86_64-linux-gnu"
+      cp -a "$CRAFT_STAGE/usr/local/lib/x86_64-linux-gnu"/libfrida-core-1.0.so* "$CRAFT_PART_INSTALL/usr/local/lib/x86_64-linux-gnu/"
+      cp -a "$CRAFT_STAGE/usr/local/lib/x86_64-linux-gnu/frida-1.0" "$CRAFT_PART_INSTALL/usr/local/lib/x86_64-linux-gnu/"
     build-packages:
       - git
       - curl
@@ -79,7 +82,7 @@ parts:
       git clone https://github.com/radareorg/radare2.git src
       cd src
       git checkout 65ee12a4f0d67f24a1b968111c536de3bb5bb4e3
-      meson setup build --prefix="$CRAFT_STAGE/usr/local"
+      meson setup build --prefix="$CRAFT_STAGE/usr/local" --default-library=static -Dstatic_runtime=true -Dcli=disabled
       ninja -C build
       ninja -C build install
     build-packages:
@@ -103,6 +106,7 @@ parts:
       cd "$PARENT/luma/LumaGtk"
       make build SWIFT_BUILD_FLAGS="-c release"
       install -Dm755 .build/x86_64-unknown-linux-gnu/release/LumaGtk "$CRAFT_PART_INSTALL/usr/local/bin/luma"
+      strip --strip-unneeded "$CRAFT_PART_INSTALL/usr/local/bin/luma"
       install -Dm644 data/re.frida.Luma.desktop "$CRAFT_PART_INSTALL/usr/local/share/applications/re.frida.Luma.desktop"
       install -Dm644 data/re.frida.Luma.xml "$CRAFT_PART_INSTALL/usr/local/share/mime/packages/re.frida.Luma.xml"
       mv "$PARENT/luma" "$CRAFT_PART_BUILD"
