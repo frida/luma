@@ -12,6 +12,7 @@
 		0C8A0A732EF0B51800F0D7B2 /* SwiftyMonaco in Frameworks */ = {isa = PBXBuildFile; productRef = 0C8A0A722EF0B51800F0D7B2 /* SwiftyMonaco */; };
 		0C8A0A752EF0B51C00F0D7B2 /* Frida in Frameworks */ = {isa = PBXBuildFile; productRef = 0C8A0A742EF0B51C00F0D7B2 /* Frida */; };
 		0CAA00012F00000000000001 /* LumaCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0CAA00022F00000000000001 /* LumaCore */; };
+		0CAA00032F00000000000002 /* SwiftyR2 in Embed Frameworks */ = {isa = PBXBuildFile; productRef = 0C8A0A702EF0B51400F0D7B2 /* SwiftyR2 */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXAggregateTarget section */
@@ -69,6 +70,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
+				0CAA00032F00000000000002 /* SwiftyR2 in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -95,7 +97,8 @@
 			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
 			buildPhase = 0CD209322EB511C400D027FC /* Resources */;
 			membershipExceptions = (
-				scripts,
+				scripts/capture-screenshots.py,
+				scripts/capture-screenshots.sh,
 			);
 		};
 /* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
