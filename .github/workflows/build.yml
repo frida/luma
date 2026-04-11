@@ -51,25 +51,22 @@ jobs:
         run: |
           if [ "$CAN_SIGN" = "true" ]; then
             IDENTITY="Developer ID Application"
-            STYLE=Manual
           else
             IDENTITY="-"
-            STYLE=Automatic
           fi
-          xcodebuild \
+          xcodebuild archive \
             -project Luma.xcodeproj \
             -scheme Luma \
             -configuration Release \
-            -derivedDataPath build/.derived \
+            -archivePath build/Luma.xcarchive \
             -arch ${{ matrix.arch }} \
             "CODE_SIGN_IDENTITY=$IDENTITY" \
-            CODE_SIGN_STYLE="$STYLE" \
+            CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM=753PE4AG6F \
             "OTHER_CODE_SIGN_FLAGS=--timestamp" \
-            ENABLE_HARDENED_RUNTIME=YES \
-            build
+            ENABLE_HARDENED_RUNTIME=YES
           mkdir -p build
-          cp -r build/.derived/Build/Products/Release/Luma.app build/
+          cp -r build/Luma.xcarchive/Products/Applications/Luma.app build/
 
       - name: Notarize
         if: env.CAN_SIGN == 'true'
