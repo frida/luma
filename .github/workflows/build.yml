@@ -66,7 +66,10 @@ jobs:
           mkdir -p build
           cp -r build/.derived/Build/Products/Release/Luma.app build/
           if [ "$CAN_SIGN" = "true" ]; then
-            codesign --deep --force --options runtime \
+            find build/Luma.app/Contents/Frameworks -name '*.framework' -maxdepth 1 | while read fw; do
+              codesign --force --options runtime --sign "Developer ID Application" --timestamp "$fw"
+            done
+            codesign --force --options runtime \
               --sign "Developer ID Application" \
               --entitlements Luma/Luma.entitlements \
               --timestamp \
@@ -367,6 +370,7 @@ jobs:
           path: ${{ steps.snapcraft.outputs.snap }}
 
   windows:
+    if: false
     runs-on: windows-latest
     continue-on-error: true
     timeout-minutes: 120
