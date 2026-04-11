@@ -12,7 +12,6 @@
 		0C8A0A732EF0B51800F0D7B2 /* SwiftyMonaco in Frameworks */ = {isa = PBXBuildFile; productRef = 0C8A0A722EF0B51800F0D7B2 /* SwiftyMonaco */; };
 		0C8A0A752EF0B51C00F0D7B2 /* Frida in Frameworks */ = {isa = PBXBuildFile; productRef = 0C8A0A742EF0B51C00F0D7B2 /* Frida */; };
 		0CAA00012F00000000000001 /* LumaCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0CAA00022F00000000000001 /* LumaCore */; };
-		0CAA00032F00000000000002 /* SwiftyR2 in Embed Frameworks */ = {isa = PBXBuildFile; productRef = 0C8A0A702EF0B51400F0D7B2 /* SwiftyR2 */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXAggregateTarget section */
@@ -70,7 +69,6 @@
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
-				0CAA00032F00000000000002 /* SwiftyR2 in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -203,6 +201,7 @@
 				0CD209312EB511C400D027FC /* Frameworks */,
 				0CD209322EB511C400D027FC /* Resources */,
 				0CE0E5262ED0A38A000B1E01 /* Embed Frameworks */,
+				0CAA00042F00000000000003 /* Embed Radare2.framework */,
 			);
 			buildRules = (
 			);
@@ -310,6 +309,26 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/zsh;
 			shellScript = "set -euo pipefail\n\n\"${BUILT_PRODUCTS_DIR}/LumaBundleCompiler\" \\\n    --project-root     \"${SRCROOT}\" \\\n    --swift-out        \"${SRCROOT}/Sources/LumaCore/Generated/LumaAgent.swift\" \\\n    --staging-dir      \"${BUILD_DIR}/AgentStaging\" \\\n    --package frida-itrace@6.0.0 \\\n    --agent  core      Agent/core/luma.ts \\\n    --agent  drain     Agent/instruments/drain-agent.ts \\\n    --module tracer    Agent/instruments/tracer.ts \\\n    --module codeShare Agent/instruments/codeshare.ts\n";
+		};
+		0CAA00042F00000000000003 /* Embed Radare2.framework */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/Radare2.framework",
+			);
+			name = "Embed Radare2.framework";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/Radare2.framework",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ -d \"${BUILT_PRODUCTS_DIR}/Radare2.framework\" ]; then\n  mkdir -p \"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}\"\n  rsync -av --delete \"${BUILT_PRODUCTS_DIR}/Radare2.framework\" \"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/\"\n  codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" --timestamp=none --preserve-metadata=identifier,entitlements \"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Radare2.framework\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

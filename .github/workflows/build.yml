@@ -356,7 +356,7 @@ jobs:
         with:
           arch: amd64
 
-      - uses: compnerd/gha-setup-swift@v2
+      - uses: compnerd/gha-setup-swift@v0.4.0
         with:
           release: ${{ env.SWIFT_VERSION }}
 
