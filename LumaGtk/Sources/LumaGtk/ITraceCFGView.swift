@@ -395,6 +395,7 @@ final class ITraceCFGView {
             let label = Label(str: "")
             label.setMarkup(str: StyledTextPango.markup(for: line))
             label.halign = .start
+            label.xalign = 0
             label.add(cssClass: "monospace")
             label.add(cssClass: "caption")
             label.add(cssClass: "luma-cfg-instr")
