@@ -67,6 +67,9 @@ void luma_alert_confirm(void *parent_window,
                          LumaConfirmCallback callback,
                          void *user_data);
 
+// GType fundamental helpers (not directly usable from Swift).
+unsigned long luma_g_type_boolean(void);
+
 // GApplication::open signal wrapper.
 typedef void (*LumaOpenFilesCallback)(const char *path, void *user_data);
 void luma_app_set_open_handler(void *gobject_application,

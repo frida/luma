@@ -1,7 +1,13 @@
 import CGtk
+import CLuma
 import Foundation
 import GLibObject
 import Gtk
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Darwin)
+import Darwin
+#endif
 
 #if canImport(AppKit)
 import AppKit
@@ -20,8 +26,8 @@ enum ThemeWatcher {
         #if canImport(AppKit)
         // GTK4's GdkMacos backend does not push NSApp.effectiveAppearance into
         // GtkSettings, so neither the GTK chrome nor our subscribers ever
-        // notice macOS appearance changes. Mirror it ourselves into
-        // gtk-interface-color-scheme (GTK 4.20+).
+        // notice macOS appearance changes. Mirror it ourselves into the
+        // appropriate color scheme property.
         macAppearanceBridge.start()
         #endif
     }
@@ -30,37 +36,73 @@ enum ThemeWatcher {
     static func isDarkMode() -> Bool {
         guard let settings = gtk_settings_get_default() else { return false }
         let object = UnsafeMutableRawPointer(settings).assumingMemoryBound(to: GObject.self)
-        return readColorScheme(object: object) == .dark
+        return readIsDark(object: object)
     }
 
     @MainActor
-    private static func readColorScheme(
+    private static func readIsDark(
         object: UnsafeMutablePointer<GObject>
-    ) -> InterfaceColorScheme {
+    ) -> Bool {
+        if hasColorSchemeProperty {
+            var v = GValue()
+            g_value_init(&v, colorSchemeGType)
+            g_object_get_property(object, colorSchemePropertyName, &v)
+            let raw = g_value_get_enum(&v)
+            g_value_unset(&v)
+            // InterfaceColorScheme: 0 = default, 1 = light, 2 = dark
+            return raw == 2
+        }
         var v = GValue()
-        g_value_init(&v, gtk_interface_color_scheme_get_type())
-        g_object_get_property(object, colorSchemePropertyName, &v)
-        let raw = g_value_get_enum(&v)
+        g_value_init(&v, GType(luma_g_type_boolean()))
+        g_object_get_property(object, preferDarkPropertyName, &v)
+        let isDark = g_value_get_boolean(&v) != 0
         g_value_unset(&v)
-        return InterfaceColorScheme(rawValue: UInt32(raw))
+        return isDark
     }
 
     @MainActor
-    fileprivate static func writeColorScheme(
+    fileprivate static func writeIsDark(
         object: UnsafeMutablePointer<GObject>,
-        scheme: InterfaceColorScheme
+        dark: Bool
     ) {
-        var v = GValue()
-        g_value_init(&v, gtk_interface_color_scheme_get_type())
-        g_value_set_enum(&v, gint(scheme.rawValue))
-        g_object_set_property(object, colorSchemePropertyName, &v)
-        g_value_unset(&v)
+        if hasColorSchemeProperty {
+            var v = GValue()
+            g_value_init(&v, colorSchemeGType)
+            // InterfaceColorScheme: 1 = light, 2 = dark
+            g_value_set_enum(&v, dark ? 2 : 1)
+            g_object_set_property(object, colorSchemePropertyName, &v)
+            g_value_unset(&v)
+        } else {
+            var v = GValue()
+            g_value_init(&v, GType(luma_g_type_boolean()))
+            g_value_set_boolean(&v, dark ? 1 : 0)
+            g_object_set_property(object, preferDarkPropertyName, &v)
+            g_value_unset(&v)
+        }
     }
 
-    fileprivate static let colorSchemePropertyName =
-        SettingsPropertyName.gtkInterfaceColorScheme.rawValue
-    fileprivate static let colorSchemeNotifySignal =
-        SettingsSignalName.notifyGtkInterfaceColorScheme.rawValue
+    private static let colorSchemePropertyName = "gtk-interface-color-scheme"
+    private static let preferDarkPropertyName = "gtk-application-prefer-dark-theme"
+
+    private static let hasColorSchemeProperty: Bool = {
+        guard let settingsClass = g_type_class_ref(gtk_settings_get_type()) else { return false }
+        defer { g_type_class_unref(settingsClass) }
+        let objectClass = settingsClass.assumingMemoryBound(to: GObjectClass.self)
+        return g_object_class_find_property(objectClass, colorSchemePropertyName) != nil
+    }()
+
+    private static let colorSchemeGType: GType = {
+        let sym = dlsym(nil, "gtk_interface_color_scheme_get_type")
+        guard let sym else { return 0 }
+        let fn = unsafeBitCast(sym, to: (@convention(c) () -> GType).self)
+        return fn()
+    }()
+
+    private static var notifySignalName: String {
+        hasColorSchemeProperty
+            ? "notify::gtk-interface-color-scheme"
+            : "notify::gtk-application-prefer-dark-theme"
+    }
 
     @MainActor
     static func subscribe<Owner: AnyObject>(
@@ -80,7 +122,7 @@ enum ThemeWatcher {
         let userData = UnsafeMutableRawPointer(bitPattern: token)
         let handlerID = g_signal_connect_data(
             settings,
-            colorSchemeNotifySignal,
+            notifySignalName,
             unsafeBitCast(themeChangedCallback, to: GCallback.self),
             userData,
             nil,
@@ -168,10 +210,7 @@ private final class MacAppearanceBridge: NSObject {
         let appearance = NSApplication.shared.effectiveAppearance
         let match = appearance.bestMatch(from: [.aqua, .darkAqua])
         let isDark = match == .darkAqua
-        ThemeWatcher.writeColorScheme(
-            object: object,
-            scheme: isDark ? .dark : .light
-        )
+        ThemeWatcher.writeIsDark(object: object, dark: isDark)
     }
 }
 
