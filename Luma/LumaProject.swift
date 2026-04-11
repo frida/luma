@@ -24,9 +24,7 @@ struct LumaProject: FileDocument {
     }
 
     private static func makeTemporaryDBURL() -> URL {
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("re.frida.Luma.\(UUID().uuidString)", isDirectory: true)
-        try! FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        return tempDir.appendingPathComponent("project.sqlite")
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("re.frida.Luma.\(UUID().uuidString).luma")
     }
 }
