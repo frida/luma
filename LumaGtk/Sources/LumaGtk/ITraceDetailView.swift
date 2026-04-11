@@ -1,4 +1,5 @@
 import CGLib
+import CGtk
 import Foundation
 import Gtk
 import LumaCore
@@ -20,9 +21,7 @@ final class ITraceDetailView {
     private var cfgView: ITraceCFGView?
     private var timeline: ITraceTimeline?
     private var selectedCallIndex: Int = 0
-    private var modeSwitcher: Box?
-    private var listToggle: ToggleButton?
-    private var graphToggle: ToggleButton?
+    private var showingGraph = true
     fileprivate var isDarkMode: Bool = ThemeWatcher.isDarkMode()
     private var themeSignalID: gulong = 0
 
@@ -125,6 +124,17 @@ final class ITraceDetailView {
         themeSignalID = ThemeWatcher.subscribe(owner: self) { detail in
             detail.handleThemeChanged()
         }
+
+        let modeKey = EventControllerKey()
+        modeKey.propagationPhase = GTK_PHASE_CAPTURE
+        modeKey.onKeyPressed { [weak self] _, keyval, _, _ in
+            MainActor.assumeIsolated {
+                guard keyval == 0x020 else { return false }
+                self?.toggleMode()
+                return true
+            }
+        }
+        widget.install(controller: modeKey)
     }
 
     deinit {
@@ -175,60 +185,27 @@ final class ITraceDetailView {
             }
             self.timeline = timeline
             bodyContainer.append(child: timeline.widget)
-            bodyContainer.append(child: makeModeSwitcher())
             populateEntries(decoded.entries)
             bodyContainer.append(child: entriesScroll)
-        }
-    }
-
-    private func makeModeSwitcher() -> Box {
-        let row = Box(orientation: .horizontal, spacing: 0)
-        row.halign = .start
-        row.marginTop = 4
-        row.add(cssClass: "linked")
-
-        let list = ToggleButton()
-        list.label = "List"
-        list.active = true
-        let graph = ToggleButton()
-        graph.label = "Graph"
-        graph.set(group: ToggleButtonRef(list.toggle_button_ptr))
-
-        list.onToggled { [weak self] btn in
-            MainActor.assumeIsolated {
-                guard btn.active else { return }
-                self?.showListMode()
-            }
-        }
-        graph.onToggled { [weak self] btn in
-            MainActor.assumeIsolated {
-                guard btn.active else { return }
-                self?.showGraphMode()
-            }
-        }
-
-        row.append(child: list)
-        row.append(child: graph)
-        listToggle = list
-        graphToggle = graph
-        modeSwitcher = row
-        return row
-    }
-
-    private func showListMode() {
-        if let cfgWidget = cfgView?.widget {
-            cfgWidget.visible = false
-        }
-        entriesScroll.visible = true
-    }
-
-    private func showGraphMode() {
-        if cfgView == nil, let decoded {
             buildCFGView(from: decoded)
+            applyMode()
         }
-        entriesScroll.visible = false
-        if let cfgWidget = cfgView?.widget {
-            cfgWidget.visible = true
+    }
+
+    private func toggleMode() {
+        showingGraph.toggle()
+        applyMode()
+    }
+
+    private func applyMode() {
+        entriesScroll.visible = !showingGraph
+        cfgView?.widget.visible = showingGraph
+        if showingGraph {
+            cfgView?.focus()
+        } else if let selected = entriesList.selectedRow {
+            _ = selected.grabFocus()
+        } else if let first = entryRows.first {
+            _ = first.grabFocus()
         }
     }
 

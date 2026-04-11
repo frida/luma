@@ -1,4 +1,6 @@
 import CCairo
+import CGraphene
+import CGtk
 import Cairo
 import Foundation
 import Gdk
@@ -40,6 +42,7 @@ final class ITraceCFGView {
     private var selectedKey: CFGGraph.NodeKey?
     private var selectedInstructionLine: Int = 0
     private var registerPopover: Popover?
+    private var registerPopoverScroll: ScrolledWindow?
 
     private var disasmCache: [UInt64: StyledText] = [:]
     private var disasmFetchTask: Task<Void, Never>?
@@ -50,10 +53,6 @@ final class ITraceCFGView {
 
     private var offsetBaseX: Double = 0
     private var offsetBaseY: Double = 0
-
-    private var hoverPopover: Popover?
-    private var hoverKey: CFGGraph.NodeKey?
-    private var hoverDelayTask: Task<Void, Never>?
 
     private let nodeWidth: Double = 360
     private let baseNodeHeight: Double = 40
@@ -136,6 +135,16 @@ final class ITraceCFGView {
 
     func setSelectedNode(key: CFGGraph.NodeKey?) {
         select(key: key, notify: false)
+    }
+
+    func focus() {
+        if selectedKey == nil {
+            let entryKey = graph.entryKey
+            if graph.nodes[entryKey] != nil {
+                select(key: entryKey, line: 0, notify: false)
+            }
+        }
+        _ = container.grabFocus()
     }
 
     func invalidateDisasm() {
@@ -243,24 +252,8 @@ final class ITraceCFGView {
         nameLabel.add(cssClass: "monospace")
         nameLabel.ellipsize = .end
         nameLabel.setSizeRequest(width: Int(nodeWidth) - 20, height: -1)
+        nameLabel.marginBottom = 4
         box.append(child: nameLabel)
-
-        let visitLabel = Label(str: "\(node.visitCount)\u{00D7}")
-        visitLabel.halign = .start
-        visitLabel.add(cssClass: "dim-label")
-        visitLabel.add(cssClass: "caption")
-        box.append(child: visitLabel)
-
-        if let diff = registerDiffText(for: node.key) {
-            let regLabel = Label(str: diff)
-            regLabel.halign = .start
-            regLabel.add(cssClass: "caption")
-            regLabel.add(cssClass: "monospace")
-            regLabel.add(cssClass: "luma-cfg-regdiff")
-            regLabel.ellipsize = .end
-            regLabel.setSizeRequest(width: Int(nodeWidth) - 20, height: -1)
-            box.append(child: regLabel)
-        }
 
         let instructions = ListBox()
         instructions.selectionMode = .single
@@ -278,32 +271,7 @@ final class ITraceCFGView {
         box.append(child: instructions)
         nodeInstructionList[node.key] = instructions
 
-        let key = node.key
-        let motion = EventControllerMotion()
-        motion.onEnter { [weak self] _, _, _ in
-            MainActor.assumeIsolated {
-                self?.scheduleHover(key: key)
-            }
-        }
-        motion.onLeave { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.cancelHover(key: key)
-            }
-        }
-        box.install(controller: motion)
-
         return box
-    }
-
-    private func registerDiffText(for key: CFGGraph.NodeKey) -> String? {
-        guard let info = nodeRegisterInfo[key] else { return nil }
-        if info.writes.isEmpty {
-            return nil
-        }
-        let parts = info.writes.prefix(2).map {
-            String(format: "%@=0x%llx", $0.registerName, $0.value)
-        }
-        return parts.joined(separator: " ")
     }
 
     private func shortName(_ name: String) -> String {
@@ -431,8 +399,6 @@ final class ITraceCFGView {
         let lineCount = max(1, lines.count)
         let newHeight =
             titleRowHeight
-            + (registerDiffText(for: key) != nil ? 16 : 0)
-            + 16 /* visit row */
             + Double(lineCount) * instructionLineHeight
             + 10
         nodeHeights[key] = newHeight
@@ -647,16 +613,18 @@ final class ITraceCFGView {
                     let factor = 1.0 - dy * 0.1
                     var newZoom = oldZoom * factor
                     newZoom = max(0.25, min(4.0, newZoom))
-                    // Anchor under cursor: worldX = (mx - panX) / oldZoom; keep worldX
-                    // at the same screen point after zoom: newPanX = mx - worldX * newZoom.
                     let worldX = (lastMouseX - self.panX) / oldZoom
                     let worldY = (lastMouseY - self.panY) / oldZoom
                     self.zoom = newZoom
                     self.panX = lastMouseX - worldX * newZoom
                     self.panY = lastMouseY - worldY * newZoom
                 } else {
-                    self.panX -= dx * 30
-                    self.panY -= dy * 30
+                    // SURFACE unit (trackpads) reports per-event pixel deltas;
+                    // WHEEL unit reports discrete ticks that need to be scaled
+                    // up to feel like normal scrolling.
+                    let multiplier = controller.unit == GDK_SCROLL_UNIT_WHEEL ? 30.0 : 1.0
+                    self.panX -= dx * multiplier
+                    self.panY -= dy * multiplier
                 }
                 self.repositionNodes()
                 self.drawingArea.queueDraw()
@@ -672,78 +640,6 @@ final class ITraceCFGView {
         zoom = 1.0
         repositionNodes()
         drawingArea.queueDraw()
-    }
-
-    // MARK: - Hover popover
-
-    private func scheduleHover(key: CFGGraph.NodeKey) {
-        if hoverKey == key { return }
-        hoverKey = key
-        hoverDelayTask?.cancel()
-        hoverDelayTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 200_000_000)
-            if Task.isCancelled { return }
-            guard let self, self.hoverKey == key else { return }
-            self.showHoverPopover(key: key)
-        }
-    }
-
-    private func cancelHover(key: CFGGraph.NodeKey) {
-        if hoverKey == key {
-            hoverKey = nil
-            hoverDelayTask?.cancel()
-            hoverDelayTask = nil
-            hoverPopover?.popdown()
-        }
-    }
-
-    private func showHoverPopover(key: CFGGraph.NodeKey) {
-        guard let node = graph.nodes[key], let anchor = nodeWidgets[key] else { return }
-        hoverPopover?.popdown()
-
-        let pop = Popover()
-        pop.autohide = false
-        pop.canFocus = false
-
-        let content = Box(orientation: .vertical, spacing: 2)
-        content.marginStart = 8
-        content.marginEnd = 8
-        content.marginTop = 6
-        content.marginBottom = 6
-
-        let name = Label(str: node.name)
-        name.halign = .start
-        name.add(cssClass: "heading")
-        name.add(cssClass: "monospace")
-        content.append(child: name)
-
-        let meta = Label(
-            str: String(
-                format: "0x%llx · %d bytes · %d visits",
-                node.address, node.size, node.visitCount))
-        meta.halign = .start
-        meta.add(cssClass: "dim-label")
-        meta.add(cssClass: "caption")
-        content.append(child: meta)
-
-        if let info = nodeRegisterInfo[key], !info.writes.isEmpty {
-            let hdr = Label(str: "Register writes")
-            hdr.halign = .start
-            hdr.add(cssClass: "caption-heading")
-            content.append(child: hdr)
-            for w in info.writes.prefix(3) {
-                let l = Label(str: String(format: "  %@ = 0x%llx", w.registerName, w.value))
-                l.halign = .start
-                l.add(cssClass: "monospace")
-                l.add(cssClass: "caption")
-                content.append(child: l)
-            }
-        }
-
-        pop.set(child: WidgetRef(content.widget_ptr))
-        pop.set(parent: anchor)
-        pop.popup()
-        hoverPopover = pop
     }
 
     // MARK: - Keyboard
@@ -842,40 +738,166 @@ final class ITraceCFGView {
         }
     }
 
+    private static let registerPopoverChrome = 32
+    private static let registerPopoverMargin = 16
+    private static let registerPopoverMinWidth = 260
+    private static let registerPopoverMinHeight = 180
+
     private func showRegisterPopover() {
         guard let key = selectedKey,
+            let node = graph.nodes[key],
             nodeRegisterInfo[key] != nil,
             let anchor = nodeWidgets[key]
         else { return }
 
         dismissRegisterPopover()
 
+        let inner = buildRegisterContent(for: key)
+        let natural = naturalSize(of: inner)
+        ensureRoomForRegisterPopover(node: node, contentWidth: natural.width)
+
+        let scroll = ScrolledWindow()
+        scroll.setPolicy(
+            hscrollbarPolicy: PolicyType.automatic,
+            vscrollbarPolicy: PolicyType.automatic
+        )
+        scroll.set(child: inner)
+        applyScrollSize(scroll: scroll, node: node, contentSize: natural)
+
         let pop = Popover()
-        pop.autohide = true
+        pop.autohide = false
+        pop.canFocus = false
         pop.position = .right
-        pop.set(child: WidgetRef(buildRegisterContent(for: key).widget_ptr))
+        pop.set(child: WidgetRef(scroll.widget_ptr))
         pop.set(parent: anchor)
+        applyPopoverPointingTo(popover: pop, anchor: anchor)
         pop.popup()
         registerPopover = pop
+        registerPopoverScroll = scroll
     }
 
     private func updateRegisterPopover() {
         guard let pop = registerPopover, let key = selectedKey,
+            let node = graph.nodes[key],
+            let anchor = nodeWidgets[key],
             nodeRegisterInfo[key] != nil
         else { return }
-        pop.set(child: WidgetRef(buildRegisterContent(for: key).widget_ptr))
+        let inner = buildRegisterContent(for: key)
+        let natural = naturalSize(of: inner)
+        registerPopoverScroll?.set(child: inner)
+        registerPopoverScroll.flatMap {
+            applyScrollSize(scroll: $0, node: node, contentSize: natural)
+        }
+        applyPopoverPointingTo(popover: pop, anchor: anchor)
+    }
+
+    private func naturalSize(of widget: Box) -> (width: Int, height: Int) {
+        var natW: gint = 0
+        var natH: gint = 0
+        widget.measure(orientation: GTK_ORIENTATION_HORIZONTAL, for: -1, natural: &natW)
+        widget.measure(orientation: GTK_ORIENTATION_VERTICAL, for: Int(natW), natural: &natH)
+        return (Int(natW), Int(natH))
+    }
+
+    private func applyScrollSize(
+        scroll: ScrolledWindow,
+        node: CFGGraph.Node,
+        contentSize: (width: Int, height: Int)
+    ) {
+        let avail = availableSizeRightOf(node: node)
+        let width = min(contentSize.width, avail.width)
+        let height = min(contentSize.height, avail.height)
+        scroll.setSizeRequest(
+            width: max(Self.registerPopoverMinWidth, width),
+            height: max(Self.registerPopoverMinHeight, height)
+        )
+    }
+
+    /// Right edge of `node` in the CFG container's coordinate system, computed
+    /// from our internal pan/zoom state. Using this instead of
+    /// `gtk_widget_compute_bounds` matters because compute_bounds returns the
+    /// allocation from the *previous* layout pass, so a fresh `ensureRoom…`
+    /// call won't see the panning we just applied.
+    private func nodeRightInContainer(_ node: CFGGraph.Node) -> Double {
+        return (node.position.x + nodeWidth / 2 + offsetBaseX) * zoom + panX
+    }
+
+    private func availableSizeRightOf(node: CFGGraph.Node) -> (width: Int, height: Int) {
+        let chrome = Double(Self.registerPopoverChrome)
+        let margin = Double(Self.registerPopoverMargin)
+        var width = Self.registerPopoverMinWidth
+        var height = Self.registerPopoverMinHeight
+        let containerW = Double(container.allocatedWidth)
+        let containerH = Double(container.allocatedHeight)
+        if containerW > 0 {
+            let nodeRight = nodeRightInContainer(node)
+            let availW = containerW - nodeRight - chrome - margin
+            width = max(Self.registerPopoverMinWidth, Int(availW))
+        }
+        if containerH > 0 {
+            let availH = containerH - 2 * margin
+            height = max(Self.registerPopoverMinHeight, Int(availH))
+        }
+        return (width, height)
+    }
+
+    private func ensureRoomForRegisterPopover(node: CFGGraph.Node, contentWidth: Int) {
+        let containerW = Double(container.allocatedWidth)
+        guard containerW > 0 else { return }
+        let nodeRight = nodeRightInContainer(node)
+        let chrome = Double(Self.registerPopoverChrome)
+        let margin = Double(Self.registerPopoverMargin)
+        let needed = Double(contentWidth) + chrome + margin
+        let available = containerW - nodeRight
+        if available < needed {
+            panX -= (needed - available)
+            repositionNodes()
+            drawingArea.queueDraw()
+        }
+    }
+
+    private func applyPopoverPointingTo(popover: Popover, anchor: Box) {
+        // Pin to the node's vertical center so the popover stays put while
+        // the user navigates instructions inside the same block. The arrow
+        // ends up at the node's middle; the contents update to reflect the
+        // selected instruction.
+        let anchorWidth = anchor.allocatedWidth
+        let anchorHeight = anchor.allocatedHeight
+        guard anchorWidth > 0, anchorHeight > 0 else { return }
+        var rect = GdkRectangle(
+            x: gint(anchorWidth - 1),
+            y: gint(anchorHeight / 2),
+            width: 1,
+            height: 1
+        )
+        withUnsafeMutablePointer(to: &rect) { ptr in
+            gtk_popover_set_pointing_to(popover.popover_ptr, ptr)
+        }
     }
 
     private func dismissRegisterPopover() {
         registerPopover?.popdown()
         registerPopover = nil
+        registerPopoverScroll = nil
     }
 
     private func buildRegisterContent(for key: CFGGraph.NodeKey) -> Box {
         let info = nodeRegisterInfo[key]!
 
         let instrOffset = selectedInstructionLine * 4
-        var values = info.stateBeforeBlock.values
+        // The trace is a delta-encoded log of register writes, so very early
+        // entries only have a handful of registers in their cumulative state.
+        // Start from the most-complete snapshot we have (the trace's final
+        // accumulated state), then override layer by layer with progressively
+        // more accurate information so registers we *do* know about for this
+        // instruction are correct, and the rest are at least populated.
+        var values: [Int: UInt64] = decoded.registerStates.last?.values ?? [:]
+        for (idx, val) in info.stateAfterBlock.values {
+            values[idx] = val
+        }
+        for (idx, val) in info.stateBeforeBlock.values {
+            values[idx] = val
+        }
         var changed = Set<Int>()
         for write in info.writes where write.blockOffset <= instrOffset {
             values[write.registerIndex] = write.value
@@ -890,7 +912,7 @@ final class ITraceCFGView {
         }
         let layout = registerLayout(nameToIdx: nameToIdx, values: values)
 
-        let outer = Box(orientation: .vertical, spacing: 6)
+        let outer = Box(orientation: .vertical, spacing: 4)
         outer.marginStart = 10
         outer.marginEnd = 10
         outer.marginTop = 8
@@ -915,9 +937,9 @@ final class ITraceCFGView {
         for row in rows {
             let rowBox = Box(orientation: .horizontal, spacing: 12)
             for entry in row {
-                let cell = Label(
-                    str: String(format: "%4s: 0x%016llx", (entry.name as NSString).utf8String!, entry.value)
-                )
+                let padded = entry.name.padding(toLength: 4, withPad: " ", startingAt: 0)
+                let valueText = String(format: "0x%016llx", entry.value)
+                let cell = Label(str: "\(padded): \(valueText)")
                 cell.add(cssClass: "monospace")
                 cell.add(cssClass: "caption")
                 if changed.contains(entry.index) {

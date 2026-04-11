@@ -60,12 +60,16 @@ enum StyleSheet {
     .luma-cfg-section-6 { border-left: 3px solid #e377c2; }
     .luma-cfg-section-7 { border-left: 3px solid #17becf; }
     .luma-cfg-section-current { box-shadow: 0 0 0 2px alpha(@accent_bg_color, 0.6); }
-    .luma-cfg-instr-list { background: transparent; }
+    .luma-cfg-instr-list {
+        background: transparent;
+        padding: 0;
+        margin: 0;
+        min-height: 0;
+    }
     .luma-cfg-instr-list > row {
         padding: 0 4px;
         min-height: 0;
     }
-    .luma-cfg-regdiff { color: alpha(@accent_fg_color, 0.9); }
     .luma-cfg-reg-changed { color: @accent_bg_color; font-weight: bold; }
 
     .luma-toast {
