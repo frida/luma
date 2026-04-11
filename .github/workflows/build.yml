@@ -82,9 +82,17 @@ jobs:
             --team-id "$TEAM_ID" \
             --password "$NOTARY_PASSWORD"
           ditto -c -k --sequesterRsrc build/Luma.app Luma-notarize.zip
-          xcrun notarytool submit Luma-notarize.zip \
+          RESULT=$(xcrun notarytool submit Luma-notarize.zip \
             --keychain-profile "notarytool-profile" \
-            --wait
+            --wait 2>&1) || true
+          echo "$RESULT"
+          ID=$(echo "$RESULT" | grep '  id:' | head -1 | awk '{print $2}')
+          STATUS=$(echo "$RESULT" | grep '  status:' | head -1 | awk '{print $2}')
+          if [ "$STATUS" != "Accepted" ]; then
+            echo "--- Notarization log ---"
+            xcrun notarytool log "$ID" --keychain-profile "notarytool-profile" 2>&1 || true
+            exit 1
+          fi
           xcrun stapler staple build/Luma.app
 
       - name: Create DMG
