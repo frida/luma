@@ -56,7 +56,8 @@
             "build-commands": [
                 "./configure --enable-shared --without-prebuilds=sdk --prefix=/app -- --force-fallback-for=openssl",
                 "make -j$(nproc)",
-                "make install"
+                "DESTDIR=/tmp/frida-install meson install -C build --skip-subprojects",
+                "cp -a /tmp/frida-install/app/* /app/"
             ],
             "sources": [
                 {
