@@ -12,8 +12,8 @@ env:
 
 jobs:
   macos:
-    if: false
     runs-on: macos-26
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -52,7 +52,6 @@ jobs:
           path: Luma.dmg
 
   fedora:
-    if: false
     runs-on: ubuntu-latest
     container: fedora:43
     steps:
@@ -151,7 +150,6 @@ jobs:
           path: luma-fedora-43.tar.gz
 
   ubuntu:
-    if: false
     runs-on: ubuntu-latest
     container: ubuntu:25.10
     steps:
@@ -251,7 +249,6 @@ jobs:
           path: luma-ubuntu-25.10.deb
 
   flatpak:
-    if: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
