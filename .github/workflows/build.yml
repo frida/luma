@@ -97,17 +97,21 @@ jobs:
           fi
           xcrun stapler staple build/Luma.app
 
+      - name: Install create-dmg
+        run: brew install create-dmg
+
       - name: Create DMG
         run: |
-          mkdir -p dmg-staging
-          cp -r build/Luma.app dmg-staging/
-          ln -s /Applications dmg-staging/Applications
-          hdiutil create \
-            -volname Luma \
-            -srcfolder dmg-staging \
-            -ov \
-            -format UDZO \
-            Luma-${{ matrix.arch }}.dmg
+          create-dmg \
+            --volname "Luma" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "Luma.app" 150 185 \
+            --app-drop-link 450 185 \
+            --no-internet-enable \
+            Luma-${{ matrix.arch }}.dmg \
+            build/Luma.app
 
       - uses: actions/upload-artifact@v4
         with:
