@@ -118,6 +118,7 @@ parts:
       - libsoup-3.0-dev
       - gobject-introspection
       - libgirepository1.0-dev
+      - libatk1.0-dev
       - libxml2-dev
       - nodejs
       - npm
