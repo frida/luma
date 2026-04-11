@@ -18,8 +18,8 @@ import UniformTypeIdentifiers
         }
 
         var body: some Scene {
-            DocumentGroup(newDocument: { LumaProject() }) { configuration in
-                MainWindowView(store: configuration.document.store)
+            DocumentGroup(newDocument: LumaProject()) { configuration in
+                MainWindowView(dbURL: configuration.document.temporaryDBURL)
             }
             .defaultSize(width: 1100, height: 680)
         }
@@ -72,8 +72,8 @@ import UniformTypeIdentifiers
         }
 
         var body: some Scene {
-            DocumentGroup(newDocument: { LumaProject() }) { configuration in
-                MainWindowView(store: configuration.document.store)
+            DocumentGroup(newDocument: LumaProject()) { configuration in
+                MainWindowView(dbURL: configuration.document.temporaryDBURL)
             }
         }
     }

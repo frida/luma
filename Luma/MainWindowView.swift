@@ -4,13 +4,11 @@ import UniformTypeIdentifiers
 import LumaCore
 
 struct MainWindowView: View {
-    let store: ProjectStore
-
     @State private var uiState = ProjectUIStateValue()
     @StateObject private var workspace: Workspace
 
-    init(store: ProjectStore) {
-        self.store = store
+    init(dbURL: URL) {
+        let store = try! ProjectStore(path: dbURL.path)
         self._workspace = StateObject(wrappedValue: Workspace(store: store))
     }
 

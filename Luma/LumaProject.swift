@@ -1,59 +1,32 @@
-import Combine
 import Foundation
-import LumaCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-nonisolated final class LumaProject: ReferenceFileDocument {
-    nonisolated(unsafe) let objectWillChange = ObservableObjectPublisher()
-    let store: ProjectStore
+struct LumaProject: FileDocument {
+    static let readableContentTypes: [UTType] = [UTType(exportedAs: "re.frida.luma")]
+    static let writableContentTypes: [UTType] = readableContentTypes
 
-    nonisolated static var readableContentTypes: [UTType] {
-        [UTType.project]
-    }
-    nonisolated static var writableContentTypes: [UTType] {
-        [UTType.project]
-    }
-
-    private let temporaryDirectory: URL
-    private let temporaryDBURL: URL
+    var temporaryDBURL: URL
 
     init() {
+        self.temporaryDBURL = Self.makeTemporaryDBURL()
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        self.temporaryDBURL = Self.makeTemporaryDBURL()
+        if let data = configuration.file.regularFileContents {
+            try data.write(to: temporaryDBURL)
+        }
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: try Data(contentsOf: temporaryDBURL))
+    }
+
+    private static func makeTemporaryDBURL() -> URL {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("re.frida.Luma.\(UUID().uuidString)", isDirectory: true)
         try! FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        let dbURL = tempDir.appendingPathComponent("project.sqlite")
-        self.temporaryDirectory = tempDir
-        self.temporaryDBURL = dbURL
-        self.store = try! ProjectStore(path: dbURL.path)
-    }
-
-    required nonisolated init(configuration: ReadConfiguration) throws {
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("re.frida.Luma.\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        let dbURL = tempDir.appendingPathComponent("project.sqlite")
-
-        if let data = configuration.file.regularFileContents {
-            try data.write(to: dbURL)
-        }
-
-        self.temporaryDirectory = tempDir
-        self.temporaryDBURL = dbURL
-        self.store = try ProjectStore(path: dbURL.path)
-    }
-
-    nonisolated func snapshot(contentType: UTType) throws -> Data {
-        try Data(contentsOf: temporaryDBURL)
-    }
-
-    nonisolated func fileWrapper(snapshot: Data, configuration: WriteConfiguration) throws -> FileWrapper {
-        FileWrapper(regularFileWithContents: snapshot)
-    }
-}
-
-extension UTType {
-    nonisolated static var project: UTType {
-        UTType(exportedAs: "re.frida.luma")
+        return tempDir.appendingPathComponent("project.sqlite")
     }
 }
