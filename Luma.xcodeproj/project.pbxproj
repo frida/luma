@@ -85,6 +85,8 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				scripts/capture-screenshots.py,
+				scripts/capture-screenshots.sh,
 			);
 			target = 0CD209332EB511C400D027FC /* Luma */;
 		};
@@ -95,8 +97,6 @@
 			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
 			buildPhase = 0CD209322EB511C400D027FC /* Resources */;
 			membershipExceptions = (
-				scripts/capture-screenshots.py,
-				scripts/capture-screenshots.sh,
 			);
 		};
 /* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
@@ -201,7 +201,6 @@
 				0CD209312EB511C400D027FC /* Frameworks */,
 				0CD209322EB511C400D027FC /* Resources */,
 				0CE0E5262ED0A38A000B1E01 /* Embed Frameworks */,
-				0CAA00042F00000000000003 /* Embed Radare2.framework */,
 			);
 			buildRules = (
 			);
@@ -309,26 +308,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/zsh;
 			shellScript = "set -euo pipefail\n\n\"${BUILT_PRODUCTS_DIR}/LumaBundleCompiler\" \\\n    --project-root     \"${SRCROOT}\" \\\n    --swift-out        \"${SRCROOT}/Sources/LumaCore/Generated/LumaAgent.swift\" \\\n    --staging-dir      \"${BUILD_DIR}/AgentStaging\" \\\n    --package frida-itrace@6.0.0 \\\n    --agent  core      Agent/core/luma.ts \\\n    --agent  drain     Agent/instruments/drain-agent.ts \\\n    --module tracer    Agent/instruments/tracer.ts \\\n    --module codeShare Agent/instruments/codeshare.ts\n";
-		};
-		0CAA00042F00000000000003 /* Embed Radare2.framework */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(BUILT_PRODUCTS_DIR)/Radare2.framework",
-			);
-			name = "Embed Radare2.framework";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/Radare2.framework",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "if [ -d \"${BUILT_PRODUCTS_DIR}/Radare2.framework\" ]; then\n  mkdir -p \"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}\"\n  rsync -av --delete \"${BUILT_PRODUCTS_DIR}/Radare2.framework\" \"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/\"\n  codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" --timestamp=none --preserve-metadata=identifier,entitlements \"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Radare2.framework\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
