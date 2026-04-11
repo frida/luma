@@ -377,16 +377,23 @@ jobs:
       - name: Install build tools
         run: pip install meson ninja gvsbuild
 
-      - name: Build GTK4
-        uses: actions/cache@v4
+      - name: Restore GTK4 cache
         id: gtk-cache
+        uses: actions/cache/restore@v4
         with:
           path: C:\gtk-build
           key: ${{ runner.os }}-gvsbuild-gtk4-v1
 
-      - name: Build GTK4 (uncached)
+      - name: Build GTK4
         if: steps.gtk-cache.outputs.cache-hit != 'true'
         run: gvsbuild build --ninja-opts -j2 gtk4 gobject-introspection
+
+      - name: Save GTK4 cache
+        if: steps.gtk-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: C:\gtk-build
+          key: ${{ runner.os }}-gvsbuild-gtk4-v1
 
       - name: Set up GTK environment
         shell: bash
