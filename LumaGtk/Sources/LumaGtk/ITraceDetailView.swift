@@ -11,7 +11,7 @@ final class ITraceDetailView {
     private let engine: Engine
     private let sessionID: UUID
     private let bodyContainer: Box
-    private let entriesBox: Box
+    private let entriesList: ListBox
     private let entriesScroll: ScrolledWindow
     private var entryRows: [ListBoxRow] = []
     private var decoded: DecodedITrace?
@@ -86,12 +86,14 @@ final class ITraceDetailView {
         bodyContainer.marginTop = 12
         widget.append(child: bodyContainer)
 
-        entriesBox = Box(orientation: .vertical, spacing: 0)
-        entriesBox.hexpand = true
+        entriesList = ListBox()
+        entriesList.hexpand = true
+        entriesList.selectionMode = .single
+        entriesList.add(cssClass: "boxed-list")
         entriesScroll = ScrolledWindow()
         entriesScroll.hexpand = true
         entriesScroll.vexpand = true
-        entriesScroll.set(child: entriesBox)
+        entriesScroll.set(child: entriesList)
 
         let spinner = Spinner()
         spinner.start()
@@ -246,10 +248,8 @@ final class ITraceDetailView {
     }
 
     private func populateEntries(_ entries: [TraceEntry]) {
-        var child = entriesBox.firstChild
-        while let current = child {
-            child = current.nextSibling
-            entriesBox.remove(child: current)
+        while let row = entriesList.firstChild {
+            entriesList.remove(child: row)
         }
         entryRows.removeAll(keepingCapacity: true)
         entryRows.reserveCapacity(entries.count)
@@ -271,16 +271,17 @@ final class ITraceDetailView {
             label.marginEnd = 8
             label.marginTop = 1
             label.marginBottom = 1
-            label.selectable = true
             row.set(child: label)
-            entriesBox.append(child: row)
+            entriesList.append(child: row)
             entryRows.append(row)
         }
     }
 
     private func jumpToEntry(index: Int) {
         guard index >= 0, index < entryRows.count else { return }
-        _ = entryRows[index].grabFocus()
+        let row = entryRows[index]
+        entriesList.select(row: row)
+        _ = row.grabFocus()
     }
 
     private static func presentComparePopover(
