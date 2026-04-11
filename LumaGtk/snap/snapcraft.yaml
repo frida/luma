@@ -27,7 +27,7 @@ parts:
   swift:
     plugin: nil
     override-build: |
-      curl -sL "https://download.swift.org/swift-6.1-release/ubuntu2204/swift-6.1-RELEASE/swift-6.1-RELEASE-ubuntu22.04.tar.gz" \
+      curl -sL "https://download.swift.org/swift-6.2-release/ubuntu2204/swift-6.2-RELEASE/swift-6.2-RELEASE-ubuntu22.04.tar.gz" \
         -o swift.tar.gz
       tar xzf swift.tar.gz --strip-components=2 -C "$CRAFT_STAGE"
       rm swift.tar.gz
@@ -92,9 +92,10 @@ parts:
       export PATH="$CRAFT_STAGE/usr/bin:$CRAFT_STAGE/usr/local/bin:$CRAFT_STAGE/bin:$PATH"
       export PKG_CONFIG_PATH="$CRAFT_STAGE/usr/local/lib/pkgconfig:$CRAFT_STAGE/usr/local/lib/x86_64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH"
       export LD_LIBRARY_PATH="$CRAFT_STAGE/usr/local/lib:$CRAFT_STAGE/usr/local/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"
-      cd LumaGtk
+      ln -sfn build "$CRAFT_PART_BUILD/../luma"
+      cd "$CRAFT_PART_BUILD/../luma/LumaGtk"
       make build SWIFT_BUILD_FLAGS="-c release"
-      install -Dm755 .build/release/LumaGtk "$CRAFT_PART_INSTALL/usr/local/bin/luma"
+      install -Dm755 .build/x86_64-unknown-linux-gnu/release/LumaGtk "$CRAFT_PART_INSTALL/usr/local/bin/luma"
       install -Dm644 data/re.frida.Luma.desktop "$CRAFT_PART_INSTALL/usr/local/share/applications/re.frida.Luma.desktop"
       install -Dm644 data/re.frida.Luma.xml "$CRAFT_PART_INSTALL/usr/local/share/mime/packages/re.frida.Luma.xml"
     build-packages:
