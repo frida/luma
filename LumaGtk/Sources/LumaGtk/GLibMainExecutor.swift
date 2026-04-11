@@ -11,14 +11,22 @@ import Glibc
 // work and any Task { @MainActor in ... } stalls forever.
 //
 // libdispatch on Linux exports the same hooks CFRunLoop uses on Apple to
-// drain its main queue: _dispatch_get_main_queue_handle_4CF returns an fd
-// that becomes readable when the main queue has work, and
+// drain its main queue: _dispatch_get_main_queue_handle_4CF returns a unix
+// file descriptor that becomes readable when the main queue has work, and
 // _dispatch_main_queue_callback_4CF drains whatever is pending.
 //
 // Watch the fd from a low-priority GLib I/O source so the GTK main loop
 // drives the dispatch main queue, which in turn drives Swift's main actor.
 // The drain priority sits below GTK's render idles so window mapping and
 // drawing always run before we hand the main thread over to Swift work.
+//
+// macOS doesn't need any of this: the GDK macOS backend pumps NSApplication
+// from inside g_application_run, which spins CFRunLoop, which already drains
+// libdispatch's main queue. The 4CF handle on Apple platforms is a Mach
+// port name, not a unix fd, so feeding it to g_io_channel_unix_new would
+// just produce a Bad-file-descriptor warning.
+
+#if os(Linux)
 
 @_silgen_name("_dispatch_get_main_queue_handle_4CF")
 private func dispatchGetMainQueueHandle() -> Int32
@@ -36,8 +44,11 @@ private let drainCallback: GIOFunc = { channel, _, _ in
     return 1  // G_SOURCE_CONTINUE
 }
 
+#endif
+
 enum GLibMainExecutor {
     static func install() {
+        #if os(Linux)
         // Touch the main queue so libdispatch initializes its handle.
         _ = DispatchQueue.main
 
@@ -56,5 +67,6 @@ enum GLibMainExecutor {
             nil
         )
         g_io_channel_unref(channel)
+        #endif
     }
 }
