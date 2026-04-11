@@ -84,19 +84,20 @@ enum ThemeWatcher {
     private static let colorSchemePropertyName = "gtk-interface-color-scheme"
     private static let preferDarkPropertyName = "gtk-application-prefer-dark-theme"
 
-    private static let hasColorSchemeProperty: Bool = {
-        guard let settingsClass = g_type_class_ref(gtk_settings_get_type()) else { return false }
+    /// `gtk-interface-color-scheme` is GTK 4.20+. We discover both whether
+    /// the property exists and its enum GType from the property spec — no
+    /// dlsym needed (and `dlsym(nil, …)` doesn't even work on macOS, where
+    /// the default-namespace handle is `RTLD_DEFAULT == -2`, not `NULL`).
+    private static let colorSchemeGType: GType = {
+        guard let settingsClass = g_type_class_ref(gtk_settings_get_type()) else { return 0 }
         defer { g_type_class_unref(settingsClass) }
         let objectClass = settingsClass.assumingMemoryBound(to: GObjectClass.self)
-        return g_object_class_find_property(objectClass, colorSchemePropertyName) != nil
+        guard let pspec = g_object_class_find_property(objectClass, colorSchemePropertyName)
+        else { return 0 }
+        return pspec.pointee.value_type
     }()
 
-    private static let colorSchemeGType: GType = {
-        let sym = dlsym(nil, "gtk_interface_color_scheme_get_type")
-        guard let sym else { return 0 }
-        let fn = unsafeBitCast(sym, to: (@convention(c) () -> GType).self)
-        return fn()
-    }()
+    private static var hasColorSchemeProperty: Bool { colorSchemeGType != 0 }
 
     private static var notifySignalName: String {
         hasColorSchemeProperty
