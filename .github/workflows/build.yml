@@ -50,9 +50,11 @@ jobs:
       - name: Build
         run: |
           if [ "$CAN_SIGN" = "true" ]; then
-            SIGN_ARGS="CODE_SIGN_IDENTITY=Developer ID Application CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=753PE4AG6F"
+            IDENTITY="Developer ID Application"
+            STYLE=Manual
           else
-            SIGN_ARGS="CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=NO"
+            IDENTITY="-"
+            STYLE=Automatic
           fi
           xcodebuild \
             -project Luma.xcodeproj \
@@ -60,7 +62,9 @@ jobs:
             -configuration Release \
             -derivedDataPath build/.derived \
             -arch ${{ matrix.arch }} \
-            $SIGN_ARGS \
+            "CODE_SIGN_IDENTITY=$IDENTITY" \
+            CODE_SIGN_STYLE="$STYLE" \
+            DEVELOPMENT_TEAM=753PE4AG6F \
             build
           mkdir -p build
           cp -r build/.derived/Build/Products/Release/Luma.app build/
