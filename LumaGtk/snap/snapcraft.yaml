@@ -86,7 +86,7 @@ parts:
   luma:
     after: [swift, frida-core, radare2]
     plugin: nil
-    source: ..
+    source: ../..
     source-type: local
     override-build: |
       export PATH="$CRAFT_STAGE/usr/bin:$CRAFT_STAGE/usr/local/bin:$CRAFT_STAGE/bin:$PATH"
