@@ -55,6 +55,7 @@ parts:
       ./configure --enable-shared --without-prebuilds=sdk --prefix="$CRAFT_STAGE/usr/local" -- --force-fallback-for=openssl -Dcompat=disabled -Dserver=disabled -Dportal=disabled -Dinject=disabled -Dgadget=disabled -Dtests=disabled
       make -j$(nproc)
       DESTDIR="$PWD/_destdir" python3 releng/meson/meson.py install -C build --skip-subprojects --no-rebuild
+      mkdir -p "$CRAFT_STAGE/usr/local"
       cp -a "_destdir/$CRAFT_STAGE/usr/local/." "$CRAFT_STAGE/usr/local/"
     build-packages:
       - git
