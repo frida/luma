@@ -433,7 +433,7 @@ jobs:
           git clone --depth 1 -b $env:FRIDA_CORE_REF https://github.com/frida/frida-core.git $env:RUNNER_TEMP\frida-core
           Push-Location $env:RUNNER_TEMP\frida-core
           git submodule update --init --recursive --depth 1
-          python -c "import sys; sys.path.insert(0, '.'); from releng.meson_configure import main; main()" . --enable-shared --without-prebuilds=sdk "--prefix=$env:RUNNER_TEMP\frida-prefix"
+          python -c "import sys; sys.path.insert(0, '.'); from releng.meson_configure import main; main()" . --enable-shared --without-prebuilds=sdk "--prefix=$env:RUNNER_TEMP\frida-prefix" -- --force-fallback-for=openssl
           if ($LASTEXITCODE -ne 0) { throw "configure failed with exit code $LASTEXITCODE" }
           python releng/meson/meson.py compile -C build
           if ($LASTEXITCODE -ne 0) { throw "compile failed with exit code $LASTEXITCODE" }
