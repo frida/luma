@@ -34,9 +34,22 @@ parts:
     build-packages:
       - curl
 
-  frida-core:
+  nodejs:
     plugin: nil
     override-build: |
+      curl -sL "https://nodejs.org/dist/v20.18.0/node-v20.18.0-linux-x64.tar.xz" \
+        -o node.tar.xz
+      tar xJf node.tar.xz --strip-components=1 -C "$CRAFT_STAGE"
+      rm node.tar.xz
+    build-packages:
+      - curl
+      - xz-utils
+
+  frida-core:
+    after: [nodejs]
+    plugin: nil
+    override-build: |
+      export PATH="$CRAFT_STAGE/bin:$PATH"
       git clone --depth 1 https://github.com/frida/frida-core.git src
       cd src
       ./configure --enable-shared --without-prebuilds=sdk --prefix="$CRAFT_STAGE/usr/local" -- --force-fallback-for=openssl -Dcompat=disabled -Dserver=disabled -Dportal=disabled -Dinject=disabled -Dgadget=disabled -Dtests=disabled
@@ -56,6 +69,7 @@ parts:
       - libsoup-3.0-dev
       - libunwind-dev
       - libnice-dev
+      - libelf-dev
       - libelf-dev
 
   radare2:
