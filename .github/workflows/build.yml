@@ -236,25 +236,9 @@ jobs:
       - name: Package as .deb
         run: |
           PKG=luma_0.1.0_amd64
-          mkdir -p $PKG/DEBIAN
-          mkdir -p $PKG/usr/local/{bin,share/applications,share/mime/packages}
-          cat > $PKG/DEBIAN/control << 'CTRL'
-          Package: luma
-          Version: 0.1.0
-          Section: devel
-          Priority: optional
-          Architecture: amd64
-          Depends: libgtk-4-1, libwebkitgtk-6.0-4, libsoup-3.0-0
-          Maintainer: Ole Andre Vadla Ravnas <oleavr@frida.re>
-          Description: Luma - Dynamic instrumentation toolkit
-           Interactive dynamic instrumentation app built on Frida.
-          CTRL
-          sed -i 's/^          //' $PKG/DEBIAN/control
-          ls -la LumaGtk/.build/release/ 2>/dev/null || true
-          ls -la LumaGtk/.build/x86_64-unknown-linux-gnu/release/ 2>/dev/null || true
-          BINARY=$(find LumaGtk/.build -name LumaGtk -type f 2>/dev/null | grep release | head -1)
-          echo "Found binary: $BINARY"
-          cp "$BINARY" $PKG/usr/local/bin/luma
+          mkdir -p $PKG/DEBIAN $PKG/usr/local/bin $PKG/usr/local/share/applications $PKG/usr/local/share/mime/packages
+          printf 'Package: luma\nVersion: 0.1.0\nSection: devel\nPriority: optional\nArchitecture: amd64\nDepends: libgtk-4-1, libwebkitgtk-6.0-4, libsoup-3.0-0\nMaintainer: Ole Andre Vadla Ravnas <oleavr@frida.re>\nDescription: Luma - Dynamic instrumentation toolkit\n Interactive dynamic instrumentation app built on Frida.\n' > $PKG/DEBIAN/control
+          cp LumaGtk/.build/x86_64-unknown-linux-gnu/release/LumaGtk $PKG/usr/local/bin/luma
           cp LumaGtk/data/re.frida.Luma.desktop $PKG/usr/local/share/applications/
           cp LumaGtk/data/re.frida.Luma.xml $PKG/usr/local/share/mime/packages/
           dpkg-deb --build $PKG
