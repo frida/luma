@@ -86,8 +86,8 @@ parts:
   luma:
     after: [swift, frida-core, radare2]
     plugin: nil
-    source: ../..
-    source-type: local
+    source: https://github.com/frida/luma.git
+    source-branch: cross-platform
     override-build: |
       export PATH="$CRAFT_STAGE/usr/bin:$CRAFT_STAGE/usr/local/bin:$CRAFT_STAGE/bin:$PATH"
       export PKG_CONFIG_PATH="$CRAFT_STAGE/usr/local/lib/pkgconfig:$CRAFT_STAGE/usr/local/lib/x86_64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH"
