@@ -25,12 +25,15 @@ jobs:
           node-version: "20"
 
       - name: Install the Apple certificates
-        if: ${{ secrets.CERTIFICATES_P12 != '' }}
         env:
           CERTIFICATES_P12: ${{ secrets.CERTIFICATES_P12 }}
           CERTIFICATES_PASSWORD: ${{ secrets.CERTIFICATES_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
+          if [ -z "$CERTIFICATES_P12" ]; then
+            echo "No signing certificates configured, skipping"
+            exit 0
+          fi
           CERTIFICATE_PATH=$RUNNER_TEMP/apple-certificates.p12
           KEYCHAIN_PATH=$RUNNER_TEMP/luma-signing.keychain-db
           echo -n "$CERTIFICATES_P12" | base64 --decode -o $CERTIFICATE_PATH
