@@ -42,6 +42,7 @@ final class LumaApplication {
 
     private func activate() {
         StyleSheet.install()
+        ThemeWatcher.install()
         if CommandLine.arguments.contains("--monaco-demo") {
             MonacoDemo.present(in: app)
             return
