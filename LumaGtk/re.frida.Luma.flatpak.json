@@ -17,7 +17,7 @@
     "build-options": {
         "build-args": ["--share=network"],
         "env": {
-            "PKG_CONFIG_PATH": "/app/lib64/pkgconfig:/app/lib/pkgconfig:/app/lib/x86_64-linux-gnu/pkgconfig:/app/share/pkgconfig"
+            "PKG_CONFIG_PATH": "/app/lib64/pkgconfig"
         }
     },
     "modules": [
