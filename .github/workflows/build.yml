@@ -26,9 +26,9 @@ jobs:
 
       - name: Install the Apple certificates
         env:
-          CERTIFICATES_P12: ${{ secrets.CERTIFICATES_P12 }}
-          CERTIFICATES_PASSWORD: ${{ secrets.CERTIFICATES_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          CERTIFICATES_P12: ${{ secrets.APPLE_CERTIFICATES_P12 }}
+          CERTIFICATES_PASSWORD: ${{ secrets.APPLE_CERTIFICATES_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
         run: |
           if [ -z "$CERTIFICATES_P12" ]; then
             echo "No signing certificates configured, skipping"
@@ -358,7 +358,8 @@ jobs:
 
       - uses: compnerd/gha-setup-swift@v0.4.0
         with:
-          swift-version: ${{ env.SWIFT_VERSION }}
+          swift-version: "swift-${{ env.SWIFT_VERSION }}-release"
+          swift-build: "${{ env.SWIFT_VERSION }}-RELEASE"
 
       - uses: actions/setup-python@v5
         with:
