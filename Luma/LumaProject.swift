@@ -1,9 +1,11 @@
+import Combine
 import Foundation
 import LumaCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-final class LumaProject: ReferenceFileDocument, ObservableObject {
+nonisolated final class LumaProject: ReferenceFileDocument {
+    let objectWillChange = ObservableObjectPublisher()
     let store: ProjectStore
 
     nonisolated static var readableContentTypes: [UTType] {
@@ -51,7 +53,7 @@ final class LumaProject: ReferenceFileDocument, ObservableObject {
 }
 
 extension UTType {
-    static var project: UTType {
+    nonisolated static var project: UTType {
         UTType(exportedAs: "re.frida.luma")
     }
 }
