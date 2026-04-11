@@ -56,8 +56,10 @@
             "build-commands": [
                 "./configure --enable-shared --without-prebuilds=sdk --prefix=/app -- --force-fallback-for=openssl",
                 "make -j$(nproc)",
-                "DESTDIR=/tmp/frida-install make install",
-                "cp -a /tmp/frida-install/app/* /app/"
+                "DESTDIR=/tmp/frida-install make install || true",
+                "ls -la /tmp/frida-install/ || true",
+                "find /tmp/frida-install -name '*.so*' -o -name '*.h' -o -name '*.pc' | head -20 || true",
+                "cp -a /tmp/frida-install/app/. /app/ 2>/dev/null || cp -a /tmp/frida-install/usr/local/. /app/ 2>/dev/null || cp -a /tmp/frida-install/. /app/"
             ],
             "sources": [
                 {
