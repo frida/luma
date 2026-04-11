@@ -53,7 +53,7 @@ parts:
       export PATH="$CRAFT_STAGE/bin:$PATH"
       git clone --depth 1 https://github.com/frida/frida-core.git src
       cd src
-      ./configure --enable-shared --without-prebuilds=sdk --prefix="$CRAFT_STAGE/usr/local" -- --force-fallback-for=openssl -Dcompat=disabled -Dserver=disabled -Dportal=disabled -Dinject=disabled -Dgadget=disabled -Dtests=disabled
+      ./configure --enable-shared --without-prebuilds=sdk --prefix="$CRAFT_STAGE/usr/local" -- --force-fallback-for=openssl,libelf -Dcompat=disabled -Dserver=disabled -Dportal=disabled -Dinject=disabled -Dgadget=disabled -Dtests=disabled
       make -j$(nproc)
       DESTDIR="$PWD/_destdir" python3 releng/meson/meson.py install -C build --skip-subprojects --no-rebuild
       mkdir -p "$CRAFT_STAGE/usr/local"
@@ -72,7 +72,6 @@ parts:
       - libsoup-3.0-dev
       - libunwind-dev
       - libnice-dev
-      - libelf-dev
 
   radare2:
     plugin: nil
