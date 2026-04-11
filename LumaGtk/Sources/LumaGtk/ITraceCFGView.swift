@@ -138,6 +138,13 @@ final class ITraceCFGView {
         select(key: key, notify: false)
     }
 
+    func invalidateDisasm() {
+        disasmFetchTask?.cancel()
+        disasmFetchTask = nil
+        disasmCache.removeAll()
+        fetchDisasmForNodes()
+    }
+
     // MARK: - Graph build
 
     private func rebuildGraph(forCallIndex callIdx: Int) {

@@ -1,7 +1,6 @@
 import CGtk
 import Foundation
 import Gdk
-import GLibObject
 import Gtk
 import LumaCore
 
@@ -134,32 +133,16 @@ final class InsightDetailView {
         }
         disasmBox.install(controller: keyController)
 
-        isDarkMode = Self.detectDarkMode()
-        if let settings = gtk_settings_get_default() {
-            themeSignalID = g_signal_connect_data(
-                settings,
-                "notify::gtk-theme-name",
-                unsafeBitCast(themeChangedCallback, to: GCallback.self),
-                Unmanaged.passUnretained(self).toOpaque(),
-                nil,
-                GConnectFlags(rawValue: 0)
-            )
+        isDarkMode = ThemeWatcher.isDarkMode()
+        themeSignalID = ThemeWatcher.subscribe(owner: self) { view in
+            view.handleThemeChanged()
         }
 
         refresh()
     }
 
     deinit {
-        if themeSignalID != 0, let settings = gtk_settings_get_default() {
-            g_signal_handler_disconnect(settings, themeSignalID)
-        }
-    }
-
-    private static func detectDarkMode() -> Bool {
-        guard let settings = Settings.getDefault() else { return false }
-        let value = settings.get(property: .gtkThemeName)
-        guard let name = value.string else { return false }
-        return name.localizedCaseInsensitiveContains("dark")
+        ThemeWatcher.unsubscribe(handlerID: themeSignalID)
     }
 
     private func setContent(_ child: Widget) {
@@ -524,7 +507,7 @@ final class InsightDetailView {
 
     fileprivate func handleThemeChanged() {
         let wasDark = isDarkMode
-        isDarkMode = Self.detectDarkMode()
+        isDarkMode = ThemeWatcher.isDarkMode()
         if isDarkMode != wasDark {
             refresh()
         }
@@ -534,19 +517,5 @@ final class InsightDetailView {
         while let child = box.firstChild {
             box.remove(child: child)
         }
-    }
-}
-
-private let themeChangedCallback: @convention(c) (
-    UnsafeMutableRawPointer,
-    UnsafeMutableRawPointer?,
-    UnsafeMutableRawPointer?
-) -> Void = { _, _, userData in
-    guard let userData else { return }
-    let raw = UInt(bitPattern: userData)
-    MainActor.assumeIsolated {
-        let ptr = UnsafeMutableRawPointer(bitPattern: raw)!
-        let view = Unmanaged<InsightDetailView>.fromOpaque(ptr).takeUnretainedValue()
-        view.handleThemeChanged()
     }
 }

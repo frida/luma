@@ -1,3 +1,4 @@
+import CGLib
 import Foundation
 import Gtk
 import LumaCore
@@ -22,6 +23,8 @@ final class ITraceDetailView {
     private var modeSwitcher: Box?
     private var listToggle: ToggleButton?
     private var graphToggle: ToggleButton?
+    fileprivate var isDarkMode: Bool = ThemeWatcher.isDarkMode()
+    private var themeSignalID: gulong = 0
 
     init(
         capture: ITraceCaptureRecord,
@@ -118,6 +121,21 @@ final class ITraceDetailView {
             }
             self?.applyDecodeResult(result)
         }
+
+        themeSignalID = ThemeWatcher.subscribe(owner: self) { detail in
+            detail.handleThemeChanged()
+        }
+    }
+
+    deinit {
+        ThemeWatcher.unsubscribe(handlerID: themeSignalID)
+    }
+
+    fileprivate func handleThemeChanged() {
+        let now = ThemeWatcher.isDarkMode()
+        guard now != isDarkMode else { return }
+        isDarkMode = now
+        cfgView?.invalidateDisasm()
     }
 
     private func applyDecodeResult(_ result: Result<DecodedITrace, Error>) {
@@ -219,8 +237,9 @@ final class ITraceDetailView {
 
         let disassembler = self.disassembler
         let provider: ((UInt64, Int) async -> StyledText)? = disassembler.map { d in
-            { addr, size in
-                await d.disassemble(at: addr, size: size, isDarkMode: true, withFlags: false)
+            { [weak self] addr, size in
+                let dark = await MainActor.run { self?.isDarkMode ?? false }
+                return await d.disassemble(at: addr, size: size, isDarkMode: dark, withFlags: false)
             }
         }
 
