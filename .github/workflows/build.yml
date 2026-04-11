@@ -18,7 +18,7 @@ jobs:
       matrix:
         arch: [arm64, x86_64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-node@v4
         with:
@@ -49,11 +49,6 @@ jobs:
 
       - name: Build
         run: |
-          if [ "$CAN_SIGN" = "true" ]; then
-            IDENTITY="Developer ID Application"
-          else
-            IDENTITY="-"
-          fi
           xcodebuild \
             -project Luma.xcodeproj \
             -scheme Luma \
@@ -65,16 +60,27 @@ jobs:
             build
           mkdir -p build
           cp -r build/.derived/Build/Products/Release/Luma.app build/
-          if [ "$CAN_SIGN" = "true" ]; then
-            find build/Luma.app/Contents/Frameworks -name '*.framework' -maxdepth 1 | while read fw; do
-              codesign --force --options runtime --sign "Developer ID Application" --timestamp "$fw/Versions/Current"
-            done
-            codesign --force --options runtime \
-              --sign "Developer ID Application" \
-              --entitlements Luma/Luma.entitlements \
-              --timestamp \
-              build/Luma.app
-          fi
+
+      - name: Post-process binary
+        run: |
+          BINARY=build/Luma.app/Contents/MacOS/Luma
+          install_name_tool -change \
+            @rpath/Radare2.framework/Versions/A/Radare2 \
+            @rpath/Radare2.framework/Radare2 \
+            "$BINARY"
+          strip -Sx "$BINARY"
+
+      - name: Sign
+        if: env.CAN_SIGN == 'true'
+        run: |
+          find build/Luma.app/Contents/Frameworks -name '*.framework' -maxdepth 1 | while read fw; do
+            codesign --force --options runtime --sign "Developer ID Application" --timestamp "$fw/Versions/Current"
+          done
+          codesign --force --options runtime \
+            --sign "Developer ID Application" \
+            --entitlements Luma/Luma.entitlements \
+            --timestamp \
+            build/Luma.app
 
       - name: Notarize
         if: env.CAN_SIGN == 'true'
@@ -204,7 +210,7 @@ jobs:
           ldconfig
           pkg-config --modversion r_core
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Build
         run: cd LumaGtk && make build SWIFT_BUILD_FLAGS="-c release"
@@ -302,7 +308,7 @@ jobs:
           ldconfig
           pkg-config --modversion r_core
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Build
         run: cd LumaGtk && make build SWIFT_BUILD_FLAGS="-c release"
@@ -328,7 +334,7 @@ jobs:
     if: false
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Flatpak and flatpak-builder
         run: |
@@ -357,7 +363,7 @@ jobs:
     if: false
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: snapcore/action-build@v1
         id: snapcraft
@@ -375,7 +381,7 @@ jobs:
     continue-on-error: true
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-node@v4
         with:
