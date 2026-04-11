@@ -65,6 +65,8 @@ jobs:
             "CODE_SIGN_IDENTITY=$IDENTITY" \
             CODE_SIGN_STYLE="$STYLE" \
             DEVELOPMENT_TEAM=753PE4AG6F \
+            "OTHER_CODE_SIGN_FLAGS=--timestamp" \
+            ENABLE_HARDENED_RUNTIME=YES \
             build
           mkdir -p build
           cp -r build/.derived/Build/Products/Release/Luma.app build/
