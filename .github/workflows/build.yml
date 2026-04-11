@@ -266,6 +266,8 @@ jobs:
         run: |
           flatpak-builder \
             --force-clean \
+            --disable-rofiles-fuse \
+            --keep-build-dirs \
             --repo=flatpak-repo \
             flatpak-build \
             LumaGtk/re.frida.Luma.flatpak.json

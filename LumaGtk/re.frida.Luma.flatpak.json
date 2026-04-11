@@ -14,6 +14,9 @@
         "--system-talk-name=org.freedesktop.PolicyKit1",
         "--filesystem=home"
     ],
+    "build-options": {
+        "build-args": ["--share=network"]
+    },
     "modules": [
         {
             "name": "swift",
@@ -81,7 +84,7 @@
             "buildsystem": "simple",
             "build-commands": [
                 "cd LumaGtk && make build SWIFT_BUILD_FLAGS='-c release'",
-                "install -Dm755 LumaGtk/.build/release/LumaGtk /app/bin/luma",
+                "install -Dm755 LumaGtk/.build/x86_64-unknown-linux-gnu/release/LumaGtk /app/bin/luma",
                 "install -Dm644 LumaGtk/data/re.frida.Luma.desktop /app/share/applications/re.frida.Luma.desktop",
                 "install -Dm644 LumaGtk/data/re.frida.Luma.xml /app/share/mime/packages/re.frida.Luma.xml"
             ],
