@@ -432,9 +432,9 @@ jobs:
           git clone --depth 1 -b $env:FRIDA_CORE_REF https://github.com/frida/frida-core.git $env:RUNNER_TEMP\frida-core
           Push-Location $env:RUNNER_TEMP\frida-core
           git submodule update --init --recursive --depth 1
-          python releng/meson_configure.py . --enable-shared --without-prebuilds=sdk --prefix=$env:RUNNER_TEMP\frida-prefix
+          python -c "import sys; sys.path.insert(0, '.'); from releng.meson_configure import main; main()" . --enable-shared --without-prebuilds=sdk --prefix=$env:RUNNER_TEMP\frida-prefix
           python releng/meson/meson.py compile -C build
-          python releng/meson/meson.py install -C build
+          python releng/meson/meson.py install -C build --skip-subprojects
           Pop-Location
 
       - name: Build radare2 (static)
