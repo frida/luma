@@ -63,8 +63,7 @@ jobs:
             "CODE_SIGN_IDENTITY=$IDENTITY" \
             CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM=753PE4AG6F \
-            "OTHER_CODE_SIGN_FLAGS=--timestamp" \
-            ENABLE_HARDENED_RUNTIME=YES
+            "OTHER_CODE_SIGN_FLAGS=--timestamp"
           mkdir -p build
           cp -r build/Luma.xcarchive/Products/Applications/Luma.app build/
 
