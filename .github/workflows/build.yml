@@ -12,7 +12,6 @@ env:
 
 jobs:
   macos:
-    if: false  # TODO: enable once cross-platform branch SwiftUI compiles
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
@@ -52,7 +51,6 @@ jobs:
           path: Luma.dmg
 
   fedora:
-    if: false  # Passes — disabled while iterating on other jobs
     runs-on: ubuntu-latest
     container: fedora:43
     steps:
@@ -250,7 +248,6 @@ jobs:
           path: luma-ubuntu-25.10.deb
 
   flatpak:
-    if: false  # TODO: enable after Fedora passes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -277,7 +274,6 @@ jobs:
           path: luma.flatpak
 
   snap:
-    if: false  # TODO: enable after Fedora passes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
