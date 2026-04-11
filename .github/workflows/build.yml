@@ -398,21 +398,12 @@ jobs:
       - name: Build frida-core (shared)
         shell: cmd
         run: |
-          git clone --depth 1 -b %FRIDA_CORE_REF% https://github.com/frida/frida-core.git %RUNNER_TEMP%\frida-core
-          cd %RUNNER_TEMP%\frida-core
-          configure.bat --enable-shared --without-prebuilds=sdk --prefix=%RUNNER_TEMP%\frida-prefix
-          make.bat
-          make.bat install
+          git clone --depth 1 -b %FRIDA_CORE_REF% https://github.com/frida/frida-core.git %RUNNER_TEMP%\frida-core && cd %RUNNER_TEMP%\frida-core && configure.bat --enable-shared --without-prebuilds=sdk --prefix=%RUNNER_TEMP%\frida-prefix && make.bat && make.bat install
 
       - name: Build radare2 (static)
         shell: cmd
         run: |
-          git clone https://github.com/radareorg/radare2.git %RUNNER_TEMP%\radare2
-          cd %RUNNER_TEMP%\radare2
-          git checkout %RADARE2_REF%
-          meson setup build --prefix=%RUNNER_TEMP%\r2-prefix --default-library=static -Dstatic_runtime=true -Dcli=disabled --vsenv
-          meson compile -C build
-          meson install -C build
+          git clone https://github.com/radareorg/radare2.git %RUNNER_TEMP%\radare2 && cd %RUNNER_TEMP%\radare2 && git checkout %RADARE2_REF% && meson setup build --prefix=%RUNNER_TEMP%\r2-prefix --default-library=static -Dstatic_runtime=true -Dcli=disabled --vsenv && meson compile -C build && meson install -C build
 
       - name: Update environment
         shell: bash
