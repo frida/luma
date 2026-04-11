@@ -32,19 +32,13 @@
             ]
         },
         {
-            "name": "frida-core-deps",
-            "buildsystem": "simple",
-            "build-commands": ["true"],
-            "modules": [
+            "name": "libgee",
+            "buildsystem": "autotools",
+            "sources": [
                 {
-                    "name": "libgee",
-                    "buildsystem": "meson",
-                    "sources": [{ "type": "git", "url": "https://gitlab.gnome.org/GNOME/libgee.git", "tag": "0.20.8" }]
-                },
-                {
-                    "name": "json-glib",
-                    "buildsystem": "meson",
-                    "sources": [{ "type": "git", "url": "https://gitlab.gnome.org/GNOME/json-glib.git", "tag": "1.10.6" }]
+                    "type": "archive",
+                    "url": "https://download.gnome.org/sources/libgee/0.20/libgee-0.20.6.tar.xz",
+                    "sha256": "1bf834f5e10d60cc6124d74ed3c1dd38da646787fbf7872220b8b4068e476d4d"
                 }
             ]
         },
@@ -52,7 +46,7 @@
             "name": "frida-core",
             "buildsystem": "simple",
             "build-commands": [
-                "./configure --enable-shared --without-prebuilds=sdk --prefix=/app",
+                "./configure --enable-shared --without-prebuilds=sdk --prefix=/app -- --force-fallback-for=openssl",
                 "make -j$(nproc)",
                 "make install"
             ],
