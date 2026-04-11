@@ -71,6 +71,7 @@ jobs:
 
       - name: Notarize
         if: env.CAN_SIGN == 'true'
+        continue-on-error: true
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
