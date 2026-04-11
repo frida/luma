@@ -25,6 +25,7 @@ jobs:
           node-version: "20"
 
       - name: Install the Apple certificates
+        if: ${{ secrets.CERTIFICATES_P12 != '' }}
         env:
           CERTIFICATES_P12: ${{ secrets.CERTIFICATES_P12 }}
           CERTIFICATES_PASSWORD: ${{ secrets.CERTIFICATES_PASSWORD }}
@@ -41,23 +42,28 @@ jobs:
           rm $CERTIFICATE_PATH
           MACOS_CERTID=$(security find-identity -v -p codesigning | grep "Developer ID Application: " | awk '{ print $2 }')
           echo "MACOS_CERTID=$MACOS_CERTID" >> $GITHUB_ENV
+          echo "CAN_SIGN=true" >> $GITHUB_ENV
 
       - name: Build
         run: |
+          if [ "$CAN_SIGN" = "true" ]; then
+            SIGN_ARGS="CODE_SIGN_IDENTITY=Developer ID Application CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=753PE4AG6F"
+          else
+            SIGN_ARGS="CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=NO"
+          fi
           xcodebuild \
             -project Luma.xcodeproj \
             -scheme Luma \
             -configuration Release \
             -derivedDataPath build/.derived \
             -arch ${{ matrix.arch }} \
-            CODE_SIGN_IDENTITY="Developer ID Application" \
-            CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM=753PE4AG6F \
+            $SIGN_ARGS \
             build
           mkdir -p build
           cp -r build/.derived/Build/Products/Release/Luma.app build/
 
       - name: Notarize
+        if: env.CAN_SIGN == 'true'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
