@@ -771,9 +771,10 @@ private struct HookEditorView: View {
     var workspace: Workspace
 
     var body: some View {
+        let packages = (try? workspace.store.fetchPackagesState().packages) ?? []
         CodeEditorView(
             text: $draftCode,
-            profile: TracerEditorProfile.typescript,
+            profile: EditorProfile.fridaTracerHook(packages: packages),
             workspace: workspace,
         )
         .onChange(of: draftCode) { _, _ in

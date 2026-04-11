@@ -12,8 +12,8 @@ import UniformTypeIdentifiers
         @NSApplicationDelegateAdaptor(LumaAppDelegate.self) var appDelegate
 
         init() {
-            SwiftyMonaco.prewarmPool(profile: CodeShareEditorProfile.javascript, count: 2)
-            SwiftyMonaco.prewarmPool(profile: TracerEditorProfile.typescript, count: 2)
+            SwiftyMonaco.prewarmPool(profile: MonacoEditorProfile(from: EditorProfile.fridaCodeShare()), count: 2)
+            SwiftyMonaco.prewarmPool(profile: MonacoEditorProfile(from: EditorProfile.fridaTracerHook(packages: [])), count: 2)
 
         }
 
@@ -67,8 +67,8 @@ import UniformTypeIdentifiers
     @main
     struct LumaApp: App {
         init() {
-            SwiftyMonaco.prewarmPool(profile: CodeShareEditorProfile.javascript, count: 2)
-            SwiftyMonaco.prewarmPool(profile: TracerEditorProfile.typescript, count: 2)
+            SwiftyMonaco.prewarmPool(profile: MonacoEditorProfile(from: EditorProfile.fridaCodeShare()), count: 2)
+            SwiftyMonaco.prewarmPool(profile: MonacoEditorProfile(from: EditorProfile.fridaTracerHook(packages: [])), count: 2)
         }
 
         var body: some Scene {

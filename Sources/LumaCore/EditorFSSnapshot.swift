@@ -1,6 +1,6 @@
 import Foundation
 
-public struct MonacoFSSnapshotFile: Codable, Hashable, Sendable {
+public struct EditorFSSnapshotFile: Codable, Hashable, Sendable {
     public var path: String
     public var text: String
 
@@ -10,17 +10,17 @@ public struct MonacoFSSnapshotFile: Codable, Hashable, Sendable {
     }
 }
 
-public struct MonacoFSSnapshot: Codable, Hashable, Sendable {
+public struct EditorFSSnapshot: Codable, Hashable, Sendable {
     public var version: Int
-    public var files: [MonacoFSSnapshotFile]
+    public var files: [EditorFSSnapshotFile]
 
-    public init(version: Int, files: [MonacoFSSnapshotFile]) {
+    public init(version: Int, files: [EditorFSSnapshotFile]) {
         self.version = version
         self.files = files
     }
 
-    public func withVersion(_ v: Int) -> MonacoFSSnapshot {
-        MonacoFSSnapshot(version: v, files: files)
+    public func withVersion(_ v: Int) -> EditorFSSnapshot {
+        EditorFSSnapshot(version: v, files: files)
     }
 }
 

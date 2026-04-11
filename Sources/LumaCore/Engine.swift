@@ -33,9 +33,9 @@ public final class Engine {
     public private(set) var tracerInstanceIDBySession: [UUID: UUID] = [:]
     public private(set) var sessions: [ProcessSession] = []
     public private(set) var notebookEntries: [NotebookEntry] = []
-    public private(set) var monacoFSSnapshot: MonacoFSSnapshot?
-    @ObservationIgnored public var monacoFSSnapshotDirty: Bool = true
-    @ObservationIgnored private var monacoFSSnapshotVersion: Int = 0
+    public private(set) var editorFSSnapshot: EditorFSSnapshot?
+    @ObservationIgnored public var editorFSSnapshotDirty: Bool = true
+    @ObservationIgnored private var editorFSSnapshotVersion: Int = 0
 
     private var addressActionProviders: [AddressActionProvider] = []
     @ObservationIgnored public var onSessionListChanged: (@MainActor (SessionListChange) -> Void)?
@@ -248,27 +248,27 @@ public final class Engine {
         return installed
     }
 
-    public func rebuildMonacoFSSnapshotIfNeeded() async {
-        guard monacoFSSnapshotDirty else { return }
+    public func rebuildEditorFSSnapshotIfNeeded() async {
+        guard editorFSSnapshotDirty else { return }
         do {
             let paths = try compilerWorkspacePaths()
             _ = try await compilerWorkspace.ensureReady(paths: paths)
-            let snapshot = try Self.buildMonacoFSSnapshot(paths: paths)
-            monacoFSSnapshotVersion += 1
-            monacoFSSnapshot = snapshot.withVersion(monacoFSSnapshotVersion)
-            monacoFSSnapshotDirty = false
+            let snapshot = try Self.buildEditorFSSnapshot(paths: paths)
+            editorFSSnapshotVersion += 1
+            editorFSSnapshot = snapshot.withVersion(editorFSSnapshotVersion)
+            editorFSSnapshotDirty = false
         } catch {
-            print("Failed to rebuild Monaco FS snapshot: \(error)")
+            print("Failed to rebuild editor FS snapshot: \(error)")
         }
     }
 
-    private static func buildMonacoFSSnapshot(paths: CompilerWorkspacePaths) throws -> MonacoFSSnapshot {
+    private static func buildEditorFSSnapshot(paths: CompilerWorkspacePaths) throws -> EditorFSSnapshot {
         let fm = FileManager.default
         let root = paths.root
         let nodeModules = paths.nodeModules
 
         guard fm.fileExists(atPath: nodeModules.path) else {
-            return MonacoFSSnapshot(version: 0, files: [])
+            return EditorFSSnapshot(version: 0, files: [])
         }
 
         let workspaceRootURI = "file:///workspace/"
@@ -289,7 +289,7 @@ public final class Engine {
             options: [.skipsHiddenFiles]
         )
 
-        var out: [MonacoFSSnapshotFile] = []
+        var out: [EditorFSSnapshotFile] = []
         out.reserveCapacity(2048)
 
         while let url = enumerator?.nextObject() as? URL {
@@ -303,7 +303,7 @@ public final class Engine {
             out.append(.init(path: uri, text: text))
         }
 
-        return MonacoFSSnapshot(version: 0, files: out)
+        return EditorFSSnapshot(version: 0, files: out)
     }
 
     public func upgradePackage(_ package: InstalledPackage) async throws -> InstalledPackage {
@@ -317,7 +317,7 @@ public final class Engine {
     public func removePackage(_ package: InstalledPackage) async throws {
         let paths = try compilerWorkspacePaths()
         try await compilerWorkspace.removePackage(package, paths: paths)
-        monacoFSSnapshotDirty = true
+        editorFSSnapshotDirty = true
     }
 
     public func loadAllPackages(on node: ProcessNode) async {
@@ -355,7 +355,7 @@ public final class Engine {
     }
 
     private func propagatePackage(_ package: InstalledPackage) async {
-        monacoFSSnapshotDirty = true
+        editorFSSnapshotDirty = true
         for node in processNodes {
             await loadPackage(package, on: node)
         }

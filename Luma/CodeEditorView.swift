@@ -4,37 +4,23 @@ import SwiftyMonaco
 
 struct CodeEditorView: View {
     @Binding var text: String
-    let profile: MonacoEditorProfile
+    let profile: EditorProfile
     var introspector: MonacoIntrospector? = nil
     @ObservedObject var workspace: Workspace
 
     var body: some View {
-        let packages: [LumaCore.InstalledPackage] = []
-        let injectedProfile = profileWithGlobalAliasTypings(from: profile, packages: packages)
+        let monacoProfile = MonacoEditorProfile(from: profile)
+        let snapshot = workspace.engine.editorFSSnapshot.map { MonacoFSSnapshot(from: $0) }
 
-        var editor = SwiftyMonaco(text: $text, profile: injectedProfile)
-            .fsSnapshot(workspace.monacoFSSnapshot)
+        var editor = SwiftyMonaco(text: $text, profile: monacoProfile)
+            .fsSnapshot(snapshot)
 
         if let introspector {
             editor = editor.introspector(introspector)
         }
 
         return editor.task {
-            await workspace.rebuildMonacoFSSnapshotIfNeeded()
+            await workspace.engine.rebuildEditorFSSnapshotIfNeeded()
         }
-    }
-
-    private func profileWithGlobalAliasTypings(
-        from base: MonacoEditorProfile,
-        packages: [InstalledPackage]
-    ) -> MonacoEditorProfile {
-        guard let generated = MonacoPackageAliasTypings.makeLib(packages: packages) else {
-            return base
-        }
-        let lib = MonacoExtraLib(generated.content, filePath: generated.filePath)
-        var copy = base
-        copy.tsExtraLibs.append(lib)
-        copy.jsExtraLibs.append(lib)
-        return copy
     }
 }

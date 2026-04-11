@@ -205,11 +205,7 @@ final class CodeShareBrowser {
             MainActor.assumeIsolated { self?.addAsInstrument() }
         }
 
-        codeShareEditor.setProfile(MonacoEditorProfile(
-            languageId: "javascript", theme: .dark, fontSize: 13, readOnly: true,
-            jsCompilerOptions: MonacoTypings.fridaCompilerOptions,
-            jsExtraLibs: MonacoTypings.fridaGum.map { [$0] } ?? []
-        ))
+        codeShareEditor.setProfile(EditorProfile.fridaCodeShare(readOnly: true))
         codeShareEditor.setText("")
         if codeShareEditor.isReady {
             codeShareEditor.reparent(into: sourceContainer)

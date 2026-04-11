@@ -1,5 +1,6 @@
 import Foundation
 import Gtk
+import LumaCore
 
 @MainActor
 enum MonacoDemo {
@@ -8,12 +9,12 @@ enum MonacoDemo {
         window.title = "Monaco Demo"
         window.setDefaultSize(width: 1100, height: 760)
 
-        var profile = MonacoEditorProfile(
+        var profile = EditorProfile(
             languageId: "typescript",
             theme: .dark,
             fontSize: 14
         )
-        if let gum = MonacoTypings.fridaGum {
+        if let gum = EditorProfile.fridaGumLib {
             profile.tsExtraLibs.append(gum)
         }
 

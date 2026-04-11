@@ -249,7 +249,7 @@ struct CodeShareProjectDetailView: View {
 
                     CodeEditorView(
                         text: $source,
-                        profile: CodeShareEditorProfile.javascript,
+                        profile: EditorProfile.fridaCodeShare(),
                         introspector: monacoIntrospector,
                         workspace: workspace,
                     )

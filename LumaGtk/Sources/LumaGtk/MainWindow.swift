@@ -1568,31 +1568,20 @@ final class MainWindow {
     }
 
     private func makeSharedTracerEditor() -> MonacoEditor {
-        var profile = MonacoEditorProfile(languageId: "typescript", theme: .dark, fontSize: 13)
-        profile.tsCompilerOptions = MonacoTypings.fridaCompilerOptions
-        if let gum = MonacoTypings.fridaGum { profile.tsExtraLibs.append(gum) }
-        profile.tsExtraLibs.append(
-            MonacoExtraLib(EditorPane.tracerDeclarations, filePath: "@types/frida-luma/tracer.d.ts")
-        )
         let installedPackages = (try? engine?.store.fetchPackagesState().packages) ?? []
-        if let aliasLib = MonacoPackageAliasTypings.makeLib(packages: installedPackages) {
-            profile.tsExtraLibs.append(MonacoExtraLib(aliasLib.content, filePath: aliasLib.filePath))
-        }
+        let profile = EditorProfile.fridaTracerHook(packages: installedPackages)
         let editor = MonacoEditor(profile: profile)
         if let engine {
             Task { @MainActor in
-                await engine.rebuildMonacoFSSnapshotIfNeeded()
-                editor.setFSSnapshot(engine.monacoFSSnapshot)
+                await engine.rebuildEditorFSSnapshotIfNeeded()
+                editor.setFSSnapshot(engine.editorFSSnapshot)
             }
         }
         return editor
     }
 
     private func makeSharedCodeShareEditor() -> MonacoEditor {
-        var profile = MonacoEditorProfile(languageId: "javascript", theme: .dark, fontSize: 13)
-        profile.jsCompilerOptions = MonacoTypings.fridaCompilerOptions
-        if let gum = MonacoTypings.fridaGum { profile.jsExtraLibs.append(gum) }
-        return MonacoEditor(profile: profile)
+        return MonacoEditor(profile: EditorProfile.fridaCodeShare())
     }
 }
 

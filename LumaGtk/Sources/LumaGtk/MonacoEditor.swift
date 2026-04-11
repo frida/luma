@@ -4,105 +4,6 @@ import GLibObject
 import Gtk
 import LumaCore
 
-public struct MonacoExtraLib: Equatable {
-    public let content: String
-    public let filePath: String
-
-    public init(_ content: String, filePath: String) {
-        self.content = content
-        self.filePath = filePath
-    }
-
-    fileprivate func toJavaScriptObjectLiteral() -> String {
-        let b64 = content.data(using: .utf8)?.base64EncodedString() ?? ""
-        let escapedPath = filePath.replacingOccurrences(of: "'", with: "\\'")
-        return "{ content: atob('\(b64)'), filePath: '\(escapedPath)' }"
-    }
-}
-
-public struct TypeScriptCompilerOptions: Equatable {
-    public var target: Int?
-    public var lib: [String]?
-    public var module: Int?
-    public var moduleResolution: Int?
-    public var typeRoots: [String]?
-    public var strict: Bool?
-
-    public init(
-        target: Int? = nil,
-        lib: [String]? = nil,
-        module: Int? = nil,
-        moduleResolution: Int? = nil,
-        typeRoots: [String]? = nil,
-        strict: Bool? = nil
-    ) {
-        self.target = target
-        self.lib = lib
-        self.module = module
-        self.moduleResolution = moduleResolution
-        self.typeRoots = typeRoots
-        self.strict = strict
-    }
-
-    fileprivate func toJavaScriptObjectLiteral() -> String {
-        var parts: [String] = []
-        if let target { parts.append("target: \(target)") }
-        if let lib {
-            let libJS = lib.map { "'\($0)'" }.joined(separator: ", ")
-            parts.append("lib: [\(libJS)]")
-        }
-        if let module { parts.append("module: \(module)") }
-        if let moduleResolution { parts.append("moduleResolution: \(moduleResolution)") }
-        if let typeRoots {
-            let rootsJS = typeRoots
-                .map { "'\($0.replacingOccurrences(of: "'", with: "\\'"))'" }
-                .joined(separator: ", ")
-            parts.append("typeRoots: [\(rootsJS)]")
-        }
-        if let strict { parts.append("strict: \(strict ? "true" : "false")") }
-        return "{ \(parts.joined(separator: ", ")) }"
-    }
-}
-
-public struct MonacoEditorProfile: Equatable {
-    public enum Theme: String, Equatable {
-        case light
-        case dark
-    }
-
-    public var languageId: String
-    public var theme: Theme
-    public var fontSize: Int
-    public var minimap: Bool
-    public var readOnly: Bool
-    public var tsCompilerOptions: TypeScriptCompilerOptions
-    public var tsExtraLibs: [MonacoExtraLib]
-    public var jsCompilerOptions: TypeScriptCompilerOptions
-    public var jsExtraLibs: [MonacoExtraLib]
-
-    public init(
-        languageId: String = "javascript",
-        theme: Theme = .dark,
-        fontSize: Int = 14,
-        minimap: Bool = false,
-        readOnly: Bool = false,
-        tsCompilerOptions: TypeScriptCompilerOptions = .init(),
-        tsExtraLibs: [MonacoExtraLib] = [],
-        jsCompilerOptions: TypeScriptCompilerOptions = .init(),
-        jsExtraLibs: [MonacoExtraLib] = []
-    ) {
-        self.languageId = languageId
-        self.theme = theme
-        self.fontSize = fontSize
-        self.minimap = minimap
-        self.readOnly = readOnly
-        self.tsCompilerOptions = tsCompilerOptions
-        self.tsExtraLibs = tsExtraLibs
-        self.jsCompilerOptions = jsCompilerOptions
-        self.jsExtraLibs = jsExtraLibs
-    }
-}
-
 @MainActor
 public final class MonacoEditor {
     public let widget: WidgetRef
@@ -112,14 +13,14 @@ public final class MonacoEditor {
     public var onReady: (() -> Void)?
 
     private let view: OpaquePointer
-    private var profile: MonacoEditorProfile
+    private var profile: EditorProfile
     private var pendingText: String
-    private var pendingSnapshot: MonacoFSSnapshot?
+    private var pendingSnapshot: EditorFSSnapshot?
     private var isLoaded = false
 
     private static var instances: [ObjectIdentifier: MonacoEditor] = [:]
 
-    public init(profile: MonacoEditorProfile = .init(), initialText: String = "") {
+    public init(profile: EditorProfile = .init(), initialText: String = "") {
         self.profile = profile
         self.pendingText = initialText
 
@@ -173,14 +74,14 @@ public final class MonacoEditor {
         }
     }
 
-    public func setFSSnapshot(_ snapshot: MonacoFSSnapshot?) {
+    public func setFSSnapshot(_ snapshot: EditorFSSnapshot?) {
         pendingSnapshot = snapshot
         if isLoaded, let script = snapshotScript(snapshot) {
             evaluate(script)
         }
     }
 
-    public func setProfile(_ newProfile: MonacoEditorProfile) {
+    public func setProfile(_ newProfile: EditorProfile) {
         profile = newProfile
         if isLoaded {
             evaluate(reconfigureScript(profile))
@@ -211,7 +112,7 @@ public final class MonacoEditor {
         return "editor.setText(atob('\(b64)'));"
     }
 
-    private func snapshotScript(_ snapshot: MonacoFSSnapshot?) -> String? {
+    private func snapshotScript(_ snapshot: EditorFSSnapshot?) -> String? {
         guard let snapshot else { return "editor.setFSSnapshot(null);" }
         guard let data = try? JSONEncoder().encode(snapshot),
             let json = String(data: data, encoding: .utf8)
@@ -248,7 +149,7 @@ public final class MonacoEditor {
         return lines.joined(separator: "\n")
     }
 
-    private func reconfigureScript(_ profile: MonacoEditorProfile) -> String {
+    private func reconfigureScript(_ profile: EditorProfile) -> String {
         var lines: [String] = []
         lines.append("editor.updateDefaultTypescriptCompilerOptions(\(profile.tsCompilerOptions.toJavaScriptObjectLiteral()));")
         lines.append("editor.updateDefaultTypescriptExtraLibs([\(profile.tsExtraLibs.map { $0.toJavaScriptObjectLiteral() }.joined(separator: ", "))]);")
@@ -288,18 +189,33 @@ private let monacoEditorTextChanged: @convention(c) (
     }
 }
 
-@MainActor
-public enum MonacoTypings {
-    public static let fridaGum: MonacoExtraLib? = {
-        guard let typing = TypeScriptTypings.fridaGum else { return nil }
-        return MonacoExtraLib(typing.content, filePath: typing.filePath)
-    }()
+// MARK: - JS literal generation for the canonical types
 
-    public static let fridaCompilerOptions = TypeScriptCompilerOptions(
-        target: 9,
-        lib: ["es2022"],
-        module: 100,
-        moduleResolution: 3,
-        strict: true
-    )
+extension EditorCompilerOptions {
+    fileprivate func toJavaScriptObjectLiteral() -> String {
+        var parts: [String] = []
+        if let target { parts.append("target: \(target.rawValue)") }
+        if let lib {
+            let libJS = lib.map { "'\($0)'" }.joined(separator: ", ")
+            parts.append("lib: [\(libJS)]")
+        }
+        if let module { parts.append("module: \(module.rawValue)") }
+        if let moduleResolution { parts.append("moduleResolution: \(moduleResolution.rawValue)") }
+        if let typeRoots {
+            let rootsJS = typeRoots
+                .map { "'\($0.replacingOccurrences(of: "'", with: "\\'"))'" }
+                .joined(separator: ", ")
+            parts.append("typeRoots: [\(rootsJS)]")
+        }
+        if let strict { parts.append("strict: \(strict ? "true" : "false")") }
+        return "{ \(parts.joined(separator: ", ")) }"
+    }
+}
+
+extension EditorExtraLib {
+    fileprivate func toJavaScriptObjectLiteral() -> String {
+        let b64 = content.data(using: .utf8)?.base64EncodedString() ?? ""
+        let escapedPath = filePath.replacingOccurrences(of: "'", with: "\\'")
+        return "{ content: atob('\(b64)'), filePath: '\(escapedPath)' }"
+    }
 }

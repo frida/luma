@@ -430,11 +430,7 @@ final class AddInstrumentDialog {
         detailContainer.append(child: editorContainer)
 
         let editor = sharedCodeShareMonaco
-        editor.setProfile(MonacoEditorProfile(
-            languageId: "javascript", theme: .dark, fontSize: 13,
-            jsCompilerOptions: MonacoTypings.fridaCompilerOptions,
-            jsExtraLibs: MonacoTypings.fridaGum.map { [$0] } ?? []
-        ))
+        editor.setProfile(EditorProfile.fridaCodeShare())
         editor.setText(config.source)
 
         if editor.isReady {
