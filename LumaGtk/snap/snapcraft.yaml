@@ -55,8 +55,8 @@ parts:
       - libjson-glib-dev
       - libsoup-3.0-dev
       - libunwind-dev
-      - libdwarf-dev
       - libnice-dev
+      - libelf-dev
 
   radare2:
     plugin: meson
