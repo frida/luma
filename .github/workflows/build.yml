@@ -24,6 +24,24 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Install the Apple certificates
+        env:
+          CERTIFICATES_P12: ${{ secrets.CERTIFICATES_P12 }}
+          CERTIFICATES_PASSWORD: ${{ secrets.CERTIFICATES_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          CERTIFICATE_PATH=$RUNNER_TEMP/apple-certificates.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/luma-signing.keychain-db
+          echo -n "$CERTIFICATES_P12" | base64 --decode -o $CERTIFICATE_PATH
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security import $CERTIFICATE_PATH -P "$CERTIFICATES_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+          rm $CERTIFICATE_PATH
+          MACOS_CERTID=$(security find-identity -v -p codesigning | grep "Developer ID Application: " | awk '{ print $2 }')
+          echo "MACOS_CERTID=$MACOS_CERTID" >> $GITHUB_ENV
+
       - name: Build
         run: |
           xcodebuild \
@@ -32,11 +50,28 @@ jobs:
             -configuration Release \
             -derivedDataPath build/.derived \
             -arch ${{ matrix.arch }} \
-            CODE_SIGN_IDENTITY=- \
-            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="Developer ID Application" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM=753PE4AG6F \
             build
           mkdir -p build
           cp -r build/.derived/Build/Products/Release/Luma.app build/
+
+      - name: Notarize
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          xcrun notarytool store-credentials "notarytool-profile" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$TEAM_ID" \
+            --password "$NOTARY_PASSWORD"
+          ditto -c -k --sequesterRsrc build/Luma.app Luma-notarize.zip
+          xcrun notarytool submit Luma-notarize.zip \
+            --keychain-profile "notarytool-profile" \
+            --wait
+          xcrun stapler staple build/Luma.app
 
       - name: Create DMG
         run: |
