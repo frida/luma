@@ -67,8 +67,6 @@ parts:
     source-commit: 65ee12a4f0d67f24a1b968111c536de3bb5bb4e3
     meson-parameters:
       - --prefix=/usr/local
-      - -Ddefault_library=static
-      - -Dstatic_runtime=true
     build-packages:
       - pkg-config
 

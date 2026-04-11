@@ -73,7 +73,7 @@
         {
             "name": "radare2",
             "buildsystem": "meson",
-            "config-opts": ["-Ddefault_library=static", "-Dstatic_runtime=true"],
+            "config-opts": [],
             "sources": [
                 {
                     "type": "archive",
