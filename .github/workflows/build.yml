@@ -431,6 +431,7 @@ jobs:
         run: |
           git clone --depth 1 -b $env:FRIDA_CORE_REF https://github.com/frida/frida-core.git $env:RUNNER_TEMP\frida-core
           Push-Location $env:RUNNER_TEMP\frida-core
+          git submodule update --init --recursive --depth 1
           python releng/meson_configure.py . --enable-shared --without-prebuilds=sdk --prefix=$env:RUNNER_TEMP\frida-prefix
           python releng/meson/meson.py compile -C build
           python releng/meson/meson.py install -C build
