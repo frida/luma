@@ -22,9 +22,9 @@ struct SidebarView: View {
             Section("Sessions") {
                 ForEach(sessions) { session in
                     let node = workspace.engine.node(forSessionID: session.id)
-                    let instruments = (try? workspace.store.fetchInstruments(sessionID: session.id)) ?? []
-                    let insights = (try? workspace.store.fetchInsights(sessionID: session.id)) ?? []
-                    let captures = (try? workspace.store.fetchITraceCaptures(sessionID: session.id)) ?? []
+                    let instruments = workspace.engine.instrumentsBySession[session.id] ?? []
+                    let insights = workspace.engine.insightsBySession[session.id] ?? []
+                    let captures = workspace.engine.capturesBySession[session.id] ?? []
 
                     SidebarSessionHeaderRow(
                         session: session,

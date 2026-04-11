@@ -57,6 +57,48 @@ public final class ProjectStore: Sendable {
         )
     }
 
+    public func observeAllInstruments(
+        onChange: @escaping @Sendable ([UUID: [InstrumentInstance]]) -> Void
+    ) -> StoreObservation {
+        StoreObservation(
+            ValueObservation
+                .tracking { db in
+                    try InstrumentInstance.fetchAll(db)
+                }
+                .start(in: db, scheduling: .async(onQueue: .main), onError: { _ in }) { rows in
+                    onChange(Dictionary(grouping: rows, by: \.sessionID))
+                }
+        )
+    }
+
+    public func observeAllInsights(
+        onChange: @escaping @Sendable ([UUID: [AddressInsight]]) -> Void
+    ) -> StoreObservation {
+        StoreObservation(
+            ValueObservation
+                .tracking { db in
+                    try AddressInsight.fetchAll(db)
+                }
+                .start(in: db, scheduling: .async(onQueue: .main), onError: { _ in }) { rows in
+                    onChange(Dictionary(grouping: rows, by: \.sessionID))
+                }
+        )
+    }
+
+    public func observeAllITraceCaptures(
+        onChange: @escaping @Sendable ([UUID: [ITraceCaptureRecord]]) -> Void
+    ) -> StoreObservation {
+        StoreObservation(
+            ValueObservation
+                .tracking { db in
+                    try ITraceCaptureRecord.fetchAll(db)
+                }
+                .start(in: db, scheduling: .async(onQueue: .main), onError: { _ in }) { rows in
+                    onChange(Dictionary(grouping: rows, by: \.sessionID))
+                }
+        )
+    }
+
     // MARK: - Process Sessions
 
     public func fetchSessions() throws -> [ProcessSession] {

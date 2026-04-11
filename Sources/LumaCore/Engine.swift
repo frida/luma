@@ -33,6 +33,9 @@ public final class Engine {
     public private(set) var tracerInstanceIDBySession: [UUID: UUID] = [:]
     public private(set) var sessions: [ProcessSession] = []
     public private(set) var notebookEntries: [NotebookEntry] = []
+    public private(set) var instrumentsBySession: [UUID: [InstrumentInstance]] = [:]
+    public private(set) var insightsBySession: [UUID: [AddressInsight]] = [:]
+    public private(set) var capturesBySession: [UUID: [ITraceCaptureRecord]] = [:]
     public private(set) var editorFSSnapshot: EditorFSSnapshot?
     @ObservationIgnored public var editorFSSnapshotDirty: Bool = true
     @ObservationIgnored private var editorFSSnapshotVersion: Int = 0
@@ -43,6 +46,9 @@ public final class Engine {
     @ObservationIgnored public var onNotebookChanged: (@MainActor (NotebookChange) -> Void)?
     @ObservationIgnored private var sessionsObservation: StoreObservation?
     @ObservationIgnored private var notebookObservation: StoreObservation?
+    @ObservationIgnored private var instrumentsObservation: StoreObservation?
+    @ObservationIgnored private var insightsObservation: StoreObservation?
+    @ObservationIgnored private var capturesObservation: StoreObservation?
 
     public init(store: ProjectStore, dataDirectory: URL, tokenStore: TokenStore? = nil) {
         self.store = store
@@ -206,6 +212,15 @@ public final class Engine {
         }
         notebookObservation = store.observeNotebookEntries { [weak self] entries in
             Task { @MainActor in self?.notebookEntries = entries }
+        }
+        instrumentsObservation = store.observeAllInstruments { [weak self] grouped in
+            Task { @MainActor in self?.instrumentsBySession = grouped }
+        }
+        insightsObservation = store.observeAllInsights { [weak self] grouped in
+            Task { @MainActor in self?.insightsBySession = grouped }
+        }
+        capturesObservation = store.observeAllITraceCaptures { [weak self] grouped in
+            Task { @MainActor in self?.capturesBySession = grouped }
         }
 
         await loadRemoteDevices()
