@@ -54,9 +54,7 @@ parts:
       cd src
       ./configure --enable-shared --without-prebuilds=sdk --prefix="$CRAFT_STAGE/usr/local" -- --force-fallback-for=openssl -Dcompat=disabled -Dserver=disabled -Dportal=disabled -Dinject=disabled -Dgadget=disabled -Dtests=disabled
       make -j$(nproc)
-      DESTDIR="$PWD/_destdir" make install
-      mkdir -p "$CRAFT_STAGE/usr/local"
-      cp -a "$PWD/_destdir/$CRAFT_STAGE/usr/local/." "$CRAFT_STAGE/usr/local/"
+      make install
     build-packages:
       - git
       - curl
@@ -75,13 +73,19 @@ parts:
       - libelf-dev
 
   radare2:
-    plugin: meson
-    source: https://github.com/radareorg/radare2.git
-    source-commit: 65ee12a4f0d67f24a1b968111c536de3bb5bb4e3
-    meson-parameters:
-      - --prefix=/usr/local
+    plugin: nil
+    override-build: |
+      git clone https://github.com/radareorg/radare2.git src
+      cd src
+      git checkout 65ee12a4f0d67f24a1b968111c536de3bb5bb4e3
+      meson setup build --prefix="$CRAFT_STAGE/usr/local"
+      ninja -C build
+      ninja -C build install
     build-packages:
+      - git
       - pkg-config
+      - meson
+      - ninja-build
 
   luma:
     after: [swift, frida-core, radare2]
