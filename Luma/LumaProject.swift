@@ -5,7 +5,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 nonisolated final class LumaProject: ReferenceFileDocument {
-    let objectWillChange = ObservableObjectPublisher()
+    nonisolated(unsafe) let objectWillChange = ObservableObjectPublisher()
     let store: ProjectStore
 
     nonisolated static var readableContentTypes: [UTType] {
