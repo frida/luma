@@ -356,9 +356,9 @@ jobs:
         with:
           arch: amd64
 
-      - uses: swift-actions/setup-swift@v3
+      - uses: compnerd/gha-setup-swift@v2
         with:
-          swift-version: ${{ env.SWIFT_VERSION }}
+          release: ${{ env.SWIFT_VERSION }}
 
       - uses: actions/setup-python@v5
         with:
