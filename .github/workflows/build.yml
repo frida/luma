@@ -54,16 +54,24 @@ jobs:
           else
             IDENTITY="-"
           fi
-          xcodebuild archive \
+          xcodebuild \
             -project Luma.xcodeproj \
             -scheme Luma \
             -configuration Release \
-            -archivePath build/Luma.xcarchive \
+            -derivedDataPath build/.derived \
             -arch ${{ matrix.arch }} \
-            "CODE_SIGN_IDENTITY=$IDENTITY" \
-            DEVELOPMENT_TEAM=753PE4AG6F
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO \
+            build
           mkdir -p build
-          cp -r build/Luma.xcarchive/Products/Applications/Luma.app build/
+          cp -r build/.derived/Build/Products/Release/Luma.app build/
+          if [ "$CAN_SIGN" = "true" ]; then
+            codesign --deep --force --options runtime \
+              --sign "Developer ID Application" \
+              --entitlements Luma/Luma.entitlements \
+              --timestamp \
+              build/Luma.app
+          fi
 
       - name: Notarize
         if: env.CAN_SIGN == 'true'
