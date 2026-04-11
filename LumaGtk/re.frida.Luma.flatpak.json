@@ -19,6 +19,22 @@
     },
     "modules": [
         {
+            "name": "nodejs",
+            "buildsystem": "simple",
+            "build-commands": [
+                "tar xJf node.tar.xz --strip-components=1 -C /app",
+                "rm node.tar.xz"
+            ],
+            "sources": [
+                {
+                    "type": "file",
+                    "url": "https://nodejs.org/dist/v20.18.0/node-v20.18.0-linux-x64.tar.xz",
+                    "sha256": "4543670b589593f8fa5f106111fd5139081da42bb165a9239f05195e405f240a",
+                    "dest-filename": "node.tar.xz"
+                }
+            ]
+        },
+        {
             "name": "swift",
             "buildsystem": "simple",
             "build-commands": [
@@ -60,22 +76,6 @@
                     "url": "https://github.com/radareorg/radare2/archive/65ee12a4f0d67f24a1b968111c536de3bb5bb4e3.tar.gz",
                     "sha256": "d00a38d6219350d1da5ba2b454f4a46e06daa66c509b5b6a2a9d6bcaaef3b1a6",
                     "strip-components": 1
-                }
-            ]
-        },
-        {
-            "name": "nodejs",
-            "buildsystem": "simple",
-            "build-commands": [
-                "tar xJf node.tar.xz --strip-components=1 -C /app",
-                "rm node.tar.xz"
-            ],
-            "sources": [
-                {
-                    "type": "file",
-                    "url": "https://nodejs.org/dist/v20.18.0/node-v20.18.0-linux-x64.tar.xz",
-                    "sha256": "4543670b589593f8fa5f106111fd5139081da42bb165a9239f05195e405f240a",
-                    "dest-filename": "node.tar.xz"
                 }
             ]
         },
