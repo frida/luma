@@ -43,10 +43,15 @@ enum StyleSheet {
     .luma-itrace-fn-6 { background-image: none; background-color: alpha(#e377c2, 0.55); color: white; }
     .luma-itrace-fn-7 { background-image: none; background-color: alpha(#17becf, 0.55); color: white; }
 
-    .luma-diff-same { color: @theme_fg_color; }
+    .luma-diff-same { }
     .luma-diff-added { background-color: alpha(#26a269, 0.15); }
     .luma-diff-removed { background-color: alpha(#c01c28, 0.15); }
-    .luma-diff-changed { background-color: alpha(#e5a50a, 0.15); }
+    .luma-diff-changed { background-color: alpha(#e5a50a, 0.10); }
+    .luma-diff-block-name { color: #2aa1b3; }
+    .luma-diff-indicator-removed { color: #c01c28; }
+    .luma-diff-indicator-added { color: #26a269; }
+    .luma-diff-val-left { color: #c01c28; }
+    .luma-diff-val-right { color: #26a269; }
 
     .luma-cfg-node { border: 1px solid alpha(@theme_fg_color, 0.4); border-radius: 6px; padding: 6px 10px; background-color: alpha(@theme_bg_color, 0.85); }
     .luma-cfg-node.selected { border-color: @accent_bg_color; background-color: alpha(@accent_bg_color, 0.18); }

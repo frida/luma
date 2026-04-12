@@ -642,22 +642,20 @@ final class ITraceCFGView {
         let viewH = Double(container.allocatedHeight)
         guard viewW > 0, viewH > 0 else { return }
 
-        // Keep the node within the central portion of the viewport
-        let insetX = min(viewW * 0.15, 60)
-        let insetY = min(viewH * 0.15, 60)
+        let margin = 20.0
         var dx = 0.0
         var dy = 0.0
 
-        if nodeCX - halfW < insetX {
-            dx = insetX - (nodeCX - halfW)
-        } else if nodeCX + halfW > viewW - insetX {
-            dx = (viewW - insetX) - (nodeCX + halfW)
+        if nodeCX - halfW < margin {
+            dx = margin - (nodeCX - halfW)
+        } else if nodeCX + halfW > viewW - margin {
+            dx = (viewW - margin) - (nodeCX + halfW)
         }
 
-        if nodeCY - halfH < insetY {
-            dy = insetY - (nodeCY - halfH)
-        } else if nodeCY + halfH > viewH - insetY {
-            dy = (viewH - insetY) - (nodeCY + halfH)
+        if nodeCY - halfH < margin {
+            dy = margin - (nodeCY - halfH)
+        } else if nodeCY + halfH > viewH - margin {
+            dy = (viewH - margin) - (nodeCY + halfH)
         }
 
         if dx != 0 || dy != 0 {

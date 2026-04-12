@@ -9,6 +9,7 @@ final class ITraceDiffView {
     private let left: ITraceCaptureRecord
     private let right: ITraceCaptureRecord
     private let bodyContainer: Box
+    private var divergenceLabel: Label?
 
     init(left: ITraceCaptureRecord, right: ITraceCaptureRecord) {
         self.left = left
@@ -22,52 +23,22 @@ final class ITraceDiffView {
         widget.marginTop = 12
         widget.marginBottom = 12
 
-        let titleLabel = Label(str: "Diff")
+        let headerRow = Box(orientation: .horizontal, spacing: 8)
+        headerRow.hexpand = true
+        let titleLabel = Label(str: "Diff: \(left.displayName) vs \(right.displayName)")
         titleLabel.halign = .start
+        titleLabel.hexpand = true
         titleLabel.add(cssClass: "title-3")
-        widget.append(child: titleLabel)
+        headerRow.append(child: titleLabel)
+        divergenceLabel = Label(str: "")
+        divergenceLabel!.halign = .end
+        divergenceLabel!.add(cssClass: "dim-label")
+        divergenceLabel!.add(cssClass: "caption")
+        divergenceLabel!.visible = false
+        headerRow.append(child: divergenceLabel!)
+        widget.append(child: headerRow)
 
-        let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        formatter.timeStyle = .medium
-
-        let header = Box(orientation: .horizontal, spacing: 12)
-        header.marginTop = 6
-        header.marginBottom = 6
-
-        let leftCol = Box(orientation: .vertical, spacing: 0)
-        leftCol.hexpand = true
-        let leftName = Label(str: left.displayName)
-        leftName.halign = .start
-        leftName.add(cssClass: "heading")
-        leftCol.append(child: leftName)
-        let leftDate = Label(str: formatter.string(from: left.capturedAt))
-        leftDate.halign = .start
-        leftDate.add(cssClass: "dim-label")
-        leftDate.add(cssClass: "caption")
-        leftCol.append(child: leftDate)
-        header.append(child: leftCol)
-
-        let arrow = Label(str: "\u{2194}")
-        arrow.add(cssClass: "dim-label")
-        header.append(child: arrow)
-
-        let rightCol = Box(orientation: .vertical, spacing: 0)
-        rightCol.hexpand = true
-        let rightName = Label(str: right.displayName)
-        rightName.halign = .start
-        rightName.add(cssClass: "heading")
-        rightCol.append(child: rightName)
-        let rightDate = Label(str: formatter.string(from: right.capturedAt))
-        rightDate.halign = .start
-        rightDate.add(cssClass: "dim-label")
-        rightDate.add(cssClass: "caption")
-        rightCol.append(child: rightDate)
-        header.append(child: rightCol)
-
-        widget.append(child: header)
-
-        bodyContainer = Box(orientation: .vertical, spacing: 8)
+        bodyContainer = Box(orientation: .vertical, spacing: 0)
         bodyContainer.hexpand = true
         bodyContainer.vexpand = true
         bodyContainer.marginTop = 8
@@ -101,10 +72,8 @@ final class ITraceDiffView {
     }
 
     private func applyDecodeResult(_ result: Result<(DecodedITrace, DecodedITrace), Error>) {
-        var child = bodyContainer.firstChild
-        while let current = child {
-            child = current.nextSibling
-            bodyContainer.remove(child: current)
+        while let child = bodyContainer.firstChild {
+            bodyContainer.remove(child: child)
         }
 
         switch result {
@@ -116,28 +85,93 @@ final class ITraceDiffView {
             bodyContainer.append(child: errorLabel)
 
         case .success(let (l, r)):
-            let rows = computeDiff(left: l.entries, right: r.entries)
+            let (rows, firstDivergence) = computeDiff(left: l.entries, right: r.entries)
+
+            if let idx = firstDivergence {
+                divergenceLabel?.label = "First divergence at entry \(idx)"
+                divergenceLabel?.visible = true
+            }
+
+            if rows.isEmpty {
+                let empty = Label(str: "Traces are identical.")
+                empty.halign = .center
+                empty.add(cssClass: "dim-label")
+                bodyContainer.append(child: empty)
+                return
+            }
+
             let listBox = Box(orientation: .vertical, spacing: 0)
             listBox.hexpand = true
 
-            if rows.isEmpty {
-                let empty = Label(str: "Both captures are empty.")
-                empty.halign = .center
-                empty.add(cssClass: "dim-label")
-                listBox.append(child: empty)
-            } else {
-                for row in rows {
-                    let label = Label(str: row.text)
-                    label.halign = .start
-                    label.add(cssClass: "monospace")
-                    label.add(cssClass: row.cssClass)
-                    label.marginStart = 8
-                    label.marginEnd = 8
-                    label.marginTop = 1
-                    label.marginBottom = 1
-                    label.selectable = true
-                    listBox.append(child: label)
+            for (index, row) in rows.enumerated() {
+                let rowBox = Box(orientation: .horizontal, spacing: 8)
+                rowBox.add(cssClass: row.cssClass)
+                rowBox.marginStart = 4
+                rowBox.marginEnd = 4
+
+                let indexLabel = Label(str: String(format: "%4d", index))
+                indexLabel.add(cssClass: "monospace")
+                indexLabel.add(cssClass: "caption")
+                indexLabel.add(cssClass: "dim-label")
+                rowBox.append(child: indexLabel)
+
+                let indicator = Label(str: row.indicator)
+                indicator.add(cssClass: "monospace")
+                indicator.add(cssClass: "caption")
+                if row.indicatorCssClass != nil {
+                    indicator.add(cssClass: row.indicatorCssClass!)
                 }
+                indicator.setSizeRequest(width: 12, height: -1)
+                rowBox.append(child: indicator)
+
+                let name = Label(str: row.blockName)
+                name.halign = .start
+                name.add(cssClass: "monospace")
+                name.add(cssClass: "caption")
+                name.add(cssClass: "luma-diff-block-name")
+                rowBox.append(child: name)
+
+                for diff in row.registerDiffs.prefix(3) {
+                    let diffBox = Box(orientation: .horizontal, spacing: 2)
+                    let regName = Label(str: diff.registerName)
+                    regName.add(cssClass: "monospace")
+                    regName.add(cssClass: "caption")
+                    regName.add(cssClass: "dim-label")
+                    diffBox.append(child: regName)
+
+                    if let lv = diff.leftValue {
+                        let lbl = Label(str: String(format: "0x%llx", lv))
+                        lbl.add(cssClass: "monospace")
+                        lbl.add(cssClass: "caption")
+                        lbl.add(cssClass: "luma-diff-val-left")
+                        diffBox.append(child: lbl)
+                    }
+
+                    let arrow = Label(str: "\u{2192}")
+                    arrow.add(cssClass: "caption")
+                    arrow.add(cssClass: "dim-label")
+                    diffBox.append(child: arrow)
+
+                    if let rv = diff.rightValue {
+                        let lbl = Label(str: String(format: "0x%llx", rv))
+                        lbl.add(cssClass: "monospace")
+                        lbl.add(cssClass: "caption")
+                        lbl.add(cssClass: "luma-diff-val-right")
+                        diffBox.append(child: lbl)
+                    }
+
+                    rowBox.append(child: diffBox)
+                }
+
+                if row.registerDiffs.count > 3 {
+                    let overflow = Label(str: "+\(row.registerDiffs.count - 3)")
+                    overflow.add(cssClass: "monospace")
+                    overflow.add(cssClass: "caption")
+                    overflow.add(cssClass: "dim-label")
+                    rowBox.append(child: overflow)
+                }
+
+                listBox.append(child: rowBox)
             }
 
             let scroll = ScrolledWindow()
@@ -145,98 +179,155 @@ final class ITraceDiffView {
             scroll.vexpand = true
             scroll.set(child: listBox)
             bodyContainer.append(child: scroll)
+
+            if let divIdx = firstDivergence {
+                Task { @MainActor in
+                    await Task.yield()
+                    await Task.yield()
+                    guard let adj = scroll.vadjustment else { return }
+                    let totalRows = Double(rows.count)
+                    guard totalRows > 0 else { return }
+                    let fraction = Double(divIdx) / totalRows
+                    let target = fraction * adj.upper - adj.pageSize / 2
+                    adj.value = max(0, min(target, adj.upper - adj.pageSize))
+                }
+            }
         }
+    }
+
+    // MARK: - Diff computation
+
+    private struct RegisterDiff {
+        let registerName: String
+        let leftValue: UInt64?
+        let rightValue: UInt64?
     }
 
     private struct DiffRow {
-        let text: String
+        let indicator: String
+        let indicatorCssClass: String?
+        let blockName: String
+        let registerDiffs: [RegisterDiff]
         let cssClass: String
     }
 
-    private func computeDiff(left: [TraceEntry], right: [TraceEntry]) -> [DiffRow] {
-        let m = left.count
-        let n = right.count
+    private func computeDiff(
+        left: [TraceEntry], right: [TraceEntry]
+    ) -> ([DiffRow], Int?) {
+        let leftAddrs = left.map(\.blockAddress)
+        let rightAddrs = right.map(\.blockAddress)
+        let lcs = longestCommonSubsequence(leftAddrs, rightAddrs)
 
-        guard m > 0 || n > 0 else { return [] }
+        var rows: [DiffRow] = []
+        var li = 0, ri = 0, ci = 0
+        var firstDivergence: Int?
 
-        var dp = Array(repeating: Array(repeating: 0, count: n + 1), count: m + 1)
-        if m > 0 && n > 0 {
-            for i in 1...m {
-                for j in 1...n {
-                    if left[i - 1].blockAddress == right[j - 1].blockAddress
-                        && left[i - 1].blockSize == right[j - 1].blockSize
-                    {
-                        dp[i][j] = dp[i - 1][j - 1] + 1
-                    } else {
-                        dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])
-                    }
+        while li < left.count || ri < right.count {
+            if ci < lcs.count,
+                li < left.count,
+                ri < right.count,
+                left[li].blockAddress == lcs[ci],
+                right[ri].blockAddress == lcs[ci]
+            {
+                let regDiffs = compareRegisters(left[li], right[ri])
+                if !regDiffs.isEmpty, firstDivergence == nil {
+                    firstDivergence = rows.count
                 }
-            }
-        }
-
-        var rowsReversed: [DiffRow] = []
-        var i = m
-        var j = n
-        while i > 0 && j > 0 {
-            let a = left[i - 1]
-            let b = right[j - 1]
-            if a.blockAddress == b.blockAddress && a.blockSize == b.blockSize {
-                if registerWritesEqual(a.registerWrites, b.registerWrites) {
-                    rowsReversed.append(DiffRow(
-                        text: String(format: "=  0x%016llx  %@", a.blockAddress, a.blockName),
-                        cssClass: "luma-diff-same"
-                    ))
-                } else {
-                    rowsReversed.append(DiffRow(
-                        text: String(format: "~  0x%016llx  %@  [reg writes differ]", a.blockAddress, a.blockName),
-                        cssClass: "luma-diff-changed"
-                    ))
-                }
-                i -= 1
-                j -= 1
-            } else if dp[i - 1][j] >= dp[i][j - 1] {
-                rowsReversed.append(DiffRow(
-                    text: String(format: "-  0x%016llx  %@  (left only)", a.blockAddress, a.blockName),
+                rows.append(DiffRow(
+                    indicator: " ",
+                    indicatorCssClass: nil,
+                    blockName: left[li].blockName,
+                    registerDiffs: regDiffs,
+                    cssClass: regDiffs.isEmpty ? "luma-diff-same" : "luma-diff-changed"
+                ))
+                li += 1; ri += 1; ci += 1
+            } else if li < left.count
+                && (ci >= lcs.count || left[li].blockAddress != lcs[ci])
+            {
+                if firstDivergence == nil { firstDivergence = rows.count }
+                rows.append(DiffRow(
+                    indicator: "\u{2212}",
+                    indicatorCssClass: "luma-diff-indicator-removed",
+                    blockName: left[li].blockName,
+                    registerDiffs: [],
                     cssClass: "luma-diff-removed"
                 ))
-                i -= 1
-            } else {
-                rowsReversed.append(DiffRow(
-                    text: String(format: "+  0x%016llx  %@  (right only)", b.blockAddress, b.blockName),
+                li += 1
+            } else if ri < right.count
+                && (ci >= lcs.count || right[ri].blockAddress != lcs[ci])
+            {
+                if firstDivergence == nil { firstDivergence = rows.count }
+                rows.append(DiffRow(
+                    indicator: "+",
+                    indicatorCssClass: "luma-diff-indicator-added",
+                    blockName: right[ri].blockName,
+                    registerDiffs: [],
                     cssClass: "luma-diff-added"
                 ))
+                ri += 1
+            } else {
+                break
+            }
+        }
+
+        return (rows, firstDivergence)
+    }
+
+    private func compareRegisters(
+        _ a: TraceEntry, _ b: TraceEntry
+    ) -> [RegisterDiff] {
+        var aByIndex: [Int: RegisterWrite] = [:]
+        for w in a.registerWrites { aByIndex[w.registerIndex] = w }
+        var bByIndex: [Int: RegisterWrite] = [:]
+        for w in b.registerWrites { bByIndex[w.registerIndex] = w }
+
+        var diffs: [RegisterDiff] = []
+        for idx in Set(aByIndex.keys).union(bByIndex.keys).sorted() {
+            let aVal = aByIndex[idx]?.value
+            let bVal = bByIndex[idx]?.value
+            if aVal != bVal {
+                let name = aByIndex[idx]?.registerName
+                    ?? bByIndex[idx]?.registerName ?? "r\(idx)"
+                diffs.append(RegisterDiff(
+                    registerName: name, leftValue: aVal, rightValue: bVal))
+            }
+        }
+        return diffs
+    }
+
+    private func longestCommonSubsequence(
+        _ a: [UInt64], _ b: [UInt64]
+    ) -> [UInt64] {
+        let m = a.count, n = b.count
+        guard m > 0, n > 0 else { return [] }
+
+        var dp = Array(repeating: Array(repeating: 0, count: n + 1), count: m + 1)
+        for i in 1...m {
+            for j in 1...n {
+                if a[i - 1] == b[j - 1] {
+                    dp[i][j] = dp[i - 1][j - 1] + 1
+                } else {
+                    dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])
+                }
+            }
+        }
+
+        var result: [UInt64] = []
+        var i = m, j = n
+        while i > 0, j > 0 {
+            if a[i - 1] == b[j - 1] {
+                result.append(a[i - 1])
+                i -= 1; j -= 1
+            } else if dp[i - 1][j] > dp[i][j - 1] {
+                i -= 1
+            } else {
                 j -= 1
             }
         }
-        while i > 0 {
-            let a = left[i - 1]
-            rowsReversed.append(DiffRow(
-                text: String(format: "-  0x%016llx  %@  (left only)", a.blockAddress, a.blockName),
-                cssClass: "luma-diff-removed"
-            ))
-            i -= 1
-        }
-        while j > 0 {
-            let b = right[j - 1]
-            rowsReversed.append(DiffRow(
-                text: String(format: "+  0x%016llx  %@  (right only)", b.blockAddress, b.blockName),
-                cssClass: "luma-diff-added"
-            ))
-            j -= 1
-        }
-
-        return rowsReversed.reversed()
+        return result.reversed()
     }
 
-    private func registerWritesEqual(_ a: [RegisterWrite], _ b: [RegisterWrite]) -> Bool {
-        guard a.count == b.count else { return false }
-        for (lw, rw) in zip(a, b) {
-            if lw.registerIndex != rw.registerIndex || lw.value != rw.value {
-                return false
-            }
-        }
-        return true
-    }
+    // MARK: - Presentation
 
     static func present(from anchor: Widget, left: ITraceCaptureRecord, right: ITraceCaptureRecord) {
         let view = ITraceDiffView(left: left, right: right)
@@ -268,16 +359,17 @@ final class ITraceDiffView {
     }
 
     private static var retained: [ObjectIdentifier: ITraceDiffView] = [:]
+    private static var retainedWindows: [ObjectIdentifier: Window] = [:]
 
     private static func retain(view: ITraceDiffView, window: Window) {
-        let key = ObjectIdentifier(window)
-        retained[key] = view
-        let handler: (WindowRef) -> Bool = { _ in
+        let id = ObjectIdentifier(view)
+        retained[id] = view
+        retainedWindows[id] = window
+        window.onDestroy { _ in
             MainActor.assumeIsolated {
-                _ = retained.removeValue(forKey: key)
+                retained.removeValue(forKey: id)
+                retainedWindows.removeValue(forKey: id)
             }
-            return false
         }
-        window.onCloseRequest(handler: handler)
     }
 }

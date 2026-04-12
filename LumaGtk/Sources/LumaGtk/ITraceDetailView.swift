@@ -360,6 +360,11 @@ final class ITraceDetailView {
 
         popover.set(child: WidgetRef(scroll.widget_ptr))
         popover.set(parent: anchor)
+        popover.onClosed { _ in
+            MainActor.assumeIsolated {
+                gtk_widget_unparent(popover.widget_ptr)
+            }
+        }
         popover.popup()
     }
 
