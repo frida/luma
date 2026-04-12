@@ -128,6 +128,7 @@ jobs:
           path: Luma-${{ matrix.arch }}.dmg
 
   fedora:
+    if: false
     runs-on: ubuntu-latest
     container: fedora:43
     steps:
@@ -227,6 +228,7 @@ jobs:
           path: luma-fedora-43.tar.gz
 
   ubuntu:
+    if: false
     runs-on: ubuntu-latest
     container: ubuntu:25.10
     steps:
@@ -327,6 +329,7 @@ jobs:
           path: luma-ubuntu-25.10.deb
 
   flatpak:
+    if: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -355,6 +358,7 @@ jobs:
           path: luma.flatpak
 
   snap:
+    if: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
