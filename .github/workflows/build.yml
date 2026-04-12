@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "20"
 
@@ -128,7 +128,7 @@ jobs:
             Luma-${{ matrix.arch }}.dmg \
             build/Luma.app
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Luma-${{ matrix.arch }}.dmg
           path: Luma-${{ matrix.arch }}.dmg
@@ -227,7 +227,7 @@ jobs:
           cp LumaGtk/data/re.frida.Luma.xml pkg/usr/share/mime/packages/
           tar czf luma-fedora-43.tar.gz -C pkg .
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: luma-fedora-43.tar.gz
           path: luma-fedora-43.tar.gz
@@ -327,7 +327,7 @@ jobs:
           dpkg-deb --build $PKG
           mv ${PKG}.deb luma-ubuntu-25.10.deb
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: luma-ubuntu-25.10.deb
           path: luma-ubuntu-25.10.deb
@@ -355,7 +355,7 @@ jobs:
             LumaGtk/re.frida.Luma.flatpak.json
           flatpak build-bundle flatpak-repo luma.flatpak re.frida.Luma
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: luma.flatpak
           path: luma.flatpak
@@ -365,12 +365,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: snapcore/action-build@v1
+      - uses: snapcore/action-build@v1.3.0
         id: snapcraft
         with:
           path: LumaGtk
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: luma.snap
           path: ${{ steps.snapcraft.outputs.snap }}
@@ -383,7 +383,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "20"
 
