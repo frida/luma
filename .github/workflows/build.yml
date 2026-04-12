@@ -13,7 +13,6 @@ env:
 jobs:
   macos:
     runs-on: macos-26
-    continue-on-error: true
     strategy:
       matrix:
         arch: [arm64, x86_64]
@@ -84,7 +83,6 @@ jobs:
 
       - name: Notarize
         if: env.CAN_SIGN == 'true'
-        continue-on-error: true
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -130,7 +128,6 @@ jobs:
           path: Luma-${{ matrix.arch }}.dmg
 
   fedora:
-    if: false
     runs-on: ubuntu-latest
     container: fedora:43
     steps:
@@ -230,7 +227,6 @@ jobs:
           path: luma-fedora-43.tar.gz
 
   ubuntu:
-    if: false
     runs-on: ubuntu-latest
     container: ubuntu:25.10
     steps:
@@ -331,7 +327,6 @@ jobs:
           path: luma-ubuntu-25.10.deb
 
   flatpak:
-    if: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -360,7 +355,6 @@ jobs:
           path: luma.flatpak
 
   snap:
-    if: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -376,6 +370,7 @@ jobs:
           path: ${{ steps.snapcraft.outputs.snap }}
 
   windows:
+    if: false
     runs-on: windows-latest
     continue-on-error: true
     timeout-minutes: 120
