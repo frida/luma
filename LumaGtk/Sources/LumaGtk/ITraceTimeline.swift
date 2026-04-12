@@ -100,7 +100,11 @@ final class ITraceTimeline {
             }
 
             if isSelected {
-                ctx.setSource(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.9)
+                if ThemeWatcher.isDarkMode() {
+                    ctx.setSource(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.9)
+                } else {
+                    ctx.setSource(red: 0.0, green: 0.0, blue: 0.0, alpha: 0.7)
+                }
                 ctx.lineWidth = 1.5
                 ctx.rectangle(x: x + 0.75, y: 0.75, width: w - 1.5, height: height - 1.5)
                 ctx.stroke()

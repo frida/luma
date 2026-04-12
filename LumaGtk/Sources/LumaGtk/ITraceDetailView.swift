@@ -45,10 +45,14 @@ final class ITraceDetailView {
         widget.marginTop = 12
         widget.marginBottom = 12
 
+        let headerRow = Box(orientation: .horizontal, spacing: 8)
+        headerRow.hexpand = true
+
+        let headerLeft = Box(orientation: .vertical, spacing: 0)
         let titleLabel = Label(str: capture.displayName)
         titleLabel.halign = .start
         titleLabel.add(cssClass: "title-3")
-        widget.append(child: titleLabel)
+        headerLeft.append(child: titleLabel)
 
         let formatter = DateFormatter()
         formatter.dateStyle = .short
@@ -59,17 +63,20 @@ final class ITraceDetailView {
         captionLabel.halign = .start
         captionLabel.add(cssClass: "dim-label")
         captionLabel.add(cssClass: "caption")
-        widget.append(child: captionLabel)
+        headerLeft.append(child: captionLabel)
+
+        headerRow.append(child: headerLeft)
 
         var pendingCompareButton: Button?
         if !otherCaptures.isEmpty {
-            let compareRow = Box(orientation: .horizontal, spacing: 8)
-            compareRow.marginTop = 6
             let btn = Button(label: "Compare with\u{2026}")
+            btn.valign = .center
             pendingCompareButton = btn
-            compareRow.append(child: btn)
-            widget.append(child: compareRow)
+            headerLeft.hexpand = true
+            headerRow.append(child: btn)
         }
+
+        widget.append(child: headerRow)
 
         bodyContainer = Box(orientation: .vertical, spacing: 8)
         bodyContainer.hexpand = true

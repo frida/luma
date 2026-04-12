@@ -58,7 +58,7 @@ final class ITraceCFGView {
 
     private let nodeWidth: Double = 360
     private let baseNodeHeight: Double = 30
-    private let padding: Double = 40
+    private let padding: Double = 20
 
     init(
         decoded: DecodedITrace,
@@ -97,22 +97,8 @@ final class ITraceCFGView {
         overlayWidget.set(child: WidgetRef(area.widget_ptr))
         overlayWidget.addOverlay(widget: fixedContainer)
 
-        let resetButton = Button(label: "Reset view")
-        resetButton.halign = .end
-        resetButton.valign = .start
-        resetButton.marginTop = 6
-        resetButton.marginEnd = 6
-        resetButton.add(cssClass: "osd")
-        overlayWidget.addOverlay(widget: resetButton)
-
         root.append(child: overlayWidget)
         self.widget = root
-
-        resetButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.resetView()
-            }
-        }
 
         area.setDrawFunc { [weak self] _, ctx, _, _ in
             MainActor.assumeIsolated {
@@ -682,13 +668,7 @@ final class ITraceCFGView {
         }
     }
 
-    private func resetView() {
-        panX = 0
-        panY = 0
-        zoom = 1.0
-        repositionNodes()
-        drawingArea.queueDraw()
-    }
+
 
     // MARK: - Keyboard
 
@@ -710,18 +690,14 @@ final class ITraceCFGView {
                     self.jumpToBlock(direction: 1); return true
                 case 0x04b:  // K — jump to previous block
                     self.jumpToBlock(direction: -1); return true
-                case 0x067:  // g — first function
-                    self.onJumpToFunction?(0); return true
-                case 0x047:  // G — last function
-                    self.onJumpToFunction?(-1); return true
+                case 0x067, 0xff50:  // g, Home
+                    self.jumpToFirst(); return true
+                case 0x047, 0xff57:  // G, End
+                    self.jumpToLast(); return true
                 case 0xff55:  // Page Up
                     self.jumpToBlock(direction: -1); return true
                 case 0xff56:  // Page Down
                     self.jumpToBlock(direction: 1); return true
-                case 0xff50:  // Home
-                    self.onJumpToFunction?(0); return true
-                case 0xff57:  // End
-                    self.onJumpToFunction?(-1); return true
                 case 0xff0d:
                     self.toggleRegisterPopover()
                     return true
@@ -738,6 +714,25 @@ final class ITraceCFGView {
             }
         }
         container.install(controller: key)
+    }
+
+    private func jumpToFirst() {
+        onJumpToFunction?(0)
+        let sorted = currentSectionNodes().sorted { $0.position.y < $1.position.y }
+        if let first = sorted.first {
+            select(key: first.key, line: 0, notify: true)
+            panToNode(first)
+        }
+    }
+
+    private func jumpToLast() {
+        onJumpToFunction?(-1)
+        let sorted = currentSectionNodes().sorted { $0.position.y < $1.position.y }
+        if let last = sorted.last {
+            let line = max(0, (nodeInstructionRows[last.key]?.count ?? 1) - 1)
+            select(key: last.key, line: line, notify: true)
+            panToNode(last)
+        }
     }
 
     private func jumpToBlock(direction: Int) {
