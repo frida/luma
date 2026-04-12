@@ -69,7 +69,7 @@ final class JSInspectValueWidget {
         )
 
         let body = Box(orientation: .vertical, spacing: 2)
-        body.marginStart = 17
+        body.marginStart = 14
         body.hexpand = true
         for prop in props {
             let row = Box(orientation: .horizontal, spacing: 4)
@@ -100,7 +100,7 @@ final class JSInspectValueWidget {
         )
 
         let body = Box(orientation: .vertical, spacing: 2)
-        body.marginStart = 17
+        body.marginStart = 14
         body.hexpand = true
         for (idx, element) in elements.enumerated() {
             let row = Box(orientation: .horizontal, spacing: 4)
@@ -127,7 +127,7 @@ final class JSInspectValueWidget {
         let header = headerMarkup(title: "Map{\(entries.count)}", preview: nil, color: cyan)
 
         let body = Box(orientation: .vertical, spacing: 2)
-        body.marginStart = 17
+        body.marginStart = 14
         body.hexpand = true
         for entry in entries {
             let row = Box(orientation: .horizontal, spacing: 4)
@@ -156,7 +156,7 @@ final class JSInspectValueWidget {
         let header = headerMarkup(title: "Set{\(elements.count)}", preview: nil, color: cyan)
 
         let body = Box(orientation: .vertical, spacing: 2)
-        body.marginStart = 17
+        body.marginStart = 14
         body.hexpand = true
         for element in elements {
             let row = Box(orientation: .horizontal, spacing: 4)
