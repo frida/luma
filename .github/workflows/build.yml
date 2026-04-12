@@ -428,6 +428,8 @@ jobs:
           echo "PKG_CONFIG_PATH=$GTK_PKG" >> $GITHUB_ENV
 
       - name: Build frida-core (shared)
+        env:
+          PKG_CONFIG_PATH: ""
         run: |
           $ErrorActionPreference = 'Stop'
           git clone --depth 1 -b $env:FRIDA_CORE_REF https://github.com/frida/frida-core.git $env:RUNNER_TEMP\frida-core
