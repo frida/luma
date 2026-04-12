@@ -73,7 +73,9 @@ jobs:
         if: env.CAN_SIGN == 'true'
         run: |
           find build/Luma.app/Contents/Frameworks -name '*.framework' -maxdepth 1 | while read fw; do
-            codesign --force --options runtime --sign "Developer ID Application" --timestamp "$fw/Versions/A"
+            name=$(basename "$fw" .framework)
+            codesign --force --options runtime --sign "Developer ID Application" --timestamp "$fw/Versions/A/$name"
+            codesign --force --sign "Developer ID Application" --timestamp "$fw"
           done
           codesign --force --options runtime \
             --sign "Developer ID Application" \
