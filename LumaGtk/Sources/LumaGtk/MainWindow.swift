@@ -736,7 +736,7 @@ final class MainWindow {
                 widget = detail.widget
             } else {
                 widget = MainWindow.makeEmptyState(
-                    icon: "audio-x-generic-symbolic",
+                    icon: "system-run-symbolic",
                     title: "Capture unavailable",
                     subtitle: "This ITrace capture is no longer in the store."
                 )
@@ -940,7 +940,7 @@ final class MainWindow {
         outer.halign = .center
         outer.valign = .center
 
-        let stack = Box(orientation: .vertical, spacing: 12)
+        let stack = Box(orientation: .vertical, spacing: 8)
         stack.halign = .center
         stack.valign = .center
         stack.marginStart = 24
@@ -950,9 +950,8 @@ final class MainWindow {
         stack.add(cssClass: "luma-empty-state")
 
         let image = Gtk.Image(iconName: icon)
-        image.pixelSize = 64
+        image.pixelSize = 40
         image.halign = .center
-        image.add(cssClass: "dim-label")
         stack.append(child: image)
 
         let titleLabel = Label(str: title)
@@ -1261,7 +1260,7 @@ final class MainWindow {
         rowBox.marginEnd = 12
         rowBox.marginTop = 2
         rowBox.marginBottom = 2
-        let iconImage = Gtk.Image(iconName: "audio-x-generic-symbolic")
+        let iconImage = Gtk.Image(iconName: "system-run-symbolic")
         iconImage.pixelSize = 16
         rowBox.append(child: iconImage)
         let lbl = Label(str: capture.displayName)

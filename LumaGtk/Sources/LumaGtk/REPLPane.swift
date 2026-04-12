@@ -59,6 +59,7 @@ final class REPLPane {
         cellsScroll = ScrolledWindow()
         cellsScroll.hexpand = true
         cellsScroll.vexpand = true
+        cellsScroll.add(cssClass: "view")
         cellsScroll.set(child: cellsBox)
         widget.append(child: cellsScroll)
 
@@ -530,7 +531,7 @@ final class REPLPane {
         codeRow.append(child: codeLabel)
         column.append(child: codeRow)
 
-        let resultRow = Box(orientation: .horizontal, spacing: 8)
+        let resultRow = Box(orientation: .horizontal, spacing: 6)
         resultRow.hexpand = true
         let resultArrow = Label(str: "←")
         resultArrow.add(cssClass: "monospace")

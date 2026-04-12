@@ -537,7 +537,7 @@ final class NotebookPane {
         outer.halign = .center
         outer.valign = .center
 
-        let stack = Box(orientation: .vertical, spacing: 12)
+        let stack = Box(orientation: .vertical, spacing: 24)
         stack.halign = .center
         stack.valign = .center
         stack.marginStart = 24
@@ -546,16 +546,18 @@ final class NotebookPane {
         stack.marginBottom = 24
         stack.add(cssClass: "luma-empty-state")
 
+        let titleGroup = Box(orientation: .vertical, spacing: 8)
+        titleGroup.halign = .center
+
         let image = Gtk.Image(iconName: "accessories-dictionary-symbolic")
-        image.pixelSize = 64
+        image.pixelSize = 40
         image.halign = .center
-        image.add(cssClass: "dim-label")
-        stack.append(child: image)
+        titleGroup.append(child: image)
 
         let titleLabel = Label(str: "Notebook")
         titleLabel.add(cssClass: "title-2")
         titleLabel.halign = .center
-        stack.append(child: titleLabel)
+        titleGroup.append(child: titleLabel)
 
         let subtitleLabel = Label(str: "Capture interesting findings here.")
         subtitleLabel.add(cssClass: "dim-label")
@@ -563,26 +565,29 @@ final class NotebookPane {
         subtitleLabel.justify = .center
         subtitleLabel.halign = .center
         subtitleLabel.setSizeRequest(width: 360, height: -1)
-        stack.append(child: subtitleLabel)
+        titleGroup.append(child: subtitleLabel)
 
-        let steps = Box(orientation: .vertical, spacing: 6)
+        stack.append(child: titleGroup)
+
+        let steps = Box(orientation: .vertical, spacing: 8)
         steps.halign = .center
-        steps.marginTop = 8
-        steps.setSizeRequest(width: 360, height: -1)
 
         let step1 = Label(str: "1. Attach to a running app or process.")
         step1.halign = .start
         step1.wrap = true
+        step1.setSizeRequest(width: 350, height: -1)
         steps.append(child: step1)
 
         let step2 = Label(str: "2. Add instruments to observe behavior.")
         step2.halign = .start
         step2.wrap = true
+        step2.setSizeRequest(width: 350, height: -1)
         steps.append(child: step2)
 
         let step3 = Label(str: "3. Pin any output to save it here.")
         step3.halign = .start
         step3.wrap = true
+        step3.setSizeRequest(width: 350, height: -1)
         steps.append(child: step3)
 
         stack.append(child: steps)

@@ -82,6 +82,23 @@ enum StyleSheet {
         .luma-cfg-reg-changed { color: #78aeed; }
     }
 
+    .luma-js-expander {
+        margin: 0;
+        padding: 0;
+    }
+    .luma-js-expander > title {
+        padding: 0;
+        margin: 0;
+        min-height: 0;
+    }
+    .luma-js-expander > title > arrow {
+        min-width: 10px;
+        min-height: 10px;
+        -gtk-icon-size: 10px;
+        margin: 0 0 0 -4px;
+        opacity: 0.5;
+    }
+
     .luma-toast {
         border-radius: 999px;
         background-color: alpha(@theme_fg_color, 0.85);

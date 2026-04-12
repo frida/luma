@@ -69,7 +69,7 @@ final class JSInspectValueWidget {
         )
 
         let body = Box(orientation: .vertical, spacing: 2)
-        body.marginStart = 12
+        body.marginStart = 17
         body.hexpand = true
         for prop in props {
             let row = Box(orientation: .horizontal, spacing: 4)
@@ -100,7 +100,7 @@ final class JSInspectValueWidget {
         )
 
         let body = Box(orientation: .vertical, spacing: 2)
-        body.marginStart = 12
+        body.marginStart = 17
         body.hexpand = true
         for (idx, element) in elements.enumerated() {
             let row = Box(orientation: .horizontal, spacing: 4)
@@ -127,7 +127,7 @@ final class JSInspectValueWidget {
         let header = headerMarkup(title: "Map{\(entries.count)}", preview: nil, color: cyan)
 
         let body = Box(orientation: .vertical, spacing: 2)
-        body.marginStart = 12
+        body.marginStart = 17
         body.hexpand = true
         for entry in entries {
             let row = Box(orientation: .horizontal, spacing: 4)
@@ -156,7 +156,7 @@ final class JSInspectValueWidget {
         let header = headerMarkup(title: "Set{\(elements.count)}", preview: nil, color: cyan)
 
         let body = Box(orientation: .vertical, spacing: 2)
-        body.marginStart = 12
+        body.marginStart = 17
         body.hexpand = true
         for element in elements {
             let row = Box(orientation: .horizontal, spacing: 4)
@@ -173,6 +173,7 @@ final class JSInspectValueWidget {
 
     private static func makeExpander(headerMarkup: String, body: Widget) -> Widget {
         let expander = Expander(label: "")
+        expander.add(cssClass: "luma-js-expander")
         let titleLabel = Label(str: "")
         titleLabel.setMarkup(str: headerMarkup)
         titleLabel.add(cssClass: "monospace")
@@ -290,14 +291,14 @@ final class JSInspectValueWidget {
 
     // MARK: - Markup helpers
 
-    private static let cyan = "#5ad6ec"
-    private static let mint = "#7ef0b8"
-    private static let green = "#b8e25c"
-    private static let orange = "#ffb454"
-    private static let purple = "#d782ff"
-    private static let red = "#ff6b7a"
-    private static let blue = "#7cc4ff"
-    private static let dim = "#9aa0a6"
+    private static let cyan = "#00b4d8"
+    private static let mint = "#00c7be"
+    private static let green = "#34c759"
+    private static let orange = "#ff9500"
+    private static let purple = "#af52de"
+    private static let red = "#ff3b30"
+    private static let blue = "#007aff"
+    private static let dim = "#8e8e93"
 
     private static func span(_ text: String, color: String) -> String {
         return "<span foreground=\"\(color)\">\(text)</span>"
