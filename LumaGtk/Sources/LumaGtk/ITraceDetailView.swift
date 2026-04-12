@@ -22,6 +22,7 @@ final class ITraceDetailView {
     private var timeline: ITraceTimeline?
     private var selectedCallIndex: Int = 0
     private var showingGraph = true
+    private var compareButton: Button?
     fileprivate var isDarkMode: Bool = ThemeWatcher.isDarkMode()
     private var themeSignalID: gulong = 0
 
@@ -60,25 +61,13 @@ final class ITraceDetailView {
         captionLabel.add(cssClass: "caption")
         widget.append(child: captionLabel)
 
+        var pendingCompareButton: Button?
         if !otherCaptures.isEmpty {
             let compareRow = Box(orientation: .horizontal, spacing: 8)
             compareRow.marginTop = 6
-            let compareButton = Button(label: "Compare with\u{2026}")
-            let captureForCompare = capture
-            let othersForCompare = otherCaptures
-            let formatterForCompare = formatter
-            compareButton.onClicked { [weak compareButton] _ in
-                MainActor.assumeIsolated {
-                    guard let compareButton else { return }
-                    Self.presentComparePopover(
-                        anchor: compareButton,
-                        capture: captureForCompare,
-                        others: othersForCompare,
-                        formatter: formatterForCompare
-                    )
-                }
-            }
-            compareRow.append(child: compareButton)
+            let btn = Button(label: "Compare with\u{2026}")
+            pendingCompareButton = btn
+            compareRow.append(child: btn)
             widget.append(child: compareRow)
         }
 
@@ -135,6 +124,24 @@ final class ITraceDetailView {
             }
         }
         widget.install(controller: modeKey)
+
+        if let btn = pendingCompareButton {
+            self.compareButton = btn
+            let captureForCompare = capture
+            let othersForCompare = otherCaptures
+            let formatterForCompare = formatter
+            btn.onClicked { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let button = self?.compareButton else { return }
+                    Self.presentComparePopover(
+                        anchor: button,
+                        capture: captureForCompare,
+                        others: othersForCompare,
+                        formatter: formatterForCompare
+                    )
+                }
+            }
+        }
     }
 
     deinit {
@@ -232,6 +239,26 @@ final class ITraceDetailView {
                 self?.scrollToEntry(matchingNodeKey: key)
             }
         }
+        view.onJumpToFunction = { [weak self] index in
+            MainActor.assumeIsolated {
+                guard let self, let decoded = self.decoded else { return }
+                let target = index < 0 ? decoded.functionCalls.count - 1 : index
+                guard target >= 0, target < decoded.functionCalls.count else { return }
+                self.selectedCallIndex = target
+                self.cfgView?.setSelectedCall(index: target)
+                self.timeline?.setSelected(index: target)
+            }
+        }
+        view.onNavigateFunction = { [weak self] direction in
+            MainActor.assumeIsolated {
+                guard let self, let decoded = self.decoded else { return }
+                let newIdx = self.selectedCallIndex + direction
+                guard newIdx >= 0, newIdx < decoded.functionCalls.count else { return }
+                self.selectedCallIndex = newIdx
+                self.cfgView?.setSelectedCall(index: newIdx)
+                self.timeline?.setSelected(index: newIdx)
+            }
+        }
         cfgView = view
         bodyContainer.append(child: view.widget)
     }
@@ -309,9 +336,9 @@ final class ITraceDetailView {
             listBox.append(child: row)
         }
 
-        listBox.onRowSelected { [popover, weak anchor] _, row in
+        listBox.onRowActivated { [popover, weak anchor] _, row in
             MainActor.assumeIsolated {
-                guard let row, let anchor else { return }
+                guard let anchor else { return }
                 let index = Int(row.index)
                 guard index >= 0, index < others.count else { return }
                 popover.popdown()
@@ -321,6 +348,7 @@ final class ITraceDetailView {
 
         let scroll = ScrolledWindow()
         scroll.setSizeRequest(width: 320, height: 240)
+        scroll.add(cssClass: "luma-popover-scroll")
         scroll.set(child: listBox)
 
         popover.set(child: WidgetRef(scroll.widget_ptr))

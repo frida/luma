@@ -70,11 +70,11 @@ enum StyleSheet {
         padding: 0 4px;
         min-height: 0;
     }
-    scrolledwindow.luma-cfg-reg-scroll > viewport { color: #2e3436; }
-    scrolledwindow.luma-cfg-reg-scroll .luma-cfg-reg-changed { color: #1c71d8; font-weight: bold; }
+    scrolledwindow.luma-popover-scroll > viewport { color: #2e3436; }
+    .luma-cfg-reg-changed { color: #1c71d8; font-weight: bold; }
     @media (prefers-color-scheme: dark) {
-        scrolledwindow.luma-cfg-reg-scroll > viewport { color: #deddda; }
-        scrolledwindow.luma-cfg-reg-scroll .luma-cfg-reg-changed { color: #78aeed; }
+        scrolledwindow.luma-popover-scroll > viewport { color: #deddda; }
+        .luma-cfg-reg-changed { color: #78aeed; }
     }
 
     .luma-toast {

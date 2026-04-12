@@ -18,6 +18,8 @@ final class ITraceCFGView {
     let widget: Box
 
     var onSelect: ((CFGGraph.NodeKey) -> Void)?
+    var onNavigateFunction: ((Int) -> Void)?
+    var onJumpToFunction: ((Int) -> Void)?
 
     private let decoded: DecodedITrace
     private let arch: String
@@ -55,9 +57,7 @@ final class ITraceCFGView {
     private var offsetBaseY: Double = 0
 
     private let nodeWidth: Double = 360
-    private let baseNodeHeight: Double = 40
-    private let instructionLineHeight: Double = 14
-    private let titleRowHeight: Double = 22
+    private let baseNodeHeight: Double = 30
     private let padding: Double = 40
 
     init(
@@ -131,6 +131,7 @@ final class ITraceCFGView {
         guard index != selectedCallIndex else { return }
         selectedCallIndex = index
         rebuildGraph(forCallIndex: index)
+        focus()
     }
 
     func setSelectedNode(key: CFGGraph.NodeKey?) {
@@ -143,6 +144,19 @@ final class ITraceCFGView {
             if graph.nodes[entryKey] != nil {
                 select(key: entryKey, line: 0, notify: false)
             }
+        }
+        if let key = selectedKey, let node = graph.nodes[key] {
+            panToNode(node)
+        }
+        _ = container.grabFocus()
+    }
+
+    func focusLast() {
+        let sorted = currentSectionNodes().sorted { $0.position.y < $1.position.y }
+        if let last = sorted.last {
+            let line = max(0, (nodeInstructionRows[last.key]?.count ?? 1) - 1)
+            select(key: last.key, line: line, notify: false)
+            panToNode(last)
         }
         _ = container.grabFocus()
     }
@@ -337,10 +351,9 @@ final class ITraceCFGView {
             }
         }
 
-        guard !toFetch.isEmpty else {
-            relayout()
-            return
-        }
+        relayout()
+
+        guard !toFetch.isEmpty else { return }
 
         disasmFetchTask = Task { @MainActor [weak self] in
             for (key, addr, size) in toFetch {
@@ -396,11 +409,9 @@ final class ITraceCFGView {
             applyLineHighlight(key: key)
         }
 
-        let lineCount = max(1, lines.count)
-        let newHeight =
-            titleRowHeight
-            + Double(lineCount) * instructionLineHeight
-            + 10
+        var natH: gint = 0
+        nodeWidgets[key]?.measure(orientation: GTK_ORIENTATION_VERTICAL, for: -1, natural: &natH)
+        let newHeight = natH > 0 ? Double(natH) : baseNodeHeight
         nodeHeights[key] = newHeight
 
         if relayoutAfter {
@@ -476,6 +487,7 @@ final class ITraceCFGView {
         if notify, let key {
             onSelect?(key)
         }
+        _ = container.grabFocus()
     }
 
     private func selectLine(key: CFGGraph.NodeKey, line: Int, notify: Bool) {
@@ -634,6 +646,42 @@ final class ITraceCFGView {
         container.install(controller: scroll)
     }
 
+    private func panToNode(_ node: CFGGraph.Node) {
+        let h = nodeHeights[node.key] ?? baseNodeHeight
+        let nodeCX = (node.position.x + offsetBaseX) * zoom + panX
+        let nodeCY = (node.position.y + offsetBaseY) * zoom + panY
+        let halfW = nodeWidth / 2 * zoom
+        let halfH = h / 2 * zoom
+        let viewW = Double(container.allocatedWidth)
+        let viewH = Double(container.allocatedHeight)
+        guard viewW > 0, viewH > 0 else { return }
+
+        // Keep the node within the central portion of the viewport
+        let insetX = min(viewW * 0.15, 60)
+        let insetY = min(viewH * 0.15, 60)
+        var dx = 0.0
+        var dy = 0.0
+
+        if nodeCX - halfW < insetX {
+            dx = insetX - (nodeCX - halfW)
+        } else if nodeCX + halfW > viewW - insetX {
+            dx = (viewW - insetX) - (nodeCX + halfW)
+        }
+
+        if nodeCY - halfH < insetY {
+            dy = insetY - (nodeCY - halfH)
+        } else if nodeCY + halfH > viewH - insetY {
+            dy = (viewH - insetY) - (nodeCY + halfH)
+        }
+
+        if dx != 0 || dy != 0 {
+            panX += dx
+            panY += dy
+            repositionNodes()
+            drawingArea.queueDraw()
+        }
+    }
+
     private func resetView() {
         panX = 0
         panY = 0
@@ -650,10 +698,30 @@ final class ITraceCFGView {
             MainActor.assumeIsolated {
                 guard let self else { return false }
                 switch keyval {
-                case 0xff51: self.moveSelection(dx: -1, dy: 0); return true
-                case 0xff53: self.moveSelection(dx: 1, dy: 0); return true
-                case 0xff52: self.moveLine(by: -1); return true
-                case 0xff54: self.moveLine(by: 1); return true
+                case 0xff51, 0x068:  // Left, h
+                    self.onNavigateFunction?(-1); return true
+                case 0xff53, 0x06c:  // Right, l
+                    self.onNavigateFunction?(1); return true
+                case 0xff52, 0x06b:  // Up, k
+                    self.moveLine(by: -1); return true
+                case 0xff54, 0x06a:  // Down, j
+                    self.moveLine(by: 1); return true
+                case 0x04a:  // J — jump to next block
+                    self.jumpToBlock(direction: 1); return true
+                case 0x04b:  // K — jump to previous block
+                    self.jumpToBlock(direction: -1); return true
+                case 0x067:  // g — first function
+                    self.onJumpToFunction?(0); return true
+                case 0x047:  // G — last function
+                    self.onJumpToFunction?(-1); return true
+                case 0xff55:  // Page Up
+                    self.jumpToBlock(direction: -1); return true
+                case 0xff56:  // Page Down
+                    self.jumpToBlock(direction: 1); return true
+                case 0xff50:  // Home
+                    self.onJumpToFunction?(0); return true
+                case 0xff57:  // End
+                    self.onJumpToFunction?(-1); return true
                 case 0xff0d:
                     self.toggleRegisterPopover()
                     return true
@@ -672,14 +740,22 @@ final class ITraceCFGView {
         container.install(controller: key)
     }
 
+    private func jumpToBlock(direction: Int) {
+        let sorted = currentSectionNodes().sorted { $0.position.y < $1.position.y }
+        selectNextIn(sorted, direction: direction)
+    }
+
+
     private func moveLine(by delta: Int) {
         guard !graph.nodes.isEmpty else { return }
+        let hadPopover = registerPopover != nil
         guard let currentKey = selectedKey,
             let rows = nodeInstructionRows[currentKey],
             !rows.isEmpty
         else {
-            // Fall back to node selection if no current line context.
-            moveSelection(dx: 0, dy: delta > 0 ? 1 : -1)
+            let sorted = currentSectionNodes().sorted { $0.position.y < $1.position.y }
+            selectNextIn(sorted, direction: delta > 0 ? 1 : -1)
+            if hadPopover { showRegisterPopover() }
             return
         }
         let target = selectedInstructionLine + delta
@@ -687,45 +763,41 @@ final class ITraceCFGView {
             selectLine(key: currentKey, line: target, notify: false)
             return
         }
-        // Edge of node — fall through to neighbour.
-        let prevKey = currentKey
-        moveSelection(dx: 0, dy: delta > 0 ? 1 : -1)
-        guard let newKey = selectedKey, newKey != prevKey,
-            let newRows = nodeInstructionRows[newKey], !newRows.isEmpty
-        else { return }
-        let newLine = delta > 0 ? 0 : newRows.count - 1
-        selectLine(key: newKey, line: newLine, notify: false)
+        let sorted = currentSectionNodes().sorted { $0.position.y < $1.position.y }
+        selectNextIn(sorted, direction: delta > 0 ? 1 : -1)
+        if hadPopover { showRegisterPopover() }
     }
 
-    private func moveSelection(dx: Int, dy: Int) {
-        guard !graph.nodes.isEmpty else { return }
-        guard let current = selectedKey.flatMap({ graph.nodes[$0] }) else {
-            if let first = graph.nodes.values.min(by: { $0.position.y < $1.position.y }) {
-                select(key: first.key, notify: true)
-            }
-            return
+    private func currentSectionNodes() -> [CFGGraph.Node] {
+        let section: Int
+        if let key = selectedKey, let node = graph.nodes[key] {
+            section = node.section
+        } else {
+            section = selectedCallIndex
         }
+        let current = graph.nodes.values.filter { $0.section == section }
+        return current.isEmpty ? Array(graph.nodes.values) : current
+    }
 
-        var best: CFGGraph.Node?
-        var bestScore = Double.infinity
-        for node in graph.nodes.values where node.key != current.key {
-            let ddx = node.position.x - current.position.x
-            let ddy = node.position.y - current.position.y
-            if dx != 0 {
-                if (dx > 0 && ddx <= 0) || (dx < 0 && ddx >= 0) { continue }
+    private func selectNextIn(_ sorted: [CFGGraph.Node], direction: Int) {
+        guard !sorted.isEmpty else { return }
+        let currentIdx = sorted.firstIndex { $0.key == selectedKey }
+        let nextIdx: Int
+        if let currentIdx {
+            let candidate = currentIdx + direction
+            if candidate < 0 || candidate >= sorted.count {
+                onNavigateFunction?(direction)
+                if direction < 0 { focusLast() }
+                return
             }
-            if dy != 0 {
-                if (dy > 0 && ddy <= 0) || (dy < 0 && ddy >= 0) { continue }
-            }
-            let score = ddx * ddx + ddy * ddy
-            if score < bestScore {
-                bestScore = score
-                best = node
-            }
+            nextIdx = candidate
+        } else {
+            nextIdx = direction > 0 ? 0 : sorted.count - 1
         }
-        if let best {
-            select(key: best.key, notify: true)
-        }
+        let node = sorted[nextIdx]
+        let line = direction > 0 ? 0 : max(0, (nodeInstructionRows[node.key]?.count ?? 1) - 1)
+        select(key: node.key, line: line, notify: true)
+        panToNode(node)
     }
 
     // MARK: - Register popover
@@ -761,7 +833,7 @@ final class ITraceCFGView {
             hscrollbarPolicy: PolicyType.automatic,
             vscrollbarPolicy: PolicyType.automatic
         )
-        scroll.add(cssClass: "luma-cfg-reg-scroll")
+        scroll.add(cssClass: "luma-popover-scroll")
         scroll.set(child: inner)
         applyScrollSize(scroll: scroll, node: node, contentSize: natural)
 
