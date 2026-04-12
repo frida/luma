@@ -72,6 +72,11 @@ jobs:
             if [ -d "$fw/Versions" ]; then
               rm -rf "$fw/Versions"
             fi
+            name=$(basename "$fw" .framework)
+            if lipo -info "$fw/$name" 2>/dev/null | grep -q "Non-fat\|Architectures"; then
+              lipo -thin ${{ matrix.arch }} "$fw/$name" -output "$fw/$name.thin"
+              mv "$fw/$name.thin" "$fw/$name"
+            fi
           done
 
       - name: Sign
