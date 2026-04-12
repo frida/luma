@@ -70,7 +70,12 @@ enum StyleSheet {
         padding: 0 4px;
         min-height: 0;
     }
-    .luma-cfg-reg-changed { color: @accent_bg_color; font-weight: bold; }
+    scrolledwindow.luma-cfg-reg-scroll > viewport { color: #2e3436; }
+    scrolledwindow.luma-cfg-reg-scroll .luma-cfg-reg-changed { color: #1c71d8; font-weight: bold; }
+    @media (prefers-color-scheme: dark) {
+        scrolledwindow.luma-cfg-reg-scroll > viewport { color: #deddda; }
+        scrolledwindow.luma-cfg-reg-scroll .luma-cfg-reg-changed { color: #78aeed; }
+    }
 
     .luma-toast {
         border-radius: 999px;

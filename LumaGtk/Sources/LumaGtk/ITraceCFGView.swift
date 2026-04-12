@@ -761,6 +761,7 @@ final class ITraceCFGView {
             hscrollbarPolicy: PolicyType.automatic,
             vscrollbarPolicy: PolicyType.automatic
         )
+        scroll.add(cssClass: "luma-cfg-reg-scroll")
         scroll.set(child: inner)
         applyScrollSize(scroll: scroll, node: node, contentSize: natural)
 
@@ -941,7 +942,6 @@ final class ITraceCFGView {
                 let valueText = String(format: "0x%016llx", entry.value)
                 let cell = Label(str: "\(padded): \(valueText)")
                 cell.add(cssClass: "monospace")
-                cell.add(cssClass: "caption")
                 if changed.contains(entry.index) {
                     cell.add(cssClass: "luma-cfg-reg-changed")
                 }
