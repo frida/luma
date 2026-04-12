@@ -67,7 +67,8 @@ jobs:
             @rpath/Radare2.framework/Versions/A/Radare2 \
             @rpath/Radare2.framework/Radare2 \
             "$BINARY"
-          strip -Sx "$BINARY"
+          echo '_main' > /tmp/exports.txt
+          strip -Sx -exported_symbols_list /tmp/exports.txt "$BINARY"
           for fw in build/Luma.app/Contents/Frameworks/*.framework; do
             if [ -d "$fw/Versions" ]; then
               rm -rf "$fw/Versions"
