@@ -844,7 +844,7 @@ public final class Engine {
     public func removeInstrument(_ instance: InstrumentInstance) async {
         if let node = node(forSessionID: instance.sessionID) {
             if node.instruments.first(where: { $0.id == instance.id })?.isAttached == true {
-                try? await node.script.exports.disposeInstrument(["instanceId": instance.id.uuidString])
+                _ = try? await node.script.exports.disposeInstrument(["instanceId": instance.id.uuidString])
             }
             node.removeInstrument(id: instance.id)
         }
@@ -874,7 +874,7 @@ public final class Engine {
             )
         } else {
             if node.instruments.first(where: { $0.id == inst.id })?.isAttached == true {
-                try? await node.script.exports.disposeInstrument(["instanceId": inst.id.uuidString])
+                _ = try? await node.script.exports.disposeInstrument(["instanceId": inst.id.uuidString])
                 node.markInstrumentDetached(id: inst.id)
             }
         }
