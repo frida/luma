@@ -426,7 +426,7 @@ jobs:
           vcpkg install
           --overlay-triplets=${{ github.workspace }}/.github/vcpkg-triplets
           --triplet x64-windows-release
-          glib json-glib libsoup gtk
+          glib json-glib libsoup gtk libxml2
 
       - name: Save vcpkg cache
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'

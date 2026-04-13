@@ -1,5 +1,5 @@
 {
-  "originHash" : "d7b1842c888b2f9b78cdb321859e5b95786e2bd7b70465f3ad7b8542f966fb6a",
+  "originHash" : "e8fed4d547697461b410fa028aee49186571c946205ffa4f51066e5779d95749",
   "pins" : [
     {
       "identity" : "frida-swift",
@@ -7,16 +7,16 @@
       "location" : "https://github.com/frida/frida-swift",
       "state" : {
         "branch" : "main",
-        "revision" : "938f2b2e155a325b4982ff29f8759ed6aa928572"
+        "revision" : "1d333e52495e1780f069250f751ec26dc7e2ea6c"
       }
     },
     {
       "identity" : "gir2swift",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/rhx/gir2swift.git",
+      "location" : "https://github.com/frida/gir2swift.git",
       "state" : {
         "branch" : "main",
-        "revision" : "e2b894e3ba0197d7c2ebe1cde62e5c1faa404b75"
+        "revision" : "70561e343431a70d30dab87cbe750337005c86cf"
       }
     },
     {
@@ -166,10 +166,10 @@
     {
       "identity" : "swiftlibxml",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/rhx/SwiftLibXML.git",
+      "location" : "https://github.com/frida/SwiftLibXML.git",
       "state" : {
         "branch" : "main",
-        "revision" : "35dea8fe9a65a8971eb5fde906fd41b07d855d6a"
+        "revision" : "52e42d0e9205211aa9c992661c2f321f9b7aaca9"
       }
     },
     {
