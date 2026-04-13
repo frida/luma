@@ -426,7 +426,7 @@ jobs:
           vcpkg install
           --overlay-triplets=${{ github.workspace }}/.github/vcpkg-triplets
           --triplet x64-windows-release
-          glib json-glib libsoup gtk libxml2
+          glib json-glib libsoup gtk libxml2 gobject-introspection
 
       - name: Save vcpkg cache
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
@@ -443,6 +443,7 @@ jobs:
           echo "$VCPKG_PREFIX/bin" >> $GITHUB_PATH
           echo "$VCPKG_PREFIX/tools" >> $GITHUB_PATH
           echo "PKG_CONFIG_PATH=$VCPKG_PREFIX/lib/pkgconfig" >> $GITHUB_ENV
+          echo "GIR_EXTRA_SEARCH_PATH=$VCPKG_PREFIX/share/gir-1.0" >> $GITHUB_ENV
 
       - name: Build frida-core (shared)
         run: |
