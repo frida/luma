@@ -409,32 +409,40 @@ jobs:
           python-version: "3.12"
 
       - name: Install build tools
-        run: pip install meson ninja gvsbuild
+        run: |
+          pip install meson ninja setuptools
+          choco install pkgconfiglite -y
 
-      - name: Restore GTK4 cache
-        id: gtk-cache
+      - name: Restore vcpkg cache
+        id: vcpkg-cache
         uses: actions/cache/restore@v4
         with:
-          path: C:\gtk-build
-          key: ${{ runner.os }}-gvsbuild-gtk4-v1
+          path: C:\vcpkg\installed
+          key: vcpkg-x64-windows-release-v1
 
-      - name: Build GTK4
-        if: steps.gtk-cache.outputs.cache-hit != 'true'
-        run: gvsbuild build --ninja-opts -j2 gtk4 gobject-introspection
+      - name: Install dependencies via vcpkg
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        run: >-
+          vcpkg install
+          --overlay-triplets=${{ github.workspace }}/.github/vcpkg-triplets
+          --triplet x64-windows-release
+          glib json-glib libsoup gtk4
 
-      - name: Save GTK4 cache
-        if: steps.gtk-cache.outputs.cache-hit != 'true'
+      - name: Save vcpkg cache
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: C:\gtk-build
-          key: ${{ runner.os }}-gvsbuild-gtk4-v1
+          path: C:\vcpkg\installed
+          key: vcpkg-x64-windows-release-v1
 
-      - name: Set up GTK environment
+      - name: Set up vcpkg environment
         shell: bash
         run: |
-          echo "C:\\gtk-build\\gtk\\x64\\release\\bin" >> $GITHUB_PATH
-          GTK_PKG="C:/gtk-build/gtk/x64/release/lib/pkgconfig"
-          echo "PKG_CONFIG_PATH=$GTK_PKG" >> $GITHUB_ENV
+          VCPKG_PREFIX="C:/vcpkg/installed/x64-windows-release"
+          echo "$VCPKG_PREFIX/tools/pkgconf" >> $GITHUB_PATH
+          echo "$VCPKG_PREFIX/bin" >> $GITHUB_PATH
+          echo "$VCPKG_PREFIX/tools" >> $GITHUB_PATH
+          echo "PKG_CONFIG_PATH=$VCPKG_PREFIX/lib/pkgconfig" >> $GITHUB_ENV
 
       - name: Build frida-core (shared)
         env:
@@ -444,7 +452,12 @@ jobs:
           git clone --depth 1 -b $env:FRIDA_CORE_REF https://github.com/frida/frida-core.git $env:RUNNER_TEMP\frida-core
           Push-Location $env:RUNNER_TEMP\frida-core
           git submodule update --init --recursive --depth 1
-          python -c "import sys; sys.path.insert(0, '.'); from releng.meson_configure import main; main()" . --enable-shared --without-prebuilds=sdk "--prefix=$env:RUNNER_TEMP\frida-prefix" -- --force-fallback-for=openssl
+          python -c "import sys; sys.path.insert(0, '.'); from releng.meson_configure import main; main()" `
+              . `
+              --enable-shared `
+              --without-prebuilds=sdk `
+              "--prefix=$env:RUNNER_TEMP\frida-prefix" `
+              -- --force-fallback-for=openssl,libnghttp2 -Dcompiler_backend=disabled -Dtests=disabled
           if ($LASTEXITCODE -ne 0) { throw "configure failed with exit code $LASTEXITCODE" }
           python releng/meson/meson.py compile -C build
           if ($LASTEXITCODE -ne 0) { throw "compile failed with exit code $LASTEXITCODE" }
@@ -457,7 +470,7 @@ jobs:
           git clone https://github.com/radareorg/radare2.git $env:RUNNER_TEMP\radare2
           Push-Location $env:RUNNER_TEMP\radare2
           git checkout $env:RADARE2_REF
-          meson setup build --prefix=$env:RUNNER_TEMP\r2-prefix --default-library=static -Dstatic_runtime=true -Dcli=disabled --vsenv
+          meson setup build "--prefix=$env:RUNNER_TEMP\r2-prefix" --default-library=static -Dstatic_runtime=true -Dcli=disabled --vsenv
           meson compile -C build
           meson install -C build
           Pop-Location
@@ -467,8 +480,8 @@ jobs:
         run: |
           FRIDA_PKG="$RUNNER_TEMP/frida-prefix/lib/pkgconfig"
           R2_PKG="$RUNNER_TEMP/r2-prefix/lib/pkgconfig"
-          GTK_PKG="C:/gtk-build/gtk/x64/release/lib/pkgconfig"
-          echo "PKG_CONFIG_PATH=$FRIDA_PKG;$R2_PKG;$GTK_PKG" >> $GITHUB_ENV
+          VCPKG_PKG="C:/vcpkg/installed/x64-windows-release/lib/pkgconfig"
+          echo "PKG_CONFIG_PATH=$FRIDA_PKG;$R2_PKG;$VCPKG_PKG" >> $GITHUB_ENV
           echo "$RUNNER_TEMP\\frida-prefix\\bin" >> $GITHUB_PATH
 
       - name: Build LumaGtk
