@@ -5,8 +5,13 @@ import PackageDescription
 
 func pkgConfigFlags(_ packages: [String], libs: Bool = false) -> [String] {
     let proc = Process()
+    #if os(Windows)
+    proc.executableURL = URL(fileURLWithPath: "C:\\Windows\\System32\\cmd.exe")
+    proc.arguments = ["/c", "pkg-config"] + (libs ? ["--libs"] : ["--cflags"]) + packages
+    #else
     proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
     proc.arguments = ["pkg-config"] + (libs ? ["--libs"] : ["--cflags"]) + packages
+    #endif
     let pipe = Pipe()
     proc.standardOutput = pipe
     proc.standardError = FileHandle.nullDevice
@@ -28,6 +33,13 @@ let cLumaCSettings: [CSetting] = [
 let cLumaLinkerSettings: [LinkerSetting] = [
     .linkedFramework("WebKit"),
 ]
+let lumaGtkLinkerSettings: [LinkerSetting] = []
+#elseif os(Windows)
+let cLumaSources: [String] = ["shim_gtk.c", "shim_webview2.c"]
+let cLumaCSettings: [CSetting] = [
+    .unsafeFlags(pkgConfigFlags(["gtk4"])),
+]
+let cLumaLinkerSettings: [LinkerSetting] = []
 let lumaGtkLinkerSettings: [LinkerSetting] = []
 #else
 let cLumaSources: [String] = ["shim_gtk.c", "shim_webkitgtk.c"]
