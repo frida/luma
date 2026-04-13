@@ -385,7 +385,6 @@ jobs:
           path: ${{ steps.snapcraft.outputs.snap }}
 
   windows:
-    if: false
     runs-on: windows-latest
     continue-on-error: true
     timeout-minutes: 120
