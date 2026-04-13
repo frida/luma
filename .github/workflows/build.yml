@@ -192,7 +192,15 @@ jobs:
           dnf install -y swiftlang
           swift --version
 
+      - name: Restore frida-core cache
+        id: frida-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/frida-destdir
+          key: ${{ runner.os }}-fedora43-frida-core-${{ env.FRIDA_CORE_REF }}-v1
+
       - name: Build frida-core (shared)
+        if: steps.frida-cache.outputs.cache-hit != 'true'
         env:
           CC: gcc
           CXX: g++
@@ -201,11 +209,29 @@ jobs:
           cd /tmp/frida-core
           ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr
           make -j$(nproc)
-          make install
+          DESTDIR=/tmp/frida-destdir make install
+
+      - name: Save frida-core cache
+        if: steps.frida-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/frida-destdir
+          key: ${{ runner.os }}-fedora43-frida-core-${{ env.FRIDA_CORE_REF }}-v1
+
+      - name: Install frida-core
+        run: |
+          cp -a /tmp/frida-destdir/usr/. /usr/
           ldconfig
-          pkg-config --modversion frida-core-1.0
+
+      - name: Restore radare2 cache
+        id: r2-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/r2-destdir
+          key: ${{ runner.os }}-fedora43-radare2-${{ env.RADARE2_REF }}-v1
 
       - name: Build radare2 (static)
+        if: steps.r2-cache.outputs.cache-hit != 'true'
         env:
           CC: gcc
           CXX: g++
@@ -214,10 +240,19 @@ jobs:
           cd /tmp/radare2
           git checkout $RADARE2_REF
           meson setup build --prefix=/usr --default-library=static -Dstatic_runtime=true -Dcli=disabled
-          ninja -C build
-          ninja -C build install
+          DESTDIR=/tmp/r2-destdir ninja -C build install
+
+      - name: Save radare2 cache
+        if: steps.r2-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/r2-destdir
+          key: ${{ runner.os }}-fedora43-radare2-${{ env.RADARE2_REF }}-v1
+
+      - name: Install radare2
+        run: |
+          cp -a /tmp/r2-destdir/usr/. /usr/
           ldconfig
-          pkg-config --modversion r_core
 
       - uses: actions/checkout@v5
 
@@ -295,27 +330,62 @@ jobs:
           ldconfig
           swift --version
 
+      - name: Restore frida-core cache
+        id: frida-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/frida-destdir
+          key: ${{ runner.os }}-ubuntu2510-frida-core-${{ env.FRIDA_CORE_REF }}-v1
+
       - name: Build frida-core (shared)
+        if: steps.frida-cache.outputs.cache-hit != 'true'
         run: |
           git clone --depth 1 -b $FRIDA_CORE_REF https://github.com/frida/frida-core.git /tmp/frida-core
           cd /tmp/frida-core
           ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr \
             -- --force-fallback-for=openssl
           make -j$(nproc)
-          make install
+          DESTDIR=/tmp/frida-destdir make install
+
+      - name: Save frida-core cache
+        if: steps.frida-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/frida-destdir
+          key: ${{ runner.os }}-ubuntu2510-frida-core-${{ env.FRIDA_CORE_REF }}-v1
+
+      - name: Install frida-core
+        run: |
+          cp -a /tmp/frida-destdir/usr/. /usr/
           ldconfig
-          pkg-config --modversion frida-core-1.0
+
+      - name: Restore radare2 cache
+        id: r2-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/r2-destdir
+          key: ${{ runner.os }}-ubuntu2510-radare2-${{ env.RADARE2_REF }}-v1
 
       - name: Build radare2 (static)
+        if: steps.r2-cache.outputs.cache-hit != 'true'
         run: |
           git clone https://github.com/radareorg/radare2.git /tmp/radare2
           cd /tmp/radare2
           git checkout $RADARE2_REF
           meson setup build --prefix=/usr --default-library=static -Dstatic_runtime=true -Dcli=disabled
-          ninja -C build
-          ninja -C build install
+          DESTDIR=/tmp/r2-destdir ninja -C build install
+
+      - name: Save radare2 cache
+        if: steps.r2-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/r2-destdir
+          key: ${{ runner.os }}-ubuntu2510-radare2-${{ env.RADARE2_REF }}-v1
+
+      - name: Install radare2
+        run: |
+          cp -a /tmp/r2-destdir/usr/. /usr/
           ldconfig
-          pkg-config --modversion r_core
 
       - uses: actions/checkout@v5
 
@@ -445,7 +515,15 @@ jobs:
           echo "PKG_CONFIG_PATH=$VCPKG_PREFIX/lib/pkgconfig" >> $GITHUB_ENV
           echo "GIR_EXTRA_SEARCH_PATH=$VCPKG_PREFIX/share/gir-1.0" >> $GITHUB_ENV
 
+      - name: Restore frida-core cache
+        id: frida-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}\frida-prefix
+          key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v1
+
       - name: Build frida-core (shared)
+        if: steps.frida-cache.outputs.cache-hit != 'true'
         run: |
           $ErrorActionPreference = 'Stop'
           git clone --depth 1 -b $env:FRIDA_CORE_REF https://github.com/frida/frida-core.git $env:RUNNER_TEMP\frida-core
@@ -464,7 +542,22 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "install failed with exit code $LASTEXITCODE" }
           Pop-Location
 
+      - name: Save frida-core cache
+        if: steps.frida-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}\frida-prefix
+          key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v1
+
+      - name: Restore radare2 cache
+        id: r2-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}\r2-prefix
+          key: ${{ runner.os }}-radare2-${{ env.RADARE2_REF }}-v1
+
       - name: Build radare2 (static)
+        if: steps.r2-cache.outputs.cache-hit != 'true'
         run: |
           git clone https://github.com/radareorg/radare2.git $env:RUNNER_TEMP\radare2
           Push-Location $env:RUNNER_TEMP\radare2
@@ -474,6 +567,13 @@ jobs:
           meson compile -C build
           meson install -C build
           Pop-Location
+
+      - name: Save radare2 cache
+        if: steps.r2-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}\r2-prefix
+          key: ${{ runner.os }}-radare2-${{ env.RADARE2_REF }}-v1
 
       - name: Update environment
         shell: bash
