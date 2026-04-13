@@ -62,7 +62,7 @@ public final class MonacoEditor {
 
     public func reparent(into container: Box) {
         if let parent = widget.parent {
-            Box(raw: parent.ptr).remove(child: widget)
+            BoxRef(raw: parent.ptr).remove(child: widget)
         }
         container.append(child: widget)
     }

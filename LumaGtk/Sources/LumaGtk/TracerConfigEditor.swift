@@ -15,7 +15,8 @@ final class TracerConfigEditor {
 
     fileprivate var config: TracerConfig
     private var selectedHookID: UUID?
-    private var layoutMode: LayoutMode = .compact
+    private var preferredLayoutMode: LayoutMode = .compact
+    private var lastKnownWidth: Int = 0
 
     private let contentSlot: Box
     private var hooksList: HooksList?
@@ -27,6 +28,13 @@ final class TracerConfigEditor {
     enum LayoutMode {
         case compact
         case expanded
+    }
+
+    private var effectiveLayoutMode: LayoutMode {
+        if lastKnownWidth > 0 && lastKnownWidth < 800 {
+            return .compact
+        }
+        return preferredLayoutMode
     }
 
     init(
@@ -50,6 +58,20 @@ final class TracerConfigEditor {
         contentSlot = Box(orientation: .vertical, spacing: 0)
         contentSlot.hexpand = true
         contentSlot.vexpand = true
+
+        let sensorPtr = gtk_drawing_area_new()!
+        gtk_widget_set_hexpand(sensorPtr, 1)
+        gtk_widget_set_size_request(sensorPtr, -1, 0)
+        let context = Unmanaged.passUnretained(self).toOpaque()
+        g_signal_connect_data(
+            sensorPtr,
+            "resize",
+            unsafeBitCast(widthSensorResized, to: GCallback.self),
+            context,
+            nil,
+            GConnectFlags(rawValue: 0)
+        )
+        widget.append(child: WidgetRef(raw: UnsafeMutableRawPointer(sensorPtr)))
         widget.append(child: contentSlot)
 
         rebuildContent()
@@ -98,33 +120,46 @@ final class TracerConfigEditor {
             return
         }
 
-        let editorPane = EditorPane(
-            engine: engine,
-            hook: selectedHook,
-            sharedEditor: sharedEditor,
-            onSave: { [weak self] updated in
-                self?.saveHook(updated)
-            }
-        )
-        self.editorPane = editorPane
-
-        switch layoutMode {
+        switch effectiveLayoutMode {
         case .compact:
+            let editorPane = EditorPane(
+                engine: engine,
+                hook: selectedHook,
+                sharedEditor: sharedEditor,
+                showToolbar: false,
+                onSave: { [weak self] updated in
+                    self?.saveHook(updated)
+                }
+            )
+            self.editorPane = editorPane
+
             let toolbar = buildCompactToolbar()
             contentSlot.append(child: toolbar)
             let separator = Separator(orientation: .horizontal)
             contentSlot.append(child: separator)
-            editorPane.widget.marginStart = 0
-            editorPane.widget.marginEnd = 0
-            editorPane.widget.marginTop = 0
-            editorPane.widget.marginBottom = 0
             contentSlot.append(child: editorPane.widget)
 
         case .expanded:
+            let editorPane = EditorPane(
+                engine: engine,
+                hook: selectedHook,
+                sharedEditor: sharedEditor,
+                showToolbar: true,
+                onSave: { [weak self] updated in
+                    self?.saveHook(updated)
+                }
+            )
+            self.editorPane = editorPane
+
             let paned = Paned(orientation: .horizontal)
-            paned.position = 720
+            paned.resizeStartChild = true
+            paned.resizeEndChild = false
+            paned.shrinkStartChild = false
+            paned.shrinkEndChild = false
             paned.hexpand = true
             paned.vexpand = true
+            let sashPosition = max(400, lastKnownWidth - 320)
+            paned.position = sashPosition
 
             let hooksList = HooksList(
                 hooks: config.hooks,
@@ -158,9 +193,20 @@ final class TracerConfigEditor {
     }
 
     private func setLayoutMode(_ mode: LayoutMode) {
-        guard mode != layoutMode else { return }
-        layoutMode = mode
-        rebuildContent()
+        guard mode != preferredLayoutMode else { return }
+        preferredLayoutMode = mode
+        scheduleRebuild()
+    }
+
+    private var rebuildScheduled = false
+
+    private func scheduleRebuild() {
+        guard !rebuildScheduled else { return }
+        rebuildScheduled = true
+        Task { @MainActor in
+            self.rebuildScheduled = false
+            self.rebuildContent()
+        }
     }
 
     private func buildCompactToolbar() -> Box {
@@ -201,9 +247,62 @@ final class TracerConfigEditor {
             toolbar.append(child: title)
         }
 
+        if let hook = selectedHook {
+            let enabledSwitch = Switch()
+            enabledSwitch.active = hook.isEnabled
+            enabledSwitch.valign = .center
+            enabledSwitch.onStateSet { [weak self] _, state in
+                MainActor.assumeIsolated {
+                    guard let self, let id = self.selectedHookID else { return }
+                    self.toggleEnabled(id: id, enabled: state)
+                }
+                return false
+            }
+            toolbar.append(child: enabledSwitch)
+
+            let isFunctionHook = hook.code.contains("onEnter") || hook.code.contains("onLeave")
+            if isFunctionHook {
+                let itraceSwitch = Switch()
+                itraceSwitch.active = hook.itraceEnabled
+                itraceSwitch.valign = .center
+                itraceSwitch.tooltipText = "Capture instruction trace for each call"
+                itraceSwitch.onStateSet { [weak self] _, state in
+                    MainActor.assumeIsolated {
+                        guard let self, let id = self.selectedHookID else { return }
+                        self.toggleITrace(id: id, enabled: state)
+                    }
+                    return false
+                }
+                let itraceLabel = Label(str: "ITrace")
+                itraceLabel.add(cssClass: "dim-label")
+                toolbar.append(child: itraceSwitch)
+                toolbar.append(child: itraceLabel)
+            }
+        }
+
         let spacer = Box(orientation: .horizontal, spacing: 0)
         spacer.hexpand = true
         toolbar.append(child: spacer)
+
+        if let editorPane {
+            let dirtyIcon = Image(iconName: "media-record-symbolic")
+            dirtyIcon.tooltipText = "Unsaved changes"
+            dirtyIcon.visible = editorPane.isDirty
+            toolbar.append(child: dirtyIcon)
+
+            let saveButton = Button(label: "Save")
+            saveButton.add(cssClass: "suggested-action")
+            saveButton.sensitive = editorPane.isDirty
+            saveButton.tooltipText = "Save current hook script"
+            saveButton.onClicked { [weak self] _ in
+                MainActor.assumeIsolated { self?.editorPane?.commit() }
+            }
+            editorPane.onDirtyChanged = { [weak dirtyIcon, weak saveButton] dirty in
+                dirtyIcon?.visible = dirty
+                saveButton?.sensitive = dirty
+            }
+            toolbar.append(child: saveButton)
+        }
 
         let attached = engine?.node(forSessionID: sessionID) != nil
         let addButton = Button()
@@ -236,15 +335,17 @@ final class TracerConfigEditor {
             toolbar.append(child: deleteButton)
         }
 
-        let expandButton = Button()
-        let expandIcon = Image(iconName: "view-dual-symbolic")
-        expandButton.set(child: expandIcon)
-        expandButton.add(cssClass: "flat")
-        expandButton.tooltipText = "Show hooks list"
-        expandButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.setLayoutMode(.expanded) }
+        if !(lastKnownWidth > 0 && lastKnownWidth < 800) {
+            let expandButton = Button()
+            let expandIcon = Image(iconName: "view-dual-symbolic")
+            expandButton.set(child: expandIcon)
+            expandButton.add(cssClass: "flat")
+            expandButton.tooltipText = "Show hooks list"
+            expandButton.onClicked { [weak self] _ in
+                MainActor.assumeIsolated { self?.setLayoutMode(.expanded) }
+            }
+            toolbar.append(child: expandButton)
         }
-        toolbar.append(child: expandButton)
 
         return toolbar
     }
@@ -335,7 +436,8 @@ final class TracerConfigEditor {
 
         content.append(child: buttons)
         popover.set(child: content)
-        popover.set(parent: WidgetRef(editorPane.saveButton))
+        let anchor: WidgetProtocol = editorPane.saveButton ?? editorPane.widget
+        popover.set(parent: WidgetRef(anchor))
         unsavedChangesPopover = popover
         popover.popup()
     }
@@ -361,6 +463,12 @@ final class TracerConfigEditor {
         emit()
     }
 
+    private func toggleITrace(id: UUID, enabled: Bool) {
+        guard let idx = config.hooks.firstIndex(where: { $0.id == id }) else { return }
+        config.hooks[idx].itraceEnabled = enabled
+        emit()
+    }
+
     private func saveHook(_ updated: TracerConfig.Hook) {
         guard let idx = config.hooks.firstIndex(where: { $0.id == updated.id }) else { return }
         config.hooks[idx] = updated
@@ -377,7 +485,7 @@ final class TracerConfigEditor {
             selectedHookID = config.hooks.first?.id
         }
         if config.hooks.count <= 1 {
-            layoutMode = .compact
+            preferredLayoutMode = .compact
         }
         emit()
         rebuildContent()
@@ -437,7 +545,7 @@ final class TracerConfigEditor {
         config.hooks.append(hook)
         selectedHookID = hook.id
         if !hadMultipleHooks && config.hooks.count > 1 {
-            layoutMode = .expanded
+            preferredLayoutMode = .expanded
         }
         emit()
         rebuildContent()
@@ -462,6 +570,34 @@ private let compactDropdownChanged: @convention(c) (
         let idx = Int(gtk_drop_down_get_selected(dropdownPtr))
         guard idx >= 0, idx < editor.config.hooks.count else { return }
         editor.handleSelect(editor.config.hooks[idx].id)
+    }
+}
+
+private let widthSensorResized: @convention(c) (
+    UnsafeMutableRawPointer,
+    Int32,
+    Int32,
+    UnsafeMutableRawPointer?
+) -> Void = { _, width, _, userData in
+    guard let userData else { return }
+    let rawSelf = UInt(bitPattern: userData)
+    let w = Int(width)
+    MainActor.assumeIsolated {
+        let editor = Unmanaged<TracerConfigEditor>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: rawSelf)!
+        ).takeUnretainedValue()
+        editor.handleWidthChanged(w)
+    }
+}
+
+extension TracerConfigEditor {
+    fileprivate func handleWidthChanged(_ width: Int) {
+        let oldEffective = effectiveLayoutMode
+        lastKnownWidth = width
+        let newEffective = effectiveLayoutMode
+        if oldEffective != newEffective {
+            scheduleRebuild()
+        }
     }
 }
 
@@ -968,18 +1104,20 @@ final class EditorPane {
 
     private weak var engine: Engine?
     private let onSave: (TracerConfig.Hook) -> Void
+    var onDirtyChanged: ((Bool) -> Void)?
 
     private var hook: TracerConfig.Hook?
     private var draftCode: String = ""
     private(set) var isDirty: Bool = false
 
-    private let toolbar: Box
-    private let titleLabel: Label
-    private let subtitleLabel: Label
-    private let enabledSwitch: Switch
-    private let itraceSwitch: Switch
-    private let dirtyIndicator: Image
-    let saveButton: Button
+    private let showToolbar: Bool
+    private var toolbar: Box?
+    private var titleLabel: Label?
+    private var subtitleLabel: Label?
+    private var enabledSwitch: Switch?
+    private var itraceSwitch: Switch?
+    private var dirtyIndicator: Image?
+    let saveButton: Button?
     private let editorHost: Box
     private let placeholder: Label
     private let monaco: MonacoEditor
@@ -989,67 +1127,88 @@ final class EditorPane {
         engine: Engine?,
         hook: TracerConfig.Hook?,
         sharedEditor: MonacoEditor,
+        showToolbar: Bool = true,
         onSave: @escaping (TracerConfig.Hook) -> Void
     ) {
         self.engine = engine
         self.hook = hook
         self.monaco = sharedEditor
+        self.showToolbar = showToolbar
         self.onSave = onSave
 
-        widget = Box(orientation: .vertical, spacing: 8)
+        widget = Box(orientation: .vertical, spacing: showToolbar ? 8 : 0)
         widget.hexpand = true
         widget.vexpand = true
-        widget.marginStart = 12
-        widget.marginEnd = 12
-        widget.marginTop = 12
-        widget.marginBottom = 12
+        if showToolbar {
+            widget.marginStart = 12
+            widget.marginEnd = 12
+            widget.marginTop = 12
+            widget.marginBottom = 12
+        }
 
-        toolbar = Box(orientation: .horizontal, spacing: 8)
-        toolbar.hexpand = true
+        if showToolbar {
+            let toolbar = Box(orientation: .horizontal, spacing: 8)
+            toolbar.hexpand = true
+            self.toolbar = toolbar
 
-        let titleColumn = Box(orientation: .vertical, spacing: 0)
-        titleColumn.hexpand = true
-        titleLabel = Label(str: "")
-        titleLabel.halign = .start
-        titleLabel.add(cssClass: "title-4")
-        titleColumn.append(child: titleLabel)
-        subtitleLabel = Label(str: "")
-        subtitleLabel.halign = .start
-        subtitleLabel.add(cssClass: "caption")
-        subtitleLabel.add(cssClass: "dim-label")
-        subtitleLabel.add(cssClass: "monospace")
-        titleColumn.append(child: subtitleLabel)
-        toolbar.append(child: titleColumn)
+            let titleColumn = Box(orientation: .vertical, spacing: 0)
+            titleColumn.hexpand = true
+            let titleLabel = Label(str: "")
+            titleLabel.halign = .start
+            titleLabel.add(cssClass: "title-4")
+            self.titleLabel = titleLabel
+            titleColumn.append(child: titleLabel)
+            let subtitleLabel = Label(str: "")
+            subtitleLabel.halign = .start
+            subtitleLabel.add(cssClass: "caption")
+            subtitleLabel.add(cssClass: "dim-label")
+            subtitleLabel.add(cssClass: "monospace")
+            self.subtitleLabel = subtitleLabel
+            titleColumn.append(child: subtitleLabel)
+            toolbar.append(child: titleColumn)
 
-        let enabledRow = Box(orientation: .horizontal, spacing: 6)
-        enabledSwitch = Switch()
-        enabledSwitch.valign = .center
-        enabledRow.append(child: enabledSwitch)
-        let enabledLabel = Label(str: "Enabled")
-        enabledRow.append(child: enabledLabel)
-        toolbar.append(child: enabledRow)
+            let enabledRow = Box(orientation: .horizontal, spacing: 6)
+            let enabledSwitch = Switch()
+            enabledSwitch.valign = .center
+            self.enabledSwitch = enabledSwitch
+            enabledRow.append(child: enabledSwitch)
+            let enabledLabel = Label(str: "Enabled")
+            enabledRow.append(child: enabledLabel)
+            toolbar.append(child: enabledRow)
 
-        let itraceRow = Box(orientation: .horizontal, spacing: 6)
-        itraceSwitch = Switch()
-        itraceSwitch.valign = .center
-        itraceSwitch.tooltipText = "Capture instruction trace for each call"
-        itraceRow.append(child: itraceSwitch)
-        let itraceLabel = Label(str: "ITrace")
-        itraceRow.append(child: itraceLabel)
-        toolbar.append(child: itraceRow)
+            let itraceRow = Box(orientation: .horizontal, spacing: 6)
+            let itraceSwitch = Switch()
+            itraceSwitch.valign = .center
+            itraceSwitch.tooltipText = "Capture instruction trace for each call"
+            self.itraceSwitch = itraceSwitch
+            itraceRow.append(child: itraceSwitch)
+            let itraceLabel = Label(str: "ITrace")
+            itraceRow.append(child: itraceLabel)
+            toolbar.append(child: itraceRow)
 
-        dirtyIndicator = Image(iconName: "media-record-symbolic")
-        dirtyIndicator.tooltipText = "Unsaved changes"
-        dirtyIndicator.visible = false
-        toolbar.append(child: dirtyIndicator)
+            let dirtyIndicator = Image(iconName: "media-record-symbolic")
+            dirtyIndicator.tooltipText = "Unsaved changes"
+            dirtyIndicator.visible = false
+            self.dirtyIndicator = dirtyIndicator
+            toolbar.append(child: dirtyIndicator)
 
-        saveButton = Button(label: "Save")
-        saveButton.add(cssClass: "suggested-action")
-        saveButton.sensitive = false
-        saveButton.tooltipText = "Save current hook script"
-        toolbar.append(child: saveButton)
+            let saveButton = Button(label: "Save")
+            saveButton.add(cssClass: "suggested-action")
+            saveButton.sensitive = false
+            saveButton.tooltipText = "Save current hook script"
+            self.saveButton = saveButton
+            toolbar.append(child: saveButton)
 
-        widget.append(child: toolbar)
+            widget.append(child: toolbar)
+        } else {
+            self.toolbar = nil
+            self.titleLabel = nil
+            self.subtitleLabel = nil
+            self.enabledSwitch = nil
+            self.itraceSwitch = nil
+            self.dirtyIndicator = nil
+            self.saveButton = nil
+        }
 
         editorHost = Box(orientation: .vertical, spacing: 0)
         editorHost.hexpand = true
@@ -1079,15 +1238,17 @@ final class EditorPane {
             }
         }
 
-        let toggleHandler: (SwitchRef, Bool) -> Bool = { [weak self] _, _ in
-            MainActor.assumeIsolated { self?.recomputeDirty() }
-            return false
-        }
-        enabledSwitch.onStateSet(handler: toggleHandler)
-        itraceSwitch.onStateSet(handler: toggleHandler)
+        if showToolbar {
+            let toggleHandler: (SwitchRef, Bool) -> Bool = { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.recomputeDirty() }
+                return false
+            }
+            enabledSwitch?.onStateSet(handler: toggleHandler)
+            itraceSwitch?.onStateSet(handler: toggleHandler)
 
-        saveButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.commit() }
+            saveButton?.onClicked { [weak self] _ in
+                MainActor.assumeIsolated { self?.commit() }
+            }
         }
 
         if sharedEditor.isReady {
@@ -1116,20 +1277,21 @@ final class EditorPane {
 
     private func applyHookToUI() {
         if let hook {
-            titleLabel.label = hook.displayName.isEmpty ? "(unnamed)" : hook.displayName
-            subtitleLabel.label = hook.addressAnchor.displayString
-            enabledSwitch.active = hook.isEnabled
-            itraceSwitch.active = hook.itraceEnabled
+            titleLabel?.label = hook.displayName.isEmpty ? "(unnamed)" : hook.displayName
+            subtitleLabel?.label = hook.addressAnchor.displayString
+            enabledSwitch?.active = hook.isEnabled
+            itraceSwitch?.active = hook.itraceEnabled
             draftCode = hook.code
             monaco.setText(hook.code)
             isDirty = false
-            saveButton.sensitive = false
-            dirtyIndicator.visible = false
-            toolbar.visible = true
+            saveButton?.sensitive = false
+            dirtyIndicator?.visible = false
+            onDirtyChanged?(false)
+            toolbar?.visible = true
             editorHost.visible = true
             placeholder.visible = false
         } else {
-            toolbar.visible = false
+            toolbar?.visible = false
             editorHost.visible = false
             placeholder.visible = true
         }
@@ -1138,27 +1300,36 @@ final class EditorPane {
     private func recomputeDirty() {
         guard let hook else {
             isDirty = false
-            saveButton.sensitive = false
-            dirtyIndicator.visible = false
+            saveButton?.sensitive = false
+            dirtyIndicator?.visible = false
+            onDirtyChanged?(false)
             return
         }
-        isDirty =
-            draftCode != hook.code
-            || enabledSwitch.active != hook.isEnabled
-            || itraceSwitch.active != hook.itraceEnabled
-        saveButton.sensitive = isDirty
-        dirtyIndicator.visible = isDirty
+        if showToolbar {
+            isDirty =
+                draftCode != hook.code
+                || (enabledSwitch?.active ?? hook.isEnabled) != hook.isEnabled
+                || (itraceSwitch?.active ?? hook.itraceEnabled) != hook.itraceEnabled
+        } else {
+            isDirty = draftCode != hook.code
+        }
+        saveButton?.sensitive = isDirty
+        dirtyIndicator?.visible = isDirty
+        onDirtyChanged?(isDirty)
     }
 
     func commit() {
         guard var hook else { return }
         hook.code = draftCode
-        hook.isEnabled = enabledSwitch.active
-        hook.itraceEnabled = itraceSwitch.active
+        if showToolbar {
+            hook.isEnabled = enabledSwitch?.active ?? hook.isEnabled
+            hook.itraceEnabled = itraceSwitch?.active ?? hook.itraceEnabled
+        }
         self.hook = hook
         isDirty = false
-        saveButton.sensitive = false
-        dirtyIndicator.visible = false
+        saveButton?.sensitive = false
+        dirtyIndicator?.visible = false
+        onDirtyChanged?(false)
         onSave(hook)
     }
 }

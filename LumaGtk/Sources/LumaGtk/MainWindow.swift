@@ -770,11 +770,7 @@ final class MainWindow {
             }
         }
         replaceDetail(with: widget)
-        if let sid = currentSessionID() {
-            addInstrumentButton.sensitive = engine?.node(forSessionID: sid) != nil
-        } else {
-            addInstrumentButton.sensitive = false
-        }
+        addInstrumentButton.sensitive = currentSessionID() != nil
     }
 
     private func currentSessionID() -> UUID? {
