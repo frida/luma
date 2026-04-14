@@ -408,13 +408,13 @@ final class REPLPane {
             pango_layout_get_pixel_size(layoutPtr, &prefixWidth, &unusedHeight)
         }
 
-        let height = inputEntry.allocatedHeight
         let approxLeftPadding: Int32 = 8
+        let entryHeight = inputEntry.allocatedHeight
         return (
             x: Double(prefixWidth + approxLeftPadding),
-            y: Double(height),
+            y: 0,
             width: 1,
-            height: 1
+            height: Double(entryHeight)
         )
     }
 
