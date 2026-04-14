@@ -169,6 +169,22 @@ enum StyleSheet {
         box-shadow: 0 2px 6px alpha(black, 0.3);
     }
 
+    popover.menu button.luma-menu-destructive {
+        color: @error_color;
+        font-weight: normal;
+        padding: 6px 8px;
+        min-height: 0;
+    }
+    popover.menu button.luma-menu-destructive:hover {
+        background-color: alpha(@error_color, 0.12);
+    }
+    popover.menu button.luma-menu-destructive:active {
+        background-color: alpha(@error_color, 0.22);
+    }
+    popover.menu button.luma-menu-destructive label {
+        padding-left: 0;
+    }
+
     .luma-chat-bubble-local { background-color: alpha(@accent_bg_color, 0.20); border-radius: 12px; padding: 6px 10px; }
     .luma-chat-bubble-remote { background-color: alpha(@theme_fg_color, 0.08); border-radius: 12px; padding: 6px 10px; }
     .luma-invite-frame { border: 1px solid alpha(@theme_fg_color, 0.15); border-radius: 6px; padding: 8px 12px; }

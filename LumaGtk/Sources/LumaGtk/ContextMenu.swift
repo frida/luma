@@ -68,7 +68,8 @@ enum ContextMenu {
 
         for item in destructiveButtons {
             let button = Button(label: item.text)
-            button.add(cssClass: "destructive-action")
+            button.add(cssClass: "flat")
+            button.add(cssClass: "luma-menu-destructive")
             button.set(actionName: item.actionName)
             _ = popover.add(child: button, id: item.id)
         }
