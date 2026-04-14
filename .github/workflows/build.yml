@@ -528,6 +528,10 @@ jobs:
           echo "$VCPKG_PREFIX/tools" >> $GITHUB_PATH
           echo "PKG_CONFIG_PATH=$VCPKG_PREFIX/lib/pkgconfig" >> $GITHUB_ENV
           echo "GIR_EXTRA_SEARCH_PATH=${{ github.workspace }}/LumaGtk/gir-1.0" >> $GITHUB_ENV
+          echo "=== vcpkg libs ==="
+          ls "$VCPKG_PREFIX/lib"/*xml* 2>&1 || true
+          echo "=== libxml-2.0.pc ==="
+          cat "$VCPKG_PREFIX/lib/pkgconfig/libxml-2.0.pc" 2>&1 || true
 
       - name: Restore frida-core cache
         id: frida-cache
