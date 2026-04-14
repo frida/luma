@@ -502,7 +502,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-x64-windows-release-v1
+          key: vcpkg-x64-windows-release-v2
 
       - name: Install dependencies via vcpkg
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
@@ -510,14 +510,14 @@ jobs:
           vcpkg install
           --overlay-triplets=${{ github.workspace }}/.github/vcpkg-triplets
           --triplet x64-windows-release
-          glib json-glib libsoup gtk libxml2 gobject-introspection
+          glib json-glib libsoup gtk libxml2
 
       - name: Save vcpkg cache
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-x64-windows-release-v1
+          key: vcpkg-x64-windows-release-v2
 
       - name: Set up vcpkg environment
         shell: bash
@@ -527,11 +527,7 @@ jobs:
           echo "$VCPKG_PREFIX/bin" >> $GITHUB_PATH
           echo "$VCPKG_PREFIX/tools" >> $GITHUB_PATH
           echo "PKG_CONFIG_PATH=$VCPKG_PREFIX/lib/pkgconfig" >> $GITHUB_ENV
-          echo "GIR_EXTRA_SEARCH_PATH=$VCPKG_PREFIX/share/gir-1.0" >> $GITHUB_ENV
-          echo "=== vcpkg GIR inventory ==="
-          ls -la "$VCPKG_PREFIX/share/gir-1.0" 2>&1 || echo "(gir-1.0 directory missing)"
-          echo "=== .gir files anywhere in vcpkg ==="
-          find "$VCPKG_PREFIX" -name '*.gir' 2>/dev/null | head -20 || true
+          echo "GIR_EXTRA_SEARCH_PATH=${{ github.workspace }}/LumaGtk/gir-1.0" >> $GITHUB_ENV
 
       - name: Restore frida-core cache
         id: frida-cache
