@@ -528,6 +528,10 @@ jobs:
           echo "$VCPKG_PREFIX/tools" >> $GITHUB_PATH
           echo "PKG_CONFIG_PATH=$VCPKG_PREFIX/lib/pkgconfig" >> $GITHUB_ENV
           echo "GIR_EXTRA_SEARCH_PATH=$VCPKG_PREFIX/share/gir-1.0" >> $GITHUB_ENV
+          echo "=== vcpkg GIR inventory ==="
+          ls -la "$VCPKG_PREFIX/share/gir-1.0" 2>&1 || echo "(gir-1.0 directory missing)"
+          echo "=== .gir files anywhere in vcpkg ==="
+          find "$VCPKG_PREFIX" -name '*.gir' 2>/dev/null | head -20 || true
 
       - name: Restore frida-core cache
         id: frida-cache
