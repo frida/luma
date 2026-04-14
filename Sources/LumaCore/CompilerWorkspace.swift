@@ -32,7 +32,6 @@ public final class CompilerWorkspace {
     public var lastCompilerDiagnostics: [String] = []
 
     private let store: ProjectStore
-    private var cachedCompiler: Compiler?
 
     public init(store: ProjectStore) {
         self.store = store
@@ -261,14 +260,7 @@ public final class CompilerWorkspace {
         label: String,
         _ work: (Compiler) async throws -> T
     ) async throws -> T {
-        let compiler: Compiler
-        if let cached = cachedCompiler {
-            compiler = cached
-        } else {
-            let fresh = Compiler()
-            cachedCompiler = fresh
-            compiler = fresh
-        }
+        let compiler = Compiler()
 
         var diagnostics: [String] = []
 
