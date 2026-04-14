@@ -422,6 +422,13 @@ jobs:
           sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
           sudo flatpak install -y flathub org.gnome.Platform//47 org.gnome.Sdk//47
 
+      - name: Restore flatpak-builder cache
+        id: flatpak-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .flatpak-builder
+          key: flatpak-builder-v1
+
       - name: Build Flatpak
         run: |
           flatpak-builder \
@@ -432,6 +439,13 @@ jobs:
             flatpak-build \
             LumaGtk/re.frida.Luma.flatpak.json
           flatpak build-bundle flatpak-repo luma.flatpak re.frida.Luma
+
+      - name: Save flatpak-builder cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .flatpak-builder
+          key: flatpak-builder-v1
 
       - uses: actions/upload-artifact@v7
         with:
