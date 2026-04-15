@@ -9,6 +9,8 @@ final class EventStreamPane {
 
     private weak var engine: Engine?
     private let toggleButton: Button
+    private let collapseCaretButton: Button
+    private let collapsedBar: Box
     private let statusLabel: Label
     private let filterBar: Box
     private let sourceFilterButton: MenuButton
@@ -49,23 +51,23 @@ final class EventStreamPane {
         widget.add(cssClass: "event-stream-pane")
         widget.setSizeRequest(width: -1, height: 36)
 
-        let bar = Box(orientation: .horizontal, spacing: 8)
-        bar.marginStart = 4
-        bar.marginEnd = 12
-        bar.marginTop = 4
-        bar.marginBottom = 4
-        bar.setSizeRequest(width: -1, height: 28)
-        widget.append(child: bar)
+        collapsedBar = Box(orientation: .horizontal, spacing: 8)
+        collapsedBar.marginStart = 4
+        collapsedBar.marginEnd = 12
+        collapsedBar.marginTop = 4
+        collapsedBar.marginBottom = 4
+        collapsedBar.setSizeRequest(width: -1, height: 28)
+        widget.append(child: collapsedBar)
 
         toggleButton = Button()
         toggleButton.label = "▲  Show Event Stream"
         toggleButton.hasFrame = false
-        bar.append(child: toggleButton)
+        collapsedBar.append(child: toggleButton)
 
         statusLabel = Label(str: "")
         statusLabel.halign = .start
         statusLabel.hexpand = true
-        bar.append(child: statusLabel)
+        collapsedBar.append(child: statusLabel)
 
         filterBar = Box(orientation: .horizontal, spacing: 6)
         filterBar.marginStart = 12
@@ -108,6 +110,12 @@ final class EventStreamPane {
         clearButton.add(cssClass: "flat")
         filterBar.append(child: clearButton)
 
+        collapseCaretButton = Button()
+        collapseCaretButton.set(iconName: "go-down-symbolic")
+        collapseCaretButton.add(cssClass: "flat")
+        collapseCaretButton.tooltipText = "Hide the event stream"
+        filterBar.append(child: collapseCaretButton)
+
         eventListBox = Box(orientation: .vertical, spacing: 0)
         eventListBox.hexpand = true
         eventListBox.vexpand = true
@@ -143,6 +151,12 @@ final class EventStreamPane {
         dateFormatter.dateFormat = "HH:mm:ss"
 
         toggleButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.toggleCollapsed()
+            }
+        }
+
+        collapseCaretButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.toggleCollapsed()
             }
@@ -237,6 +251,7 @@ final class EventStreamPane {
             width: -1,
             height: isCollapsed ? collapsedHeightRequest : -1
         )
+        collapsedBar.visible = isCollapsed
         listOverlay.visible = !isCollapsed
         filterBar.visible = !isCollapsed
     }
@@ -359,17 +374,8 @@ final class EventStreamPane {
                 toggleButton.label = "▲  Show Event Stream"
                 widget.remove(cssClass: "has-pending-events")
             }
-            statusLabel.setText(str: "")
         } else {
-            toggleButton.label = "▼  Hide Event Stream"
             widget.remove(cssClass: "has-pending-events")
-            let count = filteredEvents.count
-            let total = displayedEvents.count
-            if count == total {
-                statusLabel.setText(str: count == 0 ? "" : "\(count) events")
-            } else {
-                statusLabel.setText(str: "\(count) of \(total)")
-            }
         }
         updateLiveIndicator()
     }
