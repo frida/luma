@@ -579,9 +579,7 @@ final class TargetPicker {
         container.append(child: buildSection(
             title: "Environment",
             content: { $0.append(child: envBody) },
-            hint: isAppMode
-                ? "Environment variables will be added on top of the default environment."
-                : "Environment variables are added on top of the default environment."
+            hint: "Environment variables are added on top of the default environment."
         ))
 
         container.append(child: buildSection(

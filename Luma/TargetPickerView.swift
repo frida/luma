@@ -436,7 +436,7 @@ struct TargetPickerView: View {
 
                     Section("Environment") {
                         EnvEditor(entries: $appEnvEntries)
-                        Text("Environment variables will be added on top of the default environment.")
+                        Text("Environment variables are added on top of the default environment.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
