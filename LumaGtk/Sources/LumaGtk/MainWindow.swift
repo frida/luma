@@ -177,6 +177,7 @@ final class MainWindow {
         column.hexpand = true
         column.vexpand = true
         self.eventStreamHost = column
+        eventStreamPane.setInitialCollapsed(LumaState.shared.eventStreamCollapsed)
         applyEventStreamLayout()
 
         eventStreamPane.onCollapsedChanged = { [weak self] _ in
@@ -298,7 +299,8 @@ final class MainWindow {
         state.saveSashes(
             sidebar: Int(topPaned.position),
             collaboration: Int(outerPaned.position),
-            eventStream: eventStreamSash
+            eventStream: eventStreamSash,
+            eventStreamCollapsed: eventStreamPane.collapsed
         )
     }
 
@@ -326,7 +328,7 @@ final class MainWindow {
                 totalHeight = LumaState.shared.windowHeight
             }
             let saved = LumaState.shared.eventStreamSashPosition
-            let defaultPosition = max(0, (totalHeight * 7) / 10)
+            let defaultPosition = max(0, (totalHeight * 3) / 4)
             eventStreamPaned.position = Int(saved ?? defaultPosition)
             host.append(child: eventStreamPaned)
         }
