@@ -274,7 +274,7 @@ struct TargetPickerView: View {
     @ViewBuilder
     private func spawnDetailPane(for device: Device) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            spawnHeader(for: device)
+            spawnHeader()
             Divider()
 
             switch spawnSubmode {
@@ -290,30 +290,16 @@ struct TargetPickerView: View {
     }
 
     @ViewBuilder
-    private func spawnHeader(for device: Device) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Spawn on \(device.name)")
-                        .font(.headline)
-                    Text(device.id)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Picker("Launch", selection: $spawnSubmode) {
-                    Text("Application").tag(SpawnSubmode.application)
-                    Text("Program").tag(SpawnSubmode.program)
-                }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 260)
+    private func spawnHeader() -> some View {
+        HStack {
+            Picker("Launch", selection: $spawnSubmode) {
+                Text("Application").tag(SpawnSubmode.application)
+                Text("Program").tag(SpawnSubmode.program)
             }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 260)
 
-            Text("Luma will spawn the target and attach a new session automatically.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+            Spacer()
         }
         .padding([.horizontal, .top])
     }

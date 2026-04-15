@@ -39,8 +39,6 @@ final class TargetPicker {
 
     private let submodeAppToggle: ToggleButton
     private let submodeProgramToggle: ToggleButton
-    private let spawnDeviceTitle: Label
-    private let spawnDeviceSubtitle: Label
 
     private let appList: ListBox
     private let appSearchEntry: SearchEntry
@@ -143,8 +141,6 @@ final class TargetPicker {
         submodeAppToggle.label = "Application"
         submodeProgramToggle = ToggleButton()
         submodeProgramToggle.label = "Program"
-        spawnDeviceTitle = Label(str: "")
-        spawnDeviceSubtitle = Label(str: "")
 
         appList = ListBox()
         appSearchEntry = SearchEntry()
@@ -352,7 +348,6 @@ final class TargetPicker {
         }
         applySpawnSubmode()
         applyMode()
-        updateSpawnHeader(device: nil)
     }
 
     func present() {
@@ -641,45 +636,24 @@ final class TargetPicker {
     }
 
     private func buildSpawnHeader() -> Box {
-        let outer = Box(orientation: .vertical, spacing: 8)
-        outer.marginStart = 12
-        outer.marginEnd = 12
-        outer.marginTop = 12
-        outer.marginBottom = 8
-
-        let titleRow = Box(orientation: .horizontal, spacing: 8)
-
-        let titleStack = Box(orientation: .vertical, spacing: 2)
-        titleStack.hexpand = true
-        titleStack.valign = .center
-        spawnDeviceTitle.halign = .start
-        spawnDeviceTitle.add(cssClass: "heading")
-        spawnDeviceTitle.ellipsize = .end
-        titleStack.append(child: spawnDeviceTitle)
-        spawnDeviceSubtitle.halign = .start
-        spawnDeviceSubtitle.add(cssClass: "caption")
-        spawnDeviceSubtitle.add(cssClass: "dim-label")
-        spawnDeviceSubtitle.ellipsize = .end
-        titleStack.append(child: spawnDeviceSubtitle)
-        titleRow.append(child: titleStack)
+        let row = Box(orientation: .horizontal, spacing: 0)
+        row.marginStart = 12
+        row.marginEnd = 12
+        row.marginTop = 10
+        row.marginBottom = 8
 
         let submodeToggles = Box(orientation: .horizontal, spacing: 0)
         submodeToggles.add(cssClass: "linked")
         submodeToggles.valign = .center
         submodeToggles.append(child: submodeAppToggle)
         submodeToggles.append(child: submodeProgramToggle)
-        titleRow.append(child: submodeToggles)
+        row.append(child: submodeToggles)
 
-        outer.append(child: titleRow)
+        let spacer = Box(orientation: .horizontal, spacing: 0)
+        spacer.hexpand = true
+        row.append(child: spacer)
 
-        let description = Label(str: "Luma will spawn the target and attach a new session automatically.")
-        description.halign = .start
-        description.add(cssClass: "caption")
-        description.add(cssClass: "dim-label")
-        description.wrap = true
-        outer.append(child: description)
-
-        return outer
+        return row
     }
 
     private func buildSection(
@@ -828,7 +802,6 @@ final class TargetPicker {
         guard let row else {
             selectedDeviceID = nil
             programBrowseButton.visible = false
-            updateSpawnHeader(device: nil)
             return
         }
         let index = Int(row.index)
@@ -836,22 +809,11 @@ final class TargetPicker {
         let device = devices[index]
         selectedDeviceID = device.id
         programBrowseButton.visible = (device.id == "local")
-        updateSpawnHeader(device: device)
         loadProcesses(for: device)
         if mode == .spawn {
             loadApplications(for: device)
         }
         refreshSpawnButtonSensitivity()
-    }
-
-    private func updateSpawnHeader(device: Frida.Device?) {
-        if let device {
-            spawnDeviceTitle.label = "Spawn on \(device.name)"
-            spawnDeviceSubtitle.label = device.id
-        } else {
-            spawnDeviceTitle.label = "Spawn on \u{2026}"
-            spawnDeviceSubtitle.label = "Select a device on the left."
-        }
     }
 
     // MARK: - Processes
