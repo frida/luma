@@ -36,6 +36,7 @@ final class TargetPicker {
     private let modeHint: Label
     private let attachPane: Box
     private let spawnPane: Box
+    private let noDevicePane: Box
 
     private let submodeAppToggle: ToggleButton
     private let submodeProgramToggle: ToggleButton
@@ -176,6 +177,7 @@ final class TargetPicker {
         modeStack = Box(orientation: .vertical, spacing: 0)
         attachPane = Box(orientation: .vertical, spacing: 0)
         spawnPane = Box(orientation: .vertical, spacing: 0)
+        noDevicePane = Box(orientation: .vertical, spacing: 0)
         spawnFormStack = Box(orientation: .vertical, spacing: 0)
         appFormBox = Box(orientation: .vertical, spacing: 0)
         programFormBox = Box(orientation: .vertical, spacing: 0)
@@ -234,11 +236,13 @@ final class TargetPicker {
 
         attachPane.append(child: buildProcessPane())
         spawnPane.append(child: buildSpawnPane())
+        noDevicePane.append(child: buildNoDevicePane())
 
         modeStack.hexpand = true
         modeStack.vexpand = true
         modeStack.append(child: attachPane)
         modeStack.append(child: spawnPane)
+        modeStack.append(child: noDevicePane)
 
         let rightPane = Box(orientation: .vertical, spacing: 0)
         rightPane.hexpand = true
@@ -635,6 +639,32 @@ final class TargetPicker {
         return column
     }
 
+    private func buildNoDevicePane() -> Box {
+        let box = Box(orientation: .vertical, spacing: 8)
+        box.halign = .center
+        box.valign = .center
+        box.hexpand = true
+        box.vexpand = true
+        box.add(cssClass: "luma-empty-state")
+
+        let icon = Image(iconName: "computer-symbolic")
+        icon.set(pixelSize: 48)
+        icon.add(cssClass: "dim-label")
+        box.append(child: icon)
+
+        let title = Label(str: "Select a Device")
+        title.add(cssClass: "title-3")
+        box.append(child: title)
+
+        let subtitle = Label(str: "Choose a device on the left to start a new session.")
+        subtitle.add(cssClass: "dim-label")
+        subtitle.wrap = true
+        subtitle.justify = .center
+        box.append(child: subtitle)
+
+        return box
+    }
+
     private func buildSpawnHeader() -> Box {
         let row = Box(orientation: .horizontal, spacing: 0)
         row.marginStart = 12
@@ -695,8 +725,10 @@ final class TargetPicker {
     }
 
     private func applyMode() {
-        attachPane.visible = (mode == .attach)
-        spawnPane.visible = (mode == .spawn)
+        let hasDevice = currentDevice() != nil
+        attachPane.visible = hasDevice && (mode == .attach)
+        spawnPane.visible = hasDevice && (mode == .spawn)
+        noDevicePane.visible = !hasDevice
         attachButton.visible = (mode == .attach)
         spawnButton.visible = (mode == .spawn)
         modeHint.label = mode == .spawn
@@ -802,6 +834,7 @@ final class TargetPicker {
         guard let row else {
             selectedDeviceID = nil
             programBrowseButton.visible = false
+            applyMode()
             return
         }
         let index = Int(row.index)
@@ -809,6 +842,7 @@ final class TargetPicker {
         let device = devices[index]
         selectedDeviceID = device.id
         programBrowseButton.visible = (device.id == "local")
+        applyMode()
         loadProcesses(for: device)
         if mode == .spawn {
             loadApplications(for: device)
