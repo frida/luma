@@ -524,21 +524,10 @@ final class TargetPicker {
 
         appFormBox.append(child: appContent)
         appFormBox.append(child: appLoading)
-        appFormBox.append(child: Separator(orientation: .horizontal))
         appFormBox.append(child: buildSpawnSubmodeSections(for: appSubmodeForm, isAppMode: true))
         appFormBox.hexpand = true
         appFormBox.vexpand = true
 
-        let programTop = Box(orientation: .vertical, spacing: 0)
-        programTop.marginStart = 12
-        programTop.marginEnd = 12
-        programTop.marginTop = 8
-        programTop.append(child: buildSection(
-            title: "Program",
-            content: { $0.append(child: self.programPathRow) },
-            hint: "Provide an absolute path on the target device, e.g. /usr/bin/foo."
-        ))
-        programFormBox.append(child: programTop)
         programFormBox.append(child: buildSpawnSubmodeSections(for: programSubmodeForm, isAppMode: false))
         programFormBox.hexpand = true
         programFormBox.vexpand = false
@@ -560,15 +549,24 @@ final class TargetPicker {
         container.marginTop = 8
         container.marginBottom = 12
 
+        if !isAppMode {
+            container.append(child: buildSection(
+                title: "Program",
+                content: { $0.append(child: self.programPathRow) },
+                hint: "Provide an absolute path on the target device, e.g. /usr/bin/foo."
+            ))
+        }
+
+        let optional = Box(orientation: .vertical, spacing: 0)
+
         let argsTitle = isAppMode ? "Launch Arguments" : "Arguments"
         let argsHint = isAppMode
             ? "Arguments can be passed to apps too, but are not supported on all targets."
             : "Space-separated arguments. Shell-style quoting may be supported in a future version."
-        container.append(child: buildSection(
+        optional.append(child: buildSection(
             title: argsTitle,
             content: { $0.append(child: form.argumentsEntry) },
-            hint: argsHint,
-            collapsible: isAppMode
+            hint: argsHint
         ))
 
         let envBody = Box(orientation: .vertical, spacing: 4)
@@ -580,18 +578,16 @@ final class TargetPicker {
             MainActor.assumeIsolated { form?.appendEnvRow() }
         }
         envBody.append(child: addEnvButton)
-        container.append(child: buildSection(
+        optional.append(child: buildSection(
             title: "Environment",
             content: { $0.append(child: envBody) },
-            hint: "Environment variables are added on top of the default environment.",
-            collapsible: isAppMode
+            hint: "Environment variables are added on top of the default environment."
         ))
 
-        container.append(child: buildSection(
+        optional.append(child: buildSection(
             title: "Working Directory",
             content: { $0.append(child: form.workingDirEntry) },
-            hint: isAppMode ? "Use an absolute path on the target device, e.g. /var/mobile." : nil,
-            collapsible: isAppMode
+            hint: "Use an absolute path on the target device, e.g. /var/mobile."
         ))
 
         let executionBody = Box(orientation: .vertical, spacing: 8)
@@ -623,11 +619,20 @@ final class TargetPicker {
         resumeColumn.append(child: resumeHint)
         executionBody.append(child: resumeColumn)
 
-        container.append(child: buildSection(
+        optional.append(child: buildSection(
             title: "Execution",
-            content: { $0.append(child: executionBody) },
-            collapsible: isAppMode
+            content: { $0.append(child: executionBody) }
         ))
+
+        if isAppMode {
+            let advanced = Expander(label: "Advanced")
+            advanced.marginTop = 4
+            advanced.add(cssClass: "luma-spawn-expander")
+            advanced.set(child: optional)
+            container.append(child: advanced)
+        } else {
+            container.append(child: optional)
+        }
 
         return container
     }
@@ -682,34 +687,8 @@ final class TargetPicker {
     private func buildSection(
         title: String,
         content: (Box) -> Void,
-        hint: String? = nil,
-        collapsible: Bool = false
-    ) -> Widget {
-        let body = Box(orientation: .vertical, spacing: 6)
-        body.add(cssClass: "luma-section-body")
-        content(body)
-
-        if collapsible {
-            let expander = Expander(label: title)
-            expander.marginTop = 2
-            expander.marginBottom = 4
-            expander.add(cssClass: "luma-spawn-expander")
-            let wrapper = Box(orientation: .vertical, spacing: 4)
-            wrapper.marginTop = 4
-            wrapper.append(child: body)
-            if let hint {
-                let hintLabel = Label(str: hint)
-                hintLabel.halign = .start
-                hintLabel.marginStart = 4
-                hintLabel.add(cssClass: "caption")
-                hintLabel.add(cssClass: "dim-label")
-                hintLabel.wrap = true
-                wrapper.append(child: hintLabel)
-            }
-            expander.set(child: wrapper)
-            return expander
-        }
-
+        hint: String? = nil
+    ) -> Box {
         let section = Box(orientation: .vertical, spacing: 4)
         section.marginTop = 4
         section.marginBottom = 12
@@ -722,6 +701,9 @@ final class TargetPicker {
         heading.add(cssClass: "dim-label")
         section.append(child: heading)
 
+        let body = Box(orientation: .vertical, spacing: 6)
+        body.add(cssClass: "luma-section-body")
+        content(body)
         section.append(child: body)
 
         if let hint {
