@@ -261,6 +261,14 @@ final class EventStreamPane {
         syncSnapshot()
     }
 
+    func setInitialCollapsed(_ value: Bool) {
+        guard isCollapsed != value else { return }
+        isCollapsed = value
+        applyCollapsedState()
+        updateBar()
+        updatePendingPill()
+    }
+
     private func toggleCollapsed() {
         isCollapsed.toggle()
         applyCollapsedState()
@@ -282,6 +290,11 @@ final class EventStreamPane {
         filterBar.visible = !isCollapsed
         headerSeparator.visible = !isCollapsed
         listOverlay.visible = !isCollapsed
+        if isCollapsed {
+            widget.remove(cssClass: "is-expanded")
+        } else {
+            widget.add(cssClass: "is-expanded")
+        }
     }
 
     private func handleEventsAppended(_ newEvents: ArraySlice<RuntimeEvent>) {

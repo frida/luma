@@ -5,8 +5,10 @@ import Gtk
 enum StyleSheet {
     static let css = """
     .event-stream-pane {
-        background-color: @theme_base_color;
         border-top: 1px solid alpha(@theme_fg_color, 0.18);
+    }
+    .event-stream-pane.is-expanded {
+        background-color: @theme_base_color;
     }
     .luma-live-dot {
         color: @success_color;
