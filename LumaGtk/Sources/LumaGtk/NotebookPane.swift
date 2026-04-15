@@ -530,6 +530,28 @@ final class NotebookPane {
         window.focus = nil
     }
 
+    private static func makeWalkthroughStep(number: Int, text: String) -> Box {
+        let row = Box(orientation: .horizontal, spacing: 10)
+        row.setSizeRequest(width: 350, height: -1)
+        row.halign = .center
+
+        let numberLabel = Label(str: "\(number).")
+        numberLabel.halign = .end
+        numberLabel.valign = .start
+        numberLabel.setSizeRequest(width: 18, height: -1)
+        numberLabel.add(cssClass: "dim-label")
+        row.append(child: numberLabel)
+
+        let bodyLabel = Label(str: text)
+        bodyLabel.halign = .start
+        bodyLabel.wrap = true
+        bodyLabel.hexpand = true
+        bodyLabel.xalign = 0
+        row.append(child: bodyLabel)
+
+        return row
+    }
+
     private static func makeWalkthroughEmptyState(onNewNote: @escaping () -> Void) -> Box {
         let outer = Box(orientation: .vertical, spacing: 0)
         outer.hexpand = true
@@ -572,23 +594,13 @@ final class NotebookPane {
         let steps = Box(orientation: .vertical, spacing: 8)
         steps.halign = .center
 
-        let step1 = Label(str: "1. Attach to a running app or process.")
-        step1.halign = .start
-        step1.wrap = true
-        step1.setSizeRequest(width: 350, height: -1)
-        steps.append(child: step1)
-
-        let step2 = Label(str: "2. Add instruments to observe behavior.")
-        step2.halign = .start
-        step2.wrap = true
-        step2.setSizeRequest(width: 350, height: -1)
-        steps.append(child: step2)
-
-        let step3 = Label(str: "3. Pin any output to save it here.")
-        step3.halign = .start
-        step3.wrap = true
-        step3.setSizeRequest(width: 350, height: -1)
-        steps.append(child: step3)
+        for (index, text) in [
+            "Attach to a running app or process.",
+            "Add instruments to observe behavior.",
+            "Pin any output to save it here.",
+        ].enumerated() {
+            steps.append(child: Self.makeWalkthroughStep(number: index + 1, text: text))
+        }
 
         stack.append(child: steps)
 
