@@ -258,6 +258,7 @@ struct TargetPickerView: View {
                 Text("Attach").tag(Mode.attach)
             }
             .pickerStyle(.segmented)
+            .labelsHidden()
             .frame(maxWidth: 260)
 
             Spacer()
