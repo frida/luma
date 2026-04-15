@@ -33,6 +33,7 @@ final class TargetPicker {
     private let spawnToggle: ToggleButton
 
     private let modeStack: Box
+    private let modeHint: Label
     private let attachPane: Box
     private let spawnPane: Box
 
@@ -134,6 +135,7 @@ final class TargetPicker {
         attachToggle.label = "Attach"
         spawnToggle = ToggleButton()
         spawnToggle.label = "Spawn"
+        modeHint = Label(str: "")
 
         submodeAppToggle = ToggleButton()
         submodeAppToggle.label = "Application"
@@ -203,14 +205,27 @@ final class TargetPicker {
         header.packEnd(child: spawnButton)
         window.set(titlebar: WidgetRef(header))
 
-        let modeRow = Box(orientation: .horizontal, spacing: 0)
-        modeRow.halign = .center
-        modeRow.marginTop = 10
-        modeRow.marginBottom = 6
-        modeRow.add(cssClass: "linked")
+        let modeToggles = Box(orientation: .horizontal, spacing: 0)
+        modeToggles.add(cssClass: "linked")
         spawnToggle.set(group: ToggleButtonRef(attachToggle.toggle_button_ptr))
-        modeRow.append(child: attachToggle)
-        modeRow.append(child: spawnToggle)
+        modeToggles.append(child: spawnToggle)
+        modeToggles.append(child: attachToggle)
+
+        modeHint.add(cssClass: "caption")
+        modeHint.add(cssClass: "dim-label")
+        modeHint.halign = .end
+        modeHint.valign = .center
+        modeHint.hexpand = true
+        modeHint.xalign = 1
+        modeHint.ellipsize = .end
+
+        let modeHeader = Box(orientation: .horizontal, spacing: 12)
+        modeHeader.marginStart = 12
+        modeHeader.marginEnd = 12
+        modeHeader.marginTop = 8
+        modeHeader.marginBottom = 4
+        modeHeader.append(child: modeToggles)
+        modeHeader.append(child: modeHint)
 
         let paned = Paned(orientation: .horizontal)
         paned.position = 260
@@ -224,7 +239,14 @@ final class TargetPicker {
         modeStack.vexpand = true
         modeStack.append(child: attachPane)
         modeStack.append(child: spawnPane)
-        paned.endChild = WidgetRef(modeStack)
+
+        let rightPane = Box(orientation: .vertical, spacing: 0)
+        rightPane.hexpand = true
+        rightPane.vexpand = true
+        rightPane.append(child: modeHeader)
+        rightPane.append(child: Separator(orientation: .horizontal))
+        rightPane.append(child: modeStack)
+        paned.endChild = WidgetRef(rightPane)
         paned.hexpand = true
         paned.vexpand = true
 
@@ -244,7 +266,6 @@ final class TargetPicker {
             banner.hexpand = true
             column.append(child: banner)
         }
-        column.append(child: modeRow)
         column.append(child: paned)
         window.set(child: column)
 
@@ -325,6 +346,7 @@ final class TargetPicker {
         } else {
             submodeProgramToggle.active = true
         }
+        applySpawnSubmode()
         applyMode()
     }
 
@@ -425,11 +447,15 @@ final class TargetPicker {
         processStatus.marginEnd = 12
         processStatus.marginTop = 8
         processStatus.marginBottom = 4
+        processStatus.add(cssClass: "dim-label")
+        processStatus.add(cssClass: "caption")
+        processStatus.wrap = true
+        processStatus.visible = false
 
         processSearchEntry.placeholderText = "Filter by process name"
         processSearchEntry.marginStart = 12
         processSearchEntry.marginEnd = 12
-        processSearchEntry.marginTop = 4
+        processSearchEntry.marginTop = 8
         processSearchEntry.marginBottom = 6
 
         let scroll = ScrolledWindow()
@@ -482,6 +508,10 @@ final class TargetPicker {
         appStatus.marginEnd = 12
         appStatus.marginTop = 4
         appStatus.marginBottom = 4
+        appStatus.add(cssClass: "dim-label")
+        appStatus.add(cssClass: "caption")
+        appStatus.wrap = true
+        appStatus.visible = false
         appSearchEntry.placeholderText = "Filter by name or identifier"
         appSearchEntry.marginStart = 12
         appSearchEntry.marginEnd = 12
@@ -526,7 +556,8 @@ final class TargetPicker {
         programFormBox.append(child: programNote)
         programFormBox.append(child: programPathRow)
         programFormBox.hexpand = true
-        programFormBox.vexpand = true
+        programFormBox.vexpand = false
+        programFormBox.valign = .start
 
         spawnFormStack.hexpand = true
         spawnFormStack.vexpand = true
@@ -632,6 +663,9 @@ final class TargetPicker {
         spawnPane.visible = (mode == .spawn)
         attachButton.visible = (mode == .attach)
         spawnButton.visible = (mode == .spawn)
+        modeHint.label = mode == .spawn
+            ? "Spawn a new app or program under Luma."
+            : "Attach to an already-running process on this device."
         if mode == .spawn, let device = currentDevice() {
             loadApplications(for: device)
         }
@@ -648,6 +682,7 @@ final class TargetPicker {
     private func applySpawnSubmode() {
         appFormBox.visible = (spawnSubmode == .application)
         programFormBox.visible = (spawnSubmode == .program)
+        spawnFormStack.vexpand = (spawnSubmode == .application)
     }
 
     private func refreshSpawnButtonSensitivity() {
@@ -767,6 +802,7 @@ final class TargetPicker {
                 guard !Task.isCancelled, self.selectedDeviceID == capturedID else { return }
                 self.setProcessLoading(false, deviceName: device.name)
                 self.processStatus.setText(str: "Failed to enumerate processes: \(error)")
+                self.processStatus.visible = true
             }
         }
     }
@@ -797,7 +833,7 @@ final class TargetPicker {
         }
         processes = sorted
         applyProcessFilter(query: processSearchEntry.text)
-        processStatus.setText(str: "\(device.name) — \(sorted.count) processes")
+        processStatus.visible = false
 
         if let savedName = pickerState.lastSelectedProcessName,
             let idx = filteredProcesses.firstIndex(where: { $0.name == savedName }),
@@ -869,6 +905,7 @@ final class TargetPicker {
                 guard !Task.isCancelled, self.selectedDeviceID == capturedID else { return }
                 self.setAppLoading(false, deviceName: device.name)
                 self.appStatus.setText(str: "Failed to enumerate applications: \(error)")
+                self.appStatus.visible = true
             }
         }
     }
@@ -893,7 +930,7 @@ final class TargetPicker {
             $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
         applications = sorted
-        appStatus.setText(str: "\(device.name) — \(sorted.count) applications")
+        appStatus.visible = false
         applyAppFilter(query: appSearchEntry.text)
 
         if let saved = selectedApplicationIdentifier ?? pickerState.lastSpawnApplicationID,
