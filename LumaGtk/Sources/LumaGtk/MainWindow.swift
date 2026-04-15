@@ -312,7 +312,6 @@ final class MainWindow {
         // Detach children from any prior parent (Paned holds raw refs).
         let detail = detailHost!
         let stream = eventStreamPane.widget
-        if let p = detail.parent { (p as? Box)?.remove(child: detail) }
         eventStreamPaned.startChild = nil
         eventStreamPaned.endChild = nil
 

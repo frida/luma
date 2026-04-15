@@ -764,7 +764,7 @@ final class EventStreamPane {
             MainActor.assumeIsolated {
                 var tx: Double = 0
                 var ty: Double = 0
-                column.translateCoordinates(
+                _ = column.translateCoordinates(
                     destWidget: anchor,
                     srcX: x,
                     srcY: y,
@@ -833,7 +833,7 @@ final class EventStreamPane {
                 guard let self else { return }
                 var translatedX: Double = 0
                 var translatedY: Double = 0
-                row.translateCoordinates(
+                _ = row.translateCoordinates(
                     destWidget: anchor,
                     srcX: x,
                     srcY: y,
