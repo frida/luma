@@ -597,7 +597,7 @@ final class NotebookPane {
         for (index, text) in [
             "Attach to a running app or process.",
             "Add instruments to observe behavior.",
-            "Pin any output to save it here.",
+            "Pin any event from the stream to save it here.",
         ].enumerated() {
             steps.append(child: Self.makeWalkthroughStep(number: index + 1, text: text))
         }
