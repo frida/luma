@@ -937,9 +937,18 @@ final class TargetPicker {
             if let fridaIcon = proc.icons.last, let img = IconPixbuf.makeImage(from: fridaIcon, pixelSize: 24) {
                 hbox.append(child: img)
             }
-            let label = Label(str: "\(proc.name)  ·  pid \(proc.pid)")
-            label.halign = .start
-            hbox.append(child: label)
+            let textBox = Box(orientation: .vertical, spacing: 0)
+            textBox.valign = .center
+            let nameLabel = Label(str: proc.name)
+            nameLabel.halign = .start
+            nameLabel.ellipsize = .end
+            let pidLabel = Label(str: "PID \(proc.pid)")
+            pidLabel.halign = .start
+            pidLabel.add(cssClass: "dim-label")
+            pidLabel.add(cssClass: "caption")
+            textBox.append(child: nameLabel)
+            textBox.append(child: pidLabel)
+            hbox.append(child: textBox)
             row.set(child: hbox)
             processList.append(child: row)
         }
