@@ -25,6 +25,8 @@ final class TargetPicker {
     private let processLoadingSpinner: Spinner
     private let processLoadingLabel: Label
     private let processContent: Box
+    private let processError: Box
+    private let processErrorMessage: Label
     private let processSearchEntry: SearchEntry
     private let attachButton: Button
     private let spawnButton: Button
@@ -48,6 +50,8 @@ final class TargetPicker {
     private let appLoadingSpinner: Spinner
     private let appLoadingLabel: Label
     private let appContent: Box
+    private let appError: Box
+    private let appErrorMessage: Label
     private let programPathEntry: Entry
     private let programBrowseButton: Button
     private let programPathRow: Box
@@ -123,6 +127,8 @@ final class TargetPicker {
         processLoadingSpinner = Spinner()
         processLoadingLabel = Label(str: "Enumerating processes\u{2026}")
         processContent = Box(orientation: .vertical, spacing: 0)
+        processError = Box(orientation: .vertical, spacing: 8)
+        processErrorMessage = Label(str: "")
         processSearchEntry = SearchEntry()
         attachButton = Button(label: "Attach")
         spawnButton = Button(label: "Spawn & Attach")
@@ -145,6 +151,8 @@ final class TargetPicker {
         appLoadingSpinner = Spinner()
         appLoadingLabel = Label(str: "Enumerating applications\u{2026}")
         appContent = Box(orientation: .vertical, spacing: 0)
+        appError = Box(orientation: .vertical, spacing: 8)
+        appErrorMessage = Label(str: "")
         programPathEntry = Entry()
         programPathEntry.placeholderText = "Absolute program path, e.g. /usr/bin/foo"
         programPathEntry.hexpand = true
@@ -470,12 +478,41 @@ final class TargetPicker {
         processLoading.append(child: processLoadingLabel)
         processLoading.visible = false
 
+        configureErrorPane(processError, message: processErrorMessage, title: "Failed to Enumerate Processes")
+
         let column = Box(orientation: .vertical, spacing: 0)
         column.hexpand = true
         column.vexpand = true
         column.append(child: processContent)
         column.append(child: processLoading)
+        column.append(child: processError)
         return column
+    }
+
+    private func configureErrorPane(_ pane: Box, message: Label, title: String) {
+        pane.halign = .center
+        pane.valign = .center
+        pane.hexpand = true
+        pane.vexpand = true
+        pane.visible = false
+
+        let icon = Image(iconName: "dialog-warning-symbolic")
+        icon.set(pixelSize: 36)
+        icon.add(cssClass: "warning")
+        pane.append(child: icon)
+
+        let headline = Label(str: title)
+        headline.add(cssClass: "title-4")
+        pane.append(child: headline)
+
+        message.halign = .center
+        message.justify = .center
+        message.wrap = true
+        message.add(cssClass: "caption")
+        message.add(cssClass: "dim-label")
+        message.marginStart = 24
+        message.marginEnd = 24
+        pane.append(child: message)
     }
 
     private func buildSpawnPane() -> Box {
@@ -522,8 +559,11 @@ final class TargetPicker {
         appLoading.append(child: appLoadingLabel)
         appLoading.visible = false
 
+        configureErrorPane(appError, message: appErrorMessage, title: "Failed to Enumerate Applications")
+
         appFormBox.append(child: appContent)
         appFormBox.append(child: appLoading)
+        appFormBox.append(child: appError)
         appFormBox.append(child: buildSpawnSubmodeSections(for: appSubmodeForm, isAppMode: true))
         appFormBox.hexpand = true
         appFormBox.vexpand = true
@@ -862,7 +902,7 @@ final class TargetPicker {
         filteredProcesses = []
         selectedProcessIndex = nil
         attachButton.sensitive = false
-        setProcessLoading(true, deviceName: device.name)
+        setProcessState(.loading, deviceName: device.name)
 
         processFetchTask?.cancel()
         let capturedID = device.id
@@ -870,30 +910,29 @@ final class TargetPicker {
             do {
                 let result = try await device.enumerateProcesses(scope: .full)
                 guard !Task.isCancelled, self.selectedDeviceID == capturedID else { return }
-                self.setProcessLoading(false, deviceName: device.name)
+                self.setProcessState(.content, deviceName: device.name)
                 self.renderProcesses(result, for: device)
             } catch {
                 guard !Task.isCancelled, self.selectedDeviceID == capturedID else { return }
-                self.setProcessLoading(false, deviceName: device.name)
-                self.processStatus.setText(str: "Failed to enumerate processes: \(error)")
-                self.processStatus.visible = true
+                self.processErrorMessage.setText(str: error.localizedDescription)
+                self.setProcessState(.error, deviceName: device.name)
             }
         }
     }
 
-    private func setProcessLoading(_ loading: Bool, deviceName: String) {
-        if loading {
-            processLoadingLabel.setText(str: "Enumerating processes on \(deviceName)\u{2026}")
-            processLoadingSpinner.start()
-            processLoadingSpinner.spinning = true
-            processLoading.visible = true
-            processContent.visible = false
-        } else {
-            processLoadingSpinner.stop()
-            processLoadingSpinner.spinning = false
-            processLoading.visible = false
-            processContent.visible = true
-        }
+    private enum ListPaneState {
+        case content
+        case loading
+        case error
+    }
+
+    private func setProcessState(_ state: ListPaneState, deviceName: String) {
+        processLoadingLabel.setText(str: "Enumerating processes on \(deviceName)\u{2026}")
+        processLoadingSpinner.spinning = (state == .loading)
+        if state == .loading { processLoadingSpinner.start() } else { processLoadingSpinner.stop() }
+        processContent.visible = (state == .content)
+        processLoading.visible = (state == .loading)
+        processError.visible = (state == .error)
     }
 
     private func renderProcesses(_ snapshot: [ProcessDetails], for device: Frida.Device) {
@@ -974,7 +1013,7 @@ final class TargetPicker {
         appList.removeAll()
         applications = []
         filteredApplications = []
-        setAppLoading(true, deviceName: device.name)
+        setAppState(.loading, deviceName: device.name)
 
         appFetchTask?.cancel()
         let capturedID = device.id
@@ -982,30 +1021,23 @@ final class TargetPicker {
             do {
                 let result = try await device.enumerateApplications(scope: .full)
                 guard !Task.isCancelled, self.selectedDeviceID == capturedID else { return }
-                self.setAppLoading(false, deviceName: device.name)
+                self.setAppState(.content, deviceName: device.name)
                 self.renderApplications(result, for: device)
             } catch {
                 guard !Task.isCancelled, self.selectedDeviceID == capturedID else { return }
-                self.setAppLoading(false, deviceName: device.name)
-                self.appStatus.setText(str: "Failed to enumerate applications: \(error)")
-                self.appStatus.visible = true
+                self.appErrorMessage.setText(str: error.localizedDescription)
+                self.setAppState(.error, deviceName: device.name)
             }
         }
     }
 
-    private func setAppLoading(_ loading: Bool, deviceName: String) {
-        if loading {
-            appLoadingLabel.setText(str: "Enumerating applications on \(deviceName)\u{2026}")
-            appLoadingSpinner.start()
-            appLoadingSpinner.spinning = true
-            appLoading.visible = true
-            appContent.visible = false
-        } else {
-            appLoadingSpinner.stop()
-            appLoadingSpinner.spinning = false
-            appLoading.visible = false
-            appContent.visible = true
-        }
+    private func setAppState(_ state: ListPaneState, deviceName: String) {
+        appLoadingLabel.setText(str: "Enumerating applications on \(deviceName)\u{2026}")
+        appLoadingSpinner.spinning = (state == .loading)
+        if state == .loading { appLoadingSpinner.start() } else { appLoadingSpinner.stop() }
+        appContent.visible = (state == .content)
+        appLoading.visible = (state == .loading)
+        appError.visible = (state == .error)
     }
 
     private func renderApplications(_ snapshot: [ApplicationDetails], for device: Frida.Device) {
