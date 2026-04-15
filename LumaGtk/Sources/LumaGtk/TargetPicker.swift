@@ -51,14 +51,9 @@ final class TargetPicker {
     private let programPathEntry: Entry
     private let programBrowseButton: Button
     private let programPathRow: Box
-    private let argumentsEntry: Entry
-    private let workingDirEntry: Entry
-    private let envListBox: Box
-    private var envRowWidgets: [(row: Box, key: Entry, value: Entry)] = []
-    private var envPairs: [(String, String)] = []
-    private let stdioInheritToggle: ToggleButton
-    private let stdioPipeToggle: ToggleButton
-    private let autoResumeSwitch: Switch
+
+    private let appSubmodeForm: SpawnSubmodeForm
+    private let programSubmodeForm: SpawnSubmodeForm
     private let spawnFormStack: Box
     private let appFormBox: Box
     private let programFormBox: Box
@@ -161,18 +156,9 @@ final class TargetPicker {
         programPathRow = Box(orientation: .horizontal, spacing: 6)
         programPathRow.append(child: programPathEntry)
         programPathRow.append(child: programBrowseButton)
-        argumentsEntry = Entry()
-        argumentsEntry.placeholderText = "Arguments (space-separated, optional)"
-        workingDirEntry = Entry()
-        workingDirEntry.placeholderText = "Working directory (optional)"
-        envListBox = Box(orientation: .vertical, spacing: 4)
-        stdioInheritToggle = ToggleButton()
-        stdioInheritToggle.label = "Inherit"
-        stdioPipeToggle = ToggleButton()
-        stdioPipeToggle.label = "Pipe"
-        autoResumeSwitch = Switch()
-        autoResumeSwitch.active = true
-        autoResumeSwitch.valign = .center
+
+        appSubmodeForm = SpawnSubmodeForm()
+        programSubmodeForm = SpawnSubmodeForm()
 
         modeStack = Box(orientation: .vertical, spacing: 0)
         attachPane = Box(orientation: .vertical, spacing: 0)
@@ -538,19 +524,19 @@ final class TargetPicker {
 
         appFormBox.append(child: appContent)
         appFormBox.append(child: appLoading)
+        appFormBox.append(child: Separator(orientation: .horizontal))
+        appFormBox.append(child: buildSpawnSubmodeSections(for: appSubmodeForm, isAppMode: true))
         appFormBox.hexpand = true
         appFormBox.vexpand = true
 
-        // Program form (Program section content: path + hint)
+        programPathRow.marginStart = 12
+        programPathRow.marginEnd = 12
         programFormBox.append(child: buildSection(
             title: "Program",
-            content: { box in
-                self.programPathRow.marginStart = 12
-                self.programPathRow.marginEnd = 12
-                box.append(child: self.programPathRow)
-            },
+            content: { $0.append(child: self.programPathRow) },
             hint: "Provide an absolute path on the target device, e.g. /usr/bin/foo."
         ))
+        programFormBox.append(child: buildSpawnSubmodeSections(for: programSubmodeForm, isAppMode: false))
         programFormBox.hexpand = true
         programFormBox.vexpand = false
         programFormBox.valign = .start
@@ -561,48 +547,47 @@ final class TargetPicker {
         spawnFormStack.append(child: programFormBox)
         column.append(child: spawnFormStack)
 
-        column.append(child: Separator(orientation: .horizontal))
+        return column
+    }
 
-        // Shared bottom sections: Arguments, Environment, Working Directory, Execution
-        let bottomSections = Box(orientation: .vertical, spacing: 0)
-        bottomSections.marginStart = 12
-        bottomSections.marginEnd = 12
-        bottomSections.marginTop = 8
-        bottomSections.marginBottom = 12
+    private func buildSpawnSubmodeSections(for form: SpawnSubmodeForm, isAppMode: Bool) -> Box {
+        let container = Box(orientation: .vertical, spacing: 0)
+        container.marginStart = 12
+        container.marginEnd = 12
+        container.marginTop = 8
+        container.marginBottom = 12
 
-        argumentsEntry.hexpand = true
-        argumentsEntry.placeholderText = "Arguments (optional)"
-        bottomSections.append(child: buildSection(
-            title: "Arguments",
-            content: { $0.append(child: self.argumentsEntry) },
-            hint: "Space-separated arguments. Shell-style quoting may be supported in a future version."
+        let argsTitle = isAppMode ? "Launch Arguments" : "Arguments"
+        let argsHint = isAppMode
+            ? "Arguments can be passed to apps too, but are not supported on all targets."
+            : "Space-separated arguments. Shell-style quoting may be supported in a future version."
+        container.append(child: buildSection(
+            title: argsTitle,
+            content: { $0.append(child: form.argumentsEntry) },
+            hint: argsHint
         ))
 
         let envBody = Box(orientation: .vertical, spacing: 4)
-        envListBox.hexpand = true
-        envBody.append(child: envListBox)
+        envBody.append(child: form.envListBox)
         let addEnvButton = Button(label: "Add Variable")
         addEnvButton.halign = .start
         addEnvButton.add(cssClass: "flat")
-        addEnvButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.appendEnvRow(key: "", value: "")
-            }
+        addEnvButton.onClicked { [weak form] _ in
+            MainActor.assumeIsolated { form?.appendEnvRow() }
         }
         envBody.append(child: addEnvButton)
-        bottomSections.append(child: buildSection(
+        container.append(child: buildSection(
             title: "Environment",
             content: { $0.append(child: envBody) },
-            hint: "Environment variables are added on top of the default environment."
+            hint: isAppMode
+                ? "Environment variables will be added on top of the default environment."
+                : "Environment variables are added on top of the default environment."
         ))
-        rebuildEnvRows()
 
-        workingDirEntry.hexpand = true
-        workingDirEntry.placeholderText = "Working directory (optional)"
-        bottomSections.append(child: buildSection(
+        container.append(child: buildSection(
             title: "Working Directory",
-            content: { $0.append(child: self.workingDirEntry) },
-            hint: "Use an absolute path on the target device, e.g. /var/mobile."
+            content: { $0.append(child: form.workingDirEntry) },
+            hint: isAppMode ? "Use an absolute path on the target device, e.g. /var/mobile." : nil
         ))
 
         let executionBody = Box(orientation: .vertical, spacing: 8)
@@ -614,29 +599,25 @@ final class TargetPicker {
         stdioRow.append(child: stdioLabel)
         let stdioToggles = Box(orientation: .horizontal, spacing: 0)
         stdioToggles.add(cssClass: "linked")
-        stdioPipeToggle.set(group: ToggleButtonRef(stdioInheritToggle.toggle_button_ptr))
-        stdioInheritToggle.active = true
-        stdioToggles.append(child: stdioInheritToggle)
-        stdioToggles.append(child: stdioPipeToggle)
+        stdioToggles.append(child: form.stdioInheritToggle)
+        stdioToggles.append(child: form.stdioPipeToggle)
         stdioRow.append(child: stdioToggles)
         executionBody.append(child: stdioRow)
 
         let resumeRow = Box(orientation: .horizontal, spacing: 8)
-        resumeRow.append(child: autoResumeSwitch)
+        resumeRow.append(child: form.autoResumeSwitch)
         let resumeLabel = Label(str: "Automatically resume after instruments load")
         resumeLabel.halign = .start
         resumeRow.append(child: resumeLabel)
         executionBody.append(child: resumeRow)
 
-        bottomSections.append(child: buildSection(
+        container.append(child: buildSection(
             title: "Execution",
             content: { $0.append(child: executionBody) },
             hint: "When turned off, the process will remain paused after spawn until you resume it from Luma."
         ))
 
-        column.append(child: bottomSections)
-
-        return column
+        return container
     }
 
     private func buildNoDevicePane() -> Box {
@@ -692,21 +673,27 @@ final class TargetPicker {
         hint: String? = nil
     ) -> Box {
         let section = Box(orientation: .vertical, spacing: 4)
-        section.marginTop = 6
-        section.marginBottom = 10
+        section.marginTop = 4
+        section.marginBottom = 12
 
-        let heading = Label(str: title)
+        let heading = Label(str: title.uppercased())
         heading.halign = .start
-        heading.add(cssClass: "heading")
+        heading.marginStart = 4
+        heading.marginBottom = 2
+        heading.add(cssClass: "caption-heading")
+        heading.add(cssClass: "dim-label")
         section.append(child: heading)
 
-        let body = Box(orientation: .vertical, spacing: 4)
+        let body = Box(orientation: .vertical, spacing: 6)
+        body.add(cssClass: "luma-section-body")
         content(body)
         section.append(child: body)
 
         if let hint {
             let hintLabel = Label(str: hint)
             hintLabel.halign = .start
+            hintLabel.marginStart = 4
+            hintLabel.marginTop = 4
             hintLabel.add(cssClass: "caption")
             hintLabel.add(cssClass: "dim-label")
             hintLabel.wrap = true
@@ -1070,71 +1057,6 @@ final class TargetPicker {
         refreshSpawnButtonSensitivity()
     }
 
-    // MARK: - Environment editor
-
-    private func rebuildEnvRows() {
-        for entry in envRowWidgets {
-            envListBox.remove(child: entry.row)
-        }
-        envRowWidgets.removeAll(keepingCapacity: true)
-        for (index, pair) in envPairs.enumerated() {
-            insertEnvRowWidget(at: index, key: pair.0, value: pair.1)
-        }
-    }
-
-    private func appendEnvRow(key: String, value: String) {
-        let index = envPairs.count
-        envPairs.append((key, value))
-        insertEnvRowWidget(at: index, key: key, value: value)
-    }
-
-    private func insertEnvRowWidget(at index: Int, key: String, value: String) {
-        let row = Box(orientation: .horizontal, spacing: 4)
-        row.hexpand = true
-        let keyEntry = Entry()
-        keyEntry.placeholderText = "KEY"
-        keyEntry.text = key
-        keyEntry.hexpand = true
-        let valueEntry = Entry()
-        valueEntry.placeholderText = "value"
-        valueEntry.text = value
-        valueEntry.hexpand = true
-        let removeButton = Button(label: "\u{2715}")
-        removeButton.add(cssClass: "flat")
-        let rowRef = row
-        keyEntry.onChanged { [weak self] entry in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                if let i = self.envRowWidgets.firstIndex(where: { $0.row === rowRef }) {
-                    self.envPairs[i].0 = entry.text
-                }
-            }
-        }
-        valueEntry.onChanged { [weak self] entry in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                if let i = self.envRowWidgets.firstIndex(where: { $0.row === rowRef }) {
-                    self.envPairs[i].1 = entry.text
-                }
-            }
-        }
-        removeButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                if let i = self.envRowWidgets.firstIndex(where: { $0.row === rowRef }) {
-                    self.envPairs.remove(at: i)
-                    self.envListBox.remove(child: rowRef)
-                    self.envRowWidgets.remove(at: i)
-                }
-            }
-        }
-        row.append(child: keyEntry)
-        row.append(child: valueEntry)
-        row.append(child: removeButton)
-        envListBox.append(child: row)
-        envRowWidgets.insert((row: row, key: keyEntry, value: valueEntry), at: index)
-    }
-
     // MARK: - Commit
 
     private func commitAttach() {
@@ -1155,36 +1077,27 @@ final class TargetPicker {
     private func commitSpawn() {
         guard let device = currentDevice() else { return }
         let target: SpawnConfig.Target
+        let form: SpawnSubmodeForm
         switch spawnSubmode {
         case .application:
             guard let identifier = selectedApplicationIdentifier,
                 let app = applications.first(where: { $0.identifier == identifier })
             else { return }
             target = .application(identifier: app.identifier, name: app.name)
+            form = appSubmodeForm
         case .program:
             let path = programPathEntry.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !path.isEmpty else { return }
             target = .program(path: path)
+            form = programSubmodeForm
         }
-        let arguments = argumentsEntry.text
-            .split(whereSeparator: { $0.isWhitespace })
-            .map(String.init)
-        var environment: [String: String] = [:]
-        for (rawKey, value) in envPairs {
-            let key = rawKey.trimmingCharacters(in: .whitespaces)
-            guard !key.isEmpty else { continue }
-            environment[key] = value
-        }
-        // TODO: Persist environment once TargetPickerState gains a field for it.
-        let cwd = workingDirEntry.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let stdio: Frida.Stdio = stdioPipeToggle.active ? .pipe : .inherit
         let config = SpawnConfig(
             target: target,
-            arguments: arguments,
-            environment: environment,
-            workingDirectory: cwd.isEmpty ? nil : cwd,
-            stdio: stdio,
-            autoResume: autoResumeSwitch.active
+            arguments: form.arguments(),
+            environment: form.environment(),
+            workingDirectory: form.workingDirectory(),
+            stdio: form.stdio(),
+            autoResume: form.autoResume()
         )
         persistState()
         onSpawn(device, config)
@@ -1378,5 +1291,118 @@ private let targetPickerCertificatePathThunk: @convention(c) (
         } else {
             picker.clearPendingCertificateEntry()
         }
+    }
+}
+
+@MainActor
+private final class SpawnSubmodeForm {
+    let argumentsEntry: Entry
+    let workingDirEntry: Entry
+    let envListBox: Box
+    let stdioInheritToggle: ToggleButton
+    let stdioPipeToggle: ToggleButton
+    let autoResumeSwitch: Switch
+
+    private var envRowWidgets: [(row: Box, key: Entry, value: Entry)] = []
+    private var envPairs: [(String, String)] = []
+
+    init() {
+        argumentsEntry = Entry()
+        argumentsEntry.placeholderText = "Arguments (optional)"
+        argumentsEntry.hexpand = true
+        workingDirEntry = Entry()
+        workingDirEntry.placeholderText = "Working directory (optional)"
+        workingDirEntry.hexpand = true
+        envListBox = Box(orientation: .vertical, spacing: 4)
+        envListBox.hexpand = true
+        stdioInheritToggle = ToggleButton()
+        stdioInheritToggle.label = "Inherit"
+        stdioInheritToggle.active = true
+        stdioPipeToggle = ToggleButton()
+        stdioPipeToggle.label = "Pipe"
+        stdioPipeToggle.set(group: ToggleButtonRef(stdioInheritToggle.toggle_button_ptr))
+        autoResumeSwitch = Switch()
+        autoResumeSwitch.active = true
+        autoResumeSwitch.valign = .center
+    }
+
+    func arguments() -> [String] {
+        argumentsEntry.text
+            .split(whereSeparator: { $0.isWhitespace })
+            .map(String.init)
+    }
+
+    func environment() -> [String: String] {
+        var out: [String: String] = [:]
+        for (rawKey, value) in envPairs {
+            let key = rawKey.trimmingCharacters(in: .whitespaces)
+            guard !key.isEmpty else { continue }
+            out[key] = value
+        }
+        return out
+    }
+
+    func workingDirectory() -> String? {
+        let trimmed = workingDirEntry.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    func stdio() -> Frida.Stdio {
+        stdioPipeToggle.active ? .pipe : .inherit
+    }
+
+    func autoResume() -> Bool {
+        autoResumeSwitch.active
+    }
+
+    func appendEnvRow(key: String = "", value: String = "") {
+        let index = envPairs.count
+        envPairs.append((key, value))
+
+        let row = Box(orientation: .horizontal, spacing: 6)
+        let keyEntry = Entry()
+        keyEntry.placeholderText = "KEY"
+        keyEntry.text = key
+        keyEntry.hexpand = true
+        let valueEntry = Entry()
+        valueEntry.placeholderText = "value"
+        valueEntry.text = value
+        valueEntry.hexpand = true
+        let removeButton = Button()
+        removeButton.set(iconName: "list-remove-symbolic")
+        removeButton.add(cssClass: "flat")
+        row.append(child: keyEntry)
+        row.append(child: valueEntry)
+        row.append(child: removeButton)
+
+        keyEntry.onChanged { [weak self, weak row] entry in
+            MainActor.assumeIsolated {
+                guard let self, let rowRef = row else { return }
+                if let i = self.envRowWidgets.firstIndex(where: { $0.row === rowRef }) {
+                    self.envPairs[i].0 = entry.text
+                }
+            }
+        }
+        valueEntry.onChanged { [weak self, weak row] entry in
+            MainActor.assumeIsolated {
+                guard let self, let rowRef = row else { return }
+                if let i = self.envRowWidgets.firstIndex(where: { $0.row === rowRef }) {
+                    self.envPairs[i].1 = entry.text
+                }
+            }
+        }
+        removeButton.onClicked { [weak self, weak row] _ in
+            MainActor.assumeIsolated {
+                guard let self, let rowRef = row else { return }
+                if let i = self.envRowWidgets.firstIndex(where: { $0.row === rowRef }) {
+                    self.envPairs.remove(at: i)
+                    self.envListBox.remove(child: rowRef)
+                    self.envRowWidgets.remove(at: i)
+                }
+            }
+        }
+
+        envListBox.append(child: row)
+        envRowWidgets.insert((row: row, key: keyEntry, value: valueEntry), at: index)
     }
 }

@@ -169,6 +169,13 @@ enum StyleSheet {
         box-shadow: 0 2px 6px alpha(black, 0.3);
     }
 
+    .luma-section-body {
+        background-color: alpha(@theme_fg_color, 0.06);
+        border: 1px solid alpha(@theme_fg_color, 0.08);
+        border-radius: 8px;
+        padding: 10px 12px;
+    }
+
     .luma-pid-badge {
         border-radius: 4px;
         padding: 1px 6px;
