@@ -41,6 +41,10 @@ struct TargetPickerView: View {
     @State private var appWorkingDirectory: String = ""
     @State private var appStdio: Stdio = .pipe
     @State private var appAutoResume: Bool = true
+    @State private var appArgumentsExpanded: Bool = false
+    @State private var appEnvExpanded: Bool = false
+    @State private var appWorkingDirExpanded: Bool = false
+    @State private var appExecutionExpanded: Bool = false
 
     @State private var programPath: String = ""
     @State private var programArgumentsText: String = ""
@@ -292,14 +296,14 @@ struct TargetPickerView: View {
     @ViewBuilder
     private func spawnHeader() -> some View {
         HStack {
+            Spacer()
+
             Picker("Launch", selection: $spawnSubmode) {
                 Text("Application").tag(SpawnSubmode.application)
                 Text("Program").tag(SpawnSubmode.program)
             }
             .pickerStyle(.segmented)
             .frame(maxWidth: 260)
-
-            Spacer()
         }
         .padding([.horizontal, .top])
     }
@@ -426,22 +430,26 @@ struct TargetPickerView: View {
                 Divider()
 
                 Form {
-                    Section("Launch Arguments") {
+                    Section(isExpanded: $appArgumentsExpanded) {
                         TextField("Arguments (optional)", text: $appArgumentsText, axis: .vertical)
                             .lineLimit(1...3)
                         Text("Arguments can be passed to apps too, but are not supported on all targets.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
+                    } header: {
+                        Text("Launch Arguments")
                     }
 
-                    Section("Environment") {
+                    Section(isExpanded: $appEnvExpanded) {
                         EnvEditor(entries: $appEnvEntries)
                         Text("Environment variables are added on top of the default environment.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
+                    } header: {
+                        Text("Environment")
                     }
 
-                    Section("Working Directory") {
+                    Section(isExpanded: $appWorkingDirExpanded) {
                         TextField("Working directory (optional)", text: $appWorkingDirectory)
                             #if canImport(UIKit)
                                 .textInputAutocapitalization(.never)
@@ -450,17 +458,23 @@ struct TargetPickerView: View {
                         Text("Use an absolute path on the target device, e.g. /var/mobile.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
+                    } header: {
+                        Text("Working Directory")
                     }
 
-                    Section("Execution") {
+                    Section(isExpanded: $appExecutionExpanded) {
                         StdioPicker(selection: $appStdio)
 
-                        Toggle(isOn: $appAutoResume) {
-                            Text("Automatically resume after instruments load")
+                        VStack(alignment: .leading, spacing: 4) {
+                            Toggle(isOn: $appAutoResume) {
+                                Text("Automatically resume after instruments load")
+                            }
+                            Text("When turned off, the process will remain paused after spawn until you resume it from Luma.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
                         }
-                        Text("When turned off, the process will remain paused after spawn until you resume it from Luma.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                    } header: {
+                        Text("Execution")
                     }
                 }
                 .formStyle(.grouped)
@@ -509,12 +523,14 @@ struct TargetPickerView: View {
                 Section("Execution") {
                     StdioPicker(selection: $programStdio)
 
-                    Toggle(isOn: $programAutoResume) {
-                        Text("Automatically resume after instruments load")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle(isOn: $programAutoResume) {
+                            Text("Automatically resume after instruments load")
+                        }
+                        Text("When turned off, the process will remain paused after spawn until you resume it from Luma.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
-                    Text("When turned off, the process will remain paused after spawn until you resume it from Luma.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
                 }
             }
             .formStyle(.grouped)

@@ -529,13 +529,16 @@ final class TargetPicker {
         appFormBox.hexpand = true
         appFormBox.vexpand = true
 
-        programPathRow.marginStart = 12
-        programPathRow.marginEnd = 12
-        programFormBox.append(child: buildSection(
+        let programTop = Box(orientation: .vertical, spacing: 0)
+        programTop.marginStart = 12
+        programTop.marginEnd = 12
+        programTop.marginTop = 8
+        programTop.append(child: buildSection(
             title: "Program",
             content: { $0.append(child: self.programPathRow) },
             hint: "Provide an absolute path on the target device, e.g. /usr/bin/foo."
         ))
+        programFormBox.append(child: programTop)
         programFormBox.append(child: buildSpawnSubmodeSections(for: programSubmodeForm, isAppMode: false))
         programFormBox.hexpand = true
         programFormBox.vexpand = false
@@ -564,7 +567,8 @@ final class TargetPicker {
         container.append(child: buildSection(
             title: argsTitle,
             content: { $0.append(child: form.argumentsEntry) },
-            hint: argsHint
+            hint: argsHint,
+            collapsible: isAppMode
         ))
 
         let envBody = Box(orientation: .vertical, spacing: 4)
@@ -579,13 +583,15 @@ final class TargetPicker {
         container.append(child: buildSection(
             title: "Environment",
             content: { $0.append(child: envBody) },
-            hint: "Environment variables are added on top of the default environment."
+            hint: "Environment variables are added on top of the default environment.",
+            collapsible: isAppMode
         ))
 
         container.append(child: buildSection(
             title: "Working Directory",
             content: { $0.append(child: form.workingDirEntry) },
-            hint: isAppMode ? "Use an absolute path on the target device, e.g. /var/mobile." : nil
+            hint: isAppMode ? "Use an absolute path on the target device, e.g. /var/mobile." : nil,
+            collapsible: isAppMode
         ))
 
         let executionBody = Box(orientation: .vertical, spacing: 8)
@@ -602,17 +608,25 @@ final class TargetPicker {
         stdioRow.append(child: stdioToggles)
         executionBody.append(child: stdioRow)
 
+        let resumeColumn = Box(orientation: .vertical, spacing: 4)
         let resumeRow = Box(orientation: .horizontal, spacing: 8)
         resumeRow.append(child: form.autoResumeSwitch)
         let resumeLabel = Label(str: "Automatically resume after instruments load")
         resumeLabel.halign = .start
         resumeRow.append(child: resumeLabel)
-        executionBody.append(child: resumeRow)
+        resumeColumn.append(child: resumeRow)
+        let resumeHint = Label(str: "When turned off, the process will remain paused after spawn until you resume it from Luma.")
+        resumeHint.halign = .start
+        resumeHint.add(cssClass: "caption")
+        resumeHint.add(cssClass: "dim-label")
+        resumeHint.wrap = true
+        resumeColumn.append(child: resumeHint)
+        executionBody.append(child: resumeColumn)
 
         container.append(child: buildSection(
             title: "Execution",
             content: { $0.append(child: executionBody) },
-            hint: "When turned off, the process will remain paused after spawn until you resume it from Luma."
+            collapsible: isAppMode
         ))
 
         return container
@@ -651,6 +665,10 @@ final class TargetPicker {
         row.marginTop = 10
         row.marginBottom = 8
 
+        let spacer = Box(orientation: .horizontal, spacing: 0)
+        spacer.hexpand = true
+        row.append(child: spacer)
+
         let submodeToggles = Box(orientation: .horizontal, spacing: 0)
         submodeToggles.add(cssClass: "linked")
         submodeToggles.valign = .center
@@ -658,18 +676,40 @@ final class TargetPicker {
         submodeToggles.append(child: submodeProgramToggle)
         row.append(child: submodeToggles)
 
-        let spacer = Box(orientation: .horizontal, spacing: 0)
-        spacer.hexpand = true
-        row.append(child: spacer)
-
         return row
     }
 
     private func buildSection(
         title: String,
         content: (Box) -> Void,
-        hint: String? = nil
-    ) -> Box {
+        hint: String? = nil,
+        collapsible: Bool = false
+    ) -> Widget {
+        let body = Box(orientation: .vertical, spacing: 6)
+        body.add(cssClass: "luma-section-body")
+        content(body)
+
+        if collapsible {
+            let expander = Expander(label: title)
+            expander.marginTop = 2
+            expander.marginBottom = 4
+            expander.add(cssClass: "luma-spawn-expander")
+            let wrapper = Box(orientation: .vertical, spacing: 4)
+            wrapper.marginTop = 4
+            wrapper.append(child: body)
+            if let hint {
+                let hintLabel = Label(str: hint)
+                hintLabel.halign = .start
+                hintLabel.marginStart = 4
+                hintLabel.add(cssClass: "caption")
+                hintLabel.add(cssClass: "dim-label")
+                hintLabel.wrap = true
+                wrapper.append(child: hintLabel)
+            }
+            expander.set(child: wrapper)
+            return expander
+        }
+
         let section = Box(orientation: .vertical, spacing: 4)
         section.marginTop = 4
         section.marginBottom = 12
@@ -682,9 +722,6 @@ final class TargetPicker {
         heading.add(cssClass: "dim-label")
         section.append(child: heading)
 
-        let body = Box(orientation: .vertical, spacing: 6)
-        body.add(cssClass: "luma-section-body")
-        content(body)
         section.append(child: body)
 
         if let hint {
@@ -1315,10 +1352,10 @@ private final class SpawnSubmodeForm {
         envListBox.hexpand = true
         stdioInheritToggle = ToggleButton()
         stdioInheritToggle.label = "Inherit"
-        stdioInheritToggle.active = true
         stdioPipeToggle = ToggleButton()
-        stdioPipeToggle.label = "Pipe"
+        stdioPipeToggle.label = "Pipe to Luma"
         stdioPipeToggle.set(group: ToggleButtonRef(stdioInheritToggle.toggle_button_ptr))
+        stdioPipeToggle.active = true
         autoResumeSwitch = Switch()
         autoResumeSwitch.active = true
         autoResumeSwitch.valign = .center
