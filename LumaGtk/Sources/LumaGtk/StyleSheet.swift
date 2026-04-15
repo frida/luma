@@ -5,7 +5,14 @@ import Gtk
 enum StyleSheet {
     static let css = """
     .event-stream-pane {
+        background-color: @theme_base_color;
         border-top: 1px solid alpha(@theme_fg_color, 0.18);
+    }
+    .luma-live-dot {
+        color: @success_color;
+    }
+    .luma-paused-dot {
+        color: alpha(@theme_fg_color, 0.45);
     }
     .event-stream-pane.has-pending-events {
         background-color: alpha(@accent_bg_color, 0.18);

@@ -13,16 +13,21 @@ final class EventStreamPane {
     private let collapsedBar: Box
     private let statusLabel: Label
     private let filterBar: Box
+    private let headerSeparator: Separator
     private let sourceFilterButton: MenuButton
     private let processFilterButton: MenuButton
     private let searchEntry: Entry
     private let pauseButton: ToggleButton
     private let clearButton: Button
-    private let liveIndicator: Label
+    private let liveIndicatorBox: Box
+    private let liveDot: Label
+    private let liveLabel: Label
     private let scroll: ScrolledWindow
     private let listOverlay: Overlay
     private let eventListBox: Box
-    private let emptyStateLabel: Label
+    private let emptyStateBox: Box
+    private let emptyStateTitle: Label
+    private let emptyStateSubtitle: Label
     private let pendingPillButton: Button
     private let dateFormatter: DateFormatter
 
@@ -72,7 +77,7 @@ final class EventStreamPane {
         filterBar = Box(orientation: .horizontal, spacing: 6)
         filterBar.marginStart = 12
         filterBar.marginEnd = 12
-        filterBar.marginTop = 2
+        filterBar.marginTop = 4
         filterBar.marginBottom = 4
         filterBar.visible = false
         widget.append(child: filterBar)
@@ -96,10 +101,17 @@ final class EventStreamPane {
         searchEntry.setSizeRequest(width: 200, height: -1)
         filterBar.append(child: searchEntry)
 
-        liveIndicator = Label(str: "● Live")
-        liveIndicator.add(cssClass: "dim-label")
-        liveIndicator.add(cssClass: "caption")
-        filterBar.append(child: liveIndicator)
+        liveIndicatorBox = Box(orientation: .horizontal, spacing: 6)
+        liveIndicatorBox.valign = .center
+        liveDot = Label(str: "●")
+        liveDot.add(cssClass: "luma-live-dot")
+        liveDot.valign = .center
+        liveLabel = Label(str: "Live")
+        liveLabel.add(cssClass: "dim-label")
+        liveLabel.add(cssClass: "caption")
+        liveIndicatorBox.append(child: liveDot)
+        liveIndicatorBox.append(child: liveLabel)
+        filterBar.append(child: liveIndicatorBox)
 
         pauseButton = ToggleButton()
         pauseButton.label = "Pause"
@@ -125,11 +137,22 @@ final class EventStreamPane {
         scroll.vexpand = true
         scroll.set(child: eventListBox)
 
-        emptyStateLabel = Label(str: "Waiting for events\u{2026}")
-        emptyStateLabel.add(cssClass: "dim-label")
-        emptyStateLabel.halign = .center
-        emptyStateLabel.valign = .center
-        emptyStateLabel.canTarget = false
+        emptyStateBox = Box(orientation: .vertical, spacing: 6)
+        emptyStateBox.halign = .center
+        emptyStateBox.valign = .center
+        emptyStateBox.canTarget = false
+
+        emptyStateTitle = Label(str: "No events yet")
+        emptyStateTitle.add(cssClass: "heading")
+        emptyStateTitle.halign = .center
+        emptyStateBox.append(child: emptyStateTitle)
+
+        emptyStateSubtitle = Label(str: "Events from your sessions will appear here.")
+        emptyStateSubtitle.add(cssClass: "dim-label")
+        emptyStateSubtitle.halign = .center
+        emptyStateSubtitle.justify = .center
+        emptyStateSubtitle.wrap = true
+        emptyStateBox.append(child: emptyStateSubtitle)
 
         pendingPillButton = Button(label: "0 new events while paused")
         pendingPillButton.add(cssClass: "luma-event-pending-pill")
@@ -138,11 +161,15 @@ final class EventStreamPane {
         pendingPillButton.marginBottom = 12
         pendingPillButton.visible = false
 
+        headerSeparator = Separator(orientation: .horizontal)
+        headerSeparator.visible = false
+        widget.append(child: headerSeparator)
+
         listOverlay = Overlay()
         listOverlay.hexpand = true
         listOverlay.vexpand = true
         listOverlay.set(child: WidgetRef(scroll))
-        listOverlay.addOverlay(widget: emptyStateLabel)
+        listOverlay.addOverlay(widget: emptyStateBox)
         listOverlay.addOverlay(widget: pendingPillButton)
         listOverlay.visible = false
         widget.append(child: listOverlay)
@@ -252,8 +279,9 @@ final class EventStreamPane {
             height: isCollapsed ? collapsedHeightRequest : -1
         )
         collapsedBar.visible = isCollapsed
-        listOverlay.visible = !isCollapsed
         filterBar.visible = !isCollapsed
+        headerSeparator.visible = !isCollapsed
+        listOverlay.visible = !isCollapsed
     }
 
     private func handleEventsAppended(_ newEvents: ArraySlice<RuntimeEvent>) {
@@ -289,7 +317,7 @@ final class EventStreamPane {
         }
 
         if appended {
-            emptyStateLabel.visible = false
+            emptyStateBox.visible = false
             scrollToBottomSoon()
         }
         updateBar()
@@ -355,13 +383,29 @@ final class EventStreamPane {
             eventListBox.append(child: makeRow(for: event, previousTimestamp: prevTimestamp))
             prevTimestamp = event.timestamp
         }
-        emptyStateLabel.visible = filteredEvents.isEmpty
+        emptyStateBox.visible = filteredEvents.isEmpty
         if filteredEvents.isEmpty {
-            if displayedEvents.isEmpty {
-                emptyStateLabel.setText(str: "Waiting for events\u{2026}")
-            } else {
-                emptyStateLabel.setText(str: "No events match the current filters.")
-            }
+            applyEmptyState()
+        }
+    }
+
+    private func applyEmptyState() {
+        let trimmedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasSourceFilter = enabledSources != Set(EventSourceFilter.allCases)
+        let hasProcessFilter = selectedProcessName != nil
+
+        if displayedEvents.isEmpty {
+            emptyStateTitle.setText(str: "No events yet")
+            emptyStateSubtitle.setText(str: "Events from your sessions will appear here.")
+        } else if !trimmedSearch.isEmpty {
+            emptyStateTitle.setText(str: "No events match your search")
+            emptyStateSubtitle.setText(str: "Try a different search term.")
+        } else if hasSourceFilter || hasProcessFilter {
+            emptyStateTitle.setText(str: "No events match the current filters")
+            emptyStateSubtitle.setText(str: "Try adjusting the source or process filters.")
+        } else {
+            emptyStateTitle.setText(str: "No events yet")
+            emptyStateSubtitle.setText(str: "Events from your sessions will appear here.")
         }
     }
 
@@ -381,7 +425,14 @@ final class EventStreamPane {
     }
 
     private func updateLiveIndicator() {
-        liveIndicator.setText(str: isPaused ? "⏸ Paused" : "● Live")
+        liveLabel.setText(str: isPaused ? "Paused" : "Live")
+        if isPaused {
+            liveDot.remove(cssClass: "luma-live-dot")
+            liveDot.add(cssClass: "luma-paused-dot")
+        } else {
+            liveDot.remove(cssClass: "luma-paused-dot")
+            liveDot.add(cssClass: "luma-live-dot")
+        }
     }
 
     private func updatePendingPill() {
