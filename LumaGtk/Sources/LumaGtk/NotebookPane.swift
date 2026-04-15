@@ -593,6 +593,7 @@ final class NotebookPane {
 
         let steps = Box(orientation: .vertical, spacing: 8)
         steps.halign = .center
+        steps.marginStart = 64
 
         for (index, text) in [
             "Attach to a running app or process.",

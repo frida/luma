@@ -273,7 +273,7 @@ struct NotebookEntryRow: View {
     }
 }
 
-private let instructionsMaxWidth: CGFloat = 350
+private let instructionsMaxWidth: CGFloat = 440
 
 struct NotebookEmptyStateView: View {
     @ObservedObject var workspace: Workspace
@@ -303,12 +303,26 @@ struct NotebookEmptyStateView: View {
                         Spacer(minLength: 0)
 
                         VStack(alignment: .leading, spacing: 8) {
-                            walkthroughStep(number: 1, text: "Attach to a running app or process.")
-                            walkthroughStep(number: 2, text: "Add instruments to observe behavior.")
-                            walkthroughStep(number: 3, text: "Pin any event from the stream to save it here.")
+                            walkthroughStep(
+                                number: 1,
+                                text: Text("Use the ")
+                                    + Text(Image(systemName: "target"))
+                                    + Text(" button to attach to a running app or process.")
+                            )
+                            walkthroughStep(
+                                number: 2,
+                                text: Text("Then use the ")
+                                    + Text(Image(systemName: "waveform.path.ecg"))
+                                    + Text(" button to add instruments.")
+                            )
+                            walkthroughStep(
+                                number: 3,
+                                text: Text("Pin any event from the bottom event stream to save it here.")
+                            )
                         }
                         .font(.callout)
                         .frame(maxWidth: instructionsMaxWidth, alignment: .leading)
+                        .padding(.leading, 72)
 
                         Spacer(minLength: 0)
                     }
@@ -322,12 +336,13 @@ struct NotebookEmptyStateView: View {
     }
 
     @ViewBuilder
-    private func walkthroughStep(number: Int, text: String) -> some View {
+    private func walkthroughStep(number: Int, text: Text) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text("\(number).")
+                .monospacedDigit()
                 .foregroundStyle(.secondary)
                 .frame(width: 18, alignment: .trailing)
-            Text(text)
+            text
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
