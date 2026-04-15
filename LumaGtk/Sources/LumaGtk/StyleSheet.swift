@@ -169,6 +169,13 @@ enum StyleSheet {
         box-shadow: 0 2px 6px alpha(black, 0.3);
     }
 
+    .luma-pid-badge {
+        border-radius: 4px;
+        padding: 1px 6px;
+        background-color: alpha(@theme_fg_color, 0.12);
+        color: alpha(@theme_fg_color, 0.75);
+    }
+
     popover.menu button.luma-menu-destructive {
         color: @error_color;
         font-weight: normal;

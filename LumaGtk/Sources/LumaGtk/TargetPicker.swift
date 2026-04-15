@@ -39,6 +39,8 @@ final class TargetPicker {
 
     private let submodeAppToggle: ToggleButton
     private let submodeProgramToggle: ToggleButton
+    private let spawnDeviceTitle: Label
+    private let spawnDeviceSubtitle: Label
 
     private let appList: ListBox
     private let appSearchEntry: SearchEntry
@@ -141,6 +143,8 @@ final class TargetPicker {
         submodeAppToggle.label = "Application"
         submodeProgramToggle = ToggleButton()
         submodeProgramToggle.label = "Program"
+        spawnDeviceTitle = Label(str: "")
+        spawnDeviceSubtitle = Label(str: "")
 
         appList = ListBox()
         appSearchEntry = SearchEntry()
@@ -348,6 +352,7 @@ final class TargetPicker {
         }
         applySpawnSubmode()
         applyMode()
+        updateSpawnHeader(device: nil)
     }
 
     func present() {
@@ -493,20 +498,14 @@ final class TargetPicker {
         column.hexpand = true
         column.vexpand = true
 
-        let submodeRow = Box(orientation: .horizontal, spacing: 0)
-        submodeRow.halign = .center
-        submodeRow.marginTop = 8
-        submodeRow.marginBottom = 8
-        submodeRow.add(cssClass: "linked")
-        submodeRow.append(child: submodeAppToggle)
-        submodeRow.append(child: submodeProgramToggle)
-        column.append(child: submodeRow)
+        column.append(child: buildSpawnHeader())
+        column.append(child: Separator(orientation: .horizontal))
 
-        // App form
+        // App form (list at top + shared sections below)
         appStatus.halign = .start
         appStatus.marginStart = 12
         appStatus.marginEnd = 12
-        appStatus.marginTop = 4
+        appStatus.marginTop = 8
         appStatus.marginBottom = 4
         appStatus.add(cssClass: "dim-label")
         appStatus.add(cssClass: "caption")
@@ -515,6 +514,7 @@ final class TargetPicker {
         appSearchEntry.placeholderText = "Filter by name or identifier"
         appSearchEntry.marginStart = 12
         appSearchEntry.marginEnd = 12
+        appSearchEntry.marginTop = 8
         appSearchEntry.marginBottom = 6
         let appScroll = ScrolledWindow()
         appScroll.hexpand = true
@@ -542,19 +542,16 @@ final class TargetPicker {
         appFormBox.hexpand = true
         appFormBox.vexpand = true
 
-        // Program form
-        let programNote = Label(str: "Provide an absolute path on the target device.")
-        programNote.halign = .start
-        programNote.add(cssClass: "dim-label")
-        programNote.marginStart = 12
-        programNote.marginEnd = 12
-        programNote.marginTop = 4
-        programNote.marginBottom = 4
-        programPathRow.marginStart = 12
-        programPathRow.marginEnd = 12
-        programPathRow.marginBottom = 6
-        programFormBox.append(child: programNote)
-        programFormBox.append(child: programPathRow)
+        // Program form (Program section content: path + hint)
+        programFormBox.append(child: buildSection(
+            title: "Program",
+            content: { box in
+                self.programPathRow.marginStart = 12
+                self.programPathRow.marginEnd = 12
+                box.append(child: self.programPathRow)
+            },
+            hint: "Provide an absolute path on the target device, e.g. /usr/bin/foo."
+        ))
         programFormBox.hexpand = true
         programFormBox.vexpand = false
         programFormBox.valign = .start
@@ -565,37 +562,26 @@ final class TargetPicker {
         spawnFormStack.append(child: programFormBox)
         column.append(child: spawnFormStack)
 
-        // Spawn options + Advanced
-        let argsRow = Box(orientation: .horizontal, spacing: 8)
-        argsRow.marginStart = 12
-        argsRow.marginEnd = 12
-        argsRow.marginTop = 6
-        argsRow.marginBottom = 4
-        let argsLabel = Label(str: "Arguments")
-        argsLabel.halign = .start
-        argsLabel.setSizeRequest(width: 110, height: -1)
-        argsRow.append(child: argsLabel)
+        column.append(child: Separator(orientation: .horizontal))
+
+        // Shared bottom sections: Arguments, Environment, Working Directory, Execution
+        let bottomSections = Box(orientation: .vertical, spacing: 0)
+        bottomSections.marginStart = 12
+        bottomSections.marginEnd = 12
+        bottomSections.marginTop = 8
+        bottomSections.marginBottom = 12
+
         argumentsEntry.hexpand = true
-        argsRow.append(child: argumentsEntry)
-        column.append(child: argsRow)
+        argumentsEntry.placeholderText = "Arguments (optional)"
+        bottomSections.append(child: buildSection(
+            title: "Arguments",
+            content: { $0.append(child: self.argumentsEntry) },
+            hint: "Space-separated arguments. Shell-style quoting may be supported in a future version."
+        ))
 
-        let advBody = Box(orientation: .vertical, spacing: 6)
-        advBody.marginStart = 12
-        advBody.marginEnd = 12
-        advBody.marginTop = 6
-        advBody.marginBottom = 6
-
-        let envRow = Box(orientation: .horizontal, spacing: 8)
-        envRow.valign = .start
-        let envLabel = Label(str: "Environment")
-        envLabel.halign = .start
-        envLabel.valign = .start
-        envLabel.setSizeRequest(width: 110, height: -1)
-        envRow.append(child: envLabel)
-        let envColumn = Box(orientation: .vertical, spacing: 4)
-        envColumn.hexpand = true
+        let envBody = Box(orientation: .vertical, spacing: 4)
         envListBox.hexpand = true
-        envColumn.append(child: envListBox)
+        envBody.append(child: envListBox)
         let addEnvButton = Button(label: "Add Variable")
         addEnvButton.halign = .start
         addEnvButton.add(cssClass: "flat")
@@ -604,15 +590,28 @@ final class TargetPicker {
                 self?.appendEnvRow(key: "", value: "")
             }
         }
-        envColumn.append(child: addEnvButton)
-        envRow.append(child: envColumn)
-        advBody.append(child: envRow)
+        envBody.append(child: addEnvButton)
+        bottomSections.append(child: buildSection(
+            title: "Environment",
+            content: { $0.append(child: envBody) },
+            hint: "Environment variables are added on top of the default environment."
+        ))
         rebuildEnvRows()
 
+        workingDirEntry.hexpand = true
+        workingDirEntry.placeholderText = "Working directory (optional)"
+        bottomSections.append(child: buildSection(
+            title: "Working Directory",
+            content: { $0.append(child: self.workingDirEntry) },
+            hint: "Use an absolute path on the target device, e.g. /var/mobile."
+        ))
+
+        let executionBody = Box(orientation: .vertical, spacing: 8)
         let stdioRow = Box(orientation: .horizontal, spacing: 8)
         let stdioLabel = Label(str: "Stdio")
         stdioLabel.halign = .start
-        stdioLabel.setSizeRequest(width: 110, height: -1)
+        stdioLabel.valign = .center
+        stdioLabel.setSizeRequest(width: 80, height: -1)
         stdioRow.append(child: stdioLabel)
         let stdioToggles = Box(orientation: .horizontal, spacing: 0)
         stdioToggles.add(cssClass: "linked")
@@ -621,33 +620,96 @@ final class TargetPicker {
         stdioToggles.append(child: stdioInheritToggle)
         stdioToggles.append(child: stdioPipeToggle)
         stdioRow.append(child: stdioToggles)
-        advBody.append(child: stdioRow)
-
-        let cwdRow = Box(orientation: .horizontal, spacing: 8)
-        let cwdLabel = Label(str: "Working dir")
-        cwdLabel.halign = .start
-        cwdLabel.setSizeRequest(width: 110, height: -1)
-        cwdRow.append(child: cwdLabel)
-        workingDirEntry.hexpand = true
-        cwdRow.append(child: workingDirEntry)
-        advBody.append(child: cwdRow)
+        executionBody.append(child: stdioRow)
 
         let resumeRow = Box(orientation: .horizontal, spacing: 8)
-        let resumeLabel = Label(str: "Auto resume")
-        resumeLabel.halign = .start
-        resumeLabel.setSizeRequest(width: 110, height: -1)
-        resumeRow.append(child: resumeLabel)
         resumeRow.append(child: autoResumeSwitch)
-        advBody.append(child: resumeRow)
+        let resumeLabel = Label(str: "Automatically resume after instruments load")
+        resumeLabel.halign = .start
+        resumeRow.append(child: resumeLabel)
+        executionBody.append(child: resumeRow)
 
-        let advExpander = Expander(label: "Advanced")
-        advExpander.set(child: advBody)
-        advExpander.marginStart = 12
-        advExpander.marginEnd = 12
-        advExpander.marginBottom = 8
-        column.append(child: advExpander)
+        bottomSections.append(child: buildSection(
+            title: "Execution",
+            content: { $0.append(child: executionBody) },
+            hint: "When turned off, the process will remain paused after spawn until you resume it from Luma."
+        ))
+
+        column.append(child: bottomSections)
 
         return column
+    }
+
+    private func buildSpawnHeader() -> Box {
+        let outer = Box(orientation: .vertical, spacing: 8)
+        outer.marginStart = 12
+        outer.marginEnd = 12
+        outer.marginTop = 12
+        outer.marginBottom = 8
+
+        let titleRow = Box(orientation: .horizontal, spacing: 8)
+
+        let titleStack = Box(orientation: .vertical, spacing: 2)
+        titleStack.hexpand = true
+        titleStack.valign = .center
+        spawnDeviceTitle.halign = .start
+        spawnDeviceTitle.add(cssClass: "heading")
+        spawnDeviceTitle.ellipsize = .end
+        titleStack.append(child: spawnDeviceTitle)
+        spawnDeviceSubtitle.halign = .start
+        spawnDeviceSubtitle.add(cssClass: "caption")
+        spawnDeviceSubtitle.add(cssClass: "dim-label")
+        spawnDeviceSubtitle.ellipsize = .end
+        titleStack.append(child: spawnDeviceSubtitle)
+        titleRow.append(child: titleStack)
+
+        let submodeToggles = Box(orientation: .horizontal, spacing: 0)
+        submodeToggles.add(cssClass: "linked")
+        submodeToggles.valign = .center
+        submodeToggles.append(child: submodeAppToggle)
+        submodeToggles.append(child: submodeProgramToggle)
+        titleRow.append(child: submodeToggles)
+
+        outer.append(child: titleRow)
+
+        let description = Label(str: "Luma will spawn the target and attach a new session automatically.")
+        description.halign = .start
+        description.add(cssClass: "caption")
+        description.add(cssClass: "dim-label")
+        description.wrap = true
+        outer.append(child: description)
+
+        return outer
+    }
+
+    private func buildSection(
+        title: String,
+        content: (Box) -> Void,
+        hint: String? = nil
+    ) -> Box {
+        let section = Box(orientation: .vertical, spacing: 4)
+        section.marginTop = 6
+        section.marginBottom = 10
+
+        let heading = Label(str: title)
+        heading.halign = .start
+        heading.add(cssClass: "heading")
+        section.append(child: heading)
+
+        let body = Box(orientation: .vertical, spacing: 4)
+        content(body)
+        section.append(child: body)
+
+        if let hint {
+            let hintLabel = Label(str: hint)
+            hintLabel.halign = .start
+            hintLabel.add(cssClass: "caption")
+            hintLabel.add(cssClass: "dim-label")
+            hintLabel.wrap = true
+            section.append(child: hintLabel)
+        }
+
+        return section
     }
 
     // MARK: - Mode
@@ -766,6 +828,7 @@ final class TargetPicker {
         guard let row else {
             selectedDeviceID = nil
             programBrowseButton.visible = false
+            updateSpawnHeader(device: nil)
             return
         }
         let index = Int(row.index)
@@ -773,11 +836,22 @@ final class TargetPicker {
         let device = devices[index]
         selectedDeviceID = device.id
         programBrowseButton.visible = (device.id == "local")
+        updateSpawnHeader(device: device)
         loadProcesses(for: device)
         if mode == .spawn {
             loadApplications(for: device)
         }
         refreshSpawnButtonSensitivity()
+    }
+
+    private func updateSpawnHeader(device: Frida.Device?) {
+        if let device {
+            spawnDeviceTitle.label = "Spawn on \(device.name)"
+            spawnDeviceSubtitle.label = device.id
+        } else {
+            spawnDeviceTitle.label = "Spawn on \u{2026}"
+            spawnDeviceSubtitle.label = "Select a device on the left."
+        }
     }
 
     // MARK: - Processes
@@ -963,15 +1037,26 @@ final class TargetPicker {
                 hbox.append(child: img)
             }
             let textBox = Box(orientation: .vertical, spacing: 0)
+            textBox.hexpand = true
+            textBox.valign = .center
             let nameLabel = Label(str: app.name)
             nameLabel.halign = .start
+            nameLabel.ellipsize = .end
             let idLabel = Label(str: app.identifier)
             idLabel.halign = .start
+            idLabel.ellipsize = .end
             idLabel.add(cssClass: "dim-label")
             idLabel.add(cssClass: "caption")
             textBox.append(child: nameLabel)
             textBox.append(child: idLabel)
             hbox.append(child: textBox)
+            if let pid = app.pid {
+                let badge = Label(str: "Running (PID \(pid))")
+                badge.add(cssClass: "caption")
+                badge.add(cssClass: "luma-pid-badge")
+                badge.valign = .center
+                hbox.append(child: badge)
+            }
             row.set(child: hbox)
             appList.append(child: row)
         }
