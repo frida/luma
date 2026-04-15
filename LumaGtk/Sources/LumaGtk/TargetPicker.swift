@@ -27,6 +27,7 @@ final class TargetPicker {
     private let processContent: Box
     private let processError: Box
     private let processErrorMessage: Label
+    private let processEmpty: Box
     private let processSearchEntry: SearchEntry
     private let attachButton: Button
     private let spawnButton: Button
@@ -52,6 +53,7 @@ final class TargetPicker {
     private let appContent: Box
     private let appError: Box
     private let appErrorMessage: Label
+    private let appEmpty: Box
     private let programPathEntry: Entry
     private let programBrowseButton: Button
     private let programPathRow: Box
@@ -129,6 +131,7 @@ final class TargetPicker {
         processContent = Box(orientation: .vertical, spacing: 0)
         processError = Box(orientation: .vertical, spacing: 8)
         processErrorMessage = Label(str: "")
+        processEmpty = Box(orientation: .vertical, spacing: 8)
         processSearchEntry = SearchEntry()
         attachButton = Button(label: "Attach")
         spawnButton = Button(label: "Spawn & Attach")
@@ -153,6 +156,7 @@ final class TargetPicker {
         appContent = Box(orientation: .vertical, spacing: 0)
         appError = Box(orientation: .vertical, spacing: 8)
         appErrorMessage = Label(str: "")
+        appEmpty = Box(orientation: .vertical, spacing: 8)
         programPathEntry = Entry()
         programPathEntry.placeholderText = "Absolute program path, e.g. /usr/bin/foo"
         programPathEntry.hexpand = true
@@ -479,6 +483,12 @@ final class TargetPicker {
         processLoading.visible = false
 
         configureErrorPane(processError, message: processErrorMessage, title: "Failed to Enumerate Processes")
+        configureEmptyPane(
+            processEmpty,
+            icon: "view-list-symbolic",
+            title: "No Processes",
+            message: "No processes were returned by this device."
+        )
 
         let column = Box(orientation: .vertical, spacing: 0)
         column.hexpand = true
@@ -486,7 +496,35 @@ final class TargetPicker {
         column.append(child: processContent)
         column.append(child: processLoading)
         column.append(child: processError)
+        column.append(child: processEmpty)
         return column
+    }
+
+    private func configureEmptyPane(_ pane: Box, icon iconName: String, title: String, message: String) {
+        pane.halign = .center
+        pane.valign = .center
+        pane.hexpand = true
+        pane.vexpand = true
+        pane.visible = false
+
+        let icon = Image(iconName: iconName)
+        icon.set(pixelSize: 36)
+        icon.add(cssClass: "dim-label")
+        pane.append(child: icon)
+
+        let headline = Label(str: title)
+        headline.add(cssClass: "title-4")
+        pane.append(child: headline)
+
+        let body = Label(str: message)
+        body.halign = .center
+        body.justify = .center
+        body.wrap = true
+        body.add(cssClass: "caption")
+        body.add(cssClass: "dim-label")
+        body.marginStart = 24
+        body.marginEnd = 24
+        pane.append(child: body)
     }
 
     private func configureErrorPane(_ pane: Box, message: Label, title: String) {
@@ -560,10 +598,17 @@ final class TargetPicker {
         appLoading.visible = false
 
         configureErrorPane(appError, message: appErrorMessage, title: "Failed to Enumerate Applications")
+        configureEmptyPane(
+            appEmpty,
+            icon: "view-grid-symbolic",
+            title: "No Applications",
+            message: "This device did not report any launchable applications. On some platforms application spawning is not supported; use Program instead."
+        )
 
         appFormBox.append(child: appContent)
         appFormBox.append(child: appLoading)
         appFormBox.append(child: appError)
+        appFormBox.append(child: appEmpty)
         appFormBox.append(child: buildSpawnSubmodeSections(for: appSubmodeForm, isAppMode: true))
         appFormBox.hexpand = true
         appFormBox.vexpand = true
@@ -910,7 +955,7 @@ final class TargetPicker {
             do {
                 let result = try await device.enumerateProcesses(scope: .full)
                 guard !Task.isCancelled, self.selectedDeviceID == capturedID else { return }
-                self.setProcessState(.content, deviceName: device.name)
+                self.setProcessState(result.isEmpty ? .empty : .content, deviceName: device.name)
                 self.renderProcesses(result, for: device)
             } catch {
                 guard !Task.isCancelled, self.selectedDeviceID == capturedID else { return }
@@ -924,6 +969,7 @@ final class TargetPicker {
         case content
         case loading
         case error
+        case empty
     }
 
     private func setProcessState(_ state: ListPaneState, deviceName: String) {
@@ -933,6 +979,7 @@ final class TargetPicker {
         processContent.visible = (state == .content)
         processLoading.visible = (state == .loading)
         processError.visible = (state == .error)
+        processEmpty.visible = (state == .empty)
     }
 
     private func renderProcesses(_ snapshot: [ProcessDetails], for device: Frida.Device) {
@@ -1021,7 +1068,7 @@ final class TargetPicker {
             do {
                 let result = try await device.enumerateApplications(scope: .full)
                 guard !Task.isCancelled, self.selectedDeviceID == capturedID else { return }
-                self.setAppState(.content, deviceName: device.name)
+                self.setAppState(result.isEmpty ? .empty : .content, deviceName: device.name)
                 self.renderApplications(result, for: device)
             } catch {
                 guard !Task.isCancelled, self.selectedDeviceID == capturedID else { return }
@@ -1038,6 +1085,7 @@ final class TargetPicker {
         appContent.visible = (state == .content)
         appLoading.visible = (state == .loading)
         appError.visible = (state == .error)
+        appEmpty.visible = (state == .empty)
     }
 
     private func renderApplications(_ snapshot: [ApplicationDetails], for device: Frida.Device) {
