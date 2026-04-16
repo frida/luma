@@ -1,5 +1,5 @@
 {
-  "originHash" : "3993fcf226948d7413aa9ee312f235fc51053228be618c7253bff70c6c2ab635",
+  "originHash" : "4f6ef4c88a71cd573e8fa7bc482efa7ad544a6d6f4b167a29e806fe541d19372",
   "pins" : [
     {
       "identity" : "frida-swift",
@@ -103,10 +103,10 @@
     {
       "identity" : "swiftglib",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/rhx/SwiftGLib.git",
+      "location" : "https://github.com/frida/SwiftGLib.git",
       "state" : {
         "branch" : "development",
-        "revision" : "e1640c1a7f84dea6e26a46aa6b9db5a2dc8bb17f"
+        "revision" : "a7d9ba9fca627fe7818a6731559fcc2967e99e60"
       }
     },
     {
