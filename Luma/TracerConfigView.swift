@@ -11,8 +11,10 @@ struct TracerConfigView: View {
     @Environment(\.instrumentSession) private var instrumentSession
 
     @State private var searchQuery = ""
+    @State private var searchScope: TracerTargetScope = .function
     @State private var isResolving = false
     @State private var resolveResults: [ResolvedApi] = []
+    @State private var searchError: String?
     @State private var searchTask: Task<Void, Never>?
 
     @State private var selectedHookID: UUID?
@@ -97,6 +99,18 @@ struct TracerConfigView: View {
                 searchTask?.cancel()
                 searchQuery = ""
                 resolveResults = []
+                searchError = nil
+            }
+        }
+        .onChange(of: searchScope) {
+            searchTask?.cancel()
+            resolveResults = []
+            searchError = nil
+            guard !searchQuery.isEmpty, canResolve else { return }
+            searchTask = Task {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                if Task.isCancelled { return }
+                await performSearch()
             }
         }
         .onChange(of: layoutMode) { _, newValue in
@@ -113,6 +127,7 @@ struct TracerConfigView: View {
         .onChange(of: searchQuery) { _, newValue in
             searchTask?.cancel()
             resolveResults = []
+            searchError = nil
 
             guard !newValue.isEmpty, canResolve else { return }
 
@@ -494,8 +509,10 @@ struct TracerConfigView: View {
     private var searchSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                TextField("Search APIs (e.g. open, objc_msgSend)", text: $searchQuery)
+                TextField(searchScope.placeholder, text: $searchQuery)
                     .textFieldStyle(.roundedBorder)
+
+                scopeMenu
 
                 Button {
                     Task { await performSearch() }
@@ -513,6 +530,10 @@ struct TracerConfigView: View {
 
             if isResolving {
                 Text("Searching…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if let error = searchError {
+                Text(error)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -567,7 +588,7 @@ struct TracerConfigView: View {
                     }
                 }
                 .frame(minHeight: 120, maxHeight: 200)
-            } else if !searchQuery.isEmpty && !isResolving && canResolve {
+            } else if !searchQuery.isEmpty && !isResolving && canResolve && searchError == nil {
                 Text("No results. Try another pattern.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -581,7 +602,27 @@ struct TracerConfigView: View {
             searchTask?.cancel()
             searchQuery = ""
             resolveResults = []
+            searchError = nil
         }
+    }
+
+    private var scopeMenu: some View {
+        Menu {
+            ForEach(TracerTargetScope.allCases, id: \.self) { scope in
+                Button(scope.label) {
+                    searchScope = scope
+                }
+            }
+        } label: {
+            HStack(spacing: 2) {
+                Text(searchScope.label)
+                Image(systemName: "chevron.down")
+                    .font(.caption2)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Target scope")
     }
 
     private func handleUserSelectionChange(_ newValue: UUID?) {
@@ -741,7 +782,7 @@ struct TracerConfigView: View {
 
         do {
             let raw = try await node.script.exports.resolveTargets([
-                "scope": "function",
+                "scope": searchScope.rawValue,
                 "query": searchQuery,
             ])
 
@@ -750,8 +791,10 @@ struct TracerConfigView: View {
             }
 
             resolveResults = try arr.map(parseResolvedTarget)
+            searchError = nil
         } catch {
             resolveResults = []
+            searchError = error.localizedDescription
         }
     }
 

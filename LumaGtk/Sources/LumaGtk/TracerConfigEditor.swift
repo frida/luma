@@ -574,6 +574,25 @@ private let compactDropdownChanged: @convention(c) (
     }
 }
 
+private let scopeDropdownChanged: @convention(c) (
+    UnsafeMutableRawPointer,
+    UnsafeMutableRawPointer?,
+    UnsafeMutableRawPointer?
+) -> Void = { widget, _, userData in
+    guard let userData else { return }
+    let rawSelf = UInt(bitPattern: userData)
+    let rawWidget = UInt(bitPattern: widget)
+    MainActor.assumeIsolated {
+        let search = Unmanaged<TracerHookSearch>.fromOpaque(
+            UnsafeMutableRawPointer(bitPattern: rawSelf)!
+        ).takeUnretainedValue()
+        let dropdownPtr = UnsafeMutablePointer<GtkDropDown>(
+            OpaquePointer(bitPattern: rawWidget)!
+        )
+        search.handleScopeChanged(rawIndex: Int(gtk_drop_down_get_selected(dropdownPtr)))
+    }
+}
+
 private let widthSensorResized: @convention(c) (
     UnsafeMutableRawPointer,
     Int32,
@@ -616,12 +635,14 @@ private final class TracerHookSearch {
     private let onPick: (TracerConfigEditor.ResolvedApi) -> Void
 
     private let entry: Entry
+    private let scopeDropdown: DropDown
     private let spinner: Spinner
     private let status: Label
     private let addAllButton: Button
     private let listBox: ListBox
     private let scroll: ScrolledWindow
 
+    private var scope: TracerTargetScope = .function
     private var results: [TracerConfigEditor.ResolvedApi] = []
     private var debounceTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
@@ -679,9 +700,14 @@ private final class TracerHookSearch {
         queryRow.hexpand = true
         entry = Entry()
         entry.hexpand = true
-        entry.placeholderText = "Search APIs (e.g. open, objc_msgSend)\u{2026}"
+        entry.placeholderText = TracerTargetScope.function.placeholder
         entry.sensitive = attached
         queryRow.append(child: entry)
+
+        scopeDropdown = Self.makeScopeDropdown()
+        scopeDropdown.valign = .center
+        scopeDropdown.tooltipText = "Target scope"
+        queryRow.append(child: scopeDropdown)
 
         spinner = Spinner()
         spinner.spinning = false
@@ -727,6 +753,16 @@ private final class TracerHookSearch {
             MainActor.assumeIsolated { anchor.runSearchNow() }
         }
 
+        let selfContext = Unmanaged.passUnretained(self).toOpaque()
+        g_signal_connect_data(
+            scopeDropdown.drop_down_ptr,
+            "notify::selected",
+            unsafeBitCast(scopeDropdownChanged, to: GCallback.self),
+            selfContext,
+            nil,
+            GConnectFlags(rawValue: 0)
+        )
+
         addAllButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
@@ -738,6 +774,37 @@ private final class TracerHookSearch {
 
         if attached {
             _ = entry.grabFocus()
+        }
+    }
+
+    private static func makeScopeDropdown() -> DropDown {
+        let labels = TracerTargetScope.allCases.map { $0.label }
+        let cStrings = labels.map { strdup($0) }
+        defer { cStrings.forEach { free($0) } }
+        var ptrs = cStrings.map { UnsafePointer($0) as UnsafePointer<CChar>? }
+        ptrs.append(nil)
+        let widgetPtr = ptrs.withUnsafeBufferPointer { buf in
+            gtk_drop_down_new_from_strings(buf.baseAddress)
+        }!
+        return DropDown(raw: UnsafeMutableRawPointer(widgetPtr))
+    }
+
+    fileprivate func handleScopeChanged(rawIndex: Int) {
+        let cases = TracerTargetScope.allCases
+        guard rawIndex >= 0, rawIndex < cases.count else { return }
+        let newScope = cases[rawIndex]
+        guard newScope != scope else { return }
+        scope = newScope
+        entry.placeholderText = newScope.placeholder
+        debounceTask?.cancel()
+        searchTask?.cancel()
+        results = []
+        rebuildResults()
+        let query = entry.text ?? ""
+        if query.isEmpty {
+            status.label = "Type a query to search."
+        } else {
+            scheduleSearch()
         }
     }
 
@@ -781,7 +848,7 @@ private final class TracerHookSearch {
             }
             do {
                 let raw = try await node.script.exports.resolveTargets([
-                    "scope": "function",
+                    "scope": anchor.scope.rawValue,
                     "query": query,
                 ])
                 if Task.isCancelled { return }
