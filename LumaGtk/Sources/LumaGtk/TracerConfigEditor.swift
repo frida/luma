@@ -578,7 +578,7 @@ private func classifySearchError(_ error: any Swift.Error) -> (message: String, 
     } else {
         message = error.localizedDescription
     }
-    let hint = message.contains("Install 'frida-java-bridge'") ? "frida-java-bridge" : nil
+    let hint = message.contains("'frida-java-bridge'") ? "frida-java-bridge" : nil
     return (message, hint)
 }
 

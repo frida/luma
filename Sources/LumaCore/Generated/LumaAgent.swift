@@ -6,7 +6,7 @@ import Foundation
 enum LumaAgent {
     static let coreSource: String = #"""
     📦
-    25244 /Agent/core/luma.js
+    25193 /Agent/core/luma.js
     ✄
     var __defProp = Object.defineProperty;
     var __export = (target, all) => {
@@ -713,14 +713,14 @@ enum LumaAgent {
         const mod = await import("frida-java-bridge");
         bridge = mod.default ?? mod;
       } catch (e) {
-        throw new Error("Java runtime is not available. Install 'frida-java-bridge' via the Packages panel.");
+        throw new Error("The 'frida-java-bridge' package is required for Java tracing.");
       }
       cachedJavaBridge = bridge;
       return requireAvailable(bridge);
     }
     function requireAvailable(bridge) {
       if (!bridge.available) {
-        throw new Error("frida-java-bridge is loaded but the target process has no Java runtime.");
+        throw new Error("No Java runtime detected in this process.");
       }
       return bridge;
     }
@@ -1395,14 +1395,14 @@ enum LumaAgent {
         const mod = await import("frida-java-bridge");
         bridge = mod.default ?? mod;
       } catch (e) {
-        throw new Error("Java runtime is not available. Install 'frida-java-bridge' via the Packages panel.");
+        throw new Error("The 'frida-java-bridge' package is required for Java tracing.");
       }
       cachedJavaBridge = bridge;
       return requireAvailable(bridge);
     }
     function requireAvailable(bridge) {
       if (!bridge.available) {
-        throw new Error("frida-java-bridge is loaded but the target process has no Java runtime.");
+        throw new Error("No Java runtime detected in this process.");
       }
       return bridge;
     }

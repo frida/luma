@@ -536,18 +536,7 @@ struct TracerConfigView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else if let error = searchError {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if case .installPackage(let pkg) = searchErrorHint {
-                        Button(installingPackage == pkg ? "Installing…" : "Install") {
-                            installMissingPackage(pkg)
-                        }
-                        .platformLinkButtonStyle()
-                        .disabled(installingPackage == pkg)
-                    }
-                }
+                errorBanner(message: error)
             }
 
             if !resolveResults.isEmpty {
@@ -616,6 +605,35 @@ struct TracerConfigView: View {
             resolveResults = []
             searchError = nil
         }
+    }
+
+    @ViewBuilder
+    private func errorBanner(message: String) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: "shippingbox")
+                .foregroundStyle(.secondary)
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if case .installPackage(let pkg) = searchErrorHint {
+                Button {
+                    installMissingPackage(pkg)
+                } label: {
+                    if installingPackage == pkg {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text("Install")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(installingPackage == pkg)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 
     private var scopeMenu: some View {
@@ -814,7 +832,7 @@ struct TracerConfigView: View {
         } else {
             message = error.localizedDescription
         }
-        let hint: SearchErrorHint? = message.contains("Install 'frida-java-bridge'") ? .installPackage("frida-java-bridge") : nil
+        let hint: SearchErrorHint? = message.contains("'frida-java-bridge'") ? .installPackage("frida-java-bridge") : nil
         return (message, hint)
     }
 

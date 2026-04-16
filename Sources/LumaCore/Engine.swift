@@ -365,7 +365,11 @@ public final class Engine {
             try await node.script.exports.loadPackages(JSValue([entry]))
             node.loadedPackageNames.insert(entry["name"] as! String)
         } catch {
-            print("[Engine] failed to load package \(package.name): \(String(describing: error)))")
+            let diagnostics = compilerWorkspace.lastCompilerDiagnostics.joined(separator: "\n")
+            print("[Engine] failed to load package \(package.name): \(String(describing: error))")
+            if !diagnostics.isEmpty {
+                print("[Engine] compiler diagnostics:\n\(diagnostics)")
+            }
         }
     }
 

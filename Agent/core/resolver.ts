@@ -207,7 +207,7 @@ export async function loadJavaBridge(): Promise<typeof _Java> {
         const mod = await import("frida-java-bridge");
         bridge = (mod as any).default ?? mod;
     } catch (e) {
-        throw new Error("Java runtime is not available. Install 'frida-java-bridge' via the Packages panel.");
+        throw new Error("The 'frida-java-bridge' package is required for Java tracing.");
     }
 
     cachedJavaBridge = bridge;
@@ -216,7 +216,7 @@ export async function loadJavaBridge(): Promise<typeof _Java> {
 
 function requireAvailable(bridge: typeof _Java): typeof _Java {
     if (!bridge.available) {
-        throw new Error("frida-java-bridge is loaded but the target process has no Java runtime.");
+        throw new Error("No Java runtime detected in this process.");
     }
     return bridge;
 }
