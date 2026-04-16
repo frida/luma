@@ -956,15 +956,15 @@ private final class TracerHookSearch {
         pendingInstallHint = hint
 
         if let hint {
-            installBannerLabel.setLabel(str: message)
+            installBannerLabel.label = message
             if installTask == nil {
-                installButton.set(label: "Install \(hint.name)")
+                installButton.label = "Install \(hint.name)"
                 installButton.sensitive = true
             }
             installBanner.visible = true
             statusRow.visible = false
         } else {
-            status.setLabel(str: message)
+            status.label = message
             statusRow.visible = true
             installBanner.visible = false
         }
@@ -976,7 +976,7 @@ private final class TracerHookSearch {
             installTask == nil
         else { return }
 
-        installButton.set(label: "Installing \(hint.name)\u{2026}")
+        installButton.label = "Installing \(hint.name)\u{2026}"
         installButton.sensitive = false
         installTask = Task { @MainActor [anchor = self] in
             defer {
@@ -988,7 +988,7 @@ private final class TracerHookSearch {
                 anchor.runSearchNow()
             } catch {
                 let classified = classifySearchError(error)
-                anchor.installButton.set(label: "Install \(hint.name)")
+                anchor.installButton.label = "Install \(hint.name)"
                 anchor.installButton.sensitive = true
                 anchor.setSearchStatus(classified.message, hint: classified.hint)
             }
