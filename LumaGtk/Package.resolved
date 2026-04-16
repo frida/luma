@@ -1,5 +1,5 @@
 {
-  "originHash" : "39174910f671a860237247903eaba1ed1387b4440e44986a120c5e32df6bd00c",
+  "originHash" : "5931d75823e7bf3a25a8be5fcc1b8daf62da56cb6f65b85c451b8dad469e5346",
   "pins" : [
     {
       "identity" : "frida-swift",
@@ -106,7 +106,7 @@
       "location" : "https://github.com/frida/SwiftGLib.git",
       "state" : {
         "branch" : "development",
-        "revision" : "5ef61e84a3f44239803c0aa01ad0fdeb977b5a7b"
+        "revision" : "109ea857766fb5f49f57c4576b8de67f165a372c"
       }
     },
     {
