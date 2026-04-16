@@ -529,19 +529,10 @@ jobs:
           echo "$VCPKG_PREFIX/tools" >> $GITHUB_PATH
           echo "PKG_CONFIG_PATH=$VCPKG_PREFIX/lib/pkgconfig" >> $GITHUB_ENV
           echo "GIR_EXTRA_SEARCH_PATH=$VCPKG_PREFIX/share/gir-1.0" >> $GITHUB_ENV
-          # SwiftLibXML's module map links "xml2" -> lld-link expects xml2.lib,
-          # but vcpkg ships libxml2.lib. Provide an alias.
-          if [ -f "$VCPKG_PREFIX/lib/libxml2.lib" ] && [ ! -f "$VCPKG_PREFIX/lib/xml2.lib" ]; then
-            cp "$VCPKG_PREFIX/lib/libxml2.lib" "$VCPKG_PREFIX/lib/xml2.lib"
-          fi
           # Package.swift calls "pkg-config"; vcpkg ships pkgconf.exe. Alias it.
           if [ -f "$VCPKG_PREFIX/tools/pkgconf/pkgconf.exe" ] && [ ! -f "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe" ]; then
             cp "$VCPKG_PREFIX/tools/pkgconf/pkgconf.exe" "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe"
           fi
-          echo "=== vcpkg libs ==="
-          ls "$VCPKG_PREFIX/lib"/*xml* 2>&1 || true
-          echo "=== pkgconf tools ==="
-          ls "$VCPKG_PREFIX/tools/pkgconf" 2>&1 || true
 
       - name: Restore frida-core cache
         id: frida-cache
@@ -615,34 +606,5 @@ jobs:
           echo "$RUNNER_TEMP\\frida-prefix\\bin" >> $GITHUB_PATH
           echo "$RUNNER_TEMP\\r2-prefix\\bin" >> $GITHUB_PATH
 
-      - name: Diagnose pkg-config at build-time
-        shell: bash
-        run: |
-          echo "=== where pkg-config / pkgconf ==="
-          which pkg-config || true
-          which pkgconf || true
-          echo "=== PKG_CONFIG_PATH ==="
-          echo "$PKG_CONFIG_PATH"
-          echo "=== pc files visible ==="
-          for dir in $(echo "$PKG_CONFIG_PATH" | tr ';:' '\n'); do
-            [ -d "$dir" ] && ls "$dir" 2>/dev/null | head -30
-          done
-          echo "=== gtk4 --cflags ==="
-          pkg-config --cflags gtk4 2>&1 || echo "FAILED $?"
-          echo "=== gtk4 --libs ==="
-          pkg-config --libs gtk4 2>&1 || echo "FAILED $?"
-          echo "=== libxml-2.0 --cflags/libs ==="
-          pkg-config --cflags libxml-2.0 2>&1 || echo "FAILED $?"
-          pkg-config --libs libxml-2.0 2>&1 || echo "FAILED $?"
-          echo "=== gtk4 via cmd.exe /c (mirror Package.swift call) ==="
-          cmd.exe //c "pkg-config --cflags gtk4" 2>&1 || echo "FAILED $?"
-
       - name: Build LumaGtk
-        run: cd LumaGtk && swift build -c release -v 2>&1 | tee build.log
-        shell: bash
-        continue-on-error: true
-
-      - name: Show build log tail on failure
-        if: always()
-        shell: bash
-        run: tail -n 200 LumaGtk/build.log 2>/dev/null || true
+        run: cd LumaGtk && swift build -c release
