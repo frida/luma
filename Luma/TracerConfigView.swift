@@ -198,8 +198,7 @@ struct TracerConfigView: View {
     }
 
     private func existingHook(for api: ResolvedApi) -> TracerConfig.Hook? {
-        let target = AddressAnchor.moduleExport(name: api.moduleName, export: api.symbolName)
-        return config.hooks.first(where: { $0.addressAnchor == target })
+        return config.hooks.first(where: { $0.addressAnchor == api.anchor })
     }
 
     private func handleSelectionChangeFromOutside(_ newSelection: SidebarItemID?) {
@@ -533,11 +532,13 @@ struct TracerConfigView: View {
                 List(resolveResults) { api in
                     HStack(alignment: .center) {
                         VStack(alignment: .leading) {
-                            Text(api.symbolName)
+                            Text(api.displayName)
                                 .font(.callout)
-                            Text(api.moduleName)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                            if let detail = api.detail {
+                                Text(detail)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         Spacer()
                         if let hook = existingHook(for: api) {
@@ -680,11 +681,11 @@ struct TracerConfigView: View {
             return existing
         }
 
-        let stub = defaultTracerNativeStub.replacingOccurrences(of: "CALL(args[0]", with: "\(api.symbolName)(args[0]")
+        let stub = defaultTracerNativeStub.replacingOccurrences(of: "CALL(args[0]", with: "\(api.displayName)(args[0]")
 
         let hook = TracerConfig.Hook(
-            displayName: api.symbolName,
-            addressAnchor: .moduleExport(name: api.moduleName, export: api.symbolName),
+            displayName: api.displayName,
+            addressAnchor: api.anchor,
             isEnabled: true,
             code: stub
         )
@@ -725,9 +726,10 @@ struct TracerConfigView: View {
 
     struct ResolvedApi: Identifiable, Hashable {
         let id = UUID()
-        let moduleName: String
-        let symbolName: String
+        let displayName: String
+        let detail: String?
         let address: UInt64
+        let anchor: AddressAnchor
     }
 
     @MainActor
@@ -738,27 +740,36 @@ struct TracerConfigView: View {
         defer { isResolving = false }
 
         do {
-            let raw = try await node.script.exports.resolveApis(searchQuery)
+            let raw = try await node.script.exports.resolveTargets([
+                "scope": "function",
+                "query": searchQuery,
+            ])
 
             guard let arr = raw as? [[String: Any]] else {
-                throw LumaCoreError.invalidArgument("resolveApis: expected array of objects")
+                throw LumaCoreError.invalidArgument("resolveTargets: expected array of objects")
             }
 
-            resolveResults = try arr.map { obj in
-                let moduleName = try expectString(obj["moduleName"] as Any, "moduleName")
-                let symbolName = try expectString(obj["symbolName"] as Any, "symbolName")
-                let addressStr = try expectString(obj["address"] as Any, "address")
-                let address = try parseAgentHexAddress(addressStr)
-                return ResolvedApi(moduleName: moduleName, symbolName: symbolName, address: address)
-            }
+            resolveResults = try arr.map(parseResolvedTarget)
         } catch {
             resolveResults = []
         }
     }
 
+    private func parseResolvedTarget(_ obj: [String: Any]) throws -> ResolvedApi {
+        let displayName = try expectString(obj["displayName"] as Any, "displayName")
+        let detail = obj["detail"] as? String
+        let addressStr = try expectString(obj["address"] as Any, "address")
+        let address = try parseAgentHexAddress(addressStr)
+        guard let anchorObj = obj["anchor"] as? [String: Any] else {
+            throw LumaCoreError.invalidArgument("resolveTargets: missing 'anchor'")
+        }
+        let anchor = try AddressAnchor.fromJSON(anchorObj)
+        return ResolvedApi(displayName: displayName, detail: detail, address: address, anchor: anchor)
+    }
+
     private func expectString(_ value: Any, _ field: String) throws -> String {
         guard let s = value as? String else {
-            throw LumaCoreError.invalidArgument("resolveApis: '\(field)' is not a String")
+            throw LumaCoreError.invalidArgument("resolveTargets: '\(field)' is not a String")
         }
         return s
     }
@@ -851,8 +862,13 @@ private struct HooksListView: View {
         case .absolute:
             return anchor.displayString
         case .moduleOffset(let name, _),
-            .moduleExport(let name, _):
+            .moduleExport(let name, _),
+            .swiftFunc(let name, _):
             return name
+        case .objcMethod:
+            return nil
+        case .debugSymbol:
+            return nil
         }
     }
 }

@@ -1,4 +1,5 @@
 import type { Instrument, InstrumentContext } from '../core/instrument.js';
+import { resolveAnchor, type AnchorJSON } from '../core/resolver.js';
 import { startCapture, stopCapture } from './itrace-capture.js';
 
 interface TracerConfig {
@@ -9,7 +10,7 @@ interface TracerConfig {
 interface TracerHookConfig {
     id: HookID;
     displayName: string;
-    addressAnchor: AddressAnchor;
+    addressAnchor: AnchorJSON;
     isEnabled: boolean;
     code: string;
     isPinned?: boolean;
@@ -17,11 +18,6 @@ interface TracerHookConfig {
 }
 
 type HookID = string;
-
-type AddressAnchor =
-    | { type: "absolute"; address: string }
-    | { type: "moduleOffset"; name: string; offset: number }
-    | { type: "moduleExport"; name: string; export: string };
 
 type Handler = FunctionHandlers | InstructionHandler;
 
@@ -255,33 +251,7 @@ class Tracer {
 }
 
 function resolveTarget(hook: TracerHookConfig): NativePointer | null {
-    const anchor = hook.addressAnchor;
-
-    switch (anchor.type) {
-        case "absolute": {
-            return ptr(anchor.address);
-        }
-
-        case "moduleOffset": {
-            const m = Process.findModuleByName(anchor.name);
-            if (m === null)
-                return null;
-            return m.base.add(anchor.offset);
-        }
-
-        case "moduleExport": {
-            const m = Process.findModuleByName(anchor.name);
-            if (m === null)
-                return null;
-            const e = m.findExportByName(anchor.export);
-            if (e === null)
-                return null;
-            return e;
-        }
-
-        default:
-            return null;
-    }
+    return resolveAnchor(hook.addressAnchor);
 }
 
 function noop() {

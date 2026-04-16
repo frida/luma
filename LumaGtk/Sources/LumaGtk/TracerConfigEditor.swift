@@ -496,9 +496,10 @@ final class TracerConfigEditor {
     }
 
     fileprivate struct ResolvedApi {
-        let moduleName: String
-        let symbolName: String
+        let displayName: String
+        let detail: String?
         let address: UInt64
+        let anchor: AddressAnchor
     }
 
     private func presentAddPopover(anchor: WidgetRef) {
@@ -534,11 +535,11 @@ final class TracerConfigEditor {
         let hadMultipleHooks = config.hooks.count > 1
         let stub = defaultTracerNativeStub.replacingOccurrences(
             of: "CALL(args[0]",
-            with: "\(api.symbolName)(args[0]"
+            with: "\(api.displayName)(args[0]"
         )
         let hook = TracerConfig.Hook(
-            displayName: api.symbolName,
-            addressAnchor: .moduleExport(name: api.moduleName, export: api.symbolName),
+            displayName: api.displayName,
+            addressAnchor: api.anchor,
             isEnabled: true,
             code: stub
         )
@@ -779,27 +780,33 @@ private final class TracerHookSearch {
                 anchor.spinner.stop()
             }
             do {
-                let raw = try await node.script.exports.resolveApis(query)
+                let raw = try await node.script.exports.resolveTargets([
+                    "scope": "function",
+                    "query": query,
+                ])
                 if Task.isCancelled { return }
                 guard let arr = raw as? [[String: Any]] else {
                     anchor.results = []
                     anchor.rebuildResults()
-                    anchor.status.label = "resolveApis: unexpected response"
+                    anchor.status.label = "resolveTargets: unexpected response"
                     return
                 }
                 var decoded: [TracerConfigEditor.ResolvedApi] = []
                 decoded.reserveCapacity(arr.count)
                 for obj in arr {
-                    guard let moduleName = obj["moduleName"] as? String,
-                        let symbolName = obj["symbolName"] as? String,
+                    guard let displayName = obj["displayName"] as? String,
                         let addressStr = obj["address"] as? String,
-                        let address = try? parseAgentHexAddress(addressStr)
+                        let address = try? parseAgentHexAddress(addressStr),
+                        let anchorObj = obj["anchor"] as? [String: Any],
+                        let parsedAnchor = try? AddressAnchor.fromJSON(anchorObj)
                     else { continue }
+                    let detail = obj["detail"] as? String
                     decoded.append(
                         TracerConfigEditor.ResolvedApi(
-                            moduleName: moduleName,
-                            symbolName: symbolName,
-                            address: address
+                            displayName: displayName,
+                            detail: detail,
+                            address: address,
+                            anchor: parsedAnchor
                         )
                     )
                 }
@@ -838,11 +845,17 @@ private final class TracerHookSearch {
             let textColumn = Box(orientation: .vertical, spacing: 2)
             textColumn.hexpand = true
 
-            let title = Label(str: api.symbolName)
+            let title = Label(str: api.displayName)
             title.halign = .start
             textColumn.append(child: title)
 
-            let subtitle = Label(str: "\(api.moduleName)  •  " + String(format: "0x%llx", api.address))
+            let subtitleText: String
+            if let detail = api.detail {
+                subtitleText = "\(detail)  •  " + String(format: "0x%llx", api.address)
+            } else {
+                subtitleText = String(format: "0x%llx", api.address)
+            }
+            let subtitle = Label(str: subtitleText)
             subtitle.halign = .start
             subtitle.add(cssClass: "caption")
             subtitle.add(cssClass: "dim-label")
@@ -1090,8 +1103,13 @@ private final class HooksList {
         case .absolute:
             return hook.addressAnchor.displayString
         case .moduleOffset(let name, _),
-            .moduleExport(let name, _):
+            .moduleExport(let name, _),
+            .swiftFunc(let name, _):
             return name
+        case .objcMethod:
+            return nil
+        case .debugSymbol:
+            return nil
         }
     }
 }

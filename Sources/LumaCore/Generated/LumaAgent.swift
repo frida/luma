@@ -6,7 +6,7 @@ import Foundation
 enum LumaAgent {
     static let coreSource: String = #"""
     📦
-    18358 /Agent/core/luma.js
+    23652 /Agent/core/luma.js
     ✄
     var __defProp = Object.defineProperty;
     var __export = (target, all) => {
@@ -570,24 +570,186 @@ enum LumaAgent {
     // Agent/core/resolver.ts
     var resolver_exports = {};
     __export(resolver_exports, {
-      lookupModuleExportAddress: () => lookupModuleExportAddress,
-      resolveApis: () => resolveApis
+      lookupAnchorAddress: () => lookupAnchorAddress,
+      resolveAnchor: () => resolveAnchor,
+      resolveTargets: () => resolveTargets
     });
-    function lookupModuleExportAddress(moduleName, exportName) {
-      return Process.getModuleByName(moduleName).getExportByName(exportName);
-    }
-    async function resolveApis(pattern) {
-      const results = [];
-      const resolver = new ApiResolver("module");
-      for (const match of resolver.enumerateMatches(`exports:*!${pattern}`)) {
-        const tokens = match.name.split("!");
-        results.push({
-          moduleName: tokens[0],
-          symbolName: tokens[1],
-          address: match.address.toString()
-        });
+    async function resolveTargets(request) {
+      const { scope, query } = request;
+      switch (scope) {
+        case "function":
+          return resolveFunctionScope(query);
+        case "module":
+          return resolveModuleScope(query);
+        case "imports":
+          return resolveImportsScope(query);
+        case "relative-function":
+          return resolveRelativeFunctionScope(query);
+        case "absolute-instruction":
+          return resolveAbsoluteInstructionScope(query);
+        case "objc-method":
+          return resolveObjcMethodScope(query);
+        case "swift-func":
+          return resolveSwiftFuncScope(query);
+        case "debug-symbol":
+          return resolveDebugSymbolScope(query);
       }
-      return results;
+    }
+    async function lookupAnchorAddress(anchor) {
+      return resolveAnchor(anchor)?.toString() ?? null;
+    }
+    function resolveAnchor(anchor) {
+      switch (anchor.type) {
+        case "absolute":
+          return ptr(anchor.address);
+        case "moduleOffset": {
+          const module = Process.findModuleByName(anchor.name);
+          return module?.base.add(anchor.offset) ?? null;
+        }
+        case "moduleExport": {
+          const module = Process.findModuleByName(anchor.name);
+          return module?.findExportByName(anchor.export) ?? null;
+        }
+        case "objcMethod":
+          return firstMatchAddress(getObjcResolver().enumerateMatches(anchor.selector));
+        case "swiftFunc":
+          return firstMatchAddress(getSwiftResolver().enumerateMatches(`functions:${anchor.module}!${anchor.function}`));
+        case "debugSymbol": {
+          const matches = DebugSymbol.findFunctionsMatching(anchor.name);
+          return matches.length > 0 ? matches[0] : null;
+        }
+      }
+    }
+    function resolveFunctionScope(query) {
+      const pattern = query.includes("!") ? query : `*!${query}`;
+      return getModuleResolver().enumerateMatches(`exports:${pattern}`).map(moduleExportTargetFromMatch);
+    }
+    function resolveModuleScope(query) {
+      return getModuleResolver().enumerateMatches(`exports:${query}!*`).map(moduleExportTargetFromMatch);
+    }
+    function resolveImportsScope(query) {
+      const pattern = query.length > 0 ? query : Process.enumerateModules()[0].path;
+      return getModuleResolver().enumerateMatches(`imports:${pattern}!*`).map(moduleExportTargetFromMatch);
+    }
+    function resolveRelativeFunctionScope(query) {
+      const { module, offset } = parseRelativeFunctionPattern(query);
+      const base2 = Process.findModuleByName(module);
+      if (base2 === null) {
+        return [];
+      }
+      const address = base2.base.add(offset);
+      return [{
+        scope: "relative-function",
+        displayName: `${module}+0x${offset.toString(16)}`,
+        detail: null,
+        address: address.toString(),
+        anchor: { type: "moduleOffset", name: module, offset }
+      }];
+    }
+    function resolveAbsoluteInstructionScope(query) {
+      const address = ptr(query);
+      return [{
+        scope: "absolute-instruction",
+        displayName: address.toString(),
+        detail: null,
+        address: address.toString(),
+        anchor: { type: "absolute", address: address.toString() }
+      }];
+    }
+    function resolveObjcMethodScope(query) {
+      return getObjcResolver().enumerateMatches(query).map((match) => ({
+        scope: "objc-method",
+        displayName: match.name,
+        detail: null,
+        address: match.address.toString(),
+        anchor: { type: "objcMethod", selector: match.name }
+      }));
+    }
+    function resolveSwiftFuncScope(query) {
+      return getSwiftResolver().enumerateMatches(`functions:${query}`).map((match) => {
+        const [moduleName, funcName] = splitScopedName(match.name);
+        return {
+          scope: "swift-func",
+          displayName: funcName,
+          detail: moduleName,
+          address: match.address.toString(),
+          anchor: { type: "swiftFunc", module: moduleName, function: funcName }
+        };
+      });
+    }
+    function resolveDebugSymbolScope(query) {
+      return DebugSymbol.findFunctionsMatching(query).map((address) => {
+        const symbol = DebugSymbol.fromAddress(address);
+        const name = symbol.name ?? address.toString();
+        return {
+          scope: "debug-symbol",
+          displayName: name,
+          detail: symbol.moduleName ?? null,
+          address: address.toString(),
+          anchor: { type: "debugSymbol", name }
+        };
+      });
+    }
+    function moduleExportTargetFromMatch(match) {
+      const [moduleName, symbolName] = splitScopedName(match.name);
+      return {
+        scope: "function",
+        displayName: symbolName,
+        detail: moduleName,
+        address: match.address.toString(),
+        anchor: { type: "moduleExport", name: moduleName, export: symbolName }
+      };
+    }
+    function firstMatchAddress(matches) {
+      return matches.length > 0 ? matches[0].address : null;
+    }
+    function splitScopedName(name) {
+      const bang = name.indexOf("!");
+      if (bang < 0) {
+        return ["", name];
+      }
+      return [name.substring(0, bang), name.substring(bang + 1)];
+    }
+    function parseRelativeFunctionPattern(pattern) {
+      const bang = pattern.indexOf("!");
+      if (bang < 0) {
+        throw new Error("Expected MODULE!OFFSET");
+      }
+      const module = pattern.substring(0, bang);
+      const offset = parseInt(pattern.substring(bang + 1), 16);
+      if (isNaN(offset)) {
+        throw new Error("Invalid offset (expected hex)");
+      }
+      return { module, offset };
+    }
+    var cachedModuleResolver = null;
+    var cachedObjcResolver = null;
+    var cachedSwiftResolver = null;
+    function getModuleResolver() {
+      if (cachedModuleResolver === null) {
+        cachedModuleResolver = new ApiResolver("module");
+      }
+      return cachedModuleResolver;
+    }
+    function getObjcResolver() {
+      if (cachedObjcResolver === null) {
+        try {
+          cachedObjcResolver = new ApiResolver("objc");
+        } catch (e) {
+          throw new Error("Objective-C runtime is not available in this process");
+        }
+      }
+      return cachedObjcResolver;
+    }
+    function getSwiftResolver() {
+      if (cachedSwiftResolver === null) {
+        try {
+          cachedSwiftResolver = new ApiResolver("swift");
+        } catch (e) {
+          throw new Error("Swift runtime is not available in this process");
+        }
+      }
+      return cachedSwiftResolver;
     }
     
     // Agent/core/symbolicate.ts
@@ -1146,6 +1308,55 @@ enum LumaAgent {
     """#
 
     static let tracerSource: String = #"""
+    // Agent/core/resolver.ts
+    function resolveAnchor(anchor) {
+      switch (anchor.type) {
+        case "absolute":
+          return ptr(anchor.address);
+        case "moduleOffset": {
+          const module = Process.findModuleByName(anchor.name);
+          return module?.base.add(anchor.offset) ?? null;
+        }
+        case "moduleExport": {
+          const module = Process.findModuleByName(anchor.name);
+          return module?.findExportByName(anchor.export) ?? null;
+        }
+        case "objcMethod":
+          return firstMatchAddress(getObjcResolver().enumerateMatches(anchor.selector));
+        case "swiftFunc":
+          return firstMatchAddress(getSwiftResolver().enumerateMatches(`functions:${anchor.module}!${anchor.function}`));
+        case "debugSymbol": {
+          const matches = DebugSymbol.findFunctionsMatching(anchor.name);
+          return matches.length > 0 ? matches[0] : null;
+        }
+      }
+    }
+    function firstMatchAddress(matches) {
+      return matches.length > 0 ? matches[0].address : null;
+    }
+    var cachedObjcResolver = null;
+    var cachedSwiftResolver = null;
+    function getObjcResolver() {
+      if (cachedObjcResolver === null) {
+        try {
+          cachedObjcResolver = new ApiResolver("objc");
+        } catch (e) {
+          throw new Error("Objective-C runtime is not available in this process");
+        }
+      }
+      return cachedObjcResolver;
+    }
+    function getSwiftResolver() {
+      if (cachedSwiftResolver === null) {
+        try {
+          cachedSwiftResolver = new ApiResolver("swift");
+        } catch (e) {
+          throw new Error("Swift runtime is not available in this process");
+        }
+      }
+      return cachedSwiftResolver;
+    }
+    
     // node_modules/frida-itrace/dist/backend.js
     var code = `#line 2 "backend.ts"
     #include <string.h>
@@ -2918,29 +3129,7 @@ enum LumaAgent {
       }
     };
     function resolveTarget(hook) {
-      const anchor = hook.addressAnchor;
-      switch (anchor.type) {
-        case "absolute": {
-          return ptr(anchor.address);
-        }
-        case "moduleOffset": {
-          const m = Process.findModuleByName(anchor.name);
-          if (m === null)
-            return null;
-          return m.base.add(anchor.offset);
-        }
-        case "moduleExport": {
-          const m = Process.findModuleByName(anchor.name);
-          if (m === null)
-            return null;
-          const e = m.findExportByName(anchor.export);
-          if (e === null)
-            return null;
-          return e;
-        }
-        default:
-          return null;
-      }
+      return resolveAnchor(hook.addressAnchor);
     }
     function noop() {
     }

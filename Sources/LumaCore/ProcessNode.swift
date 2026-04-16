@@ -562,18 +562,14 @@ public final class ProcessNode: Identifiable {
             }
             return m.base &+ offset
 
-        case .moduleExport(let name, let export):
+        case .moduleExport(let name, _):
             guard modules.first(where: { $0.name == name }) != nil else {
                 throw LumaCoreError.invalidArgument("Module '\(name)' not loaded in the current process")
             }
+            return try await lookupAnchor(anchor)
 
-            let raw = try await script.exports.lookupModuleExportAddress(name, export)
-
-            guard let rawString = raw as? String else {
-                throw LumaCoreError.invalidArgument("Invalid return type from lookupModuleExportAddress")
-            }
-
-            return try parseAgentHexAddress(rawString)
+        case .objcMethod, .swiftFunc, .debugSymbol:
+            return try await lookupAnchor(anchor)
         }
     }
 
@@ -595,9 +591,17 @@ public final class ProcessNode: Identifiable {
             }
             return m.base &+ offset
 
-        case .moduleExport:
-            throw LumaCoreError.invalidOperation("moduleExport requires async resolution")
+        case .moduleExport, .objcMethod, .swiftFunc, .debugSymbol:
+            throw LumaCoreError.invalidOperation("\(anchor.displayString) requires async resolution")
         }
+    }
+
+    private func lookupAnchor(_ anchor: AddressAnchor) async throws -> UInt64 {
+        let raw = try await script.exports.lookupAnchorAddress(anchor.toJSON())
+        guard let rawString = raw as? String else {
+            throw LumaCoreError.invalidArgument("Could not resolve \(anchor.displayString)")
+        }
+        return try parseAgentHexAddress(rawString)
     }
 
     public func symbolicate(addresses: [UInt64]) async throws -> [SymbolicateResult] {
