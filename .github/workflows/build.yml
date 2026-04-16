@@ -7,7 +7,7 @@ on:
 
 env:
   FRIDA_CORE_REF: "main"
-  RADARE2_REF: "65ee12a4f0d67f24a1b968111c536de3bb5bb4e3"
+  RADARE2_REF: "d542f75fc1e865881ae1c40baf9cce28cd96ca6a"
   SWIFT_VERSION: "6.2"
 
 jobs:
@@ -581,8 +581,6 @@ jobs:
           git clone https://github.com/radareorg/radare2.git $env:RUNNER_TEMP\radare2
           Push-Location $env:RUNNER_TEMP\radare2
           git checkout $env:RADARE2_REF
-          git -c user.name=ci -c user.email=ci@local fetch https://github.com/oleavr/radare2.git luma-pkgconfig-dedupe
-          git -c user.name=ci -c user.email=ci@local cherry-pick FETCH_HEAD
           $env:CFLAGS = "/D_Static_assert=static_assert /std:c11"
           meson setup build "--prefix=$env:RUNNER_TEMP\r2-prefix" --default-library=shared -Dcli=disabled
           meson compile -C build
