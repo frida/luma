@@ -3,6 +3,7 @@ import Foundation
 import Frida
 import Gtk
 import LumaCore
+import Pango
 
 @MainActor
 final class TargetPicker {
@@ -217,7 +218,7 @@ final class TargetPicker {
         modeHint.valign = .center
         modeHint.hexpand = true
         modeHint.xalign = 1
-        modeHint.ellipsize = .end
+        modeHint.ellipsize = EllipsizeMode.end
 
         let modeHeader = Box(orientation: .horizontal, spacing: 12)
         modeHeader.marginStart = 12
@@ -1027,7 +1028,7 @@ final class TargetPicker {
             textBox.valign = .center
             let nameLabel = Label(str: proc.name)
             nameLabel.halign = .start
-            nameLabel.ellipsize = .end
+            nameLabel.ellipsize = EllipsizeMode.end
             let pidLabel = Label(str: "PID \(proc.pid)")
             pidLabel.halign = .start
             pidLabel.add(cssClass: "dim-label")
@@ -1130,10 +1131,10 @@ final class TargetPicker {
             textBox.valign = .center
             let nameLabel = Label(str: app.name)
             nameLabel.halign = .start
-            nameLabel.ellipsize = .end
+            nameLabel.ellipsize = EllipsizeMode.end
             let idLabel = Label(str: app.identifier)
             idLabel.halign = .start
-            idLabel.ellipsize = .end
+            idLabel.ellipsize = EllipsizeMode.end
             idLabel.add(cssClass: "dim-label")
             idLabel.add(cssClass: "caption")
             textBox.append(child: nameLabel)
