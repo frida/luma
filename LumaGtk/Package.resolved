@@ -1,5 +1,5 @@
 {
-  "originHash" : "e8fed4d547697461b410fa028aee49186571c946205ffa4f51066e5779d95749",
+  "originHash" : "3993fcf226948d7413aa9ee312f235fc51053228be618c7253bff70c6c2ab635",
   "pins" : [
     {
       "identity" : "frida-swift",
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/frida/gir2swift.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "8c7ae1486e7013fac5c587a8d48afdb450278c80"
+        "branch" : "development",
+        "revision" : "8db74ed810bd768d6d667742fe9b4a72711739f7"
       }
     },
     {
@@ -60,8 +60,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/rhx/SwiftAtk.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "acaaa7fabfa94242ca896ad4fb957ed4c6dd18e3"
+        "branch" : "development",
+        "revision" : "ec621792303d1cdd54c9d0ac7e0e4d822b4019e4"
       }
     },
     {
@@ -69,8 +69,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/rhx/SwiftCairo.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "87cd2aa586853fbeed192a42455fc43e9289b605"
+        "branch" : "development",
+        "revision" : "5e9481bd1fdaa0ead5691d60679cede7fc0916ca"
       }
     },
     {
@@ -78,8 +78,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/rhx/SwiftGdk.git",
       "state" : {
-        "branch" : "gtk4",
-        "revision" : "54474e94af355bf88283d3cc342daa15cc32b67b"
+        "branch" : "gtk4-development",
+        "revision" : "b59607e1bed54eeb624a089ca10ea7d6796762ff"
       }
     },
     {
@@ -87,8 +87,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/rhx/SwiftGdkPixbuf.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "a0fee7dbaeca5f954b7bc04ae7996ed62c10c8c1"
+        "branch" : "development",
+        "revision" : "c3bf8636dfdc9432fc1a5196d2feeb3d286a62b4"
       }
     },
     {
@@ -96,8 +96,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/rhx/SwiftGIO.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "9a2ee26f08383d489988a837006992323b005bec"
+        "branch" : "development",
+        "revision" : "8b89ff37e53f641d915c85bd19aba0e8e1e9e623"
       }
     },
     {
@@ -105,8 +105,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/rhx/SwiftGLib.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "10e8466b10c73f098c5336d2c7a7483c4b2a13c3"
+        "branch" : "development",
+        "revision" : "e1640c1a7f84dea6e26a46aa6b9db5a2dc8bb17f"
       }
     },
     {
@@ -114,8 +114,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/rhx/SwiftGModule.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "eecf947483b81361a1ff242b606d581358963a15"
+        "branch" : "development",
+        "revision" : "bd571cb9d2dd63f26169482155ac2a10cb6bc2c5"
       }
     },
     {
@@ -123,8 +123,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/rhx/SwiftGObject.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "a959fc96fe441048c71972a6708ef9fea22ccbb6"
+        "branch" : "development",
+        "revision" : "f8d4954086cb0fe5dd56fd8c97a055eba8ccbc8c"
       }
     },
     {
@@ -132,8 +132,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/rhx/SwiftGraphene.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "b39a5e33ab00d5c565b618d3b12e83b3900c79c2"
+        "branch" : "development",
+        "revision" : "c55687e0eb1cd722f9bd915e0aaf7ed0ce09d3ec"
       }
     },
     {
@@ -141,17 +141,17 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/rhx/SwiftGsk.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "bd3417c4255167a40e8a0015ab7f81defd940afb"
+        "branch" : "development",
+        "revision" : "3d778a7028ca850f9a3407c4d08c1ef74f527f6e"
       }
     },
     {
       "identity" : "swiftgtk",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/rhx/SwiftGtk.git",
+      "location" : "https://github.com/frida/SwiftGtk.git",
       "state" : {
-        "branch" : "gtk4",
-        "revision" : "b228c64c1cedeac9f584e5b1f298f4ec34fc05d3"
+        "branch" : "gtk4-development",
+        "revision" : "b3cfb5d0f17886bdc9d4dc12d65ce30e3e3733ce"
       }
     },
     {
@@ -159,8 +159,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/rhx/SwiftHarfBuzz.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "788b7a619aa1a494e4c712c11b138dd216d2db43"
+        "branch" : "development",
+        "revision" : "52bb03287b08d9b8aa4314671a08930e30dd1a11"
       }
     },
     {
@@ -169,7 +169,7 @@
       "location" : "https://github.com/frida/SwiftLibXML.git",
       "state" : {
         "branch" : "main",
-        "revision" : "52e42d0e9205211aa9c992661c2f321f9b7aaca9"
+        "revision" : "bf42585f43b95e2e9a2d7b0957c1697e2f54b332"
       }
     },
     {
@@ -177,8 +177,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/rhx/SwiftPango.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "1670dc5109759fe53beaaa1aac2a77e131735500"
+        "branch" : "development",
+        "revision" : "72d2e9220b29ecc032b57031a0c9d58179b0a775"
       }
     },
     {
@@ -186,8 +186,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/rhx/SwiftPangoCairo.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "0318374a18fc8ac183ad906d83df5b19c9e03f48"
+        "branch" : "development",
+        "revision" : "4eafd01f85504784a91a585a4d4f50fce4857da3"
       }
     },
     {
@@ -196,7 +196,7 @@
       "location" : "https://github.com/radareorg/SwiftyR2",
       "state" : {
         "branch" : "main",
-        "revision" : "93691158ba4e5a49e5530b4d377d6d671eedf6d7"
+        "revision" : "4e0b36f631b9420cabbb3b0bc9e1551ed47a5d1e"
       }
     },
     {
