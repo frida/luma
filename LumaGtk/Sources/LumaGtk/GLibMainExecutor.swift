@@ -26,13 +26,17 @@ import Glibc
 // port name, not a unix fd, so feeding it to g_io_channel_unix_new would
 // just produce a Bad-file-descriptor warning.
 
+#if os(Linux) || os(Windows)
+
+@_silgen_name("_dispatch_main_queue_callback_4CF")
+private func dispatchMainQueueCallback(_ msg: UnsafeMutableRawPointer?)
+
+#endif
+
 #if os(Linux)
 
 @_silgen_name("_dispatch_get_main_queue_handle_4CF")
 private func dispatchGetMainQueueHandle() -> Int32
-
-@_silgen_name("_dispatch_main_queue_callback_4CF")
-private func dispatchMainQueueCallback(_ msg: UnsafeMutableRawPointer?)
 
 private let drainCallback: GIOFunc = { channel, _, _ in
     var value: UInt64 = 0
@@ -43,6 +47,50 @@ private let drainCallback: GIOFunc = { channel, _, _ in
     dispatchMainQueueCallback(nil)
     return 1  // G_SOURCE_CONTINUE
 }
+
+#endif
+
+#if os(Windows)
+
+// On Windows, libdispatch's main-queue handle is a win32 HANDLE that becomes
+// signaled when work is pending. GLib supports waiting on win32 HANDLEs by
+// storing them (cast to gint) in a GPollFD; g_poll feeds them straight into
+// WaitForMultipleObjects. Wrap it in a custom GSource so the drain is
+// event-driven rather than polled.
+
+@_silgen_name("_dispatch_get_main_queue_handle_4CF")
+private func dispatchGetMainQueueHandle() -> UnsafeMutableRawPointer
+
+private nonisolated(unsafe) var windowsDispatchPollFd = GPollFD()
+
+private let windowsDispatchSourcePrepare: @convention(c) (
+    UnsafeMutablePointer<GSource>?, UnsafeMutablePointer<Int32>?
+) -> gboolean = { _, timeout in
+    timeout?.pointee = -1
+    return 0
+}
+
+private let windowsDispatchSourceCheck: @convention(c) (
+    UnsafeMutablePointer<GSource>?
+) -> gboolean = { _ in
+    (windowsDispatchPollFd.revents & UInt16(G_IO_IN.rawValue)) != 0 ? 1 : 0
+}
+
+private let windowsDispatchSourceDispatch: @convention(c) (
+    UnsafeMutablePointer<GSource>?, GSourceFunc?, gpointer?
+) -> gboolean = { _, _, _ in
+    dispatchMainQueueCallback(nil)
+    return 1  // G_SOURCE_CONTINUE
+}
+
+private nonisolated(unsafe) var windowsDispatchSourceFuncs = GSourceFuncs(
+    prepare: windowsDispatchSourcePrepare,
+    check: windowsDispatchSourceCheck,
+    dispatch: windowsDispatchSourceDispatch,
+    finalize: nil,
+    closure_callback: nil,
+    closure_marshal: nil
+)
 
 #endif
 
@@ -67,6 +115,22 @@ enum GLibMainExecutor {
             nil
         )
         g_io_channel_unref(channel)
+        #elseif os(Windows)
+        _ = DispatchQueue.main
+
+        let handle = dispatchGetMainQueueHandle()
+        windowsDispatchPollFd.fd = Int64(Int(bitPattern: handle))
+        windowsDispatchPollFd.events = UInt16(G_IO_IN.rawValue)
+        windowsDispatchPollFd.revents = 0
+
+        let source = g_source_new(
+            &windowsDispatchSourceFuncs,
+            UInt32(MemoryLayout<GSource>.size)
+        )
+        g_source_set_priority(source, Int32(G_PRIORITY_LOW))
+        g_source_add_poll(source, &windowsDispatchPollFd)
+        g_source_attach(source, nil)
+        g_source_unref(source)
         #endif
     }
 }
