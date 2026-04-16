@@ -340,8 +340,9 @@ final class MainWindow {
         engine.onSessionListChanged = { [weak self] change in self?.handleSessionListChange(change) }
         engine.onREPLCellAdded = { [weak self] cell in self?.currentREPLPane?.appendCell(cell) }
         engine.onNotebookChanged = { [weak self] change in self?.notebookPane?.handleNotebookChange(change) }
+        engine.onInstalledPackagesChanged = { [weak self] packages in self?.renderPackages(packages) }
         engine.populateSessionList()
-        renderPackages((try? engine.store.fetchPackagesState())?.packages ?? [])
+        renderPackages(engine.installedPackages)
         eventStreamPane.attach(engine: engine)
         eventStreamPane.onNavigateToHook = { [weak self] sessionID, instrumentID, hookID in
             self?.navigateToHook(sessionID: sessionID, instrumentID: instrumentID, hookID: hookID)

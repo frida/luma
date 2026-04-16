@@ -9,8 +9,7 @@ struct SidebarView: View {
     @Binding var selection: SidebarItemID?
 
     var sessions: [LumaCore.ProcessSession] { workspace.engine.sessions }
-
-    @State private var packages: [LumaCore.InstalledPackage] = []
+    var packages: [LumaCore.InstalledPackage] { workspace.engine.installedPackages }
 
     var body: some View {
         List(selection: $selection) {

@@ -36,6 +36,7 @@ public final class Engine {
     public private(set) var instrumentsBySession: [UUID: [InstrumentInstance]] = [:]
     public private(set) var insightsBySession: [UUID: [AddressInsight]] = [:]
     public private(set) var capturesBySession: [UUID: [ITraceCaptureRecord]] = [:]
+    public private(set) var installedPackages: [InstalledPackage] = []
     public private(set) var editorFSSnapshot: EditorFSSnapshot?
     @ObservationIgnored public var editorFSSnapshotDirty: Bool = true
     @ObservationIgnored private var editorFSSnapshotVersion: Int = 0
@@ -44,11 +45,13 @@ public final class Engine {
     @ObservationIgnored public var onSessionListChanged: (@MainActor (SessionListChange) -> Void)?
     @ObservationIgnored public var onREPLCellAdded: (@MainActor (REPLCell) -> Void)?
     @ObservationIgnored public var onNotebookChanged: (@MainActor (NotebookChange) -> Void)?
+    @ObservationIgnored public var onInstalledPackagesChanged: (@MainActor ([InstalledPackage]) -> Void)?
     @ObservationIgnored private var sessionsObservation: StoreObservation?
     @ObservationIgnored private var notebookObservation: StoreObservation?
     @ObservationIgnored private var instrumentsObservation: StoreObservation?
     @ObservationIgnored private var insightsObservation: StoreObservation?
     @ObservationIgnored private var capturesObservation: StoreObservation?
+    @ObservationIgnored private var packagesObservation: StoreObservation?
 
     public init(store: ProjectStore, dataDirectory: URL, tokenStore: TokenStore? = nil) {
         self.store = store
@@ -221,6 +224,12 @@ public final class Engine {
         }
         capturesObservation = store.observeAllITraceCaptures { [weak self] grouped in
             Task { @MainActor in self?.capturesBySession = grouped }
+        }
+        packagesObservation = store.observeInstalledPackages { [weak self] packages in
+            Task { @MainActor in
+                self?.installedPackages = packages
+                self?.onInstalledPackagesChanged?(packages)
+            }
         }
 
         await loadRemoteDevices()

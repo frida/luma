@@ -99,6 +99,20 @@ public final class ProjectStore: Sendable {
         )
     }
 
+    public func observeInstalledPackages(
+        onChange: @escaping @Sendable ([InstalledPackage]) -> Void
+    ) -> StoreObservation {
+        StoreObservation(
+            ValueObservation
+                .tracking { db in
+                    try InstalledPackage
+                        .order(Column("added_at").asc)
+                        .fetchAll(db)
+                }
+                .start(in: db, scheduling: .async(onQueue: .main), onError: { _ in }, onChange: onChange)
+        )
+    }
+
     // MARK: - Process Sessions
 
     public func fetchSessions() throws -> [ProcessSession] {
