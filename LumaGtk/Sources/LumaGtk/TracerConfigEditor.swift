@@ -571,14 +571,21 @@ private let compactDropdownChanged: @convention(c) (
     }
 }
 
-private func classifySearchError(_ error: any Swift.Error) -> (message: String, hint: String?) {
+private struct SearchInstallHint: Equatable {
+    let name: String
+    let globalAlias: String?
+}
+
+private func classifySearchError(_ error: any Swift.Error) -> (message: String, hint: SearchInstallHint?) {
     let message: String
     if case let Frida.Error.rpcError(rpcMessage, _) = error {
         message = rpcMessage
     } else {
         message = error.localizedDescription
     }
-    let hint = message.contains("'frida-java-bridge'") ? "frida-java-bridge" : nil
+    let hint = message.contains("'frida-java-bridge'")
+        ? SearchInstallHint(name: "frida-java-bridge", globalAlias: "Java")
+        : nil
     return (message, hint)
 }
 
@@ -655,7 +662,7 @@ private final class TracerHookSearch {
     private var results: [TracerConfigEditor.ResolvedApi] = []
     private var debounceTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
-    private var pendingInstallPackage: String?
+    private var pendingInstallHint: SearchInstallHint?
     private var installTask: Task<Void, Never>?
 
     init(
@@ -919,10 +926,10 @@ private final class TracerHookSearch {
         }
     }
 
-    private func setInstallHint(_ packageName: String?) {
-        pendingInstallPackage = packageName
-        if let packageName, installTask == nil {
-            installButton.label = "Install \(packageName)"
+    private func setInstallHint(_ hint: SearchInstallHint?) {
+        pendingInstallHint = hint
+        if let hint, installTask == nil {
+            installButton.label = "Install \(hint.name)"
             installButton.visible = true
             installButton.sensitive = true
         } else if installTask == nil {
@@ -931,7 +938,7 @@ private final class TracerHookSearch {
     }
 
     private func installPendingPackage() {
-        guard let packageName = pendingInstallPackage,
+        guard let hint = pendingInstallHint,
             let engine,
             installTask == nil
         else { return }
@@ -943,7 +950,7 @@ private final class TracerHookSearch {
                 anchor.installTask = nil
             }
             do {
-                _ = try await engine.installPackage(name: packageName)
+                _ = try await engine.installPackage(name: hint.name, globalAlias: hint.globalAlias)
                 anchor.setInstallHint(nil)
                 anchor.runSearchNow()
             } catch {

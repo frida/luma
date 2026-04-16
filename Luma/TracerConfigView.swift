@@ -616,9 +616,10 @@ struct TracerConfigView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if case .installPackage(let pkg) = searchErrorHint {
+            if let hint = searchErrorHint {
+                let pkg = hint.packageName
                 Button {
-                    installMissingPackage(pkg)
+                    installMissingPackage(hint)
                 } label: {
                     if installingPackage == pkg {
                         ProgressView().controlSize(.small)
@@ -832,16 +833,20 @@ struct TracerConfigView: View {
         } else {
             message = error.localizedDescription
         }
-        let hint: SearchErrorHint? = message.contains("'frida-java-bridge'") ? .installPackage("frida-java-bridge") : nil
+        let hint: SearchErrorHint? =
+            message.contains("'frida-java-bridge'")
+            ? .installPackage(name: "frida-java-bridge", globalAlias: "Java")
+            : nil
         return (message, hint)
     }
 
-    private func installMissingPackage(_ name: String) {
+    private func installMissingPackage(_ hint: SearchErrorHint) {
+        guard case .installPackage(let name, let alias) = hint else { return }
         installingPackage = name
         Task {
             defer { installingPackage = nil }
             do {
-                _ = try await workspace.engine.installPackage(name: name)
+                _ = try await workspace.engine.installPackage(name: name, globalAlias: alias)
                 await performSearch()
             } catch {
                 let classified = classify(error)
@@ -852,7 +857,13 @@ struct TracerConfigView: View {
     }
 
     enum SearchErrorHint: Equatable {
-        case installPackage(String)
+        case installPackage(name: String, globalAlias: String?)
+
+        var packageName: String {
+            switch self {
+            case .installPackage(let name, _): return name
+            }
+        }
     }
 
     private func parseResolvedTarget(_ obj: [String: Any]) throws -> ResolvedApi {
