@@ -691,7 +691,7 @@ private final class TracerHookSearch {
             widget.marginTop = 24
             widget.marginBottom = 24
         case .popover:
-            widget.setSizeRequest(width: 360, height: 360)
+            widget.setSizeRequest(width: 420, height: 360)
             widget.marginStart = 10
             widget.marginEnd = 10
             widget.marginTop = 10
@@ -754,16 +754,15 @@ private final class TracerHookSearch {
         widget.append(child: statusRow)
 
         installBanner = Box(orientation: .horizontal, spacing: 10)
-        installBanner.add(cssClass: "card")
-        installBanner.marginTop = 2
-        installBanner.marginBottom = 2
+        installBanner.add(cssClass: "luma-install-banner")
+        installBanner.marginTop = 4
+        installBanner.marginBottom = 4
         installBanner.visible = false
 
         let bannerIcon = Image(iconName: "package-x-generic-symbolic")
-        bannerIcon.add(cssClass: "dim-label")
-        bannerIcon.marginStart = 10
-        bannerIcon.marginTop = 8
-        bannerIcon.marginBottom = 8
+        bannerIcon.set(pixelSize: 16)
+        bannerIcon.valign = .center
+        bannerIcon.marginStart = 12
         installBanner.append(child: bannerIcon)
 
         installBannerLabel = Label(str: "")
@@ -772,6 +771,8 @@ private final class TracerHookSearch {
         installBannerLabel.hexpand = true
         installBannerLabel.wrap = true
         installBannerLabel.xalign = 0
+        installBannerLabel.marginTop = 8
+        installBannerLabel.marginBottom = 8
         installBanner.append(child: installBannerLabel)
 
         installButton = Button(label: "Install")
@@ -958,7 +959,8 @@ private final class TracerHookSearch {
         if let hint {
             installBannerLabel.label = message
             if installTask == nil {
-                installButton.label = "Install \(hint.name)"
+                installButton.label = "Install"
+                installButton.tooltipText = "Install \(hint.name)"
                 installButton.sensitive = true
             }
             installBanner.visible = true
@@ -976,7 +978,8 @@ private final class TracerHookSearch {
             installTask == nil
         else { return }
 
-        installButton.label = "Installing \(hint.name)\u{2026}"
+        installButton.label = "Installing\u{2026}"
+        installButton.tooltipText = "Installing \(hint.name)"
         installButton.sensitive = false
         installTask = Task { @MainActor [anchor = self] in
             defer {
@@ -988,7 +991,8 @@ private final class TracerHookSearch {
                 anchor.runSearchNow()
             } catch {
                 let classified = classifySearchError(error)
-                anchor.installButton.label = "Install \(hint.name)"
+                anchor.installButton.label = "Install"
+                anchor.installButton.tooltipText = "Install \(hint.name)"
                 anchor.installButton.sensitive = true
                 anchor.setSearchStatus(classified.message, hint: classified.hint)
             }
