@@ -581,7 +581,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}\r2-prefix
-          key: ${{ runner.os }}-radare2-${{ env.RADARE2_REF }}-v1
+          key: ${{ runner.os }}-radare2-${{ env.RADARE2_REF }}-v2
 
       - name: Build radare2 (static)
         if: steps.r2-cache.outputs.cache-hit != 'true'
@@ -589,6 +589,8 @@ jobs:
           git clone https://github.com/radareorg/radare2.git $env:RUNNER_TEMP\radare2
           Push-Location $env:RUNNER_TEMP\radare2
           git checkout $env:RADARE2_REF
+          git -c user.name=ci -c user.email=ci@local fetch https://github.com/oleavr/radare2.git luma-pkgconfig-dedupe
+          git -c user.name=ci -c user.email=ci@local cherry-pick FETCH_HEAD
           $env:CFLAGS = "/D_Static_assert=static_assert /std:c11"
           meson setup build "--prefix=$env:RUNNER_TEMP\r2-prefix" --default-library=static -Dcli=disabled
           meson compile -C build
@@ -600,7 +602,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}\r2-prefix
-          key: ${{ runner.os }}-radare2-${{ env.RADARE2_REF }}-v1
+          key: ${{ runner.os }}-radare2-${{ env.RADARE2_REF }}-v2
 
       - name: Update environment
         shell: bash
