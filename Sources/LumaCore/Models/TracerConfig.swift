@@ -82,6 +82,8 @@ public func defaultTracerCode(for anchor: AddressAnchor, displayName: String) ->
         return objcMethodStub(displayName: displayName)
     case .swiftFunc:
         return swiftFuncStub(displayName: displayName)
+    case .javaMethod:
+        return javaMethodStub(displayName: displayName)
     case .moduleOffset, .moduleExport, .debugSymbol:
         return nativeFunctionStub(displayName: displayName)
     }
@@ -129,6 +131,22 @@ private func swiftFuncStub(displayName: String) -> String {
             },
 
             onLeave(log, retval) {
+            }
+        });
+        """
+}
+
+private func javaMethodStub(displayName: String) -> String {
+    return """
+        defineHandler({
+            onEnter(log, args) {
+                log(`\(displayName)(${args.map(JSON.stringify).join(', ')})`);
+            },
+
+            onLeave(log, retval) {
+                if (retval !== undefined) {
+                    log(`<= ${JSON.stringify(retval)}`);
+                }
             }
         });
         """

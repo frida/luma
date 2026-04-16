@@ -1,5 +1,6 @@
+import type _Java from "frida-java-bridge";
 import type { Instrument, InstrumentContext } from '../core/instrument.js';
-import { resolveAnchor, type AnchorJSON } from '../core/resolver.js';
+import { loadJavaBridge, resolveAnchor, type AnchorJSON } from '../core/resolver.js';
 import { startCapture, stopCapture } from './itrace-capture.js';
 
 interface TracerConfig {
@@ -26,12 +27,15 @@ interface FunctionHandlers {
     onLeave?: LeaveHandler;
 }
 
-type Hook = FunctionHook | InstructionHook;
-type FunctionHook = [listener: InvocationListener, config: TracerHookConfig, onEnter: EnterHandler, onLeave: LeaveHandler];
-type InstructionHook = [listener: InvocationListener, config: TracerHookConfig, onHit: InstructionHandler];
+type Hook = FunctionHook | InstructionHook | JavaHook;
+type FunctionHook = [detach: () => void, config: TracerHookConfig, onEnter: EnterHandler, onLeave: LeaveHandler, kind: "function"];
+type InstructionHook = [detach: () => void, config: TracerHookConfig, onHit: InstructionHandler, kind: "instruction"];
+type JavaHook = [detach: () => void, config: TracerHookConfig, onEnter: JavaEnterHandler, onLeave: JavaLeaveHandler, kind: "java"];
 type EnterHandler = (this: InvocationContext, log: LogHandler, args: InvocationArguments) => void;
 type LeaveHandler = (this: InvocationContext, log: LogHandler, retval: InvocationReturnValue) => any;
 type InstructionHandler = (this: InvocationContext, log: LogHandler, args: InvocationArguments) => void;
+type JavaEnterHandler = (this: any, log: LogHandler, args: any[]) => void;
+type JavaLeaveHandler = (this: any, log: LogHandler, retval: any) => any;
 type LogHandler = (...args: any[]) => void;
 type CutPoint = ">" | "|" | "<";
 
@@ -67,16 +71,16 @@ class Tracer {
 
     async dispose() {
         for (const [, hook] of this.#hooks) {
-            hook[0].detach();
+            hook[0]();
         }
         this.#hooks.clear();
     }
 
     async updateConfig(next: TracerConfig) {
-        this.#apply(next);
+        await this.#apply(next);
     }
 
-    #apply(next: TracerConfig) {
+    async #apply(next: TracerConfig) {
         const ctx = this.#ctx;
         const hooks = this.#hooks;
 
@@ -84,7 +88,7 @@ class Tracer {
 
         for (const [id, runtime] of hooks) {
             if (!nextIds.has(id)) {
-                runtime[0].detach();
+                runtime[0]();
                 hooks.delete(id);
             }
         }
@@ -102,7 +106,7 @@ class Tracer {
             }
 
             if (existing !== undefined) {
-                existing[0].detach();
+                existing[0]();
                 hooks.delete(hookConfig.id);
             }
 
@@ -111,12 +115,12 @@ class Tracer {
             }
 
             try {
-                hooks.set(hookConfig.id, this.#attachHook(hookConfig));
+                hooks.set(hookConfig.id, await this.#attachHook(hookConfig));
             } catch (e) {
                 this.#ctx.emit({
                     type: "tracer-error",
                     id: hookConfig.id,
-                    message: "Could not resolve target"
+                    message: (e instanceof Error) ? e.message : "Could not resolve target"
                 });
             }
         }
@@ -124,48 +128,92 @@ class Tracer {
         this.#config = next;
     }
 
-    #attachHook(hookConfig: TracerHookConfig): Hook {
-        const target = resolveTarget(hookConfig);
+    async #attachHook(hookConfig: TracerHookConfig): Promise<Hook> {
+        const handler = compileHandler(hookConfig.code);
+
+        if (hookConfig.addressAnchor.type === "javaMethod") {
+            if (typeof handler === "function") {
+                throw new Error("Java hooks require onEnter/onLeave handlers");
+            }
+            return this.#attachJavaHook(hookConfig, hookConfig.addressAnchor, handler);
+        }
+
+        const target = resolveAnchor(hookConfig.addressAnchor);
         if (target === null) {
             throw new Error("Could not resolve target");
         }
 
-        let handler: Handler | null = null;
-
-        function defineHandler(h: Handler) {
-            handler = h;
-        }
-
-        const fn = new Function("defineHandler", `"use strict";\n${hookConfig.code}`);
-        fn(defineHandler);
-
-        if (handler === null) {
-            throw new Error("Hook did not call defineHandler");
-        }
-
-        let hook: Hook;
-        if (typeof handler === "function") {
-            const cb: InstructionHandler = handler;
-            hook = [null as unknown as InvocationListener, hookConfig, cb] as InstructionHook;
-        } else {
-            const cbs: FunctionHandlers = handler;
-            hook = [null as unknown as InvocationListener, hookConfig, cbs.onEnter ?? noop, cbs.onLeave ?? noop] as FunctionHook;
-        }
-
         this.#hookTargets.set(hookConfig.id, target);
 
-        // Back up prologue bytes before Interceptor overwrites them.
-        if (hook.length === 4 && hookConfig.itraceEnabled) {
+        if (typeof handler === "function") {
+            return this.#attachNativeInstructionHook(hookConfig, target, handler);
+        }
+        return this.#attachNativeFunctionHook(hookConfig, target, handler);
+    }
+
+    #attachNativeFunctionHook(hookConfig: TracerHookConfig, target: NativePointer, handlers: FunctionHandlers): FunctionHook {
+        if (hookConfig.itraceEnabled) {
             const backup = target.readByteArray(64);
             if (backup !== null) {
                 this.#prologueBackups.set(target.toString(), backup);
             }
         }
 
-        const listener = Interceptor.attach(target, (hook.length === 3)
-            ? this.#makeNativeInstructionListener(hook)
-            : this.#makeNativeFunctionListener(hook));
-        hook[0] = listener;
+        const hook: FunctionHook = [
+            () => { },
+            hookConfig,
+            handlers.onEnter ?? noop,
+            handlers.onLeave ?? noop,
+            "function",
+        ];
+        const listener = Interceptor.attach(target, this.#makeNativeFunctionListener(hook));
+        hook[0] = () => listener.detach();
+        return hook;
+    }
+
+    #attachNativeInstructionHook(hookConfig: TracerHookConfig, target: NativePointer, onHit: InstructionHandler): InstructionHook {
+        const hook: InstructionHook = [
+            () => { },
+            hookConfig,
+            onHit,
+            "instruction",
+        ];
+        const listener = Interceptor.attach(target, this.#makeNativeInstructionListener(hook));
+        hook[0] = () => listener.detach();
+        return hook;
+    }
+
+    async #attachJavaHook(hookConfig: TracerHookConfig, anchor: JavaMethodAnchor, handlers: FunctionHandlers): Promise<JavaHook> {
+        const Java = await loadJavaBridge();
+
+        const hook: JavaHook = [
+            () => { },
+            hookConfig,
+            handlers.onEnter ?? noop,
+            handlers.onLeave ?? noop,
+            "java",
+        ];
+
+        const overloads: _Java.Method[] = [];
+        Java.perform(() => {
+            const klass = Java.use(anchor.className);
+            const dispatcher = klass[anchor.methodName];
+            if (dispatcher === undefined) {
+                throw new Error(`Method '${anchor.methodName}' not found on '${anchor.className}'`);
+            }
+            for (const method of dispatcher.overloads) {
+                method.implementation = this.#makeJavaImplementation(hook, method);
+                overloads.push(method);
+            }
+        });
+
+        hook[0] = () => {
+            Java.perform(() => {
+                for (const method of overloads) {
+                    method.implementation = null;
+                }
+            });
+        };
 
         return hook;
     }
@@ -209,6 +257,17 @@ class Tracer {
         };
     }
 
+    #makeJavaImplementation(hook: JavaHook, method: _Java.Method): _Java.MethodImplementation {
+        const tracer = this;
+        return function (...args: any[]) {
+            const [, config, onEnter, onLeave] = hook;
+            tracer.#invokeJavaHandler(onEnter, config, this, args, ">");
+            const retval = method.apply(this, args);
+            const replacement = tracer.#invokeJavaHandler(onLeave, config, this, retval, "<");
+            return (replacement !== undefined) ? replacement : retval;
+        };
+    }
+
     #invokeNativeHandler(callback: EnterHandler | LeaveHandler | InstructionHandler, config: TracerHookConfig,
         context: InvocationContext, param: any, cutPoint: CutPoint) {
         const threadId = context.threadId;
@@ -223,6 +282,20 @@ class Tracer {
         };
 
         callback.call(context, log, param);
+    }
+
+    #invokeJavaHandler(callback: JavaEnterHandler | JavaLeaveHandler, config: TracerHookConfig,
+        context: any, param: any, cutPoint: CutPoint): any {
+        const threadId = Process.getCurrentThreadId();
+        const depth = this.#updateDepth(threadId, cutPoint);
+
+        const timestamp = Date.now() - this.#started;
+
+        const log = (...message: any[]) => {
+            this.#ctx.emit([config.id, timestamp, threadId, depth, NULL, [], message]);
+        };
+
+        return callback.call(context, log, param);
     }
 
     #nextCallIndex(hookId: string): number {
@@ -250,9 +323,23 @@ class Tracer {
     }
 }
 
-function resolveTarget(hook: TracerHookConfig): NativePointer | null {
-    return resolveAnchor(hook.addressAnchor);
+function compileHandler(code: string): Handler {
+    let handler: Handler | null = null;
+
+    function defineHandler(h: Handler) {
+        handler = h;
+    }
+
+    const fn = new Function("defineHandler", `"use strict";\n${code}`);
+    fn(defineHandler);
+
+    if (handler === null) {
+        throw new Error("Hook did not call defineHandler");
+    }
+    return handler;
 }
+
+type JavaMethodAnchor = Extract<AnchorJSON, { type: "javaMethod" }>;
 
 function noop() {
 }

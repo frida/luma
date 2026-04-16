@@ -6,7 +6,7 @@ import Foundation
 enum LumaAgent {
     static let coreSource: String = #"""
     📦
-    23652 /Agent/core/luma.js
+    25244 /Agent/core/luma.js
     ✄
     var __defProp = Object.defineProperty;
     var __export = (target, all) => {
@@ -570,6 +570,7 @@ enum LumaAgent {
     // Agent/core/resolver.ts
     var resolver_exports = {};
     __export(resolver_exports, {
+      loadJavaBridge: () => loadJavaBridge,
       lookupAnchorAddress: () => lookupAnchorAddress,
       resolveAnchor: () => resolveAnchor,
       resolveTargets: () => resolveTargets
@@ -591,6 +592,8 @@ enum LumaAgent {
           return resolveObjcMethodScope(query);
         case "swift-func":
           return resolveSwiftFuncScope(query);
+        case "java-method":
+          return await resolveJavaMethodScope(query);
         case "debug-symbol":
           return resolveDebugSymbolScope(query);
       }
@@ -618,6 +621,8 @@ enum LumaAgent {
           const matches = DebugSymbol.findFunctionsMatching(anchor.name);
           return matches.length > 0 ? matches[0] : null;
         }
+        case "javaMethod":
+          return null;
       }
     }
     function resolveFunctionScope(query) {
@@ -677,6 +682,52 @@ enum LumaAgent {
         };
       });
     }
+    async function resolveJavaMethodScope(query) {
+      const Java = await loadJavaBridge();
+      const targets = [];
+      Java.perform(() => {
+        for (const group of Java.enumerateMethods(query)) {
+          for (const klass of group.classes) {
+            for (const methodName of klass.methods) {
+              const bareName = bareJavaMethodName(methodName);
+              targets.push({
+                scope: "java-method",
+                displayName: `${klass.name}.${bareName}`,
+                detail: klass.name,
+                address: "0x0",
+                anchor: { type: "javaMethod", className: klass.name, methodName: bareName }
+              });
+            }
+          }
+        }
+      });
+      return targets;
+    }
+    async function loadJavaBridge() {
+      const cached = cachedJavaBridge;
+      if (cached !== null) {
+        return requireAvailable(cached);
+      }
+      let bridge;
+      try {
+        const mod = await import("frida-java-bridge");
+        bridge = mod.default ?? mod;
+      } catch (e) {
+        throw new Error("Java runtime is not available. Install 'frida-java-bridge' via the Packages panel.");
+      }
+      cachedJavaBridge = bridge;
+      return requireAvailable(bridge);
+    }
+    function requireAvailable(bridge) {
+      if (!bridge.available) {
+        throw new Error("frida-java-bridge is loaded but the target process has no Java runtime.");
+      }
+      return bridge;
+    }
+    function bareJavaMethodName(name) {
+      const paren = name.indexOf("(");
+      return paren < 0 ? name : name.substring(0, paren);
+    }
     function resolveDebugSymbolScope(query) {
       return DebugSymbol.findFunctionsMatching(query).map((address) => {
         const symbol = DebugSymbol.fromAddress(address);
@@ -725,6 +776,7 @@ enum LumaAgent {
     var cachedModuleResolver = null;
     var cachedObjcResolver = null;
     var cachedSwiftResolver = null;
+    var cachedJavaBridge = null;
     function getModuleResolver() {
       if (cachedModuleResolver === null) {
         cachedModuleResolver = new ApiResolver("module");
@@ -1329,13 +1381,37 @@ enum LumaAgent {
           const matches = DebugSymbol.findFunctionsMatching(anchor.name);
           return matches.length > 0 ? matches[0] : null;
         }
+        case "javaMethod":
+          return null;
       }
+    }
+    async function loadJavaBridge() {
+      const cached = cachedJavaBridge;
+      if (cached !== null) {
+        return requireAvailable(cached);
+      }
+      let bridge;
+      try {
+        const mod = await import("frida-java-bridge");
+        bridge = mod.default ?? mod;
+      } catch (e) {
+        throw new Error("Java runtime is not available. Install 'frida-java-bridge' via the Packages panel.");
+      }
+      cachedJavaBridge = bridge;
+      return requireAvailable(bridge);
+    }
+    function requireAvailable(bridge) {
+      if (!bridge.available) {
+        throw new Error("frida-java-bridge is loaded but the target process has no Java runtime.");
+      }
+      return bridge;
     }
     function firstMatchAddress(matches) {
       return matches.length > 0 ? matches[0].address : null;
     }
     var cachedObjcResolver = null;
     var cachedSwiftResolver = null;
+    var cachedJavaBridge = null;
     function getObjcResolver() {
       if (cachedObjcResolver === null) {
         try {
@@ -2988,20 +3064,20 @@ enum LumaAgent {
       }
       async dispose() {
         for (const [, hook] of this.#hooks) {
-          hook[0].detach();
+          hook[0]();
         }
         this.#hooks.clear();
       }
       async updateConfig(next) {
-        this.#apply(next);
+        await this.#apply(next);
       }
-      #apply(next) {
+      async #apply(next) {
         const ctx = this.#ctx;
         const hooks = this.#hooks;
         const nextIds = new Set(next.hooks.map((h) => h.id));
         for (const [id, runtime] of hooks) {
           if (!nextIds.has(id)) {
-            runtime[0].detach();
+            runtime[0]();
             hooks.delete(id);
           }
         }
@@ -3014,56 +3090,102 @@ enum LumaAgent {
             }
           }
           if (existing !== void 0) {
-            existing[0].detach();
+            existing[0]();
             hooks.delete(hookConfig.id);
           }
           if (!hookConfig.isEnabled) {
             continue;
           }
           try {
-            hooks.set(hookConfig.id, this.#attachHook(hookConfig));
+            hooks.set(hookConfig.id, await this.#attachHook(hookConfig));
           } catch (e) {
             this.#ctx.emit({
               type: "tracer-error",
               id: hookConfig.id,
-              message: "Could not resolve target"
+              message: e instanceof Error ? e.message : "Could not resolve target"
             });
           }
         }
         this.#config = next;
       }
-      #attachHook(hookConfig) {
-        const target = resolveTarget(hookConfig);
+      async #attachHook(hookConfig) {
+        const handler = compileHandler(hookConfig.code);
+        if (hookConfig.addressAnchor.type === "javaMethod") {
+          if (typeof handler === "function") {
+            throw new Error("Java hooks require onEnter/onLeave handlers");
+          }
+          return this.#attachJavaHook(hookConfig, hookConfig.addressAnchor, handler);
+        }
+        const target = resolveAnchor(hookConfig.addressAnchor);
         if (target === null) {
           throw new Error("Could not resolve target");
         }
-        let handler = null;
-        function defineHandler(h) {
-          handler = h;
-        }
-        const fn = new Function("defineHandler", `"use strict";
-    ${hookConfig.code}`);
-        fn(defineHandler);
-        if (handler === null) {
-          throw new Error("Hook did not call defineHandler");
-        }
-        let hook;
-        if (typeof handler === "function") {
-          const cb = handler;
-          hook = [null, hookConfig, cb];
-        } else {
-          const cbs = handler;
-          hook = [null, hookConfig, cbs.onEnter ?? noop, cbs.onLeave ?? noop];
-        }
         this.#hookTargets.set(hookConfig.id, target);
-        if (hook.length === 4 && hookConfig.itraceEnabled) {
+        if (typeof handler === "function") {
+          return this.#attachNativeInstructionHook(hookConfig, target, handler);
+        }
+        return this.#attachNativeFunctionHook(hookConfig, target, handler);
+      }
+      #attachNativeFunctionHook(hookConfig, target, handlers) {
+        if (hookConfig.itraceEnabled) {
           const backup = target.readByteArray(64);
           if (backup !== null) {
             this.#prologueBackups.set(target.toString(), backup);
           }
         }
-        const listener = Interceptor.attach(target, hook.length === 3 ? this.#makeNativeInstructionListener(hook) : this.#makeNativeFunctionListener(hook));
-        hook[0] = listener;
+        const hook = [
+          () => {
+          },
+          hookConfig,
+          handlers.onEnter ?? noop,
+          handlers.onLeave ?? noop,
+          "function"
+        ];
+        const listener = Interceptor.attach(target, this.#makeNativeFunctionListener(hook));
+        hook[0] = () => listener.detach();
+        return hook;
+      }
+      #attachNativeInstructionHook(hookConfig, target, onHit) {
+        const hook = [
+          () => {
+          },
+          hookConfig,
+          onHit,
+          "instruction"
+        ];
+        const listener = Interceptor.attach(target, this.#makeNativeInstructionListener(hook));
+        hook[0] = () => listener.detach();
+        return hook;
+      }
+      async #attachJavaHook(hookConfig, anchor, handlers) {
+        const Java = await loadJavaBridge();
+        const hook = [
+          () => {
+          },
+          hookConfig,
+          handlers.onEnter ?? noop,
+          handlers.onLeave ?? noop,
+          "java"
+        ];
+        const overloads = [];
+        Java.perform(() => {
+          const klass = Java.use(anchor.className);
+          const dispatcher = klass[anchor.methodName];
+          if (dispatcher === void 0) {
+            throw new Error(`Method '${anchor.methodName}' not found on '${anchor.className}'`);
+          }
+          for (const method of dispatcher.overloads) {
+            method.implementation = this.#makeJavaImplementation(hook, method);
+            overloads.push(method);
+          }
+        });
+        hook[0] = () => {
+          Java.perform(() => {
+            for (const method of overloads) {
+              method.implementation = null;
+            }
+          });
+        };
         return hook;
       }
       #makeNativeFunctionListener(hook) {
@@ -3096,6 +3218,16 @@ enum LumaAgent {
           agent.#invokeNativeHandler(onHit, config, this, args, "|");
         };
       }
+      #makeJavaImplementation(hook, method) {
+        const tracer = this;
+        return function(...args) {
+          const [, config, onEnter, onLeave] = hook;
+          tracer.#invokeJavaHandler(onEnter, config, this, args, ">");
+          const retval = method.apply(this, args);
+          const replacement = tracer.#invokeJavaHandler(onLeave, config, this, retval, "<");
+          return replacement !== void 0 ? replacement : retval;
+        };
+      }
       #invokeNativeHandler(callback, config, context, param, cutPoint) {
         const threadId = context.threadId;
         const depth = this.#updateDepth(threadId, cutPoint);
@@ -3106,6 +3238,15 @@ enum LumaAgent {
           this.#ctx.emit([config.id, timestamp, threadId, depth, caller, backtrace, message]);
         };
         callback.call(context, log, param);
+      }
+      #invokeJavaHandler(callback, config, context, param, cutPoint) {
+        const threadId = Process.getCurrentThreadId();
+        const depth = this.#updateDepth(threadId, cutPoint);
+        const timestamp = Date.now() - this.#started;
+        const log = (...message) => {
+          this.#ctx.emit([config.id, timestamp, threadId, depth, NULL, [], message]);
+        };
+        return callback.call(context, log, param);
       }
       #nextCallIndex(hookId) {
         const current = this.#callCounters.get(hookId) ?? 0;
@@ -3128,8 +3269,18 @@ enum LumaAgent {
         return depth;
       }
     };
-    function resolveTarget(hook) {
-      return resolveAnchor(hook.addressAnchor);
+    function compileHandler(code2) {
+      let handler = null;
+      function defineHandler(h) {
+        handler = h;
+      }
+      const fn = new Function("defineHandler", `"use strict";
+    ${code2}`);
+      fn(defineHandler);
+      if (handler === null) {
+        throw new Error("Hook did not call defineHandler");
+      }
+      return handler;
     }
     function noop() {
     }

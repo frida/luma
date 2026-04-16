@@ -28,6 +28,8 @@ $(AGENT_BUNDLE): $(AGENT_SOURCES)
 	    --swift-out    "$(AGENT_BUNDLE)" \
 	    --staging-dir  "$(AGENT_STAGING)" \
 	    --package frida-itrace@6.0.0 \
+	    --package frida-java-bridge@7.0.12 \
+	    --external frida-java-bridge \
 	    --agent  core      Agent/core/luma.ts \
 	    --agent  drain     Agent/instruments/drain-agent.ts \
 	    --module tracer    Agent/instruments/tracer.ts \

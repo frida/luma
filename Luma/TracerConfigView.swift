@@ -908,6 +908,8 @@ private struct HooksListView: View {
             return name
         case .objcMethod:
             return nil
+        case .javaMethod(let className, _):
+            return className
         case .debugSymbol:
             return nil
         }

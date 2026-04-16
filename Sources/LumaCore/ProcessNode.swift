@@ -570,6 +570,9 @@ public final class ProcessNode: Identifiable {
 
         case .objcMethod, .swiftFunc, .debugSymbol:
             return try await lookupAnchor(anchor)
+
+        case .javaMethod:
+            throw LumaCoreError.invalidOperation("\(anchor.displayString) is a Java method and has no native address")
         }
     }
 
@@ -593,6 +596,9 @@ public final class ProcessNode: Identifiable {
 
         case .moduleExport, .objcMethod, .swiftFunc, .debugSymbol:
             throw LumaCoreError.invalidOperation("\(anchor.displayString) requires async resolution")
+
+        case .javaMethod:
+            throw LumaCoreError.invalidOperation("\(anchor.displayString) is a Java method and has no native address")
         }
     }
 

@@ -1,3 +1,5 @@
+import type _Java from "frida-java-bridge";
+
 export interface ResolveRequest {
     scope: TargetScope;
     query: string;
@@ -11,6 +13,7 @@ export type TargetScope =
     | "absolute-instruction"
     | "objc-method"
     | "swift-func"
+    | "java-method"
     | "debug-symbol";
 
 export interface ResolvedTarget {
@@ -27,6 +30,7 @@ export type AnchorJSON =
     | { type: "moduleExport"; name: string; export: string }
     | { type: "objcMethod"; selector: string }
     | { type: "swiftFunc"; module: string; function: string }
+    | { type: "javaMethod"; className: string; methodName: string }
     | { type: "debugSymbol"; name: string };
 
 export async function resolveTargets(request: ResolveRequest): Promise<ResolvedTarget[]> {
@@ -53,6 +57,9 @@ export async function resolveTargets(request: ResolveRequest): Promise<ResolvedT
 
         case "swift-func":
             return resolveSwiftFuncScope(query);
+
+        case "java-method":
+            return await resolveJavaMethodScope(query);
 
         case "debug-symbol":
             return resolveDebugSymbolScope(query);
@@ -90,6 +97,9 @@ export function resolveAnchor(anchor: AnchorJSON): NativePointer | null {
             const matches = DebugSymbol.findFunctionsMatching(anchor.name);
             return matches.length > 0 ? matches[0] : null;
         }
+
+        case "javaMethod":
+            return null;
     }
 }
 
@@ -163,6 +173,59 @@ function resolveSwiftFuncScope(query: string): ResolvedTarget[] {
     });
 }
 
+async function resolveJavaMethodScope(query: string): Promise<ResolvedTarget[]> {
+    const Java = await loadJavaBridge();
+
+    const targets: ResolvedTarget[] = [];
+    Java.perform(() => {
+        for (const group of Java.enumerateMethods(query)) {
+            for (const klass of group.classes) {
+                for (const methodName of klass.methods) {
+                    const bareName = bareJavaMethodName(methodName);
+                    targets.push({
+                        scope: "java-method",
+                        displayName: `${klass.name}.${bareName}`,
+                        detail: klass.name,
+                        address: "0x0",
+                        anchor: { type: "javaMethod", className: klass.name, methodName: bareName },
+                    });
+                }
+            }
+        }
+    });
+    return targets;
+}
+
+export async function loadJavaBridge(): Promise<typeof _Java> {
+    const cached = cachedJavaBridge;
+    if (cached !== null) {
+        return requireAvailable(cached);
+    }
+
+    let bridge: typeof _Java;
+    try {
+        const mod = await import("frida-java-bridge");
+        bridge = (mod as any).default ?? mod;
+    } catch (e) {
+        throw new Error("Java runtime is not available. Install 'frida-java-bridge' via the Packages panel.");
+    }
+
+    cachedJavaBridge = bridge;
+    return requireAvailable(bridge);
+}
+
+function requireAvailable(bridge: typeof _Java): typeof _Java {
+    if (!bridge.available) {
+        throw new Error("frida-java-bridge is loaded but the target process has no Java runtime.");
+    }
+    return bridge;
+}
+
+function bareJavaMethodName(name: string): string {
+    const paren = name.indexOf("(");
+    return (paren < 0) ? name : name.substring(0, paren);
+}
+
 function resolveDebugSymbolScope(query: string): ResolvedTarget[] {
     return DebugSymbol.findFunctionsMatching(query).map(address => {
         const symbol = DebugSymbol.fromAddress(address);
@@ -216,6 +279,7 @@ function parseRelativeFunctionPattern(pattern: string): { module: string; offset
 let cachedModuleResolver: ApiResolver | null = null;
 let cachedObjcResolver: ApiResolver | null = null;
 let cachedSwiftResolver: ApiResolver | null = null;
+let cachedJavaBridge: typeof _Java | null = null;
 
 function getModuleResolver(): ApiResolver {
     if (cachedModuleResolver === null) {

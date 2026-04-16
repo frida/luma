@@ -9,6 +9,7 @@ public enum AddressAnchor: Codable, Hashable, Sendable {
     case objcMethod(selector: String)
     case swiftFunc(module: String, function: String)
     case debugSymbol(name: String)
+    case javaMethod(className: String, methodName: String)
 
     public var displayString: String {
         switch self {
@@ -29,6 +30,9 @@ public enum AddressAnchor: Codable, Hashable, Sendable {
 
         case .debugSymbol(let name):
             return name
+
+        case .javaMethod(let className, let methodName):
+            return "\(className).\(methodName)"
         }
     }
 
@@ -58,6 +62,11 @@ public enum AddressAnchor: Codable, Hashable, Sendable {
             )
         case "debugSymbol":
             return .debugSymbol(name: try parseAnchorString(object["name"], field: "name"))
+        case "javaMethod":
+            return .javaMethod(
+                className: try parseAnchorString(object["className"], field: "className"),
+                methodName: try parseAnchorString(object["methodName"], field: "methodName")
+            )
         default:
             throw LumaCoreError.invalidArgument("Unknown anchor type '\(type)'")
         }
@@ -102,6 +111,13 @@ public enum AddressAnchor: Codable, Hashable, Sendable {
             return [
                 "type": "debugSymbol",
                 "name": name,
+            ]
+
+        case .javaMethod(let className, let methodName):
+            return [
+                "type": "javaMethod",
+                "className": className,
+                "methodName": methodName,
             ]
         }
     }

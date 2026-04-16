@@ -307,7 +307,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/zsh;
-			shellScript = "set -euo pipefail\n\n\"${BUILT_PRODUCTS_DIR}/LumaBundleCompiler\" \\\n    --project-root     \"${SRCROOT}\" \\\n    --swift-out        \"${SRCROOT}/Sources/LumaCore/Generated/LumaAgent.swift\" \\\n    --staging-dir      \"${BUILD_DIR}/AgentStaging\" \\\n    --package frida-itrace@6.0.0 \\\n    --agent  core      Agent/core/luma.ts \\\n    --agent  drain     Agent/instruments/drain-agent.ts \\\n    --module tracer    Agent/instruments/tracer.ts \\\n    --module codeShare Agent/instruments/codeshare.ts\n";
+			shellScript = "set -euo pipefail\n\n\"${BUILT_PRODUCTS_DIR}/LumaBundleCompiler\" \\\n    --project-root     \"${SRCROOT}\" \\\n    --swift-out        \"${SRCROOT}/Sources/LumaCore/Generated/LumaAgent.swift\" \\\n    --staging-dir      \"${BUILD_DIR}/AgentStaging\" \\\n    --package frida-itrace@6.0.0 \\\n    --package frida-java-bridge@7.0.12 \\\n    --external frida-java-bridge \\\n    --agent  core      Agent/core/luma.ts \\\n    --agent  drain     Agent/instruments/drain-agent.ts \\\n    --module tracer    Agent/instruments/tracer.ts \\\n    --module codeShare Agent/instruments/codeshare.ts\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

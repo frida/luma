@@ -6,6 +6,7 @@ public enum TracerTargetScope: String, CaseIterable, Codable, Sendable {
     case module
     case objcMethod = "objc-method"
     case swiftFunc = "swift-func"
+    case javaMethod = "java-method"
     case debugSymbol = "debug-symbol"
 
     public var label: String {
@@ -17,6 +18,7 @@ public enum TracerTargetScope: String, CaseIterable, Codable, Sendable {
         case .module: return "All Module Exports"
         case .objcMethod: return "Objective-C Method"
         case .swiftFunc: return "Swift Function"
+        case .javaMethod: return "Java Method"
         case .debugSymbol: return "Debug Symbol"
         }
     }
@@ -29,6 +31,7 @@ public enum TracerTargetScope: String, CaseIterable, Codable, Sendable {
         case .imports, .module: return "Module"
         case .objcMethod: return "-[*Auth foo:bar:], +[Foo foo*], or *[Bar baz]"
         case .swiftFunc: return "*SomeModule*!SomeClassPrefix*.*secret*()"
+        case .javaMethod: return "com.example.*!*"
         case .debugSymbol: return "Function"
         }
     }

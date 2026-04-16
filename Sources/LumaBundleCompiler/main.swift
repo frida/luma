@@ -46,6 +46,7 @@ struct LumaBundleCompiler {
         var entries: [Entry] = []
         var packageSpecs: [String] = []
         var localPackages: [(name: String, path: String)] = []
+        var externals: [String] = []
 
         func popValue(for flag: String) throws -> String {
             guard let idx = args.firstIndex(of: flag), idx + 1 < args.count else {
@@ -78,6 +79,10 @@ struct LumaBundleCompiler {
             case "--package":
                 guard !args.isEmpty else { throw ToolError.usage("Missing value for --package") }
                 packageSpecs.append(args.removeFirst())
+
+            case "--external":
+                guard !args.isEmpty else { throw ToolError.usage("Missing value for --external") }
+                externals.append(args.removeFirst())
 
             case "--local-package":
                 guard args.count >= 2 else {
@@ -194,6 +199,9 @@ struct LumaBundleCompiler {
         let options = BuildOptions()
         options.projectRoot = effectiveProjectRoot
         options.sourceMaps = .omitted
+        if !externals.isEmpty {
+            options.externals = externals
+        }
 
         let eventsTask = Task {
             for await event in compiler.events {
@@ -258,6 +266,7 @@ struct LumaBundleCompiler {
             Options:
               --staging-dir <path>  Directory for package installation and compilation
               --package <spec>      Install npm package into staging dir before compilation
+              --external <name>     Do not bundle imports of this npm package
 
             Examples:
               \(prog) --project-root /path/to/repo \\
