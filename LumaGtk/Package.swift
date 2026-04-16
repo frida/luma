@@ -70,9 +70,6 @@ let package = Package(
     dependencies: [
         .package(path: ".."),
         .package(url: "https://github.com/frida/SwiftGtk.git", branch: "gtk4-development"),
-        .package(url: "https://github.com/frida/SwiftGLib.git", branch: "development"),
-        .package(url: "https://github.com/frida/gir2swift.git", branch: "development"),
-        .package(url: "https://github.com/frida/SwiftLibXML.git", branch: "main"),
     ],
     targets: [
         .target(

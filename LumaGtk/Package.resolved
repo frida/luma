@@ -1,5 +1,5 @@
 {
-  "originHash" : "4f6ef4c88a71cd573e8fa7bc482efa7ad544a6d6f4b167a29e806fe541d19372",
+  "originHash" : "39174910f671a860237247903eaba1ed1387b4440e44986a120c5e32df6bd00c",
   "pins" : [
     {
       "identity" : "frida-swift",
@@ -16,7 +16,7 @@
       "location" : "https://github.com/frida/gir2swift.git",
       "state" : {
         "branch" : "development",
-        "revision" : "f795267c959e5606d63322b3a466439bb8f08a08"
+        "revision" : "01bdfaf6e25bad45ebb708d491c91d94e762391e"
       }
     },
     {
@@ -42,8 +42,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-asn1.git",
       "state" : {
-        "revision" : "9f542610331815e29cc3821d3b6f488db8715517",
-        "version" : "1.6.0"
+        "revision" : "eb50cbd14606a9161cbc5d452f18797c90ef0bab",
+        "version" : "1.7.0"
       }
     },
     {
@@ -58,46 +58,46 @@
     {
       "identity" : "swiftatk",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/rhx/SwiftAtk.git",
+      "location" : "https://github.com/frida/SwiftAtk.git",
       "state" : {
         "branch" : "development",
-        "revision" : "ec621792303d1cdd54c9d0ac7e0e4d822b4019e4"
+        "revision" : "2764a6bc5003a9693b8a8ff3dfb4c66bb62b2696"
       }
     },
     {
       "identity" : "swiftcairo",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/rhx/SwiftCairo.git",
+      "location" : "https://github.com/frida/SwiftCairo.git",
       "state" : {
         "branch" : "development",
-        "revision" : "5e9481bd1fdaa0ead5691d60679cede7fc0916ca"
+        "revision" : "c08bf5bf4a0a87159dd90e75b11e9c4b582ada3b"
       }
     },
     {
       "identity" : "swiftgdk",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/rhx/SwiftGdk.git",
+      "location" : "https://github.com/frida/SwiftGdk.git",
       "state" : {
         "branch" : "gtk4-development",
-        "revision" : "b59607e1bed54eeb624a089ca10ea7d6796762ff"
+        "revision" : "f20519ffefd28720b845fc214e9ea9094b080c1d"
       }
     },
     {
       "identity" : "swiftgdkpixbuf",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/rhx/SwiftGdkPixbuf.git",
+      "location" : "https://github.com/frida/SwiftGdkPixbuf.git",
       "state" : {
         "branch" : "development",
-        "revision" : "c3bf8636dfdc9432fc1a5196d2feeb3d286a62b4"
+        "revision" : "cdd8087ebc4f4dfd542f2e1a43e4be214710c9e3"
       }
     },
     {
       "identity" : "swiftgio",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/rhx/SwiftGIO.git",
+      "location" : "https://github.com/frida/SwiftGIO.git",
       "state" : {
         "branch" : "development",
-        "revision" : "8b89ff37e53f641d915c85bd19aba0e8e1e9e623"
+        "revision" : "7955d7cffcf929c6525ec39d200efd4bd0a1d390"
       }
     },
     {
@@ -112,37 +112,37 @@
     {
       "identity" : "swiftgmodule",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/rhx/SwiftGModule.git",
+      "location" : "https://github.com/frida/SwiftGModule.git",
       "state" : {
         "branch" : "development",
-        "revision" : "bd571cb9d2dd63f26169482155ac2a10cb6bc2c5"
+        "revision" : "bc69b920ab1848927efe3b3afd6ccef669f23fca"
       }
     },
     {
       "identity" : "swiftgobject",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/rhx/SwiftGObject.git",
+      "location" : "https://github.com/frida/SwiftGObject.git",
       "state" : {
         "branch" : "development",
-        "revision" : "f8d4954086cb0fe5dd56fd8c97a055eba8ccbc8c"
+        "revision" : "a818a23e323d2b09ab64e7a1c9e65391a0eb7497"
       }
     },
     {
       "identity" : "swiftgraphene",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/rhx/SwiftGraphene.git",
+      "location" : "https://github.com/frida/SwiftGraphene.git",
       "state" : {
         "branch" : "development",
-        "revision" : "c55687e0eb1cd722f9bd915e0aaf7ed0ce09d3ec"
+        "revision" : "44e816cec75102f9defbefe553430ce14bc4ac28"
       }
     },
     {
       "identity" : "swiftgsk",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/rhx/SwiftGsk.git",
+      "location" : "https://github.com/frida/SwiftGsk.git",
       "state" : {
         "branch" : "development",
-        "revision" : "3d778a7028ca850f9a3407c4d08c1ef74f527f6e"
+        "revision" : "168860a4124806ea2dfafb9fd9477ff83af88aaa"
       }
     },
     {
@@ -151,16 +151,16 @@
       "location" : "https://github.com/frida/SwiftGtk.git",
       "state" : {
         "branch" : "gtk4-development",
-        "revision" : "b3cfb5d0f17886bdc9d4dc12d65ce30e3e3733ce"
+        "revision" : "98e220601cbfc6947276b861bbef4cfd784a6d2d"
       }
     },
     {
       "identity" : "swiftharfbuzz",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/rhx/SwiftHarfBuzz.git",
+      "location" : "https://github.com/frida/SwiftHarfBuzz.git",
       "state" : {
         "branch" : "development",
-        "revision" : "52bb03287b08d9b8aa4314671a08930e30dd1a11"
+        "revision" : "a87e6c273e55fc98f4f70d7b5334b36bcd36e853"
       }
     },
     {
@@ -175,19 +175,19 @@
     {
       "identity" : "swiftpango",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/rhx/SwiftPango.git",
+      "location" : "https://github.com/frida/SwiftPango.git",
       "state" : {
         "branch" : "development",
-        "revision" : "72d2e9220b29ecc032b57031a0c9d58179b0a775"
+        "revision" : "86f79d726f9a65711f05a7d90afbb552f1d54e68"
       }
     },
     {
       "identity" : "swiftpangocairo",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/rhx/SwiftPangoCairo.git",
+      "location" : "https://github.com/frida/SwiftPangoCairo.git",
       "state" : {
         "branch" : "development",
-        "revision" : "4eafd01f85504784a91a585a4d4f50fce4857da3"
+        "revision" : "0e18a547afbe16274b3d27d526b4b1f373b04f04"
       }
     },
     {
