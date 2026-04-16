@@ -48,8 +48,11 @@ struct DetailView: View {
                         .id(insight.id)
                 }
 
-            case .some(.package(_)):
-                EmptyView()
+            case .some(.package(let packageID)):
+                if let package = workspace.engine.installedPackages.first(where: { $0.id == packageID }) {
+                    PackageDetailView(package: package, workspace: workspace, selection: $selection)
+                        .id(package.id)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
