@@ -1,3 +1,4 @@
+import CGdkPixbuf
 import Foundation
 import Frida
 import GdkPixBuf
@@ -43,7 +44,7 @@ enum IconPixbuf {
         }
         return Pixbuf(
             bytes: bytes,
-            colorspace: Colorspace.rgb,
+            colorspace: GdkColorspace(rawValue: 0),
             hasAlpha: true,
             bitsPerSample: 8,
             width: width,

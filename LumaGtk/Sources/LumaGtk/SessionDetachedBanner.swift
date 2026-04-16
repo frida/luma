@@ -1,3 +1,4 @@
+import CPango
 import Foundation
 import Gtk
 import LumaCore
@@ -43,7 +44,7 @@ enum SessionDetachedBanner {
             statusLabel.add(cssClass: "dim-label")
             statusLabel.halign = .start
             statusLabel.hexpand = true
-            statusLabel.ellipsize = .end
+            statusLabel.ellipsize = PangoEllipsizeMode(rawValue: 3)
             leading.append(child: statusLabel)
         }
 

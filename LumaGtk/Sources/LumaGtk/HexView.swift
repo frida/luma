@@ -99,7 +99,7 @@ public final class HexView {
 
     private func configureFont(ctx: Cairo.ContextRef) {
         "monospace".withCString { p in
-            ctx.selectFontFace(p, slant: .normal, weight: .normal)
+            ctx.selectFontFace(p, slant: CAIRO_FONT_SLANT_NORMAL, weight: CAIRO_FONT_WEIGHT_NORMAL)
         }
         ctx.fontSize = fontSize
     }

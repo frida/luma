@@ -133,12 +133,9 @@ final class ITraceTimeline {
         height: Double,
         isSelected: Bool
     ) {
-        cairo_select_font_face(
-            ctx.context_ptr,
-            "monospace",
-            CAIRO_FONT_SLANT_NORMAL,
-            isSelected ? CAIRO_FONT_WEIGHT_BOLD : CAIRO_FONT_WEIGHT_NORMAL
-        )
+        let slant = cairo_font_slant_t(rawValue: 0)
+        let weight = cairo_font_weight_t(rawValue: isSelected ? 1 : 0)
+        cairo_select_font_face(ctx.context_ptr, "monospace", slant, weight)
         cairo_set_font_size(ctx.context_ptr, 9)
 
         var extents = cairo_text_extents_t()

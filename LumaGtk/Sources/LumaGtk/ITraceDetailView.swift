@@ -11,7 +11,7 @@ final class ITraceDetailView {
     private let capture: ITraceCaptureRecord
     private let otherCaptures: [ITraceCaptureRecord]
     private let engine: Engine
-    private let sessionID: UUID
+    private let sessionID: Foundation.UUID
     private let bodyContainer: Box
     private let entriesList: ListBox
     private let entriesScroll: ScrolledWindow
@@ -30,7 +30,7 @@ final class ITraceDetailView {
         capture: ITraceCaptureRecord,
         otherCaptures: [ITraceCaptureRecord] = [],
         engine: Engine,
-        sessionID: UUID
+        sessionID: Foundation.UUID
     ) {
         self.capture = capture
         self.otherCaptures = otherCaptures
@@ -246,7 +246,7 @@ final class ITraceDetailView {
                 self?.scrollToEntry(matchingNodeKey: key)
             }
         }
-        view.onJumpToFunction = { [weak self] index in
+        view.onJumpToFunction = { [weak self] (index: Int) in
             MainActor.assumeIsolated {
                 guard let self, let decoded = self.decoded else { return }
                 let target = index < 0 ? decoded.functionCalls.count - 1 : index
@@ -256,7 +256,7 @@ final class ITraceDetailView {
                 self.timeline?.setSelected(index: target)
             }
         }
-        view.onNavigateFunction = { [weak self] direction in
+        view.onNavigateFunction = { [weak self] (direction: Int) in
             MainActor.assumeIsolated {
                 guard let self, let decoded = self.decoded else { return }
                 let newIdx = self.selectedCallIndex + direction

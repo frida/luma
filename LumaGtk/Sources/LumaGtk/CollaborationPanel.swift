@@ -1,3 +1,4 @@
+import CPango
 import Foundation
 import Gdk
 import Gtk
@@ -327,7 +328,7 @@ final class CollaborationPanel {
             urlLabel.halign = .start
             urlLabel.hexpand = true
             urlLabel.selectable = true
-            urlLabel.ellipsize = .middle
+            urlLabel.ellipsize = PangoEllipsizeMode(rawValue: 2)
             urlLabel.add(cssClass: "monospace")
             urlLabel.add(cssClass: "caption")
             inviteRow.append(child: urlLabel)

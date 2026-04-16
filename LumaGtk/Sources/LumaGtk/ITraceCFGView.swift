@@ -1,6 +1,7 @@
 import CCairo
 import CGraphene
 import CGtk
+import CPango
 import Cairo
 import Foundation
 import Gdk
@@ -250,7 +251,7 @@ final class ITraceCFGView {
         nameLabel.halign = .start
         nameLabel.add(cssClass: "caption-heading")
         nameLabel.add(cssClass: "monospace")
-        nameLabel.ellipsize = .end
+        nameLabel.ellipsize = PangoEllipsizeMode(rawValue: 3)
         nameLabel.setSizeRequest(width: Int(nodeWidth) - 20, height: -1)
         nameLabel.marginBottom = 4
         box.append(child: nameLabel)
@@ -382,7 +383,7 @@ final class ITraceCFGView {
             label.hexpand = true
             label.add(cssClass: "monospace")
             label.add(cssClass: "caption")
-            label.ellipsize = .end
+            label.ellipsize = PangoEllipsizeMode(rawValue: 3)
             label.marginStart = 4
             label.marginEnd = 4
             row.set(child: label)
