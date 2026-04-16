@@ -268,9 +268,13 @@ public final class ProjectStore: Sendable {
     // MARK: - Packages State
 
     public func fetchPackagesState() throws -> ProjectPackagesState {
-        try db.read { db in
-            guard var state = try ProjectPackagesState.fetchOne(db) else {
-                return ProjectPackagesState()
+        try db.write { db in
+            var state: ProjectPackagesState
+            if let existing = try ProjectPackagesState.fetchOne(db) {
+                state = existing
+            } else {
+                state = ProjectPackagesState()
+                try state.save(db)
             }
             state.packages = try InstalledPackage
                 .filter(Column("packages_state_id") == state.id)
