@@ -652,8 +652,11 @@ private final class TracerHookSearch {
     private let entry: Entry
     private let scopeDropdown: DropDown
     private let spinner: Spinner
+    private let statusRow: Box
     private let status: Label
     private let addAllButton: Button
+    private let installBanner: Box
+    private let installBannerLabel: Label
     private let installButton: Button
     private let listBox: ListBox
     private let scroll: ScrolledWindow
@@ -733,7 +736,7 @@ private final class TracerHookSearch {
         queryRow.append(child: spinner)
         widget.append(child: queryRow)
 
-        let statusRow = Box(orientation: .horizontal, spacing: 6)
+        statusRow = Box(orientation: .horizontal, spacing: 6)
         statusRow.hexpand = true
         status = Label(str: attached ? "Type a query to search." : "Attach to a process to search APIs.")
         status.add(cssClass: "dim-label")
@@ -742,12 +745,6 @@ private final class TracerHookSearch {
         status.hexpand = true
         statusRow.append(child: status)
 
-        installButton = Button(label: "Install")
-        installButton.add(cssClass: "flat")
-        installButton.add(cssClass: "caption")
-        installButton.visible = false
-        statusRow.append(child: installButton)
-
         addAllButton = Button(label: "Add All")
         addAllButton.add(cssClass: "flat")
         addAllButton.add(cssClass: "caption")
@@ -755,6 +752,36 @@ private final class TracerHookSearch {
         addAllButton.visible = false
         statusRow.append(child: addAllButton)
         widget.append(child: statusRow)
+
+        installBanner = Box(orientation: .horizontal, spacing: 10)
+        installBanner.add(cssClass: "card")
+        installBanner.marginTop = 2
+        installBanner.marginBottom = 2
+        installBanner.visible = false
+
+        let bannerIcon = Image(iconName: "package-x-generic-symbolic")
+        bannerIcon.add(cssClass: "dim-label")
+        bannerIcon.marginStart = 10
+        bannerIcon.marginTop = 8
+        bannerIcon.marginBottom = 8
+        installBanner.append(child: bannerIcon)
+
+        installBannerLabel = Label(str: "")
+        installBannerLabel.add(cssClass: "caption")
+        installBannerLabel.halign = .start
+        installBannerLabel.hexpand = true
+        installBannerLabel.wrap = true
+        installBannerLabel.xalign = 0
+        installBanner.append(child: installBannerLabel)
+
+        installButton = Button(label: "Install")
+        installButton.add(cssClass: "suggested-action")
+        installButton.valign = .center
+        installButton.marginEnd = 8
+        installButton.marginTop = 6
+        installButton.marginBottom = 6
+        installBanner.append(child: installButton)
+        widget.append(child: installBanner)
 
         listBox = ListBox()
         listBox.selectionMode = .none
@@ -830,10 +857,9 @@ private final class TracerHookSearch {
         searchTask?.cancel()
         results = []
         rebuildResults()
-        setInstallHint(nil)
         let query = entry.text ?? ""
         if query.isEmpty {
-            status.label = "Type a query to search."
+            setSearchStatus("Type a query to search.")
         } else {
             scheduleSearch()
         }
@@ -846,8 +872,7 @@ private final class TracerHookSearch {
             searchTask?.cancel()
             results = []
             rebuildResults()
-            setInstallHint(nil)
-            status.label = "Type a query to search."
+            setSearchStatus("Type a query to search.")
             return
         }
         debounceTask = Task { @MainActor [anchor = self] in
@@ -866,13 +891,13 @@ private final class TracerHookSearch {
 
     private func performSearch(query: String) {
         guard let node = engine?.node(forSessionID: sessionID) else {
-            status.label = "Attach to a process to search APIs."
+            setSearchStatus("Attach to a process to search APIs.")
             return
         }
         searchTask?.cancel()
         spinner.spinning = true
         spinner.start()
-        status.label = "Searching\u{2026}"
+        setSearchStatus("Searching\u{2026}")
         searchTask = Task { @MainActor [anchor = self] in
             defer {
                 anchor.spinner.spinning = false
@@ -887,7 +912,7 @@ private final class TracerHookSearch {
                 guard let arr = raw as? [[String: Any]] else {
                     anchor.results = []
                     anchor.rebuildResults()
-                    anchor.status.label = "resolveTargets: unexpected response"
+                    anchor.setSearchStatus("resolveTargets: unexpected response")
                     return
                 }
                 var decoded: [TracerConfigEditor.ResolvedApi] = []
@@ -911,29 +936,37 @@ private final class TracerHookSearch {
                 }
                 anchor.results = decoded
                 anchor.rebuildResults()
-                anchor.setInstallHint(nil)
-                anchor.status.label =
-                    decoded.isEmpty ? "No results. Try another pattern." : "\(decoded.count) result\(decoded.count == 1 ? "" : "s")"
+                anchor.setSearchStatus(
+                    decoded.isEmpty
+                        ? "No results. Try another pattern."
+                        : "\(decoded.count) result\(decoded.count == 1 ? "" : "s")"
+                )
             } catch is CancellationError {
                 return
             } catch {
                 anchor.results = []
                 anchor.rebuildResults()
                 let classified = classifySearchError(error)
-                anchor.status.label = classified.message
-                anchor.setInstallHint(classified.hint)
+                anchor.setSearchStatus(classified.message, hint: classified.hint)
             }
         }
     }
 
-    private func setInstallHint(_ hint: SearchInstallHint?) {
+    private func setSearchStatus(_ message: String, hint: SearchInstallHint? = nil) {
         pendingInstallHint = hint
-        if let hint, installTask == nil {
-            installButton.label = "Install \(hint.name)"
-            installButton.visible = true
-            installButton.sensitive = true
-        } else if installTask == nil {
-            installButton.visible = false
+
+        if let hint {
+            installBannerLabel.label = message
+            if installTask == nil {
+                installButton.label = "Install \(hint.name)"
+                installButton.sensitive = true
+            }
+            installBanner.visible = true
+            statusRow.visible = false
+        } else {
+            status.label = message
+            statusRow.visible = true
+            installBanner.visible = false
         }
     }
 
@@ -943,7 +976,7 @@ private final class TracerHookSearch {
             installTask == nil
         else { return }
 
-        installButton.label = "Installing…"
+        installButton.label = "Installing \(hint.name)\u{2026}"
         installButton.sensitive = false
         installTask = Task { @MainActor [anchor = self] in
             defer {
@@ -951,13 +984,13 @@ private final class TracerHookSearch {
             }
             do {
                 _ = try await engine.installPackage(name: hint.name, globalAlias: hint.globalAlias)
-                anchor.setInstallHint(nil)
+                anchor.setSearchStatus("Searching\u{2026}")
                 anchor.runSearchNow()
             } catch {
                 let classified = classifySearchError(error)
-                anchor.status.label = classified.message
-                anchor.installButton.label = "Install"
+                anchor.installButton.label = "Install \(hint.name)"
                 anchor.installButton.sensitive = true
+                anchor.setSearchStatus(classified.message, hint: classified.hint)
             }
         }
     }
