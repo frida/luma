@@ -4,6 +4,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct LumaMonacoView LumaMonacoView;
 
 typedef void (*LumaMonacoTextCallback)(const char *text_utf8, void *user_data);
@@ -75,5 +79,9 @@ typedef void (*LumaOpenFilesCallback)(const char *path, void *user_data);
 void luma_app_set_open_handler(void *gobject_application,
                                 LumaOpenFilesCallback callback,
                                 void *user_data);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

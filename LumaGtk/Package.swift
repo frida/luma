@@ -30,16 +30,25 @@ let cLumaSources: [String] = ["shim_gtk.c", "shim_webkit.m"]
 let cLumaCSettings: [CSetting] = [
     .unsafeFlags(pkgConfigFlags(["gtk4"])),
 ]
+let cLumaCxxSettings: [CXXSetting] = []
 let cLumaLinkerSettings: [LinkerSetting] = [
     .linkedFramework("WebKit"),
 ]
 let lumaGtkLinkerSettings: [LinkerSetting] = []
 #elseif os(Windows)
-let cLumaSources: [String] = ["shim_gtk.c", "shim_webview2.c"]
+let cLumaSources: [String] = ["shim_gtk.c", "shim_webview2.cpp"]
 let cLumaCSettings: [CSetting] = [
     .unsafeFlags(pkgConfigFlags(["gtk4"])),
 ]
-let cLumaLinkerSettings: [LinkerSetting] = []
+let cLumaCxxSettings: [CXXSetting] = [
+    .unsafeFlags(pkgConfigFlags(["gtk4"])),
+]
+let cLumaLinkerSettings: [LinkerSetting] = [
+    .linkedLibrary("WebView2Loader.dll"),
+    .linkedLibrary("ole32"),
+    .linkedLibrary("oleaut32"),
+    .linkedLibrary("runtimeobject"),
+]
 let lumaGtkLinkerSettings: [LinkerSetting] = []
 #else
 let cLumaSources: [String] = ["shim_gtk.c", "shim_webkitgtk.c"]
@@ -48,6 +57,7 @@ let cLumaCSettings: [CSetting] = [
         pkgConfigFlags(["webkitgtk-6.0", "gtk4", "libsoup-3.0"])
     ),
 ]
+let cLumaCxxSettings: [CXXSetting] = []
 let cLumaLinkerSettings: [LinkerSetting] = [
     .linkedLibrary("webkitgtk-6.0"),
     .linkedLibrary("javascriptcoregtk-6.0"),
@@ -78,6 +88,7 @@ let package = Package(
             sources: cLumaSources,
             publicHeadersPath: "include",
             cSettings: cLumaCSettings,
+            cxxSettings: cLumaCxxSettings,
             linkerSettings: cLumaLinkerSettings
         ),
         .executableTarget(
