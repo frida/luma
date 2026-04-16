@@ -15,7 +15,9 @@ struct TracerConfigView: View {
     @State private var isResolving = false
     @State private var resolveResults: [ResolvedApi] = []
     @State private var searchError: String?
+    @State private var searchErrorHint: SearchErrorHint?
     @State private var searchTask: Task<Void, Never>?
+    @State private var installingPackage: String?
 
     @State private var selectedHookID: UUID?
     @State private var listSelection: Set<UUID> = []
@@ -100,6 +102,7 @@ struct TracerConfigView: View {
                 searchQuery = ""
                 resolveResults = []
                 searchError = nil
+                searchErrorHint = nil
             }
         }
         .onChange(of: searchScope) {
@@ -533,9 +536,18 @@ struct TracerConfigView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else if let error = searchError {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if case .installPackage(let pkg) = searchErrorHint {
+                        Button(installingPackage == pkg ? "Installing…" : "Install") {
+                            installMissingPackage(pkg)
+                        }
+                        .platformLinkButtonStyle()
+                        .disabled(installingPackage == pkg)
+                    }
+                }
             }
 
             if !resolveResults.isEmpty {
@@ -614,11 +626,7 @@ struct TracerConfigView: View {
                 }
             }
         } label: {
-            HStack(spacing: 2) {
-                Text(searchScope.label)
-                Image(systemName: "chevron.down")
-                    .font(.caption2)
-            }
+            Text(searchScope.label)
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
@@ -790,10 +798,43 @@ struct TracerConfigView: View {
 
             resolveResults = try arr.map(parseResolvedTarget)
             searchError = nil
+            searchErrorHint = nil
         } catch {
             resolveResults = []
-            searchError = error.localizedDescription
+            let classified = classify(error)
+            searchError = classified.message
+            searchErrorHint = classified.hint
         }
+    }
+
+    private func classify(_ error: any Swift.Error) -> (message: String, hint: SearchErrorHint?) {
+        let message: String
+        if case let Frida.Error.rpcError(rpcMessage, _) = error {
+            message = rpcMessage
+        } else {
+            message = error.localizedDescription
+        }
+        let hint: SearchErrorHint? = message.contains("Install 'frida-java-bridge'") ? .installPackage("frida-java-bridge") : nil
+        return (message, hint)
+    }
+
+    private func installMissingPackage(_ name: String) {
+        installingPackage = name
+        Task {
+            defer { installingPackage = nil }
+            do {
+                _ = try await workspace.engine.installPackage(name: name)
+                await performSearch()
+            } catch {
+                let classified = classify(error)
+                searchError = classified.message
+                searchErrorHint = classified.hint
+            }
+        }
+    }
+
+    enum SearchErrorHint: Equatable {
+        case installPackage(String)
     }
 
     private func parseResolvedTarget(_ obj: [String: Any]) throws -> ResolvedApi {

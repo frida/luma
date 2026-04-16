@@ -1,5 +1,6 @@
 import CGtk
 import Foundation
+import Frida
 import GLibObject
 import Gtk
 import LumaCore
@@ -570,6 +571,17 @@ private let compactDropdownChanged: @convention(c) (
     }
 }
 
+private func classifySearchError(_ error: any Swift.Error) -> (message: String, hint: String?) {
+    let message: String
+    if case let Frida.Error.rpcError(rpcMessage, _) = error {
+        message = rpcMessage
+    } else {
+        message = error.localizedDescription
+    }
+    let hint = message.contains("Install 'frida-java-bridge'") ? "frida-java-bridge" : nil
+    return (message, hint)
+}
+
 private let scopeDropdownChanged: @convention(c) (
     UnsafeMutableRawPointer,
     UnsafeMutableRawPointer?,
@@ -635,6 +647,7 @@ private final class TracerHookSearch {
     private let spinner: Spinner
     private let status: Label
     private let addAllButton: Button
+    private let installButton: Button
     private let listBox: ListBox
     private let scroll: ScrolledWindow
 
@@ -642,6 +655,8 @@ private final class TracerHookSearch {
     private var results: [TracerConfigEditor.ResolvedApi] = []
     private var debounceTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
+    private var pendingInstallPackage: String?
+    private var installTask: Task<Void, Never>?
 
     init(
         engine: Engine?,
@@ -720,6 +735,12 @@ private final class TracerHookSearch {
         status.hexpand = true
         statusRow.append(child: status)
 
+        installButton = Button(label: "Install")
+        installButton.add(cssClass: "flat")
+        installButton.add(cssClass: "caption")
+        installButton.visible = false
+        statusRow.append(child: installButton)
+
         addAllButton = Button(label: "Add All")
         addAllButton.add(cssClass: "flat")
         addAllButton.add(cssClass: "caption")
@@ -768,6 +789,12 @@ private final class TracerHookSearch {
             }
         }
 
+        installButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.installPendingPackage()
+            }
+        }
+
         if attached {
             _ = entry.grabFocus()
         }
@@ -796,6 +823,7 @@ private final class TracerHookSearch {
         searchTask?.cancel()
         results = []
         rebuildResults()
+        setInstallHint(nil)
         let query = entry.text ?? ""
         if query.isEmpty {
             status.label = "Type a query to search."
@@ -811,6 +839,7 @@ private final class TracerHookSearch {
             searchTask?.cancel()
             results = []
             rebuildResults()
+            setInstallHint(nil)
             status.label = "Type a query to search."
             return
         }
@@ -875,6 +904,7 @@ private final class TracerHookSearch {
                 }
                 anchor.results = decoded
                 anchor.rebuildResults()
+                anchor.setInstallHint(nil)
                 anchor.status.label =
                     decoded.isEmpty ? "No results. Try another pattern." : "\(decoded.count) result\(decoded.count == 1 ? "" : "s")"
             } catch is CancellationError {
@@ -882,7 +912,45 @@ private final class TracerHookSearch {
             } catch {
                 anchor.results = []
                 anchor.rebuildResults()
-                anchor.status.label = "Search failed: \(error.localizedDescription)"
+                let classified = classifySearchError(error)
+                anchor.status.label = classified.message
+                anchor.setInstallHint(classified.hint)
+            }
+        }
+    }
+
+    private func setInstallHint(_ packageName: String?) {
+        pendingInstallPackage = packageName
+        if let packageName, installTask == nil {
+            installButton.label = "Install \(packageName)"
+            installButton.visible = true
+            installButton.sensitive = true
+        } else if installTask == nil {
+            installButton.visible = false
+        }
+    }
+
+    private func installPendingPackage() {
+        guard let packageName = pendingInstallPackage,
+            let engine,
+            installTask == nil
+        else { return }
+
+        installButton.label = "Installing…"
+        installButton.sensitive = false
+        installTask = Task { @MainActor [anchor = self] in
+            defer {
+                anchor.installTask = nil
+            }
+            do {
+                _ = try await engine.installPackage(name: packageName)
+                anchor.setInstallHint(nil)
+                anchor.runSearchNow()
+            } catch {
+                let classified = classifySearchError(error)
+                anchor.status.label = classified.message
+                anchor.installButton.label = "Install"
+                anchor.installButton.sensitive = true
             }
         }
     }
