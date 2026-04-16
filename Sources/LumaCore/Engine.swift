@@ -1009,7 +1009,7 @@ public final class Engine {
             return (instrumentID: tracer.id, hookID: existingID)
         }
 
-        let stub = defaultTracerInstructionStub.replacingOccurrences(of: "INSTRUCTION", with: anchor.displayString)
+        let stub = defaultTracerCode(for: anchor, displayName: anchor.displayString)
 
         let newHook = TracerConfig.Hook(
             id: UUID(),

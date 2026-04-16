@@ -74,19 +74,80 @@ public struct TracerConfig: Codable, Equatable, Sendable {
     }
 }
 
-public let defaultTracerNativeStub = """
-    defineHandler({
-        onEnter(log, args) {
-            log(`CALL(args[0]=${args[0]})`);
-        },
+public func defaultTracerCode(for anchor: AddressAnchor, displayName: String) -> String {
+    switch anchor {
+    case .absolute:
+        return instructionStub(displayName: displayName)
+    case .objcMethod:
+        return objcMethodStub(displayName: displayName)
+    case .swiftFunc:
+        return swiftFuncStub(displayName: displayName)
+    case .moduleOffset, .moduleExport, .debugSymbol:
+        return nativeFunctionStub(displayName: displayName)
+    }
+}
 
-        onLeave(log, retval) {
+private func nativeFunctionStub(displayName: String) -> String {
+    return """
+        defineHandler({
+            onEnter(log, args) {
+                log(`\(displayName)(args[0]=${args[0]})`);
+            },
+
+            onLeave(log, retval) {
+            }
+        });
+        """
+}
+
+private func instructionStub(displayName: String) -> String {
+    return """
+        defineHandler(function (log, args) {
+            log(`\(displayName) hit! sp=${this.context.sp}`);
+        });
+        """
+}
+
+private func objcMethodStub(displayName: String) -> String {
+    return """
+        defineHandler({
+            onEnter(log, args) {
+                log(`\(objcLogPattern(selector: displayName))`);
+            },
+
+            onLeave(log, retval) {
+            }
+        });
+        """
+}
+
+private func swiftFuncStub(displayName: String) -> String {
+    return """
+        defineHandler({
+            onEnter(log, args) {
+                log(`\(displayName)`);
+            },
+
+            onLeave(log, retval) {
+            }
+        });
+        """
+}
+
+private func objcLogPattern(selector: String) -> String {
+    var argIndex = 2
+    var result = ""
+    for character in selector {
+        if character == ":" {
+            result += ":${args[\(argIndex)]} "
+            argIndex += 1
+        } else {
+            result.append(character)
         }
-    });
-    """
-
-public let defaultTracerInstructionStub = """
-    defineHandler(function (log, args) {
-        log(`INSTRUCTION hit! sp=${this.context.sp}`);
-    });
-    """
+    }
+    if result.hasSuffix(" ]") {
+        result.removeLast(2)
+        result += "]"
+    }
+    return result
+}

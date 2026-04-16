@@ -533,15 +533,11 @@ final class TracerConfigEditor {
 
     fileprivate func appendHook(for api: ResolvedApi) {
         let hadMultipleHooks = config.hooks.count > 1
-        let stub = defaultTracerNativeStub.replacingOccurrences(
-            of: "CALL(args[0]",
-            with: "\(api.displayName)(args[0]"
-        )
         let hook = TracerConfig.Hook(
             displayName: api.displayName,
             addressAnchor: api.anchor,
             isEnabled: true,
-            code: stub
+            code: defaultTracerCode(for: api.anchor, displayName: api.displayName)
         )
         config.hooks.append(hook)
         selectedHookID = hook.id
