@@ -502,22 +502,23 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-x64-windows-release-v2
+          key: vcpkg-x64-windows-release-v3
 
       - name: Install dependencies via vcpkg
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
         run: >-
           vcpkg install
           --overlay-triplets=${{ github.workspace }}/.github/vcpkg-triplets
+          --overlay-ports=${{ github.workspace }}/.github/vcpkg-ports
           --triplet x64-windows-release
-          glib json-glib libsoup gtk libxml2 graphite2 sqlite3[snapshot]
+          glib json-glib libsoup gtk[introspection] libxml2 graphite2 sqlite3[snapshot]
 
       - name: Save vcpkg cache
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-x64-windows-release-v2
+          key: vcpkg-x64-windows-release-v3
 
       - name: Set up vcpkg environment
         shell: bash
@@ -527,7 +528,7 @@ jobs:
           echo "$VCPKG_PREFIX/bin" >> $GITHUB_PATH
           echo "$VCPKG_PREFIX/tools" >> $GITHUB_PATH
           echo "PKG_CONFIG_PATH=$VCPKG_PREFIX/lib/pkgconfig" >> $GITHUB_ENV
-          echo "GIR_EXTRA_SEARCH_PATH=${{ github.workspace }}/LumaGtk/gir-1.0" >> $GITHUB_ENV
+          echo "GIR_EXTRA_SEARCH_PATH=$VCPKG_PREFIX/share/gir-1.0" >> $GITHUB_ENV
           # SwiftLibXML's module map links "xml2" -> lld-link expects xml2.lib,
           # but vcpkg ships libxml2.lib. Provide an alias.
           if [ -f "$VCPKG_PREFIX/lib/libxml2.lib" ] && [ ! -f "$VCPKG_PREFIX/lib/xml2.lib" ]; then

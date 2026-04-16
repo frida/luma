@@ -1,0 +1,68 @@
+From 45ec035af848befac0f11b075bf5bb5d1b2d67ba Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ole=20Andr=C3=A9=20Vadla=20Ravn=C3=A5s?= <oleavr@frida.re>
+Date: Thu, 16 Apr 2026 11:39:43 +0200
+Subject: [PATCH] scanner: Warn instead of erroring on unresolvable libs
+
+A '--library foo' that resolves only to a static archive with no
+matching shared library (e.g. the Windows SDK COM GUID helper libs
+dxguid / DirectX-Headers / DirectX-Guids, or ASan/UBSan archives) is
+legitimate: those libs contribute no GObject types to the scan, and
+the gir's shared-library="" attribute simply omits them.
+
+Before this change such a '--library' aborted the entire scan, which
+made gtk4 introspection unbuildable on Windows + MSVC whenever the
+D3D12 renderer was linked in. Demote the error to a warning; anything
+that genuinely needs to be introspected would have failed earlier
+during the C compile/link step.
+---
+ giscanner/ccompiler.py | 11 ++++++++---
+ giscanner/shlibs.py    | 11 ++++++++---
+ 2 files changed, 16 insertions(+), 6 deletions(-)
+
+diff --git a/giscanner/ccompiler.py b/giscanner/ccompiler.py
+index ed05e48..3365cde 100644
+--- a/giscanner/ccompiler.py
++++ b/giscanner/ccompiler.py
+@@ -482,9 +482,14 @@ class CCompiler(object):
+             if not found:
+                 not_resolved.append(lib)
+         if len(not_resolved) > 0:
+-            raise SystemExit(
+-                "ERROR: can't resolve libraries to shared libraries: " +
+-                ", ".join(not_resolved))
++            # A `--library` may resolve to a static archive that has no
++            # matching DLL (e.g. Windows SDK COM GUID helper libs like
++            # dxguid / DirectX-Headers / DirectX-Guids). Such libs don't
++            # contribute GObject types, so the resulting gir's
++            # shared-library="" attribute simply omits them.
++            sys.stderr.write(
++                "warning: ignoring libraries with no shared counterpart: " +
++                ", ".join(not_resolved) + "\n")
+         return shlibs
+ 
+     @property
+diff --git a/giscanner/shlibs.py b/giscanner/shlibs.py
+index 66cbb25..b3d4ce2 100644
+--- a/giscanner/shlibs.py
++++ b/giscanner/shlibs.py
+@@ -150,9 +150,14 @@ def resolve_from_ldd_output(libraries, output):
+                     break
+ 
+     if len(patterns) > 0:
+-        raise SystemExit(
+-            "ERROR: can't resolve libraries to shared libraries: " +
+-            ", ".join(patterns.keys()))
++        # A `--library` may resolve to a static archive that has no
++        # matching shared library (e.g. helper archives that contain
++        # only data/constant tables). Such libs don't contribute
++        # GObject types, so the resulting gir's shared-library=""
++        # attribute simply omits them.
++        sys.stderr.write(
++            "warning: ignoring libraries with no shared counterpart: " +
++            ", ".join(patterns.keys()) + "\n")
+ 
+     return shlibs
+ 
+-- 
+2.37.2.windows.2
+
