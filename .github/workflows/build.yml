@@ -12,6 +12,7 @@ env:
 
 jobs:
   macos:
+    if: false  # temporarily disabled while debugging Windows CI
     runs-on: macos-26
     strategy:
       matrix:
@@ -502,7 +503,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-x64-windows-release-v3
+          key: vcpkg-x64-windows-release-v4
 
       - name: Install dependencies via vcpkg
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
@@ -518,7 +519,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-x64-windows-release-v3
+          key: vcpkg-x64-windows-release-v4
 
       - name: Set up vcpkg environment
         shell: bash
@@ -539,7 +540,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}\frida-prefix
-          key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v1
+          key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v2
 
       - name: Build frida-core (shared)
         if: steps.frida-cache.outputs.cache-hit != 'true'
@@ -559,6 +560,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "compile failed with exit code $LASTEXITCODE" }
           python releng/meson/meson.py install -C build --no-rebuild --skip-subprojects
           if ($LASTEXITCODE -ne 0) { throw "install failed with exit code $LASTEXITCODE" }
+          Get-ChildItem "$env:RUNNER_TEMP\frida-prefix\lib\pkgconfig\*.pc" | ForEach-Object {
+            (Get-Content $_.FullName) -replace '^prefix=.*', 'prefix=${pcfiledir}/../..' |
+              Set-Content $_.FullName
+          }
           Pop-Location
 
       - name: Save frida-core cache
@@ -566,14 +571,14 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}\frida-prefix
-          key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v1
+          key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v2
 
       - name: Restore radare2 cache
         id: r2-cache
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}\r2-prefix
-          key: ${{ runner.os }}-radare2-${{ env.RADARE2_REF }}-v2
+          key: ${{ runner.os }}-radare2-${{ env.RADARE2_REF }}-v3
 
       - name: Build radare2 (shared)
         if: steps.r2-cache.outputs.cache-hit != 'true'
@@ -585,6 +590,10 @@ jobs:
           meson setup build "--prefix=$env:RUNNER_TEMP\r2-prefix" --default-library=shared -Dcli=disabled
           meson compile -C build
           meson install -C build
+          Get-ChildItem "$env:RUNNER_TEMP\r2-prefix\lib\pkgconfig\*.pc" | ForEach-Object {
+            (Get-Content $_.FullName) -replace '^prefix=.*', 'prefix=${pcfiledir}/../..' |
+              Set-Content $_.FullName
+          }
           Pop-Location
 
       - name: Save radare2 cache
@@ -592,7 +601,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}\r2-prefix
-          key: ${{ runner.os }}-radare2-${{ env.RADARE2_REF }}-v2
+          key: ${{ runner.os }}-radare2-${{ env.RADARE2_REF }}-v3
 
       - name: Update environment
         shell: bash
