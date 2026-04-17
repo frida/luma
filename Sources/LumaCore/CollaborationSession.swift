@@ -47,7 +47,7 @@ public final class CollaborationSession {
 
         public static func fromJSON(_ obj: [String: Any], localUser: UserInfo) -> ChatMessage? {
             guard let text = obj["text"] as? String,
-                let senderObj = obj["sender"] as? [String: Any],
+                let senderObj = obj["user"] as? [String: Any],
                 let sender = UserInfo.fromJSON(senderObj)
             else { return nil }
             return ChatMessage(text: text, sender: sender, isLocal: sender.id == localUser.id)
