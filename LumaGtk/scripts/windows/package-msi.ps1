@@ -66,10 +66,35 @@ New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
 Copy-Item $exe (Join-Path $stage 'Luma.exe')
 
+$swiftRuntimeDir = $null
+$swiftCore = Get-Command swiftCore.dll -ErrorAction SilentlyContinue
+if (-not $swiftCore) {
+    # swiftCore.dll isn't usually on PATH on CI. Probe the SDKROOT /
+    # Swift developer layout directly.
+    $candidates = @()
+    if ($env:SDKROOT) { $candidates += Join-Path $env:SDKROOT '..\..\..\..\Runtimes' }
+    $candidates += @(
+        "$env:LOCALAPPDATA\Programs\Swift\Runtimes",
+        'C:\Program Files\Swift\Runtimes',
+        "$env:ProgramFiles\Swift\Runtimes"
+    )
+    foreach ($base in $candidates | Where-Object { $_ -and (Test-Path $_) }) {
+        $hit = Get-ChildItem -Path $base -Filter swiftCore.dll -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($hit) { $swiftRuntimeDir = $hit.DirectoryName; break }
+    }
+} else {
+    $swiftRuntimeDir = Split-Path -Parent $swiftCore.Path
+}
+if (-not $swiftRuntimeDir) {
+    throw "Could not locate Swift runtime DLLs (swiftCore.dll). Set SDKROOT or install Swift for Windows."
+}
+Write-Host "Swift runtime: $swiftRuntimeDir"
+
 $dllSearchPath = @(
     (Join-Path $env:VCPKG_PREFIX 'bin'),
     (Join-Path $env:FRIDA_PREFIX 'bin'),
-    (Join-Path $env:R2_PREFIX    'bin')
+    (Join-Path $env:R2_PREFIX    'bin'),
+    $swiftRuntimeDir
 ) | Where-Object { Test-Path $_ }
 
 $dumpbin = Get-Command dumpbin.exe -ErrorAction SilentlyContinue
