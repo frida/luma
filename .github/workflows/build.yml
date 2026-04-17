@@ -628,6 +628,10 @@ jobs:
           echo "PKG_CONFIG_PATH=$FRIDA_PKG;$R2_PKG;$VCPKG_PKG" >> $GITHUB_ENV
           echo "$RUNNER_TEMP\\frida-prefix\\bin" >> $GITHUB_PATH
           echo "$RUNNER_TEMP\\r2-prefix\\bin" >> $GITHUB_PATH
+          # Extend CPATH with frida-core and radare2 headers so SwiftyR2 and
+          # FridaCore shims can locate them without pkg-config.
+          echo "CPATH=$CPATH;$RUNNER_TEMP/frida-prefix/include/frida-1.0;$RUNNER_TEMP/r2-prefix/include" >> $GITHUB_ENV
+          echo "CPLUS_INCLUDE_PATH=$CPLUS_INCLUDE_PATH;$RUNNER_TEMP/frida-prefix/include/frida-1.0;$RUNNER_TEMP/r2-prefix/include" >> $GITHUB_ENV
 
       - name: Build LumaGtk
         run: cd LumaGtk && swift build -c release
