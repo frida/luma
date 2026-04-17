@@ -89,6 +89,10 @@ public func defaultTracerCode(for anchor: AddressAnchor, displayName: String) ->
     }
 }
 
+public func defaultInstructionHookCode(displayName: String) -> String {
+    return instructionStub(displayName: displayName)
+}
+
 private func nativeFunctionStub(displayName: String) -> String {
     return """
         defineHandler({
