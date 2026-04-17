@@ -56,6 +56,7 @@ enum SessionDetachedBanner {
         reattach.marginBottom = 6
         reattach.valign = .center
         reattach.sensitive = session.phase != .attaching
+        reattach.focusOnClick = false
         reattach.onClicked { _ in
             MainActor.assumeIsolated {
                 onReattach()

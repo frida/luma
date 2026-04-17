@@ -700,12 +700,14 @@ final class MainWindow {
         case .insight(let sid, let iid):
             let cached = insightsBySession[sid]?.first { $0.id == iid }
             let insight = cached ?? (try? engine?.store.fetchInsights(sessionID: sid))?.first { $0.id == iid }
-            if let insight, let engine {
+            let session = sessions.first(where: { $0.id == sid })
+            if let insight, let engine, let session {
                 let detail: InsightDetailView
                 if let existing = currentInsightDetail, currentInsightID == iid {
+                    existing.applySessionState()
                     detail = existing
                 } else {
-                    detail = InsightDetailView(engine: engine, sessionID: sid, insight: insight)
+                    detail = InsightDetailView(engine: engine, session: session, insight: insight, owner: self)
                     currentInsightDetail = detail
                     currentInsightID = iid
                 }
@@ -1039,6 +1041,7 @@ final class MainWindow {
                 currentREPLPane?.applySessionState()
             }
             currentInstrumentDetail?.applySessionState()
+            currentInsightDetail?.applySessionState()
             updateResumeButtonVisibility()
         case .sessionRemoved(let id):
             removeSessionRows(id)

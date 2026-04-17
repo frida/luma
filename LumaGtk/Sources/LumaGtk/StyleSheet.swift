@@ -43,10 +43,50 @@ enum StyleSheet {
 
     .luma-disasm-row:hover {
         background-color: alpha(@theme_fg_color, 0.05);
+        border-radius: 8px;
     }
 
     .luma-disasm-row.selected {
         background-color: alpha(@accent_bg_color, 0.25);
+        border-radius: 8px;
+    }
+
+    .luma-disasm-row.pulsing {
+        background-color: alpha(@accent_bg_color, 0.45);
+        border-radius: 8px;
+        animation: luma-disasm-pulse 1.08s ease-in-out;
+    }
+
+    @keyframes luma-disasm-pulse {
+        0%, 100% { background-color: alpha(@accent_bg_color, 0.06); }
+        16%, 50%, 84% { background-color: alpha(@accent_bg_color, 0.45); }
+        33%, 67% { background-color: alpha(@accent_bg_color, 0.06); }
+    }
+
+    .luma-disasm-decoration {
+        font-size: 0.55em;
+        color: alpha(@theme_fg_color, 0.45);
+    }
+
+    button.luma-disasm-jump {
+        min-height: 0;
+        min-width: 0;
+        padding: 1px 6px;
+        border-radius: 999px;
+        background-color: alpha(@theme_fg_color, 0.08);
+        opacity: 0.75;
+    }
+    button.luma-disasm-jump:hover {
+        opacity: 1.0;
+        background-color: alpha(@theme_fg_color, 0.14);
+    }
+
+    .luma-loading-capsule {
+        background-color: alpha(@theme_bg_color, 0.85);
+        border: 1px solid alpha(@theme_fg_color, 0.12);
+        border-radius: 999px;
+        padding: 8px 12px;
+        box-shadow: 0 1px 4px alpha(black, 0.15);
     }
 
     .luma-itrace-fn-0 { background-image: none; background-color: alpha(#1f77b4, 0.55); color: white; }
