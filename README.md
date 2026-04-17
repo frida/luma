@@ -71,3 +71,30 @@ make clean
 The resulting app will be located at:
 
     build/Luma.app
+
+## Building the GTK frontend (Linux)
+
+From `LumaGtk/`:
+
+```sh
+make           # incremental build → .build/debug/LumaGtk
+make run       # build + launch
+make install PREFIX=/usr/local
+```
+
+## Building the GTK frontend (Windows)
+
+Requires Swift for Windows, Visual Studio 2022 (for `cl.exe`),
+vcpkg with gtk4, and prebuilt `frida-core` / `radare2` prefixes.
+Launch a **Developer PowerShell for VS** and run from `LumaGtk/`:
+
+```powershell
+.\scripts\windows\build.ps1                            # debug
+.\scripts\windows\build.ps1 -Configuration release
+.\scripts\windows\package-msi.ps1 -Version 0.1.0       # build\Luma-*.msi
+.\run.bat                                              # launch with DLL PATH set
+```
+
+Prefix locations default to `C:\vcpkg\installed\x64-windows-release`
+and `C:\src\dist`; override with `-VcpkgPrefix`, `-FridaPrefix`,
+`-R2Prefix` (or `$env:VCPKG_PREFIX` etc.).
