@@ -122,6 +122,16 @@ function Add-DllClosure {
 }
 Add-DllClosure $exe
 
+# frida-core loads its per-arch agent and helper at runtime from
+# <install>\frida-1.0\<arch>\, alongside dbghelp.dll and symsrv.dll.
+# These are not in LumaGtk.exe's import table, so the DLL-closure
+# walk above misses them — stage them explicitly.
+$fridaLib = Join-Path $env:FRIDA_PREFIX 'lib\frida-1.0'
+if (Test-Path $fridaLib) {
+    $fridaStage = Join-Path $stage 'frida-1.0'
+    robocopy $fridaLib $fridaStage /E /NFL /NDL /NJH /NJS /NP | Out-Null
+}
+
 # GTK data: icons, glib schemas, gdk-pixbuf loaders.
 function Copy-Tree {
     param([string] $From, [string] $To)
@@ -131,6 +141,16 @@ function Copy-Tree {
 Copy-Tree (Join-Path $env:VCPKG_PREFIX 'share\glib-2.0\schemas') (Join-Path $stage 'share\glib-2.0\schemas')
 Copy-Tree (Join-Path $env:VCPKG_PREFIX 'share\icons')            (Join-Path $stage 'share\icons')
 Copy-Tree (Join-Path $env:VCPKG_PREFIX 'lib\gdk-pixbuf-2.0')     (Join-Path $stage 'lib\gdk-pixbuf-2.0')
+
+# Compile the GLib schema XMLs so GTK can actually use them.
+$schemasDir = Join-Path $stage 'share\glib-2.0\schemas'
+if (Test-Path $schemasDir) {
+    $compiler = Join-Path $env:VCPKG_PREFIX 'tools\glib\glib-compile-schemas.exe'
+    if (Test-Path $compiler) {
+        & $compiler --strict $schemasDir
+        if ($LASTEXITCODE -ne 0) { throw "glib-compile-schemas failed ($LASTEXITCODE)" }
+    }
+}
 
 $arch    = 'x64'
 $msiName = "Luma-$Version-$arch.msi"
