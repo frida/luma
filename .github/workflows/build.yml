@@ -648,5 +648,15 @@ jobs:
           echo "CPLUS_INCLUDE_PATH=$CPLUS_INCLUDE_PATH;$RUNNER_TEMP/frida-prefix/include/frida-1.0;$RUNNER_TEMP/r2-prefix/include" >> $GITHUB_ENV
 
       - name: Build LumaGtk
-        run: cd LumaGtk && (swift build -c release; status=$?; echo "=== GLib-2.0-B.swift ByteArray lines ==="; grep -n "ByteArray" .build/plugins/outputs/swiftglib/GLib/destination/gir2swift-plugin/gir2swift-generated/GLib/GLib-2.0-B.swift | head -20; exit $status)
+        id: build
+        run: cd LumaGtk && swift build -c release
+        continue-on-error: true
+
+      - name: Dump generated GLib-2.0-B.swift ByteArray lines
+        if: always()
         shell: bash
+        run: |
+          GLIB_B="LumaGtk/.build/plugins/outputs/swiftglib/GLib/destination/gir2swift-plugin/gir2swift-generated/GLib/GLib-2.0-B.swift"
+          echo "=== ByteArray lines in $GLIB_B ==="
+          grep -n "ByteArray" "$GLIB_B" | head -20 || echo "(no match)"
+          if [ "${{ steps.build.outcome }}" = "failure" ]; then exit 1; fi
