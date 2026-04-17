@@ -648,4 +648,5 @@ jobs:
           echo "CPLUS_INCLUDE_PATH=$CPLUS_INCLUDE_PATH;$RUNNER_TEMP/frida-prefix/include/frida-1.0;$RUNNER_TEMP/r2-prefix/include" >> $GITHUB_ENV
 
       - name: Build LumaGtk
-        run: cd LumaGtk && swift build -c release
+        run: cd LumaGtk && (swift build -c release; status=$?; echo "=== GLib-2.0-B.swift ByteArray lines ==="; grep -n "ByteArray" .build/plugins/outputs/swiftglib/GLib/destination/gir2swift-plugin/gir2swift-generated/GLib/GLib-2.0-B.swift | head -20; exit $status)
+        shell: bash
