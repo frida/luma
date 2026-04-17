@@ -501,7 +501,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-x64-windows-release-v6
+          key: vcpkg-x64-windows-release-v7
 
       - name: Install dependencies via vcpkg
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
@@ -510,14 +510,14 @@ jobs:
           --overlay-triplets=${{ github.workspace }}/.github/vcpkg-triplets
           --overlay-ports=${{ github.workspace }}/.github/vcpkg-ports
           --triplet x64-windows-release
-          glib json-glib libsoup gtk[introspection] atk[introspection] libxml2 graphite2 sqlite3[snapshot] webview2
+          glib json-glib libsoup gtk[introspection] atk[introspection] libadwaita[introspection] libxml2 graphite2 sqlite3[snapshot] webview2
 
       - name: Save vcpkg cache
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-x64-windows-release-v6
+          key: vcpkg-x64-windows-release-v7
 
       - name: Set up vcpkg environment
         shell: bash
@@ -551,7 +551,8 @@ jobs:
               *) cp "$hdr" "$STAGE/" ;;
             esac
           done
-          CPATH="$VCPKG_PREFIX/include/gtk-4.0"
+          CPATH="$VCPKG_PREFIX/include/libadwaita-1"
+          CPATH="$CPATH;$VCPKG_PREFIX/include/gtk-4.0"
           CPATH="$CPATH;$VCPKG_PREFIX/include/pango-1.0"
           CPATH="$CPATH;$VCPKG_PREFIX/include/harfbuzz"
           CPATH="$CPATH;$VCPKG_PREFIX/include/gdk-pixbuf-2.0"

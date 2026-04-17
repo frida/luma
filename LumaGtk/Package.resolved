@@ -1,5 +1,5 @@
 {
-  "originHash" : "5931d75823e7bf3a25a8be5fcc1b8daf62da56cb6f65b85c451b8dad469e5346",
+  "originHash" : "085c483d9e6358a5432ea8305f6797bf32f6a441b1fd90ec66f8c5c32c3cf355",
   "pins" : [
     {
       "identity" : "frida-swift",
@@ -16,7 +16,7 @@
       "location" : "https://github.com/frida/gir2swift.git",
       "state" : {
         "branch" : "development",
-        "revision" : "eadb3836f4248d3e48b0a9c71594c53f438db799"
+        "revision" : "9356672749612cf0cf43780d837455e09f2f8b8a"
       }
     },
     {
@@ -53,6 +53,15 @@
       "state" : {
         "revision" : "95ba0316a9b733e92bb6b071255ff46263bbe7dc",
         "version" : "3.15.1"
+      }
+    },
+    {
+      "identity" : "swiftadw",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/frida/SwiftAdw.git",
+      "state" : {
+        "branch" : "development",
+        "revision" : "cc1b7507510b935dadf4c8f604eb4b530c6b758f"
       }
     },
     {

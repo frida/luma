@@ -99,6 +99,7 @@ let package = Package(
     dependencies: [
         .package(path: ".."),
         .package(url: "https://github.com/frida/SwiftGtk.git", branch: "gtk4-development"),
+        .package(url: "https://github.com/frida/SwiftAdw.git", branch: "development"),
     ],
     targets: [
         .target(
@@ -115,6 +116,7 @@ let package = Package(
             dependencies: [
                 .product(name: "LumaCore", package: "luma"),
                 .product(name: "Gtk", package: "SwiftGtk"),
+                .product(name: "Adw", package: "SwiftAdw"),
                 "CLuma",
             ],
             path: "Sources/LumaGtk",
