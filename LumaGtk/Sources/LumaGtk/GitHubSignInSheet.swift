@@ -220,7 +220,12 @@ final class GitHubSignInSheet {
 
 @MainActor
 extension GitHubSignInSheet {
-    static func present(from anchor: Widget, gitHubAuth: GitHubAuth) {
+    @discardableResult
+    static func present(
+        from anchor: Widget,
+        gitHubAuth: GitHubAuth,
+        onClosed: (() -> Void)? = nil
+    ) -> Window {
         let sheet = GitHubSignInSheet(gitHubAuth: gitHubAuth)
 
         let window = Window()
@@ -248,23 +253,35 @@ extension GitHubSignInSheet {
         window.set(child: WidgetRef(sheet.contentBox.widget_ptr))
 
         sheet.window = window
-        Self.retain(sheet: sheet, window: window)
+        Self.retain(sheet: sheet, window: window, gitHubAuth: gitHubAuth, onClosed: onClosed)
 
         sheet.refresh()
         sheet.observe()
 
         installEscapeShortcut(on: window)
         window.present()
+
+        return window
     }
 
     private static var retained: [ObjectIdentifier: GitHubSignInSheet] = [:]
 
-    private static func retain(sheet: GitHubSignInSheet, window: Window) {
+    private static func retain(
+        sheet: GitHubSignInSheet,
+        window: Window,
+        gitHubAuth: GitHubAuth,
+        onClosed: (() -> Void)?
+    ) {
         let key = ObjectIdentifier(window)
         retained[key] = sheet
         let handler: (WindowRef) -> Bool = { _ in
             MainActor.assumeIsolated {
+                if case .failed = gitHubAuth.state {
+                    gitHubAuth.resetState()
+                }
+                gitHubAuth.dismissSignIn()
                 _ = retained.removeValue(forKey: key)
+                onClosed?()
             }
             return false
         }

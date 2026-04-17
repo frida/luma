@@ -30,6 +30,7 @@ final class CollaborationPanel {
     private var isPinnedToBottom = true
     private var lastChatCount = 0
     private var suppressScrollPinUpdate = false
+    private var signInWindow: Window?
 
     init(engine: Engine, onClose: @escaping () -> Void) {
         self.engine = engine
@@ -145,6 +146,7 @@ final class CollaborationPanel {
         refreshRoom()
         refreshParticipants()
         refreshChat()
+        syncSignInSheet()
         observeIdentity()
         observeRoom()
         observeParticipants()
@@ -158,12 +160,32 @@ final class CollaborationPanel {
         withObservationTracking {
             _ = engine.gitHubAuth.currentUser
             _ = engine.gitHubAuth.state
+            _ = engine.gitHubAuth.isPresentingSignIn
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
                 self.refreshIdentity()
+                self.syncSignInSheet()
                 self.observeIdentity()
             }
+        }
+    }
+
+    private func syncSignInSheet() {
+        guard let engine else { return }
+        let wants = engine.gitHubAuth.isPresentingSignIn
+        if wants && signInWindow == nil {
+            let window = GitHubSignInSheet.present(
+                from: widget,
+                gitHubAuth: engine.gitHubAuth,
+                onClosed: { [weak self] in
+                    self?.signInWindow = nil
+                }
+            )
+            signInWindow = window
+        } else if !wants, let window = signInWindow {
+            signInWindow = nil
+            window.destroy()
         }
     }
 
@@ -203,46 +225,30 @@ final class CollaborationPanel {
     private func refreshIdentity() {
         clearChildren(of: identitySection)
         guard let engine else { return }
-
-        if let user = engine.gitHubAuth.currentUser {
-            let row = Box(orientation: .horizontal, spacing: 8)
-            let label = Label(str: "@\(user.id)")
-            label.halign = .start
-            label.hexpand = true
-            row.append(child: label)
-            let signOut = Button(label: "Sign out")
-            signOut.hasFrame = false
-            signOut.onClicked { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let engine = self?.engine else { return }
-                    Task { @MainActor in
-                        await engine.gitHubAuth.signOut()
-                        await engine.collaboration.stop()
-                    }
-                }
-            }
-            row.append(child: signOut)
-            identitySection.append(child: row)
-        } else {
-            let signIn = Button(label: "Sign in to GitHub\u{2026}")
-            signIn.add(cssClass: "suggested-action")
-            signIn.onClicked { [weak self, weak signIn] _ in
-                MainActor.assumeIsolated {
-                    guard let engine = self?.engine, let anchor = signIn else { return }
-                    GitHubSignInSheet.present(from: anchor, gitHubAuth: engine.gitHubAuth)
-                    engine.gitHubAuth.beginSignIn()
-                }
-            }
-            identitySection.append(child: signIn)
+        guard let user = engine.gitHubAuth.currentUser else {
+            identitySection.visible = false
+            return
         }
 
-        if case .failed(let reason) = engine.gitHubAuth.state {
-            let err = Label(str: reason)
-            err.halign = .start
-            err.add(cssClass: "error")
-            err.wrap = true
-            identitySection.append(child: err)
+        identitySection.visible = true
+        let row = Box(orientation: .horizontal, spacing: 8)
+        let label = Label(str: "@\(user.id)")
+        label.halign = .start
+        label.hexpand = true
+        row.append(child: label)
+        let signOut = Button(label: "Sign out")
+        signOut.hasFrame = false
+        signOut.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let engine = self?.engine else { return }
+                Task { @MainActor in
+                    await engine.gitHubAuth.signOut()
+                    await engine.collaboration.stop()
+                }
+            }
         }
+        row.append(child: signOut)
+        identitySection.append(child: row)
     }
 
     private func refreshRoom() {
