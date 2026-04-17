@@ -570,7 +570,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}\frida-prefix
-          key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v2
+          key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v3
 
       - name: Build frida-core (shared)
         if: steps.frida-cache.outputs.cache-hit != 'true'
@@ -601,7 +601,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}\frida-prefix
-          key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v2
+          key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v3
 
       - name: Restore radare2 cache
         id: r2-cache
