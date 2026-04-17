@@ -471,7 +471,6 @@ jobs:
 
   windows:
     runs-on: windows-latest
-    continue-on-error: true
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
@@ -648,17 +647,4 @@ jobs:
           echo "CPLUS_INCLUDE_PATH=$CPLUS_INCLUDE_PATH;$RUNNER_TEMP/frida-prefix/include/frida-1.0;$RUNNER_TEMP/r2-prefix/include" >> $GITHUB_ENV
 
       - name: Build LumaGtk
-        id: build
         run: cd LumaGtk && swift build -c release
-        continue-on-error: true
-
-      - name: Dump generated GLib-2.0-constants.swift
-        if: always()
-        shell: bash
-        run: |
-          F="LumaGtk/.build/plugins/outputs/swiftglib/GLib/destination/gir2swift-plugin/gir2swift-generated/GLib/GLib-2.0-constants.swift"
-          echo "=== atomicRefCountInit line in $F ==="
-          grep -n "atomicRefCountInit\|G_ATOMIC_REF_COUNT_INIT" "$F" | head -5 || echo "(no match)"
-          echo "=== head 80 lines ==="
-          head -80 "$F" 2>&1 || echo "(missing)"
-          if [ "${{ steps.build.outcome }}" = "failure" ]; then exit 1; fi
