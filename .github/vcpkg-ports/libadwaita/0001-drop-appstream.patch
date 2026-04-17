@@ -1,0 +1,140 @@
+diff --git a/meson.build b/meson.build
+index 5279b18..3914b0a 100644
+--- a/meson.build
++++ b/meson.build
+@@ -40,13 +40,6 @@ glib_dep = dependency('glib-2.0', version: glib_min_version)
+ gio_dep = dependency('gio-2.0', version: glib_min_version)
+ gtk_dep = dependency('gtk4', version: gtk_min_version)
+ fribidi_dep = dependency('fribidi')
+-appstream_dep = dependency('appstream',
+-  fallback : ['appstream', 'appstream_dep'],
+-  default_options : [
+-    'systemd=false', 'apidocs=false', 'install-docs=false',
+-    'stemming=false', 'svg-support=false', 'gir=false',
+-  ],
+-)
+ 
+ target_system = host_machine.system()
+ if target_system == 'darwin'
+diff --git a/src/adw-about-dialog.c b/src/adw-about-dialog.c
+index ac35e36..b0fbe51 100644
+--- a/src/adw-about-dialog.c
++++ b/src/adw-about-dialog.c
+@@ -7,7 +7,6 @@
+ 
+ #include "config.h"
+ #include <glib/gi18n-lib.h>
+-#include <appstream.h>
+ 
+ #include "adw-about-dialog.h"
+ 
+@@ -437,13 +436,6 @@ legal_showing_cb (AdwAboutDialog *self)
+   self->legal_showing_idle_id = 0;
+ }
+ 
+-static gboolean
+-get_release_for_version (AsRelease  *rel,
+-                         const char *version)
+-{
+-  return !g_strcmp0 (as_release_get_version (rel), version);
+-}
+-
+ static void
+ update_credits_legal_group (AdwAboutDialog *self)
+ {
+@@ -1076,6 +1068,18 @@ update_support (AdwAboutDialog *self)
+ 
+ static void
+ populate_from_appdata (AdwAboutDialog *self)
++{
++  g_assert (self->appdata_resource_path != NULL);
++
++  g_warning ("libadwaita built without appstream support: "
++             "ignoring appdata-resource-path '%s'. "
++             "Populate the about dialog properties directly instead.",
++             self->appdata_resource_path);
++}
++
++#if 0 /* disabled: appstream removed */
++static void
++populate_from_appdata_orig (AdwAboutDialog *self)
+ {
+   GFile *appdata_file;
+   char *appdata_uri;
+@@ -1212,6 +1216,7 @@ populate_from_appdata (AdwAboutDialog *self)
+   g_free (application_id);
+   g_free (appdata_uri);
+ }
++#endif /* disabled: appstream removed */
+ 
+ static void
+ adw_about_dialog_get_property (GObject    *object,
+diff --git a/src/adw-about-window.c b/src/adw-about-window.c
+index b7c98d7..0bdd5ab 100644
+--- a/src/adw-about-window.c
++++ b/src/adw-about-window.c
+@@ -6,7 +6,6 @@
+ 
+ #include "config.h"
+ #include <glib/gi18n-lib.h>
+-#include <appstream.h>
+ 
+ #include "adw-about-window.h"
+ 
+@@ -427,13 +426,6 @@ legal_showing_cb (AdwAboutWindow *self)
+     g_idle_add_once ((GSourceOnceFunc) legal_showing_idle_cb, self);
+ }
+ 
+-static gboolean
+-get_release_for_version (AsRelease  *rel,
+-                         const char *version)
+-{
+-  return !g_strcmp0 (as_release_get_version (rel), version);
+-}
+-
+ static void
+ update_credits_legal_group (AdwAboutWindow *self)
+ {
+@@ -1996,6 +1988,22 @@ adw_about_window_new (void)
+ GtkWidget *
+ adw_about_window_new_from_appdata (const char *resource_path,
+                                    const char *release_notes_version)
++{
++  g_return_val_if_fail (resource_path, NULL);
++
++  g_warning ("libadwaita built without appstream support: "
++             "adw_about_window_new_from_appdata ignoring '%s'. "
++             "Populate the about window properties directly instead.",
++             resource_path);
++
++  (void) release_notes_version;
++  return adw_about_window_new ();
++}
++
++#if 0 /* disabled: appstream removed */
++GtkWidget *
++adw_about_window_new_from_appdata_orig (const char *resource_path,
++                                        const char *release_notes_version)
+ {
+   AdwAboutWindow *self;
+   GFile *appdata_file;
+@@ -2143,6 +2151,7 @@ adw_about_window_new_from_appdata (const char *resource_path,
+ 
+   return GTK_WIDGET (self);
+ }
++#endif /* disabled: appstream removed */
+ 
+ /**
+  * adw_about_window_get_application_icon:
+diff --git a/src/meson.build b/src/meson.build
+index 8a86f9e..314aed8 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -332,7 +332,6 @@ libadwaita_deps = [
+   fribidi_dep,
+   gio_dep,
+   gtk_dep,
+-  appstream_dep,
+   cc.find_library('m', required: false),
+ ]
+ 

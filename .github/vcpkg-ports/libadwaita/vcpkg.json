@@ -1,0 +1,40 @@
+{
+  "name": "libadwaita",
+  "version": "1.9.0",
+  "port-version": 1,
+  "description": "Building blocks for modern GNOME applications (patched: appstream dep removed)",
+  "homepage": "https://gnome.pages.gitlab.gnome.org/libadwaita",
+  "license": "LGPL-2.1-or-later",
+  "supports": "!xbox",
+  "dependencies": [
+    {
+      "name": "glib",
+      "host": true
+    },
+    "gtk",
+    {
+      "name": "sassc",
+      "host": true
+    },
+    {
+      "name": "vcpkg-tool-meson",
+      "host": true
+    }
+  ],
+  "features": {
+    "introspection": {
+      "description": "Build with introspection",
+      "supports": "!static",
+      "dependencies": [
+        {
+          "name": "gtk",
+          "default-features": false,
+          "features": [
+            "introspection"
+          ]
+        },
+        "gobject-introspection"
+      ]
+    }
+  }
+}

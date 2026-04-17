@@ -66,6 +66,7 @@ $pkgConfigDirs = @(
 ) | ForEach-Object { $_ -replace '\\','/' } | Select-Object -Unique
 
 $cpathDirs = @(
+    'include\libadwaita-1',
     'include\gtk-4.0',
     'include\pango-1.0',
     'include\harfbuzz',
