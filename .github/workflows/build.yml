@@ -538,6 +538,16 @@ jobs:
           # consumer — clang compiling C shim sources — reads CPATH for
           # header search, so pre-populate it with the vcpkg gtk4 include
           # dirs as a cross-target fallback.
+          #
+          # Don't add $VCPKG_PREFIX/include itself — vcpkg drops a dirent.h
+          # polyfill there that conflicts with Swift's _FoundationCShims.
+          # Stage WebView2 headers into a dedicated subdir and add that
+          # instead.
+          mkdir -p "$VCPKG_PREFIX/include/webview2-shim"
+          cp "$VCPKG_PREFIX/include/WebView2.h" \
+             "$VCPKG_PREFIX/include/WebView2EnvironmentOptions.h" \
+             "$VCPKG_PREFIX/include/WebView2Interop.h" \
+             "$VCPKG_PREFIX/include/webview2-shim/"
           CPATH="$VCPKG_PREFIX/include/gtk-4.0"
           CPATH="$CPATH;$VCPKG_PREFIX/include/pango-1.0"
           CPATH="$CPATH;$VCPKG_PREFIX/include/harfbuzz"
@@ -547,7 +557,7 @@ jobs:
           CPATH="$CPATH;$VCPKG_PREFIX/lib/graphene-1.0/include"
           CPATH="$CPATH;$VCPKG_PREFIX/include/glib-2.0"
           CPATH="$CPATH;$VCPKG_PREFIX/lib/glib-2.0/include"
-          CPATH="$CPATH;$VCPKG_PREFIX/include"
+          CPATH="$CPATH;$VCPKG_PREFIX/include/webview2-shim"
           echo "CPATH=$CPATH" >> $GITHUB_ENV
           echo "CPLUS_INCLUDE_PATH=$CPATH" >> $GITHUB_ENV
 
