@@ -502,7 +502,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-x64-windows-release-v5
+          key: vcpkg-x64-windows-release-v6
 
       - name: Install dependencies via vcpkg
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
@@ -511,14 +511,14 @@ jobs:
           --overlay-triplets=${{ github.workspace }}/.github/vcpkg-triplets
           --overlay-ports=${{ github.workspace }}/.github/vcpkg-ports
           --triplet x64-windows-release
-          glib json-glib libsoup gtk[introspection] atk[introspection] libxml2 graphite2 sqlite3[snapshot]
+          glib json-glib libsoup gtk[introspection] atk[introspection] libxml2 graphite2 sqlite3[snapshot] webview2
 
       - name: Save vcpkg cache
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-x64-windows-release-v5
+          key: vcpkg-x64-windows-release-v6
 
       - name: Set up vcpkg environment
         shell: bash
