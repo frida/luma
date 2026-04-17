@@ -1022,7 +1022,7 @@ public final class Engine {
             return (instrumentID: tracer.id, hookID: existingID)
         }
 
-        let stub = defaultInstructionHookCode(displayName: anchor.displayString)
+        let stub = defaultTracerCode(kind: .instruction, anchor: anchor, displayName: anchor.displayString)
 
         let newHook = TracerConfig.Hook(
             id: UUID(),

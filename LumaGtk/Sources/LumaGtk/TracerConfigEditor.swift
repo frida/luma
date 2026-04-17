@@ -262,8 +262,7 @@ final class TracerConfigEditor {
             }
             toolbar.append(child: enabledSwitch)
 
-            let isFunctionHook = hook.code.contains("onEnter") || hook.code.contains("onLeave")
-            if isFunctionHook {
+            if hook.kind == .function {
                 let itraceSwitch = Switch()
                 itraceSwitch.active = hook.itraceEnabled
                 itraceSwitch.valign = .center
@@ -539,7 +538,7 @@ final class TracerConfigEditor {
             displayName: api.displayName,
             addressAnchor: api.anchor,
             isEnabled: true,
-            code: defaultTracerCode(for: api.anchor, displayName: api.displayName)
+            code: defaultTracerCode(kind: .function, anchor: api.anchor, displayName: api.displayName)
         )
         config.hooks.append(hook)
         selectedHookID = hook.id

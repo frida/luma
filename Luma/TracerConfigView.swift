@@ -679,11 +679,7 @@ struct TracerConfigView: View {
     }
 
     private var selectedHookIsFunctionHook: Bool {
-        guard let hook = selectedHook else { return false }
-        // Function hooks use defineHandler({onEnter/onLeave}),
-        // instruction hooks use defineHandler(function).
-        // Heuristic: check if the code contains "onEnter" or "onLeave".
-        return hook.code.contains("onEnter") || hook.code.contains("onLeave")
+        selectedHook?.kind == .function
     }
 
     private func bindingForSelectedHookITrace() -> Binding<Bool> {
@@ -753,7 +749,7 @@ struct TracerConfigView: View {
             displayName: api.displayName,
             addressAnchor: api.anchor,
             isEnabled: true,
-            code: defaultTracerCode(for: api.anchor, displayName: api.displayName)
+            code: defaultTracerCode(kind: .function, anchor: api.anchor, displayName: api.displayName)
         )
 
         config.hooks.append(hook)

@@ -74,23 +74,33 @@ public struct TracerConfig: Codable, Equatable, Sendable {
     }
 }
 
-public func defaultTracerCode(for anchor: AddressAnchor, displayName: String) -> String {
-    switch anchor {
-    case .absolute:
-        return instructionStub(displayName: displayName)
-    case .objcMethod:
-        return objcMethodStub(displayName: displayName)
-    case .swiftFunc:
-        return swiftFuncStub(displayName: displayName)
-    case .javaMethod:
-        return javaMethodStub(displayName: displayName)
-    case .moduleOffset, .moduleExport, .debugSymbol:
-        return nativeFunctionStub(displayName: displayName)
+public enum TracerHookKind: Sendable {
+    case instruction
+    case function
+}
+
+extension TracerConfig.Hook {
+    public var kind: TracerHookKind {
+        (code.contains("onEnter") || code.contains("onLeave")) ? .function : .instruction
     }
 }
 
-public func defaultInstructionHookCode(displayName: String) -> String {
-    return instructionStub(displayName: displayName)
+public func defaultTracerCode(kind: TracerHookKind, anchor: AddressAnchor, displayName: String) -> String {
+    switch kind {
+    case .instruction:
+        return instructionStub(displayName: displayName)
+    case .function:
+        switch anchor {
+        case .objcMethod:
+            return objcMethodStub(displayName: displayName)
+        case .swiftFunc:
+            return swiftFuncStub(displayName: displayName)
+        case .javaMethod:
+            return javaMethodStub(displayName: displayName)
+        case .absolute, .moduleOffset, .moduleExport, .debugSymbol:
+            return nativeFunctionStub(displayName: displayName)
+        }
+    }
 }
 
 private func nativeFunctionStub(displayName: String) -> String {
