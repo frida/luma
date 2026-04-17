@@ -533,11 +533,13 @@ jobs:
           if [ -f "$VCPKG_PREFIX/tools/pkgconf/pkgconf.exe" ] && [ ! -f "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe" ]; then
             cp "$VCPKG_PREFIX/tools/pkgconf/pkgconf.exe" "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe"
           fi
-          # SwiftPM's .systemLibrary(pkgConfig:) resolves pkg-config via its
-          # own Process spawner, which doesn't see GITHUB_PATH additions the
-          # same way bash does. Drop a copy into Git's usr/bin — that path is
-          # baked into every CreateProcess lookup on the Windows runner.
+          # SwiftPM resolves pkg-config by running 'pkg-config' (no .exe)
+          # through TSCBasic.AsyncProcess, which on Windows doesn't apply
+          # PATHEXT. Drop a no-extension copy of the PE alongside the .exe
+          # and put a copy in Git's usr/bin for good measure.
           cp "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe" "C:/Program Files/Git/usr/bin/pkg-config.exe"
+          cp "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe" "C:/Program Files/Git/usr/bin/pkg-config"
+          cp "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe" "$VCPKG_PREFIX/tools/pkgconf/pkg-config"
 
       - name: Restore frida-core cache
         id: frida-cache
