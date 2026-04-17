@@ -148,7 +148,7 @@ struct CollaborationPanel: View {
                         Spacer()
                     }
 
-                    let inviteURL = "luma://join?room=\(roomID)"
+                    let inviteURL = "\(BackendConfig.inviteLinkBase)\(roomID)"
 
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 4) {

@@ -320,7 +320,7 @@ final class CollaborationPanel {
             label.add(cssClass: "monospace")
             roomSection.append(child: label)
 
-            let inviteURL = "luma://join?room=\(roomID)"
+            let inviteURL = "\(BackendConfig.inviteLinkBase)\(roomID)"
             let inviteFrame = Box(orientation: .vertical, spacing: 4)
             inviteFrame.add(cssClass: "luma-invite-frame")
 
