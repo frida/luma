@@ -501,7 +501,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-x64-windows-release-v7
+          key: vcpkg-x64-windows-release-v8
 
       - name: Install dependencies via vcpkg
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
@@ -510,14 +510,14 @@ jobs:
           --overlay-triplets=${{ github.workspace }}/.github/vcpkg-triplets
           --overlay-ports=${{ github.workspace }}/.github/vcpkg-ports
           --triplet x64-windows-release
-          glib json-glib libsoup gtk[introspection] atk[introspection] libadwaita[introspection] libxml2 graphite2 sqlite3[snapshot] webview2
+          glib glib-networking json-glib libsoup nghttp2 gtk[introspection] atk[introspection] libadwaita[introspection] libxml2 graphite2 sqlite3[snapshot] webview2
 
       - name: Save vcpkg cache
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-x64-windows-release-v7
+          key: vcpkg-x64-windows-release-v8
 
       - name: Set up vcpkg environment
         shell: bash
@@ -570,7 +570,20 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}\frida-prefix
-          key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v3
+          key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v4
+
+      - name: Install MinGW toolchain for cgo
+        if: steps.frida-cache.outputs.cache-hit != 'true'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc
+
+      - name: Install Go toolchain
+        if: steps.frida-cache.outputs.cache-hit != 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
 
       - name: Build frida-core (shared)
         if: steps.frida-cache.outputs.cache-hit != 'true'
@@ -584,7 +597,7 @@ jobs:
               --enable-shared `
               --without-prebuilds=sdk `
               "--prefix=$env:RUNNER_TEMP\frida-prefix" `
-              -- --force-fallback-for=openssl,libnghttp2 -Dcompiler_backend=disabled -Dtests=disabled
+              -- --force-fallback-for=openssl -Dtests=disabled
           if ($LASTEXITCODE -ne 0) { throw "configure failed with exit code $LASTEXITCODE" }
           python releng/meson/meson.py compile -C build
           if ($LASTEXITCODE -ne 0) { throw "compile failed with exit code $LASTEXITCODE" }
@@ -601,7 +614,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}\frida-prefix
-          key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v3
+          key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v4
 
       - name: Restore radare2 cache
         id: r2-cache

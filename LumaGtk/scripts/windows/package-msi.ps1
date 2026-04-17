@@ -193,6 +193,9 @@ $productWxs = Join-Path $wixObj 'product.wxs'
                        Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </DirectoryRef>
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR" />
+    <UIRef Id="WixUI_InstallDir" />
+    <UIRef Id="WixUI_ErrorProgressText" />
   </Product>
 </Wix>
 "@ | Set-Content -Encoding UTF8 $productWxs
