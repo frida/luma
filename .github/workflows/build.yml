@@ -533,10 +533,11 @@ jobs:
           if [ -f "$VCPKG_PREFIX/tools/pkgconf/pkgconf.exe" ] && [ ! -f "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe" ]; then
             cp "$VCPKG_PREFIX/tools/pkgconf/pkgconf.exe" "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe"
           fi
-          echo "=== share/gir-1.0 ==="
-          ls "$VCPKG_PREFIX/share/gir-1.0" 2>&1 || echo "(missing)"
-          echo "=== lib/girepository-1.0 ==="
-          ls "$VCPKG_PREFIX/lib/girepository-1.0" 2>&1 || echo "(missing)"
+          echo "=== pkg-config lookups ==="
+          which pkg-config || echo "(not on PATH)"
+          pkg-config --cflags gtk4 2>&1 || echo "(gtk4 failed)"
+          echo "=== cmd /c pkg-config (mirrors Package.swift) ==="
+          cmd.exe //c "pkg-config --cflags gtk4" 2>&1 || echo "(cmd pkg-config failed)"
 
       - name: Restore frida-core cache
         id: frida-cache
