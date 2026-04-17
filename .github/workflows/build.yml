@@ -496,7 +496,6 @@ jobs:
       - name: Install build tools
         run: |
           pip install meson ninja setuptools
-          choco install pkgconfiglite -y
 
       - name: Restore vcpkg cache
         id: vcpkg-cache
