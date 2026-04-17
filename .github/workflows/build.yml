@@ -535,11 +535,10 @@ jobs:
           fi
           # SwiftPM resolves pkg-config by running 'pkg-config' (no .exe)
           # through TSCBasic.AsyncProcess, which on Windows doesn't apply
-          # PATHEXT. Drop a no-extension copy of the PE alongside the .exe
-          # and put a copy in Git's usr/bin for good measure.
+          # PATHEXT. Drop a no-extension copy of the PE in Git's usr/bin
+          # where every spawner finds it.
           cp "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe" "C:/Program Files/Git/usr/bin/pkg-config.exe"
-          cp "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe" "C:/Program Files/Git/usr/bin/pkg-config"
-          cp "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe" "$VCPKG_PREFIX/tools/pkgconf/pkg-config"
+          cat "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe" > "C:/Program Files/Git/usr/bin/pkg-config"
 
       - name: Restore frida-core cache
         id: frida-cache
