@@ -7,7 +7,7 @@ on:
 
 env:
   FRIDA_CORE_REF: "main"
-  RADARE2_REF: "d542f75fc1e865881ae1c40baf9cce28cd96ca6a"
+  RADARE2_REF: "5e3b30e883b08b7fe822d081e2b4d142d96ae3fc"
   SWIFT_VERSION: "6.2"
 
 jobs:
