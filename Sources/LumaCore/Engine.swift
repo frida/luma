@@ -1028,6 +1028,7 @@ public final class Engine {
             id: UUID(),
             displayName: String(format: "0x%llx", address),
             addressAnchor: anchor,
+            kind: .instruction,
             isEnabled: true,
             code: stub
         )

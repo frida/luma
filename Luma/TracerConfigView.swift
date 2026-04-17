@@ -748,6 +748,7 @@ struct TracerConfigView: View {
         let hook = TracerConfig.Hook(
             displayName: api.displayName,
             addressAnchor: api.anchor,
+            kind: .function,
             isEnabled: true,
             code: defaultTracerCode(kind: .function, anchor: api.anchor, displayName: api.displayName)
         )

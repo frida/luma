@@ -1,5 +1,10 @@
 import Foundation
 
+public enum TracerHookKind: String, Codable, Sendable {
+    case instruction
+    case function
+}
+
 public struct TracerConfig: Codable, Equatable, Sendable {
     public struct Hook: Codable, Equatable, Identifiable, Sendable {
         public var id: UUID
@@ -7,6 +12,8 @@ public struct TracerConfig: Codable, Equatable, Sendable {
         public var displayName: String
 
         public var addressAnchor: AddressAnchor
+
+        public var kind: TracerHookKind
 
         public var isEnabled: Bool
 
@@ -20,6 +27,7 @@ public struct TracerConfig: Codable, Equatable, Sendable {
             id: UUID = UUID(),
             displayName: String,
             addressAnchor: AddressAnchor,
+            kind: TracerHookKind,
             isEnabled: Bool = true,
             code: String,
             isPinned: Bool = false,
@@ -28,6 +36,7 @@ public struct TracerConfig: Codable, Equatable, Sendable {
             self.id = id
             self.displayName = displayName
             self.addressAnchor = addressAnchor
+            self.kind = kind
             self.isEnabled = isEnabled
             self.code = code
             self.isPinned = isPinned
@@ -56,6 +65,7 @@ public struct TracerConfig: Codable, Equatable, Sendable {
                     "id": hook.id.uuidString,
                     "displayName": hook.displayName,
                     "addressAnchor": hook.addressAnchor.toJSON(),
+                    "kind": hook.kind.rawValue,
                     "isEnabled": hook.isEnabled,
                     "code": hook.code,
                 ]
@@ -71,17 +81,6 @@ public struct TracerConfig: Codable, Equatable, Sendable {
                 return dict
             }
         ]
-    }
-}
-
-public enum TracerHookKind: Sendable {
-    case instruction
-    case function
-}
-
-extension TracerConfig.Hook {
-    public var kind: TracerHookKind {
-        (code.contains("onEnter") || code.contains("onLeave")) ? .function : .instruction
     }
 }
 
