@@ -654,9 +654,10 @@ final class InsightDetailView {
         ]
 
         for action in engine.addressActions(sessionID: sessionID, address: address) {
-            items.append(ContextMenu.Item(action.title, destructive: action.role == .destructive) {
+            items.append(ContextMenu.Item(action.title, destructive: action.role == .destructive) { [weak self] in
                 Task { @MainActor in
-                    _ = await action.perform()
+                    guard let target = await action.perform() else { return }
+                    self?.owner?.navigate(to: target)
                 }
             })
         }

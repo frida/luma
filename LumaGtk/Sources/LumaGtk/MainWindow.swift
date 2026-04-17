@@ -1001,6 +1001,13 @@ final class MainWindow {
         currentInstrumentDetail?.selectTracerHook(id: hookID)
     }
 
+    func navigate(to target: LumaCore.NavigationTarget) {
+        switch target {
+        case .instrumentComponent(let sessionID, let instrumentID, let componentID):
+            navigateToHook(sessionID: sessionID, instrumentID: instrumentID, hookID: componentID)
+        }
+    }
+
     private func select(_ newValue: SidebarSelection) {
         guard selection != newValue else { return }
         selection = newValue
