@@ -533,12 +533,22 @@ jobs:
           if [ -f "$VCPKG_PREFIX/tools/pkgconf/pkgconf.exe" ] && [ ! -f "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe" ]; then
             cp "$VCPKG_PREFIX/tools/pkgconf/pkgconf.exe" "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe"
           fi
-          # SwiftPM resolves pkg-config by running 'pkg-config' (no .exe)
-          # through TSCBasic.AsyncProcess, which on Windows doesn't apply
-          # PATHEXT. Drop a no-extension copy of the PE in Git's usr/bin
-          # where every spawner finds it.
-          cp "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe" "C:/Program Files/Git/usr/bin/pkg-config.exe"
-          cat "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe" > "C:/Program Files/Git/usr/bin/pkg-config"
+          # SwiftPM's internal .systemLibrary(pkgConfig:) resolution fails
+          # to find pkg-config via its own Process spawner on Windows. The
+          # consumer — clang compiling C shim sources — reads CPATH for
+          # header search, so pre-populate it with the vcpkg gtk4 include
+          # dirs as a cross-target fallback.
+          CPATH="$VCPKG_PREFIX/include/gtk-4.0"
+          CPATH="$CPATH;$VCPKG_PREFIX/include/pango-1.0"
+          CPATH="$CPATH;$VCPKG_PREFIX/include/harfbuzz"
+          CPATH="$CPATH;$VCPKG_PREFIX/include/gdk-pixbuf-2.0"
+          CPATH="$CPATH;$VCPKG_PREFIX/include/cairo"
+          CPATH="$CPATH;$VCPKG_PREFIX/include/graphene-1.0"
+          CPATH="$CPATH;$VCPKG_PREFIX/lib/graphene-1.0/include"
+          CPATH="$CPATH;$VCPKG_PREFIX/include/glib-2.0"
+          CPATH="$CPATH;$VCPKG_PREFIX/lib/glib-2.0/include"
+          CPATH="$CPATH;$VCPKG_PREFIX/include"
+          echo "CPATH=$CPATH" >> $GITHUB_ENV
 
       - name: Restore frida-core cache
         id: frida-cache
