@@ -9,6 +9,11 @@ env:
   FRIDA_CORE_REF: "main"
   RADARE2_REF: "5e3b30e883b08b7fe822d081e2b4d142d96ae3fc"
   SWIFT_VERSION: "6.2"
+  # ilammy/msvc-dev-cmd hasn't cut a Node-24-compatible release yet
+  # (v1 is its only major). Opt into Node 24 ahead of GitHub's
+  # forced migration in June 2026 so the warning doesn't clutter
+  # every build log in the meantime.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   macos:
@@ -18,7 +23,7 @@ jobs:
       matrix:
         arch: [arm64]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v6
         with:
@@ -195,7 +200,7 @@ jobs:
 
       - name: Restore frida-core cache
         id: frida-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/frida-destdir
           key: ${{ runner.os }}-fedora43-frida-core-${{ env.FRIDA_CORE_REF }}-v1
@@ -214,7 +219,7 @@ jobs:
 
       - name: Save frida-core cache
         if: steps.frida-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: /tmp/frida-destdir
           key: ${{ runner.os }}-fedora43-frida-core-${{ env.FRIDA_CORE_REF }}-v1
@@ -226,7 +231,7 @@ jobs:
 
       - name: Restore radare2 cache
         id: r2-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/r2-destdir
           key: ${{ runner.os }}-fedora43-radare2-${{ env.RADARE2_REF }}-v1
@@ -245,7 +250,7 @@ jobs:
 
       - name: Save radare2 cache
         if: steps.r2-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: /tmp/r2-destdir
           key: ${{ runner.os }}-fedora43-radare2-${{ env.RADARE2_REF }}-v1
@@ -255,7 +260,7 @@ jobs:
           cp -a /tmp/r2-destdir/usr/. /usr/
           ldconfig
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Build
         run: cd LumaGtk && make build SWIFT_BUILD_FLAGS="-c release"
@@ -333,7 +338,7 @@ jobs:
 
       - name: Restore frida-core cache
         id: frida-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/frida-destdir
           key: ${{ runner.os }}-ubuntu2510-frida-core-${{ env.FRIDA_CORE_REF }}-v1
@@ -350,7 +355,7 @@ jobs:
 
       - name: Save frida-core cache
         if: steps.frida-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: /tmp/frida-destdir
           key: ${{ runner.os }}-ubuntu2510-frida-core-${{ env.FRIDA_CORE_REF }}-v1
@@ -362,7 +367,7 @@ jobs:
 
       - name: Restore radare2 cache
         id: r2-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/r2-destdir
           key: ${{ runner.os }}-ubuntu2510-radare2-${{ env.RADARE2_REF }}-v1
@@ -378,7 +383,7 @@ jobs:
 
       - name: Save radare2 cache
         if: steps.r2-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: /tmp/r2-destdir
           key: ${{ runner.os }}-ubuntu2510-radare2-${{ env.RADARE2_REF }}-v1
@@ -388,7 +393,7 @@ jobs:
           cp -a /tmp/r2-destdir/usr/. /usr/
           ldconfig
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Build
         run: cd LumaGtk && make build SWIFT_BUILD_FLAGS="-c release"
@@ -414,7 +419,7 @@ jobs:
     if: false
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Install Flatpak and flatpak-builder
         run: |
@@ -425,7 +430,7 @@ jobs:
 
       - name: Restore flatpak-builder cache
         id: flatpak-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: .flatpak-builder
           key: flatpak-builder-v1
@@ -443,7 +448,7 @@ jobs:
 
       - name: Save flatpak-builder cache
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: .flatpak-builder
           key: flatpak-builder-v1
@@ -457,7 +462,7 @@ jobs:
     if: false
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - uses: snapcore/action-build@v1.3.0
         id: snapcraft
@@ -473,7 +478,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v6
         with:
@@ -488,7 +493,7 @@ jobs:
           swift-version: "swift-${{ env.SWIFT_VERSION }}-release"
           swift-build: "${{ env.SWIFT_VERSION }}-RELEASE"
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -498,7 +503,7 @@ jobs:
 
       - name: Restore vcpkg cache
         id: vcpkg-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: C:\vcpkg\installed
           key: vcpkg-x64-windows-release-v8
@@ -514,7 +519,7 @@ jobs:
 
       - name: Save vcpkg cache
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: C:\vcpkg\installed
           key: vcpkg-x64-windows-release-v8
@@ -567,7 +572,7 @@ jobs:
 
       - name: Restore frida-core cache
         id: frida-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}\frida-prefix
           key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v4
@@ -581,7 +586,7 @@ jobs:
 
       - name: Install Go toolchain
         if: steps.frida-cache.outputs.cache-hit != 'true'
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '1.24'
 
@@ -611,14 +616,14 @@ jobs:
 
       - name: Save frida-core cache
         if: steps.frida-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}\frida-prefix
           key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v4
 
       - name: Restore radare2 cache
         id: r2-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}\r2-prefix
           key: ${{ runner.os }}-radare2-${{ env.RADARE2_REF }}-v3
@@ -641,7 +646,7 @@ jobs:
 
       - name: Save radare2 cache
         if: steps.r2-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}\r2-prefix
           key: ${{ runner.os }}-radare2-${{ env.RADARE2_REF }}-v3

@@ -163,6 +163,7 @@ $componentsWxs = Join-Path $wixObj 'components.wxs'
 if ($LASTEXITCODE -ne 0) { throw "heat failed ($LASTEXITCODE)" }
 
 $productWxs = Join-Path $wixObj 'product.wxs'
+$iconPath = (Join-Path $pkg 'data\luma.ico') -replace '\\','/'
 @"
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
@@ -171,6 +172,8 @@ $productWxs = Join-Path $wixObj 'product.wxs'
     <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
     <MajorUpgrade DowngradeErrorMessage="A newer version of Luma is already installed." />
     <MediaTemplate EmbedCab="yes" />
+    <Icon Id="LumaIcon" SourceFile="$iconPath" />
+    <Property Id="ARPPRODUCTICON" Value="LumaIcon" />
     <Feature Id="Main" Title="Luma" Level="1">
       <ComponentGroupRef Id="LumaComponents" />
       <ComponentRef Id="ApplicationShortcut" />
@@ -187,7 +190,8 @@ $productWxs = Join-Path $wixObj 'product.wxs'
       <Component Id="ApplicationShortcut" Guid="a7b4e3f2-21d9-4b8a-9f3b-64a2e3b2a001">
         <Shortcut Id="ApplicationStartMenuShortcut" Name="Luma"
                   Description="Interactive dynamic instrumentation"
-                  Target="[INSTALLDIR]Luma.exe" WorkingDirectory="INSTALLDIR" />
+                  Target="[INSTALLDIR]Luma.exe" WorkingDirectory="INSTALLDIR"
+                  Icon="LumaIcon" IconIndex="0" />
         <RemoveFolder Id="CleanupApplicationProgramsFolder" On="uninstall" />
         <RegistryValue Root="HKCU" Key="Software\Frida\Luma" Name="installed"
                        Type="integer" Value="1" KeyPath="yes" />

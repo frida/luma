@@ -44,6 +44,27 @@ func findOnPath(_ name: String) -> String? {
     return nil
 }
 
+#if os(Windows)
+func compileWindowsExecutableIcon() -> String? {
+    let pkg = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
+    let rcFile = pkg + "\\Sources\\LumaGtk\\luma.rc"
+    let resFile = pkg + "\\Sources\\LumaGtk\\luma.res"
+    guard FileManager.default.fileExists(atPath: rcFile) else { return nil }
+    if let rc = findOnPath("rc") {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: rc)
+        proc.arguments = ["/nologo", "/fo", resFile, rcFile]
+        proc.standardOutput = FileHandle.nullDevice
+        proc.standardError = FileHandle.nullDevice
+        try? proc.run()
+        proc.waitUntilExit()
+        if proc.terminationStatus == 0 { return resFile }
+    }
+    return FileManager.default.fileExists(atPath: resFile) ? resFile : nil
+}
+let lumaExecutableIconResource = compileWindowsExecutableIcon()
+#endif
+
 #if os(macOS)
 let cLumaSources: [String] = ["shim_gtk.c", "shim_webkit.m"]
 let cLumaCSettings: [CSetting] = [
@@ -68,7 +89,9 @@ let cLumaLinkerSettings: [LinkerSetting] = [
     .linkedLibrary("oleaut32"),
     .linkedLibrary("runtimeobject"),
 ]
-let lumaGtkLinkerSettings: [LinkerSetting] = []
+let lumaGtkLinkerSettings: [LinkerSetting] = lumaExecutableIconResource.map {
+    [.unsafeFlags([$0])]
+} ?? []
 #else
 let cLumaSources: [String] = ["shim_gtk.c", "shim_webkitgtk.c"]
 let cLumaCSettings: [CSetting] = [

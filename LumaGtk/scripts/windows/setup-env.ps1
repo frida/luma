@@ -104,6 +104,22 @@ foreach ($p in $prefixBins) {
     }
 }
 
+# rc.exe lives in the Windows SDK bin and isn't on PATH in plain
+# cmd / PowerShell. Package.swift uses it to compile the exe icon
+# resource when swift build runs outside a Developer prompt.
+if (-not (Get-Command rc.exe -ErrorAction SilentlyContinue)) {
+    $sdkRoot = 'C:\Program Files (x86)\Windows Kits\10\bin'
+    if (Test-Path $sdkRoot) {
+        $sdkBin = Get-ChildItem $sdkRoot -Directory |
+            Where-Object { $_.Name -match '^10\.' } |
+            Sort-Object Name -Descending |
+            ForEach-Object { Join-Path $_.FullName 'x64' } |
+            Where-Object { Test-Path (Join-Path $_ 'rc.exe') } |
+            Select-Object -First 1
+        if ($sdkBin) { $env:PATH = "$sdkBin;$env:PATH" }
+    }
+}
+
 Write-Host "LumaGtk build env configured:"
 Write-Host "  VCPKG_PREFIX  = $vcpkg"
 Write-Host "  FRIDA_PREFIX  = $frida"
