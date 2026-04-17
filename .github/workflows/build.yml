@@ -648,3 +648,18 @@ jobs:
 
       - name: Build LumaGtk
         run: cd LumaGtk && swift build -c release
+
+      - name: Package MSI
+        shell: pwsh
+        run: |
+          cd LumaGtk
+          .\scripts\windows\package-msi.ps1 -SkipBuild -Configuration release `
+              -VcpkgPrefix "C:/vcpkg/installed/x64-windows-release" `
+              -FridaPrefix "$env:RUNNER_TEMP/frida-prefix" `
+              -R2Prefix    "$env:RUNNER_TEMP/r2-prefix"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Luma-windows-x64.msi
+          path: LumaGtk/build/Luma-*.msi
+          if-no-files-found: error
