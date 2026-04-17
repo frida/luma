@@ -4,14 +4,10 @@ import Foundation
 import PackageDescription
 
 func pkgConfigFlags(_ packages: [String], libs: Bool = false) -> [String] {
+    guard let pkgConfigPath = findOnPath("pkg-config") else { return [] }
     let proc = Process()
-    #if os(Windows)
-    proc.executableURL = URL(fileURLWithPath: "C:\\Windows\\System32\\cmd.exe")
-    proc.arguments = ["/c", "pkg-config"] + (libs ? ["--libs"] : ["--cflags"]) + packages
-    #else
-    proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-    proc.arguments = ["pkg-config"] + (libs ? ["--libs"] : ["--cflags"]) + packages
-    #endif
+    proc.executableURL = URL(fileURLWithPath: pkgConfigPath)
+    proc.arguments = (libs ? ["--libs"] : ["--cflags"]) + packages
     let pipe = Pipe()
     proc.standardOutput = pipe
     proc.standardError = FileHandle.nullDevice
@@ -23,6 +19,29 @@ func pkgConfigFlags(_ packages: [String], libs: Bool = false) -> [String] {
         .trimmingCharacters(in: .whitespacesAndNewlines)
         .split(separator: " ")
         .map(String.init) ?? []
+}
+
+func findOnPath(_ name: String) -> String? {
+    #if os(Windows)
+    let separator: Character = ";"
+    let extensions = ["", ".exe", ".cmd", ".bat"]
+    let pathSep = "\\"
+    #else
+    let separator: Character = ":"
+    let extensions = [""]
+    let pathSep = "/"
+    #endif
+    let env = ProcessInfo.processInfo.environment
+    guard let pathValue = env["PATH"] ?? env["Path"] else { return nil }
+    for dir in pathValue.split(separator: separator).map(String.init) where !dir.isEmpty {
+        for ext in extensions {
+            let candidate = dir + pathSep + name + ext
+            if FileManager.default.fileExists(atPath: candidate) {
+                return candidate
+            }
+        }
+    }
+    return nil
 }
 
 #if os(macOS)

@@ -534,16 +534,6 @@ jobs:
             cp "$VCPKG_PREFIX/tools/pkgconf/pkgconf.exe" "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe"
           fi
 
-      - name: Probe pkg-config
-        shell: bash
-        run: |
-          echo "=== which pkg-config ==="
-          which -a pkg-config || echo "(not on PATH)"
-          echo "=== pkg-config --cflags gtk4 ==="
-          pkg-config --cflags gtk4 2>&1 || echo "(gtk4 failed)"
-          echo "=== cmd /c pkg-config --cflags gtk4 ==="
-          cmd.exe //c "pkg-config --cflags gtk4" 2>&1 || echo "(cmd pkg-config failed)"
-
       - name: Restore frida-core cache
         id: frida-cache
         uses: actions/cache/restore@v4
