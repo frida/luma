@@ -533,8 +533,11 @@ jobs:
           if [ -f "$VCPKG_PREFIX/tools/pkgconf/pkgconf.exe" ] && [ ! -f "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe" ]; then
             cp "$VCPKG_PREFIX/tools/pkgconf/pkgconf.exe" "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe"
           fi
-          # SwiftPM's built-in .systemLibrary(pkgConfig:) lookup reads this.
-          echo "PKG_CONFIG=$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe" >> $GITHUB_ENV
+          # SwiftPM's .systemLibrary(pkgConfig:) resolves pkg-config via its
+          # own Process spawner, which doesn't see GITHUB_PATH additions the
+          # same way bash does. Drop a copy into Git's usr/bin — that path is
+          # baked into every CreateProcess lookup on the Windows runner.
+          cp "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe" "C:/Program Files/Git/usr/bin/pkg-config.exe"
 
       - name: Restore frida-core cache
         id: frida-cache
