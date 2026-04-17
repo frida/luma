@@ -533,6 +533,8 @@ jobs:
           if [ -f "$VCPKG_PREFIX/tools/pkgconf/pkgconf.exe" ] && [ ! -f "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe" ]; then
             cp "$VCPKG_PREFIX/tools/pkgconf/pkgconf.exe" "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe"
           fi
+          # SwiftPM's built-in .systemLibrary(pkgConfig:) lookup reads this.
+          echo "PKG_CONFIG=$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe" >> $GITHUB_ENV
 
       - name: Restore frida-core cache
         id: frida-cache
