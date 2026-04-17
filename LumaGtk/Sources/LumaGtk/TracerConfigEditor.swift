@@ -225,6 +225,7 @@ final class TracerConfigEditor {
             let dropdownPtr = ptrs.withUnsafeBufferPointer { buf in
                 gtk_drop_down_new_from_strings(buf.baseAddress)
             }!
+            g_object_ref_sink(UnsafeMutableRawPointer(dropdownPtr))
             let dropdown = DropDown(raw: UnsafeMutableRawPointer(dropdownPtr))
             for ptr in cStrings { free(ptr) }
             if let selID = selectedHookID,
@@ -844,6 +845,7 @@ private final class TracerHookSearch {
         let widgetPtr = ptrs.withUnsafeBufferPointer { buf in
             gtk_drop_down_new_from_strings(buf.baseAddress)
         }!
+        g_object_ref_sink(UnsafeMutableRawPointer(widgetPtr))
         return DropDown(raw: UnsafeMutableRawPointer(widgetPtr))
     }
 
