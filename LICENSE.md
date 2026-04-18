@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2025 Ole André Vadla Ravnås
+Copyright (c) 2025-2026 Ole André Vadla Ravnås
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
