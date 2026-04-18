@@ -379,6 +379,7 @@ final class PackageSearchDialog {
         dialog.onInstalled = onInstalled
 
         let window = Window()
+        applyWindowDecoration(window)
         window.title = "Install Package"
         window.setDefaultSize(width: 640, height: 560)
         window.modal = true

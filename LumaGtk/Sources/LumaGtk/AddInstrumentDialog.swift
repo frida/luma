@@ -45,6 +45,7 @@ final class AddInstrumentDialog {
         self.sharedCodeShareMonaco = codeShareEditor
 
         window = Window()
+        applyWindowDecoration(window)
         window.title = "Add Instrument"
         window.setDefaultSize(width: 960, height: 720)
         window.modal = true

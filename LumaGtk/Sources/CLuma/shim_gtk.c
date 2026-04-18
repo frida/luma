@@ -285,3 +285,13 @@ luma_g_type_boolean(void)
 {
     return G_TYPE_BOOLEAN;
 }
+
+#ifndef _WIN32
+// Windows decoration tweaks live in shim_win32.cpp; everywhere else
+// GTK's native CSD does the right thing on its own.
+void
+luma_prepare_window(void *window)
+{
+    (void)window;
+}
+#endif

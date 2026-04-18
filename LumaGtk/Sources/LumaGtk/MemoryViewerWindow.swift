@@ -154,6 +154,7 @@ extension MemoryViewerWindow {
         let view = MemoryViewerWindow(engine: engine, sessionID: sessionID, address: address)
 
         let window = Window()
+        applyWindowDecoration(window)
         window.title = String(format: "Memory 0x%llx", address)
         window.setDefaultSize(width: 760, height: 560)
         window.modal = false

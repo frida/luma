@@ -466,6 +466,7 @@ final class CodeShareBrowser {
         let browser = CodeShareBrowser(engine: engine, sessionID: sessionID, codeShareEditor: codeShareEditor)
 
         let window = Window()
+        applyWindowDecoration(window)
         window.title = "CodeShare"
         window.setDefaultSize(width: 900, height: 600)
         window.modal = false

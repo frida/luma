@@ -229,6 +229,7 @@ extension GitHubSignInSheet {
         let sheet = GitHubSignInSheet(gitHubAuth: gitHubAuth)
 
         let window = Window()
+        applyWindowDecoration(window)
         window.title = "Sign in to GitHub"
         window.setDefaultSize(width: 480, height: 320)
         window.modal = true

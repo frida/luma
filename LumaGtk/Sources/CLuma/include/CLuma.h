@@ -80,6 +80,12 @@ void luma_app_set_open_handler(void *gobject_application,
                                 LumaOpenFilesCallback callback,
                                 void *user_data);
 
+// Windows-only. Tags a GtkWindow with .solid-csd (GTK then won't
+// reserve an alpha shadow margin that renders as solid black without
+// a compositor) and applies DWM's native rounded corners on realize.
+// No-op on non-Windows builds.
+void luma_prepare_window(void *window);
+
 #ifdef __cplusplus
 }
 #endif

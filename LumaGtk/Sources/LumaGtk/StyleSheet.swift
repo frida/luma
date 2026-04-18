@@ -260,17 +260,20 @@ enum StyleSheet {
     .luma-linked-lab-hint { border: 1px solid alpha(@theme_fg_color, 0.15); border-radius: 6px; padding: 6px 10px; }
     """
 
-    // GTK4's default CSD adds an invisible margin around each window
-    // so it can draw a drop shadow there. On X11/Wayland the
-    // compositor blends that margin transparently, but on Windows
-    // there's no compositor in the mix and the shadow area renders
-    // as a solid black rectangle hugging the window. Collapse the
-    // margin and suppress the shadow on Windows only.
+    // Each window also gets tagged with .solid-csd via
+    // applyWindowDecoration, which is GTK's own escape hatch for
+    // platforms without proper compositor transparency. Belt and
+    // suspenders: also strip the decoration node's shadow / margin /
+    // border-radius so GTK paints all the way to the rectangular
+    // window edge, leaving the rounding to DWM at compositor level.
     #if os(Windows)
     private static let platformCss = """
     window.csd,
+    window.solid-csd,
     window.csd decoration,
-    window.csd decoration-overlay {
+    window.solid-csd decoration,
+    window.csd decoration-overlay,
+    window.solid-csd decoration-overlay {
         margin: 0;
         box-shadow: none;
         border-radius: 0;

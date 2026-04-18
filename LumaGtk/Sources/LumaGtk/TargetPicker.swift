@@ -117,6 +117,7 @@ final class TargetPicker {
         selectedApplicationIdentifier = pickerState.lastSpawnApplicationID
 
         window = Window()
+        applyWindowDecoration(window)
         window.title = reason == nil ? "New Session" : "Re-Establish Session"
         window.setDefaultSize(width: 880, height: 540)
         window.modal = true
@@ -1218,6 +1219,7 @@ final class TargetPicker {
 
     private func presentAddRemoteSheet() {
         let sheet = Window()
+        applyWindowDecoration(sheet)
         sheet.title = "Add Remote Device"
         sheet.setDefaultSize(width: 460, height: -1)
         sheet.modal = true
