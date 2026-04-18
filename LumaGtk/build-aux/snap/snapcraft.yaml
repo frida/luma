@@ -1,5 +1,6 @@
 name: luma
 base: core26
+build-base: devel
 version: '0.1.0'
 summary: Dynamic instrumentation toolkit built on Frida
 description: |
