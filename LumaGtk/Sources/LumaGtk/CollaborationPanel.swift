@@ -13,7 +13,7 @@ final class CollaborationPanel {
     private let onClose: () -> Void
 
     private let identitySection: Box
-    private let roomSection: Box
+    private let labSection: Box
     private let participantsSection: Box
     private let participantsList: ListBox
     private let chatSection: Box
@@ -69,8 +69,8 @@ final class CollaborationPanel {
 
         widget.append(child: Separator(orientation: .horizontal))
 
-        roomSection = Box(orientation: .vertical, spacing: 6)
-        widget.append(child: roomSection)
+        labSection = Box(orientation: .vertical, spacing: 6)
+        widget.append(child: labSection)
 
         widget.append(child: Separator(orientation: .horizontal))
 
@@ -143,12 +143,12 @@ final class CollaborationPanel {
         }
 
         refreshIdentity()
-        refreshRoom()
+        refreshLab()
         refreshParticipants()
         refreshChat()
         syncSignInSheet()
         observeIdentity()
-        observeRoom()
+        observeLab()
         observeParticipants()
         observeChat()
     }
@@ -189,16 +189,16 @@ final class CollaborationPanel {
         }
     }
 
-    private func observeRoom() {
+    private func observeLab() {
         guard let engine else { return }
         withObservationTracking {
             _ = engine.collaboration.status
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                self.refreshRoom()
+                self.refreshLab()
                 self.refreshChatInputState()
-                self.observeRoom()
+                self.observeLab()
             }
         }
     }
@@ -251,8 +251,8 @@ final class CollaborationPanel {
         identitySection.append(child: row)
     }
 
-    private func refreshRoom() {
-        clearChildren(of: roomSection)
+    private func refreshLab() {
+        clearChildren(of: labSection)
         copiedToastLabel = nil
         copiedToastResetTask?.cancel()
         copiedToastResetTask = nil
@@ -260,11 +260,11 @@ final class CollaborationPanel {
 
         switch engine.collaboration.status {
         case .disconnected:
-            let storedRoomID = (try? engine.store.fetchCollaborationState())?.roomID
-            if let stored = storedRoomID {
+            let storedLabID = (try? engine.store.fetchCollaborationState())?.labID
+            if let stored = storedLabID {
                 let hint = Box(orientation: .vertical, spacing: 4)
-                hint.add(cssClass: "luma-linked-room-hint")
-                let hintLabel = Label(str: "This project is already linked to room \(truncatedRoomID(stored)).")
+                hint.add(cssClass: "luma-linked-lab-hint")
+                let hintLabel = Label(str: "This project is already linked to lab \(truncatedLabID(stored)).")
                 hintLabel.halign = .start
                 hintLabel.wrap = true
                 hintLabel.add(cssClass: "caption")
@@ -274,26 +274,26 @@ final class CollaborationPanel {
                 reconnect.halign = .start
                 reconnect.onClicked { [weak self] _ in
                     MainActor.assumeIsolated {
-                        self?.engine?.startCollaboration(joiningRoom: stored)
+                        self?.engine?.startCollaboration(joiningLab: stored)
                     }
                 }
                 hint.append(child: reconnect)
-                roomSection.append(child: hint)
+                labSection.append(child: hint)
             }
 
             let info = Label(str: "Not connected")
             info.halign = .start
             info.add(cssClass: "dim-label")
-            roomSection.append(child: info)
+            labSection.append(child: info)
 
             let enable = Button(label: "Enable Collaboration")
             enable.add(cssClass: "suggested-action")
             enable.onClicked { [weak self] _ in
                 MainActor.assumeIsolated {
-                    self?.engine?.startCollaboration(joiningRoom: nil)
+                    self?.engine?.startCollaboration(joiningLab: nil)
                 }
             }
-            roomSection.append(child: enable)
+            labSection.append(child: enable)
 
         case .connecting:
             let row = Box(orientation: .horizontal, spacing: 6)
@@ -305,22 +305,22 @@ final class CollaborationPanel {
             label.halign = .start
             label.hexpand = true
             row.append(child: label)
-            roomSection.append(child: row)
+            labSection.append(child: row)
 
-        case .joined(let roomID):
-            let roleLabel = Label(str: engine.collaboration.isHost ? "You are hosting this room" : "You joined this room")
+        case .joined(let labID):
+            let roleLabel = Label(str: engine.collaboration.isHost ? "You are hosting this lab" : "You joined this lab")
             roleLabel.halign = .start
             roleLabel.add(cssClass: "caption")
             roleLabel.add(cssClass: "dim-label")
-            roomSection.append(child: roleLabel)
+            labSection.append(child: roleLabel)
 
-            let label = Label(str: "Room: \(truncatedRoomID(roomID))")
+            let label = Label(str: "Lab: \(truncatedLabID(labID))")
             label.halign = .start
             label.selectable = true
             label.add(cssClass: "monospace")
-            roomSection.append(child: label)
+            labSection.append(child: label)
 
-            let inviteURL = "\(BackendConfig.inviteLinkBase)\(roomID)"
+            let inviteURL = "\(BackendConfig.inviteLinkBase)\(labID)"
             let inviteFrame = Box(orientation: .vertical, spacing: 4)
             inviteFrame.add(cssClass: "luma-invite-frame")
 
@@ -360,7 +360,7 @@ final class CollaborationPanel {
             inviteFrame.append(child: toast)
             copiedToastLabel = toast
 
-            roomSection.append(child: inviteFrame)
+            labSection.append(child: inviteFrame)
 
             let leave = Button(label: "Leave")
             leave.onClicked { [weak self] _ in
@@ -371,22 +371,22 @@ final class CollaborationPanel {
                     }
                 }
             }
-            roomSection.append(child: leave)
+            labSection.append(child: leave)
 
         case .error(let msg):
             let label = Label(str: msg)
             label.halign = .start
             label.wrap = true
             label.add(cssClass: "error")
-            roomSection.append(child: label)
+            labSection.append(child: label)
 
             let retry = Button(label: "Retry")
             retry.onClicked { [weak self] _ in
                 MainActor.assumeIsolated {
-                    self?.engine?.startCollaboration(joiningRoom: nil)
+                    self?.engine?.startCollaboration(joiningLab: nil)
                 }
             }
-            roomSection.append(child: retry)
+            labSection.append(child: retry)
         }
     }
 
@@ -604,7 +604,7 @@ final class CollaborationPanel {
         }
     }
 
-    private func truncatedRoomID(_ id: String) -> String {
+    private func truncatedLabID(_ id: String) -> String {
         if id.count <= 12 { return id }
         return String(id.prefix(12)) + "\u{2026}"
     }

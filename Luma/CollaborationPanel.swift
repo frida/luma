@@ -24,7 +24,7 @@ struct CollaborationPanel: View {
         VStack(spacing: 12) {
             header
             Divider()
-            roomSection
+            labSection
 
             if isActive {
                 Divider()
@@ -90,20 +90,20 @@ struct CollaborationPanel: View {
         }
     }
 
-    private var roomSection: some View {
+    private var labSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Project collaboration")
                 .font(.subheadline).bold()
 
             switch collaboration.status {
             case .disconnected:
-                let storedRoomID = (try? workspace.store.fetchCollaborationState())?.roomID
-                if let stored = storedRoomID {
-                    Text("This project is already linked to a shared notebook (room \(truncatedRoomID(stored))).")
+                let storedLabID = (try? workspace.store.fetchCollaborationState())?.labID
+                if let stored = storedLabID {
+                    Text("This project is already linked to a shared notebook (lab \(truncatedLabID(stored))).")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text(
-                        "Enable collaboration to rejoin that shared room. Any other copies of this project will connect to the same notebook."
+                        "Enable collaboration to rejoin that shared lab. Any other copies of this project will connect to the same notebook."
                     )
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -140,21 +140,21 @@ struct CollaborationPanel: View {
                 }
 
             case .joined:
-                if let roomID = collaboration.roomID {
+                if let labID = collaboration.labID {
                     HStack {
-                        Text(collaboration.isHost ? "You are hosting this room." : "You joined this room.")
+                        Text(collaboration.isHost ? "You are hosting this lab." : "You joined this lab.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
                     }
 
-                    let inviteURL = "\(BackendConfig.inviteLinkBase)\(roomID)"
+                    let inviteURL = "\(BackendConfig.inviteLinkBase)\(labID)"
 
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 4) {
-                            Text("Room:")
+                            Text("Lab:")
                                 .font(.caption2).bold()
-                            Text(truncatedRoomID(roomID))
+                            Text(truncatedLabID(labID))
                                 .font(.caption2)
                                 .textSelection(.enabled)
                             Spacer()
@@ -234,7 +234,7 @@ struct CollaborationPanel: View {
         }
     }
 
-    private func truncatedRoomID(_ id: String) -> String {
+    private func truncatedLabID(_ id: String) -> String {
         if id.count <= 8 { return id }
         let prefix = id.prefix(4)
         let suffix = id.suffix(4)

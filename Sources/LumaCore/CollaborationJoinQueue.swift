@@ -6,10 +6,10 @@ public final class CollaborationJoinQueue: @unchecked Sendable {
     private let lock = NSLock()
     private var pending: [String] = []
 
-    public func enqueue(roomID: String) {
+    public func enqueue(labID: String) {
         lock.lock()
         defer { lock.unlock() }
-        pending.append(roomID)
+        pending.append(labID)
     }
 
     public func consumeNext() -> String? {

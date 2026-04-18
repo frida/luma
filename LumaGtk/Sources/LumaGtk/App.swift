@@ -159,10 +159,10 @@ final class LumaApplication {
             url.scheme == "luma",
             url.host == "join",
             let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-            let roomID = components.queryItems?.first(where: { $0.name == "room" })?.value,
-            !roomID.isEmpty
+            let labID = components.queryItems?.first(where: { $0.name == "lab" })?.value,
+            !labID.isEmpty
         else { return }
-        CollaborationJoinQueue.shared.enqueue(roomID: roomID)
+        CollaborationJoinQueue.shared.enqueue(labID: labID)
     }
 
     fileprivate func handleSaveAsPath(window: MainWindow, _ path: String) {

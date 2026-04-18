@@ -5,15 +5,15 @@ public struct ProjectCollaborationState: Codable, Identifiable, Sendable, Fetcha
     public static let databaseTableName = "project_collaboration_state"
 
     public var id: UUID
-    public var roomID: String?
+    public var labID: String?
 
     enum CodingKeys: String, CodingKey {
         case id
-        case roomID = "room_id"
+        case labID = "lab_id"
     }
 
-    public init(id: UUID = UUID(), roomID: String? = nil) {
+    public init(id: UUID = UUID(), labID: String? = nil) {
         self.id = id
-        self.roomID = roomID
+        self.labID = labID
     }
 }

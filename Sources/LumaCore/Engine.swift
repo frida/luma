@@ -101,11 +101,11 @@ public final class Engine {
 
     // MARK: - Collaboration
 
-    public func startCollaboration(joiningRoom roomID: String? = nil) {
-        let existing = roomID ?? (try? store.fetchCollaborationState())?.roomID
+    public func startCollaboration(joiningLab labID: String? = nil) {
+        let existing = labID ?? (try? store.fetchCollaborationState())?.labID
         Task { @MainActor in
             guard let token = await gitHubAuth.requestToken() else { return }
-            await collaboration.start(token: token, existingRoomID: existing)
+            await collaboration.start(token: token, existingLabID: existing)
         }
     }
 
@@ -233,8 +233,8 @@ public final class Engine {
         }
 
         await loadRemoteDevices()
-        if let roomID = CollaborationJoinQueue.shared.consumeNext() {
-            startCollaboration(joiningRoom: roomID)
+        if let labID = CollaborationJoinQueue.shared.consumeNext() {
+            startCollaboration(joiningLab: labID)
         }
     }
 

@@ -41,24 +41,24 @@ import UniformTypeIdentifiers
                 return
             }
 
-            guard let roomID = roomID(from: url) else {
+            guard let labID = labID(from: url) else {
                 return
             }
 
-            CollaborationJoinQueue.shared.enqueue(roomID: roomID)
+            CollaborationJoinQueue.shared.enqueue(labID: labID)
         }
 
-        private func roomID(from url: URL) -> String? {
+        private func labID(from url: URL) -> String? {
             guard
                 let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-                let roomItem = components.queryItems?.first(where: { $0.name == "room" }),
-                let roomID = roomItem.value,
-                !roomID.isEmpty
+                let labItem = components.queryItems?.first(where: { $0.name == "lab" }),
+                let labID = labItem.value,
+                !labID.isEmpty
             else {
                 return nil
             }
 
-            return roomID
+            return labID
         }
     }
 

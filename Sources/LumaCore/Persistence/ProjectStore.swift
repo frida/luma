@@ -447,7 +447,7 @@ public final class ProjectStore: Sendable {
 
             try db.create(table: "project_collaboration_state") { t in
                 t.primaryKey("id", .text).notNull()
-                t.column("room_id", .text)
+                t.column("lab_id", .text)
             }
 
             try db.create(table: "target_picker_state") { t in

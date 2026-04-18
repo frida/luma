@@ -8,7 +8,7 @@ public final class CollaborationSession {
     public enum Status: Equatable, Sendable {
         case disconnected
         case connecting
-        case joined(roomID: String)
+        case joined(labID: String)
         case error(message: String)
     }
 
@@ -60,7 +60,7 @@ public final class CollaborationSession {
     private let portalCertificate: String
 
     private(set) public var status: Status = .disconnected
-    private(set) public var roomID: String?
+    private(set) public var labID: String?
     private(set) public var localUser: UserInfo?
     private(set) public var participants: [UserInfo] = []
     private(set) public var chatMessages: [ChatMessage] = []
@@ -93,7 +93,7 @@ public final class CollaborationSession {
         self.portalCertificate = portalCertificate
     }
 
-    public func start(token: String, existingRoomID: String?) async {
+    public func start(token: String, existingLabID: String?) async {
         guard case .disconnected = status else { return }
         setStatus(.connecting)
 
@@ -118,12 +118,12 @@ public final class CollaborationSession {
 
             try await device.bus.attach()
 
-            if let existingRoomID {
+            if let existingLabID {
                 isHost = false
-                joinRoom(roomID: existingRoomID)
+                joinLab(labID: existingLabID)
             } else {
                 isHost = true
-                createRoom()
+                createLab()
             }
         } catch {
             setStatus(.error(message: String(describing: error)))
@@ -138,7 +138,7 @@ public final class CollaborationSession {
         portalDevice = nil
 
         setStatus(.disconnected)
-        roomID = nil
+        labID = nil
         localUser = nil
         participants = []
         chatMessages = []
@@ -170,17 +170,17 @@ public final class CollaborationSession {
         device.bus.post(["type": "delete-entry", "payload": ["entry-id": id.uuidString]])
     }
 
-    // MARK: - Room Operations
+    // MARK: - Lab Operations
 
-    private func createRoom() {
+    private func createLab() {
         guard let device = portalDevice else { return }
-        device.bus.post(["type": "create-room", "payload": [:] as JSONObject])
+        device.bus.post(["type": "create-lab", "payload": [:] as JSONObject])
         setStatus(.connecting)
     }
 
-    private func joinRoom(roomID: String) {
+    private func joinLab(labID: String) {
         guard let device = portalDevice else { return }
-        device.bus.post(["type": "join-room", "payload": ["id": roomID]])
+        device.bus.post(["type": "join-lab", "payload": ["id": labID]])
         setStatus(.connecting)
     }
 
@@ -211,21 +211,21 @@ public final class CollaborationSession {
                 localUser = user
             }
 
-        case "room-created":
-            guard let roomObj = payload["room"] as? JSONObject,
-                let roomID = roomObj["id"] as? String,
+        case "lab-created":
+            guard let labObj = payload["lab"] as? JSONObject,
+                let labID = labObj["id"] as? String,
                 let localUser
             else {
                 await stop()
                 return
             }
 
-            self.roomID = roomID
-            setStatus(.joined(roomID: roomID))
+            self.labID = labID
+            setStatus(.joined(labID: labID))
             participants = [localUser]
 
             var collabState = try! store.fetchCollaborationState()
-            collabState.roomID = roomID
+            collabState.labID = labID
             try! store.save(collabState)
 
             let entries = try! store.fetchNotebookEntries()
@@ -233,10 +233,10 @@ public final class CollaborationSession {
                 notifyEntryAdded(entry)
             }
 
-        case "room-joined":
+        case "lab-joined":
             guard
-                let roomObj = payload["room"] as? JSONObject,
-                let roomID = roomObj["id"] as? String,
+                let labObj = payload["lab"] as? JSONObject,
+                let labID = labObj["id"] as? String,
                 let participantDicts = payload["participants"] as? [JSONObject],
                 let chatObj = payload["chat"] as? JSONObject,
                 let chatMsgs = chatObj["messages"] as? [JSONObject],
@@ -275,13 +275,13 @@ public final class CollaborationSession {
                 snapshot.append(entry)
             }
 
-            self.roomID = roomID
-            setStatus(.joined(roomID: roomID))
+            self.labID = labID
+            setStatus(.joined(labID: labID))
             participants = participantDicts.compactMap { UserInfo.fromJSON($0) }
             chatMessages = chatMsgs.compactMap { ChatMessage.fromJSON($0, localUser: localUser) }
 
             var collabState = try! store.fetchCollaborationState()
-            collabState.roomID = roomID
+            collabState.labID = labID
             try! store.save(collabState)
 
             onNotebookEntriesReceived?(snapshot)
