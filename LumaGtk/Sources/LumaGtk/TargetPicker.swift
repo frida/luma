@@ -781,7 +781,7 @@ final class TargetPicker {
         section.append(child: heading)
 
         let body = Box(orientation: .vertical, spacing: 6)
-        body.add(cssClass: "luma-section-body")
+        body.add(cssClass: "card")
         content(body)
         section.append(child: body)
 

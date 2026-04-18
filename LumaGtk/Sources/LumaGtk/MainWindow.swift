@@ -937,56 +937,26 @@ final class MainWindow {
         subtitle: String,
         actionLabel: String? = nil,
         onAction: (() -> Void)? = nil
-    ) -> Box {
-        let outer = Box(orientation: .vertical, spacing: 0)
-        outer.hexpand = true
-        outer.vexpand = true
-        outer.halign = .center
-        outer.valign = .center
-
-        let stack = Box(orientation: .vertical, spacing: 8)
-        stack.halign = .center
-        stack.valign = .center
-        stack.marginStart = 24
-        stack.marginEnd = 24
-        stack.marginTop = 24
-        stack.marginBottom = 24
-        stack.add(cssClass: "luma-empty-state")
-
-        let image = Gtk.Image(iconName: icon)
-        image.pixelSize = 40
-        image.halign = .center
-        stack.append(child: image)
-
-        let titleLabel = Label(str: title)
-        titleLabel.add(cssClass: "title-2")
-        titleLabel.halign = .center
-        stack.append(child: titleLabel)
-
-        let subtitleLabel = Label(str: subtitle)
-        subtitleLabel.add(cssClass: "dim-label")
-        subtitleLabel.wrap = true
-        subtitleLabel.justify = .center
-        subtitleLabel.halign = .center
-        subtitleLabel.setSizeRequest(width: 360, height: -1)
-        stack.append(child: subtitleLabel)
+    ) -> Adw.StatusPage {
+        let page = Adw.StatusPage()
+        page.hexpand = true
+        page.vexpand = true
+        icon.withCString { page.set(iconName: $0) }
+        title.withCString { page.set(title: $0) }
+        subtitle.withCString { page.set(description: $0) }
 
         if let actionLabel, let onAction {
             let button = Button(label: actionLabel)
             button.add(cssClass: "suggested-action")
             button.add(cssClass: "pill")
             button.halign = .center
-            button.marginTop = 6
             button.onClicked { _ in
-                MainActor.assumeIsolated {
-                    onAction()
-                }
+                MainActor.assumeIsolated { onAction() }
             }
-            stack.append(child: button)
+            page.set(child: button)
         }
 
-        outer.append(child: stack)
-        return outer
+        return page
     }
 
     private func replaceDetail<T: WidgetProtocol>(with widget: T) {

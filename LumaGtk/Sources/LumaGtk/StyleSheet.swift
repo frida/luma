@@ -140,15 +140,6 @@ enum StyleSheet {
         opacity: 0.5;
     }
 
-    .luma-empty-state {
-        opacity: 0.95;
-    }
-
-    .luma-empty-state image {
-        opacity: 0.55;
-        margin-bottom: 6px;
-    }
-
     .luma-sidebar-section-header {
         padding: 6px 8px 4px 4px;
         color: alpha(@theme_fg_color, 0.55);
@@ -200,13 +191,6 @@ enum StyleSheet {
         background-color: alpha(@accent_bg_color, 0.85);
         color: white;
         box-shadow: 0 2px 6px alpha(black, 0.3);
-    }
-
-    .luma-section-body {
-        background-color: alpha(@theme_fg_color, 0.06);
-        border: 1px solid alpha(@theme_fg_color, 0.08);
-        border-radius: 8px;
-        padding: 10px 12px;
     }
 
     .luma-pid-badge {
