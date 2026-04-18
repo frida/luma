@@ -111,11 +111,19 @@ sync_bounds(LumaMonacoView *self)
     double surface_dx = 0, surface_dy = 0;
     gtk_native_get_surface_transform(native, &surface_dx, &surface_dy);
 
+    // GTK geometry is in logical pixels, WebView2's put_Bounds expects
+    // device pixels. Scale both origin and extent by the surface's DPI
+    // scale so the embedded webview lines up with its GTK slot on
+    // HiDPI displays — including fractional scales (125%, 150%, ...).
+    GdkSurface *surface = gtk_native_get_surface(native);
+    double scale = (surface != nullptr) ? gdk_surface_get_scale(surface) : 1.0;
+    if (scale < 1.0) scale = 1.0;
+
     RECT bounds;
-    bounds.left = static_cast<LONG>(root_pt.x + surface_dx);
-    bounds.top = static_cast<LONG>(root_pt.y + surface_dy);
-    bounds.right = bounds.left + w;
-    bounds.bottom = bounds.top + h;
+    bounds.left = static_cast<LONG>((root_pt.x + surface_dx) * scale);
+    bounds.top = static_cast<LONG>((root_pt.y + surface_dy) * scale);
+    bounds.right = bounds.left + static_cast<LONG>(w * scale);
+    bounds.bottom = bounds.top + static_cast<LONG>(h * scale);
 
     self->controller->put_Bounds(bounds);
     self->controller->put_IsVisible(TRUE);
