@@ -67,6 +67,44 @@ public final class MonacoEditor {
         container.append(child: widget)
     }
 
+    /// Install the editor into a host Box, overlaying a centered
+    /// spinner until the underlying web view finishes loading.
+    ///
+    /// WebView2 on Windows only gets a parent HWND once GTK's
+    /// realize signal fires, so the widget must enter the live tree
+    /// before navigation can start — reparenting has to happen up
+    /// front rather than from onReady.
+    public func installInto(_ host: Box) {
+        let container = Box(orientation: .vertical, spacing: 0)
+        container.hexpand = true
+        container.vexpand = true
+
+        let spinner = Spinner()
+        spinner.halign = .center
+        spinner.valign = .center
+
+        let overlay = Overlay()
+        overlay.hexpand = true
+        overlay.vexpand = true
+        overlay.set(child: WidgetRef(container))
+        overlay.addOverlay(widget: spinner)
+        host.append(child: overlay)
+
+        reparent(into: container)
+        if isReady {
+            spinner.visible = false
+        } else {
+            spinner.spinning = true
+            spinner.start()
+            onReady = { [weak spinner] in
+                guard let spinner else { return }
+                spinner.spinning = false
+                spinner.stop()
+                spinner.visible = false
+            }
+        }
+    }
+
     public func setText(_ text: String) {
         pendingText = text
         if isLoaded {

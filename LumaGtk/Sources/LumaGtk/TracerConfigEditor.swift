@@ -1318,7 +1318,6 @@ final class EditorPane {
     private let editorHost: Box
     private let placeholder: Label
     private let monaco: MonacoEditor
-    private let loadingSpinner: Spinner
 
     init(
         engine: Engine?,
@@ -1412,12 +1411,6 @@ final class EditorPane {
         editorHost.vexpand = true
         editorHost.setSizeRequest(width: -1, height: 320)
 
-        loadingSpinner = Spinner()
-        loadingSpinner.halign = .center
-        loadingSpinner.valign = .center
-        loadingSpinner.hexpand = true
-        loadingSpinner.vexpand = true
-
         widget.append(child: editorHost)
 
         placeholder = Label(str: "Select a hook to edit its script.")
@@ -1448,20 +1441,7 @@ final class EditorPane {
             }
         }
 
-        if sharedEditor.isReady {
-            sharedEditor.reparent(into: editorHost)
-        } else {
-            loadingSpinner.spinning = true
-            loadingSpinner.start()
-            editorHost.append(child: loadingSpinner)
-            sharedEditor.onReady = { [weak self] in
-                guard let self else { return }
-                self.editorHost.remove(child: self.loadingSpinner)
-                self.loadingSpinner.spinning = false
-                self.loadingSpinner.stop()
-                self.monaco.reparent(into: self.editorHost)
-            }
-        }
+        sharedEditor.installInto(editorHost)
         sharedEditor.setText(hook?.code ?? "")
 
         applyHookToUI()

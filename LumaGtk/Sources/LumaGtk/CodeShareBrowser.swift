@@ -28,8 +28,6 @@ final class CodeShareBrowser {
     private let ownerLabel: Label
     private let descriptionLabel: Label
     private let sourceEditor: MonacoEditor
-    private let sourceContainer: Box
-    private let loadingSpinner: Spinner
     private let addButton: Button
     private let detailErrorLabel: Label
 
@@ -152,17 +150,11 @@ final class CodeShareBrowser {
         sourceHeader.marginTop = 8
         detailContainer.append(child: sourceHeader)
 
-        sourceContainer = Box(orientation: .vertical, spacing: 0)
+        let sourceContainer = Box(orientation: .vertical, spacing: 0)
         sourceContainer.hexpand = true
         sourceContainer.vexpand = true
         sourceContainer.setSizeRequest(width: -1, height: 360)
         detailContainer.append(child: sourceContainer)
-
-        loadingSpinner = Spinner()
-        loadingSpinner.halign = .center
-        loadingSpinner.valign = .center
-        loadingSpinner.hexpand = true
-        loadingSpinner.vexpand = true
 
         let actions = Box(orientation: .horizontal, spacing: 8)
         let actionsSpacer = Label(str: "")
@@ -207,20 +199,7 @@ final class CodeShareBrowser {
 
         codeShareEditor.setProfile(EditorProfile.fridaCodeShare(readOnly: true))
         codeShareEditor.setText("")
-        if codeShareEditor.isReady {
-            codeShareEditor.reparent(into: sourceContainer)
-        } else {
-            loadingSpinner.spinning = true
-            loadingSpinner.start()
-            sourceContainer.append(child: loadingSpinner)
-            codeShareEditor.onReady = { [weak self] in
-                guard let self else { return }
-                self.sourceContainer.remove(child: self.loadingSpinner)
-                self.loadingSpinner.spinning = false
-                self.loadingSpinner.stop()
-                self.sourceEditor.reparent(into: self.sourceContainer)
-            }
-        }
+        codeShareEditor.installInto(sourceContainer)
 
         loadPopular()
     }

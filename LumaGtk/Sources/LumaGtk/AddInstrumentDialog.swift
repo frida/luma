@@ -432,26 +432,7 @@ final class AddInstrumentDialog {
         let editor = sharedCodeShareMonaco
         editor.setProfile(EditorProfile.fridaCodeShare())
         editor.setText(config.source)
-
-        if editor.isReady {
-            editor.reparent(into: editorContainer)
-        } else {
-            let spinner = Spinner()
-            spinner.halign = .center
-            spinner.valign = .center
-            spinner.hexpand = true
-            spinner.vexpand = true
-            spinner.spinning = true
-            spinner.start()
-            editorContainer.append(child: spinner)
-            editor.onReady = { [weak editorContainer] in
-                guard let editorContainer else { return }
-                editorContainer.remove(child: spinner)
-                spinner.spinning = false
-                spinner.stop()
-                editor.reparent(into: editorContainer)
-            }
-        }
+        editor.installInto(editorContainer)
 
         var currentSource = config.source
         let sync: () -> Void = { [weak self] in
