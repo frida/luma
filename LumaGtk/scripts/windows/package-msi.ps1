@@ -12,6 +12,8 @@ param(
     [string] $Configuration = 'release',
 
     [string] $Version       = '0.1.0',
+    [ValidateSet('x64','arm64')]
+    [string] $Arch          = 'x64',
     [string] $OutputDir,
     [string] $VcpkgPrefix,
     [string] $FridaPrefix,
@@ -167,8 +169,7 @@ if (Test-Path $schemasDir) {
         Remove-Item -Force
 }
 
-$arch    = 'x64'
-$msiName = "Luma-$Version-$arch.msi"
+$msiName = "Luma-$Version-$Arch.msi"
 $wixObj  = Join-Path $OutputDir 'wixobj'
 New-Item -ItemType Directory -Force -Path $wixObj | Out-Null
 
@@ -222,7 +223,7 @@ $licensePath = (Join-Path $pkg 'data\license.rtf')  -replace '\\','/'
 "@ | Set-Content -Encoding UTF8 $productWxs
 
 $wixOut = Join-Path $OutputDir $msiName
-& $candle -arch $arch "-dStageDir=$stage" -out "$wixObj\" $productWxs $componentsWxs
+& $candle -arch $Arch "-dStageDir=$stage" -out "$wixObj\" $productWxs $componentsWxs
 if ($LASTEXITCODE -ne 0) { throw "candle failed ($LASTEXITCODE)" }
 & $light -ext WixUIExtension -sice:ICE91 -sice:ICE64 -sice:ICE60 `
     -b $stage -out $wixOut `

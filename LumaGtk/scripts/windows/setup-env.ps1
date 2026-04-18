@@ -92,7 +92,7 @@ $env:CPATH                 = $cpathDirs -join ';'
 $env:CPLUS_INCLUDE_PATH    = $cpathDirs -join ';'
 
 # Put the dependency prefixes on PATH so pkg-config and the built
-# executable (via run.bat) can find the runtime DLLs.
+# executable (via run.ps1) can find the runtime DLLs.
 $prefixBins = @(
     $pkgconfTools,
     (Join-Path $vcpkg 'bin'),

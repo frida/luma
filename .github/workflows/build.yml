@@ -17,10 +17,15 @@ env:
 
 jobs:
   macos:
-    runs-on: macos-26
+    runs-on: ${{ matrix.runner }}
     strategy:
+      fail-fast: false
       matrix:
-        arch: [arm64]
+        include:
+          - runner: macos-26
+            arch: arm64
+          - runner: macos-15-large
+            arch: x86_64
     steps:
       - uses: actions/checkout@v6
 
@@ -472,8 +477,28 @@ jobs:
           path: ${{ steps.snapcraft.outputs.snap }}
 
   windows:
-    runs-on: windows-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            win_arch: x64
+            msvc_arch: amd64
+            vcpkg_triplet: x64-windows-release
+            toolcache_arch: x64
+            frida_extra_meson: ""
+          - runner: windows-11-arm
+            win_arch: arm64
+            msvc_arch: arm64
+            vcpkg_triplet: arm64-windows-release
+            toolcache_arch: arm64
+            # No arm64 MinGW is available on Windows, so we can't build
+            # frida-core's Go-based compiler backend here. Disable it
+            # for now; re-enable once a cross-compilable alternative
+            # exists.
+            frida_extra_meson: "-Dcompiler_backend=disabled"
     steps:
       - uses: actions/checkout@v6
 
@@ -483,7 +508,7 @@ jobs:
 
       - uses: ilammy/msvc-dev-cmd@v1
         with:
-          arch: amd64
+          arch: ${{ matrix.msvc_arch }}
 
       - uses: compnerd/gha-setup-swift@v0.4.0
         with:
@@ -503,7 +528,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-x64-windows-release-v8
+          key: vcpkg-${{ matrix.vcpkg_triplet }}-v8
 
       - name: Install dependencies via vcpkg
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
@@ -511,7 +536,7 @@ jobs:
           vcpkg install
           --overlay-triplets=${{ github.workspace }}/.github/vcpkg-triplets
           --overlay-ports=${{ github.workspace }}/.github/vcpkg-ports
-          --triplet x64-windows-release
+          --triplet ${{ matrix.vcpkg_triplet }}
           glib glib-networking json-glib libsoup gtk[introspection] atk[introspection] libadwaita[introspection] libxml2 graphite2 sqlite3[snapshot] webview2
 
       - name: Save vcpkg cache
@@ -519,12 +544,12 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-x64-windows-release-v8
+          key: vcpkg-${{ matrix.vcpkg_triplet }}-v8
 
       - name: Set up vcpkg environment
         shell: bash
         run: |
-          VCPKG_PREFIX="C:/vcpkg/installed/x64-windows-release"
+          VCPKG_PREFIX="C:/vcpkg/installed/${{ matrix.vcpkg_triplet }}"
           echo "$VCPKG_PREFIX/tools/pkgconf" >> $GITHUB_PATH
           echo "$VCPKG_PREFIX/bin" >> $GITHUB_PATH
           echo "$VCPKG_PREFIX/tools" >> $GITHUB_PATH
@@ -580,7 +605,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}\frida-prefix
-          key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v5
+          key: ${{ runner.os }}-${{ matrix.win_arch }}-frida-core-${{ env.FRIDA_CORE_REF }}-v5
 
       - name: Install Go toolchain
         if: steps.frida-cache.outputs.cache-hit != 'true'
@@ -589,17 +614,17 @@ jobs:
           # setup-go@v6 runs `go env GOPATH` within the same step as
           # addPath(), which on Node 24 + Windows never sees the
           # updated PATH and fails with "'go' is not recognized".
-          # windows-latest ships a preinstalled Go in the hosted
-          # toolcache; just surface it on PATH ourselves.
+          # Hosted runners ship a preinstalled Go in the toolcache;
+          # just surface it on PATH ourselves.
           $goRoot = Get-ChildItem 'C:\hostedtoolcache\windows\go' -Directory |
               Sort-Object { [version]$_.Name } -Descending |
               Select-Object -First 1
-          $goBin = Join-Path $goRoot.FullName 'x64\bin'
+          $goBin = Join-Path $goRoot.FullName '${{ matrix.toolcache_arch }}\bin'
           "$goBin" >> $env:GITHUB_PATH
           & (Join-Path $goBin 'go.exe') version
 
       - name: Install MinGW toolchain for cgo
-        if: steps.frida-cache.outputs.cache-hit != 'true'
+        if: steps.frida-cache.outputs.cache-hit != 'true' && matrix.win_arch == 'x64'
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
@@ -619,7 +644,7 @@ jobs:
               --enable-shared `
               --without-prebuilds=sdk `
               "--prefix=$env:RUNNER_TEMP\frida-prefix" `
-              -- --force-fallback-for=openssl,libnghttp2 -Dtests=disabled
+              -- --force-fallback-for=openssl,libnghttp2 -Dtests=disabled ${{ matrix.frida_extra_meson }}
           if ($LASTEXITCODE -ne 0) {
               Write-Host "---- meson-log.txt ----"
               Get-Content build\meson-logs\meson-log.txt -ErrorAction SilentlyContinue
@@ -640,14 +665,14 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}\frida-prefix
-          key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v5
+          key: ${{ runner.os }}-${{ matrix.win_arch }}-frida-core-${{ env.FRIDA_CORE_REF }}-v5
 
       - name: Restore radare2 cache
         id: r2-cache
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}\r2-prefix
-          key: ${{ runner.os }}-radare2-${{ env.RADARE2_REF }}-v3
+          key: ${{ runner.os }}-${{ matrix.win_arch }}-radare2-${{ env.RADARE2_REF }}-v3
 
       - name: Build radare2 (shared)
         if: steps.r2-cache.outputs.cache-hit != 'true'
@@ -670,14 +695,14 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}\r2-prefix
-          key: ${{ runner.os }}-radare2-${{ env.RADARE2_REF }}-v3
+          key: ${{ runner.os }}-${{ matrix.win_arch }}-radare2-${{ env.RADARE2_REF }}-v3
 
       - name: Update environment
         shell: bash
         run: |
           FRIDA_PKG="$RUNNER_TEMP/frida-prefix/lib/pkgconfig"
           R2_PKG="$RUNNER_TEMP/r2-prefix/lib/pkgconfig"
-          VCPKG_PKG="C:/vcpkg/installed/x64-windows-release/lib/pkgconfig"
+          VCPKG_PKG="C:/vcpkg/installed/${{ matrix.vcpkg_triplet }}/lib/pkgconfig"
           echo "PKG_CONFIG_PATH=$FRIDA_PKG;$R2_PKG;$VCPKG_PKG" >> $GITHUB_ENV
           echo "$RUNNER_TEMP\\frida-prefix\\bin" >> $GITHUB_PATH
           echo "$RUNNER_TEMP\\r2-prefix\\bin" >> $GITHUB_PATH
@@ -712,12 +737,13 @@ jobs:
         run: |
           cd LumaGtk
           .\scripts\windows\package-msi.ps1 -SkipBuild -Configuration release `
-              -VcpkgPrefix "C:/vcpkg/installed/x64-windows-release" `
+              -Arch "${{ matrix.win_arch }}" `
+              -VcpkgPrefix "C:/vcpkg/installed/${{ matrix.vcpkg_triplet }}" `
               -FridaPrefix "$env:RUNNER_TEMP/frida-prefix" `
               -R2Prefix    "$env:RUNNER_TEMP/r2-prefix"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: Luma-windows-x64.msi
+          name: Luma-windows-${{ matrix.win_arch }}.msi
           path: LumaGtk/build/Luma-*.msi
           if-no-files-found: error

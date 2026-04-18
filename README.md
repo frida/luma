@@ -92,7 +92,7 @@ Launch a **Developer PowerShell for VS** and run from `LumaGtk/`:
 .\scripts\windows\build.ps1                            # debug
 .\scripts\windows\build.ps1 -Configuration release
 .\scripts\windows\package-msi.ps1 -Version 0.1.0       # build\Luma-*.msi
-.\scripts\windows\run.bat                              # launch with DLL PATH set
+.\scripts\windows\run.ps1                              # launch with DLL PATH set
 ```
 
 Prefix locations default to `C:\vcpkg\installed\x64-windows-release`
