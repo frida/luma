@@ -188,11 +188,6 @@ final class TargetPicker {
         spawnButton.sensitive = false
 
         let header = Adw.HeaderBar()
-        let cancelButton = Button(label: "Cancel")
-        cancelButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.close() }
-        }
-        header.packStart(child: cancelButton)
         attachButton.add(cssClass: "suggested-action")
         attachButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.commitAttach() }
@@ -255,16 +250,8 @@ final class TargetPicker {
         column.hexpand = true
         column.vexpand = true
         if let reason {
-            let banner = Label(str: reason)
-            banner.add(cssClass: "luma-banner")
-            banner.add(cssClass: "luma-banner-warning")
-            banner.halign = .start
-            banner.marginStart = 16
-            banner.marginEnd = 16
-            banner.marginTop = 10
-            banner.marginBottom = 10
-            banner.wrap = true
-            banner.hexpand = true
+            let banner = reason.withCString { Adw.Banner(title: $0) }
+            banner.revealed = true
             column.append(child: banner)
         }
         column.append(child: paned)
@@ -280,8 +267,14 @@ final class TargetPicker {
         processList.onRowSelected { [weak self] _, row in
             MainActor.assumeIsolated { self?.handleProcessRow(row) }
         }
+        processList.onRowActivated { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.commitAttach() }
+        }
         appList.onRowSelected { [weak self] _, row in
             MainActor.assumeIsolated { self?.handleAppRow(row) }
+        }
+        appList.onRowActivated { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.commitSpawn() }
         }
         processSearchEntry.onSearchChanged { [weak self] entry in
             MainActor.assumeIsolated {
@@ -1222,11 +1215,6 @@ final class TargetPicker {
         sheet.set(contentWidth: 460)
 
         let header = Adw.HeaderBar()
-        let cancelButton = Button(label: "Cancel")
-        cancelButton.onClicked { [sheet] _ in
-            MainActor.assumeIsolated { _ = sheet.close() }
-        }
-        header.packStart(child: cancelButton)
         let connectButton = Button(label: "Connect")
         connectButton.add(cssClass: "suggested-action")
         header.packEnd(child: connectButton)
@@ -1284,6 +1272,7 @@ final class TargetPicker {
         toolbarView.addTopBar(widget: header)
         toolbarView.set(content: body)
         sheet.set(child: toolbarView)
+        sheet.set(defaultWidget: connectButton)
 
         connectButton.onClicked { [weak self, sheet] _ in
             MainActor.assumeIsolated {

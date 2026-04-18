@@ -63,11 +63,6 @@ final class AddInstrumentDialog {
         detailContainer.vexpand = true
 
         let header = Adw.HeaderBar()
-        let cancelButton = Button(label: "Cancel")
-        cancelButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.close() }
-        }
-        header.packStart(child: cancelButton)
         let browseButton = Button(label: "Browse CodeShare\u{2026}")
         browseButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.openCodeShareBrowser() }
@@ -97,6 +92,7 @@ final class AddInstrumentDialog {
         toolbarView.addTopBar(widget: header)
         toolbarView.set(content: paned)
         dialog.set(child: toolbarView)
+        dialog.set(defaultWidget: addButton)
 
         for descriptor in descriptors {
             let row = ListBoxRow()
@@ -125,6 +121,13 @@ final class AddInstrumentDialog {
         }
 
         showPlaceholder(message: "Select an instrument to configure.")
+
+        listBox.onRowActivated { [weak self] _, _ in
+            MainActor.assumeIsolated {
+                guard let self, self.addButton.sensitive else { return }
+                self.commit()
+            }
+        }
 
         listBox.onRowSelected { [weak self] _, row in
             MainActor.assumeIsolated {

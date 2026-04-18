@@ -21,24 +21,10 @@ enum StyleSheet {
         border-top-color: alpha(@accent_bg_color, 0.45);
     }
 
-    .luma-banner {
-        border-bottom: 1px solid alpha(currentColor, 0.15);
-    }
-
     .luma-install-banner {
         background-color: alpha(@accent_bg_color, 0.12);
         border: 1px solid alpha(@accent_bg_color, 0.45);
         border-radius: 6px;
-    }
-
-    .luma-banner.luma-banner-warning {
-        background-color: alpha(@warning_bg_color, 0.18);
-        border-bottom-color: alpha(@warning_bg_color, 0.45);
-    }
-
-    .luma-banner.luma-banner-error {
-        background-color: alpha(@error_bg_color, 0.20);
-        border-bottom-color: alpha(@error_bg_color, 0.5);
     }
 
     .luma-disasm-row:hover {

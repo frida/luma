@@ -1,3 +1,4 @@
+import Adw
 import CGtk
 import Foundation
 import GLibObject
@@ -206,25 +207,11 @@ final class InstrumentConfigEditor {
 
         let current = config.currentSourceHash
         if config.lastReviewedHash == nil {
-            let banner = Label(str: "⚠ Not yet reviewed. Please audit this script before enabling.")
-            banner.halign = .start
-            banner.add(cssClass: "luma-banner")
-            banner.add(cssClass: "luma-banner-warning")
-            banner.wrap = true
-            column.append(child: banner)
+            column.append(child: makeBanner("⚠ Not yet reviewed. Please audit this script before enabling."))
         } else if config.lastReviewedHash != current {
-            let banner = Label(str: "✎ Locally modified since last review.")
-            banner.halign = .start
-            banner.add(cssClass: "luma-banner")
-            banner.add(cssClass: "luma-banner-warning")
-            banner.wrap = true
-            column.append(child: banner)
+            column.append(child: makeBanner("✎ Locally modified since last review."))
         } else if let synced = config.lastSyncedHash, synced != current {
-            let banner = Label(str: "↻ Differs from last synced version on CodeShare.")
-            banner.halign = .start
-            banner.add(cssClass: "luma-banner")
-            banner.wrap = true
-            column.append(child: banner)
+            column.append(child: makeBanner("↻ Differs from last synced version on CodeShare."))
         }
 
         let nameRow = Box(orientation: .horizontal, spacing: 8)
@@ -336,6 +323,12 @@ final class InstrumentConfigEditor {
         label.add(cssClass: "error")
         label.halign = .start
         return label
+    }
+
+    private func makeBanner(_ text: String) -> Adw.Banner {
+        let banner = text.withCString { Adw.Banner(title: $0) }
+        banner.revealed = true
+        return banner
     }
 
     func selectTracerHook(id: UUID) {

@@ -12,6 +12,7 @@ enum SessionDetachedBanner {
         let banner = title(for: session).withCString { Adw.Banner(title: $0) }
         banner.useMarkup = true
         banner.buttonLabel = "\(session.kind.reestablishLabel)\u{2026}"
+        banner.setButton(style: .suggested)
         banner.revealed = true
         banner.sensitive = session.phase != .attaching
         banner.onButtonClicked { _ in

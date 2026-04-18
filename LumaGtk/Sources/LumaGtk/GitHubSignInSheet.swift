@@ -235,14 +235,6 @@ extension GitHubSignInSheet {
         dialog.set(contentHeight: 320)
 
         let header = Adw.HeaderBar()
-        let cancelButton = Button(label: "Cancel")
-        cancelButton.onClicked { [dialog] _ in
-            MainActor.assumeIsolated {
-                gitHubAuth.cancelSignIn()
-                _ = dialog.close()
-            }
-        }
-        header.packStart(child: cancelButton)
 
         let toolbarView = Adw.ToolbarView()
         toolbarView.addTopBar(widget: header)
@@ -272,8 +264,13 @@ extension GitHubSignInSheet {
         retained[key] = sheet
         dialog.onClosed { _ in
             MainActor.assumeIsolated {
-                if case .failed = gitHubAuth.state {
+                switch gitHubAuth.state {
+                case .authenticated:
+                    break
+                case .failed:
                     gitHubAuth.resetState()
+                default:
+                    gitHubAuth.cancelSignIn()
                 }
                 gitHubAuth.dismissSignIn()
                 _ = retained.removeValue(forKey: key)
