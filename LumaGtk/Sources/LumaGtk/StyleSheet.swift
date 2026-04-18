@@ -260,9 +260,29 @@ enum StyleSheet {
     .luma-linked-lab-hint { border: 1px solid alpha(@theme_fg_color, 0.15); border-radius: 6px; padding: 6px 10px; }
     """
 
+    // GTK4's default CSD adds an invisible margin around each window
+    // so it can draw a drop shadow there. On X11/Wayland the
+    // compositor blends that margin transparently, but on Windows
+    // there's no compositor in the mix and the shadow area renders
+    // as a solid black rectangle hugging the window. Collapse the
+    // margin and suppress the shadow on Windows only.
+    #if os(Windows)
+    private static let platformCss = """
+    window.csd,
+    window.csd decoration,
+    window.csd decoration-overlay {
+        margin: 0;
+        box-shadow: none;
+        border-radius: 0;
+    }
+    """
+    #else
+    private static let platformCss = ""
+    #endif
+
     static func install() {
         let provider = CssProvider()
-        provider.loadFrom(string: css)
+        provider.loadFrom(string: css + "\n" + platformCss)
         guard let display = gdk_display_get_default() else { return }
         gtk_style_context_add_provider_for_display(
             display,
