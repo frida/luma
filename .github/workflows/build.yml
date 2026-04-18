@@ -457,6 +457,12 @@ jobs:
           path: luma.flatpak
 
   snap:
+    # core24's libadwaita-1-dev is 1.5.x which ships an older Adw-1.gir:
+    # gir2swift emits the subtitle-/title-lines property setters with
+    # newValue typed as Bool, and `gint(newValue)` then fails to
+    # compile. Re-enable once either core26 is available with a
+    # libadwaita ≥ 1.6 or the gir2swift plugin learns to reconcile.
+    if: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
