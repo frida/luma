@@ -89,9 +89,13 @@ let cLumaLinkerSettings: [LinkerSetting] = [
     .linkedLibrary("oleaut32"),
     .linkedLibrary("runtimeobject"),
 ]
-let lumaGtkLinkerSettings: [LinkerSetting] = lumaExecutableIconResource.map {
-    [.unsafeFlags([$0])]
-} ?? []
+// Windows: produce a GUI app (no console window). Swift's runtime
+// still calls main(), so redirect the linker entry to the C runtime's
+// main-compatible start routine rather than WinMain.
+let windowsGuiLinkerFlags = ["-Xlinker", "/SUBSYSTEM:WINDOWS", "-Xlinker", "/ENTRY:mainCRTStartup"]
+let lumaGtkLinkerSettings: [LinkerSetting] = [
+    .unsafeFlags(windowsGuiLinkerFlags + (lumaExecutableIconResource.map { [$0] } ?? []))
+]
 #else
 let cLumaSources: [String] = ["shim_gtk.c", "shim_webkitgtk.c"]
 let cLumaCSettings: [CSetting] = [

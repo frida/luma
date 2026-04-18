@@ -66,6 +66,15 @@ New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
 Copy-Item $exe (Join-Path $stage 'Luma.exe')
 
+# SwiftPM emits a *.resources bundle per target that uses resources.
+# Bundle.module resolves them from the executable's directory at
+# runtime, so they must land next to Luma.exe in the MSI.
+$buildDir = Split-Path -Parent $exe
+Get-ChildItem -Path $buildDir -Directory -Filter '*.resources' -ErrorAction SilentlyContinue |
+    ForEach-Object {
+        Copy-Item -Recurse -Force $_.FullName (Join-Path $stage $_.Name)
+    }
+
 $swiftRuntimeDir = $null
 $swiftCore = Get-Command swiftCore.dll -ErrorAction SilentlyContinue
 if (-not $swiftCore) {
@@ -125,11 +134,13 @@ Add-DllClosure $exe
 # frida-core loads its per-arch agent and helper at runtime from
 # <install>\frida-1.0\<arch>\, alongside dbghelp.dll and symsrv.dll.
 # These are not in LumaGtk.exe's import table, so the DLL-closure
-# walk above misses them — stage them explicitly.
+# walk above misses them — stage them explicitly, but omit the
+# gadget DLLs (they're for launch-time injection into third-party
+# apps and unused by Luma).
 $fridaLib = Join-Path $env:FRIDA_PREFIX 'lib\frida-1.0'
 if (Test-Path $fridaLib) {
     $fridaStage = Join-Path $stage 'frida-1.0'
-    robocopy $fridaLib $fridaStage /E /NFL /NDL /NJH /NJS /NP | Out-Null
+    robocopy $fridaLib $fridaStage /E /NFL /NDL /NJH /NJS /NP /XF 'frida-gadget.dll' | Out-Null
 }
 
 # GTK data: icons, glib schemas, gdk-pixbuf loaders.
@@ -142,7 +153,8 @@ Copy-Tree (Join-Path $env:VCPKG_PREFIX 'share\glib-2.0\schemas') (Join-Path $sta
 Copy-Tree (Join-Path $env:VCPKG_PREFIX 'share\icons')            (Join-Path $stage 'share\icons')
 Copy-Tree (Join-Path $env:VCPKG_PREFIX 'lib\gdk-pixbuf-2.0')     (Join-Path $stage 'lib\gdk-pixbuf-2.0')
 
-# Compile the GLib schema XMLs so GTK can actually use them.
+# Compile the GLib schema XMLs so GTK can actually use them, then
+# drop the source XMLs — only gschemas.compiled is read at runtime.
 $schemasDir = Join-Path $stage 'share\glib-2.0\schemas'
 if (Test-Path $schemasDir) {
     $compiler = Join-Path $env:VCPKG_PREFIX 'tools\glib\glib-compile-schemas.exe'
@@ -150,6 +162,9 @@ if (Test-Path $schemasDir) {
         & $compiler --strict $schemasDir
         if ($LASTEXITCODE -ne 0) { throw "glib-compile-schemas failed ($LASTEXITCODE)" }
     }
+    Get-ChildItem -Path $schemasDir -File |
+        Where-Object { $_.Name -ne 'gschemas.compiled' } |
+        Remove-Item -Force
 }
 
 $arch    = 'x64'
@@ -163,7 +178,8 @@ $componentsWxs = Join-Path $wixObj 'components.wxs'
 if ($LASTEXITCODE -ne 0) { throw "heat failed ($LASTEXITCODE)" }
 
 $productWxs = Join-Path $wixObj 'product.wxs'
-$iconPath = (Join-Path $pkg 'data\luma.ico') -replace '\\','/'
+$iconPath    = (Join-Path $pkg 'data\luma.ico')     -replace '\\','/'
+$licensePath = (Join-Path $pkg 'data\license.rtf')  -replace '\\','/'
 @"
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
@@ -198,6 +214,7 @@ $iconPath = (Join-Path $pkg 'data\luma.ico') -replace '\\','/'
       </Component>
     </DirectoryRef>
     <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR" />
+    <WixVariable Id="WixUILicenseRtf" Value="$licensePath" />
     <UIRef Id="WixUI_InstallDir" />
     <UIRef Id="WixUI_ErrorProgressText" />
   </Product>
