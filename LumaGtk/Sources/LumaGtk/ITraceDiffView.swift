@@ -1,3 +1,4 @@
+import Adw
 import Foundation
 import Gtk
 import LumaCore
@@ -44,7 +45,7 @@ final class ITraceDiffView {
         bodyContainer.marginTop = 8
         widget.append(child: bodyContainer)
 
-        let spinner = Spinner()
+        let spinner = Gtk.Spinner()
         spinner.start()
         let loading = Box(orientation: .horizontal, spacing: 8)
         loading.halign = .center
@@ -332,26 +333,22 @@ final class ITraceDiffView {
     static func present(from anchor: Widget, left: ITraceCaptureRecord, right: ITraceCaptureRecord) {
         let view = ITraceDiffView(left: left, right: right)
 
-        let window = Window()
+        let window = Adw.Window()
         applyWindowDecoration(window)
         window.title = "ITrace Diff"
         window.setDefaultSize(width: 900, height: 600)
-        window.modal = false
         window.destroyWithParent = true
 
         if let rootPtr = anchor.root?.ptr {
-            window.setTransientFor(parent: WindowRef(raw: rootPtr))
+            window.setTransientFor(parent: Gtk.WindowRef(raw: rootPtr))
         }
 
-        let header = HeaderBar()
-        let closeButton = Button(label: "Close")
-        closeButton.onClicked { [window] _ in
-            MainActor.assumeIsolated { window.destroy() }
-        }
-        header.packEnd(child: closeButton)
-        window.set(titlebar: WidgetRef(header))
+        let header = Adw.HeaderBar()
 
-        window.set(child: view.widget)
+        let toolbarView = Adw.ToolbarView()
+        toolbarView.addTopBar(widget: header)
+        toolbarView.set(content: view.widget)
+        window.set(content: toolbarView)
 
         Self.retain(view: view, window: window)
 
@@ -360,9 +357,9 @@ final class ITraceDiffView {
     }
 
     private static var retained: [ObjectIdentifier: ITraceDiffView] = [:]
-    private static var retainedWindows: [ObjectIdentifier: Window] = [:]
+    private static var retainedWindows: [ObjectIdentifier: Adw.Window] = [:]
 
-    private static func retain(view: ITraceDiffView, window: Window) {
+    private static func retain(view: ITraceDiffView, window: Adw.Window) {
         let id = ObjectIdentifier(view)
         retained[id] = view
         retainedWindows[id] = window
