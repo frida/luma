@@ -44,6 +44,18 @@ func findOnPath(_ name: String) -> String? {
     return nil
 }
 
+let lumaGtkTargetDir = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()
+    .appendingPathComponent("Sources/LumaGtk", isDirectory: true).path
+
+// SwiftPM rejects exclude entries that don't exist on disk. luma.rc is
+// only meaningful to the Windows build, and luma.res is the rc.exe
+// output produced at manifest-evaluation time — both are absent on
+// Linux/macOS. Only exclude what's actually there.
+let lumaGtkExcludes: [String] = ["luma.rc", "luma.res"].filter { name in
+    FileManager.default.fileExists(atPath: lumaGtkTargetDir + "/" + name)
+}
+
 #if os(Windows)
 func compileWindowsExecutableIcon() -> String? {
     let pkg = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
@@ -155,14 +167,7 @@ let package = Package(
                 "CLuma",
             ],
             path: "Sources/LumaGtk",
-            exclude: [
-                // Windows icon resource script + compiled blob; rc.exe
-                // consumes luma.rc at manifest-evaluation time and the
-                // linker pulls luma.res in via unsafeFlags, so SwiftPM
-                // doesn't need to treat them as Swift/resource inputs.
-                "luma.rc",
-                "luma.res",
-            ],
+            exclude: lumaGtkExcludes,
             resources: [
                 .copy("Resources/MonacoWeb"),
             ],
