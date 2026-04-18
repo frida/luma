@@ -105,7 +105,6 @@ vcpkg_fixup_pkgconfig()
 vcpkg_install_copyright(FILE_LIST "${SOURCE_PATH}/COPYING")
 
 set(TOOL_NAMES gtk4-builder-tool
-               gtk4-encode-symbolic-svg
                gtk4-path-tool
                gtk4-query-settings
                gtk4-rendernode-tool
