@@ -1,17 +1,16 @@
 # It installs only shared libs, regardless build type.
 vcpkg_check_linkage(ONLY_DYNAMIC_LIBRARY)
 
-string(REGEX MATCH [[^[0-9][0-9]*\.[1-9][0-9]*]] VERSION_MAJOR_MINOR "${VERSION}")
-vcpkg_download_distfile(ARCHIVE
-    URLS
-        "https://download.gnome.org/sources/${PORT}/${VERSION_MAJOR_MINOR}/${PORT}-${VERSION}.tar.xz"
-        "https://www.mirrorservice.org/sites/ftp.gnome.org/pub/GNOME/sources/${PORT}/${VERSION_MAJOR_MINOR}/${PORT}-${VERSION}.tar.xz"
-    FILENAME "GNOME-${PORT}-${VERSION}.tar.xz"
-    SHA512 e5bb42320b53adcee71712d948f0ff7616867edc01d41f8833c03ae1594fa2dbb4b4143d038a9a9638751091154abdd0164468d5b8113d40c747a2a0b5a437cd
-)
-
-vcpkg_extract_source_archive(SOURCE_PATH
-    ARCHIVE "${ARCHIVE}"
+# Source frida/gtk rather than an upstream tarball so we can ship the
+# Windows CSD / DWM shadow fix (GNOME/gtk!8929) ahead of its upstream
+# merge — without it, libadwaita windows render a solid black shadow
+# margin on Windows for lack of a GDK compositor.
+vcpkg_from_github(
+    OUT_SOURCE_PATH SOURCE_PATH
+    REPO frida/gtk
+    REF 68e5f298872eae30e89c614f7dd23f935062e4df
+    SHA512 ef86640305705c42bc48188ae158ccc0baad1240ffc0137f638b4d6ec1f63f424a0941420e5b3bbce28feda6b9d6f95334a6b4e0c071877eaf03ec71ad6dd077
+    HEAD_REF main
     PATCHES
         0001-build.patch
 )
