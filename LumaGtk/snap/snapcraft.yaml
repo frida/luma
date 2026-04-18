@@ -112,6 +112,7 @@ parts:
       mv "$PARENT/luma" "$CRAFT_PART_BUILD"
     build-packages:
       - libgtk-4-dev
+      - libadwaita-1-dev
       - libwebkitgtk-6.0-dev
       - libglib2.0-dev
       - libpango1.0-dev
@@ -129,5 +130,6 @@ parts:
       - pkg-config
     stage-packages:
       - libgtk-4-1
+      - libadwaita-1-0
       - libwebkitgtk-6.0-4
       - libsoup-3.0-0
