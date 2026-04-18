@@ -79,11 +79,22 @@ Get-ChildItem (Join-Path $vcpkg 'include\*.h') -File | Where-Object {
     }
 }
 
-$pkgConfigDirs = @(
+# Optional GTK-from-git prefix (see scripts/windows/build-gtk-from-git.ps1).
+# When present, prepend it to PKG_CONFIG_PATH and PATH so its gtk4.pc
+# wins over vcpkg's while the rest of the stack (libadwaita, cairo,
+# glib, ...) continues to come from vcpkg.
+$gtkFromGit = if ($env:GTK_PREFIX) { $env:GTK_PREFIX } else { 'C:\src\gtk-prefix' }
+$gtkFromGitPkg = Join-Path $gtkFromGit 'lib\pkgconfig'
+$gtkFromGitBin = Join-Path $gtkFromGit 'bin'
+
+$pkgConfigDirs = @()
+if (Test-Path $gtkFromGitPkg) { $pkgConfigDirs += $gtkFromGitPkg }
+$pkgConfigDirs += @(
     (Join-Path $frida 'lib\pkgconfig'),
     (Join-Path $r2    'lib\pkgconfig'),
     (Join-Path $vcpkg 'lib\pkgconfig')
-) | ForEach-Object { $_ -replace '\\','/' } | Select-Object -Unique
+)
+$pkgConfigDirs = $pkgConfigDirs | ForEach-Object { $_ -replace '\\','/' } | Select-Object -Unique
 
 # Root-level vcpkg headers (WebView2.h, sqlite3.h, ...) aren't
 # reachable through pkg-config, so point clang at the vcpkg-shim
@@ -132,9 +143,11 @@ Install one of:
 }
 
 # Put the dependency prefixes on PATH so pkg-config and the built
-# executable (via run.ps1) can find the runtime DLLs.
+# executable (via run.ps1) can find the runtime DLLs. GTK-from-git
+# bin dir wins over vcpkg's if present.
 $prefixBins = @(
     $pkgconfTools,
+    $gtkFromGitBin,
     (Join-Path $vcpkg 'bin'),
     (Join-Path $vcpkg 'tools'),
     (Join-Path $frida 'bin'),
