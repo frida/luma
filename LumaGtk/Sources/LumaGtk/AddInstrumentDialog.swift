@@ -1,3 +1,4 @@
+import Adw
 import CGtk
 import Foundation
 import Gtk
@@ -7,8 +8,8 @@ import LumaCore
 final class AddInstrumentDialog {
     typealias OnAdded = (LumaCore.InstrumentInstance) -> Void
 
-    private let window: Window
-    private let parentWindow: Window
+    private let dialog: Adw.Dialog
+    private let parentWindow: Gtk.Window
     private let descriptors: [LumaCore.InstrumentDescriptor]
     private let disabledDescriptorIDs: Set<String>
     private let onAdded: OnAdded?
@@ -26,7 +27,7 @@ final class AddInstrumentDialog {
     private let sharedCodeShareMonaco: MonacoEditor
 
     init(
-        parent: Window,
+        parent: Gtk.Window,
         engine: Engine,
         sessionID: UUID,
         descriptors: [LumaCore.InstrumentDescriptor],
@@ -44,13 +45,10 @@ final class AddInstrumentDialog {
         self.sharedTracerMonaco = tracerEditor
         self.sharedCodeShareMonaco = codeShareEditor
 
-        window = Window()
-        applyWindowDecoration(window)
-        window.title = "Add Instrument"
-        window.setDefaultSize(width: 960, height: 720)
-        window.modal = true
-        window.setTransientFor(parent: parent)
-        window.destroyWithParent = true
+        dialog = Adw.Dialog()
+        dialog.set(title: "Add Instrument")
+        dialog.set(contentWidth: 960)
+        dialog.set(contentHeight: 720)
 
         listBox = ListBox()
         listBox.selectionMode = .single
@@ -64,7 +62,7 @@ final class AddInstrumentDialog {
         detailContainer.hexpand = true
         detailContainer.vexpand = true
 
-        let header = HeaderBar()
+        let header = Adw.HeaderBar()
         let cancelButton = Button(label: "Cancel")
         cancelButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.close() }
@@ -76,7 +74,6 @@ final class AddInstrumentDialog {
         }
         header.packStart(child: browseButton)
         header.packEnd(child: addButton)
-        window.set(titlebar: WidgetRef(header))
 
         let listScroll = ScrolledWindow()
         listScroll.hexpand = false
@@ -95,7 +92,11 @@ final class AddInstrumentDialog {
         paned.vexpand = true
         paned.startChild = WidgetRef(listScroll)
         paned.endChild = WidgetRef(detailScroll)
-        window.set(child: paned)
+
+        let toolbarView = Adw.ToolbarView()
+        toolbarView.addTopBar(widget: header)
+        toolbarView.set(content: paned)
+        dialog.set(child: toolbarView)
 
         for descriptor in descriptors {
             let row = ListBoxRow()
@@ -147,27 +148,24 @@ final class AddInstrumentDialog {
     }
 
     func present() {
-        Self.retain(dialog: self, window: window)
-        installEscapeShortcut(on: window)
-        window.present()
+        Self.retain(self, dialog: dialog)
+        dialog.present(parent: parentWindow)
     }
 
     private static var retained: [ObjectIdentifier: AddInstrumentDialog] = [:]
 
-    private static func retain(dialog: AddInstrumentDialog, window: Window) {
-        let key = ObjectIdentifier(window)
-        retained[key] = dialog
-        let handler: (WindowRef) -> Bool = { _ in
+    private static func retain(_ owner: AddInstrumentDialog, dialog: Adw.Dialog) {
+        let key = ObjectIdentifier(dialog)
+        retained[key] = owner
+        dialog.onClosed { _ in
             MainActor.assumeIsolated {
                 _ = retained.removeValue(forKey: key)
             }
-            return false
         }
-        window.onCloseRequest(handler: handler)
     }
 
     private func close() {
-        window.destroy()
+        _ = dialog.close()
     }
 
     private func clearDetail() {

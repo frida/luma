@@ -1,3 +1,4 @@
+import Adw
 import Foundation
 import Gdk
 import Gtk
@@ -6,7 +7,7 @@ import Observation
 
 @MainActor
 final class GitHubSignInSheet {
-    private weak var window: Window?
+    private weak var dialog: Adw.Dialog?
     private let gitHubAuth: GitHubAuth
 
     private let contentBox: Box
@@ -17,7 +18,7 @@ final class GitHubSignInSheet {
     private let copyCodeButton: Button
     private let openUrlButton: Button
     private let statusRow: Box
-    private let spinner: Spinner
+    private let spinner: Gtk.Spinner
     private let statusLabel: Label
     private let errorLabel: Label
     private let dismissButton: Button
@@ -108,7 +109,7 @@ final class GitHubSignInSheet {
             MainActor.assumeIsolated { self?.openVerificationUrl() }
         }
         dismissButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.closeWindow() }
+            MainActor.assumeIsolated { self?.closeDialog() }
         }
     }
 
@@ -195,9 +196,9 @@ final class GitHubSignInSheet {
     private func openVerificationUrl() {
         guard let url = currentUrl else { return }
         let launcher = UriLauncher(uri: url.absoluteString)
-        let parentWindow: WindowRef?
-        if let ptr = window?.ptr {
-            parentWindow = WindowRef(raw: ptr)
+        let parentWindow: Gtk.WindowRef?
+        if let rootPtr = dialog?.root?.ptr {
+            parentWindow = Gtk.WindowRef(raw: rootPtr)
         } else {
             parentWindow = nil
         }
@@ -209,12 +210,12 @@ final class GitHubSignInSheet {
         closeTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             if Task.isCancelled { return }
-            self?.closeWindow()
+            self?.closeDialog()
         }
     }
 
-    private func closeWindow() {
-        window?.destroy()
+    private func closeDialog() {
+        _ = dialog?.close()
     }
 }
 
@@ -225,57 +226,51 @@ extension GitHubSignInSheet {
         from anchor: Widget,
         gitHubAuth: GitHubAuth,
         onClosed: (() -> Void)? = nil
-    ) -> Window {
+    ) -> Adw.Dialog {
         let sheet = GitHubSignInSheet(gitHubAuth: gitHubAuth)
 
-        let window = Window()
-        applyWindowDecoration(window)
-        window.title = "Sign in to GitHub"
-        window.setDefaultSize(width: 480, height: 320)
-        window.modal = true
-        window.destroyWithParent = true
+        let dialog = Adw.Dialog()
+        dialog.set(title: "Sign in to GitHub")
+        dialog.set(contentWidth: 480)
+        dialog.set(contentHeight: 320)
 
-        if let rootPtr = anchor.root?.ptr {
-            window.setTransientFor(parent: WindowRef(raw: rootPtr))
-        }
-
-        let header = HeaderBar()
+        let header = Adw.HeaderBar()
         let cancelButton = Button(label: "Cancel")
-        cancelButton.onClicked { [window] _ in
+        cancelButton.onClicked { [dialog] _ in
             MainActor.assumeIsolated {
                 gitHubAuth.cancelSignIn()
-                window.destroy()
+                _ = dialog.close()
             }
         }
         header.packStart(child: cancelButton)
-        let headerRef = WidgetRef(header)
-        window.set(titlebar: headerRef)
 
-        window.set(child: WidgetRef(sheet.contentBox.widget_ptr))
+        let toolbarView = Adw.ToolbarView()
+        toolbarView.addTopBar(widget: header)
+        toolbarView.set(content: sheet.contentBox)
+        dialog.set(child: toolbarView)
 
-        sheet.window = window
-        Self.retain(sheet: sheet, window: window, gitHubAuth: gitHubAuth, onClosed: onClosed)
+        sheet.dialog = dialog
+        Self.retain(sheet: sheet, dialog: dialog, gitHubAuth: gitHubAuth, onClosed: onClosed)
 
         sheet.refresh()
         sheet.observe()
 
-        installEscapeShortcut(on: window)
-        window.present()
+        dialog.present(parent: anchor)
 
-        return window
+        return dialog
     }
 
     private static var retained: [ObjectIdentifier: GitHubSignInSheet] = [:]
 
     private static func retain(
         sheet: GitHubSignInSheet,
-        window: Window,
+        dialog: Adw.Dialog,
         gitHubAuth: GitHubAuth,
         onClosed: (() -> Void)?
     ) {
-        let key = ObjectIdentifier(window)
+        let key = ObjectIdentifier(dialog)
         retained[key] = sheet
-        let handler: (WindowRef) -> Bool = { _ in
+        dialog.onClosed { _ in
             MainActor.assumeIsolated {
                 if case .failed = gitHubAuth.state {
                     gitHubAuth.resetState()
@@ -284,8 +279,6 @@ extension GitHubSignInSheet {
                 _ = retained.removeValue(forKey: key)
                 onClosed?()
             }
-            return false
         }
-        window.onCloseRequest(handler: handler)
     }
 }

@@ -1,3 +1,4 @@
+import Adw
 import CLuma
 import Foundation
 import Frida
@@ -12,18 +13,18 @@ final class TargetPicker {
     typealias OnAttach = (_ device: Frida.Device, _ process: ProcessDetails) -> Void
     typealias OnSpawn = (_ device: Frida.Device, _ config: SpawnConfig) -> Void
 
-    private let parent: Window
+    private let parent: Gtk.Window
     private let engine: Engine
     private let onAttach: OnAttach
     private let onSpawn: OnSpawn
     private let reason: String?
 
-    private let window: Window
+    private let dialog: Adw.Dialog
     private let deviceList: ListBox
     private let processList: ListBox
     private let processStatus: Label
     private let processLoading: Box
-    private let processLoadingSpinner: Spinner
+    private let processLoadingSpinner: Gtk.Spinner
     private let processLoadingLabel: Label
     private let processContent: Box
     private let processError: Box
@@ -49,7 +50,7 @@ final class TargetPicker {
     private let appSearchEntry: SearchEntry
     private let appStatus: Label
     private let appLoading: Box
-    private let appLoadingSpinner: Spinner
+    private let appLoadingSpinner: Gtk.Spinner
     private let appLoadingLabel: Label
     private let appContent: Box
     private let appError: Box
@@ -79,7 +80,7 @@ final class TargetPicker {
 
     private var pickerState: TargetPickerState
     private var pendingCertificateEntry: Entry?
-    private weak var addRemoteSheet: Window?
+    private weak var addRemoteSheet: Adw.Dialog?
     private var mode: Mode = .attach
     private var spawnSubmode: SpawnSubmode = .application
 
@@ -94,7 +95,7 @@ final class TargetPicker {
     }
 
     init(
-        parent: Window,
+        parent: Gtk.Window,
         engine: Engine,
         reason: String? = nil,
         onAttach: @escaping OnAttach,
@@ -116,19 +117,16 @@ final class TargetPicker {
         selectedDeviceID = pickerState.lastSelectedDeviceID
         selectedApplicationIdentifier = pickerState.lastSpawnApplicationID
 
-        window = Window()
-        applyWindowDecoration(window)
-        window.title = reason == nil ? "New Session" : "Re-Establish Session"
-        window.setDefaultSize(width: 880, height: 540)
-        window.modal = true
-        window.setTransientFor(parent: parent)
-        window.destroyWithParent = true
+        dialog = Adw.Dialog()
+        dialog.set(title: reason == nil ? "New Session" : "Re-Establish Session")
+        dialog.set(contentWidth: 880)
+        dialog.set(contentHeight: 540)
 
         deviceList = ListBox()
         processList = ListBox()
         processStatus = Label(str: "Select a device to list processes\u{2026}")
         processLoading = Box(orientation: .vertical, spacing: 8)
-        processLoadingSpinner = Spinner()
+        processLoadingSpinner = Gtk.Spinner()
         processLoadingLabel = Label(str: "Enumerating processes\u{2026}")
         processContent = Box(orientation: .vertical, spacing: 0)
         processError = Box(orientation: .vertical, spacing: 8)
@@ -153,7 +151,7 @@ final class TargetPicker {
         appSearchEntry = SearchEntry()
         appStatus = Label(str: "Select a device to list applications\u{2026}")
         appLoading = Box(orientation: .vertical, spacing: 8)
-        appLoadingSpinner = Spinner()
+        appLoadingSpinner = Gtk.Spinner()
         appLoadingLabel = Label(str: "Enumerating applications\u{2026}")
         appContent = Box(orientation: .vertical, spacing: 0)
         appError = Box(orientation: .vertical, spacing: 8)
@@ -189,7 +187,7 @@ final class TargetPicker {
         attachButton.sensitive = false
         spawnButton.sensitive = false
 
-        let header = HeaderBar()
+        let header = Adw.HeaderBar()
         let cancelButton = Button(label: "Cancel")
         cancelButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.close() }
@@ -205,7 +203,6 @@ final class TargetPicker {
         }
         header.packEnd(child: attachButton)
         header.packEnd(child: spawnButton)
-        window.set(titlebar: WidgetRef(header))
 
         let modeToggles = Box(orientation: .horizontal, spacing: 0)
         modeToggles.add(cssClass: "linked")
@@ -271,7 +268,11 @@ final class TargetPicker {
             column.append(child: banner)
         }
         column.append(child: paned)
-        window.set(child: column)
+
+        let toolbarView = Adw.ToolbarView()
+        toolbarView.addTopBar(widget: header)
+        toolbarView.set(content: column)
+        dialog.set(child: toolbarView)
 
         deviceList.onRowSelected { [weak self] _, row in
             MainActor.assumeIsolated { self?.handleDeviceRow(row) }
@@ -329,16 +330,14 @@ final class TargetPicker {
             }
         }
 
-        let key = ObjectIdentifier(window)
+        let key = ObjectIdentifier(dialog)
         TargetPicker.retained[key] = self
-        window.onCloseRequest { [weak self] _ in
+        dialog.onClosed { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.persistState()
                 TargetPicker.retained[key] = nil
             }
-            return false
         }
-        installEscapeShortcut(on: window)
 
         if mode == .attach {
             attachToggle.active = true
@@ -355,7 +354,7 @@ final class TargetPicker {
     }
 
     func present() {
-        window.present()
+        dialog.present(parent: parent)
         snapshotTask = Task { @MainActor in
             renderDevices(await engine.deviceManager.currentDevices())
             for await change in await engine.deviceManager.changes() {
@@ -383,11 +382,11 @@ final class TargetPicker {
         snapshotTask?.cancel()
         processFetchTask?.cancel()
         appFetchTask?.cancel()
-        window.destroy()
+        _ = dialog.close()
     }
 
     private func presentProgramBrowseDialog() {
-        guard let parentPtr = window.window_ptr.map(UnsafeMutableRawPointer.init) else { return }
+        guard let parentPtr = parent.window_ptr.map(UnsafeMutableRawPointer.init) else { return }
         let context = Unmanaged.passRetained(self).toOpaque()
         "Select program".withCString { title in
             luma_file_dialog_open(parentPtr, title, targetPickerProgramPathThunk, context)
@@ -1179,7 +1178,7 @@ final class TargetPicker {
         snapshotTask?.cancel()
         processFetchTask?.cancel()
         appFetchTask?.cancel()
-        window.destroy()
+        _ = dialog.close()
     }
 
     private func commitSpawn() {
@@ -1212,31 +1211,25 @@ final class TargetPicker {
         snapshotTask?.cancel()
         processFetchTask?.cancel()
         appFetchTask?.cancel()
-        window.destroy()
+        _ = dialog.close()
     }
 
     // MARK: - Add Remote sheet
 
     private func presentAddRemoteSheet() {
-        let sheet = Window()
-        applyWindowDecoration(sheet)
-        sheet.title = "Add Remote Device"
-        sheet.setDefaultSize(width: 460, height: -1)
-        sheet.modal = true
-        sheet.setTransientFor(parent: window)
-        sheet.destroyWithParent = true
+        let sheet = Adw.Dialog()
+        sheet.set(title: "Add Remote Device")
+        sheet.set(contentWidth: 460)
 
-        let header = HeaderBar()
+        let header = Adw.HeaderBar()
         let cancelButton = Button(label: "Cancel")
         cancelButton.onClicked { [sheet] _ in
-            MainActor.assumeIsolated { sheet.destroy() }
+            MainActor.assumeIsolated { _ = sheet.close() }
         }
         header.packStart(child: cancelButton)
         let connectButton = Button(label: "Connect")
         connectButton.add(cssClass: "suggested-action")
         header.packEnd(child: connectButton)
-        sheet.set(titlebar: WidgetRef(header))
-        installEscapeShortcut(on: sheet)
 
         let body = Box(orientation: .vertical, spacing: 8)
         body.marginStart = 16
@@ -1287,7 +1280,10 @@ final class TargetPicker {
         errorLabel.add(cssClass: "error")
         body.append(child: errorLabel)
 
-        sheet.set(child: body)
+        let toolbarView = Adw.ToolbarView()
+        toolbarView.addTopBar(widget: header)
+        toolbarView.set(content: body)
+        sheet.set(child: toolbarView)
 
         connectButton.onClicked { [weak self, sheet] _ in
             MainActor.assumeIsolated {
@@ -1324,7 +1320,7 @@ final class TargetPicker {
                             keepaliveInterval: keepalive
                         )
                         try? self.engine.store.save(config)
-                        sheet.destroy()
+                        _ = sheet.close()
                     } catch {
                         errorLabel.setText(str: "\(error)")
                         errorLabel.visible = true
@@ -1334,7 +1330,7 @@ final class TargetPicker {
             }
         }
 
-        sheet.present()
+        sheet.present(parent: dialog)
     }
 
     private func labeledRow(_ title: String, entry: Entry, trailing: Button? = nil) -> Box {
@@ -1352,8 +1348,7 @@ final class TargetPicker {
     }
 
     private func presentCertificateBrowseDialog(into entry: Entry) {
-        let parentWindow = addRemoteSheet ?? window
-        guard let parentPtr = parentWindow.window_ptr.map(UnsafeMutableRawPointer.init) else { return }
+        guard let parentPtr = parent.window_ptr.map(UnsafeMutableRawPointer.init) else { return }
         pendingCertificateEntry = entry
         let context = Unmanaged.passRetained(self).toOpaque()
         "Select certificate".withCString { title in

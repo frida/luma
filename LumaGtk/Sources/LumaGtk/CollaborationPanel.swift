@@ -1,3 +1,4 @@
+import Adw
 import CPango
 import Foundation
 import Gdk
@@ -30,7 +31,7 @@ final class CollaborationPanel {
     private var isPinnedToBottom = true
     private var lastChatCount = 0
     private var suppressScrollPinUpdate = false
-    private var signInWindow: Window?
+    private var signInWindow: Adw.Dialog?
 
     init(engine: Engine, onClose: @escaping () -> Void) {
         self.engine = engine
@@ -185,7 +186,7 @@ final class CollaborationPanel {
             signInWindow = window
         } else if !wants, let window = signInWindow {
             signInWindow = nil
-            window.destroy()
+            _ = window.close()
         }
     }
 
@@ -297,7 +298,7 @@ final class CollaborationPanel {
 
         case .connecting:
             let row = Box(orientation: .horizontal, spacing: 6)
-            let spinner = Spinner()
+            let spinner = Gtk.Spinner()
             spinner.spinning = true
             spinner.start()
             row.append(child: spinner)
