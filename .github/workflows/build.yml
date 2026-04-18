@@ -17,7 +17,6 @@ env:
 
 jobs:
   macos:
-    if: false  # temporarily disabled while debugging Windows CI
     runs-on: macos-26
     strategy:
       matrix:
@@ -145,7 +144,6 @@ jobs:
           path: Luma-${{ matrix.arch }}.dmg
 
   fedora:
-    if: false
     runs-on: ubuntu-latest
     container: fedora:43
     steps:
@@ -280,7 +278,6 @@ jobs:
           path: luma-fedora-43.tar.gz
 
   ubuntu:
-    if: false
     runs-on: ubuntu-latest
     container: ubuntu:25.10
     steps:
@@ -416,7 +413,6 @@ jobs:
           path: luma-ubuntu-25.10.deb
 
   flatpak:
-    if: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -459,7 +455,6 @@ jobs:
           path: luma.flatpak
 
   snap:
-    if: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -577,18 +572,19 @@ jobs:
           path: ${{ runner.temp }}\frida-prefix
           key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v4
 
+      - name: Install Go toolchain
+        if: steps.frida-cache.outputs.cache-hit != 'true'
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.24'
+
       - name: Install MinGW toolchain for cgo
         if: steps.frida-cache.outputs.cache-hit != 'true'
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           install: mingw-w64-x86_64-gcc
-
-      - name: Install Go toolchain
-        if: steps.frida-cache.outputs.cache-hit != 'true'
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.24'
+          path-type: inherit
 
       - name: Build frida-core (shared)
         if: steps.frida-cache.outputs.cache-hit != 'true'
