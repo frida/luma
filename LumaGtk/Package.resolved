@@ -1,5 +1,5 @@
 {
-  "originHash" : "623f8d4feb99d1b244bd66c9dca47a9cd7fec13e3c333ee7c038f7dbbeaaab12",
+  "originHash" : "a8b9a0f97e8a753693656c9583c92c5ea73bc08bd1ae4b8a7308908e1e4ab872",
   "pins" : [
     {
       "identity" : "frida-swift",
@@ -160,7 +160,7 @@
       "location" : "https://github.com/frida/SwiftGtk.git",
       "state" : {
         "branch" : "gtk4-development",
-        "revision" : "98e220601cbfc6947276b861bbef4cfd784a6d2d"
+        "revision" : "a6b83c71ba5b5e3bbf96daf64ed71f77b2737af8"
       }
     },
     {

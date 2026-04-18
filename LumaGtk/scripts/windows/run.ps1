@@ -24,19 +24,36 @@ $ErrorActionPreference = 'Stop'
 $script = Split-Path -Parent $MyInvocation.MyCommand.Path
 $pkg    = Resolve-Path (Join-Path $script '..\..')
 
-if (-not $VcpkgPrefix) {
-    $VcpkgPrefix = if ($env:VCPKG_PREFIX) { $env:VCPKG_PREFIX } else { 'C:\vcpkg\installed\x64-windows-release' }
+function Resolve-PrefixDir {
+    param([string] $Explicit, [string] $EnvName, [string[]] $Candidates)
+    if ($Explicit) { return (Resolve-Path -LiteralPath $Explicit).Path }
+    $fromEnv = [Environment]::GetEnvironmentVariable($EnvName)
+    if ($fromEnv) { return (Resolve-Path -LiteralPath $fromEnv).Path }
+    foreach ($c in $Candidates) {
+        if (Test-Path -LiteralPath $c) { return (Resolve-Path -LiteralPath $c).Path }
+    }
+    throw "Could not locate $EnvName. Pass -$($EnvName.Replace('_PREFIX','Prefix')) or set `$env:$EnvName."
 }
-if (-not $FridaPrefix) {
-    $FridaPrefix = if ($env:FRIDA_PREFIX) { $env:FRIDA_PREFIX } else { 'C:\src\dist' }
-}
+
+$VcpkgPrefix = Resolve-PrefixDir $VcpkgPrefix 'VCPKG_PREFIX' @(
+    'C:\vcpkg\installed\x64-windows-release',
+    'C:\src\vcpkg\installed\x64-windows-release'
+)
+$FridaPrefix = Resolve-PrefixDir $FridaPrefix 'FRIDA_PREFIX' @('C:\src\dist')
 
 $exe = Join-Path $pkg ".build\$Configuration\LumaGtk.exe"
 if (-not (Test-Path $exe)) {
     throw "LumaGtk.exe not found at $exe. Build it first with build.ps1."
 }
 
-$env:PATH = "$VcpkgPrefix\bin;$VcpkgPrefix\tools;$FridaPrefix\bin;$env:PATH"
+# Prefer the gtk-from-git prefix when present so the launched exe
+# loads the locally built gtk4 / gdk DLLs instead of vcpkg's copies.
+$gtkPrefix = if ($env:GTK_PREFIX) { $env:GTK_PREFIX } else { 'C:\src\gtk-prefix' }
+$gtkBin = Join-Path $gtkPrefix 'bin'
+$pathParts = @()
+if (Test-Path $gtkBin) { $pathParts += $gtkBin }
+$pathParts += "$VcpkgPrefix\bin","$VcpkgPrefix\tools","$FridaPrefix\bin",$env:PATH
+$env:PATH = ($pathParts -join ';')
 $env:GDK_PIXBUF_MODULE_FILE = "$VcpkgPrefix\lib\gdk-pixbuf-2.0\2.10.0\loaders.cache"
 $env:XDG_DATA_DIRS = if ($env:XDG_DATA_DIRS) {
     "$VcpkgPrefix\share;$env:XDG_DATA_DIRS"
