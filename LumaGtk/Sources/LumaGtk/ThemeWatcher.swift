@@ -1,3 +1,5 @@
+import Adw
+import CGLib
 import CGtk
 import CLuma
 import Foundation
@@ -17,92 +19,24 @@ import AppKit
 // deinit (which Swift 6 considers off-actor) without crashing strict-concurrency
 // checks. The actual GTK calls all happen on the main thread anyway: subscribe
 // is invoked from @MainActor code, and unsubscribe from deinit just disconnects
-// a signal handler — gtk_settings_get_default + g_signal_handler_disconnect are
+// a signal handler — AdwStyleManager + g_signal_handler_disconnect are
 // thread-safe in GTK4.
 
 enum ThemeWatcher {
     @MainActor
     static func install() {
         #if canImport(AppKit)
-        // GTK4's GdkMacos backend does not push NSApp.effectiveAppearance into
-        // GtkSettings, so neither the GTK chrome nor our subscribers ever
-        // notice macOS appearance changes. Mirror it ourselves into the
-        // appropriate color scheme property.
+        // AdwStyleManager observes NSApp natively since libadwaita 1.4,
+        // but also mirror NSApp.effectiveAppearance into GtkSettings as a
+        // safety net for code paths that read gtk-interface-color-scheme
+        // or gtk-application-prefer-dark-theme directly.
         macAppearanceBridge.start()
         #endif
     }
 
     @MainActor
     static func isDarkMode() -> Bool {
-        guard let settings = gtk_settings_get_default() else { return false }
-        let object = UnsafeMutableRawPointer(settings).assumingMemoryBound(to: GObject.self)
-        return readIsDark(object: object)
-    }
-
-    @MainActor
-    private static func readIsDark(
-        object: UnsafeMutablePointer<GObject>
-    ) -> Bool {
-        if hasColorSchemeProperty {
-            var v = GValue()
-            g_value_init(&v, colorSchemeGType)
-            g_object_get_property(object, colorSchemePropertyName, &v)
-            let raw = g_value_get_enum(&v)
-            g_value_unset(&v)
-            // InterfaceColorScheme: 0 = default, 1 = light, 2 = dark
-            return raw == 2
-        }
-        var v = GValue()
-        g_value_init(&v, GType(luma_g_type_boolean()))
-        g_object_get_property(object, preferDarkPropertyName, &v)
-        let isDark = g_value_get_boolean(&v) != 0
-        g_value_unset(&v)
-        return isDark
-    }
-
-    @MainActor
-    fileprivate static func writeIsDark(
-        object: UnsafeMutablePointer<GObject>,
-        dark: Bool
-    ) {
-        if hasColorSchemeProperty {
-            var v = GValue()
-            g_value_init(&v, colorSchemeGType)
-            // InterfaceColorScheme: 1 = light, 2 = dark
-            g_value_set_enum(&v, dark ? 2 : 1)
-            g_object_set_property(object, colorSchemePropertyName, &v)
-            g_value_unset(&v)
-        } else {
-            var v = GValue()
-            g_value_init(&v, GType(luma_g_type_boolean()))
-            g_value_set_boolean(&v, dark ? 1 : 0)
-            g_object_set_property(object, preferDarkPropertyName, &v)
-            g_value_unset(&v)
-        }
-    }
-
-    private static let colorSchemePropertyName = "gtk-interface-color-scheme"
-    private static let preferDarkPropertyName = "gtk-application-prefer-dark-theme"
-
-    /// `gtk-interface-color-scheme` is GTK 4.20+. We discover both whether
-    /// the property exists and its enum GType from the property spec — no
-    /// dlsym needed (and `dlsym(nil, …)` doesn't even work on macOS, where
-    /// the default-namespace handle is `RTLD_DEFAULT == -2`, not `NULL`).
-    private static let colorSchemeGType: GType = {
-        guard let settingsClass = g_type_class_ref(gtk_settings_get_type()) else { return 0 }
-        defer { g_type_class_unref(settingsClass) }
-        let objectClass = settingsClass.assumingMemoryBound(to: GObjectClass.self)
-        guard let pspec = g_object_class_find_property(objectClass, colorSchemePropertyName)
-        else { return 0 }
-        return pspec.pointee.value_type
-    }()
-
-    private static var hasColorSchemeProperty: Bool { colorSchemeGType != 0 }
-
-    private static var notifySignalName: String {
-        hasColorSchemeProperty
-            ? "notify::gtk-interface-color-scheme"
-            : "notify::gtk-application-prefer-dark-theme"
+        Adw.StyleManager.getDefault().dark
     }
 
     @MainActor
@@ -110,7 +44,7 @@ enum ThemeWatcher {
         owner: Owner,
         onChange: @escaping @MainActor (Owner) -> Void
     ) -> gulong {
-        guard let settings = gtk_settings_get_default() else { return 0 }
+        let manager = Adw.StyleManager.getDefault()!
         let token = State.lock.withLock {
             let token = State.nextToken
             State.nextToken += 1
@@ -122,8 +56,8 @@ enum ThemeWatcher {
         }
         let userData = UnsafeMutableRawPointer(bitPattern: token)
         let handlerID = g_signal_connect_data(
-            settings,
-            notifySignalName,
+            manager.style_manager_ptr,
+            "notify::dark",
             unsafeBitCast(themeChangedCallback, to: GCallback.self),
             userData,
             nil,
@@ -141,9 +75,12 @@ enum ThemeWatcher {
             State.callbacks.removeValue(forKey: token)
             return State.handlersForToken.removeValue(forKey: token) ?? []
         }
-        guard !realIDs.isEmpty, let settings = gtk_settings_get_default() else { return }
-        for id in realIDs {
-            g_signal_handler_disconnect(settings, id)
+        guard !realIDs.isEmpty else { return }
+        MainActor.assumeIsolated {
+            let manager = Adw.StyleManager.getDefault()!
+            for id in realIDs {
+                g_signal_handler_disconnect(manager.style_manager_ptr, id)
+            }
         }
     }
 
@@ -211,8 +148,38 @@ private final class MacAppearanceBridge: NSObject {
         let appearance = NSApplication.shared.effectiveAppearance
         let match = appearance.bestMatch(from: [.aqua, .darkAqua])
         let isDark = match == .darkAqua
-        ThemeWatcher.writeIsDark(object: object, dark: isDark)
+        writeIsDark(object: object, dark: isDark)
     }
+
+    private func writeIsDark(object: UnsafeMutablePointer<GObject>, dark: Bool) {
+        if hasColorSchemeProperty {
+            var v = GValue()
+            g_value_init(&v, colorSchemeGType)
+            // InterfaceColorScheme: 1 = light, 2 = dark
+            g_value_set_enum(&v, dark ? 2 : 1)
+            g_object_set_property(object, "gtk-interface-color-scheme", &v)
+            g_value_unset(&v)
+        } else {
+            var v = GValue()
+            g_value_init(&v, GType(luma_g_type_boolean()))
+            g_value_set_boolean(&v, dark ? 1 : 0)
+            g_object_set_property(object, "gtk-application-prefer-dark-theme", &v)
+            g_value_unset(&v)
+        }
+    }
+
+    /// `gtk-interface-color-scheme` is GTK 4.20+. Discover whether the
+    /// property exists and its enum GType from the property spec.
+    private let colorSchemeGType: GType = {
+        guard let settingsClass = g_type_class_ref(gtk_settings_get_type()) else { return 0 }
+        defer { g_type_class_unref(settingsClass) }
+        let objectClass = settingsClass.assumingMemoryBound(to: GObjectClass.self)
+        guard let pspec = g_object_class_find_property(objectClass, "gtk-interface-color-scheme")
+        else { return 0 }
+        return pspec.pointee.value_type
+    }()
+
+    private var hasColorSchemeProperty: Bool { colorSchemeGType != 0 }
 }
 
 #endif
