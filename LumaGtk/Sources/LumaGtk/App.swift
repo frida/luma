@@ -228,6 +228,9 @@ final class LumaApplication {
         installAction(appPtr: appPtr, name: "toggle-collaboration") { [weak self] in
             self?.activeWindow()?.toggleCollaboration()
         }
+        installAction(appPtr: appPtr, name: "about") { [weak self] in
+            self?.presentAboutDialog()
+        }
         for slot in 0..<maxRecentSlots {
             installAction(appPtr: appPtr, name: "open-recent-\(slot)") { [weak self] in
                 self?.openRecent(slot: slot)
@@ -296,6 +299,24 @@ final class LumaApplication {
         appendItem(toMenu: windowSection, label: "Close Window", action: "app.close-window")
         luma_menu_append_section(menu, windowSection)
         luma_menu_unref(windowSection)
+
+        let aboutSection = luma_menu_new()!
+        appendItem(toMenu: aboutSection, label: "About Luma", action: "app.about")
+        luma_menu_append_section(menu, aboutSection)
+        luma_menu_unref(aboutSection)
+    }
+
+    private func presentAboutDialog() {
+        let dialog = Adw.AboutDialog()
+        "Luma".withCString { dialog.set(applicationName: $0) }
+        "re.frida.Luma".withCString { dialog.set(applicationIcon: $0) }
+        "Ole André Vadla Ravnås".withCString { dialog.set(developerName: $0) }
+        "© 2025–2026 Ole André Vadla Ravnås".withCString { dialog.set(copyright: $0) }
+        "https://luma.frida.re".withCString { dialog.set(website: $0) }
+        "https://github.com/frida/luma/issues".withCString { dialog.set(issueUrl: $0) }
+        dialog.set(licenseType: .mitX11)
+        let parent = activeWindow()?.window
+        dialog.present(parent: parent)
     }
 
     private func appendItem(
