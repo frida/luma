@@ -101,7 +101,7 @@
             "name": "frida-core",
             "buildsystem": "simple",
             "build-commands": [
-                "./configure --enable-shared --without-prebuilds=sdk --prefix=/app -- --force-fallback-for=openssl",
+                "./configure --enable-shared --without-prebuilds=sdk --prefix=/app -- --force-fallback-for=openssl,libbpf",
                 "make -j$(nproc)",
                 "DESTDIR=$PWD/_destdir python3 releng/meson/meson.py install -C build --skip-subprojects --no-rebuild",
                 "cp -a _destdir/app/. /app/"

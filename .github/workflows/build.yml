@@ -528,7 +528,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-${{ matrix.vcpkg_triplet }}-v8
+          key: vcpkg-${{ matrix.vcpkg_triplet }}-v9
 
       - name: Install dependencies via vcpkg
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
@@ -544,7 +544,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-${{ matrix.vcpkg_triplet }}-v8
+          key: vcpkg-${{ matrix.vcpkg_triplet }}-v9
 
       - name: Set up vcpkg environment
         shell: bash
