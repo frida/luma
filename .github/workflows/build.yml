@@ -637,6 +637,13 @@ jobs:
         if: steps.frida-cache.outputs.cache-hit != 'true'
         env:
           MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+          # CPATH / CPLUS_INCLUDE_PATH are LumaGtk's C-shim search
+          # paths and frida-core doesn't consume them. They also
+          # balloon the env dictionary that compiler/build-backend.py
+          # base64-encodes onto the ninja command line, tipping it
+          # past the Windows CreateProcessW 32K limit.
+          CPATH: ""
+          CPLUS_INCLUDE_PATH: ""
         run: |
           $ErrorActionPreference = 'Stop'
           git clone --depth 1 -b $env:FRIDA_CORE_REF https://github.com/frida/frida-core.git $env:RUNNER_TEMP\frida-core
