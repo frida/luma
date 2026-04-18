@@ -27,7 +27,20 @@ if (-not (Get-Command swift -ErrorAction SilentlyContinue)) {
     throw "swift.exe not on PATH. Install Swift for Windows and re-run from a Developer PowerShell for VS."
 }
 if (-not (Get-Command cl -ErrorAction SilentlyContinue)) {
-    throw "cl.exe not on PATH. Launch a Developer PowerShell for VS (or run vcvars64.bat) first."
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (-not (Test-Path $vswhere)) {
+        throw "cl.exe not on PATH and vswhere.exe not found. Launch a Developer PowerShell for VS (or run vcvars64.bat) first."
+    }
+    $vsRoot = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+    if (-not $vsRoot) { throw "No Visual Studio with MSVC toolchain found. Install VS Build Tools and try again." }
+    $devShellDll = Join-Path $vsRoot 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll'
+    if (-not (Test-Path $devShellDll)) { throw "VS DevShell module not found at $devShellDll." }
+    Import-Module $devShellDll
+    Enter-VsDevShell -VsInstallPath $vsRoot -SkipAutomaticLocation `
+        -DevCmdArguments '-arch=x64 -host_arch=x64' | Out-Null
+    if (-not (Get-Command cl -ErrorAction SilentlyContinue)) {
+        throw "Failed to load MSVC environment from $vsRoot."
+    }
 }
 
 & (Join-Path $script 'setup-env.ps1') `
