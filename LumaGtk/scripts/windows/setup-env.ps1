@@ -101,6 +101,36 @@ $env:GIR_EXTRA_SEARCH_PATH = (Join-Path $vcpkg 'share\gir-1.0') -replace '\\','/
 $env:CPATH                 = $shimDir
 $env:CPLUS_INCLUDE_PATH    = $shimDir
 
+# gir2swift shells out to sed/awk to patch generated Swift. Git for
+# Windows' cygwin build of sed (typically first on PATH for most
+# Windows devs) crashes silently at fork() time on recent Windows
+# versions, leaving the patches unapplied and the generated GLib
+# Swift unable to compile. Any non-Git sed on disk (MSYS2, GnuWin32,
+# chocolatey shim) works, so probe for one and prepend its dir.
+$sedCandidates = @(
+    'C:\msys64\usr\bin\sed.exe',
+    'C:\Program Files (x86)\GnuWin32\bin\sed.exe',
+    'C:\ProgramData\chocolatey\bin\sed.exe'
+)
+$sedDir = $sedCandidates |
+    Where-Object { Test-Path $_ } |
+    Select-Object -First 1 |
+    ForEach-Object { Split-Path -Parent $_ }
+if ($sedDir) {
+    if (-not (($env:PATH -split ';') -contains $sedDir)) {
+        $env:PATH = "$sedDir;$env:PATH"
+    }
+    Write-Host "  sed/awk      = $sedDir"
+} else {
+    Write-Warning @"
+No non-cygwin sed/awk found. gir2swift post-processing will be
+skipped, and the generated GLib Swift will fail to compile.
+Install one of:
+  winget install GnuWin32.Sed GnuWin32.Gawk
+  or an MSYS2 install under C:\msys64
+"@
+}
+
 # Put the dependency prefixes on PATH so pkg-config and the built
 # executable (via run.ps1) can find the runtime DLLs.
 $prefixBins = @(
