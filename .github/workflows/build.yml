@@ -17,15 +17,14 @@ env:
 
 jobs:
   macos:
-    runs-on: ${{ matrix.runner }}
+    # Apple Silicon Xcode cross-compiles to x86_64 natively, so both
+    # matrix entries run on the free arm64 runner — no paid -large
+    # runner needed for the Intel slice.
+    runs-on: macos-26
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - runner: macos-26
-            arch: arm64
-          - runner: macos-15-large
-            arch: x86_64
+        arch: [arm64, x86_64]
     steps:
       - uses: actions/checkout@v6
 
