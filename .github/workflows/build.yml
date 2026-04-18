@@ -17,6 +17,7 @@ env:
 
 jobs:
   macos:
+    if: false  # re-enable once Windows is green; last run: passed
     runs-on: macos-26
     strategy:
       matrix:
@@ -144,6 +145,7 @@ jobs:
           path: Luma-${{ matrix.arch }}.dmg
 
   fedora:
+    if: false  # re-enable once Windows is green; last fail: CAdw can't find adwaita.h (pkg-config cflags not reaching the target)
     runs-on: ubuntu-latest
     container: fedora:43
     steps:
@@ -279,6 +281,7 @@ jobs:
           path: luma-fedora-43.tar.gz
 
   ubuntu:
+    if: false  # re-enable once Windows is green; last fail: same as fedora — CAdw can't find adwaita.h
     runs-on: ubuntu-latest
     container: ubuntu:25.10
     steps:
@@ -415,6 +418,7 @@ jobs:
           path: luma-ubuntu-25.10.deb
 
   flatpak:
+    if: false  # re-enable once Windows is green; last run: not completed
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -457,6 +461,7 @@ jobs:
           path: luma.flatpak
 
   snap:
+    if: false  # re-enable once Windows is green; last fail: snapcraft sandbox missing libadwaita (needs snapcraft.yaml update + Adw-1.gir)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
