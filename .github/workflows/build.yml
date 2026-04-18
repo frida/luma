@@ -151,6 +151,7 @@ jobs:
         run: |
           dnf install -y \
             gtk4-devel \
+            libadwaita-devel \
             webkitgtk6.0-devel \
             glib2-devel \
             pango-devel \
@@ -291,6 +292,7 @@ jobs:
           apt-get update
           apt-get install -y \
             libgtk-4-dev \
+            libadwaita-1-dev \
             libwebkitgtk-6.0-dev \
             libglib2.0-dev \
             libpango1.0-dev \
