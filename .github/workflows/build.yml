@@ -485,6 +485,7 @@ jobs:
           - runner: windows-latest
             win_arch: x64
             msvc_arch: amd64
+            swift_build_arch: amd64
             vcpkg_triplet: x64-windows-release
             toolcache_arch: x64
             msys2_system: MINGW64
@@ -492,6 +493,7 @@ jobs:
           - runner: windows-11-arm
             win_arch: arm64
             msvc_arch: arm64
+            swift_build_arch: arm64
             vcpkg_triplet: arm64-windows-release
             toolcache_arch: arm64
             msys2_system: CLANGARM64
@@ -511,6 +513,7 @@ jobs:
         with:
           swift-version: "swift-${{ env.SWIFT_VERSION }}-release"
           swift-build: "${{ env.SWIFT_VERSION }}-RELEASE"
+          build_arch: ${{ matrix.swift_build_arch }}
 
       - uses: actions/setup-python@v6
         with:
