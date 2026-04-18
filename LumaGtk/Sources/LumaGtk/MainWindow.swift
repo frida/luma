@@ -52,7 +52,7 @@ final class MainWindow {
     private var collaborationButton: Button!
     private var collaborationPanel: CollaborationPanel?
     private let outerPaned: Paned
-    private var topPaned: Paned!
+    private var splitView: Adw.NavigationSplitView!
     private var eventStreamPaned: Paned!
     private var eventStreamHost: Box!
     private var detailHost: Widget!
@@ -148,18 +148,21 @@ final class MainWindow {
         }
         header.packEnd(child: primaryMenuButton)
 
-        let topPaned = Paned(orientation: .horizontal)
-        topPaned.position = state.sidebarSashPosition
         let sidebar = buildSidebar()
         let detail = buildDetailPane()
-        topPaned.startChild = WidgetRef(sidebar)
-        topPaned.endChild = WidgetRef(detail)
-        topPaned.hexpand = true
-        topPaned.vexpand = true
-        self.topPaned = topPaned
+        let sidebarPage = "Luma".withCString { Adw.NavigationPage(child: sidebar, title: $0) }
+        let contentPage = "".withCString { Adw.NavigationPage(child: detail, title: $0) }
+        let splitView = Adw.NavigationSplitView()
+        splitView.set(sidebar: sidebarPage)
+        splitView.set(content: contentPage)
+        splitView.setMinSidebar(width: 240)
+        splitView.setMaxSidebar(width: 400)
+        splitView.hexpand = true
+        splitView.vexpand = true
+        self.splitView = splitView
 
         outerPaned.position = state.collaborationSashPosition
-        outerPaned.startChild = WidgetRef(topPaned)
+        outerPaned.startChild = WidgetRef(splitView)
         outerPaned.hexpand = true
         outerPaned.vexpand = true
 
@@ -301,7 +304,6 @@ final class MainWindow {
             eventStreamSash = Int(eventStreamPaned.position)
         }
         state.saveSashes(
-            sidebar: Int(topPaned.position),
             collaboration: Int(outerPaned.position),
             eventStream: eventStreamSash,
             eventStreamCollapsed: eventStreamPane.collapsed

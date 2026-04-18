@@ -41,11 +41,6 @@ final class LumaState {
         set { stored.windowMaximized = newValue; persist() }
     }
 
-    var sidebarSashPosition: Int {
-        get { stored.sidebarSashPosition ?? 280 }
-        set { stored.sidebarSashPosition = newValue; persist() }
-    }
-
     var collaborationSashPosition: Int {
         get { stored.collaborationSashPosition ?? 880 }
         set { stored.collaborationSashPosition = newValue; persist() }
@@ -68,8 +63,7 @@ final class LumaState {
         persist()
     }
 
-    func saveSashes(sidebar: Int, collaboration: Int, eventStream: Int? = nil, eventStreamCollapsed: Bool) {
-        stored.sidebarSashPosition = sidebar
+    func saveSashes(collaboration: Int, eventStream: Int? = nil, eventStreamCollapsed: Bool) {
         stored.collaborationSashPosition = collaboration
         if let eventStream {
             stored.eventStreamSashPosition = eventStream
@@ -84,7 +78,6 @@ final class LumaState {
         var windowWidth: Int?
         var windowHeight: Int?
         var windowMaximized: Bool?
-        var sidebarSashPosition: Int?
         var collaborationSashPosition: Int?
         var eventStreamSashPosition: Int?
         var eventStreamCollapsed: Bool?
