@@ -607,11 +607,15 @@ jobs:
         if: steps.frida-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
-          Write-Host '---- glib-2.0.pc ----'
-          Get-Content 'C:\vcpkg\installed\x64-windows-release\lib\pkgconfig\glib-2.0.pc'
-          Write-Host '---- pkg-config --cflags glib-2.0 ----'
-          & 'C:\vcpkg\installed\x64-windows-release\tools\pkgconf\pkg-config.exe' --cflags glib-2.0
-          Write-Host "---- exit $LASTEXITCODE ----"
+          $pkg = 'C:\vcpkg\installed\x64-windows-release\tools\pkgconf\pkg-config.exe'
+          Write-Host '---- pkg-config --variable=pc_path pkg-config ----'
+          & $pkg --variable=pc_path pkg-config
+          Write-Host '---- which glib-2.0.pc files exist ----'
+          Get-ChildItem -Path C:\ -Recurse -Filter glib-2.0.pc -ErrorAction SilentlyContinue -Depth 8 |
+            ForEach-Object { $_.FullName }
+          Write-Host '---- pkg-config --debug --cflags glib-2.0 ----'
+          & $pkg --debug --cflags glib-2.0 2>&1 | Select-String -Pattern 'path|found|fragment|include|cflags' -CaseSensitive:$false
+          Write-Host "---- done ----"
 
       - name: Build frida-core (shared)
         if: steps.frida-cache.outputs.cache-hit != 'true'
