@@ -104,6 +104,12 @@ parts:
       PARENT="$(dirname "$CRAFT_PART_BUILD")"
       mv "$CRAFT_PART_BUILD" "$PARENT/luma"
       cd "$PARENT/luma/LumaGtk"
+      # core24's libadwaita 1.5 ships an Adw-1.gir whose *_lines getters
+      # are mistyped as gboolean; patch it for gir2swift. Drop once
+      # core26 lands with libadwaita >= 1.6.
+      python3 scripts/linux/patch-libadwaita-gir.py \
+        /usr/share/gir-1.0/Adw-1.gir "$PARENT/gir-fixup"
+      export GIR_EXTRA_SEARCH_PATH="$PARENT/gir-fixup"
       make build SWIFT_BUILD_FLAGS="-c release"
       install -Dm755 .build/x86_64-unknown-linux-gnu/release/LumaGtk "$CRAFT_PART_INSTALL/usr/local/bin/luma"
       strip --strip-unneeded "$CRAFT_PART_INSTALL/usr/local/bin/luma"
