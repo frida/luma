@@ -1,3 +1,4 @@
+import Adw
 import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -14,12 +15,12 @@ struct NpmPackageResult: Sendable {
 @MainActor
 final class PackageSearchDialog {
     private weak var engine: Engine?
-    private weak var hostWindow: Window?
+    private weak var hostDialog: Adw.Dialog?
     private var onInstalled: (() -> Void)?
 
     private let widget: Box
     private let searchEntry: Entry
-    private let searchSpinner: Spinner
+    private let searchSpinner: Adw.Spinner
     private let listBox: ListBox
     private let statusLabel: Label
     private let errorLabel: Label
@@ -28,7 +29,7 @@ final class PackageSearchDialog {
     private let versionEntry: Entry
     private let aliasEntry: Entry
     private let installButton: Button
-    private let installSpinner: Spinner
+    private let installSpinner: Adw.Spinner
 
     private var results: [NpmPackageResult] = []
     private var selectedIndex: Int? = nil
@@ -54,8 +55,8 @@ final class PackageSearchDialog {
         searchEntry.hexpand = true
         searchRow.append(child: searchEntry)
 
-        searchSpinner = Spinner()
-        searchSpinner.spinning = false
+        searchSpinner = Adw.Spinner()
+        searchSpinner.visible = false
         searchSpinner.setSizeRequest(width: 16, height: 16)
         searchRow.append(child: searchSpinner)
         widget.append(child: searchRow)
@@ -120,8 +121,8 @@ final class PackageSearchDialog {
         let spacer = Label(str: "")
         spacer.hexpand = true
         installRow.append(child: spacer)
-        installSpinner = Spinner()
-        installSpinner.spinning = false
+        installSpinner = Adw.Spinner()
+        installSpinner.visible = false
         installRow.append(child: installSpinner)
         installButton = Button(label: "Install")
         installButton.add(cssClass: "suggested-action")
@@ -187,8 +188,7 @@ final class PackageSearchDialog {
             showStatus(nil)
             results = []
             rebuildList()
-            searchSpinner.spinning = false
-            searchSpinner.stop()
+            searchSpinner.visible = false
             return
         }
 
@@ -207,8 +207,7 @@ final class PackageSearchDialog {
     private func performSearch(query: String) {
         showError(nil)
         showStatus("Searching…")
-        searchSpinner.spinning = true
-        searchSpinner.start()
+        searchSpinner.visible = true
 
         searchTask = Task { @MainActor [weak self] in
             let outcome: Result<[NpmPackageResult], Error>
@@ -222,8 +221,7 @@ final class PackageSearchDialog {
             guard let self else { return }
             if Task.isCancelled || self.currentQuery != query { return }
 
-            self.searchSpinner.spinning = false
-            self.searchSpinner.stop()
+            self.searchSpinner.visible = false
 
             switch outcome {
             case .success(let pkgs):
@@ -341,8 +339,7 @@ final class PackageSearchDialog {
 
         isInstalling = true
         installButton.sensitive = false
-        installSpinner.spinning = true
-        installSpinner.start()
+        installSpinner.visible = true
         showError(nil)
         showStatus("Installing \(name)\(spec.map { "@\($0)" } ?? "")…")
 
@@ -350,14 +347,13 @@ final class PackageSearchDialog {
             defer {
                 self.isInstalling = false
                 self.installButton.sensitive = true
-                self.installSpinner.spinning = false
-                self.installSpinner.stop()
+                self.installSpinner.visible = false
             }
             do {
                 _ = try await engine.installPackage(name: name, versionSpec: spec, globalAlias: alias)
                 self.showStatus("Installed \(name).")
                 self.onInstalled?()
-                self.hostWindow?.destroy()
+                _ = self.hostDialog?.close()
             } catch {
                 self.showStatus(nil)
                 self.showError("Install failed: \(error.localizedDescription)")
@@ -378,47 +374,33 @@ final class PackageSearchDialog {
         let dialog = PackageSearchDialog(engine: engine)
         dialog.onInstalled = onInstalled
 
-        let window = Window()
-        applyWindowDecoration(window)
-        window.title = "Install Package"
-        window.setDefaultSize(width: 640, height: 560)
-        window.modal = true
-        window.destroyWithParent = true
+        let adwDialog = Adw.Dialog()
+        adwDialog.set(title: "Install Package")
+        adwDialog.set(contentWidth: 640)
+        adwDialog.set(contentHeight: 560)
 
-        if let rootPtr = anchor.root?.ptr {
-            window.setTransientFor(parent: WindowRef(raw: rootPtr))
-        }
+        let header = Adw.HeaderBar()
 
-        let header = HeaderBar()
-        let cancelButton = Button(label: "Cancel")
-        cancelButton.onClicked { [window] _ in
-            MainActor.assumeIsolated { window.destroy() }
-        }
-        header.packStart(child: cancelButton)
-        window.set(titlebar: WidgetRef(header))
+        let toolbarView = Adw.ToolbarView()
+        toolbarView.addTopBar(widget: header)
+        toolbarView.set(content: dialog.widget)
+        adwDialog.set(child: toolbarView)
 
-        installEscapeShortcut(on: window)
+        dialog.hostDialog = adwDialog
+        Self.retain(dialog: dialog, adwDialog: adwDialog)
 
-        window.set(child: dialog.widget)
-
-        dialog.hostWindow = window
-        Self.retain(dialog: dialog, window: window)
-
-        installEscapeShortcut(on: window)
-        window.present()
+        adwDialog.present(parent: anchor)
     }
 
     private static var retained: [ObjectIdentifier: PackageSearchDialog] = [:]
 
-    private static func retain(dialog: PackageSearchDialog, window: Window) {
-        let key = ObjectIdentifier(window)
+    private static func retain(dialog: PackageSearchDialog, adwDialog: Adw.Dialog) {
+        let key = ObjectIdentifier(adwDialog)
         retained[key] = dialog
-        let handler: (WindowRef) -> Bool = { _ in
+        adwDialog.onClosed { _ in
             MainActor.assumeIsolated {
                 _ = retained.removeValue(forKey: key)
             }
-            return false
         }
-        window.onCloseRequest(handler: handler)
     }
 }
