@@ -6,7 +6,6 @@ import LumaCore
 enum MonacoDemo {
     static func present(in app: Application) {
         let window = ApplicationWindow(application: app)
-        applyWindowDecoration(window)
         window.title = "Monaco Demo"
         window.setDefaultSize(width: 1100, height: 760)
 

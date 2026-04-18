@@ -88,7 +88,7 @@ let cLumaLinkerSettings: [LinkerSetting] = [
 ]
 let lumaGtkLinkerSettings: [LinkerSetting] = []
 #elseif os(Windows)
-let cLumaSources: [String] = ["shim_gtk.c", "shim_webview2.cpp", "shim_win32.cpp"]
+let cLumaSources: [String] = ["shim_gtk.c", "shim_webview2.cpp"]
 let cLumaCSettings: [CSetting] = [
     .unsafeFlags(pkgConfigFlags(["gtk4"])),
 ]
@@ -100,7 +100,6 @@ let cLumaLinkerSettings: [LinkerSetting] = [
     .linkedLibrary("ole32"),
     .linkedLibrary("oleaut32"),
     .linkedLibrary("runtimeobject"),
-    .linkedLibrary("dwmapi"),
 ]
 // Windows: produce a GUI app (no console window). Swift's runtime
 // still calls main(), so redirect the linker entry to the C runtime's

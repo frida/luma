@@ -231,32 +231,9 @@ enum StyleSheet {
     .luma-linked-lab-hint { border: 1px solid alpha(@theme_fg_color, 0.15); border-radius: 6px; padding: 6px 10px; }
     """
 
-    // Each window also gets tagged with .solid-csd via
-    // applyWindowDecoration, which is GTK's own escape hatch for
-    // platforms without proper compositor transparency. Belt and
-    // suspenders: also strip the decoration node's shadow / margin /
-    // border-radius so GTK paints all the way to the rectangular
-    // window edge, leaving the rounding to DWM at compositor level.
-    #if os(Windows)
-    private static let platformCss = """
-    window.csd,
-    window.solid-csd,
-    window.csd decoration,
-    window.solid-csd decoration,
-    window.csd decoration-overlay,
-    window.solid-csd decoration-overlay {
-        margin: 0;
-        box-shadow: none;
-        border-radius: 0;
-    }
-    """
-    #else
-    private static let platformCss = ""
-    #endif
-
     static func install() {
         let provider = CssProvider()
-        provider.loadFrom(string: css + "\n" + platformCss)
+        provider.loadFrom(string: css)
         guard let display = gdk_display_get_default() else { return }
         gtk_style_context_add_provider_for_display(
             display,

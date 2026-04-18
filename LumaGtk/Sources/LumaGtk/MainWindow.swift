@@ -89,7 +89,6 @@ final class MainWindow {
         self.application = application
         self.document = document
         self.window = Adw.ApplicationWindow(app: app)
-        applyWindowDecoration(window)
         self.outerPaned = Paned(orientation: .horizontal)
         window.title = MainWindow.makeTitle(for: document)
         let state = LumaState.shared

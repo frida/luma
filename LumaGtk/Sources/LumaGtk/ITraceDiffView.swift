@@ -333,7 +333,6 @@ final class ITraceDiffView {
         let view = ITraceDiffView(left: left, right: right)
 
         let window = Adw.Window()
-        applyWindowDecoration(window)
         window.title = "ITrace Diff"
         window.setDefaultSize(width: 900, height: 600)
         window.destroyWithParent = true
