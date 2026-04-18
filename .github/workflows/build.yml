@@ -621,41 +621,6 @@ jobs:
           MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
         run: |
           $ErrorActionPreference = 'Stop'
-          # frida-core's tools/cgo/detect.py does `env = {**os.environ,
-          # ...}` and meson base64-encodes the resulting dict onto
-          # ninja's command line via build-backend.py. Hosted Windows
-          # runners pre-set ~150 env vars (Android SDK/NDK, multi-JDK,
-          # Azure, Chrome/Edge drivers, Boost, Haxe, Maven, Ruby, SQL,
-          # ...), which blows past the Windows CreateProcessW 32K
-          # limit. Drop the ones frida doesn't use before invoking
-          # meson.
-          @(
-              'ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE','AGENT_TOOLSDIRECTORY',
-              'ANDROID_HOME','ANDROID_NDK','ANDROID_NDK_HOME','ANDROID_NDK_LATEST_HOME','ANDROID_NDK_ROOT','ANDROID_SDK_ROOT',
-              'ANT_HOME',
-              'AZURE_CONFIG_DIR','AZURE_DEVOPS_CACHE_DIR','AZURE_EXTENSION_DIR','AZ_DEVOPS_GLOBAL_CONFIG_DIR',
-              'BISON_PKGDATADIR',
-              'BOOST_ROOT','BOOST_ROOT_1_72_0','BOOST_ROOT_1_84_0','BOOSTVERSION',
-              'CHROMEWEBDRIVER','CHROME_PATH','EDGEWEBDRIVER','GECKOWEBDRIVER','SELENIUM_JAR_PATH',
-              'CONDA','DEPLOYMENT_BASEPATH',
-              'DOTNET_MULTILEVEL_LOOKUP','DOTNET_NOLOGO','DOTNET_SKIP_FIRST_TIME_EXPERIENCE','DOTNET_ROOT','DOTNET_ROOT(X86)',
-              'GHCUP_INSTALL_BASE_PREFIX','GOOGLECHROMEDRIVER',
-              'GRADLE_HOME','HAXE_STD_PATH','HAXELIB_ROOT','HAXEPATH',
-              'JAVA_HOME','JAVA_HOME_11_X64','JAVA_HOME_17_X64','JAVA_HOME_21_X64','JAVA_HOME_8_X64',
-              'KOTLIN_HOME','LEIN_HOME','LEIN_JAR',
-              'M2','M2_HOME','MAVEN_HOME','MAVEN_OPTS',
-              'NUGET_PACKAGES','NUGET_XMLDOC_MODE',
-              'PERFLOG_LOCATION_SETTING',
-              'PGBIN','PGDATA','PGHOST','PGPASSWORD','PGPORT','PGROOT','PGUSER','PGVER',
-              'PIPX_BIN_DIR','PIPX_HOME',
-              'RBENV_ROOT','RUBY','RUBYLIB','RUBYOPT',
-              'RUST_BACKTRACE','RUSTFLAGS','RUSTUP_HOME','CARGO_HOME',
-              'SBT_HOME','SCCACHE_DIR','SELENIUMAPPFOLDER','STACK_ROOT',
-              'SQLCMDPASSWORD','SQLCMDPATH','SQLCMDUSER','SQLCOLSEP','SqlServer',
-              'SWIG_DIR','SWIG_LIB',
-              'CPATH','CPLUS_INCLUDE_PATH',
-              'VCPKG_INSTALLATION_ROOT'
-          ) | ForEach-Object { Remove-Item -LiteralPath "Env:$_" -ErrorAction SilentlyContinue }
           git clone --depth 1 -b $env:FRIDA_CORE_REF https://github.com/frida/frida-core.git $env:RUNNER_TEMP\frida-core
           Push-Location $env:RUNNER_TEMP\frida-core
           git submodule update --init --recursive --depth 1
