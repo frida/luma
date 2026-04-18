@@ -534,6 +534,12 @@ jobs:
           echo "$VCPKG_PREFIX/bin" >> $GITHUB_PATH
           echo "$VCPKG_PREFIX/tools" >> $GITHUB_PATH
           echo "PKG_CONFIG_PATH=$VCPKG_PREFIX/lib/pkgconfig" >> $GITHUB_ENV
+          # pkgconf on this runner classifies $VCPKG_PREFIX/include as a
+          # system path (via the INCLUDE env var MSVC sets) and strips
+          # -I fragments that live under it, which breaks glib's
+          # -I${includedir}/glib-2.0 Cflags. Opt back in.
+          echo "PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1" >> $GITHUB_ENV
+          echo "PKG_CONFIG_ALLOW_SYSTEM_LIBS=1" >> $GITHUB_ENV
           echo "GIR_EXTRA_SEARCH_PATH=$VCPKG_PREFIX/share/gir-1.0" >> $GITHUB_ENV
           # Package.swift calls "pkg-config"; vcpkg ships pkgconf.exe. Alias it.
           if [ -f "$VCPKG_PREFIX/tools/pkgconf/pkgconf.exe" ] && [ ! -f "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe" ]; then
@@ -603,19 +609,6 @@ jobs:
           install: mingw-w64-x86_64-gcc
           path-type: inherit
 
-      - name: Diagnose glib pkg-config
-        if: steps.frida-cache.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          $pkg = 'C:\vcpkg\installed\x64-windows-release\tools\pkgconf\pkg-config.exe'
-          Write-Host '---- pkg-config --variable=pc_path pkg-config ----'
-          & $pkg --variable=pc_path pkg-config
-          Write-Host '---- which glib-2.0.pc files exist ----'
-          Get-ChildItem -Path C:\ -Recurse -Filter glib-2.0.pc -ErrorAction SilentlyContinue -Depth 8 |
-            ForEach-Object { $_.FullName }
-          Write-Host '---- pkg-config --debug --cflags glib-2.0 ----'
-          & $pkg --debug --cflags glib-2.0 2>&1 | Select-String -Pattern 'path|found|fragment|include|cflags' -CaseSensitive:$false
-          Write-Host "---- done ----"
 
       - name: Build frida-core (shared)
         if: steps.frida-cache.outputs.cache-hit != 'true'
