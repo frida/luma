@@ -85,31 +85,21 @@ $pkgConfigDirs = @(
     (Join-Path $vcpkg 'lib\pkgconfig')
 ) | ForEach-Object { $_ -replace '\\','/' } | Select-Object -Unique
 
-$cpathDirs = @(
-    'include\libadwaita-1',
-    'include\gtk-4.0',
-    'include\pango-1.0',
-    'include\harfbuzz',
-    'include\gdk-pixbuf-2.0',
-    'include\cairo',
-    'include\graphene-1.0',
-    'lib\graphene-1.0\include',
-    'include\glib-2.0',
-    'lib\glib-2.0\include',
-    'include\json-glib-1.0',
-    'include\libsoup-3.0',
-    'include\vcpkg-shim'
-) | ForEach-Object { (Join-Path $vcpkg $_) -replace '\\','/' }
-$cpathDirs += (Join-Path $frida 'include\frida-1.0') -replace '\\','/'
-$cpathDirs += (Join-Path $r2    'include')           -replace '\\','/'
+# Root-level vcpkg headers (WebView2.h, sqlite3.h, ...) aren't visible
+# through pkg-config, so point clang at the vcpkg-shim staging dir that
+# mirrors $VCPKG_PREFIX/include minus the dirent.h polyfill that would
+# clash with Swift's _FoundationCShims. Everything else (gtk4, glib,
+# libadwaita, frida-core, radare2, ...) is reachable via pkg-config now
+# that the relocatable .pc prefix is in place.
+$shimDir = (Join-Path $vcpkg 'include\vcpkg-shim') -replace '\\','/'
 
 $env:VCPKG_PREFIX          = $vcpkg
 $env:FRIDA_PREFIX          = $frida
 $env:R2_PREFIX             = $r2
 $env:PKG_CONFIG_PATH       = $pkgConfigDirs -join ';'
 $env:GIR_EXTRA_SEARCH_PATH = (Join-Path $vcpkg 'share\gir-1.0') -replace '\\','/'
-$env:CPATH                 = $cpathDirs -join ';'
-$env:CPLUS_INCLUDE_PATH    = $cpathDirs -join ';'
+$env:CPATH                 = $shimDir
+$env:CPLUS_INCLUDE_PATH    = $shimDir
 
 # Put the dependency prefixes on PATH so pkg-config and the built
 # executable (via run.ps1) can find the runtime DLLs.

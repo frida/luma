@@ -565,16 +565,11 @@ jobs:
           if [ -f "$VCPKG_PREFIX/tools/pkgconf/pkgconf.exe" ] && [ ! -f "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe" ]; then
             cp "$VCPKG_PREFIX/tools/pkgconf/pkgconf.exe" "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe"
           fi
-          # SwiftPM's internal .systemLibrary(pkgConfig:) resolution fails
-          # to find pkg-config via its own Process spawner on Windows. The
-          # consumer — clang compiling C shim sources — reads CPATH for
-          # header search, so pre-populate it with the vcpkg gtk4 include
-          # dirs as a cross-target fallback.
-          #
-          # Don't add $VCPKG_PREFIX/include itself — vcpkg drops a dirent.h
-          # polyfill there that conflicts with Swift's _FoundationCShims.
-          # Mirror the root-level headers into a staging dir, skipping the
-          # ones that clash.
+          # Mirror root-level vcpkg headers (WebView2.h, sqlite3.h, ...)
+          # into a staging dir, skipping dirent.h whose vcpkg polyfill
+          # clashes with Swift's _FoundationCShims. Put just the shim
+          # on CPATH — everything else is reachable via pkg-config now
+          # that frida-core / radare2 have relocatable prefixes.
           STAGE="$VCPKG_PREFIX/include/vcpkg-shim"
           mkdir -p "$STAGE"
           for hdr in "$VCPKG_PREFIX"/include/*.h; do
@@ -584,21 +579,8 @@ jobs:
               *) cp "$hdr" "$STAGE/" ;;
             esac
           done
-          CPATH="$VCPKG_PREFIX/include/libadwaita-1"
-          CPATH="$CPATH;$VCPKG_PREFIX/include/gtk-4.0"
-          CPATH="$CPATH;$VCPKG_PREFIX/include/pango-1.0"
-          CPATH="$CPATH;$VCPKG_PREFIX/include/harfbuzz"
-          CPATH="$CPATH;$VCPKG_PREFIX/include/gdk-pixbuf-2.0"
-          CPATH="$CPATH;$VCPKG_PREFIX/include/cairo"
-          CPATH="$CPATH;$VCPKG_PREFIX/include/graphene-1.0"
-          CPATH="$CPATH;$VCPKG_PREFIX/lib/graphene-1.0/include"
-          CPATH="$CPATH;$VCPKG_PREFIX/include/glib-2.0"
-          CPATH="$CPATH;$VCPKG_PREFIX/lib/glib-2.0/include"
-          CPATH="$CPATH;$VCPKG_PREFIX/include/json-glib-1.0"
-          CPATH="$CPATH;$VCPKG_PREFIX/include/libsoup-3.0"
-          CPATH="$CPATH;$STAGE"
-          echo "CPATH=$CPATH" >> $GITHUB_ENV
-          echo "CPLUS_INCLUDE_PATH=$CPATH" >> $GITHUB_ENV
+          echo "CPATH=$STAGE" >> $GITHUB_ENV
+          echo "CPLUS_INCLUDE_PATH=$STAGE" >> $GITHUB_ENV
 
       - name: Restore frida-core cache
         id: frida-cache
@@ -716,10 +698,6 @@ jobs:
           echo "PKG_CONFIG_PATH=$FRIDA_PKG;$R2_PKG;$VCPKG_PKG" >> $GITHUB_ENV
           echo "$RUNNER_TEMP\\frida-prefix\\bin" >> $GITHUB_PATH
           echo "$RUNNER_TEMP\\r2-prefix\\bin" >> $GITHUB_PATH
-          # Extend CPATH with frida-core and radare2 headers so SwiftyR2 and
-          # FridaCore shims can locate them without pkg-config.
-          echo "CPATH=$CPATH;$RUNNER_TEMP/frida-prefix/include/frida-1.0;$RUNNER_TEMP/r2-prefix/include" >> $GITHUB_ENV
-          echo "CPLUS_INCLUDE_PATH=$CPLUS_INCLUDE_PATH;$RUNNER_TEMP/frida-prefix/include/frida-1.0;$RUNNER_TEMP/r2-prefix/include" >> $GITHUB_ENV
 
       - name: Install native sed/awk/cat for gir2swift post-processing
         shell: pwsh
