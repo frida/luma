@@ -36,6 +36,26 @@ $vcpkg = Resolve-Prefix $VcpkgPrefix 'VCPKG_PREFIX' @(
 $frida = Resolve-Prefix $FridaPrefix 'FRIDA_PREFIX' @('C:\src\dist')
 $r2    = Resolve-Prefix $R2Prefix    'R2_PREFIX'    @('C:\src\dist')
 
+# frida-core and radare2 install .pc files with an absolute prefix
+# like `prefix=C:/src/dist`. vcpkg's pkgconf trips over the colon in
+# the drive letter and emits "Expected a value for variable 'prefix'",
+# leaving every ${prefix}-derived variable unresolved — which in turn
+# makes Swift's .systemLibrary(pkgConfig:) resolver return no include
+# paths. Rewrite the prefix to a pcfiledir-relative form so the file
+# is relocatable and colon-free. Idempotent.
+function Repair-PkgConfigPrefix {
+    param([string] $PkgConfigDir)
+    if (-not (Test-Path $PkgConfigDir)) { return }
+    Get-ChildItem -Path $PkgConfigDir -Filter '*.pc' -File | ForEach-Object {
+        $content = Get-Content -Raw -LiteralPath $_.FullName
+        if ($content -match '(?m)^prefix=\$\{pcfiledir\}') { return }
+        $patched = $content -replace '(?m)^prefix=.*', 'prefix=${pcfiledir}/../..'
+        [System.IO.File]::WriteAllText($_.FullName, $patched, [System.Text.UTF8Encoding]::new($false))
+    }
+}
+Repair-PkgConfigPrefix (Join-Path $frida 'lib\pkgconfig')
+Repair-PkgConfigPrefix (Join-Path $r2    'lib\pkgconfig')
+
 # vcpkg ships pkgconf.exe but SwiftGtk's Package.swift invokes
 # "pkg-config". Provide an alias next to pkgconf.exe.
 $pkgconfTools = Join-Path $vcpkg 'tools\pkgconf'
