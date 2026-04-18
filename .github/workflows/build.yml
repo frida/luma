@@ -445,7 +445,7 @@ jobs:
             --keep-build-dirs \
             --repo=flatpak-repo \
             flatpak-build \
-            LumaGtk/re.frida.Luma.flatpak.json
+            LumaGtk/build-aux/flatpak/re.frida.Luma.json
           flatpak build-bundle flatpak-repo luma.flatpak re.frida.Luma
 
       - name: Save flatpak-builder cache
