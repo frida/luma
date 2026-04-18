@@ -547,7 +547,8 @@ final class MainWindow {
 
         let headerLabel = Label(str: "SESSIONS (0)")
         headerLabel.halign = .start
-        headerLabel.add(cssClass: "luma-sidebar-section-header")
+        headerLabel.add(cssClass: "caption-heading")
+        headerLabel.add(cssClass: "dim-label")
         sessionsHeaderLabel = headerLabel
 
         let expander = Expander(label: "")
@@ -588,7 +589,8 @@ final class MainWindow {
 
         let headerLabel = Label(str: "PACKAGES (0)")
         headerLabel.halign = .start
-        headerLabel.add(cssClass: "luma-sidebar-section-header")
+        headerLabel.add(cssClass: "caption-heading")
+        headerLabel.add(cssClass: "dim-label")
         packagesHeaderLabel = headerLabel
 
         let expander = Expander(label: "")

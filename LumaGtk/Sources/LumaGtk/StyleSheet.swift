@@ -149,15 +149,6 @@ enum StyleSheet {
         opacity: 0.5;
     }
 
-    .luma-sidebar-section-header {
-        padding: 6px 8px 4px 4px;
-        color: alpha(@theme_fg_color, 0.55);
-        font-size: 0.78em;
-        font-weight: 600;
-    }
-    expander title:hover .luma-sidebar-section-header {
-        color: @theme_fg_color;
-    }
     expander title {
         border-radius: 6px;
         padding: 2px 6px;
