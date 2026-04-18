@@ -567,9 +567,7 @@ jobs:
           fi
           # Mirror root-level vcpkg headers (WebView2.h, sqlite3.h, ...)
           # into a staging dir, skipping dirent.h whose vcpkg polyfill
-          # clashes with Swift's _FoundationCShims. Put just the shim
-          # on CPATH — everything else is reachable via pkg-config now
-          # that frida-core / radare2 have relocatable prefixes.
+          # clashes with Swift's _FoundationCShims.
           STAGE="$VCPKG_PREFIX/include/vcpkg-shim"
           mkdir -p "$STAGE"
           for hdr in "$VCPKG_PREFIX"/include/*.h; do
@@ -579,8 +577,30 @@ jobs:
               *) cp "$hdr" "$STAGE/" ;;
             esac
           done
-          echo "CPATH=$STAGE" >> $GITHUB_ENV
-          echo "CPLUS_INCLUDE_PATH=$STAGE" >> $GITHUB_ENV
+          # SwiftAdw / SwiftGtk ship their C modules as .target on
+          # Windows (SwiftPM's .systemLibrary pkg-config resolver
+          # doesn't feed cflags to clang here), so the C compile sees
+          # pkg-config's -I flags but consumers don't. When the Swift
+          # side does `import CAdw`, Swift's clang opens the module's
+          # map referencing #include <adwaita.h> and needs those paths
+          # via CPATH. Derive them from pkg-config so we track
+          # libadwaita's transitive deps automatically, then strip the
+          # bare $VCPKG_PREFIX/include (dirent.h clash) and append the
+          # shim instead.
+          CPATH_LIST=""
+          for tok in $("$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe" --cflags libadwaita-1); do
+            case "$tok" in
+              -I*)
+                p="${tok#-I}"
+                if [ "$p" != "$VCPKG_PREFIX/include" ]; then
+                  CPATH_LIST="${CPATH_LIST:+$CPATH_LIST;}$p"
+                fi
+                ;;
+            esac
+          done
+          CPATH_LIST="${CPATH_LIST};${STAGE}"
+          echo "CPATH=$CPATH_LIST" >> $GITHUB_ENV
+          echo "CPLUS_INCLUDE_PATH=$CPATH_LIST" >> $GITHUB_ENV
 
       - name: Restore frida-core cache
         id: frida-cache
