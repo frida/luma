@@ -576,14 +576,19 @@ jobs:
 
       - name: Install Go toolchain
         if: steps.frida-cache.outputs.cache-hit != 'true'
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.24'
-          # v6 defaults to caching via a go.mod it finds in the repo,
-          # and our checkout doesn't have one at the root — the cache
-          # probe runs `go env GOPATH` before the PATH update has
-          # propagated, which fails with "'go' is not recognized".
-          cache: false
+        shell: pwsh
+        run: |
+          # setup-go@v6 runs `go env GOPATH` within the same step as
+          # addPath(), which on Node 24 + Windows never sees the
+          # updated PATH and fails with "'go' is not recognized".
+          # windows-latest ships a preinstalled Go in the hosted
+          # toolcache; just surface it on PATH ourselves.
+          $goRoot = Get-ChildItem 'C:\hostedtoolcache\windows\go' -Directory |
+              Sort-Object { [version]$_.Name } -Descending |
+              Select-Object -First 1
+          $goBin = Join-Path $goRoot.FullName 'x64\bin'
+          "$goBin" >> $env:GITHUB_PATH
+          & (Join-Path $goBin 'go.exe') version
 
       - name: Install MinGW toolchain for cgo
         if: steps.frida-cache.outputs.cache-hit != 'true'
