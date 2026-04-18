@@ -517,7 +517,7 @@ jobs:
           --overlay-triplets=${{ github.workspace }}/.github/vcpkg-triplets
           --overlay-ports=${{ github.workspace }}/.github/vcpkg-ports
           --triplet x64-windows-release
-          glib glib-networking json-glib libsoup nghttp2 gtk[introspection] atk[introspection] libadwaita[introspection] libxml2 graphite2 sqlite3[snapshot] webview2
+          glib glib-networking json-glib libsoup gtk[introspection] atk[introspection] libadwaita[introspection] libxml2 graphite2 sqlite3[snapshot] webview2
 
       - name: Save vcpkg cache
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
@@ -583,7 +583,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}\frida-prefix
-          key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v4
+          key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v5
 
       - name: Install Go toolchain
         if: steps.frida-cache.outputs.cache-hit != 'true'
@@ -622,7 +622,7 @@ jobs:
               --enable-shared `
               --without-prebuilds=sdk `
               "--prefix=$env:RUNNER_TEMP\frida-prefix" `
-              -- --force-fallback-for=openssl -Dtests=disabled
+              -- --force-fallback-for=openssl,libnghttp2 -Dtests=disabled
           if ($LASTEXITCODE -ne 0) {
               Write-Host "---- meson-log.txt ----"
               Get-Content build\meson-logs\meson-log.txt -ErrorAction SilentlyContinue
@@ -643,7 +643,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}\frida-prefix
-          key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v4
+          key: ${{ runner.os }}-frida-core-${{ env.FRIDA_CORE_REF }}-v5
 
       - name: Restore radare2 cache
         id: r2-cache
