@@ -298,10 +298,7 @@ final class CollaborationPanel {
 
         case .connecting:
             let row = Box(orientation: .horizontal, spacing: 6)
-            let spinner = Gtk.Spinner()
-            spinner.spinning = true
-            spinner.start()
-            row.append(child: spinner)
+            row.append(child: Adw.Spinner())
             let label = Label(str: "Connecting\u{2026}")
             label.halign = .start
             label.hexpand = true

@@ -1,3 +1,4 @@
+import Adw
 import CGLib
 import CGtk
 import Foundation
@@ -93,8 +94,7 @@ final class ITraceDetailView {
         entriesScroll.vexpand = true
         entriesScroll.set(child: entriesList)
 
-        let spinner = Spinner()
-        spinner.start()
+        let spinner = Adw.Spinner()
         let loading = Box(orientation: .horizontal, spacing: 8)
         loading.halign = .center
         loading.marginTop = 24

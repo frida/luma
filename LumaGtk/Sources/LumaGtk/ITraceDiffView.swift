@@ -45,8 +45,7 @@ final class ITraceDiffView {
         bodyContainer.marginTop = 8
         widget.append(child: bodyContainer)
 
-        let spinner = Gtk.Spinner()
-        spinner.start()
+        let spinner = Adw.Spinner()
         let loading = Box(orientation: .horizontal, spacing: 8)
         loading.halign = .center
         loading.marginTop = 24

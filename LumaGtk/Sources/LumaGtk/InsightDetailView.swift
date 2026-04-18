@@ -1,3 +1,4 @@
+import Adw
 import CCairo
 import CGtk
 import Cairo
@@ -24,7 +25,7 @@ final class InsightDetailView {
     private let contentOverlay: Overlay
     private let contentHost: Box
     private let spinnerHost: Box
-    private let spinner: Spinner
+    private let spinner: Adw.Spinner
     private var spinnerTask: Task<Void, Never>?
 
     private let disasmHost: Box
@@ -84,8 +85,7 @@ final class InsightDetailView {
         contentHost.marginBottom = 8
         contentOverlay.set(child: contentHost)
 
-        spinner = Spinner()
-        spinner.spinning = false
+        spinner = Adw.Spinner()
 
         spinnerHost = Box(orientation: .horizontal, spacing: 0)
         spinnerHost.add(cssClass: "luma-loading-capsule")
@@ -329,13 +329,11 @@ final class InsightDetailView {
     }
 
     private func setSpinnerVisible(_ visible: Bool) {
-        spinnerHost.visible = visible
-        spinner.spinning = visible
-        if visible {
-            spinner.start()
-        } else {
-            spinner.stop()
+        if !visible {
+            spinnerTask?.cancel()
+            spinnerTask = nil
         }
+        spinnerHost.visible = visible
     }
 
     // MARK: - Infinite scroll

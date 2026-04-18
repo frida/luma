@@ -24,7 +24,7 @@ final class TargetPicker {
     private let processList: ListBox
     private let processStatus: Label
     private let processLoading: Box
-    private let processLoadingSpinner: Gtk.Spinner
+    private let processLoadingSpinner: Adw.Spinner
     private let processLoadingLabel: Label
     private let processContent: Box
     private let processError: Box
@@ -50,7 +50,7 @@ final class TargetPicker {
     private let appSearchEntry: SearchEntry
     private let appStatus: Label
     private let appLoading: Box
-    private let appLoadingSpinner: Gtk.Spinner
+    private let appLoadingSpinner: Adw.Spinner
     private let appLoadingLabel: Label
     private let appContent: Box
     private let appError: Box
@@ -126,7 +126,7 @@ final class TargetPicker {
         processList = ListBox()
         processStatus = Label(str: "Select a device to list processes\u{2026}")
         processLoading = Box(orientation: .vertical, spacing: 8)
-        processLoadingSpinner = Gtk.Spinner()
+        processLoadingSpinner = Adw.Spinner()
         processLoadingLabel = Label(str: "Enumerating processes\u{2026}")
         processContent = Box(orientation: .vertical, spacing: 0)
         processError = Box(orientation: .vertical, spacing: 8)
@@ -151,7 +151,7 @@ final class TargetPicker {
         appSearchEntry = SearchEntry()
         appStatus = Label(str: "Select a device to list applications\u{2026}")
         appLoading = Box(orientation: .vertical, spacing: 8)
-        appLoadingSpinner = Gtk.Spinner()
+        appLoadingSpinner = Adw.Spinner()
         appLoadingLabel = Label(str: "Enumerating applications\u{2026}")
         appContent = Box(orientation: .vertical, spacing: 0)
         appError = Box(orientation: .vertical, spacing: 8)
@@ -968,8 +968,6 @@ final class TargetPicker {
 
     private func setProcessState(_ state: ListPaneState, deviceName: String) {
         processLoadingLabel.setText(str: "Enumerating processes on \(deviceName)\u{2026}")
-        processLoadingSpinner.spinning = (state == .loading)
-        if state == .loading { processLoadingSpinner.start() } else { processLoadingSpinner.stop() }
         processContent.visible = (state == .content)
         processLoading.visible = (state == .loading)
         processError.visible = (state == .error)
@@ -1074,8 +1072,6 @@ final class TargetPicker {
 
     private func setAppState(_ state: ListPaneState, deviceName: String) {
         appLoadingLabel.setText(str: "Enumerating applications on \(deviceName)\u{2026}")
-        appLoadingSpinner.spinning = (state == .loading)
-        if state == .loading { appLoadingSpinner.start() } else { appLoadingSpinner.stop() }
         appContent.visible = (state == .content)
         appLoading.visible = (state == .loading)
         appError.visible = (state == .error)

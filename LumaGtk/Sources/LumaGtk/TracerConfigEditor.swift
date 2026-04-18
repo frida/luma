@@ -1,3 +1,4 @@
+import Adw
 import CGtk
 import Foundation
 import Frida
@@ -652,7 +653,7 @@ private final class TracerHookSearch {
 
     private let entry: Entry
     private let scopeDropdown: DropDown
-    private let spinner: Spinner
+    private let spinner: Adw.Spinner
     private let statusRow: Box
     private let status: Label
     private let addAllButton: Button
@@ -731,8 +732,8 @@ private final class TracerHookSearch {
         scopeDropdown.tooltipText = "Target scope"
         queryRow.append(child: scopeDropdown)
 
-        spinner = Spinner()
-        spinner.spinning = false
+        spinner = Adw.Spinner()
+        spinner.visible = false
         spinner.valign = .center
         queryRow.append(child: spinner)
         widget.append(child: queryRow)
@@ -898,13 +899,11 @@ private final class TracerHookSearch {
             return
         }
         searchTask?.cancel()
-        spinner.spinning = true
-        spinner.start()
+        spinner.visible = true
         setSearchStatus("Searching\u{2026}")
         searchTask = Task { @MainActor [anchor = self] in
             defer {
-                anchor.spinner.spinning = false
-                anchor.spinner.stop()
+                anchor.spinner.visible = false
             }
             do {
                 let raw = try await node.script.exports.resolveTargets([

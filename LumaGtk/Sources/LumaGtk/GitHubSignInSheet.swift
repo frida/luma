@@ -18,7 +18,6 @@ final class GitHubSignInSheet {
     private let copyCodeButton: Button
     private let openUrlButton: Button
     private let statusRow: Box
-    private let spinner: Gtk.Spinner
     private let statusLabel: Label
     private let errorLabel: Label
     private let dismissButton: Button
@@ -81,10 +80,7 @@ final class GitHubSignInSheet {
         statusRow = Box(orientation: .horizontal, spacing: 8)
         statusRow.halign = .center
         statusRow.marginTop = 8
-        spinner = Spinner()
-        spinner.spinning = true
-        spinner.start()
-        statusRow.append(child: spinner)
+        statusRow.append(child: Adw.Spinner())
         statusLabel = Label(str: "Waiting for authorization\u{2026}")
         statusLabel.add(cssClass: "dim-label")
         statusRow.append(child: statusLabel)
@@ -123,8 +119,6 @@ final class GitHubSignInSheet {
             urlLabel.setText(str: "")
             copyCodeButton.sensitive = false
             openUrlButton.sensitive = false
-            spinner.spinning = true
-            spinner.start()
             statusLabel.setText(str: "Starting sign-in\u{2026}")
             statusRow.visible = true
             errorLabel.visible = false
@@ -135,8 +129,6 @@ final class GitHubSignInSheet {
             urlLabel.setText(str: "")
             copyCodeButton.sensitive = false
             openUrlButton.sensitive = false
-            spinner.spinning = true
-            spinner.start()
             statusLabel.setText(str: "Contacting GitHub\u{2026}")
             statusRow.visible = true
             errorLabel.visible = false
@@ -149,22 +141,16 @@ final class GitHubSignInSheet {
             urlLabel.setText(str: verifyURL.absoluteString)
             copyCodeButton.sensitive = true
             openUrlButton.sensitive = true
-            spinner.spinning = true
-            spinner.start()
             statusLabel.setText(str: "Waiting for authorization\u{2026}")
             statusRow.visible = true
             errorLabel.visible = false
             dismissButton.visible = false
 
         case .authenticated:
-            spinner.spinning = false
-            spinner.stop()
             statusLabel.setText(str: "Signed in.")
             scheduleClose(after: 0.2)
 
         case .failed(let reason):
-            spinner.spinning = false
-            spinner.stop()
             statusRow.visible = false
             errorLabel.setText(str: "Sign-in failed: \(reason)")
             errorLabel.visible = true

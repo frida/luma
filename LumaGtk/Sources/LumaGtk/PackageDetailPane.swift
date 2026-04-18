@@ -1,3 +1,4 @@
+import Adw
 import Foundation
 import Gtk
 import LumaCore
@@ -16,7 +17,7 @@ final class PackageDetailPane {
     private let aliasLabel: Label
     private let upgradeButton: Button
     private let removeButton: Button
-    private let busySpinner: Spinner
+    private let busySpinner: Adw.Spinner
     private let statusLabel: Label
     private let errorLabel: Label
     private let filesContainer: Box
@@ -63,8 +64,8 @@ final class PackageDetailPane {
         upgradeButton = Button(label: "Upgrade to Latest")
         removeButton = Button(label: "Remove Package")
         removeButton.add(cssClass: "destructive-action")
-        busySpinner = Spinner()
-        busySpinner.spinning = false
+        busySpinner = Adw.Spinner()
+        busySpinner.visible = false
         actions.append(child: upgradeButton)
         actions.append(child: removeButton)
         actions.append(child: busySpinner)
@@ -136,12 +137,7 @@ final class PackageDetailPane {
         isBusy = busy
         upgradeButton.sensitive = !busy
         removeButton.sensitive = !busy
-        busySpinner.spinning = busy
-        if busy {
-            busySpinner.start()
-        } else {
-            busySpinner.stop()
-        }
+        busySpinner.visible = busy
     }
 
     private func showStatus(_ message: String?) {

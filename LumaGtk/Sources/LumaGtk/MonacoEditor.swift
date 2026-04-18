@@ -1,3 +1,4 @@
+import Adw
 import CLuma
 import Foundation
 import GLibObject
@@ -79,7 +80,7 @@ public final class MonacoEditor {
         container.hexpand = true
         container.vexpand = true
 
-        let spinner = Spinner()
+        let spinner = Adw.Spinner()
         spinner.halign = .center
         spinner.valign = .center
 
@@ -94,13 +95,8 @@ public final class MonacoEditor {
         if isReady {
             spinner.visible = false
         } else {
-            spinner.spinning = true
-            spinner.start()
             onReady = { [weak spinner] in
-                guard let spinner else { return }
-                spinner.spinning = false
-                spinner.stop()
-                spinner.visible = false
+                spinner?.visible = false
             }
         }
     }

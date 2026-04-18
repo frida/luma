@@ -11,7 +11,7 @@ final class MemoryViewerWindow {
     private let sessionID: UUID
     private let address: UInt64
 
-    private let spinner: Gtk.Spinner
+    private let spinner: Adw.Spinner
     private let statusLabel: Label
     private let lengthLabel: Label
     private let hexView: HexView
@@ -45,8 +45,8 @@ final class MemoryViewerWindow {
         addrLabel.selectable = true
         headerRow.append(child: addrLabel)
 
-        spinner = Spinner()
-        spinner.spinning = false
+        spinner = Adw.Spinner()
+        spinner.visible = false
         headerRow.append(child: spinner)
 
         let spacer = Box(orientation: .horizontal, spacing: 0)
@@ -129,11 +129,9 @@ final class MemoryViewerWindow {
             return
         }
 
-        spinner.spinning = true
-        spinner.start()
+        spinner.visible = true
         defer {
-            spinner.spinning = false
-            spinner.stop()
+            spinner.visible = false
         }
 
         do {

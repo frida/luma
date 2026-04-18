@@ -1,3 +1,4 @@
+import Adw
 import CPango
 import Foundation
 import Gtk
@@ -998,8 +999,7 @@ final class EventStreamPane {
         title.halign = .start
         title.hexpand = true
         header.append(child: title)
-        let spinner = Spinner()
-        spinner.spinning = true
+        let spinner = Adw.Spinner()
         header.append(child: spinner)
         column.append(child: header)
 
@@ -1037,7 +1037,7 @@ final class EventStreamPane {
         popover.popup()
 
         Task { @MainActor in
-            defer { spinner.spinning = false }
+            defer { spinner.visible = false }
             do {
                 let symbols = try await node.symbolicate(addresses: addresses)
                 for (idx, symbol) in symbols.enumerated() {

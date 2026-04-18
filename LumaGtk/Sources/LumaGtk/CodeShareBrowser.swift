@@ -21,10 +21,10 @@ final class CodeShareBrowser {
     private let searchEntry: Entry
     private let listBox: ListBox
     private let errorLabel: Label
-    private let listSpinner: Gtk.Spinner
+    private let listSpinner: Adw.Spinner
 
     private let detailContainer: Box
-    private let detailSpinner: Gtk.Spinner
+    private let detailSpinner: Adw.Spinner
     private let titleLabel: Label
     private let ownerLabel: Label
     private let descriptionLabel: Label
@@ -75,8 +75,8 @@ final class CodeShareBrowser {
         searchEntry.visible = false
         toolbar.append(child: searchEntry)
 
-        listSpinner = Spinner()
-        listSpinner.spinning = false
+        listSpinner = Adw.Spinner()
+        listSpinner.visible = false
         toolbar.append(child: listSpinner)
 
         widget.append(child: toolbar)
@@ -121,8 +121,8 @@ final class CodeShareBrowser {
         titleLabel.hexpand = true
         headerRow.append(child: titleLabel)
 
-        detailSpinner = Spinner()
-        detailSpinner.spinning = false
+        detailSpinner = Adw.Spinner()
+        detailSpinner.visible = false
         headerRow.append(child: detailSpinner)
         detailContainer.append(child: headerRow)
 
@@ -241,12 +241,10 @@ final class CodeShareBrowser {
     private func loadPopular() {
         loadTask?.cancel()
         showError(nil)
-        listSpinner.spinning = true
-        listSpinner.start()
+        listSpinner.visible = true
         loadTask = Task { @MainActor in
             defer {
-                listSpinner.spinning = false
-                listSpinner.stop()
+                listSpinner.visible = false
             }
             do {
                 let items = try await CodeShareService.fetchPopular()
@@ -272,12 +270,10 @@ final class CodeShareBrowser {
             rebuildList()
             return
         }
-        listSpinner.spinning = true
-        listSpinner.start()
+        listSpinner.visible = true
         loadTask = Task { @MainActor in
             defer {
-                listSpinner.spinning = false
-                listSpinner.stop()
+                listSpinner.visible = false
             }
             do {
                 let items = try await CodeShareService.searchProjects(query: query)
@@ -336,8 +332,7 @@ final class CodeShareBrowser {
         sourceEditor.setText("")
         addButton.sensitive = false
         detailErrorLabel.visible = false
-        detailSpinner.spinning = false
-        detailSpinner.stop()
+        detailSpinner.visible = false
     }
 
     private func loadDetails(for project: CodeShareService.ProjectSummary) {
@@ -352,15 +347,13 @@ final class CodeShareBrowser {
         descriptionLabel.setText(str: project.description)
         sourceEditor.setText("")
 
-        detailSpinner.spinning = true
-        detailSpinner.start()
+        detailSpinner.visible = true
 
         let owner = project.owner
         let slug = project.slug
         detailsTask = Task { @MainActor in
             defer {
-                detailSpinner.spinning = false
-                detailSpinner.stop()
+                detailSpinner.visible = false
             }
             do {
                 let details = try await CodeShareService.fetchProjectDetails(owner: owner, slug: slug)
