@@ -1,4 +1,4 @@
-import CPango
+import Adw
 import Foundation
 import Gtk
 import LumaCore
@@ -8,72 +8,24 @@ enum SessionDetachedBanner {
     static func make(
         for session: LumaCore.ProcessSession,
         onReattach: @escaping () -> Void
-    ) -> Box {
-        let banner = Box(orientation: .horizontal, spacing: 12)
-        banner.add(cssClass: "luma-banner")
-        banner.add(cssClass: bannerStyleClass(for: session))
-        banner.marginStart = 0
-        banner.marginEnd = 0
-        banner.marginTop = 0
-        banner.marginBottom = 0
-        banner.hexpand = true
-
-        let leading = Box(orientation: .horizontal, spacing: 8)
-        leading.marginStart = 16
-        leading.marginEnd = 12
-        leading.marginTop = 8
-        leading.marginBottom = 8
-        leading.hexpand = true
-
-        let icon = Label(str: "⚡")
-        icon.add(cssClass: "title-3")
-        leading.append(child: icon)
-
-        let title = Label(str: session.processName)
-        title.add(cssClass: "heading")
-        title.halign = .start
-        leading.append(child: title)
-
-        if let status = statusText(for: session) {
-            let separator = Separator(orientation: .vertical)
-            separator.marginStart = 4
-            separator.marginEnd = 4
-            leading.append(child: separator)
-
-            let statusLabel = Label(str: status)
-            statusLabel.add(cssClass: "dim-label")
-            statusLabel.halign = .start
-            statusLabel.hexpand = true
-            statusLabel.ellipsize = PangoEllipsizeMode(rawValue: 3)
-            leading.append(child: statusLabel)
+    ) -> Adw.Banner {
+        let banner = title(for: session).withCString { Adw.Banner(title: $0) }
+        banner.useMarkup = true
+        banner.buttonLabel = "\(session.kind.reestablishLabel)\u{2026}"
+        banner.revealed = true
+        banner.sensitive = session.phase != .attaching
+        banner.onButtonClicked { _ in
+            MainActor.assumeIsolated { onReattach() }
         }
-
-        banner.append(child: leading)
-
-        let reattach = Button(label: "\(session.kind.reestablishLabel)…")
-        reattach.marginEnd = 16
-        reattach.marginTop = 6
-        reattach.marginBottom = 6
-        reattach.valign = .center
-        reattach.sensitive = session.phase != .attaching
-        reattach.focusOnClick = false
-        reattach.onClicked { _ in
-            MainActor.assumeIsolated {
-                onReattach()
-            }
-        }
-        banner.append(child: reattach)
-
         return banner
     }
 
-    private static func bannerStyleClass(for session: LumaCore.ProcessSession) -> String {
-        switch session.detachReason {
-        case .applicationRequested:
-            return "luma-banner-warning"
-        default:
-            return "luma-banner-error"
+    private static func title(for session: LumaCore.ProcessSession) -> String {
+        let name = escapeMarkup(session.processName)
+        guard let status = statusText(for: session) else {
+            return "<b>\(name)</b>"
         }
+        return "<b>\(name)</b> · \(escapeMarkup(status))"
     }
 
     private static func statusText(for session: LumaCore.ProcessSession) -> String? {
@@ -95,6 +47,22 @@ enum SessionDetachedBanner {
         case .deviceLost:
             return "Detached because the device connection was lost."
         }
+    }
+
+    private static func escapeMarkup(_ text: String) -> String {
+        var out = ""
+        out.reserveCapacity(text.count)
+        for scalar in text.unicodeScalars {
+            switch scalar {
+            case "&": out.append("&amp;")
+            case "<": out.append("&lt;")
+            case ">": out.append("&gt;")
+            case "'": out.append("&apos;")
+            case "\"": out.append("&quot;")
+            default: out.unicodeScalars.append(scalar)
+            }
+        }
+        return out
     }
 
     static func shouldShow(for session: LumaCore.ProcessSession) -> Bool {

@@ -154,14 +154,6 @@ enum StyleSheet {
         opacity: 0.5;
     }
 
-    .luma-toast {
-        border-radius: 999px;
-        background-color: alpha(@theme_fg_color, 0.85);
-        color: @theme_bg_color;
-        box-shadow: 0 2px 6px alpha(black, 0.3);
-        padding: 0;
-    }
-
     .luma-empty-state {
         opacity: 0.95;
     }

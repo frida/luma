@@ -1,3 +1,4 @@
+import Adw
 import CLuma
 import Foundation
 import Frida
@@ -7,9 +8,9 @@ import Observation
 
 @MainActor
 final class MainWindow {
-    private let app: Application
+    private let app: Gtk.Application
     private weak var application: LumaApplication?
-    let window: ApplicationWindow
+    let window: Adw.ApplicationWindow
     private(set) var document: LumaDocument
 
     private var engine: Engine?
@@ -83,11 +84,11 @@ final class MainWindow {
         }
     }
 
-    init(app: Application, application: LumaApplication, document: LumaDocument) {
+    init(app: Gtk.Application, application: LumaApplication, document: LumaDocument) {
         self.app = app
         self.application = application
         self.document = document
-        self.window = ApplicationWindow(application: app)
+        self.window = Adw.ApplicationWindow(app: app)
         applyWindowDecoration(window)
         self.outerPaned = Paned(orientation: .horizontal)
         window.title = MainWindow.makeTitle(for: document)
@@ -112,7 +113,7 @@ final class MainWindow {
         self.detailContainer = detailContainer
         self.eventStreamPane = eventStreamPane
 
-        let header = HeaderBar()
+        let header = Adw.HeaderBar()
         let newSessionButton = Button(label: "New Session…")
         newSessionButton.add(cssClass: "suggested-action")
         header.packStart(child: newSessionButton)
@@ -146,8 +147,6 @@ final class MainWindow {
             luma_menu_button_set_menu(menuButtonPtr, menuModelPtr)
         }
         header.packEnd(child: primaryMenuButton)
-
-        window.set(titlebar: WidgetRef(header))
 
         let topPaned = Paned(orientation: .horizontal)
         topPaned.position = state.sidebarSashPosition
@@ -186,7 +185,11 @@ final class MainWindow {
         }
         let toastOverlay = ToastOverlay(content: column)
         self.toastOverlay = toastOverlay
-        window.set(child: toastOverlay.widget)
+
+        let toolbarView = Adw.ToolbarView()
+        toolbarView.addTopBar(widget: header)
+        toolbarView.set(content: toastOverlay.widget)
+        window.set(content: toolbarView)
 
         newSessionButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
@@ -216,7 +219,7 @@ final class MainWindow {
             }
         }
 
-        let closeHandler: (WindowRef) -> Bool = { [weak self] _ in
+        let closeHandler: (Gtk.WindowRef) -> Bool = { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.persistWindowState()
@@ -1161,7 +1164,7 @@ final class MainWindow {
 
     private func removeSessionRows(_ sessionID: UUID) {
         if let rootPtr = sessionsList.root?.ptr {
-            WindowRef(raw: rootPtr).focus = nil
+            Gtk.WindowRef(raw: rootPtr).focus = nil
         }
         while let idx = sessionsRowKinds.firstIndex(where: { $0.sessionID == sessionID }) {
             if let row = sessionsList.getRowAt(index: idx) {
@@ -1502,20 +1505,20 @@ final class MainWindow {
         destructiveLabel: String,
         action: @escaping () -> Void
     ) {
-        guard let parentPtr = window.window_ptr.map(UnsafeMutableRawPointer.init) else { return }
-        let box = ConfirmCallbackBox(action: action)
-        let context = Unmanaged.passRetained(box).toOpaque()
-        message.withCString { messageCstr in
-            destructiveLabel.withCString { labelCstr in
-                if let detail {
-                    detail.withCString { detailCstr in
-                        luma_alert_confirm(parentPtr, messageCstr, detailCstr, labelCstr, lumaConfirmThunk, context)
-                    }
-                } else {
-                    luma_alert_confirm(parentPtr, messageCstr, nil, labelCstr, lumaConfirmThunk, context)
+        let dialog = Adw.AlertDialog(heading: message, body: detail)
+        dialog.addResponse(id: "cancel", label: "_Cancel")
+        dialog.addResponse(id: "confirm", label: destructiveLabel)
+        dialog.setResponseAppearance(response: "confirm", appearance: .destructive)
+        dialog.setDefault(response: "cancel")
+        dialog.setClose(response: "cancel")
+        dialog.onResponse { _, responseID in
+            MainActor.assumeIsolated {
+                if responseID == "confirm" {
+                    action()
                 }
             }
         }
+        dialog.present(parent: window)
     }
 
     private func currentSelectionRowIndex() -> Int? {
@@ -1608,24 +1611,5 @@ final class MainWindow {
 
     private func makeSharedCodeShareEditor() -> MonacoEditor {
         return MonacoEditor(profile: EditorProfile.fridaCodeShare())
-    }
-}
-
-private final class ConfirmCallbackBox {
-    let action: () -> Void
-    init(action: @escaping () -> Void) { self.action = action }
-}
-
-private let lumaConfirmThunk: @convention(c) (
-    Int32, UnsafeMutableRawPointer?
-) -> Void = { confirmed, userData in
-    guard let userData else { return }
-    let raw = UInt(bitPattern: userData)
-    MainActor.assumeIsolated {
-        let ptr = UnsafeMutableRawPointer(bitPattern: raw)!
-        let box = Unmanaged<ConfirmCallbackBox>.fromOpaque(ptr).takeRetainedValue()
-        if confirmed != 0 {
-            box.action()
-        }
     }
 }

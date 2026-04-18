@@ -1,3 +1,4 @@
+import Adw
 import CGLib
 import CLuma
 import Foundation
@@ -6,7 +7,7 @@ import LumaCore
 
 @MainActor
 final class LumaApplication {
-    let app: Application
+    let app: Adw.Application
 
     private struct OpenDocument {
         let window: MainWindow
@@ -19,8 +20,8 @@ final class LumaApplication {
     private let maxRecentSlots = 10
 
     init() {
-        guard let app = Application(id: "re.frida.Luma", flags: .handlesOpen) else {
-            fatalError("Unable to create Gtk application")
+        guard let app = Adw.Application(id: "re.frida.Luma", flags: .handlesOpen) else {
+            fatalError("Unable to create Adw application")
         }
         self.app = app
     }

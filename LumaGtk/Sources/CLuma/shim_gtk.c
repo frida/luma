@@ -192,57 +192,6 @@ luma_file_dialog_save(void *parent_window,
     g_object_unref(dialog);
 }
 
-// Confirmation alert.
-
-typedef struct {
-    LumaConfirmCallback callback;
-    void *user_data;
-    int destructive_index;
-} LumaConfirmCtx;
-
-static void
-on_confirm_finished(GObject *source, GAsyncResult *result, gpointer user_data)
-{
-    LumaConfirmCtx *ctx = (LumaConfirmCtx *)user_data;
-    GError *error = NULL;
-    int chosen = (int)gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(source), result, &error);
-    if (error != NULL) {
-        ctx->callback(0, ctx->user_data);
-        g_error_free(error);
-    } else {
-        ctx->callback(chosen == ctx->destructive_index ? 1 : 0, ctx->user_data);
-    }
-    g_free(ctx);
-}
-
-void
-luma_alert_confirm(void *parent_window,
-                    const char *message,
-                    const char *detail,
-                    const char *destructive_label,
-                    LumaConfirmCallback callback,
-                    void *user_data)
-{
-    GtkAlertDialog *dialog = gtk_alert_dialog_new("%s", message);
-    if (detail != NULL) {
-        gtk_alert_dialog_set_detail(dialog, detail);
-    }
-    gtk_alert_dialog_set_modal(dialog, TRUE);
-
-    const char *buttons[3] = { "_Cancel", destructive_label, NULL };
-    gtk_alert_dialog_set_buttons(dialog, buttons);
-    gtk_alert_dialog_set_cancel_button(dialog, 0);
-    gtk_alert_dialog_set_default_button(dialog, 0);
-
-    LumaConfirmCtx *ctx = g_new0(LumaConfirmCtx, 1);
-    ctx->callback = callback;
-    ctx->user_data = user_data;
-    ctx->destructive_index = 1;
-
-    gtk_alert_dialog_choose(dialog, GTK_WINDOW(parent_window), NULL, on_confirm_finished, ctx);
-    g_object_unref(dialog);
-}
-
 typedef struct {
     LumaOpenFilesCallback callback;
     void *user_data;
