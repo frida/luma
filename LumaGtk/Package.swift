@@ -92,7 +92,19 @@ let cLumaLinkerSettings: [LinkerSetting] = [
 // Windows: produce a GUI app (no console window). Swift's runtime
 // still calls main(), so redirect the linker entry to the C runtime's
 // main-compatible start routine rather than WinMain.
-let windowsGuiLinkerFlags = ["-Xlinker", "/SUBSYSTEM:WINDOWS", "-Xlinker", "/ENTRY:mainCRTStartup"]
+//
+// /ignore:importeddllmain silences vcpkg libxml2's DLL whose import
+// library still re-exports DllMain.
+// /ignore:4217 silences LNK4217 ("locally defined symbol imported")
+// from Swift-on-Windows marking every C module import as dllimport
+// even when the C target is statically linked into the same exe —
+// Yams/CYaml trips this on every yaml_* call.
+let windowsGuiLinkerFlags = [
+    "-Xlinker", "/SUBSYSTEM:WINDOWS",
+    "-Xlinker", "/ENTRY:mainCRTStartup",
+    "-Xlinker", "/ignore:importeddllmain",
+    "-Xlinker", "/ignore:4217",
+]
 let lumaGtkLinkerSettings: [LinkerSetting] = [
     .unsafeFlags(windowsGuiLinkerFlags + (lumaExecutableIconResource.map { [$0] } ?? []))
 ]
@@ -147,6 +159,14 @@ let package = Package(
                 "CLuma",
             ],
             path: "Sources/LumaGtk",
+            exclude: [
+                // Windows icon resource script + compiled blob; rc.exe
+                // consumes luma.rc at manifest-evaluation time and the
+                // linker pulls luma.res in via unsafeFlags, so SwiftPM
+                // doesn't need to treat them as Swift/resource inputs.
+                "luma.rc",
+                "luma.res",
+            ],
             resources: [
                 .copy("Resources/MonacoWeb"),
             ],
