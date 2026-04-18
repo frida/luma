@@ -79,22 +79,11 @@ Get-ChildItem (Join-Path $vcpkg 'include\*.h') -File | Where-Object {
     }
 }
 
-# Optional GTK-from-git prefix (see scripts/windows/build-gtk-from-git.ps1).
-# When present, prepend it to PKG_CONFIG_PATH and PATH so its gtk4.pc
-# wins over vcpkg's while the rest of the stack (libadwaita, cairo,
-# glib, ...) continues to come from vcpkg.
-$gtkFromGit = if ($env:GTK_PREFIX) { $env:GTK_PREFIX } else { 'C:\src\gtk-prefix' }
-$gtkFromGitPkg = Join-Path $gtkFromGit 'lib\pkgconfig'
-$gtkFromGitBin = Join-Path $gtkFromGit 'bin'
-
-$pkgConfigDirs = @()
-if (Test-Path $gtkFromGitPkg) { $pkgConfigDirs += $gtkFromGitPkg }
-$pkgConfigDirs += @(
+$pkgConfigDirs = @(
     (Join-Path $frida 'lib\pkgconfig'),
     (Join-Path $r2    'lib\pkgconfig'),
     (Join-Path $vcpkg 'lib\pkgconfig')
-)
-$pkgConfigDirs = $pkgConfigDirs | ForEach-Object { $_ -replace '\\','/' } | Select-Object -Unique
+) | ForEach-Object { $_ -replace '\\','/' } | Select-Object -Unique
 
 # Root-level vcpkg headers (WebView2.h, sqlite3.h, ...) aren't
 # reachable through pkg-config, so point clang at the vcpkg-shim
@@ -108,29 +97,9 @@ $env:VCPKG_PREFIX          = $vcpkg
 $env:FRIDA_PREFIX          = $frida
 $env:R2_PREFIX             = $r2
 $env:PKG_CONFIG_PATH       = $pkgConfigDirs -join ';'
-# When gtk-from-git is present, its gir files must take precedence
-# over vcpkg's — the in-tree GIR has to match the shipped DLLs or
-# gir2swift emits bindings for symbols that don't exist (e.g.
-# "cannot find type 'GdkColorChannel'" after the type was removed
-# upstream).
-$girSearchDirs = @()
-$gtkFromGitGir = Join-Path $gtkFromGit 'share\gir-1.0'
-if (Test-Path $gtkFromGitGir) { $girSearchDirs += $gtkFromGitGir }
-$girSearchDirs += (Join-Path $vcpkg 'share\gir-1.0')
-$env:GIR_EXTRA_SEARCH_PATH = ($girSearchDirs | ForEach-Object { $_ -replace '\\','/' }) -join ';'
+$env:GIR_EXTRA_SEARCH_PATH = (Join-Path $vcpkg 'share\gir-1.0') -replace '\\','/'
 $env:CPATH                 = $shimDir
 $env:CPLUS_INCLUDE_PATH    = $shimDir
-
-# Put gtk-from-git's lib dir on $LIB before vcpkg's, so lld-link
-# resolves -lgtk-4 / -lgdk-4 to our locally-built import libraries
-# even when the consumer's pkg-config -L ordering is ignored.
-# Without this, lld-link happily picks vcpkg's older gtk-4.lib from
-# some other search path and misses symbols added upstream
-# (gtk_enum_list_*, gdk_toplevel_set_shadow_decorated, ...).
-$gtkFromGitLib = Join-Path $gtkFromGit 'lib'
-if (Test-Path $gtkFromGitLib) {
-    $env:LIB = "$gtkFromGitLib;$env:LIB"
-}
 
 # gir2swift shells out to sed/awk to patch generated Swift. Git for
 # Windows' cygwin build of sed (typically first on PATH for most
@@ -163,11 +132,9 @@ Install one of:
 }
 
 # Put the dependency prefixes on PATH so pkg-config and the built
-# executable (via run.ps1) can find the runtime DLLs. GTK-from-git
-# bin dir wins over vcpkg's if present.
+# executable (via run.ps1) can find the runtime DLLs.
 $prefixBins = @(
     $pkgconfTools,
-    $gtkFromGitBin,
     (Join-Path $vcpkg 'bin'),
     (Join-Path $vcpkg 'tools'),
     (Join-Path $frida 'bin'),

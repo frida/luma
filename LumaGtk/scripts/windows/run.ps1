@@ -46,14 +46,7 @@ if (-not (Test-Path $exe)) {
     throw "LumaGtk.exe not found at $exe. Build it first with build.ps1."
 }
 
-# Prefer the gtk-from-git prefix when present so the launched exe
-# loads the locally built gtk4 / gdk DLLs instead of vcpkg's copies.
-$gtkPrefix = if ($env:GTK_PREFIX) { $env:GTK_PREFIX } else { 'C:\src\gtk-prefix' }
-$gtkBin = Join-Path $gtkPrefix 'bin'
-$pathParts = @()
-if (Test-Path $gtkBin) { $pathParts += $gtkBin }
-$pathParts += "$VcpkgPrefix\bin","$VcpkgPrefix\tools","$FridaPrefix\bin",$env:PATH
-$env:PATH = ($pathParts -join ';')
+$env:PATH = "$VcpkgPrefix\bin;$VcpkgPrefix\tools;$FridaPrefix\bin;$env:PATH"
 $env:GDK_PIXBUF_MODULE_FILE = "$VcpkgPrefix\lib\gdk-pixbuf-2.0\2.10.0\loaders.cache"
 $env:XDG_DATA_DIRS = if ($env:XDG_DATA_DIRS) {
     "$VcpkgPrefix\share;$env:XDG_DATA_DIRS"
