@@ -228,9 +228,3 @@ luma_app_set_open_handler(void *gobject_application,
     ctx->user_data = user_data;
     g_signal_connect(G_APPLICATION(gobject_application), "open", G_CALLBACK(on_app_open), ctx);
 }
-
-unsigned long
-luma_g_type_boolean(void)
-{
-    return G_TYPE_BOOLEAN;
-}
