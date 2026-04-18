@@ -26,4 +26,4 @@ if defined XDG_DATA_DIRS (
 
 rem /SUBSYSTEM:WINDOWS means cmd doesn't wait for the exe by default;
 rem use `start /wait` so run.bat blocks until LumaGtk exits.
-start "Luma" /wait "%~dp0.build\%MODE%\LumaGtk.exe" %ARGS%
+start "Luma" /wait "%~dp0..\..\.build\%MODE%\LumaGtk.exe" %ARGS%

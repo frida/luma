@@ -76,6 +76,8 @@ $cpathDirs = @(
     'lib\graphene-1.0\include',
     'include\glib-2.0',
     'lib\glib-2.0\include',
+    'include\json-glib-1.0',
+    'include\libsoup-3.0',
     'include\vcpkg-shim'
 ) | ForEach-Object { (Join-Path $vcpkg $_) -replace '\\','/' }
 $cpathDirs += (Join-Path $frida 'include\frida-1.0') -replace '\\','/'

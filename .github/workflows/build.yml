@@ -569,6 +569,8 @@ jobs:
           CPATH="$CPATH;$VCPKG_PREFIX/lib/graphene-1.0/include"
           CPATH="$CPATH;$VCPKG_PREFIX/include/glib-2.0"
           CPATH="$CPATH;$VCPKG_PREFIX/lib/glib-2.0/include"
+          CPATH="$CPATH;$VCPKG_PREFIX/include/json-glib-1.0"
+          CPATH="$CPATH;$VCPKG_PREFIX/include/libsoup-3.0"
           CPATH="$CPATH;$STAGE"
           echo "CPATH=$CPATH" >> $GITHUB_ENV
           echo "CPLUS_INCLUDE_PATH=$CPATH" >> $GITHUB_ENV
