@@ -231,6 +231,9 @@ final class LumaApplication {
         installAction(appPtr: appPtr, name: "about") { [weak self] in
             self?.presentAboutDialog()
         }
+        installAction(appPtr: appPtr, name: "show-help-overlay") { [weak self] in
+            self?.presentShortcutsDialog()
+        }
         for slot in 0..<maxRecentSlots {
             installAction(appPtr: appPtr, name: "open-recent-\(slot)") { [weak self] in
                 self?.openRecent(slot: slot)
@@ -246,6 +249,7 @@ final class LumaApplication {
         setAccel(appPtr: appPtr, action: "app.resume-process", accel: "<Primary>r")
         setAccel(appPtr: appPtr, action: "app.manage-packages", accel: "<Primary><Alt>p")
         setAccel(appPtr: appPtr, action: "app.toggle-collaboration", accel: "<Primary><Alt>c")
+        setAccel(appPtr: appPtr, action: "app.show-help-overlay", accel: "<Primary>question")
 
         primaryMenuPtr = luma_menu_new()
         rebuildPrimaryMenu()
@@ -295,10 +299,48 @@ final class LumaApplication {
         luma_menu_append_section(menu, docSection)
         luma_menu_unref(docSection)
 
-        let aboutSection = luma_menu_new()!
-        appendItem(toMenu: aboutSection, label: "About Luma", action: "app.about")
-        luma_menu_append_section(menu, aboutSection)
-        luma_menu_unref(aboutSection)
+        let helpSection = luma_menu_new()!
+        appendItem(toMenu: helpSection, label: "Keyboard Shortcuts", action: "app.show-help-overlay")
+        appendItem(toMenu: helpSection, label: "About Luma", action: "app.about")
+        luma_menu_append_section(menu, helpSection)
+        luma_menu_unref(helpSection)
+    }
+
+    private func presentShortcutsDialog() {
+        let dialog = Adw.ShortcutsDialog()
+
+        let windows = Adw.ShortcutsSection(title: "General")
+        windows.add(item: shortcutItem("New Window", action: "app.new-window"))
+        windows.add(item: shortcutItem("Open Project\u{2026}", action: "app.open"))
+        windows.add(item: shortcutItem("Save As\u{2026}", action: "app.save-as"))
+        windows.add(item: shortcutItem("Close Window", action: "app.close-window"))
+        windows.add(item: shortcutItem("Keyboard Shortcuts", action: "app.show-help-overlay"))
+        dialog.add(section: windows)
+
+        let sessions = Adw.ShortcutsSection(title: "Sessions")
+        sessions.add(item: shortcutItem("New Session\u{2026}", action: "app.new-session"))
+        sessions.add(item: shortcutItem("Add Instrument\u{2026}", action: "app.add-instrument"))
+        sessions.add(item: shortcutItem("Resume Process", action: "app.resume-process"))
+        dialog.add(section: sessions)
+
+        let packages = Adw.ShortcutsSection(title: "Packages")
+        packages.add(item: shortcutItem("Install Package\u{2026}", action: "app.manage-packages"))
+        dialog.add(section: packages)
+
+        let collaboration = Adw.ShortcutsSection(title: "Collaboration")
+        collaboration.add(item: shortcutItem("Toggle Collaboration Panel", action: "app.toggle-collaboration"))
+        dialog.add(section: collaboration)
+
+        let parent = activeWindow()?.window
+        dialog.present(parent: parent)
+    }
+
+    private func shortcutItem(_ title: String, action: String) -> Adw.ShortcutsItem {
+        return title.withCString { t in
+            action.withCString { a in
+                Adw.ShortcutsItem(action: t, actionName: a)
+            }
+        }
     }
 
     private func presentAboutDialog() {
