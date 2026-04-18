@@ -488,17 +488,15 @@ jobs:
             msvc_arch: amd64
             vcpkg_triplet: x64-windows-release
             toolcache_arch: x64
-            frida_extra_meson: ""
+            msys2_system: MINGW64
+            msys2_package: mingw-w64-x86_64-gcc
           - runner: windows-11-arm
             win_arch: arm64
             msvc_arch: arm64
             vcpkg_triplet: arm64-windows-release
             toolcache_arch: arm64
-            # No arm64 MinGW is available on Windows, so we can't build
-            # frida-core's Go-based compiler backend here. Disable it
-            # for now; re-enable once a cross-compilable alternative
-            # exists.
-            frida_extra_meson: "-Dcompiler_backend=disabled"
+            msys2_system: CLANGARM64
+            msys2_package: mingw-w64-clang-aarch64-clang
     steps:
       - uses: actions/checkout@v6
 
@@ -624,16 +622,19 @@ jobs:
           & (Join-Path $goBin 'go.exe') version
 
       - name: Install MinGW toolchain for cgo
-        if: steps.frida-cache.outputs.cache-hit != 'true' && matrix.win_arch == 'x64'
+        if: steps.frida-cache.outputs.cache-hit != 'true'
+        id: msys2
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
-          install: mingw-w64-x86_64-gcc
+          msystem: ${{ matrix.msys2_system }}
+          install: ${{ matrix.msys2_package }}
           path-type: inherit
 
 
       - name: Build frida-core (shared)
         if: steps.frida-cache.outputs.cache-hit != 'true'
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
         run: |
           $ErrorActionPreference = 'Stop'
           git clone --depth 1 -b $env:FRIDA_CORE_REF https://github.com/frida/frida-core.git $env:RUNNER_TEMP\frida-core
@@ -644,7 +645,7 @@ jobs:
               --enable-shared `
               --without-prebuilds=sdk `
               "--prefix=$env:RUNNER_TEMP\frida-prefix" `
-              -- --force-fallback-for=openssl,libnghttp2 -Dtests=disabled ${{ matrix.frida_extra_meson }}
+              -- --force-fallback-for=openssl,libnghttp2 -Dtests=disabled
           if ($LASTEXITCODE -ne 0) {
               Write-Host "---- meson-log.txt ----"
               Get-Content build\meson-logs\meson-log.txt -ErrorAction SilentlyContinue
