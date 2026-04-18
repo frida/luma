@@ -1,5 +1,5 @@
 {
-  "originHash" : "f5a5789eedf646e0c76cba5426c1e75a9042a1046b2670c9b7854b96aa950afe",
+  "originHash" : "623f8d4feb99d1b244bd66c9dca47a9cd7fec13e3c333ee7c038f7dbbeaaab12",
   "pins" : [
     {
       "identity" : "frida-swift",
@@ -61,7 +61,7 @@
       "location" : "https://github.com/frida/SwiftAdw.git",
       "state" : {
         "branch" : "development",
-        "revision" : "ad11985bf80fea00de83bf96b0ade84501bb3248"
+        "revision" : "86c8cdfe810df5768441ddd99f9d785de4ebe9ff"
       }
     },
     {

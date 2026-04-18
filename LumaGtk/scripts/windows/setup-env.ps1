@@ -85,6 +85,12 @@ $pkgConfigDirs = @(
     (Join-Path $vcpkg 'lib\pkgconfig')
 ) | ForEach-Object { $_ -replace '\\','/' } | Select-Object -Unique
 
+# Root-level vcpkg headers (WebView2.h, sqlite3.h, ...) aren't
+# reachable through pkg-config, so point clang at the vcpkg-shim
+# staging dir that mirrors $VCPKG_PREFIX/include minus the dirent.h
+# polyfill that clashes with Swift's _FoundationCShims. Everything
+# else (gtk4, libadwaita, frida-core, radare2, ...) propagates
+# through SwiftPM's .systemLibrary(pkgConfig:) resolver.
 $shimDir = (Join-Path $vcpkg 'include\vcpkg-shim') -replace '\\','/'
 
 $env:VCPKG_PREFIX          = $vcpkg
@@ -92,35 +98,8 @@ $env:FRIDA_PREFIX          = $frida
 $env:R2_PREFIX             = $r2
 $env:PKG_CONFIG_PATH       = $pkgConfigDirs -join ';'
 $env:GIR_EXTRA_SEARCH_PATH = (Join-Path $vcpkg 'share\gir-1.0') -replace '\\','/'
-
-# On Windows, SwiftAdw / SwiftGtk ship their C modules as .target
-# (not .systemLibrary), because SwiftPM's pkg-config integration on
-# Windows doesn't feed cflags to clang. That works for the C target's
-# own build, but nothing propagates the include paths to consumers —
-# so when the Swift side does `import CAdw` and clang opens its
-# module.modulemap referencing #include <adwaita.h>, it has no way to
-# resolve it without CPATH.
-#
-# Derive the set of -I paths from pkg-config rather than hardcoding,
-# so we track libadwaita's transitive deps as they evolve. Drop the
-# bare $VCPKG_PREFIX/include path — its dirent.h polyfill conflicts
-# with Swift's _FoundationCShims — and substitute the shim staging
-# dir that mirrors the root headers minus dirent.h.
-$pkgConfigExe = Join-Path $pkgconfTools 'pkg-config.exe'
-$vcpkgRootInclude = (Join-Path $vcpkg 'include') -replace '\\','/'
-$cflagsRaw = & $pkgConfigExe --cflags libadwaita-1 2>$null
-$includeDirs = [System.Collections.Generic.List[string]]::new()
-foreach ($arg in ($cflagsRaw -split ' ')) {
-    if ($arg.StartsWith('-I')) {
-        $p = ($arg.Substring(2)) -replace '\\','/'
-        if ($p -ne $vcpkgRootInclude -and $includeDirs -notcontains $p) {
-            $includeDirs.Add($p)
-        }
-    }
-}
-$includeDirs.Add($shimDir)
-$env:CPATH             = $includeDirs -join ';'
-$env:CPLUS_INCLUDE_PATH = $env:CPATH
+$env:CPATH                 = $shimDir
+$env:CPLUS_INCLUDE_PATH    = $shimDir
 
 # gir2swift shells out to sed/awk to patch generated Swift. Git for
 # Windows' cygwin build of sed (typically first on PATH for most
