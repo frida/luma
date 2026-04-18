@@ -74,6 +74,50 @@ The resulting app will be located at:
 
 ## Building the GTK frontend (Linux)
 
+### Prerequisites (Fedora)
+
+Install the toolchains and `-devel` packages for Luma and its native
+dependencies:
+
+```sh
+sudo dnf install -y \
+    gcc-c++ libstdc++-static patch golang-bin nodejs swift-lang \
+    libadwaita-devel atk-devel webkitgtk6.0-devel \
+    libgee-devel json-glib-devel libsoup3-devel \
+    libunwind-devel libdwarf-devel libnice-devel \
+    ngtcp2-crypto-ossl-devel libbpf-devel capstone-devel \
+    lzfse-devel
+```
+
+Build and install `frida-core` into `/usr/local` (Fedora's `libbpf`
+is too old, so force a subproject fallback):
+
+```sh
+cd ~/src
+git clone git@github.com:frida/frida-core.git
+cd frida-core
+./configure --enable-shared --without-prebuilds=sdk \
+    --enable-barebone-backend --enable-compiler-backend \
+    -- --force-fallback-for=libbpf
+make
+sudo make install
+```
+
+Build and install `radare2` into `/usr/local`. The stock
+`sys/install.sh` builds without optimization, so override `CFLAGS`
+and strip unused code with `--gc-sections`:
+
+```sh
+cd ~/src
+git clone git@github.com:radareorg/radare2.git
+cd radare2
+CFLAGS="-O2 -g -ffunction-sections -fdata-sections" \
+    LDFLAGS="-Wl,--gc-sections" \
+    ./sys/install.sh --install
+```
+
+### Build and run
+
 From `LumaGtk/`:
 
 ```sh
