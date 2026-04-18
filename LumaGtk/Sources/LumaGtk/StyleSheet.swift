@@ -21,6 +21,15 @@ enum StyleSheet {
         border-top-color: alpha(@accent_bg_color, 0.45);
     }
 
+    /* libadwaita's .monospace rule points font-family at
+       --monospace-font-family, which on macOS is not populated by
+       GtkSettings, so the class silently falls back to the inherited
+       proportional font. Pin it to the CSS monospace keyword so Pango
+       always resolves a monospace face. */
+    .monospace {
+        font-family: monospace;
+    }
+
     .luma-install-banner {
         background-color: alpha(@accent_bg_color, 0.12);
         border: 1px solid alpha(@accent_bg_color, 0.45);
