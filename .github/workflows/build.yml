@@ -611,7 +611,11 @@ jobs:
               --without-prebuilds=sdk `
               "--prefix=$env:RUNNER_TEMP\frida-prefix" `
               -- --force-fallback-for=openssl -Dtests=disabled
-          if ($LASTEXITCODE -ne 0) { throw "configure failed with exit code $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "---- meson-log.txt ----"
+              Get-Content build\meson-logs\meson-log.txt -ErrorAction SilentlyContinue
+              throw "configure failed with exit code $LASTEXITCODE"
+          }
           python releng/meson/meson.py compile -C build
           if ($LASTEXITCODE -ne 0) { throw "compile failed with exit code $LASTEXITCODE" }
           python releng/meson/meson.py install -C build --no-rebuild --skip-subprojects
