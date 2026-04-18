@@ -1,3 +1,4 @@
+import Adw
 import Foundation
 #if canImport(CryptoKit)
 import CryptoKit
@@ -13,17 +14,17 @@ final class CodeShareBrowser {
 
     private weak var engine: Engine?
     private let sessionID: UUID
-    private weak var hostWindow: Window?
+    private weak var hostWindow: Gtk.Window?
 
     private let popularButton: Button
     private let searchButton: Button
     private let searchEntry: Entry
     private let listBox: ListBox
     private let errorLabel: Label
-    private let listSpinner: Spinner
+    private let listSpinner: Gtk.Spinner
 
     private let detailContainer: Box
-    private let detailSpinner: Spinner
+    private let detailSpinner: Gtk.Spinner
     private let titleLabel: Label
     private let ownerLabel: Label
     private let descriptionLabel: Label
@@ -204,7 +205,7 @@ final class CodeShareBrowser {
         loadPopular()
     }
 
-    fileprivate func setHostWindow(_ window: Window) {
+    fileprivate func setHostWindow(_ window: Gtk.Window) {
         hostWindow = window
     }
 
@@ -446,45 +447,38 @@ final class CodeShareBrowser {
     }
 
     static func present(from anchor: Widget, engine: Engine, sessionID: UUID, codeShareEditor: MonacoEditor) {
-        if let rootPtr = anchor.root?.ptr {
-            present(from: WindowRef(raw: rootPtr), engine: engine, sessionID: sessionID, codeShareEditor: codeShareEditor)
-        } else {
-            present(from: nil as Window?, engine: engine, sessionID: sessionID, codeShareEditor: codeShareEditor)
-        }
+        let parent = anchor.root?.ptr.map { Gtk.WindowRef(raw: $0) }
+        present(from: parent, engine: engine, sessionID: sessionID, codeShareEditor: codeShareEditor)
     }
 
-    static func present(from parent: Window?, engine: Engine, sessionID: UUID, codeShareEditor: MonacoEditor) {
+    static func present(from parent: Gtk.Window?, engine: Engine, sessionID: UUID, codeShareEditor: MonacoEditor) {
         present(
-            from: parent.map { WindowRef(raw: $0.ptr) },
+            from: parent.map { Gtk.WindowRef(raw: $0.ptr) },
             engine: engine,
             sessionID: sessionID,
             codeShareEditor: codeShareEditor
         )
     }
 
-    static func present(from parent: WindowRef?, engine: Engine, sessionID: UUID, codeShareEditor: MonacoEditor) {
+    static func present(from parent: Gtk.WindowRef?, engine: Engine, sessionID: UUID, codeShareEditor: MonacoEditor) {
         let browser = CodeShareBrowser(engine: engine, sessionID: sessionID, codeShareEditor: codeShareEditor)
 
-        let window = Window()
+        let window = Adw.Window()
         applyWindowDecoration(window)
         window.title = "CodeShare"
         window.setDefaultSize(width: 900, height: 600)
-        window.modal = false
         window.destroyWithParent = true
 
         if let parent {
             window.setTransientFor(parent: parent)
         }
 
-        let header = HeaderBar()
-        let closeButton = Button(label: "Close")
-        closeButton.onClicked { [window] _ in
-            MainActor.assumeIsolated { window.destroy() }
-        }
-        header.packEnd(child: closeButton)
-        window.set(titlebar: WidgetRef(header))
+        let header = Adw.HeaderBar()
 
-        window.set(child: browser.widget)
+        let toolbarView = Adw.ToolbarView()
+        toolbarView.addTopBar(widget: header)
+        toolbarView.set(content: browser.widget)
+        window.set(content: toolbarView)
 
         browser.setHostWindow(window)
         Self.retain(browser: browser, window: window)
@@ -495,10 +489,10 @@ final class CodeShareBrowser {
 
     private static var retained: [ObjectIdentifier: CodeShareBrowser] = [:]
 
-    private static func retain(browser: CodeShareBrowser, window: Window) {
+    private static func retain(browser: CodeShareBrowser, window: Adw.Window) {
         let key = ObjectIdentifier(window)
         retained[key] = browser
-        let handler: (WindowRef) -> Bool = { _ in
+        let handler: (Gtk.WindowRef) -> Bool = { _ in
             MainActor.assumeIsolated {
                 _ = retained.removeValue(forKey: key)
             }

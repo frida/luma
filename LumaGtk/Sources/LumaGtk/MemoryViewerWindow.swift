@@ -1,3 +1,4 @@
+import Adw
 import Foundation
 import Gtk
 import LumaCore
@@ -10,7 +11,7 @@ final class MemoryViewerWindow {
     private let sessionID: UUID
     private let address: UInt64
 
-    private let spinner: Spinner
+    private let spinner: Gtk.Spinner
     private let statusLabel: Label
     private let lengthLabel: Label
     private let hexView: HexView
@@ -153,26 +154,22 @@ extension MemoryViewerWindow {
     static func present(from anchor: Widget, engine: Engine, sessionID: UUID, address: UInt64) {
         let view = MemoryViewerWindow(engine: engine, sessionID: sessionID, address: address)
 
-        let window = Window()
+        let window = Adw.Window()
         applyWindowDecoration(window)
         window.title = String(format: "Memory 0x%llx", address)
         window.setDefaultSize(width: 760, height: 560)
-        window.modal = false
         window.destroyWithParent = true
 
         if let rootPtr = anchor.root?.ptr {
-            window.setTransientFor(parent: WindowRef(raw: rootPtr))
+            window.setTransientFor(parent: Gtk.WindowRef(raw: rootPtr))
         }
 
-        let header = HeaderBar()
-        let closeButton = Button(label: "Close")
-        closeButton.onClicked { [window] _ in
-            MainActor.assumeIsolated { window.destroy() }
-        }
-        header.packEnd(child: closeButton)
-        window.set(titlebar: WidgetRef(header))
+        let header = Adw.HeaderBar()
 
-        window.set(child: WidgetRef(view.widget.widget_ptr))
+        let toolbarView = Adw.ToolbarView()
+        toolbarView.addTopBar(widget: header)
+        toolbarView.set(content: view.widget)
+        window.set(content: toolbarView)
 
         Self.retain(view: view, window: window)
 
@@ -182,10 +179,10 @@ extension MemoryViewerWindow {
 
     private static var retained: [ObjectIdentifier: MemoryViewerWindow] = [:]
 
-    private static func retain(view: MemoryViewerWindow, window: Window) {
+    private static func retain(view: MemoryViewerWindow, window: Adw.Window) {
         let key = ObjectIdentifier(window)
         retained[key] = view
-        let handler: (WindowRef) -> Bool = { _ in
+        let handler: (Gtk.WindowRef) -> Bool = { _ in
             MainActor.assumeIsolated {
                 _ = retained.removeValue(forKey: key)
             }
