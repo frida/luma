@@ -275,6 +275,10 @@ jobs:
           strip --strip-unneeded pkg/usr/bin/luma
           cp LumaGtk/data/re.frida.Luma.desktop pkg/usr/share/applications/
           cp LumaGtk/data/re.frida.Luma.xml pkg/usr/share/mime/packages/
+          for size in 32 48 64 128 256 512; do
+            install -Dm644 "LumaGtk/data/icons/hicolor/${size}x${size}/apps/re.frida.Luma.png" \
+              "pkg/usr/share/icons/hicolor/${size}x${size}/apps/re.frida.Luma.png"
+          done
           tar czf luma-fedora-43.tar.gz -C pkg .
 
       - uses: actions/upload-artifact@v7
@@ -410,6 +414,10 @@ jobs:
           strip --strip-unneeded $PKG/usr/bin/luma
           cp LumaGtk/data/re.frida.Luma.desktop $PKG/usr/share/applications/
           cp LumaGtk/data/re.frida.Luma.xml $PKG/usr/share/mime/packages/
+          for size in 32 48 64 128 256 512; do
+            install -Dm644 "LumaGtk/data/icons/hicolor/${size}x${size}/apps/re.frida.Luma.png" \
+              "$PKG/usr/share/icons/hicolor/${size}x${size}/apps/re.frida.Luma.png"
+          done
           dpkg-deb --build $PKG
           mv ${PKG}.deb luma-ubuntu-25.10.deb
 
@@ -428,7 +436,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder
           sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          sudo flatpak install -y flathub org.gnome.Platform//47 org.gnome.Sdk//47
+          sudo flatpak install -y flathub org.gnome.Platform//50 org.gnome.Sdk//50
 
       - name: Restore flatpak-builder cache
         id: flatpak-cache

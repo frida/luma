@@ -49,19 +49,30 @@ PREFIX ?= /usr/local
 BINDIR := $(PREFIX)/bin
 DATADIR := $(PREFIX)/share
 
+ICON_SIZES := 32 48 64 128 256 512
+
 install: build
 	install -Dm755 .build/debug/LumaGtk $(DESTDIR)$(BINDIR)/luma
 	install -Dm644 data/re.frida.Luma.desktop $(DESTDIR)$(DATADIR)/applications/re.frida.Luma.desktop
 	install -Dm644 data/re.frida.Luma.xml $(DESTDIR)$(DATADIR)/mime/packages/re.frida.Luma.xml
+	for size in $(ICON_SIZES); do \
+	    install -Dm644 data/icons/hicolor/$${size}x$${size}/apps/re.frida.Luma.png \
+	        $(DESTDIR)$(DATADIR)/icons/hicolor/$${size}x$${size}/apps/re.frida.Luma.png; \
+	done
 	-update-mime-database $(DESTDIR)$(DATADIR)/mime 2>/dev/null
 	-update-desktop-database $(DESTDIR)$(DATADIR)/applications 2>/dev/null
+	-gtk-update-icon-cache -f -t $(DESTDIR)$(DATADIR)/icons/hicolor 2>/dev/null
 
 uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/luma
 	rm -f $(DESTDIR)$(DATADIR)/applications/re.frida.Luma.desktop
 	rm -f $(DESTDIR)$(DATADIR)/mime/packages/re.frida.Luma.xml
+	for size in $(ICON_SIZES); do \
+	    rm -f $(DESTDIR)$(DATADIR)/icons/hicolor/$${size}x$${size}/apps/re.frida.Luma.png; \
+	done
 	-update-mime-database $(DESTDIR)$(DATADIR)/mime 2>/dev/null
 	-update-desktop-database $(DESTDIR)$(DATADIR)/applications 2>/dev/null
+	-gtk-update-icon-cache -f -t $(DESTDIR)$(DATADIR)/icons/hicolor 2>/dev/null
 
 clean:
 	swift package clean
