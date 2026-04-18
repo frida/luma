@@ -295,11 +295,6 @@ final class LumaApplication {
         luma_menu_append_section(menu, docSection)
         luma_menu_unref(docSection)
 
-        let windowSection = luma_menu_new()!
-        appendItem(toMenu: windowSection, label: "Close Window", action: "app.close-window")
-        luma_menu_append_section(menu, windowSection)
-        luma_menu_unref(windowSection)
-
         let aboutSection = luma_menu_new()!
         appendItem(toMenu: aboutSection, label: "About Luma", action: "app.about")
         luma_menu_append_section(menu, aboutSection)
