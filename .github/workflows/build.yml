@@ -730,7 +730,10 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH -Value $gnuBin
 
       - name: Build LumaGtk
-        run: cd LumaGtk && swift build -c release
+        run: >-
+          cd LumaGtk && swift build -c release
+          -Xlinker /ignore:importeddllmain
+          -Xlinker /ignore:4217
 
       - name: Package MSI
         shell: pwsh

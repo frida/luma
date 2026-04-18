@@ -91,20 +91,15 @@ let cLumaLinkerSettings: [LinkerSetting] = [
 ]
 // Windows: produce a GUI app (no console window). Swift's runtime
 // still calls main(), so redirect the linker entry to the C runtime's
-// main-compatible start routine rather than WinMain.
+// main-compatible start routine rather than WinMain. Tool binaries
+// built by SwiftPM plugins (gir2swift-tool, Yams-tool, ...) need the
+// default console subsystem, so keep these target-scoped.
 //
-// /ignore:importeddllmain silences vcpkg libxml2's DLL whose import
-// library still re-exports DllMain.
-// /ignore:4217 silences LNK4217 ("locally defined symbol imported")
-// from Swift-on-Windows marking every C module import as dllimport
-// even when the C target is statically linked into the same exe —
-// Yams/CYaml trips this on every yaml_* call.
-let windowsGuiLinkerFlags = [
-    "-Xlinker", "/SUBSYSTEM:WINDOWS",
-    "-Xlinker", "/ENTRY:mainCRTStartup",
-    "-Xlinker", "/ignore:importeddllmain",
-    "-Xlinker", "/ignore:4217",
-]
+// The /ignore:* warning filters also apply to those tool binaries and
+// can't be set on targets outside this package — they live on the
+// swift build command line (see scripts/windows/build.ps1 and the
+// Windows CI job).
+let windowsGuiLinkerFlags = ["-Xlinker", "/SUBSYSTEM:WINDOWS", "-Xlinker", "/ENTRY:mainCRTStartup"]
 let lumaGtkLinkerSettings: [LinkerSetting] = [
     .unsafeFlags(windowsGuiLinkerFlags + (lumaExecutableIconResource.map { [$0] } ?? []))
 ]

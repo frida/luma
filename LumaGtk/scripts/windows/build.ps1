@@ -50,7 +50,18 @@ if (-not (Get-Command cl -ErrorAction SilentlyContinue)) {
 
 Push-Location $pkg
 try {
-    $swiftArgs = @('build', '-c', $Configuration) + $ExtraArgs
+    # /ignore:importeddllmain silences vcpkg libxml2's DllMain re-export.
+    # /ignore:4217 silences LNK4217 — Swift-on-Windows marks every C
+    # module import as dllimport even when the C target links into the
+    # same binary, and lld-link complains every time Yams calls a
+    # yaml_* function. These apply to all link invocations (including
+    # plugin tool binaries), so they live here rather than in
+    # Package.swift, which only scopes to its own targets.
+    $swiftArgs = @(
+        'build', '-c', $Configuration,
+        '-Xlinker', '/ignore:importeddllmain',
+        '-Xlinker', '/ignore:4217'
+    ) + $ExtraArgs
     & swift @swiftArgs
     if ($LASTEXITCODE -ne 0) { throw "swift build failed ($LASTEXITCODE)" }
 } finally {
