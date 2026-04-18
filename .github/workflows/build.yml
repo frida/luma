@@ -577,6 +577,11 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: '1.24'
+          # v6 defaults to caching via a go.mod it finds in the repo,
+          # and our checkout doesn't have one at the root — the cache
+          # probe runs `go env GOPATH` before the PATH update has
+          # propagated, which fails with "'go' is not recognized".
+          cache: false
 
       - name: Install MinGW toolchain for cgo
         if: steps.frida-cache.outputs.cache-hit != 'true'
