@@ -125,6 +125,16 @@ parts:
         esac
         cp -P "$so" "$SWIFT_DST/"
       done
+      # Swift's FoundationXML keeps DT_NEEDED on libxml2.so.2 even
+      # though plucky/core26 now ships libxml2.so.16. Drop the host's
+      # libxml2 into the swift dir under the legacy SONAME so the
+      # snap's rpath lookup still resolves it.
+      xml_src="$(readlink -f /usr/lib/x86_64-linux-gnu/libxml2.so.16 2>/dev/null \
+                 || readlink -f /usr/lib/x86_64-linux-gnu/libxml2.so.2 2>/dev/null \
+                 || true)"
+      if [ -n "$xml_src" ] && [ -f "$xml_src" ]; then
+        install -m644 "$xml_src" "$SWIFT_DST/libxml2.so.2"
+      fi
       install -Dm755 .build/x86_64-unknown-linux-gnu/release/LumaGtk "$CRAFT_PART_INSTALL/usr/local/bin/luma"
       strip --strip-unneeded "$CRAFT_PART_INSTALL/usr/local/bin/luma"
       strip --strip-unneeded "$SWIFT_DST"/*.so
@@ -161,4 +171,3 @@ parts:
       - libadwaita-1-0
       - libwebkitgtk-6.0-4
       - libsoup-3.0-0
-      - libxml2
