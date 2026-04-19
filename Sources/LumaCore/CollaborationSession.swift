@@ -99,6 +99,11 @@ public final class CollaborationSession {
         return members.contains { $0.user.id == localUser.id && $0.role == .owner }
     }
 
+    /// True when the given user id belongs to the currently signed-in user.
+    public func isSelf(_ userID: String) -> Bool {
+        userID == localUser?.id
+    }
+
     private var portalDevice: Device?
     private var portalBusTask: Task<Void, Never>?
 

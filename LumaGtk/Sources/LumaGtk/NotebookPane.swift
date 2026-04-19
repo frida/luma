@@ -98,6 +98,8 @@ final class NotebookPane {
             let row = makeRow(for: entry)
             entryRows[entry.id] = row
             insertEntryRow(row, for: entry)
+        case .snapshot:
+            rebuildEntries()
         case .updated(let entry):
             if let existing = entryRows[entry.id] {
                 let parent = entriesBox

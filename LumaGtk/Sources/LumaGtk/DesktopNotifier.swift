@@ -7,12 +7,17 @@ import LumaCore
 /// a new member joining the lab, a new notebook entry, or a chat message.
 /// The matching coverage on macOS is provided by APNs via the system UI,
 /// so this class only exists on the LumaGtk side.
+///
+/// Notifications are suppressed while this window is the active toplevel
+/// (the user is already looking at the event live).
 @MainActor
 final class DesktopNotifier {
     private let app: Gtk.Application
+    private weak var window: Gtk.Window?
 
-    init(app: Gtk.Application) {
+    init(app: Gtk.Application, window: Gtk.Window) {
         self.app = app
+        self.window = window
     }
 
     func notifyMemberAdded(_ member: LumaCore.CollaborationSession.Member, labID: String?) {
@@ -26,7 +31,6 @@ final class DesktopNotifier {
     }
 
     func notifyChatMessage(_ message: LumaCore.CollaborationSession.ChatMessage, labID: String?) {
-        guard !message.isLocal else { return }
         let name = displayName(message.sender)
         deliver(
             kind: "chat-message",
@@ -37,12 +41,7 @@ final class DesktopNotifier {
     }
 
     func notifyEntryAdded(_ entry: NotebookEntry, labID: String?) {
-        let author: String
-        if let a = entry.author {
-            author = a.name
-        } else {
-            author = "Someone"
-        }
+        let author = entry.author?.name ?? "Someone"
         let title = entry.title.isEmpty ? "(untitled)" : entry.title
         deliver(
             kind: "entry-added",
@@ -57,6 +56,7 @@ final class DesktopNotifier {
     }
 
     private func deliver(kind: String, title: String, body: String, labID: String?) {
+        if window?.isActive == true { return }
         let notification = Notification(title: title)
         if !body.isEmpty {
             body.withCString { notification.set(body: $0) }

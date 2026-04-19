@@ -260,8 +260,10 @@ final class CollaborationPanel {
         engine.collaboration.onMemberAdded = { [weak self] member in
             guard let self else { return }
             self.addParticipant(member.user)
-            let labID = self.engine?.collaboration.labID
-            self.desktopNotifier?.notifyMemberAdded(member, labID: labID)
+            guard let engine = self.engine,
+                  !engine.collaboration.isSelf(member.user.id)
+            else { return }
+            self.desktopNotifier?.notifyMemberAdded(member, labID: engine.collaboration.labID)
         }
         engine.collaboration.onMemberRemoved = { [weak self] userID in
             self?.removeParticipant(userID)
@@ -276,8 +278,8 @@ final class CollaborationPanel {
         engine.collaboration.onChatMessageReceived = { [weak self] message in
             guard let self else { return }
             self.appendChatMessage(message)
-            let labID = self.engine?.collaboration.labID
-            self.desktopNotifier?.notifyChatMessage(message, labID: labID)
+            guard !message.isLocal, let engine = self.engine else { return }
+            self.desktopNotifier?.notifyChatMessage(message, labID: engine.collaboration.labID)
         }
     }
 

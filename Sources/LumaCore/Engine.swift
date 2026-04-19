@@ -157,6 +157,13 @@ public final class Engine {
         if let otherEntry {
             e.timestamp = otherEntry.timestamp.addingTimeInterval(0.001)
         }
+        if e.author == nil, let user = gitHubAuth.currentUser {
+            e.author = NotebookEntry.Author(
+                id: user.id,
+                name: user.name,
+                avatarURL: user.avatarURL?.absoluteString ?? ""
+            )
+        }
         try? store.save(e)
         notebookEntries.append(e)
         onNotebookChanged?(.added(e))
@@ -189,8 +196,8 @@ public final class Engine {
             for entry in entries {
                 try? self.store.save(entry)
                 self.notebookEntries.append(entry)
-                self.onNotebookChanged?(.added(entry))
             }
+            self.onNotebookChanged?(.snapshot(entries))
         }
 
         collaboration.onNotebookEntryAdded = { [weak self] entry in

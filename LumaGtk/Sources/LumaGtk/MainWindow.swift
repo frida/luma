@@ -89,8 +89,9 @@ final class MainWindow {
         self.app = app
         self.application = application
         self.document = document
-        self.desktopNotifier = DesktopNotifier(app: app)
-        self.window = Adw.ApplicationWindow(app: app)
+        let window = Adw.ApplicationWindow(app: app)
+        self.desktopNotifier = DesktopNotifier(app: app, window: window)
+        self.window = window
         self.outerPaned = Paned(orientation: .horizontal)
         window.title = MainWindow.makeTitle(for: document)
         let state = LumaState.shared
@@ -350,13 +351,16 @@ final class MainWindow {
         self.engine = engine
         engine.onSessionListChanged = { [weak self] change in self?.handleSessionListChange(change) }
         engine.onREPLCellAdded = { [weak self] cell in self?.currentREPLPane?.appendCell(cell) }
-        engine.onNotebookChanged = { [weak self, weak engine] change in
+        engine.onNotebookChanged = { [weak self] change in
             guard let self else { return }
             self.notebookPane?.handleNotebookChange(change)
-            if case let .added(entry) = change {
-                let labID = engine?.collaboration.labID
-                self.desktopNotifier.notifyEntryAdded(entry, labID: labID)
-            }
+            guard
+                case let .added(entry) = change,
+                let engine = self.engine,
+                let authorID = entry.author?.id,
+                !engine.collaboration.isSelf(authorID)
+            else { return }
+            self.desktopNotifier.notifyEntryAdded(entry, labID: engine.collaboration.labID)
         }
         engine.onInstalledPackagesChanged = { [weak self] packages in self?.renderPackages(packages) }
         engine.populateSessionList()
