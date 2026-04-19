@@ -80,6 +80,7 @@ public final class CollaborationSession {
     public var onParticipantJoined: ((UserInfo) -> Void)?
     public var onParticipantLeft: ((String) -> Void)?
     public var onChatMessageReceived: ((ChatMessage) -> Void)?
+    public var onAuthRejected: ((AuthFailure) async -> Void)?
 
     public init(
         deviceManager: DeviceManager,
@@ -126,7 +127,12 @@ public final class CollaborationSession {
                 createLab()
             }
         } catch {
-            setStatus(.error(message: String(describing: error)))
+            if let failure = AuthFailure.fromError(error), failure.isAuthRejection {
+                setStatus(.error(message: failure.message))
+                await onAuthRejected?(failure)
+            } else {
+                setStatus(.error(message: String(describing: error)))
+            }
         }
     }
 

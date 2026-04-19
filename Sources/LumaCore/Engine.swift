@@ -144,6 +144,10 @@ public final class Engine {
     }
 
     public func bindCollaborationCallbacks() {
+        collaboration.onAuthRejected = { [weak self] _ in
+            await self?.gitHubAuth.signOut()
+        }
+
         collaboration.onNotebookEntriesReceived = { [weak self] entries in
             guard let self else { return }
             for entry in entries {
