@@ -32,8 +32,14 @@ parts:
         -o swift.tar.gz
       tar xzf swift.tar.gz --strip-components=2 -C "$CRAFT_STAGE"
       rm swift.tar.gz
+      # core26 ships libxml2.so.16 only; Swift 6.2's ubuntu24 tarball
+      # links against libxml2.so.2. Alias for swift-build's
+      # $ORIGIN/../lib rpath.
+      mkdir -p "$CRAFT_STAGE/lib"
+      ln -sf /usr/lib/x86_64-linux-gnu/libxml2.so.16 "$CRAFT_STAGE/lib/libxml2.so.2"
     build-packages:
       - curl
+      - libxml2
 
   nodejs:
     plugin: nil
