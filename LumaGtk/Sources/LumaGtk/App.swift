@@ -335,21 +335,17 @@ final class LumaApplication {
     }
 
     private func shortcutItem(_ title: String, action: String) -> Adw.ShortcutsItem {
-        return title.withCString { t in
-            action.withCString { a in
-                Adw.ShortcutsItem(action: t, actionName: a)
-            }
-        }
+        Adw.ShortcutsItem(action: title, actionName: action)
     }
 
     private func presentAboutDialog() {
         let dialog = Adw.AboutDialog()
-        "Luma".withCString { dialog.set(applicationName: $0) }
-        "re.frida.Luma".withCString { dialog.set(applicationIcon: $0) }
-        "Ole André Vadla Ravnås".withCString { dialog.set(developerName: $0) }
-        "© 2025–2026 Ole André Vadla Ravnås".withCString { dialog.set(copyright: $0) }
-        "https://luma.frida.re".withCString { dialog.set(website: $0) }
-        "https://github.com/frida/luma/issues".withCString { dialog.set(issueUrl: $0) }
+        dialog.set(applicationName: "Luma")
+        dialog.set(applicationIcon: "re.frida.Luma")
+        dialog.set(developerName: "Ole André Vadla Ravnås")
+        dialog.set(copyright: "© 2025–2026 Ole André Vadla Ravnås")
+        dialog.set(website: "https://luma.frida.re")
+        dialog.set(issueUrl: "https://github.com/frida/luma/issues")
         dialog.set(licenseType: .mitX11)
         let parent = activeWindow()?.window
         dialog.present(parent: parent)
@@ -360,11 +356,7 @@ final class LumaApplication {
         label: String,
         action: String
     ) {
-        label.withCString { l in
-            action.withCString { a in
-                luma_menu_append(menu, l, a)
-            }
-        }
+        luma_menu_append(menu, label, action)
     }
 
     private func installAction(
@@ -374,9 +366,7 @@ final class LumaApplication {
     ) {
         let box = ActionHandlerBox(handler: handler)
         let context = Unmanaged.passRetained(box).toOpaque()
-        name.withCString { cstr in
-            luma_action_install(appPtr, cstr, lumaActionThunk, context)
-        }
+        luma_action_install(appPtr, name, lumaActionThunk, context)
     }
 
     private func setAccel(
@@ -384,11 +374,7 @@ final class LumaApplication {
         action: String,
         accel: String
     ) {
-        action.withCString { actionCstr in
-            accel.withCString { accelCstr in
-                luma_app_set_accels(appPtr, actionCstr, accelCstr)
-            }
-        }
+        luma_app_set_accels(appPtr, action, accel)
     }
 
     private func parseDocumentPaths(from arguments: [String]) -> [String] {

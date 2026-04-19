@@ -7,10 +7,8 @@ import Gtk
 
 extension Adw.Application {
     @inlinable convenience init?(id: String, flags: ApplicationFlags = []) {
-        let rv: UnsafeMutablePointer<AdwApplication>? = id.withCString { cid in
-            GLib.set(applicationName: cid)
-            return adw_application_new(cid, flags.value)
-        }
+        GLib.set(applicationName: id)
+        let rv: UnsafeMutablePointer<AdwApplication>? = adw_application_new(id, flags.value)
         guard let app = rv else { return nil }
         self.init(app)
     }

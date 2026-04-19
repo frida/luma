@@ -94,7 +94,7 @@ final class InstrumentConfigEditor {
 
         if let iconFile = pack.manifest.icon?.file {
             let iconPath = pack.folderURL.appendingPathComponent(iconFile).path
-            let image = iconPath.withCString { Image(file: $0) }
+            let image = Image(file: iconPath)
             image.set(pixelSize: 32)
             image.valign = .center
             packHeader.append(child: image)
@@ -243,9 +243,7 @@ final class InstrumentConfigEditor {
         textView.bottomMargin = 6
         textView.leftMargin = 6
         textView.rightMargin = 6
-        config.source.withCString { cstr in
-            textView.buffer?.set(text: cstr, len: -1)
-        }
+        textView.buffer?.set(text: config.source, len: -1)
         let codeScroll = ScrolledWindow()
         codeScroll.hexpand = true
         codeScroll.vexpand = true
@@ -326,7 +324,7 @@ final class InstrumentConfigEditor {
     }
 
     private func makeBanner(_ text: String) -> Adw.Banner {
-        let banner = text.withCString { Adw.Banner(title: $0) }
+        let banner = Adw.Banner(title: text)
         banner.revealed = true
         return banner
     }

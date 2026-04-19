@@ -16,7 +16,7 @@
       "location" : "https://github.com/frida/gir2swift.git",
       "state" : {
         "branch" : "development",
-        "revision" : "bcf8a9c2820acbf3126199fa2c1f05b546e4126a"
+        "revision" : "601df4e9657583ff64196872e5406606c4d29b46"
       }
     },
     {
@@ -115,7 +115,7 @@
       "location" : "https://github.com/frida/SwiftGLib.git",
       "state" : {
         "branch" : "development",
-        "revision" : "d0fa7d87d14a4a29c8d86e6865eeb10a4b1a966c"
+        "revision" : "0c317ade2870a02bb06ece6348557deb2b71e226"
       }
     },
     {
@@ -133,7 +133,7 @@
       "location" : "https://github.com/frida/SwiftGObject.git",
       "state" : {
         "branch" : "development",
-        "revision" : "a818a23e323d2b09ab64e7a1c9e65391a0eb7497"
+        "revision" : "e9e3563dec0ce12b942ee7e009dbdde6eb69702d"
       }
     },
     {
@@ -160,7 +160,7 @@
       "location" : "https://github.com/frida/SwiftGtk.git",
       "state" : {
         "branch" : "gtk4-development",
-        "revision" : "6b1654c05dc6aedd71a8ecec8c152e6dd18d5317"
+        "revision" : "09e9ec996485f825718514dcbd8256c8bd90576e"
       }
     },
     {

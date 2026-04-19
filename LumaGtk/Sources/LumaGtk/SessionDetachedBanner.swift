@@ -9,7 +9,7 @@ enum SessionDetachedBanner {
         for session: LumaCore.ProcessSession,
         onReattach: @escaping () -> Void
     ) -> Adw.Banner {
-        let banner = title(for: session).withCString { Adw.Banner(title: $0) }
+        let banner = Adw.Banner(title: title(for: session))
         banner.useMarkup = true
         banner.buttonLabel = "\(session.kind.reestablishLabel)\u{2026}"
         banner.setButton(style: .suggested)

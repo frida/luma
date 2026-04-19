@@ -616,9 +616,7 @@ final class CollaborationPanel {
         size: Int
     ) -> Adw.Avatar {
         let displayName = user.name.isEmpty ? "@\(user.id)" : user.name
-        let avatar = displayName.withCString { cstr in
-            Adw.Avatar(size: size, text: cstr, showInitials: true)
-        }
+        let avatar = Adw.Avatar(size: size, text: displayName, showInitials: true)
         avatar.tooltipText = displayName
 
         loadAvatarImage(into: avatar, user: user, size: size)

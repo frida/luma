@@ -149,8 +149,8 @@ final class MainWindow {
 
         let sidebar = buildSidebar()
         let detail = buildDetailPane()
-        let sidebarPage = "Luma".withCString { Adw.NavigationPage(child: sidebar, title: $0) }
-        let contentPage = "Detail".withCString { Adw.NavigationPage(child: detail, title: $0) }
+        let sidebarPage = Adw.NavigationPage(child: sidebar, title: "Luma")
+        let contentPage = Adw.NavigationPage(child: detail, title: "Detail")
         let splitView = Adw.NavigationSplitView()
         splitView.set(sidebar: sidebarPage)
         splitView.set(content: contentPage)
@@ -948,9 +948,9 @@ final class MainWindow {
         let page = Adw.StatusPage()
         page.hexpand = true
         page.vexpand = true
-        icon.withCString { page.set(iconName: $0) }
-        title.withCString { page.set(title: $0) }
-        subtitle.withCString { page.set(description: $0) }
+        page.set(iconName: icon)
+        page.set(title: title)
+        page.set(description: subtitle)
 
         if let actionLabel, let onAction {
             let button = Button(label: actionLabel)

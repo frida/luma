@@ -451,9 +451,7 @@ final class NotebookPane {
         textView.leftMargin = 6
         textView.rightMargin = 6
         if !entry.details.isEmpty {
-            entry.details.withCString { cstr in
-                textView.buffer.set(text: cstr, len: -1)
-            }
+            textView.buffer.set(text: entry.details, len: -1)
         }
 
         let textScroll = ScrolledWindow()

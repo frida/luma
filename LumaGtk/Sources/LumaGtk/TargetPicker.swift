@@ -250,7 +250,7 @@ final class TargetPicker {
         column.hexpand = true
         column.vexpand = true
         if let reason {
-            let banner = reason.withCString { Adw.Banner(title: $0) }
+            let banner = Adw.Banner(title: reason)
             banner.revealed = true
             column.append(child: banner)
         }

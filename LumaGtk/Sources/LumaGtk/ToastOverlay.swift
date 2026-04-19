@@ -17,7 +17,7 @@ final class ToastOverlay {
 
     func show(_ text: String, durationSeconds: Double = 3.0) {
         widget.dismissAll()
-        let toast = text.withCString { Adw.Toast(title: $0) }
+        let toast = Adw.Toast(title: text)
         toast.set(timeout: Int(durationSeconds.rounded()))
         // adw_toast_overlay_add_toast is (transfer full), but the generated
         // binding passes the raw pointer without adding a reference. Bump
