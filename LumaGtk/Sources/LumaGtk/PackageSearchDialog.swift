@@ -280,9 +280,7 @@ final class PackageSearchDialog {
 
     private func onResultSelected(_ pkg: Package) {
         specifierEntry.text = "\(pkg.name)@\(pkg.version)"
-        if (aliasEntry.text ?? "").isEmpty, let alias = Self.defaultGlobalAlias(for: pkg.name) {
-            aliasEntry.text = alias
-        }
+        aliasEntry.text = InstalledPackage.defaultGlobalAlias(forPackageName: pkg.name) ?? ""
         updateInstallButtonSensitivity()
     }
 
@@ -348,15 +346,6 @@ final class PackageSearchDialog {
             }
         }
         return (spec, nil)
-    }
-
-    private static func defaultGlobalAlias(for name: String) -> String? {
-        switch name {
-        case "frida-objc-bridge": return "ObjC"
-        case "frida-java-bridge": return "Java"
-        case "frida-swift-bridge": return "Swift"
-        default: return nil
-        }
     }
 
     static func present(from anchor: Widget, engine: Engine, onInstalled: @escaping () -> Void) {

@@ -132,12 +132,7 @@ struct PackageSearchView: View {
         .onChange(of: selectedPackage) { _, pkg in
             if let pkg {
                 packageSpecifier = "\(pkg.name)@\(pkg.version)"
-
-                if canonicalizedGlobalAlias.isEmpty,
-                    let alias = defaultGlobalAlias(forPackageName: pkg.name)
-                {
-                    globalAlias = alias
-                }
+                globalAlias = InstalledPackage.defaultGlobalAlias(forPackageName: pkg.name) ?? ""
             }
         }
 
@@ -247,13 +242,4 @@ private func parsePackageSpecifier(_ spec: String) -> (name: String, versionSpec
     }
 
     return (spec, nil)
-}
-
-private func defaultGlobalAlias(forPackageName name: String) -> String? {
-    switch name {
-    case "frida-objc-bridge": return "ObjC"
-    case "frida-java-bridge": return "Java"
-    case "frida-swift-bridge": return "Swift"
-    default: return nil
-    }
 }

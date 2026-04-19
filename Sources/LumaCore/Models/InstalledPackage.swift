@@ -35,4 +35,13 @@ public struct InstalledPackage: Codable, Identifiable, Sendable, FetchableRecord
         self.globalAlias = globalAlias
         self.addedAt = addedAt
     }
+
+    public static func defaultGlobalAlias(forPackageName name: String) -> String? {
+        switch name {
+        case "frida-objc-bridge": return "ObjC"
+        case "frida-java-bridge": return "Java"
+        case "frida-swift-bridge": return "Swift"
+        default: return nil
+        }
+    }
 }
