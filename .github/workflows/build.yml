@@ -446,7 +446,9 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: .flatpak-builder
-          key: flatpak-builder-v1
+          key: flatpak-builder-v1-${{ github.run_id }}
+          restore-keys: |
+            flatpak-builder-v1-
 
       - name: Build Flatpak
         run: |
@@ -464,7 +466,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: .flatpak-builder
-          key: flatpak-builder-v1
+          key: flatpak-builder-v1-${{ github.run_id }}
 
       - uses: actions/upload-artifact@v7
         with:
