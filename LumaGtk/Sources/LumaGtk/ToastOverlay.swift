@@ -1,12 +1,12 @@
 import Adw
-import CGLib
 import Foundation
-import GLibObject
 import Gtk
 
 @MainActor
 final class ToastOverlay {
     let widget: Adw.ToastOverlay
+
+    private var current: Adw.Toast?
 
     init(content: Widget) {
         widget = Adw.ToastOverlay()
@@ -16,15 +16,10 @@ final class ToastOverlay {
     }
 
     func show(_ text: String, durationSeconds: Double = 3.0) {
-        widget.dismissAll()
+        current?.dismiss()
         let toast = Adw.Toast(title: text)
         toast.set(timeout: Int(durationSeconds.rounded()))
-        // adw_toast_overlay_add_toast is (transfer full), but the generated
-        // binding passes the raw pointer without adding a reference. Bump
-        // the refcount so the overlay has its own ref and our Swift
-        // wrapper's unref on deinit doesn't leave a dangling pointer in
-        // the overlay's queue.
-        g_object_ref(gpointer(toast.toast_ptr))
         widget.add(toast: toast)
+        current = toast
     }
 }
