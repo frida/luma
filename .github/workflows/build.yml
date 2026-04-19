@@ -722,18 +722,29 @@ jobs:
       - name: Build LumaGtk
         shell: pwsh
         run: |
-          # SwiftPM invokes swiftc.exe as the final linker driver with
-          # the full list of object files, library search paths, and
-          # -l references. On a fully-featured GTK/WebKit/Frida/r2
-          # build that easily exceeds Windows' 32 KB CreateProcess
-          # command-line limit and fails with "The filename or
-          # extension is too long". Use a short --build-path so the
-          # per-arg overhead shrinks enough to stay below the cap.
-          cd LumaGtk
-          swift build -c release `
-              --build-path "$env:RUNNER_TEMP\b" `
-              -Xlinker /ignore:importeddllmain `
-              -Xlinker /ignore:4217
+          # SwiftPM invokes swiftc.exe as the final link driver with
+          # every .o, -L path and -l ref on the command line. On a
+          # GTK/WebKit/Frida/r2 build that overshoots Windows' ~32 KB
+          # CreateProcess limit and aborts with "The filename or
+          # extension is too long". Pin the build dir to a
+          # drive-letter root (B:\) via `subst`; the per-arg prefix
+          # drops from D:\a\_temp\b\<triplet>\... to B:\<triplet>\...
+          # which shaves ~13 chars off every input path and keeps the
+          # final cmdline under the cap.
+          $buildRoot = "$env:RUNNER_TEMP\b"
+          New-Item -Path $buildRoot -ItemType Directory -Force | Out-Null
+          cmd /c subst B: """$buildRoot"""
+          if ($LASTEXITCODE -ne 0) { throw "subst B: failed" }
+          try {
+              cd LumaGtk
+              swift build -c release `
+                  --build-path B:\ `
+                  -Xlinker /ignore:importeddllmain `
+                  -Xlinker /ignore:4217
+              if ($LASTEXITCODE -ne 0) { throw "swift build failed ($LASTEXITCODE)" }
+          } finally {
+              cmd /c subst B: /d | Out-Null
+          }
 
       - name: Package MSI
         shell: pwsh
