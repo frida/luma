@@ -81,7 +81,7 @@ parts:
     override-build: |
       git clone https://github.com/radareorg/radare2.git src
       cd src
-      git checkout 65ee12a4f0d67f24a1b968111c536de3bb5bb4e3
+      git checkout c08254586bc9d99a187aab5279e130eff39e37a7
       meson setup build --prefix="$CRAFT_STAGE/usr/local" --default-library=static -Dstatic_runtime=true -Dcli=disabled
       ninja -C build
       ninja -C build install
