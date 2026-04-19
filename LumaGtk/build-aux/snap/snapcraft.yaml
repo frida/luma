@@ -123,7 +123,14 @@ parts:
       export PKG_CONFIG_PATH="$CRAFT_STAGE/usr/local/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
       export LD_LIBRARY_PATH="$CRAFT_STAGE/usr/local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
       export C_INCLUDE_PATH="$CRAFT_STAGE/usr/local/include${C_INCLUDE_PATH:+:$C_INCLUDE_PATH}"
-      cd LumaGtk
+      # SwiftPM derives package identity from the last path component
+      # of .package(path: ...). LumaGtk/Package.swift's
+      # .package(path: "..") must therefore resolve to a directory
+      # called "luma"; $CRAFT_PART_BUILD ends in .../luma/build, so
+      # symlink a sibling "luma" → $CRAFT_PART_BUILD to satisfy the
+      # identity check without moving the build tree.
+      ln -sfn "$CRAFT_PART_BUILD" "$(dirname "$CRAFT_PART_BUILD")/luma"
+      cd "$(dirname "$CRAFT_PART_BUILD")/luma/LumaGtk"
       make build SWIFT_BUILD_FLAGS="-c release"
       # Bundle the Swift runtime (from the swift part's staged tree,
       # test-only libs dropped) alongside the binary, plus a libxml2
