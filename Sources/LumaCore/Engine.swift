@@ -91,12 +91,34 @@ public final class Engine {
             await gitHubAuth.loadPersistedToken()
         }
 
+        APNsRegistration.shared.observe { [weak self] _ in
+            self?.syncAPNsSubscription()
+        }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            for await status in self.collaboration.statusChanges {
+                if case .joined = status {
+                    self.syncAPNsSubscription()
+                }
+            }
+        }
+
         eventLogTask = Task { @MainActor [weak self] in
             guard let self else { return }
             for await event in self._events.makeStream() {
                 self.eventLog.append(event)
             }
         }
+    }
+
+    private func syncAPNsSubscription() {
+        guard case .joined = collaboration.status else { return }
+        guard let token = APNsRegistration.shared.deviceTokenHex else { return }
+        collaboration.registerPushSubscriptions([[
+            "platform": "apns",
+            "endpoint": token,
+            "environment": APNsRegistration.environment,
+        ]])
     }
 
     // MARK: - Collaboration

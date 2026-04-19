@@ -28,11 +28,30 @@ import UniformTypeIdentifiers
     class LumaAppDelegate: NSObject, NSApplicationDelegate {
         func applicationDidFinishLaunching(_ notification: Notification) {
             NSWindow.allowsAutomaticWindowTabbing = false
+            NSApplication.shared.registerForRemoteNotifications()
         }
 
         func application(_ application: NSApplication, open urls: [URL]) {
             for url in urls {
                 handle(url: url)
+            }
+        }
+
+        func application(
+            _ application: NSApplication,
+            didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+        ) {
+            Task { @MainActor in
+                APNsRegistration.shared.setToken(deviceToken)
+            }
+        }
+
+        func application(
+            _ application: NSApplication,
+            didFailToRegisterForRemoteNotificationsWithError error: Error
+        ) {
+            Task { @MainActor in
+                APNsRegistration.shared.setError(error.localizedDescription)
             }
         }
 
