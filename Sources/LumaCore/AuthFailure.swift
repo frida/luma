@@ -10,6 +10,12 @@ public struct AuthFailure: Sendable, Decodable {
     public let code: String
     public let message: String
 
+    public init(domain: String, code: String, message: String) {
+        self.domain = domain
+        self.code = code
+        self.message = message
+    }
+
     public var isAuthRejection: Bool { domain == "auth" }
 
     public static func fromError(_ error: any Swift.Error) -> AuthFailure? {

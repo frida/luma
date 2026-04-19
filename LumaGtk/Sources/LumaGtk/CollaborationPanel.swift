@@ -224,11 +224,14 @@ final class CollaborationPanel {
 
     private func observeParticipants() {
         guard let engine else { return }
-        engine.collaboration.onParticipantJoined = { [weak self] user in
-            self?.addParticipant(user)
+        engine.collaboration.onMemberAdded = { [weak self] member in
+            self?.addParticipant(member.user)
         }
-        engine.collaboration.onParticipantLeft = { [weak self] userID in
+        engine.collaboration.onMemberRemoved = { [weak self] userID in
             self?.removeParticipant(userID)
+        }
+        engine.collaboration.onMemberPresenceChanged = { [weak self] _, _ in
+            self?.refreshParticipants()
         }
     }
 
@@ -493,7 +496,7 @@ final class CollaborationPanel {
 
     private func refreshParticipants() {
         guard let engine else { return }
-        let desired = engine.collaboration.participants
+        let desired = engine.collaboration.members.map(\.user)
         let desiredIDs = Set(desired.map(\.id))
 
         for (id, widget) in participantWidgets where !desiredIDs.contains(id) {

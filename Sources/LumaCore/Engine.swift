@@ -166,20 +166,17 @@ public final class Engine {
             }
         }
 
-        collaboration.onNotebookEntryUpdated = { [weak self] updated in
+        collaboration.onNotebookEntryUpdated = { [weak self] id, changes in
             guard let self else { return }
-            if var existing = try? self.store.fetchNotebookEntry(id: updated.id) {
-                existing.title = updated.title
-                existing.details = updated.details
-                existing.timestamp = updated.timestamp
-                existing.processName = updated.processName
-                existing.isUserNote = updated.isUserNote
-                try? self.store.save(existing)
-                if let i = self.notebookEntries.firstIndex(where: { $0.id == existing.id }) {
-                    self.notebookEntries[i] = existing
-                }
-                self.onNotebookChanged?(.updated(existing))
+            guard var existing = try? self.store.fetchNotebookEntry(id: id) else { return }
+            if let v = changes["title"] as? String { existing.title = v }
+            if let v = changes["details"] as? String { existing.details = v }
+            if let v = changes["process_name"] as? String { existing.processName = v }
+            try? self.store.save(existing)
+            if let i = self.notebookEntries.firstIndex(where: { $0.id == id }) {
+                self.notebookEntries[i] = existing
             }
+            self.onNotebookChanged?(.updated(existing))
         }
 
         collaboration.onNotebookEntryDeleted = { [weak self] id in

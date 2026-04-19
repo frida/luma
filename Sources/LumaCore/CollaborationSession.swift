@@ -25,8 +25,34 @@ public final class CollaborationSession {
 
         public static func fromJSON(_ obj: [String: Any]) -> UserInfo? {
             guard let id = obj["id"] as? String, let name = obj["name"] as? String else { return nil }
-            let avatarURL = (obj["avatar_url"] as? String).flatMap(URL.init(string:))
+            let avatarURL = (obj["avatar"] as? String).flatMap(URL.init(string:))
             return UserInfo(id: id, name: name, avatarURL: avatarURL)
+        }
+    }
+
+    public struct Member: Identifiable, Hashable, Sendable {
+        public enum Role: String, Sendable { case owner, member }
+        public enum Presence: String, Sendable { case online, offline }
+
+        public let user: UserInfo
+        public let role: Role
+        public var presence: Presence
+        public let joinedAt: String
+        public var lastSeenAt: String
+
+        public var id: String { user.id }
+
+        public static func fromJSON(_ obj: [String: Any]) -> Member? {
+            guard let userObj = obj["user"] as? [String: Any],
+                let user = UserInfo.fromJSON(userObj),
+                let roleRaw = obj["role"] as? String,
+                let role = Role(rawValue: roleRaw),
+                let presenceRaw = obj["presence"] as? String,
+                let presence = Presence(rawValue: presenceRaw),
+                let joinedAt = obj["joined_at"] as? String,
+                let lastSeenAt = obj["last_seen_at"] as? String
+            else { return nil }
+            return Member(user: user, role: role, presence: presence, joinedAt: joinedAt, lastSeenAt: lastSeenAt)
         }
     }
 
@@ -62,9 +88,15 @@ public final class CollaborationSession {
     private(set) public var status: Status = .disconnected
     private(set) public var labID: String?
     private(set) public var localUser: UserInfo?
-    private(set) public var participants: [UserInfo] = []
+    private(set) public var members: [Member] = []
     private(set) public var chatMessages: [ChatMessage] = []
+    private(set) public var vapidPublicKey: String?
     public var isHost = false
+
+    public var isOwner: Bool {
+        guard let localUser else { return false }
+        return members.contains { $0.user.id == localUser.id && $0.role == .owner }
+    }
 
     private var portalDevice: Device?
     private var portalBusTask: Task<Void, Never>?
@@ -74,13 +106,17 @@ public final class CollaborationSession {
 
     public var onNotebookEntriesReceived: (([NotebookEntry]) -> Void)?
     public var onNotebookEntryAdded: ((NotebookEntry) -> Void)?
-    public var onNotebookEntryUpdated: ((NotebookEntry) -> Void)?
+    public var onNotebookEntryUpdated: ((UUID, JSONObject) -> Void)?
     public var onNotebookEntryDeleted: ((UUID) -> Void)?
     public var onEntriesReordered: (([UUID]) -> Void)?
-    public var onParticipantJoined: ((UserInfo) -> Void)?
-    public var onParticipantLeft: ((String) -> Void)?
+    public var onMemberAdded: ((Member) -> Void)?
+    public var onMemberRemoved: ((String) -> Void)?
+    public var onMemberPresenceChanged: ((String, Member.Presence) -> Void)?
     public var onChatMessageReceived: ((ChatMessage) -> Void)?
     public var onAuthRejected: ((AuthFailure) async -> Void)?
+
+    private var nextRequestId = 0
+    private var pendingRequests: [String: (Result<JSONObject, AuthFailure>) -> Void] = [:]
 
     public init(
         deviceManager: DeviceManager,
@@ -146,48 +182,221 @@ public final class CollaborationSession {
         setStatus(.disconnected)
         labID = nil
         localUser = nil
-        participants = []
+        members = []
         chatMessages = []
+        vapidPublicKey = nil
+        pendingRequests.removeAll()
+    }
+
+    // MARK: - Sending
+
+    private func sendRequest(
+        from path: String,
+        type: String,
+        payload: JSONObject = [:],
+        data: [UInt8]? = nil,
+        onResult: @escaping (Result<JSONObject, AuthFailure>) -> Void
+    ) {
+        guard let device = portalDevice else { return }
+        nextRequestId += 1
+        let id = "r\(nextRequestId)"
+        pendingRequests[id] = onResult
+        var msg: JSONObject = ["from": path, "type": type, "id": id]
+        if !payload.isEmpty { msg["payload"] = payload }
+        device.bus.post(msg, data: data)
+    }
+
+    private func sendNotification(
+        from path: String,
+        type: String,
+        payload: JSONObject,
+        data: [UInt8]? = nil
+    ) {
+        guard let device = portalDevice else { return }
+        var msg: JSONObject = ["from": path, "type": type]
+        if !payload.isEmpty { msg["payload"] = payload }
+        device.bus.post(msg, data: data)
     }
 
     public func sendChat(_ text: String) {
-        guard case .joined = status, let device = portalDevice else { return }
-        device.bus.post(["type": "chat-message", "payload": ["text": text]])
+        guard case .joined(let labID) = status else { return }
+        sendNotification(
+            from: "/labs/\(labID)/chat/messages",
+            type: "+add",
+            payload: ["messages": [["text": text]]]
+        )
     }
 
     public func notifyEntryAdded(_ entry: NotebookEntry) {
-        guard case .joined = status, let device = portalDevice else { return }
-        device.bus.post(
-            ["type": "add-entry", "payload": ["entry": entry.toJSON()]],
-            data: entry.binaryData.map { [UInt8]($0) }
+        guard case .joined(let labID) = status else { return }
+        let bin = entry.binaryData.map { [UInt8]($0) }
+        var payload: JSONObject = ["entries": [entry.toJSON()]]
+        if let bin {
+            payload["binary_indices"] = [["start": 0, "length": bin.count] as JSONObject]
+        } else {
+            payload["binary_indices"] = [NSNull()]
+        }
+        sendNotification(
+            from: "/labs/\(labID)/notebook/entries",
+            type: "+add",
+            payload: payload,
+            data: bin,
         )
     }
 
     public func notifyEntryUpdated(_ entry: NotebookEntry) {
-        guard case .joined = status, let device = portalDevice else { return }
+        guard case .joined(let labID) = status else { return }
         let full = entry.toJSON()
-        var payload: JSONObject = ["entry-id": full["id"] ?? entry.id.uuidString]
-        for (k, v) in full where k != "id" { payload[k] = v }
-        device.bus.post(["type": "update-entry", "payload": payload])
+        var changes: JSONObject = [:]
+        for k in ["title", "details", "js_value", "process_name"] where full[k] != nil {
+            changes[k] = full[k]
+        }
+        sendNotification(
+            from: "/labs/\(labID)/notebook/entries",
+            type: "+update",
+            payload: ["updates": [["entry_id": entry.id.uuidString, "changes": changes]]]
+        )
     }
 
     public func notifyEntryDeleted(id: UUID) {
-        guard case .joined = status, let device = portalDevice else { return }
-        device.bus.post(["type": "delete-entry", "payload": ["entry-id": id.uuidString]])
+        guard case .joined(let labID) = status else { return }
+        sendNotification(
+            from: "/labs/\(labID)/notebook/entries",
+            type: "+remove",
+            payload: ["entry_ids": [id.uuidString]]
+        )
+    }
+
+    public func reorderEntries(_ order: [UUID]) {
+        guard case .joined(let labID) = status else { return }
+        sendNotification(
+            from: "/labs/\(labID)/notebook/entries",
+            type: "+reorder",
+            payload: ["order": order.map { $0.uuidString }]
+        )
+    }
+
+    public func registerPushSubscriptions(_ subs: [JSONObject]) {
+        guard let localUser else { return }
+        sendNotification(
+            from: "/users/\(localUser.id)/push_subscriptions",
+            type: "+add",
+            payload: ["subscriptions": subs]
+        )
+    }
+
+    public func unregisterPushSubscriptions(_ subs: [JSONObject]) {
+        guard let localUser else { return }
+        sendNotification(
+            from: "/users/\(localUser.id)/push_subscriptions",
+            type: "+remove",
+            payload: ["subscriptions": subs]
+        )
+    }
+
+    public func removeMembers(_ userIDs: [String]) async {
+        guard case .joined(let labID) = status else { return }
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            sendRequest(
+                from: "/labs/\(labID)/members",
+                type: ".remove",
+                payload: ["user_ids": userIDs]
+            ) { _ in cont.resume() }
+        }
     }
 
     // MARK: - Lab Operations
 
     private func createLab() {
-        guard let device = portalDevice else { return }
-        device.bus.post(["type": "create-lab", "payload": [:] as JSONObject])
         setStatus(.connecting)
+        sendRequest(from: "/labs", type: ".create") { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let payload):
+                guard let labObj = payload["lab"] as? JSONObject,
+                    let labID = labObj["id"] as? String,
+                    let localUser = self.localUser
+                else { Task { await self.stop() }; return }
+                self.labID = labID
+                self.setStatus(.joined(labID: labID))
+                let now = ISO8601DateFormatter().string(from: Date())
+                self.members = [Member(
+                    user: localUser,
+                    role: .owner,
+                    presence: .online,
+                    joinedAt: now,
+                    lastSeenAt: now
+                )]
+                var collabState = try! self.store.fetchCollaborationState()
+                collabState.labID = labID
+                try! self.store.save(collabState)
+                let entries = try! self.store.fetchNotebookEntries()
+                for entry in entries {
+                    self.notifyEntryAdded(entry)
+                }
+            case .failure(let failure):
+                self.setStatus(.error(message: failure.message))
+            }
+        }
     }
 
     private func joinLab(labID: String) {
-        guard let device = portalDevice else { return }
-        device.bus.post(["type": "join-lab", "payload": ["id": labID]])
         setStatus(.connecting)
+        sendRequest(from: "/labs/\(labID)", type: ".join") { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let payload):
+                self.ingestJoinSnapshot(payload: payload, labID: labID)
+            case .failure(let failure):
+                self.setStatus(.error(message: failure.message))
+            }
+        }
+    }
+
+    private func ingestJoinSnapshot(payload: JSONObject, labID: String) {
+        guard let localUser = self.localUser,
+            let memberDicts = payload["members"] as? [JSONObject],
+            let chatObj = payload["chat"] as? JSONObject,
+            let chatMsgs = chatObj["messages"] as? [JSONObject],
+            let notebookObj = payload["notebook"] as? JSONObject,
+            let notebookEntries = notebookObj["entries"] as? [JSONObject]
+        else { Task { await self.stop() }; return }
+
+        let binaryIndices = notebookObj["binary_indices"] as? [Any] ?? []
+
+        self.labID = labID
+        setStatus(.joined(labID: labID))
+        members = memberDicts.compactMap(Member.fromJSON)
+        chatMessages = chatMsgs.compactMap { ChatMessage.fromJSON($0, localUser: localUser) }
+
+        var collabState = try! store.fetchCollaborationState()
+        collabState.labID = labID
+        try! store.save(collabState)
+
+        // Note: .join response data (binary blob) is fetched separately via
+        // the last-data on the message; see handleBusEvent.
+        var snapshot: [NotebookEntry] = []
+        for (i, obj) in notebookEntries.enumerated() {
+            let bin: [UInt8]? = extractBinary(indices: binaryIndices, at: i, from: lastMessageData)
+            guard let entry = NotebookEntry.fromJSON(obj, binaryData: bin) else {
+                continue
+            }
+            snapshot.append(entry)
+        }
+        onNotebookEntriesReceived?(snapshot)
+    }
+
+    private var lastMessageData: [UInt8]? = nil
+
+    private func extractBinary(indices: [Any], at i: Int, from data: [UInt8]?) -> [UInt8]? {
+        guard i < indices.count else { return nil }
+        guard let idx = indices[i] as? JSONObject,
+            let start = idx["start"] as? Int,
+            let length = idx["length"] as? Int,
+            let data = data,
+            start + length <= data.count
+        else { return nil }
+        return Array(data[start..<start + length])
     }
 
     // MARK: - Bus Event Handling
@@ -199,166 +408,124 @@ public final class CollaborationSession {
 
         case .message(message: let anyValue, let data):
             guard let dict = anyValue as? JSONObject,
-                let type = dict["type"] as? String,
-                let payload = dict["payload"] as? JSONObject
-            else {
-                await stop()
+                let type = dict["type"] as? String
+            else { await stop(); return }
+
+            let id = dict["id"] as? String
+            let payload = (dict["payload"] as? JSONObject) ?? [:]
+            let errorObj = dict["error"] as? JSONObject
+
+            if type == "+result" || type == "+error" {
+                guard let id, let cont = pendingRequests.removeValue(forKey: id) else { return }
+                if type == "+result" {
+                    self.lastMessageData = data
+                    cont(.success(payload))
+                    self.lastMessageData = nil
+                } else {
+                    let code = errorObj?["code"] as? String ?? "unknown"
+                    let msg = errorObj?["message"] as? String ?? "request failed"
+                    cont(.failure(AuthFailure(domain: "portal", code: code, message: msg)))
+                }
                 return
             }
 
-            await handleMessage(type: type, payload: payload, data: data)
+            guard let from = dict["from"] as? String else { return }
+            lastMessageData = data
+            handleNotification(from: from, type: type, payload: payload, data: data)
+            lastMessageData = nil
         }
     }
 
-    private func handleMessage(type: String, payload: JSONObject, data: [UInt8]?) async {
-        switch type {
-        case "welcome":
-            if let userObj = payload["user"] as? JSONObject, let user = UserInfo.fromJSON(userObj) {
-                localUser = user
+    private func handleNotification(from: String, type: String, payload: JSONObject, data: [UInt8]?) {
+        let segs = from.hasPrefix("/") ? from.dropFirst()
+            .split(separator: "/", omittingEmptySubsequences: true).map(String.init) : []
+
+        switch (type, segs) {
+        case ("+welcome", ["session"]):
+            if let userObj = payload["user"] as? JSONObject, let u = UserInfo.fromJSON(userObj) {
+                localUser = u
+            }
+            if let push = payload["push"] as? JSONObject,
+                let key = push["vapid_public_key"] as? String {
+                vapidPublicKey = key
             }
 
-        case "lab-created":
-            guard let labObj = payload["lab"] as? JSONObject,
-                let labID = labObj["id"] as? String,
-                let localUser
-            else {
-                await stop()
-                return
-            }
-
-            self.labID = labID
-            setStatus(.joined(labID: labID))
-            participants = [localUser]
-
-            var collabState = try! store.fetchCollaborationState()
-            collabState.labID = labID
-            try! store.save(collabState)
-
-            let entries = try! store.fetchNotebookEntries()
-            for entry in entries {
-                notifyEntryAdded(entry)
-            }
-
-        case "lab-joined":
-            guard
-                let labObj = payload["lab"] as? JSONObject,
-                let labID = labObj["id"] as? String,
-                let participantDicts = payload["participants"] as? [JSONObject],
-                let chatObj = payload["chat"] as? JSONObject,
-                let chatMsgs = chatObj["messages"] as? [JSONObject],
-                let notebookObj = payload["notebook"] as? JSONObject,
-                let notebookEntries = notebookObj["entries"] as? [JSONObject],
-                let binaryObj = payload["binary"] as? JSONObject,
-                let binaryIndices = binaryObj["indices"] as? [Any],
-                binaryIndices.count == notebookEntries.count,
-                let localUser
-            else {
-                await stop()
-                return
-            }
-
-            var snapshot: [NotebookEntry] = []
-            for (i, obj) in notebookEntries.enumerated() {
-                let indexInfo = binaryIndices[i]
-                let binaryData: [UInt8]?
-                if let idx = indexInfo as? JSONObject,
-                    let start = idx["start"] as? Int,
-                    let length = idx["length"] as? Int
-                {
-                    guard let slice = data?[start..<start + length] else {
-                        await stop()
-                        return
-                    }
-                    binaryData = Array(slice)
-                } else {
-                    binaryData = nil
+        case ("+add", let s) where s.count == 3 && s[0] == "labs" && s[2] == "members":
+            guard let arr = payload["members"] as? [JSONObject] else { return }
+            for obj in arr {
+                guard let member = Member.fromJSON(obj) else { continue }
+                if !members.contains(where: { $0.user.id == member.user.id }) {
+                    members.append(member)
+                    onMemberAdded?(member)
                 }
+            }
 
-                guard let entry = NotebookEntry.fromJSON(obj, binaryData: binaryData) else {
-                    await stop()
-                    return
+        case ("+remove", let s) where s.count == 3 && s[0] == "labs" && s[2] == "members":
+            guard let ids = payload["user_ids"] as? [String] else { return }
+            for userID in ids {
+                members.removeAll { $0.user.id == userID }
+                onMemberRemoved?(userID)
+            }
+
+        case ("+presence", let s) where s.count == 3 && s[0] == "labs" && s[2] == "members":
+            guard let changes = payload["changes"] as? [JSONObject] else { return }
+            for change in changes {
+                guard let userID = change["user_id"] as? String,
+                    let presenceRaw = change["presence"] as? String,
+                    let presence = Member.Presence(rawValue: presenceRaw),
+                    let lastSeen = change["last_seen_at"] as? String,
+                    let idx = members.firstIndex(where: { $0.user.id == userID })
+                else { continue }
+                members[idx].presence = presence
+                members[idx].lastSeenAt = lastSeen
+                onMemberPresenceChanged?(userID, presence)
+            }
+
+        case ("+add", let s) where s.count == 4 && s[0] == "labs" && s[2] == "notebook" && s[3] == "entries":
+            guard let entries = payload["entries"] as? [JSONObject] else { return }
+            let binaryIndices = payload["binary_indices"] as? [Any] ?? []
+            for (i, obj) in entries.enumerated() {
+                let bin = extractBinary(indices: binaryIndices, at: i, from: data)
+                guard let entry = NotebookEntry.fromJSON(obj, binaryData: bin) else { continue }
+                onNotebookEntryAdded?(entry)
+            }
+
+        case ("+update", let s) where s.count == 4 && s[0] == "labs" && s[2] == "notebook" && s[3] == "entries":
+            guard let updates = payload["updates"] as? [JSONObject] else { return }
+            for u in updates {
+                guard let entryIdStr = u["entry_id"] as? String,
+                    let entryId = UUID(uuidString: entryIdStr),
+                    let changes = u["changes"] as? JSONObject
+                else { continue }
+                onNotebookEntryUpdated?(entryId, changes)
+            }
+
+        case ("+remove", let s) where s.count == 4 && s[0] == "labs" && s[2] == "notebook" && s[3] == "entries":
+            guard let ids = payload["entry_ids"] as? [String] else { return }
+            for idStr in ids {
+                if let id = UUID(uuidString: idStr) {
+                    onNotebookEntryDeleted?(id)
                 }
-                snapshot.append(entry)
             }
 
-            self.labID = labID
-            setStatus(.joined(labID: labID))
-            participants = participantDicts.compactMap { UserInfo.fromJSON($0) }
-            chatMessages = chatMsgs.compactMap { ChatMessage.fromJSON($0, localUser: localUser) }
-
-            var collabState = try! store.fetchCollaborationState()
-            collabState.labID = labID
-            try! store.save(collabState)
-
-            onNotebookEntriesReceived?(snapshot)
-
-        case "entry-added":
-            guard let entryObj = payload["entry"] as? JSONObject,
-                let entry = NotebookEntry.fromJSON(entryObj, binaryData: data)
-            else {
-                await stop()
-                return
-            }
-            onNotebookEntryAdded?(entry)
-
-        case "entry-updated":
-            guard let updatedObj = payload["entry"] as? JSONObject,
-                let updated = NotebookEntry.fromJSON(updatedObj, binaryData: data)
-            else {
-                await stop()
-                return
-            }
-            onNotebookEntryUpdated?(updated)
-
-        case "entry-deleted":
-            guard let entryObj = payload["entry"] as? JSONObject,
-                let rawId = entryObj["id"] as? String,
-                let id = UUID(uuidString: rawId)
-            else {
-                await stop()
-                return
-            }
-            onNotebookEntryDeleted?(id)
-
-        case "entries-reordered":
-            guard let rawOrder = payload["order"] as? [String] else {
-                await stop()
-                return
-            }
+        case ("+reorder", let s) where s.count == 4 && s[0] == "labs" && s[2] == "notebook" && s[3] == "entries":
+            guard let rawOrder = payload["order"] as? [String] else { return }
             let order = rawOrder.compactMap(UUID.init(uuidString:))
-            if order.count != rawOrder.count {
-                await stop()
-                return
-            }
-            onEntriesReordered?(order)
-
-        case "participant-joined":
-            if let userObj = payload["user"] as? JSONObject, let user = UserInfo.fromJSON(userObj) {
-                participants.append(user)
-                onParticipantJoined?(user)
+            if order.count == rawOrder.count {
+                onEntriesReordered?(order)
             }
 
-        case "participant-left":
-            if let userObj = payload["user"] as? JSONObject, let userID = userObj["id"] as? String {
-                participants.removeAll { $0.id == userID }
-                onParticipantLeft?(userID)
+        case ("+add", let s) where s.count == 4 && s[0] == "labs" && s[2] == "chat" && s[3] == "messages":
+            guard let localUser, let msgs = payload["messages"] as? [JSONObject] else { return }
+            for m in msgs {
+                if let message = ChatMessage.fromJSON(m, localUser: localUser) {
+                    chatMessages.append(message)
+                    onChatMessageReceived?(message)
+                }
             }
-
-        case "chat-message":
-            if let localUser,
-                let messageObj = payload["message"] as? JSONObject,
-                let message = ChatMessage.fromJSON(messageObj, localUser: localUser)
-            {
-                chatMessages.append(message)
-                onChatMessageReceived?(message)
-            }
-
-        case "error":
-            let msg = String(describing: payload["code"] ?? "protocol error")
-            setStatus(.error(message: msg))
 
         default:
-            await stop()
+            break
         }
     }
 

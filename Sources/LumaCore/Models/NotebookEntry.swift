@@ -4,7 +4,29 @@ import GRDB
 public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
     public static let databaseTableName = "notebook_entry"
 
+    public enum Kind: String, Codable, Sendable { case note, capture }
+
+    public struct Author: Codable, Hashable, Sendable {
+        public let id: String
+        public let name: String
+        public let avatarURL: String
+
+        public init(id: String, name: String, avatarURL: String) {
+            self.id = id
+            self.name = name
+            self.avatarURL = avatarURL
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case id
+            case name
+            case avatarURL = "avatar_url"
+        }
+    }
+
     public var id: UUID
+    public var author: Author?
+    public var kind: Kind
     public var timestamp: Date
     public var title: String
     public var details: String
@@ -12,10 +34,19 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
     public var binaryData: Data?
     public var sessionID: UUID?
     public var processName: String?
-    public var isUserNote: Bool
+
+    /// True when the entry is a user-authored note (vs. a capture from an
+    /// instrumented process). Maintained as a computed alias for the
+    /// `kind` enum so existing callers don't have to churn.
+    public var isUserNote: Bool {
+        get { kind == .note }
+        set { kind = newValue ? .note : .capture }
+    }
 
     enum CodingKeys: String, CodingKey {
         case id
+        case author
+        case kind
         case timestamp
         case title
         case details
@@ -23,11 +54,11 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
         case binaryData = "binary_data"
         case sessionID = "session_id"
         case processName = "process_name"
-        case isUserNote = "is_user_note"
     }
 
     public init(
         id: UUID = UUID(),
+        author: Author? = nil,
         timestamp: Date = .now,
         title: String,
         details: String,
@@ -38,6 +69,8 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
         isUserNote: Bool = false
     ) {
         self.id = id
+        self.author = author
+        self.kind = isUserNote ? .note : .capture
         self.timestamp = timestamp
         self.title = title
         self.details = details
@@ -45,7 +78,6 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
         self.binaryData = binaryData
         self.sessionID = sessionID
         self.processName = processName
-        self.isUserNote = isUserNote
     }
 
     public func toJSON() -> [String: Any] {
@@ -55,21 +87,29 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
 
         var obj: [String: Any] = [
             "id": id.uuidString,
+            "kind": kind.rawValue,
             "timestamp": formatter.string(from: timestamp),
             "title": title,
             "details": details,
-            "is-user-note": isUserNote,
         ]
 
+        if let author {
+            obj["author"] = [
+                "id": author.id,
+                "name": author.name,
+                "avatar": author.avatarURL,
+            ]
+        }
+
         if let processName {
-            obj["process-name"] = processName
+            obj["process_name"] = processName
         }
 
         if let val = jsValue,
             let data = try? JSONEncoder().encode(val),
             let jsonObject = try? JSONSerialization.jsonObject(with: data)
         {
-            obj["js-value"] = jsonObject
+            obj["js_value"] = jsonObject
         }
 
         return obj
@@ -85,13 +125,23 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
             let timestampString = obj["timestamp"] as? String,
             let ts = formatter.date(from: timestampString),
             let title = obj["title"] as? String,
-            let details = obj["details"] as? String
+            let details = obj["details"] as? String,
+            let kindRaw = obj["kind"] as? String,
+            let kind = Kind(rawValue: kindRaw)
         else {
             return nil
         }
 
+        var author: Author? = nil
+        if let authorObj = obj["author"] as? [String: Any],
+            let authorId = authorObj["id"] as? String,
+            let authorName = authorObj["name"] as? String {
+            let avatar = (authorObj["avatar"] as? String) ?? ""
+            author = Author(id: authorId, name: authorName, avatarURL: avatar)
+        }
+
         var jsValue: JSInspectValue? = nil
-        if let raw = obj["js-value"] {
+        if let raw = obj["js_value"] {
             if let data = try? JSONSerialization.data(withJSONObject: raw),
                 let decoded = try? JSONDecoder().decode(JSInspectValue.self, from: data)
             {
@@ -99,18 +149,18 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
             }
         }
 
-        let isUserNote = (obj["is-user-note"] as? Bool) ?? true
-        let processName = obj["process-name"] as? String
+        let processName = obj["process_name"] as? String
 
         return NotebookEntry(
             id: uuid,
+            author: author,
             timestamp: ts,
             title: title,
             details: details,
             jsValue: jsValue,
             binaryData: data.map { Data($0) },
             processName: processName,
-            isUserNote: isUserNote
+            isUserNote: kind == .note
         )
     }
 }

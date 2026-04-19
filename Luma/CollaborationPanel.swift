@@ -244,15 +244,16 @@ struct CollaborationPanel: View {
     private var participantsSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("Participants")
+                Text("Members")
                     .font(.subheadline).bold()
                 Spacer()
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
-                    ForEach(collaboration.participants) { user in
-                        avatarView(for: user)
+                    ForEach(collaboration.members) { member in
+                        avatarView(for: member.user)
+                            .opacity(member.presence == .online ? 1.0 : 0.55)
                     }
                 }
                 .padding(.vertical, 2)
