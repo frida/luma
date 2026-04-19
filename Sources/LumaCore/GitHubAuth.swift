@@ -150,7 +150,7 @@ public final class GitHubAuth {
     private func requestDeviceCode() async throws -> DeviceCodeResponse {
         var req = URLRequest(url: URL(string: "https://github.com/login/device/code")!)
         req.httpMethod = "POST"
-        req.httpBody = "client_id=\(clientID)&scope=read:user".data(using: .utf8)
+        req.httpBody = "client_id=\(clientID)&scope=read:user%20user:email".data(using: .utf8)
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         let (data, _) = try await URLSession.shared.data(for: req)
         return try JSONDecoder().decode(DeviceCodeResponse.self, from: data)
