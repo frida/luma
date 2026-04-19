@@ -29,6 +29,7 @@ import UniformTypeIdentifiers
         func applicationDidFinishLaunching(_ notification: Notification) {
             NSWindow.allowsAutomaticWindowTabbing = false
             NSApplication.shared.registerForRemoteNotifications()
+            LocalNotifier.requestAuthorization()
         }
 
         func application(_ application: NSApplication, open urls: [URL]) {
