@@ -1,16 +1,8 @@
 import Adw
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
+import Frida
 import Gtk
 import LumaCore
-
-struct NpmPackageResult: Sendable {
-    let name: String
-    let version: String
-    let descriptionText: String?
-}
 
 @MainActor
 final class PackageSearchDialog {
@@ -25,13 +17,14 @@ final class PackageSearchDialog {
     private let statusLabel: Label
     private let errorLabel: Label
 
-    private let formBox: Box
-    private let versionEntry: Entry
+    private let specifierEntry: Entry
     private let aliasEntry: Entry
     private let installButton: Button
     private let installSpinner: Adw.Spinner
 
-    private var results: [NpmPackageResult] = []
+    private let manager = PackageManager()
+
+    private var results: [Package] = []
     private var selectedIndex: Int? = nil
     private var searchTask: Task<Void, Never>?
     private var debounceTask: Task<Void, Never>?
@@ -93,18 +86,18 @@ final class PackageSearchDialog {
         listRow.append(child: listTrailingSpacer)
         widget.append(child: listRow)
 
-        formBox = Box(orientation: .vertical, spacing: 6)
+        let formBox = Box(orientation: .vertical, spacing: 6)
 
-        let versionRow = Box(orientation: .horizontal, spacing: 8)
-        let versionLabel = Label(str: "Version specifier:")
-        versionLabel.halign = .start
-        versionLabel.setSizeRequest(width: 140, height: -1)
-        versionRow.append(child: versionLabel)
-        versionEntry = Entry()
-        versionEntry.placeholderText = "optional, e.g. ^1.0.0"
-        versionEntry.hexpand = true
-        versionRow.append(child: versionEntry)
-        formBox.append(child: versionRow)
+        let specifierRow = Box(orientation: .horizontal, spacing: 8)
+        let specifierLabel = Label(str: "Install:")
+        specifierLabel.halign = .start
+        specifierLabel.setSizeRequest(width: 140, height: -1)
+        specifierRow.append(child: specifierLabel)
+        specifierEntry = Entry()
+        specifierEntry.placeholderText = "name or name@version"
+        specifierEntry.hexpand = true
+        specifierRow.append(child: specifierEntry)
+        formBox.append(child: specifierRow)
 
         let aliasRow = Box(orientation: .horizontal, spacing: 8)
         let aliasNameLabel = Label(str: "Global alias:")
@@ -124,13 +117,12 @@ final class PackageSearchDialog {
         installSpinner = Adw.Spinner()
         installSpinner.visible = false
         installRow.append(child: installSpinner)
-        installButton = Button(label: "Install")
+        installButton = Button(label: "Add Package")
         installButton.add(cssClass: "suggested-action")
         installButton.sensitive = false
         installRow.append(child: installButton)
         formBox.append(child: installRow)
 
-        formBox.visible = false
         widget.append(child: formBox)
 
         searchEntry.onActivate { [weak self] _ in
@@ -141,15 +133,23 @@ final class PackageSearchDialog {
         }
         listBox.onRowSelected { [weak self] _, row in
             MainActor.assumeIsolated {
-                guard let self, let row else { return }
+                guard let self else { return }
+                guard let row else {
+                    self.selectedIndex = nil
+                    self.updateInstallButtonSensitivity()
+                    return
+                }
                 let idx = Int(row.index)
                 guard idx >= 0, idx < self.results.count else { return }
                 self.selectedIndex = idx
                 self.onResultSelected(self.results[idx])
             }
         }
+        specifierEntry.onChanged { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateInstallButtonSensitivity() }
+        }
         installButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.installSelected() }
+            MainActor.assumeIsolated { self?.installPackage() }
         }
     }
 
@@ -209,11 +209,14 @@ final class PackageSearchDialog {
         showStatus("Searching…")
         searchSpinner.visible = true
 
+        let manager = self.manager
         searchTask = Task { @MainActor [weak self] in
-            let outcome: Result<[NpmPackageResult], Error>
+            let outcome: Result<[Package], Swift.Error>
             do {
-                let pkgs = try await Self.fetchNpmSearch(query: query, limit: 25)
-                outcome = .success(pkgs)
+                let options = PackageSearchOptions()
+                options.limit = 25
+                let result = try await manager.search(query: query, options: options)
+                outcome = .success(result.packages)
             } catch {
                 outcome = .failure(error)
             }
@@ -242,52 +245,10 @@ final class PackageSearchDialog {
         }
     }
 
-    private static func fetchNpmSearch(query: String, limit: Int) async throws -> [NpmPackageResult] {
-        var components = URLComponents(string: "https://registry.npmjs.org/-/v1/search")!
-        components.queryItems = [
-            URLQueryItem(name: "text", value: "\(query) keywords:frida-gum"),
-            URLQueryItem(name: "from", value: "0"),
-            URLQueryItem(name: "size", value: String(limit)),
-        ]
-        guard let url = components.url else {
-            throw NSError(domain: "PackageSearchDialog", code: 1, userInfo: [NSLocalizedDescriptionKey: "invalid URL"])
-        }
-
-        var request = URLRequest(url: url)
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw NSError(
-                domain: "PackageSearchDialog",
-                code: http.statusCode,
-                userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode) from npm registry"])
-        }
-
-        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let objects = root["objects"] as? [[String: Any]]
-        else {
-            throw NSError(
-                domain: "PackageSearchDialog",
-                code: 2,
-                userInfo: [NSLocalizedDescriptionKey: "unexpected npm response shape"])
-        }
-
-        return objects.compactMap { object -> NpmPackageResult? in
-            guard let pkg = object["package"] as? [String: Any],
-                  let name = pkg["name"] as? String,
-                  let version = pkg["version"] as? String
-            else { return nil }
-            let desc = pkg["description"] as? String
-            return NpmPackageResult(name: name, version: version, descriptionText: desc)
-        }
-    }
-
     private func rebuildList() {
         listBox.removeAll()
         selectedIndex = nil
-        formBox.visible = false
-        installButton.sensitive = false
+        updateInstallButtonSensitivity()
 
         for pkg in results {
             let row = ListBoxRow()
@@ -317,41 +278,58 @@ final class PackageSearchDialog {
         }
     }
 
-    private func onResultSelected(_ pkg: NpmPackageResult) {
-        formBox.visible = true
-        installButton.sensitive = !isInstalling
-        if (versionEntry.text ?? "").isEmpty {
-            versionEntry.text = pkg.version
-        }
+    private func onResultSelected(_ pkg: Package) {
+        specifierEntry.text = "\(pkg.name)@\(pkg.version)"
         if (aliasEntry.text ?? "").isEmpty, let alias = Self.defaultGlobalAlias(for: pkg.name) {
             aliasEntry.text = alias
         }
+        updateInstallButtonSensitivity()
     }
 
-    private func installSelected() {
-        guard !isInstalling, let engine, let idx = selectedIndex, idx < results.count else { return }
-        let pkg = results[idx]
-        let name = pkg.name
-        let versionSpec = (versionEntry.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    private func updateInstallButtonSensitivity() {
+        let hasSpecifier = !(specifierEntry.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasSelection = selectedIndex != nil
+        installButton.sensitive = (hasSpecifier || hasSelection) && !isInstalling
+    }
+
+    private func installPackage() {
+        guard !isInstalling, let engine else { return }
+
+        let rawSpec = (specifierEntry.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let name: String
+        let versionSpec: String
+        if !rawSpec.isEmpty {
+            let parsed = Self.parsePackageSpecifier(rawSpec)
+            guard !parsed.name.isEmpty else { return }
+            name = parsed.name
+            versionSpec = parsed.versionSpec ?? "latest"
+        } else if let idx = selectedIndex, idx < results.count {
+            let pkg = results[idx]
+            name = pkg.name
+            versionSpec = pkg.version
+        } else {
+            return
+        }
+
         let aliasText = (aliasEntry.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let alias: String? = aliasText.isEmpty ? nil : aliasText
-        let spec: String? = versionSpec.isEmpty ? nil : versionSpec
 
         isInstalling = true
-        installButton.sensitive = false
+        updateInstallButtonSensitivity()
         installSpinner.visible = true
         showError(nil)
-        showStatus("Installing \(name)\(spec.map { "@\($0)" } ?? "")…")
+        showStatus("Installing \(name)@\(versionSpec)…")
 
         Task { @MainActor in
             defer {
                 self.isInstalling = false
-                self.installButton.sensitive = true
                 self.installSpinner.visible = false
+                self.updateInstallButtonSensitivity()
             }
             do {
-                _ = try await engine.installPackage(name: name, versionSpec: spec, globalAlias: alias)
-                self.showStatus("Installed \(name).")
+                _ = try await engine.installPackage(name: name, versionSpec: versionSpec, globalAlias: alias)
+                self.showStatus("Installed \(name)@\(versionSpec).")
                 self.onInstalled?()
                 _ = self.hostDialog?.close()
             } catch {
@@ -359,6 +337,17 @@ final class PackageSearchDialog {
                 self.showError("Install failed: \(error.localizedDescription)")
             }
         }
+    }
+
+    private static func parsePackageSpecifier(_ spec: String) -> (name: String, versionSpec: String?) {
+        if let atIndex = spec.lastIndex(of: "@"), atIndex != spec.startIndex {
+            let namePart = String(spec[..<atIndex])
+            let versionPart = String(spec[spec.index(after: atIndex)...])
+            if !namePart.isEmpty, !versionPart.isEmpty {
+                return (namePart, versionPart)
+            }
+        }
+        return (spec, nil)
     }
 
     private static func defaultGlobalAlias(for name: String) -> String? {
