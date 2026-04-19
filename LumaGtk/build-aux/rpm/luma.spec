@@ -14,7 +14,6 @@ Requires:       gtk4
 Requires:       libadwaita
 Requires:       webkitgtk6.0
 Requires:       libsoup3
-Requires:       libxml2
 
 %description
 Luma is an interactive dynamic instrumentation app built on Frida.

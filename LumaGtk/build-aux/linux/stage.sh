@@ -1,32 +1,27 @@
 #!/usr/bin/env bash
 # Stage a /usr tree ready for rpmbuild/dpkg-deb.
 #
-# usage: stage.sh STAGE_DIR FRIDA_LIBDIR SWIFT_LIBDIR
+# usage: stage.sh STAGE_DIR BINARY FRIDA_LIBDIR SWIFT_LIBDIR LIBXML2
 #
-#   STAGE_DIR    - empty directory that will be populated with /usr/...
-#   FRIDA_LIBDIR - directory holding libfrida-core-1.0.so.* and frida-1.0/
-#   SWIFT_LIBDIR - directory holding the Swift runtime .so files
-#                  (usually .../lib/swift/linux)
+#   STAGE_DIR     - directory to populate with the installable /usr tree
+#   BINARY        - path to the freshly built LumaGtk executable
+#   FRIDA_LIBDIR  - directory holding libfrida-core-1.0.so.* and frida-1.0/
+#   SWIFT_LIBDIR  - directory holding the Swift runtime .so files
+#                   (usually .../lib/swift/linux)
+#   LIBXML2       - libxml2 .so to ship beside libFoundationXML; renamed to
+#                   libxml2.so.2 so the legacy SONAME the Swift runtime
+#                   expects keeps resolving regardless of host ABI bumps
 
 set -euo pipefail
 
-if [ $# -ne 3 ]; then
-    echo "usage: $0 STAGE_DIR FRIDA_LIBDIR SWIFT_LIBDIR" >&2
-    exit 1
-fi
-
 stage="$1"
-frida_libdir="$2"
-swift_libdir="$3"
+exe="$2"
+frida_libdir="$3"
+swift_libdir="$4"
+libxml2="$5"
 
 here="$(dirname "$(readlink -f "$0")")"
 lumagtk_root="$(readlink -f "$here/../..")"
-
-exe="$(ls "$lumagtk_root"/.build/*/release/LumaGtk 2>/dev/null | head -1)"
-if [ -z "$exe" ]; then
-    echo "LumaGtk binary not found under $lumagtk_root/.build/*/release/" >&2
-    exit 1
-fi
 
 luma_lib="$stage/usr/lib/luma"
 install -d "$stage/usr/bin" \
@@ -46,29 +41,13 @@ for so in "$swift_libdir"/*.so; do
     cp -P "$so" "$luma_lib/swift/"
 done
 
-# Swift's libFoundationXML keeps DT_NEEDED on libxml2.so.2, but
-# Ubuntu 25.10+ (and eventually Fedora) ships only libxml2.so.16.
-# Bundle whichever libxml2 the build host offers under the legacy
-# SONAME so the app runs on distros that have already moved on.
-xml_src=""
-for candidate in "$frida_libdir/libxml2.so.2" "$frida_libdir/libxml2.so.16" \
-                 /usr/lib/x86_64-linux-gnu/libxml2.so.2 /usr/lib/x86_64-linux-gnu/libxml2.so.16 \
-                 /usr/lib64/libxml2.so.2 /usr/lib64/libxml2.so.16; do
-    if [ -e "$candidate" ]; then
-        xml_src="$(readlink -f "$candidate")"
-        break
-    fi
-done
-if [ -n "$xml_src" ]; then
-    install -m644 "$xml_src" "$luma_lib/swift/libxml2.so.2"
-fi
+install -m644 "$libxml2" "$luma_lib/swift/libxml2.so.2"
 
 strip --strip-unneeded "$stage/usr/bin/luma"
 find "$luma_lib" -name '*.so*' -type f -exec strip --strip-unneeded {} +
 
 patchelf --set-rpath '$ORIGIN/../lib/luma:$ORIGIN/../lib/luma/swift' "$stage/usr/bin/luma"
 for so in "$luma_lib/frida-1.0"/*/*.so; do
-    [ -f "$so" ] || continue
     patchelf --set-rpath '$ORIGIN/../..' "$so"
 done
 
