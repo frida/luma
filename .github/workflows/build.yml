@@ -772,6 +772,11 @@ jobs:
               }
           }
 
+      - name: Install WiX Toolset
+        if: matrix.win_arch == 'arm64'
+        shell: pwsh
+        run: choco install -y --no-progress wixtoolset
+
       - name: Package MSI
         shell: pwsh
         run: |
