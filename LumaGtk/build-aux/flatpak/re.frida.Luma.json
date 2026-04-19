@@ -88,8 +88,7 @@
             "build-commands": [
                 "tar xzf swift.tar.gz --strip-components=2 -C /app",
                 "rm swift.tar.gz",
-                "mkdir -p /app/lib",
-                "ln -sf /usr/lib/x86_64-linux-gnu/libxml2.so.16 /app/lib/libxml2.so.2"
+                "ln -sf /usr/lib/x86_64-linux-gnu/libxml2.so.16 /app/lib/swift/linux/libxml2.so.2"
             ],
             "sources": [
                 {
