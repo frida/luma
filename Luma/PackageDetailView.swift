@@ -18,11 +18,18 @@ struct PackageDetailView: View {
             HStack {
                 Image(systemName: "shippingbox")
                     .font(.largeTitle)
-                VStack(alignment: .leading) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(package.name)
                         .font(.title)
                     Text("Installed version \(package.version)")
                         .foregroundStyle(.secondary)
+                    if let alias = package.globalAlias, !alias.isEmpty {
+                        Text("global: \(alias)")
+                            .font(.caption)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.quaternary, in: .capsule)
+                    }
                 }
                 Spacer()
             }
@@ -203,6 +210,10 @@ struct PackageDetailView: View {
                         rel = String(url.path.dropFirst(basePath.count + 1))
                     } else {
                         rel = url.lastPathComponent
+                    }
+
+                    if rel.split(separator: "/").contains(where: { $0.hasPrefix(".") }) {
+                        continue
                     }
 
                     let resourceValues = try? url.resourceValues(forKeys: [.isDirectoryKey])

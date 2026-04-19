@@ -262,10 +262,6 @@ final class PackageDetailPane {
             if rel.split(separator: "/").contains(where: { $0.hasPrefix(".") }) {
                 continue
             }
-            let depth = rel.split(separator: "/").count
-            if depth > 3 {
-                continue
-            }
             let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
             entries.append((rel, isDir))
         }
