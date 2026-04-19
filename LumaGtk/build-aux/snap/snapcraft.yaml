@@ -30,14 +30,18 @@ parts:
     override-build: |
       curl -sL "https://download.swift.org/swift-6.2-release/ubuntu2404/swift-6.2-RELEASE/swift-6.2-RELEASE-ubuntu24.04.tar.gz" \
         -o swift.tar.gz
-      tar xzf swift.tar.gz --strip-components=2 -C "$CRAFT_PART_INSTALL"
+      # Unpack under /usr/local so the top-level bin/ and lib/ don't
+      # collide with the root-level symlinks the luma part's
+      # stage-packages also install.
+      install -d "$CRAFT_PART_INSTALL/usr/local"
+      tar xzf swift.tar.gz --strip-components=2 -C "$CRAFT_PART_INSTALL/usr/local"
       rm swift.tar.gz
       # core26 ships libxml2.so.16 only; Swift 6.2's ubuntu24 tarball
       # links libFoundationXML against libxml2.so.2. libFoundationXML's
       # DT_RUNPATH is $ORIGIN, so alias has to sit beside it under
       # lib/swift/linux.
       ln -sf /usr/lib/x86_64-linux-gnu/libxml2.so.16 \
-        "$CRAFT_PART_INSTALL/lib/swift/linux/libxml2.so.2"
+        "$CRAFT_PART_INSTALL/usr/local/lib/swift/linux/libxml2.so.2"
     build-packages:
       - curl
       - libxml2-16
@@ -49,7 +53,8 @@ parts:
     override-build: |
       curl -sL "https://nodejs.org/dist/v20.18.0/node-v20.18.0-linux-x64.tar.xz" \
         -o node.tar.xz
-      tar xJf node.tar.xz --strip-components=1 -C "$CRAFT_PART_INSTALL"
+      install -d "$CRAFT_PART_INSTALL/usr/local"
+      tar xJf node.tar.xz --strip-components=1 -C "$CRAFT_PART_INSTALL/usr/local"
       rm node.tar.xz
     build-packages:
       - curl
@@ -61,7 +66,7 @@ parts:
     after: [nodejs]
     plugin: nil
     override-build: |
-      export PATH="$CRAFT_STAGE/bin:$PATH"
+      export PATH="$CRAFT_STAGE/usr/local/bin:$PATH"
       git clone --depth 1 https://github.com/frida/frida-core.git src
       cd src
       ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr/local \
@@ -119,7 +124,7 @@ parts:
     source: https://github.com/frida/luma.git
     source-branch: cross-platform
     override-build: |
-      export PATH="$CRAFT_STAGE/usr/bin:$CRAFT_STAGE/usr/local/bin:$CRAFT_STAGE/bin:$PATH"
+      export PATH="$CRAFT_STAGE/usr/local/bin:$PATH"
       export PKG_CONFIG_PATH="$CRAFT_STAGE/usr/local/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
       export LD_LIBRARY_PATH="$CRAFT_STAGE/usr/local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
       export C_INCLUDE_PATH="$CRAFT_STAGE/usr/local/include${C_INCLUDE_PATH:+:$C_INCLUDE_PATH}"
@@ -140,7 +145,7 @@ parts:
       # part and get picked up via the binary's rpath.
       SWIFT_DST="$CRAFT_PART_INSTALL/usr/local/lib/luma/swift"
       install -d "$SWIFT_DST"
-      for so in "$CRAFT_STAGE/lib/swift/linux"/*.so; do
+      for so in "$CRAFT_STAGE/usr/local/lib/swift/linux"/*.so; do
         case "$(basename "$so")" in
           libXCTest.so|libTesting.so|lib_Testing_Foundation.so) continue ;;
         esac
