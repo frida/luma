@@ -150,7 +150,7 @@ final class MainWindow {
         let sidebar = buildSidebar()
         let detail = buildDetailPane()
         let sidebarPage = "Luma".withCString { Adw.NavigationPage(child: sidebar, title: $0) }
-        let contentPage = "".withCString { Adw.NavigationPage(child: detail, title: $0) }
+        let contentPage = "Detail".withCString { Adw.NavigationPage(child: detail, title: $0) }
         let splitView = Adw.NavigationSplitView()
         splitView.set(sidebar: sidebarPage)
         splitView.set(content: contentPage)
