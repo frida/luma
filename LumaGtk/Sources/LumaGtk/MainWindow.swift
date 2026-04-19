@@ -161,6 +161,10 @@ final class MainWindow {
         self.splitView = splitView
 
         outerPaned.position = state.collaborationSashPosition
+        outerPaned.resizeStartChild = true
+        outerPaned.resizeEndChild = false
+        outerPaned.shrinkStartChild = false
+        outerPaned.shrinkEndChild = false
         outerPaned.startChild = WidgetRef(splitView)
         outerPaned.hexpand = true
         outerPaned.vexpand = true
