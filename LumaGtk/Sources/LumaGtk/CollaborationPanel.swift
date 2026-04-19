@@ -496,31 +496,65 @@ final class CollaborationPanel {
 
     private func refreshParticipants() {
         guard let engine else { return }
-        let desired = engine.collaboration.members.map(\.user)
-        let desiredIDs = Set(desired.map(\.id))
-
-        for (id, widget) in participantWidgets where !desiredIDs.contains(id) {
+        for (_, widget) in participantWidgets {
             participantsStrip.remove(child: widget)
-            participantWidgets.removeValue(forKey: id)
         }
+        participantWidgets.removeAll()
 
-        for user in desired where participantWidgets[user.id] == nil {
-            let button = makeAvatarButton(for: user, size: Self.participantAvatarSize)
-            participantsStrip.append(child: button)
-            participantWidgets[user.id] = button
+        let sorted = engine.collaboration.members.sorted { a, b in
+            if (a.role == .owner) != (b.role == .owner) { return a.role == .owner }
+            if (a.presence == .online) != (b.presence == .online) {
+                return a.presence == .online
+            }
+            return a.joinedAt < b.joinedAt
+        }
+        for member in sorted {
+            let widget = makeMemberAvatar(for: member, size: Self.participantAvatarSize)
+            participantsStrip.append(child: widget)
+            participantWidgets[member.user.id] = widget
         }
     }
 
     private func addParticipant(_ user: LumaCore.CollaborationSession.UserInfo) {
-        guard participantWidgets[user.id] == nil else { return }
-        let button = makeAvatarButton(for: user, size: Self.participantAvatarSize)
-        participantsStrip.append(child: button)
-        participantWidgets[user.id] = button
+        refreshParticipants()
     }
 
     private func removeParticipant(_ userID: String) {
-        guard let widget = participantWidgets.removeValue(forKey: userID) else { return }
-        participantsStrip.remove(child: widget)
+        refreshParticipants()
+    }
+
+    private func makeMemberAvatar(
+        for member: LumaCore.CollaborationSession.Member,
+        size: Int
+    ) -> Widget {
+        let overlay = Overlay()
+        let button = makeAvatarButton(for: member.user, size: size)
+        let role = member.role == .owner ? "owner" : "member"
+        let presence = member.presence == .online ? "online" : "offline"
+        button.tooltipText = "\(member.user.name) · \(role) · \(presence)"
+        if member.presence == .offline {
+            button.opacity = 0.55
+        }
+        overlay.set(child: button)
+
+        let dot = Box(orientation: .horizontal, spacing: 0)
+        dot.add(cssClass: "luma-member-dot")
+        dot.add(cssClass: member.presence == .online ? "online" : "offline")
+        dot.halign = .end
+        dot.valign = .end
+        dot.canTarget = false
+        overlay.addOverlay(widget: dot)
+
+        if member.role == .owner {
+            let crown = Label(str: "\u{2605}")
+            crown.add(cssClass: "luma-member-owner-badge")
+            crown.halign = .end
+            crown.valign = .start
+            crown.canTarget = false
+            overlay.addOverlay(widget: crown)
+        }
+
+        return overlay
     }
 
     private func refreshChat() {

@@ -251,15 +251,55 @@ struct CollaborationPanel: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
-                    ForEach(collaboration.members) { member in
-                        avatarView(for: member.user)
-                            .opacity(member.presence == .online ? 1.0 : 0.55)
+                    ForEach(sortedMembers) { member in
+                        memberAvatarView(for: member)
                     }
                 }
                 .padding(.vertical, 2)
             }
-            .frame(minHeight: 28)
+            .frame(minHeight: 32)
         }
+    }
+
+    private var sortedMembers: [CollaborationSession.Member] {
+        collaboration.members.sorted { a, b in
+            if (a.role == .owner) != (b.role == .owner) { return a.role == .owner }
+            if (a.presence == .online) != (b.presence == .online) {
+                return a.presence == .online
+            }
+            return a.joinedAt < b.joinedAt
+        }
+    }
+
+    private func memberAvatarView(for member: CollaborationSession.Member) -> some View {
+        let online = member.presence == .online
+        let isOwner = member.role == .owner
+        return avatarView(for: member.user)
+            .opacity(online ? 1.0 : 0.55)
+            .overlay(alignment: .topTrailing) {
+                if isOwner {
+                    Image(systemName: "crown.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color(red: 0.94, green: 0.39, blue: 0.34))
+                        .padding(2)
+                        .background(Circle().fill(.background))
+                        .offset(x: 4, y: -4)
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                Circle()
+                    .fill(online ? Color(red: 0.36, green: 0.78, blue: 0.41) : Color.secondary.opacity(0.6))
+                    .frame(width: 8, height: 8)
+                    .overlay(Circle().stroke(Color(.windowBackgroundColor), lineWidth: 1.5))
+                    .offset(x: 2, y: 2)
+            }
+            .help(memberTooltip(member))
+    }
+
+    private func memberTooltip(_ member: CollaborationSession.Member) -> String {
+        let role = member.role == .owner ? "owner" : "member"
+        let presence = member.presence == .online ? "online" : "offline"
+        return "\(member.user.name) · \(role) · \(presence)"
     }
 
     private var chatSection: some View {

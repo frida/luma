@@ -231,6 +231,28 @@ enum StyleSheet {
     button.luma-avatar-button:hover {
         background-color: alpha(@theme_fg_color, 0.08);
     }
+
+    .luma-member-dot {
+        min-width: 8px;
+        min-height: 8px;
+        margin: 2px;
+        border-radius: 50%;
+        box-shadow: 0 0 0 2px @theme_base_color;
+    }
+    .luma-member-dot.online {
+        background-color: @success_color;
+    }
+    .luma-member-dot.offline {
+        background-color: alpha(@theme_fg_color, 0.4);
+    }
+    .luma-member-owner-badge {
+        color: @accent_color;
+        min-width: 12px;
+        min-height: 12px;
+        background-color: @theme_base_color;
+        border-radius: 50%;
+        padding: 1px;
+    }
     """
 
     static func install() {
