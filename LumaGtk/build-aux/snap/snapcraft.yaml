@@ -98,8 +98,8 @@ parts:
     source-branch: cross-platform
     override-build: |
       export PATH="$CRAFT_STAGE/usr/bin:$CRAFT_STAGE/usr/local/bin:$CRAFT_STAGE/bin:$PATH"
-      export PKG_CONFIG_PATH="$CRAFT_STAGE/usr/local/lib/pkgconfig:$CRAFT_STAGE/usr/local/lib/x86_64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH"
-      export LD_LIBRARY_PATH="$CRAFT_STAGE/usr/local/lib:$CRAFT_STAGE/usr/local/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"
+      export PKG_CONFIG_PATH="$CRAFT_STAGE/usr/local/lib/pkgconfig:$CRAFT_STAGE/usr/local/lib/x86_64-linux-gnu/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+      export LD_LIBRARY_PATH="$CRAFT_STAGE/usr/local/lib:$CRAFT_STAGE/usr/local/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
       export C_INCLUDE_PATH="$CRAFT_STAGE/usr/local/include${C_INCLUDE_PATH:+:$C_INCLUDE_PATH}"
       PARENT="$(dirname "$CRAFT_PART_BUILD")"
       mv "$CRAFT_PART_BUILD" "$PARENT/luma"
