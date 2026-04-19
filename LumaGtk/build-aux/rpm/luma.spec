@@ -1,0 +1,50 @@
+Name:           luma
+Version:        %{version}
+Release:        1%{?dist}
+Summary:        Dynamic instrumentation toolkit built on Frida
+
+License:        wxWindows
+URL:            https://frida.re/
+
+BuildArch:      x86_64
+AutoReq:        no
+AutoProv:       no
+
+Requires:       gtk4
+Requires:       libadwaita
+Requires:       webkitgtk6.0
+Requires:       libsoup3
+Requires:       libxml2
+
+%description
+Luma is an interactive dynamic instrumentation app built on Frida.
+Attach to running processes, instrument functions, trace calls, and
+explore memory with a graphical interface.
+
+%prep
+
+%build
+
+%install
+cp -a "%{_sourcedir}/stage/." "%{buildroot}/"
+
+%files
+/usr/bin/luma
+/usr/lib/luma
+/usr/share/applications/re.frida.Luma.desktop
+/usr/share/mime/packages/re.frida.Luma.xml
+/usr/share/icons/hicolor/*/apps/re.frida.Luma.png
+
+%post
+gtk-update-icon-cache -f /usr/share/icons/hicolor &>/dev/null || :
+update-mime-database /usr/share/mime &>/dev/null || :
+update-desktop-database /usr/share/applications &>/dev/null || :
+
+%postun
+if [ $1 -eq 0 ]; then
+    gtk-update-icon-cache -f /usr/share/icons/hicolor &>/dev/null || :
+    update-mime-database /usr/share/mime &>/dev/null || :
+    update-desktop-database /usr/share/applications &>/dev/null || :
+fi
+
+%changelog

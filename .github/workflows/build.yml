@@ -265,26 +265,31 @@ jobs:
 
       - uses: actions/checkout@v6
 
+      - name: Install packaging tools
+        run: dnf install -y patchelf rsync
+
       - name: Build
         run: cd LumaGtk && make build SWIFT_BUILD_FLAGS="-c release"
 
-      - name: Package
+      - name: Package as .rpm
+        env:
+          VERSION: "0.1.0"
         run: |
-          mkdir -p pkg/usr/{bin,share/applications,share/mime/packages}
-          cp LumaGtk/.build/release/LumaGtk pkg/usr/bin/luma
-          strip --strip-unneeded pkg/usr/bin/luma
-          cp LumaGtk/data/re.frida.Luma.desktop pkg/usr/share/applications/
-          cp LumaGtk/data/re.frida.Luma.xml pkg/usr/share/mime/packages/
-          for size in 32 48 64 128 256 512; do
-            install -Dm644 "LumaGtk/data/icons/hicolor/${size}x${size}/apps/re.frida.Luma.png" \
-              "pkg/usr/share/icons/hicolor/${size}x${size}/apps/re.frida.Luma.png"
-          done
-          tar czf luma-fedora-43.tar.gz -C pkg .
+          TOP=$PWD/rpmbuild
+          mkdir -p $TOP/{SOURCES/stage,SPECS,BUILD,BUILDROOT,RPMS,SRPMS}
+          LumaGtk/build-aux/linux/stage.sh $TOP/SOURCES/stage \
+              /usr/lib64 \
+              /usr/libexec/swift/6.2/lib/swift/linux
+          cp LumaGtk/build-aux/rpm/luma.spec $TOP/SPECS/
+          rpmbuild --define "_topdir $TOP" \
+                   --define "version $VERSION" \
+                   -bb $TOP/SPECS/luma.spec
+          cp $TOP/RPMS/x86_64/luma-${VERSION}-*.x86_64.rpm luma-fedora-43.rpm
 
       - uses: actions/upload-artifact@v7
         with:
-          name: luma-fedora-43.tar.gz
-          path: luma-fedora-43.tar.gz
+          name: luma-fedora-43.rpm
+          path: luma-fedora-43.rpm
 
   ubuntu:
     runs-on: ubuntu-latest
@@ -402,22 +407,20 @@ jobs:
 
       - uses: actions/checkout@v6
 
+      - name: Install packaging tools
+        run: apt-get install -y patchelf rsync
+
       - name: Build
         run: cd LumaGtk && make build SWIFT_BUILD_FLAGS="-c release"
 
       - name: Package as .deb
         run: |
           PKG=luma_0.1.0_amd64
-          mkdir -p $PKG/DEBIAN $PKG/usr/bin $PKG/usr/share/applications $PKG/usr/share/mime/packages
-          printf 'Package: luma\nVersion: 0.1.0\nSection: devel\nPriority: optional\nArchitecture: amd64\nDepends: libgtk-4-1, libwebkitgtk-6.0-4, libsoup-3.0-0\nMaintainer: Ole Andre Vadla Ravnas <oleavr@frida.re>\nDescription: Luma - Dynamic instrumentation toolkit\n Interactive dynamic instrumentation app built on Frida.\n' > $PKG/DEBIAN/control
-          cp LumaGtk/.build/x86_64-unknown-linux-gnu/release/LumaGtk $PKG/usr/bin/luma
-          strip --strip-unneeded $PKG/usr/bin/luma
-          cp LumaGtk/data/re.frida.Luma.desktop $PKG/usr/share/applications/
-          cp LumaGtk/data/re.frida.Luma.xml $PKG/usr/share/mime/packages/
-          for size in 32 48 64 128 256 512; do
-            install -Dm644 "LumaGtk/data/icons/hicolor/${size}x${size}/apps/re.frida.Luma.png" \
-              "$PKG/usr/share/icons/hicolor/${size}x${size}/apps/re.frida.Luma.png"
-          done
+          LumaGtk/build-aux/linux/stage.sh $PKG \
+              /usr/lib/x86_64-linux-gnu \
+              /usr/local/lib/swift/linux
+          mkdir -p $PKG/DEBIAN
+          printf 'Package: luma\nVersion: 0.1.0\nSection: devel\nPriority: optional\nArchitecture: amd64\nDepends: libgtk-4-1, libadwaita-1-0, libwebkitgtk-6.0-4, libsoup-3.0-0, libxml2\nMaintainer: Ole Andre Vadla Ravnas <oleavr@frida.re>\nDescription: Luma - Dynamic instrumentation toolkit\n Interactive dynamic instrumentation app built on Frida.\n' > $PKG/DEBIAN/control
           dpkg-deb --build $PKG
           mv ${PKG}.deb luma-ubuntu-25.10.deb
 
