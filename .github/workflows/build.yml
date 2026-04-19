@@ -733,7 +733,8 @@ jobs:
           # final cmdline under the cap.
           $buildRoot = "$env:RUNNER_TEMP\b"
           New-Item -Path $buildRoot -ItemType Directory -Force | Out-Null
-          cmd /c subst B: """$buildRoot"""
+          $subst = Join-Path $env:WINDIR 'System32\subst.exe'
+          & $subst B: $buildRoot
           if ($LASTEXITCODE -ne 0) { throw "subst B: failed" }
           try {
               cd LumaGtk
@@ -743,7 +744,7 @@ jobs:
                   -Xlinker /ignore:4217
               if ($LASTEXITCODE -ne 0) { throw "swift build failed ($LASTEXITCODE)" }
           } finally {
-              cmd /c subst B: /d | Out-Null
+              & $subst B: /d | Out-Null
           }
 
       - name: Package MSI

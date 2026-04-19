@@ -39,7 +39,6 @@ parts:
       ln -sf /usr/lib/x86_64-linux-gnu/libxml2.so.16 "$CRAFT_STAGE/lib/libxml2.so.2"
     build-packages:
       - curl
-      - libxml2
 
   nodejs:
     plugin: nil
