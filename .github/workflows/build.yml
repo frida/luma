@@ -731,17 +731,31 @@ jobs:
           # every .o, -L path and -l ref on the command line. On a
           # GTK/WebKit/Frida/r2 build that overshoots Windows' ~32 KB
           # CreateProcess limit and aborts with "The filename or
-          # extension is too long". Pin the build dir to a
-          # drive-letter root (B:\) via `subst`; the per-arg prefix
-          # drops from D:\a\_temp\b\<triplet>\... to B:\<triplet>\...
-          # which shaves ~13 chars off every input path and keeps the
-          # final cmdline under the cap.
+          # extension is too long". Map every long path that appears
+          # on the link line to a drive-letter root via `subst`, which
+          # collapses each prefix to 3 characters and keeps the
+          # aggregate cmdline under the cap.
+          $subst = Join-Path $env:WINDIR 'System32\subst.exe'
           $buildRoot = "$env:RUNNER_TEMP\b"
           New-Item -Path $buildRoot -ItemType Directory -Force | Out-Null
-          $subst = Join-Path $env:WINDIR 'System32\subst.exe'
-          & $subst B: $buildRoot
-          if ($LASTEXITCODE -ne 0) { throw "subst B: failed" }
+          $swiftRoot = Split-Path -Parent (Split-Path -Parent (Get-Command swift).Source)
+          $vcpkgPrefix = "C:\vcpkg\installed\${{ matrix.vcpkg_triplet }}"
+          $fridaPrefix = "$env:RUNNER_TEMP\frida-prefix"
+          $r2Prefix    = "$env:RUNNER_TEMP\r2-prefix"
+          $mappings = [ordered]@{
+              'B:' = $buildRoot
+              'T:' = $swiftRoot
+              'V:' = $vcpkgPrefix
+              'F:' = $fridaPrefix
+              'R:' = $r2Prefix
+          }
+          foreach ($letter in $mappings.Keys) {
+              & $subst $letter $mappings[$letter]
+              if ($LASTEXITCODE -ne 0) { throw "subst $letter failed" }
+          }
           try {
+              $env:PATH = "T:\bin;F:\bin;R:\bin;$env:PATH"
+              $env:PKG_CONFIG_PATH = "F:\lib\pkgconfig;R:\lib\pkgconfig;V:\lib\pkgconfig"
               cd LumaGtk
               swift build -c release `
                   --build-path B:\ `
@@ -749,7 +763,9 @@ jobs:
                   -Xlinker /ignore:4217
               if ($LASTEXITCODE -ne 0) { throw "swift build failed ($LASTEXITCODE)" }
           } finally {
-              & $subst B: /d | Out-Null
+              foreach ($letter in $mappings.Keys) {
+                  & $subst $letter /d | Out-Null
+              }
           }
 
       - name: Package MSI
