@@ -15,6 +15,7 @@ param(
     [ValidateSet('x64','arm64')]
     [string] $Arch          = 'x64',
     [string] $OutputDir,
+    [string] $BuildPath,
     [string] $VcpkgPrefix,
     [string] $FridaPrefix,
     [string] $R2Prefix,
@@ -28,6 +29,8 @@ $pkg    = Resolve-Path (Join-Path $script '..\..')
 
 if (-not $OutputDir) { $OutputDir = Join-Path $pkg 'build' }
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+
+if (-not $BuildPath) { $BuildPath = Join-Path $pkg '.build' }
 
 if (-not $SkipBuild) {
     & (Join-Path $script 'build.ps1') `
@@ -59,7 +62,11 @@ $heat   = Join-Path $wixRoot 'bin\heat.exe'
 $candle = Join-Path $wixRoot 'bin\candle.exe'
 $light  = Join-Path $wixRoot 'bin\light.exe'
 
-$exe = Join-Path $pkg ".build\$Configuration\LumaGtk.exe"
+$triplet = @{
+    'x64'   = 'x86_64-unknown-windows-msvc'
+    'arm64' = 'aarch64-unknown-windows-msvc'
+}[$Arch]
+$exe = Join-Path $BuildPath "$triplet\$Configuration\LumaGtk.exe"
 if (-not (Test-Path $exe)) { throw "LumaGtk.exe not found at $exe. Run build first." }
 
 $stage = Join-Path $OutputDir "stage-$Configuration"

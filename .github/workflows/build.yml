@@ -720,10 +720,20 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH -Value $gnuBin
 
       - name: Build LumaGtk
-        run: >-
-          cd LumaGtk && swift build -c release
-          -Xlinker /ignore:importeddllmain
-          -Xlinker /ignore:4217
+        shell: pwsh
+        run: |
+          # SwiftPM invokes swiftc.exe as the final linker driver with
+          # the full list of object files, library search paths, and
+          # -l references. On a fully-featured GTK/WebKit/Frida/r2
+          # build that easily exceeds Windows' 32 KB CreateProcess
+          # command-line limit and fails with "The filename or
+          # extension is too long". Use a short --build-path so the
+          # per-arg overhead shrinks enough to stay below the cap.
+          cd LumaGtk
+          swift build -c release `
+              --build-path "$env:RUNNER_TEMP\b" `
+              -Xlinker /ignore:importeddllmain `
+              -Xlinker /ignore:4217
 
       - name: Package MSI
         shell: pwsh
@@ -731,6 +741,7 @@ jobs:
           cd LumaGtk
           .\scripts\windows\package-msi.ps1 -SkipBuild -Configuration release `
               -Arch "${{ matrix.win_arch }}" `
+              -BuildPath "$env:RUNNER_TEMP/b" `
               -VcpkgPrefix "C:/vcpkg/installed/${{ matrix.vcpkg_triplet }}" `
               -FridaPrefix "$env:RUNNER_TEMP/frida-prefix" `
               -R2Prefix    "$env:RUNNER_TEMP/r2-prefix"
