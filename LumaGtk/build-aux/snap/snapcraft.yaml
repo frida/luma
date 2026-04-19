@@ -30,28 +30,32 @@ parts:
     override-build: |
       curl -sL "https://download.swift.org/swift-6.2-release/ubuntu2404/swift-6.2-RELEASE/swift-6.2-RELEASE-ubuntu24.04.tar.gz" \
         -o swift.tar.gz
-      tar xzf swift.tar.gz --strip-components=2 -C "$CRAFT_STAGE"
+      tar xzf swift.tar.gz --strip-components=2 -C "$CRAFT_PART_INSTALL"
       rm swift.tar.gz
       # core26 ships libxml2.so.16 only; Swift 6.2's ubuntu24 tarball
       # links libFoundationXML against libxml2.so.2. libFoundationXML's
-      # DT_RUNPATH is \$ORIGIN, so the alias has to sit beside it
-      # under lib/swift/linux (not the top-level lib/).
+      # DT_RUNPATH is $ORIGIN, so alias has to sit beside it under
+      # lib/swift/linux.
       ln -sf /usr/lib/x86_64-linux-gnu/libxml2.so.16 \
-        "$CRAFT_STAGE/lib/swift/linux/libxml2.so.2"
+        "$CRAFT_PART_INSTALL/lib/swift/linux/libxml2.so.2"
     build-packages:
       - curl
       - libxml2-16
+    prime:
+      - -*
 
   nodejs:
     plugin: nil
     override-build: |
       curl -sL "https://nodejs.org/dist/v20.18.0/node-v20.18.0-linux-x64.tar.xz" \
         -o node.tar.xz
-      tar xJf node.tar.xz --strip-components=1 -C "$CRAFT_STAGE"
+      tar xJf node.tar.xz --strip-components=1 -C "$CRAFT_PART_INSTALL"
       rm node.tar.xz
     build-packages:
       - curl
       - xz-utils
+    prime:
+      - -*
 
   frida-core:
     after: [nodejs]
@@ -60,14 +64,12 @@ parts:
       export PATH="$CRAFT_STAGE/bin:$PATH"
       git clone --depth 1 https://github.com/frida/frida-core.git src
       cd src
-      ./configure --enable-shared --without-prebuilds=sdk --prefix="$CRAFT_STAGE/usr/local" -- --force-fallback-for=openssl,libelf -Dcompat=disabled -Dserver=disabled -Dportal=disabled -Dinject=disabled -Dgadget=disabled -Dtests=disabled
+      ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr/local \
+        -- --force-fallback-for=openssl,libelf \
+           -Dcompat=disabled -Dserver=disabled -Dportal=disabled \
+           -Dinject=disabled -Dgadget=disabled -Dtests=disabled
       make -j$(nproc)
-      DESTDIR="$PWD/_destdir" python3 releng/meson/meson.py install -C build --skip-subprojects --no-rebuild
-      mkdir -p "$CRAFT_STAGE/usr/local"
-      cp -a "_destdir/$CRAFT_STAGE/usr/local/." "$CRAFT_STAGE/usr/local/"
-      mkdir -p "$CRAFT_PART_INSTALL/usr/local/lib/x86_64-linux-gnu"
-      cp -a "$CRAFT_STAGE/usr/local/lib/x86_64-linux-gnu"/libfrida-core-1.0.so* "$CRAFT_PART_INSTALL/usr/local/lib/x86_64-linux-gnu/"
-      cp -a "$CRAFT_STAGE/usr/local/lib/x86_64-linux-gnu/frida-1.0" "$CRAFT_PART_INSTALL/usr/local/lib/x86_64-linux-gnu/"
+      DESTDIR="$CRAFT_PART_INSTALL" python3 releng/meson/meson.py install -C build --skip-subprojects --no-rebuild
     build-packages:
       - git
       - curl
@@ -82,6 +84,9 @@ parts:
       - libsoup-3.0-dev
       - libunwind-dev
       - libnice-dev
+    prime:
+      - usr/local/lib/x86_64-linux-gnu/libfrida-core-1.0.so*
+      - usr/local/lib/x86_64-linux-gnu/frida-1.0
 
   radare2:
     plugin: nil
@@ -89,14 +94,16 @@ parts:
       git clone https://github.com/radareorg/radare2.git src
       cd src
       git checkout c08254586bc9d99a187aab5279e130eff39e37a7
-      meson setup build --prefix="$CRAFT_STAGE/usr/local" --default-library=static -Dstatic_runtime=true -Dcli=disabled
+      meson setup build --prefix=/usr/local --default-library=static -Dstatic_runtime=true -Dcli=disabled
       ninja -C build
-      ninja -C build install
+      DESTDIR="$CRAFT_PART_INSTALL" ninja -C build install
     build-packages:
       - git
       - pkg-config
       - meson
       - ninja-build
+    prime:
+      - -*
 
   luma:
     after: [swift, frida-core, radare2]
@@ -108,32 +115,25 @@ parts:
       export PKG_CONFIG_PATH="$CRAFT_STAGE/usr/local/lib/pkgconfig:$CRAFT_STAGE/usr/local/lib/x86_64-linux-gnu/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
       export LD_LIBRARY_PATH="$CRAFT_STAGE/usr/local/lib:$CRAFT_STAGE/usr/local/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
       export C_INCLUDE_PATH="$CRAFT_STAGE/usr/local/include${C_INCLUDE_PATH:+:$C_INCLUDE_PATH}"
-      PARENT="$(dirname "$CRAFT_PART_BUILD")"
-      mv "$CRAFT_PART_BUILD" "$PARENT/luma"
-      cd "$PARENT/luma/LumaGtk"
+      cd LumaGtk
       make build SWIFT_BUILD_FLAGS="-c release"
-      # Bundle the runtime libraries the snap needs at runtime
-      # alongside the binary: frida-core is shipped by the
-      # frida-core part (into /usr/local/lib/x86_64-linux-gnu), while
-      # the Swift runtime lives in $CRAFT_STAGE/lib/swift/linux from
-      # the swift part, so copy the subset we actually need next to
-      # the app under /usr/local/lib/luma/swift/.
-      SWIFT_SRC="$CRAFT_STAGE/lib/swift/linux"
+      # Bundle the Swift runtime (from the swift part's staged tree,
+      # test-only libs dropped) alongside the binary, plus a libxml2
+      # alias so FoundationXML resolves on core26 (which ships only
+      # libxml2.so.16). frida-core's libs are staged by the frida-core
+      # part and get picked up via the binary's rpath.
       SWIFT_DST="$CRAFT_PART_INSTALL/usr/local/lib/luma/swift"
       install -d "$SWIFT_DST"
-      for so in "$SWIFT_SRC"/*.so; do
+      for so in "$CRAFT_STAGE/lib/swift/linux"/*.so; do
         case "$(basename "$so")" in
           libXCTest.so|libTesting.so|lib_Testing_Foundation.so) continue ;;
         esac
         cp -P "$so" "$SWIFT_DST/"
       done
-      # Swift's FoundationXML keeps DT_NEEDED on libxml2.so.2, but
-      # core26 ships the libxml2 2.14 series as libxml2.so.16. Drop
-      # it next to libFoundationXML.so under the legacy SONAME so the
-      # .so's own DT_RUNPATH (=$ORIGIN) resolves the load.
       install -m644 /usr/lib/x86_64-linux-gnu/libxml2.so.16 \
         "$SWIFT_DST/libxml2.so.2"
-      install -Dm755 .build/x86_64-unknown-linux-gnu/release/LumaGtk "$CRAFT_PART_INSTALL/usr/local/bin/luma"
+      install -Dm755 .build/x86_64-unknown-linux-gnu/release/LumaGtk \
+        "$CRAFT_PART_INSTALL/usr/local/bin/luma"
       strip --strip-unneeded "$CRAFT_PART_INSTALL/usr/local/bin/luma"
       strip --strip-unneeded "$SWIFT_DST"/*.so
       patchelf --set-rpath '$ORIGIN/../lib/luma/swift:$ORIGIN/../lib/x86_64-linux-gnu' \
@@ -144,7 +144,6 @@ parts:
         install -Dm644 "data/icons/hicolor/${size}x${size}/apps/re.frida.Luma.png" \
           "$CRAFT_PART_INSTALL/usr/local/share/icons/hicolor/${size}x${size}/apps/re.frida.Luma.png"
       done
-      mv "$PARENT/luma" "$CRAFT_PART_BUILD"
     build-packages:
       - libgtk-4-dev
       - libadwaita-1-dev
