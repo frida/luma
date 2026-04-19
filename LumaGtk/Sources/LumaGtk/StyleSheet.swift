@@ -220,6 +220,17 @@ enum StyleSheet {
     .luma-chat-bubble-remote { background-color: alpha(@theme_fg_color, 0.08); border-radius: 12px; padding: 6px 10px; }
     .luma-invite-frame { border: 1px solid alpha(@theme_fg_color, 0.15); border-radius: 6px; padding: 8px 12px; }
     .luma-linked-lab-hint { border: 1px solid alpha(@theme_fg_color, 0.15); border-radius: 6px; padding: 6px 10px; }
+
+    button.luma-avatar-button {
+        padding: 0;
+        min-width: 0;
+        min-height: 0;
+        border-radius: 999px;
+        background: none;
+    }
+    button.luma-avatar-button:hover {
+        background-color: alpha(@theme_fg_color, 0.08);
+    }
     """
 
     static func install() {

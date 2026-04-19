@@ -2,6 +2,7 @@ import Adw
 import CPango
 import Foundation
 import Gdk
+import GdkPixBuf
 import Gtk
 import LumaCore
 import Observation
@@ -13,17 +14,17 @@ final class CollaborationPanel {
     private weak var engine: Engine?
     private let onClose: () -> Void
 
-    private let identitySection: Box
+    private let headerBox: Box
+    private let headerAvatarHost: Box
     private let labSection: Box
-    private let participantsSection: Box
-    private let participantsList: ListBox
-    private let chatSection: Box
+    private let activeCollaboration: Box
+    private let participantsStrip: Box
+    private let participantsScroll: ScrolledWindow
     private let chatListBox: ListBox
     private let chatScroll: ScrolledWindow
     private let chatEntry: Entry
     private let chatSendButton: Button
 
-    private let timeFormatter: DateFormatter
     private let chatTimeFormatter: DateFormatter
 
     private var copiedToastLabel: Label?
@@ -32,6 +33,10 @@ final class CollaborationPanel {
     private var lastChatCount = 0
     private var suppressScrollPinUpdate = false
     private var signInWindow: Adw.Dialog?
+
+    private static let headerAvatarSize: Int = 24
+    private static let participantAvatarSize: Int = 28
+    private static let chatAvatarSize: Int = 20
 
     init(engine: Engine, onClose: @escaping () -> Void) {
         self.engine = engine
@@ -47,48 +52,57 @@ final class CollaborationPanel {
         widget.vexpand = true
         widget.setSizeRequest(width: 280, height: -1)
 
-        timeFormatter = DateFormatter()
-        timeFormatter.dateFormat = "HH:mm:ss"
         chatTimeFormatter = DateFormatter()
         chatTimeFormatter.dateFormat = "HH:mm"
 
-        let header = Box(orientation: .horizontal, spacing: 8)
+        headerBox = Box(orientation: .horizontal, spacing: 8)
         let title = Label(str: "Collaboration")
         title.add(cssClass: "title-4")
         title.halign = .start
         title.hexpand = true
-        header.append(child: title)
+        headerBox.append(child: title)
+
+        headerAvatarHost = Box(orientation: .horizontal, spacing: 0)
+        headerBox.append(child: headerAvatarHost)
+
         let closeButton = Button(label: "✕")
         closeButton.hasFrame = false
-        header.append(child: closeButton)
-        widget.append(child: header)
-
-        widget.append(child: Separator(orientation: .horizontal))
-
-        identitySection = Box(orientation: .vertical, spacing: 6)
-        widget.append(child: identitySection)
+        headerBox.append(child: closeButton)
+        widget.append(child: headerBox)
 
         widget.append(child: Separator(orientation: .horizontal))
 
         labSection = Box(orientation: .vertical, spacing: 6)
         widget.append(child: labSection)
 
-        widget.append(child: Separator(orientation: .horizontal))
+        activeCollaboration = Box(orientation: .vertical, spacing: 8)
+        activeCollaboration.vexpand = true
+        activeCollaboration.visible = false
+        widget.append(child: activeCollaboration)
 
-        participantsSection = Box(orientation: .vertical, spacing: 4)
+        activeCollaboration.append(child: Separator(orientation: .horizontal))
+
+        let participantsSection = Box(orientation: .vertical, spacing: 4)
         let participantsHeader = Label(str: "PARTICIPANTS")
         participantsHeader.halign = .start
         participantsHeader.add(cssClass: "heading")
         participantsSection.append(child: participantsHeader)
-        participantsList = ListBox()
-        participantsList.add(cssClass: "navigation-sidebar")
-        participantsList.selectionMode = .none
-        participantsSection.append(child: participantsList)
-        widget.append(child: participantsSection)
 
-        widget.append(child: Separator(orientation: .horizontal))
+        participantsStrip = Box(orientation: .horizontal, spacing: 6)
+        participantsStrip.marginTop = 2
+        participantsStrip.marginBottom = 2
+        participantsScroll = ScrolledWindow()
+        participantsScroll.setPolicy(hscrollbarPolicy: .automatic, vscrollbarPolicy: .never)
+        participantsScroll.hexpand = true
+        participantsScroll.setSizeRequest(width: -1, height: Self.participantAvatarSize + 8)
+        participantsScroll.set(child: participantsStrip)
+        participantsSection.append(child: participantsScroll)
 
-        chatSection = Box(orientation: .vertical, spacing: 6)
+        activeCollaboration.append(child: participantsSection)
+
+        activeCollaboration.append(child: Separator(orientation: .horizontal))
+
+        let chatSection = Box(orientation: .vertical, spacing: 6)
         chatSection.vexpand = true
         let chatHeader = Label(str: "CHAT")
         chatHeader.halign = .start
@@ -113,7 +127,7 @@ final class CollaborationPanel {
         inputRow.append(child: chatSendButton)
         chatSection.append(child: inputRow)
 
-        widget.append(child: chatSection)
+        activeCollaboration.append(child: chatSection)
 
         closeButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
@@ -166,6 +180,7 @@ final class CollaborationPanel {
             Task { @MainActor in
                 guard let self else { return }
                 self.refreshIdentity()
+                self.refreshLab()
                 self.syncSignInSheet()
                 self.observeIdentity()
             }
@@ -206,11 +221,11 @@ final class CollaborationPanel {
 
     private func observeParticipants() {
         guard let engine else { return }
-        engine.collaboration.onParticipantJoined = { [weak self] user in
-            self?.appendParticipant(user)
+        engine.collaboration.onParticipantJoined = { [weak self] _ in
+            self?.refreshParticipants()
         }
-        engine.collaboration.onParticipantLeft = { [weak self] userID in
-            self?.removeParticipant(userID)
+        engine.collaboration.onParticipantLeft = { [weak self] _ in
+            self?.refreshParticipants()
         }
     }
 
@@ -224,32 +239,56 @@ final class CollaborationPanel {
     // MARK: - Refreshers
 
     private func refreshIdentity() {
-        clearChildren(of: identitySection)
-        guard let engine else { return }
-        guard let user = engine.gitHubAuth.currentUser else {
-            identitySection.visible = false
-            return
-        }
+        clearChildren(of: headerAvatarHost)
+        guard let engine, let user = engine.gitHubAuth.currentUser else { return }
 
-        identitySection.visible = true
-        let row = Box(orientation: .horizontal, spacing: 8)
-        let label = Label(str: "@\(user.id)")
-        label.halign = .start
-        label.hexpand = true
-        row.append(child: label)
-        let signOut = Button(label: "Sign out")
-        signOut.hasFrame = false
-        signOut.onClicked { [weak self] _ in
+        let menuButton = MenuButton()
+        menuButton.hasFrame = false
+        menuButton.tooltipText = user.name.isEmpty ? "@\(user.id)" : user.name
+        menuButton.add(cssClass: "flat")
+        menuButton.add(cssClass: "luma-avatar-button")
+
+        let avatar = makeAvatar(for: user, size: Self.headerAvatarSize)
+        avatar.tooltipText = nil
+        menuButton.set(child: avatar)
+
+        let popover = Popover()
+        popover.autohide = true
+        let menuBox = Box(orientation: .vertical, spacing: 2)
+        menuBox.marginStart = 6
+        menuBox.marginEnd = 6
+        menuBox.marginTop = 6
+        menuBox.marginBottom = 6
+
+        let profileButton = Button(label: "View GitHub Profile")
+        profileButton.add(cssClass: "flat")
+        profileButton.onClicked { [weak self, weak popover] _ in
+            MainActor.assumeIsolated {
+                self?.openGitHubProfile(for: user)
+                popover?.popdown()
+            }
+        }
+        menuBox.append(child: profileButton)
+
+        let signOutButton = Button(label: "Sign out")
+        signOutButton.add(cssClass: "flat")
+        signOutButton.add(cssClass: "luma-menu-destructive")
+        signOutButton.onClicked { [weak self, weak popover] _ in
             MainActor.assumeIsolated {
                 guard let engine = self?.engine else { return }
                 Task { @MainActor in
                     await engine.gitHubAuth.signOut()
                     await engine.collaboration.stop()
                 }
+                popover?.popdown()
             }
         }
-        row.append(child: signOut)
-        identitySection.append(child: row)
+        menuBox.append(child: signOutButton)
+
+        popover.set(child: menuBox)
+        menuButton.set(popover: popover)
+
+        headerAvatarHost.append(child: menuButton)
     }
 
     private func refreshLab() {
@@ -259,39 +298,72 @@ final class CollaborationPanel {
         copiedToastResetTask = nil
         guard let engine else { return }
 
-        switch engine.collaboration.status {
+        let status = engine.collaboration.status
+        if case .joined = status {
+            activeCollaboration.visible = true
+        } else {
+            activeCollaboration.visible = false
+        }
+
+        let heading = Label(str: "Project collaboration")
+        heading.halign = .start
+        heading.add(cssClass: "heading")
+        labSection.append(child: heading)
+
+        switch status {
         case .disconnected:
             let storedLabID = (try? engine.store.fetchCollaborationState())?.labID
             if let stored = storedLabID {
-                let hint = Box(orientation: .vertical, spacing: 4)
-                hint.add(cssClass: "luma-linked-lab-hint")
-                let hintLabel = Label(str: "This project is already linked to lab \(truncatedLabID(stored)).")
+                let hintLabel = Label(
+                    str: "This project is already linked to a shared notebook (lab \(truncatedLabID(stored))).")
                 hintLabel.halign = .start
                 hintLabel.wrap = true
+                hintLabel.xalign = 0
                 hintLabel.add(cssClass: "caption")
                 hintLabel.add(cssClass: "dim-label")
-                hint.append(child: hintLabel)
-                let reconnect = Button(label: "Reconnect")
-                reconnect.halign = .start
-                reconnect.onClicked { [weak self] _ in
-                    MainActor.assumeIsolated {
-                        self?.engine?.startCollaboration(joiningLab: stored)
-                    }
-                }
-                hint.append(child: reconnect)
-                labSection.append(child: hint)
+                labSection.append(child: hintLabel)
+
+                let explanation = Label(
+                    str:
+                        "Enable collaboration to rejoin that shared lab. Any other copies of this project will connect to the same notebook."
+                )
+                explanation.halign = .start
+                explanation.wrap = true
+                explanation.xalign = 0
+                explanation.add(cssClass: "caption")
+                explanation.add(cssClass: "dim-label")
+                labSection.append(child: explanation)
+            } else {
+                let info = Label(str: "Collaboration is currently off for this project.")
+                info.halign = .start
+                info.wrap = true
+                info.xalign = 0
+                info.add(cssClass: "caption")
+                info.add(cssClass: "dim-label")
+                labSection.append(child: info)
+
+                let explanation = Label(str: "Enable collaboration to create a shared notebook and chat.")
+                explanation.halign = .start
+                explanation.wrap = true
+                explanation.xalign = 0
+                explanation.add(cssClass: "caption")
+                explanation.add(cssClass: "dim-label")
+                labSection.append(child: explanation)
             }
 
-            let info = Label(str: "Not connected")
-            info.halign = .start
-            info.add(cssClass: "dim-label")
-            labSection.append(child: info)
-
-            let enable = Button(label: "Enable Collaboration")
+            let buttonLabel: String
+            if let user = engine.gitHubAuth.currentUser {
+                buttonLabel = "Enable collaboration as @\(user.id)"
+            } else {
+                buttonLabel = "Enable collaboration"
+            }
+            let enable = Button(label: buttonLabel)
             enable.add(cssClass: "suggested-action")
+            enable.halign = .start
+            let labToJoin = storedLabID
             enable.onClicked { [weak self] _ in
                 MainActor.assumeIsolated {
-                    self?.engine?.startCollaboration(joiningLab: nil)
+                    self?.engine?.startCollaboration(joiningLab: labToJoin)
                 }
             }
             labSection.append(child: enable)
@@ -302,21 +374,28 @@ final class CollaborationPanel {
             let label = Label(str: "Connecting\u{2026}")
             label.halign = .start
             label.hexpand = true
+            label.add(cssClass: "caption")
+            label.add(cssClass: "dim-label")
             row.append(child: label)
             labSection.append(child: row)
 
         case .joined(let labID):
-            let roleLabel = Label(str: engine.collaboration.isHost ? "You are hosting this lab" : "You joined this lab")
+            let roleLabel = Label(str: engine.collaboration.isHost ? "You are hosting this lab." : "You joined this lab.")
             roleLabel.halign = .start
             roleLabel.add(cssClass: "caption")
             roleLabel.add(cssClass: "dim-label")
             labSection.append(child: roleLabel)
 
-            let label = Label(str: "Lab: \(truncatedLabID(labID))")
-            label.halign = .start
-            label.selectable = true
-            label.add(cssClass: "monospace")
-            labSection.append(child: label)
+            let labIDRow = Box(orientation: .horizontal, spacing: 4)
+            let labIDTitle = Label(str: "Lab:")
+            labIDTitle.add(cssClass: "caption-heading")
+            labIDRow.append(child: labIDTitle)
+            let labIDValue = Label(str: truncatedLabID(labID))
+            labIDValue.selectable = true
+            labIDValue.add(cssClass: "caption")
+            labIDValue.add(cssClass: "monospace")
+            labIDRow.append(child: labIDValue)
+            labSection.append(child: labIDRow)
 
             let inviteURL = "\(BackendConfig.inviteLinkBase)\(labID)"
             let inviteFrame = Box(orientation: .vertical, spacing: 4)
@@ -337,8 +416,10 @@ final class CollaborationPanel {
             urlLabel.add(cssClass: "caption")
             inviteRow.append(child: urlLabel)
 
-            let copyButton = Button(label: "Copy")
+            let copyButton = Button()
             copyButton.hasFrame = false
+            copyButton.set(iconName: "edit-copy-symbolic")
+            copyButton.tooltipText = "Copy invite link"
             copyButton.onClicked { [weak self] _ in
                 MainActor.assumeIsolated {
                     if let display = Display.getDefault() {
@@ -350,6 +431,15 @@ final class CollaborationPanel {
             inviteRow.append(child: copyButton)
             inviteFrame.append(child: inviteRow)
 
+            let hint = Label(
+                str: "Share this link so others can open a new project and join this notebook.")
+            hint.halign = .start
+            hint.wrap = true
+            hint.xalign = 0
+            hint.add(cssClass: "caption")
+            hint.add(cssClass: "dim-label")
+            inviteFrame.append(child: hint)
+
             let toast = Label(str: "Copied!")
             toast.halign = .start
             toast.add(cssClass: "caption")
@@ -360,7 +450,8 @@ final class CollaborationPanel {
 
             labSection.append(child: inviteFrame)
 
-            let leave = Button(label: "Leave")
+            let leave = Button(label: "Disable collaboration")
+            leave.halign = .start
             leave.onClicked { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let engine = self?.engine else { return }
@@ -372,13 +463,22 @@ final class CollaborationPanel {
             labSection.append(child: leave)
 
         case .error(let msg):
+            let icon = Image(iconName: "dialog-warning-symbolic")
+            let errorRow = Box(orientation: .horizontal, spacing: 6)
+            errorRow.append(child: icon)
             let label = Label(str: msg)
             label.halign = .start
             label.wrap = true
-            label.add(cssClass: "error")
-            labSection.append(child: label)
+            label.xalign = 0
+            label.hexpand = true
+            label.add(cssClass: "warning")
+            label.add(cssClass: "caption")
+            errorRow.append(child: label)
+            labSection.append(child: errorRow)
 
             let retry = Button(label: "Retry")
+            retry.add(cssClass: "suggested-action")
+            retry.halign = .start
             retry.onClicked { [weak self] _ in
                 MainActor.assumeIsolated {
                     self?.engine?.startCollaboration(joiningLab: nil)
@@ -390,17 +490,9 @@ final class CollaborationPanel {
 
     private func refreshParticipants() {
         guard let engine else { return }
-        participantsList.removeAll()
+        clearChildren(of: participantsStrip)
         for user in engine.collaboration.participants {
-            let row = ListBoxRow()
-            let label = Label(str: user.name.isEmpty ? "@\(user.id)" : user.name)
-            label.halign = .start
-            label.marginStart = 8
-            label.marginEnd = 8
-            label.marginTop = 2
-            label.marginBottom = 2
-            row.set(child: label)
-            participantsList.append(child: row)
+            participantsStrip.append(child: makeAvatarButton(for: user, size: Self.participantAvatarSize))
         }
     }
 
@@ -409,59 +501,7 @@ final class CollaborationPanel {
         chatListBox.removeAll()
         let messages = engine.collaboration.chatMessages
         for message in messages {
-            let row = ListBoxRow()
-            row.selectable = false
-            row.activatable = false
-
-            let outer = Box(orientation: .horizontal, spacing: 0)
-            outer.marginStart = 4
-            outer.marginEnd = 4
-            outer.marginTop = 2
-            outer.marginBottom = 2
-
-            let bubble = Box(orientation: .vertical, spacing: 2)
-            bubble.add(cssClass: message.isLocal ? "luma-chat-bubble-local" : "luma-chat-bubble-remote")
-            bubble.hexpand = false
-            bubble.halign = message.isLocal ? .end : .start
-
-            let header = Box(orientation: .horizontal, spacing: 6)
-            let senderName = message.isLocal
-                ? "You"
-                : (message.sender.name.isEmpty ? "@\(message.sender.id)" : message.sender.name)
-            let senderLabel = Label(str: senderName)
-            senderLabel.halign = .start
-            senderLabel.hexpand = true
-            senderLabel.add(cssClass: "caption-heading")
-            header.append(child: senderLabel)
-
-            let timeLabel = Label(str: chatTimeFormatter.string(from: message.timestamp))
-            timeLabel.halign = .end
-            timeLabel.add(cssClass: "caption")
-            timeLabel.add(cssClass: "dim-label")
-            header.append(child: timeLabel)
-            bubble.append(child: header)
-
-            let body = Label(str: message.text)
-            body.halign = .start
-            body.wrap = true
-            body.xalign = 0
-            body.add(cssClass: "caption")
-            bubble.append(child: body)
-
-            if message.isLocal {
-                let spacer = Box(orientation: .horizontal, spacing: 0)
-                spacer.hexpand = true
-                outer.append(child: spacer)
-                outer.append(child: bubble)
-            } else {
-                outer.append(child: bubble)
-                let spacer = Box(orientation: .horizontal, spacing: 0)
-                spacer.hexpand = true
-                outer.append(child: spacer)
-            }
-
-            row.set(child: outer)
-            chatListBox.append(child: row)
+            chatListBox.append(child: buildChatRow(for: message))
         }
 
         if messages.count != lastChatCount {
@@ -474,29 +514,17 @@ final class CollaborationPanel {
         refreshChatInputState()
     }
 
-    private func appendParticipant(_ user: LumaCore.CollaborationSession.UserInfo) {
-        let row = ListBoxRow()
-        let label = Label(str: user.name.isEmpty ? "@\(user.id)" : user.name)
-        label.halign = .start
-        label.marginStart = 8
-        label.marginEnd = 8
-        label.marginTop = 2
-        label.marginBottom = 2
-        row.set(child: label)
-        participantsList.append(child: row)
-    }
-
-    private func removeParticipant(_ userID: String) {
-        guard let engine else { return }
-        let participants = engine.collaboration.participants
-        // Find by absence — the participant was already removed from the model
-        participantsList.removeAll()
-        for user in participants {
-            appendParticipant(user)
-        }
-    }
-
     private func appendChatMessage(_ message: LumaCore.CollaborationSession.ChatMessage) {
+        chatListBox.append(child: buildChatRow(for: message))
+
+        lastChatCount += 1
+        if isPinnedToBottom {
+            scrollChatToBottomSoon()
+        }
+        refreshChatInputState()
+    }
+
+    private func buildChatRow(for message: LumaCore.CollaborationSession.ChatMessage) -> ListBoxRow {
         let row = ListBoxRow()
         row.selectable = false
         row.activatable = false
@@ -513,13 +541,18 @@ final class CollaborationPanel {
         bubble.halign = message.isLocal ? .end : .start
 
         let header = Box(orientation: .horizontal, spacing: 6)
+
+        let avatar = makeAvatarButton(for: message.sender, size: Self.chatAvatarSize)
+        header.append(child: avatar)
+
         let senderName = message.isLocal
             ? "You"
-            : (message.sender.name.isEmpty ? "@\(message.sender.id)" : message.sender.name)
+            : "@\(message.sender.id)"
         let senderLabel = Label(str: senderName)
         senderLabel.halign = .start
         senderLabel.hexpand = true
-        senderLabel.add(cssClass: "caption-heading")
+        senderLabel.add(cssClass: "caption")
+        senderLabel.add(cssClass: "dim-label")
         header.append(child: senderLabel)
 
         let timeLabel = Label(str: chatTimeFormatter.string(from: message.timestamp))
@@ -549,14 +582,76 @@ final class CollaborationPanel {
         }
 
         row.set(child: outer)
-        chatListBox.append(child: row)
-
-        lastChatCount += 1
-        if isPinnedToBottom {
-            scrollChatToBottomSoon()
-        }
-        refreshChatInputState()
+        return row
     }
+
+    // MARK: - Avatars
+
+    private func makeAvatar(
+        for user: LumaCore.CollaborationSession.UserInfo,
+        size: Int
+    ) -> Adw.Avatar {
+        let displayName = user.name.isEmpty ? "@\(user.id)" : user.name
+        let avatar = displayName.withCString { cstr in
+            Adw.Avatar(size: size, text: cstr, showInitials: true)
+        }
+        avatar.tooltipText = displayName
+
+        loadAvatarImage(into: avatar, user: user, size: size)
+        return avatar
+    }
+
+    private func makeAvatarButton(
+        for user: LumaCore.CollaborationSession.UserInfo,
+        size: Int
+    ) -> Button {
+        let button = Button()
+        button.hasFrame = false
+        button.add(cssClass: "flat")
+        button.add(cssClass: "luma-avatar-button")
+        button.tooltipText = user.name.isEmpty ? "@\(user.id)" : user.name
+
+        let avatar = makeAvatar(for: user, size: size)
+        avatar.tooltipText = nil
+        button.set(child: avatar)
+
+        button.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.openGitHubProfile(for: user)
+            }
+        }
+        return button
+    }
+
+    private func loadAvatarImage(
+        into avatar: Adw.Avatar,
+        user: LumaCore.CollaborationSession.UserInfo,
+        size: Int
+    ) {
+        guard let base = user.avatarURL else { return }
+        let fetchSize = size * 2
+        guard let url = URL(string: "\(base.absoluteString)&s=\(fetchSize)") else { return }
+
+        Task { @MainActor [weak avatar] in
+            guard let texture = await AvatarCache.shared.texture(for: url) else { return }
+            guard let avatar else { return }
+            avatar.set(customImage: texture)
+        }
+    }
+
+    private func openGitHubProfile(for user: LumaCore.CollaborationSession.UserInfo) {
+        let urlString = "https://github.com/\(user.id)"
+        let launcher = UriLauncher(uri: urlString)
+        let parentWindow: Gtk.WindowRef?
+        if let rootPtr = widget.root?.ptr {
+            parentWindow = Gtk.WindowRef(raw: rootPtr)
+        } else {
+            parentWindow = nil
+        }
+        launcher.launch(parent: parentWindow, cancellable: nil, callback: nil, userData: nil)
+    }
+
+    // MARK: - Scroll / input
 
     private func scrollChatToBottomSoon() {
         Task { @MainActor in
@@ -604,7 +699,9 @@ final class CollaborationPanel {
 
     private func truncatedLabID(_ id: String) -> String {
         if id.count <= 12 { return id }
-        return String(id.prefix(12)) + "\u{2026}"
+        let prefix = id.prefix(4)
+        let suffix = id.suffix(4)
+        return "\(prefix)\u{2026}\(suffix)"
     }
 
     private func clearChildren(of container: Box) {
