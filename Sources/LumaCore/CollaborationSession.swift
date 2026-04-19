@@ -294,6 +294,46 @@ public final class CollaborationSession {
         )
     }
 
+    public struct PushEnrollmentTicket: Sendable {
+        public let token: String
+        public let vapidPublicKey: String
+    }
+
+    public func requestPushEnrollmentToken() async throws -> PushEnrollmentTicket {
+        guard let userID = localUser?.id else {
+            throw AuthFailure(
+                domain: "client",
+                code: "not-authenticated",
+                message: "No authenticated user",
+            )
+        }
+        return try await withCheckedThrowingContinuation { cont in
+            sendRequest(
+                from: "/users/\(userID)/push_enrollment_tokens",
+                type: ".create"
+            ) { result in
+                switch result {
+                case .success(let payload):
+                    guard let token = payload["token"] as? String,
+                        let vapid = payload["vapid_public_key"] as? String
+                    else {
+                        cont.resume(throwing: AuthFailure(
+                            domain: "portal",
+                            code: "bad-response",
+                            message: "Missing fields in enrollment response",
+                        ))
+                        return
+                    }
+                    cont.resume(returning: PushEnrollmentTicket(
+                        token: token, vapidPublicKey: vapid
+                    ))
+                case .failure(let err):
+                    cont.resume(throwing: err)
+                }
+            }
+        }
+    }
+
     public func removeMembers(_ userIDs: [String]) async {
         guard case .joined(let labID) = status else { return }
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in

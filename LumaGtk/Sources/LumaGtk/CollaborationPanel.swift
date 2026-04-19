@@ -20,6 +20,7 @@ final class CollaborationPanel {
     private let activeCollaboration: Box
     private let participantsStrip: Box
     private let participantsScroll: ScrolledWindow
+    private let notificationsButton: Button
     private let chatListBox: ListBox
     private let chatScroll: ScrolledWindow
     private let chatEntry: Entry
@@ -84,10 +85,20 @@ final class CollaborationPanel {
         activeCollaboration.append(child: Separator(orientation: .horizontal))
 
         let participantsSection = Box(orientation: .vertical, spacing: 4)
+        let participantsHeaderRow = Box(orientation: .horizontal, spacing: 6)
         let participantsHeader = Label(str: "PARTICIPANTS")
         participantsHeader.halign = .start
+        participantsHeader.hexpand = true
         participantsHeader.add(cssClass: "heading")
-        participantsSection.append(child: participantsHeader)
+        participantsHeaderRow.append(child: participantsHeader)
+
+        let notificationsButton = Button(label: "Enable notifications")
+        notificationsButton.hasFrame = false
+        notificationsButton.add(cssClass: "flat")
+        notificationsButton.tooltipText = "Open your browser to allow Web Push notifications"
+        participantsHeaderRow.append(child: notificationsButton)
+
+        participantsSection.append(child: participantsHeaderRow)
 
         participantsStrip = Box(orientation: .horizontal, spacing: 6)
         participantsStrip.marginTop = 2
@@ -98,6 +109,8 @@ final class CollaborationPanel {
         participantsScroll.setSizeRequest(width: -1, height: Self.participantAvatarSize + 8)
         participantsScroll.set(child: participantsStrip)
         participantsSection.append(child: participantsScroll)
+
+        self.notificationsButton = notificationsButton
 
         activeCollaboration.append(child: participantsSection)
 
@@ -155,6 +168,12 @@ final class CollaborationPanel {
                     let atBottom = (adj.upper - (adj.value + adj.pageSize)) < 20.0
                     self.isPinnedToBottom = atBottom
                 }
+            }
+        }
+
+        notificationsButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.enableBrowserNotifications()
             }
         }
 
@@ -693,6 +712,26 @@ final class CollaborationPanel {
         Task { @MainActor [avatar] in
             guard let texture = await AvatarCache.shared.texture(for: url) else { return }
             avatar.set(customImage: texture)
+        }
+    }
+
+    private func enableBrowserNotifications() {
+        guard let engine else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let url = try await engine.webPushEnrollmentURL()
+                let launcher = UriLauncher(uri: url.absoluteString)
+                let parentWindow: Gtk.WindowRef?
+                if let rootPtr = self.widget.root?.ptr {
+                    parentWindow = Gtk.WindowRef(raw: rootPtr)
+                } else {
+                    parentWindow = nil
+                }
+                launcher.launch(parent: parentWindow, cancellable: nil, callback: nil, userData: nil)
+            } catch {
+                print("push enrollment failed: \(error)")
+            }
         }
     }
 

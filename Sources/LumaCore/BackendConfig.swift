@@ -3,6 +3,7 @@ import Foundation
 public enum BackendConfig {
     public static let portalAddress = "portal.luma.frida.re:27042"
     public static let inviteLinkBase = "https://luma.frida.re/l/"
+    public static let pushEnrollURL = "https://luma.frida.re/push-enroll"
 
     public static let certificate: String = {
         guard let url = Bundle.module.url(forResource: "LumaPortal", withExtension: "pem") else {

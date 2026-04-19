@@ -114,6 +114,20 @@ public final class Engine {
         await collaboration.stop()
     }
 
+    /// Ask the portal for a one-time enrollment token and build the URL the
+    /// user should open in their default browser to allow Web Push
+    /// notifications. The token is single-use with a five-minute lifetime
+    /// (enforced server-side) so it's safe to stash in the URL fragment.
+    public func webPushEnrollmentURL() async throws -> URL {
+        let ticket = try await collaboration.requestPushEnrollmentToken()
+        guard var components = URLComponents(string: BackendConfig.pushEnrollURL) else {
+            throw URLError(.badURL)
+        }
+        components.fragment = "token=\(ticket.token)&vapid=\(ticket.vapidPublicKey)"
+        guard let url = components.url else { throw URLError(.badURL) }
+        return url
+    }
+
     // MARK: - Notebook Operations
 
     public func addNotebookEntry(_ entry: NotebookEntry, after otherEntry: NotebookEntry? = nil) {
