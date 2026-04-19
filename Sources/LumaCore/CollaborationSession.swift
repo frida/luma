@@ -91,6 +91,7 @@ public final class CollaborationSession {
     private(set) public var members: [Member] = []
     private(set) public var chatMessages: [ChatMessage] = []
     private(set) public var vapidPublicKey: String?
+    private(set) public var registeredPushPlatforms: Set<String> = []
     public var isHost = false
 
     public var isOwner: Bool {
@@ -185,6 +186,7 @@ public final class CollaborationSession {
         members = []
         chatMessages = []
         vapidPublicKey = nil
+        registeredPushPlatforms = []
         pendingRequests.removeAll()
     }
 
@@ -283,6 +285,11 @@ public final class CollaborationSession {
             type: "+add",
             payload: ["subscriptions": subs]
         )
+        for s in subs {
+            if let platform = s["platform"] as? String {
+                registeredPushPlatforms.insert(platform)
+            }
+        }
     }
 
     public func unregisterPushSubscriptions(_ subs: [JSONObject]) {
@@ -485,9 +492,13 @@ public final class CollaborationSession {
             if let userObj = payload["user"] as? JSONObject, let u = UserInfo.fromJSON(userObj) {
                 localUser = u
             }
-            if let push = payload["push"] as? JSONObject,
-                let key = push["vapid_public_key"] as? String {
-                vapidPublicKey = key
+            if let push = payload["push"] as? JSONObject {
+                if let key = push["vapid_public_key"] as? String {
+                    vapidPublicKey = key
+                }
+                if let list = push["registered"] as? [String] {
+                    registeredPushPlatforms = Set(list)
+                }
             }
 
         case ("+add", let s) where s.count == 3 && s[0] == "labs" && s[2] == "members":

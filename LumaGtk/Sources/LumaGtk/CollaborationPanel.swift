@@ -181,11 +181,21 @@ final class CollaborationPanel {
         refreshLab()
         refreshParticipants()
         refreshChat()
+        refreshNotificationsButton()
         syncSignInSheet()
         observeIdentity()
         observeLab()
         observeParticipants()
         observeChat()
+    }
+
+    private func refreshNotificationsButton() {
+        guard let engine else {
+            notificationsButton.visible = false
+            return
+        }
+        let registered = engine.collaboration.registeredPushPlatforms
+        notificationsButton.visible = registered.isEmpty
     }
 
     // MARK: - Observation
@@ -229,6 +239,7 @@ final class CollaborationPanel {
         guard let engine else { return }
         withObservationTracking {
             _ = engine.collaboration.status
+            _ = engine.collaboration.registeredPushPlatforms
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
@@ -236,6 +247,7 @@ final class CollaborationPanel {
                 self.refreshParticipants()
                 self.refreshChat()
                 self.refreshChatInputState()
+                self.refreshNotificationsButton()
                 self.observeLab()
             }
         }
