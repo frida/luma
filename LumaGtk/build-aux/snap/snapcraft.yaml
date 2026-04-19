@@ -66,10 +66,16 @@ parts:
       cd src
       ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr/local \
         -- --force-fallback-for=openssl,libelf \
+           --libdir=lib \
            -Dcompat=disabled -Dserver=disabled -Dportal=disabled \
            -Dinject=disabled -Dgadget=disabled -Dtests=disabled
       make -j$(nproc)
       DESTDIR="$CRAFT_PART_INSTALL" python3 releng/meson/meson.py install -C build --skip-subprojects --no-rebuild
+      # Rewrite .pc prefix to a pcfiledir-relative path so pkg-config
+      # resolves cflags/libs against $CRAFT_STAGE after snapcraft's
+      # staging step rather than the literal --prefix.
+      sed -i 's|^prefix=.*|prefix=${pcfiledir}/../..|' \
+        "$CRAFT_PART_INSTALL"/usr/local/lib/pkgconfig/*.pc
     build-packages:
       - git
       - curl
@@ -85,8 +91,8 @@ parts:
       - libunwind-dev
       - libnice-dev
     prime:
-      - usr/local/lib/x86_64-linux-gnu/libfrida-core-1.0.so*
-      - usr/local/lib/x86_64-linux-gnu/frida-1.0
+      - usr/local/lib/libfrida-core-1.0.so*
+      - usr/local/lib/frida-1.0
 
   radare2:
     plugin: nil
@@ -94,9 +100,11 @@ parts:
       git clone https://github.com/radareorg/radare2.git src
       cd src
       git checkout c08254586bc9d99a187aab5279e130eff39e37a7
-      meson setup build --prefix=/usr/local --default-library=static -Dstatic_runtime=true -Dcli=disabled
+      meson setup build --prefix=/usr/local --libdir=lib --default-library=static -Dstatic_runtime=true -Dcli=disabled
       ninja -C build
       DESTDIR="$CRAFT_PART_INSTALL" ninja -C build install
+      sed -i 's|^prefix=.*|prefix=${pcfiledir}/../..|' \
+        "$CRAFT_PART_INSTALL"/usr/local/lib/pkgconfig/*.pc
     build-packages:
       - git
       - pkg-config
@@ -112,8 +120,8 @@ parts:
     source-branch: cross-platform
     override-build: |
       export PATH="$CRAFT_STAGE/usr/bin:$CRAFT_STAGE/usr/local/bin:$CRAFT_STAGE/bin:$PATH"
-      export PKG_CONFIG_PATH="$CRAFT_STAGE/usr/local/lib/pkgconfig:$CRAFT_STAGE/usr/local/lib/x86_64-linux-gnu/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-      export LD_LIBRARY_PATH="$CRAFT_STAGE/usr/local/lib:$CRAFT_STAGE/usr/local/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+      export PKG_CONFIG_PATH="$CRAFT_STAGE/usr/local/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+      export LD_LIBRARY_PATH="$CRAFT_STAGE/usr/local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
       export C_INCLUDE_PATH="$CRAFT_STAGE/usr/local/include${C_INCLUDE_PATH:+:$C_INCLUDE_PATH}"
       cd LumaGtk
       make build SWIFT_BUILD_FLAGS="-c release"
@@ -136,7 +144,7 @@ parts:
         "$CRAFT_PART_INSTALL/usr/local/bin/luma"
       strip --strip-unneeded "$CRAFT_PART_INSTALL/usr/local/bin/luma"
       strip --strip-unneeded "$SWIFT_DST"/*.so
-      patchelf --set-rpath '$ORIGIN/../lib/luma/swift:$ORIGIN/../lib/x86_64-linux-gnu' \
+      patchelf --set-rpath '$ORIGIN/../lib/luma/swift:$ORIGIN/../lib' \
                "$CRAFT_PART_INSTALL/usr/local/bin/luma"
       install -Dm644 data/re.frida.Luma.desktop "$CRAFT_PART_INSTALL/usr/local/share/applications/re.frida.Luma.desktop"
       install -Dm644 data/re.frida.Luma.xml "$CRAFT_PART_INSTALL/usr/local/share/mime/packages/re.frida.Luma.xml"
