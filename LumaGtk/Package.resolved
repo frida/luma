@@ -160,7 +160,7 @@
       "location" : "https://github.com/frida/SwiftGtk.git",
       "state" : {
         "branch" : "gtk4-development",
-        "revision" : "a6b83c71ba5b5e3bbf96daf64ed71f77b2737af8"
+        "revision" : "6b1654c05dc6aedd71a8ecec8c152e6dd18d5317"
       }
     },
     {
