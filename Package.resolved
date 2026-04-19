@@ -7,7 +7,7 @@
       "location" : "https://github.com/frida/frida-swift",
       "state" : {
         "branch" : "main",
-        "revision" : "40a4bf89ce49b65e677b6cc775f09f46ebe9f87b"
+        "revision" : "87c2e45141f0b524ed1b99038d54a1652fcdd5c8"
       }
     },
     {
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-asn1.git",
       "state" : {
-        "revision" : "9f542610331815e29cc3821d3b6f488db8715517",
-        "version" : "1.6.0"
+        "revision" : "eb50cbd14606a9161cbc5d452f18797c90ef0bab",
+        "version" : "1.7.0"
       }
     },
     {
@@ -43,7 +43,7 @@
       "location" : "https://github.com/radareorg/SwiftyR2",
       "state" : {
         "branch" : "main",
-        "revision" : "93691158ba4e5a49e5530b4d377d6d671eedf6d7"
+        "revision" : "2b13fd5f4337c74b3c2888e324e3eb3fd262874c"
       }
     }
   ],

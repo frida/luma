@@ -1,5 +1,5 @@
 {
-  "originHash" : "a8b9a0f97e8a753693656c9583c92c5ea73bc08bd1ae4b8a7308908e1e4ab872",
+  "originHash" : "21a7e297476280bc66b7240d309c3e41c6af648b72de33929f9f97eaeb6a9d64",
   "pins" : [
     {
       "identity" : "frida-swift",
@@ -7,7 +7,7 @@
       "location" : "https://github.com/frida/frida-swift",
       "state" : {
         "branch" : "main",
-        "revision" : "8c570dda5e282a1de679301301ca75c8ea962d54"
+        "revision" : "87c2e45141f0b524ed1b99038d54a1652fcdd5c8"
       }
     },
     {
@@ -205,7 +205,7 @@
       "location" : "https://github.com/radareorg/SwiftyR2",
       "state" : {
         "branch" : "main",
-        "revision" : "e6c4ad1853c8c34baf569ad5c60963314e580ddc"
+        "revision" : "2b13fd5f4337c74b3c2888e324e3eb3fd262874c"
       }
     },
     {
