@@ -5,7 +5,7 @@ import Frida
 /// authentication delegate packs this JSON envelope into the thrown error
 /// message so clients can tell an auth rejection (domain == "auth") apart
 /// from a transient upstream issue (domain == "github").
-public struct AuthFailure: Sendable, Decodable {
+public struct AuthFailure: Sendable, Decodable, Swift.Error {
     public let domain: String
     public let code: String
     public let message: String
