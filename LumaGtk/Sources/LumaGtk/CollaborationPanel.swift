@@ -27,6 +27,7 @@ final class CollaborationPanel {
 
     private let chatTimeFormatter: DateFormatter
 
+    private var participantWidgets: [String: Widget] = [:]
     private var copiedToastLabel: Label?
     private var copiedToastResetTask: Task<Void, Never>?
     private var isPinnedToBottom = true
@@ -213,6 +214,8 @@ final class CollaborationPanel {
             Task { @MainActor in
                 guard let self else { return }
                 self.refreshLab()
+                self.refreshParticipants()
+                self.refreshChat()
                 self.refreshChatInputState()
                 self.observeLab()
             }
@@ -221,11 +224,11 @@ final class CollaborationPanel {
 
     private func observeParticipants() {
         guard let engine else { return }
-        engine.collaboration.onParticipantJoined = { [weak self] _ in
-            self?.refreshParticipants()
+        engine.collaboration.onParticipantJoined = { [weak self] user in
+            self?.addParticipant(user)
         }
-        engine.collaboration.onParticipantLeft = { [weak self] _ in
-            self?.refreshParticipants()
+        engine.collaboration.onParticipantLeft = { [weak self] userID in
+            self?.removeParticipant(userID)
         }
     }
 
@@ -490,10 +493,31 @@ final class CollaborationPanel {
 
     private func refreshParticipants() {
         guard let engine else { return }
-        clearChildren(of: participantsStrip)
-        for user in engine.collaboration.participants {
-            participantsStrip.append(child: makeAvatarButton(for: user, size: Self.participantAvatarSize))
+        let desired = engine.collaboration.participants
+        let desiredIDs = Set(desired.map(\.id))
+
+        for (id, widget) in participantWidgets where !desiredIDs.contains(id) {
+            participantsStrip.remove(child: widget)
+            participantWidgets.removeValue(forKey: id)
         }
+
+        for user in desired where participantWidgets[user.id] == nil {
+            let button = makeAvatarButton(for: user, size: Self.participantAvatarSize)
+            participantsStrip.append(child: button)
+            participantWidgets[user.id] = button
+        }
+    }
+
+    private func addParticipant(_ user: LumaCore.CollaborationSession.UserInfo) {
+        guard participantWidgets[user.id] == nil else { return }
+        let button = makeAvatarButton(for: user, size: Self.participantAvatarSize)
+        participantsStrip.append(child: button)
+        participantWidgets[user.id] = button
+    }
+
+    private func removeParticipant(_ userID: String) {
+        guard let widget = participantWidgets.removeValue(forKey: userID) else { return }
+        participantsStrip.remove(child: widget)
     }
 
     private func refreshChat() {
@@ -629,12 +653,10 @@ final class CollaborationPanel {
         size: Int
     ) {
         guard let base = user.avatarURL else { return }
-        let fetchSize = size * 2
-        guard let url = URL(string: "\(base.absoluteString)&s=\(fetchSize)") else { return }
+        guard let url = URL(string: "\(base.absoluteString)&s=96") else { return }
 
-        Task { @MainActor [weak avatar] in
+        Task { @MainActor [avatar] in
             guard let texture = await AvatarCache.shared.texture(for: url) else { return }
-            guard let avatar else { return }
             avatar.set(customImage: texture)
         }
     }
