@@ -110,8 +110,26 @@ parts:
       mv "$CRAFT_PART_BUILD" "$PARENT/luma"
       cd "$PARENT/luma/LumaGtk"
       make build SWIFT_BUILD_FLAGS="-c release"
+      # Bundle the runtime libraries the snap needs at runtime
+      # alongside the binary: frida-core is shipped by the
+      # frida-core part (into /usr/local/lib/x86_64-linux-gnu), while
+      # the Swift runtime lives in $CRAFT_STAGE/lib/swift/linux from
+      # the swift part, so copy the subset we actually need next to
+      # the app under /usr/local/lib/luma/swift/.
+      SWIFT_SRC="$CRAFT_STAGE/lib/swift/linux"
+      SWIFT_DST="$CRAFT_PART_INSTALL/usr/local/lib/luma/swift"
+      install -d "$SWIFT_DST"
+      for so in "$SWIFT_SRC"/*.so; do
+        case "$(basename "$so")" in
+          libXCTest.so|libTesting.so|lib_Testing_Foundation.so) continue ;;
+        esac
+        cp -P "$so" "$SWIFT_DST/"
+      done
       install -Dm755 .build/x86_64-unknown-linux-gnu/release/LumaGtk "$CRAFT_PART_INSTALL/usr/local/bin/luma"
       strip --strip-unneeded "$CRAFT_PART_INSTALL/usr/local/bin/luma"
+      strip --strip-unneeded "$SWIFT_DST"/*.so
+      patchelf --set-rpath '$ORIGIN/../lib/luma/swift:$ORIGIN/../lib/x86_64-linux-gnu' \
+               "$CRAFT_PART_INSTALL/usr/local/bin/luma"
       install -Dm644 data/re.frida.Luma.desktop "$CRAFT_PART_INSTALL/usr/local/share/applications/re.frida.Luma.desktop"
       install -Dm644 data/re.frida.Luma.xml "$CRAFT_PART_INSTALL/usr/local/share/mime/packages/re.frida.Luma.xml"
       for size in 32 48 64 128 256 512; do
@@ -136,9 +154,11 @@ parts:
       - libxml2-dev
       - nodejs
       - npm
+      - patchelf
       - pkg-config
     stage-packages:
       - libgtk-4-1
       - libadwaita-1-0
       - libwebkitgtk-6.0-4
       - libsoup-3.0-0
+      - libxml2
