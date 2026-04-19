@@ -59,9 +59,9 @@ final class DesktopNotifier {
         if window?.isActive == true { return }
         let notification = Notification(title: title)
         if !body.isEmpty {
-            body.withCString { notification.set(body: $0) }
+            notification.set(body: body)
         }
         let id = labID.map { "\(kind)-\($0)" } ?? kind
-        id.withCString { app.sendNotification(id: $0, notification: notification) }
+        app.sendNotification(id: id, notification: notification)
     }
 }
