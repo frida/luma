@@ -6,14 +6,6 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXBuildFile section */
-		0C8A0A6F2EF0B51000F0D7B2 /* Frida in Frameworks */ = {isa = PBXBuildFile; productRef = 0C8A0A6E2EF0B51000F0D7B2 /* Frida */; };
-		0C8A0A712EF0B51400F0D7B2 /* SwiftyR2 in Frameworks */ = {isa = PBXBuildFile; productRef = 0C8A0A702EF0B51400F0D7B2 /* SwiftyR2 */; };
-		0C8A0A732EF0B51800F0D7B2 /* SwiftyMonaco in Frameworks */ = {isa = PBXBuildFile; productRef = 0C8A0A722EF0B51800F0D7B2 /* SwiftyMonaco */; };
-		0C8A0A752EF0B51C00F0D7B2 /* Frida in Frameworks */ = {isa = PBXBuildFile; productRef = 0C8A0A742EF0B51C00F0D7B2 /* Frida */; };
-		0CAA00012F00000000000001 /* LumaCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0CAA00022F00000000000001 /* LumaCore */; };
-/* End PBXBuildFile section */
-
 /* Begin PBXAggregateTarget section */
 		0CAB00010000000000000001 /* AgentBundle */ = {
 			isa = PBXAggregateTarget;
@@ -29,14 +21,15 @@
 		};
 /* End PBXAggregateTarget section */
 
+/* Begin PBXBuildFile section */
+		0C8A0A6F2EF0B51000F0D7B2 /* Frida in Frameworks */ = {isa = PBXBuildFile; productRef = 0C8A0A6E2EF0B51000F0D7B2 /* Frida */; };
+		0C8A0A712EF0B51400F0D7B2 /* SwiftyR2 in Frameworks */ = {isa = PBXBuildFile; productRef = 0C8A0A702EF0B51400F0D7B2 /* SwiftyR2 */; };
+		0C8A0A732EF0B51800F0D7B2 /* SwiftyMonaco in Frameworks */ = {isa = PBXBuildFile; productRef = 0C8A0A722EF0B51800F0D7B2 /* SwiftyMonaco */; };
+		0C8A0A752EF0B51C00F0D7B2 /* Frida in Frameworks */ = {isa = PBXBuildFile; productRef = 0C8A0A742EF0B51C00F0D7B2 /* Frida */; };
+		0CAA00012F00000000000001 /* LumaCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0CAA00022F00000000000001 /* LumaCore */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
-		0C6420CB2EE8712300E4F780 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 0CD2092C2EB511C400D027FC /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 0C6420C02EE8672900E4F780;
-			remoteInfo = LumaBundleCompiler;
-		};
 		0CAB00010000000000000006 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 0CD2092C2EB511C400D027FC /* Project object */;
@@ -85,24 +78,15 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
-				scripts/capture-screenshots.py,
-				scripts/capture-screenshots.sh,
+				"scripts/capture-screenshots.py",
+				"scripts/capture-screenshots.sh",
 			);
 			target = 0CD209332EB511C400D027FC /* Luma */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
-/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
-		0C4C90702ED5DA7900E08137 /* Exceptions for "Luma" folder in "Copy Bundle Resources" phase from "Luma" target */ = {
-			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
-			buildPhase = 0CD209322EB511C400D027FC /* Resources */;
-			membershipExceptions = (
-			);
-		};
-/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		0C6420C22EE8672900E4F780 /* LumaBundleCompiler */ = {
+		0C6420C22EE8672900E4F780 /* Sources/LumaBundleCompiler */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Sources/LumaBundleCompiler;
 			sourceTree = "<group>";
@@ -111,7 +95,6 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				0CAAF62A2ED4D41D00B8FD05 /* Exceptions for "Luma" folder in "Luma" target */,
-				0C4C90702ED5DA7900E08137 /* Exceptions for "Luma" folder in "Copy Bundle Resources" phase from "Luma" target */,
 			);
 			path = Luma;
 			sourceTree = "<group>";
@@ -183,7 +166,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				0C6420C22EE8672900E4F780 /* LumaBundleCompiler */,
+				0C6420C22EE8672900E4F780 /* Sources/LumaBundleCompiler */,
 			);
 			name = LumaBundleCompiler;
 			packageProductDependencies = (
@@ -329,11 +312,6 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		0C6420CC2EE8712300E4F780 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 0C6420C02EE8672900E4F780 /* LumaBundleCompiler */;
-			targetProxy = 0C6420CB2EE8712300E4F780 /* PBXContainerItemProxy */;
-		};
 		0CAB00010000000000000005 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 0C6420C02EE8672900E4F780 /* LumaBundleCompiler */;
@@ -347,22 +325,6 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		0CAB00010000000000000003 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-			};
-			name = Debug;
-		};
-		0CAB00010000000000000004 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-			};
-			name = Release;
-		};
 		0C6420C62EE8672900E4F780 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -397,12 +359,29 @@
 			};
 			name = Release;
 		};
+		0CAB00010000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		0CAB00010000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
 		0CD209422EB511C700D027FC /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = NO;
+				CODE_SIGN_ENTITLEMENTS = Luma/Luma.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
@@ -419,6 +398,8 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Luma/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Luma;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -462,15 +443,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = NO;
+				CODE_SIGN_ENTITLEMENTS = Luma/Luma.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 753PE4AG6F;
-				CODE_SIGN_ENTITLEMENTS = Luma/Luma.entitlements;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
-				EXPORTED_SYMBOLS_FILE = Luma/exported-symbols.txt;
-				GCC_SYMBOLS_PRIVATE_EXTERN = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
 				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
@@ -479,8 +458,12 @@
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				EXPORTED_SYMBOLS_FILE = "Luma/exported-symbols.txt";
+				GCC_SYMBOLS_PRIVATE_EXTERN = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Luma/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Luma;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -646,20 +629,20 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		0CAB00010000000000000002 /* Build configuration list for PBXAggregateTarget "AgentBundle" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				0CAB00010000000000000003 /* Debug */,
-				0CAB00010000000000000004 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		0C6420C52EE8672900E4F780 /* Build configuration list for PBXNativeTarget "LumaBundleCompiler" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				0C6420C62EE8672900E4F780 /* Debug */,
 				0C6420C72EE8672900E4F780 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0CAB00010000000000000002 /* Build configuration list for PBXAggregateTarget "AgentBundle" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0CAB00010000000000000003 /* Debug */,
+				0CAB00010000000000000004 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -683,6 +666,13 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		0CAA00032F00000000000001 /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
 		0C8A0A6B2EF0B4E100F0D7B2 /* XCRemoteSwiftPackageReference "frida-swift" */ = {
@@ -710,13 +700,6 @@
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCLocalSwiftPackageReference section */
-		0CAA00032F00000000000001 /* XCLocalSwiftPackageReference "." */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = .;
-		};
-/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		0C8A0A6E2EF0B51000F0D7B2 /* Frida */ = {
