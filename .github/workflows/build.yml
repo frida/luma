@@ -7,7 +7,7 @@ on:
 
 env:
   FRIDA_CORE_REF: "main"
-  RADARE2_REF: "c08254586bc9d99a187aab5279e130eff39e37a7"
+  RADARE2_REF: "7ed1e8c6fd000b99c8aa6835e12bef1657d92746"
   SWIFT_VERSION: "6.2"
   # ilammy/msvc-dev-cmd hasn't cut a Node-24-compatible release yet
   # (v1 is its only major). Opt into Node 24 ahead of GitHub's
