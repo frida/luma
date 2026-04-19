@@ -12,6 +12,7 @@ final class CollaborationPanel {
     let widget: Box
 
     private weak var engine: Engine?
+    private weak var desktopNotifier: DesktopNotifier?
     private let onClose: () -> Void
 
     private let headerBox: Box
@@ -40,8 +41,9 @@ final class CollaborationPanel {
     private static let participantAvatarSize: Int = 28
     private static let chatAvatarSize: Int = 20
 
-    init(engine: Engine, onClose: @escaping () -> Void) {
+    init(engine: Engine, desktopNotifier: DesktopNotifier, onClose: @escaping () -> Void) {
         self.engine = engine
+        self.desktopNotifier = desktopNotifier
         self.onClose = onClose
 
         widget = Box(orientation: .vertical, spacing: 8)
@@ -195,7 +197,7 @@ final class CollaborationPanel {
             return
         }
         let registered = engine.collaboration.registeredPushPlatforms
-        notificationsButton.visible = registered.isEmpty
+        notificationsButton.visible = !registered.contains("web")
     }
 
     // MARK: - Observation
@@ -256,7 +258,10 @@ final class CollaborationPanel {
     private func observeParticipants() {
         guard let engine else { return }
         engine.collaboration.onMemberAdded = { [weak self] member in
-            self?.addParticipant(member.user)
+            guard let self else { return }
+            self.addParticipant(member.user)
+            let labID = self.engine?.collaboration.labID
+            self.desktopNotifier?.notifyMemberAdded(member, labID: labID)
         }
         engine.collaboration.onMemberRemoved = { [weak self] userID in
             self?.removeParticipant(userID)
@@ -269,7 +274,10 @@ final class CollaborationPanel {
     private func observeChat() {
         guard let engine else { return }
         engine.collaboration.onChatMessageReceived = { [weak self] message in
-            self?.appendChatMessage(message)
+            guard let self else { return }
+            self.appendChatMessage(message)
+            let labID = self.engine?.collaboration.labID
+            self.desktopNotifier?.notifyChatMessage(message, labID: labID)
         }
     }
 

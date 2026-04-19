@@ -27,6 +27,7 @@ final class MainWindow {
     private let detailContainer: Box
     private let eventStreamPane: EventStreamPane
     private var notebookPane: NotebookPane?
+    private let desktopNotifier: DesktopNotifier
     private var currentInstrumentDetail: InstrumentDetailPane?
     private var currentREPLPane: REPLPane?
     private var currentREPLSessionID: UUID?
@@ -88,6 +89,7 @@ final class MainWindow {
         self.app = app
         self.application = application
         self.document = document
+        self.desktopNotifier = DesktopNotifier(app: app)
         self.window = Adw.ApplicationWindow(app: app)
         self.outerPaned = Paned(orientation: .horizontal)
         window.title = MainWindow.makeTitle(for: document)
@@ -348,7 +350,14 @@ final class MainWindow {
         self.engine = engine
         engine.onSessionListChanged = { [weak self] change in self?.handleSessionListChange(change) }
         engine.onREPLCellAdded = { [weak self] cell in self?.currentREPLPane?.appendCell(cell) }
-        engine.onNotebookChanged = { [weak self] change in self?.notebookPane?.handleNotebookChange(change) }
+        engine.onNotebookChanged = { [weak self, weak engine] change in
+            guard let self else { return }
+            self.notebookPane?.handleNotebookChange(change)
+            if case let .added(entry) = change {
+                let labID = engine?.collaboration.labID
+                self.desktopNotifier.notifyEntryAdded(entry, labID: labID)
+            }
+        }
         engine.onInstalledPackagesChanged = { [weak self] packages in self?.renderPackages(packages) }
         engine.populateSessionList()
         renderPackages(engine.installedPackages)
@@ -366,9 +375,13 @@ final class MainWindow {
         InsightDetailView.copyFeedback = { [weak self] message in
             self?.showToast(message, durationSeconds: 1.0)
         }
-        let panel = CollaborationPanel(engine: engine, onClose: { [weak self] in
-            self?.setCollaborationVisible(false)
-        })
+        let panel = CollaborationPanel(
+            engine: engine,
+            desktopNotifier: desktopNotifier,
+            onClose: { [weak self] in
+                self?.setCollaborationVisible(false)
+            }
+        )
         collaborationPanel = panel
         outerPaned.endChild = WidgetRef(panel.widget)
         panel.widget.visible = isCollaborationPanelVisible
