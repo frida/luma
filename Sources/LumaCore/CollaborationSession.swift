@@ -235,19 +235,74 @@ public final class CollaborationSession {
     }
 
     public func notifyEntryAdded(_ entry: NotebookEntry) {
+        notifyEntriesAdded([entry])
+    }
+
+    /// Cap for a single `+add` batch, chosen to stay comfortably under Frida's
+    /// bus frame size. Entries are greedily packed until the next one would
+    /// overflow; a single entry that already exceeds the cap is sent on its
+    /// own (and the server will reject if it truly violates a per-field
+    /// limit).
+    private static let maxBatchBytes = 4 * 1024 * 1024
+
+    public func notifyEntriesAdded(_ entries: [NotebookEntry]) {
         guard case .joined(let labID) = status else { return }
-        let bin = entry.binaryData.map { [UInt8]($0) }
-        var payload: JSONObject = ["entries": [entry.toJSON()]]
-        if let bin {
-            payload["binary_indices"] = [["start": 0, "length": bin.count] as JSONObject]
-        } else {
-            payload["binary_indices"] = [NSNull()]
+        guard !entries.isEmpty else { return }
+
+        var chunks: [[NotebookEntry]] = [[]]
+        var chunkBytes = 0
+        for entry in entries {
+            let entrySize = sizeOfEntry(entry)
+            if !chunks[chunks.count - 1].isEmpty,
+               chunkBytes + entrySize > Self.maxBatchBytes {
+                chunks.append([])
+                chunkBytes = 0
+            }
+            chunks[chunks.count - 1].append(entry)
+            chunkBytes += entrySize
         }
+
+        for chunk in chunks {
+            sendEntriesBatch(chunk, labID: labID)
+        }
+    }
+
+    private func sizeOfEntry(_ entry: NotebookEntry) -> Int {
+        var size = entry.binaryData?.count ?? 0
+        if let jsonData = try? JSONSerialization.data(withJSONObject: entry.toJSON()) {
+            size += jsonData.count
+        }
+        return size
+    }
+
+    private func sendEntriesBatch(
+        _ entries: [NotebookEntry],
+        labID: String
+    ) {
+        var entryObjects: [JSONObject] = []
+        var binaryIndices: [Any] = []
+        var combined: [UInt8] = []
+        for entry in entries {
+            entryObjects.append(entry.toJSON())
+            if let bin = entry.binaryData {
+                binaryIndices.append([
+                    "start": combined.count,
+                    "length": bin.count,
+                ] as JSONObject)
+                combined.append(contentsOf: [UInt8](bin))
+            } else {
+                binaryIndices.append(NSNull())
+            }
+        }
+        let payload: JSONObject = [
+            "entries": entryObjects,
+            "binary_indices": binaryIndices,
+        ]
         sendNotification(
             from: "/labs/\(labID)/notebook/entries",
             type: "+add",
             payload: payload,
-            data: bin,
+            data: combined.isEmpty ? nil : combined,
         )
     }
 
@@ -383,9 +438,7 @@ public final class CollaborationSession {
                 collabState.labID = labID
                 try! self.store.save(collabState)
                 let entries = try! self.store.fetchNotebookEntries()
-                for entry in entries {
-                    self.notifyEntryAdded(entry)
-                }
+                self.notifyEntriesAdded(entries)
             case .failure(let failure):
                 self.setStatus(.error(message: failure.message))
             }
