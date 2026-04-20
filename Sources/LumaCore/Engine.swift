@@ -290,6 +290,7 @@ public final class Engine {
                 try? store.save(session)
             }
         }
+        notebookEntries = (try? store.fetchNotebookEntries()) ?? []
         sessions = (try? store.fetchSessions()) ?? []
 
         sessionsObservation = store.observeSessions { [weak self] sessions in
