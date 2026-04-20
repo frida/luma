@@ -202,7 +202,18 @@ public final class Engine {
 
         collaboration.onNotebookEntryAdded = { [weak self] entry in
             guard let self else { return }
-            if (try? self.store.fetchNotebookEntry(id: entry.id)) == nil {
+            if let existing = try? self.store.fetchNotebookEntry(id: entry.id) {
+                // Echo of an entry we just sent — adopt the server-stamped
+                // author so every client renders a consistent identity.
+                guard existing.author != entry.author else { return }
+                var updated = existing
+                updated.author = entry.author
+                try? self.store.save(updated)
+                if let i = self.notebookEntries.firstIndex(where: { $0.id == updated.id }) {
+                    self.notebookEntries[i] = updated
+                }
+                self.onNotebookChanged?(.updated(updated))
+            } else {
                 try? self.store.save(entry)
                 self.notebookEntries.append(entry)
                 self.onNotebookChanged?(.added(entry))

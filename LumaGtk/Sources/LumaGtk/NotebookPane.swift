@@ -1,3 +1,4 @@
+import Adw
 import CGtk
 import Foundation
 import Gtk
@@ -383,6 +384,10 @@ final class NotebookPane {
         spacer.hexpand = true
         header.append(child: spacer)
 
+        if let author = entry.author {
+            header.append(child: makeAuthorBadge(author))
+        }
+
         let timestamp = Label(str: timeFormatter.string(from: entry.timestamp))
         timestamp.add(cssClass: "caption")
         timestamp.add(cssClass: "dim-label")
@@ -422,6 +427,31 @@ final class NotebookPane {
         header.append(child: deleteButton)
 
         return header
+    }
+
+    private func makeAuthorBadge(_ author: LumaCore.NotebookEntry.Author) -> Box {
+        let name = author.name.isEmpty ? "@\(author.id)" : author.name
+        let box = Box(orientation: .horizontal, spacing: 4)
+        box.tooltipText = name
+
+        let avatar = Adw.Avatar(size: 16, text: name, showInitials: true)
+        box.append(child: avatar)
+
+        if !author.avatarURL.isEmpty,
+           let url = URL(string: "\(author.avatarURL)&s=48")
+        {
+            Task { @MainActor [avatar] in
+                guard let texture = await AvatarCache.shared.texture(for: url) else { return }
+                avatar.set(customImage: texture)
+            }
+        }
+
+        let label = Label(str: name)
+        label.add(cssClass: "caption")
+        label.add(cssClass: "dim-label")
+        box.append(child: label)
+
+        return box
     }
 
     private func makeEditableBody(for entry: LumaCore.NotebookEntry) -> Box {

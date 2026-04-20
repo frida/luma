@@ -175,6 +175,10 @@ struct NotebookEntryRow: View {
 
             Spacer()
 
+            if let author = entry.author {
+                authorBadge(author)
+            }
+
             Text(entry.timestamp.formatted())
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -189,6 +193,31 @@ struct NotebookEntryRow: View {
                 .help("Edit Note")
             }
         }
+    }
+
+    @ViewBuilder
+    private func authorBadge(_ author: LumaCore.NotebookEntry.Author) -> some View {
+        let name = author.name.isEmpty ? "@\(author.id)" : author.name
+        HStack(spacing: 4) {
+            AsyncImage(url: URL(string: author.avatarURL)) { phase in
+                switch phase {
+                case .success(let image):
+                    image.resizable().scaledToFill()
+                default:
+                    Image(systemName: "person.crop.circle")
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 16, height: 16)
+            .clipShape(Circle())
+
+            Text(name)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .help(name)
     }
 
     @ViewBuilder
