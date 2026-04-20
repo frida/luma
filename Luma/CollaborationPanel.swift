@@ -182,7 +182,7 @@ struct CollaborationPanel: View {
                             .accessibilityLabel("Copy invite link")
                         }
 
-                        Text("Share this link so others can open a new project and join this notebook.")
+                        Text("Share this link to invite others to this notebook.")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .padding(.top, 2)
@@ -513,6 +513,8 @@ private struct LabPictureView: View {
         ("image/gif", "com.compuserve.gif"),
     ]
 
+    private static let pictureSize: CGFloat = 48
+
     var body: some View {
         Group {
             if collaboration.isOwner {
@@ -528,8 +530,10 @@ private struct LabPictureView: View {
                 } label: {
                     pictureView
                 }
+                .menuStyle(.button)
                 .menuIndicator(.hidden)
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
+                .fixedSize()
                 .help("Change lab picture")
             } else {
                 pictureView
@@ -539,26 +543,29 @@ private struct LabPictureView: View {
 
     @ViewBuilder
     private var pictureView: some View {
+        pictureContent
+            .frame(width: Self.pictureSize, height: Self.pictureSize)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    @ViewBuilder
+    private var pictureContent: some View {
         if let data = collaboration.labPictureData,
            let image = NSImage(data: data) {
             Image(nsImage: image)
                 .resizable()
-                .scaledToFill()
-                .frame(width: 48, height: 48)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .aspectRatio(contentMode: .fill)
         } else if let owner = collaboration.members.first(where: { $0.role == .owner }),
-                  let url = owner.user.avatarURL.flatMap({ URL(string: "\($0.absoluteString)&s=96") }) {
+                  let url = owner.user.avatarURL.flatMap({
+                      URL(string: "\($0.absoluteString)&s=\(Int(Self.pictureSize * 2))")
+                  }) {
             AsyncImage(url: url) { image in
-                image.resizable().scaledToFill()
+                image.resizable().aspectRatio(contentMode: .fill)
             } placeholder: {
                 Color.secondary.opacity(0.1)
             }
-            .frame(width: 48, height: 48)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
         } else {
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.secondary.opacity(0.15))
-                .frame(width: 48, height: 48)
+            Color.secondary.opacity(0.15)
                 .overlay(Image(systemName: "photo").foregroundStyle(.secondary))
         }
     }
@@ -574,19 +581,61 @@ private struct LabPictureView: View {
         guard panel.runModal() == .OK, let url = panel.url,
               let data = try? Data(contentsOf: url) else { return }
 
-        let ext = url.pathExtension.lowercased()
-        let contentType: String
-        switch ext {
-        case "png": contentType = "image/png"
-        case "jpg", "jpeg": contentType = "image/jpeg"
-        case "webp": contentType = "image/webp"
-        case "gif": contentType = "image/gif"
-        default: contentType = "image/png"
-        }
+        let (bytes, contentType) = normalizedPicture(from: data, originalExtension: url.pathExtension)
 
         Task { @MainActor in
-            await collaboration.setLabPicture(data, contentType: contentType)
+            await collaboration.setLabPicture(bytes, contentType: contentType)
         }
+    }
+
+    /// Downscale the user-supplied image to at most 512×512 and re-
+    /// encode as JPEG. Keeps the wire payload well under the server's
+    /// 512 KiB cap and prevents a multi-megapixel file from tanking
+    /// the UI when we render it into a 48-pt slot. Images already
+    /// smaller than the cap pass through unchanged.
+    private func normalizedPicture(
+        from data: Data,
+        originalExtension ext: String,
+    ) -> (Data, String) {
+        let maxDimension: CGFloat = 512
+        let passthrough: (Data, String) = {
+            switch ext.lowercased() {
+            case "png": return (data, "image/png")
+            case "jpg", "jpeg": return (data, "image/jpeg")
+            case "webp": return (data, "image/webp")
+            case "gif": return (data, "image/gif")
+            default: return (data, "image/png")
+            }
+        }()
+
+        guard let image = NSImage(data: data) else { return passthrough }
+        let size = image.size
+        let longest = max(size.width, size.height)
+        if longest <= maxDimension && data.count <= 512 * 1024 {
+            return passthrough
+        }
+
+        let scale = maxDimension / longest
+        let target = CGSize(width: size.width * scale, height: size.height * scale)
+        let resized = NSImage(size: target)
+        resized.lockFocus()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        image.draw(
+            in: NSRect(origin: .zero, size: target),
+            from: .zero,
+            operation: .copy,
+            fraction: 1.0,
+        )
+        resized.unlockFocus()
+
+        guard let tiff = resized.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff),
+              let jpeg = bitmap.representation(
+                  using: .jpeg,
+                  properties: [.compressionFactor: 0.85]
+              )
+        else { return passthrough }
+        return (jpeg, "image/jpeg")
     }
 }
 
@@ -615,9 +664,9 @@ private struct LabTitleView: View {
             } else {
                 Text(collaboration.labTitle ?? "Untitled")
                     .font(.headline)
-                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
-                Spacer()
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 if collaboration.isOwner {
                     Button {
                         draft = collaboration.labTitle ?? ""

@@ -1,6 +1,8 @@
 #include "include/CLuma.h"
 
 #include <gtk/gtk.h>
+#include <gdk-pixbuf/gdk-pixbuf.h>
+#include <string.h>
 
 // --- File menu / actions ----------------------------------------------------
 
@@ -227,4 +229,52 @@ luma_app_set_open_handler(void *gobject_application,
     ctx->callback = callback;
     ctx->user_data = user_data;
     g_signal_connect(G_APPLICATION(gobject_application), "open", G_CALLBACK(on_app_open), ctx);
+}
+
+// --- Image normalization ----------------------------------------------------
+
+bool
+luma_image_normalize(const unsigned char *in_bytes,
+                      size_t in_size,
+                      int max_dimension,
+                      unsigned char **out_bytes,
+                      size_t *out_size)
+{
+    if (!in_bytes || in_size == 0 || !out_bytes || !out_size) return false;
+
+    GInputStream *stream = g_memory_input_stream_new_from_data(in_bytes, (gssize)in_size, NULL);
+    GError *error = NULL;
+    GdkPixbuf *pixbuf = gdk_pixbuf_new_from_stream(stream, NULL, &error);
+    g_object_unref(stream);
+    if (!pixbuf) {
+        if (error) g_error_free(error);
+        return false;
+    }
+
+    int w = gdk_pixbuf_get_width(pixbuf);
+    int h = gdk_pixbuf_get_height(pixbuf);
+    int longest = w > h ? w : h;
+    GdkPixbuf *scaled = pixbuf;
+    if (longest > max_dimension) {
+        double scale = (double)max_dimension / (double)longest;
+        int nw = (int)(w * scale);
+        int nh = (int)(h * scale);
+        scaled = gdk_pixbuf_scale_simple(pixbuf, nw, nh, GDK_INTERP_BILINEAR);
+        g_object_unref(pixbuf);
+        if (!scaled) return false;
+    }
+
+    gchar *buf = NULL;
+    gsize buf_len = 0;
+    gboolean ok = gdk_pixbuf_save_to_buffer(
+        scaled, &buf, &buf_len, "jpeg", &error, "quality", "85", NULL);
+    g_object_unref(scaled);
+    if (!ok) {
+        if (error) g_error_free(error);
+        return false;
+    }
+
+    *out_bytes = (unsigned char *)buf;
+    *out_size = (size_t)buf_len;
+    return true;
 }

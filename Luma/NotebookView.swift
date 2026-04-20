@@ -89,8 +89,15 @@ struct NotebookEntryRow: View {
     @State private var editTitle: String = ""
     @State private var editDetails: String = ""
     @State private var dropHighlight: DropHighlight = .none
+    @State private var rowHeight: CGFloat = 0
 
     private enum DropHighlight { case none, above, below }
+    private struct RowHeightKey: PreferenceKey {
+        static var defaultValue: CGFloat = 0
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+            value = nextValue()
+        }
+    }
 
     private var isNote: Bool { entry.kind == .note }
 
@@ -117,6 +124,12 @@ struct NotebookEntryRow: View {
         .padding(10)
         .background(Color.secondary.opacity(0.06))
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(key: RowHeightKey.self, value: proxy.size.height)
+            }
+        )
+        .onPreferenceChange(RowHeightKey.self) { rowHeight = $0 }
         .overlay(alignment: .top) {
             if dropHighlight == .above {
                 Color.accentColor.frame(height: 2)
@@ -165,12 +178,6 @@ struct NotebookEntryRow: View {
                     isTitleFocused = true
                 }
             }
-        }
-        .onChange(of: isTitleFocused) {
-            handleFocusChange()
-        }
-        .onChange(of: isBodyFocused) {
-            handleFocusChange()
         }
         .onTapGesture(count: 2) {
             guard isNote else { return }
@@ -264,7 +271,8 @@ struct NotebookEntryRow: View {
         }
         guard let targetIndex = ordered.firstIndex(where: { $0.id == entry.id }) else { return false }
 
-        let dropAbove = location.y < 0
+        let midpoint = rowHeight > 0 ? rowHeight / 2 : 0
+        let dropAbove = location.y < midpoint
         let neighborA: LumaCore.NotebookEntry?
         let neighborB: LumaCore.NotebookEntry?
         if dropAbove {
@@ -287,6 +295,7 @@ struct NotebookEntryRow: View {
             TextField("Title", text: $editTitle)
                 .font(.subheadline.weight(.semibold))
                 .focused($isTitleFocused)
+                .onSubmit { saveEdits() }
 
             TextEditor(text: $editDetails)
                 .font(.system(.body, design: .default))
@@ -296,6 +305,14 @@ struct NotebookEntryRow: View {
                     RoundedRectangle(cornerRadius: 6)
                         .stroke(Color.secondary.opacity(0.2))
                 )
+
+            HStack(spacing: 8) {
+                Spacer()
+                Button("Cancel") { cancelEdits() }
+                Button("Save") { saveEdits() }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+            }
         }
     }
 
@@ -324,24 +341,28 @@ struct NotebookEntryRow: View {
         }
     }
 
-    private func handleFocusChange() {
-        if isNote,
-            isEditingUserNote,
-            !isTitleFocused,
-            !isBodyFocused
-        {
-            withAnimation(.easeOut(duration: 0.15)) {
-                isEditingUserNote = false
-                commitEdits()
-            }
-        }
-    }
-
-    private func commitEdits() {
+    private func saveEdits() {
         var updated = entry
         updated.title = editTitle
         updated.details = editDetails
+        withAnimation(.easeOut(duration: 0.15)) {
+            isEditingUserNote = false
+        }
         workspace.engine.updateNotebookEntry(updated)
+    }
+
+    private func cancelEdits() {
+        editTitle = entry.title
+        editDetails = entry.details
+        withAnimation(.easeOut(duration: 0.15)) {
+            isEditingUserNote = false
+        }
+        // A freshly-inserted empty note that the user cancels gets
+        // discarded — otherwise they'd see a blank "Note" row they
+        // didn't mean to add.
+        if entry.title == "Note" && entry.details.isEmpty {
+            workspace.engine.deleteNotebookEntry(entry)
+        }
     }
 
     private func beginEditing(focusBody: Bool = false) {

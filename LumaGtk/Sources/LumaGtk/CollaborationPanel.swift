@@ -91,7 +91,7 @@ final class CollaborationPanel {
         activeCollaboration.append(child: Separator(orientation: .horizontal))
 
         let participantsSection = Box(orientation: .vertical, spacing: 4)
-        let participantsHeader = Label(str: "PARTICIPANTS")
+        let participantsHeader = Label(str: "Members")
         participantsHeader.halign = .start
         participantsHeader.hexpand = true
         participantsHeader.add(cssClass: "heading")
@@ -121,7 +121,7 @@ final class CollaborationPanel {
 
         let chatSection = Box(orientation: .vertical, spacing: 6)
         chatSection.vexpand = true
-        let chatHeader = Label(str: "CHAT")
+        let chatHeader = Label(str: "Chat")
         chatHeader.halign = .start
         chatHeader.add(cssClass: "heading")
         chatSection.append(child: chatHeader)
@@ -404,10 +404,12 @@ final class CollaborationPanel {
             let title = Label(str: engine?.collaboration.labTitle ?? "Untitled")
             title.halign = .start
             title.hexpand = true
-            title.wrap = true
+            title.wrap = false
+            title.ellipsize = PangoEllipsizeMode(rawValue: 3)  // PANGO_ELLIPSIZE_END
             title.xalign = 0
             title.add(cssClass: "title-4")
             title.selectable = true
+            title.tooltipText = engine?.collaboration.labTitle
             row.append(child: title)
 
             if engine?.collaboration.isOwner == true {
@@ -647,8 +649,7 @@ final class CollaborationPanel {
             inviteRow.append(child: copyButton)
             inviteFrame.append(child: inviteRow)
 
-            let hint = Label(
-                str: "Share this link so others can open a new project and join this notebook.")
+            let hint = Label(str: "Share this link to invite others to this notebook.")
             hint.halign = .fill
             hint.hexpand = true
             hint.wrap = true
@@ -1021,19 +1022,41 @@ private let labPicturePathThunk: @convention(c) (
         let ctx = Unmanaged<LabPictureContext>.fromOpaque(ptr).takeRetainedValue()
         guard let pathString else { return }
         let url = URL(fileURLWithPath: pathString)
-        guard let data = try? Data(contentsOf: url) else { return }
-        let ext = url.pathExtension.lowercased()
-        let contentType: String
-        switch ext {
-        case "png": contentType = "image/png"
-        case "jpg", "jpeg": contentType = "image/jpeg"
-        case "webp": contentType = "image/webp"
-        case "gif": contentType = "image/gif"
-        default: contentType = "image/png"
-        }
+        guard let raw = try? Data(contentsOf: url) else { return }
+
+        let (bytes, contentType) = normalizeLabPicture(raw, originalPath: url)
         let engine = ctx.engine
         Task { @MainActor in
-            await engine.collaboration.setLabPicture(data, contentType: contentType)
+            await engine.collaboration.setLabPicture(bytes, contentType: contentType)
         }
+    }
+}
+
+/// Downscale to at most 512 px on the longest side via the CLuma
+/// pixbuf shim and re-encode as JPEG. Matches the SwiftUI side so a
+/// high-res upload doesn't blow past the server's 512 KiB cap (or the
+/// UI's 48-pt display budget).
+private func normalizeLabPicture(
+    _ data: Data,
+    originalPath: URL,
+) -> (Data, String) {
+    var outBytes: UnsafeMutablePointer<UInt8>? = nil
+    var outSize: Int = 0
+    let ok = data.withUnsafeBytes { buffer -> Bool in
+        guard let base = buffer.bindMemory(to: UInt8.self).baseAddress else { return false }
+        return luma_image_normalize(base, buffer.count, 512, &outBytes, &outSize)
+    }
+    if ok, let outBytes, outSize > 0 {
+        defer { free(outBytes) }
+        return (Data(bytes: outBytes, count: outSize), "image/jpeg")
+    }
+    // Pixbuf couldn't handle it — fall back to sending the original.
+    let ext = originalPath.pathExtension.lowercased()
+    switch ext {
+    case "png": return (data, "image/png")
+    case "jpg", "jpeg": return (data, "image/jpeg")
+    case "webp": return (data, "image/webp")
+    case "gif": return (data, "image/gif")
+    default: return (data, "image/png")
     }
 }

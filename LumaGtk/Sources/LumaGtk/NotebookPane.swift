@@ -350,7 +350,7 @@ final class NotebookPane {
 
         let isEditing = (entry.kind == .note) && editingEntries.contains(entry.id)
 
-        inner.append(child: makeHeader(for: entry, isEditing: isEditing))
+        inner.append(child: makeHeader(for: entry))
 
         if (entry.kind == .note) {
             if isEditing {
@@ -439,7 +439,7 @@ final class NotebookPane {
         return out
     }
 
-    private func makeHeader(for entry: LumaCore.NotebookEntry, isEditing: Bool) -> Box {
+    private func makeHeader(for entry: LumaCore.NotebookEntry) -> Box {
         let header = Box(orientation: .horizontal, spacing: 8)
         header.hexpand = true
 
@@ -471,18 +471,6 @@ final class NotebookPane {
         timestampLabels[entry.id] = timestamp
         timestampDates[entry.id] = entry.timestamp
         header.append(child: timestamp)
-
-        if (entry.kind == .note) && !isEditing {
-            let editButton = Button(label: "Edit")
-            editButton.hasFrame = false
-            editButton.add(cssClass: "flat")
-            editButton.onClicked { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.beginEditing(entry)
-                }
-            }
-            header.append(child: editButton)
-        }
 
         return header
     }

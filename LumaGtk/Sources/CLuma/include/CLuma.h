@@ -66,6 +66,18 @@ void luma_app_set_open_handler(void *gobject_application,
                                 LumaOpenFilesCallback callback,
                                 void *user_data);
 
+// Image normalization: decode `in_bytes`/`in_size` via GdkPixbuf,
+// scale to at most `max_dimension` on the longest side (preserving
+// aspect ratio), and re-encode as JPEG at quality ~85. On success
+// writes a malloc'd buffer to `*out_bytes` and its length to
+// `*out_size`; caller owns the buffer and must free() it. Returns
+// true on success, false on any decode/scale/encode failure.
+bool luma_image_normalize(const unsigned char *in_bytes,
+                           size_t in_size,
+                           int max_dimension,
+                           unsigned char **out_bytes,
+                           size_t *out_size);
+
 #ifdef __cplusplus
 }
 #endif

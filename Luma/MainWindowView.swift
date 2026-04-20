@@ -67,12 +67,13 @@ struct MainWindowView: View {
     }
 
     private var mainContent: some View {
-        HStack(alignment: .top, spacing: 0) {
+        HSplitView {
             navigationAndDetail
+                .frame(minWidth: 560)
 
             if workspace.isCollaborationPanelVisible {
                 CollaborationPanel(workspace: workspace)
-                    .frame(width: 280)
+                    .frame(minWidth: 260, idealWidth: 300, maxWidth: 520)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }

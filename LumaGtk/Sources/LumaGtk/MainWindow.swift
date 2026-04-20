@@ -116,30 +116,13 @@ final class MainWindow {
         self.eventStreamPane = eventStreamPane
 
         let header = Adw.HeaderBar()
-        let newSessionButton = Button(label: "New Session…")
-        newSessionButton.add(cssClass: "suggested-action")
-        header.packStart(child: newSessionButton)
 
-        let addInstrumentButton = Button(label: "Add Instrument…")
-        addInstrumentButton.sensitive = false
-        header.packStart(child: addInstrumentButton)
-        self.addInstrumentButton = addInstrumentButton
-
-        let resumeProcessButton = Button(label: "Resume Process")
-        resumeProcessButton.set(iconName: "media-playback-start-symbolic")
-        resumeProcessButton.tooltipText = "Resume spawned process"
-        resumeProcessButton.visible = false
-        header.packStart(child: resumeProcessButton)
-        self.resumeProcessButton = resumeProcessButton
-
-        let installPackageButton = Button(label: "Install Package…")
-        header.packStart(child: installPackageButton)
-        self.installPackageButton = installPackageButton
-
-        let collaborationButton = Button(label: "Collaboration")
-        header.packStart(child: collaborationButton)
-        self.collaborationButton = collaborationButton
-
+        // Trailing toolbar group, GNOME HIG-style: symbolic icon buttons
+        // pinned to the right, tooltips carry the action names. Ordered
+        // left-to-right as new session / add instrument / resume /
+        // install / collaboration, followed by the main-menu chevron at
+        // the far right. `packEnd` stacks right-to-left so we register
+        // them in reverse.
         let primaryMenuButton = MenuButton()
         primaryMenuButton.set(iconName: "open-menu-symbolic")
         primaryMenuButton.tooltipText = "Main menu"
@@ -149,6 +132,38 @@ final class MainWindow {
             luma_menu_button_set_menu(menuButtonPtr, menuModelPtr)
         }
         header.packEnd(child: primaryMenuButton)
+
+        let collaborationButton = Button()
+        collaborationButton.set(iconName: "system-users-symbolic")
+        collaborationButton.tooltipText = "Collaboration"
+        header.packEnd(child: collaborationButton)
+        self.collaborationButton = collaborationButton
+
+        let installPackageButton = Button()
+        installPackageButton.set(iconName: "folder-download-symbolic")
+        installPackageButton.tooltipText = "Install Package\u{2026}"
+        header.packEnd(child: installPackageButton)
+        self.installPackageButton = installPackageButton
+
+        let resumeProcessButton = Button()
+        resumeProcessButton.set(iconName: "media-playback-start-symbolic")
+        resumeProcessButton.tooltipText = "Resume spawned process"
+        resumeProcessButton.visible = false
+        header.packEnd(child: resumeProcessButton)
+        self.resumeProcessButton = resumeProcessButton
+
+        let addInstrumentButton = Button()
+        addInstrumentButton.set(iconName: "applications-engineering-symbolic")
+        addInstrumentButton.tooltipText = "Add Instrument\u{2026}"
+        addInstrumentButton.sensitive = false
+        header.packEnd(child: addInstrumentButton)
+        self.addInstrumentButton = addInstrumentButton
+
+        let newSessionButton = Button()
+        newSessionButton.set(iconName: "list-add-symbolic")
+        newSessionButton.tooltipText = "New Session\u{2026}"
+        newSessionButton.add(cssClass: "suggested-action")
+        header.packEnd(child: newSessionButton)
 
         let sidebar = buildSidebar()
         let detail = buildDetailPane()
