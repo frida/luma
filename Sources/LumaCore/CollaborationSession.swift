@@ -657,6 +657,11 @@ public final class CollaborationSession {
                 labTitle = title
             }
 
+        case ("+update", let s) where s.count == 3 && s[0] == "users" && s[2] == "push_subscriptions":
+            if let list = payload["registered"] as? [String] {
+                registeredPushPlatforms = Set(list)
+            }
+
         case ("+update", let s) where s.count == 3 && s[0] == "labs" && s[2] == "picture":
             if let contentType = payload["content_type"] as? String,
                let bytes = data, !bytes.isEmpty {

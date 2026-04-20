@@ -91,20 +91,17 @@ final class CollaborationPanel {
         activeCollaboration.append(child: Separator(orientation: .horizontal))
 
         let participantsSection = Box(orientation: .vertical, spacing: 4)
-        let participantsHeaderRow = Box(orientation: .horizontal, spacing: 6)
         let participantsHeader = Label(str: "PARTICIPANTS")
         participantsHeader.halign = .start
         participantsHeader.hexpand = true
         participantsHeader.add(cssClass: "heading")
-        participantsHeaderRow.append(child: participantsHeader)
+        participantsSection.append(child: participantsHeader)
 
+        // The notifications affordance is a lab-level control and lives
+        // in labSection, rendered by refreshLab() when needed.
         let notificationsButton = Button(label: "Enable notifications")
-        notificationsButton.hasFrame = false
-        notificationsButton.add(cssClass: "flat")
+        notificationsButton.add(cssClass: "suggested-action")
         notificationsButton.tooltipText = "Open your browser to allow Web Push notifications"
-        participantsHeaderRow.append(child: notificationsButton)
-
-        participantsSection.append(child: participantsHeaderRow)
 
         participantsStrip = Box(orientation: .horizontal, spacing: 6)
         participantsStrip.marginTop = 2
@@ -219,8 +216,10 @@ final class CollaborationPanel {
             notificationsButton.visible = false
             return
         }
-        let registered = engine.collaboration.registeredPushPlatforms
-        notificationsButton.visible = !registered.contains("web")
+        let isJoined: Bool
+        if case .joined = engine.collaboration.status { isJoined = true } else { isJoined = false }
+        let needsEnrollment = !engine.collaboration.registeredPushPlatforms.contains("web")
+        notificationsButton.visible = isJoined && needsEnrollment
     }
 
     // MARK: - Observation
@@ -525,11 +524,6 @@ final class CollaborationPanel {
             activeCollaboration.visible = false
         }
 
-        let heading = Label(str: "Project collaboration")
-        heading.halign = .start
-        heading.add(cssClass: "heading")
-        labSection.append(child: heading)
-
         switch status {
         case .disconnected:
             let storedLabID = (try? engine.store.fetchCollaborationState())?.labID
@@ -611,20 +605,17 @@ final class CollaborationPanel {
             roleLabel.add(cssClass: "dim-label")
             labSection.append(child: roleLabel)
 
-            let labIDRow = Box(orientation: .horizontal, spacing: 4)
-            let labIDTitle = Label(str: "Lab:")
-            labIDTitle.add(cssClass: "caption-heading")
-            labIDRow.append(child: labIDTitle)
-            let labIDValue = Label(str: truncatedLabID(labID))
-            labIDValue.selectable = true
-            labIDValue.add(cssClass: "caption")
-            labIDValue.add(cssClass: "monospace")
-            labIDRow.append(child: labIDValue)
-            labSection.append(child: labIDRow)
+            if notificationsButton.parent != nil {
+                notificationsButton.unparent()
+            }
+            notificationsButton.halign = .start
+            labSection.append(child: notificationsButton)
+            refreshNotificationsButton()
 
             let inviteURL = "\(BackendConfig.inviteLinkBase)\(labID)"
             let inviteFrame = Box(orientation: .vertical, spacing: 4)
             inviteFrame.add(cssClass: "luma-invite-frame")
+            inviteFrame.hexpand = true
 
             let inviteHeader = Label(str: "Invite link")
             inviteHeader.halign = .start
@@ -658,7 +649,8 @@ final class CollaborationPanel {
 
             let hint = Label(
                 str: "Share this link so others can open a new project and join this notebook.")
-            hint.halign = .start
+            hint.halign = .fill
+            hint.hexpand = true
             hint.wrap = true
             hint.xalign = 0
             hint.add(cssClass: "caption")
@@ -675,7 +667,7 @@ final class CollaborationPanel {
 
             labSection.append(child: inviteFrame)
 
-            let leave = Button(label: "Disable collaboration")
+            let leave = Button(label: "Disconnect from lab")
             leave.halign = .start
             leave.onClicked { [weak self] _ in
                 MainActor.assumeIsolated {

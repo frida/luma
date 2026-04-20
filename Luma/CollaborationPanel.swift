@@ -94,9 +94,6 @@ struct CollaborationPanel: View {
 
     private var labSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Project collaboration")
-                .font(.subheadline).bold()
-
             switch collaboration.status {
             case .disconnected:
                 let storedLabID = (try? workspace.store.fetchCollaborationState())?.labID
@@ -159,15 +156,6 @@ struct CollaborationPanel: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 4) {
-                            Text("Lab:")
-                                .font(.caption2).bold()
-                            Text(truncatedLabID(labID))
-                                .font(.caption2)
-                                .textSelection(.enabled)
-                            Spacer()
-                        }
-
-                        HStack(spacing: 4) {
                             Text("Invite link:")
                                 .font(.caption2).bold()
                             Text(inviteURL)
@@ -223,7 +211,7 @@ struct CollaborationPanel: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Button("Disable collaboration") {
+                Button("Disconnect from lab") {
                     Task { @MainActor in await workspace.engine.collaboration.stop() }
                 }
                 .buttonStyle(.bordered)

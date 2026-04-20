@@ -126,11 +126,18 @@ final class NotebookPane {
         case .updated(let entry):
             if let existing = entryRows[entry.id] {
                 let parent = entriesBox
-                let next = existing.nextSibling
+                // Anchor on the widget *before* the one we're replacing.
+                // `gtk_box_insert_child_after(box, row, nil)` inserts at
+                // the head, so using `next.prevSibling` after removal
+                // collapses to nil when `existing` was the last row and
+                // lands the fresh row at the top. Grabbing the previous
+                // sibling up-front gives us a stable anchor: nil means
+                // "was first, stay first"; otherwise insert right after.
+                let prev = existing.prevSibling
                 parent.remove(child: existing)
                 let row = makeRow(for: entry)
                 entryRows[entry.id] = row
-                gtk_box_insert_child_after(parent.box_ptr, row.widget_ptr, next?.prevSibling?.widget_ptr)
+                gtk_box_insert_child_after(parent.box_ptr, row.widget_ptr, prev?.widget_ptr)
             }
         case .removed(let id):
             if let row = entryRows.removeValue(forKey: id) {
@@ -476,27 +483,6 @@ final class NotebookPane {
             }
             header.append(child: editButton)
         }
-
-        let addBelow = Button(label: "+ Note")
-        addBelow.hasFrame = false
-        addBelow.add(cssClass: "flat")
-        addBelow.onClicked { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.addUserNote(after: entry)
-            }
-        }
-        header.append(child: addBelow)
-
-        let deleteButton = Button(label: "Delete")
-        deleteButton.hasFrame = false
-        deleteButton.add(cssClass: "flat")
-        deleteButton.add(cssClass: "error")
-        deleteButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.deleteEntry(entry)
-            }
-        }
-        header.append(child: deleteButton)
 
         return header
     }
