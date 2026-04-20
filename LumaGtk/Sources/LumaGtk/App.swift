@@ -34,21 +34,34 @@ final class LumaApplication {
             lumaOpenFilesThunk,
             context
         )
-        return app.run(arguments: filtered) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.activate()
+        return app.run(
+            arguments: filtered,
+            startupHandler: { [weak self] _ in
+                MainActor.assumeIsolated { self?.startup() }
+            },
+            activationHandler: { [weak self] _ in
+                MainActor.assumeIsolated { self?.activate() }
             }
-        }
+        )
+    }
+
+    private func startup() {
+        StyleSheet.install()
+        installActions()
     }
 
     private func activate() {
-        StyleSheet.install()
         if CommandLine.arguments.contains("--monaco-demo") {
             MonacoDemo.present(in: app)
             return
         }
+        ensureDocumentWindow()
+    }
 
-        installActions()
+    fileprivate func ensureDocumentWindow() {
+        if !openDocuments.isEmpty {
+            return
+        }
 
         let cliPaths = parseDocumentPaths(from: CommandLine.arguments)
         if !cliPaths.isEmpty {
@@ -176,7 +189,8 @@ final class LumaApplication {
             let labID = components.queryItems?.first(where: { $0.name == "lab" })?.value,
             !labID.isEmpty
         else { return }
-        CollaborationJoinQueue.shared.enqueue(labID: labID)
+        ensureDocumentWindow()
+        openDocuments.values.first?.engine.startCollaboration(joiningLab: labID)
     }
 
     fileprivate func handleSaveAsPath(window: MainWindow, _ path: String) {
