@@ -341,7 +341,9 @@ final class REPLPane {
 
         let scroll = ScrolledWindow()
         scroll.setPolicy(hscrollbarPolicy: GTK_POLICY_NEVER, vscrollbarPolicy: GTK_POLICY_AUTOMATIC)
-        scroll.setSizeRequest(width: 280, height: min(160, 24 * suggestions.count + 8))
+        scroll.setSizeRequest(width: 280, height: -1)
+        scroll.propagateNaturalHeight = true
+        scroll.maxContentHeight = 160
 
         let listBox = ListBox()
         listBox.selectionMode = .single
