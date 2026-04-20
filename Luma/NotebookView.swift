@@ -31,7 +31,6 @@ struct NotebookView: View {
                         let ordered = entries
                         TopDropZone(workspace: workspace, firstEntry: ordered.first)
                             .padding(.horizontal)
-                            .padding(.top, 12)
                         ForEach(Array(ordered.enumerated()), id: \.element.id) { index, entry in
                             NotebookEntryRow(
                                 entry: entry,
@@ -102,7 +101,7 @@ private struct TopDropZone: View {
     var body: some View {
         Rectangle()
             .fill(Color.clear)
-            .frame(height: 16)
+            .frame(height: 6)
             .overlay(alignment: .bottom) {
                 if isTargeted {
                     Color.accentColor.frame(height: 2)
@@ -259,16 +258,6 @@ struct NotebookEntryRow: View {
 
             RelativeTimeText(date: entry.timestamp)
                 .help(entry.timestamp.formatted())
-
-            if isNote && !isEditingUserNote {
-                Button {
-                    beginEditing(focusBody: true)
-                } label: {
-                    Image(systemName: "pencil")
-                }
-                .buttonStyle(.borderless)
-                .help("Edit Note")
-            }
         }
     }
 

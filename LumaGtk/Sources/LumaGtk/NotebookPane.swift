@@ -343,8 +343,10 @@ final class NotebookPane {
         let inner = Box(orientation: .vertical, spacing: 6)
         inner.marginStart = 12
         inner.marginEnd = 12
-        inner.marginTop = 10
-        inner.marginBottom = 10
+        // Adwaita's `.card` style already supplies a bit of top/bottom
+        // padding; the explicit margins used to stack on top, giving
+        // the first row visibly more space above the title than below
+        // the details. Let the stylesheet own the vertical padding.
         inner.hexpand = true
         card.append(child: inner)
 
