@@ -518,23 +518,22 @@ jobs:
 
       - name: Pin snap sources to the current tree
         run: |
-          git archive --format=tar.gz --output=/tmp/luma-source.tar.gz HEAD
+          # The snapcraft VM only sees files under the project path
+          # (LumaGtk), so stage the tarball there.
+          git archive --format=tar.gz --output=LumaGtk/luma-source.tar.gz HEAD
           python3 - <<'PY'
           import os, re
           path = "LumaGtk/build-aux/snap/snapcraft.yaml"
           with open(path) as f:
               text = f.read()
-          # Pin frida-core to the workflow's FRIDA_CORE_REF.
           text = re.sub(
               r"(source: https://github\.com/frida/frida-core\.git\n\s*)source-branch: main",
               lambda m: m.group(1) + "source-commit: " + os.environ["FRIDA_CORE_REF"],
               text,
           )
-          # Point luma at the local tarball so the build reflects the
-          # checked-out tree (push, tag, or PR head alike).
           text = re.sub(
               r"source: https://github\.com/frida/luma\.git\n(\s*)source-branch: main",
-              r"source: /tmp/luma-source.tar.gz\n\1source-type: tar",
+              r"source: luma-source.tar.gz\n\1source-type: tar",
               text,
           )
           with open(path, "w") as f:
