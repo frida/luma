@@ -65,10 +65,10 @@ parts:
   frida-core:
     after: [nodejs]
     plugin: nil
+    source: https://github.com/frida/frida-core.git
+    source-branch: main
     override-build: |
       export PATH="$CRAFT_STAGE/usr/local/bin:$PATH"
-      git clone --depth 1 https://github.com/frida/frida-core.git src
-      cd src
       ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr/local \
         -- --force-fallback-for=openssl,libelf \
            --libdir=lib \

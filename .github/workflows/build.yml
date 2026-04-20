@@ -460,11 +460,28 @@ jobs:
           path: .flatpak-builder
           key: flatpak-builder-v1
 
-      - name: Pin luma source to current commit
-        if: github.event_name == 'push'
+      - name: Pin flatpak sources to the current tree
         run: |
-          sed -i '\|frida/luma.git|,/"branch"/ s|"branch": "main"|"commit": "'"$GITHUB_SHA"'"|' \
-              LumaGtk/build-aux/flatpak/re.frida.Luma.json
+          git archive --format=tar.gz --prefix=luma/ --output=/tmp/luma-source.tar.gz HEAD
+          python3 - <<'PY'
+          import json, os
+          path = "LumaGtk/build-aux/flatpak/re.frida.Luma.json"
+          with open(path) as f:
+              manifest = json.load(f)
+          for module in manifest.get("modules", []):
+              for i, source in enumerate(module.get("sources", [])):
+                  url = source.get("url", "")
+                  if url.endswith("frida/frida-core.git"):
+                      source.pop("branch", None)
+                      source["commit"] = os.environ["FRIDA_CORE_REF"]
+                  elif url.endswith("frida/luma.git"):
+                      module["sources"][i] = {
+                          "type": "archive",
+                          "path": "/tmp/luma-source.tar.gz",
+                      }
+          with open(path, "w") as f:
+              json.dump(manifest, f, indent=4)
+          PY
 
       - name: Build Flatpak
         run: |
@@ -499,11 +516,30 @@ jobs:
           sed -i "s/^version: .*/version: '${LUMA_VERSION}'/" \
               LumaGtk/build-aux/snap/snapcraft.yaml
 
-      - name: Pin luma source to current commit
-        if: github.event_name == 'push'
+      - name: Pin snap sources to the current tree
         run: |
-          sed -i "s/source-branch: main/source-commit: ${GITHUB_SHA}/" \
-              LumaGtk/build-aux/snap/snapcraft.yaml
+          git archive --format=tar.gz --output=/tmp/luma-source.tar.gz HEAD
+          python3 - <<'PY'
+          import os, re
+          path = "LumaGtk/build-aux/snap/snapcraft.yaml"
+          with open(path) as f:
+              text = f.read()
+          # Pin frida-core to the workflow's FRIDA_CORE_REF.
+          text = re.sub(
+              r"(source: https://github\.com/frida/frida-core\.git\n\s*)source-branch: main",
+              lambda m: m.group(1) + "source-commit: " + os.environ["FRIDA_CORE_REF"],
+              text,
+          )
+          # Point luma at the local tarball so the build reflects the
+          # checked-out tree (push, tag, or PR head alike).
+          text = re.sub(
+              r"source: https://github\.com/frida/luma\.git\n(\s*)source-branch: main",
+              r"source: /tmp/luma-source.tar.gz\n\1source-type: tar",
+              text,
+          )
+          with open(path, "w") as f:
+              f.write(text)
+          PY
 
       - uses: snapcore/action-build@v1.3.0
         id: snapcraft
