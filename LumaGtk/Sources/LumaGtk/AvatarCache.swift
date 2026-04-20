@@ -3,7 +3,6 @@ import Foundation
 import FoundationNetworking
 #endif
 import Gdk
-import GdkPixBuf
 
 @MainActor
 final class AvatarCache {
@@ -30,8 +29,7 @@ final class AvatarCache {
             return nil
         }
 
-        guard let pixbuf = IconPixbuf.makePixbuf(fromPNGData: data) else { return nil }
-        let texture = Gdk.Texture(pixbuf: pixbuf)
+        guard let texture = IconPixbuf.makeTexture(fromPNGData: data) else { return nil }
 
         if let existing = cache[url] { return existing }
         cache[url] = texture

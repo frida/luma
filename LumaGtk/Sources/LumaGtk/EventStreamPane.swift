@@ -1,9 +1,27 @@
 import Adw
+import CGraphene
 import CPango
 import Foundation
+import struct Graphene.PointRef
 import Gtk
 import LumaCore
 import Observation
+
+private func computePoint<Src: WidgetProtocol, Dst: WidgetProtocol>(
+    x: Double,
+    y: Double,
+    from src: Src,
+    to dst: Dst
+) -> (x: Double, y: Double) {
+    var source = graphene_point_t(x: Float(x), y: Float(y))
+    var destination = graphene_point_t(x: 0, y: 0)
+    _ = withUnsafeMutablePointer(to: &source) { srcPtr in
+        withUnsafeMutablePointer(to: &destination) { dstPtr in
+            src.computePoint(target: dst, point: PointRef(srcPtr), outPoint: PointRef(dstPtr))
+        }
+    }
+    return (Double(destination.x), Double(destination.y))
+}
 
 @MainActor
 final class EventStreamPane {
@@ -834,15 +852,7 @@ final class EventStreamPane {
         let anchor = widget
         rightClick.onPressed { [weak self, column, anchor] _, _, x, y in
             MainActor.assumeIsolated {
-                var tx: Double = 0
-                var ty: Double = 0
-                _ = column.translateCoordinates(
-                    destWidget: anchor,
-                    srcX: x,
-                    srcY: y,
-                    destX: &tx,
-                    destY: &ty
-                )
+                let (tx, ty) = computePoint(x: x, y: y, from: column, to: anchor)
                 self?.presentHookContextMenu(
                     anchor: anchor,
                     x: tx,
@@ -903,16 +913,8 @@ final class EventStreamPane {
         gesture.onPressed { [weak self, row, anchor] _, _, x, y in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                var translatedX: Double = 0
-                var translatedY: Double = 0
-                _ = row.translateCoordinates(
-                    destWidget: anchor,
-                    srcX: x,
-                    srcY: y,
-                    destX: &translatedX,
-                    destY: &translatedY
-                )
-                self.presentRowContextMenu(at: anchor, x: translatedX, y: translatedY, event: event)
+                let (tx, ty) = computePoint(x: x, y: y, from: row, to: anchor)
+                self.presentRowContextMenu(at: anchor, x: tx, y: ty, event: event)
             }
         }
         row.install(controller: gesture)

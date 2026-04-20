@@ -1,70 +1,61 @@
-import CGdkPixbuf
 import Foundation
 import Frida
-import GdkPixBuf
+import Gdk
 import GLib
 import Gtk
 
 enum IconPixbuf {
-    static func makePixbuf(from icon: Frida.Icon) -> Pixbuf? {
+    static func makeTexture(from icon: Frida.Icon) -> Gdk.Texture? {
         switch icon {
         case let .rgba(width, height, pixels):
-            return makeRGBAPixbuf(width: width, height: height, pixels: pixels)
+            return makeRGBATexture(width: width, height: height, pixels: pixels)
         case let .png(data):
-            return makePNGPixbuf(data: data)
+            return makePNGTexture(data: data)
         }
     }
 
-    static func makePixbuf(fromPNGData data: Foundation.Data) -> Pixbuf? {
-        makePNGPixbuf(data: Array(data))
+    static func makeTexture(fromPNGData data: Foundation.Data) -> Gdk.Texture? {
+        makePNGTexture(data: Array(data))
     }
 
     static func makeImage(from icon: Frida.Icon, pixelSize: Int) -> Gtk.Image? {
-        guard let pixbuf = makePixbuf(from: icon) else { return nil }
-        return makeImage(from: pixbuf, pixelSize: pixelSize)
+        guard let texture = makeTexture(from: icon) else { return nil }
+        return makeImage(from: texture, pixelSize: pixelSize)
     }
 
     static func makeImage(fromPNGData data: Foundation.Data, pixelSize: Int) -> Gtk.Image? {
-        guard let pixbuf = makePixbuf(fromPNGData: data) else { return nil }
-        return makeImage(from: pixbuf, pixelSize: pixelSize)
+        guard let texture = makeTexture(fromPNGData: data) else { return nil }
+        return makeImage(from: texture, pixelSize: pixelSize)
     }
 
-    static func makeImage(from pixbuf: Pixbuf, pixelSize: Int) -> Gtk.Image {
-        let image = Gtk.Image(pixbuf: pixbuf)
+    static func makeImage(from texture: Gdk.Texture, pixelSize: Int) -> Gtk.Image {
+        let image = Gtk.Image(paintable: texture)
         image.pixelSize = pixelSize
         return image
     }
 
-    private static func makeRGBAPixbuf(width: Int, height: Int, pixels: [UInt8]) -> Pixbuf? {
+    private static func makeRGBATexture(width: Int, height: Int, pixels: [UInt8]) -> Gdk.Texture? {
         guard width > 0, height > 0 else { return nil }
         let rowstride = width * 4
         guard pixels.count >= rowstride * height else { return nil }
-        let bytes = pixels.withUnsafeBufferPointer { buf -> Bytes in
+        let bytes = pixels.withUnsafeBufferPointer { buf in
             Bytes(data: UnsafeRawPointer(buf.baseAddress!), size: pixels.count)
         }
-        return Pixbuf(
-            bytes: bytes,
-            colorspace: GdkColorspace(rawValue: 0),
-            hasAlpha: true,
-            bitsPerSample: 8,
-            width: width,
-            height: height,
-            rowstride: rowstride
-        )
+        let builder = Gdk.MemoryTextureBuilder()
+        builder.set(bytes: bytes)
+        builder.set(format: .r8g8b8a8)
+        builder.set(width: width)
+        builder.set(height: height)
+        builder.set(stride: rowstride)
+        guard let ref = builder.build() else { return nil }
+        return Gdk.Texture(ref.texture_ptr)
     }
 
-    private static func makePNGPixbuf(data: [UInt8]) -> Pixbuf? {
+    private static func makePNGTexture(data: [UInt8]) -> Gdk.Texture? {
         guard !data.isEmpty else { return nil }
-        let loader = PixbufLoader()
-        do {
-            _ = try data.withUnsafeBufferPointer { buf in
-                try loader.write(buf: buf.baseAddress!, count: data.count)
-            }
-            _ = try loader.close()
-        } catch {
-            return nil
+        let bytes = data.withUnsafeBufferPointer { buf in
+            Bytes(data: UnsafeRawPointer(buf.baseAddress!), size: data.count)
         }
-        guard let ref = loader.getPixbuf() else { return nil }
-        return Pixbuf(retainingRaw: UnsafeRawPointer(ref.pixbuf_ptr))
+        return try? Gdk.Texture(bytes: bytes)
     }
 }
