@@ -122,7 +122,8 @@
             "config-opts": [
                 "--default-library=static",
                 "-Dstatic_runtime=true",
-                "-Dcli=disabled"
+                "-Dcli=disabled",
+                "-Duse_sys_zip=true"
             ],
             "sources": [
                 {

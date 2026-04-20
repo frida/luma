@@ -167,6 +167,8 @@ jobs:
             gobject-introspection-devel \
             atk-devel \
             libxml2-devel \
+            libzip-devel \
+            zlib-devel \
             libgee-devel \
             json-glib-devel \
             libunwind-devel \
@@ -237,7 +239,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: /tmp/r2-destdir
-          key: ${{ runner.os }}-fedora43-radare2-${{ env.RADARE2_REF }}-v1
+          key: ${{ runner.os }}-fedora43-radare2-${{ env.RADARE2_REF }}-v2
 
       - name: Build radare2 (static)
         if: steps.r2-cache.outputs.cache-hit != 'true'
@@ -248,7 +250,7 @@ jobs:
           git clone https://github.com/radareorg/radare2.git /tmp/radare2
           cd /tmp/radare2
           git checkout $RADARE2_REF
-          meson setup build --prefix=/usr --default-library=static -Dstatic_runtime=true -Dcli=disabled
+          meson setup build --prefix=/usr --default-library=static -Dstatic_runtime=true -Dcli=disabled -Duse_sys_zip=true
           DESTDIR=/tmp/r2-destdir ninja -C build install
 
       - name: Save radare2 cache
@@ -256,7 +258,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: /tmp/r2-destdir
-          key: ${{ runner.os }}-fedora43-radare2-${{ env.RADARE2_REF }}-v1
+          key: ${{ runner.os }}-fedora43-radare2-${{ env.RADARE2_REF }}-v2
 
       - name: Install radare2
         run: |
@@ -321,6 +323,8 @@ jobs:
             libgirepository1.0-dev \
             libatk1.0-dev \
             libxml2-dev \
+            libzip-dev \
+            zlib1g-dev \
             libgee-0.8-dev \
             libjson-glib-dev \
             libunwind-dev \
@@ -385,7 +389,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: /tmp/r2-destdir
-          key: ${{ runner.os }}-ubuntu2510-radare2-${{ env.RADARE2_REF }}-v1
+          key: ${{ runner.os }}-ubuntu2510-radare2-${{ env.RADARE2_REF }}-v2
 
       - name: Build radare2 (static)
         if: steps.r2-cache.outputs.cache-hit != 'true'
@@ -393,7 +397,7 @@ jobs:
           git clone https://github.com/radareorg/radare2.git /tmp/radare2
           cd /tmp/radare2
           git checkout $RADARE2_REF
-          meson setup build --prefix=/usr --default-library=static -Dstatic_runtime=true -Dcli=disabled
+          meson setup build --prefix=/usr --default-library=static -Dstatic_runtime=true -Dcli=disabled -Duse_sys_zip=true
           DESTDIR=/tmp/r2-destdir ninja -C build install
 
       - name: Save radare2 cache
@@ -401,7 +405,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: /tmp/r2-destdir
-          key: ${{ runner.os }}-ubuntu2510-radare2-${{ env.RADARE2_REF }}-v1
+          key: ${{ runner.os }}-ubuntu2510-radare2-${{ env.RADARE2_REF }}-v2
 
       - name: Install radare2
         run: |
