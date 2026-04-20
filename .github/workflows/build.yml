@@ -460,6 +460,12 @@ jobs:
           path: .flatpak-builder
           key: flatpak-builder-v1
 
+      - name: Pin luma source to current commit
+        if: github.event_name == 'push'
+        run: |
+          sed -i 's|"branch": "main"|"commit": "'"$GITHUB_SHA"'"|' \
+              LumaGtk/build-aux/flatpak/re.frida.Luma.json
+
       - name: Build Flatpak
         run: |
           flatpak-builder \
@@ -491,6 +497,12 @@ jobs:
       - name: Set snap version
         run: |
           sed -i "s/^version: .*/version: '${LUMA_VERSION}'/" \
+              LumaGtk/build-aux/snap/snapcraft.yaml
+
+      - name: Pin luma source to current commit
+        if: github.event_name == 'push'
+        run: |
+          sed -i "s/source-branch: main/source-commit: ${GITHUB_SHA}/" \
               LumaGtk/build-aux/snap/snapcraft.yaml
 
       - uses: snapcore/action-build@v1.3.0
