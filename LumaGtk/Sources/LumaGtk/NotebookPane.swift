@@ -556,7 +556,7 @@ final class NotebookPane {
 
     private func clearWindowFocus() {
         guard let rootPtr = widget.root?.ptr else { return }
-        let window = WindowRef(raw: rootPtr)
+        let window = Gtk.WindowRef(raw: rootPtr)
         window.focus = nil
     }
 
