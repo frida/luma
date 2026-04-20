@@ -290,12 +290,12 @@ jobs:
           rpmbuild --define "_topdir $TOP" \
                    --define "version $LUMA_VERSION" \
                    -bb $TOP/SPECS/luma.spec
-          cp $TOP/RPMS/x86_64/luma-${LUMA_VERSION}-*.x86_64.rpm luma-${LUMA_VERSION}-fedora-43.rpm
+          cp $TOP/RPMS/x86_64/luma-${LUMA_VERSION}-*.x86_64.rpm luma-${LUMA_VERSION}-fedora-43-x86_64.rpm
 
       - uses: actions/upload-artifact@v7
         with:
-          name: luma-${{ env.LUMA_VERSION }}-fedora-43.rpm
-          path: luma-${{ env.LUMA_VERSION }}-fedora-43.rpm
+          name: luma-${{ env.LUMA_VERSION }}-fedora-43-x86_64.rpm
+          path: luma-${{ env.LUMA_VERSION }}-fedora-43-x86_64.rpm
 
   ubuntu:
     runs-on: ubuntu-latest
@@ -434,12 +434,12 @@ jobs:
           mkdir -p $PKG/DEBIAN
           printf 'Package: luma\nVersion: %s\nSection: devel\nPriority: optional\nArchitecture: amd64\nDepends: libgtk-4-1, libadwaita-1-0, libwebkitgtk-6.0-4, libsoup-3.0-0\nMaintainer: Ole Andre Vadla Ravnas <oleavr@frida.re>\nDescription: Luma - Dynamic instrumentation toolkit\n Interactive dynamic instrumentation app built on Frida.\n' "$LUMA_VERSION" > $PKG/DEBIAN/control
           dpkg-deb --build $PKG
-          mv ${PKG}.deb luma-${LUMA_VERSION}-ubuntu-25.10.deb
+          mv ${PKG}.deb luma-${LUMA_VERSION}-ubuntu-25.10-x86_64.deb
 
       - uses: actions/upload-artifact@v7
         with:
-          name: luma-${{ env.LUMA_VERSION }}-ubuntu-25.10.deb
-          path: luma-${{ env.LUMA_VERSION }}-ubuntu-25.10.deb
+          name: luma-${{ env.LUMA_VERSION }}-ubuntu-25.10-x86_64.deb
+          path: luma-${{ env.LUMA_VERSION }}-ubuntu-25.10-x86_64.deb
 
   flatpak:
     runs-on: ubuntu-latest
@@ -492,7 +492,7 @@ jobs:
             --repo=flatpak-repo \
             flatpak-build \
             LumaGtk/build-aux/flatpak/re.frida.Luma.json
-          flatpak build-bundle flatpak-repo "luma-${LUMA_VERSION}.flatpak" re.frida.Luma
+          flatpak build-bundle flatpak-repo "luma-${LUMA_VERSION}-x86_64.flatpak" re.frida.Luma
 
       - name: Save flatpak-builder cache
         if: always()
@@ -503,8 +503,8 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: luma-${{ env.LUMA_VERSION }}.flatpak
-          path: luma-${{ env.LUMA_VERSION }}.flatpak
+          name: luma-${{ env.LUMA_VERSION }}-x86_64.flatpak
+          path: luma-${{ env.LUMA_VERSION }}-x86_64.flatpak
 
   snap:
     runs-on: ubuntu-latest
@@ -546,12 +546,12 @@ jobs:
           path: LumaGtk
 
       - name: Rename snap artifact
-        run: cp "${{ steps.snapcraft.outputs.snap }}" "luma-${LUMA_VERSION}.snap"
+        run: cp "${{ steps.snapcraft.outputs.snap }}" "luma-${LUMA_VERSION}-x86_64.snap"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: luma-${{ env.LUMA_VERSION }}.snap
-          path: luma-${{ env.LUMA_VERSION }}.snap
+          name: luma-${{ env.LUMA_VERSION }}-x86_64.snap
+          path: luma-${{ env.LUMA_VERSION }}-x86_64.snap
 
   windows:
     runs-on: ${{ matrix.runner }}
