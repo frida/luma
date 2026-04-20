@@ -34,10 +34,6 @@ struct ITraceDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if node == nil {
-                SessionDetachedBanner(session: session, workspace: workspace)
-            }
-
             header
             Divider()
 

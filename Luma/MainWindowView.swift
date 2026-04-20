@@ -67,16 +67,29 @@ struct MainWindowView: View {
     }
 
     private var mainContent: some View {
-        HSplitView {
-            navigationAndDetail
-                .frame(minWidth: 560)
+        #if os(macOS)
+            HSplitView {
+                navigationAndDetail
+                    .frame(minWidth: 560)
 
-            if workspace.isCollaborationPanelVisible {
-                CollaborationPanel(workspace: workspace)
-                    .frame(minWidth: 260, idealWidth: 300, maxWidth: 520)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                if workspace.isCollaborationPanelVisible {
+                    CollaborationPanel(workspace: workspace)
+                        .frame(minWidth: 260, idealWidth: 300, maxWidth: 520)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
             }
-        }
+        #else
+            HStack(spacing: 0) {
+                navigationAndDetail
+
+                if workspace.isCollaborationPanelVisible {
+                    Divider()
+                    CollaborationPanel(workspace: workspace)
+                        .frame(minWidth: 260, idealWidth: 300, maxWidth: 520)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+            }
+        #endif
     }
 
     private var navigationAndDetail: some View {

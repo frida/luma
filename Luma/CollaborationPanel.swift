@@ -1,8 +1,14 @@
-import AppKit
 import Frida
 import LumaCore
 import SwiftUI
 import UniformTypeIdentifiers
+
+#if canImport(AppKit)
+import AppKit
+#endif
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct CollaborationPanel: View {
     @ObservedObject var workspace: Workspace
@@ -286,7 +292,7 @@ struct CollaborationPanel: View {
                 Circle()
                     .fill(online ? Color(red: 0.36, green: 0.78, blue: 0.41) : Color.secondary.opacity(0.6))
                     .frame(width: 8, height: 8)
-                    .overlay(Circle().stroke(Color(.windowBackgroundColor), lineWidth: 1.5))
+                    .overlay(Circle().stroke(Color.platformWindowBackground, lineWidth: 1.5))
                     .offset(x: 2, y: 2)
             }
             .help(memberTooltip(member))
@@ -518,6 +524,7 @@ private struct LabPictureView: View {
 
     var body: some View {
         Group {
+            #if canImport(AppKit)
             if collaboration.isOwner {
                 Menu {
                     Button("Upload Image\u{2026}", action: pickImage)
@@ -539,6 +546,9 @@ private struct LabPictureView: View {
             } else {
                 pictureView
             }
+            #else
+            pictureView
+            #endif
         }
     }
 
@@ -552,8 +562,8 @@ private struct LabPictureView: View {
     @ViewBuilder
     private var pictureContent: some View {
         if let data = collaboration.labPictureData,
-           let image = NSImage(data: data) {
-            Image(nsImage: image)
+           let image = Self.loadImage(from: data) {
+            image
                 .resizable()
                 .aspectRatio(contentMode: .fill)
         } else if let owner = collaboration.members.first(where: { $0.role == .owner }),
@@ -571,6 +581,19 @@ private struct LabPictureView: View {
         }
     }
 
+    private static func loadImage(from data: Data) -> Image? {
+        #if canImport(AppKit)
+        if let ns = NSImage(data: data) { return Image(nsImage: ns) }
+        return nil
+        #elseif canImport(UIKit)
+        if let ui = UIImage(data: data) { return Image(uiImage: ui) }
+        return nil
+        #else
+        return nil
+        #endif
+    }
+
+    #if canImport(AppKit)
     private func pickImage() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
@@ -638,6 +661,7 @@ private struct LabPictureView: View {
         else { return passthrough }
         return (jpeg, "image/jpeg")
     }
+    #endif
 }
 
 private struct LabTitleView: View {

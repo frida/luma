@@ -2,6 +2,31 @@ import Frida
 import LumaCore
 import SwiftUI
 
+struct SessionContent<Content: View>: View {
+    let sessionID: UUID?
+    @ObservedObject var workspace: Workspace
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if let detachedSession {
+                SessionDetachedBanner(session: detachedSession, workspace: workspace)
+            }
+            content()
+        }
+    }
+
+    private var detachedSession: LumaCore.ProcessSession? {
+        guard let sessionID,
+              let session = workspace.engine.sessions.first(where: { $0.id == sessionID })
+        else { return nil }
+
+        let isDetached = workspace.engine.node(forSessionID: session.id) == nil
+        let hasError = session.lastError != nil
+        return (isDetached || hasError) ? session : nil
+    }
+}
+
 struct SessionDetachedBanner: View {
     let session: LumaCore.ProcessSession
     @ObservedObject var workspace: Workspace

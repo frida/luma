@@ -28,12 +28,15 @@ struct REPLView: View {
         cells.sorted { $0.timestamp < $1.timestamp }
     }
 
+    #if canImport(UIKit)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    private var horizontalInset: CGFloat { horizontalSizeClass == .compact ? 6 : 16 }
+    #else
+    private var horizontalInset: CGFloat { 16 }
+    #endif
+
     var body: some View {
         VStack(spacing: 0) {
-            if let session, node == nil || session.lastError != nil {
-                SessionDetachedBanner(session: session, workspace: workspace)
-            }
-
             GeometryReader { outerGeo in
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -54,7 +57,7 @@ struct REPLView: View {
                             minHeight: outerGeo.size.height,
                             alignment: .bottomLeading
                         )
-                        .padding(.horizontal)
+                        .padding(.horizontal, horizontalInset)
 
                         Color.clear
                             .frame(height: 2)
@@ -129,7 +132,7 @@ struct REPLView: View {
                 .help("Run")
                 .disabled(node == nil)
             }
-            .padding(.horizontal)
+            .padding(.horizontal, horizontalInset)
             .padding(.vertical, 8)
             .background(.bar)
         }
@@ -247,48 +250,47 @@ private struct REPLCellView: View {
             }
             .padding(.vertical, 4)
         } else {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("›")
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                        Text(cell.code)
-                            .font(.system(.caption, design: .monospaced))
-                            .textSelection(.enabled)
-                    }
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("›")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    Text(cell.code)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
 
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("←")
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
 
-                        switch cell.result {
-                        case .text(let s):
-                            Text(s)
-                                .font(.system(.caption, design: .monospaced))
-                                .textSelection(.enabled)
-
-                        case .js(let v):
-                            JSInspectValueView(
-                                value: v,
-                                sessionID: sessionID,
-                                workspace: workspace,
-                                selection: $selection
-                            )
-
-                        case .binary(let data, _):
-                            HexView(data: data)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
+                    Text(cell.timestamp.formatted(date: .omitted, time: .shortened))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .help(cell.timestamp.formatted())
                 }
 
-                Spacer()
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("←")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
 
-                Text(cell.timestamp.formatted())
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    switch cell.result {
+                    case .text(let s):
+                        Text(s)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+
+                    case .js(let v):
+                        JSInspectValueView(
+                            value: v,
+                            sessionID: sessionID,
+                            workspace: workspace,
+                            selection: $selection
+                        )
+
+                    case .binary(let data, _):
+                        HexView(data: data)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
             .padding(.bottom, 4)
             .contextMenu {

@@ -24,10 +24,6 @@ struct AddressInsightDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if node == nil {
-                SessionDetachedBanner(session: session, workspace: workspace)
-            }
-
             Group {
                 if let err = errorText {
                     Text(err)

@@ -1,5 +1,36 @@
 import SwiftUI
 
+extension Color {
+    static var platformWindowBackground: Color {
+        #if canImport(AppKit)
+            return Color(NSColor.windowBackgroundColor)
+        #elseif canImport(UIKit)
+            return Color(UIColor.systemBackground)
+        #else
+            return Color(.background)
+        #endif
+    }
+
+    static var jsTypeLabel: Color {
+        #if canImport(UIKit)
+            return Color(uiColor: UIColor { trait in
+                trait.userInterfaceStyle == .dark
+                    ? UIColor.cyan
+                    : UIColor(red: 0.0, green: 0.45, blue: 0.65, alpha: 1.0)
+            })
+        #elseif canImport(AppKit)
+            return Color(nsColor: NSColor(name: nil) { appearance in
+                let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                return isDark
+                    ? NSColor.cyan
+                    : NSColor(calibratedRed: 0.0, green: 0.45, blue: 0.65, alpha: 1.0)
+            })
+        #else
+            return .cyan
+        #endif
+    }
+}
+
 enum Platform {
     static func copyToClipboard(_ string: String) {
         #if canImport(AppKit)

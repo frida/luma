@@ -139,16 +139,20 @@ private struct JSInspectNodeView: View {
                 .padding(.leading, 12)
             },
             label: {
-                HStack(spacing: 4) {
-                    Text("Object{\(props.count)}\(anchorSuffix())")
-                        .foregroundStyle(.cyan)
-                    if let preview = inlinePreview(value) {
-                        Text(preview)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                disclosureLabel(
+                    typeText: "Object{\(props.count)}\(anchorSuffix())",
+                    preview: inlinePreview(value)
+                )
             }
         )
+    }
+
+    private func disclosureLabel(typeText: String, preview: String?) -> some View {
+        let typePart = Text(typeText).foregroundStyle(Color.jsTypeLabel)
+        let combined: Text = preview.map { typePart + Text(" \($0)").foregroundStyle(.secondary) } ?? typePart
+        return combined
+            .lineLimit(1)
+            .truncationMode(.tail)
     }
 
     private func arrayView(_ elements: [JSInspectValue]) -> some View {
@@ -181,14 +185,10 @@ private struct JSInspectNodeView: View {
                 .padding(.leading, 12)
             },
             label: {
-                HStack(spacing: 4) {
-                    Text("Array[\(elements.count)]\(anchorSuffix())")
-                        .foregroundStyle(.cyan)
-                    if let preview = inlinePreview(value) {
-                        Text(preview)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                disclosureLabel(
+                    typeText: "Array[\(elements.count)]\(anchorSuffix())",
+                    preview: inlinePreview(value)
+                )
             }
         )
     }
@@ -233,14 +233,10 @@ private struct JSInspectNodeView: View {
                 .padding(.leading, 12)
             },
             label: {
-                HStack(spacing: 4) {
-                    Text("Map{\(entries.count)}\(anchorSuffix())")
-                        .foregroundStyle(.cyan)
-                    if let preview = inlinePreview(value) {
-                        Text(preview)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                disclosureLabel(
+                    typeText: "Map{\(entries.count)}\(anchorSuffix())",
+                    preview: inlinePreview(value)
+                )
             }
         )
     }
@@ -275,14 +271,10 @@ private struct JSInspectNodeView: View {
                 .padding(.leading, 12)
             },
             label: {
-                HStack(spacing: 4) {
-                    Text("Set{\(elements.count)}\(anchorSuffix())")
-                        .foregroundStyle(.cyan)
-                    if let preview = inlinePreview(value) {
-                        Text(preview)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                disclosureLabel(
+                    typeText: "Set{\(elements.count)}\(anchorSuffix())",
+                    preview: inlinePreview(value)
+                )
             }
         )
     }

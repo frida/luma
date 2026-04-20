@@ -67,6 +67,7 @@ struct ITraceTimeline: View {
             }
             .background(colorScheme == .dark ? Color.black.opacity(0.7) : Color(white: 0.9))
             .clipShape(RoundedRectangle(cornerRadius: 4))
+            #if canImport(AppKit)
             .overlay {
                 TimelineTooltipOverlay(
                     functionCalls: functionCalls,
@@ -75,6 +76,7 @@ struct ITraceTimeline: View {
                     height: stripHeight
                 )
             }
+            #endif
             .contentShape(Rectangle())
             .onTapGesture { location in
                 selectedCallIndex = callIndex(at: location.x, width: width)
@@ -115,6 +117,9 @@ struct ITraceTimeline: View {
         return Double(hash % 360) / 360.0
     }
 }
+
+#if canImport(AppKit)
+import AppKit
 
 private struct TimelineTooltipOverlay: NSViewRepresentable {
     let functionCalls: [TraceFunctionCall]
@@ -193,3 +198,4 @@ private class TooltipOwner: NSObject, NSViewToolTipOwner {
         text
     }
 }
+#endif

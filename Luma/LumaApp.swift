@@ -82,19 +82,64 @@ import UniformTypeIdentifiers
         }
     }
 
-#else
+#elseif canImport(UIKit)
+
+    import UIKit
 
     @main
     struct LumaApp: App {
-        init() {
-            SwiftyMonaco.prewarmPool(profile: MonacoEditorProfile(from: EditorProfile.fridaCodeShare()), count: 2)
-            SwiftyMonaco.prewarmPool(profile: MonacoEditorProfile(from: EditorProfile.fridaTracerHook(packages: [])), count: 2)
-        }
+        @UIApplicationDelegateAdaptor(LumaAppDelegate.self) var appDelegate
 
         var body: some Scene {
             DocumentGroup(newDocument: LumaProject()) { configuration in
-                MainWindowView(dbURL: configuration.document.temporaryDBURL)
+                PhoneMainView(dbURL: configuration.document.temporaryDBURL)
             }
+        }
+    }
+
+    class LumaAppDelegate: NSObject, UIApplicationDelegate {
+        func application(
+            _ application: UIApplication,
+            didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+        ) -> Bool {
+            application.registerForRemoteNotifications()
+            return true
+        }
+
+        func application(
+            _ application: UIApplication,
+            didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+        ) {
+            Task { @MainActor in
+                APNsRegistration.shared.setToken(deviceToken)
+            }
+        }
+
+        func application(
+            _ application: UIApplication,
+            didFailToRegisterForRemoteNotificationsWithError error: Swift.Error
+        ) {
+            Task { @MainActor in
+                APNsRegistration.shared.setError(error.localizedDescription)
+            }
+        }
+
+        static func handle(url: URL) {
+            guard url.scheme == "luma", url.host == "join" else { return }
+            guard let labID = labID(from: url) else { return }
+            CollaborationJoinQueue.shared.enqueue(labID: labID)
+        }
+
+        private static func labID(from url: URL) -> String? {
+            guard
+                let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                let labItem = components.queryItems?.first(where: { $0.name == "lab" }),
+                let labID = labItem.value,
+                !labID.isEmpty
+            else {
+                return nil
+            }
+            return labID
         }
     }
 

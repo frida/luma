@@ -1,7 +1,4 @@
-import AppKit
 import LumaCore
-import Metal
-import MetalKit
 import SwiftUI
 
 struct NodeRegisterInfo {
@@ -9,6 +6,11 @@ struct NodeRegisterInfo {
     let stateAfterBlock: RegisterState    // state after all writes
     let writes: [RegisterWrite]           // writes within this block
 }
+
+#if canImport(AppKit)
+import AppKit
+import Metal
+import MetalKit
 
 struct ITraceCFGView: NSViewRepresentable {
     let graph: CFGGraph
@@ -1275,4 +1277,38 @@ extension ITraceCFGView {
         }
     }
 }
+
+#else
+
+struct ITraceCFGView: View {
+    let graph: CFGGraph
+    let currentSection: Int
+    let blockBytes: [UInt64: Data]
+    let nodeRegisterInfo: [CFGGraph.NodeKey: NodeRegisterInfo]
+    let registerNames: [String]
+    let arch: String
+    let disasmProvider: ((UInt64, Int) async -> StyledText)?
+    @Binding var selectedNodeKey: CFGGraph.NodeKey?
+    var onNavigateFunction: ((Int) -> Void)?
+    var onJumpToFunction: ((Int) -> Void)?
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "square.on.square.dashed")
+                .font(.system(size: 44))
+                .foregroundStyle(.secondary)
+            Text("CFG view is macOS-only for now")
+                .font(.headline)
+            Text("Open this project on the macOS build to view the control-flow graph.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(uiColor: .systemBackground))
+    }
+}
+
+#endif
 

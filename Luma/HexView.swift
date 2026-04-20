@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HexView: View {
     let data: Data
+
     let bytesPerRow: Int = 16
 
     let groupSpacing: CGFloat = 20
@@ -19,69 +20,29 @@ struct HexView: View {
     @State private var asciiCellSize: CGSize = .zero
     @State private var rowHeight: CGFloat = 0
 
+    #if canImport(UIKit)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    private var isCompactWidth: Bool { horizontalSizeClass == .compact }
+    #else
+    private var isCompactWidth: Bool { false }
+    #endif
+
     private var bytes: [UInt8] { Array(data) }
+
+    private static let offsetFormat = "%08X"
+
+    private var rowFont: Font { .system(.caption, design: .monospaced) }
+    private var hexFont: Font {
+        isCompactWidth ? .system(size: 10, design: .monospaced) : rowFont
+    }
+    private var asciiFont: Font {
+        isCompactWidth ? .system(size: 9, design: .monospaced) : rowFont
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(rows.indices, id: \.self) { rowIndex in
-                let row = rows[rowIndex]
-
-                HStack(alignment: .firstTextBaseline, spacing: groupSpacing) {
-                    Text(String(format: "%08X", row.offset))
-                        .foregroundStyle(Color.green.opacity(0.85))
-                        .background(
-                            GeometryReader { geo in
-                                Color.clear.onAppear {
-                                    offsetColumnWidth = geo.size.width
-                                }
-                            }
-                        )
-                        .textSelection(.enabled)
-
-                    HStack(spacing: hexSpacing) {
-                        ForEach(row.bytes.indices, id: \.self) { col in
-                            let global = row.offset + col
-                            let byte = row.bytes[col]
-                            Text(String(format: "%02X", byte))
-                                .foregroundStyle(color(for: byte))
-                                .padding(.horizontal, 2)
-                                .background(selectionBackground(for: global))
-                                .background(
-                                    GeometryReader { geo in
-                                        Color.clear.onAppear {
-                                            hexCellSize = geo.size
-                                        }
-                                    }
-                                )
-                        }
-                    }
-
-                    HStack(spacing: asciiSpacing) {
-                        ForEach(row.bytes.indices, id: \.self) { col in
-                            let global = row.offset + col
-                            let byte = row.bytes[col]
-                            let ch = ascii(for: byte)
-                            Text(String(ch))
-                                .foregroundStyle(.secondary)
-                                .background(selectionBackground(for: global))
-                                .background(
-                                    GeometryReader { geo in
-                                        Color.clear.onAppear {
-                                            asciiCellSize = geo.size
-                                        }
-                                    }
-                                )
-                        }
-                    }
-                }
-                .font(.system(.caption, design: .monospaced))
-                .background(
-                    GeometryReader { proxy in
-                        Color.clear.onAppear {
-                            rowHeight = proxy.size.height + 2
-                        }
-                    }
-                )
+                rowView(rows[rowIndex])
             }
         }
         .contentShape(Rectangle())
@@ -103,6 +64,74 @@ struct HexView: View {
         }
         .onKeyPress { keyPress in
             handleKeyPress(keyPress)
+        }
+    }
+
+    private func rowView(_ row: Row) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: groupSpacing) {
+            if !isCompactWidth {
+                offsetText(row.offset)
+            }
+            hexBytes(row)
+            asciiBytes(row)
+        }
+        .background(
+            GeometryReader { proxy in
+                Color.clear.onAppear { rowHeight = proxy.size.height + 2 }
+            }
+        )
+    }
+
+    private func offsetText(_ offset: Int) -> some View {
+        Text(String(format: HexView.offsetFormat, offset))
+            .font(rowFont)
+            .lineLimit(1)
+            .foregroundStyle(Color.green.opacity(0.85))
+            .background(
+                GeometryReader { geo in
+                    Color.clear.onAppear { offsetColumnWidth = geo.size.width }
+                }
+            )
+            .textSelection(.enabled)
+    }
+
+    private func hexBytes(_ row: Row) -> some View {
+        HStack(spacing: hexSpacing) {
+            ForEach(row.bytes.indices, id: \.self) { col in
+                let global = row.offset + col
+                let byte = row.bytes[col]
+                Text(String(format: "%02X", byte))
+                    .font(hexFont)
+                    .lineLimit(1)
+                    .foregroundStyle(color(for: byte))
+                    .padding(.horizontal, 2)
+                    .background(selectionBackground(for: global))
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.onAppear { hexCellSize = geo.size }
+                        }
+                    )
+            }
+        }
+    }
+
+    private func asciiBytes(_ row: Row) -> some View {
+        HStack(spacing: asciiSpacing) {
+            ForEach(row.bytes.indices, id: \.self) { col in
+                let global = row.offset + col
+                let byte = row.bytes[col]
+                let ch = ascii(for: byte)
+                Text(String(ch))
+                    .font(asciiFont)
+                    .lineLimit(1)
+                    .foregroundStyle(.secondary)
+                    .background(selectionBackground(for: global))
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.onAppear { asciiCellSize = geo.size }
+                        }
+                    )
+            }
         }
     }
 
@@ -260,10 +289,8 @@ struct HexView: View {
     }
 
     private func index(at location: CGPoint) -> Int? {
-        guard rowHeight > 0,
-            hexCellSize.width > 0,
-            offsetColumnWidth > 0
-        else { return nil }
+        guard rowHeight > 0, hexCellSize.width > 0 else { return nil }
+        guard isCompactWidth || offsetColumnWidth > 0 else { return nil }
 
         let row = max(0, Int(location.y / rowHeight))
         let rowStart = row * bytesPerRow
@@ -275,7 +302,7 @@ struct HexView: View {
 
         let x = location.x
 
-        let hexStartX = offsetColumnWidth + groupSpacing
+        let hexStartX: CGFloat = isCompactWidth ? 0 : offsetColumnWidth + groupSpacing
         let hexCellStride = hexCellSize.width + hexSpacing
         let hexRowWidth =
             CGFloat(rowLen) * hexCellSize.width

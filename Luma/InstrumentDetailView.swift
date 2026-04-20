@@ -25,10 +25,6 @@ struct InstrumentDetailView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if node == nil, let session {
-                SessionDetachedBanner(session: session, workspace: workspace)
-            }
-
             VStack(alignment: .leading, spacing: 0) {
                 if let ui = InstrumentUIRegistry.shared.ui(for: instance) {
                     ui.makeConfigEditor(configJSON: $configJSON, workspace: workspace, selection: $selection)

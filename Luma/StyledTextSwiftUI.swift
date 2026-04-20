@@ -1,6 +1,8 @@
-import AppKit
 import LumaCore
 import SwiftUI
+
+#if canImport(AppKit)
+import AppKit
 
 extension StyledText {
     func nsAttributed(font: NSFont) -> NSAttributedString {
@@ -25,7 +27,10 @@ extension StyledText {
         }
         return result
     }
+}
+#endif
 
+extension StyledText {
     var attributed: AttributedString {
         var result = AttributedString()
         for span in spans {

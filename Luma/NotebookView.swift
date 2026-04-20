@@ -287,7 +287,7 @@ struct NotebookEntryRow: View {
         }
         .frame(width: 18, height: 18)
         .clipShape(Circle())
-        .overlay(Circle().strokeBorder(Color(.windowBackgroundColor), lineWidth: 1.5))
+        .overlay(Circle().strokeBorder(Color.platformWindowBackground, lineWidth: 1.5))
         .help(name)
         .onTapGesture {
             if let url = URL(string: "https://github.com/\(editor.id)") {
