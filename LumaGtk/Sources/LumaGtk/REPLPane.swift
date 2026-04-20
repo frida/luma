@@ -434,7 +434,23 @@ final class REPLPane {
         if next >= completionItems.count { next = 0 }
         if let row = listBox.getRowAt(index: next) {
             listBox.select(row: row)
+            scrollCompletionRowIntoView(row)
         }
+    }
+
+    private func scrollCompletionRowIntoView(_ row: ListBoxRowRef) {
+        guard let scroll = completionScroll,
+              let listBox = completionList,
+              let vadj = scroll.vadjustment else { return }
+        var rowY: Double = 0
+        var rowX: Double = 0
+        let translated = withUnsafeMutablePointer(to: &rowX) { xPtr in
+            withUnsafeMutablePointer(to: &rowY) { yPtr in
+                row.translateCoordinates(destWidget: listBox, srcX: 0, srcY: 0, destX: xPtr, destY: yPtr)
+            }
+        }
+        guard translated else { return }
+        vadj.clampPage(lower: rowY, upper: rowY + Double(row.height))
     }
 
     private func acceptSelectedCompletion() {
