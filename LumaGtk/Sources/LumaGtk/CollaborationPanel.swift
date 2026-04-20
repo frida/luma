@@ -531,7 +531,7 @@ final class CollaborationPanel {
             let storedLabID = (try? engine.store.fetchCollaborationState())?.labID
             if let stored = storedLabID {
                 let hintLabel = Label(
-                    str: "This project is already linked to a shared notebook (lab \(truncatedLabID(stored))).")
+                    str: "You're currently offline from the shared lab (lab \(truncatedLabID(stored))).")
                 hintLabel.halign = .start
                 hintLabel.wrap = true
                 hintLabel.xalign = 0
@@ -539,10 +539,7 @@ final class CollaborationPanel {
                 hintLabel.add(cssClass: "dim-label")
                 labSection.append(child: hintLabel)
 
-                let explanation = Label(
-                    str:
-                        "Enable collaboration to rejoin that shared lab. Any other copies of this project will connect to the same notebook."
-                )
+                let explanation = Label(str: "Reconnect to rejoin and resume syncing.")
                 explanation.halign = .start
                 explanation.wrap = true
                 explanation.xalign = 0
@@ -568,7 +565,9 @@ final class CollaborationPanel {
             }
 
             let buttonLabel: String
-            if let user = engine.gitHubAuth.currentUser {
+            if storedLabID != nil {
+                buttonLabel = "Reconnect"
+            } else if let user = engine.gitHubAuth.currentUser {
                 buttonLabel = "Enable collaboration as @\(user.id)"
             } else {
                 buttonLabel = "Enable collaboration"

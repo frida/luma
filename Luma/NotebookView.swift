@@ -25,25 +25,39 @@ struct NotebookView: View {
 
     private var content: some View {
         ZStack(alignment: .bottomTrailing) {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 16) {
-                    let ordered = entries
-                    ForEach(Array(ordered.enumerated()), id: \.element.id) { index, entry in
-                        NotebookEntryRow(
-                            entry: entry,
-                            previous: index > 0 ? ordered[index - 1] : nil,
-                            next: index < ordered.count - 1 ? ordered[index + 1] : nil,
-                            workspace: workspace,
-                            selection: $selection
-                        ) {
-                            addUserNote(after: entry)
-                        } deleteAction: {
-                            workspace.engine.deleteNotebookEntry(entry)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 16) {
+                        let ordered = entries
+                        TopDropZone(workspace: workspace, firstEntry: ordered.first)
+                            .padding(.horizontal)
+                            .padding(.top, 12)
+                        ForEach(Array(ordered.enumerated()), id: \.element.id) { index, entry in
+                            NotebookEntryRow(
+                                entry: entry,
+                                previous: index > 0 ? ordered[index - 1] : nil,
+                                next: index < ordered.count - 1 ? ordered[index + 1] : nil,
+                                workspace: workspace,
+                                selection: $selection
+                            ) {
+                                addUserNote(after: entry)
+                            } deleteAction: {
+                                workspace.engine.deleteNotebookEntry(entry)
+                            }
+                            .id(entry.id)
                         }
+                        .padding(.horizontal)
+                        // Bottom breathing room so the floating "New Note"
+                        // button never overlaps the last row's editor
+                        // controls once the user scrolls all the way down.
+                        Color.clear.frame(height: 80)
                     }
-                    .padding(.horizontal)
-                    .padding(.top, 12)
-                    .padding(.bottom, 16)
+                }
+                .onChange(of: lastInsertedID) { _, newID in
+                    guard let newID else { return }
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        proxy.scrollTo(newID, anchor: .bottom)
+                    }
                 }
             }
 
@@ -61,6 +75,8 @@ struct NotebookView: View {
         }
     }
 
+    @State private var lastInsertedID: UUID?
+
     private func addUserNote(after entry: LumaCore.NotebookEntry?) {
         let note = LumaCore.NotebookEntry(
             kind: .note,
@@ -70,6 +86,41 @@ struct NotebookView: View {
             processName: entry?.processName
         )
         workspace.engine.addNotebookEntry(note, after: entry)
+        lastInsertedID = note.id
+    }
+}
+
+/// Thin drop strip above the first entry so drags can actually land at
+/// position 0. The per-row `.dropDestination` only fires inside the
+/// row's frame; drops into the empty space above the first row used
+/// to fall on the floor.
+private struct TopDropZone: View {
+    @ObservedObject var workspace: Workspace
+    let firstEntry: LumaCore.NotebookEntry?
+    @State private var isTargeted = false
+
+    var body: some View {
+        Rectangle()
+            .fill(Color.clear)
+            .frame(height: 16)
+            .overlay(alignment: .bottom) {
+                if isTargeted {
+                    Color.accentColor.frame(height: 2)
+                }
+            }
+            .dropDestination(for: String.self) { items, _ in
+                guard let first = items.first,
+                      let sourceID = UUID(uuidString: first),
+                      let source = workspace.engine.notebookEntries.first(where: { $0.id == sourceID })
+                else { return false }
+                if source.id == firstEntry?.id { return false }
+                workspace.engine.reorderNotebookEntry(
+                    source,
+                    between: nil,
+                    and: firstEntry,
+                )
+                return true
+            } isTargeted: { isTargeted = $0 }
     }
 }
 

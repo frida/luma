@@ -221,8 +221,6 @@ public final class Engine {
             position = Self.notebookPositionStep
         }
 
-        print("[notebook] reorder \(entry.id) \(entry.position) -> \(position) (prev=\(previous?.position.description ?? "nil") next=\(next?.position.description ?? "nil"))")
-
         var updated = entry
         updated.position = position
         try? store.save(updated)

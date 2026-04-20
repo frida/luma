@@ -97,16 +97,15 @@ struct CollaborationPanel: View {
             switch collaboration.status {
             case .disconnected:
                 let storedLabID = (try? workspace.store.fetchCollaborationState())?.labID
+                let hasExistingLab = storedLabID != nil
                 if let stored = storedLabID {
-                    Text("This project is already linked to a shared notebook (lab \(truncatedLabID(stored))).")
+                    Text("You're currently offline from the shared lab (lab \(truncatedLabID(stored))).")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(
-                        "Enable collaboration to rejoin that shared lab. Any other copies of this project will connect to the same notebook."
-                    )
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 2)
+                    Text("Reconnect to rejoin and resume syncing.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 2)
                 } else {
                     Text("Collaboration is currently off for this project.")
                         .font(.caption)
@@ -117,17 +116,19 @@ struct CollaborationPanel: View {
                         .padding(.top, 2)
                 }
 
-                if let user = workspace.engine.gitHubAuth.currentUser {
-                    Button("Enable collaboration as @\(user.id)") {
-                        workspace.engine.startCollaboration()
+                let actionLabel: String = {
+                    if hasExistingLab {
+                        return "Reconnect"
                     }
-                    .buttonStyle(.borderedProminent)
-                } else {
-                    Button("Enable collaboration") {
-                        workspace.engine.startCollaboration()
+                    if let user = workspace.engine.gitHubAuth.currentUser {
+                        return "Enable collaboration as @\(user.id)"
                     }
-                    .buttonStyle(.borderedProminent)
+                    return "Enable collaboration"
+                }()
+                Button(actionLabel) {
+                    workspace.engine.startCollaboration()
                 }
+                .buttonStyle(.borderedProminent)
 
             case .connecting:
                 HStack(spacing: 6) {
@@ -140,7 +141,7 @@ struct CollaborationPanel: View {
 
             case .joined:
                 if let labID = collaboration.labID {
-                    HStack(alignment: .top, spacing: 10) {
+                    HStack(alignment: .center, spacing: 10) {
                         LabPictureView(collaboration: collaboration)
                         LabTitleView(collaboration: collaboration)
                     }
