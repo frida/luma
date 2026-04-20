@@ -18,6 +18,13 @@ enum IconPixbuf {
         makePNGTexture(data: Array(data))
     }
 
+    /// Build a Gdk.Texture from arbitrary encoded image bytes (PNG, JPEG,
+    /// WebP, GIF — anything GDK's pixbuf loader recognizes). The name-
+    /// cousin `makeTexture(fromPNGData:)` is a legacy alias.
+    static func makeTexture(fromEncodedData data: Foundation.Data) -> Gdk.Texture? {
+        makePNGTexture(data: Array(data))
+    }
+
     static func makeImage(from icon: Frida.Icon, pixelSize: Int) -> Gtk.Image? {
         guard let texture = makeTexture(from: icon) else { return nil }
         return makeImage(from: texture, pixelSize: pixelSize)

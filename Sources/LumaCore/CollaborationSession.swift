@@ -88,6 +88,8 @@ public final class CollaborationSession {
     private(set) public var status: Status = .disconnected
     private(set) public var labID: String?
     private(set) public var labTitle: String?
+    private(set) public var labPictureData: Data?
+    private(set) public var labPictureContentType: String?
     private(set) public var localUser: UserInfo?
     private(set) public var members: [Member] = []
     private(set) public var chatMessages: [ChatMessage] = []
@@ -189,6 +191,8 @@ public final class CollaborationSession {
         setStatus(.disconnected)
         labID = nil
         labTitle = nil
+        labPictureData = nil
+        labPictureContentType = nil
         localUser = nil
         members = []
         chatMessages = []
@@ -394,6 +398,46 @@ public final class CollaborationSession {
         }
     }
 
+    /// Upload a new lab picture. Owner-only. `contentType` is one of
+    /// image/png, image/jpeg, image/webp, image/gif. Data is capped at
+    /// 512 KiB by the server. Updates `labPictureData` optimistically on
+    /// success.
+    public func setLabPicture(_ data: Data, contentType: String) async {
+        guard case .joined(let labID) = status else { return }
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            sendRequest(
+                from: "/labs/\(labID)/picture",
+                type: ".set",
+                payload: ["content_type": contentType],
+                data: [UInt8](data)
+            ) { [weak self] result in
+                if case .success = result {
+                    self?.labPictureData = data
+                    self?.labPictureContentType = contentType
+                }
+                cont.resume()
+            }
+        }
+    }
+
+    /// Clear the lab picture; clients fall back to the owner's GitHub
+    /// avatar. Owner-only.
+    public func removeLabPicture() async {
+        guard case .joined(let labID) = status else { return }
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            sendRequest(
+                from: "/labs/\(labID)/picture",
+                type: ".remove"
+            ) { [weak self] result in
+                if case .success = result {
+                    self?.labPictureData = nil
+                    self?.labPictureContentType = nil
+                }
+                cont.resume()
+            }
+        }
+    }
+
     /// Suggested title for a freshly-created lab, built from the local
     /// weekday and time-of-day plus a randomly-picked verb, e.g.
     /// "Monday morning reversing", "Friday evening spelunking". Generated
@@ -502,9 +546,22 @@ public final class CollaborationSession {
         let binaryIndices = notebookObj["binary_indices"] as? [Any] ?? []
 
         self.labID = labID
-        if let labObj = payload["lab"] as? JSONObject,
-           let title = labObj["title"] as? String {
-            self.labTitle = title
+        if let labObj = payload["lab"] as? JSONObject {
+            if let title = labObj["title"] as? String {
+                self.labTitle = title
+            }
+            if let picture = labObj["picture"] as? JSONObject,
+               let contentType = picture["content_type"] as? String,
+               let offset = picture["offset"] as? Int,
+               let length = picture["length"] as? Int,
+               let all = lastMessageData,
+               offset >= 0, offset + length <= all.count {
+                self.labPictureData = Data(all[offset..<offset + length])
+                self.labPictureContentType = contentType
+            } else {
+                self.labPictureData = nil
+                self.labPictureContentType = nil
+            }
         }
         setStatus(.joined(labID: labID))
         members = memberDicts.compactMap(Member.fromJSON)
@@ -599,6 +656,17 @@ public final class CollaborationSession {
             if let title = payload["title"] as? String {
                 labTitle = title
             }
+
+        case ("+update", let s) where s.count == 3 && s[0] == "labs" && s[2] == "picture":
+            if let contentType = payload["content_type"] as? String,
+               let bytes = data, !bytes.isEmpty {
+                labPictureData = Data(bytes)
+                labPictureContentType = contentType
+            }
+
+        case ("+remove", let s) where s.count == 3 && s[0] == "labs" && s[2] == "picture":
+            labPictureData = nil
+            labPictureContentType = nil
 
         case ("+add", let s) where s.count == 3 && s[0] == "labs" && s[2] == "members":
             guard let arr = payload["members"] as? [JSONObject] else { return }

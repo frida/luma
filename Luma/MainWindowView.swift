@@ -43,6 +43,11 @@ struct MainWindowView: View {
         .task {
             await workspace.configurePersistence()
         }
+        .onDisappear {
+            Task { @MainActor in
+                await workspace.engine.collaboration.stop()
+            }
+        }
         .onChange(of: workspace.engine.eventLog.totalReceived) { _, newVersion in
             if uiState.isEventStreamCollapsed {
                 let delta = max(0, newVersion - collapsedEventBaselineVersion)

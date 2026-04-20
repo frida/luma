@@ -21,6 +21,9 @@ final class NotebookPane {
     private var draftEntries: Set<UUID> = []
     private var jsValueKeepers: [JSInspectValueWidget] = []
     private var entryRows: [UUID: Widget] = [:]
+    private var timestampLabels: [UUID: Label] = [:]
+    private var timestampDates: [UUID: Date] = [:]
+    private var tickerTask: Task<Void, Never>?
     private let emptyStateActionHolder = ActionHolder()
 
     init(engine: Engine) {
@@ -89,6 +92,25 @@ final class NotebookPane {
         }
 
         populateEntries()
+        startRelativeTimeTicker()
+    }
+
+    deinit {
+        tickerTask?.cancel()
+    }
+
+    private func startRelativeTimeTicker() {
+        tickerTask?.cancel()
+        tickerTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                guard let self, !Task.isCancelled else { return }
+                let now = Date()
+                for (id, date) in self.timestampDates {
+                    self.timestampLabels[id]?.label = RelativeTime.string(from: date, now: now)
+                }
+            }
+        }
     }
 
     // MARK: - Change handling
@@ -114,6 +136,8 @@ final class NotebookPane {
             if let row = entryRows.removeValue(forKey: id) {
                 entriesBox.remove(child: row)
             }
+            timestampLabels.removeValue(forKey: id)
+            timestampDates.removeValue(forKey: id)
             editingEntries.remove(id)
             autoEditedEntries.remove(id)
             draftEntries.remove(id)
@@ -146,6 +170,8 @@ final class NotebookPane {
         clearChildren(of: entriesBox)
         jsValueKeepers.removeAll()
         entryRows.removeAll()
+        timestampLabels.removeAll()
+        timestampDates.removeAll()
         for entry in sortedEntries(from: engine) {
             let row = makeRow(for: entry)
             entryRows[entry.id] = row
@@ -435,6 +461,8 @@ final class NotebookPane {
         timestamp.tooltipText = timeFormatter.string(from: entry.timestamp)
         timestamp.add(cssClass: "caption")
         timestamp.add(cssClass: "dim-label")
+        timestampLabels[entry.id] = timestamp
+        timestampDates[entry.id] = entry.timestamp
         header.append(child: timestamp)
 
         if (entry.kind == .note) && !isEditing {

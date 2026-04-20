@@ -1,4 +1,5 @@
 import Adw
+import CLuma
 import CPango
 import Foundation
 import Gdk
@@ -37,6 +38,8 @@ final class CollaborationPanel {
     private var suppressScrollPinUpdate = false
     private var signInWindow: Adw.Dialog?
     private var isEditingLabTitle: Bool = false
+    private var chatTimestamps: [(label: Label, date: Date)] = []
+    private var tickerTask: Task<Void, Never>?
 
     private static let headerAvatarSize: Int = 24
     private static let participantAvatarSize: Int = 28
@@ -190,6 +193,25 @@ final class CollaborationPanel {
         observeLab()
         observeParticipants()
         observeChat()
+        startRelativeTimeTicker()
+    }
+
+    deinit {
+        tickerTask?.cancel()
+    }
+
+    private func startRelativeTimeTicker() {
+        tickerTask?.cancel()
+        tickerTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                guard let self, !Task.isCancelled else { return }
+                let now = Date()
+                for entry in self.chatTimestamps {
+                    entry.label.label = RelativeTime.string(from: entry.date, now: now)
+                }
+            }
+        }
     }
 
     private func refreshNotificationsButton() {
@@ -243,6 +265,7 @@ final class CollaborationPanel {
         withObservationTracking {
             _ = engine.collaboration.status
             _ = engine.collaboration.labTitle
+            _ = engine.collaboration.labPictureData
             _ = engine.collaboration.registeredPushPlatforms
         } onChange: { [weak self] in
             Task { @MainActor in
@@ -254,6 +277,86 @@ final class CollaborationPanel {
                 self.refreshNotificationsButton()
                 self.observeLab()
             }
+        }
+    }
+
+    private func makeLabPictureButton() -> Widget {
+        let imageWidget = makeLabPictureImage(size: 48)
+
+        guard engine?.collaboration.isOwner == true else {
+            return imageWidget
+        }
+
+        let menuButton = MenuButton()
+        menuButton.hasFrame = false
+        menuButton.add(cssClass: "flat")
+        menuButton.tooltipText = "Change lab picture"
+        menuButton.set(child: imageWidget)
+
+        let menuBox = Box(orientation: .vertical, spacing: 2)
+        menuBox.marginStart = 6
+        menuBox.marginEnd = 6
+        menuBox.marginTop = 6
+        menuBox.marginBottom = 6
+
+        let uploadButton = Button(label: "Upload image\u{2026}")
+        uploadButton.add(cssClass: "flat")
+        uploadButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.openLabPicturePicker()
+            }
+        }
+        menuBox.append(child: uploadButton)
+
+        if engine?.collaboration.labPictureData != nil {
+            let resetButton = Button(label: "Reset to default")
+            resetButton.add(cssClass: "flat")
+            resetButton.add(cssClass: "luma-menu-destructive")
+            resetButton.onClicked { [weak engine] _ in
+                MainActor.assumeIsolated {
+                    guard let engine else { return }
+                    Task { @MainActor in await engine.collaboration.removeLabPicture() }
+                }
+            }
+            menuBox.append(child: resetButton)
+        }
+
+        let popover = Popover()
+        popover.autohide = true
+        popover.set(child: menuBox)
+        menuButton.set(popover: popover)
+        return menuButton
+    }
+
+    private func makeLabPictureImage(size: Int) -> Widget {
+        if let data = engine?.collaboration.labPictureData,
+           let texture = IconPixbuf.makeTexture(fromEncodedData: data) {
+            let image = Gtk.Image(paintable: texture)
+            image.pixelSize = size
+            image.add(cssClass: "luma-lab-picture")
+            return image
+        }
+        // Fall back to owner avatar.
+        let owner = engine?.collaboration.members.first(where: { $0.role == .owner })
+        let name = owner.map { $0.user.name.isEmpty ? "@\($0.user.id)" : $0.user.name } ?? "Lab"
+        let avatar = Adw.Avatar(size: size, text: name, showInitials: true)
+        if let url = owner?.user.avatarURL {
+            let sized = URL(string: "\(url.absoluteString)&s=\(size * 2)") ?? url
+            Task { @MainActor [avatar] in
+                guard let texture = await AvatarCache.shared.texture(for: sized) else { return }
+                avatar.set(customImage: texture)
+            }
+        }
+        return avatar
+    }
+
+    private func openLabPicturePicker() {
+        guard let engine else { return }
+        guard let rootPtr = widget.root?.ptr else { return }
+        let parentPtr = UnsafeMutableRawPointer(rootPtr)
+        let context = Unmanaged.passRetained(LabPictureContext(engine: engine)).toOpaque()
+        "Choose lab picture".withCString { title in
+            luma_file_dialog_open(parentPtr, title, labPicturePathThunk, context)
         }
     }
 
@@ -497,7 +600,10 @@ final class CollaborationPanel {
             labSection.append(child: row)
 
         case .joined(let labID):
-            labSection.append(child: makeLabTitleRow())
+            let headerRow = Box(orientation: .horizontal, spacing: 10)
+            headerRow.append(child: makeLabPictureButton())
+            headerRow.append(child: makeLabTitleRow())
+            labSection.append(child: headerRow)
 
             let roleLabel = Label(str: engine.collaboration.isHost ? "You are hosting this lab." : "You joined this lab.")
             roleLabel.halign = .start
@@ -673,6 +779,7 @@ final class CollaborationPanel {
     private func refreshChat() {
         guard let engine else { return }
         chatListBox.removeAll()
+        chatTimestamps.removeAll()
         let messages = engine.collaboration.chatMessages
         for message in messages {
             chatListBox.append(child: buildChatRow(for: message))
@@ -734,6 +841,7 @@ final class CollaborationPanel {
         timeLabel.halign = .end
         timeLabel.add(cssClass: "caption")
         timeLabel.add(cssClass: "dim-label")
+        chatTimestamps.append((label: timeLabel, date: message.timestamp))
         header.append(child: timeLabel)
         bubble.append(child: header)
 
@@ -900,6 +1008,40 @@ final class CollaborationPanel {
         while let current = child {
             child = current.nextSibling
             container.remove(child: current)
+        }
+    }
+}
+
+@MainActor
+private final class LabPictureContext {
+    let engine: Engine
+    init(engine: Engine) { self.engine = engine }
+}
+
+private let labPicturePathThunk: @convention(c) (
+    UnsafePointer<CChar>?, UnsafeMutableRawPointer?
+) -> Void = { pathPtr, userData in
+    guard let userData else { return }
+    let raw = UInt(bitPattern: userData)
+    let pathString: String? = pathPtr.map { String(cString: $0) }
+    MainActor.assumeIsolated {
+        let ptr = UnsafeMutableRawPointer(bitPattern: raw)!
+        let ctx = Unmanaged<LabPictureContext>.fromOpaque(ptr).takeRetainedValue()
+        guard let pathString else { return }
+        let url = URL(fileURLWithPath: pathString)
+        guard let data = try? Data(contentsOf: url) else { return }
+        let ext = url.pathExtension.lowercased()
+        let contentType: String
+        switch ext {
+        case "png": contentType = "image/png"
+        case "jpg", "jpeg": contentType = "image/jpeg"
+        case "webp": contentType = "image/webp"
+        case "gif": contentType = "image/gif"
+        default: contentType = "image/png"
+        }
+        let engine = ctx.engine
+        Task { @MainActor in
+            await engine.collaboration.setLabPicture(data, contentType: contentType)
         }
     }
 }

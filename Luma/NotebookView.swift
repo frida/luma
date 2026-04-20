@@ -199,9 +199,7 @@ struct NotebookEntryRow: View {
 
             editorStack
 
-            Text(LumaCore.RelativeTime.string(from: entry.timestamp))
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            RelativeTimeText(date: entry.timestamp)
                 .help(entry.timestamp.formatted())
 
             if isNote && !isEditingUserNote {

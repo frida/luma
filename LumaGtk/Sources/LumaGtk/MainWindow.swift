@@ -232,6 +232,11 @@ final class MainWindow {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.persistWindowState()
+                if let engine = self.engine {
+                    Task { @MainActor in
+                        await engine.collaboration.stop()
+                    }
+                }
                 self.application?.windowDidClose(self)
             }
             return false

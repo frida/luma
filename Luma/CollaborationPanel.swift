@@ -1,6 +1,8 @@
+import AppKit
 import Frida
 import LumaCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct CollaborationPanel: View {
     @ObservedObject var workspace: Workspace
@@ -141,7 +143,10 @@ struct CollaborationPanel: View {
 
             case .joined:
                 if let labID = collaboration.labID {
-                    LabTitleView(collaboration: collaboration)
+                    HStack(alignment: .top, spacing: 10) {
+                        LabPictureView(collaboration: collaboration)
+                        LabTitleView(collaboration: collaboration)
+                    }
 
                     HStack {
                         Text(collaboration.isHost ? "You are hosting this lab." : "You joined this lab.")
@@ -326,10 +331,11 @@ struct CollaborationPanel: View {
                                                 .font(.caption2)
                                                 .foregroundStyle(.secondary)
                                             Spacer()
-                                            Text(LumaCore.RelativeTime.string(from: msg.timestamp))
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary.opacity(0.7))
-                                                .help(msg.timestamp.formatted())
+                                            RelativeTimeText(
+                                                date: msg.timestamp,
+                                                color: .secondary.opacity(0.7)
+                                            )
+                                            .help(msg.timestamp.formatted())
                                         }
 
                                         Text(msg.text)
@@ -506,6 +512,93 @@ private struct ChatInputRow: View {
 
         collaboration.sendChat(text)
         draft = ""
+    }
+}
+
+private struct LabPictureView: View {
+    var collaboration: CollaborationSession
+
+    private static let supportedTypes: [(contentType: String, uti: String)] = [
+        ("image/png", "public.png"),
+        ("image/jpeg", "public.jpeg"),
+        ("image/webp", "org.webmproject.webp"),
+        ("image/gif", "com.compuserve.gif"),
+    ]
+
+    var body: some View {
+        Group {
+            if collaboration.isOwner {
+                Menu {
+                    Button("Upload Image\u{2026}", action: pickImage)
+                    if collaboration.labPictureData != nil {
+                        Button("Reset to Default", role: .destructive) {
+                            Task { @MainActor in
+                                await collaboration.removeLabPicture()
+                            }
+                        }
+                    }
+                } label: {
+                    pictureView
+                }
+                .menuIndicator(.hidden)
+                .buttonStyle(.borderless)
+                .help("Change lab picture")
+            } else {
+                pictureView
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var pictureView: some View {
+        if let data = collaboration.labPictureData,
+           let image = NSImage(data: data) {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 48, height: 48)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+        } else if let owner = collaboration.members.first(where: { $0.role == .owner }),
+                  let url = owner.user.avatarURL.flatMap({ URL(string: "\($0.absoluteString)&s=96") }) {
+            AsyncImage(url: url) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                Color.secondary.opacity(0.1)
+            }
+            .frame(width: 48, height: 48)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+        } else {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.secondary.opacity(0.15))
+                .frame(width: 48, height: 48)
+                .overlay(Image(systemName: "photo").foregroundStyle(.secondary))
+        }
+    }
+
+    private func pickImage() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = Self.supportedTypes.compactMap {
+            UTType($0.uti)
+        }
+        guard panel.runModal() == .OK, let url = panel.url,
+              let data = try? Data(contentsOf: url) else { return }
+
+        let ext = url.pathExtension.lowercased()
+        let contentType: String
+        switch ext {
+        case "png": contentType = "image/png"
+        case "jpg", "jpeg": contentType = "image/jpeg"
+        case "webp": contentType = "image/webp"
+        case "gif": contentType = "image/gif"
+        default: contentType = "image/png"
+        }
+
+        Task { @MainActor in
+            await collaboration.setLabPicture(data, contentType: contentType)
+        }
     }
 }
 
