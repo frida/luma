@@ -31,6 +31,7 @@ final class REPLPane {
     private var suppressingChanged = false
     private var completionPopover: Popover?
     private var completionList: ListBox?
+    private var completionScroll: ScrolledWindow?
     private var completionItems: [String] = []
     private var completionBaseCode: String = ""
 
@@ -339,16 +340,11 @@ final class REPLPane {
         popover.autohide = false
         popover.canFocus = false
 
-        let scroll = ScrolledWindow()
-        scroll.setPolicy(hscrollbarPolicy: GTK_POLICY_NEVER, vscrollbarPolicy: GTK_POLICY_AUTOMATIC)
-        scroll.setSizeRequest(width: 280, height: -1)
-        scroll.propagateNaturalHeight = true
-        scroll.maxContentHeight = 160
-
         let listBox = ListBox()
         listBox.selectionMode = .single
         listBox.canFocus = false
         listBox.add(cssClass: "boxed-list")
+        listBox.setSizeRequest(width: 280, height: -1)
         for suggestion in suggestions {
             let row = ListBoxRow()
             row.canFocus = false
@@ -368,8 +364,18 @@ final class REPLPane {
             }
         }
 
-        scroll.set(child: listBox)
-        popover.set(child: scroll)
+        let inlineRowLimit = 6
+        if suggestions.count > inlineRowLimit {
+            let scroll = ScrolledWindow()
+            scroll.setPolicy(hscrollbarPolicy: GTK_POLICY_NEVER, vscrollbarPolicy: GTK_POLICY_AUTOMATIC)
+            scroll.propagateNaturalHeight = true
+            scroll.maxContentHeight = 160
+            scroll.set(child: listBox)
+            popover.set(child: scroll)
+            completionScroll = scroll
+        } else {
+            popover.set(child: listBox)
+        }
         popover.set(parent: inputEntry)
         popover.position = GTK_POS_BOTTOM
 
@@ -454,6 +460,7 @@ final class REPLPane {
         completionPopover?.unparent()
         completionPopover = nil
         completionList = nil
+        completionScroll = nil
         completionItems = []
     }
 
