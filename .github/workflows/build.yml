@@ -463,7 +463,7 @@ jobs:
       - name: Pin luma source to current commit
         if: github.event_name == 'push'
         run: |
-          sed -i 's|"branch": "main"|"commit": "'"$GITHUB_SHA"'"|' \
+          sed -i '\|frida/luma.git|,/"branch"/ s|"branch": "main"|"commit": "'"$GITHUB_SHA"'"|' \
               LumaGtk/build-aux/flatpak/re.frida.Luma.json
 
       - name: Build Flatpak
