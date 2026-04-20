@@ -4,7 +4,6 @@
 #
 #     .\scripts\windows\run.ps1                      # debug
 #     .\scripts\windows\run.ps1 -Configuration release
-#     .\scripts\windows\run.ps1 --monaco-demo
 #
 # Extra arguments after -Configuration are forwarded to the exe.
 

@@ -27,7 +27,6 @@ final class LumaApplication {
     }
 
     func run(_ arguments: [String] = CommandLine.arguments) -> Int {
-        let filtered = arguments.filter { $0 != "--monaco-demo" }
         let context = Unmanaged.passRetained(self).toOpaque()
         luma_app_set_open_handler(
             UnsafeMutableRawPointer(app.application_ptr),
@@ -35,7 +34,7 @@ final class LumaApplication {
             context
         )
         return app.run(
-            arguments: filtered,
+            arguments: arguments,
             startupHandler: { [weak self] _ in
                 MainActor.assumeIsolated { self?.startup() }
             },
@@ -51,10 +50,6 @@ final class LumaApplication {
     }
 
     private func activate() {
-        if CommandLine.arguments.contains("--monaco-demo") {
-            MonacoDemo.present(in: app)
-            return
-        }
         ensureDocumentWindow()
     }
 
@@ -509,10 +504,7 @@ private let FRIDA_RUNTIME_GLIB: Int32 = 0
 struct LumaGtkMain {
     static func main() {
         "luma".withCString { g_set_prgname($0) }
-        let isMonacoDemo = CommandLine.arguments.contains("--monaco-demo")
-        if !isMonacoDemo {
-            frida_init_with_runtime(FRIDA_RUNTIME_GLIB)
-        }
+        frida_init_with_runtime(FRIDA_RUNTIME_GLIB)
         GLibMainExecutor.install()
         let app = LumaApplication()
         let status = app.run()
