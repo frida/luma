@@ -639,8 +639,8 @@ final class ITraceCFGView {
         let nodeCY = (node.position.y + offsetBaseY) * zoom + panY
         let halfW = nodeWidth / 2 * zoom
         let halfH = h / 2 * zoom
-        let viewW = Double(container.allocatedWidth)
-        let viewH = Double(container.allocatedHeight)
+        let viewW = Double(container.width)
+        let viewH = Double(container.height)
         guard viewW > 0, viewH > 0 else { return }
 
         let margin = 20.0
@@ -894,8 +894,8 @@ final class ITraceCFGView {
         let margin = Double(Self.registerPopoverMargin)
         var width = Self.registerPopoverMinWidth
         var height = Self.registerPopoverMinHeight
-        let containerW = Double(container.allocatedWidth)
-        let containerH = Double(container.allocatedHeight)
+        let containerW = Double(container.width)
+        let containerH = Double(container.height)
         if containerW > 0 {
             let nodeRight = nodeRightInContainer(node)
             let availW = containerW - nodeRight - chrome - margin
@@ -909,7 +909,7 @@ final class ITraceCFGView {
     }
 
     private func ensureRoomForRegisterPopover(node: CFGGraph.Node, contentWidth: Int) {
-        let containerW = Double(container.allocatedWidth)
+        let containerW = Double(container.width)
         guard containerW > 0 else { return }
         let nodeRight = nodeRightInContainer(node)
         let chrome = Double(Self.registerPopoverChrome)
@@ -928,8 +928,8 @@ final class ITraceCFGView {
         // the user navigates instructions inside the same block. The arrow
         // ends up at the node's middle; the contents update to reflect the
         // selected instruction.
-        let anchorWidth = anchor.allocatedWidth
-        let anchorHeight = anchor.allocatedHeight
+        let anchorWidth = anchor.width
+        let anchorHeight = anchor.height
         guard anchorWidth > 0, anchorHeight > 0 else { return }
         var rect = GdkRectangle(
             x: gint(anchorWidth - 1),

@@ -409,7 +409,7 @@ final class REPLPane {
         }
 
         let approxLeftPadding: Int32 = 8
-        let entryHeight = inputEntry.allocatedHeight
+        let entryHeight = inputEntry.height
         return (
             x: Double(prefixWidth + approxLeftPadding),
             y: 0,

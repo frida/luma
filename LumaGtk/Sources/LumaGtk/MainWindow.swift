@@ -335,7 +335,7 @@ final class MainWindow {
         } else {
             eventStreamPaned.startChild = WidgetRef(detail)
             eventStreamPaned.endChild = WidgetRef(stream)
-            var totalHeight = Int(eventStreamPaned.allocatedHeight)
+            var totalHeight = Int(eventStreamPaned.height)
             if totalHeight <= 0 {
                 totalHeight = LumaState.shared.windowHeight
             }

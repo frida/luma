@@ -439,7 +439,7 @@ final class InsightDetailView {
     private func scrollToCenter(index: Int) {
         guard let adj = disasmScroll.vadjustment else { return }
         guard !disasmRows.isEmpty else { return }
-        let rowHeight = Double(disasmRows[0].allocatedHeight)
+        let rowHeight = Double(disasmRows[0].height)
         guard rowHeight > 0 else { return }
         let rowMidY = (Double(index) + 0.5) * rowHeight
         let target = rowMidY - adj.pageSize / 2.0
@@ -701,7 +701,7 @@ final class InsightDetailView {
 
     private func drawFlow(ctx: Cairo.ContextRef) {
         guard !disasmLines.isEmpty, !disasmRows.isEmpty else { return }
-        let rowHeight = Double(disasmRows[0].allocatedHeight)
+        let rowHeight = Double(disasmRows[0].height)
         guard rowHeight > 0 else { return }
 
         let indexByAddr: [UInt64: Int] = Dictionary(

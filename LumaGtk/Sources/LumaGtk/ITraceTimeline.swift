@@ -35,7 +35,7 @@ final class ITraceTimeline {
         click.onPressed { [weak self, weak area] _, _, x, _ in
             MainActor.assumeIsolated {
                 guard let self, let area else { return }
-                let width = Double(area.allocatedWidth)
+                let width = Double(area.width)
                 if let idx = self.callIndex(at: x, width: width) {
                     self.selectedIndex = idx
                     area.queueDraw()
@@ -48,7 +48,7 @@ final class ITraceTimeline {
         area.onQueryTooltip { [weak self] _, x, _, _, tooltip in
             MainActor.assumeIsolated {
                 guard let self else { return false }
-                let width = Double(area.allocatedWidth)
+                let width = Double(area.width)
                 guard let idx = self.callIndex(at: Double(x), width: width) else {
                     return false
                 }
