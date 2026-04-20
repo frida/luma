@@ -7,7 +7,7 @@ on:
   pull_request:
 
 env:
-  FRIDA_CORE_REF: "main"
+  FRIDA_CORE_REF: "440a03f0d4aa731fd5634e023f4e6af8c709335f"
   RADARE2_REF: "7ed1e8c6fd000b99c8aa6835e12bef1657d92746"
   SWIFT_VERSION: "6.2"
   LUMA_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '0.1.0' }}
@@ -210,7 +210,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: /tmp/frida-destdir
-          key: ${{ runner.os }}-fedora43-frida-core-${{ env.FRIDA_CORE_REF }}-v1
+          key: ${{ runner.os }}-fedora43-frida-core-${{ env.FRIDA_CORE_REF }}-v2
 
       - name: Build frida-core (shared)
         if: steps.frida-cache.outputs.cache-hit != 'true'
@@ -218,8 +218,9 @@ jobs:
           CC: gcc
           CXX: g++
         run: |
-          git clone --depth 1 -b $FRIDA_CORE_REF https://github.com/frida/frida-core.git /tmp/frida-core
+          git clone https://github.com/frida/frida-core.git /tmp/frida-core
           cd /tmp/frida-core
+          git checkout $FRIDA_CORE_REF
           ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr
           make -j$(nproc)
           DESTDIR=/tmp/frida-destdir make install
@@ -229,7 +230,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: /tmp/frida-destdir
-          key: ${{ runner.os }}-fedora43-frida-core-${{ env.FRIDA_CORE_REF }}-v1
+          key: ${{ runner.os }}-fedora43-frida-core-${{ env.FRIDA_CORE_REF }}-v2
 
       - name: Install frida-core
         run: |
@@ -360,13 +361,14 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: /tmp/frida-destdir
-          key: ${{ runner.os }}-ubuntu2510-frida-core-${{ env.FRIDA_CORE_REF }}-v1
+          key: ${{ runner.os }}-ubuntu2510-frida-core-${{ env.FRIDA_CORE_REF }}-v2
 
       - name: Build frida-core (shared)
         if: steps.frida-cache.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 -b $FRIDA_CORE_REF https://github.com/frida/frida-core.git /tmp/frida-core
+          git clone https://github.com/frida/frida-core.git /tmp/frida-core
           cd /tmp/frida-core
+          git checkout $FRIDA_CORE_REF
           ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr \
             -- --force-fallback-for=openssl
           make -j$(nproc)
@@ -377,7 +379,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: /tmp/frida-destdir
-          key: ${{ runner.os }}-ubuntu2510-frida-core-${{ env.FRIDA_CORE_REF }}-v1
+          key: ${{ runner.os }}-ubuntu2510-frida-core-${{ env.FRIDA_CORE_REF }}-v2
 
       - name: Install frida-core
         run: |
@@ -617,7 +619,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}\frida-prefix
-          key: ${{ runner.os }}-${{ matrix.win_arch }}-frida-core-${{ env.FRIDA_CORE_REF }}-v5
+          key: ${{ runner.os }}-${{ matrix.win_arch }}-frida-core-${{ env.FRIDA_CORE_REF }}-v6
 
       - name: Install Go toolchain
         if: steps.frida-cache.outputs.cache-hit != 'true'
@@ -651,8 +653,9 @@ jobs:
           MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
         run: |
           $ErrorActionPreference = 'Stop'
-          git clone --depth 1 -b $env:FRIDA_CORE_REF https://github.com/frida/frida-core.git $env:RUNNER_TEMP\frida-core
+          git clone https://github.com/frida/frida-core.git $env:RUNNER_TEMP\frida-core
           Push-Location $env:RUNNER_TEMP\frida-core
+          git checkout $env:FRIDA_CORE_REF
           git submodule update --init --recursive --depth 1
           python -c "import sys; sys.path.insert(0, '.'); from releng.meson_configure import main; main()" `
               . `
@@ -680,7 +683,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}\frida-prefix
-          key: ${{ runner.os }}-${{ matrix.win_arch }}-frida-core-${{ env.FRIDA_CORE_REF }}-v5
+          key: ${{ runner.os }}-${{ matrix.win_arch }}-frida-core-${{ env.FRIDA_CORE_REF }}-v6
 
       - name: Restore radare2 cache
         id: r2-cache
