@@ -157,6 +157,12 @@ parts:
         "$SWIFT_DST/libxml2.so.2"
       install -Dm755 .build/x86_64-unknown-linux-gnu/release/LumaGtk \
         "$CRAFT_PART_INSTALL/usr/local/bin/luma"
+      # Bundle.module resolves SwiftPM's *.resources directories from
+      # the executable's /proc/self/exe path — drop them next to the
+      # binary so the app can start.
+      for bundle in .build/x86_64-unknown-linux-gnu/release/*.resources; do
+        [ -d "$bundle" ] && cp -a "$bundle" "$CRAFT_PART_INSTALL/usr/local/bin/"
+      done
       strip --strip-unneeded "$CRAFT_PART_INSTALL/usr/local/bin/luma"
       strip --strip-unneeded "$SWIFT_DST"/*.so
       patchelf --set-rpath '$ORIGIN/../lib/luma/swift:$ORIGIN/../lib' \

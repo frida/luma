@@ -166,6 +166,7 @@
                 "cd LumaGtk && make build SWIFT_BUILD_FLAGS='-c release'",
                 "install -Dm755 LumaGtk/.build/x86_64-unknown-linux-gnu/release/LumaGtk /app/bin/luma",
                 "strip --strip-unneeded /app/bin/luma",
+                "for bundle in LumaGtk/.build/x86_64-unknown-linux-gnu/release/*.resources; do [ -d \"$bundle\" ] && cp -a \"$bundle\" /app/bin/; done",
                 "install -Dm644 LumaGtk/data/re.frida.Luma.desktop /app/share/applications/re.frida.Luma.desktop",
                 "install -Dm644 LumaGtk/data/re.frida.Luma.xml /app/share/mime/packages/re.frida.Luma.xml",
                 "for size in 32 48 64 128 256 512; do install -Dm644 LumaGtk/data/icons/hicolor/${size}x${size}/apps/re.frida.Luma.png /app/share/icons/hicolor/${size}x${size}/apps/re.frida.Luma.png; done"
