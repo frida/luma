@@ -125,7 +125,8 @@
                 "-DBUILD_TOOLS=OFF",
                 "-DBUILD_REGRESS=OFF",
                 "-DBUILD_EXAMPLES=OFF",
-                "-DBUILD_DOC=OFF"
+                "-DBUILD_DOC=OFF",
+                "-DENABLE_ZSTD=OFF"
             ],
             "sources": [
                 {
