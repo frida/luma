@@ -60,8 +60,19 @@ final class LumaApplication {
 
         let lastPath = LumaState.shared.lastDocumentPath
         if let lastPath, FileManager.default.fileExists(atPath: lastPath) {
-            openWindow(forFile: URL(fileURLWithPath: lastPath))
-            return
+            let url = URL(fileURLWithPath: lastPath)
+            if url.path.hasPrefix(Self.untitledDirectory.path) {
+                // Auto-saved untitled doc from a previous session;
+                // reopen it instead of stranding it on disk and
+                // minting a new Untitled N.luma alongside.
+                if let document = try? LumaDocumentLoader.openUntitled(at: url) {
+                    openWindow(for: document)
+                    return
+                }
+            } else {
+                openWindow(forFile: url)
+                return
+            }
         }
 
         openNewUntitledWindow()
@@ -104,8 +115,11 @@ final class LumaApplication {
                 window.attach(engine: engine)
             }
 
+            // Track lastDocumentPath for every open — untitled included
+            // — so killing the app and relaunching reopens the same
+            // auto-save file instead of conjuring a fresh Untitled N.
+            LumaState.shared.lastDocumentPath = document.url.path
             if !document.isUntitled {
-                LumaState.shared.lastDocumentPath = document.url.path
                 LumaState.shared.recordRecent(path: document.url.path)
                 rebuildPrimaryMenu()
             }

@@ -52,6 +52,17 @@ public enum LumaDocumentLoader {
         return LumaDocument(storage: .file(url))
     }
 
+    /// Reopen a document that was previously auto-saved at `url` inside
+    /// the untitled directory. Keeps the `.untitled` storage kind so
+    /// the title bar still shows "Untitled" and Save As prompts for a
+    /// new location instead of overwriting the auto-save file.
+    public static func openUntitled(at url: URL) throws -> LumaDocument {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw LumaDocumentError.invalidPath(url)
+        }
+        return LumaDocument(storage: .untitled(url))
+    }
+
     public static func makeUntitled(in directory: URL) throws -> LumaDocument {
         let fm = FileManager.default
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
