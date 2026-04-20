@@ -49,7 +49,7 @@ import UniformTypeIdentifiers
 
         func application(
             _ application: NSApplication,
-            didFailToRegisterForRemoteNotificationsWithError error: Error
+            didFailToRegisterForRemoteNotificationsWithError error: Swift.Error
         ) {
             Task { @MainActor in
                 APNsRegistration.shared.setError(error.localizedDescription)
