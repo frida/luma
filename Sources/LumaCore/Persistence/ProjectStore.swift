@@ -256,7 +256,7 @@ public final class ProjectStore: Sendable {
 
     public func clearOutbox() throws {
         try db.write { db in
-            try NotebookOutboxRecord.deleteAll(db)
+            _ = try NotebookOutboxRecord.deleteAll(db)
         }
     }
 
