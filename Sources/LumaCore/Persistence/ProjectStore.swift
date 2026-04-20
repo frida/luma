@@ -385,6 +385,8 @@ public final class ProjectStore: Sendable {
 
             try db.create(table: "notebook_entry") { t in
                 t.primaryKey("id", .text).notNull()
+                t.column("author", .blob)
+                t.column("kind", .text).notNull()
                 t.column("session_id", .text)
                 t.column("timestamp", .datetime).notNull()
                 t.column("title", .text).notNull()
@@ -392,7 +394,6 @@ public final class ProjectStore: Sendable {
                 t.column("js_value", .blob)
                 t.column("binary_data", .blob)
                 t.column("process_name", .text)
-                t.column("is_user_note", .boolean).notNull().defaults(to: false)
             }
 
             try db.create(table: "itrace_capture") { t in
