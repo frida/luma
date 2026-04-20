@@ -7,7 +7,10 @@ struct NotebookView: View {
     @Binding var selection: SidebarItemID?
 
     private var entries: [LumaCore.NotebookEntry] {
-        workspace.engine.notebookEntries.sorted { $0.timestamp < $1.timestamp }
+        workspace.engine.notebookEntries.sorted { a, b in
+            if a.position != b.position { return a.position < b.position }
+            return a.id.uuidString < b.id.uuidString
+        }
     }
 
     var body: some View {
@@ -24,9 +27,12 @@ struct NotebookView: View {
         ZStack(alignment: .bottomTrailing) {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 16) {
-                    ForEach(entries) { entry in
+                    let ordered = entries
+                    ForEach(Array(ordered.enumerated()), id: \.element.id) { index, entry in
                         NotebookEntryRow(
                             entry: entry,
+                            previous: index > 0 ? ordered[index - 1] : nil,
+                            next: index < ordered.count - 1 ? ordered[index + 1] : nil,
                             workspace: workspace,
                             selection: $selection
                         ) {
@@ -57,11 +63,11 @@ struct NotebookView: View {
 
     private func addUserNote(after entry: LumaCore.NotebookEntry?) {
         let note = LumaCore.NotebookEntry(
+            kind: .note,
             title: "Note",
             details: "",
             binaryData: nil,
-            processName: entry?.processName,
-            isUserNote: true
+            processName: entry?.processName
         )
         workspace.engine.addNotebookEntry(note, after: entry)
     }
@@ -69,6 +75,8 @@ struct NotebookView: View {
 
 struct NotebookEntryRow: View {
     let entry: LumaCore.NotebookEntry
+    let previous: LumaCore.NotebookEntry?
+    let next: LumaCore.NotebookEntry?
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 
@@ -80,12 +88,17 @@ struct NotebookEntryRow: View {
     @State private var isEditingUserNote: Bool = false
     @State private var editTitle: String = ""
     @State private var editDetails: String = ""
+    @State private var dropHighlight: DropHighlight = .none
+
+    private enum DropHighlight { case none, above, below }
+
+    private var isNote: Bool { entry.kind == .note }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             header
 
-            if entry.isUserNote {
+            if isNote {
                 if isEditingUserNote {
                     editableUserNoteBody
                 } else {
@@ -104,8 +117,24 @@ struct NotebookEntryRow: View {
         .padding(10)
         .background(Color.secondary.opacity(0.06))
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(alignment: .top) {
+            if dropHighlight == .above {
+                Color.accentColor.frame(height: 2)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if dropHighlight == .below {
+                Color.accentColor.frame(height: 2)
+            }
+        }
+        .draggable(entry.id.uuidString)
+        .dropDestination(for: String.self) { items, location in
+            handleDrop(items: items, location: location)
+        } isTargeted: { targeted in
+            if !targeted { dropHighlight = .none }
+        }
         .contextMenu {
-            if entry.isUserNote {
+            if isNote {
                 Button {
                     beginEditing()
                 } label: {
@@ -130,7 +159,7 @@ struct NotebookEntryRow: View {
         .onAppear {
             editTitle = entry.title
             editDetails = entry.details
-            if entry.isUserNote && entry.details.isEmpty && entry.title == "Note" {
+            if isNote && entry.details.isEmpty && entry.title == "Note" {
                 isEditingUserNote = true
                 DispatchQueue.main.async {
                     isTitleFocused = true
@@ -144,7 +173,7 @@ struct NotebookEntryRow: View {
             handleFocusChange()
         }
         .onTapGesture(count: 2) {
-            guard entry.isUserNote else { return }
+            guard isNote else { return }
             beginEditing(focusBody: true)
         }
     }
@@ -161,29 +190,20 @@ struct NotebookEntryRow: View {
                     .clipShape(RoundedRectangle(cornerRadius: 4))
             }
 
-            if entry.isUserNote {
-                Text(entry.title.isEmpty ? "Note" : entry.title)
-                    .font(.headline)
-                    .lineLimit(1)
-                    .textSelection(.enabled)
-            } else {
-                Text(entry.title)
-                    .font(.headline)
-                    .lineLimit(1)
-                    .textSelection(.enabled)
-            }
+            Text(isNote && entry.title.isEmpty ? "Note" : entry.title)
+                .font(.headline)
+                .lineLimit(1)
+                .textSelection(.enabled)
 
             Spacer()
 
-            if let author = entry.author {
-                authorBadge(author)
-            }
+            editorStack
 
             Text(entry.timestamp.formatted())
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
-            if entry.isUserNote && !isEditingUserNote {
+            if isNote && !isEditingUserNote {
                 Button {
                     beginEditing(focusBody: true)
                 } label: {
@@ -196,28 +216,70 @@ struct NotebookEntryRow: View {
     }
 
     @ViewBuilder
-    private func authorBadge(_ author: LumaCore.NotebookEntry.Author) -> some View {
-        let name = author.name.isEmpty ? "@\(author.id)" : author.name
-        HStack(spacing: 4) {
-            AsyncImage(url: URL(string: author.avatarURL)) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().scaledToFill()
-                default:
-                    Image(systemName: "person.crop.circle")
-                        .resizable()
-                        .scaledToFit()
-                        .foregroundStyle(.secondary)
+    private var editorStack: some View {
+        if !entry.editors.isEmpty {
+            HStack(spacing: -6) {
+                ForEach(entry.editors, id: \.id) { editor in
+                    editorAvatar(editor)
                 }
             }
-            .frame(width: 16, height: 16)
-            .clipShape(Circle())
-
-            Text(name)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
         }
+    }
+
+    private func editorAvatar(_ editor: LumaCore.NotebookEntry.Author) -> some View {
+        let name = editor.name.isEmpty ? "@\(editor.id)" : editor.name
+        return AsyncImage(url: URL(string: editor.avatarURL)) { phase in
+            switch phase {
+            case .success(let image):
+                image.resizable().scaledToFill()
+            default:
+                Image(systemName: "person.crop.circle")
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 18, height: 18)
+        .clipShape(Circle())
+        .overlay(Circle().strokeBorder(Color(.windowBackgroundColor), lineWidth: 1.5))
         .help(name)
+        .onTapGesture {
+            if let url = URL(string: "https://github.com/\(editor.id)") {
+                Platform.openURL(url)
+            }
+        }
+    }
+
+    private func handleDrop(items: [String], location: CGPoint) -> Bool {
+        defer { dropHighlight = .none }
+        guard let first = items.first,
+            let sourceID = UUID(uuidString: first),
+            sourceID != entry.id
+        else { return false }
+        guard let source = workspace.engine.notebookEntries.first(where: { $0.id == sourceID })
+        else { return false }
+
+        let ordered = workspace.engine.notebookEntries.sorted { a, b in
+            if a.position != b.position { return a.position < b.position }
+            return a.id.uuidString < b.id.uuidString
+        }
+        guard let targetIndex = ordered.firstIndex(where: { $0.id == entry.id }) else { return false }
+
+        let dropAbove = location.y < 0
+        let neighborA: LumaCore.NotebookEntry?
+        let neighborB: LumaCore.NotebookEntry?
+        if dropAbove {
+            neighborA = targetIndex > 0 ? ordered[targetIndex - 1] : nil
+            neighborB = ordered[targetIndex]
+        } else {
+            neighborA = ordered[targetIndex]
+            neighborB = targetIndex < ordered.count - 1 ? ordered[targetIndex + 1] : nil
+        }
+        // Ignore no-op drags that would land back where the entry already is.
+        if neighborA?.id == source.id || neighborB?.id == source.id { return false }
+
+        workspace.engine.reorderNotebookEntry(source, between: neighborA, and: neighborB)
+        return true
     }
 
     @ViewBuilder
@@ -264,7 +326,7 @@ struct NotebookEntryRow: View {
     }
 
     private func handleFocusChange() {
-        if entry.isUserNote,
+        if isNote,
             isEditingUserNote,
             !isTitleFocused,
             !isBodyFocused
@@ -284,7 +346,7 @@ struct NotebookEntryRow: View {
     }
 
     private func beginEditing(focusBody: Bool = false) {
-        guard entry.isUserNote else { return }
+        guard isNote else { return }
         editTitle = entry.title
         editDetails = entry.details
 

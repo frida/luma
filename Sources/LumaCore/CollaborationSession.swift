@@ -110,11 +110,11 @@ public final class CollaborationSession {
     private let _statusChanges = AsyncEventSource<Status>()
     public var statusChanges: AsyncStream<Status> { _statusChanges.makeStream() }
 
-    public var onNotebookEntriesReceived: (([NotebookEntry]) -> Void)?
-    public var onNotebookEntryAdded: ((NotebookEntry) -> Void)?
-    public var onNotebookEntryUpdated: ((UUID, JSONObject) -> Void)?
-    public var onNotebookEntryDeleted: ((UUID) -> Void)?
-    public var onEntriesReordered: (([UUID]) -> Void)?
+    public var onNotebookSnapshot: (([NotebookEntry]) -> Void)?
+    public var onEntryUpserted: ((NotebookEntry) -> Void)?
+    public var onEntryRemoved: ((UUID) -> Void)?
+    public var onEntryRepositioned: ((UUID, Double) -> Void)?
+    public var onOpRejected: ((UUID, String) -> Void)?
     public var onMemberAdded: ((Member) -> Void)?
     public var onMemberRemoved: ((String) -> Void)?
     public var onMemberPresenceChanged: ((String, Member.Presence) -> Void)?
@@ -234,107 +234,76 @@ public final class CollaborationSession {
         )
     }
 
-    public func notifyEntryAdded(_ entry: NotebookEntry) {
-        notifyEntriesAdded([entry])
+    /// True once this project has ever joined or created a lab. Local-only
+    /// projects skip the outbox entirely so they never touch that table.
+    public var isCollaborative: Bool {
+        (try? store.fetchCollaborationState())?.labID != nil
     }
 
-    /// Cap for a single `+add` batch, chosen to stay comfortably under Frida's
-    /// bus frame size. Entries are greedily packed until the next one would
-    /// overflow; a single entry that already exceeds the cap is sent on its
-    /// own (and the server will reject if it truly violates a per-field
-    /// limit).
-    private static let maxBatchBytes = 4 * 1024 * 1024
-
-    public func notifyEntriesAdded(_ entries: [NotebookEntry]) {
-        guard case .joined(let labID) = status else { return }
-        guard !entries.isEmpty else { return }
-
-        var chunks: [[NotebookEntry]] = [[]]
-        var chunkBytes = 0
-        for entry in entries {
-            let entrySize = sizeOfEntry(entry)
-            if !chunks[chunks.count - 1].isEmpty,
-               chunkBytes + entrySize > Self.maxBatchBytes {
-                chunks.append([])
-                chunkBytes = 0
-            }
-            chunks[chunks.count - 1].append(entry)
-            chunkBytes += entrySize
-        }
-
-        for chunk in chunks {
-            sendEntriesBatch(chunk, labID: labID)
-        }
+    public func enqueueAdd(_ entry: NotebookEntry) {
+        guard isCollaborative else { return }
+        let op = NotebookOp.add(.init(entry: entry))
+        try? store.saveOutboxOp(op)
+        sendOpIfJoined(op)
     }
 
-    private func sizeOfEntry(_ entry: NotebookEntry) -> Int {
-        var size = entry.binaryData?.count ?? 0
-        if let jsonData = try? JSONSerialization.data(withJSONObject: entry.toJSON()) {
-            size += jsonData.count
-        }
-        return size
-    }
-
-    private func sendEntriesBatch(
-        _ entries: [NotebookEntry],
-        labID: String
+    public func enqueueUpdate(
+        entryID: UUID,
+        title: String? = nil,
+        details: String? = nil,
+        processName: String? = nil
     ) {
-        var entryObjects: [JSONObject] = []
-        var binaryIndices: [Any] = []
-        var combined: [UInt8] = []
-        for entry in entries {
-            entryObjects.append(entry.toJSON())
-            if let bin = entry.binaryData {
-                binaryIndices.append([
-                    "start": combined.count,
-                    "length": bin.count,
-                ] as JSONObject)
-                combined.append(contentsOf: [UInt8](bin))
-            } else {
-                binaryIndices.append(NSNull())
-            }
+        guard isCollaborative else { return }
+        let op = NotebookOp.update(.init(
+            entryID: entryID,
+            title: title,
+            details: details,
+            processName: processName
+        ))
+        try? store.saveOutboxOp(op)
+        sendOpIfJoined(op)
+    }
+
+    public func enqueueRemove(entryID: UUID) {
+        guard isCollaborative else { return }
+        let op = NotebookOp.remove(.init(entryID: entryID))
+        try? store.saveOutboxOp(op)
+        sendOpIfJoined(op)
+    }
+
+    public func enqueueReorder(entryID: UUID, position: Double) {
+        guard isCollaborative else { return }
+        let op = NotebookOp.reorder(.init(entryID: entryID, position: position))
+        try? store.saveOutboxOp(op)
+        sendOpIfJoined(op)
+    }
+
+    /// Resend every op still in the outbox. Called after a successful
+    /// join/create so unsynced mutations propagate. The server dedupes by
+    /// `op_id`, so redundant replays are safe.
+    public func replayOutbox() {
+        guard case .joined(let labID) = status else { return }
+        let ops = (try? store.fetchOutboxOps()) ?? []
+        for op in ops {
+            sendOpOverWire(op, labID: labID)
         }
-        let payload: JSONObject = [
-            "entries": entryObjects,
-            "binary_indices": binaryIndices,
-        ]
-        sendNotification(
-            from: "/labs/\(labID)/notebook/entries",
-            type: "+add",
-            payload: payload,
-            data: combined.isEmpty ? nil : combined,
-        )
     }
 
-    public func notifyEntryUpdated(_ entry: NotebookEntry) {
+    private func sendOpIfJoined(_ op: NotebookOp) {
         guard case .joined(let labID) = status else { return }
-        let full = entry.toJSON()
-        var changes: JSONObject = [:]
-        for k in ["title", "details", "js_value", "process_name"] where full[k] != nil {
-            changes[k] = full[k]
+        sendOpOverWire(op, labID: labID)
+    }
+
+    private func sendOpOverWire(_ op: NotebookOp, labID: String) {
+        var binary: [UInt8]? = nil
+        if case let .add(add) = op, let bin = add.entry.binaryData {
+            binary = [UInt8](bin)
         }
         sendNotification(
             from: "/labs/\(labID)/notebook/entries",
-            type: "+update",
-            payload: ["updates": [["entry_id": entry.id.uuidString, "changes": changes]]]
-        )
-    }
-
-    public func notifyEntryDeleted(id: UUID) {
-        guard case .joined(let labID) = status else { return }
-        sendNotification(
-            from: "/labs/\(labID)/notebook/entries",
-            type: "+remove",
-            payload: ["entry_ids": [id.uuidString]]
-        )
-    }
-
-    public func reorderEntries(_ order: [UUID]) {
-        guard case .joined(let labID) = status else { return }
-        sendNotification(
-            from: "/labs/\(labID)/notebook/entries",
-            type: "+reorder",
-            payload: ["order": order.map { $0.uuidString }]
+            type: "+op",
+            payload: op.toJSON(),
+            data: binary
         )
     }
 
@@ -425,6 +394,11 @@ public final class CollaborationSession {
                     let localUser = self.localUser
                 else { Task { await self.stop() }; return }
                 self.labID = labID
+                // Persist labID first so isCollaborative flips true before
+                // we fan existing entries into the outbox.
+                var collabState = try! self.store.fetchCollaborationState()
+                collabState.labID = labID
+                try! self.store.save(collabState)
                 self.setStatus(.joined(labID: labID))
                 let now = ISO8601DateFormatter().string(from: Date())
                 self.members = [Member(
@@ -434,11 +408,10 @@ public final class CollaborationSession {
                     joinedAt: now,
                     lastSeenAt: now
                 )]
-                var collabState = try! self.store.fetchCollaborationState()
-                collabState.labID = labID
-                try! self.store.save(collabState)
-                let entries = try! self.store.fetchNotebookEntries()
-                self.notifyEntriesAdded(entries)
+                let entries = (try? self.store.fetchNotebookEntries()) ?? []
+                let ops: [NotebookOp] = entries.map { .add(.init(entry: $0)) }
+                try? self.store.saveOutboxOps(ops)
+                self.replayOutbox()
             case .failure(let failure):
                 self.setStatus(.error(message: failure.message))
             }
@@ -452,6 +425,7 @@ public final class CollaborationSession {
             switch result {
             case .success(let payload):
                 self.ingestJoinSnapshot(payload: payload, labID: labID)
+                self.replayOutbox()
             case .failure(let failure):
                 self.setStatus(.error(message: failure.message))
             }
@@ -488,7 +462,7 @@ public final class CollaborationSession {
             }
             snapshot.append(entry)
         }
-        onNotebookEntriesReceived?(snapshot)
+        onNotebookSnapshot?(snapshot)
     }
 
     private var lastMessageData: [UInt8]? = nil
@@ -590,39 +564,46 @@ public final class CollaborationSession {
                 onMemberPresenceChanged?(userID, presence)
             }
 
-        case ("+add", let s) where s.count == 4 && s[0] == "labs" && s[2] == "notebook" && s[3] == "entries":
-            guard let entries = payload["entries"] as? [JSONObject] else { return }
-            let binaryIndices = payload["binary_indices"] as? [Any] ?? []
-            for (i, obj) in entries.enumerated() {
-                let bin = extractBinary(indices: binaryIndices, at: i, from: data)
-                guard let entry = NotebookEntry.fromJSON(obj, binaryData: bin) else { continue }
-                onNotebookEntryAdded?(entry)
-            }
-
-        case ("+update", let s) where s.count == 4 && s[0] == "labs" && s[2] == "notebook" && s[3] == "entries":
-            guard let updates = payload["updates"] as? [JSONObject] else { return }
-            for u in updates {
-                guard let entryIdStr = u["entry_id"] as? String,
-                    let entryId = UUID(uuidString: entryIdStr),
-                    let changes = u["changes"] as? JSONObject
-                else { continue }
-                onNotebookEntryUpdated?(entryId, changes)
-            }
-
-        case ("+remove", let s) where s.count == 4 && s[0] == "labs" && s[2] == "notebook" && s[3] == "entries":
-            guard let ids = payload["entry_ids"] as? [String] else { return }
-            for idStr in ids {
-                if let id = UUID(uuidString: idStr) {
-                    onNotebookEntryDeleted?(id)
+        case ("+op", let s) where s.count == 4 && s[0] == "labs" && s[2] == "notebook" && s[3] == "entries":
+            guard let kind = payload["kind"] as? String else { return }
+            let opID = (payload["op_id"] as? String).flatMap(UUID.init(uuidString:))
+            switch kind {
+            case "add":
+                if let entryObj = payload["entry"] as? JSONObject,
+                   let entry = NotebookEntry.fromJSON(entryObj, binaryData: data) {
+                    onEntryUpserted?(entry)
                 }
+            case "update":
+                if let entryObj = payload["entry"] as? JSONObject,
+                   let entry = NotebookEntry.fromJSON(entryObj, binaryData: nil) {
+                    onEntryUpserted?(entry)
+                }
+            case "remove":
+                if let idStr = payload["entry_id"] as? String,
+                   let id = UUID(uuidString: idStr) {
+                    onEntryRemoved?(id)
+                }
+            case "reorder":
+                if let idStr = payload["entry_id"] as? String,
+                   let id = UUID(uuidString: idStr),
+                   let position = (payload["position"] as? Double)
+                       ?? (payload["position"] as? NSNumber)?.doubleValue {
+                    onEntryRepositioned?(id, position)
+                }
+            default:
+                return
+            }
+            // Successful echo — remove any matching outbox entry.
+            if let opID {
+                try? store.removeOutboxOp(opID: opID)
             }
 
-        case ("+reorder", let s) where s.count == 4 && s[0] == "labs" && s[2] == "notebook" && s[3] == "entries":
-            guard let rawOrder = payload["order"] as? [String] else { return }
-            let order = rawOrder.compactMap(UUID.init(uuidString:))
-            if order.count == rawOrder.count {
-                onEntriesReordered?(order)
-            }
+        case ("+op-rejected", let s) where s.count == 4 && s[0] == "labs" && s[2] == "notebook" && s[3] == "entries":
+            guard let idStr = payload["op_id"] as? String,
+                let opID = UUID(uuidString: idStr) else { return }
+            let reason = (payload["reason"] as? String) ?? "rejected"
+            try? store.removeOutboxOp(opID: opID)
+            onOpRejected?(opID, reason)
 
         case ("+add", let s) where s.count == 4 && s[0] == "labs" && s[2] == "chat" && s[3] == "messages":
             guard let localUser, let msgs = payload["messages"] as? [JSONObject] else { return }

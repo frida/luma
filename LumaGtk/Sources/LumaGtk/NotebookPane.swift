@@ -123,9 +123,16 @@ final class NotebookPane {
         updateVisibility()
     }
 
+    private func sortedEntries(from engine: Engine) -> [LumaCore.NotebookEntry] {
+        engine.notebookEntries.sorted { a, b in
+            if a.position != b.position { return a.position < b.position }
+            return a.id.uuidString < b.id.uuidString
+        }
+    }
+
     private func populateEntries() {
         guard let engine else { return }
-        for entry in engine.notebookEntries.sorted(by: { $0.timestamp < $1.timestamp }) {
+        for entry in sortedEntries(from: engine) {
             let row = makeRow(for: entry)
             entryRows[entry.id] = row
             entriesBox.append(child: row)
@@ -139,7 +146,7 @@ final class NotebookPane {
         clearChildren(of: entriesBox)
         jsValueKeepers.removeAll()
         entryRows.removeAll()
-        for entry in engine.notebookEntries.sorted(by: { $0.timestamp < $1.timestamp }) {
+        for entry in sortedEntries(from: engine) {
             let row = makeRow(for: entry)
             entryRows[entry.id] = row
             entriesBox.append(child: row)
@@ -152,7 +159,7 @@ final class NotebookPane {
             entriesBox.append(child: row)
             return
         }
-        let sorted = engine.notebookEntries.sorted { $0.timestamp < $1.timestamp }
+        let sorted = sortedEntries(from: engine)
         guard let targetIdx = sorted.firstIndex(where: { $0.id == entry.id }) else {
             entriesBox.append(child: row)
             return
@@ -179,11 +186,11 @@ final class NotebookPane {
     private func addUserNote(after other: LumaCore.NotebookEntry? = nil) {
         guard let engine else { return }
         let note = LumaCore.NotebookEntry(
+            kind: .note,
             title: "Note",
             details: "",
             binaryData: nil,
-            processName: other?.processName,
-            isUserNote: true
+            processName: other?.processName
         )
         editingEntries.insert(note.id)
         autoEditedEntries.insert(note.id)
@@ -206,15 +213,51 @@ final class NotebookPane {
 
     private func presentContextMenu(anchor: Widget, x: Double, y: Double, entry: LumaCore.NotebookEntry) {
         var topSection: [ContextMenu.Item] = []
-        if entry.isUserNote {
+        if (entry.kind == .note) {
             topSection.append(.init("Edit") { [weak self] in self?.beginEditing(entry) })
         }
         topSection.append(.init("Insert Note Below") { [weak self] in self?.addUserNote(after: entry) })
 
-        ContextMenu.present([
-            topSection,
-            [.init("Delete", destructive: true) { [weak self] in self?.deleteEntry(entry) }],
-        ], at: anchor, x: x, y: y)
+        var reorderSection: [ContextMenu.Item] = []
+        if let engine {
+            let ordered = sortedEntries(from: engine)
+            if let idx = ordered.firstIndex(where: { $0.id == entry.id }) {
+                if idx > 0 {
+                    reorderSection.append(.init("Move Up") { [weak self] in
+                        self?.moveEntry(entry, up: true, in: ordered, index: idx)
+                    })
+                }
+                if idx < ordered.count - 1 {
+                    reorderSection.append(.init("Move Down") { [weak self] in
+                        self?.moveEntry(entry, up: false, in: ordered, index: idx)
+                    })
+                }
+            }
+        }
+
+        var sections: [[ContextMenu.Item]] = [topSection]
+        if !reorderSection.isEmpty { sections.append(reorderSection) }
+        sections.append([.init("Delete", destructive: true) { [weak self] in self?.deleteEntry(entry) }])
+        ContextMenu.present(sections, at: anchor, x: x, y: y)
+    }
+
+    private func moveEntry(
+        _ entry: LumaCore.NotebookEntry,
+        up: Bool,
+        in ordered: [LumaCore.NotebookEntry],
+        index: Int,
+    ) {
+        guard let engine else { return }
+        let previous: LumaCore.NotebookEntry?
+        let next: LumaCore.NotebookEntry?
+        if up {
+            previous = index > 1 ? ordered[index - 2] : nil
+            next = ordered[index - 1]
+        } else {
+            previous = ordered[index + 1]
+            next = index + 2 < ordered.count ? ordered[index + 2] : nil
+        }
+        engine.reorderNotebookEntry(entry, between: previous, and: next)
     }
 
     private func commitEdits(
@@ -242,7 +285,7 @@ final class NotebookPane {
         card.marginBottom = 0
         card.hexpand = true
 
-        if entry.isUserNote {
+        if (entry.kind == .note) {
             let dblClick = GestureClick()
             dblClick.set(button: 1)
             dblClick.onPressed { [weak self] _, nPress, _, _ in
@@ -272,11 +315,11 @@ final class NotebookPane {
         inner.hexpand = true
         card.append(child: inner)
 
-        let isEditing = entry.isUserNote && editingEntries.contains(entry.id)
+        let isEditing = (entry.kind == .note) && editingEntries.contains(entry.id)
 
         inner.append(child: makeHeader(for: entry, isEditing: isEditing))
 
-        if entry.isUserNote {
+        if (entry.kind == .note) {
             if isEditing {
                 inner.append(child: makeEditableBody(for: entry))
             } else if !entry.details.isEmpty {
@@ -384,8 +427,8 @@ final class NotebookPane {
         spacer.hexpand = true
         header.append(child: spacer)
 
-        if let author = entry.author {
-            header.append(child: makeAuthorBadge(author))
+        if !entry.editors.isEmpty {
+            header.append(child: makeEditorStack(entry.editors))
         }
 
         let timestamp = Label(str: timeFormatter.string(from: entry.timestamp))
@@ -393,7 +436,7 @@ final class NotebookPane {
         timestamp.add(cssClass: "dim-label")
         header.append(child: timestamp)
 
-        if entry.isUserNote && !isEditing {
+        if (entry.kind == .note) && !isEditing {
             let editButton = Button(label: "Edit")
             editButton.hasFrame = false
             editButton.add(cssClass: "flat")
@@ -429,29 +472,48 @@ final class NotebookPane {
         return header
     }
 
-    private func makeAuthorBadge(_ author: LumaCore.NotebookEntry.Author) -> Box {
-        let name = author.name.isEmpty ? "@\(author.id)" : author.name
-        let box = Box(orientation: .horizontal, spacing: 4)
-        box.tooltipText = name
+    private func makeEditorStack(_ editors: [LumaCore.NotebookEntry.Author]) -> Box {
+        let row = Box(orientation: .horizontal, spacing: 2)
+        for editor in editors {
+            row.append(child: makeEditorAvatar(editor))
+        }
+        return row
+    }
 
-        let avatar = Adw.Avatar(size: 16, text: name, showInitials: true)
-        box.append(child: avatar)
+    private func makeEditorAvatar(_ editor: LumaCore.NotebookEntry.Author) -> Button {
+        let name = editor.name.isEmpty ? "@\(editor.id)" : editor.name
+        let button = Button()
+        button.hasFrame = false
+        button.add(cssClass: "flat")
+        button.tooltipText = name
 
-        if !author.avatarURL.isEmpty,
-           let url = URL(string: "\(author.avatarURL)&s=48")
-        {
+        let avatar = Adw.Avatar(size: 18, text: name, showInitials: true)
+        button.set(child: avatar)
+
+        if !editor.avatarURL.isEmpty,
+           let url = URL(string: "\(editor.avatarURL)&s=48") {
             Task { @MainActor [avatar] in
                 guard let texture = await AvatarCache.shared.texture(for: url) else { return }
                 avatar.set(customImage: texture)
             }
         }
 
-        let label = Label(str: name)
-        label.add(cssClass: "caption")
-        label.add(cssClass: "dim-label")
-        box.append(child: label)
+        let profileURL = "https://github.com/\(editor.id)"
+        button.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let launcher = UriLauncher(uri: profileURL)
+                let parentWindow: Gtk.WindowRef?
+                if let rootPtr = self.widget.root?.ptr {
+                    parentWindow = Gtk.WindowRef(raw: rootPtr)
+                } else {
+                    parentWindow = nil
+                }
+                launcher.launch(parent: parentWindow, cancellable: nil, callback: nil, userData: nil)
+            }
+        }
 
-        return box
+        return button
     }
 
     private func makeEditableBody(for entry: LumaCore.NotebookEntry) -> Box {

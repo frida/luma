@@ -34,7 +34,7 @@ public final class ProjectStore: Sendable {
             ValueObservation
                 .tracking { db in
                     try NotebookEntry
-                        .order(Column("timestamp").asc)
+                        .order(Column("position").asc, Column("id").asc)
                         .fetchAll(db)
                 }
                 .start(in: db, scheduling: .async(onQueue: .main), onError: { _ in }, onChange: onChange)
@@ -191,8 +191,17 @@ public final class ProjectStore: Sendable {
     public func fetchNotebookEntries() throws -> [NotebookEntry] {
         try db.read { db in
             try NotebookEntry
-                .order(Column("timestamp").asc)
+                .order(Column("position").asc, Column("id").asc)
                 .fetchAll(db)
+        }
+    }
+
+    public func maxNotebookEntryPosition() throws -> Double? {
+        try db.read { db in
+            try Double.fetchOne(
+                db,
+                sql: "SELECT MAX(position) FROM notebook_entry"
+            )
         }
     }
 
@@ -212,6 +221,65 @@ public final class ProjectStore: Sendable {
         try db.write { db in
             _ = try NotebookEntry.deleteOne(db, key: id)
         }
+    }
+
+    // MARK: - Notebook Outbox
+
+    public func saveOutboxOp(_ op: NotebookOp) throws {
+        try db.write { db in
+            try saveOutboxOp(op, in: db)
+        }
+    }
+
+    public func saveOutboxOps(_ ops: [NotebookOp]) throws {
+        try db.write { db in
+            for op in ops {
+                try saveOutboxOp(op, in: db)
+            }
+        }
+    }
+
+    public func fetchOutboxOps() throws -> [NotebookOp] {
+        try db.read { db in
+            let rows = try NotebookOutboxRecord
+                .order(Column("created_at").asc, Column("op_id").asc)
+                .fetchAll(db)
+            return rows.compactMap { $0.toOp() }
+        }
+    }
+
+    public func removeOutboxOp(opID: UUID) throws {
+        try db.write { db in
+            _ = try NotebookOutboxRecord.deleteOne(db, key: opID.uuidString)
+        }
+    }
+
+    public func clearOutbox() throws {
+        try db.write { db in
+            try NotebookOutboxRecord.deleteAll(db)
+        }
+    }
+
+    private func saveOutboxOp(_ op: NotebookOp, in db: Database) throws {
+        let payload = op.toJSON()
+        let data = try JSONSerialization.data(
+            withJSONObject: payload,
+            options: [.sortedKeys]
+        )
+        let json = String(data: data, encoding: .utf8) ?? "{}"
+        let binary: Data? = {
+            if case let .add(add) = op { return add.entry.binaryData }
+            return nil
+        }()
+        let record = NotebookOutboxRecord(
+            opID: op.opID.uuidString,
+            kind: op.kind,
+            entryID: op.entryID.uuidString,
+            payloadJSON: json,
+            binaryData: binary,
+            createdAt: Date()
+        )
+        try record.save(db)
     }
 
     // MARK: - ITrace Captures
@@ -385,15 +453,25 @@ public final class ProjectStore: Sendable {
 
             try db.create(table: "notebook_entry") { t in
                 t.primaryKey("id", .text).notNull()
-                t.column("author", .blob)
                 t.column("kind", .text).notNull()
-                t.column("session_id", .text)
+                t.column("editors", .blob).notNull()
                 t.column("timestamp", .datetime).notNull()
+                t.column("position", .double).notNull().defaults(to: 0)
                 t.column("title", .text).notNull()
                 t.column("details", .text).notNull()
                 t.column("js_value", .blob)
                 t.column("binary_data", .blob)
+                t.column("session_id", .text)
                 t.column("process_name", .text)
+            }
+
+            try db.create(table: "notebook_outbox") { t in
+                t.primaryKey("op_id", .text).notNull()
+                t.column("kind", .text).notNull()
+                t.column("entry_id", .text).notNull()
+                t.column("payload_json", .text).notNull()
+                t.column("binary_data", .blob)
+                t.column("created_at", .datetime).notNull()
             }
 
             try db.create(table: "itrace_capture") { t in

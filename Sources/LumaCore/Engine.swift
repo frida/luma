@@ -152,22 +152,31 @@ public final class Engine {
 
     // MARK: - Notebook Operations
 
+    /// Spacing between consecutive `position` values assigned locally. The
+    /// server stamps definitive values on echo; this is just enough slack
+    /// so a drag-between-neighbors computes a non-degenerate midpoint.
+    private static let notebookPositionStep: Double = 1000
+
     public func addNotebookEntry(_ entry: NotebookEntry, after otherEntry: NotebookEntry? = nil) {
         var e = entry
         if let otherEntry {
             e.timestamp = otherEntry.timestamp.addingTimeInterval(0.001)
         }
-        if e.author == nil, let user = gitHubAuth.currentUser {
-            e.author = NotebookEntry.Author(
+        if e.editors.isEmpty, let user = gitHubAuth.currentUser {
+            e.editors = [NotebookEntry.Author(
                 id: user.id,
                 name: user.name,
                 avatarURL: user.avatarURL?.absoluteString ?? ""
-            )
+            )]
+        }
+        if e.position == 0 {
+            let maxPos = (try? store.maxNotebookEntryPosition()) ?? 0
+            e.position = maxPos + Self.notebookPositionStep
         }
         try? store.save(e)
         notebookEntries.append(e)
         onNotebookChanged?(.added(e))
-        collaboration.notifyEntryAdded(e)
+        collaboration.enqueueAdd(e)
     }
 
     public func updateNotebookEntry(_ entry: NotebookEntry) {
@@ -176,14 +185,50 @@ public final class Engine {
             notebookEntries[i] = entry
         }
         onNotebookChanged?(.updated(entry))
-        collaboration.notifyEntryUpdated(entry)
+        collaboration.enqueueUpdate(
+            entryID: entry.id,
+            title: entry.title,
+            details: entry.details,
+            processName: entry.processName
+        )
     }
 
     public func deleteNotebookEntry(_ entry: NotebookEntry) {
         try? store.deleteNotebookEntry(id: entry.id)
         notebookEntries.removeAll { $0.id == entry.id }
         onNotebookChanged?(.removed(entry.id))
-        collaboration.notifyEntryDeleted(id: entry.id)
+        collaboration.enqueueRemove(entryID: entry.id)
+    }
+
+    /// Move `entry` into the slot between `previous` and `next` (either may
+    /// be nil to mean "no neighbor on that side"). Computes a position as
+    /// the midpoint of the two neighbors' positions; if the slot is at an
+    /// edge, extends beyond by a single step.
+    public func reorderNotebookEntry(
+        _ entry: NotebookEntry,
+        between previous: NotebookEntry?,
+        and next: NotebookEntry?
+    ) {
+        let position: Double
+        switch (previous?.position, next?.position) {
+        case let (p?, n?):
+            position = (p + n) / 2
+        case let (p?, nil):
+            position = p + Self.notebookPositionStep
+        case let (nil, n?):
+            position = n - Self.notebookPositionStep
+        case (nil, nil):
+            position = Self.notebookPositionStep
+        }
+
+        var updated = entry
+        updated.position = position
+        try? store.save(updated)
+        if let i = notebookEntries.firstIndex(where: { $0.id == entry.id }) {
+            notebookEntries[i] = updated
+        }
+        onNotebookChanged?(.reordered)
+        collaboration.enqueueReorder(entryID: entry.id, position: position)
     }
 
     public func bindCollaborationCallbacks() {
@@ -191,8 +236,16 @@ public final class Engine {
             await self?.gitHubAuth.signOut()
         }
 
-        collaboration.onNotebookEntriesReceived = { [weak self] entries in
+        collaboration.onNotebookSnapshot = { [weak self] entries in
             guard let self else { return }
+            // Snapshot is authoritative: replace local state with it. Any
+            // locally-made mutations that aren't reflected here still live
+            // in the outbox and will replay once status flips to .joined.
+            let existingIDs = self.notebookEntries.map(\.id)
+            for id in existingIDs {
+                try? self.store.deleteNotebookEntry(id: id)
+            }
+            self.notebookEntries.removeAll()
             for entry in entries {
                 try? self.store.save(entry)
                 self.notebookEntries.append(entry)
@@ -200,57 +253,31 @@ public final class Engine {
             self.onNotebookChanged?(.snapshot(entries))
         }
 
-        collaboration.onNotebookEntryAdded = { [weak self] entry in
+        collaboration.onEntryUpserted = { [weak self] entry in
             guard let self else { return }
-            if let existing = try? self.store.fetchNotebookEntry(id: entry.id) {
-                // Echo of an entry we just sent — adopt the server-stamped
-                // author so every client renders a consistent identity.
-                guard existing.author != entry.author else { return }
-                var updated = existing
-                updated.author = entry.author
-                try? self.store.save(updated)
-                if let i = self.notebookEntries.firstIndex(where: { $0.id == updated.id }) {
-                    self.notebookEntries[i] = updated
-                }
-                self.onNotebookChanged?(.updated(updated))
+            let existed = (try? self.store.fetchNotebookEntry(id: entry.id)) != nil
+            try? self.store.save(entry)
+            if let i = self.notebookEntries.firstIndex(where: { $0.id == entry.id }) {
+                self.notebookEntries[i] = entry
             } else {
-                try? self.store.save(entry)
                 self.notebookEntries.append(entry)
-                self.onNotebookChanged?(.added(entry))
             }
+            self.onNotebookChanged?(existed ? .updated(entry) : .added(entry))
         }
 
-        collaboration.onNotebookEntryUpdated = { [weak self] id, changes in
-            guard let self else { return }
-            guard var existing = try? self.store.fetchNotebookEntry(id: id) else { return }
-            if let v = changes["title"] as? String { existing.title = v }
-            if let v = changes["details"] as? String { existing.details = v }
-            if let v = changes["process_name"] as? String { existing.processName = v }
-            try? self.store.save(existing)
-            if let i = self.notebookEntries.firstIndex(where: { $0.id == id }) {
-                self.notebookEntries[i] = existing
-            }
-            self.onNotebookChanged?(.updated(existing))
-        }
-
-        collaboration.onNotebookEntryDeleted = { [weak self] id in
+        collaboration.onEntryRemoved = { [weak self] id in
             try? self?.store.deleteNotebookEntry(id: id)
             self?.notebookEntries.removeAll { $0.id == id }
             self?.onNotebookChanged?(.removed(id))
         }
 
-        collaboration.onEntriesReordered = { [weak self] order in
+        collaboration.onEntryRepositioned = { [weak self] id, position in
             guard let self else { return }
-            var t = Date()
-            for id in order {
-                if var entry = try? self.store.fetchNotebookEntry(id: id) {
-                    entry.timestamp = t
-                    try? self.store.save(entry)
-                    if let i = self.notebookEntries.firstIndex(where: { $0.id == id }) {
-                        self.notebookEntries[i] = entry
-                    }
-                    t = t.addingTimeInterval(0.001)
-                }
+            guard var existing = try? self.store.fetchNotebookEntry(id: id) else { return }
+            existing.position = position
+            try? self.store.save(existing)
+            if let i = self.notebookEntries.firstIndex(where: { $0.id == id }) {
+                self.notebookEntries[i] = existing
             }
             self.onNotebookChanged?(.reordered)
         }

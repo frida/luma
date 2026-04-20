@@ -4,7 +4,12 @@ import GRDB
 public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
     public static let databaseTableName = "notebook_entry"
 
-    public enum Kind: String, Codable, Sendable { case note, capture }
+    public enum Kind: String, Codable, Sendable {
+        /// User-authored freeform note.
+        case note
+        /// Captured from an instrumented process via a hook / script.
+        case capture
+    }
 
     public struct Author: Codable, Hashable, Sendable {
         public let id: String
@@ -25,9 +30,16 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
     }
 
     public var id: UUID
-    public var author: Author?
     public var kind: Kind
+    /// Original creator at index 0, followed by everyone who's edited the
+    /// entry (deduped, preserving first-edit order). The server appends on
+    /// each `update` op it applies.
+    public var editors: [Author]
     public var timestamp: Date
+    /// Server-authoritative sort key. New entries get `(current max + 1000)`;
+    /// drag operations slot in at the midpoint of two neighbors. Clients
+    /// sort by `(position, id)` so ties break deterministically.
+    public var position: Double
     public var title: String
     public var details: String
     public var jsValue: JSInspectValue?
@@ -35,19 +47,14 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
     public var sessionID: UUID?
     public var processName: String?
 
-    /// True when the entry is a user-authored note (vs. a capture from an
-    /// instrumented process). Maintained as a computed alias for the
-    /// `kind` enum so existing callers don't have to churn.
-    public var isUserNote: Bool {
-        get { kind == .note }
-        set { kind = newValue ? .note : .capture }
-    }
+    public var author: Author? { editors.first }
 
     enum CodingKeys: String, CodingKey {
         case id
-        case author
         case kind
+        case editors
         case timestamp
+        case position
         case title
         case details
         case jsValue = "js_value"
@@ -58,20 +65,22 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
 
     public init(
         id: UUID = UUID(),
-        author: Author? = nil,
+        kind: Kind = .capture,
+        editors: [Author] = [],
         timestamp: Date = .now,
+        position: Double = 0,
         title: String,
         details: String,
         jsValue: JSInspectValue? = nil,
         binaryData: Data? = nil,
         sessionID: UUID? = nil,
-        processName: String? = nil,
-        isUserNote: Bool = false
+        processName: String? = nil
     ) {
         self.id = id
-        self.author = author
-        self.kind = isUserNote ? .note : .capture
+        self.kind = kind
+        self.editors = editors
         self.timestamp = timestamp
+        self.position = position
         self.title = title
         self.details = details
         self.jsValue = jsValue
@@ -88,28 +97,28 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
         var obj: [String: Any] = [
             "id": id.uuidString,
             "kind": kind.rawValue,
+            "editors": editors.map { author in
+                [
+                    "id": author.id,
+                    "name": author.name,
+                    "avatar": author.avatarURL,
+                ]
+            },
             "timestamp": formatter.string(from: timestamp),
+            "position": position,
             "title": title,
             "details": details,
         ]
-
-        if let author {
-            obj["author"] = [
-                "id": author.id,
-                "name": author.name,
-                "avatar": author.avatarURL,
-            ]
-        }
-
-        if let processName {
-            obj["process_name"] = processName
-        }
 
         if let val = jsValue,
             let data = try? JSONEncoder().encode(val),
             let jsonObject = try? JSONSerialization.jsonObject(with: data)
         {
             obj["js_value"] = jsonObject
+        }
+
+        if let processName {
+            obj["process_name"] = processName
         }
 
         return obj
@@ -122,23 +131,29 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
         guard
             let idString = obj["id"] as? String,
             let uuid = UUID(uuidString: idString),
+            let kindRaw = obj["kind"] as? String,
+            let kind = Kind(rawValue: kindRaw),
             let timestampString = obj["timestamp"] as? String,
             let ts = formatter.date(from: timestampString),
             let title = obj["title"] as? String,
-            let details = obj["details"] as? String,
-            let kindRaw = obj["kind"] as? String,
-            let kind = Kind(rawValue: kindRaw)
+            let details = obj["details"] as? String
         else {
             return nil
         }
 
-        var author: Author? = nil
-        if let authorObj = obj["author"] as? [String: Any],
-            let authorId = authorObj["id"] as? String,
-            let authorName = authorObj["name"] as? String {
-            let avatar = (authorObj["avatar"] as? String) ?? ""
-            author = Author(id: authorId, name: authorName, avatarURL: avatar)
+        var editors: [Author] = []
+        if let arr = obj["editors"] as? [[String: Any]] {
+            for item in arr {
+                guard let id = item["id"] as? String,
+                    let name = item["name"] as? String else { continue }
+                let avatar = (item["avatar"] as? String) ?? ""
+                editors.append(Author(id: id, name: name, avatarURL: avatar))
+            }
         }
+
+        let position = (obj["position"] as? Double)
+            ?? (obj["position"] as? NSNumber)?.doubleValue
+            ?? 0
 
         var jsValue: JSInspectValue? = nil
         if let raw = obj["js_value"] {
@@ -153,14 +168,15 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
 
         return NotebookEntry(
             id: uuid,
-            author: author,
+            kind: kind,
+            editors: editors,
             timestamp: ts,
+            position: position,
             title: title,
             details: details,
             jsValue: jsValue,
             binaryData: data.map { Data($0) },
-            processName: processName,
-            isUserNote: kind == .note
+            processName: processName
         )
     }
 }
