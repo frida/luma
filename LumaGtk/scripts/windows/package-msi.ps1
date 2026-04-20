@@ -12,8 +12,8 @@ param(
     [string] $Configuration = 'release',
 
     [string] $Version       = '0.1.0',
-    [ValidateSet('x64','arm64')]
-    [string] $Arch          = 'x64',
+    [ValidateSet('x86_64','arm64')]
+    [string] $Arch          = 'x86_64',
     [string] $OutputDir,
     [string] $BuildPath,
     [string] $VcpkgPrefix,
@@ -63,8 +63,12 @@ $candle = Join-Path $wixRoot 'bin\candle.exe'
 $light  = Join-Path $wixRoot 'bin\light.exe'
 
 $triplet = @{
-    'x64'   = 'x86_64-unknown-windows-msvc'
-    'arm64' = 'aarch64-unknown-windows-msvc'
+    'x86_64' = 'x86_64-unknown-windows-msvc'
+    'arm64'  = 'aarch64-unknown-windows-msvc'
+}[$Arch]
+$wixArch = @{
+    'x86_64' = 'x64'
+    'arm64'  = 'arm64'
 }[$Arch]
 $exe = Join-Path $BuildPath "$triplet\$Configuration\LumaGtk.exe"
 if (-not (Test-Path $exe)) { throw "LumaGtk.exe not found at $exe. Run build first." }
@@ -230,7 +234,7 @@ $licensePath = (Join-Path $pkg 'data\license.rtf')  -replace '\\','/'
 "@ | Set-Content -Encoding UTF8 $productWxs
 
 $wixOut = Join-Path $OutputDir $msiName
-& $candle -arch $Arch "-dStageDir=$stage" -out "$wixObj\" $productWxs $componentsWxs
+& $candle -arch $wixArch "-dStageDir=$stage" -out "$wixObj\" $productWxs $componentsWxs
 if ($LASTEXITCODE -ne 0) { throw "candle failed ($LASTEXITCODE)" }
 & $light -ext WixUIExtension -sice:ICE91 -sice:ICE64 -sice:ICE60 `
     -b $stage -out $wixOut `

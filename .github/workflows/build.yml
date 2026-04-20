@@ -3,12 +3,14 @@ name: Build
 on:
   push:
     branches: [main, cross-platform]
+    tags: ['[0-9]+.[0-9]+.[0-9]+']
   pull_request:
 
 env:
   FRIDA_CORE_REF: "main"
   RADARE2_REF: "7ed1e8c6fd000b99c8aa6835e12bef1657d92746"
   SWIFT_VERSION: "6.2"
+  LUMA_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '0.1.0' }}
   # ilammy/msvc-dev-cmd hasn't cut a Node-24-compatible release yet
   # (v1 is its only major). Opt into Node 24 ahead of GitHub's
   # forced migration in June 2026 so the warning doesn't clutter
@@ -139,13 +141,13 @@ jobs:
             --icon "Luma.app" 150 185 \
             --app-drop-link 450 185 \
             --no-internet-enable \
-            Luma-${{ matrix.arch }}.dmg \
+            Luma-${LUMA_VERSION}-${{ matrix.arch }}.dmg \
             build/Luma.app
 
       - uses: actions/upload-artifact@v7
         with:
-          name: Luma-${{ matrix.arch }}.dmg
-          path: Luma-${{ matrix.arch }}.dmg
+          name: Luma-${{ env.LUMA_VERSION }}-${{ matrix.arch }}.dmg
+          path: Luma-${{ env.LUMA_VERSION }}-${{ matrix.arch }}.dmg
 
   fedora:
     runs-on: ubuntu-latest
@@ -274,8 +276,6 @@ jobs:
         run: cd LumaGtk && make build SWIFT_BUILD_FLAGS="-c release"
 
       - name: Package as .rpm
-        env:
-          VERSION: "0.1.0"
         run: |
           TOP=$PWD/rpmbuild
           mkdir -p $TOP/{SOURCES/stage,SPECS,BUILD,BUILDROOT,RPMS,SRPMS}
@@ -287,14 +287,14 @@ jobs:
               /usr/lib64/libxml2.so.2
           cp LumaGtk/build-aux/rpm/luma.spec $TOP/SPECS/
           rpmbuild --define "_topdir $TOP" \
-                   --define "version $VERSION" \
+                   --define "version $LUMA_VERSION" \
                    -bb $TOP/SPECS/luma.spec
-          cp $TOP/RPMS/x86_64/luma-${VERSION}-*.x86_64.rpm luma-fedora-43.rpm
+          cp $TOP/RPMS/x86_64/luma-${LUMA_VERSION}-*.x86_64.rpm luma-${LUMA_VERSION}-fedora-43.rpm
 
       - uses: actions/upload-artifact@v7
         with:
-          name: luma-fedora-43.rpm
-          path: luma-fedora-43.rpm
+          name: luma-${{ env.LUMA_VERSION }}-fedora-43.rpm
+          path: luma-${{ env.LUMA_VERSION }}-fedora-43.rpm
 
   ubuntu:
     runs-on: ubuntu-latest
@@ -422,7 +422,7 @@ jobs:
 
       - name: Package as .deb
         run: |
-          PKG=luma_0.1.0_amd64
+          PKG=luma_${LUMA_VERSION}_amd64
           LumaGtk/build-aux/linux/stage.sh \
               $PKG \
               LumaGtk/.build/x86_64-unknown-linux-gnu/release/LumaGtk \
@@ -430,14 +430,14 @@ jobs:
               /usr/local/lib/swift/linux \
               /usr/lib/x86_64-linux-gnu/libxml2.so.16
           mkdir -p $PKG/DEBIAN
-          printf 'Package: luma\nVersion: 0.1.0\nSection: devel\nPriority: optional\nArchitecture: amd64\nDepends: libgtk-4-1, libadwaita-1-0, libwebkitgtk-6.0-4, libsoup-3.0-0\nMaintainer: Ole Andre Vadla Ravnas <oleavr@frida.re>\nDescription: Luma - Dynamic instrumentation toolkit\n Interactive dynamic instrumentation app built on Frida.\n' > $PKG/DEBIAN/control
+          printf 'Package: luma\nVersion: %s\nSection: devel\nPriority: optional\nArchitecture: amd64\nDepends: libgtk-4-1, libadwaita-1-0, libwebkitgtk-6.0-4, libsoup-3.0-0\nMaintainer: Ole Andre Vadla Ravnas <oleavr@frida.re>\nDescription: Luma - Dynamic instrumentation toolkit\n Interactive dynamic instrumentation app built on Frida.\n' "$LUMA_VERSION" > $PKG/DEBIAN/control
           dpkg-deb --build $PKG
-          mv ${PKG}.deb luma-ubuntu-25.10.deb
+          mv ${PKG}.deb luma-${LUMA_VERSION}-ubuntu-25.10.deb
 
       - uses: actions/upload-artifact@v7
         with:
-          name: luma-ubuntu-25.10.deb
-          path: luma-ubuntu-25.10.deb
+          name: luma-${{ env.LUMA_VERSION }}-ubuntu-25.10.deb
+          path: luma-${{ env.LUMA_VERSION }}-ubuntu-25.10.deb
 
   flatpak:
     runs-on: ubuntu-latest
@@ -467,7 +467,7 @@ jobs:
             --repo=flatpak-repo \
             flatpak-build \
             LumaGtk/build-aux/flatpak/re.frida.Luma.json
-          flatpak build-bundle flatpak-repo luma.flatpak re.frida.Luma
+          flatpak build-bundle flatpak-repo "luma-${LUMA_VERSION}.flatpak" re.frida.Luma
 
       - name: Save flatpak-builder cache
         if: always()
@@ -478,23 +478,31 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: luma.flatpak
-          path: luma.flatpak
+          name: luma-${{ env.LUMA_VERSION }}.flatpak
+          path: luma-${{ env.LUMA_VERSION }}.flatpak
 
   snap:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
+      - name: Set snap version
+        run: |
+          sed -i "s/^version: .*/version: '${LUMA_VERSION}'/" \
+              LumaGtk/build-aux/snap/snapcraft.yaml
+
       - uses: snapcore/action-build@v1.3.0
         id: snapcraft
         with:
           path: LumaGtk
 
+      - name: Rename snap artifact
+        run: cp "${{ steps.snapcraft.outputs.snap }}" "luma-${LUMA_VERSION}.snap"
+
       - uses: actions/upload-artifact@v7
         with:
-          name: luma.snap
-          path: ${{ steps.snapcraft.outputs.snap }}
+          name: luma-${{ env.LUMA_VERSION }}.snap
+          path: luma-${{ env.LUMA_VERSION }}.snap
 
   windows:
     runs-on: ${{ matrix.runner }}
@@ -504,7 +512,7 @@ jobs:
       matrix:
         include:
           - runner: windows-latest
-            win_arch: x64
+            win_arch: x86_64
             msvc_arch: amd64
             swift_build_arch: amd64
             vcpkg_triplet: x64-windows-release
@@ -786,6 +794,7 @@ jobs:
         run: |
           cd LumaGtk
           .\scripts\windows\package-msi.ps1 -SkipBuild -Configuration release `
+              -Version "$env:LUMA_VERSION" `
               -Arch "${{ matrix.win_arch }}" `
               -BuildPath "$env:RUNNER_TEMP/b" `
               -VcpkgPrefix "C:/vcpkg/installed/${{ matrix.vcpkg_triplet }}" `
@@ -794,6 +803,26 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: Luma-windows-${{ matrix.win_arch }}.msi
-          path: LumaGtk/build/Luma-*.msi
+          name: Luma-${{ env.LUMA_VERSION }}-${{ matrix.win_arch }}.msi
+          path: LumaGtk/build/Luma-${{ env.LUMA_VERSION }}-${{ matrix.win_arch }}.msi
           if-no-files-found: error
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [macos, fedora, ubuntu, flatpak, snap, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          draft: true
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          files: artifacts/*
+          fail_on_unmatched_files: true
