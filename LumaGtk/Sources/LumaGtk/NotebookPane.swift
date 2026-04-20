@@ -431,7 +431,8 @@ final class NotebookPane {
             header.append(child: makeEditorStack(entry.editors))
         }
 
-        let timestamp = Label(str: timeFormatter.string(from: entry.timestamp))
+        let timestamp = Label(str: RelativeTime.string(from: entry.timestamp))
+        timestamp.tooltipText = timeFormatter.string(from: entry.timestamp)
         timestamp.add(cssClass: "caption")
         timestamp.add(cssClass: "dim-label")
         header.append(child: timestamp)

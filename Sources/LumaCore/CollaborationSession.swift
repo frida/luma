@@ -87,6 +87,7 @@ public final class CollaborationSession {
 
     private(set) public var status: Status = .disconnected
     private(set) public var labID: String?
+    private(set) public var labTitle: String?
     private(set) public var localUser: UserInfo?
     private(set) public var members: [Member] = []
     private(set) public var chatMessages: [ChatMessage] = []
@@ -187,6 +188,7 @@ public final class CollaborationSession {
 
         setStatus(.disconnected)
         labID = nil
+        labTitle = nil
         localUser = nil
         members = []
         chatMessages = []
@@ -370,6 +372,56 @@ public final class CollaborationSession {
         }
     }
 
+    /// Rename the active lab. Owner-only — the server rejects everyone
+    /// else with `forbidden`. Optimistically updates `labTitle` on success
+    /// so the UI doesn't wait for the broadcast echo to reflect the new
+    /// value.
+    public func setLabTitle(_ title: String) async {
+        guard case .joined(let labID) = status else { return }
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            sendRequest(
+                from: "/labs/\(labID)",
+                type: ".set",
+                payload: ["title": trimmed]
+            ) { [weak self] result in
+                if case .success = result {
+                    self?.labTitle = trimmed
+                }
+                cont.resume()
+            }
+        }
+    }
+
+    /// Suggested title for a freshly-created lab, built from the local
+    /// weekday and time-of-day plus a randomly-picked verb, e.g.
+    /// "Monday morning reversing", "Friday evening spelunking". Generated
+    /// client-side so the weekday/time reflect the owner's timezone, not
+    /// the server's.
+    public static func initialLabTitle(at date: Date = .now) -> String {
+        var cal = Calendar(identifier: .gregorian)
+        cal.locale = Locale(identifier: "en_US_POSIX")
+        let weekdays = [
+            "Sunday", "Monday", "Tuesday", "Wednesday",
+            "Thursday", "Friday", "Saturday",
+        ]
+        let weekday = weekdays[cal.component(.weekday, from: date) - 1]
+        let hour = cal.component(.hour, from: date)
+        let timeOfDay: String
+        switch hour {
+        case 4..<12: timeOfDay = "morning"
+        case 12..<17: timeOfDay = "afternoon"
+        case 17..<21: timeOfDay = "evening"
+        default: timeOfDay = "night"
+        }
+        let verbs = [
+            "reversing", "tracing", "hacking", "spelunking",
+            "poking", "sleuthing", "dissecting",
+        ]
+        return "\(weekday) \(timeOfDay) \(verbs.randomElement()!)"
+    }
+
     public func removeMembers(_ userIDs: [String]) async {
         guard case .joined(let labID) = status else { return }
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
@@ -385,7 +437,12 @@ public final class CollaborationSession {
 
     private func createLab() {
         setStatus(.connecting)
-        sendRequest(from: "/labs", type: ".create") { [weak self] result in
+        let initialTitle = Self.initialLabTitle()
+        sendRequest(
+            from: "/labs",
+            type: ".create",
+            payload: ["title": initialTitle]
+        ) { [weak self] result in
             guard let self else { return }
             switch result {
             case .success(let payload):
@@ -394,6 +451,7 @@ public final class CollaborationSession {
                     let localUser = self.localUser
                 else { Task { await self.stop() }; return }
                 self.labID = labID
+                self.labTitle = (labObj["title"] as? String) ?? initialTitle
                 // Persist labID first so isCollaborative flips true before
                 // we fan existing entries into the outbox.
                 var collabState = try! self.store.fetchCollaborationState()
@@ -444,6 +502,10 @@ public final class CollaborationSession {
         let binaryIndices = notebookObj["binary_indices"] as? [Any] ?? []
 
         self.labID = labID
+        if let labObj = payload["lab"] as? JSONObject,
+           let title = labObj["title"] as? String {
+            self.labTitle = title
+        }
         setStatus(.joined(labID: labID))
         members = memberDicts.compactMap(Member.fromJSON)
         chatMessages = chatMsgs.compactMap { ChatMessage.fromJSON($0, localUser: localUser) }
@@ -531,6 +593,11 @@ public final class CollaborationSession {
                 if let list = push["registered"] as? [String] {
                     registeredPushPlatforms = Set(list)
                 }
+            }
+
+        case ("+update", let s) where s.count == 2 && s[0] == "labs":
+            if let title = payload["title"] as? String {
+                labTitle = title
             }
 
         case ("+add", let s) where s.count == 3 && s[0] == "labs" && s[2] == "members":

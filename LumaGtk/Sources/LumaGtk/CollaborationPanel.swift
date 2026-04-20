@@ -36,6 +36,7 @@ final class CollaborationPanel {
     private var lastChatCount = 0
     private var suppressScrollPinUpdate = false
     private var signInWindow: Adw.Dialog?
+    private var isEditingLabTitle: Bool = false
 
     private static let headerAvatarSize: Int = 24
     private static let participantAvatarSize: Int = 28
@@ -241,6 +242,7 @@ final class CollaborationPanel {
         guard let engine else { return }
         withObservationTracking {
             _ = engine.collaboration.status
+            _ = engine.collaboration.labTitle
             _ = engine.collaboration.registeredPushPlatforms
         } onChange: { [weak self] in
             Task { @MainActor in
@@ -253,6 +255,74 @@ final class CollaborationPanel {
                 self.observeLab()
             }
         }
+    }
+
+    private func makeLabTitleRow() -> Box {
+        let row = Box(orientation: .horizontal, spacing: 6)
+        row.hexpand = true
+
+        if isEditingLabTitle, engine?.collaboration.isOwner == true {
+            let entry = Entry()
+            entry.text = engine?.collaboration.labTitle ?? ""
+            entry.placeholderText = "Title"
+            entry.hexpand = true
+            row.append(child: entry)
+
+            let commit: () -> Void = { [weak self] in
+                guard let self, let engine = self.engine else { return }
+                let trimmed = (entry.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                self.isEditingLabTitle = false
+                if !trimmed.isEmpty, trimmed != engine.collaboration.labTitle {
+                    Task { @MainActor in
+                        await engine.collaboration.setLabTitle(trimmed)
+                    }
+                }
+                self.refreshLab()
+            }
+            let cancel: () -> Void = { [weak self] in
+                self?.isEditingLabTitle = false
+                self?.refreshLab()
+            }
+
+            entry.onActivate { _ in MainActor.assumeIsolated { commit() } }
+
+            let saveButton = Button(label: "Save")
+            saveButton.add(cssClass: "suggested-action")
+            saveButton.onClicked { _ in MainActor.assumeIsolated { commit() } }
+            row.append(child: saveButton)
+
+            let cancelButton = Button(label: "Cancel")
+            cancelButton.hasFrame = false
+            cancelButton.add(cssClass: "flat")
+            cancelButton.onClicked { _ in MainActor.assumeIsolated { cancel() } }
+            row.append(child: cancelButton)
+
+            Task { @MainActor in _ = entry.grabFocus() }
+        } else {
+            let title = Label(str: engine?.collaboration.labTitle ?? "Untitled")
+            title.halign = .start
+            title.hexpand = true
+            title.wrap = true
+            title.xalign = 0
+            title.add(cssClass: "title-4")
+            title.selectable = true
+            row.append(child: title)
+
+            if engine?.collaboration.isOwner == true {
+                let editButton = Button()
+                editButton.hasFrame = false
+                editButton.set(iconName: "document-edit-symbolic")
+                editButton.tooltipText = "Rename lab"
+                editButton.onClicked { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        self?.isEditingLabTitle = true
+                        self?.refreshLab()
+                    }
+                }
+                row.append(child: editButton)
+            }
+        }
+        return row
     }
 
     private func observeParticipants() {
@@ -427,6 +497,8 @@ final class CollaborationPanel {
             labSection.append(child: row)
 
         case .joined(let labID):
+            labSection.append(child: makeLabTitleRow())
+
             let roleLabel = Label(str: engine.collaboration.isHost ? "You are hosting this lab." : "You joined this lab.")
             roleLabel.halign = .start
             roleLabel.add(cssClass: "caption")
@@ -657,7 +729,8 @@ final class CollaborationPanel {
         senderLabel.add(cssClass: "dim-label")
         header.append(child: senderLabel)
 
-        let timeLabel = Label(str: chatTimeFormatter.string(from: message.timestamp))
+        let timeLabel = Label(str: RelativeTime.string(from: message.timestamp))
+        timeLabel.tooltipText = chatTimeFormatter.string(from: message.timestamp)
         timeLabel.halign = .end
         timeLabel.add(cssClass: "caption")
         timeLabel.add(cssClass: "dim-label")

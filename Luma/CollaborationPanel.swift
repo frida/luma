@@ -141,6 +141,8 @@ struct CollaborationPanel: View {
 
             case .joined:
                 if let labID = collaboration.labID {
+                    LabTitleView(collaboration: collaboration)
+
                     HStack {
                         Text(collaboration.isHost ? "You are hosting this lab." : "You joined this lab.")
                             .font(.caption)
@@ -324,9 +326,10 @@ struct CollaborationPanel: View {
                                                 .font(.caption2)
                                                 .foregroundStyle(.secondary)
                                             Spacer()
-                                            Text(msg.timestamp, style: .time)
+                                            Text(LumaCore.RelativeTime.string(from: msg.timestamp))
                                                 .font(.caption2)
                                                 .foregroundStyle(.secondary.opacity(0.7))
+                                                .help(msg.timestamp.formatted())
                                         }
 
                                         Text(msg.text)
@@ -503,5 +506,58 @@ private struct ChatInputRow: View {
 
         collaboration.sendChat(text)
         draft = ""
+    }
+}
+
+private struct LabTitleView: View {
+    var collaboration: CollaborationSession
+
+    @State private var isEditing = false
+    @State private var draft: String = ""
+    @FocusState private var fieldFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if isEditing {
+                TextField("Title", text: $draft)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.headline)
+                    .focused($fieldFocused)
+                    .onSubmit(commit)
+
+                Button("Save", action: commit)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                Button("Cancel") { isEditing = false }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            } else {
+                Text(collaboration.labTitle ?? "Untitled")
+                    .font(.headline)
+                    .lineLimit(2)
+                    .textSelection(.enabled)
+                Spacer()
+                if collaboration.isOwner {
+                    Button {
+                        draft = collaboration.labTitle ?? ""
+                        isEditing = true
+                        DispatchQueue.main.async { fieldFocused = true }
+                    } label: {
+                        Image(systemName: "pencil")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Rename lab")
+                }
+            }
+        }
+    }
+
+    private func commit() {
+        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        isEditing = false
+        guard !trimmed.isEmpty, trimmed != collaboration.labTitle else { return }
+        Task { @MainActor in
+            await collaboration.setLabTitle(trimmed)
+        }
     }
 }
