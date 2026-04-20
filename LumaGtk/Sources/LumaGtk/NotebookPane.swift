@@ -343,10 +343,13 @@ final class NotebookPane {
         let inner = Box(orientation: .vertical, spacing: 6)
         inner.marginStart = 12
         inner.marginEnd = 12
-        // Adwaita's `.card` style already supplies a bit of top/bottom
-        // padding; the explicit margins used to stack on top, giving
-        // the first row visibly more space above the title than below
-        // the details. Let the stylesheet own the vertical padding.
+        // The hex view renders its own inset (marginY = 6 pt) along
+        // its trailing edge, so entries carrying binary data already
+        // have breathing room below the last byte. Text-only notes
+        // and captures need their own bottom margin so the details
+        // don't butt against the card edge.
+        let hasBinary = (entry.binaryData?.count ?? 0) > 0
+        inner.marginBottom = hasBinary ? 0 : 8
         inner.hexpand = true
         card.append(child: inner)
 
