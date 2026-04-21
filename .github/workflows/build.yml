@@ -9,6 +9,7 @@ on:
 env:
   FRIDA_CORE_REF: "440a03f0d4aa731fd5634e023f4e6af8c709335f"
   RADARE2_REF: "7ed1e8c6fd000b99c8aa6835e12bef1657d92746"
+  SPARKLE_VERSION: "2.9.1"
   SWIFT_VERSION: "6.2"
   LUMA_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '0.1.0' }}
   # ilammy/msvc-dev-cmd hasn't cut a Node-24-compatible release yet
@@ -185,6 +186,36 @@ jobs:
             --no-internet-enable \
             Luma-${LUMA_VERSION}-${{ matrix.arch }}.dmg \
             build/Luma.app
+
+      - name: Sign DMG for Sparkle
+        if: env.CAN_SIGN == 'true'
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
+            echo "SPARKLE_PRIVATE_KEY secret is not set." >&2
+            echo "Sparkle requires every DMG to be signed with the EdDSA" >&2
+            echo "private key paired with SUPublicEDKey in Info.plist," >&2
+            echo "or the auto-updater will refuse the download." >&2
+            exit 1
+          fi
+          SPARKLE_DIR=$RUNNER_TEMP/sparkle
+          mkdir -p $SPARKLE_DIR
+          curl -sL "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz" \
+            | tar -xJf - -C $SPARKLE_DIR
+          KEY_FILE=$RUNNER_TEMP/sparkle-priv.key
+          printf %s "$SPARKLE_PRIVATE_KEY" > $KEY_FILE
+          chmod 600 $KEY_FILE
+          DMG=Luma-${LUMA_VERSION}-${{ matrix.arch }}.dmg
+          SIG_LINE=$($SPARKLE_DIR/bin/sign_update -f $KEY_FILE "$DMG")
+          rm -f $KEY_FILE
+          echo "$SIG_LINE"
+          SIG=$(echo "$SIG_LINE" | sed -E 's/.*sparkle:edSignature="([^"]+)".*/\1/')
+          if [ -z "$SIG" ] || [ "$SIG" = "$SIG_LINE" ]; then
+            echo "Failed to extract edSignature from sign_update output." >&2
+            exit 1
+          fi
+          printf %s "$SIG" > "${DMG}.sig"
 
       - uses: actions/upload-artifact@v7
         with:

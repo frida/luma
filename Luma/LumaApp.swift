@@ -10,6 +10,7 @@ import UniformTypeIdentifiers
     @main
     struct LumaApp: App {
         @NSApplicationDelegateAdaptor(LumaAppDelegate.self) var appDelegate
+        @StateObject private var updater = LumaUpdater()
 
         init() {
             SwiftyMonaco.prewarmPool(profile: MonacoEditorProfile(from: EditorProfile.fridaCodeShare()), count: 2)
@@ -26,6 +27,11 @@ import UniformTypeIdentifiers
                 )
             }
             .defaultSize(width: 1100, height: 680)
+            .commands {
+                CommandGroup(after: .appInfo) {
+                    CheckForUpdatesView(updater: updater)
+                }
+            }
         }
     }
 
