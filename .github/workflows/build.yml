@@ -57,6 +57,24 @@ jobs:
           echo "MACOS_CERTID=$MACOS_CERTID" >> $GITHUB_ENV
           echo "CAN_SIGN=true" >> $GITHUB_ENV
 
+      - name: Install the Developer ID provisioning profile
+        env:
+          DEVELOPER_ID_PROFILE: ${{ secrets.APPLE_DEVELOPER_ID_PROFILE }}
+        run: |
+          if [ "$CAN_SIGN" != "true" ]; then
+            echo "Not signing; skipping provisioning profile"
+            exit 0
+          fi
+          if [ -z "$DEVELOPER_ID_PROFILE" ]; then
+            echo "CAN_SIGN=true but APPLE_DEVELOPER_ID_PROFILE is not set." >&2
+            echo "The aps-environment entitlement requires an embedded Developer ID" >&2
+            echo "provisioning profile, or macOS will refuse to launch the app." >&2
+            exit 1
+          fi
+          PROFILE_PATH=$RUNNER_TEMP/developer-id.provisionprofile
+          echo -n "$DEVELOPER_ID_PROFILE" | base64 --decode -o $PROFILE_PATH
+          echo "DEVELOPER_ID_PROFILE_PATH=$PROFILE_PATH" >> $GITHUB_ENV
+
       - name: Build
         run: |
           xcodebuild \
@@ -97,11 +115,35 @@ jobs:
             name=$(basename "$fw" .framework)
             codesign --force --options runtime --sign "Developer ID Application" --timestamp "$fw/$name"
           done
+          cp "$DEVELOPER_ID_PROFILE_PATH" build/Luma.app/Contents/embedded.provisionprofile
           codesign --force --options runtime \
             --sign "Developer ID Application" \
-            --entitlements Luma/Luma.entitlements \
+            --entitlements Luma/Luma-Release.entitlements \
             --timestamp \
             build/Luma.app
+
+      - name: Verify signed entitlements
+        if: env.CAN_SIGN == 'true'
+        run: |
+          ENTITLEMENTS=$RUNNER_TEMP/signed-entitlements.plist
+          codesign -d --entitlements - --xml build/Luma.app > $ENTITLEMENTS 2>/dev/null
+          APS=$(plutil -extract 'aps-environment' raw -o - $ENTITLEMENTS 2>/dev/null || true)
+          if [ "$APS" != "production" ]; then
+            echo "aps-environment is '$APS', expected 'production'" >&2
+            plutil -p $ENTITLEMENTS >&2
+            exit 1
+          fi
+          if [ ! -f build/Luma.app/Contents/embedded.provisionprofile ]; then
+            echo "embedded.provisionprofile is missing from the signed bundle" >&2
+            exit 1
+          fi
+          PROFILE_PLIST=$RUNNER_TEMP/profile.plist
+          security cms -D -i build/Luma.app/Contents/embedded.provisionprofile > $PROFILE_PLIST
+          PROFILE_APS=$(plutil -extract 'Entitlements.aps-environment' raw -o - $PROFILE_PLIST 2>/dev/null || true)
+          if [ "$PROFILE_APS" != "production" ]; then
+            echo "Provisioning profile aps-environment is '$PROFILE_APS', expected 'production'" >&2
+            exit 1
+          fi
 
       - name: Notarize
         if: env.CAN_SIGN == 'true'

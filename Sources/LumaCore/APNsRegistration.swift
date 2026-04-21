@@ -38,9 +38,9 @@ public final class APNsRegistration {
         deviceToken?.map { String(format: "%02x", $0) }.joined()
     }
 
-    /// Which APNs endpoint the token is valid against. Xcode rewrites the
-    /// `aps-environment` entitlement to `production` for distribution
-    /// builds; the DEBUG-vs-release split mirrors that.
+    /// Which APNs endpoint the token is valid against: sandbox for
+    /// debug builds (signed with `aps-environment = development`) and
+    /// production for release builds (`aps-environment = production`).
     public static var environment: String {
         #if DEBUG
         return "sandbox"
