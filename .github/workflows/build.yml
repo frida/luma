@@ -112,9 +112,26 @@ jobs:
       - name: Sign
         if: env.CAN_SIGN == 'true'
         run: |
+          sign() {
+            codesign --force --options runtime --timestamp \
+              --sign "Developer ID Application" "$1"
+          }
+          SPARKLE=build/Luma.app/Contents/Frameworks/Sparkle.framework
+          if [ -d "$SPARKLE" ]; then
+            if [ -d "$SPARKLE/Versions/Current" ]; then
+              SPARKLE_ROOT="$SPARKLE/Versions/Current"
+            else
+              SPARKLE_ROOT="$SPARKLE"
+            fi
+            [ -f "$SPARKLE_ROOT/Autoupdate" ] && sign "$SPARKLE_ROOT/Autoupdate"
+            for xpc in "$SPARKLE_ROOT"/XPCServices/*.xpc; do
+              [ -d "$xpc" ] && sign "$xpc"
+            done
+            [ -d "$SPARKLE_ROOT/Updater.app" ] && sign "$SPARKLE_ROOT/Updater.app"
+          fi
           find build/Luma.app/Contents/Frameworks -name '*.framework' -maxdepth 1 | while read fw; do
             name=$(basename "$fw" .framework)
-            codesign --force --options runtime --sign "Developer ID Application" --timestamp "$fw/$name"
+            sign "$fw/$name"
           done
           cp "$DEVELOPER_ID_PROFILE_PATH" build/Luma.app/Contents/embedded.provisionprofile
           codesign --force --options runtime \
