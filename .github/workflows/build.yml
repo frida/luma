@@ -293,9 +293,10 @@ jobs:
             -project Luma.xcodeproj \
             -scheme Luma \
             -configuration Release \
-            -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build/.derived-ios \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
             CODE_SIGN_IDENTITY=- \
             CODE_SIGNING_ALLOWED=NO \
             build
