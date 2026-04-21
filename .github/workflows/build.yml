@@ -383,14 +383,14 @@ jobs:
       - name: Upload to TestFlight
         if: env.CAN_SIGN == 'true' && github.ref_type == 'tag'
         env:
-          ASC_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-          ASC_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
-          ASC_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+          ASC_API_KEY_ID: ${{ secrets.APPLE_APP_STORE_CONNECT_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.APPLE_APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_API_KEY_P8: ${{ secrets.APPLE_APP_STORE_CONNECT_KEY_P8 }}
         run: |
           if [ -z "$ASC_API_KEY_ID" ] || [ -z "$ASC_API_ISSUER_ID" ] || [ -z "$ASC_API_KEY_P8" ]; then
             echo "App Store Connect API credentials are not configured." >&2
-            echo "Set APP_STORE_CONNECT_API_KEY_ID, APP_STORE_CONNECT_API_ISSUER_ID" >&2
-            echo "and APP_STORE_CONNECT_API_KEY_P8 to enable TestFlight uploads." >&2
+            echo "Set APPLE_APP_STORE_CONNECT_KEY_ID, APPLE_APP_STORE_CONNECT_ISSUER_ID" >&2
+            echo "and APPLE_APP_STORE_CONNECT_KEY_P8 to enable TestFlight uploads." >&2
             exit 1
           fi
           KEYS_DIR=$HOME/.appstoreconnect/private_keys
