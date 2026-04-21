@@ -459,6 +459,8 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = Luma/Luma-iOS-Release.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution";
 				CODE_SIGN_STYLE = Automatic;
+				"CODE_SIGN_STYLE[sdk=iphoneos*]" = Manual;
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "$(LUMA_IOS_PROFILE)";
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 753PE4AG6F;

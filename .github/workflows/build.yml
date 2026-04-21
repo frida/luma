@@ -282,17 +282,36 @@ jobs:
           fi
           echo "CAN_SIGN=true" >> $GITHUB_ENV
 
-      - name: Install the App Store Connect API key
+      - name: Install the App Store provisioning profile
         if: env.CAN_SIGN == 'true'
+        env:
+          APP_STORE_PROFILE: ${{ secrets.APPLE_APP_STORE_PROFILE }}
+        run: |
+          if [ -z "$APP_STORE_PROFILE" ]; then
+            echo "CAN_SIGN=true but APPLE_APP_STORE_PROFILE is not set." >&2
+            echo "An App Store provisioning profile for re.frida.Luma is" >&2
+            echo "required to archive for iOS." >&2
+            exit 1
+          fi
+          PROFILE_PATH=$RUNNER_TEMP/app-store.mobileprovision
+          echo -n "$APP_STORE_PROFILE" | base64 --decode -o $PROFILE_PATH
+          UUID=$(security cms -D -i $PROFILE_PATH | plutil -extract UUID raw -)
+          INSTALL_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$INSTALL_DIR"
+          cp $PROFILE_PATH "$INSTALL_DIR/$UUID.mobileprovision"
+          echo "LUMA_IOS_PROFILE=$UUID" >> $GITHUB_ENV
+
+      - name: Install the App Store Connect API key
+        if: env.CAN_SIGN == 'true' && github.ref_type == 'tag'
         env:
           KEY_ID: ${{ secrets.APPLE_APP_STORE_CONNECT_KEY_ID }}
           ISSUER_ID: ${{ secrets.APPLE_APP_STORE_CONNECT_ISSUER_ID }}
           KEY_P8: ${{ secrets.APPLE_APP_STORE_CONNECT_KEY_P8 }}
         run: |
           if [ -z "$KEY_ID" ] || [ -z "$ISSUER_ID" ] || [ -z "$KEY_P8" ]; then
-            echo "CAN_SIGN=true but App Store Connect API credentials are not set." >&2
-            echo "Configure APPLE_APP_STORE_CONNECT_KEY_ID, _ISSUER_ID and _KEY_P8" >&2
-            echo "so xcodebuild can fetch iOS provisioning profiles." >&2
+            echo "Tag push with CAN_SIGN=true but App Store Connect API" >&2
+            echo "credentials are not set. Configure _KEY_ID, _ISSUER_ID" >&2
+            echo "and _KEY_P8 so altool can upload to TestFlight." >&2
             exit 1
           fi
           KEYS_DIR=$HOME/.appstoreconnect/private_keys
@@ -330,11 +349,8 @@ jobs:
             -destination 'generic/platform=iOS' \
             -archivePath build/Luma.xcarchive \
             -derivedDataPath build/.derived-ios \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$ASC_KEY_FILE" \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             DEVELOPMENT_TEAM=$TEAM_ID \
+            LUMA_IOS_PROFILE=$LUMA_IOS_PROFILE \
             MARKETING_VERSION=$LUMA_VERSION \
             CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             archive
@@ -355,22 +371,23 @@ jobs:
               <key>teamID</key>
               <string>$TEAM_ID</string>
               <key>signingStyle</key>
-              <string>automatic</string>
+              <string>manual</string>
               <key>stripSwiftSymbols</key>
               <true/>
               <key>uploadSymbols</key>
               <true/>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>re.frida.Luma</key>
+                  <string>$LUMA_IOS_PROFILE</string>
+              </dict>
           </dict>
           </plist>
           EOF
           xcodebuild -exportArchive \
             -archivePath build/Luma.xcarchive \
             -exportPath build/ipa \
-            -exportOptionsPlist $EXPORT_OPTIONS \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$ASC_KEY_FILE" \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+            -exportOptionsPlist $EXPORT_OPTIONS
           mv build/ipa/Luma.ipa Luma-${LUMA_VERSION}.ipa
 
       - uses: actions/upload-artifact@v7
