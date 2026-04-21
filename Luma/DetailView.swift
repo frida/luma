@@ -10,7 +10,20 @@ struct DetailView: View {
         Group {
             switch selection {
             case .none:
-                NotebookEmptyStateView(workspace: workspace)
+                NotebookEmptyStateView(
+                    workspace: workspace,
+                    onAddNote: {
+                        let note = LumaCore.NotebookEntry(
+                            kind: .note,
+                            title: "",
+                            details: "",
+                            binaryData: nil,
+                            processName: nil
+                        )
+                        workspace.engine.addNotebookEntry(note, after: nil)
+                        selection = .notebook
+                    }
+                )
 
             case .some(.notebook):
                 NotebookView(workspace: workspace, selection: $selection)

@@ -6,6 +6,13 @@ struct NotebookView: View {
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 
+    #if canImport(UIKit)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    private var horizontalInset: CGFloat { horizontalSizeClass == .compact ? 6 : 16 }
+    #else
+    private var horizontalInset: CGFloat { 16 }
+    #endif
+
     private var entries: [LumaCore.NotebookEntry] {
         workspace.engine.notebookEntries.sorted { a, b in
             if a.position != b.position { return a.position < b.position }
@@ -16,7 +23,7 @@ struct NotebookView: View {
     var body: some View {
         Group {
             if entries.isEmpty {
-                NotebookEmptyStateView(workspace: workspace)
+                NotebookEmptyStateView(workspace: workspace, onAddNote: { addUserNote(after: nil) })
             } else {
                 content
             }
@@ -30,14 +37,21 @@ struct NotebookView: View {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         let ordered = entries
                         TopDropZone(workspace: workspace, firstEntry: ordered.first)
-                            .padding(.horizontal)
+                            .padding(.horizontal, horizontalInset)
                         ForEach(Array(ordered.enumerated()), id: \.element.id) { index, entry in
                             NotebookEntryRow(
                                 entry: entry,
                                 previous: index > 0 ? ordered[index - 1] : nil,
                                 next: index < ordered.count - 1 ? ordered[index + 1] : nil,
                                 workspace: workspace,
-                                selection: $selection
+                                selection: $selection,
+                                onEditingChanged: { editing in
+                                    if editing {
+                                        editingEntryIDs.insert(entry.id)
+                                    } else {
+                                        editingEntryIDs.remove(entry.id)
+                                    }
+                                }
                             ) {
                                 addUserNote(after: entry)
                             } deleteAction: {
@@ -45,18 +59,20 @@ struct NotebookView: View {
                             }
                             .id(entry.id)
                         }
-                        .padding(.horizontal)
-                        // Bottom breathing room so the floating "New Note"
-                        // button never overlaps the last row's editor
-                        // controls once the user scrolls all the way down.
-                        Color.clear.frame(height: 80)
+                        .padding(.horizontal, horizontalInset)
+                        Color.clear
+                            .frame(height: 80)
+                            .id("notebook-bottom-anchor")
                     }
                 }
                 .onChange(of: lastInsertedID) { _, newID in
-                    guard let newID else { return }
+                    guard newID != nil else { return }
                     withAnimation(.easeInOut(duration: 0.2)) {
-                        proxy.scrollTo(newID, anchor: .bottom)
+                        proxy.scrollTo("notebook-bottom-anchor", anchor: .bottom)
                     }
+                }
+                .onChange(of: entries.map(\.id)) { _, newIDs in
+                    editingEntryIDs.formIntersection(Set(newIDs))
                 }
             }
 
@@ -71,15 +87,22 @@ struct NotebookView: View {
             .padding()
             .clipShape(Capsule())
             .shadow(radius: 3)
+            .opacity(isAnyEditing ? 0 : 1)
+            .allowsHitTesting(!isAnyEditing)
+            .animation(.easeInOut(duration: 0.15), value: isAnyEditing)
         }
     }
+
+    @State private var editingEntryIDs: Set<UUID> = []
+
+    private var isAnyEditing: Bool { !editingEntryIDs.isEmpty }
 
     @State private var lastInsertedID: UUID?
 
     private func addUserNote(after entry: LumaCore.NotebookEntry?) {
         let note = LumaCore.NotebookEntry(
             kind: .note,
-            title: "Note",
+            title: "",
             details: "",
             binaryData: nil,
             processName: entry?.processName
@@ -130,6 +153,7 @@ struct NotebookEntryRow: View {
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 
+    let onEditingChanged: (Bool) -> Void
     let addNoteBelow: () -> Void
     let deleteAction: () -> Void
 
@@ -222,11 +246,19 @@ struct NotebookEntryRow: View {
         .onAppear {
             editTitle = entry.title
             editDetails = entry.details
-            if isNote && entry.details.isEmpty && entry.title == "Note" {
+            if isNote && entry.details.isEmpty && entry.title.isEmpty {
                 isEditingUserNote = true
                 DispatchQueue.main.async {
                     isTitleFocused = true
                 }
+            }
+        }
+        .onChange(of: isEditingUserNote) { _, newValue in
+            onEditingChanged(newValue)
+        }
+        .onDisappear {
+            if isEditingUserNote {
+                onEditingChanged(false)
             }
         }
         .onTapGesture(count: 2) {
@@ -247,10 +279,12 @@ struct NotebookEntryRow: View {
                     .clipShape(RoundedRectangle(cornerRadius: 4))
             }
 
-            Text(isNote && entry.title.isEmpty ? "Note" : entry.title)
-                .font(.headline)
-                .lineLimit(1)
-                .textSelection(.enabled)
+            if !(isNote && isEditingUserNote) {
+                Text(isNote && entry.title.isEmpty ? "Note" : entry.title)
+                    .font(.headline)
+                    .lineLimit(1)
+                    .textSelection(.enabled)
+            }
 
             Spacer()
 
@@ -341,6 +375,16 @@ struct NotebookEntryRow: View {
                 .font(.system(.body, design: .default))
                 .frame(minHeight: 80)
                 .focused($isBodyFocused)
+                .overlay(alignment: .topLeading) {
+                    if editDetails.isEmpty {
+                        Text("Write something\u{2026}")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 8)
+                            .allowsHitTesting(false)
+                    }
+                }
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
                         .stroke(Color.secondary.opacity(0.2))
@@ -374,6 +418,7 @@ struct NotebookEntryRow: View {
                 workspace: workspace,
                 selection: $selection
             )
+            .font(.system(.footnote, design: .monospaced))
         } else if !entry.details.isEmpty {
             Text(entry.details)
                 .font(.system(.body, design: .monospaced))
@@ -392,17 +437,20 @@ struct NotebookEntryRow: View {
     }
 
     private func cancelEdits() {
+        if isFreshPlaceholder {
+            workspace.engine.deleteNotebookEntry(entry)
+            return
+        }
+
         editTitle = entry.title
         editDetails = entry.details
         withAnimation(.easeOut(duration: 0.15)) {
             isEditingUserNote = false
         }
-        // A freshly-inserted empty note that the user cancels gets
-        // discarded — otherwise they'd see a blank "Note" row they
-        // didn't mean to add.
-        if entry.title == "Note" && entry.details.isEmpty {
-            workspace.engine.deleteNotebookEntry(entry)
-        }
+    }
+
+    private var isFreshPlaceholder: Bool {
+        entry.title.isEmpty && entry.details.isEmpty
     }
 
     private func beginEditing(focusBody: Bool = false) {
@@ -428,6 +476,14 @@ private let instructionsMaxWidth: CGFloat = 440
 
 struct NotebookEmptyStateView: View {
     @ObservedObject var workspace: Workspace
+    let onAddNote: () -> Void
+
+    #if canImport(UIKit)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    private var isCompact: Bool { horizontalSizeClass == .compact }
+    #else
+    private var isCompact: Bool { false }
+    #endif
 
     var body: some View {
         GeometryReader { geo in
@@ -450,39 +506,47 @@ struct NotebookEmptyStateView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .center)
 
-                    HStack {
-                        Spacer(minLength: 0)
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            walkthroughStep(
-                                number: 1,
-                                text: Text("Use the ")
-                                    + Text(Image(systemName: "target"))
-                                    + Text(" button to attach to a running app or process.")
-                            )
-                            walkthroughStep(
-                                number: 2,
-                                text: Text("Then use the ")
-                                    + Text(Image(systemName: "waveform.path.ecg"))
-                                    + Text(" button to add instruments.")
-                            )
-                            walkthroughStep(
-                                number: 3,
-                                text: Text("Pin any event from the bottom event stream to save it here.")
-                            )
-                        }
-                        .font(.callout)
-                        .frame(maxWidth: instructionsMaxWidth, alignment: .leading)
-                        .padding(.leading, 72)
-
-                        Spacer(minLength: 0)
+                    if !isCompact {
+                        walkthrough
                     }
+
+                    Button(action: onAddNote) {
+                        Label("New Note", systemImage: "plus")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
                 }
                 .padding(.horizontal, 24)
 
                 Spacer(minLength: 0)
             }
             .frame(width: geo.size.width, height: geo.size.height)
+        }
+    }
+
+    private var walkthrough: some View {
+        HStack {
+            Spacer(minLength: 0)
+
+            VStack(alignment: .leading, spacing: 8) {
+                walkthroughStep(
+                    number: 1,
+                    text: Text("Use the \(Image(systemName: "target")) button to attach to a running app or process.")
+                )
+                walkthroughStep(
+                    number: 2,
+                    text: Text("Then use the \(Image(systemName: "waveform.path.ecg")) button to add instruments.")
+                )
+                walkthroughStep(
+                    number: 3,
+                    text: Text("Pin any event from the bottom event stream to save it here.")
+                )
+            }
+            .font(.callout)
+            .frame(maxWidth: instructionsMaxWidth, alignment: .leading)
+            .padding(.leading, 72)
+
+            Spacer(minLength: 0)
         }
     }
 
