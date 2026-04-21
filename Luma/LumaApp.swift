@@ -19,17 +19,48 @@ import UniformTypeIdentifiers
 
         var body: some Scene {
             DocumentGroup(newDocument: LumaProject()) { configuration in
-                MainWindowView(dbURL: configuration.document.temporaryDBURL)
+                MainWindowView(
+                    dbURL: configuration.document.workingDBURL,
+                    fileURL: configuration.fileURL,
+                    project: configuration.$document
+                )
             }
             .defaultSize(width: 1100, height: 680)
         }
     }
 
     class LumaAppDelegate: NSObject, NSApplicationDelegate {
+        func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
+            false
+        }
+
+        func application(_ application: NSApplication, shouldRestoreSecureApplicationState coder: NSCoder) -> Bool {
+            false
+        }
+
         func applicationDidFinishLaunching(_ notification: Notification) {
             NSWindow.allowsAutomaticWindowTabbing = false
             NSApplication.shared.registerForRemoteNotifications()
             LocalNotifier.requestAuthorization()
+            reopenLastDocumentIfNeeded()
+        }
+
+        private func reopenLastDocumentIfNeeded() {
+            guard
+                NSDocumentController.shared.documents.isEmpty,
+                let path = LumaAppState.shared.lastDocumentPath,
+                FileManager.default.fileExists(atPath: path)
+            else { return }
+            let url = URL(fileURLWithPath: path)
+            do {
+                let docType = try NSDocumentController.shared.typeForContents(of: url)
+                let doc = try NSDocumentController.shared.makeDocument(withContentsOf: url, ofType: docType)
+                NSDocumentController.shared.addDocument(doc)
+                doc.makeWindowControllers()
+                doc.showWindows()
+            } catch {
+                FileHandle.standardError.write(Data("[LumaApp] reopen failed: \(error)\n".utf8))
+            }
         }
 
         func application(_ application: NSApplication, open urls: [URL]) {

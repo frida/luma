@@ -2,6 +2,9 @@ import Foundation
 import GRDB
 
 public final class ProjectStore: Sendable {
+    public static let didCommitNotification = Notification.Name("LumaCore.ProjectStore.didCommit")
+
+    public let instanceID = UUID()
     private let db: DatabaseQueue
 
     public init(path: String) throws {
@@ -9,6 +12,35 @@ public final class ProjectStore: Sendable {
         config.foreignKeysEnabled = true
         db = try DatabaseQueue(path: path, configuration: config)
         try migrator.migrate(db)
+
+        let id = instanceID
+        let observer = CommitNotifyingObserver(instanceID: id)
+        try db.write { db in
+            db.add(transactionObserver: observer, extent: .databaseLifetime)
+        }
+    }
+
+    /// Exports a consistent SQLite snapshot to `destination`, including any
+    /// data still sitting in the WAL. Uses SQLite's `VACUUM INTO`, which
+    /// produces a fresh, self-contained database file with no sidecar WAL
+    /// or -shm files.
+    public func exportSnapshot(to destination: URL) throws {
+        let fm = FileManager.default
+        if fm.fileExists(atPath: destination.path) {
+            try fm.removeItem(at: destination)
+        }
+        try db.writeWithoutTransaction { db in
+            let escaped = destination.path.replacingOccurrences(of: "'", with: "''")
+            try db.execute(sql: "VACUUM INTO '\(escaped)'")
+        }
+    }
+
+    /// Standalone variant for callers that don't have a live `ProjectStore`
+    /// open — opens a short-lived connection to `source`, runs the vacuum,
+    /// then closes.
+    public static func exportSnapshot(from source: URL, to destination: URL) throws {
+        let store = try ProjectStore(path: source.path)
+        try store.exportSnapshot(to: destination)
     }
 
     // MARK: - Observation
@@ -542,4 +574,26 @@ public final class ProjectStore: Sendable {
 
         return migrator
     }
+}
+
+private final class CommitNotifyingObserver: TransactionObserver {
+    let instanceID: UUID
+
+    init(instanceID: UUID) {
+        self.instanceID = instanceID
+    }
+
+    func observes(eventsOfKind eventKind: DatabaseEventKind) -> Bool { true }
+    func databaseDidChange(with event: DatabaseEvent) {}
+    func databaseDidCommit(_ db: Database) {
+        let id = instanceID
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: ProjectStore.didCommitNotification,
+                object: nil,
+                userInfo: ["instanceID": id]
+            )
+        }
+    }
+    func databaseDidRollback(_ db: Database) {}
 }

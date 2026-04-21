@@ -7,9 +7,20 @@ struct MainWindowView: View {
     @State private var uiState = ProjectUIStateValue()
     @StateObject private var workspace: Workspace
 
-    init(dbURL: URL) {
+    private let dbURL: URL
+    private let fileURL: URL?
+    private let project: Binding<LumaProject>?
+
+    init(dbURL: URL, fileURL: URL? = nil, project: Binding<LumaProject>? = nil) {
+        self.dbURL = dbURL
+        self.fileURL = fileURL
+        self.project = project
         let store = try! ProjectStore(path: dbURL.path)
         self._workspace = StateObject(wrappedValue: Workspace(store: store))
+    }
+
+    private var restorationPath: String {
+        (fileURL ?? dbURL).path
     }
 
     @State private var collapsedEventBaselineVersion: Int = 0
@@ -43,10 +54,20 @@ struct MainWindowView: View {
         .task {
             await workspace.configurePersistence()
         }
+        .onChange(of: restorationPath, initial: true) { _, newPath in
+            LumaAppState.shared.lastDocumentPath = newPath
+        }
         .onDisappear {
             Task { @MainActor in
                 await workspace.engine.collaboration.stop()
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: ProjectStore.didCommitNotification)) { note in
+            guard
+                let id = note.userInfo?["instanceID"] as? UUID,
+                id == workspace.store.instanceID
+            else { return }
+            project?.wrappedValue.revision &+= 1
         }
         .onChange(of: workspace.engine.eventLog.totalReceived) { _, newVersion in
             if uiState.isEventStreamCollapsed {
@@ -260,6 +281,8 @@ struct WorkspaceToolbar: ToolbarContent {
     @Binding var selection: SidebarItemID?
 
     @State var showingAddInstrumentSheetForProcess: LumaCore.ProcessSession?
+    @State private var showingCodeShareSheetForProcess: LumaCore.ProcessSession?
+    @State private var pendingCodeShareAfterAddInstrumentDismiss: LumaCore.ProcessSession?
     @State private var isShowingPackageManager = false
 
     var selectedProcessSession: LumaCore.ProcessSession? {
@@ -311,12 +334,33 @@ struct WorkspaceToolbar: ToolbarContent {
             }
             .disabled(session == nil)
             .keyboardShortcut("i", modifiers: [.command, .shift])
-            .sheet(item: $showingAddInstrumentSheetForProcess) { session in
+            .sheet(
+                item: $showingAddInstrumentSheetForProcess,
+                onDismiss: {
+                    if let session = pendingCodeShareAfterAddInstrumentDismiss {
+                        pendingCodeShareAfterAddInstrumentDismiss = nil
+                        showingCodeShareSheetForProcess = session
+                    }
+                }
+            ) { session in
                 AddInstrumentSheet(
                     session: session,
                     workspace: workspace,
                     selection: $selection,
                     onInstrumentAdded: { instrument in
+                        selection = .instrument(session.id, instrument.id)
+                    },
+                    onBrowseCodeShare: {
+                        pendingCodeShareAfterAddInstrumentDismiss = session
+                    }
+                )
+            }
+            .sheet(item: $showingCodeShareSheetForProcess) { session in
+                CodeShareBrowserView(
+                    session: session,
+                    workspace: workspace,
+                    onInstrumentAdded: { instrument in
+                        showingCodeShareSheetForProcess = nil
                         selection = .instrument(session.id, instrument.id)
                     }
                 )
