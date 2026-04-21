@@ -190,7 +190,7 @@ final class MainWindow {
         let eventStreamPaned = Paned(orientation: .vertical)
         eventStreamPaned.resizeStartChild = true
         eventStreamPaned.resizeEndChild = true
-        eventStreamPaned.shrinkStartChild = false
+        eventStreamPaned.shrinkStartChild = true
         eventStreamPaned.shrinkEndChild = false
         eventStreamPaned.hexpand = true
         eventStreamPaned.vexpand = true

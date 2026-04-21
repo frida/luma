@@ -623,11 +623,13 @@ final class EventStreamPane {
             row.append(child: expandable)
         } else {
             let payload = Label(str: payloadString(for: event))
-            payload.halign = .start
+            payload.halign = .fill
+            payload.xalign = 0
             payload.hexpand = true
             payload.lines = 3
             payload.wrap = true
             payload.ellipsize = PangoEllipsizeMode(rawValue: 3)
+            payload.selectable = true
             payload.add(cssClass: "monospace")
             row.append(child: payload)
         }
@@ -705,7 +707,8 @@ final class EventStreamPane {
         let textLabel = Label(str: error.text)
         textLabel.add(cssClass: "monospace")
         textLabel.add(cssClass: "luma-event-jserror")
-        textLabel.halign = .start
+        textLabel.halign = .fill
+        textLabel.xalign = 0
         textLabel.hexpand = true
         textLabel.wrap = true
         textLabel.selectable = true
@@ -718,6 +721,7 @@ final class EventStreamPane {
             loc.add(cssClass: "caption")
             loc.halign = .start
             loc.marginStart = 12
+            loc.selectable = true
             column.append(child: loc)
         }
 
@@ -725,7 +729,8 @@ final class EventStreamPane {
             let stackLabel = Label(str: stack)
             stackLabel.add(cssClass: "monospace")
             stackLabel.add(cssClass: "dim-label")
-            stackLabel.halign = .start
+            stackLabel.halign = .fill
+            stackLabel.xalign = 0
             stackLabel.marginStart = 12
             stackLabel.wrap = true
             stackLabel.selectable = true
@@ -755,7 +760,8 @@ final class EventStreamPane {
         if !message.values.isEmpty && allStrings.count == message.values.count {
             let payload = Label(str: allStrings.joined(separator: " "))
             payload.add(cssClass: "monospace")
-            payload.halign = .start
+            payload.halign = .fill
+            payload.xalign = 0
             payload.hexpand = true
             payload.lines = 3
             payload.wrap = true
@@ -768,7 +774,7 @@ final class EventStreamPane {
             for value in message.values {
                 let wrapper = JSInspectValueWidget.make(value: value, engine: engine, sessionID: sessionID)
                 jsValueKeepers.append(wrapper)
-                wrapper.widget.halign = .start
+                wrapper.widget.halign = .fill
                 wrapper.widget.hexpand = true
                 column.append(child: wrapper.widget)
             }
@@ -776,7 +782,8 @@ final class EventStreamPane {
         } else {
             let payload = Label(str: message.values.map { $0.inlineDescription }.joined(separator: " "))
             payload.add(cssClass: "monospace")
-            payload.halign = .start
+            payload.halign = .fill
+            payload.xalign = 0
             payload.hexpand = true
             payload.lines = 3
             payload.wrap = true
@@ -871,11 +878,13 @@ final class EventStreamPane {
             case .string(let s) = elems[0]
         {
             let payload = Label(str: s)
-            payload.halign = .start
+            payload.halign = .fill
+            payload.xalign = 0
             payload.hexpand = true
             payload.lines = 3
             payload.wrap = true
             payload.ellipsize = PangoEllipsizeMode(rawValue: 3)
+            payload.selectable = true
             payload.add(cssClass: "monospace")
             column.append(child: payload)
         } else {
