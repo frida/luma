@@ -9,6 +9,7 @@ struct TracerConfigView: View {
     @Binding var selection: SidebarItemID?
 
     @Environment(\.instrumentSession) private var instrumentSession
+    @Environment(\.instrumentConfigCommitCoordinator) private var commitCoordinator
 
     @State private var searchQuery = ""
     @State private var searchScope: TracerTargetScope = .function
@@ -38,6 +39,14 @@ struct TracerConfigView: View {
     @State private var draftCode: String = ""
     @State private var isDirty: Bool = false
     @State private var showSavedCheck: Bool = false
+    @State private var commitRegistrationToken: UUID?
+
+    #if canImport(UIKit)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    private var isCompactWidth: Bool { horizontalSizeClass == .compact }
+    #else
+    private var isCompactWidth: Bool { false }
+    #endif
 
     enum LayoutMode: String, CaseIterable, Identifiable {
         case compact
@@ -78,6 +87,17 @@ struct TracerConfigView: View {
         }
         .onAppear {
             ensureValidSelection()
+            if let coordinator = commitCoordinator, commitRegistrationToken == nil {
+                commitRegistrationToken = coordinator.register {
+                    if isDirty { saveDraft() }
+                }
+            }
+        }
+        .onDisappear {
+            if let coordinator = commitCoordinator, let token = commitRegistrationToken {
+                coordinator.unregister(token)
+                commitRegistrationToken = nil
+            }
         }
         .onChange(of: config.hooks) { _, hooks in
             if hooks.isEmpty {
@@ -277,7 +297,7 @@ struct TracerConfigView: View {
             }
 
             searchSection
-                .frame(width: 420)
+                .frame(maxWidth: isCompactWidth ? .infinity : 420)
                 .padding(12)
 
             Spacer()
@@ -493,7 +513,7 @@ struct TracerConfigView: View {
         .help("Add hooks by searching functions")
         .popover(isPresented: $isShowingSearchPopover) {
             searchSection
-                .frame(width: 420)
+                .frame(maxWidth: isCompactWidth ? .infinity : 420)
                 .padding(12)
         }
     }
@@ -514,6 +534,10 @@ struct TracerConfigView: View {
             HStack {
                 TextField(searchScope.placeholder, text: $searchQuery)
                     .textFieldStyle(.roundedBorder)
+                    #if canImport(UIKit)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+                    #endif
 
                 scopeMenu
 
