@@ -4,7 +4,5 @@
 <dict>
 	<key>aps-environment</key>
 	<string>production</string>
-	<key>com.apple.security.cs.debugger</key>
-	<true/>
 </dict>
 </plist>

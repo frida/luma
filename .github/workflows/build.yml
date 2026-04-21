@@ -119,7 +119,7 @@ jobs:
           cp "$DEVELOPER_ID_PROFILE_PATH" build/Luma.app/Contents/embedded.provisionprofile
           codesign --force --options runtime \
             --sign "Developer ID Application" \
-            --entitlements Luma/Luma-Release.entitlements \
+            --entitlements Luma/Luma-macOS-Release.entitlements \
             --timestamp \
             build/Luma.app
 
@@ -221,6 +221,167 @@ jobs:
         with:
           name: Luma-${{ env.LUMA_VERSION }}-${{ matrix.arch }}.dmg
           path: Luma-${{ env.LUMA_VERSION }}-${{ matrix.arch }}.dmg
+
+      - uses: actions/upload-artifact@v7
+        if: env.CAN_SIGN == 'true'
+        with:
+          name: Luma-${{ env.LUMA_VERSION }}-${{ matrix.arch }}.dmg.sig
+          path: Luma-${{ env.LUMA_VERSION }}-${{ matrix.arch }}.dmg.sig
+
+  ios:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      - name: Install the Apple certificates
+        env:
+          CERTIFICATES_P12: ${{ secrets.APPLE_CERTIFICATES_P12 }}
+          CERTIFICATES_PASSWORD: ${{ secrets.APPLE_CERTIFICATES_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+        run: |
+          if [ -z "$CERTIFICATES_P12" ]; then
+            echo "No signing certificates configured, will build unsigned"
+            exit 0
+          fi
+          CERTIFICATE_PATH=$RUNNER_TEMP/apple-certificates.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/luma-signing.keychain-db
+          echo -n "$CERTIFICATES_P12" | base64 --decode -o $CERTIFICATE_PATH
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security import $CERTIFICATE_PATH -P "$CERTIFICATES_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+          rm $CERTIFICATE_PATH
+          if ! security find-identity -v -p codesigning | grep -q "Apple Distribution"; then
+            echo "No Apple Distribution identity in the provided certificate bundle." >&2
+            echo "Add one to APPLE_CERTIFICATES_P12 to enable iOS archive builds." >&2
+            exit 0
+          fi
+          echo "CAN_SIGN=true" >> $GITHUB_ENV
+
+      - name: Install the App Store provisioning profile
+        env:
+          APP_STORE_PROFILE: ${{ secrets.APPLE_APP_STORE_PROFILE }}
+        run: |
+          if [ "$CAN_SIGN" != "true" ]; then
+            exit 0
+          fi
+          if [ -z "$APP_STORE_PROFILE" ]; then
+            echo "CAN_SIGN=true but APPLE_APP_STORE_PROFILE is not set." >&2
+            echo "An App Store provisioning profile for re.frida.Luma is" >&2
+            echo "required to archive for iOS." >&2
+            exit 1
+          fi
+          PROFILE_PATH=$RUNNER_TEMP/app-store.mobileprovision
+          echo -n "$APP_STORE_PROFILE" | base64 --decode -o $PROFILE_PATH
+          UUID=$(security cms -D -i $PROFILE_PATH | plutil -extract UUID raw -)
+          INSTALL_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$INSTALL_DIR"
+          cp $PROFILE_PATH "$INSTALL_DIR/$UUID.mobileprovision"
+          echo "APP_STORE_PROFILE_UUID=$UUID" >> $GITHUB_ENV
+
+      - name: Build (unsigned, iOS Simulator)
+        if: env.CAN_SIGN != 'true'
+        run: |
+          xcodebuild \
+            -project Luma.xcodeproj \
+            -scheme Luma \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/.derived-ios \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Archive
+        if: env.CAN_SIGN == 'true'
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          xcodebuild \
+            -project Luma.xcodeproj \
+            -scheme Luma \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/Luma.xcarchive \
+            -derivedDataPath build/.derived-ios \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM=$TEAM_ID \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER=$APP_STORE_PROFILE_UUID \
+            CODE_SIGN_ENTITLEMENTS=Luma/Luma-iOS-Release.entitlements \
+            MARKETING_VERSION=$LUMA_VERSION \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            archive
+
+      - name: Export IPA
+        if: env.CAN_SIGN == 'true'
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          EXPORT_OPTIONS=$RUNNER_TEMP/ExportOptions.plist
+          cat > $EXPORT_OPTIONS <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>app-store-connect</string>
+              <key>teamID</key>
+              <string>$TEAM_ID</string>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>stripSwiftSymbols</key>
+              <true/>
+              <key>uploadSymbols</key>
+              <true/>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>re.frida.Luma</key>
+                  <string>$APP_STORE_PROFILE_UUID</string>
+              </dict>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath build/Luma.xcarchive \
+            -exportPath build/ipa \
+            -exportOptionsPlist $EXPORT_OPTIONS
+          mv build/ipa/Luma.ipa Luma-${LUMA_VERSION}.ipa
+
+      - uses: actions/upload-artifact@v7
+        if: env.CAN_SIGN == 'true'
+        with:
+          name: Luma-${{ env.LUMA_VERSION }}.ipa
+          path: Luma-${{ env.LUMA_VERSION }}.ipa
+
+      - name: Upload to TestFlight
+        if: env.CAN_SIGN == 'true' && github.ref_type == 'tag'
+        env:
+          ASC_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          ASC_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+        run: |
+          if [ -z "$ASC_API_KEY_ID" ] || [ -z "$ASC_API_ISSUER_ID" ] || [ -z "$ASC_API_KEY_P8" ]; then
+            echo "App Store Connect API credentials are not configured." >&2
+            echo "Set APP_STORE_CONNECT_API_KEY_ID, APP_STORE_CONNECT_API_ISSUER_ID" >&2
+            echo "and APP_STORE_CONNECT_API_KEY_P8 to enable TestFlight uploads." >&2
+            exit 1
+          fi
+          KEYS_DIR=$HOME/.appstoreconnect/private_keys
+          mkdir -p $KEYS_DIR
+          echo -n "$ASC_API_KEY_P8" | base64 --decode \
+              -o "$KEYS_DIR/AuthKey_${ASC_API_KEY_ID}.p8"
+          xcrun altool --upload-app \
+            --type ios \
+            --file Luma-${LUMA_VERSION}.ipa \
+            --apiKey "$ASC_API_KEY_ID" \
+            --apiIssuer "$ASC_API_ISSUER_ID"
 
   fedora:
     runs-on: ubuntu-latest
@@ -932,7 +1093,7 @@ jobs:
 
   release:
     if: github.ref_type == 'tag'
-    needs: [macos, fedora, ubuntu, flatpak, snap, windows]
+    needs: [macos, ios, fedora, ubuntu, flatpak, snap, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
