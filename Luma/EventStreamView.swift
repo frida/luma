@@ -5,6 +5,13 @@ struct EventStreamView: View {
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
 
+    #if canImport(UIKit)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    private var isCompactWidth: Bool { horizontalSizeClass == .compact }
+    #else
+    private var isCompactWidth: Bool { false }
+    #endif
+
     var onCollapseRequested: (() -> Void)?
 
     @State private var displayedEvents: [RuntimeEvent] = []
@@ -95,96 +102,156 @@ struct EventStreamView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
-            Label("Event Stream", systemImage: "waveform")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-
-            Picker("", selection: $sourceFilter) {
-                ForEach(EventSourceFilter.allCases) { filter in
-                    Text(filter.menuTitle).tag(filter)
+        Group {
+            if isCompactWidth {
+                HStack(spacing: 8) {
+                    compactSourceFilter
+                    if !availableProcessNames.isEmpty {
+                        compactProcessFilter
+                    }
+                    TextField("Search", text: $searchText)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($isSearchFocused)
+                    pauseButton
+                    clearButton
                 }
-            }
-            .pickerStyle(.menu)
-            .controlSize(.small)
-            .help("Filter by event source")
+            } else {
+                HStack(spacing: 8) {
+                    Label("Event Stream", systemImage: "waveform")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
 
-            if !availableProcessNames.isEmpty {
-                Menu {
-                    Button("All Processes") {
-                        selectedProcessName = nil
+                    regularSourceFilter
+
+                    if !availableProcessNames.isEmpty {
+                        regularProcessFilter
                     }
 
-                    Divider()
+                    Spacer()
 
-                    ForEach(availableProcessNames, id: \.self) { name in
+                    TextField("Search", text: $searchText)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 220)
+                        .focused($isSearchFocused)
+
+                    HStack(spacing: 6) {
+                        Circle()
+                            .frame(width: 6, height: 6)
+                            .foregroundColor(isPaused ? .gray : .green)
+                        Text(isPaused ? "Paused" : "Live")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    pauseButton
+                    clearButton
+
+                    if let onCollapseRequested {
                         Button {
-                            selectedProcessName = name
+                            onCollapseRequested()
                         } label: {
-                            if selectedProcessName == name {
-                                Label(name, systemImage: "checkmark")
-                            } else {
-                                Text(name)
-                            }
+                            Image(systemName: "chevron.down")
                         }
+                        .buttonStyle(.borderless)
+                        .help("Hide the event stream")
                     }
-                } label: {
-                    Label(
-                        selectedProcessName ?? "All Processes",
-                        systemImage: "line.3.horizontal.decrease.circle"
-                    )
                 }
-                .controlSize(.small)
-                .help("Filter by process")
-            }
-
-            Spacer()
-
-            TextField("Search", text: $searchText)
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 220)
-                .focused($isSearchFocused)
-
-            HStack(spacing: 6) {
-                Circle()
-                    .frame(width: 6, height: 6)
-                    .foregroundColor(isPaused ? .gray : .green)
-                Text(isPaused ? "Paused" : "Live")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Button {
-                togglePause()
-            } label: {
-                Image(systemName: isPaused ? "play.fill" : "pause.fill")
-            }
-            .buttonStyle(.borderless)
-            .help(isPaused ? "Resume live tail" : "Pause event stream")
-
-            Button {
-                workspace.engine.eventLog.clear()
-                resetAllEventState()
-                isPaused = false
-                isAtBottom = true
-            } label: {
-                Image(systemName: "trash")
-            }
-            .buttonStyle(.borderless)
-            .help("Clear events")
-
-            if let onCollapseRequested {
-                Button {
-                    onCollapseRequested()
-                } label: {
-                    Image(systemName: "chevron.down")
-                }
-                .buttonStyle(.borderless)
-                .help("Hide the event stream")
             }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
+    }
+
+    private var regularSourceFilter: some View {
+        Picker("", selection: $sourceFilter) {
+            ForEach(EventSourceFilter.allCases) { filter in
+                Text(filter.menuTitle).tag(filter)
+            }
+        }
+        .pickerStyle(.menu)
+        .controlSize(.small)
+        .help("Filter by event source")
+    }
+
+    private var compactSourceFilter: some View {
+        Menu {
+            Picker("Source", selection: $sourceFilter) {
+                ForEach(EventSourceFilter.allCases) { filter in
+                    Text(filter.menuTitle).tag(filter)
+                }
+            }
+        } label: {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .symbolVariant(sourceFilter == .all ? .none : .fill)
+        }
+        .accessibilityLabel("Filter by event source")
+    }
+
+    private var regularProcessFilter: some View {
+        Menu {
+            processFilterContent
+        } label: {
+            Label(
+                selectedProcessName ?? "All Processes",
+                systemImage: "line.3.horizontal.decrease.circle"
+            )
+        }
+        .controlSize(.small)
+        .help("Filter by process")
+    }
+
+    private var compactProcessFilter: some View {
+        Menu {
+            processFilterContent
+        } label: {
+            Image(systemName: "cpu")
+                .symbolVariant(selectedProcessName == nil ? .none : .fill)
+        }
+        .accessibilityLabel("Filter by process")
+    }
+
+    @ViewBuilder
+    private var processFilterContent: some View {
+        Button("All Processes") {
+            selectedProcessName = nil
+        }
+
+        Divider()
+
+        ForEach(availableProcessNames, id: \.self) { name in
+            Button {
+                selectedProcessName = name
+            } label: {
+                if selectedProcessName == name {
+                    Label(name, systemImage: "checkmark")
+                } else {
+                    Text(name)
+                }
+            }
+        }
+    }
+
+    private var pauseButton: some View {
+        Button {
+            togglePause()
+        } label: {
+            Image(systemName: isPaused ? "play.fill" : "pause.fill")
+        }
+        .buttonStyle(.borderless)
+        .help(isPaused ? "Resume live tail" : "Pause event stream")
+    }
+
+    private var clearButton: some View {
+        Button {
+            workspace.engine.eventLog.clear()
+            resetAllEventState()
+            isPaused = false
+            isAtBottom = true
+        } label: {
+            Image(systemName: "trash")
+        }
+        .buttonStyle(.borderless)
+        .help("Clear events")
     }
 
     private var scrollContent: some View {
@@ -687,6 +754,7 @@ struct EventRow: View {
                             workspace: workspace,
                             selection: $selection
                         )
+                        .font(.system(.footnote, design: .monospaced))
                     }
                 }
             )

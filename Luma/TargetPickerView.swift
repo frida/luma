@@ -16,6 +16,13 @@ struct TargetPickerView: View {
     @StateObject private var store: DeviceListModel
     private let deviceManager: DeviceManager
 
+    #if canImport(UIKit)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    private var isCompactWidth: Bool { horizontalSizeClass == .compact }
+    #else
+    private var isCompactWidth: Bool { false }
+    #endif
+
     let reason: String?
     let onSpawn: (Device, SpawnConfig) -> Void
     let onAttach: (Device, ProcessDetails) -> Void
@@ -102,6 +109,27 @@ struct TargetPickerView: View {
         }
     }
 
+    @ToolbarContentBuilder
+    private var sharedToolbar: some ToolbarContent {
+        ToolbarItem(placement: .cancellationAction) {
+            Button {
+                dismiss()
+            } label: {
+                Text("Cancel")
+            }
+        }
+        ToolbarItem(placement: .confirmationAction) {
+            if mode == .spawn {
+                Button {
+                    triggerSpawn()
+                } label: {
+                    Label("Spawn & Attach", systemImage: "play.circle")
+                }
+                .disabled(!canSpawn)
+            }
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if let reason {
@@ -119,7 +147,13 @@ struct TargetPickerView: View {
 
             NavigationSplitView {
                 deviceListPane()
+                    .navigationTitle("New Session")
                     .navigationSplitViewColumnWidth(min: 200, ideal: 250)
+                    .toolbar {
+                        if isCompactWidth {
+                            sharedToolbar
+                        }
+                    }
             } detail: {
                 VStack(alignment: .leading, spacing: 0) {
                     modeSelector()
@@ -145,27 +179,9 @@ struct TargetPickerView: View {
                     }
                 }
                 .navigationTitle("New Session")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button {
-                            dismiss()
-                        } label: {
-                            Text("Done").bold()
-                        }
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        if mode == .spawn {
-                            Button {
-                                triggerSpawn()
-                            } label: {
-                                Label("Spawn & Attach", systemImage: "play.circle")
-                            }
-                            .disabled(!canSpawn)
-                        }
-                    }
-                }
+                .toolbar { sharedToolbar }
             }
-            .frame(minWidth: 904, minHeight: 400)
+            .frame(minWidth: isCompactWidth ? 0 : 904, minHeight: isCompactWidth ? 0 : 400)
             .sheet(isPresented: $showingAddRemoteSheet) {
                 addRemoteSheet()
             }
@@ -178,10 +194,12 @@ struct TargetPickerView: View {
                     store.devices.contains(where: { $0.id == lastID })
                 {
                     selectedDeviceID = lastID
-                } else if let local = store.devices.first(where: { $0.kind == .local }) {
-                    selectedDeviceID = local.id
-                } else {
-                    selectedDeviceID = store.devices.first?.id
+                } else if !isCompactWidth {
+                    if let local = store.devices.first(where: { $0.kind == .local }) {
+                        selectedDeviceID = local.id
+                    } else {
+                        selectedDeviceID = store.devices.first?.id
+                    }
                 }
 
                 if let state = pickerState {
@@ -222,10 +240,12 @@ struct TargetPickerView: View {
                     return
                 }
 
-                if let local = newDevices.first(where: { $0.kind == .local }) {
-                    selectedDeviceID = local.id
-                } else {
-                    selectedDeviceID = newDevices.first?.id
+                if !isCompactWidth {
+                    if let local = newDevices.first(where: { $0.kind == .local }) {
+                        selectedDeviceID = local.id
+                    } else {
+                        selectedDeviceID = newDevices.first?.id
+                    }
                 }
             }
             .onChange(of: selectedDeviceID) { _, newID in

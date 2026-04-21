@@ -115,7 +115,7 @@ struct REPLView: View {
                         .frame(minHeight: 22)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                        Text("Session detached — click \(session?.kind.reestablishLabel ?? "Re-Attach") to continue.")
+                        Text("Session detached — use \(session?.kind.reestablishLabel ?? "Re-Attach") to continue.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .padding(.leading, 4)
@@ -240,9 +240,11 @@ private struct REPLCellView: View {
                     .frame(height: 1)
                     .foregroundStyle(Color.accentColor.opacity(0.25))
 
-                Text("New process attached at \(cell.timestamp.formatted(date: .omitted, time: .standard))")
+                Text("New process attached at \(cell.timestamp.formatted(date: .omitted, time: .shortened))")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
 
                 Rectangle()
                     .frame(height: 1)
@@ -269,13 +271,11 @@ private struct REPLCellView: View {
 
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("←")
-                        .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(.secondary)
 
                     switch cell.result {
                     case .text(let s):
                         Text(s)
-                            .font(.system(.caption, design: .monospaced))
                             .textSelection(.enabled)
 
                     case .js(let v):
@@ -291,6 +291,7 @@ private struct REPLCellView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+                .font(.system(.caption, design: .monospaced))
             }
             .padding(.bottom, 4)
             .contextMenu {

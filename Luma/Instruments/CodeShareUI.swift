@@ -50,6 +50,7 @@ struct CodeShareUI: InstrumentUI {
                     workspace: workspace,
                     selection: selection
                 )
+                .font(.system(.footnote, design: .monospaced))
             )
         }
         return AnyView(Text(String(describing: event.payload)))

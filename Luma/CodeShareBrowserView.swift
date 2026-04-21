@@ -19,6 +19,13 @@ struct CodeShareBrowserView: View {
     @State private var addInstrumentHandler: (() -> Void)?
     @State private var isAddingInstrument: Bool = false
 
+    #if canImport(UIKit)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    private var isCompactWidth: Bool { horizontalSizeClass == .compact }
+    #else
+    private var isCompactWidth: Bool { false }
+    #endif
+
     var body: some View {
         NavigationSplitView {
             sidebar
@@ -28,7 +35,7 @@ struct CodeShareBrowserView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding()
         }
-        .frame(minWidth: 900, minHeight: 600)
+        .frame(minWidth: isCompactWidth ? 0 : 900, minHeight: isCompactWidth ? 0 : 600)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") {
@@ -141,7 +148,7 @@ struct CodeShareBrowserView: View {
             }
         }
         .padding()
-        .frame(minWidth: 260, idealWidth: 300)
+        .frame(minWidth: isCompactWidth ? 0 : 260, idealWidth: isCompactWidth ? nil : 300)
     }
 
     @ViewBuilder
@@ -172,7 +179,7 @@ struct CodeShareBrowserView: View {
         do {
             let items = try await CodeShareService.fetchPopular()
             projects = items
-            if selectedProject == nil {
+            if selectedProject == nil, !isCompactWidth {
                 selectedProject = projects.first
             }
         } catch {
@@ -190,7 +197,7 @@ struct CodeShareBrowserView: View {
         do {
             let items = try await CodeShareService.searchProjects(query: searchQuery)
             projects = items
-            if selectedProject == nil {
+            if selectedProject == nil, !isCompactWidth {
                 selectedProject = projects.first
             }
         } catch {

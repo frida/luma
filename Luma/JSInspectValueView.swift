@@ -38,7 +38,6 @@ struct JSInspectValueView: View {
         )
         .environment(\.circularTargets, circularTargets)
         .environmentObject(anchorStore)
-        .font(.system(.footnote, design: .monospaced))
         .textSelection(.enabled)
         .errorPopoverHost()
     }
@@ -148,9 +147,14 @@ private struct JSInspectNodeView: View {
     }
 
     private func disclosureLabel(typeText: String, preview: String?) -> some View {
-        let typePart = Text(typeText).foregroundStyle(Color.jsTypeLabel)
-        let combined: Text = preview.map { typePart + Text(" \($0)").foregroundStyle(.secondary) } ?? typePart
-        return combined
+        var attributed = AttributedString(typeText)
+        attributed.foregroundColor = Color.jsTypeLabel
+        if let preview {
+            var previewPart = AttributedString(" \(preview)")
+            previewPart.foregroundColor = .secondary
+            attributed.append(previewPart)
+        }
+        return Text(attributed)
             .lineLimit(1)
             .truncationMode(.tail)
     }

@@ -19,6 +19,13 @@ struct CollaborationPanel: View {
     @State private var isPinnedToBottom = true
     private let chatBottomID = "CHAT_BOTTOM_ANCHOR"
 
+    #if canImport(UIKit)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    private var isCompactWidth: Bool { horizontalSizeClass == .compact }
+    #else
+    private var isCompactWidth: Bool { false }
+    #endif
+
     private var collaboration: CollaborationSession {
         workspace.engine.collaboration
     }
@@ -29,9 +36,11 @@ struct CollaborationPanel: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
-            header
-            Divider()
+        VStack(alignment: .leading, spacing: 12) {
+            if !isCompactWidth {
+                header
+                Divider()
+            }
             labSection
 
             if isActive {
@@ -41,7 +50,7 @@ struct CollaborationPanel: View {
                 chatSection
             }
         }
-        .frame(maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(12)
         .background(.ultraThickMaterial)
         .sheet(
@@ -99,6 +108,11 @@ struct CollaborationPanel: View {
     }
 
     private var labSection: some View {
+        labSectionContent
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var labSectionContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             switch collaboration.status {
             case .disconnected:

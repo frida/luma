@@ -59,6 +59,7 @@ struct TracerUI: InstrumentUI {
                         workspace: workspace,
                         selection: selection
                     )
+                    .font(.system(.footnote, design: .monospaced))
                 )
             }
         }()
