@@ -1,30 +1,9 @@
 import Foundation
+import LumaCore
 
 @MainActor
 final class LumaState {
     static let shared = LumaState()
-
-    var lastDocumentPath: String? {
-        get { stored.lastDocumentPath }
-        set {
-            stored.lastDocumentPath = newValue
-            persist()
-        }
-    }
-
-    var recentPaths: [String] {
-        stored.recentPaths
-    }
-
-    func recordRecent(path: String) {
-        var list = stored.recentPaths.filter { $0 != path }
-        list.insert(path, at: 0)
-        if list.count > maxRecents {
-            list = Array(list.prefix(maxRecents))
-        }
-        stored.recentPaths = list
-        persist()
-    }
 
     var windowWidth: Int {
         get { stored.windowWidth ?? 1200 }
@@ -73,8 +52,6 @@ final class LumaState {
     }
 
     private struct Stored: Codable {
-        var lastDocumentPath: String?
-        var recentPaths: [String] = []
         var windowWidth: Int?
         var windowHeight: Int?
         var windowMaximized: Bool?
@@ -85,7 +62,6 @@ final class LumaState {
 
     private var stored: Stored
     private let stateURL: URL
-    private let maxRecents = 10
 
     private init() {
         let xdg = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"]
@@ -93,7 +69,7 @@ final class LumaState {
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".config")
         let configDir = xdg.appendingPathComponent("luma", isDirectory: true)
         try? FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
-        self.stateURL = configDir.appendingPathComponent("state.json")
+        self.stateURL = configDir.appendingPathComponent("ui-state.json")
 
         if let data = try? Data(contentsOf: stateURL),
             let decoded = try? JSONDecoder().decode(Stored.self, from: data)
@@ -101,12 +77,6 @@ final class LumaState {
             self.stored = decoded
         } else {
             self.stored = Stored()
-        }
-
-        let pruned = stored.recentPaths.filter { FileManager.default.fileExists(atPath: $0) }
-        if pruned.count != stored.recentPaths.count {
-            stored.recentPaths = pruned
-            persist()
         }
     }
 

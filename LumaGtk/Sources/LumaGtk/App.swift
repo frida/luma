@@ -66,13 +66,10 @@ final class LumaApplication {
             return
         }
 
-        let lastPath = LumaState.shared.lastDocumentPath
+        let lastPath = LumaAppState.shared.lastDocumentPath
         if let lastPath, FileManager.default.fileExists(atPath: lastPath) {
             let url = URL(fileURLWithPath: lastPath)
-            if url.path.hasPrefix(Self.untitledDirectory.path) {
-                // Auto-saved untitled doc from a previous session;
-                // reopen it instead of stranding it on disk and
-                // minting a new Untitled N.luma alongside.
+            if LumaAppState.shared.isUntitledAutoSavePath(url.path) {
                 if let document = try? LumaDocumentLoader.openUntitled(at: url) {
                     openWindow(for: document)
                     return
@@ -88,7 +85,7 @@ final class LumaApplication {
 
     func openNewUntitledWindow() {
         do {
-            let document = try LumaDocumentLoader.makeUntitled(in: Self.untitledDirectory)
+            let document = try LumaDocumentLoader.makeUntitled(in: LumaAppPaths.shared.untitledDirectory)
             openWindow(for: document)
         } catch {
             FileHandle.standardError.write(
@@ -114,7 +111,7 @@ final class LumaApplication {
 
         do {
             let store = try ProjectStore(path: document.sqlitePath)
-            let engine = Engine(store: store, dataDirectory: Self.dataDirectory)
+            let engine = Engine(store: store, dataDirectory: LumaAppPaths.shared.dataDirectory)
             openDocuments[key] = OpenDocument(window: window, engine: engine, document: document)
             window.present()
 
@@ -123,12 +120,9 @@ final class LumaApplication {
                 window.attach(engine: engine)
             }
 
-            // Track lastDocumentPath for every open — untitled included
-            // — so killing the app and relaunching reopens the same
-            // auto-save file instead of conjuring a fresh Untitled N.
-            LumaState.shared.lastDocumentPath = document.url.path
+            LumaAppState.shared.lastDocumentPath = document.url.path
             if !document.isUntitled {
-                LumaState.shared.recordRecent(path: document.url.path)
+                LumaAppState.shared.recordRecent(path: document.url.path)
                 rebuildPrimaryMenu()
             }
         } catch {
@@ -148,8 +142,8 @@ final class LumaApplication {
         entry.document = document
         openDocuments[key] = entry
         if !document.isUntitled {
-            LumaState.shared.lastDocumentPath = document.url.path
-            LumaState.shared.recordRecent(path: document.url.path)
+            LumaAppState.shared.lastDocumentPath = document.url.path
+            LumaAppState.shared.recordRecent(path: document.url.path)
             rebuildPrimaryMenu()
         }
     }
@@ -278,7 +272,7 @@ final class LumaApplication {
     }
 
     private func openRecent(slot: Int) {
-        let recents = LumaState.shared.recentPaths
+        let recents = LumaAppState.shared.recentPaths
         guard slot < recents.count else { return }
         openWindow(forFile: URL(fileURLWithPath: recents[slot]))
     }
@@ -288,7 +282,7 @@ final class LumaApplication {
 
     func rebuildPrimaryMenu() {
         guard let menu = primaryMenuPtr else { return }
-        let signature = LumaState.shared.recentPaths.joined(separator: "\u{1f}")
+        let signature = LumaAppState.shared.recentPaths.joined(separator: "\u{1f}")
         if primaryMenuBuilt && signature == lastBuiltRecentsSignature {
             return
         }
@@ -300,7 +294,7 @@ final class LumaApplication {
         appendItem(toMenu: topSection!, label: "New Window", action: "app.new-window")
         appendItem(toMenu: topSection!, label: "Open\u{2026}", action: "app.open")
 
-        let recents = LumaState.shared.recentPaths.prefix(maxRecentSlots)
+        let recents = LumaAppState.shared.recentPaths.prefix(maxRecentSlots)
         if !recents.isEmpty {
             let recentMenu = luma_menu_new()!
             for (i, path) in recents.enumerated() {
@@ -406,20 +400,6 @@ final class LumaApplication {
         }
     }
 
-    static var dataDirectory: URL {
-        let xdg = ProcessInfo.processInfo.environment["XDG_DATA_HOME"]
-            .map(URL.init(fileURLWithPath:))
-            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".local/share")
-        let dir = xdg.appendingPathComponent("luma", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
-    }
-
-    static var untitledDirectory: URL {
-        let dir = dataDirectory.appendingPathComponent("Untitled", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
-    }
 }
 
 private final class ActionHandlerBox {
