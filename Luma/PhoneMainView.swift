@@ -15,7 +15,12 @@ struct PhoneMainView: View {
     @State private var eventsBaseline: Int = 0
     @State private var collabChatBaseline: Int = 0
 
-    init(dbURL: URL) {
+    private let dbURL: URL
+    private let documentActions: PhoneDocumentActions
+
+    init(dbURL: URL, documentActions: PhoneDocumentActions = .noop) {
+        self.dbURL = dbURL
+        self.documentActions = documentActions
         let store = try! ProjectStore(path: dbURL.path)
         self._workspace = StateObject(wrappedValue: Workspace(store: store))
     }
@@ -33,7 +38,8 @@ struct PhoneMainView: View {
                     path: $path,
                     activeDrawer: $activeDrawer,
                     eventsIndicator: eventsIndicator,
-                    collabIndicator: collabIndicator
+                    collabIndicator: collabIndicator,
+                    documentActions: documentActions
                 )
                 .navigationDestination(for: PhoneRoute.self) { route in
                     switch route {
@@ -47,15 +53,6 @@ struct PhoneMainView: View {
                             collabIndicator: collabIndicator
                         )
 
-                    case .notebook:
-                        NotebookView(
-                            workspace: workspace,
-                            selection: .constant(nil)
-                        )
-                        .navigationTitle("Notebook")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbar { drawerTriggers }
-
                     case .instrument(let sessionID, let instrumentID):
                         if let instance = workspace.engine.instrumentsBySession[sessionID]?
                             .first(where: { $0.id == instrumentID })
@@ -64,7 +61,7 @@ struct PhoneMainView: View {
                                 InstrumentDetailView(
                                     instance: instance,
                                     workspace: workspace,
-                                    selection: .constant(nil)
+                                    selection: $path.asSidebarSelection()
                                 )
                             }
                             .navigationBarTitleDisplayMode(.inline)
@@ -81,7 +78,7 @@ struct PhoneMainView: View {
                                     session: session,
                                     insight: insight,
                                     workspace: workspace,
-                                    selection: .constant(nil)
+                                    selection: $path.asSidebarSelection()
                                 )
                             }
                             .navigationTitle(insight.title)
@@ -99,7 +96,7 @@ struct PhoneMainView: View {
                                     capture: capture,
                                     session: session,
                                     workspace: workspace,
-                                    selection: .constant(nil)
+                                    selection: $path.asSidebarSelection()
                                 )
                             }
                             .navigationTitle(capture.displayName)
@@ -114,6 +111,9 @@ struct PhoneMainView: View {
             await workspace.configurePersistence()
             eventsBaseline = workspace.engine.eventLog.totalReceived
             collabChatBaseline = workspace.engine.collaboration.chatMessages.count
+        }
+        .onAppear {
+            LumaAppState.shared.lastDocumentPath = dbURL.path
         }
         .onDisappear {
             Task { @MainActor in
@@ -152,10 +152,31 @@ struct PhoneMainView: View {
 
 enum PhoneRoute: Hashable {
     case session(UUID)
-    case notebook
     case instrument(UUID, UUID)
     case insight(UUID, UUID)
     case capture(UUID, UUID)
+}
+
+extension Binding where Value == [PhoneRoute] {
+    func asSidebarSelection() -> Binding<SidebarItemID?> {
+        Binding<SidebarItemID?>(
+            get: { nil },
+            set: { newValue in
+                guard let newValue else { return }
+                switch newValue {
+                case .insight(let sid, let iid):
+                    self.wrappedValue.append(.insight(sid, iid))
+                case .instrument(let sid, let iid),
+                     .instrumentComponent(let sid, let iid, _, _):
+                    self.wrappedValue.append(.instrument(sid, iid))
+                case .itraceCapture(let sid, let cid):
+                    self.wrappedValue.append(.capture(sid, cid))
+                case .repl, .notebook, .package:
+                    break
+                }
+            }
+        )
+    }
 }
 
 enum DrawerKind: Hashable {
@@ -216,8 +237,21 @@ private struct DrawerHost<Content: View>: View {
                 }
             }
             .animation(.spring(response: 0.3, dampingFraction: 0.85), value: active)
-            .onChange(of: active) { _, newValue in
-                if newValue == nil {
+            .onChange(of: active) { oldValue, newValue in
+                switch oldValue {
+                case .events:
+                    onEventsOpened()
+                case .collab:
+                    onCollabOpened()
+                case nil:
+                    break
+                }
+                switch newValue {
+                case .events:
+                    onEventsOpened()
+                case .collab:
+                    onCollabOpened()
+                case nil:
                     expanded = false
                     dragOffset = 0
                 }

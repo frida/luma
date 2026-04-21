@@ -15,6 +15,9 @@ struct PhoneSessionView: View {
     @State private var segment: Segment = .repl
     @State private var isShowingAddInstrument = false
     @State private var isShowingSwitcher = false
+    @State private var isShowingNotebook = false
+    @State private var isShowingCodeShare = false
+    @State private var pendingCodeShareAfterAddInstrumentDismiss = false
     @State private var pendingKill = false
     @State private var pendingDelete = false
 
@@ -69,16 +72,40 @@ struct PhoneSessionView: View {
             }
         }
         .toolbar(.hidden, for: .navigationBar)
-        .sheet(isPresented: $isShowingAddInstrument) {
+        .sheet(isPresented: $isShowingNotebook) {
+            PhoneNotebookSheet(workspace: workspace)
+        }
+        .sheet(
+            isPresented: $isShowingAddInstrument,
+            onDismiss: {
+                if pendingCodeShareAfterAddInstrumentDismiss {
+                    pendingCodeShareAfterAddInstrumentDismiss = false
+                    isShowingCodeShare = true
+                }
+            }
+        ) {
+            if let session {
+                AddInstrumentSheet(
+                    session: session,
+                    workspace: workspace,
+                    selection: .constant(nil),
+                    onInstrumentAdded: { _ in
+                        isShowingAddInstrument = false
+                    },
+                    onBrowseCodeShare: {
+                        pendingCodeShareAfterAddInstrumentDismiss = true
+                    }
+                )
+            }
+        }
+        .sheet(isPresented: $isShowingCodeShare) {
             if let session {
                 NavigationStack {
-                    AddInstrumentSheet(
+                    CodeShareBrowserView(
                         session: session,
                         workspace: workspace,
-                        selection: .constant(nil),
-                        onInstrumentAdded: { instrument in
-                            isShowingAddInstrument = false
-                            path.append(.instrument(session.id, instrument.id))
+                        onInstrumentAdded: { _ in
+                            isShowingCodeShare = false
                         }
                     )
                 }
@@ -153,6 +180,15 @@ struct PhoneSessionView: View {
                 .presentationCompactAdaptation(.popover)
             }
 
+            Button {
+                isShowingNotebook = true
+            } label: {
+                Image(systemName: "book.pages")
+                    .font(.body)
+                    .frame(width: 36, height: 36)
+            }
+            .accessibilityLabel("Notebook")
+
             Spacer()
 
             DrawerTriggerButton(
@@ -216,7 +252,7 @@ struct PhoneSessionView: View {
             REPLView(
                 sessionID: sessionID,
                 workspace: workspace,
-                selection: .constant(nil)
+                selection: $path.asSidebarSelection()
             )
 
         case .instruments:
@@ -237,7 +273,7 @@ struct PhoneSessionView: View {
             segmentEmptyState(
                 icon: "waveform.path.ecg",
                 title: "No instruments yet",
-                hint: "Tap the ••• menu above to add one.",
+                hint: nil,
                 actionTitle: "Add Instrument…",
                 action: { isShowingAddInstrument = true }
             )
@@ -282,7 +318,7 @@ struct PhoneSessionView: View {
             segmentEmptyState(
                 icon: "doc.text.magnifyingglass",
                 title: "No insights yet",
-                hint: "Insights are created from the tracer and memory views.",
+                hint: "Long-press a NativePointer value and choose Open Memory or Open Disassembly to create one.",
                 actionTitle: nil,
                 action: nil
             )
@@ -338,7 +374,7 @@ struct PhoneSessionView: View {
     private func segmentEmptyState(
         icon: String,
         title: String,
-        hint: String,
+        hint: String?,
         actionTitle: String?,
         action: (() -> Void)?
     ) -> some View {
@@ -347,10 +383,12 @@ struct PhoneSessionView: View {
                 .font(.system(size: 44))
                 .foregroundStyle(.secondary)
             Text(title).font(.headline)
-            Text(hint)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+            if let hint {
+                Text(hint)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
                     .buttonStyle(.borderedProminent)

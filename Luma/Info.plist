@@ -6,6 +6,8 @@
 	<true/>
 	<key>UIFileSharingEnabled</key>
 	<true/>
+	<key>UISupportsDocumentBrowser</key>
+	<true/>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>CFBundleDocumentTypes</key>

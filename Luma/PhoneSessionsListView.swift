@@ -10,16 +10,45 @@ struct PhoneSessionsListView: View {
     @Binding var activeDrawer: DrawerKind?
     let eventsIndicator: Bool
     let collabIndicator: Bool
+    let documentActions: PhoneDocumentActions
 
     @State private var pendingKillSession: LumaCore.ProcessSession?
     @State private var pendingDeleteSession: LumaCore.ProcessSession?
+    @State private var isShowingNotebook = false
 
     private var sessions: [LumaCore.ProcessSession] { workspace.engine.sessions }
 
     private var header: some View {
         HStack(spacing: 8) {
+            Menu {
+                Section(documentActions.currentDisplayName) {
+                    Button {
+                        documentActions.saveAs()
+                    } label: {
+                        Label("Save a Copy\u{2026}", systemImage: "square.and.arrow.up")
+                    }
+                }
+                Section {
+                    Button {
+                        documentActions.new()
+                    } label: {
+                        Label("New Document", systemImage: "doc.badge.plus")
+                    }
+                    Button {
+                        documentActions.open()
+                    } label: {
+                        Label("Open Document\u{2026}", systemImage: "folder")
+                    }
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.title3)
+                    .frame(width: 36, height: 36)
+            }
+            .accessibilityLabel("Menu")
+
             Button {
-                path.append(.notebook)
+                isShowingNotebook = true
             } label: {
                 Image(systemName: "book.pages")
                     .font(.title3)
@@ -27,11 +56,16 @@ struct PhoneSessionsListView: View {
             }
             .accessibilityLabel("Notebook")
 
-            Text("Sessions")
-                .font(.title.bold())
-                .padding(.leading, 4)
-
             Spacer()
+
+            Button {
+                workspace.targetPickerContext = .newSession
+            } label: {
+                Image(systemName: "plus")
+                    .font(.title3)
+                    .frame(width: 36, height: 36)
+            }
+            .accessibilityLabel("New Session")
 
             DrawerTriggerButton(
                 kind: .events,
@@ -48,19 +82,11 @@ struct PhoneSessionsListView: View {
             )
             .font(.title3)
             .frame(width: 36, height: 36)
-
-            Button {
-                workspace.targetPickerContext = .newSession
-            } label: {
-                Image(systemName: "plus")
-                    .font(.title3)
-                    .frame(width: 36, height: 36)
-            }
-            .accessibilityLabel("New Session")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
     }
+
 
     var body: some View {
         VStack(spacing: 0) {
@@ -69,6 +95,9 @@ struct PhoneSessionsListView: View {
             content
         }
         .toolbar(.hidden, for: .navigationBar)
+        .sheet(isPresented: $isShowingNotebook) {
+            PhoneNotebookSheet(workspace: workspace)
+        }
         .sheet(
                 item: Binding(
                     get: { workspace.targetPickerContext },
@@ -76,22 +105,15 @@ struct PhoneSessionsListView: View {
                 ),
                 onDismiss: { workspace.targetPickerContext = nil }
             ) { ctx in
-                NavigationStack {
-                    TargetPickerView(
-                        deviceManager: workspace.deviceManager,
-                        reason: {
-                            if case .reestablish(_, let reason) = ctx { return reason }
-                            return nil
-                        }(),
-                        onSpawn: handleSpawn,
-                        onAttach: handleAttach
-                    )
-                    .toolbar {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button("Cancel") { workspace.targetPickerContext = nil }
-                        }
-                    }
-                }
+                TargetPickerView(
+                    deviceManager: workspace.deviceManager,
+                    reason: {
+                        if case .reestablish(_, let reason) = ctx { return reason }
+                        return nil
+                    }(),
+                    onSpawn: handleSpawn,
+                    onAttach: handleAttach
+                )
             }
             .confirmationDialog(
                 "Kill Process?",
@@ -173,16 +195,24 @@ struct PhoneSessionsListView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             Image(systemName: "target")
                 .font(.system(size: 44))
                 .foregroundStyle(.secondary)
             Text("No sessions yet")
                 .font(.headline)
-            Text("Tap + to attach to or spawn a process.")
+            Text("Attach to a running process or spawn a new one.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+            Button {
+                workspace.targetPickerContext = .newSession
+            } label: {
+                Label("New Session\u{2026}", systemImage: "target")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()

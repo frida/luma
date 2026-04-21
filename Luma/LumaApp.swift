@@ -91,8 +91,8 @@ import UniformTypeIdentifiers
         @UIApplicationDelegateAdaptor(LumaAppDelegate.self) var appDelegate
 
         var body: some Scene {
-            DocumentGroup(newDocument: LumaProject()) { configuration in
-                PhoneMainView(dbURL: configuration.document.temporaryDBURL)
+            WindowGroup {
+                PhoneRootView()
             }
         }
     }
@@ -105,6 +105,7 @@ import UniformTypeIdentifiers
             application.registerForRemoteNotifications()
             return true
         }
+
 
         func application(
             _ application: UIApplication,
