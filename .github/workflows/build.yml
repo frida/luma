@@ -368,6 +368,8 @@ jobs:
           <dict>
               <key>method</key>
               <string>app-store-connect</string>
+              <key>destination</key>
+              <string>export</string>
               <key>teamID</key>
               <string>$TEAM_ID</string>
               <key>signingStyle</key>
