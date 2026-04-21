@@ -19,8 +19,10 @@ Package.swift       # SPM manifest for LumaCore
 
 ## Requirements
 
-- macOS ≥ 15.6
-- Xcode ≥ 26
+- macOS ≥ 15.0
+- Xcode ≥ 26 (with the Metal toolchain installed — open Xcode once
+  and accept the Metal SDK download prompt, or install it via
+  **Settings → Components**)
 
 `LumaCore` itself only needs Swift 6 and the package dependencies
 listed in `Package.swift`. It builds on Linux too:
