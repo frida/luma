@@ -766,6 +766,11 @@ jobs:
 
   snap:
     runs-on: ubuntu-latest
+    # core26 is still in latest/beta until Ubuntu 26.04 ships, and the
+    # snap inside snapcraft's LXD container fails to install it. Keep
+    # the job wired up but don't block the workflow on its failures —
+    # it should start passing again once core26 hits latest/stable.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v6
 
