@@ -395,8 +395,7 @@ jobs:
           fi
           KEYS_DIR=$HOME/.appstoreconnect/private_keys
           mkdir -p $KEYS_DIR
-          echo -n "$ASC_API_KEY_P8" | base64 --decode \
-              -o "$KEYS_DIR/AuthKey_${ASC_API_KEY_ID}.p8"
+          printf %s "$ASC_API_KEY_P8" > "$KEYS_DIR/AuthKey_${ASC_API_KEY_ID}.p8"
           xcrun altool --upload-app \
             --type ios \
             --file Luma-${LUMA_VERSION}.ipa \
