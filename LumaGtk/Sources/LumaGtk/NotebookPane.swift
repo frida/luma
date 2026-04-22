@@ -72,6 +72,7 @@ final class NotebookPane {
         newNoteButton = Button(label: "+  New Note")
         newNoteButton.add(cssClass: "suggested-action")
         newNoteButton.add(cssClass: "pill")
+        newNoteButton.add(cssClass: "luma-notebook-fab")
         newNoteButton.halign = .end
         newNoteButton.valign = .end
         newNoteButton.marginEnd = 20
@@ -343,6 +344,7 @@ final class NotebookPane {
         let inner = Box(orientation: .vertical, spacing: 6)
         inner.marginStart = 12
         inner.marginEnd = 12
+        inner.marginTop = 8
         // The hex view renders its own inset (marginY = 6 pt) along
         // its trailing edge, so entries carrying binary data already
         // have breathing room below the last byte. Text-only notes
@@ -558,6 +560,7 @@ final class NotebookPane {
 
         let textScroll = ScrolledWindow()
         textScroll.hexpand = true
+        textScroll.vexpand = false
         textScroll.setSizeRequest(width: -1, height: 120)
         textScroll.set(child: textView)
         column.append(child: textScroll)

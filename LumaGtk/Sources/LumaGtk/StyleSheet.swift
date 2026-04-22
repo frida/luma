@@ -216,6 +216,11 @@ enum StyleSheet {
         padding-left: 0;
     }
 
+    button.luma-notebook-fab {
+        min-height: 0;
+        padding: 6px 18px;
+    }
+
     .luma-chat-bubble-local { background-color: alpha(@accent_bg_color, 0.20); border-radius: 12px; padding: 6px 10px; }
     .luma-chat-bubble-remote { background-color: alpha(@theme_fg_color, 0.08); border-radius: 12px; padding: 6px 10px; }
     .luma-invite-frame { border: 1px solid alpha(@theme_fg_color, 0.15); border-radius: 6px; padding: 8px 12px; }
