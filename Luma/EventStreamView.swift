@@ -48,7 +48,7 @@ struct EventStreamView: View {
                             }
 
                         if let empty = emptyStateReason {
-                            EmptyStateView(reason: empty)
+                            EmptyStateView(reason: empty, isCompactWidth: isCompactWidth)
                         }
 
                         if pendingNewEvents > 0 && (isPaused || !isAtBottom) {
@@ -564,9 +564,10 @@ private enum EventSourceFilter: String, CaseIterable, Identifiable {
 
 private struct EmptyStateView: View {
     let reason: EventStreamView.EmptyReason
+    let isCompactWidth: Bool
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: isCompactWidth ? 12 : 6) {
             switch reason {
             case .noEvents:
                 Text("No events yet")
