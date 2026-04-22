@@ -345,14 +345,8 @@ final class NotebookPane {
         let inner = Box(orientation: .vertical, spacing: 6)
         inner.marginStart = 12
         inner.marginEnd = 12
-        inner.marginTop = 8
-        // The hex view renders its own inset (marginY = 6 pt) along
-        // its trailing edge, so entries carrying binary data already
-        // have breathing room below the last byte. Text-only notes
-        // and captures need their own bottom margin so the details
-        // don't butt against the card edge.
-        let hasBinary = (entry.binaryData?.count ?? 0) > 0
-        inner.marginBottom = hasBinary ? 0 : 8
+        inner.marginTop = 12
+        inner.marginBottom = 12
         inner.hexpand = true
         card.append(child: inner)
 
@@ -505,6 +499,7 @@ final class NotebookPane {
         let button = Button()
         button.hasFrame = false
         button.add(cssClass: "flat")
+        button.add(cssClass: "luma-avatar-button")
         button.tooltipText = name
 
         let avatar = Adw.Avatar(size: 20, text: name, showInitials: true)
