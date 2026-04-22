@@ -107,7 +107,7 @@ final class NotebookPane {
                 guard let self, !Task.isCancelled else { return }
                 let now = Date()
                 for (id, date) in self.timestampDates {
-                    self.timestampLabels[id]?.label = RelativeTime.string(from: date, now: now)
+                    self.timestampLabels[id]?.label = NotebookTimestamp.string(from: date, now: now)
                 }
             }
         }
@@ -469,7 +469,7 @@ final class NotebookPane {
             header.append(child: makeEditorStack(entry.editors))
         }
 
-        let timestamp = Label(str: RelativeTime.string(from: entry.timestamp))
+        let timestamp = Label(str: NotebookTimestamp.string(from: entry.timestamp))
         timestamp.tooltipText = timeFormatter.string(from: entry.timestamp)
         timestamp.add(cssClass: "caption")
         timestamp.add(cssClass: "dim-label")

@@ -296,7 +296,7 @@ struct NotebookEntryRow: View {
 
             editorStack
 
-            RelativeTimeText(date: entry.timestamp)
+            NotebookTimestampLabel(date: entry.timestamp)
                 .help(entry.timestamp.formatted())
         }
     }
@@ -565,6 +565,19 @@ struct NotebookEmptyStateView: View {
                 .frame(width: 18, alignment: .trailing)
             text
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+struct NotebookTimestampLabel: View {
+    let date: Date
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            Text(NotebookTimestamp.string(from: date, now: context.date))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .monospacedDigit()
         }
     }
 }
