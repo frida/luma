@@ -1134,8 +1134,6 @@ final class MainWindow {
         headerBox.marginBottom = 4
 
         let icon = makeSessionIcon(for: session, node: engine?.node(forSessionID: session.id))
-        icon.pixelSize = 24
-        icon.add(cssClass: "luma-session-icon")
         headerBox.append(child: icon)
 
         let titles = Box(orientation: .vertical, spacing: 2)
@@ -1300,18 +1298,30 @@ final class MainWindow {
     private func makeSessionIcon(
         for session: LumaCore.ProcessSession,
         node: LumaCore.ProcessNode?
-    ) -> Gtk.Image {
+    ) -> Widget {
+        let pixelSize = 24
+
         if let lastIcon = node?.process.icons.last,
-            let image = IconPixbuf.makeImage(from: lastIcon, pixelSize: 24)
+            let image = IconPixbuf.makeImage(from: lastIcon, pixelSize: pixelSize)
         {
+            image.add(cssClass: "luma-session-icon")
             return image
         }
+
         if let data = session.iconPNGData,
-            let image = IconPixbuf.makeImage(fromPNGData: data, pixelSize: 24)
+            let image = IconPixbuf.makeImage(fromPNGData: data, pixelSize: pixelSize)
         {
+            image.add(cssClass: "luma-session-icon")
             return image
         }
-        return Gtk.Image(iconName: "application-x-executable-symbolic")
+
+        let placeholder = SessionPlaceholderView.make(
+            seed: "\(session.deviceID)/\(session.processName)",
+            displayName: session.processName,
+            pixelSize: pixelSize
+        )
+        placeholder.add(cssClass: "luma-session-icon")
+        return placeholder
     }
 
     private func instrumentIconName(for kind: LumaCore.InstrumentKind) -> String {

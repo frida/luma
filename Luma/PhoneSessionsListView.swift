@@ -347,11 +347,10 @@ struct PhoneSessionRow: View {
                 .aspectRatio(contentMode: .fit)
                 .cornerRadius(6)
         } else {
-            Image(systemName: "app")
-                .resizable()
-                .scaledToFit()
-                .foregroundStyle(.secondary)
-                .opacity(0.6)
+            SessionPlaceholderIcon(
+                seed: "\(session.deviceID)/\(session.processName)",
+                displayName: session.processName
+            )
         }
     }
 

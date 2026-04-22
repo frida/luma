@@ -194,17 +194,16 @@ private struct SidebarSessionHeaderRow: View {
                         .stroke(Color.accentColor.opacity(0.6), lineWidth: 1)
                 )
         } else {
-            Image(systemName: "app")
-                .resizable()
-                .scaledToFit()
-                .foregroundStyle(.secondary)
-                .opacity(0.7)
-                .cornerRadius(4)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.accentColor.opacity(0.4), lineWidth: 1)
-                )
+            SessionPlaceholderIcon(
+                seed: placeholderSeed,
+                displayName: displayProcessName,
+                cornerRadius: 4
+            )
         }
+    }
+
+    private var placeholderSeed: String {
+        "\(session.deviceID)/\(displayProcessName)"
     }
 
     private func reestablish() {
