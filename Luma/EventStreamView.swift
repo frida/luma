@@ -113,7 +113,7 @@ struct EventStreamView: View {
                         .textFieldStyle(.roundedBorder)
                         .focused($isSearchFocused)
                     pauseButton
-                    clearButton
+                    overflowMenu
                 }
             } else {
                 HStack(spacing: 8) {
@@ -144,7 +144,7 @@ struct EventStreamView: View {
                     }
 
                     pauseButton
-                    clearButton
+                    overflowMenu
 
                     if let onCollapseRequested {
                         Button {
@@ -241,17 +241,22 @@ struct EventStreamView: View {
         .help(isPaused ? "Resume live tail" : "Pause event stream")
     }
 
-    private var clearButton: some View {
-        Button {
-            workspace.engine.eventLog.clear()
-            resetAllEventState()
-            isPaused = false
-            isAtBottom = true
+    private var overflowMenu: some View {
+        Menu {
+            Button(role: .destructive) {
+                workspace.engine.eventLog.clear()
+                resetAllEventState()
+                isPaused = false
+                isAtBottom = true
+            } label: {
+                Label("Clear Events", systemImage: "trash")
+            }
         } label: {
-            Image(systemName: "trash")
+            Image(systemName: "ellipsis.circle")
         }
-        .buttonStyle(.borderless)
-        .help("Clear events")
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("More actions")
     }
 
     private var scrollContent: some View {

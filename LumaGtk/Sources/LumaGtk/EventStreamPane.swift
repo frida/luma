@@ -38,7 +38,8 @@ final class EventStreamPane {
     private let processFilterButton: MenuButton
     private let searchEntry: Entry
     private let pauseButton: ToggleButton
-    private let clearButton: Button
+    private let overflowMenuButton: MenuButton
+    private let clearEventsButton: Button
     private let liveIndicatorBox: Box
     private let liveDot: Label
     private let liveLabel: Label
@@ -138,9 +139,28 @@ final class EventStreamPane {
         pauseButton.add(cssClass: "flat")
         filterBar.append(child: pauseButton)
 
-        clearButton = Button(label: "Clear")
-        clearButton.add(cssClass: "flat")
-        filterBar.append(child: clearButton)
+        clearEventsButton = Button(label: "Clear Events")
+        clearEventsButton.add(cssClass: "flat")
+        clearEventsButton.add(cssClass: "luma-menu-destructive")
+
+        let overflowBox = Box(orientation: .vertical, spacing: 2)
+        overflowBox.marginStart = 6
+        overflowBox.marginEnd = 6
+        overflowBox.marginTop = 6
+        overflowBox.marginBottom = 6
+        overflowBox.append(child: clearEventsButton)
+
+        let overflowPopover = Popover()
+        overflowPopover.autohide = true
+        overflowPopover.set(child: overflowBox)
+
+        overflowMenuButton = MenuButton()
+        overflowMenuButton.set(iconName: "view-more-symbolic")
+        overflowMenuButton.hasFrame = false
+        overflowMenuButton.add(cssClass: "flat")
+        overflowMenuButton.tooltipText = "More actions"
+        overflowMenuButton.set(popover: overflowPopover)
+        filterBar.append(child: overflowMenuButton)
 
         collapseCaretButton = Button()
         collapseCaretButton.set(iconName: "go-down-symbolic")
@@ -232,8 +252,9 @@ final class EventStreamPane {
             }
         }
 
-        clearButton.onClicked { [weak self] _ in
+        clearEventsButton.onClicked { [weak self, weak overflowPopover] _ in
             MainActor.assumeIsolated {
+                overflowPopover?.popdown()
                 self?.clearEvents()
             }
         }
