@@ -951,7 +951,7 @@ struct TargetPickerView: View {
             .help("Add a remote frida-server or portal")
         }
         .padding(.horizontal, deviceListHeaderHorizontalPadding)
-        .padding(.top, 12)
+        .padding(.top, isCompactWidth ? 0 : 12)
         .padding(.bottom, isCompactWidth ? 16 : 8)
     }
 
