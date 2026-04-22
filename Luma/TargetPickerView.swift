@@ -416,7 +416,12 @@ struct TargetPickerView: View {
                                         .frame(width: 24, height: 24)
                                         .cornerRadius(4)
                                 } else {
-                                    defaultApplicationIcon()
+                                    IconPlaceholderView(
+                                        seed: app.identifier,
+                                        displayName: app.name,
+                                        cornerRadius: 4
+                                    )
+                                    .frame(width: 24, height: 24)
                                 }
 
                                 VStack(alignment: .leading, spacing: 2) {
@@ -654,7 +659,12 @@ struct TargetPickerView: View {
                                         .frame(width: 24, height: 24)
                                         .cornerRadius(4)
                                 } else {
-                                    defaultProcessIcon()
+                                    IconPlaceholderView(
+                                        seed: proc.name,
+                                        displayName: proc.name,
+                                        cornerRadius: 4
+                                    )
+                                    .frame(width: 24, height: 24)
                                 }
 
                                 VStack(alignment: .leading, spacing: 2) {
@@ -1151,28 +1161,6 @@ struct TargetPickerView: View {
     @ViewBuilder
     private func defaultDeviceIcon(size: CGFloat = 24) -> some View {
         Image(systemName: "ipad.and.iphone")
-            .resizable()
-            .scaledToFit()
-            .frame(width: size, height: size)
-            .foregroundStyle(.secondary)
-            .opacity(0.6)
-            .cornerRadius(4)
-    }
-
-    @ViewBuilder
-    private func defaultApplicationIcon(size: CGFloat = 24) -> some View {
-        Image(systemName: "app.badge")
-            .resizable()
-            .scaledToFit()
-            .frame(width: size, height: size)
-            .foregroundStyle(.secondary)
-            .opacity(0.6)
-            .cornerRadius(4)
-    }
-
-    @ViewBuilder
-    private func defaultProcessIcon(size: CGFloat = 24) -> some View {
-        Image(systemName: "app")
             .resizable()
             .scaledToFit()
             .frame(width: size, height: size)

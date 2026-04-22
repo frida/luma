@@ -1014,6 +1014,12 @@ final class TargetPicker {
             hbox.marginBottom = 4
             if let fridaIcon = proc.icons.last, let img = IconPixbuf.makeImage(from: fridaIcon, pixelSize: 24) {
                 hbox.append(child: img)
+            } else {
+                hbox.append(child: IconPlaceholderView.make(
+                    seed: proc.name,
+                    displayName: proc.name,
+                    pixelSize: 24
+                ))
             }
             let textBox = Box(orientation: .vertical, spacing: 0)
             textBox.valign = .center
@@ -1114,6 +1120,12 @@ final class TargetPicker {
             hbox.marginBottom = 4
             if let fridaIcon = app.icons.last, let img = IconPixbuf.makeImage(from: fridaIcon, pixelSize: 24) {
                 hbox.append(child: img)
+            } else {
+                hbox.append(child: IconPlaceholderView.make(
+                    seed: app.identifier,
+                    displayName: app.name,
+                    pixelSize: 24
+                ))
             }
             let textBox = Box(orientation: .vertical, spacing: 0)
             textBox.hexpand = true

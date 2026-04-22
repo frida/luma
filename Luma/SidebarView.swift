@@ -194,7 +194,7 @@ private struct SidebarSessionHeaderRow: View {
                         .stroke(Color.accentColor.opacity(0.6), lineWidth: 1)
                 )
         } else {
-            SessionPlaceholderIcon(
+            IconPlaceholderView(
                 seed: placeholderSeed,
                 displayName: displayProcessName,
                 cornerRadius: 4

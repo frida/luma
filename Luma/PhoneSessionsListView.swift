@@ -347,7 +347,7 @@ struct PhoneSessionRow: View {
                 .aspectRatio(contentMode: .fit)
                 .cornerRadius(6)
         } else {
-            SessionPlaceholderIcon(
+            IconPlaceholderView(
                 seed: "\(session.deviceID)/\(session.processName)",
                 displayName: session.processName
             )

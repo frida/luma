@@ -4,10 +4,10 @@ import Gtk
 import LumaCore
 
 @MainActor
-enum SessionPlaceholderView {
+enum IconPlaceholderView {
     static func make(seed: String, displayName: String, pixelSize: Int) -> Widget {
-        let initials = SessionPlaceholder.initials(for: displayName)
-        let palette = SessionPlaceholder.palette(for: seed)
+        let initials = IconPlaceholder.initials(for: displayName)
+        let palette = IconPlaceholder.palette(for: seed)
 
         let area = DrawingArea()
         area.setSizeRequest(width: pixelSize, height: pixelSize)
@@ -31,7 +31,7 @@ enum SessionPlaceholderView {
         ctx: Cairo.ContextRef,
         width: Double,
         height: Double,
-        palette: SessionPlaceholder.Palette,
+        palette: IconPlaceholder.Palette,
         initials: String
     ) {
         let radius = 4.0

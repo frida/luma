@@ -1315,7 +1315,7 @@ final class MainWindow {
             return image
         }
 
-        let placeholder = SessionPlaceholderView.make(
+        let placeholder = IconPlaceholderView.make(
             seed: "\(session.deviceID)/\(session.processName)",
             displayName: session.processName,
             pixelSize: pixelSize

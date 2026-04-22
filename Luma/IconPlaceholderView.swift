@@ -1,7 +1,7 @@
 import LumaCore
 import SwiftUI
 
-struct SessionPlaceholderIcon: View {
+struct IconPlaceholderView: View {
     let seed: String
     let displayName: String
     var cornerRadius: CGFloat = 6
@@ -16,7 +16,7 @@ struct SessionPlaceholderIcon: View {
                     endPoint: .bottomTrailing
                 )
 
-                Text(SessionPlaceholder.initials(for: displayName))
+                Text(IconPlaceholder.initials(for: displayName))
                     .font(.system(size: side * 0.46, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white)
                     .minimumScaleFactor(0.5)
@@ -31,7 +31,7 @@ struct SessionPlaceholderIcon: View {
     }
 
     private var gradientColors: [Color] {
-        let palette = SessionPlaceholder.palette(for: seed)
+        let palette = IconPlaceholder.palette(for: seed)
         return [
             Color(
                 hue: palette.primaryHue,
