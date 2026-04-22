@@ -917,40 +917,56 @@ struct TargetPickerView: View {
     }
 
     private var deviceListHeaderView: some View {
-        HStack(spacing: 8) {
-            if store.discoveryState == .discovering {
-                ProgressView()
-                    .controlSize(.small)
-            } else {
-                Circle()
-                    .fill(store.discoveryState == .ready ? Color.green : Color.orange)
-                    .frame(width: 8, height: 8)
-                    .overlay(
-                        Circle()
-                            .stroke(Color.secondary.opacity(0.3), lineWidth: 0.5)
-                    )
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("Devices")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+
+                if store.discoveryState == .discovering {
+                    ProgressView()
+                        .controlSize(.mini)
+                }
+
+                Spacer()
+
+                Button {
+                    showingAddRemoteSheet = true
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundStyle(.tint)
+                        .imageScale(.large)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Add Remote…")
+                .help("Add a remote frida-server or portal")
             }
 
-            Text(store.discoveryState == .discovering ? "Searching for devices…" : "Devices")
-                .font(.subheadline)
+            Text(discoveryHelpText)
+                .font(.caption)
                 .foregroundStyle(.secondary)
-
-            Spacer()
-
-            Button {
-                showingAddRemoteSheet = true
-            } label: {
-                Image(systemName: "plus.circle.fill")
-                    .foregroundStyle(.tint)
-                    .padding(4)
-            }
-            .buttonStyle(.borderless)
-            .accessibilityLabel("Add Remote…")
-            .help("Add Remote…")
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(Color.secondary.opacity(0.06))
+        .padding(.horizontal, deviceListHeaderHorizontalPadding)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+    }
+
+    private var discoveryHelpText: String {
+        switch store.discoveryState {
+        case .discovering:
+            return "Searching for locally connected and remote targets…"
+        case .ready:
+            return "Pick a device to attach to a running process or spawn a new one."
+        }
+    }
+
+    private var deviceListHeaderHorizontalPadding: CGFloat {
+        #if canImport(UIKit)
+            return isCompactWidth ? 20 : 16
+        #else
+            return 12
+        #endif
     }
 
     @ViewBuilder
