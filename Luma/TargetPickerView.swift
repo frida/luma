@@ -988,6 +988,75 @@ struct TargetPickerView: View {
 
     @ViewBuilder
     private func addRemoteSheet() -> some View {
+        #if canImport(UIKit)
+            addRemoteSheetIOS
+        #else
+            addRemoteSheetMac
+        #endif
+    }
+
+    #if canImport(UIKit)
+    private var addRemoteSheetIOS: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("hostname:port", text: $remoteAddress)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                } header: {
+                    Text("Address")
+                } footer: {
+                    Text("Enter the address of a frida-server or portal.")
+                }
+
+                Section("TLS Certificate") {
+                    TextField("PEM-encoded (optional)", text: $remoteCertificate, axis: .vertical)
+                        .lineLimit(3, reservesSpace: true)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                }
+
+                Section {
+                    DisclosureGroup("Advanced Options", isExpanded: $showingAdvancedRemoteOptions) {
+                        TextField("Origin", text: $remoteOrigin)
+                            .textInputAutocapitalization(.never)
+                            .disableAutocorrection(true)
+                        TextField("Bearer / auth token", text: $remoteToken)
+                            .textInputAutocapitalization(.never)
+                            .disableAutocorrection(true)
+                        TextField("Keepalive seconds", text: $remoteKeepalive)
+                            .keyboardType(.numberPad)
+                    }
+                }
+
+                if let addRemoteError {
+                    Section {
+                        Text(addRemoteError)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle("Add Remote Device")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { cancelAddRemote() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") {
+                        Task { await addRemote() }
+                    }
+                    .disabled(remoteAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+    #endif
+
+    #if !canImport(UIKit)
+    private var addRemoteSheetMac: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Add Remote Device")
@@ -1065,11 +1134,8 @@ struct TargetPickerView: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .frame(minWidth: 420)
-        #if canImport(UIKit)
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
-        #endif
     }
+    #endif
 
     @ViewBuilder
     private func labeledTextField(
