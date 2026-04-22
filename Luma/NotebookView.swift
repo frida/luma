@@ -275,7 +275,9 @@ struct NotebookEntryRow: View {
 
     @ViewBuilder
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(alignment: .center, spacing: 10) {
+            editorStack
+
             if let processName = entry.processName {
                 Text(processName)
                     .font(.caption2)
@@ -290,11 +292,10 @@ struct NotebookEntryRow: View {
                     .font(.headline)
                     .lineLimit(1)
                     .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Spacer(minLength: 0)
             }
-
-            Spacer()
-
-            editorStack
 
             NotebookTimestampLabel(date: entry.timestamp)
                 .help(entry.timestamp.formatted())
@@ -304,9 +305,10 @@ struct NotebookEntryRow: View {
     @ViewBuilder
     private var editorStack: some View {
         if !entry.editors.isEmpty {
-            HStack(spacing: -6) {
-                ForEach(entry.editors, id: \.id) { editor in
+            HStack(spacing: -8) {
+                ForEach(Array(entry.editors.enumerated()), id: \.element.id) { index, editor in
                     editorAvatar(editor)
+                        .zIndex(Double(entry.editors.count - index))
                 }
             }
         }
@@ -325,9 +327,9 @@ struct NotebookEntryRow: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .frame(width: 18, height: 18)
+        .frame(width: 20, height: 20)
         .clipShape(Circle())
-        .overlay(Circle().strokeBorder(Color.platformWindowBackground, lineWidth: 1.5))
+        .overlay(Circle().strokeBorder(Color.platformWindowBackground, lineWidth: 2))
         .help(name)
         .onTapGesture {
             if let url = URL(string: "https://github.com/\(editor.id)") {

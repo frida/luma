@@ -1,5 +1,6 @@
 import Adw
 import CGtk
+import CPango
 import Foundation
 import Gtk
 import LumaCore
@@ -447,8 +448,12 @@ final class NotebookPane {
     }
 
     private func makeHeader(for entry: LumaCore.NotebookEntry) -> Box {
-        let header = Box(orientation: .horizontal, spacing: 8)
+        let header = Box(orientation: .horizontal, spacing: 10)
         header.hexpand = true
+
+        if !entry.editors.isEmpty {
+            header.append(child: makeEditorStack(entry.editors))
+        }
 
         if let processName = entry.processName, !processName.isEmpty {
             let chip = Label(str: processName)
@@ -460,16 +465,10 @@ final class NotebookPane {
         let title = Label(str: entry.title.isEmpty ? "Note" : entry.title)
         title.add(cssClass: "heading")
         title.halign = .start
+        title.hexpand = true
         title.selectable = true
+        title.ellipsize = PangoEllipsizeMode(rawValue: 3)
         header.append(child: title)
-
-        let spacer = Label(str: "")
-        spacer.hexpand = true
-        header.append(child: spacer)
-
-        if !entry.editors.isEmpty {
-            header.append(child: makeEditorStack(entry.editors))
-        }
 
         let timestamp = Label(str: NotebookTimestamp.string(from: entry.timestamp))
         timestamp.tooltipText = timeFormatter.string(from: entry.timestamp)
@@ -482,12 +481,23 @@ final class NotebookPane {
         return header
     }
 
-    private func makeEditorStack(_ editors: [LumaCore.NotebookEntry.Author]) -> Box {
-        let row = Box(orientation: .horizontal, spacing: 2)
-        for editor in editors {
-            row.append(child: makeEditorAvatar(editor))
+    private func makeEditorStack(_ editors: [LumaCore.NotebookEntry.Author]) -> Widget {
+        let avatarSize = 20
+        let overlap = 8
+        let step = avatarSize - overlap
+        let totalWidth = avatarSize + (editors.count - 1) * step
+
+        let fixed = Fixed()
+        fixed.setSizeRequest(width: totalWidth, height: avatarSize)
+        fixed.halign = .start
+        fixed.valign = .center
+
+        for index in (0..<editors.count).reversed() {
+            let x = Double(index * step)
+            fixed.put(widget: makeEditorAvatar(editors[index]), x: x, y: 0)
         }
-        return row
+
+        return fixed
     }
 
     private func makeEditorAvatar(_ editor: LumaCore.NotebookEntry.Author) -> Button {
@@ -497,7 +507,8 @@ final class NotebookPane {
         button.add(cssClass: "flat")
         button.tooltipText = name
 
-        let avatar = Adw.Avatar(size: 18, text: name, showInitials: true)
+        let avatar = Adw.Avatar(size: 20, text: name, showInitials: true)
+        avatar.add(cssClass: "luma-editor-avatar")
         button.set(child: avatar)
 
         if !editor.avatarURL.isEmpty,
