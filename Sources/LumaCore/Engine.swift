@@ -162,13 +162,6 @@ public final class Engine {
         if let otherEntry {
             e.timestamp = otherEntry.timestamp.addingTimeInterval(0.001)
         }
-        if e.editors.isEmpty, let user = gitHubAuth.currentUser {
-            e.editors = [NotebookEntry.Author(
-                id: user.id,
-                name: user.name,
-                avatarURL: user.avatarURL?.absoluteString ?? ""
-            )]
-        }
         if e.position == 0 {
             let maxPos = (try? store.maxNotebookEntryPosition()) ?? 0
             e.position = maxPos + Self.notebookPositionStep
