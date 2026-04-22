@@ -127,12 +127,12 @@ struct EventStreamView: View {
                         regularProcessFilter
                     }
 
-                    Spacer()
-
                     TextField("Search", text: $searchText)
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 220)
                         .focused($isSearchFocused)
+
+                    Spacer()
 
                     HStack(spacing: 6) {
                         Circle()
