@@ -711,6 +711,7 @@ final class NotebookPane {
         let button = Button(label: "New Note")
         button.add(cssClass: "suggested-action")
         button.add(cssClass: "pill")
+        button.add(cssClass: "luma-notebook-fab")
         button.halign = .center
         button.marginTop = 6
         button.onClicked { _ in
