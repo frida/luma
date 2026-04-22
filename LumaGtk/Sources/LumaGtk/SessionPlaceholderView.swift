@@ -11,6 +11,10 @@ enum SessionPlaceholderView {
 
         let area = DrawingArea()
         area.setSizeRequest(width: pixelSize, height: pixelSize)
+        area.halign = .center
+        area.valign = .center
+        area.hexpand = false
+        area.vexpand = false
         area.setDrawFunc { _, ctx, width, height in
             paint(
                 ctx: ctx,
