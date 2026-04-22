@@ -1315,13 +1315,11 @@ final class MainWindow {
             return image
         }
 
-        let placeholder = IconPlaceholderView.make(
+        return IconPlaceholderView.make(
             seed: "\(session.deviceID)/\(session.processName)",
             displayName: session.processName,
             pixelSize: pixelSize
         )
-        placeholder.add(cssClass: "luma-session-icon")
-        return placeholder
     }
 
     private func instrumentIconName(for kind: LumaCore.InstrumentKind) -> String {
