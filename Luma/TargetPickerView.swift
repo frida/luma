@@ -927,41 +927,44 @@ struct TargetPickerView: View {
     }
 
     private var deviceListHeaderView: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("Devices")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            deviceListHeaderLeading
 
-                if store.discoveryState == .discovering {
-                    ProgressView()
-                        .controlSize(.mini)
-                }
-
-                Spacer()
-
-                Button {
-                    showingAddRemoteSheet = true
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .foregroundStyle(.tint)
-                        .imageScale(.large)
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Add Remote…")
-                .help("Add a remote frida-server or portal")
+            if store.discoveryState == .discovering {
+                ProgressView()
+                    .controlSize(.mini)
             }
 
-            if isCompactWidth {
-                Text(discoveryHelpText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Spacer()
+
+            Button {
+                showingAddRemoteSheet = true
+            } label: {
+                Image(systemName: "plus.circle.fill")
+                    .foregroundStyle(.tint)
+                    .imageScale(.large)
             }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Add Remote…")
+            .help("Add a remote frida-server or portal")
         }
         .padding(.horizontal, deviceListHeaderHorizontalPadding)
         .padding(.top, 12)
-        .padding(.bottom, 8)
+        .padding(.bottom, isCompactWidth ? 16 : 8)
+    }
+
+    @ViewBuilder
+    private var deviceListHeaderLeading: some View {
+        if isCompactWidth {
+            Text(discoveryHelpText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            Text("Devices")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+        }
     }
 
     private var discoveryHelpText: String {
