@@ -158,7 +158,7 @@ struct EventStreamView: View {
                 }
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, isCompactWidth ? 16 : 8)
         .padding(.vertical, 4)
     }
 
@@ -254,8 +254,8 @@ struct EventStreamView: View {
         } label: {
             Image(systemName: "ellipsis.circle")
         }
+        .buttonStyle(.borderless)
         .menuIndicator(.hidden)
-        .fixedSize()
         .help("More actions")
     }
 
