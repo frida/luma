@@ -143,7 +143,7 @@ let package = Package(
         .macOS(.v15),
     ],
     dependencies: [
-        .package(path: ".."),
+        .package(name: "luma", path: ".."),
         .package(url: "https://github.com/frida/SwiftGtk.git", branch: "gtk4-development"),
         .package(url: "https://github.com/frida/SwiftAdw.git", branch: "development"),
     ],
