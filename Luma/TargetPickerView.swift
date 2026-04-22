@@ -923,7 +923,9 @@ struct TargetPickerView: View {
                 }
                 }
             }
+            .modifier(CompactGroupedList(isCompactWidth: isCompactWidth))
         }
+        .modifier(CompactGroupedBackground(isCompactWidth: isCompactWidth))
     }
 
     private var deviceListHeaderView: some View {
@@ -1265,5 +1267,40 @@ extension String {
     fileprivate var nilIfBlank: String? {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+private struct CompactGroupedBackground: ViewModifier {
+    let isCompactWidth: Bool
+
+    func body(content: Content) -> some View {
+        #if canImport(UIKit)
+            if isCompactWidth {
+                content.background(
+                    Color(UIColor.systemGroupedBackground)
+                        .ignoresSafeArea()
+                )
+            } else {
+                content
+            }
+        #else
+            content
+        #endif
+    }
+}
+
+private struct CompactGroupedList: ViewModifier {
+    let isCompactWidth: Bool
+
+    func body(content: Content) -> some View {
+        #if canImport(UIKit)
+            if isCompactWidth {
+                content.scrollContentBackground(.hidden)
+            } else {
+                content
+            }
+        #else
+            content
+        #endif
     }
 }
