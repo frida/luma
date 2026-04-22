@@ -971,80 +971,87 @@ struct TargetPickerView: View {
 
     @ViewBuilder
     private func addRemoteSheet() -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Add Remote Device")
-                .font(.headline)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Add Remote Device")
+                    .font(.headline)
 
-            Text("Enter the address of a frida-server or portal.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            labeledTextField(
-                "Address",
-                placeholder: "hostname:port",
-                text: $remoteAddress
-            )
-
-            labeledTextField(
-                "TLS certificate (optional)",
-                placeholder: "PEM-encoded certificate",
-                text: $remoteCertificate,
-                multiline: true
-            )
-
-            DisclosureGroup(
-                isExpanded: $showingAdvancedRemoteOptions,
-                content: {
-                    VStack(spacing: 8) {
-                        labeledTextField(
-                            "Origin (optional)",
-                            placeholder: "Origin",
-                            text: $remoteOrigin
-                        )
-
-                        labeledTextField(
-                            "Token (optional)",
-                            placeholder: "Bearer / auth token",
-                            text: $remoteToken
-                        )
-
-                        labeledTextField(
-                            "Keepalive Interval (optional)",
-                            placeholder: "Seconds",
-                            text: $remoteKeepalive
-                        )
-                    }
-                    .padding(.top, 8)
-                },
-                label: {
-                    Text("Advanced Options")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            )
-
-            if let addRemoteError {
-                Text(addRemoteError)
+                Text("Enter the address of a frida-server or portal.")
                     .font(.footnote)
-                    .foregroundStyle(.red)
-            }
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-            HStack {
-                Spacer()
-                Button("Cancel") {
-                    cancelAddRemote()
-                }
-                Button("Add") {
-                    Task {
-                        await addRemote()
+                labeledTextField(
+                    "Address",
+                    placeholder: "hostname:port",
+                    text: $remoteAddress
+                )
+
+                labeledTextField(
+                    "TLS certificate (optional)",
+                    placeholder: "PEM-encoded certificate",
+                    text: $remoteCertificate,
+                    multiline: true
+                )
+
+                DisclosureGroup(
+                    isExpanded: $showingAdvancedRemoteOptions,
+                    content: {
+                        VStack(spacing: 8) {
+                            labeledTextField(
+                                "Origin (optional)",
+                                placeholder: "Origin",
+                                text: $remoteOrigin
+                            )
+
+                            labeledTextField(
+                                "Token (optional)",
+                                placeholder: "Bearer / auth token",
+                                text: $remoteToken
+                            )
+
+                            labeledTextField(
+                                "Keepalive Interval (optional)",
+                                placeholder: "Seconds",
+                                text: $remoteKeepalive
+                            )
+                        }
+                        .padding(.top, 8)
+                    },
+                    label: {
+                        Text("Advanced Options")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
+                )
+
+                if let addRemoteError {
+                    Text(addRemoteError)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
                 }
-                .keyboardShortcut(.defaultAction)
+
+                HStack {
+                    Spacer()
+                    Button("Cancel") {
+                        cancelAddRemote()
+                    }
+                    Button("Add") {
+                        Task {
+                            await addRemote()
+                        }
+                    }
+                    .keyboardShortcut(.defaultAction)
+                }
             }
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .padding()
         .frame(minWidth: 420)
+        #if canImport(UIKit)
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        #endif
     }
 
     @ViewBuilder
