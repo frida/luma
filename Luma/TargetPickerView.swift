@@ -953,9 +953,11 @@ struct TargetPickerView: View {
                 .help("Add a remote frida-server or portal")
             }
 
-            Text(discoveryHelpText)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if isCompactWidth {
+                Text(discoveryHelpText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(.horizontal, deviceListHeaderHorizontalPadding)
         .padding(.top, 12)
