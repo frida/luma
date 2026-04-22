@@ -80,13 +80,19 @@ struct NotebookView: View {
                 addUserNote(after: nil)
             } label: {
                 Label("New Note", systemImage: "plus")
+                    .font(.callout.weight(.medium))
                     .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
             }
             .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            #if canImport(UIKit)
+            .controlSize(.regular)
+            #else
             .controlSize(.small)
+            #endif
+            .shadow(radius: 3, y: 1)
             .padding()
-            .clipShape(Capsule())
-            .shadow(radius: 3)
             .opacity(isAnyEditing ? 0 : 1)
             .allowsHitTesting(!isAnyEditing)
             .animation(.easeInOut(duration: 0.15), value: isAnyEditing)
