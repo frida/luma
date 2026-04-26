@@ -180,6 +180,13 @@ if (Test-Path $schemasDir) {
         Remove-Item -Force
 }
 
+if ($Version -match '^(\d+)\.(\d+)\.(\d+)(?:-dev\.(\d+))?') {
+    $build = if ($Matches[4]) { $Matches[4] } else { '0' }
+    $wixVersion = "$($Matches[1]).$($Matches[2]).$($Matches[3]).$build"
+} else {
+    throw "Cannot derive MSI Product/Version from '$Version'"
+}
+
 $msiName = "Luma-$Version-$Arch.msi"
 $wixObj  = Join-Path $OutputDir 'wixobj'
 New-Item -ItemType Directory -Force -Path $wixObj | Out-Null
@@ -195,7 +202,7 @@ $licensePath = (Join-Path $pkg 'data\license.rtf')  -replace '\\','/'
 @"
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-  <Product Id="*" Name="Luma" Language="1033" Version="$Version"
+  <Product Id="*" Name="Luma" Language="1033" Version="$wixVersion"
            Manufacturer="Frida" UpgradeCode="5d2a2a6f-1c1e-4f80-96bb-2c3e4f6a5b11">
     <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
     <MajorUpgrade DowngradeErrorMessage="A newer version of Luma is already installed." />
