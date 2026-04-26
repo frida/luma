@@ -124,7 +124,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: ${{ runner.temp }}/frida-core/src/compiler/go.mod
-          cache-dependency-path: ${{ runner.temp }}/frida-core/src/compiler/go.mod
+          cache: false
 
       - name: Build frida-core
         if: steps.cache.outputs.cache-hit != 'true'
