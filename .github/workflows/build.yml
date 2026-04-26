@@ -11,7 +11,6 @@ env:
   RADARE2_REF: "7ed1e8c6fd000b99c8aa6835e12bef1657d92746"
   SPARKLE_VERSION: "2.9.1"
   SWIFT_VERSION: "6.2"
-  LUMA_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '0.1.0' }}
   # ilammy/msvc-dev-cmd hasn't cut a Node-24-compatible release yet
   # (v1 is its only major). Opt into Node 24 ahead of GitHub's
   # forced migration in June 2026 so the warning doesn't clutter
@@ -19,6 +18,51 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
+      build: ${{ steps.compute.outputs.build }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - id: compute
+        run: |
+          DESCRIPTION=$(git describe --tags --always --long --match='[0-9]*.[0-9]*.[0-9]*')
+          if [[ "$DESCRIPTION" != *-*-g* ]]; then
+            VERSION="0.0.0"
+          else
+            TAG="${DESCRIPTION%-*-g*}"
+            REST="${DESCRIPTION#${TAG}-}"
+            DISTANCE="${REST%-g*}"
+            if [[ "$TAG" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-(.+))?$ ]]; then
+              MAJOR="${BASH_REMATCH[1]}"
+              MINOR="${BASH_REMATCH[2]}"
+              MICRO="${BASH_REMATCH[3]}"
+              SUFFIX="${BASH_REMATCH[5]}"
+              if [ -z "$SUFFIX" ]; then
+                if [ "$DISTANCE" -eq 0 ]; then
+                  VERSION="$MAJOR.$MINOR.$MICRO"
+                else
+                  VERSION="$MAJOR.$MINOR.$((MICRO + 1))-dev.$((DISTANCE - 1))"
+                fi
+              else
+                BASE="$MAJOR.$MINOR.$MICRO-$SUFFIX"
+                if [ "$DISTANCE" -eq 0 ]; then
+                  VERSION="$BASE"
+                else
+                  VERSION="$BASE-dev.$((DISTANCE - 1))"
+                fi
+              fi
+            else
+              echo "Unexpected tag format: $TAG" >&2
+              exit 1
+            fi
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "build=${{ github.run_number }}" >> $GITHUB_OUTPUT
+
   frida-core:
     runs-on: macos-26
     strategy:
@@ -194,7 +238,10 @@ jobs:
     # matrix entries run on the free arm64 runner — no paid -large
     # runner needed for the Intel slice.
     runs-on: macos-26
-    needs: xcframework
+    needs: [version, xcframework]
+    env:
+      LUMA_VERSION: ${{ needs.version.outputs.version }}
+      LUMA_BUILD: ${{ needs.version.outputs.build }}
     strategy:
       fail-fast: false
       matrix:
@@ -302,6 +349,8 @@ jobs:
             -configuration Release \
             -derivedDataPath build/.derived \
             -arch ${{ matrix.arch }} \
+            MARKETING_VERSION=$LUMA_VERSION \
+            CURRENT_PROJECT_VERSION=$LUMA_BUILD \
             CODE_SIGN_IDENTITY=- \
             CODE_SIGNING_ALLOWED=NO \
             build
@@ -481,7 +530,10 @@ jobs:
 
   ios:
     runs-on: macos-26
-    needs: xcframework
+    needs: [version, xcframework]
+    env:
+      LUMA_VERSION: ${{ needs.version.outputs.version }}
+      LUMA_BUILD: ${{ needs.version.outputs.build }}
     steps:
       - uses: actions/checkout@v6
 
@@ -632,7 +684,7 @@ jobs:
             DEVELOPMENT_TEAM=$TEAM_ID \
             LUMA_IOS_PROFILE=$LUMA_IOS_PROFILE \
             MARKETING_VERSION=$LUMA_VERSION \
-            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            CURRENT_PROJECT_VERSION=$LUMA_BUILD \
             archive
 
       - name: Export IPA
@@ -690,6 +742,9 @@ jobs:
   fedora:
     runs-on: ubuntu-latest
     container: fedora:43
+    needs: version
+    env:
+      LUMA_VERSION: ${{ needs.version.outputs.version }}
     steps:
       - name: Install system dependencies
         run: |
@@ -838,6 +893,9 @@ jobs:
   ubuntu:
     runs-on: ubuntu-latest
     container: ubuntu:25.10
+    needs: version
+    env:
+      LUMA_VERSION: ${{ needs.version.outputs.version }}
     steps:
       - name: Install system dependencies
         env:
@@ -981,6 +1039,9 @@ jobs:
 
   flatpak:
     runs-on: ubuntu-latest
+    needs: version
+    env:
+      LUMA_VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v6
 
@@ -1046,6 +1107,9 @@ jobs:
 
   snap:
     runs-on: ubuntu-latest
+    needs: version
+    env:
+      LUMA_VERSION: ${{ needs.version.outputs.version }}
     # core26 is still in latest/beta until Ubuntu 26.04 ships, and the
     # snap inside snapcraft's LXD container fails to install it. Keep
     # the job wired up but don't block the workflow on its failures —
@@ -1099,6 +1163,9 @@ jobs:
   windows:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 240
+    needs: version
+    env:
+      LUMA_VERSION: ${{ needs.version.outputs.version }}
     strategy:
       fail-fast: false
       matrix:
