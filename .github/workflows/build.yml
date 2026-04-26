@@ -7,7 +7,7 @@ on:
   pull_request:
 
 env:
-  FRIDA_CORE_REF: "c76072867719d5b3fe9770fc1a7ca26b2d030939"
+  FRIDA_CORE_REF: "07f8d8dd9aff726fcea805f34b03dc0d9579b388"
   RADARE2_REF: "7ed1e8c6fd000b99c8aa6835e12bef1657d92746"
   SPARKLE_VERSION: "2.9.1"
   SWIFT_VERSION: "6.2"
@@ -140,7 +140,8 @@ jobs:
               --disable-inject \
               --disable-gadget \
               --disable-tests \
-              ${{ matrix.extra_disables }}
+              ${{ matrix.extra_disables }} \
+              -- --force-fallback-for=nice
           make -j$(sysctl -n hw.ncpu)
           make install
           DEVKIT_SRC=$RUNNER_TEMP/frida-prefix/lib/frida-1.0/devkits/core
