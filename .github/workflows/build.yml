@@ -438,7 +438,9 @@ jobs:
           fi
           PROFILE_PLIST=$RUNNER_TEMP/profile.plist
           security cms -D -i build/Luma.app/Contents/embedded.provisionprofile > $PROFILE_PLIST
-          PROFILE_APS=$(plutil -extract 'Entitlements.aps-environment' raw -o - $PROFILE_PLIST 2>/dev/null || true)
+          PROFILE_APS=$(/usr/libexec/PlistBuddy -c \
+              "Print :Entitlements:com.apple.developer.aps-environment" \
+              $PROFILE_PLIST 2>/dev/null || true)
           if [ "$PROFILE_APS" != "production" ]; then
             echo "::warning::Embedded provisioning profile aps-environment is '$PROFILE_APS', expected 'production'."
             echo "::warning::Regenerate APPLE_DEVELOPER_ID_PROFILE with Push Notifications enabled; the signed app will fail to launch until then."
