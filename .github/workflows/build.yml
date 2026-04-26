@@ -7,7 +7,7 @@ on:
   pull_request:
 
 env:
-  FRIDA_CORE_REF: "440a03f0d4aa731fd5634e023f4e6af8c709335f"
+  FRIDA_CORE_REF: "5cb91d9e2543dd9b975cc5d46df9855c46a7ab4c"
   RADARE2_REF: "7ed1e8c6fd000b99c8aa6835e12bef1657d92746"
   SPARKLE_VERSION: "2.9.1"
   SWIFT_VERSION: "6.2"
@@ -19,11 +19,179 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  frida-core:
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { slice: macos-arm64,         min_os: 'macos=15.0', extra_disables: '' }
+          - { slice: macos-x86_64,        min_os: 'macos=15.0', extra_disables: '' }
+          - { slice: ios-arm64,           min_os: 'ios=18.0',   extra_disables: '--disable-local-backend --disable-simmy-backend --disable-fruity-backend --disable-droidy-backend --disable-barebone-backend' }
+          - { slice: ios-arm64-simulator, min_os: 'ios=18.0',   extra_disables: '--disable-local-backend --disable-simmy-backend --disable-fruity-backend --disable-droidy-backend --disable-barebone-backend' }
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      - name: Restore frida-core cache
+        id: cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/devkit
+          key: ${{ runner.os }}-frida-core-devkit-${{ matrix.slice }}-${{ env.FRIDA_CORE_REF }}-v1
+
+      - name: Set up Apple codesigning identities
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          CERTIFICATES_P12: ${{ secrets.APPLE_CERTIFICATES_P12 }}
+          CERTIFICATES_PASSWORD: ${{ secrets.APPLE_CERTIFICATES_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+        run: |
+          if [ -z "$CERTIFICATES_P12" ]; then
+            echo "MACOS_CERTID=-" >> $GITHUB_ENV
+            echo "IOS_CERTID=-" >> $GITHUB_ENV
+            exit 0
+          fi
+          CERTIFICATE_PATH=$RUNNER_TEMP/apple-certificates.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/luma-frida-core.keychain-db
+          echo -n "$CERTIFICATES_P12" | base64 --decode -o $CERTIFICATE_PATH
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security import $CERTIFICATE_PATH -P "$CERTIFICATES_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+          rm $CERTIFICATE_PATH
+          {
+            echo "MACOS_CERTID=$(security find-identity -v -p codesigning | grep 'Developer ID Application: ' | awk '{ print $2 }')"
+            echo "IOS_CERTID=$(security find-identity -v -p codesigning | grep 'Apple Distribution: ' | awk '{ print $2 }')"
+          } >> $GITHUB_ENV
+
+      - name: Clone frida-core
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/frida/frida-core.git $RUNNER_TEMP/frida-core
+          cd $RUNNER_TEMP/frida-core
+          git checkout $FRIDA_CORE_REF
+          git submodule update --init --recursive --depth 1
+
+      - name: Install Go toolchain
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ runner.temp }}/frida-core/src/compiler/go.mod
+          cache-dependency-path: ${{ runner.temp }}/frida-core/src/compiler/go.mod
+
+      - name: Build frida-core
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          cd $RUNNER_TEMP/frida-core
+          ./configure \
+              --host=${{ matrix.slice }} \
+              --prefix=$RUNNER_TEMP/frida-prefix \
+              --with-apple-min-os=${{ matrix.min_os }} \
+              --with-devkits=core \
+              --disable-server \
+              --disable-portal \
+              --disable-inject \
+              --disable-gadget \
+              --disable-tests \
+              ${{ matrix.extra_disables }}
+          make -j$(sysctl -n hw.ncpu)
+          make install
+          DEVKIT_SRC=$RUNNER_TEMP/frida-prefix/lib/frida-1.0/devkits/core
+          mkdir -p $RUNNER_TEMP/devkit
+          cp $DEVKIT_SRC/libfrida-core.a $RUNNER_TEMP/devkit/
+          cp $DEVKIT_SRC/frida-core.h $RUNNER_TEMP/devkit/
+
+      - name: Save frida-core cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/devkit
+          key: ${{ runner.os }}-frida-core-devkit-${{ matrix.slice }}-${{ env.FRIDA_CORE_REF }}-v1
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: frida-core-devkit-${{ matrix.slice }}
+          path: ${{ runner.temp }}/devkit
+          if-no-files-found: error
+
+  xcframework:
+    runs-on: macos-26
+    needs: frida-core
+    steps:
+      - name: Restore xcframework cache
+        id: cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/FridaCore.xcframework
+          key: ${{ runner.os }}-frida-core-xcframework-${{ env.FRIDA_CORE_REF }}-v1
+
+      - name: Download devkit artifacts
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/devkits
+          pattern: frida-core-devkit-*
+
+      - name: Assemble FridaCore.xcframework
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          DEVKITS=$RUNNER_TEMP/devkits
+          MACOS_LIB=$DEVKITS/macos-universal
+          mkdir -p $MACOS_LIB
+          lipo -create \
+              $DEVKITS/frida-core-devkit-macos-arm64/libfrida-core.a \
+              $DEVKITS/frida-core-devkit-macos-x86_64/libfrida-core.a \
+              -output $MACOS_LIB/libfrida-core.a
+
+          assemble_headers() {
+            slice=$1
+            src=$2
+            out=$RUNNER_TEMP/headers-$slice
+            mkdir -p $out/FridaCore
+            cp $src/frida-core.h $out/
+            cat > $out/FridaCore/module.modulemap <<'EOF'
+          module FridaCore [extern_c] {
+            header "../frida-core.h"
+            export *
+          }
+          EOF
+          }
+          assemble_headers macos-universal       $DEVKITS/frida-core-devkit-macos-arm64
+          assemble_headers ios-arm64             $DEVKITS/frida-core-devkit-ios-arm64
+          assemble_headers ios-arm64-simulator   $DEVKITS/frida-core-devkit-ios-arm64-simulator
+
+          rm -rf $RUNNER_TEMP/FridaCore.xcframework
+          xcodebuild -create-xcframework \
+              -library $MACOS_LIB/libfrida-core.a \
+              -headers $RUNNER_TEMP/headers-macos-universal \
+              -library $DEVKITS/frida-core-devkit-ios-arm64/libfrida-core.a \
+              -headers $RUNNER_TEMP/headers-ios-arm64 \
+              -library $DEVKITS/frida-core-devkit-ios-arm64-simulator/libfrida-core.a \
+              -headers $RUNNER_TEMP/headers-ios-arm64-simulator \
+              -output $RUNNER_TEMP/FridaCore.xcframework
+
+      - name: Save xcframework cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/FridaCore.xcframework
+          key: ${{ runner.os }}-frida-core-xcframework-${{ env.FRIDA_CORE_REF }}-v1
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: FridaCore.xcframework
+          path: ${{ runner.temp }}/FridaCore.xcframework
+          if-no-files-found: error
+
   macos:
     # Apple Silicon Xcode cross-compiles to x86_64 natively, so both
     # matrix entries run on the free arm64 runner — no paid -large
     # runner needed for the Intel slice.
     runs-on: macos-26
+    needs: xcframework
     strategy:
       fail-fast: false
       matrix:
@@ -75,6 +243,53 @@ jobs:
           PROFILE_PATH=$RUNNER_TEMP/developer-id.provisionprofile
           echo -n "$DEVELOPER_ID_PROFILE" | base64 --decode -o $PROFILE_PATH
           echo "DEVELOPER_ID_PROFILE_PATH=$PROFILE_PATH" >> $GITHUB_ENV
+
+      - name: Download FridaCore.xcframework
+        uses: actions/download-artifact@v8
+        with:
+          name: FridaCore.xcframework
+          path: ${{ runner.temp }}/FridaCore.xcframework
+
+      - name: Override frida-swift with local FridaCore.xcframework
+        run: |
+          git clone https://github.com/frida/frida-swift.git $RUNNER_TEMP/frida-swift
+          cp -R $RUNNER_TEMP/FridaCore.xcframework $RUNNER_TEMP/frida-swift/
+          python3 - <<'PY'
+          import os, re
+          swift_pkg = os.path.join(os.environ["RUNNER_TEMP"], "frida-swift", "Package.swift")
+          with open(swift_pkg) as f:
+              text = f.read()
+          text = re.sub(
+              r"\.binaryTarget\(\s*name:\s*\"FridaCore\",\s*url:[^)]+\)",
+              '.binaryTarget(\n        name: "FridaCore",\n        path: "FridaCore.xcframework"\n    )',
+              text,
+              count=1,
+              flags=re.DOTALL,
+          )
+          # gioapple pulls in Network.framework; upstream's prebuilt xcframework
+          # was OpenSSL-only and frida-swift only declares resolv.
+          text = re.sub(
+              r"linkerSettings:\s*\[",
+              'linkerSettings: [\n                .linkedFramework("Network", .when(platforms: [.macOS, .iOS])),',
+              text,
+              count=1,
+          )
+          with open(swift_pkg, "w") as f:
+              f.write(text)
+
+          luma_pkg = "Package.swift"
+          with open(luma_pkg) as f:
+              text = f.read()
+          frida_swift_path = os.path.join(os.environ["RUNNER_TEMP"], "frida-swift")
+          text = re.sub(
+              r'\.package\(url:\s*"https://github\.com/frida/frida-swift"[^)]*\)',
+              f'.package(path: "{frida_swift_path}")',
+              text,
+              count=1,
+          )
+          with open(luma_pkg, "w") as f:
+              f.write(text)
+          PY
 
       - name: Build
         run: |
@@ -249,6 +464,7 @@ jobs:
 
   ios:
     runs-on: macos-26
+    needs: xcframework
     steps:
       - uses: actions/checkout@v6
 
@@ -321,6 +537,53 @@ jobs:
           echo "ASC_KEY_ID=$KEY_ID" >> $GITHUB_ENV
           echo "ASC_ISSUER_ID=$ISSUER_ID" >> $GITHUB_ENV
           echo "ASC_KEY_FILE=$KEY_FILE" >> $GITHUB_ENV
+
+      - name: Download FridaCore.xcframework
+        uses: actions/download-artifact@v8
+        with:
+          name: FridaCore.xcframework
+          path: ${{ runner.temp }}/FridaCore.xcframework
+
+      - name: Override frida-swift with local FridaCore.xcframework
+        run: |
+          git clone https://github.com/frida/frida-swift.git $RUNNER_TEMP/frida-swift
+          cp -R $RUNNER_TEMP/FridaCore.xcframework $RUNNER_TEMP/frida-swift/
+          python3 - <<'PY'
+          import os, re
+          swift_pkg = os.path.join(os.environ["RUNNER_TEMP"], "frida-swift", "Package.swift")
+          with open(swift_pkg) as f:
+              text = f.read()
+          text = re.sub(
+              r"\.binaryTarget\(\s*name:\s*\"FridaCore\",\s*url:[^)]+\)",
+              '.binaryTarget(\n        name: "FridaCore",\n        path: "FridaCore.xcframework"\n    )',
+              text,
+              count=1,
+              flags=re.DOTALL,
+          )
+          # gioapple pulls in Network.framework; upstream's prebuilt xcframework
+          # was OpenSSL-only and frida-swift only declares resolv.
+          text = re.sub(
+              r"linkerSettings:\s*\[",
+              'linkerSettings: [\n                .linkedFramework("Network", .when(platforms: [.macOS, .iOS])),',
+              text,
+              count=1,
+          )
+          with open(swift_pkg, "w") as f:
+              f.write(text)
+
+          luma_pkg = "Package.swift"
+          with open(luma_pkg) as f:
+              text = f.read()
+          frida_swift_path = os.path.join(os.environ["RUNNER_TEMP"], "frida-swift")
+          text = re.sub(
+              r'\.package\(url:\s*"https://github\.com/frida/frida-swift"[^)]*\)',
+              f'.package(path: "{frida_swift_path}")',
+              text,
+              count=1,
+          )
+          with open(luma_pkg, "w") as f:
+              f.write(text)
+          PY
 
       - name: Build (unsigned, iOS Simulator)
         if: env.CAN_SIGN != 'true'
