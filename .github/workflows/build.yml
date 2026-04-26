@@ -7,7 +7,7 @@ on:
   pull_request:
 
 env:
-  FRIDA_CORE_REF: "fafb45499f913c994b7befe411a7c70aabbe9f60"
+  FRIDA_CORE_REF: "c76072867719d5b3fe9770fc1a7ca26b2d030939"
   RADARE2_REF: "7ed1e8c6fd000b99c8aa6835e12bef1657d92746"
   SPARKLE_VERSION: "2.9.1"
   SWIFT_VERSION: "6.2"
@@ -130,8 +130,6 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           cd $RUNNER_TEMP/frida-core
-          # Force-fallback nice so the SDK's libnice (still openssl-built
-          # until the next SDK rebuild) doesn't override our wrap copy.
           ./configure \
               --host=${{ matrix.slice }} \
               --prefix=$RUNNER_TEMP/frida-prefix \
@@ -142,8 +140,7 @@ jobs:
               --disable-inject \
               --disable-gadget \
               --disable-tests \
-              ${{ matrix.extra_disables }} \
-              -- --force-fallback-for=nice
+              ${{ matrix.extra_disables }}
           make -j$(sysctl -n hw.ncpu)
           make install
           DEVKIT_SRC=$RUNNER_TEMP/frida-prefix/lib/frida-1.0/devkits/core
