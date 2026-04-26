@@ -71,8 +71,8 @@ jobs:
         include:
           - { slice: macos-arm64,         min_os: 'macos=15.0', extra_disables: '' }
           - { slice: macos-x86_64,        min_os: 'macos=15.0', extra_disables: '' }
-          - { slice: ios-arm64,           min_os: 'ios=18.0',   extra_disables: '--disable-local-backend --disable-simmy-backend --disable-fruity-backend --disable-droidy-backend --disable-barebone-backend' }
-          - { slice: ios-arm64-simulator, min_os: 'ios=18.0',   extra_disables: '--disable-local-backend --disable-simmy-backend --disable-fruity-backend --disable-droidy-backend --disable-barebone-backend' }
+          - { slice: ios-arm64,           min_os: 'ios=26.0',   extra_disables: '--disable-local-backend --disable-simmy-backend --disable-fruity-backend --disable-droidy-backend --disable-barebone-backend' }
+          - { slice: ios-arm64-simulator, min_os: 'ios=26.0',   extra_disables: '--disable-local-backend --disable-simmy-backend --disable-fruity-backend --disable-droidy-backend --disable-barebone-backend' }
     steps:
       - uses: actions/setup-node@v6
         with:
@@ -83,7 +83,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/devkit
-          key: ${{ runner.os }}-frida-core-devkit-${{ matrix.slice }}-${{ env.FRIDA_CORE_REF }}-v1
+          key: ${{ runner.os }}-frida-core-devkit-${{ matrix.slice }}-${{ matrix.min_os }}-${{ env.FRIDA_CORE_REF }}-v1
 
       - name: Set up Apple codesigning identities
         if: steps.cache.outputs.cache-hit != 'true'
@@ -156,7 +156,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/devkit
-          key: ${{ runner.os }}-frida-core-devkit-${{ matrix.slice }}-${{ env.FRIDA_CORE_REF }}-v1
+          key: ${{ runner.os }}-frida-core-devkit-${{ matrix.slice }}-${{ matrix.min_os }}-${{ env.FRIDA_CORE_REF }}-v1
 
       - uses: actions/upload-artifact@v7
         with:
