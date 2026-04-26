@@ -359,6 +359,7 @@ final class LumaApplication {
         let dialog = Adw.AboutDialog()
         dialog.set(applicationName: "Luma")
         dialog.set(applicationIcon: "re.frida.Luma")
+        dialog.set(version: LumaVersion.string)
         dialog.set(developerName: "Ole André Vadla Ravnås")
         dialog.set(copyright: "© 2025–2026 Ole André Vadla Ravnås")
         dialog.set(website: "https://luma.frida.re")

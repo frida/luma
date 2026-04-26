@@ -173,7 +173,23 @@ let package = Package(
             swiftSettings: [
                 .swiftLanguageMode(.v6),
             ],
-            linkerSettings: lumaGtkLinkerSettings
+            linkerSettings: lumaGtkLinkerSettings,
+            plugins: [
+                .plugin(name: "EmbedLumaVersion"),
+            ]
+        ),
+        .executableTarget(
+            name: "LumaVersionWriter",
+            path: "Sources/LumaVersionWriter",
+            swiftSettings: [
+                .swiftLanguageMode(.v6),
+            ]
+        ),
+        .plugin(
+            name: "EmbedLumaVersion",
+            capability: .buildTool(),
+            dependencies: ["LumaVersionWriter"],
+            path: "Plugins/EmbedLumaVersion"
         ),
     ]
 )
