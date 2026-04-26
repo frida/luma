@@ -77,7 +77,7 @@ jobs:
 
       - name: Install Go toolchain
         if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: ${{ runner.temp }}/frida-core/src/compiler/go.mod
           cache-dependency-path: ${{ runner.temp }}/frida-core/src/compiler/go.mod
