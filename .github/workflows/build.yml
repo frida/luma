@@ -307,20 +307,35 @@ jobs:
 
       - name: Post-process binary
         run: |
-          BINARY=build/Luma.app/Contents/MacOS/Luma
-          install_name_tool -change \
-            @rpath/Radare2.framework/Versions/A/Radare2 \
-            @rpath/Radare2.framework/Radare2 \
-            "$BINARY"
-          strip -Sx "$BINARY"
+          strip -Sx build/Luma.app/Contents/MacOS/Luma
           for fw in build/Luma.app/Contents/Frameworks/*.framework; do
-            if [ -d "$fw/Versions" ]; then
-              rm -rf "$fw/Versions"
+            # xcodebuild's Embed Frameworks resolves the framework's
+            # symlinks (Versions/Current and the top-level Foo,
+            # Resources, Updater.app, ...) into real files/dirs, leaving
+            # parallel copies that confuse codesign with "bundle format
+            # is ambiguous". Restore the canonical structure.
+            ver=$(find "$fw/Versions" -mindepth 1 -maxdepth 1 -type d \
+                   ! -name Current 2>/dev/null | head -n 1)
+            if [ -n "$ver" ]; then
+              vername=$(basename "$ver")
+              if [ ! -L "$fw/Versions/Current" ]; then
+                rm -rf "$fw/Versions/Current"
+                ln -s "$vername" "$fw/Versions/Current"
+              fi
+              for entry in "$ver"/*; do
+                name=$(basename "$entry")
+                if [ -e "$fw/$name" ] && [ ! -L "$fw/$name" ]; then
+                  rm -rf "$fw/$name"
+                  ln -s "Versions/Current/$name" "$fw/$name"
+                fi
+              done
             fi
             name=$(basename "$fw" .framework)
-            if lipo -info "$fw/$name" 2>/dev/null | grep -q "Non-fat\|Architectures"; then
-              lipo -thin ${{ matrix.arch }} "$fw/$name" -output "$fw/$name.thin"
-              mv "$fw/$name.thin" "$fw/$name"
+            bin="$fw/$name"
+            [ -L "$bin" ] && bin=$(realpath "$bin")
+            if lipo -info "$bin" 2>/dev/null | grep -q 'Architectures in the fat'; then
+              lipo -thin ${{ matrix.arch }} "$bin" -output "$bin.thin"
+              mv "$bin.thin" "$bin"
             fi
           done
 
@@ -345,8 +360,7 @@ jobs:
             [ -d "$SPARKLE_ROOT/Updater.app" ] && sign "$SPARKLE_ROOT/Updater.app"
           fi
           find build/Luma.app/Contents/Frameworks -name '*.framework' -maxdepth 1 | while read fw; do
-            name=$(basename "$fw" .framework)
-            sign "$fw/$name"
+            sign "$fw"
           done
           cp "$DEVELOPER_ID_PROFILE_PATH" build/Luma.app/Contents/embedded.provisionprofile
           codesign --force --options runtime \
