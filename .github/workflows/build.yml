@@ -882,7 +882,7 @@ jobs:
               /usr/libexec/swift/6.2/lib/swift/linux \
               /usr/lib64/libxml2.so.2
           cp LumaGtk/build-aux/rpm/luma.spec $TOP/SPECS/
-          NATIVE_VERSION="${LUMA_VERSION//-/~}"
+          NATIVE_VERSION=$(echo "$LUMA_VERSION" | tr - '~')
           rpmbuild --define "_topdir $TOP" \
                    --define "version $NATIVE_VERSION" \
                    -bb $TOP/SPECS/luma.spec
@@ -1024,7 +1024,7 @@ jobs:
       - name: Package as .deb
         shell: bash
         run: |
-          NATIVE_VERSION="${LUMA_VERSION//-/~}"
+          NATIVE_VERSION=$(echo "$LUMA_VERSION" | tr - '~')
           PKG=luma_${NATIVE_VERSION}_amd64
           LumaGtk/build-aux/linux/stage.sh \
               $PKG \
