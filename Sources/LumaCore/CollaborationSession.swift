@@ -204,7 +204,7 @@ public final class CollaborationSession {
     // MARK: - Sending
 
     private func sendRequest(
-        from path: String,
+        to path: String,
         type: String,
         payload: JSONObject = [:],
         data: [UInt8]? = nil,
@@ -214,19 +214,19 @@ public final class CollaborationSession {
         nextRequestId += 1
         let id = "r\(nextRequestId)"
         pendingRequests[id] = onResult
-        var msg: JSONObject = ["from": path, "type": type, "id": id]
+        var msg: JSONObject = ["to": path, "type": type, "id": id]
         if !payload.isEmpty { msg["payload"] = payload }
         device.bus.post(msg, data: data)
     }
 
     private func sendNotification(
-        from path: String,
+        to path: String,
         type: String,
         payload: JSONObject,
         data: [UInt8]? = nil
     ) {
         guard let device = portalDevice else { return }
-        var msg: JSONObject = ["from": path, "type": type]
+        var msg: JSONObject = ["to": path, "type": type]
         if !payload.isEmpty { msg["payload"] = payload }
         device.bus.post(msg, data: data)
     }
@@ -234,7 +234,7 @@ public final class CollaborationSession {
     public func sendChat(_ text: String) {
         guard case .joined(let labID) = status else { return }
         sendNotification(
-            from: "/labs/\(labID)/chat/messages",
+            to: "/labs/\(labID)/chat/messages",
             type: "+add",
             payload: ["messages": [["text": text]]]
         )
@@ -306,7 +306,7 @@ public final class CollaborationSession {
             binary = [UInt8](bin)
         }
         sendNotification(
-            from: "/labs/\(labID)/notebook/entries",
+            to: "/labs/\(labID)/notebook/entries",
             type: "+op",
             payload: op.toJSON(),
             data: binary
@@ -316,7 +316,7 @@ public final class CollaborationSession {
     public func registerPushSubscriptions(_ subs: [JSONObject]) {
         guard let localUser else { return }
         sendNotification(
-            from: "/users/\(localUser.id)/push_subscriptions",
+            to: "/users/\(localUser.id)/push_subscriptions",
             type: "+add",
             payload: ["subscriptions": subs]
         )
@@ -330,7 +330,7 @@ public final class CollaborationSession {
     public func unregisterPushSubscriptions(_ subs: [JSONObject]) {
         guard let localUser else { return }
         sendNotification(
-            from: "/users/\(localUser.id)/push_subscriptions",
+            to: "/users/\(localUser.id)/push_subscriptions",
             type: "+remove",
             payload: ["subscriptions": subs]
         )
@@ -351,7 +351,7 @@ public final class CollaborationSession {
         }
         return try await withCheckedThrowingContinuation { cont in
             sendRequest(
-                from: "/users/\(userID)/push_enrollment_tokens",
+                to: "/users/\(userID)/push_enrollment_tokens",
                 type: ".create"
             ) { result in
                 switch result {
@@ -386,7 +386,7 @@ public final class CollaborationSession {
         guard !trimmed.isEmpty else { return }
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             sendRequest(
-                from: "/labs/\(labID)",
+                to: "/labs/\(labID)",
                 type: ".set",
                 payload: ["title": trimmed]
             ) { [weak self] result in
@@ -406,7 +406,7 @@ public final class CollaborationSession {
         guard case .joined(let labID) = status else { return }
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             sendRequest(
-                from: "/labs/\(labID)/picture",
+                to: "/labs/\(labID)/picture",
                 type: ".set",
                 payload: ["content_type": contentType],
                 data: [UInt8](data)
@@ -426,7 +426,7 @@ public final class CollaborationSession {
         guard case .joined(let labID) = status else { return }
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             sendRequest(
-                from: "/labs/\(labID)/picture",
+                to: "/labs/\(labID)/picture",
                 type: ".remove"
             ) { [weak self] result in
                 if case .success = result {
@@ -470,7 +470,7 @@ public final class CollaborationSession {
         guard case .joined(let labID) = status else { return }
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             sendRequest(
-                from: "/labs/\(labID)/members",
+                to: "/labs/\(labID)/members",
                 type: ".remove",
                 payload: ["user_ids": userIDs]
             ) { _ in cont.resume() }
@@ -483,7 +483,7 @@ public final class CollaborationSession {
         setStatus(.connecting)
         let initialTitle = Self.initialLabTitle()
         sendRequest(
-            from: "/labs",
+            to: "/labs",
             type: ".create",
             payload: ["title": initialTitle]
         ) { [weak self] result in
@@ -522,7 +522,7 @@ public final class CollaborationSession {
 
     private func joinLab(labID: String) {
         setStatus(.connecting)
-        sendRequest(from: "/labs/\(labID)", type: ".join") { [weak self] result in
+        sendRequest(to: "/labs/\(labID)", type: ".join") { [weak self] result in
             guard let self else { return }
             switch result {
             case .success(let payload):
