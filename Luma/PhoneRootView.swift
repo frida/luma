@@ -9,6 +9,8 @@ struct PhoneRootView: View {
     @State private var dbURL: URL?
     @State private var isShowingOpenPicker = false
     @State private var isShowingSaveAsPicker = false
+    private var welcome: WelcomeModel { sharedWelcomeModel }
+    @State private var isWelcomeOpenPickerVisible = false
 
     private static let lumaUTI = "re.frida.luma"
 
@@ -19,19 +21,31 @@ struct PhoneRootView: View {
                     dbURL: dbURL,
                     documentActions: PhoneDocumentActions(
                         currentDisplayName: Self.displayName(for: dbURL),
-                        new: openFreshUntitled,
+                        new: returnToWelcome,
                         open: { isShowingOpenPicker = true },
                         saveAs: { isShowingSaveAsPicker = true }
                     )
                 )
                 .id(dbURL)
             } else {
-                Color(uiColor: .systemBackground)
-                    .ignoresSafeArea()
+                WelcomeView(
+                    welcome: welcome,
+                    onCreateBlank: openFreshUntitled,
+                    onOpenExisting: { isWelcomeOpenPickerVisible = true },
+                    onCreateFromLab: openFromLab
+                )
+                .fileImporter(
+                    isPresented: $isWelcomeOpenPickerVisible,
+                    allowedContentTypes: [UTType(exportedAs: Self.lumaUTI)]
+                ) { result in
+                    if case .success(let url) = result {
+                        importExternal(url)
+                    }
+                }
             }
         }
-        .task(id: "initial-restore") {
-            await restoreOrCreate()
+        .task(id: "welcome-bootstrap") {
+            await welcome.bootstrap()
         }
         .onOpenURL(perform: handleIncomingURL)
         .fileImporter(
@@ -51,16 +65,21 @@ struct PhoneRootView: View {
     }
 
     @MainActor
-    private func restoreOrCreate() async {
-        if dbURL != nil { return }
+    private func returnToWelcome() {
+        dbURL = nil
+        Task { await welcome.refreshLabs() }
+    }
 
-        if let path = LumaAppState.shared.lastDocumentPath,
-           FileManager.default.fileExists(atPath: path) {
-            dbURL = URL(fileURLWithPath: path)
-            return
+    @MainActor
+    private func openFromLab(_ lab: WelcomeModel.LabSummary) {
+        let url = Self.untitledURL(named: lab.title)
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: url.path) {
+            fm.createFile(atPath: url.path, contents: Data())
         }
-
-        openFreshUntitled()
+        CollaborationJoinQueue.shared.enqueue(labID: lab.id)
+        dbURL = url
+        LumaAppState.shared.lastDocumentPath = url.path
     }
 
     @MainActor
@@ -115,6 +134,26 @@ struct PhoneRootView: View {
             }
         }
         return dir.appendingPathComponent("Untitled-\(UUID().uuidString).luma")
+    }
+
+    private static func untitledURL(named rawTitle: String) -> URL {
+        let illegal = CharacterSet(charactersIn: "/\\:*?\"<>|")
+        let sanitized = rawTitle.components(separatedBy: illegal).joined(separator: "-")
+            .trimmingCharacters(in: .whitespaces)
+        let base = sanitized.isEmpty ? "Lab" : sanitized
+        let dir = LumaAppPaths.shared.untitledDirectory
+        let fm = FileManager.default
+        let primary = dir.appendingPathComponent("\(base).luma")
+        if !fm.fileExists(atPath: primary.path) {
+            return primary
+        }
+        for index in 1..<4096 {
+            let candidate = dir.appendingPathComponent("\(base) \(index).luma")
+            if !fm.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+        }
+        return dir.appendingPathComponent("\(base)-\(UUID().uuidString).luma")
     }
 
     private static func workingCopyURL(for sourceURL: URL) -> URL {

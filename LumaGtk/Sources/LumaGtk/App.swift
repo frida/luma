@@ -2,6 +2,7 @@ import Adw
 import CGLib
 import CLuma
 import Foundation
+import Gdk
 import Gtk
 import LumaCore
 
@@ -18,6 +19,8 @@ final class LumaApplication {
     private var openDocuments: [ObjectIdentifier: OpenDocument] = [:]
     private(set) var primaryMenuPtr: UnsafeMutableRawPointer?
     private let maxRecentSlots = 10
+    private var welcomeModel: WelcomeModel?
+    private var activeWelcome: WelcomeWindow?
 
     init() {
         guard let app = Adw.Application(id: "re.frida.Luma", flags: .handlesOpen) else {
@@ -46,7 +49,22 @@ final class LumaApplication {
 
     private func startup() {
         StyleSheet.install()
+        registerDevelopmentIconPaths()
         installActions()
+    }
+
+    private func registerDevelopmentIconPaths() {
+        let sourceTreeIcons = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("data/icons")
+        guard FileManager.default.fileExists(
+            atPath: sourceTreeIcons.appendingPathComponent("hicolor").path
+        ) else { return }
+        guard let display = Display.getDefault(),
+              let theme = Gtk.IconThemeRef.getFor(display: display) else { return }
+        theme.addSearch(path: sourceTreeIcons.path)
     }
 
     private func activate() {
@@ -66,21 +84,28 @@ final class LumaApplication {
             return
         }
 
-        let lastPath = LumaAppState.shared.lastDocumentPath
-        if let lastPath, FileManager.default.fileExists(atPath: lastPath) {
-            let url = URL(fileURLWithPath: lastPath)
-            if LumaAppState.shared.isUntitledAutoSavePath(url.path) {
-                if let document = try? LumaDocumentLoader.openUntitled(at: url) {
-                    openWindow(for: document)
-                    return
-                }
-            } else {
-                openWindow(forFile: url)
-                return
-            }
-        }
+        showWelcome()
+    }
 
-        openNewUntitledWindow()
+    func showWelcome() {
+        if let active = activeWelcome {
+            active.window.present()
+            return
+        }
+        let window = WelcomeWindow(app: app, application: self, welcome: ensuredWelcomeModel())
+        activeWelcome = window
+        window.present()
+    }
+
+    func welcomeWindowDidClose() {
+        activeWelcome = nil
+    }
+
+    private func ensuredWelcomeModel() -> WelcomeModel {
+        if let welcomeModel { return welcomeModel }
+        let model = WelcomeModel(dataDirectory: LumaAppPaths.shared.dataDirectory)
+        welcomeModel = model
+        return model
     }
 
     func openNewUntitledWindow() {
@@ -111,7 +136,11 @@ final class LumaApplication {
 
         do {
             let store = try ProjectStore(path: document.sqlitePath)
-            let engine = Engine(store: store, dataDirectory: LumaAppPaths.shared.dataDirectory)
+            let engine = Engine(
+                store: store,
+                dataDirectory: LumaAppPaths.shared.dataDirectory,
+                gitHubAuth: ensuredWelcomeModel().gitHubAuth
+            )
             openDocuments[key] = OpenDocument(window: window, engine: engine, document: document)
             window.present()
 
@@ -150,6 +179,9 @@ final class LumaApplication {
 
     func windowDidClose(_ window: MainWindow) {
         openDocuments[ObjectIdentifier(window)] = nil
+        if openDocuments.isEmpty && activeWelcome == nil {
+            showWelcome()
+        }
     }
 
     func saveAs(window: MainWindow, destination: URL) {
@@ -196,6 +228,14 @@ final class LumaApplication {
         let context = Unmanaged.passRetained(self).toOpaque()
         "Open Project".withCString { title in
             luma_file_dialog_open(parentPtr, title, lumaOpenPathThunk, context)
+        }
+    }
+
+    func presentWelcomeOpenDialog(parent: WelcomeWindow) {
+        guard let parentPtr = parent.window.window_ptr.map(UnsafeMutableRawPointer.init) else { return }
+        let context = Unmanaged.passRetained(WelcomeOpenContext(welcome: parent)).toOpaque()
+        "Open Project".withCString { title in
+            luma_file_dialog_open(parentPtr, title, lumaWelcomeOpenPathThunk, context)
         }
     }
 
@@ -414,6 +454,27 @@ private final class SaveAsContext {
     init(app: LumaApplication, window: MainWindow) {
         self.app = app
         self.window = window
+    }
+}
+
+@MainActor
+private final class WelcomeOpenContext {
+    weak var welcome: WelcomeWindow?
+    init(welcome: WelcomeWindow) { self.welcome = welcome }
+}
+
+private let lumaWelcomeOpenPathThunk: @convention(c) (
+    UnsafePointer<CChar>?, UnsafeMutableRawPointer?
+) -> Void = { pathPtr, userData in
+    guard let userData else { return }
+    let raw = UInt(bitPattern: userData)
+    let pathString: String? = pathPtr.map { String(cString: $0) }
+    MainActor.assumeIsolated {
+        let ptr = UnsafeMutableRawPointer(bitPattern: raw)!
+        let ctx = Unmanaged<WelcomeOpenContext>.fromOpaque(ptr).takeRetainedValue()
+        if let pathString {
+            ctx.welcome?.handleOpenedFromWelcome(path: pathString)
+        }
     }
 }
 

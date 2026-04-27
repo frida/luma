@@ -19,9 +19,13 @@ final class Workspace: ObservableObject {
         private let localNotifier = LocalNotifier()
     #endif
 
-    init(store: ProjectStore) {
+    init(store: ProjectStore, gitHubAuth: GitHubAuth? = nil) {
         self.store = store
-        self.engine = Engine(store: store, dataDirectory: LumaAppPaths.shared.dataDirectory)
+        self.engine = Engine(
+            store: store,
+            dataDirectory: LumaAppPaths.shared.dataDirectory,
+            gitHubAuth: gitHubAuth
+        )
         registerInstrumentUIs()
     }
 
@@ -43,7 +47,8 @@ final class Workspace: ObservableObject {
 
     func configurePersistence() async {
         await engine.start()
-        if engine.collaboration.status != .disconnected {
+        objectWillChange.send()
+        if engine.collaboration.isCollaborative {
             isCollaborationPanelVisible = true
         }
         #if os(macOS)

@@ -53,7 +53,12 @@ public final class Engine {
     @ObservationIgnored private var capturesObservation: StoreObservation?
     @ObservationIgnored private var packagesObservation: StoreObservation?
 
-    public init(store: ProjectStore, dataDirectory: URL, tokenStore: TokenStore? = nil) {
+    public init(
+        store: ProjectStore,
+        dataDirectory: URL,
+        tokenStore: TokenStore? = nil,
+        gitHubAuth: GitHubAuth? = nil
+    ) {
         self.store = store
         self.dataDirectory = dataDirectory
         self.compilerWorkspace = CompilerWorkspace(store: store)
@@ -67,15 +72,13 @@ public final class Engine {
             portalCertificate: BackendConfig.certificate
         )
 
-        let resolvedTokenStore: TokenStore = {
-            if let tokenStore { return tokenStore }
-            #if canImport(Security)
-            return KeychainTokenStore()
-            #else
-            return FileTokenStore(directory: dataDirectory.appendingPathComponent("tokens"))
-            #endif
-        }()
-        self.gitHubAuth = GitHubAuth(tokenStore: resolvedTokenStore)
+        if let gitHubAuth {
+            self.gitHubAuth = gitHubAuth
+        } else {
+            self.gitHubAuth = GitHubAuth(
+                tokenStore: tokenStore ?? defaultTokenStore(dataDirectory: dataDirectory)
+            )
+        }
 
         registerDescriptor(Self.tracerDescriptor)
         for desc in hookPacks.descriptors() {
@@ -87,8 +90,8 @@ public final class Engine {
             self?.tracerAddressActions(sessionID: sessionID, address: address) ?? []
         }
 
-        Task { @MainActor [gitHubAuth] in
-            await gitHubAuth.loadPersistedToken()
+        Task { @MainActor [auth = self.gitHubAuth] in
+            await auth.loadPersistedToken()
         }
 
         APNsRegistration.shared.observe { [weak self] _ in

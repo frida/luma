@@ -11,75 +11,72 @@ final class GitHubSignInSheet {
     private let gitHubAuth: GitHubAuth
 
     private let contentBox: Box
-    private let headerLabel: Label
     private let captionLabel: Label
+    private let codeRow: Box
     private let codeLabel: Label
-    private let urlLabel: Label
     private let copyCodeButton: Button
+    private let copyCodeImage: Image
     private let openUrlButton: Button
     private let statusRow: Box
     private let statusLabel: Label
     private let errorLabel: Label
-    private let dismissButton: Button
+    private let cancelButton: Button
 
+    private var copyResetTask: Task<Void, Never>?
     private var closeTask: Task<Void, Never>?
 
     init(gitHubAuth: GitHubAuth) {
         self.gitHubAuth = gitHubAuth
 
-        contentBox = Box(orientation: .vertical, spacing: 12)
+        contentBox = Box(orientation: .vertical, spacing: 16)
         contentBox.marginStart = 24
         contentBox.marginEnd = 24
-        contentBox.marginTop = 20
-        contentBox.marginBottom = 20
-        contentBox.hexpand = true
-        contentBox.vexpand = true
+        contentBox.marginTop = 12
+        contentBox.marginBottom = 24
+        contentBox.halign = .center
 
-        headerLabel = Label(str: "Sign in to GitHub")
-        headerLabel.add(cssClass: "title-3")
-        headerLabel.halign = .start
-        contentBox.append(child: headerLabel)
-
-        captionLabel = Label(str: "To collaborate, authorize Luma using the device flow below.")
+        captionLabel = Label(str: "Go to GitHub and enter the following code:")
         captionLabel.add(cssClass: "dim-label")
-        captionLabel.halign = .start
+        captionLabel.halign = .center
+        captionLabel.justify = .center
         captionLabel.wrap = true
         contentBox.append(child: captionLabel)
 
-        let detailsBox = Box(orientation: .vertical, spacing: 8)
-        detailsBox.marginTop = 8
+        codeRow = Box(orientation: .horizontal, spacing: 8)
+        codeRow.halign = .center
+
+        let codeFrame = Box(orientation: .horizontal, spacing: 0)
+        codeFrame.add(cssClass: "card")
+        codeFrame.marginTop = 0
 
         codeLabel = Label(str: "")
         codeLabel.add(cssClass: "monospace")
-        codeLabel.add(cssClass: "title-1")
+        codeLabel.add(cssClass: "title-2")
         codeLabel.halign = .center
         codeLabel.selectable = true
-        detailsBox.append(child: codeLabel)
+        codeLabel.marginStart = 12
+        codeLabel.marginEnd = 12
+        codeLabel.marginTop = 6
+        codeLabel.marginBottom = 6
+        codeFrame.append(child: codeLabel)
+        codeRow.append(child: codeFrame)
 
-        urlLabel = Label(str: "")
-        urlLabel.add(cssClass: "link")
-        urlLabel.halign = .center
-        urlLabel.selectable = true
-        urlLabel.wrap = true
-        detailsBox.append(child: urlLabel)
+        copyCodeImage = Image(iconName: "edit-copy-symbolic")
+        copyCodeButton = Button()
+        copyCodeButton.set(child: copyCodeImage)
+        copyCodeButton.tooltipText = "Copy code"
+        codeRow.append(child: copyCodeButton)
 
-        let buttonRow = Box(orientation: .horizontal, spacing: 8)
-        buttonRow.halign = .center
-        buttonRow.marginTop = 4
+        contentBox.append(child: codeRow)
 
-        copyCodeButton = Button(label: "Copy code")
-        buttonRow.append(child: copyCodeButton)
-
-        openUrlButton = Button(label: "Open verification URL")
+        openUrlButton = Button(label: "Open GitHub")
         openUrlButton.add(cssClass: "suggested-action")
-        buttonRow.append(child: openUrlButton)
-
-        detailsBox.append(child: buttonRow)
-        contentBox.append(child: detailsBox)
+        openUrlButton.add(cssClass: "pill")
+        openUrlButton.halign = .center
+        contentBox.append(child: openUrlButton)
 
         statusRow = Box(orientation: .horizontal, spacing: 8)
         statusRow.halign = .center
-        statusRow.marginTop = 8
         statusRow.append(child: Adw.Spinner())
         statusLabel = Label(str: "Waiting for authorization\u{2026}")
         statusLabel.add(cssClass: "dim-label")
@@ -88,15 +85,16 @@ final class GitHubSignInSheet {
 
         errorLabel = Label(str: "")
         errorLabel.add(cssClass: "error")
-        errorLabel.halign = .start
+        errorLabel.halign = .center
+        errorLabel.justify = .center
         errorLabel.wrap = true
         errorLabel.visible = false
         contentBox.append(child: errorLabel)
 
-        dismissButton = Button(label: "Dismiss")
-        dismissButton.halign = .end
-        dismissButton.visible = false
-        contentBox.append(child: dismissButton)
+        cancelButton = Button(label: "Cancel")
+        cancelButton.halign = .center
+        cancelButton.marginTop = 4
+        contentBox.append(child: cancelButton)
 
         copyCodeButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.copyCode() }
@@ -104,7 +102,7 @@ final class GitHubSignInSheet {
         openUrlButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.openVerificationUrl() }
         }
-        dismissButton.onClicked { [weak self] _ in
+        cancelButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.closeDialog() }
         }
     }
@@ -115,49 +113,49 @@ final class GitHubSignInSheet {
     private func refresh() {
         switch gitHubAuth.state {
         case .signedOut:
-            codeLabel.setText(str: "\u{2014}")
-            urlLabel.setText(str: "")
-            copyCodeButton.sensitive = false
-            openUrlButton.sensitive = false
-            statusLabel.setText(str: "Starting sign-in\u{2026}")
-            statusRow.visible = true
-            errorLabel.visible = false
-            dismissButton.visible = false
+            showStatus("Starting sign-in\u{2026}")
 
         case .waitingForApproval:
-            codeLabel.setText(str: "\u{2014}")
-            urlLabel.setText(str: "")
-            copyCodeButton.sensitive = false
-            openUrlButton.sensitive = false
-            statusLabel.setText(str: "Contacting GitHub\u{2026}")
-            statusRow.visible = true
-            errorLabel.visible = false
-            dismissButton.visible = false
+            showStatus("Contacting GitHub\u{2026}")
 
         case .requestingCode(let code, let verifyURL):
             currentCode = code
             currentUrl = verifyURL
             codeLabel.setText(str: code)
-            urlLabel.setText(str: verifyURL.absoluteString)
+            captionLabel.visible = true
+            codeRow.visible = true
+            openUrlButton.visible = true
             copyCodeButton.sensitive = true
             openUrlButton.sensitive = true
             statusLabel.setText(str: "Waiting for authorization\u{2026}")
             statusRow.visible = true
             errorLabel.visible = false
-            dismissButton.visible = false
+            cancelButton.label = "Cancel"
 
         case .authenticated:
-            statusLabel.setText(str: "Signed in.")
+            showStatus("Signed in.")
             scheduleClose(after: 0.2)
 
         case .failed(let reason):
+            captionLabel.visible = false
+            codeRow.visible = false
+            openUrlButton.visible = false
             statusRow.visible = false
             errorLabel.setText(str: "Sign-in failed: \(reason)")
             errorLabel.visible = true
-            dismissButton.visible = true
-            copyCodeButton.sensitive = false
-            openUrlButton.sensitive = false
+            cancelButton.label = "Close"
         }
+    }
+
+    private func showStatus(_ text: String) {
+        captionLabel.visible = false
+        codeRow.visible = false
+        openUrlButton.visible = false
+        copyCodeButton.sensitive = false
+        openUrlButton.sensitive = false
+        statusLabel.setText(str: text)
+        statusRow.visible = true
+        errorLabel.visible = false
     }
 
     private func observe() {
@@ -176,6 +174,13 @@ final class GitHubSignInSheet {
         guard !currentCode.isEmpty else { return }
         if let display = Display.getDefault() {
             display.clipboard.set(text: currentCode)
+        }
+        copyCodeImage.setFrom(iconName: "object-select-symbolic")
+        copyResetTask?.cancel()
+        copyResetTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_400_000_000)
+            if Task.isCancelled { return }
+            self?.copyCodeImage.setFrom(iconName: "edit-copy-symbolic")
         }
     }
 
@@ -217,8 +222,7 @@ extension GitHubSignInSheet {
 
         let dialog = Adw.Dialog()
         dialog.set(title: "Sign in to GitHub")
-        dialog.set(contentWidth: 480)
-        dialog.set(contentHeight: 320)
+        dialog.set(contentWidth: 380)
 
         let header = Adw.HeaderBar()
 

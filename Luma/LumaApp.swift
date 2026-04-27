@@ -5,6 +5,12 @@ import SwiftUI
 import SwiftyMonaco
 import UniformTypeIdentifiers
 
+@MainActor
+let sharedWelcomeModel = WelcomeModel(dataDirectory: LumaAppPaths.shared.dataDirectory)
+
+@MainActor
+func sharedGitHubAuth() -> GitHubAuth { sharedWelcomeModel.gitHubAuth }
+
 #if os(macOS)
 
     @main
@@ -19,6 +25,12 @@ import UniformTypeIdentifiers
         }
 
         var body: some Scene {
+            Window("Welcome to Luma", id: WelcomeWindow.id) {
+                WelcomeWindow(welcome: sharedWelcomeModel)
+            }
+            .defaultSize(width: 560, height: 720)
+            .windowResizability(.contentSize)
+
             DocumentGroup(newDocument: LumaProject()) { configuration in
                 MainWindowView(
                     dbURL: configuration.document.workingDBURL,
@@ -48,26 +60,11 @@ import UniformTypeIdentifiers
             NSWindow.allowsAutomaticWindowTabbing = false
             NSApplication.shared.registerForRemoteNotifications()
             LocalNotifier.requestAuthorization()
-            reopenLastDocumentIfNeeded()
-        }
-
-        private func reopenLastDocumentIfNeeded() {
-            guard
-                NSDocumentController.shared.documents.isEmpty,
-                let path = LumaAppState.shared.lastDocumentPath,
-                FileManager.default.fileExists(atPath: path)
-            else { return }
-            let url = URL(fileURLWithPath: path)
-            do {
-                let docType = try NSDocumentController.shared.typeForContents(of: url)
-                let doc = try NSDocumentController.shared.makeDocument(withContentsOf: url, ofType: docType)
-                NSDocumentController.shared.addDocument(doc)
-                doc.makeWindowControllers()
-                doc.showWindows()
-            } catch {
-                FileHandle.standardError.write(Data("[LumaApp] reopen failed: \(error)\n".utf8))
+            Task { @MainActor in
+                await sharedWelcomeModel.bootstrap()
             }
         }
+
 
         func application(_ application: NSApplication, open urls: [URL]) {
             for url in urls {

@@ -32,14 +32,26 @@ public final class GitHubAuth {
     private let tokenStore: TokenStore
     private var signInTask: Task<Void, Never>?
     private var pendingTokenWaiters: [CheckedContinuation<String?, Never>] = []
+    private var loadTask: Task<Void, Never>?
 
     init(tokenStore: TokenStore) {
         self.tokenStore = tokenStore
     }
 
     public func loadPersistedToken() async {
-        token = try? await tokenStore.get(service: service, account: account)
-        await refreshCurrentUser()
+        if let loadTask {
+            await loadTask.value
+            return
+        }
+        let task = Task { @MainActor in
+            token = try? await tokenStore.get(service: service, account: account)
+            if token != nil, case .signedOut = state {
+                state = .authenticated
+            }
+            await refreshCurrentUser()
+        }
+        loadTask = task
+        await task.value
     }
 
     public func beginSignIn() {
@@ -84,6 +96,7 @@ public final class GitHubAuth {
     }
 
     public func requestToken() async -> String? {
+        await loadPersistedToken()
         if let token { return token }
         return await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
             pendingTokenWaiters.append(cont)

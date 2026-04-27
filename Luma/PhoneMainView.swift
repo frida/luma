@@ -22,7 +22,9 @@ struct PhoneMainView: View {
         self.dbURL = dbURL
         self.documentActions = documentActions
         let store = try! ProjectStore(path: dbURL.path)
-        self._workspace = StateObject(wrappedValue: Workspace(store: store))
+        self._workspace = StateObject(
+            wrappedValue: Workspace(store: store, gitHubAuth: sharedGitHubAuth())
+        )
     }
 
     var body: some View {

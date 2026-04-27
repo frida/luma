@@ -16,7 +16,9 @@ struct MainWindowView: View {
         self.fileURL = fileURL
         self.project = project
         let store = try! ProjectStore(path: dbURL.path)
-        self._workspace = StateObject(wrappedValue: Workspace(store: store))
+        self._workspace = StateObject(
+            wrappedValue: Workspace(store: store, gitHubAuth: sharedGitHubAuth())
+        )
     }
 
     private var restorationPath: String {
@@ -53,6 +55,9 @@ struct MainWindowView: View {
         )
         .task {
             await workspace.configurePersistence()
+            if uiState.selectedItemID == nil, !workspace.engine.notebookEntries.isEmpty {
+                uiState.selectedItemID = .notebook
+            }
         }
         .onChange(of: restorationPath, initial: true) { _, newPath in
             LumaAppState.shared.lastDocumentPath = newPath

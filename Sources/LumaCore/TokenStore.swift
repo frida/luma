@@ -97,3 +97,17 @@ public enum TokenStoreError: Error {
     #endif
     case unavailable
 }
+
+@MainActor
+public func defaultTokenStore(dataDirectory: URL) -> TokenStore {
+    // Keychain on macOS dev builds prompts on every launch (and silently
+    // fails if the user dismisses the prompt), so we persist tokens in a
+    // file under the app's data directory on Apple platforms too. iOS
+    // app-private storage is sandboxed already; macOS files inherit
+    // user-only permissions.
+    #if os(iOS) || os(visionOS)
+    return KeychainTokenStore()
+    #else
+    return FileTokenStore(directory: dataDirectory.appendingPathComponent("tokens"))
+    #endif
+}
