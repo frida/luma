@@ -344,23 +344,12 @@ private struct LabRow: View {
 
     @ViewBuilder
     private var avatar: some View {
-        if let data = lab.pictureData, let platformImage = Self.makeImage(from: data) {
+        if let platformImage = Self.makeImage(from: lab.pictureData) {
             platformImage
                 .resizable()
                 .aspectRatio(contentMode: .fill)
                 .frame(width: 32, height: 32)
                 .clipShape(Circle())
-        } else if let url = lab.owner?.avatarURL {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().aspectRatio(contentMode: .fill)
-                default:
-                    Color.secondary.opacity(0.2)
-                }
-            }
-            .frame(width: 32, height: 32)
-            .clipShape(Circle())
         } else {
             Image(systemName: "person.2.fill")
                 .frame(width: 32, height: 32)

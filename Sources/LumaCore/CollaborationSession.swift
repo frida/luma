@@ -420,24 +420,6 @@ public final class CollaborationSession {
         }
     }
 
-    /// Clear the lab picture; clients fall back to the owner's GitHub
-    /// avatar. Owner-only.
-    public func removeLabPicture() async {
-        guard case .joined(let labID) = status else { return }
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            sendRequest(
-                to: "/labs/\(labID)/picture",
-                type: ".remove"
-            ) { [weak self] result in
-                if case .success = result {
-                    self?.labPictureData = nil
-                    self?.labPictureContentType = nil
-                }
-                cont.resume()
-            }
-        }
-    }
-
     /// Suggested title for a freshly-created lab, built from the local
     /// weekday and time-of-day plus a randomly-picked verb, e.g.
     /// "Monday morning reversing", "Friday evening spelunking". Generated
@@ -482,10 +464,26 @@ public final class CollaborationSession {
     private func createLab() {
         setStatus(.connecting)
         let initialTitle = Self.initialLabTitle()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            guard let creatorAvatar = await self.fetchCreatorAvatar() else {
+                self.setStatus(.error(message: "Couldn't fetch your GitHub avatar to use as the lab picture."))
+                return
+            }
+            self.sendCreateRequest(
+                title: initialTitle,
+                pictureData: creatorAvatar.data,
+                pictureContentType: creatorAvatar.contentType
+            )
+        }
+    }
+
+    private func sendCreateRequest(title: String, pictureData: Data, pictureContentType: String) {
         sendRequest(
             to: "/labs",
             type: ".create",
-            payload: ["title": initialTitle]
+            payload: ["title": title, "picture": ["content_type": pictureContentType]],
+            data: [UInt8](pictureData)
         ) { [weak self] result in
             guard let self else { return }
             switch result {
@@ -495,7 +493,9 @@ public final class CollaborationSession {
                     let localUser = self.localUser
                 else { Task { await self.stop() }; return }
                 self.labID = labID
-                self.labTitle = (labObj["title"] as? String) ?? initialTitle
+                self.labTitle = (labObj["title"] as? String) ?? title
+                self.labPictureData = pictureData
+                self.labPictureContentType = pictureContentType
                 // Persist labID first so isCollaborative flips true before
                 // we fan existing entries into the outbox.
                 var collabState = try! self.store.fetchCollaborationState()
@@ -517,6 +517,38 @@ public final class CollaborationSession {
             case .failure(let failure):
                 self.setStatus(.error(message: failure.message))
             }
+        }
+    }
+
+    private struct AvatarBytes {
+        let data: Data
+        let contentType: String
+    }
+
+    private static let allowedAvatarContentTypes: Set<String> = [
+        "image/png", "image/jpeg", "image/webp", "image/gif",
+    ]
+
+    private func fetchCreatorAvatar() async -> AvatarBytes? {
+        guard let baseURL = localUser?.avatarURL,
+              var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+        var items = components.queryItems ?? []
+        items.removeAll { $0.name == "s" }
+        items.append(URLQueryItem(name: "s", value: "256"))
+        components.queryItems = items
+        guard let url = components.url else { return nil }
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else { return nil }
+            let raw = http.value(forHTTPHeaderField: "Content-Type") ?? ""
+            let contentType = raw.split(separator: ";").first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? raw
+            guard Self.allowedAvatarContentTypes.contains(contentType) else { return nil }
+            return AvatarBytes(data: data, contentType: contentType)
+        } catch {
+            return nil
         }
     }
 
@@ -668,10 +700,6 @@ public final class CollaborationSession {
                 labPictureData = Data(bytes)
                 labPictureContentType = contentType
             }
-
-        case ("+remove", let s) where s.count == 3 && s[0] == "labs" && s[2] == "picture":
-            labPictureData = nil
-            labPictureContentType = nil
 
         case ("+add", let s) where s.count == 3 && s[0] == "labs" && s[2] == "members":
             guard let arr = payload["members"] as? [JSONObject] else { return }

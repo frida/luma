@@ -438,15 +438,8 @@ final class WelcomeWindow {
 
         let avatarText = lab.owner?.name ?? lab.title
         let avatar = Adw.Avatar(size: 32, text: avatarText, showInitials: true)
-        if let pictureData = lab.pictureData,
-           let texture = IconPixbuf.makeTexture(fromEncodedData: pictureData) {
+        if let texture = IconPixbuf.makeTexture(fromEncodedData: lab.pictureData) {
             avatar.set(customImage: texture)
-        } else if let owner = lab.owner,
-                  let url = owner.avatarURL.flatMap({ URL(string: "\($0.absoluteString)&s=96") }) {
-            Task { @MainActor [weak avatar] in
-                guard let texture = await AvatarCache.shared.texture(for: url) else { return }
-                avatar?.set(customImage: texture)
-            }
         }
         row.addPrefix(widget: avatar)
 

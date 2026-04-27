@@ -540,22 +540,10 @@ private struct LabPictureView: View {
         Group {
             #if canImport(AppKit)
             if collaboration.isOwner {
-                Menu {
-                    Button("Upload Image\u{2026}", action: pickImage)
-                    if collaboration.labPictureData != nil {
-                        Button("Reset to Default", role: .destructive) {
-                            Task { @MainActor in
-                                await collaboration.removeLabPicture()
-                            }
-                        }
-                    }
-                } label: {
+                Button(action: pickImage) {
                     pictureView
                 }
-                .menuStyle(.button)
-                .menuIndicator(.hidden)
                 .buttonStyle(.plain)
-                .fixedSize()
                 .help("Change lab picture")
             } else {
                 pictureView

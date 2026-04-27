@@ -14,8 +14,8 @@ public final class WelcomeModel {
         public let memberCount: Int
         public let onlineCount: Int
         public let owner: CollaborationSession.UserInfo?
-        public let pictureContentType: String?
-        public let pictureData: Data?
+        public let pictureContentType: String
+        public let pictureData: Data
     }
 
     public enum LabsState: Sendable {
@@ -136,18 +136,14 @@ extension WelcomeModel.LabSummary {
         let onlineCount = (obj["online_count"] as? Int) ?? 0
         let owner = (obj["owner"] as? JSONObject).flatMap(CollaborationSession.UserInfo.fromJSON)
 
-        var pictureContentType: String?
-        var pictureData: Data?
-        if let pictureObj = obj["picture"] as? JSONObject,
-           let contentType = pictureObj["content_type"] as? String {
-            pictureContentType = contentType
-            if let payloadData,
-               let offset = pictureObj["offset"] as? Int,
-               let length = pictureObj["length"] as? Int,
-               offset >= 0, offset + length <= payloadData.count {
-                pictureData = Data(payloadData[offset..<offset + length])
-            }
-        }
+        guard let pictureObj = obj["picture"] as? JSONObject,
+              let pictureContentType = pictureObj["content_type"] as? String,
+              let payloadData,
+              let offset = pictureObj["offset"] as? Int,
+              let length = pictureObj["length"] as? Int,
+              offset >= 0, offset + length <= payloadData.count
+        else { return nil }
+        let pictureData = Data(payloadData[offset..<offset + length])
 
         return WelcomeModel.LabSummary(
             id: id,

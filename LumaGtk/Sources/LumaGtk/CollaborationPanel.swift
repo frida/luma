@@ -307,19 +307,6 @@ final class CollaborationPanel {
         }
         menuBox.append(child: uploadButton)
 
-        if engine?.collaboration.labPictureData != nil {
-            let resetButton = Button(label: "Reset to default")
-            resetButton.add(cssClass: "flat")
-            resetButton.add(cssClass: "luma-menu-destructive")
-            resetButton.onClicked { [weak engine] _ in
-                MainActor.assumeIsolated {
-                    guard let engine else { return }
-                    Task { @MainActor in await engine.collaboration.removeLabPicture() }
-                }
-            }
-            menuBox.append(child: resetButton)
-        }
-
         let popover = Popover()
         popover.autohide = true
         popover.set(child: menuBox)
