@@ -2,6 +2,10 @@ import Foundation
 import Frida
 import Observation
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 @Observable
 @MainActor
 public final class CollaborationSession {
