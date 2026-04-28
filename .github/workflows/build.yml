@@ -1510,5 +1510,13 @@ jobs:
           draft: true
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
-          files: artifacts/*
+          files: |
+            artifacts/Luma-*.dmg
+            artifacts/Luma-*.dmg.sig
+            artifacts/Luma-*.msi
+            artifacts/Luma-*.ipa
+            artifacts/luma-*.deb
+            artifacts/luma-*.rpm
+            artifacts/luma-*.snap
+            artifacts/luma-*.flatpak
           fail_on_unmatched_files: true
