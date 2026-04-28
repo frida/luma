@@ -168,6 +168,34 @@ Copy-Tree (Join-Path $env:VCPKG_PREFIX 'lib\gdk-pixbuf-2.0')     (Join-Path $sta
 Copy-Tree (Join-Path $env:VCPKG_PREFIX 'lib\gio\modules')        (Join-Path $stage 'lib\gio\modules')
 Copy-Tree (Join-Path $pkg 'data\icons\hicolor')                  (Join-Path $stage 'share\icons\hicolor')
 
+# vcpkg has no adwaita-icon-theme port, so fetch the upstream tarball
+# and stage Adwaita directly. Symbolic icons (e.g. accessories-
+# dictionary-symbolic in NotebookPane's empty state) live here, and
+# libadwaita falls back to this theme when it can't resolve a name
+# from its own GResource bundle. Skip cursors/ — 15 MB of X bitmap
+# cursors that Windows can't use.
+$adwaitaVersion = '50.0'
+$adwaitaSha256  = 'fac6e0401fca714780561a081b8f7e27c3bc1db34ebda4da175081f26b24d460'
+$adwaitaUrl     = "https://download.gnome.org/sources/adwaita-icon-theme/50/adwaita-icon-theme-$adwaitaVersion.tar.xz"
+$adwaitaTar     = Join-Path $OutputDir "adwaita-icon-theme-$adwaitaVersion.tar.xz"
+$adwaitaSrc     = Join-Path $OutputDir "adwaita-icon-theme-$adwaitaVersion"
+if (-not (Test-Path $adwaitaTar)) {
+    Invoke-WebRequest -Uri $adwaitaUrl -OutFile $adwaitaTar
+}
+$actualSha = (Get-FileHash $adwaitaTar -Algorithm SHA256).Hash.ToLower()
+if ($actualSha -ne $adwaitaSha256) {
+    throw "Adwaita tarball SHA-256 mismatch: expected $adwaitaSha256, got $actualSha"
+}
+if (Test-Path $adwaitaSrc) { Remove-Item -Recurse -Force $adwaitaSrc }
+& tar -xJf $adwaitaTar -C $OutputDir
+if ($LASTEXITCODE -ne 0) { throw "Failed to extract $adwaitaTar" }
+$adwaitaDest = Join-Path $stage 'share\icons\Adwaita'
+New-Item -ItemType Directory -Force -Path $adwaitaDest | Out-Null
+Copy-Item (Join-Path $adwaitaSrc 'index.theme') $adwaitaDest
+Copy-Tree (Join-Path $adwaitaSrc 'Adwaita\16x16')    (Join-Path $adwaitaDest '16x16')
+Copy-Tree (Join-Path $adwaitaSrc 'Adwaita\scalable') (Join-Path $adwaitaDest 'scalable')
+Copy-Tree (Join-Path $adwaitaSrc 'Adwaita\symbolic') (Join-Path $adwaitaDest 'symbolic')
+
 # Compile the GLib schema XMLs so GTK can actually use them, then
 # drop the source XMLs — only gschemas.compiled is read at runtime.
 $schemasDir = Join-Path $stage 'share\glib-2.0\schemas'
