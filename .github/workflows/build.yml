@@ -1506,7 +1506,6 @@ jobs:
 
       - uses: softprops/action-gh-release@v3
         with:
-          draft: true
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           files: |
@@ -1519,3 +1518,12 @@ jobs:
             artifacts/luma-*.snap
             artifacts/luma-*.flatpak
           fail_on_unmatched_files: true
+
+      - name: Notify luma-website
+        env:
+          GH_TOKEN: ${{ secrets.LUMA_WEBSITE_DISPATCH_TOKEN }}
+        run: |
+          gh api repos/frida/luma-website/dispatches \
+            -X POST \
+            -f event_type=luma-released \
+            -F client_payload[version]="${{ github.ref_name }}"
