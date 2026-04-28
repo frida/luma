@@ -187,7 +187,10 @@ if ($actualSha -ne $adwaitaSha256) {
     throw "Adwaita tarball SHA-256 mismatch: expected $adwaitaSha256, got $actualSha"
 }
 if (Test-Path $adwaitaSrc) { Remove-Item -Recurse -Force $adwaitaSrc }
-& tar -xJf $adwaitaTar -C $OutputDir
+# Invoke Windows' libarchive tar.exe by full path: setup-env.ps1
+# puts MSYS2's bin (with GNU tar) ahead on PATH for sed/awk, and
+# GNU tar reads the "D:" in a Windows path as a remote rcp host.
+& "$env:SystemRoot\System32\tar.exe" -xJf $adwaitaTar -C $OutputDir
 if ($LASTEXITCODE -ne 0) { throw "Failed to extract $adwaitaTar" }
 $adwaitaDest = Join-Path $stage 'share\icons\Adwaita'
 New-Item -ItemType Directory -Force -Path $adwaitaDest | Out-Null
