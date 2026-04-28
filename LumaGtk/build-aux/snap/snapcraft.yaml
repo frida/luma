@@ -1,5 +1,6 @@
 name: luma
-base: core24
+base: core26
+build-base: devel
 version: '0.1.0'
 summary: Dynamic instrumentation toolkit built on Frida
 description: |
@@ -17,7 +18,6 @@ platforms:
 apps:
   luma:
     command: usr/local/bin/luma
-    extensions: [gnome]
     plugs:
       - home
       - network
@@ -142,7 +142,7 @@ parts:
       make build SWIFT_BUILD_FLAGS="-c release"
       # Bundle the Swift runtime (from the swift part's staged tree,
       # test-only libs dropped) alongside the binary, plus a libxml2
-      # alias so FoundationXML resolves on core24 (which ships only
+      # alias so FoundationXML resolves on core26 (which ships only
       # libxml2.so.16). frida-core's libs are staged by the frida-core
       # part and get picked up via the binary's rpath.
       SWIFT_DST="$CRAFT_PART_INSTALL/usr/local/lib/luma/swift"
@@ -193,3 +193,8 @@ parts:
       - npm
       - patchelf
       - pkg-config
+    stage-packages:
+      - libgtk-4-1
+      - libadwaita-1-0
+      - libwebkitgtk-6.0-4
+      - libsoup-3.0-0
