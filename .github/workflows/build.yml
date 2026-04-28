@@ -428,12 +428,15 @@ jobs:
         run: |
           ENTITLEMENTS=$RUNNER_TEMP/signed-entitlements.plist
           codesign -d --entitlements - --xml build/Luma.app > $ENTITLEMENTS 2>/dev/null
-          APS=$(plutil -extract 'aps-environment' raw -o - $ENTITLEMENTS 2>/dev/null || true)
-          if [ "$APS" != "production" ]; then
-            echo "aps-environment is '$APS', expected 'production'" >&2
-            plutil -p $ENTITLEMENTS >&2
-            exit 1
-          fi
+          for key in aps-environment com.apple.developer.aps-environment; do
+            value=$(plutil -extract "$key" raw -o - $ENTITLEMENTS 2>/dev/null || true)
+            if [ "$value" != "production" ]; then
+              echo "Signed entitlement '$key' is '$value', expected 'production'." >&2
+              echo "taskgated does exact-key matching against the embedded profile, so both forms must be present." >&2
+              plutil -p $ENTITLEMENTS >&2
+              exit 1
+            fi
+          done
           if [ ! -f build/Luma.app/Contents/embedded.provisionprofile ]; then
             echo "embedded.provisionprofile is missing from the signed bundle" >&2
             exit 1
@@ -444,10 +447,11 @@ jobs:
               "Print :Entitlements:com.apple.developer.aps-environment" \
               $PROFILE_PLIST 2>/dev/null || true)
           if [ "$PROFILE_APS" != "production" ]; then
-            echo "::warning::Embedded provisioning profile aps-environment is '$PROFILE_APS', expected 'production'."
-            echo "::warning::Regenerate APPLE_DEVELOPER_ID_PROFILE with Push Notifications enabled; the signed app will fail to launch until then."
+            echo "Embedded provisioning profile aps-environment is '$PROFILE_APS', expected 'production'." >&2
+            echo "Regenerate APPLE_DEVELOPER_ID_PROFILE with Push Notifications enabled; the signed app fails to launch until then." >&2
             echo "--- Profile entitlements ---" >&2
             plutil -extract Entitlements xml1 -o - $PROFILE_PLIST >&2 || true
+            exit 1
           fi
 
       - name: Notarize
