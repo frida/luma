@@ -360,6 +360,8 @@ jobs:
       - name: Post-process binary
         run: |
           strip -Sx build/Luma.app/Contents/MacOS/Luma
+          R2_RES=build/Luma.app/Contents/Frameworks/Radare2.framework/Versions/A/Resources
+          rm -rf "$R2_RES/scripts" "$R2_RES/www"
           for fw in build/Luma.app/Contents/Frameworks/*.framework; do
             # xcodebuild's Embed Frameworks resolves the framework's
             # symlinks (Versions/Current and the top-level Foo,
@@ -688,6 +690,17 @@ jobs:
             MARKETING_VERSION=$LUMA_VERSION \
             CURRENT_PROJECT_VERSION=$LUMA_BUILD \
             archive
+
+      - name: Sanitize embedded Radare2 framework
+        if: env.CAN_SIGN == 'true'
+        run: |
+          APP=build/Luma.xcarchive/Products/Applications/Luma.app
+          FRAMEWORK="$APP/Frameworks/Radare2.framework"
+          rm -rf "$FRAMEWORK/scripts" "$FRAMEWORK/www"
+          MIN_IOS=$(plutil -extract MinimumOSVersion raw "$APP/Info.plist")
+          plutil -insert MinimumOSVersion -string "$MIN_IOS" "$FRAMEWORK/Info.plist"
+          SIGN_ID=$(security find-identity -v -p codesigning | awk '/Apple Distribution/ {print $2; exit}')
+          codesign --force --sign "$SIGN_ID" "$FRAMEWORK"
 
       - name: Export IPA
         if: env.CAN_SIGN == 'true'

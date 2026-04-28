@@ -60,6 +60,8 @@
         "/share/docc",
         "/share/man",
         "/share/gir-1.0",
+        "/share/radare2/*/scripts",
+        "/share/radare2/*/www",
         "/lib64/girepository-1.0",
         "*.a",
         "*.la",
