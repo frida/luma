@@ -7,7 +7,7 @@ on:
   pull_request:
 
 env:
-  FRIDA_CORE_REF: "74b86cb838a8b792f97ad94e546e215ef1e2acfb"
+  FRIDA_CORE_REF: "12d21fb8a98c9d32c41476eadcf71d7f04ec7008"
   RADARE2_REF: "7ed1e8c6fd000b99c8aa6835e12bef1657d92746"
   SPARKLE_VERSION: "2.9.1"
   SWIFT_VERSION: "6.2"
@@ -69,10 +69,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { slice: macos-arm64,         min_os: 'macos=15.0', extra_disables: '' }
-          - { slice: macos-x86_64,        min_os: 'macos=15.0', extra_disables: '' }
-          - { slice: ios-arm64,           min_os: 'ios=26.0',   extra_disables: '--disable-local-backend --disable-simmy-backend --disable-fruity-backend --disable-droidy-backend --disable-barebone-backend' }
-          - { slice: ios-arm64-simulator, min_os: 'ios=26.0',   extra_disables: '--disable-local-backend --disable-simmy-backend --disable-fruity-backend --disable-droidy-backend --disable-barebone-backend' }
+          - { slice: macos-arm64,         min_os: 'macos=15.0', extra_disables: '',                                                                                                                       extra_meson: '' }
+          - { slice: macos-x86_64,        min_os: 'macos=15.0', extra_disables: '',                                                                                                                       extra_meson: '' }
+          - { slice: ios-arm64,           min_os: 'ios=26.0',   extra_disables: '--disable-local-backend --disable-simmy-backend --disable-fruity-backend --disable-droidy-backend --disable-barebone-backend', extra_meson: '-Dglib-networking:apple_api_surface=public' }
+          - { slice: ios-arm64-simulator, min_os: 'ios=26.0',   extra_disables: '--disable-local-backend --disable-simmy-backend --disable-fruity-backend --disable-droidy-backend --disable-barebone-backend', extra_meson: '' }
     steps:
       - uses: actions/setup-node@v6
         with:
@@ -143,7 +143,7 @@ jobs:
               --disable-gadget \
               --disable-tests \
               ${{ matrix.extra_disables }} \
-              -- --force-fallback-for=nice
+              -- --force-fallback-for=nice ${{ matrix.extra_meson }}
           make -j$(sysctl -n hw.ncpu)
           make install
           DEVKIT_SRC=$RUNNER_TEMP/frida-prefix/lib/frida-1.0/devkits/core
