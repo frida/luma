@@ -429,7 +429,7 @@ jobs:
           ENTITLEMENTS=$RUNNER_TEMP/signed-entitlements.plist
           codesign -d --entitlements - --xml build/Luma.app > $ENTITLEMENTS 2>/dev/null
           for key in aps-environment com.apple.developer.aps-environment; do
-            value=$(plutil -extract "$key" raw -o - $ENTITLEMENTS 2>/dev/null || true)
+            value=$(/usr/libexec/PlistBuddy -c "Print :$key" $ENTITLEMENTS 2>/dev/null || true)
             if [ "$value" != "production" ]; then
               echo "Signed entitlement '$key' is '$value', expected 'production'." >&2
               echo "taskgated does exact-key matching against the embedded profile, so both forms must be present." >&2
