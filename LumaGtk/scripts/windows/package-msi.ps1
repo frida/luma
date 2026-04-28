@@ -165,6 +165,8 @@ function Copy-Tree {
 Copy-Tree (Join-Path $env:VCPKG_PREFIX 'share\glib-2.0\schemas') (Join-Path $stage 'share\glib-2.0\schemas')
 Copy-Tree (Join-Path $env:VCPKG_PREFIX 'share\icons')            (Join-Path $stage 'share\icons')
 Copy-Tree (Join-Path $env:VCPKG_PREFIX 'lib\gdk-pixbuf-2.0')     (Join-Path $stage 'lib\gdk-pixbuf-2.0')
+Copy-Tree (Join-Path $env:VCPKG_PREFIX 'lib\gio\modules')        (Join-Path $stage 'lib\gio\modules')
+Copy-Tree (Join-Path $pkg 'data\icons\hicolor')                  (Join-Path $stage 'share\icons\hicolor')
 
 # Compile the GLib schema XMLs so GTK can actually use them, then
 # drop the source XMLs — only gschemas.compiled is read at runtime.
