@@ -1301,6 +1301,48 @@ jobs:
           echo "CPATH=$STAGE" >> $GITHUB_ENV
           echo "CPLUS_INCLUDE_PATH=$STAGE" >> $GITHUB_ENV
 
+      - name: Install native sed/awk/cat for gir2swift post-processing
+        shell: pwsh
+        run: |
+          # gir2swift shells out to sed, awk and cat to patch generated
+          # Swift sources. Git for Windows' cygwin-based versions crash
+          # at fork() time on Actions runners with "add_item (\??\C:\
+          # Program Files\Git, /, ...) failed, errno 1" — a classic
+          # cygwin heap-rebase failure. The consequence is missing types
+          # like SequenceIterRef/SListProtocol in the SwiftGLib output
+          # and later compile errors. Install GnuWin32's native Win32
+          # ports and put them first on PATH so they win the PATH lookup.
+          choco install -y --no-progress sed gawk gnuwin32-coreutils.install
+          $gnuBin = 'C:\Program Files (x86)\GnuWin32\bin'
+          if (Test-Path (Join-Path $gnuBin 'gawk.exe')) {
+              Copy-Item (Join-Path $gnuBin 'gawk.exe') (Join-Path $gnuBin 'awk.exe') -Force
+          }
+          Add-Content -Path $env:GITHUB_PATH -Value $gnuBin
+
+      - name: Install WiX Toolset
+        if: matrix.win_arch == 'arm64'
+        shell: pwsh
+        run: choco install -y --no-progress wixtoolset
+
+      - name: Pre-fetch Adwaita icon theme
+        shell: pwsh
+        run: |
+          # Front-load the download so a flaky download.gnome.org or
+          # SHA-256 mismatch fails the job before we burn time on
+          # frida-core, radare2 and Swift builds. package-msi.ps1's
+          # existing "skip download if file exists" check picks the
+          # cached tarball up at staging time.
+          $version = '50.0'
+          $expectedSha = 'fac6e0401fca714780561a081b8f7e27c3bc1db34ebda4da175081f26b24d460'
+          $url = "https://download.gnome.org/sources/adwaita-icon-theme/50/adwaita-icon-theme-$version.tar.xz"
+          $dest = "$env:GITHUB_WORKSPACE\LumaGtk\build\adwaita-icon-theme-$version.tar.xz"
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dest) | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile $dest
+          $actualSha = (Get-FileHash $dest -Algorithm SHA256).Hash.ToLower()
+          if ($actualSha -ne $expectedSha) {
+              throw "Adwaita SHA-256 mismatch: expected $expectedSha, got $actualSha"
+          }
+
       - name: Restore frida-core cache
         id: frida-cache
         uses: actions/cache/restore@v5
@@ -1412,24 +1454,6 @@ jobs:
           echo "$RUNNER_TEMP\\frida-prefix\\bin" >> $GITHUB_PATH
           echo "$RUNNER_TEMP\\r2-prefix\\bin" >> $GITHUB_PATH
 
-      - name: Install native sed/awk/cat for gir2swift post-processing
-        shell: pwsh
-        run: |
-          # gir2swift shells out to sed, awk and cat to patch generated
-          # Swift sources. Git for Windows' cygwin-based versions crash
-          # at fork() time on Actions runners with "add_item (\??\C:\
-          # Program Files\Git, /, ...) failed, errno 1" — a classic
-          # cygwin heap-rebase failure. The consequence is missing types
-          # like SequenceIterRef/SListProtocol in the SwiftGLib output
-          # and later compile errors. Install GnuWin32's native Win32
-          # ports and put them first on PATH so they win the PATH lookup.
-          choco install -y --no-progress sed gawk gnuwin32-coreutils.install
-          $gnuBin = 'C:\Program Files (x86)\GnuWin32\bin'
-          if (Test-Path (Join-Path $gnuBin 'gawk.exe')) {
-              Copy-Item (Join-Path $gnuBin 'gawk.exe') (Join-Path $gnuBin 'awk.exe') -Force
-          }
-          Add-Content -Path $env:GITHUB_PATH -Value $gnuBin
-
       - name: Build LumaGtk
         shell: pwsh
         run: |
@@ -1473,11 +1497,6 @@ jobs:
                   & $subst $letter /d | Out-Null
               }
           }
-
-      - name: Install WiX Toolset
-        if: matrix.win_arch == 'arm64'
-        shell: pwsh
-        run: choco install -y --no-progress wixtoolset
 
       - name: Package MSI
         shell: pwsh
