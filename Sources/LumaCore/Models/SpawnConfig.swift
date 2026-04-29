@@ -1,7 +1,7 @@
 import Foundation
 import Frida
 
-public struct SpawnConfig: @unchecked Sendable {
+public struct SpawnConfig: nonisolated Codable, @unchecked Sendable {
     public enum Target: Codable, Sendable {
         case application(identifier: String, name: String)
         case program(path: String)
@@ -111,9 +111,3 @@ public struct SpawnConfig: @unchecked Sendable {
         return cwd
     }
 }
-
-#if compiler(>=6.2)
-extension SpawnConfig: nonisolated Codable {}
-#else
-extension SpawnConfig: Codable {}
-#endif
