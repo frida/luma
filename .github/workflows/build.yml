@@ -1040,7 +1040,7 @@ jobs:
               LumaGtk/.build/x86_64-unknown-linux-gnu/release/LumaGtk \
               /usr/lib/x86_64-linux-gnu
           mkdir -p $PKG/DEBIAN
-          printf 'Package: luma\nVersion: %s\nSection: devel\nPriority: optional\nArchitecture: amd64\nDepends: libadwaita-1-0, libwebkitgtk-6.0-4, libzip5, libnice10, libswiftlang\nMaintainer: Ole Andre Vadla Ravnas <oleavr@frida.re>\nDescription: the official Frida GUI\n Luma is a native app for interactive dynamic instrumentation,\n built on Frida. Persistent sessions, a live REPL, pluggable\n instruments, and real-time collaboration in a workspace that\n remembers where you left off.\n' "$NATIVE_VERSION" > $PKG/DEBIAN/control
+          printf 'Package: luma\nVersion: %s\nSection: devel\nPriority: optional\nArchitecture: amd64\nDepends: libadwaita-1-0, libwebkitgtk-6.0-4, libzip5, libnice10, libswiftlang\nMaintainer: Ole Andre Vadla Ravnas <oleavr@frida.re>\nHomepage: https://luma.frida.re/\nDescription: the official Frida GUI\n Luma is a native app for interactive dynamic instrumentation,\n built on Frida. Persistent sessions, a live REPL, pluggable\n instruments, and real-time collaboration in a workspace that\n remembers where you left off.\n' "$NATIVE_VERSION" > $PKG/DEBIAN/control
           install -m0755 LumaGtk/build-aux/linux/deb-postinst $PKG/DEBIAN/postinst
           install -m0755 LumaGtk/build-aux/linux/deb-postrm   $PKG/DEBIAN/postrm
           dpkg-deb --build $PKG

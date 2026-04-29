@@ -8,6 +8,8 @@ description: |
   built on Frida. Persistent sessions, a live REPL, pluggable
   instruments, and real-time collaboration in a workspace that
   remembers where you left off.
+website: https://luma.frida.re/
+issues: https://github.com/frida/luma/issues
 
 grade: devel
 confinement: devmode

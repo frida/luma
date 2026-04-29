@@ -268,6 +268,8 @@ $licensePath = (Join-Path $pkg 'data\license.rtf')  -replace '\\','/'
     <MediaTemplate EmbedCab="yes" />
     <Icon Id="LumaIcon" SourceFile="$iconPath" />
     <Property Id="ARPPRODUCTICON" Value="LumaIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://luma.frida.re/" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/frida/luma/issues" />
     <Feature Id="Main" Title="Luma" Level="1">
       <ComponentGroupRef Id="LumaComponents" />
       <ComponentRef Id="ApplicationShortcut" />

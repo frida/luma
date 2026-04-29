@@ -4,7 +4,7 @@ Release:        1%{?dist}
 Summary:        The official Frida GUI
 
 License:        wxWindows
-URL:            https://frida.re/
+URL:            https://luma.frida.re/
 
 BuildArch:      x86_64
 AutoReq:        no
