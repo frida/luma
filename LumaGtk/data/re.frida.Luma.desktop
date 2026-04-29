@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=Luma
-Comment=Dynamic instrumentation toolkit
+Comment=The official Frida GUI
 Exec=luma %U
 Icon=re.frida.Luma
 Terminal=false

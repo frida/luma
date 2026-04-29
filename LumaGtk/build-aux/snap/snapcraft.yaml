@@ -2,11 +2,12 @@ name: luma
 base: core26
 build-base: devel
 version: '0.1.0'
-summary: Dynamic instrumentation toolkit built on Frida
+summary: The official Frida GUI
 description: |
-  Luma is an interactive dynamic instrumentation app built on Frida.
-  Attach to running processes, instrument functions, trace calls, and
-  explore memory with a graphical interface.
+  Luma is a native app for interactive dynamic instrumentation,
+  built on Frida. Persistent sessions, a live REPL, pluggable
+  instruments, and real-time collaboration in a workspace that
+  remembers where you left off.
 
 grade: devel
 confinement: devmode

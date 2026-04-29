@@ -283,7 +283,7 @@ $licensePath = (Join-Path $pkg 'data\license.rtf')  -replace '\\','/'
     <DirectoryRef Id="ApplicationProgramsFolder">
       <Component Id="ApplicationShortcut" Guid="a7b4e3f2-21d9-4b8a-9f3b-64a2e3b2a001">
         <Shortcut Id="ApplicationStartMenuShortcut" Name="Luma"
-                  Description="Interactive dynamic instrumentation"
+                  Description="The official Frida GUI"
                   Target="[INSTALLDIR]Luma.exe" WorkingDirectory="INSTALLDIR"
                   Icon="LumaIcon" IconIndex="0" />
         <RemoveFolder Id="CleanupApplicationProgramsFolder" On="uninstall" />

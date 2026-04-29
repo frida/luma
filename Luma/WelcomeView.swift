@@ -51,7 +51,7 @@ struct WelcomeView: View {
             AppIconView()
                 .frame(width: 104, height: 104)
 
-            Text("Interactive dynamic instrumentation for Frida.")
+            Text("The official Frida GUI.")
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

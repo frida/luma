@@ -119,7 +119,7 @@ final class WelcomeWindow {
         icon.halign = .center
         box.append(child: icon)
 
-        let subtitle = Label(str: "Interactive dynamic instrumentation for Frida.")
+        let subtitle = Label(str: "The official Frida GUI.")
         subtitle.add(cssClass: "title-3")
         subtitle.add(cssClass: "dim-label")
         subtitle.halign = .center

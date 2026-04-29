@@ -1,7 +1,7 @@
 Name:           luma
 Version:        %{version}
 Release:        1%{?dist}
-Summary:        Dynamic instrumentation toolkit built on Frida
+Summary:        The official Frida GUI
 
 License:        wxWindows
 URL:            https://frida.re/
@@ -17,9 +17,10 @@ Requires:       libnice
 Requires:       swift-lang
 
 %description
-Luma is an interactive dynamic instrumentation app built on Frida.
-Attach to running processes, instrument functions, trace calls, and
-explore memory with a graphical interface.
+Luma is a native app for interactive dynamic instrumentation,
+built on Frida. Persistent sessions, a live REPL, pluggable
+instruments, and real-time collaboration in a workspace that
+remembers where you left off.
 
 %prep
 
