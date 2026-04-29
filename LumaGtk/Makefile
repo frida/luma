@@ -27,7 +27,7 @@ $(AGENT_BUNDLE): $(AGENT_SOURCES)
 	    --project-root "$(PROJECT_ROOT)" \
 	    --swift-out    "$(AGENT_BUNDLE)" \
 	    --staging-dir  "$(AGENT_STAGING)" \
-	    --package frida-itrace@6.0.0 \
+	    --package frida-itrace@6.1.0 \
 	    --package frida-java-bridge@7.0.12 \
 	    --external frida-java-bridge \
 	    --agent  core      Agent/core/luma.ts \
