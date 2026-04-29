@@ -419,7 +419,7 @@ jobs:
           cp "$DEVELOPER_ID_PROFILE_PATH" build/Luma.app/Contents/embedded.provisionprofile
           codesign --force --options runtime \
             --sign "Developer ID Application" \
-            --entitlements Luma/Luma-macOS-Release.entitlements \
+            --entitlements Luma/Luma-macOS.entitlements \
             --timestamp \
             build/Luma.app
 
