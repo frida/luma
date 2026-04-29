@@ -6,12 +6,12 @@ struct EmbedLumaVersion: BuildToolPlugin {
     func createBuildCommands(context: PluginContext, target: Target) throws -> [Command] {
         let writer = try context.tool(named: "LumaVersionWriter")
         let version = ProcessInfo.processInfo.environment["LUMA_VERSION"] ?? "0.0.0-dev"
-        let output = context.pluginWorkDirectory.appending("LumaVersion.swift")
+        let output = context.pluginWorkDirectoryURL.appending(path: "LumaVersion.swift")
         return [
             .buildCommand(
                 displayName: "Embedding Luma version (\(version))",
-                executable: writer.path,
-                arguments: [version, output.string],
+                executable: writer.url,
+                arguments: [version, output.path],
                 outputFiles: [output]
             )
         ]
