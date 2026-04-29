@@ -1,6 +1,8 @@
+import CGraphene
 import CGtk
 import Foundation
 import Gdk
+import struct Graphene.PointRef
 import Gtk
 import LumaCore
 
@@ -442,14 +444,15 @@ final class REPLPane {
         guard let scroll = completionScroll,
               let listBox = completionList,
               let vadj = scroll.vadjustment else { return }
-        var rowY: Double = 0
-        var rowX: Double = 0
-        let translated = withUnsafeMutablePointer(to: &rowX) { xPtr in
-            withUnsafeMutablePointer(to: &rowY) { yPtr in
-                row.translateCoordinates(destWidget: listBox, srcX: 0, srcY: 0, destX: xPtr, destY: yPtr)
+        var source = graphene_point_t(x: 0, y: 0)
+        var destination = graphene_point_t(x: 0, y: 0)
+        let translated = withUnsafeMutablePointer(to: &source) { srcPtr in
+            withUnsafeMutablePointer(to: &destination) { dstPtr in
+                row.computePoint(target: listBox, point: PointRef(srcPtr), outPoint: PointRef(dstPtr))
             }
         }
         guard translated else { return }
+        let rowY = Double(destination.y)
         vadj.clampPage(lower: rowY, upper: rowY + Double(row.height))
     }
 
