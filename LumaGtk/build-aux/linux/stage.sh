@@ -1,29 +1,43 @@
 #!/usr/bin/env bash
 # Stage a /usr tree ready for rpmbuild/dpkg-deb.
 #
-# usage: stage.sh STAGE_DIR BINARY FRIDA_LIBDIR
+# usage: stage.sh STAGE_DIR BINARY FRIDA_LIBDIR [SWIFT_LIBDIR LIBXML2]
 #
 #   STAGE_DIR     - directory to populate with the installable /usr tree
 #   BINARY        - path to the freshly built LumaGtk executable. The
 #                   SwiftPM *.resources bundles are picked up from the
 #                   same build directory.
 #   FRIDA_LIBDIR  - directory holding libfrida-core-1.0.so.* and frida-1.0/
+#   SWIFT_LIBDIR  - optional; directory holding the Swift runtime .so files
+#                   (usually .../lib/swift/linux). Pass when the host
+#                   distro doesn't ship a compatible Swift runtime and we
+#                   need to bundle our own.
+#   LIBXML2       - optional; libxml2 .so to ship beside libFoundationXML;
+#                   renamed to libxml2.so.2 so the legacy SONAME the Swift
+#                   runtime expects keeps resolving regardless of host ABI
+#                   bumps. Required when SWIFT_LIBDIR is given.
 
 set -euo pipefail
 
 stage="$1"
 exe="$2"
 frida_libdir="$3"
+swift_libdir="${4:-}"
+libxml2="${5:-}"
 
 here="$(dirname "$(readlink -f "$0")")"
 lumagtk_root="$(readlink -f "$here/../..")"
 build_dir="$(dirname "$(readlink -f "$exe")")"
 
 luma_lib="$stage/usr/lib/luma"
-install -d "$stage/usr/bin" \
-           "$stage/usr/share/applications" \
-           "$stage/usr/share/mime/packages" \
-           "$luma_lib"
+stage_dirs=("$stage/usr/bin" \
+            "$stage/usr/share/applications" \
+            "$stage/usr/share/mime/packages" \
+            "$luma_lib")
+if [ -n "$swift_libdir" ]; then
+    stage_dirs+=("$luma_lib/swift")
+fi
+install -d "${stage_dirs[@]}"
 
 # Install the real binary under /usr/lib/luma so the SwiftPM .resources
 # bundles that Bundle.module looks up via /proc/self/exe can sit beside
@@ -40,10 +54,28 @@ done
 cp -P "$frida_libdir"/libfrida-core-1.0.so* "$luma_lib/"
 rsync -aL --exclude='frida-gadget*' "$frida_libdir/frida-1.0/" "$luma_lib/frida-1.0/"
 
+if [ -n "$swift_libdir" ]; then
+    if [ -z "$libxml2" ]; then
+        echo "stage.sh: SWIFT_LIBDIR requires LIBXML2 too" >&2
+        exit 1
+    fi
+    for so in "$swift_libdir"/*.so; do
+        case "$(basename "$so")" in
+            libXCTest.so|libTesting.so|lib_Testing_Foundation.so) continue ;;
+        esac
+        cp -P "$so" "$luma_lib/swift/"
+    done
+    install -m644 "$libxml2" "$luma_lib/swift/libxml2.so.2"
+fi
+
 strip --strip-unneeded "$luma_lib/luma"
 find "$luma_lib" -name '*.so*' -type f -exec strip --strip-unneeded {} +
 
-patchelf --set-rpath '$ORIGIN' "$luma_lib/luma"
+if [ -n "$swift_libdir" ]; then
+    patchelf --set-rpath '$ORIGIN:$ORIGIN/swift' "$luma_lib/luma"
+else
+    patchelf --set-rpath '$ORIGIN' "$luma_lib/luma"
+fi
 for so in "$luma_lib/frida-1.0"/*/*.so; do
     patchelf --set-rpath '$ORIGIN/../..' "$so"
 done
