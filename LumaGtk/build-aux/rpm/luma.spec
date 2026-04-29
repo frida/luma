@@ -10,10 +10,11 @@ BuildArch:      x86_64
 AutoReq:        no
 AutoProv:       no
 
-Requires:       gtk4
 Requires:       libadwaita
 Requires:       webkitgtk6.0
-Requires:       libsoup3
+Requires:       libzip
+Requires:       libnice
+Requires:       swift-lang
 
 %description
 Luma is an interactive dynamic instrumentation app built on Frida.

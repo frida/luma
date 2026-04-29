@@ -1,26 +1,19 @@
 #!/usr/bin/env bash
 # Stage a /usr tree ready for rpmbuild/dpkg-deb.
 #
-# usage: stage.sh STAGE_DIR BINARY FRIDA_LIBDIR SWIFT_LIBDIR LIBXML2
+# usage: stage.sh STAGE_DIR BINARY FRIDA_LIBDIR
 #
 #   STAGE_DIR     - directory to populate with the installable /usr tree
 #   BINARY        - path to the freshly built LumaGtk executable. The
 #                   SwiftPM *.resources bundles are picked up from the
 #                   same build directory.
 #   FRIDA_LIBDIR  - directory holding libfrida-core-1.0.so.* and frida-1.0/
-#   SWIFT_LIBDIR  - directory holding the Swift runtime .so files
-#                   (usually .../lib/swift/linux)
-#   LIBXML2       - libxml2 .so to ship beside libFoundationXML; renamed to
-#                   libxml2.so.2 so the legacy SONAME the Swift runtime
-#                   expects keeps resolving regardless of host ABI bumps
 
 set -euo pipefail
 
 stage="$1"
 exe="$2"
 frida_libdir="$3"
-swift_libdir="$4"
-libxml2="$5"
 
 here="$(dirname "$(readlink -f "$0")")"
 lumagtk_root="$(readlink -f "$here/../..")"
@@ -30,7 +23,7 @@ luma_lib="$stage/usr/lib/luma"
 install -d "$stage/usr/bin" \
            "$stage/usr/share/applications" \
            "$stage/usr/share/mime/packages" \
-           "$luma_lib" "$luma_lib/swift"
+           "$luma_lib"
 
 # Install the real binary under /usr/lib/luma so the SwiftPM .resources
 # bundles that Bundle.module looks up via /proc/self/exe can sit beside
@@ -47,19 +40,10 @@ done
 cp -P "$frida_libdir"/libfrida-core-1.0.so* "$luma_lib/"
 rsync -aL --exclude='frida-gadget*' "$frida_libdir/frida-1.0/" "$luma_lib/frida-1.0/"
 
-for so in "$swift_libdir"/*.so; do
-    case "$(basename "$so")" in
-        libXCTest.so|libTesting.so|lib_Testing_Foundation.so) continue ;;
-    esac
-    cp -P "$so" "$luma_lib/swift/"
-done
-
-install -m644 "$libxml2" "$luma_lib/swift/libxml2.so.2"
-
 strip --strip-unneeded "$luma_lib/luma"
 find "$luma_lib" -name '*.so*' -type f -exec strip --strip-unneeded {} +
 
-patchelf --set-rpath '$ORIGIN:$ORIGIN/swift' "$luma_lib/luma"
+patchelf --set-rpath '$ORIGIN' "$luma_lib/luma"
 for so in "$luma_lib/frida-1.0"/*/*.so; do
     patchelf --set-rpath '$ORIGIN/../..' "$so"
 done

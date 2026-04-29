@@ -895,9 +895,7 @@ jobs:
           LumaGtk/build-aux/linux/stage.sh \
               $TOP/SOURCES/stage \
               LumaGtk/.build/x86_64-unknown-linux-gnu/release/LumaGtk \
-              /usr/lib64 \
-              /usr/libexec/swift/6.2/lib/swift/linux \
-              /usr/lib64/libxml2.so.2
+              /usr/lib64
           cp LumaGtk/build-aux/rpm/luma.spec $TOP/SPECS/
           NATIVE_VERSION=$(echo "$LUMA_VERSION" | tr - '~')
           rpmbuild --define "_topdir $TOP" \
@@ -963,13 +961,7 @@ jobs:
 
       - name: Install Swift
         run: |
-          apt-get install -y libncurses6 libcurl4-openssl-dev
-          ln -sf libxml2.so.16 /usr/lib/x86_64-linux-gnu/libxml2.so.2
-          ldconfig
-          curl -sLO "https://download.swift.org/swift-${SWIFT_VERSION}-release/ubuntu2404/swift-${SWIFT_VERSION}-RELEASE/swift-${SWIFT_VERSION}-RELEASE-ubuntu24.04.tar.gz"
-          tar xzf swift-*.tar.gz -C /usr/local --strip-components=2
-          rm swift-*.tar.gz
-          ldconfig
+          apt-get install -y swiftlang
           swift --version
 
       - name: Restore frida-core cache
@@ -1046,11 +1038,11 @@ jobs:
           LumaGtk/build-aux/linux/stage.sh \
               $PKG \
               LumaGtk/.build/x86_64-unknown-linux-gnu/release/LumaGtk \
-              /usr/lib/x86_64-linux-gnu \
-              /usr/local/lib/swift/linux \
-              /usr/lib/x86_64-linux-gnu/libxml2.so.16
+              /usr/lib/x86_64-linux-gnu
           mkdir -p $PKG/DEBIAN
-          printf 'Package: luma\nVersion: %s\nSection: devel\nPriority: optional\nArchitecture: amd64\nDepends: libgtk-4-1, libadwaita-1-0, libwebkitgtk-6.0-4, libsoup-3.0-0\nMaintainer: Ole Andre Vadla Ravnas <oleavr@frida.re>\nDescription: Luma - Dynamic instrumentation toolkit\n Interactive dynamic instrumentation app built on Frida.\n' "$NATIVE_VERSION" > $PKG/DEBIAN/control
+          printf 'Package: luma\nVersion: %s\nSection: devel\nPriority: optional\nArchitecture: amd64\nDepends: libadwaita-1-0, libwebkitgtk-6.0-4, libzip5, libnice10, libswiftlang\nMaintainer: Ole Andre Vadla Ravnas <oleavr@frida.re>\nDescription: Luma - Dynamic instrumentation toolkit\n Interactive dynamic instrumentation app built on Frida.\n' "$NATIVE_VERSION" > $PKG/DEBIAN/control
+          install -m0755 LumaGtk/build-aux/linux/deb-postinst $PKG/DEBIAN/postinst
+          install -m0755 LumaGtk/build-aux/linux/deb-postrm   $PKG/DEBIAN/postrm
           dpkg-deb --build $PKG
           mv ${PKG}.deb luma-${LUMA_VERSION}-ubuntu-26.04-x86_64.deb
 
