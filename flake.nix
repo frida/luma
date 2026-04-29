@@ -51,7 +51,7 @@
           meta = with pkgs.lib; {
             description = "The official Frida GUI";
             homepage = "https://luma.frida.re/";
-            license = licenses.wxWindows;
+            license = licenses.mit;
             platforms = [ "x86_64-linux" ];
             mainProgram = "luma";
           };

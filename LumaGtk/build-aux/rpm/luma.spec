@@ -3,7 +3,7 @@ Version:        %{version}
 Release:        1%{?dist}
 Summary:        The official Frida GUI
 
-License:        wxWindows
+License:        MIT
 URL:            https://luma.frida.re/
 
 BuildArch:      x86_64
