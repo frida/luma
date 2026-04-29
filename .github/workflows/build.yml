@@ -912,7 +912,7 @@ jobs:
 
   ubuntu:
     runs-on: ubuntu-latest
-    container: ubuntu:25.10
+    container: ubuntu:26.04
     needs: version
     env:
       LUMA_VERSION: ${{ needs.version.outputs.version }}
@@ -977,7 +977,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: /tmp/frida-destdir
-          key: ${{ runner.os }}-ubuntu2510-frida-core-${{ env.FRIDA_CORE_REF }}-v2
+          key: ${{ runner.os }}-ubuntu2604-frida-core-${{ env.FRIDA_CORE_REF }}-v2
 
       - name: Build frida-core (shared)
         if: steps.frida-cache.outputs.cache-hit != 'true'
@@ -995,7 +995,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: /tmp/frida-destdir
-          key: ${{ runner.os }}-ubuntu2510-frida-core-${{ env.FRIDA_CORE_REF }}-v2
+          key: ${{ runner.os }}-ubuntu2604-frida-core-${{ env.FRIDA_CORE_REF }}-v2
 
       - name: Install frida-core
         run: |
@@ -1007,7 +1007,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: /tmp/r2-destdir
-          key: ${{ runner.os }}-ubuntu2510-radare2-${{ env.RADARE2_REF }}-v2
+          key: ${{ runner.os }}-ubuntu2604-radare2-${{ env.RADARE2_REF }}-v2
 
       - name: Build radare2 (static)
         if: steps.r2-cache.outputs.cache-hit != 'true'
@@ -1023,7 +1023,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: /tmp/r2-destdir
-          key: ${{ runner.os }}-ubuntu2510-radare2-${{ env.RADARE2_REF }}-v2
+          key: ${{ runner.os }}-ubuntu2604-radare2-${{ env.RADARE2_REF }}-v2
 
       - name: Install radare2
         run: |
@@ -1052,12 +1052,12 @@ jobs:
           mkdir -p $PKG/DEBIAN
           printf 'Package: luma\nVersion: %s\nSection: devel\nPriority: optional\nArchitecture: amd64\nDepends: libgtk-4-1, libadwaita-1-0, libwebkitgtk-6.0-4, libsoup-3.0-0\nMaintainer: Ole Andre Vadla Ravnas <oleavr@frida.re>\nDescription: Luma - Dynamic instrumentation toolkit\n Interactive dynamic instrumentation app built on Frida.\n' "$NATIVE_VERSION" > $PKG/DEBIAN/control
           dpkg-deb --build $PKG
-          mv ${PKG}.deb luma-${LUMA_VERSION}-ubuntu-25.10-x86_64.deb
+          mv ${PKG}.deb luma-${LUMA_VERSION}-ubuntu-26.04-x86_64.deb
 
       - uses: actions/upload-artifact@v7
         with:
-          name: luma-${{ env.LUMA_VERSION }}-ubuntu-25.10-x86_64.deb
-          path: luma-${{ env.LUMA_VERSION }}-ubuntu-25.10-x86_64.deb
+          name: luma-${{ env.LUMA_VERSION }}-ubuntu-26.04-x86_64.deb
+          path: luma-${{ env.LUMA_VERSION }}-ubuntu-26.04-x86_64.deb
 
   flatpak:
     runs-on: ubuntu-latest
