@@ -810,11 +810,10 @@ jobs:
             pkg-config \
             rpm-build \
             python3-pip \
-            python3-setuptools
-
-      - name: Install Swift
-        run: |
-          dnf install -y swiftlang
+            python3-setuptools \
+            swiftlang \
+            patchelf \
+            rsync
           swift --version
 
       - name: Restore frida-core cache
@@ -881,9 +880,6 @@ jobs:
           ldconfig
 
       - uses: actions/checkout@v6
-
-      - name: Install packaging tools
-        run: dnf install -y patchelf rsync
 
       - name: Build
         run: cd LumaGtk && make build SWIFT_BUILD_FLAGS="-c release"
@@ -957,11 +953,10 @@ jobs:
             binutils \
             python3-pip \
             gcc \
-            g++
-
-      - name: Install Swift
-        run: |
-          apt-get install -y swiftlang
+            g++ \
+            swiftlang \
+            patchelf \
+            rsync
           swift --version
 
       - name: Restore frida-core cache
@@ -1023,9 +1018,6 @@ jobs:
           ldconfig
 
       - uses: actions/checkout@v6
-
-      - name: Install packaging tools
-        run: apt-get install -y patchelf rsync
 
       - name: Build
         run: cd LumaGtk && make build SWIFT_BUILD_FLAGS="-c release"
