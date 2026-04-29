@@ -156,7 +156,11 @@ if (Test-Path $fridaLib) {
     robocopy $fridaLib $fridaStage /E /NFL /NDL /NJH /NJS /NP /XF 'frida-gadget.dll' | Out-Null
 }
 
-# GTK data: icons, glib schemas, gdk-pixbuf loaders.
+# GTK data: icons, glib schemas. vcpkg's gdk-pixbuf is built with
+# -Dbuiltin_loaders=all, so PNG/JPEG/TIFF/etc. live inside
+# gdk_pixbuf-2.0-0.dll itself — there is no lib\gdk-pixbuf-2.0\
+# subtree to stage. glib-networking's TLS module is handled
+# separately below.
 function Copy-Tree {
     param([string] $From, [string] $To)
     if (-not (Test-Path $From)) { return }
@@ -164,9 +168,31 @@ function Copy-Tree {
 }
 Copy-Tree (Join-Path $env:VCPKG_PREFIX 'share\glib-2.0\schemas') (Join-Path $stage 'share\glib-2.0\schemas')
 Copy-Tree (Join-Path $env:VCPKG_PREFIX 'share\icons')            (Join-Path $stage 'share\icons')
-Copy-Tree (Join-Path $env:VCPKG_PREFIX 'lib\gdk-pixbuf-2.0')     (Join-Path $stage 'lib\gdk-pixbuf-2.0')
-Copy-Tree (Join-Path $env:VCPKG_PREFIX 'lib\gio\modules')        (Join-Path $stage 'lib\gio\modules')
 Copy-Tree (Join-Path $pkg 'data\icons\hicolor')                  (Join-Path $stage 'share\icons\hicolor')
+
+# glib-networking ships the TLS backend GIO loads at runtime to
+# satisfy libsoup HTTPS. vcpkg's portfile relocates the modules from
+# lib\gio\modules to plugins\glib-networking and then wipes lib\, so
+# we have to fish them out of plugins\ and replant them where GIO
+# expects to find them. The OpenSSL runtime DLLs are imported by
+# the module rather than by Luma.exe, so Add-DllClosure above never
+# sees them — re-run it against the module to pull in libssl,
+# libcrypto, etc. alongside Luma.exe.
+#
+# We deliberately ship *only* gioopenssl.dll. vcpkg defaults to the
+# OpenSSL backend on Windows, but if anyone rebuilds with
+# glib-networking[gnutls] the plugins\ dir would also contain
+# giognutls.dll, and GIO picks the first backend it finds — copy it
+# by accident and you trade Windows' system trust store for whatever
+# CA bundle gnutls happens to find (usually nothing).
+$gioOpenssl = Join-Path $env:VCPKG_PREFIX 'plugins\glib-networking\gioopenssl.dll'
+if (-not (Test-Path $gioOpenssl)) {
+    throw "gioopenssl.dll not found at $gioOpenssl. Without it libsoup cannot talk TLS. Check that vcpkg built glib-networking with the openssl feature."
+}
+$gioModulesStage = Join-Path $stage 'lib\gio\modules'
+New-Item -ItemType Directory -Force -Path $gioModulesStage | Out-Null
+Copy-Item $gioOpenssl $gioModulesStage -Force
+Add-DllClosure (Join-Path $gioModulesStage 'gioopenssl.dll')
 
 # vcpkg has no adwaita-icon-theme port, so fetch the upstream tarball
 # and stage Adwaita directly. Symbolic icons (e.g. accessories-
