@@ -1,7 +1,7 @@
 import Foundation
 import Frida
 
-public enum JSInspectValue: nonisolated Codable, nonisolated Equatable, @unchecked Sendable {
+public enum JSInspectValue: @unchecked Sendable {
     case number(Double)
     case string(String)
     case object(id: Int, properties: [Property])
@@ -25,7 +25,7 @@ public enum JSInspectValue: nonisolated Codable, nonisolated Equatable, @uncheck
     case depthLimit(container: ContainerKind)
     case circular(id: Int)
 
-    public struct Property: nonisolated Codable, nonisolated Equatable {
+    public struct Property {
         public let key: JSInspectValue
         public let value: JSInspectValue
 
@@ -48,7 +48,7 @@ public enum JSInspectValue: nonisolated Codable, nonisolated Equatable, @uncheck
         }
     }
 
-    public struct Bytes: nonisolated Equatable {
+    public struct Bytes {
         public let data: Data
         public let kind: BytesKind
 
@@ -58,7 +58,7 @@ public enum JSInspectValue: nonisolated Codable, nonisolated Equatable, @uncheck
         }
     }
 
-    public enum BytesKind: String, nonisolated Codable, nonisolated Equatable {
+    public enum BytesKind: String {
         case arrayBuffer = "ArrayBuffer"
         case dataView = "DataView"
 
@@ -75,7 +75,7 @@ public enum JSInspectValue: nonisolated Codable, nonisolated Equatable, @uncheck
         case bigUint64Array = "BigUint64Array"
     }
 
-    public enum ContainerKind: nonisolated Equatable {
+    public enum ContainerKind {
         case object
         case array
         case map
@@ -552,3 +552,17 @@ extension JSInspectValue {
         return try decodeNode(tree)
     }
 }
+
+#if compiler(>=6.2)
+extension JSInspectValue: nonisolated Codable, nonisolated Equatable {}
+extension JSInspectValue.Property: nonisolated Codable, nonisolated Equatable {}
+extension JSInspectValue.Bytes: nonisolated Equatable {}
+extension JSInspectValue.BytesKind: nonisolated Codable, nonisolated Equatable {}
+extension JSInspectValue.ContainerKind: nonisolated Equatable {}
+#else
+extension JSInspectValue: Codable, Equatable {}
+extension JSInspectValue.Property: Codable, Equatable {}
+extension JSInspectValue.Bytes: Equatable {}
+extension JSInspectValue.BytesKind: Codable, Equatable {}
+extension JSInspectValue.ContainerKind: Equatable {}
+#endif
