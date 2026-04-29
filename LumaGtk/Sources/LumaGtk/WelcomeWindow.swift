@@ -326,7 +326,7 @@ final class WelcomeWindow {
         let url = Self.untitledURL(in: baseDir, named: lab.title)
         let fm = FileManager.default
         if !fm.fileExists(atPath: url.path) {
-            fm.createFile(atPath: url.path, contents: Data())
+            _ = fm.createFile(atPath: url.path, contents: Data())
         }
         CollaborationJoinQueue.shared.enqueue(labID: lab.id)
         application.openWindow(forFile: url)
