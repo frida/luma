@@ -1535,6 +1535,37 @@ jobs:
             artifacts/luma-*.flatpak
           fail_on_unmatched_files: true
 
+      - name: Check out main for flake.nix bump
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          path: repo
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pin flake.nix to ${{ github.ref_name }}
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          deb=$(ls artifacts/luma-${VERSION}-ubuntu-*-x86_64.deb | head -1)
+          ubuntu_rel=$(basename "$deb" | sed -nE "s/^luma-${VERSION}-ubuntu-([0-9.]+)-x86_64\\.deb$/\\1/p")
+          hash="sha256-$(openssl dgst -sha256 -binary "$deb" | base64)"
+          cd repo
+          sed -i \
+            -e "s|version = \"[^\"]*\";|version = \"${VERSION}\";|" \
+            -e "s|ubuntu-[0-9.]*-x86_64\\.deb|ubuntu-${ubuntu_rel}-x86_64.deb|" \
+            -e "s|hash = \"sha256-[^\"]*\";|hash = \"${hash}\";|" \
+            flake.nix
+          if git diff --quiet flake.nix; then
+            echo "flake.nix already up to date"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add flake.nix
+          git commit -m "nix: Pin flake.nix to ${VERSION}"
+          git push
+
       - name: Notify luma-website
         env:
           GH_TOKEN: ${{ secrets.LUMA_WEBSITE_DISPATCH_TOKEN }}
