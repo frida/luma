@@ -66,6 +66,7 @@ struct SidebarView: View {
                         .tag(SidebarItemID.itraceCapture(session.id, capture.id))
                     }
                 }
+
             }
 
             if !packages.isEmpty {
@@ -80,6 +81,7 @@ struct SidebarView: View {
         .listStyle(.sidebar)
     }
 }
+
 
 private struct SidebarNotebookRow: View {
     var body: some View {
@@ -119,7 +121,15 @@ private struct SidebarSessionHeaderRow: View {
         }
         .padding(.vertical, 4)
         .contextMenu {
-            if let node {
+            if !workspace.engine.localUserHosts(session.id) {
+                if workspace.engine.collaboration.isOwner {
+                    Button {
+                        rehost()
+                    } label: {
+                        Label("Run on My Device…", systemImage: "rectangle.connected.to.line.below")
+                    }
+                }
+            } else if let node {
                 Button(role: .destructive) {
                     presentConfirmation(
                         title: "Kill Process?",
@@ -135,24 +145,36 @@ private struct SidebarSessionHeaderRow: View {
                 } label: {
                     Label("Detach Session", systemImage: "bolt.slash")
                 }
+
+                Divider()
+
+                Button(role: .destructive) {
+                    presentConfirmation(
+                        title: "Delete Session?",
+                        message: "This will remove the session and its history.",
+                        destructiveLabel: "Delete Session"
+                    ) { deleteSession() }
+                } label: {
+                    Label("Delete Session", systemImage: "trash")
+                }
             } else {
                 Button {
                     reestablish()
                 } label: {
                     Label("\(session.kind.reestablishLabel)…", systemImage: "arrow.clockwise")
                 }
-            }
 
-            Divider()
+                Divider()
 
-            Button(role: .destructive) {
-                presentConfirmation(
-                    title: "Delete Session?",
-                    message: "This will remove the session and its history.",
-                    destructiveLabel: "Delete Session"
-                ) { deleteSession() }
-            } label: {
-                Label("Delete Session", systemImage: "trash")
+                Button(role: .destructive) {
+                    presentConfirmation(
+                        title: "Delete Session?",
+                        message: "This will remove the session and its history.",
+                        destructiveLabel: "Delete Session"
+                    ) { deleteSession() }
+                } label: {
+                    Label("Delete Session", systemImage: "trash")
+                }
             }
         }
         .confirmationDialog(
@@ -172,12 +194,14 @@ private struct SidebarSessionHeaderRow: View {
         }
     }
 
-    private var displayProcessName: String { node?.process.name ?? session.processName }
-    private var displayDeviceName: String { node?.device.name ?? session.deviceName }
+    private var displayProcessName: String { node?.processName ?? session.processName }
+    private var displayDeviceName: String { node?.deviceName ?? session.deviceName }
 
     @ViewBuilder
     private var iconView: some View {
-        if let node, let lastIcon = node.process.icons.last {
+        if let host = session.host, host.id != workspace.engine.collaboration.localUser?.id {
+            hostAvatarView(host: host)
+        } else if let node, let lastIcon = node.processIcons.last {
             lastIcon.swiftUIImage
                 .resizable()
                 .interpolation(.high)
@@ -202,6 +226,11 @@ private struct SidebarSessionHeaderRow: View {
         }
     }
 
+    @ViewBuilder
+    private func hostAvatarView(host: LumaCore.CollaborationSession.UserInfo) -> some View {
+        UserAvatarView(user: host, size: 24)
+    }
+
     private var placeholderSeed: String {
         "\(session.deviceID)/\(displayProcessName)"
     }
@@ -215,11 +244,19 @@ private struct SidebarSessionHeaderRow: View {
         }
     }
 
+    private func rehost() {
+        Task { @MainActor in
+            let result = await workspace.engine.reHost(sessionID: session.id)
+            if case .needsUserInput(let reason, let session) = result {
+                workspace.targetPickerContext = .reestablish(session: session, reason: reason)
+            }
+        }
+    }
+
     private func killProcess() {
         guard let node else { return }
         Task { @MainActor in
-            let pid = session.lastKnownPID
-            do { try await node.device.kill(pid) } catch {
+            do { try await node.kill() } catch {
                 workspace.engine.updateSession(id: session.id) { $0.lastError = error.localizedDescription }
             }
         }
@@ -301,18 +338,19 @@ private struct SidebarInstrumentRow: View {
         .font(.callout)
         .contentShape(Rectangle())
         .padding(.leading, 20)
-        .opacity(instance.isEnabled ? 1 : 0.3)
+        .opacity(instance.state == .enabled ? 1 : 0.3)
         .contextMenu {
             Button {
+                let newState: LumaCore.InstrumentState = instance.state == .enabled ? .disabled : .enabled
                 Task { @MainActor in
-                    await workspace.engine.setInstrumentEnabled(instance, enabled: !instance.isEnabled)
+                    await workspace.engine.setInstrumentState(instance, state: newState)
                 }
             } label: {
                 Label(
-                    instance.isEnabled
+                    instance.state == .enabled
                         ? "Disable \"\(displayName)\""
                         : "Enable \"\(displayName)\"",
-                    systemImage: instance.isEnabled ? "pause.circle" : "play.circle"
+                    systemImage: instance.state == .enabled ? "pause.circle" : "play.circle"
                 )
             }
 

@@ -1,4 +1,4 @@
-public enum ConsoleLevel: String, Sendable {
+public enum ConsoleLevel: String, Codable, Sendable {
     case info
     case debug
     case warning

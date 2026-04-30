@@ -480,7 +480,9 @@ final class AddInstrumentDialog {
                 configJSON: configJSON,
                 sessionID: sessionID
             )
-            onAdded?(instance)
+            if let instance {
+                onAdded?(instance)
+            }
         }
         close()
     }

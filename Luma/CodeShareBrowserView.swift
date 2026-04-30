@@ -393,6 +393,8 @@ struct CodeShareProjectDetailView: View {
             sessionID: session.id
         )
 
-        onInstrumentAdded(newInstrument)
+        if let newInstrument {
+            onInstrumentAdded(newInstrument)
+        }
     }
 }

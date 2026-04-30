@@ -152,7 +152,9 @@ struct AddInstrumentSheet: View {
                             configJSON: initialConfigJSON,
                             sessionID: session.id
                         )
-                        onInstrumentAdded?(newInstrument)
+                        if let newInstrument {
+                            onInstrumentAdded?(newInstrument)
+                        }
                     }
                     dismiss()
                 }

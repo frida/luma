@@ -416,6 +416,73 @@ final class CollaborationPanel {
         return row
     }
 
+    private func makeLabOverflowMenu() -> MenuButton {
+        let menuButton = MenuButton()
+        menuButton.hasFrame = false
+        menuButton.add(cssClass: "flat")
+        menuButton.set(iconName: "view-more-symbolic")
+        menuButton.tooltipText = "Lab actions"
+
+        let menuBox = Box(orientation: .vertical, spacing: 2)
+        menuBox.marginStart = 6
+        menuBox.marginEnd = 6
+        menuBox.marginTop = 6
+        menuBox.marginBottom = 6
+
+        let popover = Popover()
+        popover.autohide = true
+
+        let leaveButton = Button(label: "Leave lab")
+        leaveButton.add(cssClass: "flat")
+        leaveButton.add(cssClass: "luma-menu-destructive")
+        leaveButton.onClicked { [weak self, weak popover] _ in
+            MainActor.assumeIsolated {
+                popover?.popdown()
+                self?.confirmAndLeaveLab()
+            }
+        }
+        menuBox.append(child: leaveButton)
+
+        let disconnectButton = Button(label: "Disconnect from lab")
+        disconnectButton.add(cssClass: "flat")
+        disconnectButton.onClicked { [weak self, weak popover] _ in
+            MainActor.assumeIsolated {
+                popover?.popdown()
+                guard let engine = self?.engine else { return }
+                Task { @MainActor in
+                    await engine.collaboration.stop()
+                }
+            }
+        }
+        menuBox.append(child: disconnectButton)
+
+        popover.set(child: menuBox)
+        menuButton.set(popover: popover)
+        return menuButton
+    }
+
+    private func confirmAndLeaveLab() {
+        guard let engine else { return }
+        let dialog = Adw.AlertDialog(
+            heading: "Leave this lab?",
+            body: "You'll lose access to the shared notebook. The lab keeps going for everyone else."
+        )
+        dialog.addResponse(id: "cancel", label: "_Cancel")
+        dialog.addResponse(id: "leave", label: "Leave")
+        dialog.setResponseAppearance(response: "leave", appearance: .destructive)
+        dialog.setDefault(response: "cancel")
+        dialog.setClose(response: "cancel")
+        dialog.onResponse { _, responseID in
+            MainActor.assumeIsolated {
+                guard responseID == "leave" else { return }
+                Task { @MainActor in
+                    await engine.collaboration.leaveLab()
+                }
+            }
+        }
+        dialog.present(parent: widget)
+    }
+
     private func observeParticipants() {
         guard let engine else { return }
         engine.collaboration.onMemberAdded = { [weak self] member in
@@ -428,6 +495,9 @@ final class CollaborationPanel {
         }
         engine.collaboration.onMemberRemoved = { [weak self] userID in
             self?.removeParticipant(userID)
+        }
+        engine.collaboration.onMemberRoleChanged = { [weak self] _, _ in
+            self?.refreshParticipants()
         }
         engine.collaboration.onMemberPresenceChanged = { [weak self] _, _ in
             self?.refreshParticipants()
@@ -587,11 +657,15 @@ final class CollaborationPanel {
             headerRow.append(child: makeLabTitleRow())
             labSection.append(child: headerRow)
 
+            let roleRow = Box(orientation: .horizontal, spacing: 6)
             let roleLabel = Label(str: engine.collaboration.isHost ? "You are hosting this lab." : "You joined this lab.")
             roleLabel.halign = .start
+            roleLabel.hexpand = true
             roleLabel.add(cssClass: "caption")
             roleLabel.add(cssClass: "dim-label")
-            labSection.append(child: roleLabel)
+            roleRow.append(child: roleLabel)
+            roleRow.append(child: makeLabOverflowMenu())
+            labSection.append(child: roleRow)
 
             if notificationsButton.parent != nil {
                 notificationsButton.unparent()
@@ -653,18 +727,6 @@ final class CollaborationPanel {
             copiedToastLabel = toast
 
             labSection.append(child: inviteFrame)
-
-            let leave = Button(label: "Disconnect from lab")
-            leave.halign = .start
-            leave.onClicked { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let engine = self?.engine else { return }
-                    Task { @MainActor in
-                        await engine.collaboration.stop()
-                    }
-                }
-            }
-            labSection.append(child: leave)
 
         case .error(let msg):
             let icon = Image(iconName: "dialog-warning-symbolic")
@@ -752,7 +814,68 @@ final class CollaborationPanel {
             overlay.addOverlay(widget: crown)
         }
 
+        let rightClick = GestureClick()
+        rightClick.set(button: 3)
+        rightClick.onPressed { [weak self, overlay] _, _, x, y in
+            MainActor.assumeIsolated {
+                self?.presentMemberContextMenu(for: member, anchor: overlay, x: x, y: y)
+            }
+        }
+        overlay.install(controller: rightClick)
+
         return overlay
+    }
+
+    private func presentMemberContextMenu(
+        for member: LumaCore.CollaborationSession.Member,
+        anchor: Widget,
+        x: Double,
+        y: Double
+    ) {
+        guard let engine,
+            engine.collaboration.isOwner,
+            !engine.collaboration.isSelf(member.user.id)
+        else { return }
+
+        let blockedByLastOwner = (member.role == .owner && ownerCount == 1)
+
+        var roleSection: [ContextMenu.Item] = []
+        if member.role == .member {
+            roleSection.append(.init("Promote to owner") { [weak self] in
+                guard let engine = self?.engine else { return }
+                Task { @MainActor in
+                    await engine.collaboration.setMemberRole(userID: member.user.id, role: .owner)
+                }
+            })
+        } else if !blockedByLastOwner {
+            roleSection.append(.init("Demote to member") { [weak self] in
+                guard let engine = self?.engine else { return }
+                Task { @MainActor in
+                    await engine.collaboration.setMemberRole(userID: member.user.id, role: .member)
+                }
+            })
+        }
+
+        var sections: [[ContextMenu.Item]] = []
+        if !roleSection.isEmpty { sections.append(roleSection) }
+        if !blockedByLastOwner {
+            sections.append([
+                .init("Remove from lab", destructive: true) { [weak self] in
+                    guard let engine = self?.engine else { return }
+                    Task { @MainActor in
+                        await engine.collaboration.removeMembers([member.user.id])
+                    }
+                }
+            ])
+        }
+        guard !sections.isEmpty else { return }
+
+        ContextMenu.present(sections, at: anchor, x: x, y: y)
+    }
+
+    private var ownerCount: Int {
+        guard let engine else { return 0 }
+        return engine.collaboration.members.reduce(0) { $0 + ($1.role == .owner ? 1 : 0) }
     }
 
     private func refreshChat() {

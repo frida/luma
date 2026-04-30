@@ -11,7 +11,7 @@ public final class ProjectStore: Sendable {
         var config = Configuration()
         config.foreignKeysEnabled = true
         db = try DatabaseQueue(path: path, configuration: config)
-        try migrator.migrate(db)
+        try db.write(Self.createSchema)
 
         let id = instanceID
         let observer = CommitNotifyingObserver(instanceID: id)
@@ -212,6 +212,12 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    public func fetchREPLCell(id: UUID) throws -> REPLCell? {
+        try db.read { db in
+            try REPLCell.fetchOne(db, key: id)
+        }
+    }
+
     public func save(_ cell: REPLCell) throws {
         try db.write { db in
             try cell.save(db)
@@ -309,6 +315,60 @@ public final class ProjectStore: Sendable {
             entryID: op.entryID.uuidString,
             payloadJSON: json,
             binaryData: binary,
+            createdAt: Date()
+        )
+        try record.save(db)
+    }
+
+    // MARK: - Session Outbox
+
+    public func saveSessionOutboxOp(_ op: SessionOp) throws {
+        try db.write { db in
+            try saveSessionOutboxOp(op, in: db)
+        }
+    }
+
+    public func saveSessionOutboxOps(_ ops: [SessionOp]) throws {
+        try db.write { db in
+            for op in ops {
+                try saveSessionOutboxOp(op, in: db)
+            }
+        }
+    }
+
+    public func fetchSessionOutboxOps() throws -> [SessionOp] {
+        try db.read { db in
+            let rows = try SessionOutboxRecord
+                .order(Column("created_at").asc, Column("op_id").asc)
+                .fetchAll(db)
+            return rows.compactMap { $0.toOp() }
+        }
+    }
+
+    public func removeSessionOutboxOp(opID: UUID) throws {
+        try db.write { db in
+            _ = try SessionOutboxRecord.deleteOne(db, key: opID.uuidString)
+        }
+    }
+
+    public func clearSessionOutbox() throws {
+        try db.write { db in
+            _ = try SessionOutboxRecord.deleteAll(db)
+        }
+    }
+
+    private func saveSessionOutboxOp(_ op: SessionOp, in db: Database) throws {
+        let payload = op.toJSON()
+        let data = try JSONSerialization.data(
+            withJSONObject: payload,
+            options: [.sortedKeys]
+        )
+        let json = String(data: data, encoding: .utf8) ?? "{}"
+        let record = SessionOutboxRecord(
+            opID: op.opID.uuidString,
+            kind: op.kind,
+            sessionID: op.sessionID.uuidString,
+            payloadJSON: json,
             createdAt: Date()
         )
         try record.save(db)
@@ -442,137 +502,140 @@ public final class ProjectStore: Sendable {
 
     // MARK: - Schema
 
-    private var migrator: DatabaseMigrator {
-        var migrator = DatabaseMigrator()
-
-        migrator.registerMigration("v1") { db in
-            try db.create(table: "process_session") { t in
-                t.primaryKey("id", .text).notNull()
-                t.column("kind", .blob).notNull()
-                t.column("device_id", .text).notNull()
-                t.column("device_name", .text).notNull()
-                t.column("process_name", .text).notNull()
-                t.column("icon_png_data", .blob)
-                t.column("phase", .integer).notNull()
-                t.column("detach_reason", .integer).notNull()
-                t.column("last_error", .text)
-                t.column("created_at", .datetime).notNull()
-                t.column("last_known_pid", .integer).notNull()
-                t.column("last_attached_at", .datetime)
-                t.column("process_info", .blob)
-                t.column("last_known_modules", .blob)
-            }
-
-            try db.create(table: "instrument_instance") { t in
-                t.primaryKey("id", .text).notNull()
-                t.column("session_id", .text).notNull()
-                    .references("process_session", onDelete: .cascade)
-                t.column("kind", .text).notNull()
-                t.column("source_identifier", .text).notNull()
-                t.column("is_enabled", .boolean).notNull().defaults(to: true)
-                t.column("config_json", .blob).notNull()
-            }
-
-            try db.create(table: "repl_cell") { t in
-                t.primaryKey("id", .text).notNull()
-                t.column("session_id", .text).notNull()
-                    .references("process_session", onDelete: .cascade)
-                t.column("code", .text).notNull()
-                t.column("result", .blob).notNull()
-                t.column("timestamp", .datetime).notNull()
-                t.column("is_session_boundary", .boolean).notNull().defaults(to: false)
-            }
-
-            try db.create(table: "notebook_entry") { t in
-                t.primaryKey("id", .text).notNull()
-                t.column("kind", .text).notNull()
-                t.column("editors", .blob).notNull()
-                t.column("timestamp", .datetime).notNull()
-                t.column("position", .double).notNull().defaults(to: 0)
-                t.column("title", .text).notNull()
-                t.column("details", .text).notNull()
-                t.column("js_value", .blob)
-                t.column("binary_data", .blob)
-                t.column("session_id", .text)
-                t.column("process_name", .text)
-            }
-
-            try db.create(table: "notebook_outbox") { t in
-                t.primaryKey("op_id", .text).notNull()
-                t.column("kind", .text).notNull()
-                t.column("entry_id", .text).notNull()
-                t.column("payload_json", .text).notNull()
-                t.column("binary_data", .blob)
-                t.column("created_at", .datetime).notNull()
-            }
-
-            try db.create(table: "itrace_capture") { t in
-                t.primaryKey("id", .text).notNull()
-                t.column("session_id", .text).notNull()
-                    .references("process_session", onDelete: .cascade)
-                t.column("hook_id", .text).notNull()
-                t.column("call_index", .integer).notNull()
-                t.column("captured_at", .datetime).notNull()
-                t.column("display_name", .text).notNull()
-                t.column("trace_data", .blob).notNull()
-                t.column("metadata_json", .blob).notNull()
-                t.column("lost", .integer).notNull().defaults(to: 0)
-            }
-
-            try db.create(table: "address_insight") { t in
-                t.primaryKey("id", .text).notNull()
-                t.column("session_id", .text).notNull()
-                    .references("process_session", onDelete: .cascade)
-                t.column("created_at", .datetime).notNull()
-                t.column("title", .text).notNull()
-                t.column("kind", .integer).notNull()
-                t.column("anchor", .blob).notNull()
-                t.column("byte_count", .integer).notNull()
-                t.column("last_resolved_address", .integer)
-            }
-
-            try db.create(table: "remote_device_config") { t in
-                t.primaryKey("id", .text).notNull()
-                t.column("address", .text).notNull()
-                t.column("certificate", .text)
-                t.column("origin", .text)
-                t.column("token", .text)
-                t.column("keepalive_interval", .integer)
-            }
-
-            try db.create(table: "project_packages_state") { t in
-                t.primaryKey("id", .text).notNull()
-                t.column("package_json", .blob)
-                t.column("package_lock_json", .blob)
-            }
-
-            try db.create(table: "installed_package") { t in
-                t.primaryKey("id", .text).notNull()
-                t.column("packages_state_id", .text).notNull()
-                    .references("project_packages_state", onDelete: .cascade)
-                t.column("name", .text).notNull()
-                t.column("version", .text).notNull()
-                t.column("global_alias", .text)
-                t.column("added_at", .datetime).notNull()
-            }
-
-            try db.create(table: "project_collaboration_state") { t in
-                t.primaryKey("id", .text).notNull()
-                t.column("lab_id", .text)
-            }
-
-            try db.create(table: "target_picker_state") { t in
-                t.primaryKey("id", .text).notNull()
-                t.column("last_selected_device_id", .text)
-                t.column("last_mode_raw", .text)
-                t.column("last_spawn_submode_raw", .text)
-                t.column("last_spawn_application_id", .text)
-                t.column("last_spawn_program_path", .text)
-                t.column("last_selected_process_name", .text)
-            }
+    private static func createSchema(_ db: Database) throws {
+        try db.create(table: "process_session", ifNotExists: true) { t in
+            t.primaryKey("id", .text).notNull()
+            t.column("kind", .blob).notNull()
+            t.column("host", .blob)
+            t.column("device_id", .text).notNull()
+            t.column("device_name", .text).notNull()
+            t.column("process_name", .text).notNull()
+            t.column("icon_png_data", .blob)
+            t.column("phase", .integer).notNull()
+            t.column("detach_reason", .integer).notNull()
+            t.column("last_error", .text)
+            t.column("created_at", .datetime).notNull()
+            t.column("last_known_pid", .integer).notNull()
+            t.column("last_attached_at", .datetime)
+            t.column("process_info", .blob)
+            t.column("last_known_modules", .blob)
         }
 
-        return migrator
+        try db.create(table: "instrument_instance", ifNotExists: true) { t in
+            t.primaryKey("id", .text).notNull()
+            t.column("session_id", .text).notNull()
+                .references("process_session", onDelete: .cascade)
+            t.column("kind", .text).notNull()
+            t.column("source_identifier", .text).notNull()
+            t.column("state", .text).notNull().defaults(to: "enabled")
+            t.column("config_json", .blob).notNull()
+        }
+
+        try db.create(table: "repl_cell", ifNotExists: true) { t in
+            t.primaryKey("id", .text).notNull()
+            t.column("session_id", .text).notNull()
+                .references("process_session", onDelete: .cascade)
+            t.column("code", .text).notNull()
+            t.column("result", .blob).notNull()
+            t.column("timestamp", .datetime).notNull()
+            t.column("is_session_boundary", .boolean).notNull().defaults(to: false)
+        }
+
+        try db.create(table: "notebook_entry", ifNotExists: true) { t in
+            t.primaryKey("id", .text).notNull()
+            t.column("kind", .text).notNull()
+            t.column("editors", .blob).notNull()
+            t.column("timestamp", .datetime).notNull()
+            t.column("position", .double).notNull().defaults(to: 0)
+            t.column("title", .text).notNull()
+            t.column("details", .text).notNull()
+            t.column("js_value", .blob)
+            t.column("binary_data", .blob)
+            t.column("session_id", .text)
+            t.column("process_name", .text)
+        }
+
+        try db.create(table: "notebook_outbox", ifNotExists: true) { t in
+            t.primaryKey("op_id", .text).notNull()
+            t.column("kind", .text).notNull()
+            t.column("entry_id", .text).notNull()
+            t.column("payload_json", .text).notNull()
+            t.column("binary_data", .blob)
+            t.column("created_at", .datetime).notNull()
+        }
+
+        try db.create(table: "session_outbox", ifNotExists: true) { t in
+            t.primaryKey("op_id", .text).notNull()
+            t.column("kind", .text).notNull()
+            t.column("session_id", .text).notNull()
+            t.column("payload_json", .text).notNull()
+            t.column("created_at", .datetime).notNull()
+        }
+
+        try db.create(table: "itrace_capture", ifNotExists: true) { t in
+            t.primaryKey("id", .text).notNull()
+            t.column("session_id", .text).notNull()
+                .references("process_session", onDelete: .cascade)
+            t.column("hook_id", .text).notNull()
+            t.column("call_index", .integer).notNull()
+            t.column("captured_at", .datetime).notNull()
+            t.column("display_name", .text).notNull()
+            t.column("trace_data", .blob).notNull()
+            t.column("metadata_json", .blob).notNull()
+            t.column("lost", .integer).notNull().defaults(to: 0)
+        }
+
+        try db.create(table: "address_insight", ifNotExists: true) { t in
+            t.primaryKey("id", .text).notNull()
+            t.column("session_id", .text).notNull()
+                .references("process_session", onDelete: .cascade)
+            t.column("created_at", .datetime).notNull()
+            t.column("title", .text).notNull()
+            t.column("kind", .integer).notNull()
+            t.column("anchor", .blob).notNull()
+            t.column("byte_count", .integer).notNull()
+            t.column("last_resolved_address", .integer)
+        }
+
+        try db.create(table: "remote_device_config", ifNotExists: true) { t in
+            t.primaryKey("id", .text).notNull()
+            t.column("address", .text).notNull()
+            t.column("certificate", .text)
+            t.column("origin", .text)
+            t.column("token", .text)
+            t.column("keepalive_interval", .integer)
+        }
+
+        try db.create(table: "project_packages_state", ifNotExists: true) { t in
+            t.primaryKey("id", .text).notNull()
+            t.column("package_json", .blob)
+            t.column("package_lock_json", .blob)
+        }
+
+        try db.create(table: "installed_package", ifNotExists: true) { t in
+            t.primaryKey("id", .text).notNull()
+            t.column("packages_state_id", .text).notNull()
+                .references("project_packages_state", onDelete: .cascade)
+            t.column("name", .text).notNull()
+            t.column("version", .text).notNull()
+            t.column("global_alias", .text)
+            t.column("added_at", .datetime).notNull()
+        }
+
+        try db.create(table: "project_collaboration_state", ifNotExists: true) { t in
+            t.primaryKey("id", .text).notNull()
+            t.column("lab_id", .text)
+        }
+
+        try db.create(table: "target_picker_state", ifNotExists: true) { t in
+            t.primaryKey("id", .text).notNull()
+            t.column("last_selected_device_id", .text)
+            t.column("last_mode_raw", .text)
+            t.column("last_spawn_submode_raw", .text)
+            t.column("last_spawn_application_id", .text)
+            t.column("last_spawn_program_path", .text)
+            t.column("last_selected_process_name", .text)
+        }
     }
 }
 

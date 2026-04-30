@@ -5,30 +5,58 @@ import Observation
 @Observable
 @MainActor
 public final class ProcessNode: Identifiable {
-    public let id = UUID()
+    public enum Phase: String, Sendable {
+        case attaching
+        case attached
+        case detached
+    }
 
-    public let device: Device
-    public let process: ProcessDetails
-    public let session: Session
-    public let script: Script
+    public let id = UUID()
+    public let sessionID: UUID
+
+    public let deviceID: String
+    public let deviceName: String
+    public let pid: UInt
+    public let processName: String
+    public let processIcons: [Icon]
+
+    public internal(set) var phase: Phase
+    public internal(set) var lastSeenAt: Date
 
     public private(set) var modules: [ProcessModule] = []
+
+    private let device: Device
+    private let process: ProcessDetails
+    private let session: Session
+    private let script: Script
+
+    public enum AttachmentState: String, Sendable {
+        case attached
+        case detached
+    }
 
     public struct InstrumentRef: Sendable {
         public let id: UUID
         public let kind: InstrumentKind
         public let sourceIdentifier: String
         public var configJSON: Data
-        public var isEnabled: Bool
-        public var isAttached: Bool
+        public var state: InstrumentState
+        public var attachment: AttachmentState
 
-        public init(id: UUID, kind: InstrumentKind, sourceIdentifier: String, configJSON: Data, isEnabled: Bool = true, isAttached: Bool = false) {
+        public init(
+            id: UUID,
+            kind: InstrumentKind,
+            sourceIdentifier: String,
+            configJSON: Data,
+            state: InstrumentState = .enabled,
+            attachment: AttachmentState = .detached
+        ) {
             self.id = id
             self.kind = kind
             self.sourceIdentifier = sourceIdentifier
             self.configJSON = configJSON
-            self.isEnabled = isEnabled
-            self.isAttached = isAttached
+            self.state = state
+            self.attachment = attachment
         }
     }
 
@@ -78,6 +106,7 @@ public final class ProcessNode: Identifiable {
     }
 
     public init(
+        sessionID: UUID,
         device: Device,
         process: ProcessDetails,
         session: Session,
@@ -85,10 +114,18 @@ public final class ProcessNode: Identifiable {
         instruments: [InstrumentRef] = [],
         drainAgentSource: String? = nil
     ) {
+        self.sessionID = sessionID
         self.device = device
         self.process = process
         self.session = session
         self.script = script
+        self.deviceID = device.id
+        self.deviceName = device.name
+        self.pid = process.pid
+        self.processName = process.name
+        self.processIcons = process.icons
+        self.phase = .attached
+        self.lastSeenAt = Date()
         self.instruments = instruments
         self.drainAgentSource = drainAgentSource
 
@@ -98,12 +135,24 @@ public final class ProcessNode: Identifiable {
 
     public func stop() {
         Task { @MainActor in
-            for instrument in instruments where instrument.isAttached {
+            for instrument in instruments where instrument.attachment == .attached {
                 _ = try? await script.exports.disposeInstrument(["instanceId": instrument.id.uuidString])
             }
             await tearDownITrace()
             try? await session.detach()
         }
+    }
+
+    public func kill() async throws {
+        try await device.kill(pid)
+    }
+
+    public func resume() async throws {
+        try await device.resume(pid)
+    }
+
+    public func loadPackages(_ bundles: [Any]) async throws {
+        try await script.exports.loadPackages(JSValue(bundles))
     }
 
     // MARK: - Session & Script Observation
@@ -112,7 +161,7 @@ public final class ProcessNode: Identifiable {
         Task { @MainActor [weak self] in
             guard let self else { return }
 
-            for await event in self.session.events {
+            for await event in session.events {
                 switch event {
                 case .detached(let reason, _):
                     await self.finalizePendingCapturesOnCrash()
@@ -137,7 +186,7 @@ public final class ProcessNode: Identifiable {
             self.scriptEventsStartWaiters.removeAll(keepingCapacity: false)
             for w in waiters { w.resume() }
 
-            for await event in self.script.events {
+            for await event in script.events {
                 switch event {
                 case .message(let message, let data):
                     if !self.tryHandleMessage(message, data: data) {
@@ -191,8 +240,8 @@ public final class ProcessNode: Identifiable {
                 let addedDicts = (dict["added"] as? [[String: Any]]) ?? []
                 let removedDicts = (dict["removed"] as? [[String: Any]]) ?? []
 
-                let added = addedDicts.compactMap { Self.decodeModuleDTO($0) }
-                let removed = removedDicts.compactMap { Self.decodeModuleDTO($0) }
+                let added = addedDicts.compactMap(ProcessModule.fromJSON)
+                let removed = removedDicts.compactMap(ProcessModule.fromJSON)
 
                 if !removed.isEmpty {
                     let removedBases = Set(removed.map { $0.base })
@@ -369,7 +418,7 @@ public final class ProcessNode: Identifiable {
 
     // MARK: - REPL
 
-    public func evalInREPL(_ code: String) async {
+    public func evalInREPL(_ code: String, cellID: UUID = UUID()) async {
         let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
@@ -379,7 +428,7 @@ public final class ProcessNode: Identifiable {
             let anyResult = try await script.exports.evaluate(jsCode, ["raw": pipeline != nil])
 
             if let pipeline {
-                try await handlePipelineResult(anyResult, originalCode: trimmed, pipeline: pipeline)
+                try await handlePipelineResult(anyResult, cellID: cellID, originalCode: trimmed, pipeline: pipeline)
                 return
             }
 
@@ -387,9 +436,9 @@ public final class ProcessNode: Identifiable {
                 return
             }
 
-            _replResults.yield(REPLResult(code: trimmed, value: .js(jsValue)))
+            _replResults.yield(REPLResult(id: cellID, code: trimmed, value: .js(jsValue)))
         } catch {
-            _replResults.yield(REPLResult(code: trimmed, value: .text("Error: \(error)")))
+            _replResults.yield(REPLResult(id: cellID, code: trimmed, value: .text("Error: \(error)")))
         }
     }
 
@@ -412,6 +461,7 @@ public final class ProcessNode: Identifiable {
 
     private func handlePipelineResult(
         _ anyResult: Any?,
+        cellID: UUID,
         originalCode: String,
         pipeline: String
     ) async throws {
@@ -420,7 +470,7 @@ public final class ProcessNode: Identifiable {
             kind == "error"
         {
             let text = (dict["text"] as? String) ?? "Unknown error"
-            _replResults.yield(REPLResult(code: originalCode, value: .text(text)))
+            _replResults.yield(REPLResult(id: cellID, code: originalCode, value: .text(text)))
             return
         }
 
@@ -430,7 +480,7 @@ public final class ProcessNode: Identifiable {
             let outputString =
                 String(data: outputData, encoding: .utf8)
                 ?? "(\(outputData.count) bytes from pipeline)"
-            _replResults.yield(REPLResult(code: originalCode, value: .text(outputString)))
+            _replResults.yield(REPLResult(id: cellID, code: originalCode, value: .text(outputString)))
             return
         }
 
@@ -440,7 +490,7 @@ public final class ProcessNode: Identifiable {
             let outputString =
                 String(data: outputData, encoding: .utf8)
                 ?? "(\(outputData.count) bytes from pipeline)"
-            _replResults.yield(REPLResult(code: originalCode, value: .text(outputString)))
+            _replResults.yield(REPLResult(id: cellID, code: originalCode, value: .text(outputString)))
             return
         }
 
@@ -452,12 +502,12 @@ public final class ProcessNode: Identifiable {
             let outputString =
                 String(data: outputData, encoding: .utf8)
                 ?? "(\(outputData.count) bytes from pipeline)"
-            _replResults.yield(REPLResult(code: originalCode, value: .text(outputString)))
+            _replResults.yield(REPLResult(id: cellID, code: originalCode, value: .text(outputString)))
             return
         }
 
         let s = anyResult.map { String(describing: $0) } ?? "null"
-        _replResults.yield(REPLResult(code: originalCode, value: .text(s)))
+        _replResults.yield(REPLResult(id: cellID, code: originalCode, value: .text(s)))
     }
 
     private func runPipeline(_ command: String, input: Data) async throws -> Data {
@@ -671,6 +721,17 @@ public final class ProcessNode: Identifiable {
         return out
     }
 
+    public func resolveTargets(scope: String, query: String) async throws -> [[String: Any]] {
+        let raw = try await script.exports.resolveTargets([
+            "scope": scope,
+            "query": query,
+        ])
+        guard let arr = raw as? [[String: Any]] else {
+            throw LumaCoreError.protocolViolation("resolveTargets: unexpected response shape")
+        }
+        return arr
+    }
+
     public func fetchProcessInfo() async -> ProcessInfo? {
         guard let anyInfo = try? await script.exports.getProcessInfo(),
             JSONSerialization.isValidJSONObject(anyInfo),
@@ -700,13 +761,13 @@ public final class ProcessNode: Identifiable {
 
     public func markInstrumentAttached(id: UUID) {
         if let i = instruments.firstIndex(where: { $0.id == id }) {
-            instruments[i].isAttached = true
+            instruments[i].attachment = .attached
         }
     }
 
     public func markInstrumentDetached(id: UUID) {
         if let i = instruments.firstIndex(where: { $0.id == id }) {
-            instruments[i].isAttached = false
+            instruments[i].attachment = .detached
         }
     }
 
@@ -714,6 +775,31 @@ public final class ProcessNode: Identifiable {
         if let i = instruments.firstIndex(where: { $0.id == id }) {
             instruments[i].configJSON = configJSON
         }
+    }
+
+    public func loadInstrumentOnAgent(
+        instanceID: UUID,
+        moduleName: String,
+        source: String,
+        config: Any
+    ) async throws {
+        try await script.exports.loadInstrument(JSValue([
+            "instanceId": instanceID.uuidString,
+            "moduleName": moduleName,
+            "source": source,
+            "config": config,
+        ]))
+    }
+
+    public func disposeInstrumentOnAgent(instanceID: UUID) async throws {
+        _ = try await script.exports.disposeInstrument(["instanceId": instanceID.uuidString])
+    }
+
+    public func pushInstrumentConfig(instanceID: UUID, config: Any) async throws {
+        try await script.exports.updateInstrumentConfig(JSValue([
+            "instanceId": instanceID.uuidString,
+            "config": config,
+        ]))
     }
 
     // MARK: - ITrace Orchestration
@@ -938,19 +1024,17 @@ public final class ProcessNode: Identifiable {
 
     // MARK: - Helpers
 
-    private static func decodeModuleDTO(_ dto: [String: Any]) -> ProcessModule? {
-        guard
-            let name = dto["name"] as? String,
-            let path = dto["path"] as? String,
-            let baseStr = dto["base"] as? String,
-            let size = dto["size"] as? Int
-        else { return nil }
-
-        let base = UInt64(baseStr.dropFirst(2), radix: 16) ?? 0
-        return ProcessModule(name: name, path: path, base: base, size: UInt64(size))
-    }
-
     private static func captureKey(hookId: String, callIndex: Int) -> String {
         "\(hookId):\(callIndex)"
+    }
+}
+
+extension CollaborationSession.Session.Phase {
+    public var toProcessSessionPhase: ProcessSession.Phase {
+        switch self {
+        case .attaching: return .attaching
+        case .attached: return .attached
+        case .detached: return .idle
+        }
     }
 }

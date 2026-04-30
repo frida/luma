@@ -827,14 +827,7 @@ struct TracerConfigView: View {
         defer { isResolving = false }
 
         do {
-            let raw = try await node.script.exports.resolveTargets([
-                "scope": searchScope.rawValue,
-                "query": searchQuery,
-            ])
-
-            guard let arr = raw as? [[String: Any]] else {
-                throw LumaCoreError.invalidArgument("resolveTargets: expected array of objects")
-            }
+            let arr = try await node.resolveTargets(scope: searchScope.rawValue, query: searchQuery)
 
             resolveResults = try arr.map(parseResolvedTarget)
             searchError = nil

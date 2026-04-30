@@ -35,6 +35,8 @@ final class MainWindow {
     private var currentInsightID: UUID?
     private var currentITraceDetail: ITraceDetailView?
     private var currentITraceCaptureID: UUID?
+    private var currentCollabHeader: SessionCollaborationHeader?
+    private var currentCollabHeaderSessionID: UUID?
     private(set) lazy var sharedTracerEditor: MonacoEditor = makeSharedTracerEditor()
     private(set) lazy var sharedCodeShareEditor: MonacoEditor = makeSharedCodeShareEditor()
 
@@ -217,7 +219,7 @@ final class MainWindow {
 
         newSessionButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.openTargetPicker()
+                self?.requestNewSession()
             }
         }
         addInstrumentButton.onClicked { [weak self] _ in
@@ -422,7 +424,27 @@ final class MainWindow {
     // MARK: - Target picker
 
     func newSession() {
-        openTargetPicker()
+        requestNewSession()
+    }
+
+    private func requestNewSession() {
+        guard let engine else { return }
+        if engine.canHostNewSessions {
+            openTargetPicker()
+        } else {
+            presentHostingBlockedAlert()
+        }
+    }
+
+    private func presentHostingBlockedAlert() {
+        let dialog = Adw.AlertDialog(
+            heading: "Only lab owners can host sessions",
+            body: "You're a member of this lab. Ask an owner to promote you before starting a session."
+        )
+        dialog.addResponse(id: "ok", label: "OK")
+        dialog.defaultResponse = "ok"
+        dialog.closeResponse = "ok"
+        dialog.present(parent: window)
     }
 
     private func openTargetPicker(reusing existing: LumaCore.ProcessSession? = nil, reason: String? = nil) {
@@ -821,8 +843,38 @@ final class MainWindow {
                 )
             }
         }
-        replaceDetail(with: widget)
+        replaceDetail(with: wrapWithCollabHeader(widget))
         addInstrumentButton.sensitive = currentSessionID() != nil
+    }
+
+    private func wrapWithCollabHeader<T: WidgetProtocol>(_ widget: T) -> Box {
+        let column = Box(orientation: .vertical, spacing: 0)
+        column.hexpand = true
+        column.vexpand = true
+
+        if let engine, let sid = currentSessionID() {
+            let header = SessionCollaborationHeader(
+                engine: engine,
+                sessionID: sid,
+                onClaimDriver: { [weak self] in
+                    self?.engine?.collaboration.enqueueClaimDriver(sessionID: sid)
+                },
+                onRehost: { [weak self] in
+                    self?.rehost(sessionID: sid)
+                }
+            )
+            currentCollabHeader = header
+            currentCollabHeaderSessionID = sid
+            column.append(child: header.widget)
+        } else {
+            currentCollabHeader = nil
+            currentCollabHeaderSessionID = nil
+        }
+
+        widget.hexpand = true
+        widget.vexpand = true
+        column.append(child: widget)
+        return column
     }
 
     private func currentSessionID() -> UUID? {
@@ -864,8 +916,9 @@ final class MainWindow {
 
     private func toggleInstrument(_ instrument: LumaCore.InstrumentInstance) {
         guard let engine else { return }
+        let newState: LumaCore.InstrumentState = instrument.state == .enabled ? .disabled : .enabled
         Task { @MainActor in
-            await engine.setInstrumentEnabled(instrument, enabled: !instrument.isEnabled)
+            await engine.setInstrumentState(instrument, state: newState)
             self.renderDetail()
         }
     }
@@ -1067,6 +1120,9 @@ final class MainWindow {
             }
             currentInstrumentDetail?.applySessionState()
             currentInsightDetail?.applySessionState()
+            if currentCollabHeaderSessionID == session.id {
+                currentCollabHeader?.applySessionState()
+            }
             updateResumeButtonVisibility()
         case .sessionRemoved(let id):
             removeSessionRows(id)
@@ -1186,6 +1242,7 @@ final class MainWindow {
         }
     }
 
+
     private func insertChildRow(_ row: ListBoxRow, kind: SessionsRow, sessionID: UUID) {
         let pos = insertPosition(for: kind, sessionID: sessionID)
         sessionsList.insert(child: row, position: pos)
@@ -1248,7 +1305,7 @@ final class MainWindow {
         let ilabel = Label(str: title)
         ilabel.halign = .start
         rowBox.append(child: ilabel)
-        if !instrument.isEnabled {
+        if instrument.state == .disabled {
             rowBox.opacity = 0.3
         }
         row.set(child: rowBox)
@@ -1301,7 +1358,11 @@ final class MainWindow {
     ) -> Widget {
         let pixelSize = 24
 
-        if let lastIcon = node?.process.icons.last,
+        if let host = session.host, host.id != engine?.collaboration.localUser?.id {
+            return makeHostAvatar(host: host, size: pixelSize)
+        }
+
+        if let lastIcon = node?.processIcons.last,
             let image = IconPixbuf.makeImage(from: lastIcon, pixelSize: pixelSize)
         {
             image.add(cssClass: "luma-session-icon")
@@ -1320,6 +1381,22 @@ final class MainWindow {
             displayName: session.processName,
             pixelSize: pixelSize
         )
+    }
+
+    private func makeHostAvatar(
+        host: LumaCore.CollaborationSession.UserInfo,
+        size: Int
+    ) -> Widget {
+        let displayName = host.name.isEmpty ? "@\(host.id)" : host.name
+        let avatar = Adw.Avatar(size: size, text: displayName, showInitials: true)
+        avatar.tooltipText = displayName
+        if let url = host.avatarURL.flatMap({ URL(string: "\($0.absoluteString)&s=\(size * 2)") }) {
+            Task { @MainActor [avatar] in
+                guard let texture = await AvatarCache.shared.texture(for: url) else { return }
+                avatar.set(customImage: texture)
+            }
+        }
+        return avatar
     }
 
     private func instrumentIconName(for kind: LumaCore.InstrumentKind) -> String {
@@ -1350,6 +1427,17 @@ final class MainWindow {
 
     private func presentSessionContextMenu(anchor: Widget, x: Double, y: Double, session: LumaCore.ProcessSession) {
         let node = engine?.node(forSessionID: session.id)
+        if engine?.localUserHosts(session.id) == false {
+            if engine?.collaboration.isOwner == true {
+                ContextMenu.present([
+                    [.init("Run on My Device…") { [weak self] in
+                        self?.rehost(sessionID: session.id)
+                    }]
+                ], at: anchor, x: x, y: y)
+            }
+            return
+        }
+
         var topSection: [ContextMenu.Item] = []
         if node != nil {
             topSection.append(.init("Kill Process", destructive: true) { [weak self] in
@@ -1370,6 +1458,16 @@ final class MainWindow {
             topSection,
             [.init("Delete Session", destructive: true) { [weak self] in self?.confirmDeleteSession(session) }],
         ], at: anchor, x: x, y: y)
+    }
+
+    private func rehost(sessionID: UUID) {
+        guard let engine else { return }
+        Task { @MainActor in
+            let result = await engine.reHost(sessionID: sessionID)
+            if case .needsUserInput(let reason, let session) = result {
+                self.openTargetPicker(reusing: session, reason: reason)
+            }
+        }
     }
 
     private func attachInstrumentContextMenu(
@@ -1394,7 +1492,7 @@ final class MainWindow {
         y: Double,
         instrument: LumaCore.InstrumentInstance
     ) {
-        let toggleLabel = instrument.isEnabled ? "Disable" : "Enable"
+        let toggleLabel = instrument.state == .enabled ? "Disable" : "Enable"
         ContextMenu.present([
             [.init(toggleLabel) { [weak self] in self?.toggleInstrument(instrument) }],
             [.init("Delete Instrument", destructive: true) { [weak self] in self?.confirmDeleteInstrument(instrument) }],
@@ -1464,11 +1562,9 @@ final class MainWindow {
             destructiveLabel: "Kill"
         ) { [weak self] in
             guard let self, let node = self.engine?.node(forSessionID: session.id) else { return }
-            let pid = session.lastKnownPID
-            let device = node.device
             Task { @MainActor in
                 do {
-                    try await device.kill(pid)
+                    try await node.kill()
                     self.showToast("Killed \(session.processName)")
                 } catch {
                     self.showToast("Kill failed: \(error)")

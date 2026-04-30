@@ -906,17 +906,8 @@ private final class TracerHookSearch {
                 anchor.spinner.visible = false
             }
             do {
-                let raw = try await node.script.exports.resolveTargets([
-                    "scope": anchor.scope.rawValue,
-                    "query": query,
-                ])
+                let arr = try await node.resolveTargets(scope: anchor.scope.rawValue, query: query)
                 if Task.isCancelled { return }
-                guard let arr = raw as? [[String: Any]] else {
-                    anchor.results = []
-                    anchor.rebuildResults()
-                    anchor.setSearchStatus("resolveTargets: unexpected response")
-                    return
-                }
                 var decoded: [TracerConfigEditor.ResolvedApi] = []
                 decoded.reserveCapacity(arr.count)
                 for obj in arr {

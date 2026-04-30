@@ -32,6 +32,7 @@ public final class Engine {
     public private(set) var addressAnnotations: [UUID: [UInt64: AddressAnnotation]] = [:]
     public private(set) var tracerInstanceIDBySession: [UUID: UUID] = [:]
     public private(set) var sessions: [ProcessSession] = []
+    public private(set) var driverBySession: [UUID: CollaborationSession.UserInfo] = [:]
     public private(set) var notebookEntries: [NotebookEntry] = []
     public private(set) var instrumentsBySession: [UUID: [InstrumentInstance]] = [:]
     public private(set) var insightsBySession: [UUID: [AddressInsight]] = [:]
@@ -277,6 +278,420 @@ public final class Engine {
             }
             self.onNotebookChanged?(.reordered)
         }
+
+        collaboration.onSessionsSnapshot = { [weak self] sessions in
+            guard let self else { return }
+            self.applySessionsSnapshot(sessions)
+        }
+
+        collaboration.onSessionAdded = { [weak self] session in
+            self?.adoptRemoteSession(session)
+        }
+
+        collaboration.onSessionPhaseChanged = { [weak self] sessionID, phase, reason in
+            self?.applyRemoteSessionPhase(sessionID: sessionID, phase: phase, reason: reason)
+        }
+
+        collaboration.onSessionModulesUpdated = { [weak self] sessionID, modules in
+            self?.applyRemoteSessionModules(sessionID: sessionID, modules: modules)
+        }
+
+        collaboration.onSessionHostChanged = { [weak self] sessionID, host, deviceID, deviceName, pid, processName in
+            self?.applyRemoteSessionHostChange(
+                sessionID: sessionID,
+                host: host,
+                deviceID: deviceID,
+                deviceName: deviceName,
+                pid: pid,
+                processName: processName
+            )
+        }
+
+        collaboration.onSessionDriverChanged = { [weak self] sessionID, driver in
+            self?.applyRemoteSessionDriverChange(sessionID: sessionID, driver: driver)
+        }
+
+        collaboration.onSessionReplCellAdded = { [weak self] sessionID, cell in
+            self?.applyRemoteSessionReplCell(sessionID: sessionID, cell: cell)
+        }
+
+        collaboration.onSessionReplEvalRequested = { [weak self] sessionID, code, cellID in
+            self?.handleRemoteReplEvalRequest(sessionID: sessionID, code: code, cellID: cellID)
+        }
+
+        collaboration.onSessionInstrumentAdded = { [weak self] sessionID, instance in
+            self?.applyRemoteSessionInstrumentAdded(sessionID: sessionID, instance: instance)
+        }
+
+        collaboration.onSessionInstrumentUpdated = { [weak self] sessionID, instance in
+            self?.applyRemoteSessionInstrumentUpdated(sessionID: sessionID, instance: instance)
+        }
+
+        collaboration.onSessionInstrumentRemoved = { [weak self] sessionID, instanceID in
+            self?.applyRemoteSessionInstrumentRemoved(sessionID: sessionID, instanceID: instanceID)
+        }
+
+        collaboration.onSessionInstrumentSetStateRequested = { [weak self] sessionID, instanceID, state in
+            self?.handleRemoteInstrumentSetStateRequest(sessionID: sessionID, instanceID: instanceID, state: state)
+        }
+
+        collaboration.onSessionInstrumentRemoveRequested = { [weak self] sessionID, instanceID in
+            self?.handleRemoteInstrumentRemoveRequest(sessionID: sessionID, instanceID: instanceID)
+        }
+
+        collaboration.onSessionInstrumentAddRequested = { [weak self] sessionID, kind, sourceIdentifier, configJSON in
+            self?.handleRemoteInstrumentAddRequest(
+                sessionID: sessionID,
+                kind: kind,
+                sourceIdentifier: sourceIdentifier,
+                configJSON: configJSON
+            )
+        }
+
+        collaboration.onSessionInstrumentUpdateConfigRequested = { [weak self] sessionID, instanceID, configJSON in
+            self?.handleRemoteInstrumentUpdateConfigRequest(sessionID: sessionID, instanceID: instanceID, configJSON: configJSON)
+        }
+
+        collaboration.onSessionInsightAdded = { [weak self] sessionID, insight in
+            self?.applyRemoteSessionInsightAdded(sessionID: sessionID, insight: insight)
+        }
+
+        collaboration.onSessionInsightRemoved = { [weak self] sessionID, insightID in
+            self?.applyRemoteSessionInsightRemoved(sessionID: sessionID, insightID: insightID)
+        }
+
+        collaboration.onSessionCaptureAdded = { [weak self] sessionID, capture in
+            self?.applyRemoteSessionCaptureAdded(sessionID: sessionID, capture: capture)
+        }
+
+        collaboration.onSessionCaptureRemoved = { [weak self] sessionID, captureID in
+            self?.applyRemoteSessionCaptureRemoved(sessionID: sessionID, captureID: captureID)
+        }
+
+        collaboration.onSessionEventReceived = { [weak self] sessionID, event in
+            self?.applyRemoteSessionEvent(sessionID: sessionID, event: event)
+        }
+
+        collaboration.onReplEvalTimedOut = { [weak self] cellID in
+            self?.markReplCellTimedOut(cellID: cellID)
+        }
+
+        collaboration.onSessionRemoved = { [weak self] sessionID in
+            self?.applyRemoteSessionRemoval(sessionID: sessionID)
+        }
+    }
+
+    private func markReplCellTimedOut(cellID: UUID) {
+        guard let cell = try? store.fetchREPLCell(id: cellID),
+            case .text(let text) = cell.result,
+            text == "Running…"
+        else { return }
+        var updated = cell
+        updated.result = .text("Timed out — host did not respond.")
+        try? store.save(updated)
+        onREPLCellAdded?(updated)
+    }
+
+    private func applyRemoteSessionEvent(sessionID: UUID, event: RuntimeEvent) {
+        if localUserHosts(sessionID) { return }
+        var stamped = event
+        stamped.sessionID = sessionID
+        _events.yield(stamped)
+    }
+
+    private func applyRemoteSessionCaptureAdded(sessionID: UUID, capture: ITraceCaptureRecord) {
+        if localUserHosts(sessionID) { return }
+        var stored = capture
+        stored.sessionID = sessionID
+        try? store.save(stored)
+        onSessionListChanged?(.captureAdded(stored))
+    }
+
+    private func applyRemoteSessionCaptureRemoved(sessionID: UUID, captureID: UUID) {
+        if localUserHosts(sessionID) { return }
+        try? store.deleteCapture(id: captureID)
+        onSessionListChanged?(.captureRemoved(id: captureID, sessionID: sessionID))
+    }
+
+    private func applyRemoteSessionInsightAdded(sessionID: UUID, insight: AddressInsight) {
+        if localUserHosts(sessionID) { return }
+        var stored = insight
+        stored.sessionID = sessionID
+        try? store.save(stored)
+        onSessionListChanged?(.insightAdded(stored))
+    }
+
+    private func applyRemoteSessionInsightRemoved(sessionID: UUID, insightID: UUID) {
+        if localUserHosts(sessionID) { return }
+        try? store.deleteInsight(id: insightID)
+        onSessionListChanged?(.insightRemoved(id: insightID, sessionID: sessionID))
+    }
+
+    private func applyRemoteSessionInstrumentAdded(sessionID: UUID, instance: InstrumentInstance) {
+        if localUserHosts(sessionID) { return }
+        var stored = instance
+        stored.sessionID = sessionID
+        try? store.save(stored)
+        onSessionListChanged?(.instrumentAdded(stored))
+    }
+
+    private func applyRemoteSessionInstrumentUpdated(sessionID: UUID, instance: InstrumentInstance) {
+        if localUserHosts(sessionID) { return }
+        var stored = instance
+        stored.sessionID = sessionID
+        try? store.save(stored)
+        onSessionListChanged?(.instrumentUpdated(stored))
+    }
+
+    private func applyRemoteSessionInstrumentRemoved(sessionID: UUID, instanceID: UUID) {
+        if localUserHosts(sessionID) { return }
+        try? store.deleteInstrument(id: instanceID)
+        onSessionListChanged?(.instrumentRemoved(id: instanceID, sessionID: sessionID))
+    }
+
+    public func localUserHosts(_ sessionID: UUID) -> Bool {
+        guard let session = sessions.first(where: { $0.id == sessionID }) else { return false }
+        return localUserHosts(session)
+    }
+
+    public func localUserHosts(_ session: ProcessSession) -> Bool {
+        guard let host = session.host else { return true }
+        return host.id == collaboration.localUser?.id
+    }
+
+    public var canHostNewSessions: Bool {
+        !collaboration.isCollaborative || collaboration.isOwner
+    }
+
+    private func broadcastInstrumentUpdate(_ instance: InstrumentInstance) {
+        guard localUserHosts(instance.sessionID) else { return }
+        collaboration.enqueueUpdateInstrument(sessionID: instance.sessionID, instance: instance)
+    }
+
+    private func handleRemoteReplEvalRequest(sessionID: UUID, code: String, cellID: UUID) {
+        guard let node = processNodes.first(where: { $0.sessionID == sessionID }) else { return }
+        Task { @MainActor in
+            await node.evalInREPL(code, cellID: cellID)
+        }
+    }
+
+    private func handleRemoteInstrumentSetStateRequest(
+        sessionID: UUID,
+        instanceID: UUID,
+        state: InstrumentState
+    ) {
+        guard localUserHosts(sessionID),
+            let instance = try? store.fetchInstrument(id: instanceID)
+        else { return }
+        Task { @MainActor in
+            await setInstrumentState(instance, state: state)
+        }
+    }
+
+    private func handleRemoteInstrumentRemoveRequest(sessionID: UUID, instanceID: UUID) {
+        guard localUserHosts(sessionID),
+            let instance = try? store.fetchInstrument(id: instanceID)
+        else { return }
+        Task { @MainActor in
+            await removeInstrument(instance)
+        }
+    }
+
+    private func handleRemoteInstrumentAddRequest(
+        sessionID: UUID,
+        kind: InstrumentKind,
+        sourceIdentifier: String,
+        configJSON: Data
+    ) {
+        guard localUserHosts(sessionID) else { return }
+        Task { @MainActor in
+            _ = await addInstrument(
+                kind: kind,
+                sourceIdentifier: sourceIdentifier,
+                configJSON: configJSON,
+                sessionID: sessionID
+            )
+        }
+    }
+
+    private func handleRemoteInstrumentUpdateConfigRequest(
+        sessionID: UUID,
+        instanceID: UUID,
+        configJSON: Data
+    ) {
+        guard localUserHosts(sessionID),
+            let instance = try? store.fetchInstrument(id: instanceID)
+        else { return }
+        Task { @MainActor in
+            await applyInstrumentConfig(instance, configJSON: configJSON)
+        }
+    }
+
+    private func applySessionsSnapshot(_ snapshot: [CollaborationSession.Session]) {
+        let serverKnown = Set(snapshot.map(\.id))
+        for cached in sessions where !localUserHosts(cached) && !serverKnown.contains(cached.id) {
+            applyRemoteSessionRemoval(sessionID: cached.id)
+        }
+        for session in snapshot {
+            adoptRemoteSession(session)
+        }
+        announceMissingLocalSessions(serverKnown: serverKnown)
+    }
+
+    private func announceMissingLocalSessions(serverKnown: Set<UUID>) {
+        guard collaboration.isOwner, let localUser = collaboration.localUser else { return }
+        for session in sessions where session.host == nil && !serverKnown.contains(session.id) {
+            var promoted = session
+            promoted.host = localUser
+            saveSession(promoted)
+            collaboration.enqueueAddSession(
+                sessionID: session.id,
+                deviceID: session.deviceID,
+                deviceName: session.deviceName,
+                pid: session.lastKnownPID,
+                processName: session.processName,
+                createdAt: ISO8601DateFormatter().string(from: session.createdAt)
+            )
+        }
+    }
+
+    private func adoptRemoteSession(_ session: CollaborationSession.Session) {
+        driverBySession[session.id] = session.driver
+
+        if let idx = sessions.firstIndex(where: { $0.id == session.id }) {
+            var record = sessions[idx]
+            record.host = session.host
+            record.phase = session.phase.toProcessSessionPhase
+            record.processName = session.processName
+            record.deviceID = session.deviceID
+            record.deviceName = session.deviceName
+            record.lastKnownPID = session.pid
+            if !session.modules.isEmpty {
+                record.lastKnownModules = session.modules.map {
+                    ProcessSession.PersistedModule(name: $0.name, base: $0.base, size: $0.size)
+                }
+            }
+            saveSession(record)
+        } else {
+            var record = ProcessSession(
+                id: session.id,
+                kind: .attach,
+                host: session.host,
+                deviceID: session.deviceID,
+                deviceName: session.deviceName,
+                processName: session.processName,
+                lastKnownPID: session.pid
+            )
+            record.phase = session.phase.toProcessSessionPhase
+            record.lastKnownModules = session.modules.map {
+                ProcessSession.PersistedModule(name: $0.name, base: $0.base, size: $0.size)
+            }
+            try? store.save(record)
+            sessions.insert(record, at: 0)
+            onSessionListChanged?(.sessionAdded(record))
+        }
+
+        for cell in session.replCells {
+            var stored = cell
+            stored.sessionID = session.id
+            try? store.save(stored)
+            onREPLCellAdded?(stored)
+        }
+
+        for inst in session.instruments {
+            var stored = inst
+            stored.sessionID = session.id
+            try? store.save(stored)
+            onSessionListChanged?(.instrumentAdded(stored))
+        }
+
+        for insight in session.insights {
+            var stored = insight
+            stored.sessionID = session.id
+            try? store.save(stored)
+            onSessionListChanged?(.insightAdded(stored))
+        }
+
+        for capture in session.captures {
+            var stored = capture
+            stored.sessionID = session.id
+            try? store.save(stored)
+            onSessionListChanged?(.captureAdded(stored))
+        }
+    }
+
+    private func applyRemoteSessionPhase(
+        sessionID: UUID,
+        phase: CollaborationSession.Session.Phase,
+        reason: String?
+    ) {
+        guard let idx = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        var updated = sessions[idx]
+        updated.phase = phase.toProcessSessionPhase
+        saveSession(updated)
+    }
+
+    private func applyRemoteSessionModules(sessionID: UUID, modules: [ProcessModule]) {
+        guard let idx = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        var updated = sessions[idx]
+        updated.lastKnownModules = modules.map {
+            ProcessSession.PersistedModule(name: $0.name, base: $0.base, size: $0.size)
+        }
+        saveSession(updated)
+    }
+
+    private func applyRemoteSessionDriverChange(
+        sessionID: UUID,
+        driver: CollaborationSession.UserInfo
+    ) {
+        driverBySession[sessionID] = driver
+        guard let session = sessions.first(where: { $0.id == sessionID }) else { return }
+        onSessionListChanged?(.sessionUpdated(session))
+    }
+
+    private func applyRemoteSessionHostChange(
+        sessionID: UUID,
+        host: CollaborationSession.UserInfo,
+        deviceID: String,
+        deviceName: String,
+        pid: UInt,
+        processName: String
+    ) {
+        let wasMyHost = sessions.first(where: { $0.id == sessionID })?.host?.id == collaboration.localUser?.id
+        let isMyHost = host.id == collaboration.localUser?.id
+
+        if wasMyHost && !isMyHost, let node = node(forSessionID: sessionID) {
+            removeNode(node)
+        }
+
+        guard let idx = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        var updated = sessions[idx]
+        updated.host = host
+        updated.deviceID = deviceID
+        updated.deviceName = deviceName
+        updated.processName = processName
+        updated.lastKnownPID = pid
+        updated.lastKnownModules = nil
+        saveSession(updated)
+    }
+
+    private func applyRemoteSessionReplCell(sessionID: UUID, cell: REPLCell) {
+        if localUserHosts(sessionID) { return }
+        var stored = cell
+        stored.sessionID = sessionID
+        try? store.save(stored)
+        onREPLCellAdded?(stored)
+    }
+
+    private func applyRemoteSessionRemoval(sessionID: UUID) {
+        guard sessions.contains(where: { $0.id == sessionID }) else { return }
+        if let node = processNodes.first(where: { $0.sessionID == sessionID }) {
+            removeNode(node)
+        }
+        try? store.deleteSession(id: sessionID)
+        sessions.removeAll { $0.id == sessionID }
+        driverBySession.removeValue(forKey: sessionID)
+        onSessionListChanged?(.sessionRemoved(sessionID))
     }
 
     public func start() async {
@@ -290,7 +705,9 @@ public final class Engine {
         sessions = (try? store.fetchSessions()) ?? []
 
         sessionsObservation = store.observeSessions { [weak self] sessions in
-            Task { @MainActor in self?.sessions = sessions }
+            Task { @MainActor in
+                self?.sessions = sessions
+            }
         }
         notebookObservation = store.observeNotebookEntries { [weak self] entries in
             Task { @MainActor in self?.notebookEntries = entries }
@@ -429,7 +846,7 @@ public final class Engine {
             let bundles = try await compilerWorkspace.currentPackageBundlesForAgent(paths: paths)
             guard !bundles.isEmpty else { return }
 
-            try await node.script.exports.loadPackages(JSValue(bundles))
+            try await node.loadPackages(bundles)
 
             for entry in bundles {
                 node.loadedPackageNames.insert(entry["name"] as! String)
@@ -450,7 +867,7 @@ public final class Engine {
                 return
             }
 
-            try await node.script.exports.loadPackages(JSValue([entry]))
+            try await node.loadPackages([entry])
             node.loadedPackageNames.insert(entry["name"] as! String)
         } catch {
             let diagnostics = compilerWorkspace.lastCompilerDiagnostics.joined(separator: "\n")
@@ -636,11 +1053,12 @@ public final class Engine {
                     id: $0.id, kind: $0.kind,
                     sourceIdentifier: $0.sourceIdentifier,
                     configJSON: $0.configJSON,
-                    isEnabled: $0.isEnabled
+                    state: $0.state
                 )
             }
 
             let node = ProcessNode(
+                sessionID: s.id,
                 device: device,
                 process: process,
                 session: fridaSession,
@@ -661,9 +1079,11 @@ public final class Engine {
                 onREPLCellAdded?(cell)
             }
 
-            subscribeToNodeStreams(node, sessionID: s.id)
+            subscribeToNodeStreams(node)
 
             processNodes.append(node)
+
+            announceLocalSession(node)
 
             await node.waitForScriptEventsSubscription()
             await Task.yield()
@@ -684,7 +1104,7 @@ public final class Engine {
 
             await loadAllPackages(on: node)
 
-            for ref in node.instruments where ref.isEnabled {
+            for ref in node.instruments where ref.state == .enabled {
                 await loadInstrumentOnNode(
                     instanceID: ref.id,
                     kind: ref.kind,
@@ -696,6 +1116,9 @@ public final class Engine {
             }
 
             updateSession(id: s.id) { $0.phase = .attached }
+            if let sid = collabSessionID(forNode: node) {
+                collaboration.enqueueUpdateSessionPhase(sessionID: sid, phase: .attached)
+            }
         } catch {
             print("[Engine] attach failed: \(String(describing: error)))")
             updateSession(id: s.id) {
@@ -705,13 +1128,34 @@ public final class Engine {
         }
     }
 
+    private func announceLocalSession(_ node: ProcessNode) {
+        guard collaboration.isCollaborative,
+              collaboration.isOwner,
+              let localUser = collaboration.localUser
+        else { return }
+        let sessionID = node.sessionID
+        guard var session = try? store.fetchSession(id: sessionID) else { return }
+        if session.host?.id == localUser.id { return }
+        session.host = localUser
+        saveSession(session)
+        collaboration.enqueueAddSession(
+            sessionID: sessionID,
+            deviceID: node.deviceID,
+            deviceName: node.deviceName,
+            pid: node.pid,
+            processName: node.processName
+        )
+    }
+
     public func resumeSpawnedProcess(node: ProcessNode) async {
-        guard let session = try? store.fetchSession(id: nodeSessionID(node)) else { return }
-        let pid = session.lastKnownPID
+        guard let session = try? store.fetchSession(id: node.sessionID) else { return }
 
         do {
-            try await node.device.resume(pid)
+            try await node.resume()
             updateSession(id: session.id) { $0.phase = .attached }
+            if let sid = collabSessionID(forNode: node) {
+                collaboration.enqueueUpdateSessionPhase(sessionID: sid, phase: .attached)
+            }
         } catch {
             updateSession(id: session.id) {
                 $0.lastError = error.localizedDescription
@@ -721,7 +1165,7 @@ public final class Engine {
 
     public func removeNode(_ node: ProcessNode) {
         if let idx = processNodes.firstIndex(where: { $0.id == node.id }) {
-            let sid = nodeSessionID(node)
+            let sid = node.sessionID
             processNodes.remove(at: idx)
             node.stop()
             addressAnnotations[sid] = nil
@@ -732,7 +1176,7 @@ public final class Engine {
     }
 
     public func node(forSessionID sessionID: UUID) -> ProcessNode? {
-        processNodes.first { $0.id == sessionID || nodeSessionID($0) == sessionID }
+        processNodes.first { $0.id == sessionID || $0.sessionID == sessionID }
     }
 
     public func instrument(id: UUID, sessionID: UUID) -> InstrumentInstance? {
@@ -744,7 +1188,18 @@ public final class Engine {
     }
 
     public func session(forNode node: ProcessNode) -> ProcessSession? {
-        session(id: nodeSessionID(node))
+        session(id: node.sessionID)
+    }
+
+    public func driver(forSessionID id: UUID) -> CollaborationSession.UserInfo? {
+        driverBySession[id]
+    }
+
+    public func localUserIsDriver(ofSessionID id: UUID) -> Bool {
+        guard let driver = driverBySession[id], let localID = collaboration.localUser?.id else {
+            return true
+        }
+        return driver.id == localID
     }
 
     public func disassembler(forSessionID sessionID: UUID) -> Disassembler? {
@@ -779,13 +1234,23 @@ public final class Engine {
     }
 
     public func deleteInsight(id: UUID, sessionID: UUID) {
-        try? store.deleteInsight(id: id)
-        onSessionListChanged?(.insightRemoved(id: id, sessionID: sessionID))
+        if localUserHosts(sessionID) {
+            try? store.deleteInsight(id: id)
+            onSessionListChanged?(.insightRemoved(id: id, sessionID: sessionID))
+        }
+        if collaboration.isCollaborative {
+            collaboration.enqueueRemoveInsight(sessionID: sessionID, insightID: id)
+        }
     }
 
     public func deleteCapture(id: UUID, sessionID: UUID) {
-        try? store.deleteCapture(id: id)
-        onSessionListChanged?(.captureRemoved(id: id, sessionID: sessionID))
+        if localUserHosts(sessionID) {
+            try? store.deleteCapture(id: id)
+            onSessionListChanged?(.captureRemoved(id: id, sessionID: sessionID))
+        }
+        if collaboration.isCollaborative {
+            collaboration.enqueueRemoveCapture(sessionID: sessionID, captureID: id)
+        }
     }
 
     private func saveSession(_ session: ProcessSession) {
@@ -812,7 +1277,7 @@ public final class Engine {
     }
 
     public func sessionID(for node: ProcessNode) -> UUID {
-        nodeSessionID(node)
+        node.sessionID
     }
 
     // MARK: - Reestablish Session
@@ -820,6 +1285,86 @@ public final class Engine {
     public enum ReestablishResult {
         case attached
         case needsUserInput(reason: String, session: ProcessSession)
+    }
+
+    public func reHost(sessionID: UUID) async -> ReestablishResult {
+        guard collaboration.isOwner, let localUser = collaboration.localUser else {
+            return .needsUserInput(
+                reason: "Only owners can host a session in this lab.",
+                session: ProcessSession(kind: .attach, deviceID: "", deviceName: "", processName: "", lastKnownPID: 0)
+            )
+        }
+        guard var session = sessions.first(where: { $0.id == sessionID }) else {
+            return .needsUserInput(
+                reason: "Session not found.",
+                session: ProcessSession(kind: .attach, deviceID: "", deviceName: "", processName: "", lastKnownPID: 0)
+            )
+        }
+
+        let devices = await deviceManager.currentDevices()
+        guard let device = devices.first(where: { $0.id == session.deviceID }) else {
+            return .needsUserInput(
+                reason: "Device \"\(session.deviceName)\" isn't available on this machine. Pick a device and target to host \"\(session.processName)\".",
+                session: session
+            )
+        }
+
+        do {
+            let processes = try await device.enumerateProcesses(scope: Scope.full)
+            let matches = processes.filter { $0.name == session.processName }
+            guard let chosen = matches.first(where: { $0.pid == session.lastKnownPID }) ?? matches.first else {
+                return .needsUserInput(
+                    reason: "No running process named \"\(session.processName)\" on \(session.deviceName). Choose a target.",
+                    session: session
+                )
+            }
+            await claimHostingAndAttach(session: &session, device: device, process: chosen, localUser: localUser)
+            return .attached
+        } catch {
+            return .needsUserInput(
+                reason: "Couldn't enumerate processes on \(session.deviceName): \(error.localizedDescription)",
+                session: session
+            )
+        }
+    }
+
+    public func claimHosting(
+        sessionID: UUID,
+        device: Device,
+        process: ProcessDetails
+    ) async {
+        guard collaboration.isOwner, let localUser = collaboration.localUser else { return }
+        guard var session = sessions.first(where: { $0.id == sessionID }) else { return }
+        await claimHostingAndAttach(session: &session, device: device, process: process, localUser: localUser)
+    }
+
+    private func claimHostingAndAttach(
+        session: inout ProcessSession,
+        device: Device,
+        process: ProcessDetails,
+        localUser: CollaborationSession.UserInfo
+    ) async {
+        if let existingNode = node(forSessionID: session.id) {
+            removeNode(existingNode)
+        }
+        session.host = localUser
+        session.deviceID = device.id
+        session.deviceName = device.name
+        session.processName = process.name
+        session.lastKnownPID = process.pid
+        session.lastKnownModules = nil
+        session.phase = .attaching
+        saveSession(session)
+
+        collaboration.enqueueClaimHost(
+            sessionID: session.id,
+            deviceID: device.id,
+            deviceName: device.name,
+            pid: process.pid,
+            processName: process.name
+        )
+
+        await attach(device: device, process: process, session: session)
     }
 
     public func reestablishSession(id sessionID: UUID) async -> ReestablishResult {
@@ -902,7 +1447,16 @@ public final class Engine {
         sourceIdentifier: String,
         configJSON: Data,
         sessionID: UUID
-    ) async -> InstrumentInstance {
+    ) async -> InstrumentInstance? {
+        if !localUserHosts(sessionID) {
+            collaboration.sendInstrumentAdd(
+                sessionID: sessionID,
+                kind: kind,
+                sourceIdentifier: sourceIdentifier,
+                configJSON: configJSON
+            )
+            return nil
+        }
         let instance = InstrumentInstance(
             sessionID: sessionID,
             kind: kind,
@@ -917,7 +1471,7 @@ public final class Engine {
                 id: instance.id, kind: instance.kind,
                 sourceIdentifier: instance.sourceIdentifier,
                 configJSON: instance.configJSON,
-                isEnabled: instance.isEnabled
+                state: instance.state
             ))
 
             await loadInstrumentOnNode(
@@ -928,33 +1482,56 @@ public final class Engine {
                 node: node,
                 sessionID: sessionID
             )
+
+            if let sid = collabSessionID(forNode: node) {
+                collaboration.enqueueAddInstrument(sessionID: sid, instance: instance)
+            }
         }
 
         return instance
     }
 
     public func removeInstrument(_ instance: InstrumentInstance) async {
+        if !localUserHosts(instance.sessionID) {
+            collaboration.sendInstrumentRemove(sessionID: instance.sessionID, instanceID: instance.id)
+            return
+        }
+        var sid: UUID? = nil
         if let node = node(forSessionID: instance.sessionID) {
-            if node.instruments.first(where: { $0.id == instance.id })?.isAttached == true {
-                _ = try? await node.script.exports.disposeInstrument(["instanceId": instance.id.uuidString])
+            sid = collabSessionID(forNode: node)
+            if node.instruments.first(where: { $0.id == instance.id })?.attachment == .attached {
+                try? await node.disposeInstrumentOnAgent(instanceID: instance.id)
             }
             node.removeInstrument(id: instance.id)
         }
         try? store.deleteInstrument(id: instance.id)
         onSessionListChanged?(.instrumentRemoved(id: instance.id, sessionID: instance.sessionID))
         rebuildAddressAnnotations(sessionID: instance.sessionID)
+        if let sid {
+            collaboration.enqueueRemoveInstrument(sessionID: sid, instanceID: instance.id)
+        }
     }
 
-    public func setInstrumentEnabled(_ instance: InstrumentInstance, enabled: Bool) async {
+    public func setInstrumentState(_ instance: InstrumentInstance, state: InstrumentState) async {
+        if !localUserHosts(instance.sessionID) {
+            collaboration.sendInstrumentSetState(
+                sessionID: instance.sessionID,
+                instanceID: instance.id,
+                state: state
+            )
+            return
+        }
         var inst = instance
-        inst.isEnabled = enabled
+        inst.state = state
         try? store.save(inst)
         onSessionListChanged?(.instrumentUpdated(inst))
+        broadcastInstrumentUpdate(inst)
 
         guard let node = node(forSessionID: inst.sessionID) else { return }
 
-        if enabled {
-            guard node.instruments.first(where: { $0.id == inst.id })?.isAttached != true else { return }
+        switch state {
+        case .enabled:
+            guard node.instruments.first(where: { $0.id == inst.id })?.attachment != .attached else { return }
 
             await loadInstrumentOnNode(
                 instanceID: inst.id,
@@ -964,25 +1541,34 @@ public final class Engine {
                 node: node,
                 sessionID: inst.sessionID
             )
-        } else {
-            if node.instruments.first(where: { $0.id == inst.id })?.isAttached == true {
-                _ = try? await node.script.exports.disposeInstrument(["instanceId": inst.id.uuidString])
+        case .disabled:
+            if node.instruments.first(where: { $0.id == inst.id })?.attachment == .attached {
+                try? await node.disposeInstrumentOnAgent(instanceID: inst.id)
                 node.markInstrumentDetached(id: inst.id)
             }
         }
     }
 
     public func applyInstrumentConfig(_ instance: InstrumentInstance, configJSON: Data) async {
+        if !localUserHosts(instance.sessionID) {
+            collaboration.sendInstrumentUpdateConfig(
+                sessionID: instance.sessionID,
+                instanceID: instance.id,
+                configJSON: configJSON
+            )
+            return
+        }
         var inst = instance
         inst.configJSON = configJSON
         try? store.save(inst)
         onSessionListChanged?(.instrumentUpdated(inst))
+        broadcastInstrumentUpdate(inst)
 
         guard let node = node(forSessionID: inst.sessionID) else { return }
 
         node.updateInstrumentConfig(id: inst.id, configJSON: configJSON)
 
-        guard node.instruments.first(where: { $0.id == inst.id })?.isAttached == true else { return }
+        guard node.instruments.first(where: { $0.id == inst.id })?.attachment == .attached else { return }
 
         let configObject: JSONObject
         switch inst.kind {
@@ -1006,11 +1592,7 @@ public final class Engine {
         }
 
         do {
-            try await node.script.exports.updateInstrumentConfig(
-                JSValue([
-                    "instanceId": inst.id.uuidString,
-                    "config": configObject,
-                ]))
+            try await node.pushInstrumentConfig(instanceID: inst.id, config: configObject)
         } catch {
             print("[Engine] Failed to update instrument config: \(String(describing: error)))")
         }
@@ -1080,12 +1662,13 @@ public final class Engine {
             tracer = existing
         } else {
             let configJSON = TracerConfig().encode()
-            tracer = await addInstrument(
+            guard let added = await addInstrument(
                 kind: .tracer,
                 sourceIdentifier: "builtin.tracer",
                 configJSON: configJSON,
                 sessionID: sessionID
-            )
+            ) else { return nil }
+            tracer = added
         }
 
         let anchor: AddressAnchor
@@ -1307,13 +1890,12 @@ public final class Engine {
             compiled["callCounters"] = counters
         }
 
-        try await node.script.exports.loadInstrument(
-            JSValue([
-                "instanceId": instanceID.uuidString,
-                "moduleName": "/builtin/tracer.js",
-                "source": LumaAgent.tracerSource,
-                "config": compiled,
-            ]))
+        try await node.loadInstrumentOnAgent(
+            instanceID: instanceID,
+            moduleName: "/builtin/tracer.js",
+            source: LumaAgent.tracerSource,
+            config: compiled
+        )
     }
 
     public func loadHookPackInstrument(
@@ -1330,13 +1912,12 @@ public final class Engine {
         let hashHex = digest.map { String(format: "%02x", $0) }.joined()
         let moduleName = "/hookpacks/\(packID)/\(hashHex).js"
 
-        try await node.script.exports.loadInstrument(
-            JSValue([
-                "instanceId": instanceID.uuidString,
-                "moduleName": moduleName,
-                "source": entrySource,
-                "config": config.toJSON(),
-            ]))
+        try await node.loadInstrumentOnAgent(
+            instanceID: instanceID,
+            moduleName: moduleName,
+            source: entrySource,
+            config: config.toJSON()
+        )
     }
 
     public func loadCodeShareInstrument(
@@ -1357,13 +1938,12 @@ public final class Engine {
         let hashHex = digest.map { String(format: "%02x", $0) }.joined()
         let moduleName = "/codeshare/\(config.project?.slug ?? config.name)/\(hashHex).js"
 
-        try await node.script.exports.loadInstrument(
-            JSValue([
-                "instanceId": instanceID.uuidString,
-                "moduleName": moduleName,
-                "source": LumaAgent.codeShareSource,
-                "config": configObject,
-            ]))
+        try await node.loadInstrumentOnAgent(
+            instanceID: instanceID,
+            moduleName: moduleName,
+            source: LumaAgent.codeShareSource,
+            config: configObject
+        )
     }
 
     // MARK: - Insight Management
@@ -1392,6 +1972,9 @@ public final class Engine {
         )
         try store.save(insight)
         onSessionListChanged?(.insightAdded(insight))
+        if let sid = collabSessionID(forNode: node) {
+            collaboration.enqueueAddInsight(sessionID: sid, insight: insight)
+        }
         return insight
     }
 
@@ -1471,14 +2054,16 @@ public final class Engine {
 
     // MARK: - Private Helpers
 
-    private var nodeSessionIDs: [UUID: UUID] = [:]
-
-    private func nodeSessionID(_ node: ProcessNode) -> UUID {
-        nodeSessionIDs[node.id] ?? UUID()
+    private func collabSessionID(forNode node: ProcessNode) -> UUID? {
+        guard let session = sessions.first(where: { $0.id == node.sessionID }),
+              let host = session.host,
+              host.id == collaboration.localUser?.id
+        else { return nil }
+        return session.id
     }
 
-    private func subscribeToNodeStreams(_ node: ProcessNode, sessionID: UUID) {
-        nodeSessionIDs[node.id] = sessionID
+    private func subscribeToNodeStreams(_ node: ProcessNode) {
+        let sessionID = node.sessionID
 
         Task { @MainActor [weak self, weak node] in
             guard let node else { return }
@@ -1487,6 +2072,13 @@ public final class Engine {
                 self.updateSession(id: sessionID) {
                     $0.detachReason = reason
                     $0.phase = .idle
+                }
+                if let sid = self.collabSessionID(forNode: node) {
+                    self.collaboration.enqueueUpdateSessionPhase(
+                        sessionID: sid,
+                        phase: .detached,
+                        reason: String(describing: reason)
+                    )
                 }
                 self.removeNode(node)
             }
@@ -1497,6 +2089,14 @@ public final class Engine {
             for await var event in node.events {
                 event.sessionID = sessionID
                 self?._events.yield(event)
+                if let sid = self?.collabSessionID(forNode: node) {
+                    switch event.source {
+                    case .instrument, .console, .script:
+                        self?.collaboration.sendEvent(sessionID: sid, event: event)
+                    case .repl, .processOutput:
+                        break
+                    }
+                }
             }
         }
 
@@ -1509,6 +2109,7 @@ public final class Engine {
                 case .text(let t): resultValue = .text(t)
                 }
                 let cell = REPLCell(
+                    id: result.id,
                     sessionID: sessionID,
                     code: result.code,
                     result: resultValue,
@@ -1516,6 +2117,9 @@ public final class Engine {
                 )
                 try? self?.store.save(cell)
                 self?.onREPLCellAdded?(cell)
+                if let sid = self?.collabSessionID(forNode: node) {
+                    self?.collaboration.enqueueAddReplCell(sessionID: sid, cell: cell)
+                }
             }
         }
 
@@ -1525,6 +2129,9 @@ public final class Engine {
                 let record = ITraceCaptureRecord(from: capture, sessionID: sessionID)
                 try? self?.store.save(record)
                 self?.onSessionListChanged?(.captureAdded(record))
+                if let sid = self?.collabSessionID(forNode: node) {
+                    self?.collaboration.enqueueAddCapture(sessionID: sid, capture: record)
+                }
             }
         }
 
@@ -1537,6 +2144,9 @@ public final class Engine {
                     }
                 }
                 self?.rebuildAddressAnnotations(sessionID: sessionID)
+                if let sid = self?.collabSessionID(forNode: node) {
+                    self?.collaboration.enqueueUpdateSessionModules(sessionID: sid, modules: modules)
+                }
             }
         }
     }
@@ -1566,10 +2176,10 @@ public final class Engine {
     }
 
     private func handleDeviceOutput(device: Device, data: [UInt8], fd: Int, pid: UInt) {
-        guard let node = processNodes.first(where: { $0.device.id == device.id && $0.process.pid == pid }) else { return }
+        guard let node = processNodes.first(where: { $0.deviceID == device.id && $0.pid == pid }) else { return }
 
         _events.yield(RuntimeEvent(
-            sessionID: nodeSessionID(node),
+            sessionID: node.sessionID,
             source: .processOutput(fd: fd),
             payload: .raw(
                 message: String(bytes: data, encoding: .utf8) ?? "(\(data.count) bytes on fd \(fd))",

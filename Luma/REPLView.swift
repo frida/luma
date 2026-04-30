@@ -24,6 +24,14 @@ struct REPLView: View {
         workspace.engine.node(forSessionID: sessionID)
     }
 
+    private var localUserIsDriver: Bool {
+        workspace.engine.localUserIsDriver(ofSessionID: sessionID)
+    }
+
+    private var driver: LumaCore.CollaborationSession.UserInfo? {
+        workspace.engine.driver(forSessionID: sessionID)
+    }
+
     private var orderedCells: [LumaCore.REPLCell] {
         cells.sorted { $0.timestamp < $1.timestamp }
     }
@@ -81,7 +89,7 @@ struct REPLView: View {
                     .font(.system(.body, design: .monospaced))
                     .foregroundStyle(.secondary)
 
-                if let node {
+                if let node, localUserIsDriver {
                     REPLInputField(
                         text: $inputCode,
                         isFocused: $isInputFocused,
@@ -100,6 +108,27 @@ struct REPLView: View {
                     )
                     .frame(minHeight: 22)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                } else if let driver {
+                    ZStack(alignment: .leading) {
+                        REPLInputField(
+                            text: .constant(""),
+                            isFocused: .constant(false),
+                            onCommit: { _ in },
+                            onHistoryUp: {},
+                            onHistoryDown: {},
+                            requestCompletions: { _, _ in [] as [String] }
+                        )
+                        .disabled(true)
+                        .opacity(0.35)
+                        .frame(minHeight: 22)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        Text("Driving: @\(driver.id)")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, 4)
+                    }
+                    .help("@\(driver.id) is currently driving this session.")
                 } else {
                     ZStack(alignment: .leading) {
                         REPLInputField(
@@ -130,7 +159,7 @@ struct REPLView: View {
                 }
                 .buttonStyle(.borderless)
                 .help("Run")
-                .disabled(node == nil)
+                .disabled(node == nil || !localUserIsDriver)
             }
             .padding(.horizontal, horizontalInset)
             .padding(.vertical, 8)
@@ -188,10 +217,29 @@ struct REPLView: View {
             return
         }
 
-        Task { @MainActor in
-            await node!.evalInREPL(code)
+        if !workspace.engine.localUserHosts(sessionID) {
+            let cellID = UUID()
+            let placeholder = LumaCore.REPLCell(
+                id: cellID,
+                sessionID: sessionID,
+                code: code,
+                result: .text("Running…"),
+                timestamp: Date()
+            )
+            try? workspace.store.save(placeholder)
+            workspace.engine.collaboration.sendReplEvalRequest(
+                sessionID: sessionID,
+                code: code,
+                cellID: cellID
+            )
             reloadCells()
             historyCursor = orderedCells.count
+        } else if let node {
+            Task { @MainActor in
+                await node.evalInREPL(code)
+                reloadCells()
+                historyCursor = orderedCells.count
+            }
         }
 
         isInputFocused = true

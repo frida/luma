@@ -11,4 +11,24 @@ public struct ProcessModule: Hashable, Identifiable, Codable, Sendable {
         self.base = base
         self.size = size
     }
+
+    public func toJSON() -> [String: Any] {
+        return [
+            "name": name,
+            "path": path,
+            "base": String(format: "0x%llx", base),
+            "size": Int(size),
+        ]
+    }
+
+    public static func fromJSON(_ obj: [String: Any]) -> ProcessModule? {
+        guard let name = obj["name"] as? String,
+            let path = obj["path"] as? String,
+            let baseStr = obj["base"] as? String,
+            let size = obj["size"] as? Int
+        else { return nil }
+
+        let base = UInt64(baseStr.dropFirst(2), radix: 16) ?? 0
+        return ProcessModule(name: name, path: path, base: base, size: UInt64(size))
+    }
 }

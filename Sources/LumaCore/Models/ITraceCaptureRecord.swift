@@ -58,4 +58,32 @@ public struct ITraceCaptureRecord: Codable, Identifiable, Sendable, FetchableRec
             lost: capture.lost
         )
     }
+
+    private static let wireEncoder: JSONEncoder = {
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .iso8601
+        e.dataEncodingStrategy = .base64
+        return e
+    }()
+
+    private static let wireDecoder: JSONDecoder = {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        d.dataDecodingStrategy = .base64
+        return d
+    }()
+
+    public func toWireJSON() -> [String: Any]? {
+        guard let data = try? Self.wireEncoder.encode(self),
+            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return obj
+    }
+
+    public static func fromWireJSON(_ obj: [String: Any]) -> ITraceCaptureRecord? {
+        guard let data = try? JSONSerialization.data(withJSONObject: obj),
+            let record = try? wireDecoder.decode(ITraceCaptureRecord.self, from: data)
+        else { return nil }
+        return record
+    }
 }

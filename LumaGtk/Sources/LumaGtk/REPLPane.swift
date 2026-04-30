@@ -140,13 +140,19 @@ final class REPLPane {
         guard let engine else { return }
         let session = engine.sessions.first(where: { $0.id == sessionID })
         let isAttached = engine.node(forSessionID: sessionID) != nil
+        let localIsDriver = engine.localUserIsDriver(ofSessionID: sessionID)
+        let canType = isAttached && localIsDriver
 
-        inputEntry.sensitive = isAttached
-        runButton.sensitive = isAttached
-        inputEntry.placeholderText =
-            isAttached
-            ? "Enter JavaScript\u{2026}"
-            : "Session detached — re-establish to continue."
+        inputEntry.sensitive = canType
+        runButton.sensitive = canType
+        if let driver = engine.driver(forSessionID: sessionID), !localIsDriver {
+            inputEntry.placeholderText = "Driving: @\(driver.id)"
+        } else {
+            inputEntry.placeholderText =
+                isAttached
+                ? "Enter JavaScript\u{2026}"
+                : "Session detached — re-establish to continue."
+        }
 
         let wantsBanner = session.map { SessionDetachedBanner.shouldShow(for: $0) } ?? false
         let phase = session?.phase
@@ -188,14 +194,30 @@ final class REPLPane {
     private func submit() {
         let raw = inputEntry.text ?? ""
         let code = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !code.isEmpty, let node = engine?.node(forSessionID: sessionID) else {
-            return
-        }
+        guard !code.isEmpty, let engine else { return }
         inputEntry.text = ""
         historyCursor = orderedHistory.count + 1
         draftBeforeHistory = ""
-        Task { @MainActor in
-            await node.evalInREPL(code)
+
+        if !engine.localUserHosts(sessionID) {
+            let cellID = UUID()
+            let placeholder = LumaCore.REPLCell(
+                id: cellID,
+                sessionID: sessionID,
+                code: code,
+                result: .text("Running…"),
+                timestamp: Date()
+            )
+            try? engine.store.save(placeholder)
+            engine.collaboration.sendReplEvalRequest(
+                sessionID: sessionID,
+                code: code,
+                cellID: cellID
+            )
+        } else if let node = engine.node(forSessionID: sessionID) {
+            Task { @MainActor in
+                await node.evalInREPL(code)
+            }
         }
     }
 

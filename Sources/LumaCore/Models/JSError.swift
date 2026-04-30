@@ -1,6 +1,6 @@
 import Foundation
 
-public struct JSError: CustomStringConvertible, Sendable {
+public struct JSError: CustomStringConvertible, Codable, Sendable {
     public let text: String
 
     public let fileName: String?

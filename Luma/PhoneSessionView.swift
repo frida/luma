@@ -20,6 +20,7 @@ struct PhoneSessionView: View {
     @State private var pendingCodeShareAfterAddInstrumentDismiss = false
     @State private var pendingKill = false
     @State private var pendingDelete = false
+    @State private var isShowingHostingBlockedAlert = false
 
     enum Segment: String, CaseIterable, Identifiable {
         case repl = "REPL"
@@ -133,6 +134,14 @@ struct PhoneSessionView: View {
         } message: {
             Text("This will remove the session and its history.")
         }
+        .alert(
+            "Only lab owners can host sessions",
+            isPresented: $isShowingHostingBlockedAlert
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("You're a member of this lab. Ask an owner to promote you before starting a session.")
+        }
     }
 
     @Environment(\.dismiss) private var dismiss
@@ -174,7 +183,11 @@ struct PhoneSessionView: View {
                     },
                     onNew: {
                         isShowingSwitcher = false
-                        workspace.targetPickerContext = .newSession
+                        if workspace.engine.canHostNewSessions {
+                            workspace.targetPickerContext = .newSession
+                        } else {
+                            isShowingHostingBlockedAlert = true
+                        }
                     }
                 )
                 .presentationCompactAdaptation(.popover)
@@ -293,16 +306,17 @@ struct PhoneSessionView: View {
                             Label("Delete", systemImage: "trash")
                         }
                         Button {
+                            let newState: LumaCore.InstrumentState = instance.state == .enabled ? .disabled : .enabled
                             Task {
-                                await workspace.engine.setInstrumentEnabled(instance, enabled: !instance.isEnabled)
+                                await workspace.engine.setInstrumentState(instance, state: newState)
                             }
                         } label: {
                             Label(
-                                instance.isEnabled ? "Disable" : "Enable",
-                                systemImage: instance.isEnabled ? "pause.circle" : "play.circle"
+                                instance.state == .enabled ? "Disable" : "Enable",
+                                systemImage: instance.state == .enabled ? "pause.circle" : "play.circle"
                             )
                         }
-                        .tint(instance.isEnabled ? .orange : .green)
+                        .tint(instance.state == .enabled ? .orange : .green)
                     }
                 }
             }
@@ -428,8 +442,7 @@ struct PhoneSessionView: View {
     private func killProcess() {
         guard let node, let session else { return }
         Task { @MainActor in
-            let pid = session.lastKnownPID
-            do { try await node.device.kill(pid) } catch {
+            do { try await node.kill() } catch {
                 workspace.engine.updateSession(id: session.id) { $0.lastError = error.localizedDescription }
             }
         }
@@ -457,7 +470,7 @@ private struct InstrumentRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(descriptor?.displayName ?? "Instrument")
                     .font(.body)
-                if !instance.isEnabled {
+                if instance.state == .disabled {
                     Text("Disabled")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -469,7 +482,7 @@ private struct InstrumentRow: View {
                 .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 4)
-        .opacity(instance.isEnabled ? 1 : 0.55)
+        .opacity(instance.state == .enabled ? 1 : 0.55)
         .contentShape(Rectangle())
     }
 }

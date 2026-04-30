@@ -27,6 +27,7 @@ struct MainWindowView: View {
 
     @State private var collapsedEventBaselineVersion: Int = 0
     @State private var collapsedNewEvents: Int = 0
+    @State private var isShowingHostingBlockedAlert = false
 
     var body: some View {
         CollapsibleVSplitView(
@@ -41,8 +42,17 @@ struct MainWindowView: View {
         .toolbar {
             WorkspaceToolbar(
                 workspace: workspace,
-                selection: $uiState.selectedItemID
+                selection: $uiState.selectedItemID,
+                isShowingHostingBlockedAlert: $isShowingHostingBlockedAlert
             )
+        }
+        .alert(
+            "Only lab owners can host sessions",
+            isPresented: $isShowingHostingBlockedAlert
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("You're a member of this lab. Ask an owner to promote you before starting a session.")
         }
         .frame(
             minWidth: 800,
@@ -187,7 +197,7 @@ struct MainWindowView: View {
 
         Task { @MainActor in
             if let existingNode = workspace.engine.processNodes.first(where: {
-                $0.device.id == device.id && $0.process.pid == proc.pid
+                $0.deviceID == device.id && $0.pid == proc.pid
             }) {
                 uiState.selectedItemID = .repl(workspace.engine.sessionID(for: existingNode))
                 return
@@ -284,6 +294,7 @@ struct MainWindowView: View {
 struct WorkspaceToolbar: ToolbarContent {
     @ObservedObject var workspace: Workspace
     @Binding var selection: SidebarItemID?
+    @Binding var isShowingHostingBlockedAlert: Bool
 
     @State var showingAddInstrumentSheetForProcess: LumaCore.ProcessSession?
     @State private var showingCodeShareSheetForProcess: LumaCore.ProcessSession?
@@ -324,7 +335,11 @@ struct WorkspaceToolbar: ToolbarContent {
     var body: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
             Button {
-                workspace.targetPickerContext = .newSession
+                if workspace.engine.canHostNewSessions {
+                    workspace.targetPickerContext = .newSession
+                } else {
+                    isShowingHostingBlockedAlert = true
+                }
             } label: {
                 Label("New Session…", systemImage: "target")
             }

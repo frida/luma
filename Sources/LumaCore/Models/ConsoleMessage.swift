@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ConsoleMessage: CustomStringConvertible {
+public struct ConsoleMessage: CustomStringConvertible, Codable, Sendable {
     public let level: ConsoleLevel
     public let values: [JSInspectValue]
 

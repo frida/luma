@@ -7,6 +7,7 @@ public struct ProcessSession: Codable, Identifiable, Sendable, FetchableRecord, 
 
     public var id: UUID
     public var kind: Kind
+    public var host: CollaborationSession.UserInfo?
     public var deviceID: String
     public var deviceName: String
     public var processName: String
@@ -26,6 +27,7 @@ public struct ProcessSession: Codable, Identifiable, Sendable, FetchableRecord, 
     enum CodingKeys: String, CodingKey {
         case id
         case kind
+        case host
         case deviceID = "device_id"
         case deviceName = "device_name"
         case processName = "process_name"
@@ -43,6 +45,7 @@ public struct ProcessSession: Codable, Identifiable, Sendable, FetchableRecord, 
     public init(
         id: UUID = UUID(),
         kind: Kind,
+        host: CollaborationSession.UserInfo? = nil,
         deviceID: String,
         deviceName: String,
         processName: String,
@@ -50,6 +53,7 @@ public struct ProcessSession: Codable, Identifiable, Sendable, FetchableRecord, 
     ) {
         self.id = id
         self.kind = kind
+        self.host = host
         self.deviceID = deviceID
         self.deviceName = deviceName
         self.processName = processName

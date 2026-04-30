@@ -14,6 +14,7 @@ struct CollaborationPanel: View {
     @ObservedObject var workspace: Workspace
 
     @State private var didCopyInvite = false
+    @State private var showLeaveLabConfirmation = false
 
     @State private var focusChatField = false
     @State private var isPinnedToBottom = true
@@ -65,6 +66,16 @@ struct CollaborationPanel: View {
             if case .joined = collaboration.status {
                 focusChatField = true
             }
+        }
+        .alert("Leave this lab?", isPresented: $showLeaveLabConfirmation) {
+            Button("Leave", role: .destructive) {
+                Task { @MainActor in
+                    await workspace.engine.collaboration.leaveLab()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You'll lose access to the shared notebook. The lab keeps going for everyone else.")
         }
     }
 
@@ -171,6 +182,7 @@ struct CollaborationPanel: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
+                        labOverflowMenu
                     }
 
                     let inviteURL = "\(BackendConfig.inviteLinkBase)\(labID)"
@@ -232,11 +244,6 @@ struct CollaborationPanel: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Button("Disconnect from lab") {
-                    Task { @MainActor in await workspace.engine.collaboration.stop() }
-                }
-                .buttonStyle(.bordered)
-
             case .error(let msg):
                 Label(msg, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
@@ -255,6 +262,25 @@ struct CollaborationPanel: View {
         let prefix = id.prefix(4)
         let suffix = id.suffix(4)
         return "\(prefix)…\(suffix)"
+    }
+
+    private var labOverflowMenu: some View {
+        Menu {
+            Button("Leave lab", role: .destructive) {
+                showLeaveLabConfirmation = true
+            }
+            Button("Disconnect from lab") {
+                Task { @MainActor in
+                    await workspace.engine.collaboration.stop()
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.system(size: 14))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Lab actions")
     }
 
     private var participantsSection: some View {
@@ -310,12 +336,47 @@ struct CollaborationPanel: View {
                     .offset(x: 2, y: 2)
             }
             .help(memberTooltip(member))
+            .contextMenu {
+                memberContextMenu(for: member)
+            }
     }
 
     private func memberTooltip(_ member: CollaborationSession.Member) -> String {
         let role = member.role == .owner ? "owner" : "member"
         let presence = member.presence == .online ? "online" : "offline"
         return "\(member.user.name) · \(role) · \(presence)"
+    }
+
+    @ViewBuilder
+    private func memberContextMenu(for member: CollaborationSession.Member) -> some View {
+        if collaboration.isOwner, !collaboration.isSelf(member.user.id) {
+            let blockedByLastOwner = (member.role == .owner && ownerCount == 1)
+            if member.role == .member {
+                Button("Promote to owner") {
+                    Task { @MainActor in
+                        await collaboration.setMemberRole(userID: member.user.id, role: .owner)
+                    }
+                }
+            } else {
+                Button("Demote to member") {
+                    Task { @MainActor in
+                        await collaboration.setMemberRole(userID: member.user.id, role: .member)
+                    }
+                }
+                .disabled(blockedByLastOwner)
+            }
+            Divider()
+            Button("Remove from lab", role: .destructive) {
+                Task { @MainActor in
+                    await collaboration.removeMembers([member.user.id])
+                }
+            }
+            .disabled(blockedByLastOwner)
+        }
+    }
+
+    private var ownerCount: Int {
+        collaboration.members.reduce(0) { $0 + ($1.role == .owner ? 1 : 0) }
     }
 
     private var chatSection: some View {

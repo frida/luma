@@ -9,6 +9,9 @@ struct SessionContent<Content: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if let sessionID {
+                SessionCollaborationHeader(sessionID: sessionID, workspace: workspace)
+            }
             if let detachedSession {
                 SessionDetachedBanner(session: detachedSession, workspace: workspace)
             }

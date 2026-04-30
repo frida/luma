@@ -15,6 +15,7 @@ struct PhoneSessionsListView: View {
     @State private var pendingKillSession: LumaCore.ProcessSession?
     @State private var pendingDeleteSession: LumaCore.ProcessSession?
     @State private var isShowingNotebook = false
+    @State private var isShowingHostingBlockedAlert = false
 
     private var sessions: [LumaCore.ProcessSession] { workspace.engine.sessions }
 
@@ -59,7 +60,7 @@ struct PhoneSessionsListView: View {
             Spacer()
 
             Button {
-                workspace.targetPickerContext = .newSession
+                requestNewSession()
             } label: {
                 Image(systemName: "plus")
                     .font(.title3)
@@ -143,6 +144,14 @@ struct PhoneSessionsListView: View {
             } message: { _ in
                 Text("This will remove the session and its history.")
             }
+            .alert(
+                "Only lab owners can host sessions",
+                isPresented: $isShowingHostingBlockedAlert
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("You're a member of this lab. Ask an owner to promote you before starting a session.")
+            }
     }
 
     @ViewBuilder
@@ -206,7 +215,7 @@ struct PhoneSessionsListView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Button {
-                workspace.targetPickerContext = .newSession
+                requestNewSession()
             } label: {
                 Label("New Session\u{2026}", systemImage: "target")
             }
@@ -237,7 +246,7 @@ struct PhoneSessionsListView: View {
 
         Task { @MainActor in
             if let existing = workspace.engine.processNodes.first(where: {
-                $0.device.id == device.id && $0.process.pid == proc.pid
+                $0.deviceID == device.id && $0.pid == proc.pid
             }) {
                 let existingID = workspace.engine.sessionID(for: existing)
                 path.append(.session(existingID))
@@ -279,11 +288,18 @@ struct PhoneSessionsListView: View {
         }
     }
 
+    private func requestNewSession() {
+        if workspace.engine.canHostNewSessions {
+            workspace.targetPickerContext = .newSession
+        } else {
+            isShowingHostingBlockedAlert = true
+        }
+    }
+
     private func killProcess(_ session: LumaCore.ProcessSession) {
         guard let node = workspace.engine.node(forSessionID: session.id) else { return }
         Task { @MainActor in
-            let pid = session.lastKnownPID
-            do { try await node.device.kill(pid) } catch {
+            do { try await node.kill() } catch {
                 workspace.engine.updateSession(id: session.id) { $0.lastError = error.localizedDescription }
             }
         }
@@ -316,10 +332,10 @@ struct PhoneSessionRow: View {
                 .frame(width: 40, height: 40)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(node?.process.name ?? session.processName)
+                Text(node?.processName ?? session.processName)
                     .font(.body)
                     .foregroundStyle(.primary)
-                Text(node?.device.name ?? session.deviceName)
+                Text(node?.deviceName ?? session.deviceName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -334,7 +350,7 @@ struct PhoneSessionRow: View {
 
     @ViewBuilder
     private var icon: some View {
-        if let node, let lastIcon = node.process.icons.last {
+        if let node, let lastIcon = node.processIcons.last {
             lastIcon.swiftUIImage
                 .resizable()
                 .interpolation(.high)
