@@ -1,6 +1,7 @@
 /Luma.xcodeproj/project.xcworkspace/xcuserdata/
 /Luma.xcodeproj/xcuserdata/
 /Luma/Generated/
+/Sources/LumaCore/Generated/
 /build/
 /.build/
 /.swiftpm/
