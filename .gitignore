@@ -11,3 +11,5 @@
 LumaGtk/screenshots/
 LumaGtk/Sources/LumaGtk/luma.res
 /.claude/
+/Luma.xctestplan
+LumaUITests/Resources/frida-gadget.dylib
