@@ -210,8 +210,12 @@ final class LumaApplication {
             let labID = components.queryItems?.first(where: { $0.name == "lab" })?.value,
             !labID.isEmpty
         else { return }
-        ensureDocumentWindow()
-        openDocuments.values.first?.engine.startCollaboration(joiningLab: labID)
+        if let existing = openDocuments.values.first {
+            existing.engine.startCollaboration(joiningLab: labID)
+            return
+        }
+        CollaborationJoinQueue.shared.enqueue(labID: labID)
+        openNewUntitledWindow()
     }
 
     fileprivate func handleSaveAsPath(window: MainWindow, _ path: String) {
