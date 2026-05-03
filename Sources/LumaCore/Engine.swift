@@ -552,6 +552,22 @@ public final class Engine {
                 processName: session.processName,
                 createdAt: ISO8601DateFormatter().string(from: session.createdAt)
             )
+            announceLocalSessionChildren(sessionID: session.id)
+        }
+    }
+
+    private func announceLocalSessionChildren(sessionID: UUID) {
+        for cell in (try? store.fetchREPLCells(sessionID: sessionID)) ?? [] {
+            collaboration.enqueueAddReplCell(sessionID: sessionID, cell: cell)
+        }
+        for instance in (try? store.fetchInstruments(sessionID: sessionID)) ?? [] {
+            collaboration.enqueueAddInstrument(sessionID: sessionID, instance: instance)
+        }
+        for insight in (try? store.fetchInsights(sessionID: sessionID)) ?? [] {
+            collaboration.enqueueAddInsight(sessionID: sessionID, insight: insight)
+        }
+        for capture in (try? store.fetchITraceCaptures(sessionID: sessionID)) ?? [] {
+            collaboration.enqueueAddCapture(sessionID: sessionID, capture: capture)
         }
     }
 

@@ -999,6 +999,7 @@ public final class CollaborationSession {
                 let ops: [NotebookOp] = entries.map { .add(.init(entry: $0)) }
                 try? self.store.saveOutboxOps(ops)
                 self.replayOutbox()
+                self.onSessionsSnapshot?([])
             case .failure(let failure):
                 self.setStatus(.error(message: failure.message))
             }
