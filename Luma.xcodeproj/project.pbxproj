@@ -27,6 +27,7 @@
 		0C8A0A732EF0B51800F0D7B2 /* SwiftyMonaco in Frameworks */ = {isa = PBXBuildFile; productRef = 0C8A0A722EF0B51800F0D7B2 /* SwiftyMonaco */; };
 		0C8A0A752EF0B51C00F0D7B2 /* Frida in Frameworks */ = {isa = PBXBuildFile; productRef = 0C8A0A742EF0B51C00F0D7B2 /* Frida */; };
 		0CAA00012F00000000000001 /* LumaCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0CAA00022F00000000000001 /* LumaCore */; };
+		0CB2C6812FA5411800426A24 /* Frida in Frameworks */ = {isa = PBXBuildFile; productRef = 0CB2C6802FA5411800426A24 /* Frida */; };
 		0CFA00012F00000000000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; platformFilters = (macos, ); productRef = 0CFA00022F00000000000001 /* Sparkle */; };
 /* End PBXBuildFile section */
 
@@ -44,6 +45,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 0CAB00010000000000000001;
 			remoteInfo = AgentBundle;
+		};
+		0CB2C6762FA5411700426A24 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0CD2092C2EB511C400D027FC /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0CD209332EB511C400D027FC;
+			remoteInfo = Luma;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -71,6 +79,8 @@
 
 /* Begin PBXFileReference section */
 		0C6420C12EE8672900E4F780 /* LumaBundleCompiler */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = LumaBundleCompiler; sourceTree = BUILT_PRODUCTS_DIR; };
+		0CB2C6702FA5411700426A24 /* LumaUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LumaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		0CB2CA3B2FA54E6800426A24 /* Luma.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = Luma.xctestplan; sourceTree = "<group>"; };
 		0CD209342EB511C400D027FC /* Luma.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Luma.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -83,6 +93,15 @@
 				"scripts/capture-screenshots.sh",
 			);
 			target = 0CD209332EB511C400D027FC /* Luma */;
+		};
+		0CB2C6822FA5411900426A24 /* Exceptions for "LumaUITests" folder in "LumaUITests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Fixtures/observed.c,
+				Resources/frida-gadget.dylib,
+				Resources/frida-gadget.config,
+			);
+			target = 0CB2C66F2FA5411700426A24 /* LumaUITests */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -100,6 +119,14 @@
 			path = Luma;
 			sourceTree = "<group>";
 		};
+		0CB2C6712FA5411700426A24 /* LumaUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				0CB2C6822FA5411900426A24 /* Exceptions for "LumaUITests" folder in "LumaUITests" target */,
+			);
+			path = LumaUITests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -108,6 +135,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				0C8A0A752EF0B51C00F0D7B2 /* Frida in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0CB2C66D2FA5411700426A24 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0CB2C6812FA5411800426A24 /* Frida in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -136,8 +171,10 @@
 		0CD2092B2EB511C400D027FC = {
 			isa = PBXGroup;
 			children = (
+				0CB2CA3B2FA54E6800426A24 /* Luma.xctestplan */,
 				0CAAF5F12ED4D41D00B8FD05 /* Luma */,
 				0C6420C22EE8672900E4F780 /* Sources/LumaBundleCompiler */,
+				0CB2C6712FA5411700426A24 /* LumaUITests */,
 				0C6420C82EE8675100E4F780 /* Frameworks */,
 				0CD209352EB511C400D027FC /* Products */,
 			);
@@ -148,6 +185,7 @@
 			children = (
 				0CD209342EB511C400D027FC /* Luma.app */,
 				0C6420C12EE8672900E4F780 /* LumaBundleCompiler */,
+				0CB2C6702FA5411700426A24 /* LumaUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -177,6 +215,32 @@
 			productName = LumaBundleCompiler;
 			productReference = 0C6420C12EE8672900E4F780 /* LumaBundleCompiler */;
 			productType = "com.apple.product-type.tool";
+		};
+		0CB2C66F2FA5411700426A24 /* LumaUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0CB2C6782FA5411700426A24 /* Build configuration list for PBXNativeTarget "LumaUITests" */;
+			buildPhases = (
+				0CB2C66C2FA5411700426A24 /* Sources */,
+				0CB2C66D2FA5411700426A24 /* Frameworks */,
+				0CB2C66E2FA5411700426A24 /* Resources */,
+				0CB2C6832FA5411A00426A24 /* Build observed.c fixture */,
+				0CB2C6842FA5411A00426A24 /* Copy frida-gadget */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0CB2C6772FA5411700426A24 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				0CB2C6712FA5411700426A24 /* LumaUITests */,
+			);
+			name = LumaUITests;
+			packageProductDependencies = (
+				0CB2C6802FA5411800426A24 /* Frida */,
+			);
+			productName = LumaUITests;
+			productReference = 0CB2C6702FA5411700426A24 /* LumaUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 		0CD209332EB511C400D027FC /* Luma */ = {
 			isa = PBXNativeTarget;
@@ -214,11 +278,15 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2610;
+				LastSwiftUpdateCheck = 2620;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
 					0C6420C02EE8672900E4F780 = {
 						CreatedOnToolsVersion = 26.1.1;
+					};
+					0CB2C66F2FA5411700426A24 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = 0CD209332EB511C400D027FC;
 					};
 					0CD209332EB511C400D027FC = {
 						CreatedOnToolsVersion = 26.0;
@@ -249,11 +317,19 @@
 				0CD209332EB511C400D027FC /* Luma */,
 				0CAB00010000000000000001 /* AgentBundle */,
 				0C6420C02EE8672900E4F780 /* LumaBundleCompiler */,
+				0CB2C66F2FA5411700426A24 /* LumaUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		0CB2C66E2FA5411700426A24 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		0CD209322EB511C400D027FC /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -264,6 +340,44 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		0CB2C6832FA5411A00426A24 /* Build observed.c fixture */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/LumaUITests/Fixtures/observed.c",
+			);
+			name = "Build observed.c fixture";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/observed",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/zsh;
+			shellScript = "set -euo pipefail\nmkdir -p \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\nxcrun clang -O0 -o \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/observed\" \"${SRCROOT}/LumaUITests/Fixtures/observed.c\"\n";
+		};
+		0CB2C6842FA5411A00426A24 /* Copy frida-gadget */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/LumaUITests/Resources/frida-gadget.dylib",
+				"$(SRCROOT)/LumaUITests/Resources/frida-gadget.config",
+			);
+			name = "Copy frida-gadget";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/frida-gadget.dylib",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/frida-gadget.config",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/zsh;
+			shellScript = "set -euo pipefail\nmkdir -p \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\ncp \"${SRCROOT}/LumaUITests/Resources/frida-gadget.dylib\" \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/frida-gadget.dylib\"\ncp \"${SRCROOT}/LumaUITests/Resources/frida-gadget.config\" \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/frida-gadget.config\"\n";
+		};
 		0CE0E3DD2ECA3CBE000B1E01 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -306,6 +420,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		0CB2C66C2FA5411700426A24 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		0CD209302EB511C400D027FC /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -325,6 +446,11 @@
 			isa = PBXTargetDependency;
 			target = 0CAB00010000000000000001 /* AgentBundle */;
 			targetProxy = 0CAB00010000000000000008 /* PBXContainerItemProxy */;
+		};
+		0CB2C6772FA5411700426A24 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0CD209332EB511C400D027FC /* Luma */;
+			targetProxy = 0CB2C6762FA5411700426A24 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -381,6 +507,68 @@
 			};
 			name = Release;
 		};
+		0CB2C6792FA5411700426A24 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LumaUITests/LumaUITests.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 753PE4AG6F;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/LumaUITests/Resources",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = re.frida.LumaUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_TARGET_NAME = Luma;
+				XROS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Debug;
+		};
+		0CB2C67A2FA5411700426A24 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LumaUITests/LumaUITests.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 753PE4AG6F;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/LumaUITests/Resources",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = re.frida.LumaUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_TARGET_NAME = Luma;
+				XROS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Release;
+		};
 		0CD209422EB511C700D027FC /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -394,7 +582,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 753PE4AG6F;
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = readwrite;
 				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
@@ -467,7 +655,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 753PE4AG6F;
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = readwrite;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
@@ -678,6 +866,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		0CB2C6782FA5411700426A24 /* Build configuration list for PBXNativeTarget "LumaUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0CB2C6792FA5411700426A24 /* Debug */,
+				0CB2C67A2FA5411700426A24 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		0CD2092F2EB511C400D027FC /* Build configuration list for PBXProject "Luma" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -764,6 +961,11 @@
 		0CAA00022F00000000000001 /* LumaCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = LumaCore;
+		};
+		0CB2C6802FA5411800426A24 /* Frida */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0C8A0A6B2EF0B4E100F0D7B2 /* XCRemoteSwiftPackageReference "frida-swift" */;
+			productName = Frida;
 		};
 		0CFA00022F00000000000001 /* Sparkle */ = {
 			isa = XCSwiftPackageProductDependency;
