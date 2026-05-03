@@ -217,6 +217,8 @@ public final class CollaborationSession {
     private(set) public var labPictureData: Data?
     private(set) public var labPictureContentType: String?
     private(set) public var localUser: UserInfo?
+    private var pendingJoinLabID: String?
+    private var pendingCreateOrJoinDispatched: Bool = false
     private(set) public var members: [Member] = []
     private(set) public var chatMessages: [ChatMessage] = []
     private(set) public var vapidPublicKey: String?
@@ -316,11 +318,11 @@ public final class CollaborationSession {
 
             if let existingLabID {
                 isHost = false
-                joinLab(labID: existingLabID)
+                pendingJoinLabID = existingLabID
             } else {
                 isHost = true
-                createLab()
             }
+            triggerJoinOrCreateIfReady()
         } catch {
             if let failure = AuthFailure.fromError(error), failure.isAuthRejection {
                 setStatus(.error(message: failure.message))
@@ -344,6 +346,8 @@ public final class CollaborationSession {
         labPictureData = nil
         labPictureContentType = nil
         localUser = nil
+        pendingJoinLabID = nil
+        pendingCreateOrJoinDispatched = false
         members = []
         chatMessages = []
         vapidPublicKey = nil
@@ -930,6 +934,18 @@ public final class CollaborationSession {
 
     // MARK: - Lab Operations
 
+    private func triggerJoinOrCreateIfReady() {
+        guard !pendingCreateOrJoinDispatched else { return }
+        guard localUser != nil else { return }
+        pendingCreateOrJoinDispatched = true
+        if let labID = pendingJoinLabID {
+            pendingJoinLabID = nil
+            joinLab(labID: labID)
+        } else {
+            createLab()
+        }
+    }
+
     private func createLab() {
         setStatus(.connecting)
         let initialTitle = Self.initialLabTitle()
@@ -1147,6 +1163,7 @@ public final class CollaborationSession {
         case ("+welcome", ["session"]):
             if let userObj = payload["user"] as? JSONObject, let u = UserInfo.fromJSON(userObj) {
                 localUser = u
+                triggerJoinOrCreateIfReady()
             }
             if let push = payload["push"] as? JSONObject {
                 if let key = push["vapid_public_key"] as? String {
