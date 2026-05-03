@@ -576,6 +576,7 @@ final class MainWindow {
     private func buildSessionsSection() -> Box {
         sessionsList.selectionMode = .single
         sessionsList.add(cssClass: "navigation-sidebar")
+        sessionsList.add(cssClass: "sidebar-sessions")
         sessionsList.onRowSelected { [weak self] _, row in
             MainActor.assumeIsolated {
                 guard let self, let row else { return }

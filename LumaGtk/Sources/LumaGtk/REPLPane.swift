@@ -574,6 +574,7 @@ final class REPLPane {
         codeRow.append(child: prompt)
         let codeLabel = Label(str: cell.code)
         codeLabel.add(cssClass: "monospace")
+        codeLabel.add(cssClass: "repl-cell-code")
         codeLabel.halign = .start
         codeLabel.hexpand = true
         codeLabel.wrap = true

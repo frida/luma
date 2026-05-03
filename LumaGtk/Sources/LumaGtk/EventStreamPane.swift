@@ -88,6 +88,7 @@ final class EventStreamPane {
         toggleButton = Button()
         toggleButton.label = "▲  Show Event Stream"
         toggleButton.hasFrame = false
+        toggleButton.add(cssClass: "luma-event-stream-toggle")
         collapsedBar.append(child: toggleButton)
 
         statusLabel = Label(str: "")
