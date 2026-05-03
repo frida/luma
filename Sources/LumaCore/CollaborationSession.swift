@@ -1024,17 +1024,24 @@ public final class CollaborationSession {
         items.append(URLQueryItem(name: "s", value: "256"))
         components.queryItems = items
         guard let url = components.url else { return nil }
-        do {
-            let (data, response) = try await URLSession.shared.data(from: url)
-            guard let http = response as? HTTPURLResponse,
-                  (200..<300).contains(http.statusCode) else { return nil }
-            let raw = http.value(forHTTPHeaderField: "Content-Type") ?? ""
-            let contentType = raw.split(separator: ";").first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? raw
-            guard Self.allowedAvatarContentTypes.contains(contentType) else { return nil }
-            return AvatarBytes(data: data, contentType: contentType)
-        } catch {
-            return nil
+        let backoffs: [UInt64] = [0, 500_000_000, 2_000_000_000]
+        for delay in backoffs {
+            if delay > 0 {
+                try? await Task.sleep(nanoseconds: delay)
+            }
+            do {
+                let (data, response) = try await URLSession.shared.data(from: url)
+                guard let http = response as? HTTPURLResponse,
+                      (200..<300).contains(http.statusCode) else { continue }
+                let raw = http.value(forHTTPHeaderField: "Content-Type") ?? ""
+                let contentType = raw.split(separator: ";").first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? raw
+                guard Self.allowedAvatarContentTypes.contains(contentType) else { return nil }
+                return AvatarBytes(data: data, contentType: contentType)
+            } catch {
+                continue
+            }
         }
+        return nil
     }
 
     private func joinLab(labID: String) {
