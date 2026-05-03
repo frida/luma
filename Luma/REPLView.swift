@@ -108,6 +108,7 @@ struct REPLView: View {
                     )
                     .frame(minHeight: 22)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("repl.input")
                 } else if let driver {
                     ZStack(alignment: .leading) {
                         REPLInputField(
@@ -342,6 +343,9 @@ private struct REPLCellView: View {
                 .font(.system(.caption, design: .monospaced))
             }
             .padding(.bottom, 4)
+            .contentShape(Rectangle())
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("repl.cell")
             .contextMenu {
                 Button {
                     addToNotebook()

@@ -132,6 +132,8 @@ struct AddInstrumentSheet: View {
             Text(descriptor.displayName)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("addInstrument.descriptor.\(descriptor.id)")
     }
 
     @ToolbarContentBuilder
@@ -160,6 +162,7 @@ struct AddInstrumentSheet: View {
                 }
             }
             .disabled(selectedDescriptor == nil)
+            .accessibilityIdentifier("addInstrument.add")
         }
         ToolbarItem(placement: .automatic) {
             Button("Browse CodeShare…") {

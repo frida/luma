@@ -160,6 +160,7 @@ struct CollaborationPanel: View {
                     workspace.engine.startCollaboration()
                 }
                 .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("collaboration.enable")
 
             case .connecting:
                 HStack(spacing: 6) {
@@ -196,6 +197,7 @@ struct CollaborationPanel: View {
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                                 .textSelection(.enabled)
+                                .accessibilityIdentifier("collaboration.inviteLink")
 
                             Button {
                                 Platform.copyToClipboard(inviteURL)
@@ -253,6 +255,7 @@ struct CollaborationPanel: View {
                     workspace.engine.startCollaboration()
                 }
                 .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("collaboration.retry")
             }
         }
     }

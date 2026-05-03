@@ -534,6 +534,7 @@ struct TracerConfigView: View {
             HStack {
                 TextField(searchScope.placeholder, text: $searchQuery)
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("tracer.searchQuery")
                     #if canImport(UIKit)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled(true)
@@ -553,6 +554,7 @@ struct TracerConfigView: View {
                 }
                 .disabled(searchQuery.isEmpty || isResolving || !canResolve)
                 .help(canResolve ? "Search in the attached process" : "Attach to a process to search APIs")
+                .accessibilityIdentifier("tracer.searchButton")
             }
 
             if isResolving {
@@ -573,6 +575,7 @@ struct TracerConfigView: View {
                         addAllResultsAsHooks()
                     }
                     .disabled(resolveResults.isEmpty)
+                    .accessibilityIdentifier("tracer.addAll")
                 }
 
                 List(resolveResults) { api in
@@ -916,6 +919,7 @@ private struct HookEditorView: View {
         .onChange(of: draftCode) { _, _ in
             isDirty = (draftCode != selectedHook?.code)
         }
+        .accessibilityIdentifier("tracer.hookEditor")
     }
 }
 

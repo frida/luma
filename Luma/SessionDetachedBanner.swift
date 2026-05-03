@@ -63,6 +63,7 @@ struct SessionDetachedBanner: View {
                         Text(errorPrefix + errorText)
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("session.errorText")
                     } else if let reasonText = detachReasonText {
                         Text(reasonText)
                             .font(.caption)

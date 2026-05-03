@@ -274,6 +274,7 @@ struct EventStreamView: View {
                         pin(evt)
                     }
                     .id(evt.id)
+                    .accessibilityIdentifier("event.row")
                     .background(
                         GeometryReader { rowGeo in
                             Color.clear

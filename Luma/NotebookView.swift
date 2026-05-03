@@ -84,6 +84,7 @@ struct NotebookView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
             }
+            .accessibilityIdentifier("notebook.newNote")
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.capsule)
             #if canImport(UIKit)
@@ -378,11 +379,13 @@ struct NotebookEntryRow: View {
                 .font(.subheadline.weight(.semibold))
                 .focused($isTitleFocused)
                 .onSubmit { saveEdits() }
+                .accessibilityIdentifier("notebook.note.title")
 
             TextEditor(text: $editDetails)
                 .font(.system(.body, design: .default))
                 .frame(minHeight: 80)
                 .focused($isBodyFocused)
+                .accessibilityIdentifier("notebook.note.body")
                 .overlay(alignment: .topLeading) {
                     if editDetails.isEmpty {
                         Text("Write something\u{2026}")

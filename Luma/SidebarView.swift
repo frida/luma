@@ -90,6 +90,8 @@ private struct SidebarNotebookRow: View {
                 .foregroundStyle(.tint)
             Text("Notebook")
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("sidebar.notebook")
     }
 }
 
@@ -308,6 +310,8 @@ private struct SidebarSessionREPLRow: View {
         .font(.callout)
         .padding(.leading, 20)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("sidebar.repl")
     }
 }
 

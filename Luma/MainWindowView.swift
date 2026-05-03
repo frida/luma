@@ -277,6 +277,7 @@ struct MainWindowView: View {
             }
             .buttonStyle(.borderless)
             .font(.footnote)
+            .accessibilityIdentifier("eventStream.expand")
 
             Spacer()
         }
@@ -344,6 +345,7 @@ struct WorkspaceToolbar: ToolbarContent {
                 Label("New Session…", systemImage: "target")
             }
             .keyboardShortcut("n", modifiers: [.command, .option])
+            .accessibilityIdentifier("toolbar.newSession")
 
             let session = selectedProcessSession
 

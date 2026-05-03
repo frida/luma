@@ -629,6 +629,7 @@ struct TargetPickerView: View {
                         TextField("Filter by process name", text: $processSearchText)
                             .textFieldStyle(.roundedBorder)
                             .disableAutocorrection(true)
+                            .accessibilityIdentifier("targetPicker.processSearch")
                             #if canImport(UIKit)
                                 .textInputAutocapitalization(.never)
                             #endif
@@ -686,6 +687,7 @@ struct TargetPickerView: View {
                             .padding(.vertical, 2)
                             .contentShape(Rectangle())
                             .tag(proc.pid)
+                            .accessibilityIdentifier("targetPicker.process.\(proc.name)")
                             .onTapGesture {
                                 attach(to: device, process: proc)
                             }

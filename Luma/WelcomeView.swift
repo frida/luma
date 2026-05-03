@@ -68,12 +68,14 @@ struct WelcomeView: View {
                 systemImage: "doc.badge.plus",
                 action: onCreateBlank
             )
+            .accessibilityIdentifier("welcome.newProject")
             ActionRow(
                 title: "Open Project\u{2026}",
                 subtitle: "Pick a .luma file from disk or iCloud Drive.",
                 systemImage: "folder",
                 action: onOpenExisting
             )
+            .accessibilityIdentifier("welcome.openProject")
         }
     }
 
