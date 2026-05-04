@@ -121,8 +121,8 @@ public struct RuntimeEvent: Identifiable, Sendable {
         }
     }
 
-    nonisolated(unsafe) private static let payloadEncoder = JSONEncoder()
-    nonisolated(unsafe) private static let payloadDecoder = JSONDecoder()
+    private static let payloadEncoder = JSONEncoder()
+    private static let payloadDecoder = JSONDecoder()
 
     private static func encodePayload(_ payload: Payload) -> [String: Any]? {
         switch payload {
