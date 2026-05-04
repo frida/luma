@@ -56,12 +56,13 @@ struct PhoneMainView: View {
                         )
 
                     case .instrument(let sessionID, let instrumentID):
-                        if let instance = workspace.engine.instrumentsBySession[sessionID]?
-                            .first(where: { $0.id == instrumentID })
+                        if workspace.engine.instrumentsBySession[sessionID]?
+                            .contains(where: { $0.id == instrumentID }) == true
                         {
                             SessionContent(sessionID: sessionID, workspace: workspace) {
                                 InstrumentDetailView(
-                                    instance: instance,
+                                    instanceID: instrumentID,
+                                    sessionID: sessionID,
                                     workspace: workspace,
                                     selection: $path.asSidebarSelection()
                                 )

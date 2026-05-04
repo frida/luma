@@ -38,11 +38,16 @@ struct DetailView: View {
 
             case .some(.instrument(let sessionID, let instID)),
                 .some(.instrumentComponent(let sessionID, let instID, _, _)):
-                if let inst = (try? workspace.store.fetchInstruments(sessionID: sessionID))?.first(where: { $0.id == instID }) {
+                if (try? workspace.store.fetchInstrument(id: instID)) != nil {
                     SessionContent(sessionID: sessionID, workspace: workspace) {
-                        InstrumentDetailView(instance: inst, workspace: workspace, selection: $selection)
+                        InstrumentDetailView(
+                            instanceID: instID,
+                            sessionID: sessionID,
+                            workspace: workspace,
+                            selection: $selection
+                        )
                     }
-                    .id(inst.id)
+                    .id(instID)
                 }
 
             case .some(.itraceCapture(let sessionID, let captureID)):

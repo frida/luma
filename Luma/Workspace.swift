@@ -26,6 +26,7 @@ final class Workspace: ObservableObject {
             dataDirectory: LumaAppPaths.shared.dataDirectory,
             gitHubAuth: gitHubAuth
         )
+        engine.onSessionListChanged = { [weak self] _ in self?.objectWillChange.send() }
         registerInstrumentUIs()
     }
 
