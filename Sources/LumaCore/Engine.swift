@@ -393,14 +393,12 @@ public final class Engine {
     }
 
     private func applyRemoteSessionEvent(sessionID: UUID, event: RuntimeEvent) {
-        if localUserHosts(sessionID) { return }
         var stamped = event
         stamped.sessionID = sessionID
         _events.yield(stamped)
     }
 
     private func applyRemoteSessionCaptureAdded(sessionID: UUID, capture: ITraceCaptureRecord) {
-        if localUserHosts(sessionID) { return }
         var stored = capture
         stored.sessionID = sessionID
         try? store.save(stored)
@@ -408,13 +406,11 @@ public final class Engine {
     }
 
     private func applyRemoteSessionCaptureRemoved(sessionID: UUID, captureID: UUID) {
-        if localUserHosts(sessionID) { return }
         try? store.deleteCapture(id: captureID)
         onSessionListChanged?(.captureRemoved(id: captureID, sessionID: sessionID))
     }
 
     private func applyRemoteSessionInsightAdded(sessionID: UUID, insight: AddressInsight) {
-        if localUserHosts(sessionID) { return }
         var stored = insight
         stored.sessionID = sessionID
         try? store.save(stored)
@@ -422,13 +418,11 @@ public final class Engine {
     }
 
     private func applyRemoteSessionInsightRemoved(sessionID: UUID, insightID: UUID) {
-        if localUserHosts(sessionID) { return }
         try? store.deleteInsight(id: insightID)
         onSessionListChanged?(.insightRemoved(id: insightID, sessionID: sessionID))
     }
 
     private func applyRemoteSessionInstrumentAdded(sessionID: UUID, instance: InstrumentInstance) {
-        if localUserHosts(sessionID) { return }
         var stored = instance
         stored.sessionID = sessionID
         try? store.save(stored)
@@ -436,7 +430,6 @@ public final class Engine {
     }
 
     private func applyRemoteSessionInstrumentUpdated(sessionID: UUID, instance: InstrumentInstance) {
-        if localUserHosts(sessionID) { return }
         var stored = instance
         stored.sessionID = sessionID
         try? store.save(stored)
@@ -444,7 +437,6 @@ public final class Engine {
     }
 
     private func applyRemoteSessionInstrumentRemoved(sessionID: UUID, instanceID: UUID) {
-        if localUserHosts(sessionID) { return }
         try? store.deleteInstrument(id: instanceID)
         onSessionListChanged?(.instrumentRemoved(id: instanceID, sessionID: sessionID))
     }
@@ -692,7 +684,6 @@ public final class Engine {
     }
 
     private func applyRemoteSessionReplCell(sessionID: UUID, cell: REPLCell) {
-        if localUserHosts(sessionID) { return }
         var stored = cell
         stored.sessionID = sessionID
         try? store.save(stored)
