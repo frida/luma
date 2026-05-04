@@ -1481,6 +1481,19 @@ jobs:
           try {
               $env:PATH = "T:\bin;F:\bin;R:\bin;$env:PATH"
               $env:PKG_CONFIG_PATH = "F:\lib\pkgconfig;R:\lib\pkgconfig;V:\lib\pkgconfig"
+              $env:USE_SYSTEM_FRIDA = "1"
+              swift run --package-path . luma-bundle-compiler `
+                  --project-root (Get-Location) `
+                  --swift-out    (Join-Path (Get-Location) 'Sources\LumaCore\Generated\LumaAgent.swift') `
+                  --staging-dir  (Join-Path (Get-Location) '.build\AgentStaging') `
+                  --package frida-itrace@6.1.0 `
+                  --package frida-java-bridge@7.0.12 `
+                  --external frida-java-bridge `
+                  --agent  core      Agent/core/luma.ts `
+                  --agent  drain     Agent/instruments/drain-agent.ts `
+                  --module tracer    Agent/instruments/tracer.ts `
+                  --module codeShare Agent/instruments/codeshare.ts
+              if ($LASTEXITCODE -ne 0) { throw "luma-bundle-compiler failed ($LASTEXITCODE)" }
               cd LumaGtk
               swift build -c release `
                   --build-path B:\ `
