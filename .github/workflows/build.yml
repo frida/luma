@@ -342,6 +342,15 @@ jobs:
               f.write(text)
           PY
 
+      - name: Generate agent bundle
+        run: |
+          xcodebuild \
+            -project Luma.xcodeproj \
+            -scheme AgentBundle \
+            -configuration Release \
+            -derivedDataPath build/.derived \
+            build
+
       - name: Build
         run: |
           xcodebuild \
@@ -631,6 +640,15 @@ jobs:
           with open(luma_pkg, "w") as f:
               f.write(text)
           PY
+
+      - name: Generate agent bundle
+        run: |
+          xcodebuild \
+            -project Luma.xcodeproj \
+            -scheme AgentBundle \
+            -configuration Release \
+            -derivedDataPath build/.derived-ios \
+            build
 
       - name: Build (unsigned, iOS Simulator)
         if: env.CAN_SIGN != 'true'
