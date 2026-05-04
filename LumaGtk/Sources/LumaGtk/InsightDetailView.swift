@@ -6,6 +6,7 @@ import Foundation
 import Gdk
 import Gtk
 import LumaCore
+import Pango
 
 @MainActor
 final class InsightDetailView {
@@ -106,6 +107,7 @@ final class InsightDetailView {
         disasmScroll = ScrolledWindow()
         disasmScroll.hexpand = true
         disasmScroll.vexpand = true
+        disasmScroll.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
 
         disasmContentOverlay = Overlay()
         disasmContentOverlay.hexpand = true
@@ -184,6 +186,12 @@ final class InsightDetailView {
             scheduleRefresh()
         }
         lastNodeAvailable = nodeAvailable
+    }
+
+    func requestFocus() {
+        if insight.kind == .disassembly {
+            _ = disasmBox.grabFocus()
+        }
     }
 
     private func clearFocusIfInside<W: WidgetProtocol>(_ subtree: W) {
@@ -315,6 +323,7 @@ final class InsightDetailView {
                 if !lines.isEmpty {
                     self.selectRow(at: 0, focus: false)
                 }
+                _ = self.disasmBox.grabFocus()
             }
         }
     }
@@ -439,7 +448,7 @@ final class InsightDetailView {
     private func scrollToCenter(index: Int) {
         guard let adj = disasmScroll.vadjustment else { return }
         guard !disasmRows.isEmpty else { return }
-        let rowHeight = Double(disasmRows[0].height)
+        let rowHeight = Double(disasmBox.height) / Double(disasmRows.count)
         guard rowHeight > 0 else { return }
         let rowMidY = (Double(index) + 0.5) * rowHeight
         let target = rowMidY - adj.pageSize / 2.0
@@ -507,6 +516,7 @@ final class InsightDetailView {
         row.marginEnd = 12
         row.marginTop = 2
         row.marginBottom = 2
+        row.setSizeRequest(width: -1, height: 16)
 
         let decorationsBox = Box(orientation: .horizontal, spacing: 3)
         decorationsBox.halign = .end
@@ -528,7 +538,10 @@ final class InsightDetailView {
         addrLabel.add(cssClass: "monospace")
         addrLabel.add(cssClass: "dim-label")
         addrLabel.halign = .start
-        addrLabel.setSizeRequest(width: 110, height: -1)
+        addrLabel.xalign = 0
+        addrLabel.ellipsize = EllipsizeMode.end
+        addrLabel.widthChars = 18
+        addrLabel.maxWidthChars = 18
 
         let address = line.address
         let addrGesture = GestureClick()
@@ -547,17 +560,23 @@ final class InsightDetailView {
         bytesLabel.add(cssClass: "monospace")
         bytesLabel.add(cssClass: "dim-label")
         bytesLabel.halign = .start
-        bytesLabel.setSizeRequest(width: 88, height: -1)
+        bytesLabel.xalign = 0
+        bytesLabel.ellipsize = EllipsizeMode.end
+        bytesLabel.widthChars = 18
+        bytesLabel.maxWidthChars = 18
         row.append(child: bytesLabel)
 
         let asmRow = Box(orientation: .horizontal, spacing: 6)
         asmRow.hexpand = true
-        asmRow.halign = .start
+        asmRow.halign = .fill
+        asmRow.setSizeRequest(width: 240, height: -1)
 
         let asmLabel = Label(str: "")
         asmLabel.setMarkup(str: StyledTextPango.markup(for: line.asmText))
         asmLabel.add(cssClass: "monospace")
         asmLabel.halign = .start
+        asmLabel.xalign = 0
+        asmLabel.ellipsize = EllipsizeMode.end
         asmLabel.selectable = true
         asmRow.append(child: asmLabel)
 
@@ -593,8 +612,11 @@ final class InsightDetailView {
             commentLabel.add(cssClass: "monospace")
             commentLabel.add(cssClass: "dim-label")
             commentLabel.halign = .start
+            commentLabel.xalign = 0
+            commentLabel.ellipsize = EllipsizeMode.end
             commentLabel.selectable = true
-            commentLabel.setSizeRequest(width: 320, height: -1)
+            commentLabel.widthChars = 50
+            commentLabel.maxWidthChars = 50
             row.append(child: commentLabel)
         }
 
@@ -701,7 +723,7 @@ final class InsightDetailView {
 
     private func drawFlow(ctx: Cairo.ContextRef) {
         guard !disasmLines.isEmpty, !disasmRows.isEmpty else { return }
-        let rowHeight = Double(disasmRows[0].height)
+        let rowHeight = Double(disasmBox.height) / Double(disasmRows.count)
         guard rowHeight > 0 else { return }
 
         let indexByAddr: [UInt64: Int] = Dictionary(

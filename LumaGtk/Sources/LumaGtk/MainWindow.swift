@@ -846,6 +846,9 @@ final class MainWindow {
         }
         replaceDetail(with: wrapWithCollabHeader(widget))
         addInstrumentButton.sensitive = currentSessionID() != nil
+        if case .insight = selection {
+            currentInsightDetail?.requestFocus()
+        }
     }
 
     private func wrapWithCollabHeader<T: WidgetProtocol>(_ widget: T) -> Box {
