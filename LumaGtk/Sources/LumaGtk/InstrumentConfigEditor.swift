@@ -291,21 +291,25 @@ final class InstrumentConfigEditor {
 
     private func apply(configJSON: Data) {
         guard let engine else { return }
+        // Reflect the change locally before the engine fires its
+        // .instrumentUpdated notification, so update(_:) sees identical
+        // configJSON and skips a rebuild that would clobber editor state.
+        instrument.configJSON = configJSON
         let snapshot = instrument
         Task { @MainActor in
             await engine.applyInstrumentConfig(snapshot, configJSON: configJSON)
-            if let updated = try? engine.store.fetchInstruments(sessionID: snapshot.sessionID)
-                .first(where: { $0.id == snapshot.id })
-            {
-                self.instrument = updated
-            } else {
-                self.instrument.configJSON = configJSON
-            }
-            // Tracer keeps its own state in TracerConfigEditor; rebuilding would
-            // tear down the live Monaco editor. Other instrument kinds rebuild.
-            if self.instrument.kind != .tracer {
-                self.rebuild()
-            }
+        }
+    }
+
+    func update(_ updated: LumaCore.InstrumentInstance) {
+        if updated.configJSON == instrument.configJSON { return }
+        instrument = updated
+        switch updated.kind {
+        case .tracer:
+            guard let config = try? TracerConfig.decode(from: updated.configJSON) else { return }
+            tracerEditor?.update(config: config)
+        case .hookPack, .codeShare:
+            rebuild()
         }
     }
 

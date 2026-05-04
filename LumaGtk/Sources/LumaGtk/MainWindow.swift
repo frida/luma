@@ -1150,6 +1150,9 @@ final class MainWindow {
             {
                 instrumentsBySession[instrument.sessionID]![i] = instrument
             }
+            if let detail = currentInstrumentDetail, detail.instrumentID == instrument.id {
+                detail.update(instrument)
+            }
         case .instrumentRemoved(let id, let sessionID):
             instrumentsBySession[sessionID]?.removeAll { $0.id == id }
             removeChildRow(kind: .instrument(sessionID: sessionID, instrumentID: id))

@@ -62,4 +62,8 @@ final class InstrumentDetailPane {
     func selectTracerHook(id: UUID) {
         editor.selectTracerHook(id: id)
     }
+
+    func update(_ instrument: LumaCore.InstrumentInstance) {
+        editor.update(instrument)
+    }
 }
