@@ -1,5 +1,36 @@
 const pinned = [];
 
+let latestMonacoText = null;
+
+Interceptor.attach(Module.getGlobalExportByName('luma_monaco_view_evaluate'), {
+    onEnter(args) {
+        const script = args[1].readUtf8String();
+        const match = setTextScriptRegex.exec(script);
+        if (match !== null)
+            latestMonacoText = base64DecodeUtf8(match[1]);
+    }
+});
+
+const setTextScriptRegex = /editor\.setText\(atob\('([^']*)'\)\)/;
+
+function base64DecodeUtf8(input) {
+    const bytes = [];
+    let buffer = 0;
+    let bits = 0;
+    for (const ch of input) {
+        if (ch === '=') break;
+        buffer = (buffer << 6) | base64Alphabet.indexOf(ch);
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            bytes.push((buffer >> bits) & 0xff);
+        }
+    }
+    return String.fromCharCode(...bytes);
+}
+
+const base64Alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
 const glib = findModule('libglib-2.0');
 const gobject = findModule('libgobject-2.0');
 const gio = findModule('libgio-2.0');
@@ -289,25 +320,15 @@ rpc.exports = {
     },
 
     selectReplRow() {
-        return runOnMainThread(() => {
-            for (const w of appWindows()) {
-                for (const lb of collectListBoxes(w)) {
-                    if (!widgetHasCssClass(lb, 'sidebar-sessions'))
-                        continue;
-                    for (let i = 0; ; i++) {
-                        const row = ListBox.getRowAtIndex(lb, i);
-                        if (row.isNull())
-                            break;
-                        const label = firstLabel(row);
-                        if (label !== null && labelText(label) === 'REPL') {
-                            ListBox.selectRow(lb, row);
-                            return true;
-                        }
-                    }
-                }
-            }
-            return false;
-        });
+        return selectSidebarRowByLabel('REPL');
+    },
+
+    selectTracerRow() {
+        return selectSidebarRowByLabel('Tracer');
+    },
+
+    monacoLatestText() {
+        return latestMonacoText;
     },
 
     replCellCodes() {
@@ -592,6 +613,28 @@ function rowLabelText(row) {
 function labelText(label) {
     const t = Label.getText(label);
     return t.isNull() ? '' : t.readUtf8String();
+}
+
+function selectSidebarRowByLabel(targetLabel) {
+    return runOnMainThread(() => {
+        for (const w of appWindows()) {
+            for (const lb of collectListBoxes(w)) {
+                if (!widgetHasCssClass(lb, 'sidebar-sessions'))
+                    continue;
+                for (let i = 0; ; i++) {
+                    const row = ListBox.getRowAtIndex(lb, i);
+                    if (row.isNull())
+                        break;
+                    const label = firstLabel(row);
+                    if (label !== null && labelText(label) === targetLabel) {
+                        ListBox.selectRow(lb, row);
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    });
 }
 
 function firstLabel(widget) {

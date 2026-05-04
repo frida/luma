@@ -108,6 +108,17 @@ final class GtkAppHarness: @unchecked Sendable {
         _ = try await script.exports.selectReplRow()
     }
 
+    func selectTracerRow() async throws {
+        let script = try requireScript()
+        _ = try await script.exports.selectTracerRow()
+    }
+
+    func monacoLatestText() async throws -> String? {
+        let script = try requireScript()
+        let raw = try await script.exports.monacoLatestText()
+        return raw as? String
+    }
+
     func sidebarSessionLabels() async throws -> [String] {
         let script = try requireScript()
         let raw = try await script.exports.sidebarSessionLabels()

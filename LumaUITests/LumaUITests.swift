@@ -174,6 +174,8 @@ final class LumaUITests: XCTestCase {
                 return count > 0
             }
 
+            try await bobApp.selectTracerRow()
+
             let modifiedHook = """
             defineHandler({
               onEnter (log, args) {
@@ -194,6 +196,11 @@ final class LumaUITests: XCTestCase {
                 let hits = messages.filter { $0.contains("HOOKED-") }
                 print("[LumaUITests] bob HOOKED- messages=\(hits.count)")
                 return !hits.isEmpty
+            }
+            try await waitUntil(timeout: 30) { [bobApp] in
+                let text = try await bobApp.monacoLatestText() ?? ""
+                print("[LumaUITests] bob monaco textLen=\(text.count) HOOKED-?=\(text.contains("HOOKED-"))")
+                return text.contains("HOOKED-")
             }
         }
 
