@@ -183,6 +183,9 @@
         {
             "name": "luma",
             "buildsystem": "simple",
+            "build-options": {
+                "append-ld-library-path": "/app/lib:/app/lib64"
+            },
             "build-commands": [
                 "cd LumaGtk && make build SWIFT_BUILD_FLAGS='-c release'",
                 "install -Dm755 LumaGtk/.build/x86_64-unknown-linux-gnu/release/LumaGtk /app/bin/luma",
