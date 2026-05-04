@@ -27,6 +27,9 @@ final class TracerConfigEditor {
     private var popoverSearch: TracerHookSearch?
     private var addPopover: Popover?
 
+    private nonisolated(unsafe) let sensorRaw: UnsafeMutableRawPointer
+    private var sensorHandlerID: gulong = 0
+
     enum LayoutMode {
         case compact
         case expanded
@@ -64,8 +67,9 @@ final class TracerConfigEditor {
         let sensorPtr = gtk_drawing_area_new()!
         gtk_widget_set_hexpand(sensorPtr, 1)
         gtk_widget_set_size_request(sensorPtr, -1, 0)
+        sensorRaw = UnsafeMutableRawPointer(sensorPtr)
         let context = Unmanaged.passUnretained(self).toOpaque()
-        g_signal_connect_data(
+        sensorHandlerID = g_signal_connect_data(
             sensorPtr,
             "resize",
             unsafeBitCast(widthSensorResized, to: GCallback.self),
@@ -73,10 +77,14 @@ final class TracerConfigEditor {
             nil,
             GConnectFlags(rawValue: 0)
         )
-        widget.append(child: WidgetRef(raw: UnsafeMutableRawPointer(sensorPtr)))
+        widget.append(child: WidgetRef(raw: sensorRaw))
         widget.append(child: contentSlot)
 
         rebuildContent()
+    }
+
+    deinit {
+        g_signal_handler_disconnect(sensorRaw, sensorHandlerID)
     }
 
     func update(config newConfig: TracerConfig) {
