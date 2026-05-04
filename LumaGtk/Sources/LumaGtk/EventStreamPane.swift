@@ -867,9 +867,9 @@ final class EventStreamPane {
         guard case .instrument(let instrumentID, _) = event.source,
             case .jsValue(let v) = event.payload,
             let parsed = Engine.parseTracerEvent(from: v),
-            let sessionID = event.sessionID,
-            let node = engine?.node(forSessionID: sessionID)
+            let sessionID = event.sessionID
         else { return nil }
+        let node = engine?.node(forSessionID: sessionID)
 
         let hookID = parsed.id
 
@@ -922,7 +922,7 @@ final class EventStreamPane {
             column.append(child: expander)
         }
 
-        if let backtrace = parsed.backtrace, !backtrace.isEmpty {
+        if let backtrace = parsed.backtrace, !backtrace.isEmpty, let node {
             let button = Button(label: "⋯ bt")
             button.hasFrame = false
             button.add(cssClass: "flat")
