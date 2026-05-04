@@ -75,7 +75,7 @@ struct CollaborationPanel: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("You'll lose access to the shared notebook. The lab keeps going for everyone else.")
+            Text("You'll lose access to the shared notebook, sessions, and chat. The lab keeps going for everyone else.")
         }
     }
 
@@ -141,7 +141,7 @@ struct CollaborationPanel: View {
                     Text("Collaboration is currently off for this project.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("Enable collaboration to create a shared notebook and chat.")
+                    Text("Enable collaboration to share this project's notebook and sessions, with chat and presence alongside.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .padding(.top, 2)
