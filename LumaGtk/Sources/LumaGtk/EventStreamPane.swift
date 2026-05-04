@@ -311,6 +311,20 @@ final class EventStreamPane {
         updatePendingPill()
     }
 
+    private func setPaused(_ paused: Bool) {
+        guard isPaused != paused else { return }
+        isPaused = paused
+        pauseButton.active = paused
+        pauseButton.label = paused ? "Resume" : "Pause"
+        if !paused {
+            syncSnapshot()
+            pendingNewEvents = 0
+            scrollToBottomSoon()
+        }
+        updateLiveIndicator()
+        updatePendingPill()
+    }
+
     private func toggleCollapsed() {
         isCollapsed.toggle()
         applyCollapsedState()
@@ -947,12 +961,16 @@ final class EventStreamPane {
         }
 
         if let backtrace = parsed.backtrace, !backtrace.isEmpty, let node {
-            let button = Button(label: "⋯ bt")
-            button.hasFrame = false
+            let button = Button()
+            button.set(child: Image(iconName: "view-list-symbolic"))
             button.add(cssClass: "flat")
+            button.valign = .start
+            button.tooltipText = "Show backtrace"
             button.onClicked { [weak self] _ in
                 MainActor.assumeIsolated {
-                    self?.presentBacktrace(button: button, node: node, pointers: backtrace)
+                    guard let self else { return }
+                    self.setPaused(true)
+                    self.presentBacktrace(button: button, node: node, sessionID: sessionID, pointers: backtrace)
                 }
             }
             column.append(child: button)
@@ -1037,13 +1055,14 @@ final class EventStreamPane {
     private func presentBacktrace(
         button: Button,
         node: LumaCore.ProcessNode,
+        sessionID: UUID,
         pointers: [JSInspectValue]
     ) {
         let popover = Popover()
         popover.set(parent: WidgetRef(button))
         popover.autohide = true
 
-        let column = Box(orientation: .vertical, spacing: 6)
+        let column = Box(orientation: .vertical, spacing: 10)
         column.marginStart = 12
         column.marginEnd = 12
         column.marginTop = 10
@@ -1057,8 +1076,22 @@ final class EventStreamPane {
         title.hexpand = true
         header.append(child: title)
         let spinner = Adw.Spinner()
+        spinner.valign = .center
         header.append(child: spinner)
+        let retryButton = Button(label: "Symbolicate")
+        retryButton.add(cssClass: "flat")
+        retryButton.visible = false
+        header.append(child: retryButton)
         column.append(child: header)
+
+        let errorLabel = Label(str: "")
+        errorLabel.add(cssClass: "dim-label")
+        errorLabel.add(cssClass: "caption")
+        errorLabel.halign = .start
+        errorLabel.wrap = true
+        errorLabel.xalign = 0
+        errorLabel.visible = false
+        column.append(child: errorLabel)
 
         let scroll = ScrolledWindow()
         scroll.hexpand = true
@@ -1071,19 +1104,35 @@ final class EventStreamPane {
         var lineLabels: [Label] = []
         for (idx, addr) in addresses.enumerated() {
             let row = Box(orientation: .horizontal, spacing: 8)
-            row.marginTop = 3
-            row.marginBottom = 3
+            row.marginTop = 4
+            row.marginBottom = 4
             let num = Label(str: "#\(idx + 1)")
             num.add(cssClass: "dim-label")
             num.add(cssClass: "monospace")
+            num.valign = .center
             row.append(child: num)
             let line = Label(str: node.anchor(for: addr).displayString)
             line.add(cssClass: "monospace")
             line.halign = .start
             line.hexpand = true
+            line.valign = .center
             line.selectable = true
             row.append(child: line)
             lineLabels.append(line)
+
+            let openButton = Button()
+            openButton.set(child: Image(iconName: "go-next-symbolic"))
+            openButton.add(cssClass: "circular")
+            openButton.add(cssClass: "flat")
+            openButton.valign = .center
+            openButton.tooltipText = "Open Disassembly"
+            openButton.onClicked { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.openDisassembly(sessionID: sessionID, address: addr)
+                }
+            }
+            row.append(child: openButton)
+
             listBox.append(child: row)
             if idx < addresses.count - 1 {
                 listBox.append(child: Separator(orientation: .horizontal))
@@ -1093,18 +1142,44 @@ final class EventStreamPane {
         popover.set(child: column)
         popover.popup()
 
-        Task { @MainActor in
-            defer { spinner.visible = false }
-            do {
-                let symbols = try await node.symbolicate(addresses: addresses)
-                for (idx, symbol) in symbols.enumerated() {
-                    guard idx < lineLabels.count else { break }
-                    let fallback = node.anchor(for: addresses[idx]).displayString
-                    lineLabels[idx].setText(str: symbolLabel(for: symbol, fallback: fallback))
+        let symbolicate: () -> Void = { [weak self] in
+            guard let self else { return }
+            spinner.visible = true
+            retryButton.visible = false
+            errorLabel.visible = false
+            Task { @MainActor in
+                defer { spinner.visible = false }
+                do {
+                    let symbols = try await node.symbolicate(addresses: addresses)
+                    for (idx, symbol) in symbols.enumerated() {
+                        guard idx < lineLabels.count else { break }
+                        let fallback = node.anchor(for: addresses[idx]).displayString
+                        lineLabels[idx].setText(str: self.symbolLabel(for: symbol, fallback: fallback))
+                    }
+                } catch {
+                    errorLabel.setText(str: "Symbolication failed: \(error.localizedDescription)")
+                    errorLabel.visible = true
+                    retryButton.visible = true
                 }
-            } catch {
-                // leave anchor strings as-is on failure
             }
+        }
+        retryButton.onClicked { _ in
+            MainActor.assumeIsolated { symbolicate() }
+        }
+        symbolicate()
+    }
+
+    private func openDisassembly(sessionID: UUID, address: UInt64) {
+        guard let engine else { return }
+        do {
+            let insight = try engine.getOrCreateInsight(
+                sessionID: sessionID,
+                pointer: address,
+                kind: .disassembly
+            )
+            AddressActionMenu.navigator?(sessionID, insight.id)
+        } catch {
+            AddressActionMenu.errorReporter?("Can\u{2019}t open disassembly: \(error.localizedDescription)")
         }
     }
 

@@ -42,6 +42,7 @@ struct EventStreamView: View {
                 GeometryReader { geo in
                     ZStack(alignment: .bottomTrailing) {
                         scrollContent
+                            .environment(\.pauseEventStream, pauseFromRow)
                             .coordinateSpace(name: "EventScroll")
                             .onPreferenceChange(BottomRowOffsetPreferenceKey.self) { bottomY in
                                 updateScrollPosition(bottomY: bottomY, viewportHeight: geo.size.height)
@@ -370,6 +371,12 @@ struct EventStreamView: View {
         }
     }
 
+    private func pauseFromRow() {
+        guard !isPaused else { return }
+        isPaused = true
+        syncSnapshotFromWorkspace()
+    }
+
     private func handleEventVersionChange(_ newVersion: Int) {
         if newVersion == 0 {
             resetAllEventState()
@@ -505,6 +512,17 @@ struct EventStreamView: View {
         default:
             return String(describing: evt.payload)
         }
+    }
+}
+
+private struct PauseEventStreamKey: EnvironmentKey {
+    static let defaultValue: () -> Void = {}
+}
+
+extension EnvironmentValues {
+    var pauseEventStream: () -> Void {
+        get { self[PauseEventStreamKey.self] }
+        set { self[PauseEventStreamKey.self] = newValue }
     }
 }
 

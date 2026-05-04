@@ -10,6 +10,8 @@ struct TracerEventRowView: View {
 
     @State private var showBacktracePopover = false
 
+    @Environment(\.pauseEventStream) private var pauseEventStream
+
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             messageView
@@ -18,6 +20,9 @@ struct TracerEventRowView: View {
                 Spacer(minLength: 0)
 
                 Button {
+                    if !showBacktracePopover {
+                        pauseEventStream()
+                    }
                     showBacktracePopover.toggle()
                 } label: {
                     Text("Backtrace")
