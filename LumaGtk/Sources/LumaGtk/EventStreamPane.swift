@@ -632,9 +632,6 @@ final class EventStreamPane {
         delta.setSizeRequest(width: 64, height: -1)
         row.append(child: delta)
 
-        let badge = makeSourceBadge(for: event)
-        row.append(child: badge)
-
         if let tracerWidget = makeTracerPayload(for: event) {
             row.append(child: tracerWidget)
         } else if let errorWidget = makeJSErrorPayload(for: event) {
@@ -656,6 +653,10 @@ final class EventStreamPane {
             row.append(child: payload)
         }
 
+        let badge = makeSourceBadge(for: event)
+        badge.halign = .end
+        row.append(child: badge)
+
         attachRowContextMenu(to: row, event: event)
         return row
     }
@@ -676,11 +677,10 @@ final class EventStreamPane {
     }
 
     private func makeSourceBadge(for event: RuntimeEvent) -> Widget {
-        let text = shortSourceName(for: event)
+        let text = sourceBadgeText(for: event)
         let label = Label(str: text)
         label.add(cssClass: "luma-event-badge")
-        label.add(cssClass: "luma-event-source-\(colorIndex(for: text))")
-        label.halign = .start
+        label.add(cssClass: "luma-event-source-\(colorIndex(for: badgeColorKey(for: event)))")
         label.valign = .center
         return label
     }
@@ -693,7 +693,31 @@ final class EventStreamPane {
         return Int(hash % 8)
     }
 
-    private func shortSourceName(for event: RuntimeEvent) -> String {
+    private func sourceBadgeText(for event: RuntimeEvent) -> String {
+        let process = processName(for: event)
+        switch event.source {
+        case .processOutput(let fd):
+            let channel: String
+            switch fd {
+            case 1: channel = "stdout"
+            case 2: channel = "stderr"
+            default: channel = "fd\(fd)"
+            }
+            return "\(process) • \(channel)"
+        case .script:
+            return "\(process) • Script Runtime"
+        case .console:
+            return "\(process) • Console"
+        case .repl:
+            return "\(process) • REPL"
+        case .instrument:
+            let name = instrument(for: event)
+                .flatMap { engine?.descriptor(for: $0)?.displayName } ?? "Instrument"
+            return "\(name) • \(process)"
+        }
+    }
+
+    private func badgeColorKey(for event: RuntimeEvent) -> String {
         switch event.source {
         case .processOutput(let fd):
             switch fd {
