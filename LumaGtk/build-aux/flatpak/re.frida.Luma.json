@@ -16,6 +16,7 @@
     ],
     "build-options": {
         "build-args": ["--share=network"],
+        "append-path": "/app/lib/sdk-go/bin",
         "env": {
             "PKG_CONFIG_PATH": "/app/lib64/pkgconfig"
         }
@@ -53,6 +54,7 @@
         "/lib/swift/host",
         "/lib/swift_static",
         "/lib/swift/musl",
+        "/lib/sdk-go",
         "/lib/clang",
         "/lib/node_modules",
         "/lib64/pkgconfig",
@@ -102,10 +104,27 @@
             ]
         },
         {
+            "name": "go",
+            "buildsystem": "simple",
+            "build-commands": [
+                "install -d /app/lib/sdk-go",
+                "tar xzf go.tar.gz -C /app/lib/sdk-go --strip-components=1",
+                "rm go.tar.gz"
+            ],
+            "sources": [
+                {
+                    "type": "file",
+                    "url": "https://go.dev/dl/go1.26.2.linux-amd64.tar.gz",
+                    "sha256": "990e6b4bbba816dc3ee129eaeaf4b42f17c2800b88a2166c265ac1a200262282",
+                    "dest-filename": "go.tar.gz"
+                }
+            ]
+        },
+        {
             "name": "frida-core",
             "buildsystem": "simple",
             "build-commands": [
-                "./configure --enable-shared --without-prebuilds=sdk --prefix=/app -- --force-fallback-for=openssl,libbpf",
+                "./configure --enable-shared --enable-compiler-backend --without-prebuilds=sdk --prefix=/app -- --force-fallback-for=openssl,libbpf",
                 "make -j$(nproc)",
                 "DESTDIR=$PWD/_destdir python3 releng/meson/meson.py install -C build --skip-subprojects --no-rebuild",
                 "cp -a _destdir/app/. /app/"

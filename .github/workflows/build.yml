@@ -83,7 +83,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/devkit
-          key: ${{ runner.os }}-frida-core-devkit-${{ matrix.slice }}-${{ matrix.min_os }}-${{ env.FRIDA_CORE_REF }}-v1
+          key: ${{ runner.os }}-frida-core-devkit-${{ matrix.slice }}-${{ matrix.min_os }}-${{ env.FRIDA_CORE_REF }}-v2
 
       - name: Set up Apple codesigning identities
         if: steps.cache.outputs.cache-hit != 'true'
@@ -137,6 +137,7 @@ jobs:
               --prefix=$RUNNER_TEMP/frida-prefix \
               --with-apple-min-os=${{ matrix.min_os }} \
               --with-devkits=core \
+              --enable-compiler-backend \
               --disable-server \
               --disable-portal \
               --disable-inject \
@@ -156,7 +157,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/devkit
-          key: ${{ runner.os }}-frida-core-devkit-${{ matrix.slice }}-${{ matrix.min_os }}-${{ env.FRIDA_CORE_REF }}-v1
+          key: ${{ runner.os }}-frida-core-devkit-${{ matrix.slice }}-${{ matrix.min_os }}-${{ env.FRIDA_CORE_REF }}-v2
 
       - uses: actions/upload-artifact@v7
         with:
@@ -173,7 +174,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/FridaCore.xcframework
-          key: ${{ runner.os }}-frida-core-xcframework-${{ env.FRIDA_CORE_REF }}-v1
+          key: ${{ runner.os }}-frida-core-xcframework-${{ env.FRIDA_CORE_REF }}-v2
 
       - name: Download devkit artifacts
         if: steps.cache.outputs.cache-hit != 'true'
@@ -225,7 +226,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/FridaCore.xcframework
-          key: ${{ runner.os }}-frida-core-xcframework-${{ env.FRIDA_CORE_REF }}-v1
+          key: ${{ runner.os }}-frida-core-xcframework-${{ env.FRIDA_CORE_REF }}-v2
 
       - uses: actions/upload-artifact@v7
         with:
@@ -781,6 +782,7 @@ jobs:
             python3-pip \
             python3-setuptools \
             swiftlang \
+            golang \
             patchelf \
             rsync
           swift --version
@@ -790,7 +792,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: /tmp/frida-destdir
-          key: ${{ runner.os }}-fedora43-frida-core-${{ env.FRIDA_CORE_REF }}-v2
+          key: ${{ runner.os }}-fedora43-frida-core-${{ env.FRIDA_CORE_REF }}-v3
 
       - name: Build frida-core (shared)
         if: steps.frida-cache.outputs.cache-hit != 'true'
@@ -801,7 +803,7 @@ jobs:
           git clone https://github.com/frida/frida-core.git /tmp/frida-core
           cd /tmp/frida-core
           git checkout $FRIDA_CORE_REF
-          ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr
+          ./configure --enable-shared --enable-compiler-backend --without-prebuilds=sdk --prefix=/usr
           make -j$(nproc)
           DESTDIR=/tmp/frida-destdir make install
 
@@ -810,7 +812,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: /tmp/frida-destdir
-          key: ${{ runner.os }}-fedora43-frida-core-${{ env.FRIDA_CORE_REF }}-v2
+          key: ${{ runner.os }}-fedora43-frida-core-${{ env.FRIDA_CORE_REF }}-v3
 
       - name: Install frida-core
         run: |
@@ -925,6 +927,7 @@ jobs:
             g++ \
             libncurses6 \
             libcurl4-openssl-dev \
+            golang-go \
             patchelf \
             rsync
 
@@ -943,7 +946,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: /tmp/frida-destdir
-          key: ${{ runner.os }}-ubuntu2604-frida-core-${{ env.FRIDA_CORE_REF }}-v2
+          key: ${{ runner.os }}-ubuntu2604-frida-core-${{ env.FRIDA_CORE_REF }}-v3
 
       - name: Build frida-core (shared)
         if: steps.frida-cache.outputs.cache-hit != 'true'
@@ -951,7 +954,7 @@ jobs:
           git clone https://github.com/frida/frida-core.git /tmp/frida-core
           cd /tmp/frida-core
           git checkout $FRIDA_CORE_REF
-          ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr \
+          ./configure --enable-shared --enable-compiler-backend --without-prebuilds=sdk --prefix=/usr \
             -- --force-fallback-for=openssl
           make -j$(nproc)
           DESTDIR=/tmp/frida-destdir make install
@@ -961,7 +964,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: /tmp/frida-destdir
-          key: ${{ runner.os }}-ubuntu2604-frida-core-${{ env.FRIDA_CORE_REF }}-v2
+          key: ${{ runner.os }}-ubuntu2604-frida-core-${{ env.FRIDA_CORE_REF }}-v3
 
       - name: Install frida-core
         run: |
@@ -1295,7 +1298,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}\frida-prefix
-          key: ${{ runner.os }}-${{ matrix.win_arch }}-frida-core-${{ env.FRIDA_CORE_REF }}-v6
+          key: ${{ runner.os }}-${{ matrix.win_arch }}-frida-core-${{ env.FRIDA_CORE_REF }}-v7
 
       - name: Install Go toolchain
         if: steps.frida-cache.outputs.cache-hit != 'true'
@@ -1336,6 +1339,7 @@ jobs:
           python -c "import sys; sys.path.insert(0, '.'); from releng.meson_configure import main; main()" `
               . `
               --enable-shared `
+              --enable-compiler-backend `
               --without-prebuilds=sdk `
               "--prefix=$env:RUNNER_TEMP\frida-prefix" `
               -- --force-fallback-for=openssl,libnghttp2 -Dtests=disabled
@@ -1359,7 +1363,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}\frida-prefix
-          key: ${{ runner.os }}-${{ matrix.win_arch }}-frida-core-${{ env.FRIDA_CORE_REF }}-v6
+          key: ${{ runner.os }}-${{ matrix.win_arch }}-frida-core-${{ env.FRIDA_CORE_REF }}-v7
 
       - name: Restore radare2 cache
         id: r2-cache

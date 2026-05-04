@@ -72,7 +72,7 @@ parts:
     source-branch: main
     override-build: |
       export PATH="$CRAFT_STAGE/usr/local/bin:$PATH"
-      ./configure --enable-shared --without-prebuilds=sdk --prefix=/usr/local \
+      ./configure --enable-shared --enable-compiler-backend --without-prebuilds=sdk --prefix=/usr/local \
         -- --force-fallback-for=openssl,libelf \
            --libdir=lib \
            -Dcompat=disabled -Dserver=disabled -Dportal=disabled \
@@ -92,6 +92,7 @@ parts:
       - valac
       - meson
       - ninja-build
+      - golang-go
       - libglib2.0-dev
       - libgee-0.8-dev
       - libjson-glib-dev
