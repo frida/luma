@@ -2,6 +2,8 @@ import Dispatch
 import Foundation
 import Frida
 
+setbuf(stderr, nil)
+
 private let _lumaMainGroup = DispatchGroup()
 _lumaMainGroup.enter()
 Task {
@@ -160,6 +162,7 @@ struct LumaBundleCompiler {
             _ = try await pm.install(options: opts)
 
             fputs("[packages] done\n", stderr)
+            fputs("[debug] post-install pm scope ending\n", stderr)
 
             for local in localPackages {
                 let dst = URL(fileURLWithPath: stagingDir)
@@ -195,7 +198,9 @@ struct LumaBundleCompiler {
             effectiveProjectRoot = projectRoot ?? "."
         }
 
+        fputs("[debug] before Compiler()\n", stderr)
         let compiler = Compiler()
+        fputs("[debug] after Compiler()\n", stderr)
         let options = BuildOptions()
         options.projectRoot = effectiveProjectRoot
         options.sourceMaps = .omitted
@@ -222,7 +227,9 @@ struct LumaBundleCompiler {
         compiled.reserveCapacity(entries.count)
 
         for entry in entries {
+            fputs("[debug] before build(\(entry.entrypoint))\n", stderr)
             let bundle = try await compiler.build(entrypoint: entry.entrypoint, options: options)
+            fputs("[debug] after build(\(entry.entrypoint)) -> \(bundle.utf8.count) bytes\n", stderr)
 
             let source: String
             switch entry.kind {
@@ -248,6 +255,7 @@ struct LumaBundleCompiler {
             withIntermediateDirectories: true,
             attributes: nil)
         try swiftFile.write(to: url, atomically: true, encoding: .utf8)
+        fputs("[debug] swift file written\n", stderr)
     }
 
     static func printUsageAndExit(success: Bool) -> Never {

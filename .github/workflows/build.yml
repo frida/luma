@@ -64,6 +64,7 @@ jobs:
           echo "build=${{ github.run_number }}" >> $GITHUB_OUTPUT
 
   frida-core:
+    if: false
     runs-on: macos-26
     strategy:
       fail-fast: false
@@ -166,6 +167,7 @@ jobs:
           if-no-files-found: error
 
   xcframework:
+    if: false
     runs-on: macos-26
     needs: frida-core
     steps:
@@ -235,6 +237,7 @@ jobs:
           if-no-files-found: error
 
   macos:
+    if: false
     # Apple Silicon Xcode cross-compiles to x86_64 natively, so both
     # matrix entries run on the free arm64 runner — no paid -large
     # runner needed for the Intel slice.
@@ -516,6 +519,7 @@ jobs:
           path: Luma-${{ env.LUMA_VERSION }}-${{ matrix.arch }}.dmg.sig
 
   ios:
+    if: false
     runs-on: macos-26
     needs: [version, xcframework]
     env:
@@ -747,6 +751,7 @@ jobs:
             --apiIssuer "$ASC_ISSUER_ID"
 
   fedora:
+    if: false
     runs-on: ubuntu-latest
     container: fedora:43
     needs: version
@@ -894,6 +899,7 @@ jobs:
           path: luma-${{ env.LUMA_VERSION }}-fedora-43-x86_64.rpm
 
   ubuntu:
+    if: false
     runs-on: ubuntu-latest
     container: ubuntu:26.04
     needs: version
@@ -1046,6 +1052,7 @@ jobs:
           path: luma-${{ env.LUMA_VERSION }}-ubuntu-26.04-x86_64.deb
 
   flatpak:
+    if: false
     runs-on: ubuntu-latest
     needs: version
     env:
@@ -1122,6 +1129,7 @@ jobs:
           path: luma-${{ env.LUMA_VERSION }}-x86_64.flatpak
 
   snap:
+    if: false
     runs-on: ubuntu-latest
     needs: version
     env:
@@ -1194,14 +1202,6 @@ jobs:
             toolcache_arch: x64
             msys2_system: MINGW64
             msys2_package: mingw-w64-x86_64-gcc
-          - runner: windows-11-arm
-            win_arch: arm64
-            msvc_arch: arm64
-            swift_build_arch: arm64
-            vcpkg_triplet: arm64-windows-release
-            toolcache_arch: arm64
-            msys2_system: CLANGARM64
-            msys2_package: mingw-w64-clang-aarch64-clang
     steps:
       - uses: actions/checkout@v6
 
@@ -1483,17 +1483,39 @@ jobs:
               $env:PKG_CONFIG_PATH = "F:\lib\pkgconfig;R:\lib\pkgconfig;V:\lib\pkgconfig"
               $env:USE_SYSTEM_FRIDA = "1"
               $env:GIO_EXTRA_MODULES = "V:\plugins\glib-networking"
-              swift run --package-path . luma-bundle-compiler `
-                  --project-root (Get-Location) `
-                  --swift-out    (Join-Path (Get-Location) 'Sources\LumaCore\Generated\LumaAgent.swift') `
-                  --staging-dir  (Join-Path (Get-Location) '.build\AgentStaging') `
-                  --package frida-itrace@6.1.0 `
-                  --package frida-java-bridge@7.0.12 `
-                  --external frida-java-bridge `
-                  --agent  core      Agent/core/luma.ts `
-                  --agent  drain     Agent/instruments/drain-agent.ts `
-                  --module tracer    Agent/instruments/tracer.ts `
-                  --module codeShare Agent/instruments/codeshare.ts
+              swift build --package-path . --product luma-bundle-compiler
+              if ($LASTEXITCODE -ne 0) { throw "luma-bundle-compiler build failed ($LASTEXITCODE)" }
+              $bcBinDir = (swift build --package-path . --show-bin-path).Trim()
+              $bcExe = Join-Path $bcBinDir 'luma-bundle-compiler.exe'
+              $cdb = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe' -ErrorAction SilentlyContinue
+              if (-not $cdb) { $cdb = Get-Command cdb.exe -ErrorAction SilentlyContinue }
+              if (-not $cdb) { throw "cdb.exe not found" }
+              $cdbPath = if ($cdb -is [System.IO.FileInfo]) { $cdb.FullName } else { $cdb.Source }
+              $bcArgs = @(
+                  '--project-root', (Get-Location).Path,
+                  '--swift-out',    (Join-Path (Get-Location) 'Sources\LumaCore\Generated\LumaAgent.swift'),
+                  '--staging-dir',  (Join-Path (Get-Location) '.build\AgentStaging'),
+                  '--package', 'frida-itrace@6.1.0',
+                  '--package', 'frida-java-bridge@7.0.12',
+                  '--external', 'frida-java-bridge',
+                  '--agent',  'core',      'Agent/core/luma.ts',
+                  '--agent',  'drain',     'Agent/instruments/drain-agent.ts',
+                  '--module', 'tracer',    'Agent/instruments/tracer.ts',
+                  '--module', 'codeShare', 'Agent/instruments/codeshare.ts'
+              )
+              $cdbScript = Join-Path $env:RUNNER_TEMP 'cdb-script.txt'
+              @(
+                  '.echo === debugger break hit ===',
+                  '.lastevent',
+                  '.ecxr',
+                  '!analyze -v',
+                  '.echo === current thread ===',
+                  'kP 100',
+                  '.echo === all threads ===',
+                  '~* kP 50',
+                  'q'
+              ) | Set-Content -Path $cdbScript -Encoding ascii
+              & $cdbPath -g -G -cf $cdbScript $bcExe @bcArgs
               if ($LASTEXITCODE -ne 0) { throw "luma-bundle-compiler failed ($LASTEXITCODE)" }
               cd LumaGtk
               swift build -c release `
@@ -1526,7 +1548,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: github.ref_type == 'tag'
+    if: false && github.ref_type == 'tag'
     needs: [macos, ios, fedora, ubuntu, flatpak, snap, windows]
     runs-on: ubuntu-latest
     permissions:
