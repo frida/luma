@@ -1482,6 +1482,7 @@ jobs:
               $env:PATH = "T:\bin;F:\bin;R:\bin;$env:PATH"
               $env:PKG_CONFIG_PATH = "F:\lib\pkgconfig;R:\lib\pkgconfig;V:\lib\pkgconfig"
               $env:USE_SYSTEM_FRIDA = "1"
+              $env:GIO_EXTRA_MODULES = "V:\plugins\glib-networking"
               swift run --package-path . luma-bundle-compiler `
                   --project-root (Get-Location) `
                   --swift-out    (Join-Path (Get-Location) 'Sources\LumaCore\Generated\LumaAgent.swift') `
