@@ -10,7 +10,6 @@ final class CustomInstrumentSchemaEditor {
     let widget: Box
     private(set) var schema: FeatureSchema
     private let onChanged: (FeatureSchema) -> Void
-    private let typeRow: Box
     private let fieldsBox: Box
     private var childEditors: [AnyObject] = []
 
@@ -20,39 +19,15 @@ final class CustomInstrumentSchemaEditor {
 
         widget = Box(orientation: .vertical, spacing: 6)
         widget.hexpand = true
-
-        typeRow = Box(orientation: .horizontal, spacing: 8)
         fieldsBox = Box(orientation: .vertical, spacing: 4)
-
-        populateTypeRow()
-        widget.append(child: typeRow)
         widget.append(child: fieldsBox)
         rebuildFields()
     }
 
-    private func populateTypeRow() {
-        let label = Label(str: "Type")
-        label.halign = .start
-        label.setSizeRequest(width: 100, height: -1)
-        typeRow.append(child: label)
-
-        let dropdown = makeStringDropdown(
-            labels: SchemaKind.allCases.map(\.label),
-            selectedIndex: SchemaKind(from: schema).index,
-            handler: schemaKindDropdownChanged
-        )
-        dropdown.hexpand = true
-        typeRow.append(child: dropdown)
-    }
-
-    fileprivate func handleKindChanged(_ index: Int) {
-        let kinds = SchemaKind.allCases
-        guard index >= 0, index < kinds.count else { return }
-        let newKind = kinds[index]
-        if SchemaKind(from: schema) == newKind { return }
-        schema = newKind.defaultSchema()
+    func updateSchema(_ newSchema: FeatureSchema) {
+        guard schema != newSchema else { return }
+        schema = newSchema
         rebuildFields()
-        onChanged(schema)
     }
 
     fileprivate func handleArrayItemKindChanged(_ index: Int) {
@@ -67,7 +42,7 @@ final class CustomInstrumentSchemaEditor {
 
     fileprivate func handleComboDefaultChanged(_ index: Int) {
         guard case .combo(let choices, _) = schema else { return }
-        let pick: String? = (index <= 0) ? nil : (index <= choices.count ? choices[index - 1] : nil)
+        let pick: String? = (index <= 0) ? nil : (index <= choices.count ? choices[index - 1].id : nil)
         schema = .combo(choices: choices, default: pick)
         onChanged(schema)
     }
@@ -140,7 +115,7 @@ final class CustomInstrumentSchemaEditor {
         return row
     }
 
-    private func appendComboFields(choices: [String], defaultChoice: String?) {
+    private func appendComboFields(choices: [ComboChoice], defaultChoice: String?) {
         let header = Label(str: "Choices")
         header.halign = .start
         header.add(cssClass: "caption")
@@ -153,8 +128,10 @@ final class CustomInstrumentSchemaEditor {
         fieldsBox.append(child: editor.widget)
 
         let defaultRow = labeledRow("Default")
-        let labels = ["(first)"] + choices
-        let selectedIndex = defaultChoice.flatMap { choices.firstIndex(of: $0).map { $0 + 1 } } ?? 0
+        let labels = ["(first)"] + choices.map(\.name)
+        let selectedIndex = defaultChoice.flatMap { id in
+            choices.firstIndex(where: { $0.id == id }).map { $0 + 1 }
+        } ?? 0
         let dropdown = makeStringDropdown(
             labels: labels,
             selectedIndex: selectedIndex,
@@ -267,15 +244,16 @@ final class CustomInstrumentSchemaEditor {
         onChanged(schema)
     }
 
-    private func applyComboChoices(_ newChoices: [String]) {
+    private func applyComboChoices(_ newChoices: [ComboChoice]) {
         guard case .combo(_, let d) = schema else { return }
-        let preservedDefault = d.flatMap { newChoices.contains($0) ? $0 : nil }
+        let ids = Set(newChoices.map(\.id))
+        let preservedDefault = d.flatMap { ids.contains($0) ? $0 : nil }
         schema = .combo(choices: newChoices, default: preservedDefault)
         rebuildFields()
         onChanged(schema)
     }
 
-    private func applyArrayComboChoices(_ newChoices: [String]) {
+    private func applyArrayComboChoices(_ newChoices: [ComboChoice]) {
         schema = .array(item: .combo(choices: newChoices), default: [])
         onChanged(schema)
     }
@@ -374,18 +352,28 @@ final class CustomInstrumentSchemaEditor {
     }
 }
 
-private let schemaKindDropdownChanged: @convention(c) (
-    UnsafeMutableRawPointer,
-    UnsafeMutableRawPointer?,
-    UnsafeMutableRawPointer?
-) -> Void = { widget, _, userData in
-    guard let userData else { return }
-    let editorPtr = UnsafeMutableRawPointer(bitPattern: UInt(bitPattern: userData))!
-    let widgetPtr = UnsafeMutablePointer<GtkDropDown>(OpaquePointer(bitPattern: UInt(bitPattern: widget))!)
-    MainActor.assumeIsolated {
-        let editor = Unmanaged<CustomInstrumentSchemaEditor>.fromOpaque(editorPtr).takeUnretainedValue()
-        editor.handleKindChanged(Int(gtk_drop_down_get_selected(widgetPtr)))
+@MainActor
+func makeKindDropdown(initial: SchemaKind, onChanged: @escaping (SchemaKind) -> Void) -> DropDown {
+    let labels = SchemaKind.allCases.map(\.label)
+    let cStrings = labels.map { strdup($0) }
+    defer { cStrings.forEach { free($0) } }
+    var ptrs = cStrings.map { UnsafePointer($0) as UnsafePointer<CChar>? }
+    ptrs.append(nil)
+    let widgetPtr = ptrs.withUnsafeBufferPointer { buf in
+        gtk_drop_down_new_from_strings(buf.baseAddress)
+    }!
+    g_object_ref_sink(UnsafeMutableRawPointer(widgetPtr))
+    let dropdown = DropDown(raw: UnsafeMutableRawPointer(widgetPtr))
+    dropdown.selected = initial.index
+    dropdown.onNotifySelected { dd, _ in
+        MainActor.assumeIsolated {
+            let kinds = SchemaKind.allCases
+            let index = Int(dd.selected)
+            guard index >= 0, index < kinds.count else { return }
+            onChanged(kinds[index])
+        }
     }
+    return dropdown
 }
 
 private let arrayItemDropdownChanged: @convention(c) (
@@ -422,33 +410,122 @@ final class ObjectFieldsEditor {
     private var fields: [ObjectField]
     private let onChanged: ([ObjectField]) -> Void
     private let listBox: Box
-    private let draftEntry: Entry
+    private let addRowBox: Box
+    private let toggleAddButton: Button
+    private let draftIDEntry: Entry
+    private let draftNameEntry: Entry
+    private var draftKind: SchemaKind = .boolean
+    private var nameAutoFilled: Bool = true
+    private var suppressIDChange: Bool = false
+    private var suppressNameChange: Bool = false
+    private var expandedFieldID: String? = nil
     private var fieldSchemaEditors: [CustomInstrumentSchemaEditor] = []
+    private var fieldBodies: [String: (body: Box, chevron: Button)] = [:]
 
     init(fields: [ObjectField], onChanged: @escaping ([ObjectField]) -> Void) {
         self.fields = fields
         self.onChanged = onChanged
         widget = Box(orientation: .vertical, spacing: 4)
         listBox = Box(orientation: .vertical, spacing: 4)
-        draftEntry = Entry()
-        draftEntry.placeholderText = "Field name"
-        draftEntry.hexpand = true
+        addRowBox = Box(orientation: .horizontal, spacing: 6)
+        addRowBox.visible = fields.isEmpty
+        toggleAddButton = Button(label: fields.isEmpty ? "Done Adding" : "+ Add Field")
+        toggleAddButton.halign = .start
+        toggleAddButton.add(cssClass: "flat")
+        draftIDEntry = Entry()
+        draftIDEntry.placeholderText = "id"
+        draftIDEntry.setSizeRequest(width: 140, height: -1)
+        draftNameEntry = Entry()
+        draftNameEntry.placeholderText = "Name"
+        draftNameEntry.hexpand = true
 
         layout()
         rebuildList()
+
+        if fields.isEmpty {
+            Task { @MainActor in _ = draftIDEntry.grabFocus() }
+        }
     }
 
     private func layout() {
         widget.append(child: listBox)
+        populateAddRow()
+        widget.append(child: addRowBox)
+        toggleAddButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated { self?.toggleAdding() }
+        }
+        widget.append(child: toggleAddButton)
+    }
 
-        let addRow = Box(orientation: .horizontal, spacing: 6)
-        addRow.append(child: draftEntry)
+    private func populateAddRow() {
+        addRowBox.append(child: draftIDEntry)
+        addRowBox.append(child: draftNameEntry)
+        let kindDropdown = makeKindDropdown(initial: draftKind) { [weak self] kind in
+            self?.draftKind = kind
+        }
+        addRowBox.append(child: kindDropdown)
         let addButton = Button(label: "+")
         addButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.appendDraft() }
         }
-        addRow.append(child: addButton)
-        widget.append(child: addRow)
+        let onActivate: (Gtk.EntryRef) -> Void = { [weak self] _ in
+            MainActor.assumeIsolated { self?.appendDraft() }
+        }
+        draftIDEntry.onActivate(handler: onActivate)
+        draftNameEntry.onActivate(handler: onActivate)
+        draftIDEntry.onChanged { [weak self] _ in
+            MainActor.assumeIsolated { self?.handleIDChanged() }
+        }
+        draftNameEntry.onChanged { [weak self] _ in
+            MainActor.assumeIsolated { self?.handleNameChanged() }
+        }
+        addRowBox.append(child: addButton)
+    }
+
+    private func handleIDChanged() {
+        guard !suppressIDChange else { return }
+        let raw = draftIDEntry.text ?? ""
+        let lowered = CamelCase.sanitized(raw)
+        if lowered != raw {
+            suppressIDChange = true
+            draftIDEntry.text = lowered
+            suppressIDChange = false
+            return
+        }
+        if nameAutoFilled {
+            suppressNameChange = true
+            draftNameEntry.text = CamelCase.humanized(lowered)
+            suppressNameChange = false
+        }
+    }
+
+    private func handleNameChanged() {
+        guard !suppressNameChange else { return }
+        if (draftNameEntry.text ?? "") != CamelCase.humanized(draftIDEntry.text ?? "") {
+            nameAutoFilled = false
+        }
+    }
+
+    private func toggleAdding() {
+        let nowVisible = !addRowBox.visible
+        addRowBox.visible = nowVisible
+        toggleAddButton.label = nowVisible ? "Done Adding" : "+ Add Field"
+        if nowVisible {
+            applyExpansion(to: nil)
+            _ = draftIDEntry.grabFocus()
+        } else {
+            resetDraft()
+        }
+    }
+
+    private func resetDraft() {
+        suppressIDChange = true
+        draftIDEntry.text = ""
+        suppressIDChange = false
+        suppressNameChange = true
+        draftNameEntry.text = ""
+        suppressNameChange = false
+        nameAutoFilled = true
     }
 
     private func rebuildList() {
@@ -458,6 +535,7 @@ final class ObjectFieldsEditor {
             listBox.remove(child: current)
         }
         fieldSchemaEditors.removeAll()
+        fieldBodies.removeAll()
         if fields.isEmpty {
             let empty = Label(str: "No fields defined.")
             empty.add(cssClass: "dim-label")
@@ -481,9 +559,55 @@ final class ObjectFieldsEditor {
         column.marginBottom = 10
         card.append(child: column)
 
+        let booleanField = isBoolean(field.schema)
+        let isExpanded = !booleanField && expandedFieldID == field.id
+        let initialID = field.id
+
+        let chevronButton = Button()
+        chevronButton.add(cssClass: "flat")
+        chevronButton.set(iconName: isExpanded ? "pan-down-symbolic" : "pan-end-symbolic")
+        if booleanField {
+            chevronButton.opacity = 0
+            chevronButton.sensitive = false
+        } else {
+            chevronButton.onClicked { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, index < self.fields.count else { return }
+                    let currentID = self.fields[index].id
+                    let newID: String? = (self.expandedFieldID == currentID) ? nil : currentID
+                    self.applyExpansion(to: newID)
+                }
+            }
+        }
+
         let header = Box(orientation: .horizontal, spacing: 6)
+        header.append(child: chevronButton)
+
+        let idEntry = Entry()
+        idEntry.text = field.id
+        idEntry.placeholderText = "id"
+        idEntry.setSizeRequest(width: 140, height: -1)
+        idEntry.onChanged { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, index < self.fields.count else { return }
+                let oldID = self.fields[index].id
+                let newID = idEntry.text ?? ""
+                guard oldID != newID else { return }
+                if let entry = self.fieldBodies.removeValue(forKey: oldID) {
+                    self.fieldBodies[newID] = entry
+                }
+                if self.expandedFieldID == oldID {
+                    self.expandedFieldID = newID
+                }
+                self.fields[index].id = newID
+                self.onChanged(self.fields)
+            }
+        }
+        header.append(child: idEntry)
+
         let nameEntry = Entry()
         nameEntry.text = field.name
+        nameEntry.placeholderText = "Name"
         nameEntry.hexpand = true
         nameEntry.onChanged { [weak self] _ in
             MainActor.assumeIsolated {
@@ -494,11 +618,27 @@ final class ObjectFieldsEditor {
         }
         header.append(child: nameEntry)
 
+        let kindDropdown = makeKindDropdown(initial: SchemaKind(from: field.schema)) { [weak self] kind in
+            guard let self, index < self.fields.count else { return }
+            let newSchema = kind.defaultSchema()
+            self.fields[index].schema = newSchema
+            let nowBoolean = self.isBoolean(newSchema)
+            if nowBoolean, self.fields[index].optional {
+                self.fields[index].optional = false
+            }
+            self.expandedFieldID = nowBoolean ? nil : self.fields[index].id
+            self.rebuildList()
+            self.onChanged(self.fields)
+        }
+        header.append(child: kindDropdown)
+
         let removeButton = Button(label: "−")
         removeButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, index < self.fields.count else { return }
+                let removedID = self.fields[index].id
                 self.fields.remove(at: index)
+                if self.expandedFieldID == removedID { self.expandedFieldID = nil }
                 self.rebuildList()
                 self.onChanged(self.fields)
             }
@@ -506,29 +646,36 @@ final class ObjectFieldsEditor {
         header.append(child: removeButton)
         column.append(child: header)
 
+        let body = Box(orientation: .vertical, spacing: 4)
+        body.visible = isExpanded
+
         let optionalRow = Box(orientation: .horizontal, spacing: 8)
-        let optionalLabel = Label(str: "Optional")
-        optionalLabel.halign = .start
-        optionalLabel.setSizeRequest(width: 160, height: -1)
-        optionalRow.append(child: optionalLabel)
         let optionalToggle = Switch()
         optionalToggle.active = field.optional
         optionalToggle.valign = .center
         optionalRow.append(child: optionalToggle)
-        column.append(child: optionalRow)
-        optionalRow.visible = !isBoolean(field.schema)
+        let optionalLabel = Label(str: "Optional")
+        optionalLabel.halign = .start
+        optionalRow.append(child: optionalLabel)
 
         let enabledRow = Box(orientation: .horizontal, spacing: 8)
-        let enabledLabel = Label(str: "Enabled by default")
-        enabledLabel.halign = .start
-        enabledLabel.setSizeRequest(width: 160, height: -1)
-        enabledRow.append(child: enabledLabel)
         let enabledToggle = Switch()
         enabledToggle.active = field.enabledByDefault
         enabledToggle.valign = .center
         enabledRow.append(child: enabledToggle)
-        column.append(child: enabledRow)
+        let enabledLabel = Label(str: "Enabled by default")
+        enabledLabel.halign = .start
+        enabledRow.append(child: enabledLabel)
         enabledRow.visible = field.optional
+
+        let editor = CustomInstrumentSchemaEditor(schema: field.schema) { [weak self] updated in
+            MainActor.assumeIsolated {
+                guard let self, index < self.fields.count else { return }
+                self.fields[index].schema = updated
+                self.onChanged(self.fields)
+            }
+        }
+        fieldSchemaEditors.append(editor)
 
         optionalToggle.onStateSet { [weak self] _, state in
             MainActor.assumeIsolated {
@@ -548,22 +695,14 @@ final class ObjectFieldsEditor {
             }
         }
 
-        let editor = CustomInstrumentSchemaEditor(schema: field.schema) { [weak self] updated in
-            MainActor.assumeIsolated {
-                guard let self, index < self.fields.count else { return }
-                self.fields[index].schema = updated
-                let nowBoolean = self.isBoolean(updated)
-                optionalRow.visible = !nowBoolean
-                if nowBoolean, self.fields[index].optional {
-                    self.fields[index].optional = false
-                    optionalToggle.active = false
-                    enabledRow.visible = false
-                }
-                self.onChanged(self.fields)
-            }
+        body.append(child: optionalRow)
+        body.append(child: enabledRow)
+        body.append(child: editor.widget)
+        column.append(child: body)
+
+        if !booleanField {
+            fieldBodies[initialID] = (body, chevronButton)
         }
-        fieldSchemaEditors.append(editor)
-        column.append(child: editor.widget)
 
         return card
     }
@@ -574,47 +713,119 @@ final class ObjectFieldsEditor {
     }
 
     private func appendDraft() {
-        let trimmed = (draftEntry.text ?? "").trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty, !fields.contains(where: { $0.name == trimmed }) else { return }
-        fields.append(ObjectField(name: trimmed, schema: .boolean))
-        draftEntry.text = ""
+        let id = (draftIDEntry.text ?? "").trimmingCharacters(in: .whitespaces)
+        let name = (draftNameEntry.text ?? "").trimmingCharacters(in: .whitespaces)
+        guard !id.isEmpty, !name.isEmpty, !fields.contains(where: { $0.id == id }) else { return }
+        let kindHasChildren = draftKind.hasChildren
+        fields.append(
+            ObjectField(
+                id: id,
+                name: name,
+                schema: draftKind.defaultSchema(),
+                optional: false
+            )
+        )
+        expandedFieldID = kindHasChildren ? id : nil
+        resetDraft()
         rebuildList()
         onChanged(fields)
+        if kindHasChildren {
+            addRowBox.visible = false
+            toggleAddButton.label = "+ Add Field"
+        } else {
+            _ = draftIDEntry.grabFocus()
+        }
+    }
+
+    private func applyExpansion(to newID: String?) {
+        expandedFieldID = newID
+        for (rowID, entry) in fieldBodies {
+            let shouldExpand = newID == rowID
+            entry.body.visible = shouldExpand
+            entry.chevron.set(iconName: shouldExpand ? "pan-down-symbolic" : "pan-end-symbolic")
+        }
     }
 }
 
 @MainActor
 final class ChoicesEditor {
     let widget: Box
-    private var choices: [String]
-    private let onChanged: ([String]) -> Void
+    private var choices: [ComboChoice]
+    private let onChanged: ([ComboChoice]) -> Void
     private let listBox: Box
-    private let draftEntry: Entry
+    private let draftIDEntry: Entry
+    private let draftNameEntry: Entry
+    private var nameAutoFilled: Bool = true
+    private var suppressIDChange: Bool = false
+    private var suppressNameChange: Bool = false
 
-    init(choices: [String], onChanged: @escaping ([String]) -> Void) {
+    init(choices: [ComboChoice], onChanged: @escaping ([ComboChoice]) -> Void) {
         self.choices = choices
         self.onChanged = onChanged
         widget = Box(orientation: .vertical, spacing: 4)
         listBox = Box(orientation: .vertical, spacing: 4)
-        draftEntry = Entry()
-        draftEntry.placeholderText = "Add choice"
-        draftEntry.hexpand = true
+        draftIDEntry = Entry()
+        draftIDEntry.placeholderText = "id"
+        draftIDEntry.setSizeRequest(width: 140, height: -1)
+        draftNameEntry = Entry()
+        draftNameEntry.placeholderText = "Name"
+        draftNameEntry.hexpand = true
 
         layout()
         rebuildList()
+
+        if choices.isEmpty {
+            Task { @MainActor in _ = draftIDEntry.grabFocus() }
+        }
     }
 
     private func layout() {
         widget.append(child: listBox)
 
         let addRow = Box(orientation: .horizontal, spacing: 6)
-        addRow.append(child: draftEntry)
+        addRow.append(child: draftIDEntry)
+        addRow.append(child: draftNameEntry)
         let addButton = Button(label: "+")
         addButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.appendDraft() }
         }
+        let onActivate: (Gtk.EntryRef) -> Void = { [weak self] _ in
+            MainActor.assumeIsolated { self?.appendDraft() }
+        }
+        draftIDEntry.onActivate(handler: onActivate)
+        draftNameEntry.onActivate(handler: onActivate)
+        draftIDEntry.onChanged { [weak self] _ in
+            MainActor.assumeIsolated { self?.handleDraftIDChanged() }
+        }
+        draftNameEntry.onChanged { [weak self] _ in
+            MainActor.assumeIsolated { self?.handleDraftNameChanged() }
+        }
         addRow.append(child: addButton)
         widget.append(child: addRow)
+    }
+
+    private func handleDraftIDChanged() {
+        guard !suppressIDChange else { return }
+        let raw = draftIDEntry.text ?? ""
+        let lowered = CamelCase.sanitized(raw)
+        if lowered != raw {
+            suppressIDChange = true
+            draftIDEntry.text = lowered
+            suppressIDChange = false
+            return
+        }
+        if nameAutoFilled {
+            suppressNameChange = true
+            draftNameEntry.text = CamelCase.humanized(lowered)
+            suppressNameChange = false
+        }
+    }
+
+    private func handleDraftNameChanged() {
+        guard !suppressNameChange else { return }
+        if (draftNameEntry.text ?? "") != CamelCase.humanized(draftIDEntry.text ?? "") {
+            nameAutoFilled = false
+        }
     }
 
     private func rebuildList() {
@@ -624,23 +835,38 @@ final class ChoicesEditor {
             listBox.remove(child: current)
         }
         for (index, choice) in choices.enumerated() {
-            listBox.append(child: choiceRow(value: choice, index: index))
+            listBox.append(child: choiceRow(choice: choice, index: index))
         }
     }
 
-    private func choiceRow(value: String, index: Int) -> Box {
+    private func choiceRow(choice: ComboChoice, index: Int) -> Box {
         let row = Box(orientation: .horizontal, spacing: 6)
-        let entry = Entry()
-        entry.text = value
-        entry.hexpand = true
-        entry.onChanged { [weak self] _ in
+        let idEntry = Entry()
+        idEntry.text = choice.id
+        idEntry.placeholderText = "id"
+        idEntry.setSizeRequest(width: 140, height: -1)
+        idEntry.onChanged { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, index < self.choices.count else { return }
-                self.choices[index] = entry.text ?? ""
+                self.choices[index].id = idEntry.text ?? ""
                 self.onChanged(self.choices)
             }
         }
-        row.append(child: entry)
+        row.append(child: idEntry)
+
+        let nameEntry = Entry()
+        nameEntry.text = choice.name
+        nameEntry.placeholderText = "Name"
+        nameEntry.hexpand = true
+        nameEntry.onChanged { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, index < self.choices.count else { return }
+                self.choices[index].name = nameEntry.text ?? ""
+                self.onChanged(self.choices)
+            }
+        }
+        row.append(child: nameEntry)
+
         let removeButton = Button(label: "−")
         removeButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
@@ -655,12 +881,20 @@ final class ChoicesEditor {
     }
 
     private func appendDraft() {
-        let trimmed = (draftEntry.text ?? "").trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty, !choices.contains(trimmed) else { return }
-        choices.append(trimmed)
-        draftEntry.text = ""
+        let id = (draftIDEntry.text ?? "").trimmingCharacters(in: .whitespaces)
+        let name = (draftNameEntry.text ?? "").trimmingCharacters(in: .whitespaces)
+        guard !id.isEmpty, !name.isEmpty, !choices.contains(where: { $0.id == id }) else { return }
+        choices.append(ComboChoice(id: id, name: name))
+        suppressIDChange = true
+        draftIDEntry.text = ""
+        suppressIDChange = false
+        suppressNameChange = true
+        draftNameEntry.text = ""
+        suppressNameChange = false
+        nameAutoFilled = true
         rebuildList()
         onChanged(choices)
+        _ = draftIDEntry.grabFocus()
     }
 }
 
@@ -710,6 +944,13 @@ enum SchemaKind: CaseIterable {
         case .combo: return .combo(choices: [], default: nil)
         case .object: return .object(fields: [])
         case .array: return .array(item: .string, default: [])
+        }
+    }
+
+    var hasChildren: Bool {
+        switch self {
+        case .combo, .object, .array: return true
+        default: return false
         }
     }
 }
