@@ -74,6 +74,7 @@ final class CustomInstrumentRenameDialog {
             MainActor.assumeIsolated { MonacoEditor.resumeOverlays() }
         }
         dialog.present(parent: parentWindow)
+        Task { @MainActor in _ = nameEntry.grabFocus() }
     }
 
     private func layoutContent() -> Box {
