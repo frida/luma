@@ -484,7 +484,8 @@ struct SidebarCustomInstrumentDefRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            InstrumentIconView(icon: def.icon, pointSize: 14)
+            InstrumentIconView(icon: def.icon, pointSize: 16)
+                .frame(width: 18, alignment: .center)
                 .foregroundStyle(.tint)
             Text(def.name)
             Spacer()
