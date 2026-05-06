@@ -54,6 +54,8 @@ final class CustomInstrumentDefPane {
             headerIconHost.remove(child: cur)
         }
         headerIconHost.append(child: InstrumentIconView.makeImage(for: def.icon, pixelSize: 24))
+        let packages = (try? engine?.store.fetchPackagesState().packages) ?? []
+        sourceEditor.setProfile(EditorProfile.fridaCustomInstrument(packages: packages, def: def))
     }
 
     private func layout() {
@@ -63,8 +65,8 @@ final class CustomInstrumentDefPane {
 
     private func header() -> Box {
         let row = Box(orientation: .horizontal, spacing: 8)
-        row.marginStart = 24
-        row.marginEnd = 24
+        row.marginStart = 12
+        row.marginEnd = 12
         row.append(child: headerIconHost)
 
         let titles = Box(orientation: .vertical, spacing: 0)
