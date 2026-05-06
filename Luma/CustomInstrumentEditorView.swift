@@ -112,6 +112,11 @@ struct CustomInstrumentFeaturesPopover: View {
     @State private var draftFeatures: [CustomInstrumentDef.Feature] = []
     @State private var newFeatureID: String = ""
     @State private var newFeatureName: String = ""
+    @State private var newFeatureKind: SchemaKind = .boolean
+    @State private var isAddingFeature: Bool = false
+    @State private var nameAutoFilled: Bool = true
+    @State private var expandedFeatureID: String? = nil
+    @FocusState private var draftFocus: NewFeatureField?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -123,14 +128,45 @@ struct CustomInstrumentFeaturesPopover: View {
 
             featureList
 
-            HStack(spacing: 6) {
-                TextField("id", text: $newFeatureID).frame(maxWidth: 140)
-                TextField("Name", text: $newFeatureName)
-                Button("Add") { addFeature() }
-                    .disabled(newFeatureID.trimmingCharacters(in: .whitespaces).isEmpty)
+            if isAddingFeature {
+                HStack(spacing: 6) {
+                    TextField("id", text: $newFeatureID)
+                        .frame(width: 110)
+                        .focused($draftFocus, equals: .id)
+                        .onChange(of: newFeatureID) { _, newValue in
+                            applyIDChange(newValue)
+                        }
+                        .onSubmit(addFeature)
+                    TextField("Name", text: $newFeatureName)
+                        .focused($draftFocus, equals: .name)
+                        .onChange(of: newFeatureName) { _, newValue in
+                            if newValue != CamelCase.humanized(newFeatureID) {
+                                nameAutoFilled = false
+                            }
+                        }
+                        .onSubmit(addFeature)
+                    Picker("", selection: $newFeatureKind) {
+                        ForEach(SchemaKind.allCases) { k in
+                            Text(k.label).tag(k)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(width: 130)
+                    Button("Add") { addFeature() }
+                        .disabled(addDisabled)
+                }
             }
 
             HStack {
+                Button {
+                    toggleAdding()
+                } label: {
+                    Label(
+                        isAddingFeature ? "Done Adding" : "Add Feature",
+                        systemImage: isAddingFeature ? "checkmark" : "plus"
+                    )
+                }
                 Spacer()
                 Button("Done") { commit() }
                     .keyboardShortcut(.defaultAction)
@@ -141,6 +177,40 @@ struct CustomInstrumentFeaturesPopover: View {
         .onAppear { draftFeatures = def.features }
     }
 
+    private func toggleAdding() {
+        isAddingFeature.toggle()
+        if isAddingFeature {
+            expandedFeatureID = nil
+            DispatchQueue.main.async { draftFocus = .id }
+        } else {
+            resetDraft()
+        }
+    }
+
+    private func resetDraft() {
+        newFeatureID = ""
+        newFeatureName = ""
+        newFeatureKind = .boolean
+        nameAutoFilled = true
+    }
+
+    private var addDisabled: Bool {
+        let id = newFeatureID.trimmingCharacters(in: .whitespaces)
+        let name = newFeatureName.trimmingCharacters(in: .whitespaces)
+        return id.isEmpty || name.isEmpty
+    }
+
+    private func applyIDChange(_ newValue: String) {
+        let lowered = CamelCase.sanitized(newValue)
+        if lowered != newValue {
+            newFeatureID = lowered
+            return
+        }
+        if nameAutoFilled {
+            newFeatureName = CamelCase.humanized(lowered)
+        }
+    }
+
     @ViewBuilder
     private var featureList: some View {
         let content = VStack(alignment: .leading, spacing: 8) {
@@ -148,8 +218,10 @@ struct CustomInstrumentFeaturesPopover: View {
                 Text("No features defined.").font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach($draftFeatures) { $feature in
-                    FeatureRow(feature: $feature) {
-                        draftFeatures.removeAll { $0.id == feature.id }
+                    FeatureRow(feature: $feature, expandedID: $expandedFeatureID) {
+                        let removedID = feature.id
+                        draftFeatures.removeAll { $0.id == removedID }
+                        if expandedFeatureID == removedID { expandedFeatureID = nil }
                     }
                 }
             }
@@ -165,12 +237,27 @@ struct CustomInstrumentFeaturesPopover: View {
 
     private func addFeature() {
         let id = newFeatureID.trimmingCharacters(in: .whitespaces)
-        guard !id.isEmpty, !draftFeatures.contains(where: { $0.id == id }) else { return }
-        let typedName = newFeatureName.trimmingCharacters(in: .whitespaces)
-        let displayName = typedName.isEmpty ? id : typedName
-        draftFeatures.append(.init(id: id, name: displayName, schema: .boolean, optional: false))
+        let name = newFeatureName.trimmingCharacters(in: .whitespaces)
+        guard !id.isEmpty, !name.isEmpty, !draftFeatures.contains(where: { $0.id == id }) else { return }
+        let kindHasChildren = newFeatureKind.hasChildren
+        draftFeatures.append(
+            .init(
+                id: id,
+                name: name,
+                schema: newFeatureKind.defaultSchema(),
+                optional: false
+            )
+        )
         newFeatureID = ""
         newFeatureName = ""
+        nameAutoFilled = true
+        if kindHasChildren {
+            expandedFeatureID = id
+            isAddingFeature = false
+        } else {
+            expandedFeatureID = nil
+            draftFocus = .id
+        }
     }
 
     private func commit() {
@@ -183,10 +270,14 @@ struct CustomInstrumentFeaturesPopover: View {
     }
 }
 
+private enum NewFeatureField: Hashable { case id, name }
+
 private struct FeatureRow: View {
     @Binding var feature: CustomInstrumentDef.Feature
+    @Binding var expandedID: String?
     let onDelete: () -> Void
-    @State private var isExpanded: Bool = false
+
+    private var isExpanded: Bool { expandedID == feature.id }
 
     private var isBooleanSchema: Bool {
         if case .boolean = feature.schema { return true }
@@ -196,19 +287,21 @@ private struct FeatureRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                Button {
-                    isExpanded.toggle()
-                } label: {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                if isBooleanSchema {
+                    Image(systemName: "chevron.right").opacity(0)
+                } else {
+                    Button {
+                        expandedID = isExpanded ? nil : feature.id
+                    } label: {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    }
+                    .buttonStyle(.borderless)
                 }
-                .buttonStyle(.borderless)
                 Text(feature.id).font(.system(.caption, design: .monospaced))
                 Text("—").foregroundStyle(.secondary)
                 Text(feature.name)
                 Spacer()
-                Text(SchemaKind(from: feature.schema).label)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                SchemaKindPicker(schema: $feature.schema)
                 Button {
                     onDelete()
                 } label: {
@@ -216,12 +309,10 @@ private struct FeatureRow: View {
                 }
                 .buttonStyle(.borderless)
             }
-            if isExpanded {
+            if isExpanded && !isBooleanSchema {
                 VStack(alignment: .leading, spacing: 6) {
-                    if !isBooleanSchema {
-                        Toggle("Optional (user can disable)", isOn: $feature.optional)
-                            .platformCheckboxToggleStyle()
-                    }
+                    Toggle("Optional (user can disable)", isOn: $feature.optional)
+                        .platformCheckboxToggleStyle()
                     if feature.optional {
                         Toggle("Enabled by default", isOn: $feature.enabledByDefault)
                             .platformCheckboxToggleStyle()
@@ -230,15 +321,17 @@ private struct FeatureRow: View {
                 }
                 .padding(.leading, 20)
                 .padding(.top, 4)
-                .onChange(of: feature.schema) { _, newSchema in
-                    if case .boolean = newSchema, feature.optional {
-                        feature.optional = false
-                    }
-                }
             }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 6).fill(Color.gray.opacity(0.08)))
+        .onChange(of: feature.schema) { _, newSchema in
+            if case .boolean = newSchema {
+                if feature.optional { feature.optional = false }
+            } else {
+                expandedID = feature.id
+            }
+        }
     }
 }

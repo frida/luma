@@ -1,25 +1,33 @@
 import LumaCore
 import SwiftUI
 
+struct SchemaKindPicker: View {
+    @Binding var schema: FeatureSchema
+
+    var body: some View {
+        Picker("", selection: kindBinding) {
+            ForEach(SchemaKind.allCases) { k in
+                Text(k.label).tag(k)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .frame(width: 130)
+    }
+
+    private var kindBinding: Binding<SchemaKind> {
+        Binding(
+            get: { SchemaKind(from: schema) },
+            set: { schema = $0.defaultSchema() }
+        )
+    }
+}
+
 struct CustomInstrumentSchemaEditor: View {
     @Binding var schema: FeatureSchema
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text("Type").frame(width: 80, alignment: .leading)
-                Picker("", selection: kindBinding) {
-                    ForEach(SchemaKind.allCases) { k in
-                        Text(k.label).tag(k)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .frame(maxWidth: 200)
-                Spacer()
-            }
-            schemaFields
-        }
+        schemaFields
     }
 
     @ViewBuilder
@@ -44,13 +52,6 @@ struct CustomInstrumentSchemaEditor: View {
         case .array:
             arrayFields
         }
-    }
-
-    private var kindBinding: Binding<SchemaKind> {
-        Binding(
-            get: { SchemaKind(from: schema) },
-            set: { schema = $0.defaultSchema() }
-        )
     }
 
     @ViewBuilder
@@ -121,8 +122,8 @@ struct CustomInstrumentSchemaEditor: View {
                 Text("Default").frame(width: 80, alignment: .leading)
                 Picker("", selection: comboDefaultBinding) {
                     Text("(first)").tag(nil as String?)
-                    ForEach(currentComboChoices, id: \.self) { c in
-                        Text(c).tag(c as String?)
+                    ForEach(currentComboChoices) { c in
+                        Text(c.name).tag(c.id as String?)
                     }
                 }
                 .labelsHidden()
@@ -310,17 +311,18 @@ struct CustomInstrumentSchemaEditor: View {
         )
     }
 
-    private var currentComboChoices: [String] {
+    private var currentComboChoices: [ComboChoice] {
         if case .combo(let choices, _) = schema { return choices }
         return []
     }
 
-    private var comboChoicesBinding: Binding<[String]> {
+    private var comboChoicesBinding: Binding<[ComboChoice]> {
         Binding(
             get: { currentComboChoices },
             set: { newChoices in
                 if case .combo(_, let d) = schema {
-                    let preservedDefault = d.flatMap { newChoices.contains($0) ? $0 : nil }
+                    let ids = Set(newChoices.map(\.id))
+                    let preservedDefault = d.flatMap { ids.contains($0) ? $0 : nil }
                     schema = .combo(choices: newChoices, default: preservedDefault)
                 }
             }
@@ -353,7 +355,7 @@ struct CustomInstrumentSchemaEditor: View {
         )
     }
 
-    private var arrayComboChoicesBinding: Binding<[String]> {
+    private var arrayComboChoicesBinding: Binding<[ComboChoice]> {
         Binding(
             get: {
                 if case .array(let item, _) = schema, case .combo(let choices) = item {
@@ -398,7 +400,18 @@ struct CustomInstrumentSchemaEditor: View {
 
 struct ObjectFieldsEditor: View {
     @Binding var fields: [ObjectField]
+    @State private var draftID: String = ""
     @State private var draftName: String = ""
+    @State private var draftKind: SchemaKind = .boolean
+    @State private var isAddingField: Bool
+    @State private var nameAutoFilled: Bool = true
+    @State private var expandedFieldID: String? = nil
+    @FocusState private var draftFocus: ObjectFieldDraftFocus?
+
+    init(fields: Binding<[ObjectField]>) {
+        self._fields = fields
+        self._isAddingField = State(initialValue: fields.wrappedValue.isEmpty)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -408,27 +421,104 @@ struct ObjectFieldsEditor: View {
                 ForEach(fields.indices, id: \.self) { index in
                     ObjectFieldRow(
                         field: fieldBinding(at: index),
-                        onDelete: { fields.remove(at: index) }
+                        expandedID: $expandedFieldID,
+                        onDelete: {
+                            let removedID = fields[index].id
+                            fields.remove(at: index)
+                            if expandedFieldID == removedID { expandedFieldID = nil }
+                        }
                     )
                 }
             }
-            HStack(spacing: 6) {
-                TextField("Field name", text: $draftName)
-                    .textFieldStyle(.roundedBorder)
-                Button {
-                    appendField()
-                } label: {
-                    Image(systemName: "plus.circle")
+            if isAddingField {
+                HStack(spacing: 6) {
+                    TextField("id", text: $draftID)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 110)
+                        .focused($draftFocus, equals: .id)
+                        .onChange(of: draftID) { _, newValue in
+                            applyIDChange(newValue)
+                        }
+                        .onSubmit(appendField)
+                    TextField("Name", text: $draftName)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($draftFocus, equals: .name)
+                        .onChange(of: draftName) { _, newValue in
+                            if newValue != CamelCase.humanized(draftID) {
+                                nameAutoFilled = false
+                            }
+                        }
+                        .onSubmit(appendField)
+                    Picker("", selection: $draftKind) {
+                        ForEach(SchemaKind.allCases) { k in
+                            Text(k.label).tag(k)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(width: 130)
+                    Button {
+                        appendField()
+                    } label: {
+                        Image(systemName: "plus.circle")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(addDisabled)
                 }
-                .buttonStyle(.borderless)
-                .disabled(draftName.trimmingCharacters(in: .whitespaces).isEmpty)
             }
+            Button {
+                toggleAdding()
+            } label: {
+                Label(
+                    isAddingField ? "Done Adding" : "Add Field",
+                    systemImage: isAddingField ? "checkmark" : "plus"
+                )
+            }
+        }
+        .onAppear {
+            if isAddingField {
+                DispatchQueue.main.async { draftFocus = .id }
+            }
+        }
+    }
+
+    private func toggleAdding() {
+        isAddingField.toggle()
+        if isAddingField {
+            expandedFieldID = nil
+            DispatchQueue.main.async { draftFocus = .id }
+        } else {
+            resetDraft()
+        }
+    }
+
+    private func resetDraft() {
+        draftID = ""
+        draftName = ""
+        draftKind = .boolean
+        nameAutoFilled = true
+    }
+
+    private var addDisabled: Bool {
+        let id = draftID.trimmingCharacters(in: .whitespaces)
+        let name = draftName.trimmingCharacters(in: .whitespaces)
+        return id.isEmpty || name.isEmpty
+    }
+
+    private func applyIDChange(_ newValue: String) {
+        let lowered = CamelCase.sanitized(newValue)
+        if lowered != newValue {
+            draftID = lowered
+            return
+        }
+        if nameAutoFilled {
+            draftName = CamelCase.humanized(lowered)
         }
     }
 
     private func fieldBinding(at index: Int) -> Binding<ObjectField> {
         Binding(
-            get: { index < fields.count ? fields[index] : ObjectField(name: "", schema: .boolean) },
+            get: { index < fields.count ? fields[index] : ObjectField(id: "", name: "", schema: .boolean) },
             set: { newValue in
                 if index < fields.count {
                     fields[index] = newValue
@@ -438,17 +528,39 @@ struct ObjectFieldsEditor: View {
     }
 
     private func appendField() {
-        let trimmed = draftName.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty, !fields.contains(where: { $0.name == trimmed }) else { return }
-        fields.append(ObjectField(name: trimmed, schema: .boolean))
+        let id = draftID.trimmingCharacters(in: .whitespaces)
+        let name = draftName.trimmingCharacters(in: .whitespaces)
+        guard !id.isEmpty, !name.isEmpty, !fields.contains(where: { $0.id == id }) else { return }
+        let kindHasChildren = draftKind.hasChildren
+        fields.append(
+            ObjectField(
+                id: id,
+                name: name,
+                schema: draftKind.defaultSchema(),
+                optional: false
+            )
+        )
+        draftID = ""
         draftName = ""
+        nameAutoFilled = true
+        if kindHasChildren {
+            expandedFieldID = id
+            isAddingField = false
+        } else {
+            expandedFieldID = nil
+            draftFocus = .id
+        }
     }
 }
 
+private enum ObjectFieldDraftFocus: Hashable { case id, name }
+
 private struct ObjectFieldRow: View {
     @Binding var field: ObjectField
+    @Binding var expandedID: String?
     let onDelete: () -> Void
-    @State private var isExpanded: Bool = false
+
+    private var isExpanded: Bool { expandedID == field.id }
 
     private var isBooleanSchema: Bool {
         if case .boolean = field.schema { return true }
@@ -458,17 +570,22 @@ private struct ObjectFieldRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                Button {
-                    isExpanded.toggle()
-                } label: {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                if isBooleanSchema {
+                    Image(systemName: "chevron.right").opacity(0)
+                } else {
+                    Button {
+                        expandedID = isExpanded ? nil : field.id
+                    } label: {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    }
+                    .buttonStyle(.borderless)
                 }
-                .buttonStyle(.borderless)
-                TextField("Field name", text: $field.name)
+                TextField("id", text: $field.id)
                     .textFieldStyle(.roundedBorder)
-                Text(SchemaKind(from: field.schema).label)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .frame(width: 110)
+                TextField("Name", text: $field.name)
+                    .textFieldStyle(.roundedBorder)
+                SchemaKindPicker(schema: $field.schema)
                 Button {
                     onDelete()
                 } label: {
@@ -476,12 +593,10 @@ private struct ObjectFieldRow: View {
                 }
                 .buttonStyle(.borderless)
             }
-            if isExpanded {
+            if isExpanded && !isBooleanSchema {
                 VStack(alignment: .leading, spacing: 4) {
-                    if !isBooleanSchema {
-                        Toggle("Optional", isOn: $field.optional)
-                            .platformCheckboxToggleStyle()
-                    }
+                    Toggle("Optional", isOn: $field.optional)
+                        .platformCheckboxToggleStyle()
                     if field.optional {
                         Toggle("Enabled by default", isOn: $field.enabledByDefault)
                             .platformCheckboxToggleStyle()
@@ -489,15 +604,17 @@ private struct ObjectFieldRow: View {
                     CustomInstrumentSchemaEditor(schema: $field.schema)
                 }
                 .padding(.leading, 20)
-                .onChange(of: field.schema) { _, newSchema in
-                    if case .boolean = newSchema, field.optional {
-                        field.optional = false
-                    }
-                }
             }
         }
         .padding(6)
         .background(RoundedRectangle(cornerRadius: 4).fill(Color.gray.opacity(0.05)))
+        .onChange(of: field.schema) { _, newSchema in
+            if case .boolean = newSchema {
+                if field.optional { field.optional = false }
+            } else {
+                expandedID = field.id
+            }
+        }
     }
 }
 
@@ -545,6 +662,13 @@ enum SchemaKind: String, CaseIterable, Identifiable {
         case .combo: return .combo(choices: [], default: nil)
         case .object: return .object(fields: [])
         case .array: return .array(item: .string, default: [])
+        }
+    }
+
+    var hasChildren: Bool {
+        switch self {
+        case .combo, .object, .array: return true
+        default: return false
         }
     }
 }
@@ -595,14 +719,20 @@ enum ArrayItemKind: String, CaseIterable, Identifiable {
 }
 
 struct ChoicesEditor: View {
-    @Binding var choices: [String]
-    @State private var draftChoice: String = ""
+    @Binding var choices: [ComboChoice]
+    @State private var draftID: String = ""
+    @State private var draftName: String = ""
+    @State private var nameAutoFilled: Bool = true
+    @FocusState private var draftFocus: ChoiceDraftFocus?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(choices.indices, id: \.self) { i in
                 HStack(spacing: 6) {
-                    TextField("choice", text: choiceBinding(at: i))
+                    TextField("id", text: idBinding(at: i))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 110)
+                    TextField("Name", text: nameBinding(at: i))
                         .textFieldStyle(.roundedBorder)
                     Button {
                         choices.remove(at: i)
@@ -613,37 +743,85 @@ struct ChoicesEditor: View {
                 }
             }
             HStack(spacing: 6) {
-                TextField("Add choice", text: $draftChoice)
+                TextField("id", text: $draftID)
                     .textFieldStyle(.roundedBorder)
+                    .frame(width: 110)
+                    .focused($draftFocus, equals: .id)
+                    .onChange(of: draftID) { _, newValue in
+                        applyIDChange(newValue)
+                    }
+                    .onSubmit(appendDraft)
+                TextField("Name", text: $draftName)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($draftFocus, equals: .name)
+                    .onChange(of: draftName) { _, newValue in
+                        if newValue != CamelCase.humanized(draftID) {
+                            nameAutoFilled = false
+                        }
+                    }
+                    .onSubmit(appendDraft)
                 Button {
                     appendDraft()
                 } label: {
                     Image(systemName: "plus.circle")
                 }
                 .buttonStyle(.borderless)
-                .disabled(draftChoice.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(addDisabled)
             }
+        }
+        .onAppear {
+            DispatchQueue.main.async { draftFocus = .id }
         }
     }
 
-    private func choiceBinding(at i: Int) -> Binding<String> {
+    private var addDisabled: Bool {
+        let id = draftID.trimmingCharacters(in: .whitespaces)
+        let name = draftName.trimmingCharacters(in: .whitespaces)
+        return id.isEmpty || name.isEmpty
+    }
+
+    private func applyIDChange(_ newValue: String) {
+        let lowered = CamelCase.sanitized(newValue)
+        if lowered != newValue {
+            draftID = lowered
+            return
+        }
+        if nameAutoFilled {
+            draftName = CamelCase.humanized(lowered)
+        }
+    }
+
+    private func appendDraft() {
+        let id = draftID.trimmingCharacters(in: .whitespaces)
+        let name = draftName.trimmingCharacters(in: .whitespaces)
+        guard !id.isEmpty, !name.isEmpty, !choices.contains(where: { $0.id == id }) else { return }
+        choices.append(ComboChoice(id: id, name: name))
+        draftID = ""
+        draftName = ""
+        nameAutoFilled = true
+        draftFocus = .id
+    }
+
+    private func idBinding(at i: Int) -> Binding<String> {
         Binding(
-            get: { i < choices.count ? choices[i] : "" },
+            get: { i < choices.count ? choices[i].id : "" },
             set: { newValue in
-                if i < choices.count {
-                    choices[i] = newValue
-                }
+                if i < choices.count { choices[i].id = newValue }
             }
         )
     }
 
-    private func appendDraft() {
-        let trimmed = draftChoice.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty, !choices.contains(trimmed) else { return }
-        choices.append(trimmed)
-        draftChoice = ""
+    private func nameBinding(at i: Int) -> Binding<String> {
+        Binding(
+            get: { i < choices.count ? choices[i].name : "" },
+            set: { newValue in
+                if i < choices.count { choices[i].name = newValue }
+            }
+        )
     }
 }
+
+private enum ChoiceDraftFocus: Hashable { case id, name }
 
 struct OptionalIntegerField: View {
     @Binding var binding: Int64?
