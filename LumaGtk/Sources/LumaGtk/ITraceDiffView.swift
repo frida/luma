@@ -7,14 +7,18 @@ import LumaCore
 final class ITraceDiffView {
     let widget: Box
 
-    private let left: ITraceCaptureRecord
-    private let right: ITraceCaptureRecord
+    private let left: ITrace
+    private let right: ITrace
+    private let engine: Engine
+    private let sessionID: UUID
     private let bodyContainer: Box
     private var divergenceLabel: Label?
 
-    init(left: ITraceCaptureRecord, right: ITraceCaptureRecord) {
+    init(left: ITrace, right: ITrace, engine: Engine, sessionID: UUID) {
         self.left = left
         self.right = right
+        self.engine = engine
+        self.sessionID = sessionID
 
         widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
@@ -53,14 +57,20 @@ final class ITraceDiffView {
         loading.append(child: Label(str: "Decoding captures\u{2026}"))
         bodyContainer.append(child: loading)
 
-        let leftData = left.traceData
+        let leftID = left.id
+        let leftSize = left.dataSize
         let leftMeta = left.metadataJSON
-        let rightData = right.traceData
+        let rightID = right.id
+        let rightSize = right.dataSize
         let rightMeta = right.metadataJSON
+        let eng = engine
+        let sid = sessionID
         Task { @MainActor [weak self] in
             await Task.yield()
             let result: Result<(DecodedITrace, DecodedITrace), Error>
             do {
+                let leftData = try await eng.loadTraceData(traceID: leftID, sessionID: sid, expectedSize: leftSize)
+                let rightData = try await eng.loadTraceData(traceID: rightID, sessionID: sid, expectedSize: rightSize)
                 let l = try ITraceDecoder.decode(traceData: leftData, metadataJSON: leftMeta)
                 let r = try ITraceDecoder.decode(traceData: rightData, metadataJSON: rightMeta)
                 result = .success((l, r))
@@ -329,8 +339,8 @@ final class ITraceDiffView {
 
     // MARK: - Presentation
 
-    static func present(from anchor: Widget, left: ITraceCaptureRecord, right: ITraceCaptureRecord) {
-        let view = ITraceDiffView(left: left, right: right)
+    static func present(from anchor: Widget, left: ITrace, right: ITrace, engine: Engine, sessionID: UUID) {
+        let view = ITraceDiffView(left: left, right: right, engine: engine, sessionID: sessionID)
 
         let window = Adw.Window()
         window.title = "ITrace Diff"

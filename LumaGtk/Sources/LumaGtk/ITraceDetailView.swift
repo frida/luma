@@ -9,8 +9,8 @@ import LumaCore
 final class ITraceDetailView {
     let widget: Box
 
-    private let capture: ITraceCaptureRecord
-    private let otherCaptures: [ITraceCaptureRecord]
+    private var trace: ITrace
+    private let otherTraces: [ITrace]
     private let engine: Engine
     private let sessionID: Foundation.UUID
     private let bodyContainer: Box
@@ -24,19 +24,31 @@ final class ITraceDetailView {
     private var selectedCallIndex: Int = 0
     private var showingGraph = true
     private var compareButton: Button?
+    private var stopButton: Button?
+    private var lastDecodedSize: Int = 0
+    private var redecodeTask: Task<Void, Never>?
+    private var captionLabel: Label?
+    private let baseCaption: String
+    private var serverTotalSize: Int = 0
+    private var invalidationListener: Task<Void, Never>?
     fileprivate var isDarkMode: Bool = ThemeWatcher.isDarkMode()
     private var themeSignalID: gulong = 0
 
     init(
-        capture: ITraceCaptureRecord,
-        otherCaptures: [ITraceCaptureRecord] = [],
+        trace: ITrace,
+        otherTraces: [ITrace] = [],
         engine: Engine,
         sessionID: Foundation.UUID
     ) {
-        self.capture = capture
-        self.otherCaptures = otherCaptures
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .medium
+
+        self.trace = trace
+        self.otherTraces = otherTraces
         self.engine = engine
         self.sessionID = sessionID
+        self.baseCaption = "started \(formatter.string(from: trace.startedAt)) · lost \(trace.lost)"
 
         widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
@@ -50,26 +62,38 @@ final class ITraceDetailView {
         headerRow.hexpand = true
 
         let headerLeft = Box(orientation: .vertical, spacing: 0)
-        let titleLabel = Label(str: capture.displayName)
+        let titleLabel = Label(str: trace.displayName)
         titleLabel.halign = .start
         titleLabel.add(cssClass: "title-3")
         headerLeft.append(child: titleLabel)
 
-        let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        formatter.timeStyle = .medium
-        let captionLabel = Label(
-            str: "captured \(formatter.string(from: capture.capturedAt)) · lost \(capture.lost)"
-        )
+        let captionLabel = Label(str: baseCaption)
         captionLabel.halign = .start
         captionLabel.add(cssClass: "dim-label")
         captionLabel.add(cssClass: "caption")
         headerLeft.append(child: captionLabel)
+        self.captionLabel = captionLabel
 
         headerRow.append(child: headerLeft)
 
+        let stopButton = Button(label: "Stop")
+        stopButton.valign = .center
+        stopButton.add(cssClass: "destructive-action")
+        stopButton.visible = trace.isRunning && Self.isThreadOrigin(trace.origin)
+        let traceID = trace.id
+        let stopSessionID = sessionID
+        stopButton.onClicked { [weak engine] _ in
+            MainActor.assumeIsolated {
+                Task { @MainActor [weak engine] in
+                    await engine?.stopThreadTrace(traceID: traceID, sessionID: stopSessionID)
+                }
+            }
+        }
+        headerRow.append(child: stopButton)
+        self.stopButton = stopButton
+
         var pendingCompareButton: Button?
-        if !otherCaptures.isEmpty {
+        if !otherTraces.isEmpty {
             let btn = Button(label: "Compare with\u{2026}")
             btn.valign = .center
             pendingCompareButton = btn
@@ -99,19 +123,40 @@ final class ITraceDetailView {
         loading.halign = .center
         loading.marginTop = 24
         loading.append(child: spinner)
-        let loadingLabel = Label(str: "Decoding capture\u{2026}")
+        let loadingLabel = Label(str: "Decoding trace\u{2026}")
         loading.append(child: loadingLabel)
         bodyContainer.append(child: loading)
 
-        let traceData = capture.traceData
-        let metadataJSON = capture.metadataJSON
+        let traceID = trace.id
+        let metadataJSON = trace.metadataJSON
+        let initialSize = trace.dataSize
+        let sid = sessionID
+        let eng = engine
         Task { @MainActor [weak self] in
             await Task.yield()
+            if initialSize > Self.firstPaintBytes {
+                if let preview = try? await eng.loadTraceDataPrefix(traceID: traceID, sessionID: sid, length: Self.firstPaintBytes),
+                    let decoded = try? ITraceDecoder.decode(traceData: preview, metadataJSON: metadataJSON)
+                {
+                    self?.applyDecodeResult(.success(decoded))
+                }
+            }
             let result: Result<DecodedITrace, Error>
             do {
+                let traceData = try await eng.loadTraceData(
+                    traceID: traceID,
+                    sessionID: sid,
+                    expectedSize: initialSize,
+                    onProgress: { [weak self] loaded, total in
+                        self?.updateProgress(loaded: loaded, total: total)
+                    }
+                )
+                self?.updateProgress(loaded: nil, total: nil)
                 let decoded = try ITraceDecoder.decode(traceData: traceData, metadataJSON: metadataJSON)
+                self?.lastDecodedSize = traceData.count
                 result = .success(decoded)
             } catch {
+                self?.updateProgress(loaded: nil, total: nil)
                 result = .failure(error)
             }
             self?.applyDecodeResult(result)
@@ -119,6 +164,15 @@ final class ITraceDetailView {
 
         themeSignalID = ThemeWatcher.subscribe(owner: self) { detail in
             detail.handleThemeChanged()
+        }
+
+        invalidationListener = Task { @MainActor [weak self, weak engine, traceID] in
+            guard let stream = engine?.traceCacheInvalidations else { return }
+            for await invalidation in stream where invalidation.traceID == traceID {
+                guard let self else { return }
+                self.serverTotalSize = invalidation.knownTotalSize
+                self.scheduleRedecode()
+            }
         }
 
         let modeKey = EventControllerKey()
@@ -134,25 +188,69 @@ final class ITraceDetailView {
 
         if let btn = pendingCompareButton {
             self.compareButton = btn
-            let captureForCompare = capture
-            let othersForCompare = otherCaptures
+            let traceForCompare = trace
+            let othersForCompare = otherTraces
             let formatterForCompare = formatter
             btn.onClicked { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let button = self?.compareButton else { return }
+                    guard let self else { return }
                     Self.presentComparePopover(
                         anchor: button,
-                        capture: captureForCompare,
+                        trace: traceForCompare,
                         others: othersForCompare,
-                        formatter: formatterForCompare
+                        formatter: formatterForCompare,
+                        engine: self.engine,
+                        sessionID: self.sessionID
                     )
                 }
             }
         }
     }
 
+    func update(with trace: ITrace) {
+        let previousSize = self.trace.dataSize
+        self.trace = trace
+        stopButton?.visible = trace.isRunning && Self.isThreadOrigin(trace.origin)
+        if trace.dataSize != previousSize {
+            scheduleRedecode()
+        }
+    }
+
+    private func scheduleRedecode() {
+        redecodeTask?.cancel()
+        redecodeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.startRedecode()
+        }
+    }
+
+    private func startRedecode() {
+        let expected = max(trace.dataSize, serverTotalSize)
+        guard expected != lastDecodedSize else { return }
+        let traceID = trace.id
+        let metadataJSON = trace.metadataJSON
+        let sid = sessionID
+        let eng = engine
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            let result: Result<DecodedITrace, Error>
+            do {
+                let traceData = try await eng.loadTraceData(traceID: traceID, sessionID: sid, expectedSize: expected)
+                let decoded = try ITraceDecoder.decode(traceData: traceData, metadataJSON: metadataJSON)
+                self?.lastDecodedSize = traceData.count
+                result = .success(decoded)
+            } catch {
+                result = .failure(error)
+            }
+            self?.applyDecodeResult(result)
+        }
+    }
+
     deinit {
         ThemeWatcher.unsubscribe(handlerID: themeSignalID)
+        invalidationListener?.cancel()
     }
 
     fileprivate func handleThemeChanged() {
@@ -171,7 +269,7 @@ final class ITraceDetailView {
 
         switch result {
         case .failure(let error):
-            let errorLabel = Label(str: "Failed to decode capture: \(error)")
+            let errorLabel = Label(str: "Failed to decode trace: \(error)")
             errorLabel.halign = .start
             errorLabel.wrap = true
             errorLabel.add(cssClass: "error")
@@ -201,7 +299,12 @@ final class ITraceDetailView {
             bodyContainer.append(child: timeline.widget)
             populateEntries(decoded.entries)
             bodyContainer.append(child: entriesScroll)
-            buildCFGView(from: decoded)
+            if let existingCFG = cfgView, !decoded.functionCalls.isEmpty {
+                existingCFG.update(decoded: decoded)
+                bodyContainer.append(child: existingCFG.widget)
+            } else {
+                buildCFGView(from: decoded)
+            }
             applyMode()
         }
     }
@@ -318,9 +421,11 @@ final class ITraceDetailView {
 
     private static func presentComparePopover(
         anchor: Widget,
-        capture: ITraceCaptureRecord,
-        others: [ITraceCaptureRecord],
-        formatter: DateFormatter
+        trace: ITrace,
+        others: [ITrace],
+        formatter: DateFormatter,
+        engine: Engine,
+        sessionID: Foundation.UUID
     ) {
         let popover = Popover()
         popover.autohide = true
@@ -332,7 +437,7 @@ final class ITraceDetailView {
         for other in others {
             let row = ListBoxRow()
             let label = Label(
-                str: "\(other.displayName) \u{00B7} \(formatter.string(from: other.capturedAt))"
+                str: "\(other.displayName) \u{00B7} \(formatter.string(from: other.startedAt))"
             )
             label.halign = .start
             label.marginStart = 8
@@ -349,7 +454,7 @@ final class ITraceDetailView {
                 let index = Int(row.index)
                 guard index >= 0, index < others.count else { return }
                 popover.popdown()
-                ITraceDiffView.present(from: anchor, left: capture, right: others[index])
+                ITraceDiffView.present(from: anchor, left: trace, right: others[index], engine: engine, sessionID: sessionID)
             }
         }
 
@@ -368,4 +473,25 @@ final class ITraceDetailView {
         popover.popup()
     }
 
+    private static func isThreadOrigin(_ origin: ITrace.Origin) -> Bool {
+        if case .thread = origin { return true }
+        return false
+    }
+
+    private func updateProgress(loaded: Int?, total: Int?) {
+        guard let captionLabel else { return }
+        if let loaded, let total {
+            captionLabel.setText(str: "\(baseCaption) · loading \(Self.formatBytes(loaded)) of \(Self.formatBytes(total))")
+        } else {
+            captionLabel.setText(str: baseCaption)
+        }
+    }
+
+    private static func formatBytes(_ count: Int) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: Int64(count))
+    }
+
+    private static let firstPaintBytes: Int = 256 * 1024
 }

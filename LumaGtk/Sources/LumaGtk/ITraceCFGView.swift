@@ -22,7 +22,7 @@ final class ITraceCFGView {
     var onNavigateFunction: ((Int) -> Void)?
     var onJumpToFunction: ((Int) -> Void)?
 
-    private let decoded: DecodedITrace
+    private var decoded: DecodedITrace
     private let arch: String
     private let windowRadius: Int
     private let disasmProvider: ((UInt64, Int) async -> StyledText)?
@@ -119,6 +119,27 @@ final class ITraceCFGView {
         selectedCallIndex = index
         rebuildGraph(forCallIndex: index)
         focus()
+    }
+
+    func update(decoded: DecodedITrace) {
+        let savedSelectedKey = selectedKey
+        let savedSelectedLine = selectedInstructionLine
+        let savedPanX = panX
+        let savedPanY = panY
+        let savedZoom = zoom
+
+        self.decoded = decoded
+        rebuildGraph(forCallIndex: selectedCallIndex)
+
+        panX = savedPanX
+        panY = savedPanY
+        zoom = savedZoom
+        repositionNodes()
+
+        if let saved = savedSelectedKey, graph.nodes[saved] != nil {
+            select(key: saved, line: savedSelectedLine, notify: false)
+        }
+        drawingArea.queueDraw()
     }
 
     func setSelectedNode(key: CFGGraph.NodeKey?) {

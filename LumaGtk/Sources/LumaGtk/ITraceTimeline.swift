@@ -6,23 +6,40 @@ import LumaCore
 
 @MainActor
 final class ITraceTimeline {
-    let widget: DrawingArea
+    let widget: Box
 
     var onSelect: ((Int) -> Void)?
 
     private let functionCalls: [TraceFunctionCall]
     private let totalEntryCount: Int
     private var selectedIndex: Int?
+    private var pageStart: Int = 0
+
+    private let area: DrawingArea
+    private var controls: Box?
+    private var pageLabel: Label?
+    private var prevButton: Button?
+    private var nextButton: Button?
+
+    private static let paginationThreshold: Int = 200
+    private static let pageSize: Int = 100
 
     init(functionCalls: [TraceFunctionCall], totalEntryCount: Int) {
         self.functionCalls = functionCalls
         self.totalEntryCount = max(1, totalEntryCount)
 
-        let area = DrawingArea()
+        widget = Box(orientation: .vertical, spacing: 4)
+        widget.hexpand = true
+
+        if functionCalls.count > Self.paginationThreshold {
+            installPaginationControls()
+        }
+
+        area = DrawingArea()
         area.setSizeRequest(width: -1, height: 32)
         area.hexpand = true
         area.set(hasTooltip: true)
-        widget = area
+        widget.append(child: area)
 
         area.setDrawFunc { [weak self] _, ctx, width, height in
             MainActor.assumeIsolated {
@@ -61,18 +78,108 @@ final class ITraceTimeline {
     func setSelected(index: Int?) {
         guard selectedIndex != index else { return }
         selectedIndex = index
-        widget.queueDraw()
+        if let idx = index, isPaginated, !isVisible(idx) {
+            pageStart = (idx / Self.pageSize) * Self.pageSize
+            refreshPaginationState()
+        }
+        area.queueDraw()
+    }
+
+    private var isPaginated: Bool {
+        functionCalls.count > Self.paginationThreshold
+    }
+
+    private func isVisible(_ index: Int) -> Bool {
+        index >= pageStart && index < pageEnd
+    }
+
+    private var pageEnd: Int {
+        min(pageStart + Self.pageSize, functionCalls.count)
+    }
+
+    private func lastPageStart() -> Int {
+        guard !functionCalls.isEmpty else { return 0 }
+        return ((functionCalls.count - 1) / Self.pageSize) * Self.pageSize
+    }
+
+    private func installPaginationControls() {
+        let row = Box(orientation: .horizontal, spacing: 6)
+        row.marginStart = 4
+        row.marginEnd = 4
+
+        let prev = Button()
+        prev.set(iconName: "go-previous-symbolic")
+        prev.add(cssClass: "flat")
+        prev.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.pageStart = max(0, self.pageStart - Self.pageSize)
+                self.refreshPaginationState()
+                self.area.queueDraw()
+            }
+        }
+        row.append(child: prev)
+
+        let label = Label(str: "")
+        label.hexpand = true
+        label.add(cssClass: "dim-label")
+        label.add(cssClass: "caption")
+        row.append(child: label)
+
+        let next = Button()
+        next.set(iconName: "go-next-symbolic")
+        next.add(cssClass: "flat")
+        next.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.pageStart = min(self.lastPageStart(), self.pageStart + Self.pageSize)
+                self.refreshPaginationState()
+                self.area.queueDraw()
+            }
+        }
+        row.append(child: next)
+
+        widget.append(child: row)
+
+        controls = row
+        pageLabel = label
+        prevButton = prev
+        nextButton = next
+
+        refreshPaginationState()
+    }
+
+    private func refreshPaginationState() {
+        pageLabel?.setText(str: "\(pageStart + 1)–\(pageEnd) of \(functionCalls.count)")
+        prevButton?.sensitive = pageStart > 0
+        nextButton?.sensitive = pageEnd < functionCalls.count
     }
 
     private func callIndex(at x: Double, width: Double) -> Int? {
         guard !functionCalls.isEmpty, width > 0 else { return nil }
+        let visible = visibleCalls()
+        let denom = visibleDenominator(visible)
         var accX: Double = 0
-        for (i, call) in functionCalls.enumerated() {
-            let w = max(2, Double(call.entryCount) / Double(totalEntryCount) * width)
-            if x < accX + w { return i }
+        for (i, call) in visible.enumerated() {
+            let w = max(2, Double(call.entryCount) / Double(denom) * width)
+            if x < accX + w { return pageStart + i }
             accX += w
         }
-        return functionCalls.count - 1
+        return pageStart + visible.count - 1
+    }
+
+    private func visibleCalls() -> ArraySlice<TraceFunctionCall> {
+        if isPaginated {
+            return functionCalls[pageStart..<pageEnd]
+        }
+        return functionCalls[...]
+    }
+
+    private func visibleDenominator(_ visible: ArraySlice<TraceFunctionCall>) -> Int {
+        if isPaginated {
+            return max(1, visible.reduce(0) { $0 + $1.entryCount })
+        }
+        return totalEntryCount
     }
 
     private func draw(ctx: Cairo.ContextRef, width: Double, height: Double) {
@@ -80,12 +187,15 @@ final class ITraceTimeline {
         ctx.rectangle(x: 0, y: 0, width: width, height: height)
         ctx.fill()
 
-        guard !functionCalls.isEmpty, width > 0 else { return }
+        let visible = visibleCalls()
+        guard !visible.isEmpty, width > 0 else { return }
+        let denom = visibleDenominator(visible)
 
         var x: Double = 0
-        for (i, call) in functionCalls.enumerated() {
-            let w = max(2, Double(call.entryCount) / Double(totalEntryCount) * width)
-            let isSelected = selectedIndex == i
+        for (i, call) in visible.enumerated() {
+            let w = max(2, Double(call.entryCount) / Double(denom) * width)
+            let absoluteIndex = pageStart + i
+            let isSelected = selectedIndex == absoluteIndex
 
             let hue = functionHue(call.functionName)
             let (r, g, b) = hsvToRgb(h: hue, s: 0.7, v: 0.55)
