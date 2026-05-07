@@ -35,28 +35,46 @@ final class Workspace: ObservableObject {
             return try? JSONDecoder().decode(SidebarItemID.self, from: data)
         }
         set {
+            let newJSON: String?
             if let newValue,
                 let data = try? JSONEncoder().encode(newValue),
                 let json = String(data: data, encoding: .utf8)
             {
-                projectUIState.selectedItemJSON = json
+                newJSON = json
             } else {
-                projectUIState.selectedItemJSON = nil
+                newJSON = nil
             }
-            try? store.save(projectUIState)
+            guard newJSON != projectUIState.selectedItemJSON else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self,
+                    newJSON != self.projectUIState.selectedItemJSON
+                else { return }
+                self.projectUIState.selectedItemJSON = newJSON
+                try? self.store.save(self.projectUIState)
+            }
         }
     }
 
     func setEventStreamCollapsed(_ collapsed: Bool) {
         guard projectUIState.isEventStreamCollapsed != collapsed else { return }
-        projectUIState.isEventStreamCollapsed = collapsed
-        try? store.save(projectUIState)
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                self.projectUIState.isEventStreamCollapsed != collapsed
+            else { return }
+            self.projectUIState.isEventStreamCollapsed = collapsed
+            try? self.store.save(self.projectUIState)
+        }
     }
 
     func setEventStreamBottomHeight(_ height: Double) {
         guard projectUIState.eventStreamBottomHeight != height else { return }
-        projectUIState.eventStreamBottomHeight = height
-        try? store.save(projectUIState)
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                self.projectUIState.eventStreamBottomHeight != height
+            else { return }
+            self.projectUIState.eventStreamBottomHeight = height
+            try? self.store.save(self.projectUIState)
+        }
     }
 
     func sessionDetailSection(for sessionID: UUID) -> SessionDetailSection {
@@ -86,11 +104,15 @@ final class Workspace: ObservableObject {
         mutateSessionUIState(sessionID: sessionID) { $0.lastSelectedThreadID = threadID }
     }
 
-    private func mutateSessionUIState(sessionID: UUID, _ mutate: (inout SessionUIState) -> Void) {
-        var state = sessionUIStates[sessionID] ?? SessionUIState(sessionID: sessionID)
-        mutate(&state)
-        sessionUIStates[sessionID] = state
-        try? store.save(state)
+    private func mutateSessionUIState(sessionID: UUID, _ mutate: @escaping (inout SessionUIState) -> Void) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            var state = self.sessionUIStates[sessionID] ?? SessionUIState(sessionID: sessionID)
+            mutate(&state)
+            guard state != self.sessionUIStates[sessionID] else { return }
+            self.sessionUIStates[sessionID] = state
+            try? self.store.save(state)
+        }
     }
 
     private static func loadSessionUIStates(store: ProjectStore) -> [UUID: SessionUIState] {
