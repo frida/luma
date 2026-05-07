@@ -98,6 +98,7 @@ struct SessionDetailView: View {
         let session = session
         let node = node
         return Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 4) {
+            row("Status", statusText(session: session, node: node))
             row("Device", node?.deviceName ?? session?.deviceName ?? "—")
             row("PID", String(node?.pid ?? session?.lastKnownPID ?? 0))
             if let info = node?.processInfo {
@@ -117,6 +118,22 @@ struct SessionDetailView: View {
             }
         }
         .font(.system(.body, design: .monospaced))
+    }
+
+    private func statusText(session: LumaCore.ProcessSession?, node: LumaCore.ProcessNode?) -> String {
+        if let node {
+            switch node.phase {
+            case .attaching: return "Attaching…"
+            case .attached: return "Attached"
+            case .detached: return "Detached"
+            }
+        }
+        switch session?.phase {
+        case .attaching: return "Attaching…"
+        case .awaitingInitialResume: return "Awaiting initial resume"
+        case .attached: return "Attached"
+        case .idle, .none: return "Idle"
+        }
     }
 
     private func row(_ label: String, _ value: String) -> some View {
