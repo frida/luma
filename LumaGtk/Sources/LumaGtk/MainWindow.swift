@@ -1334,6 +1334,8 @@ final class MainWindow {
         switch target {
         case .instrumentComponent(let sessionID, let instrumentID, let componentID):
             navigateToHook(sessionID: sessionID, instrumentID: instrumentID, hookID: componentID)
+        case .itrace(let sessionID, let traceID):
+            select(.itrace(sessionID: sessionID, traceID: traceID))
         }
     }
 
@@ -1645,7 +1647,7 @@ final class MainWindow {
         if let idx = traces.firstIndex(where: { $0.id == trace.id }) {
             traces[idx] = trace
             tracesBySession[trace.sessionID] = traces
-            traceRowIcons[trace.id]?.set(iconName: traceIconName(for: trace))
+            traceRowIcons[trace.id]?.set(name: traceIconName(for: trace))
             if let detail = currentITraceDetail, currentITraceID == trace.id {
                 detail.update(with: trace)
             }

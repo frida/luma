@@ -1,4 +1,5 @@
 import Adw
+import CGtk
 import Foundation
 import Gtk
 import LumaCore
@@ -213,15 +214,15 @@ final class SessionDetailView {
 
         modulesTask = Task { @MainActor [weak self, weak node] in
             guard let node else { return }
-            for await modules in node.moduleSnapshots {
-                self?.renderModules(modules)
+            for await _ in node.moduleDeltas {
+                self?.renderModules(node.modules)
             }
         }
 
         threadsTask = Task { @MainActor [weak self, weak node] in
             guard let node else { return }
-            for await threads in node.threadSnapshots {
-                self?.renderThreads(threads)
+            for await _ in node.threadDeltas {
+                self?.renderThreads(node.threads)
             }
         }
     }

@@ -31,14 +31,15 @@ final class ITraceTimeline {
         widget = Box(orientation: .vertical, spacing: 4)
         widget.hexpand = true
 
-        if functionCalls.count > Self.paginationThreshold {
-            installPaginationControls()
-        }
-
         area = DrawingArea()
         area.setSizeRequest(width: -1, height: 32)
         area.hexpand = true
         area.set(hasTooltip: true)
+
+        if functionCalls.count > Self.paginationThreshold {
+            installPaginationControls()
+        }
+
         widget.append(child: area)
 
         area.setDrawFunc { [weak self] _, ctx, width, height in
@@ -65,7 +66,7 @@ final class ITraceTimeline {
         area.onQueryTooltip { [weak self] _, x, _, _, tooltip in
             MainActor.assumeIsolated {
                 guard let self else { return false }
-                let width = Double(area.width)
+                let width = Double(self.area.width)
                 guard let idx = self.callIndex(at: Double(x), width: width) else {
                     return false
                 }

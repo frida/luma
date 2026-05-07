@@ -84,8 +84,9 @@ final class ITraceDetailView {
         let stopSessionID = sessionID
         stopButton.onClicked { [weak engine] _ in
             MainActor.assumeIsolated {
-                Task { @MainActor [weak engine] in
-                    await engine?.stopThreadTrace(traceID: traceID, sessionID: stopSessionID)
+                guard let engine else { return }
+                Task { @MainActor in
+                    await engine.stopThreadTrace(traceID: traceID, sessionID: stopSessionID)
                 }
             }
         }
@@ -127,7 +128,6 @@ final class ITraceDetailView {
         loading.append(child: loadingLabel)
         bodyContainer.append(child: loading)
 
-        let traceID = trace.id
         let metadataJSON = trace.metadataJSON
         let initialSize = trace.dataSize
         let sid = sessionID
