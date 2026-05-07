@@ -134,6 +134,10 @@ final class ITraceDetailView {
         let eng = engine
         Task { @MainActor [weak self] in
             await Task.yield()
+            if initialSize == 0 {
+                self?.showWaitingState()
+                return
+            }
             if initialSize > Self.firstPaintBytes {
                 if let preview = try? await eng.loadTraceDataPrefix(traceID: traceID, sessionID: sid, length: Self.firstPaintBytes),
                     let decoded = try? ITraceDecoder.decode(traceData: preview, metadataJSON: metadataJSON)
@@ -258,6 +262,30 @@ final class ITraceDetailView {
         guard now != isDarkMode else { return }
         isDarkMode = now
         cfgView?.invalidateDisasm()
+    }
+
+    private func showWaitingState() {
+        var child = bodyContainer.firstChild
+        while let current = child {
+            child = current.nextSibling
+            bodyContainer.remove(child: current)
+        }
+
+        let waiting = Box(orientation: .vertical, spacing: 8)
+        waiting.halign = .center
+        waiting.valign = .center
+        waiting.marginTop = 24
+        waiting.marginBottom = 24
+
+        let icon = Gtk.Image(iconName: "media-record-symbolic")
+        icon.add(cssClass: "error")
+        waiting.append(child: icon)
+
+        let label = Label(str: "Waiting for trace data\u{2026}")
+        label.add(cssClass: "dim-label")
+        waiting.append(child: label)
+
+        bodyContainer.append(child: waiting)
     }
 
     private func applyDecodeResult(_ result: Result<DecodedITrace, Error>) {
