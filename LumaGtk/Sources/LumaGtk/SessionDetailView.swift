@@ -232,6 +232,7 @@ final class SessionDetailView {
 
         let node = engine?.node(forSessionID: sessionID)
 
+        appendSummary(label: "Status", value: statusText(session: session, node: node))
         appendSummary(label: "Device", value: node?.deviceName ?? session.deviceName)
         appendSummary(label: "PID", value: String(node?.pid ?? session.lastKnownPID))
 
@@ -250,6 +251,22 @@ final class SessionDetailView {
             appendSummary(label: "Path", value: main.path)
             appendSummary(label: "Base", value: String(format: "0x%llx", main.base))
             appendSummary(label: "Size", value: "\(main.size) bytes")
+        }
+    }
+
+    private func statusText(session: LumaCore.ProcessSession, node: LumaCore.ProcessNode?) -> String {
+        if let node {
+            switch node.phase {
+            case .attaching: return "Attaching\u{2026}"
+            case .attached: return "Attached"
+            case .detached: return "Detached"
+            }
+        }
+        switch session.phase {
+        case .attaching: return "Attaching\u{2026}"
+        case .awaitingInitialResume: return "Awaiting initial resume"
+        case .attached: return "Attached"
+        case .idle: return "Idle"
         }
     }
 
