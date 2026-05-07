@@ -1931,54 +1931,50 @@ public final class Engine {
     public func addTracerHook(
         sessionID: UUID,
         address: UInt64,
-        kind: TracerHookKind
+        kind: TracerHookKind,
+        preferredAnchor: AddressAnchor? = nil
     ) async -> (instrumentID: UUID, hookID: UUID)? {
         guard (try? store.fetchSession(id: sessionID)) != nil else { return nil }
 
-        let tracer: InstrumentInstance
-        if let existing = tracerInstance(forSessionID: sessionID) {
-            tracer = existing
-        } else {
-            let configJSON = TracerConfig().encode()
-            guard let added = await addInstrument(
-                kind: .tracer,
-                sourceIdentifier: "builtin.tracer",
-                configJSON: configJSON,
-                sessionID: sessionID
-            ) else { return nil }
-            tracer = added
-        }
-
         let anchor: AddressAnchor
-        if let node = node(forSessionID: sessionID) {
+        if let preferredAnchor {
+            anchor = preferredAnchor
+        } else if let node = node(forSessionID: sessionID) {
             anchor = node.anchor(for: address)
         } else {
             anchor = .absolute(address)
         }
 
-        var config = (try? TracerConfig.decode(from: tracer.configJSON)) ?? TracerConfig()
-
-        if let existingID = config.hooks.first(where: { $0.addressAnchor == anchor })?.id {
-            return (instrumentID: tracer.id, hookID: existingID)
-        }
-
-        let stub = defaultTracerCode(kind: kind, anchor: anchor, displayName: anchor.displayString)
-
+        let displayName = anchor.displayString
+        let stub = defaultTracerCode(kind: kind, anchor: anchor, displayName: displayName)
         let newHook = TracerConfig.Hook(
             id: UUID(),
-            displayName: String(format: "0x%llx", address),
+            displayName: displayName,
             addressAnchor: anchor,
             kind: kind,
             isEnabled: true,
             code: stub
         )
 
-        config.hooks.append(newHook)
+        if let existing = tracerInstance(forSessionID: sessionID) {
+            var config = (try? TracerConfig.decode(from: existing.configJSON)) ?? TracerConfig()
+            if let existingID = config.hooks.first(where: { $0.addressAnchor == anchor })?.id {
+                return (instrumentID: existing.id, hookID: existingID)
+            }
+            config.hooks.append(newHook)
+            await applyInstrumentConfig(existing, configJSON: config.encode())
+            return (instrumentID: existing.id, hookID: newHook.id)
+        }
 
-        let configData = config.encode()
-        await applyInstrumentConfig(tracer, configJSON: configData)
-
-        return (instrumentID: tracer.id, hookID: newHook.id)
+        var initialConfig = TracerConfig()
+        initialConfig.hooks.append(newHook)
+        guard let added = await addInstrument(
+            kind: .tracer,
+            sourceIdentifier: "builtin.tracer",
+            configJSON: initialConfig.encode(),
+            sessionID: sessionID
+        ) else { return nil }
+        return (instrumentID: added.id, hookID: newHook.id)
     }
 
     // MARK: - Address Actions
@@ -2028,13 +2024,19 @@ public final class Engine {
 
         let hookKind: TracerHookKind = (context.kind == .function) ? .function : .instruction
         let title = (hookKind == .function) ? "Add Function Hook\u{2026}" : "Add Instruction Hook\u{2026}"
+        let preferredAnchor = context.anchorHint
         return [
             AddressAction(
                 title: title,
                 systemImage: "pin",
                 perform: { [weak self] in
                     guard let self,
-                        let result = await self.addTracerHook(sessionID: sessionID, address: address, kind: hookKind)
+                        let result = await self.addTracerHook(
+                            sessionID: sessionID,
+                            address: address,
+                            kind: hookKind,
+                            preferredAnchor: preferredAnchor
+                        )
                     else { return nil }
                     return .instrumentComponent(
                         sessionID: sessionID,

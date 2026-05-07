@@ -15,10 +15,12 @@ public struct AddressContext: Sendable, Hashable {
 
     public var kind: Kind
     public var typeHint: String?
+    public var anchorHint: AddressAnchor?
 
-    public init(kind: Kind = .unspecified, typeHint: String? = nil) {
+    public init(kind: Kind = .unspecified, typeHint: String? = nil, anchorHint: AddressAnchor? = nil) {
         self.kind = kind
         self.typeHint = typeHint
+        self.anchorHint = anchorHint
     }
 }
 
