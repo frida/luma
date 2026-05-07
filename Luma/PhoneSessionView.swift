@@ -519,7 +519,7 @@ private struct TraceRow: View {
         HStack(spacing: 12) {
             Image(systemName: trace.isRunning ? "record.circle" : "waveform.path")
                 .frame(width: 28, height: 28)
-                .foregroundStyle(trace.isRunning ? .red : .tint)
+                .foregroundStyle(trace.isRunning ? .red : .primary)
             Text(trace.displayName).font(.body)
             Spacer()
             Image(systemName: "chevron.right")
