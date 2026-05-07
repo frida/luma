@@ -212,6 +212,7 @@ struct MainWindowView: View {
                 lastKnownPID: 0
             )
             try? workspace.store.save(sessionRecord)
+            workspace.selectedSidebarItem = .session(sessionRecord.id)
 
             await workspace.engine.spawnAndAttach(
                 device: device,
@@ -227,7 +228,7 @@ struct MainWindowView: View {
             if let existingNode = workspace.engine.processNodes.first(where: {
                 $0.deviceID == device.id && $0.pid == proc.pid
             }) {
-                workspace.selectedSidebarItem = .repl(workspace.engine.sessionID(for: existingNode))
+                workspace.selectedSidebarItem = .session(workspace.engine.sessionID(for: existingNode))
                 return
             }
 
@@ -260,14 +261,13 @@ struct MainWindowView: View {
             }
 
             try? workspace.store.save(sessionRecord)
+            workspace.selectedSidebarItem = .session(sessionRecord.id)
 
             await workspace.engine.attach(
                 device: device,
                 process: proc,
                 session: sessionRecord
             )
-
-            workspace.selectedSidebarItem = .repl(sessionRecord.id)
         }
     }
 
