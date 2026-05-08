@@ -10,7 +10,6 @@ struct WelcomeView: View {
     var body: some View {
         @Bindable var auth = welcome.gitHubAuth
         contentBody
-            .background(Color.platformWindowBackground)
             .sheet(isPresented: $auth.isPresentingSignIn) {
                 GitHubSignInSheet(auth: welcome.gitHubAuth)
             }
@@ -24,11 +23,16 @@ struct WelcomeView: View {
     @ViewBuilder
     private var contentBody: some View {
         #if os(macOS)
-            stack(topPadding: 4, bottomPadding: 56)
-                .containerBackground(Color.platformWindowBackground, for: .window)
+            stack(topPadding: 56, bottomPadding: 56)
+                .containerBackground(for: .window) {
+                    WelcomeBackdrop()
+                }
         #else
             ScrollView {
                 stack(topPadding: 32, bottomPadding: 32)
+            }
+            .background {
+                WelcomeBackdrop().ignoresSafeArea()
             }
         #endif
     }
@@ -47,17 +51,24 @@ struct WelcomeView: View {
     }
 
     private var heroBanner: some View {
-        VStack(spacing: 16) {
-            AppIconView()
-                .frame(width: 104, height: 104)
+        VStack(spacing: 14) {
+            LumaWordmark()
 
-            Text("The official Frida GUI.")
+            Text("The official Frida GUI")
                 .font(.title3)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(taglineColor)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 360)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var taglineColor: Color {
+        colorScheme == .dark
+            ? Color.secondary
+            : Color(red: 0.369, green: 0.298, blue: 0.353) // plum
     }
 
     private var quickActions: some View {
@@ -230,44 +241,31 @@ struct WelcomeView: View {
     }
 }
 
-private struct AppIconView: View {
+private struct LumaWordmark: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    private static let cream = Color(red: 0.929, green: 0.902, blue: 0.882)
+    private static let coral = Color(red: 0.937, green: 0.392, blue: 0.337)
+
     var body: some View {
-        #if canImport(AppKit)
-        Image(nsImage: NSApplication.shared.applicationIconImage)
-            .resizable()
-            .interpolation(.high)
-        #elseif canImport(UIKit)
-        if let icon = UIImage(named: "AppIcon") ?? primaryIcon() {
-            Image(uiImage: icon)
-                .resizable()
-                .interpolation(.high)
-        } else {
-            fallback
+        VStack(spacing: 6) {
+            Text("Luma")
+                .font(.system(size: 64, weight: .semibold, design: .rounded))
+                .tracking(-2)
+                .foregroundStyle(colorScheme == .dark ? Self.cream : Self.coral)
+
+            LinearGradient(
+                colors: [
+                    Self.coral.opacity(0),
+                    Self.coral.opacity(0.55),
+                    Self.coral.opacity(0),
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: 200, height: 1.5)
         }
-        #else
-        fallback
-        #endif
     }
-
-    private var fallback: some View {
-        Image(systemName: "scope")
-            .resizable()
-            .scaledToFit()
-            .padding(16)
-            .foregroundStyle(.tint)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22))
-    }
-
-    #if canImport(UIKit)
-    private func primaryIcon() -> UIImage? {
-        guard let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any],
-              let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],
-              let files = primary["CFBundleIconFiles"] as? [String],
-              let last = files.last
-        else { return nil }
-        return UIImage(named: last)
-    }
-    #endif
 }
 
 private struct ActionRow: View {

@@ -25,11 +25,12 @@ func sharedGitHubAuth() -> GitHubAuth { sharedWelcomeModel.gitHubAuth }
         }
 
         var body: some Scene {
-            Window("Welcome to Luma", id: WelcomeWindow.id) {
+            Window("Luma", id: WelcomeWindow.id) {
                 WelcomeWindow(welcome: sharedWelcomeModel)
             }
             .defaultSize(width: 560, height: 720)
             .windowResizability(.contentSize)
+            .windowStyle(.hiddenTitleBar)
 
             DocumentGroup(newDocument: LumaProject()) { configuration in
                 MainWindowView(
