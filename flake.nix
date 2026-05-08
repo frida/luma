@@ -16,11 +16,11 @@
 
         packages.luma = pkgs.stdenv.mkDerivation rec {
           pname = "luma";
-          version = "0.4.0";
+          version = "0.5.0";
 
           src = pkgs.fetchurl {
             url = "https://github.com/frida/luma/releases/download/${version}/luma-${version}-ubuntu-26.04-x86_64.deb";
-            hash = "sha256-1fk58diEzAda0BwMhRLLOXdxYg84P96sGC8r94a9/g4=";
+            hash = "sha256-BGmBDniDb3AGlOKNBmmcoj5Re60mnW209QZyOSmImbA=";
           };
 
           nativeBuildInputs = with pkgs; [
