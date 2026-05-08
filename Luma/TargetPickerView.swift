@@ -5,6 +5,7 @@ import LumaCore
 struct TargetPickerView: View {
     enum Mode: String {
         case spawn
+        case armForLaunch
         case attach
     }
 
@@ -26,12 +27,18 @@ struct TargetPickerView: View {
     let reason: String?
     let onSpawn: (Device, SpawnConfig) -> Void
     let onAttach: (Device, ProcessDetails) -> Void
+    let onArm: (Device, SpawnConfig, String) -> Void
 
     @Environment(\.dismiss) private var dismiss
 
     @State private var pickerState: TargetPickerState?
 
     @State private var selectedDeviceID: Device.ID?
+    @State private var armRegex: String = ""
+    @State private var armDisplayName: String = ""
+    @State private var armAutoResume: Bool = true
+    @State private var isShowingArmSuggestions: Bool = false
+    @State private var armSuggestionsSearchText: String = ""
 
     @State private var remoteConfigs: [LumaCore.RemoteDeviceConfig] = []
 
@@ -85,12 +92,14 @@ struct TargetPickerView: View {
         deviceManager: DeviceManager,
         reason: String? = nil,
         onSpawn: @escaping (Device, SpawnConfig) -> Void,
-        onAttach: @escaping (Device, ProcessDetails) -> Void
+        onAttach: @escaping (Device, ProcessDetails) -> Void,
+        onArm: @escaping (Device, SpawnConfig, String) -> Void
     ) {
         self.deviceManager = deviceManager
         self.reason = reason
         self.onSpawn = onSpawn
         self.onAttach = onAttach
+        self.onArm = onArm
         self._store = StateObject(wrappedValue: DeviceListModel(manager: deviceManager))
     }
 
@@ -109,6 +118,12 @@ struct TargetPickerView: View {
         }
     }
 
+    private var canArm: Bool {
+        guard selectedDevice != nil else { return false }
+        return !armRegex.trimmingCharacters(in: .whitespaces).isEmpty
+            && !armDisplayName.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
     @ToolbarContentBuilder
     private var sharedToolbar: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
@@ -119,13 +134,23 @@ struct TargetPickerView: View {
             }
         }
         ToolbarItem(placement: .confirmationAction) {
-            if mode == .spawn {
+            switch mode {
+            case .spawn:
                 Button {
                     triggerSpawn()
                 } label: {
                     Label("Spawn & Attach", systemImage: "play.circle")
                 }
                 .disabled(!canSpawn)
+            case .armForLaunch:
+                Button {
+                    triggerArm()
+                } label: {
+                    Label("Arm for Launch", systemImage: "scope")
+                }
+                .disabled(!canArm)
+            case .attach:
+                EmptyView()
             }
         }
     }
@@ -164,6 +189,8 @@ struct TargetPickerView: View {
                         switch mode {
                         case .spawn:
                             spawnDetailPane(for: device)
+                        case .armForLaunch:
+                            armDetailPane(for: device)
                         case .attach:
                             processDetailPane(for: device)
                         }
@@ -275,6 +302,7 @@ struct TargetPickerView: View {
         HStack {
             Picker("Mode", selection: $mode) {
                 Text("Spawn").tag(Mode.spawn)
+                Text("Wait for Launch").tag(Mode.armForLaunch)
                 Text("Attach").tag(Mode.attach)
             }
             .pickerStyle(.segmented)
@@ -283,13 +311,9 @@ struct TargetPickerView: View {
 
             Spacer()
 
-            Text(
-                mode == .spawn
-                    ? "Spawn a new app or program under Luma."
-                    : "Attach to an already-running process on this device."
-            )
-            .font(.footnote)
-            .foregroundStyle(.secondary)
+            Text(modeHint)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
         .padding(.horizontal)
         .padding(.top, 8)
@@ -566,6 +590,164 @@ struct TargetPickerView: View {
         }
     }
 
+    private var modeHint: String {
+        switch mode {
+        case .spawn: return "Spawn a new app or program under Luma."
+        case .armForLaunch: return "Capture the next launch matching your rule."
+        case .attach: return "Attach to an already-running process on this device."
+        }
+    }
+
+    @ViewBuilder
+    private func armDetailPane(for device: Device) -> some View {
+        Form {
+            Section {
+                HStack(spacing: 8) {
+                    TextField("Identifier regex", text: $armRegex)
+                        .disableAutocorrection(true)
+                        #if canImport(UIKit)
+                            .textInputAutocapitalization(.never)
+                        #endif
+                    Button {
+                        isShowingArmSuggestions = true
+                    } label: {
+                        Image(systemName: "rectangle.and.text.magnifyingglass")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Browse running applications on \(device.name)")
+                    .popover(isPresented: $isShowingArmSuggestions, arrowEdge: .top) {
+                        armSuggestionsPopover(for: device)
+                    }
+                }
+                TextField("Display name", text: $armDisplayName)
+                Text("Match the regex against each new spawn's identifier on \(device.name). Display name is shown in the sidebar.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Capture Rule")
+            }
+
+            Section {
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Automatically resume on capture", isOn: $armAutoResume)
+                    Text("When off, the captured process is held paused so you can attach instruments before it runs.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("On Capture")
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    @ViewBuilder
+    private func armSuggestionsPopover(for device: Device) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Filter by name or identifier", text: $armSuggestionsSearchText)
+                    .textFieldStyle(.roundedBorder)
+                    .disableAutocorrection(true)
+                    #if canImport(UIKit)
+                        .textInputAutocapitalization(.never)
+                    #endif
+            }
+            .padding(12)
+
+            Divider()
+
+            armSuggestionsBody
+        }
+        .frame(width: 360, height: 360)
+        .task(id: device.id) {
+            await loadApplications(for: device)
+        }
+    }
+
+    @ViewBuilder
+    private var armSuggestionsBody: some View {
+        if loadingApplications {
+            ProgressView("Enumerating applications…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if armPopoverApplications.isEmpty {
+            VStack(spacing: 6) {
+                Image(systemName: "apps.iphone")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                Text(applications.isEmpty
+                    ? "No applications enumerated."
+                    : "No applications match the filter."
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(armPopoverApplications, id: \.identifier) { app in
+                        Button {
+                            applyArmSuggestion(app)
+                            isShowingArmSuggestions = false
+                        } label: {
+                            armSuggestionRow(app)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                        }
+                        .buttonStyle(.plain)
+                        Divider()
+                    }
+                }
+            }
+        }
+    }
+
+    private var armPopoverApplications: [ApplicationDetails] {
+        let trimmed = armSuggestionsSearchText.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return applications }
+        return applications.filter {
+            $0.name.localizedCaseInsensitiveContains(trimmed)
+                || $0.identifier.localizedCaseInsensitiveContains(trimmed)
+        }
+    }
+
+    @ViewBuilder
+    private func armSuggestionRow(_ app: ApplicationDetails) -> some View {
+        HStack(spacing: 8) {
+            if let firstIcon = app.icons.last {
+                firstIcon.swiftUIImage
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 20, height: 20)
+                    .cornerRadius(4)
+            } else {
+                IconPlaceholderView(
+                    seed: app.identifier,
+                    displayName: app.name,
+                    cornerRadius: 4
+                )
+                .frame(width: 20, height: 20)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(app.name)
+                Text(app.identifier)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .contentShape(Rectangle())
+    }
+
+    private func applyArmSuggestion(_ app: ApplicationDetails) {
+        armRegex = "^" + NSRegularExpression.escapedPattern(for: app.identifier) + "$"
+        armDisplayName = app.name
+    }
+
     @ViewBuilder
     private func processDetailPane(for device: Device) -> some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -743,14 +925,53 @@ struct TargetPickerView: View {
     }
 
     private func triggerSpawn() {
-        guard let device = selectedDevice else { return }
+        guard let device = selectedDevice, let config = currentSpawnConfig() else { return }
+        onSpawn(device, config)
+        dismiss()
+    }
 
+    private func triggerArm() {
+        guard let device = selectedDevice else { return }
+        let pattern = armRegex.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !pattern.isEmpty else { return }
+        let displayName = resolvedArmDisplayName(forPattern: pattern)
+        let config = SpawnConfig(
+            target: .application(identifier: armTargetIdentifier(forPattern: pattern), name: displayName),
+            arguments: [],
+            environment: [:],
+            workingDirectory: nil,
+            stdio: .pipe,
+            autoResume: armAutoResume
+        )
+        onArm(device, config, pattern)
+        dismiss()
+    }
+
+    private func resolvedArmDisplayName(forPattern pattern: String) -> String {
+        let trimmed = armDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { return trimmed }
+        return literalFromAnchoredPattern(pattern) ?? pattern
+    }
+
+    private func armTargetIdentifier(forPattern pattern: String) -> String {
+        literalFromAnchoredPattern(pattern) ?? pattern
+    }
+
+    private func literalFromAnchoredPattern(_ pattern: String) -> String? {
+        var trimmed = pattern
+        if trimmed.hasPrefix("^") { trimmed.removeFirst() }
+        if trimmed.hasSuffix("$") { trimmed.removeLast() }
+        let metacharacters: Set<Character> = ["\\", ".", "*", "+", "?", "(", ")", "[", "]", "{", "}", "|"]
+        return trimmed.contains(where: { metacharacters.contains($0) }) ? nil : trimmed
+    }
+
+    private func currentSpawnConfig() -> SpawnConfig? {
         switch spawnSubmode {
         case .application:
             guard let identifier = selectedApplicationIdentifier,
                 let app = applications.first(where: { $0.identifier == identifier })
-            else { return }
-            let config = SpawnConfig(
+            else { return nil }
+            return SpawnConfig(
                 target: .application(identifier: app.identifier, name: app.name),
                 arguments: parseArguments(from: appArgumentsText),
                 environment: buildEnvironment(from: appEnvEntries),
@@ -758,9 +979,8 @@ struct TargetPickerView: View {
                 stdio: appStdio,
                 autoResume: appAutoResume
             )
-            onSpawn(device, config)
         case .program:
-            let config = SpawnConfig(
+            return SpawnConfig(
                 target: .program(path: programPath),
                 arguments: parseArguments(from: programArgumentsText),
                 environment: buildEnvironment(from: programEnvEntries),
@@ -768,10 +988,7 @@ struct TargetPickerView: View {
                 stdio: programStdio,
                 autoResume: programAutoResume
             )
-            onSpawn(device, config)
         }
-
-        dismiss()
     }
 
     private func attach(to device: Device, process: ProcessDetails) {

@@ -198,7 +198,8 @@ struct MainWindowView: View {
                 }
             }(),
             onSpawn: handleSpawn(device:config:),
-            onAttach: handleAttach(device:proc:)
+            onAttach: handleAttach(device:proc:),
+            onArm: handleArm(device:config:regex:)
         )
     }
 
@@ -218,6 +219,17 @@ struct MainWindowView: View {
                 device: device,
                 session: sessionRecord
             )
+        }
+    }
+
+    private func handleArm(device: Device, config: SpawnConfig, regex: String) {
+        Task { @MainActor in
+            let session = await workspace.engine.armNewSession(
+                device: device,
+                config: config,
+                matchPattern: regex
+            )
+            workspace.selectedSidebarItem = .session(session.id)
         }
     }
 

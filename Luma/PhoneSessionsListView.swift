@@ -113,7 +113,8 @@ struct PhoneSessionsListView: View {
                         return nil
                     }(),
                     onSpawn: handleSpawn,
-                    onAttach: handleAttach
+                    onAttach: handleAttach,
+                    onArm: handleArm
                 )
             }
             .confirmationDialog(
@@ -238,6 +239,17 @@ struct PhoneSessionsListView: View {
             )
             try? workspace.store.save(record)
             await workspace.engine.spawnAndAttach(device: device, session: record)
+        }
+    }
+
+    private func handleArm(device: Device, config: SpawnConfig, regex: String) {
+        Task { @MainActor in
+            let session = await workspace.engine.armNewSession(
+                device: device,
+                config: config,
+                matchPattern: regex
+            )
+            path.append(.session(session.id))
         }
     }
 

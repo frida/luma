@@ -36,6 +36,34 @@ struct REPLView: View {
         cells.sorted { $0.timestamp < $1.timestamp }
     }
 
+    private var replInactiveMessage: String {
+        guard let session else { return "Session not attached." }
+        if case .armed = session.armingState {
+            if workspace.engine.isGatingActive(forDeviceID: session.deviceID) {
+                return "Waiting for a matching launch — REPL available once captured."
+            }
+            return "Armed but inactive — resume spawn gating to capture launches."
+        }
+        if session.lastAttachedAt != nil {
+            return "Session detached — use \(session.kind.reestablishLabel) to continue."
+        }
+        return "Session not attached — arm it from the banner above."
+    }
+
+    private var replInactiveHelp: String {
+        guard let session else { return "Session not attached." }
+        if case .armed = session.armingState {
+            if workspace.engine.isGatingActive(forDeviceID: session.deviceID) {
+                return "REPL becomes available after the next matching launch is captured."
+            }
+            return "Spawn gating is paused — resume it from the banner above."
+        }
+        if session.lastAttachedAt != nil {
+            return "Detached — re-establish this session before running commands."
+        }
+        return "Arm this session to capture the next matching launch."
+    }
+
     #if canImport(UIKit)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     private var horizontalInset: CGFloat { horizontalSizeClass == .compact ? 6 : 16 }
@@ -145,12 +173,12 @@ struct REPLView: View {
                         .frame(minHeight: 22)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                        Text("Session detached — use \(session?.kind.reestablishLabel ?? "Re-Attach") to continue.")
+                        Text(replInactiveMessage)
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .padding(.leading, 4)
                     }
-                    .help("Detached — re-establish this session from the sidebar before running commands.")
+                    .help(replInactiveHelp)
                 }
 
                 Button {

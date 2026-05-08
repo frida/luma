@@ -12,21 +12,190 @@ struct SessionContent<Content: View>: View {
             if let sessionID {
                 SessionCollaborationHeader(sessionID: sessionID, workspace: workspace)
             }
-            if let detachedSession {
-                SessionDetachedBanner(session: detachedSession, workspace: workspace)
+            switch bannerState {
+            case .armed(let session):
+                SessionArmedBanner(session: session, workspace: workspace)
+            case .detached(let session):
+                SessionDetachedBanner(session: session, workspace: workspace)
+            case .idle(let session):
+                SessionIdleBanner(session: session, workspace: workspace)
+            case .none:
+                EmptyView()
             }
             content()
         }
     }
 
-    private var detachedSession: LumaCore.ProcessSession? {
+    private enum BannerState {
+        case armed(LumaCore.ProcessSession)
+        case detached(LumaCore.ProcessSession)
+        case idle(LumaCore.ProcessSession)
+        case none
+    }
+
+    private var bannerState: BannerState {
         guard let sessionID,
               let session = workspace.engine.sessions.first(where: { $0.id == sessionID })
-        else { return nil }
+        else { return .none }
 
-        let isDetached = workspace.engine.node(forSessionID: session.id) == nil
+        let isAttached = workspace.engine.node(forSessionID: session.id) != nil
+        if !isAttached, case .armed = session.armingState {
+            return .armed(session)
+        }
         let hasError = session.lastError != nil
-        return (isDetached || hasError) ? session : nil
+        if isAttached && !hasError {
+            return .none
+        }
+        if session.lastAttachedAt != nil {
+            return .detached(session)
+        }
+        return .idle(session)
+    }
+}
+
+struct SessionIdleBanner: View {
+    let session: LumaCore.ProcessSession
+    @ObservedObject var workspace: Workspace
+
+    @State private var isShowingArmPrompt = false
+    @State private var armPatternDraft = ""
+
+    var body: some View {
+        LumaBanner(style: .warning) {
+            HStack {
+                HStack(alignment: .center, spacing: 8) {
+                    Image(systemName: "bolt.slash")
+                        .font(.headline)
+                    Text(session.processName)
+                        .font(.headline)
+                    Divider()
+                        .frame(height: 16)
+                    Text("Idle — not waiting for a launch.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button {
+                    presentArmPrompt()
+                } label: {
+                    Label("Arm…", systemImage: "scope")
+                }
+                .buttonStyle(.bordered)
+                .font(.caption)
+            }
+        }
+        .alert("Arm for Next Launch", isPresented: $isShowingArmPrompt) {
+            TextField("Identifier regex", text: $armPatternDraft)
+                .disableAutocorrection(true)
+            Button("Arm") { commitArm() }
+                .disabled(armPatternDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Match the next spawn whose identifier matches this regex on \(session.deviceName).")
+        }
+    }
+
+    private func presentArmPrompt() {
+        armPatternDraft = workspace.engine.defaultArmPattern(for: session)
+        isShowingArmPrompt = true
+    }
+
+    private func commitArm() {
+        let pattern = armPatternDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !pattern.isEmpty else { return }
+        let sessionID = session.id
+        Task { @MainActor in
+            await workspace.engine.armSession(id: sessionID, matchPattern: pattern)
+        }
+    }
+}
+
+struct SessionArmedBanner: View {
+    let session: LumaCore.ProcessSession
+    @ObservedObject var workspace: Workspace
+
+    var body: some View {
+        LumaBanner(style: bannerStyle) {
+            HStack {
+                HStack(alignment: .center, spacing: 8) {
+                    Image(systemName: "scope")
+                        .font(.headline)
+
+                    Text(session.processName)
+                        .font(.headline)
+
+                    Divider()
+                        .frame(height: 16)
+
+                    Text(statusText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("session.armedStatus")
+                }
+
+                Spacer()
+
+                if !isActive {
+                    Button {
+                        resume()
+                    } label: {
+                        Label("Resume", systemImage: "play.circle")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .font(.caption)
+                }
+
+                Button {
+                    disarm()
+                } label: {
+                    Label("Disarm", systemImage: "scope")
+                }
+                .buttonStyle(.bordered)
+                .font(.caption)
+            }
+        }
+    }
+
+    private var isActive: Bool {
+        workspace.engine.isGatingActive(forDeviceID: session.deviceID)
+    }
+
+    private var hasError: Bool {
+        session.lastError != nil
+    }
+
+    private var bannerStyle: LumaBannerStyle {
+        if hasError { return .error }
+        return isActive ? .info : .warning
+    }
+
+    private var statusText: String {
+        if let lastError = session.lastError {
+            return "Armed but inactive — \(lastError)"
+        }
+        if !isActive {
+            return "Armed but inactive — spawn gating is paused. Resume to enable it."
+        }
+        let pattern = session.armingState.matchPattern ?? ""
+        return pattern.isEmpty
+            ? "Waiting for the next matching launch."
+            : "Waiting for the next launch matching \(pattern)."
+    }
+
+    private func resume() {
+        let sessionID = session.id
+        Task { @MainActor in
+            await workspace.engine.resumeGating(forSessionID: sessionID)
+        }
+    }
+
+    private func disarm() {
+        let sessionID = session.id
+        Task { @MainActor in
+            await workspace.engine.disarmSession(id: sessionID)
+        }
     }
 }
 

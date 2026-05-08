@@ -489,6 +489,14 @@ struct EventStreamView: View {
 
         case .instrument(_, let name):
             return (processName, "Instrument \(name)")
+
+        case .spawnGating(_, let deviceName, _, _, let outcome):
+            let title: String
+            switch outcome {
+            case .captured: title = "Spawn Captured"
+            case .released: title = "Spawn Released"
+            }
+            return (deviceName, title)
         }
     }
 
@@ -504,6 +512,12 @@ struct EventStreamView: View {
         case .instrument:
             if let instrument = workspace.instrument(for: evt) {
                 return workspace.engine.descriptor(for: instrument).summarizeEvent(evt)
+            }
+            return String(describing: evt.payload)
+
+        case .spawnGating:
+            if case .raw(let message, _) = evt.payload {
+                return message as? String ?? String(describing: message)
             }
             return String(describing: evt.payload)
 
@@ -542,6 +556,7 @@ private enum EventSourceFilter: String, CaseIterable, Identifiable {
     case console
     case repl
     case instrument
+    case spawnGating
 
     var id: String { rawValue }
 
@@ -553,6 +568,7 @@ private enum EventSourceFilter: String, CaseIterable, Identifiable {
         case .console: return "Console"
         case .repl: return "REPL"
         case .instrument: return "Instruments"
+        case .spawnGating: return "Spawn Gating"
         }
     }
 
@@ -574,6 +590,9 @@ private enum EventSourceFilter: String, CaseIterable, Identifiable {
             return false
         case .instrument:
             if case .instrument = source { return true }
+            return false
+        case .spawnGating:
+            if case .spawnGating = source { return true }
             return false
         }
     }
@@ -712,11 +731,18 @@ struct EventRow: View {
         } else if let instrumentView = instrumentEventView {
             instrumentView
         } else {
-            Text(String(describing: evt.payload))
+            Text(rawEventText)
                 .font(.system(.footnote, design: .monospaced))
                 .textSelection(.enabled)
                 .lineLimit(3)
         }
+    }
+
+    private var rawEventText: String {
+        if case .raw(let message, _) = evt.payload {
+            return message as? String ?? String(describing: message)
+        }
+        return String(describing: evt.payload)
     }
 
     private var jsErrorEventView: AnyView? {
@@ -861,6 +887,10 @@ private struct EventSourceBadge: View {
         case .instrument:
             let name = workspace.instrument(for: evt).map { workspace.engine.descriptor(for: $0).displayName } ?? "Instrument"
             return "\(name) • \(processName)"
+
+        case .spawnGating(_, let deviceName, _, _, let outcome):
+            let label = outcome == .captured ? "Spawn Captured" : "Spawn Released"
+            return "\(deviceName) • \(label)"
         }
     }
 
@@ -880,6 +910,8 @@ private struct EventSourceBadge: View {
             return .accentColor
         case .instrument:
             return .green
+        case .spawnGating(_, _, _, _, let outcome):
+            return outcome == .captured ? .blue : .gray
         }
     }
 }

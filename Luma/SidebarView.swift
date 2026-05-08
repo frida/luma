@@ -123,13 +123,24 @@ private struct SidebarSessionHeaderRow: View {
     @State private var confirmationDestructiveLabel: String = "Confirm"
     @State private var pendingConfirmation: (() -> Void)?
 
+    @State private var isShowingArmPrompt = false
+    @State private var armPatternDraft: String = ""
+
     var body: some View {
         HStack(spacing: 8) {
             iconView
                 .frame(width: 24, height: 24)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(displayProcessName).font(.headline)
+                HStack(spacing: 4) {
+                    Text(displayProcessName).font(.headline)
+                    if isArmed {
+                        Image(systemName: "scope")
+                            .font(.caption2)
+                            .foregroundStyle(.tint)
+                            .help("Armed for next matching launch")
+                    }
+                }
                 Text(displayDeviceName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -166,6 +177,10 @@ private struct SidebarSessionHeaderRow: View {
 
                 Divider()
 
+                armingMenuButton
+
+                Divider()
+
                 Button(role: .destructive) {
                     presentConfirmation(
                         title: "Delete Session?",
@@ -176,11 +191,15 @@ private struct SidebarSessionHeaderRow: View {
                     Label("Delete Session", systemImage: "trash")
                 }
             } else {
-                Button {
-                    reestablish()
-                } label: {
-                    Label("\(session.kind.reestablishLabel)…", systemImage: "arrow.clockwise")
+                if session.lastAttachedAt != nil {
+                    Button {
+                        reestablish()
+                    } label: {
+                        Label("\(session.kind.reestablishLabel)…", systemImage: "arrow.clockwise")
+                    }
                 }
+
+                armingMenuButton
 
                 Divider()
 
@@ -209,6 +228,58 @@ private struct SidebarSessionHeaderRow: View {
             }
         } message: {
             if let confirmationMessage { Text(confirmationMessage) }
+        }
+        .alert("Arm for Next Launch", isPresented: $isShowingArmPrompt) {
+            TextField("Identifier regex", text: $armPatternDraft)
+                .disableAutocorrection(true)
+            Button("Arm") { commitArm() }
+                .disabled(armPatternDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Match the next spawn whose identifier matches this regex on \(session.deviceName).")
+        }
+    }
+
+    @ViewBuilder
+    private var armingMenuButton: some View {
+        if isArmed {
+            Button {
+                disarm()
+            } label: {
+                Label("Disarm", systemImage: "scope")
+            }
+        } else {
+            Button {
+                presentArmPrompt()
+            } label: {
+                Label("Arm for Next Launch…", systemImage: "scope")
+            }
+        }
+    }
+
+    private var isArmed: Bool {
+        if case .armed = session.armingState { return true }
+        return false
+    }
+
+    private func presentArmPrompt() {
+        armPatternDraft = workspace.engine.defaultArmPattern(for: session)
+        isShowingArmPrompt = true
+    }
+
+    private func commitArm() {
+        let pattern = armPatternDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !pattern.isEmpty else { return }
+        let sessionID = session.id
+        Task { @MainActor in
+            await workspace.engine.armSession(id: sessionID, matchPattern: pattern)
+        }
+    }
+
+    private func disarm() {
+        let sessionID = session.id
+        Task { @MainActor in
+            await workspace.engine.disarmSession(id: sessionID)
         }
     }
 
