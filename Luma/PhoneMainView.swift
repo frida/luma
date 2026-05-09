@@ -182,7 +182,7 @@ extension Binding where Value == [PhoneRoute] {
                     self.wrappedValue.append(.instrument(sid, iid))
                 case .itrace(let sid, let tid):
                     self.wrappedValue.append(.trace(sid, tid))
-                case .session, .repl, .notebook, .package, .customInstrumentDef:
+                case .session, .repl, .notebook, .missions, .mission, .package, .customInstrumentDef:
                     break
                 }
             }

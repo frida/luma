@@ -19,7 +19,7 @@ struct MissionView: View {
                 MissionHeader(mission: mission, workspace: workspace)
                 Divider()
 
-                HSplitView {
+                PlatformHSplit {
                     MissionTranscriptView(turns: turns, actions: actions, liveText: liveText)
                         .frame(minWidth: 480)
 
