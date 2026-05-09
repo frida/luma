@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 public struct OpenAIProvider: LLMProvider {
     public static let providerID = "openai"
