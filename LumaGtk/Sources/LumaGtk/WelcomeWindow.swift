@@ -53,8 +53,8 @@ final class WelcomeWindow {
         clamp.set(tighteningThreshold: 480)
         clamp.marginStart = 32
         clamp.marginEnd = 32
-        clamp.marginTop = 24
-        clamp.marginBottom = 44
+        clamp.marginTop = 140
+        clamp.marginBottom = 56
 
         contentBox = Box(orientation: .vertical, spacing: 24)
         contentBox.hexpand = true
@@ -83,8 +83,10 @@ final class WelcomeWindow {
 
         let header = Adw.HeaderBar()
         header.add(cssClass: "flat")
+        header.showTitle = false
         let toolbar = Adw.ToolbarView()
         toolbar.addTopBar(widget: header)
+        toolbar.extendContentToTopEdge = true
         toolbar.set(content: makeBackdropOverlay(content: clamp))
         window.set(content: toolbar)
 
