@@ -21,7 +21,7 @@ struct MissionView: View {
 
                 PlatformHSplit {
                     MissionTranscriptView(turns: turns, actions: actions, liveText: liveText)
-                        .frame(minWidth: 480)
+                        .frame(minWidth: 320)
 
                     VStack(alignment: .leading, spacing: 0) {
                         ActionQueueView(workspace: workspace, missionID: mission.id, actions: pendingActions)
@@ -29,7 +29,7 @@ struct MissionView: View {
                         Divider()
                         FindingsListView(workspace: workspace, missionID: mission.id, findings: findings)
                     }
-                    .frame(minWidth: 320)
+                    .frame(minWidth: 240)
                 }
 
                 Divider()
@@ -52,6 +52,10 @@ struct MissionView: View {
         liveText = ""
         mission = try? workspace.store.fetchMission(id: missionID)
         guard let m = mission else { return }
+
+        turns = (try? workspace.store.fetchMissionTurns(missionID: m.id)) ?? []
+        actions = (try? workspace.store.fetchMissionActions(missionID: m.id)) ?? []
+        findings = (try? workspace.store.fetchMissionFindings(missionID: m.id)) ?? []
 
         observations.append(workspace.store.observeMissionTurns(missionID: m.id) { rows in
             Task { @MainActor in turns = rows }
@@ -83,16 +87,15 @@ private struct MissionHeader: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(mission.goalText)
                     .font(.title3.weight(.semibold))
-                    .lineLimit(2)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
-                        MissionStatusBadge(status: mission.status)
+                        statusIndicator
                         Label(mission.providerID, systemImage: "cpu")
                         Label(mission.modelID, systemImage: "sparkles")
                         Label("\(mission.tokensUsedInput)/\(mission.tokenBudgetInput) in", systemImage: "arrow.down.circle")
@@ -106,16 +109,30 @@ private struct MissionHeader: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             if mission.status.isLive {
                 Button(role: .destructive) {
                     workspace.engine.cancelMission(missionID: mission.id)
                 } label: {
-                    Label("Cancel", systemImage: "xmark.circle")
+                    Label("Stop Mission", systemImage: "stop.circle")
                 }
-                .layoutPriority(1)
+                .help("Cancel this mission. Pending tool calls won't be approved or run.")
+                .fixedSize()
             }
         }
         .padding()
+    }
+
+    @ViewBuilder
+    private var statusIndicator: some View {
+        if mission.status == .running {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                MissionStatusBadge(status: mission.status)
+            }
+        } else {
+            MissionStatusBadge(status: mission.status)
+        }
     }
 }

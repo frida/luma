@@ -22,17 +22,30 @@ struct MissionInputBar: View {
                 .frame(minHeight: 36, maxHeight: 96)
                 .focused($isFocused)
 
-            VStack(alignment: .trailing, spacing: 4) {
-                Button("Send") { send(interrupt: false) }
-                    .keyboardShortcut(.return, modifiers: .command)
-                Button("Send Now") { send(interrupt: true) }
-                    .keyboardShortcut(.return, modifiers: [.command, .shift])
-                    .disabled(mission.status != .running)
-            }
-            .disabled(trimmedDraft.isEmpty)
+            sendControl
+                .disabled(trimmedDraft.isEmpty)
         }
         .padding(8)
         .background(Color(NSColor.controlBackgroundColor))
+    }
+
+    @ViewBuilder
+    private var sendControl: some View {
+        if mission.status == .running {
+            Menu {
+                Button("Send & Interrupt") { send(interrupt: true) }
+                    .keyboardShortcut(.return, modifiers: [.command, .shift])
+            } label: {
+                Text("Send")
+            } primaryAction: {
+                send(interrupt: false)
+            }
+            .keyboardShortcut(.return, modifiers: .command)
+            .menuStyle(.button)
+        } else {
+            Button("Send") { send(interrupt: false) }
+                .keyboardShortcut(.return, modifiers: .command)
+        }
     }
 
     private var trimmedDraft: String {
