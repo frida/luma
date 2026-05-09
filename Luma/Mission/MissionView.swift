@@ -31,6 +31,9 @@ struct MissionView: View {
                     }
                     .frame(minWidth: 320)
                 }
+
+                Divider()
+                MissionInputBar(workspace: workspace, mission: mission)
             } else {
                 ContentUnavailableView("Mission not found", systemImage: "scope")
             }
@@ -79,30 +82,38 @@ private struct MissionHeader: View {
     @ObservedObject var workspace: Workspace
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
+        HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(mission.goalText)
                     .font(.title3.weight(.semibold))
-                HStack(spacing: 12) {
-                    MissionStatusBadge(status: mission.status)
-                    Label(mission.providerID, systemImage: "cpu")
-                    Label(mission.modelID, systemImage: "sparkles")
-                    Label("\(mission.tokensUsedInput)/\(mission.tokenBudgetInput) in", systemImage: "arrow.down.circle")
-                    Label("\(mission.tokensUsedOutput)/\(mission.tokenBudgetOutput) out", systemImage: "arrow.up.circle")
-                    if mission.cacheReadTokens > 0 {
-                        Label("\(mission.cacheReadTokens) cached", systemImage: "checkmark.seal")
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        MissionStatusBadge(status: mission.status)
+                        Label(mission.providerID, systemImage: "cpu")
+                        Label(mission.modelID, systemImage: "sparkles")
+                        Label("\(mission.tokensUsedInput)/\(mission.tokenBudgetInput) in", systemImage: "arrow.down.circle")
+                        Label("\(mission.tokensUsedOutput)/\(mission.tokenBudgetOutput) out", systemImage: "arrow.up.circle")
+                        if mission.cacheReadTokens > 0 {
+                            Label("\(mission.cacheReadTokens) cached", systemImage: "checkmark.seal")
+                        }
                     }
+                    .fixedSize()
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
-            Spacer()
+
             if mission.status.isLive {
                 Button(role: .destructive) {
                     workspace.engine.cancelMission(missionID: mission.id)
                 } label: {
                     Label("Cancel", systemImage: "xmark.circle")
                 }
+                .layoutPriority(1)
             }
         }
         .padding()

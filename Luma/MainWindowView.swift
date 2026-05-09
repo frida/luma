@@ -161,7 +161,7 @@ struct MainWindowView: View {
                 workspace: workspace,
                 selection: selection
             )
-            .navigationSplitViewColumnWidth(ideal: 180)
+            .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 360)
         } detail: {
             DetailView(
                 workspace: workspace,
