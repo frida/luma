@@ -3,6 +3,8 @@ import Foundation
 import FoundationNetworking
 #endif
 
+#if os(macOS) || os(Linux) || os(Windows)
+
 @MainActor
 public final class ClaudeCodeProvider: LLMProvider {
     public static let providerID = "claude-code"
@@ -348,3 +350,5 @@ private func formatArgs(_ args: [String: Any]) -> String {
     }
     return "(" + pairs.joined(separator: ", ") + ")"
 }
+
+#endif
