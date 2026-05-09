@@ -24,7 +24,7 @@ public final class MCPServer {
     private let queue = DispatchQueue(label: "luma.mcp.server")
     private var listener: NWListener?
     #elseif canImport(CSoup)
-    private var soupServer: OpaquePointer?
+    private var soupServer: UnsafeMutablePointer<SoupServer>?
     private var soupSelfPointer: UnsafeMutableRawPointer?
     #endif
 
@@ -375,8 +375,7 @@ public final class MCPServer {
 
     #if canImport(CSoup)
     private func startSoup(preferredPort: UInt16?) async throws -> URL {
-        let server = soup_server_new(nil)
-        guard let server else {
+        guard let server = luma_soup_server_new_default() else {
             throw MCPServerError.listenerFailed("soup_server_new returned null")
         }
 
@@ -394,9 +393,9 @@ public final class MCPServer {
 
         let listenOptions = SoupServerListenOptions(rawValue: 0)
         var error: UnsafeMutablePointer<GError>?
-        let port = preferredPort.map(Int32.init) ?? 0
-        let success = soup_server_listen_local(server, gint(port), listenOptions, &error)
-        if !success {
+        let port = preferredPort.map(UInt32.init) ?? 0
+        let success = soup_server_listen_local(server, guint(port), listenOptions, &error)
+        if success == 0 {
             let message: String
             if let err = error {
                 message = String(cString: err.pointee.message)
@@ -404,24 +403,23 @@ public final class MCPServer {
             } else {
                 message = "soup_server_listen_local failed"
             }
-            g_object_unref(UnsafeMutableRawPointer(server))
+            g_object_unref(server)
             Unmanaged<MCPServer>.fromOpaque(me).release()
             soupSelfPointer = nil
             throw MCPServerError.listenerFailed(message)
         }
 
-        guard let urisRaw = soup_server_get_uris(server) else {
-            g_object_unref(UnsafeMutableRawPointer(server))
+        guard let urisList = soup_server_get_uris(server) else {
+            g_object_unref(server)
             Unmanaged<MCPServer>.fromOpaque(me).release()
             soupSelfPointer = nil
             throw MCPServerError.listenerFailed("soup_server_get_uris returned null")
         }
-        let urisList = UnsafeMutablePointer<GSList>(urisRaw)
         guard let firstUriPtr = urisList.pointee.data else {
             g_slist_free_full(urisList, { ptr in
                 if let ptr { g_uri_unref(OpaquePointer(ptr)) }
             })
-            g_object_unref(UnsafeMutableRawPointer(server))
+            g_object_unref(server)
             Unmanaged<MCPServer>.fromOpaque(me).release()
             soupSelfPointer = nil
             throw MCPServerError.listenerFailed("soup_server_get_uris returned empty list")
@@ -450,7 +448,7 @@ public final class MCPServer {
     private func stopSoup() {
         if let server = soupServer {
             soup_server_disconnect(server)
-            g_object_unref(UnsafeMutableRawPointer(server))
+            g_object_unref(server)
             soupServer = nil
         }
         if let me = soupSelfPointer {
@@ -487,7 +485,7 @@ public final class MCPServer {
         }
 
         let response = await dispatch(method: method, path: "/mcp", headers: headers, body: bodyData)
-        soup_server_message_set_status(message, gint(response.status), nil)
+        soup_server_message_set_status(message, guint(response.status), nil)
         if !response.body.isEmpty {
             response.body.withUnsafeBytes { ptr in
                 guard let base = ptr.baseAddress else { return }

@@ -90,7 +90,7 @@ public final class ClaudeCodeProvider: LLMProvider {
             arguments.append(contentsOf: ["--model", request.modelID])
         }
 
-        #if canImport(Network)
+        #if canImport(Network) || canImport(CSoup)
         if let mission = request.mission, let engine, !request.tools.isEmpty {
             let toolNames = request.tools.map(\.name)
             let server = MCPServer(engine: engine, mission: mission, toolNames: toolNames)
@@ -296,7 +296,7 @@ public final class ClaudeCodeProvider: LLMProvider {
 }
 
 private actor MCPServerHandle {
-    #if canImport(Network)
+    #if canImport(Network) || canImport(CSoup)
     private var server: MCPServer?
     private var missionID: UUID?
     private weak var engine: Engine?

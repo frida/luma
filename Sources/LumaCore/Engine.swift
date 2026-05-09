@@ -19,7 +19,7 @@ public final class Engine {
     public let missionTools: ToolCatalog
     private let missionExecutor: MissionExecutor
 
-    #if canImport(Network)
+    #if canImport(Network) || canImport(CSoup)
     private var activeMCPServersByMissionID: [UUID: MCPServer] = [:]
 
     public private(set) var externalMCPServer: MCPServer?
@@ -3152,7 +3152,7 @@ public final class Engine {
         missionExecutor.liveDeltaSink = sink
     }
 
-    #if canImport(Network)
+    #if canImport(Network) || canImport(CSoup)
     public func registerActiveMCPServer(_ server: MCPServer, for missionID: UUID) {
         activeMCPServersByMissionID[missionID] = server
     }
@@ -3322,7 +3322,7 @@ public final class Engine {
             let mission = try? store.fetchMission(id: action.missionID)
         else { return }
 
-        #if canImport(Network)
+        #if canImport(Network) || canImport(CSoup)
         if let server = activeMCPServersByMissionID[action.missionID] {
             server.approve(actionID: actionID)
             return
@@ -3369,7 +3369,7 @@ public final class Engine {
             action.status == .pending
         else { return }
 
-        #if canImport(Network)
+        #if canImport(Network) || canImport(CSoup)
         if let server = activeMCPServersByMissionID[action.missionID] {
             server.reject(actionID: actionID, reason: reason)
             return

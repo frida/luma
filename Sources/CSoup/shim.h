@@ -3,4 +3,8 @@
 
 #include <libsoup/soup.h>
 
+static inline SoupServer *luma_soup_server_new_default(void) {
+    return soup_server_new(NULL);
+}
+
 #endif
