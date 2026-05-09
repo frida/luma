@@ -40,6 +40,11 @@ struct MissionView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.background)
         .task(id: missionID) { startObservations() }
+        .onChange(of: turns.count) { oldCount, newCount in
+            if newCount > oldCount, !liveText.isEmpty {
+                liveText = ""
+            }
+        }
     }
 
     private var mission: Mission? {
