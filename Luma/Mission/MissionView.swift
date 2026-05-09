@@ -91,26 +91,29 @@ private struct MissionHeader: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(mission.goalText)
                     .font(.title3.weight(.semibold))
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        statusIndicator
-                        Label(mission.providerID, systemImage: "cpu")
-                        Label(mission.modelID, systemImage: "sparkles")
-                        Label("\(mission.tokensUsedInput)/\(mission.tokenBudgetInput) in", systemImage: "arrow.down.circle")
-                        Label("\(mission.tokensUsedOutput)/\(mission.tokenBudgetOutput) out", systemImage: "arrow.up.circle")
-                        if mission.cacheReadTokens > 0 {
-                            Label("\(mission.cacheReadTokens) cached", systemImage: "checkmark.seal")
-                        }
+                HStack(spacing: 12) {
+                    statusIndicator
+                    Label(mission.providerID, systemImage: "cpu")
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Label(mission.modelID, systemImage: "sparkles")
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Label("\(mission.tokensUsedInput)/\(mission.tokenBudgetInput) in", systemImage: "arrow.down.circle")
+                        .lineLimit(1)
+                    Label("\(mission.tokensUsedOutput)/\(mission.tokenBudgetOutput) out", systemImage: "arrow.up.circle")
+                        .lineLimit(1)
+                    if mission.cacheReadTokens > 0 {
+                        Label("\(mission.cacheReadTokens) cached", systemImage: "checkmark.seal")
+                            .lineLimit(1)
                     }
-                    .fixedSize()
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Spacer(minLength: 12)
 
             if mission.status.isLive {
                 Button(role: .destructive) {
@@ -119,7 +122,6 @@ private struct MissionHeader: View {
                     Label("Stop Mission", systemImage: "stop.circle")
                 }
                 .help("Cancel this mission. Pending tool calls won't be approved or run.")
-                .fixedSize()
             }
         }
         .padding()
