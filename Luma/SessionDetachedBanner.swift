@@ -49,6 +49,9 @@ struct SessionContent<Content: View>: View {
         if session.lastAttachedAt != nil {
             return .detached(session)
         }
+        if case .attach = session.kind {
+            return .detached(session)
+        }
         return .idle(session)
     }
 }
@@ -223,7 +226,7 @@ struct SessionDetachedBanner: View {
                             ProgressView()
                                 .controlSize(.small)
 
-                            Text("\(session.kind.reestablishLabel)ing…")
+                            Text(session.kind.inProgressLabel)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
