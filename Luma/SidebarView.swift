@@ -12,12 +12,19 @@ struct SidebarView: View {
     var sessions: [LumaCore.ProcessSession] { workspace.engine.sessions }
     var packages: [LumaCore.InstalledPackage] { workspace.engine.installedPackages }
     var customInstrumentDefs: [LumaCore.CustomInstrumentDef] { workspace.engine.customInstruments.defs }
+    var missions: [LumaCore.Mission] { workspace.engine.missions }
 
     var body: some View {
         List(selection: $selection) {
             Section {
                 SidebarNotebookRow()
                     .tag(SidebarItemID.notebook)
+                SidebarMissionsRow(count: missions.count)
+                    .tag(SidebarItemID.missions)
+                ForEach(missions) { mission in
+                    SidebarMissionRow(mission: mission)
+                        .tag(SidebarItemID.mission(mission.id))
+                }
             }
 
             Section("Sessions") {
@@ -108,6 +115,63 @@ private struct SidebarNotebookRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("sidebar.notebook")
+    }
+}
+
+private struct SidebarMissionsRow: View {
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "scope")
+                .foregroundStyle(.tint)
+            Text("Missions")
+            Spacer()
+            if count > 0 {
+                Text("\(count)").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("sidebar.missions")
+    }
+}
+
+private struct SidebarMissionRow: View {
+    let mission: LumaCore.Mission
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: iconName)
+                .foregroundStyle(iconColor)
+                .frame(width: subrowIconWidth)
+            Text(mission.goalText.isEmpty ? "(untitled mission)" : mission.goalText)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .padding(.leading, subrowIconWidth)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("sidebar.mission.\(mission.id.uuidString)")
+    }
+
+    private var iconName: String {
+        switch mission.status {
+        case .running, .drafting: return "circle.dotted"
+        case .awaitingApproval: return "hourglass"
+        case .paused: return "pause.circle"
+        case .completed: return "checkmark.circle.fill"
+        case .failed: return "xmark.octagon"
+        case .cancelled: return "stop.circle"
+        }
+    }
+
+    private var iconColor: Color {
+        switch mission.status {
+        case .running: return .blue
+        case .awaitingApproval: return .orange
+        case .completed: return .green
+        case .failed: return .red
+        default: return .secondary
+        }
     }
 }
 

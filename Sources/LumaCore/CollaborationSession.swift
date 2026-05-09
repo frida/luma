@@ -295,6 +295,8 @@ public final class CollaborationSession {
     public var onReplEvalTimedOut: ((UUID) -> Void)?
     public var onSessionRemoved: ((UUID) -> Void)?
     public var onCustomInstrumentOpReceived: ((CustomInstrumentOp) -> Void)?
+    public var onMissionOpReceived: ((MissionOp) -> Void)?
+    public var onMissionSnapshot: ((MissionSnapshot) -> Void)?
     public var onCustomInstrumentSnapshot: (([CustomInstrumentDef]) -> Void)?
     public var onSessionOpRejected: ((UUID, String) -> Void)?
     public var onChatMessageReceived: ((ChatMessage) -> Void)?
@@ -472,6 +474,57 @@ public final class CollaborationSession {
         sendOpIfJoined(op)
     }
 
+    public func enqueueMissionUpsert(_ mission: Mission) {
+        enqueueMissionOp(.missionUpsert(.init(mission: mission)))
+    }
+
+    public func enqueueMissionRemove(missionID: UUID) {
+        enqueueMissionOp(.missionRemove(.init(missionID: missionID)))
+    }
+
+    public func enqueueMissionTargetUpsert(_ target: MissionTarget) {
+        enqueueMissionOp(.targetUpsert(.init(target: target)))
+    }
+
+    public func enqueueMissionTurn(_ turn: MissionTurn) {
+        enqueueMissionOp(.turnAppend(.init(turn: turn)))
+    }
+
+    public func enqueueMissionAction(_ action: MissionAction) {
+        enqueueMissionOp(.actionUpsert(.init(action: action)))
+    }
+
+    public func enqueueMissionFinding(_ finding: MissionFinding) {
+        enqueueMissionOp(.findingUpsert(.init(finding: finding)))
+    }
+
+    public func enqueueMissionFindingRemove(missionID: UUID, findingID: UUID) {
+        enqueueMissionOp(.findingRemove(.init(missionID: missionID, findingID: findingID)))
+    }
+
+    public func enqueueMissionEvidence(missionID: UUID, evidence: MissionEvidence) {
+        enqueueMissionOp(.evidenceAdd(.init(missionID: missionID, evidence: evidence)))
+    }
+
+    private func enqueueMissionOp(_ op: MissionOp) {
+        guard isCollaborative else { return }
+        try? store.saveMissionOutboxOp(op)
+        sendMissionOpIfJoined(op)
+    }
+
+    private func sendMissionOpIfJoined(_ op: MissionOp) {
+        guard case .joined(let labID) = status else { return }
+        sendMissionOpOverWire(op, labID: labID)
+    }
+
+    private func sendMissionOpOverWire(_ op: MissionOp, labID: String) {
+        sendNotification(
+            to: "/labs/\(labID)/missions",
+            type: "+op",
+            payload: op.toJSON()
+        )
+    }
+
     /// Resend every op still in the outbox. Called after a successful
     /// join/create so unsynced mutations propagate. The server dedupes by
     /// `op_id`, so redundant replays are safe.
@@ -492,6 +545,10 @@ public final class CollaborationSession {
                 type: "+op",
                 payload: op.toJSON()
             )
+        }
+        let missionOps = (try? store.fetchMissionOutboxOps()) ?? []
+        for op in missionOps {
+            sendMissionOpOverWire(op, labID: labID)
         }
     }
 
@@ -1230,6 +1287,22 @@ public final class CollaborationSession {
         let customDicts = (payload["custom_instruments"] as? [JSONObject]) ?? []
         let customDefs = customDicts.compactMap(CustomInstrumentDef.fromJSON)
         onCustomInstrumentSnapshot?(customDefs)
+
+        let missionsArr = (payload["missions"] as? [JSONObject]) ?? []
+        let targetsArr = (payload["mission_targets"] as? [JSONObject]) ?? []
+        let turnsArr = (payload["mission_turns"] as? [JSONObject]) ?? []
+        let actionsArr = (payload["mission_actions"] as? [JSONObject]) ?? []
+        let findingsArr = (payload["mission_findings"] as? [JSONObject]) ?? []
+        let evidenceArr = (payload["mission_evidence"] as? [JSONObject]) ?? []
+        let missionSnapshot = MissionSnapshot(
+            missions: missionsArr.compactMap(Mission.fromWireJSON),
+            targets: targetsArr.compactMap(MissionTarget.fromWireJSON),
+            turns: turnsArr.compactMap(MissionTurn.fromWireJSON),
+            actions: actionsArr.compactMap(MissionAction.fromWireJSON),
+            findings: findingsArr.compactMap(MissionFinding.fromWireJSON),
+            evidence: evidenceArr.compactMap(MissionEvidence.fromWireJSON)
+        )
+        onMissionSnapshot?(missionSnapshot)
     }
 
     private var lastMessageData: [UInt8]? = nil
@@ -1408,6 +1481,16 @@ public final class CollaborationSession {
             guard let idStr = payload["op_id"] as? String,
                 let opID = UUID(uuidString: idStr) else { return }
             try? store.removeCustomInstrumentOutboxOp(opID: opID)
+
+        case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "missions":
+            guard let op = MissionOp.fromJSON(payload) else { return }
+            onMissionOpReceived?(op)
+            try? store.removeMissionOutboxOp(opID: op.opID)
+
+        case ("+op-rejected", let s) where s.count == 3 && s[0] == "labs" && s[2] == "missions":
+            guard let idStr = payload["op_id"] as? String,
+                let opID = UUID(uuidString: idStr) else { return }
+            try? store.removeMissionOutboxOp(opID: opID)
 
         case ("+op", let s) where s.count == 4 && s[0] == "labs" && s[2] == "sessions":
             guard let sessionID = UUID(uuidString: s[3]) else { return }

@@ -346,7 +346,7 @@ struct WorkspaceToolbar: ToolbarContent {
         guard let id = selection else { return nil }
 
         switch id {
-        case .notebook, .package(_), .customInstrumentDef(_):
+        case .notebook, .missions, .mission(_), .package(_), .customInstrumentDef(_):
             return nil
 
         case .session(let sessionID),
@@ -363,7 +363,7 @@ struct WorkspaceToolbar: ToolbarContent {
         guard let id = selection else { return nil }
 
         switch id {
-        case .notebook, .package(_), .customInstrumentDef(_):
+        case .notebook, .missions, .mission(_), .package(_), .customInstrumentDef(_):
             return nil
         case .session(let sessionID),
             .repl(let sessionID),

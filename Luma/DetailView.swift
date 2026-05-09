@@ -28,6 +28,13 @@ struct DetailView: View {
             case .some(.notebook):
                 NotebookView(workspace: workspace, selection: $selection)
 
+            case .some(.missions):
+                MissionsListView(workspace: workspace, selection: $selection)
+
+            case .some(.mission(let missionID)):
+                MissionView(workspace: workspace, missionID: missionID, selection: $selection)
+                    .id(missionID)
+
             case .some(.session(let sessionID)):
                 if workspace.engine.sessions.contains(where: { $0.id == sessionID }) {
                     SessionContent(sessionID: sessionID, workspace: workspace) {

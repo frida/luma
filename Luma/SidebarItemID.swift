@@ -3,6 +3,8 @@ import LumaCore
 
 enum SidebarItemID: Codable, Hashable {
     case notebook
+    case missions
+    case mission(UUID)
     case session(UUID)
     case repl(UUID)
     case instrument(UUID, UUID)

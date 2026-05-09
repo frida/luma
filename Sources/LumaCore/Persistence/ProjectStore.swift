@@ -434,6 +434,246 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    // MARK: - Missions
+
+    public func observeMissions(
+        onChange: @escaping @Sendable ([Mission]) -> Void
+    ) -> StoreObservation {
+        StoreObservation(
+            ValueObservation
+                .tracking { db in
+                    try Mission
+                        .order(Column("created_at").desc)
+                        .fetchAll(db)
+                }
+                .start(in: db, scheduling: .async(onQueue: .main), onError: { _ in }, onChange: onChange)
+        )
+    }
+
+    public func observeMissionTurns(
+        missionID: UUID,
+        onChange: @escaping @Sendable ([MissionTurn]) -> Void
+    ) -> StoreObservation {
+        StoreObservation(
+            ValueObservation
+                .tracking { db in
+                    try MissionTurn
+                        .filter(Column("mission_id") == missionID)
+                        .order(Column("index").asc)
+                        .fetchAll(db)
+                }
+                .start(in: db, scheduling: .async(onQueue: .main), onError: { _ in }, onChange: onChange)
+        )
+    }
+
+    public func observeMissionActions(
+        missionID: UUID,
+        onChange: @escaping @Sendable ([MissionAction]) -> Void
+    ) -> StoreObservation {
+        StoreObservation(
+            ValueObservation
+                .tracking { db in
+                    try MissionAction
+                        .filter(Column("mission_id") == missionID)
+                        .order(Column("requested_at").asc)
+                        .fetchAll(db)
+                }
+                .start(in: db, scheduling: .async(onQueue: .main), onError: { _ in }, onChange: onChange)
+        )
+    }
+
+    public func observeMissionFindings(
+        missionID: UUID,
+        onChange: @escaping @Sendable ([MissionFinding]) -> Void
+    ) -> StoreObservation {
+        StoreObservation(
+            ValueObservation
+                .tracking { db in
+                    try MissionFinding
+                        .filter(Column("mission_id") == missionID)
+                        .order(Column("created_at").asc)
+                        .fetchAll(db)
+                }
+                .start(in: db, scheduling: .async(onQueue: .main), onError: { _ in }, onChange: onChange)
+        )
+    }
+
+    public func fetchMissions() throws -> [Mission] {
+        try db.read { db in
+            try Mission.order(Column("created_at").desc).fetchAll(db)
+        }
+    }
+
+    public func fetchMission(id: UUID) throws -> Mission? {
+        try db.read { db in
+            try Mission.fetchOne(db, key: id)
+        }
+    }
+
+    public func save(_ mission: Mission) throws {
+        try db.write { db in
+            var m = mission
+            m.updatedAt = Date()
+            try m.save(db)
+        }
+    }
+
+    public func deleteMission(id: UUID) throws {
+        try db.write { db in
+            _ = try Mission.deleteOne(db, key: id)
+        }
+    }
+
+    public func fetchMissionTargets(missionID: UUID) throws -> [MissionTarget] {
+        try db.read { db in
+            try MissionTarget
+                .filter(Column("mission_id") == missionID)
+                .fetchAll(db)
+        }
+    }
+
+    public func save(_ target: MissionTarget) throws {
+        try db.write { db in
+            try target.save(db)
+        }
+    }
+
+    public func deleteMissionTarget(missionID: UUID, sessionID: UUID) throws {
+        try db.write { db in
+            _ = try MissionTarget
+                .filter(Column("mission_id") == missionID && Column("session_id") == sessionID)
+                .deleteAll(db)
+        }
+    }
+
+    public func fetchMissionTurns(missionID: UUID) throws -> [MissionTurn] {
+        try db.read { db in
+            try MissionTurn
+                .filter(Column("mission_id") == missionID)
+                .order(Column("index").asc)
+                .fetchAll(db)
+        }
+    }
+
+    public func save(_ turn: MissionTurn) throws {
+        try db.write { db in
+            try turn.save(db)
+        }
+    }
+
+    public func nextMissionTurnIndex(missionID: UUID) throws -> Int {
+        try db.read { db in
+            let max = try Int.fetchOne(
+                db,
+                sql: "SELECT MAX(\"index\") FROM mission_turn WHERE mission_id = ?",
+                arguments: [missionID.uuidString]
+            ) ?? -1
+            return max + 1
+        }
+    }
+
+    public func fetchMissionActions(missionID: UUID) throws -> [MissionAction] {
+        try db.read { db in
+            try MissionAction
+                .filter(Column("mission_id") == missionID)
+                .order(Column("requested_at").asc)
+                .fetchAll(db)
+        }
+    }
+
+    public func fetchMissionAction(id: UUID) throws -> MissionAction? {
+        try db.read { db in
+            try MissionAction.fetchOne(db, key: id)
+        }
+    }
+
+    public func save(_ action: MissionAction) throws {
+        try db.write { db in
+            try action.save(db)
+        }
+    }
+
+    public func fetchMissionFindings(missionID: UUID) throws -> [MissionFinding] {
+        try db.read { db in
+            try MissionFinding
+                .filter(Column("mission_id") == missionID)
+                .order(Column("created_at").asc)
+                .fetchAll(db)
+        }
+    }
+
+    public func save(_ finding: MissionFinding) throws {
+        try db.write { db in
+            try finding.save(db)
+        }
+    }
+
+    public func deleteMissionFinding(id: UUID) throws {
+        try db.write { db in
+            _ = try MissionFinding.deleteOne(db, key: id)
+        }
+    }
+
+    public func fetchMissionEvidence(findingID: UUID) throws -> [MissionEvidence] {
+        try db.read { db in
+            try MissionEvidence
+                .filter(Column("finding_id") == findingID)
+                .fetchAll(db)
+        }
+    }
+
+    public func save(_ evidence: MissionEvidence) throws {
+        try db.write { db in
+            try evidence.save(db)
+        }
+    }
+
+    // MARK: - Mission Outbox
+
+    public func saveMissionOutboxOp(_ op: MissionOp) throws {
+        try db.write { db in
+            try saveMissionOutboxOp(op, in: db)
+        }
+    }
+
+    public func fetchMissionOutboxOps() throws -> [MissionOp] {
+        try db.read { db in
+            let rows = try MissionOutboxRecord
+                .order(Column("created_at").asc, Column("op_id").asc)
+                .fetchAll(db)
+            return rows.compactMap { $0.toOp() }
+        }
+    }
+
+    public func removeMissionOutboxOp(opID: UUID) throws {
+        try db.write { db in
+            _ = try MissionOutboxRecord.deleteOne(db, key: opID.uuidString)
+        }
+    }
+
+    public func clearMissionOutbox() throws {
+        try db.write { db in
+            _ = try MissionOutboxRecord.deleteAll(db)
+        }
+    }
+
+    private func saveMissionOutboxOp(_ op: MissionOp, in db: Database) throws {
+        let payload = op.toJSON()
+        let data = try JSONSerialization.data(
+            withJSONObject: payload,
+            options: [.sortedKeys]
+        )
+        let json = String(data: data, encoding: .utf8) ?? "{}"
+        let record = MissionOutboxRecord(
+            opID: op.opID.uuidString,
+            kind: op.kind,
+            missionID: op.missionID.uuidString,
+            payloadJSON: json,
+            createdAt: Date()
+        )
+        try record.save(db)
+    }
+
     // MARK: - Remote Devices
 
     public func fetchRemoteDevices() throws -> [RemoteDeviceConfig] {
@@ -793,6 +1033,103 @@ public final class ProjectStore: Sendable {
             t.column("last_spawn_application_id", .text)
             t.column("last_spawn_program_path", .text)
             t.column("last_selected_process_name", .text)
+        }
+
+        try db.create(table: "mission", ifNotExists: true) { t in
+            t.primaryKey("id", .text).notNull()
+            t.column("created_at", .datetime).notNull()
+            t.column("updated_at", .datetime).notNull()
+            t.column("goal_text", .text).notNull()
+            t.column("status", .text).notNull()
+            t.column("provider_id", .text).notNull()
+            t.column("model_id", .text).notNull()
+            t.column("system_prompt_hash", .text)
+            t.column("token_budget_input", .integer).notNull().defaults(to: 0)
+            t.column("token_budget_output", .integer).notNull().defaults(to: 0)
+            t.column("tokens_used_input", .integer).notNull().defaults(to: 0)
+            t.column("tokens_used_output", .integer).notNull().defaults(to: 0)
+            t.column("cache_read_tokens", .integer).notNull().defaults(to: 0)
+            t.column("cache_create_tokens", .integer).notNull().defaults(to: 0)
+            t.column("thinking_budget", .integer).notNull().defaults(to: 0)
+            t.column("temperature", .double)
+        }
+
+        try db.create(table: "mission_target", ifNotExists: true) { t in
+            t.column("mission_id", .text).notNull()
+                .references("mission", onDelete: .cascade)
+            t.column("session_id", .text).notNull()
+                .references("process_session", onDelete: .cascade)
+            t.primaryKey(["mission_id", "session_id"])
+        }
+
+        try db.create(table: "mission_turn", ifNotExists: true) { t in
+            t.primaryKey("id", .text).notNull()
+            t.column("mission_id", .text).notNull()
+                .references("mission", onDelete: .cascade)
+            t.column("index", .integer).notNull()
+            t.column("created_at", .datetime).notNull()
+            t.column("role", .text).notNull()
+            t.column("content_json", .text).notNull()
+            t.column("model_id", .text)
+            t.column("stop_reason", .text)
+            t.column("input_tokens", .integer).notNull().defaults(to: 0)
+            t.column("output_tokens", .integer).notNull().defaults(to: 0)
+            t.column("cache_read_tokens", .integer).notNull().defaults(to: 0)
+            t.column("cache_create_tokens", .integer).notNull().defaults(to: 0)
+        }
+
+        try db.create(table: "mission_action", ifNotExists: true) { t in
+            t.primaryKey("id", .text).notNull()
+            t.column("mission_id", .text).notNull()
+                .references("mission", onDelete: .cascade)
+            t.column("turn_id", .text)
+                .references("mission_turn", onDelete: .setNull)
+            t.column("tool_name", .text).notNull()
+            t.column("args_json", .text).notNull()
+            t.column("status", .text).notNull()
+            t.column("is_observe", .boolean).notNull().defaults(to: false)
+            t.column("session_id", .text)
+            t.column("requested_at", .datetime).notNull()
+            t.column("decided_at", .datetime)
+            t.column("completed_at", .datetime)
+            t.column("result_json", .text)
+            t.column("result_summary", .text)
+            t.column("error", .text)
+            t.column("rationale", .text)
+            t.column("rejection_reason", .text)
+            t.column("tool_call_id", .text)
+        }
+
+        try db.create(table: "mission_finding", ifNotExists: true) { t in
+            t.primaryKey("id", .text).notNull()
+            t.column("mission_id", .text).notNull()
+                .references("mission", onDelete: .cascade)
+            t.column("created_at", .datetime).notNull()
+            t.column("title", .text).notNull()
+            t.column("body_markdown", .text).notNull()
+            t.column("confidence", .text).notNull()
+            t.column("kind", .text).notNull()
+            t.column("status", .text).notNull()
+            t.column("session_id", .text)
+            t.column("anchor_json", .text)
+            t.column("pinned_insight_id", .text)
+        }
+
+        try db.create(table: "mission_evidence", ifNotExists: true) { t in
+            t.primaryKey("id", .text).notNull()
+            t.column("finding_id", .text).notNull()
+                .references("mission_finding", onDelete: .cascade)
+            t.column("kind", .text).notNull()
+            t.column("ref_json", .text).notNull()
+            t.column("note", .text)
+        }
+
+        try db.create(table: "mission_outbox", ifNotExists: true) { t in
+            t.primaryKey("op_id", .text).notNull()
+            t.column("kind", .text).notNull()
+            t.column("mission_id", .text).notNull()
+            t.column("payload_json", .text).notNull()
+            t.column("created_at", .datetime).notNull()
         }
     }
 }

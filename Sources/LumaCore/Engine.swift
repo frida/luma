@@ -14,6 +14,11 @@ public final class Engine {
     public private(set) var descriptors: [InstrumentDescriptor] = []
     private var descriptorsByID: [String: InstrumentDescriptor] = [:]
 
+    public let llmRegistry: LLMProviderRegistry
+    public let llmCredentials: LLMCredentialStore
+    public let missionTools: ToolCatalog
+    private let missionExecutor: MissionExecutor
+
     private let _events = AsyncEventSource<RuntimeEvent>()
     public var events: AsyncStream<RuntimeEvent> { _events.makeStream() }
 
@@ -42,6 +47,7 @@ public final class Engine {
     public private(set) var instrumentsBySession: [UUID: [InstrumentInstance]] = [:]
     public private(set) var insightsBySession: [UUID: [AddressInsight]] = [:]
     public private(set) var tracesBySession: [UUID: [ITrace]] = [:]
+    public private(set) var missions: [Mission] = []
     public private(set) var installedPackages: [InstalledPackage] = []
     public private(set) var editorFSSnapshot: EditorFSSnapshot?
     @ObservationIgnored public var editorFSSnapshotDirty: Bool = true
@@ -59,6 +65,7 @@ public final class Engine {
     @ObservationIgnored private var instrumentsObservation: StoreObservation?
     @ObservationIgnored private var insightsObservation: StoreObservation?
     @ObservationIgnored private var tracesObservation: StoreObservation?
+    @ObservationIgnored private var missionsObservation: StoreObservation?
     @ObservationIgnored private var lastUploadedTraceSize: [UUID: Int] = [:]
     @ObservationIgnored private let _traceCacheInvalidations = AsyncEventSource<TraceCacheInvalidation>()
     public var traceCacheInvalidations: AsyncStream<TraceCacheInvalidation> { _traceCacheInvalidations.makeStream() }
@@ -92,13 +99,33 @@ public final class Engine {
             portalCertificate: BackendConfig.certificate
         )
 
+        let resolvedTokenStore = tokenStore ?? defaultTokenStore(dataDirectory: dataDirectory)
+
         if let gitHubAuth {
             self.gitHubAuth = gitHubAuth
         } else {
-            self.gitHubAuth = GitHubAuth(
-                tokenStore: tokenStore ?? defaultTokenStore(dataDirectory: dataDirectory)
-            )
+            self.gitHubAuth = GitHubAuth(tokenStore: resolvedTokenStore)
         }
+
+        let registry = LLMProviderRegistry()
+        let credentials = LLMCredentialStore(backing: resolvedTokenStore)
+        let catalog = ToolCatalog()
+        self.llmRegistry = registry
+        self.llmCredentials = credentials
+        self.missionTools = catalog
+        let promptStore = store
+        self.missionExecutor = MissionExecutor(
+            store: store,
+            registry: registry,
+            credentials: credentials,
+            catalog: catalog,
+            collaboration: collaboration,
+            systemPromptBuilder: { mission in
+                let targets = (try? promptStore.fetchMissionTargets(missionID: mission.id)) ?? []
+                let sessions = targets.compactMap { try? promptStore.fetchSession(id: $0.sessionID) }
+                return MissionSystemPrompt.build(for: mission, targets: sessions)
+            }
+        )
 
         registerDescriptor(Self.tracerDescriptor)
         for desc in hookPacks.descriptors() {
@@ -143,6 +170,14 @@ public final class Engine {
             for await event in self._events.makeStream() {
                 self.eventLog.append(event)
             }
+        }
+
+        llmRegistry.register(AnthropicProvider())
+        llmRegistry.register(OpenAIProvider())
+        llmRegistry.register(LocalOpenAICompatibleProvider())
+        MissionTools.registerStandard(in: missionTools, engine: self)
+        missionsObservation = store.observeMissions { [weak self] missions in
+            Task { @MainActor in self?.missions = missions }
         }
     }
 
@@ -277,6 +312,14 @@ public final class Engine {
             case .remove(let r):
                 try? self.store.deleteCustomInstrumentDef(id: r.defID)
             }
+        }
+
+        collaboration.onMissionOpReceived = { [weak self] op in
+            self?.applyRemoteMissionOp(op)
+        }
+
+        collaboration.onMissionSnapshot = { [weak self] snapshot in
+            self?.applyRemoteMissionSnapshot(snapshot)
         }
 
         collaboration.onCustomInstrumentSnapshot = { [weak self] defs in
@@ -3093,6 +3136,178 @@ public final class Engine {
     private func shouldAutoResumeOnCapture(_ session: ProcessSession) -> Bool {
         if case .spawn(let config) = session.kind { return config.autoResume }
         return true
+    }
+
+    // MARK: - Missions
+
+    public func setMissionLiveDeltaSink(
+        _ sink: (@MainActor (UUID, LLMTurnEvent) -> Void)?
+    ) {
+        missionExecutor.liveDeltaSink = sink
+    }
+
+    @discardableResult
+    public func startMission(
+        goal: String,
+        providerID: String,
+        modelID: String,
+        targetSessionIDs: [UUID],
+        tokenBudgetInput: Int,
+        tokenBudgetOutput: Int,
+        thinkingBudget: Int = 0,
+        temperature: Double? = nil
+    ) -> Mission? {
+        var mission = Mission(
+            goalText: goal,
+            providerID: providerID,
+            modelID: modelID,
+            tokenBudgetInput: tokenBudgetInput,
+            tokenBudgetOutput: tokenBudgetOutput,
+            thinkingBudget: thinkingBudget,
+            temperature: temperature
+        )
+        do {
+            try store.save(mission)
+            collaboration.enqueueMissionUpsert(mission)
+            for sid in targetSessionIDs {
+                let target = MissionTarget(missionID: mission.id, sessionID: sid)
+                try store.save(target)
+                collaboration.enqueueMissionTargetUpsert(target)
+            }
+        } catch {
+            return nil
+        }
+        mission.status = .running
+        try? store.save(mission)
+        collaboration.enqueueMissionUpsert(mission)
+        missionExecutor.start(missionID: mission.id)
+        return mission
+    }
+
+    public func cancelMission(missionID: UUID) {
+        missionExecutor.cancel(missionID: missionID)
+    }
+
+    public func deleteMission(missionID: UUID) {
+        missionExecutor.cancel(missionID: missionID)
+        try? store.deleteMission(id: missionID)
+        collaboration.enqueueMissionRemove(missionID: missionID)
+    }
+
+    public func approveMissionAction(actionID: UUID) async {
+        guard var action = try? store.fetchMissionAction(id: actionID),
+            action.status == .pending,
+            let mission = try? store.fetchMission(id: action.missionID)
+        else { return }
+        action.status = .approved
+        action.decidedAt = Date()
+        try? store.save(action)
+        collaboration.enqueueMissionAction(action)
+
+        await missionExecutor.runActionByID(action.id, mission: mission)
+
+        let stillPending = (try? store.fetchMissionActions(missionID: action.missionID))?.contains(where: { $0.status == .pending }) ?? false
+        if !stillPending {
+            missionExecutor.resume(missionID: action.missionID)
+        }
+    }
+
+    public func submitUserInputResponse(actionID: UUID, answer: String) {
+        guard var action = try? store.fetchMissionAction(id: actionID),
+            action.toolName == MissionTools.requestUserInputToolName,
+            action.status == .pending
+        else { return }
+        let payload: [String: Any] = ["answer": answer]
+        let data = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])) ?? Data("{}".utf8)
+        action.status = .succeeded
+        action.decidedAt = Date()
+        action.completedAt = Date()
+        action.resultJSON = String(data: data, encoding: .utf8)
+        action.resultSummary = answer
+        try? store.save(action)
+        collaboration.enqueueMissionAction(action)
+
+        let stillPending = (try? store.fetchMissionActions(missionID: action.missionID))?.contains(where: { $0.status == .pending }) ?? false
+        if !stillPending {
+            missionExecutor.resume(missionID: action.missionID)
+        }
+    }
+
+    public func rejectMissionAction(actionID: UUID, reason: String? = nil) async {
+        guard var action = try? store.fetchMissionAction(id: actionID),
+            action.status == .pending
+        else { return }
+        action.status = .rejected
+        action.decidedAt = Date()
+        action.completedAt = Date()
+        action.rejectionReason = reason
+        try? store.save(action)
+        collaboration.enqueueMissionAction(action)
+
+        let stillPending = (try? store.fetchMissionActions(missionID: action.missionID))?.contains(where: { $0.status == .pending }) ?? false
+        if !stillPending {
+            missionExecutor.resume(missionID: action.missionID)
+        }
+    }
+
+    public func acceptFinding(findingID: UUID) {
+        guard var finding = try? findFinding(id: findingID) else { return }
+        finding.status = .accepted
+        try? store.save(finding)
+        collaboration.enqueueMissionFinding(finding)
+    }
+
+    public func refuteFinding(findingID: UUID) {
+        guard var finding = try? findFinding(id: findingID) else { return }
+        finding.status = .refuted
+        try? store.save(finding)
+        collaboration.enqueueMissionFinding(finding)
+    }
+
+    private func findFinding(id: UUID) throws -> MissionFinding? {
+        for mission in missions {
+            if let match = (try? store.fetchMissionFindings(missionID: mission.id))?.first(where: { $0.id == id }) {
+                return match
+            }
+        }
+        return nil
+    }
+
+    private func applyRemoteMissionSnapshot(_ snapshot: MissionSnapshot) {
+        let serverMissionIDs = Set(snapshot.missions.map(\.id))
+        let localMissions = (try? store.fetchMissions()) ?? []
+        for stale in localMissions where !serverMissionIDs.contains(stale.id) {
+            try? store.deleteMission(id: stale.id)
+        }
+        for mission in snapshot.missions { try? store.save(mission) }
+        for target in snapshot.targets { try? store.save(target) }
+        for turn in snapshot.turns { try? store.save(turn) }
+        for action in snapshot.actions { try? store.save(action) }
+        for finding in snapshot.findings { try? store.save(finding) }
+        for evidence in snapshot.evidence { try? store.save(evidence) }
+    }
+
+    private func applyRemoteMissionOp(_ op: MissionOp) {
+        switch op {
+        case .missionUpsert(let u):
+            try? store.save(u.mission)
+        case .missionRemove(let r):
+            try? store.deleteMission(id: r.missionID)
+        case .targetUpsert(let u):
+            try? store.save(u.target)
+        case .targetRemove(let r):
+            try? store.deleteMissionTarget(missionID: r.target.missionID, sessionID: r.target.sessionID)
+        case .turnAppend(let a):
+            try? store.save(a.turn)
+        case .actionUpsert(let u):
+            try? store.save(u.action)
+        case .findingUpsert(let u):
+            try? store.save(u.finding)
+        case .findingRemove(let r):
+            try? store.deleteMissionFinding(id: r.findingID)
+        case .evidenceAdd(let a):
+            try? store.save(a.evidence)
+        }
     }
 }
 
