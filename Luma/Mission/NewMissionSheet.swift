@@ -39,7 +39,7 @@ struct NewMissionSheet: View {
                         }
                     }
 
-                    Picker("Model", selection: $selectedModelID) {
+                    Picker("Model", selection: resolvedModelBinding) {
                         ForEach(modelsForCurrentProvider(), id: \.id) { m in
                             Text(m.displayName).tag(m.id)
                         }
@@ -107,6 +107,17 @@ struct NewMissionSheet: View {
 
     private func modelsForCurrentProvider() -> [LLMModelInfo] {
         workspace.engine.llmRegistry.provider(id: selectedProviderID)?.suggestedModels() ?? []
+    }
+
+    private var resolvedModelBinding: Binding<String> {
+        Binding(
+            get: {
+                let models = modelsForCurrentProvider()
+                if models.contains(where: { $0.id == selectedModelID }) { return selectedModelID }
+                return models.first?.id ?? selectedModelID
+            },
+            set: { selectedModelID = $0 }
+        )
     }
 
     private func refreshAPIKeyStatus() async {
