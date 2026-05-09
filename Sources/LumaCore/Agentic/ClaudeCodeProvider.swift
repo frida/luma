@@ -100,7 +100,8 @@ public final class ClaudeCodeProvider: LLMProvider {
                 continuation.yield(.textDelta("[← \(result.summary)]\n"))
             }
             let url = try await server.start()
-            await mcpHandle.set(server)
+            engine.registerActiveMCPServer(server, for: mission.id)
+            await mcpHandle.set(server, missionID: mission.id, engine: engine)
 
             let mcpConfig: [String: Any] = [
                 "mcpServers": [
@@ -277,16 +278,24 @@ public final class ClaudeCodeProvider: LLMProvider {
 
 private actor MCPServerHandle {
     private var server: MCPServer?
+    private var missionID: UUID?
+    private weak var engine: Engine?
 
-    func set(_ server: MCPServer) {
+    func set(_ server: MCPServer, missionID: UUID, engine: Engine) {
         self.server = server
+        self.missionID = missionID
+        self.engine = engine
     }
 
     func stop() async {
-        if let server = server {
-            await server.stop()
-            self.server = nil
+        guard let server = server else { return }
+        if let missionID, let engine {
+            await engine.unregisterActiveMCPServer(for: missionID)
         }
+        await server.stop()
+        self.server = nil
+        self.missionID = nil
+        self.engine = nil
     }
 }
 

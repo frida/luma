@@ -13,13 +13,33 @@ public final class MCPServer {
     private var listener: NWListener?
 
     private weak var engine: Engine?
-    private let mission: Mission
+    public let mission: Mission
     private let toolNames: Set<String>
+
+    private var pendingApprovals: [UUID: CheckedContinuation<ApprovalDecision, Never>] = [:]
 
     public init(engine: Engine, mission: Mission, toolNames: [String]) {
         self.engine = engine
         self.mission = mission
         self.toolNames = Set(toolNames)
+    }
+
+    public func approve(actionID: UUID) {
+        if let cont = pendingApprovals.removeValue(forKey: actionID) {
+            cont.resume(returning: .approved)
+        }
+    }
+
+    public func reject(actionID: UUID, reason: String?) {
+        if let cont = pendingApprovals.removeValue(forKey: actionID) {
+            cont.resume(returning: .rejected(reason))
+        }
+    }
+
+    private enum ApprovalDecision {
+        case approved
+        case rejected(String?)
+        case cancelled
     }
 
     public func start() async throws -> URL {
@@ -59,6 +79,10 @@ public final class MCPServer {
     public func stop() {
         listener?.cancel()
         listener = nil
+        for (_, cont) in pendingApprovals {
+            cont.resume(returning: .cancelled)
+        }
+        pendingApprovals.removeAll()
     }
 
     nonisolated private func accept(_ conn: NWConnection) {
@@ -163,6 +187,41 @@ public final class MCPServer {
             sessionID: sessionID,
             toolCallID: toolCallID
         )
+
+        if !spec.isObserve {
+            try? engine.store.save(action)
+            engine.collaboration.enqueueMissionAction(action)
+
+            let decision = await withCheckedContinuation { (cont: CheckedContinuation<ApprovalDecision, Never>) in
+                pendingApprovals[action.id] = cont
+            }
+
+            switch decision {
+            case .rejected(let reason):
+                action.status = .rejected
+                action.rejectionReason = reason
+                action.decidedAt = Date()
+                action.completedAt = Date()
+                try? engine.store.save(action)
+                engine.collaboration.enqueueMissionAction(action)
+                let message = reason.map { "User declined: \($0)" } ?? "User declined to run this tool."
+                let payload: [String: Any] = [
+                    "content": [["type": "text", "text": message]],
+                    "isError": true,
+                ]
+                return jsonRPCResult(id: rpcID, result: payload)
+            case .cancelled:
+                action.status = .failed
+                action.error = "mission cancelled while awaiting approval"
+                action.completedAt = Date()
+                try? engine.store.save(action)
+                engine.collaboration.enqueueMissionAction(action)
+                return jsonRPCError(id: rpcID, code: -32_000, message: "tool call cancelled")
+            case .approved:
+                break
+            }
+        }
+
         action.status = .running
         action.decidedAt = Date()
         try? engine.store.save(action)

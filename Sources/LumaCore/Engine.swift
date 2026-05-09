@@ -18,6 +18,7 @@ public final class Engine {
     public let llmCredentials: LLMCredentialStore
     public let missionTools: ToolCatalog
     private let missionExecutor: MissionExecutor
+    private var activeMCPServersByMissionID: [UUID: MCPServer] = [:]
 
     private let _events = AsyncEventSource<RuntimeEvent>()
     public var events: AsyncStream<RuntimeEvent> { _events.makeStream() }
@@ -3144,6 +3145,14 @@ public final class Engine {
         missionExecutor.liveDeltaSink = sink
     }
 
+    public func registerActiveMCPServer(_ server: MCPServer, for missionID: UUID) {
+        activeMCPServersByMissionID[missionID] = server
+    }
+
+    public func unregisterActiveMCPServer(for missionID: UUID) {
+        activeMCPServersByMissionID.removeValue(forKey: missionID)
+    }
+
     @discardableResult
     public func startMission(
         goal: String,
@@ -3187,20 +3196,27 @@ public final class Engine {
     }
 
     public func approveMissionAction(actionID: UUID) async {
-        guard var action = try? store.fetchMissionAction(id: actionID),
+        guard let action = try? store.fetchMissionAction(id: actionID),
             action.status == .pending,
             let mission = try? store.fetchMission(id: action.missionID)
         else { return }
-        action.status = .approved
-        action.decidedAt = Date()
-        try? store.save(action)
-        collaboration.enqueueMissionAction(action)
 
-        await missionExecutor.runActionByID(action.id, mission: mission)
+        if let server = activeMCPServersByMissionID[action.missionID] {
+            server.approve(actionID: actionID)
+            return
+        }
 
-        let stillPending = (try? store.fetchMissionActions(missionID: action.missionID))?.contains(where: { $0.status == .pending }) ?? false
+        var approved = action
+        approved.status = .approved
+        approved.decidedAt = Date()
+        try? store.save(approved)
+        collaboration.enqueueMissionAction(approved)
+
+        await missionExecutor.runActionByID(approved.id, mission: mission)
+
+        let stillPending = (try? store.fetchMissionActions(missionID: approved.missionID))?.contains(where: { $0.status == .pending }) ?? false
         if !stillPending {
-            missionExecutor.resume(missionID: action.missionID)
+            missionExecutor.resume(missionID: approved.missionID)
         }
     }
 
@@ -3229,6 +3245,12 @@ public final class Engine {
         guard var action = try? store.fetchMissionAction(id: actionID),
             action.status == .pending
         else { return }
+
+        if let server = activeMCPServersByMissionID[action.missionID] {
+            server.reject(actionID: actionID, reason: reason)
+            return
+        }
+
         action.status = .rejected
         action.decidedAt = Date()
         action.completedAt = Date()
