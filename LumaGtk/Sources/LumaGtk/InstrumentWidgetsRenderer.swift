@@ -252,9 +252,7 @@ private final class GraphView {
 
     private func drawEmptyMessage(ctx: Cairo.ContextRef, width: Double, height: Double) {
         ctx.setSource(red: 0.6, green: 0.6, blue: 0.6, alpha: 1.0)
-        "monospace".withCString { p in
-            ctx.selectFontFace(p, slant: CAIRO_FONT_SLANT_NORMAL, weight: CAIRO_FONT_WEIGHT_NORMAL)
-        }
+        "monospace".withCString { ctx.selectFontFace($0) }
         ctx.fontSize = 12
         let text = "Waiting for data\u{2026}"
         let extents = text.withCString { ctx.textExtents($0) }
