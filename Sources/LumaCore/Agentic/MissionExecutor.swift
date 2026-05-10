@@ -402,17 +402,22 @@ public final class MissionExecutor {
     }
 
     private func drainPendingUserMessage(mission: inout Mission) throws {
-        let text = mission.pendingUserText
-        guard !text.isEmpty else { return }
-
-        mission.pendingUserText = ""
-        try store.save(mission)
+        var drained = ""
+        let saved = store.updateMission(id: mission.id) { m in
+            drained = m.pendingUserText
+            m.pendingUserText = ""
+        }
+        guard !drained.isEmpty else { return }
+        if let saved {
+            mission.pendingUserText = saved.pendingUserText
+            collaboration?.enqueueMissionUpsert(saved)
+        }
 
         let turns = try store.fetchMissionTurns(missionID: mission.id)
         if let last = turns.last, last.role == .user {
-            try appendTextBlock(text, to: last)
+            try appendTextBlock(drained, to: last)
         } else {
-            try persistFreshUserTurn(text: text, missionID: mission.id)
+            try persistFreshUserTurn(text: drained, missionID: mission.id)
         }
     }
 
@@ -443,8 +448,17 @@ public final class MissionExecutor {
     }
 
     private func persistMission(_ mission: Mission) {
-        try? store.save(mission)
-        collaboration?.enqueueMissionUpsert(mission)
+        let saved = store.updateMission(id: mission.id) { m in
+            m.status = mission.status
+            m.tokensUsedInput = mission.tokensUsedInput
+            m.tokensUsedOutput = mission.tokensUsedOutput
+            m.cacheReadTokens = mission.cacheReadTokens
+            m.cacheCreateTokens = mission.cacheCreateTokens
+            m.thinkingBudget = mission.thinkingBudget
+        }
+        if let saved {
+            collaboration?.enqueueMissionUpsert(saved)
+        }
     }
 
     private func persistTurn(_ turn: MissionTurn) throws {

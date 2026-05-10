@@ -518,6 +518,17 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    @discardableResult
+    public func updateMission(id: UUID, _ mutate: (inout Mission) -> Void) -> Mission? {
+        try? db.write { db in
+            guard var mission = try Mission.fetchOne(db, key: id) else { return nil }
+            mutate(&mission)
+            mission.updatedAt = Date()
+            try mission.save(db)
+            return mission
+        }
+    }
+
     public func deleteMission(id: UUID) throws {
         try db.write { db in
             _ = try Mission.deleteOne(db, key: id)

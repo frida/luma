@@ -3370,10 +3370,9 @@ public final class Engine {
 
         let title = sanitizeMissionTitle(collected)
         guard !title.isEmpty else { return }
-        guard var mission = try? store.fetchMission(id: missionID) else { return }
-        mission.title = title
-        try? store.save(mission)
-        collaboration.enqueueMissionUpsert(mission)
+        if let saved = store.updateMission(id: missionID, { $0.title = title }) {
+            collaboration.enqueueMissionUpsert(saved)
+        }
     }
 
     private func sanitizeMissionTitle(_ raw: String) -> String {
@@ -3417,10 +3416,10 @@ public final class Engine {
     private func enqueueMissionUserText(missionID: UUID, text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        guard var mission = try? store.fetchMission(id: missionID) else { return }
-        mission.pendingUserText = mergedSteer(existing: mission.pendingUserText, addition: trimmed)
-        try? store.save(mission)
-        collaboration.enqueueMissionUpsert(mission)
+        guard let saved = store.updateMission(id: missionID, { m in
+            m.pendingUserText = mergedSteer(existing: m.pendingUserText, addition: trimmed)
+        }) else { return }
+        collaboration.enqueueMissionUpsert(saved)
     }
 
     private func mergedSteer(existing: String, addition: String) -> String {
