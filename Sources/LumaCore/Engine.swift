@@ -3308,7 +3308,69 @@ public final class Engine {
         try? store.save(mission)
         collaboration.enqueueMissionUpsert(mission)
         missionExecutor.start(missionID: mission.id)
+        Task { @MainActor [weak self] in
+            await self?.generateMissionTitle(missionID: mission.id, providerID: providerID, goal: goal)
+        }
         return mission
+    }
+
+    private func generateMissionTitle(missionID: UUID, providerID: String, goal: String) async {
+        guard let provider = llmRegistry.provider(id: providerID) else { return }
+        let descriptor = provider.descriptor
+        guard let modelID = descriptor.summarizationModelID ?? descriptor.defaultModelID else { return }
+
+        var apiKey: String?
+        if descriptor.capabilities.requiresAPIKey {
+            apiKey = try? await llmCredentials.apiKey(providerID: providerID)
+            guard let key = apiKey, !key.isEmpty else { return }
+        }
+
+        let userPrompt = """
+            Label this investigation in two to four punchy words for a sidebar entry. Prefer informal shorthand — verbs and short nouns over formal phrasing (e.g. "Reverse Foo Protocol" not "Reverse Engineer the Foo Protocol for Interop"). No quotes, no punctuation, no preamble — just the label.
+
+            Goal:
+            \(goal)
+            """
+        let request = LLMTurnRequest(
+            modelID: modelID,
+            systemBlocks: [],
+            messages: [LLMMessage(role: .user, blocks: [.text(userPrompt)])],
+            tools: [],
+            maxOutputTokens: 64,
+            thinkingBudget: 0,
+            temperature: 0.2
+        )
+
+        var collected = ""
+        do {
+            for try await event in provider.streamTurn(request, apiKey: apiKey, baseURL: nil) {
+                if case .finalMessage(_, let blocks) = event {
+                    for block in blocks {
+                        if case .text(let t) = block.content {
+                            collected += t
+                        }
+                    }
+                }
+            }
+        } catch {
+            return
+        }
+
+        let title = sanitizeMissionTitle(collected)
+        guard !title.isEmpty else { return }
+        guard var mission = try? store.fetchMission(id: missionID) else { return }
+        mission.title = title
+        try? store.save(mission)
+        collaboration.enqueueMissionUpsert(mission)
+    }
+
+    private func sanitizeMissionTitle(_ raw: String) -> String {
+        var trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        trimmed = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "\"'.!?:;"))
+        if let nl = trimmed.firstIndex(of: "\n") {
+            trimmed = String(trimmed[..<nl]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return trimmed
     }
 
     public func cancelMission(missionID: UUID) {

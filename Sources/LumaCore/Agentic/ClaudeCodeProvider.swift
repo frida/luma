@@ -29,6 +29,7 @@ public final class ClaudeCodeProvider: LLMProvider {
                 supportsCustomBaseURL: false
             ),
             defaultModelID: "default",
+            summarizationModelID: "haiku",
             defaultBaseURL: URL(string: "claude://localhost")!
         )
     }

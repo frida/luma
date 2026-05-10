@@ -24,6 +24,7 @@ public struct AnthropicProvider: LLMProvider {
                 supportsCustomBaseURL: true
             ),
             defaultModelID: "claude-sonnet-4-6",
+            summarizationModelID: "claude-haiku-4-5-20251001",
             defaultBaseURL: baseURL
         )
     }

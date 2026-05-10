@@ -30,6 +30,7 @@ public struct LLMProviderDescriptor: Sendable, Hashable {
     public var displayName: String
     public var capabilities: LLMProviderCapabilities
     public var defaultModelID: String?
+    public var summarizationModelID: String?
     public var defaultBaseURL: URL
 
     public init(
@@ -37,12 +38,14 @@ public struct LLMProviderDescriptor: Sendable, Hashable {
         displayName: String,
         capabilities: LLMProviderCapabilities,
         defaultModelID: String?,
+        summarizationModelID: String? = nil,
         defaultBaseURL: URL
     ) {
         self.id = id
         self.displayName = displayName
         self.capabilities = capabilities
         self.defaultModelID = defaultModelID
+        self.summarizationModelID = summarizationModelID
         self.defaultBaseURL = defaultBaseURL
     }
 }

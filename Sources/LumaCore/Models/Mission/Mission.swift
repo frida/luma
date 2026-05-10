@@ -7,7 +7,9 @@ public struct Mission: Codable, Identifiable, Sendable, FetchableRecord, Persist
     public var id: UUID
     public var createdAt: Date
     public var updatedAt: Date
+    public var title: String?
     public var goalText: String
+    public var pendingUserText: String
     public var status: MissionStatus
     public var providerID: String
     public var modelID: String
@@ -20,13 +22,14 @@ public struct Mission: Codable, Identifiable, Sendable, FetchableRecord, Persist
     public var cacheCreateTokens: Int
     public var thinkingBudget: Int
     public var temperature: Double?
-    public var pendingUserText: String
 
     enum CodingKeys: String, CodingKey {
         case id
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+        case title
         case goalText = "goal_text"
+        case pendingUserText = "pending_user_text"
         case status
         case providerID = "provider_id"
         case modelID = "model_id"
@@ -39,7 +42,6 @@ public struct Mission: Codable, Identifiable, Sendable, FetchableRecord, Persist
         case cacheCreateTokens = "cache_create_tokens"
         case thinkingBudget = "thinking_budget"
         case temperature
-        case pendingUserText = "pending_user_text"
     }
 
     public init(
@@ -56,7 +58,9 @@ public struct Mission: Codable, Identifiable, Sendable, FetchableRecord, Persist
         self.id = id
         self.createdAt = now
         self.updatedAt = now
+        self.title = nil
         self.goalText = goalText
+        self.pendingUserText = ""
         self.status = .drafting
         self.providerID = providerID
         self.modelID = modelID
@@ -69,6 +73,5 @@ public struct Mission: Codable, Identifiable, Sendable, FetchableRecord, Persist
         self.cacheCreateTokens = 0
         self.thinkingBudget = thinkingBudget
         self.temperature = temperature
-        self.pendingUserText = ""
     }
 }

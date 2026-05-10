@@ -94,8 +94,17 @@ private struct MissionHeader: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(mission.goalText)
-                    .font(.title3.weight(.semibold))
+                if let title = mission.title, !title.isEmpty {
+                    Text(title)
+                        .font(.title3.weight(.semibold))
+                    Text(mission.goalText)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                } else {
+                    Text(mission.goalText)
+                        .font(.title3.weight(.semibold))
+                }
 
                 HStack(spacing: 12) {
                     statusIndicator

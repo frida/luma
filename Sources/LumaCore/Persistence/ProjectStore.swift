@@ -1023,7 +1023,9 @@ public final class ProjectStore: Sendable {
             t.primaryKey("id", .text).notNull()
             t.column("created_at", .datetime).notNull()
             t.column("updated_at", .datetime).notNull()
+            t.column("title", .text)
             t.column("goal_text", .text).notNull()
+            t.column("pending_user_text", .text).notNull().defaults(to: "")
             t.column("status", .text).notNull()
             t.column("provider_id", .text).notNull()
             t.column("model_id", .text).notNull()
@@ -1036,7 +1038,6 @@ public final class ProjectStore: Sendable {
             t.column("cache_create_tokens", .integer).notNull().defaults(to: 0)
             t.column("thinking_budget", .integer).notNull().defaults(to: 0)
             t.column("temperature", .double)
-            t.column("pending_user_text", .text).notNull().defaults(to: "")
         }
 
         try db.create(table: "mission_turn", ifNotExists: true) { t in

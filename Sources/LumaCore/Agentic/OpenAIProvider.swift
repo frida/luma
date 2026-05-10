@@ -24,6 +24,7 @@ public struct OpenAIProvider: LLMProvider {
                 supportsCustomBaseURL: true
             ),
             defaultModelID: "gpt-5",
+            summarizationModelID: "gpt-5-mini",
             defaultBaseURL: baseURL
         )
     }

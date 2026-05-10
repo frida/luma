@@ -24,6 +24,7 @@ public struct LocalOpenAICompatibleProvider: LLMProvider {
                 supportsCustomBaseURL: true
             ),
             defaultModelID: "gpt-oss:20b",
+            summarizationModelID: "llama3.2:3b",
             defaultBaseURL: baseURL
         )
     }

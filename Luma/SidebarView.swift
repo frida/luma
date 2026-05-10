@@ -148,7 +148,7 @@ private struct SidebarMissionRow: View {
             Image(systemName: iconName)
                 .foregroundStyle(iconColor)
                 .frame(width: subrowIconWidth)
-            Text(mission.goalText.isEmpty ? "(untitled mission)" : mission.goalText)
+            Text(displayTitle)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 0)
@@ -180,6 +180,11 @@ private struct SidebarMissionRow: View {
             selection = .missions
         }
         workspace.engine.deleteMission(missionID: mission.id)
+    }
+
+    private var displayTitle: String {
+        if let title = mission.title, !title.isEmpty { return title }
+        return mission.goalText.isEmpty ? "(untitled mission)" : mission.goalText
     }
 
     private var iconName: String {
