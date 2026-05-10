@@ -548,7 +548,7 @@ final class MainWindow {
         }
         select(.session(session.id))
         Task { @MainActor in
-            await engine.spawnAndAttach(device: device, session: session)
+            _ = try? await engine.spawnAndAttach(device: device, session: session)
             self.refreshAfterAttach(sessionID: session.id)
         }
     }
@@ -577,7 +577,7 @@ final class MainWindow {
         }
         select(.session(session.id))
         Task { @MainActor in
-            await engine.attach(device: device, process: process, session: session)
+            _ = try? await engine.attach(device: device, process: process, session: session)
             self.refreshAfterAttach(sessionID: session.id)
         }
     }

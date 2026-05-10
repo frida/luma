@@ -140,14 +140,18 @@ public enum MissionTools {
             guard let engine else { return ActionResult(summary: "engine unavailable", resultJSON: "[]", isError: true) }
             let sessions = engine.sessions
             let array: [[String: Any]] = sessions.map { s in
-                [
+                var entry: [String: Any] = [
                     "id": s.id.uuidString,
                     "process_name": s.processName,
                     "device_id": s.deviceID,
                     "device_name": s.deviceName,
-                    "phase": s.phase.rawValue,
+                    "phase": phaseDescription(s.phase),
                     "last_known_pid": s.lastKnownPID,
                 ]
+                if let error = s.lastError, !error.isEmpty {
+                    entry["last_error"] = error
+                }
+                return entry
             }
             return makeResult(jsonObject: array, summary: "Found \(sessions.count) session\(sessions.count == 1 ? "" : "s")")
         }
@@ -194,13 +198,12 @@ public enum MissionTools {
                     lastKnownPID: pid
                 )
                 try? engine.store.save(session)
-                await engine.attach(device: device, process: process, session: session)
-                let payload: [String: Any] = [
-                    "session_id": session.id.uuidString,
-                    "process_name": process.name,
-                    "pid": pid,
-                ]
-                return makeResult(jsonObject: payload, summary: "Attached to \(process.name) (pid \(pid)) on \(device.name)")
+                do {
+                    let attached = try await engine.attach(device: device, process: process, session: session)
+                    return attachSuccessResult(session: attached, process: process, device: device, reused: false, successVerb: "Attached")
+                } catch {
+                    return errorResult("attach failed for \(process.name) (pid \(pid)) on \(device.name): \(error.localizedDescription)")
+                }
             } catch {
                 return errorResult("attach failed: \(error.localizedDescription)")
             }
@@ -273,14 +276,12 @@ public enum MissionTools {
                 lastKnownPID: 0
             )
             try? engine.store.save(session)
-            await engine.spawnAndAttach(device: device, session: session)
-
-            let payload: [String: Any] = [
-                "session_id": session.id.uuidString,
-                "process_name": config.defaultDisplayName,
-                "auto_resume": autoResume,
-            ]
-            return makeResult(jsonObject: payload, summary: "Spawned \(config.defaultDisplayName) on \(device.name)")
+            do {
+                let attached = try await engine.spawnAndAttach(device: device, session: session)
+                return spawnSuccessResult(session: attached, processName: config.defaultDisplayName, device: device, autoResume: autoResume, reused: false, successVerb: "Spawned")
+            } catch {
+                return errorResult("spawn failed for \(config.defaultDisplayName) on \(device.name): \(error.localizedDescription)")
+            }
         }
     }
 
@@ -292,17 +293,15 @@ public enum MissionTools {
     }
 
     private static func reuseAttachSession(_ session: ProcessSession, engine: Engine, device: Device, process: ProcessDetails) async -> ActionResult {
-        let payload: [String: Any] = [
-            "session_id": session.id.uuidString,
-            "process_name": process.name,
-            "pid": process.pid,
-            "reused": true,
-        ]
         if engine.node(forSessionID: session.id) != nil {
-            return makeResult(jsonObject: payload, summary: "Already attached to \(process.name) (pid \(process.pid)) on \(device.name)")
+            return attachSuccessResult(session: session, process: process, device: device, reused: true, successVerb: "Already attached")
         }
-        await engine.attach(device: device, process: process, session: session)
-        return makeResult(jsonObject: payload, summary: "Re-attached to \(process.name) (pid \(process.pid)) on \(device.name)")
+        do {
+            let attached = try await engine.attach(device: device, process: process, session: session)
+            return attachSuccessResult(session: attached, process: process, device: device, reused: true, successVerb: "Re-attached")
+        } catch {
+            return errorResult("attach failed for \(process.name) (pid \(process.pid)) on \(device.name): \(error.localizedDescription)")
+        }
     }
 
     private static func findExistingSpawn(in engine: Engine, deviceID: String, target: SpawnConfig.Target) -> ProcessSession? {
@@ -313,17 +312,47 @@ public enum MissionTools {
     }
 
     private static func reuseSpawnSession(_ session: ProcessSession, engine: Engine, device: Device, config: SpawnConfig) async -> ActionResult {
-        let payload: [String: Any] = [
-            "session_id": session.id.uuidString,
-            "process_name": session.processName,
-            "auto_resume": config.autoResume,
-            "reused": true,
-        ]
         if engine.node(forSessionID: session.id) != nil {
-            return makeResult(jsonObject: payload, summary: "Already attached to \(session.processName) on \(device.name)")
+            return spawnSuccessResult(session: session, processName: session.processName, device: device, autoResume: config.autoResume, reused: true, successVerb: "Already attached to")
         }
-        await engine.spawnAndAttach(device: device, session: session)
-        return makeResult(jsonObject: payload, summary: "Re-spawned \(session.processName) on \(device.name)")
+        do {
+            let attached = try await engine.spawnAndAttach(device: device, session: session)
+            return spawnSuccessResult(session: attached, processName: session.processName, device: device, autoResume: config.autoResume, reused: true, successVerb: "Re-spawned")
+        } catch {
+            return errorResult("spawn failed for \(session.processName) on \(device.name): \(error.localizedDescription)")
+        }
+    }
+
+    private static func attachSuccessResult(session: ProcessSession, process: ProcessDetails, device: Device, reused: Bool, successVerb: String) -> ActionResult {
+        var payload: [String: Any] = [
+            "session_id": session.id.uuidString,
+            "process_name": process.name,
+            "pid": process.pid,
+            "phase": phaseDescription(session.phase),
+        ]
+        if reused { payload["reused"] = true }
+        return makeResult(jsonObject: payload, summary: "\(successVerb) to \(process.name) (pid \(process.pid)) on \(device.name)")
+    }
+
+    private static func spawnSuccessResult(session: ProcessSession, processName: String, device: Device, autoResume: Bool, reused: Bool, successVerb: String) -> ActionResult {
+        var payload: [String: Any] = [
+            "session_id": session.id.uuidString,
+            "process_name": processName,
+            "auto_resume": autoResume,
+            "phase": phaseDescription(session.phase),
+            "pid": session.lastKnownPID,
+        ]
+        if reused { payload["reused"] = true }
+        return makeResult(jsonObject: payload, summary: "\(successVerb) \(processName) on \(device.name)")
+    }
+
+    private static func phaseDescription(_ phase: ProcessSession.Phase) -> String {
+        switch phase {
+        case .idle: return "idle"
+        case .attaching: return "attaching"
+        case .awaitingInitialResume: return "awaiting_initial_resume"
+        case .attached: return "attached"
+        }
     }
 
     private static func spawnTargetsMatch(_ a: SpawnConfig.Target, _ b: SpawnConfig.Target) -> Bool {

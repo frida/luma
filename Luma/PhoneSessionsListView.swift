@@ -238,7 +238,7 @@ struct PhoneSessionsListView: View {
                 lastKnownPID: 0
             )
             try? workspace.store.save(record)
-            await workspace.engine.spawnAndAttach(device: device, session: record)
+            _ = try? await workspace.engine.spawnAndAttach(device: device, session: record)
         }
     }
 
@@ -285,7 +285,7 @@ struct PhoneSessionsListView: View {
                 record.iconPNGData = icon.pngData
             }
             try? workspace.store.save(record)
-            await workspace.engine.attach(device: device, process: proc, session: record)
+            _ = try? await workspace.engine.attach(device: device, process: proc, session: record)
 
             path.append(.session(record.id))
         }

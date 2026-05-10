@@ -2,6 +2,17 @@ import Foundation
 import Frida
 import Observation
 
+public enum EngineError: Swift.Error, LocalizedError {
+    case spawnedProcessNotFound(pid: UInt)
+
+    public var errorDescription: String? {
+        switch self {
+        case .spawnedProcessNotFound(let pid):
+            return "Spawned pid \(pid) not found"
+        }
+    }
+}
+
 @Observable
 @MainActor
 public final class Engine {
@@ -1156,10 +1167,11 @@ public final class Engine {
 
     // MARK: - Session Orchestration
 
+    @discardableResult
     public func spawnAndAttach(
         device: Device,
         session: ProcessSession
-    ) async {
+    ) async throws -> ProcessSession {
         guard case .spawn(let config) = session.kind else {
             fatalError("spawnAndAttach requires a spawn session")
         }
@@ -1184,16 +1196,13 @@ public final class Engine {
 
             let procs = try await device.enumerateProcesses(pids: [pid], scope: .full)
             guard let process = procs.first else {
-                s.lastError = "Spawned pid \(pid) not found"
-                s.phase = .idle
-                saveSession(s)
-                return
+                throw EngineError.spawnedProcessNotFound(pid: pid)
             }
 
             s.deviceName = device.name
             saveSession(s)
 
-            await performAttach(
+            try await performAttach(
                 device: device,
                 process: process,
                 session: s
@@ -1207,30 +1216,34 @@ public final class Engine {
                 s.phase = .awaitingInitialResume
             }
             saveSession(s)
+            return s
         } catch {
             s.lastError = error.localizedDescription
             s.phase = .idle
             saveSession(s)
+            throw error
         }
     }
 
+    @discardableResult
     public func attach(
         device: Device,
         process: ProcessDetails,
         session: ProcessSession
-    ) async {
-        await performAttach(
+    ) async throws -> ProcessSession {
+        try await performAttach(
             device: device,
             process: process,
             session: session
         )
+        return (try? store.fetchSession(id: session.id)) ?? session
     }
 
     private func performAttach(
         device: Device,
         process: ProcessDetails,
         session: ProcessSession
-    ) async {
+    ) async throws {
         var s = session
         s.lastKnownPID = process.pid
         s.detachReason = .applicationRequested
@@ -1333,6 +1346,7 @@ public final class Engine {
                 $0.lastError = error.localizedDescription
                 $0.phase = .idle
             }
+            throw error
         }
     }
 
@@ -1902,7 +1916,7 @@ public final class Engine {
             processName: process.name
         )
 
-        await attach(device: device, process: process, session: session)
+        _ = try? await attach(device: device, process: process, session: session)
     }
 
     public func reestablishSession(id sessionID: UUID) async -> ReestablishResult {
@@ -1930,7 +1944,7 @@ public final class Engine {
         }
 
         if case .spawn(_) = s.kind {
-            await spawnAndAttach(device: device, session: s)
+            _ = try? await spawnAndAttach(device: device, session: s)
             return .attached
         }
 
@@ -1964,7 +1978,7 @@ public final class Engine {
             s.deviceName = device.name
             saveSession(s)
 
-            await performAttach(device: device, process: chosen, session: s)
+            try await performAttach(device: device, process: chosen, session: s)
             return .attached
         } catch {
             s.lastError = error.localizedDescription
@@ -3122,7 +3136,7 @@ public final class Engine {
                 try? await device.resume(pid)
                 return
             }
-            await performAttach(device: device, process: process, session: session)
+            try await performAttach(device: device, process: process, session: session)
         } catch {
             try? await device.resume(pid)
             updateSession(id: session.id) {

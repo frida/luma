@@ -214,7 +214,7 @@ struct MainWindowView: View {
             try? workspace.store.save(sessionRecord)
             workspace.selectedSidebarItem = .session(sessionRecord.id)
 
-            await workspace.engine.spawnAndAttach(
+            _ = try? await workspace.engine.spawnAndAttach(
                 device: device,
                 session: sessionRecord
             )
@@ -274,7 +274,7 @@ struct MainWindowView: View {
             try? workspace.store.save(sessionRecord)
             workspace.selectedSidebarItem = .session(sessionRecord.id)
 
-            await workspace.engine.attach(
+            _ = try? await workspace.engine.attach(
                 device: device,
                 process: proc,
                 session: sessionRecord
