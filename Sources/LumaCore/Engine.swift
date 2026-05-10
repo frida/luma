@@ -3300,7 +3300,7 @@ public final class Engine {
                 collaboration.enqueueMissionUpsert(m)
             }
         }
-        await server.stop()
+        server.stop()
         externalMCPServer = nil
         externalMCPURL = nil
         externalMCPMissionID = nil

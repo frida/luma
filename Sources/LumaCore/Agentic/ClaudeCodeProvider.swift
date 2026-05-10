@@ -315,7 +315,7 @@ private actor MCPServerHandle {
         if let missionID, let engine {
             await engine.unregisterActiveMCPServer(for: missionID)
         }
-        await server.stop()
+        await MainActor.run { server.stop() }
         self.server = nil
         self.missionID = nil
         self.engine = nil
