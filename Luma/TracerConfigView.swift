@@ -438,11 +438,18 @@ struct TracerConfigView: View {
                 if selectedHookIsFunctionHook {
                     Toggle("ITrace", isOn: bindingForSelectedHookITrace())
                         .toggleStyle(.switch)
-                        .help("Capture instruction trace for each call up to the arming cap")
+                        .help("Capture instruction trace for each call up to the arming caps")
 
                     if let arming = selectedHook?.itraceArming, let hook = selectedHook {
                         Stepper(value: bindingForSelectedHookITraceMax(), in: 1...100) {
-                            Text("\(itraceCaptured(for: hook.id)) / \(arming.maxInvocations)")
+                            Text("\(itraceCaptured(for: hook.id)) / \(arming.maxInvocations) calls")
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        .controlSize(.small)
+
+                        Stepper(value: bindingForSelectedHookITraceBytes(), in: (256 * 1024)...(64 * 1024 * 1024), step: 256 * 1024) {
+                            Text("\(formatBytes(arming.maxBytesPerInvocation)) / call")
                                 .font(.caption.monospacedDigit())
                                 .foregroundStyle(.secondary)
                         }
@@ -743,11 +750,38 @@ struct TracerConfigView: View {
             set: { newValue in
                 guard let hook = selectedHook,
                     let idx = config.hooks.firstIndex(where: { $0.id == hook.id }),
-                    config.hooks[idx].itraceArming != nil
+                    let current = config.hooks[idx].itraceArming
                 else { return }
-                config.hooks[idx].itraceArming = ITraceArming(maxInvocations: max(1, newValue))
+                config.hooks[idx].itraceArming = ITraceArming(
+                    maxInvocations: max(1, newValue),
+                    maxBytesPerInvocation: current.maxBytesPerInvocation
+                )
             }
         )
+    }
+
+    private func bindingForSelectedHookITraceBytes() -> Binding<Int> {
+        Binding(
+            get: {
+                guard let hook = selectedHook else { return ITraceArming.defaultMaxBytesPerInvocation }
+                return config.hooks.first(where: { $0.id == hook.id })?.itraceArming?.maxBytesPerInvocation
+                    ?? ITraceArming.defaultMaxBytesPerInvocation
+            },
+            set: { newValue in
+                guard let hook = selectedHook,
+                    let idx = config.hooks.firstIndex(where: { $0.id == hook.id }),
+                    let current = config.hooks[idx].itraceArming
+                else { return }
+                config.hooks[idx].itraceArming = ITraceArming(
+                    maxInvocations: current.maxInvocations,
+                    maxBytesPerInvocation: max(1024, newValue)
+                )
+            }
+        )
+    }
+
+    private func formatBytes(_ count: Int) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(count), countStyle: .memory)
     }
 
     private func itraceCaptured(for hookID: UUID) -> Int {

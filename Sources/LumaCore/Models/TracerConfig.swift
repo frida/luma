@@ -7,11 +7,17 @@ public enum TracerHookKind: String, Codable, Sendable {
 
 public struct ITraceArming: Codable, Equatable, Sendable {
     public static let defaultMaxInvocations: Int = 5
+    public static let defaultMaxBytesPerInvocation: Int = 1_000_000
 
     public var maxInvocations: Int
+    public var maxBytesPerInvocation: Int
 
-    public init(maxInvocations: Int = ITraceArming.defaultMaxInvocations) {
+    public init(
+        maxInvocations: Int = ITraceArming.defaultMaxInvocations,
+        maxBytesPerInvocation: Int = ITraceArming.defaultMaxBytesPerInvocation
+    ) {
         self.maxInvocations = maxInvocations
+        self.maxBytesPerInvocation = maxBytesPerInvocation
     }
 }
 
@@ -85,7 +91,10 @@ public struct TracerConfig: Codable, Equatable, Sendable {
                 }
 
                 if let arming = hook.itraceArming {
-                    dict["itraceArming"] = ["maxInvocations": arming.maxInvocations] as JSONObject
+                    dict["itraceArming"] = [
+                        "maxInvocations": arming.maxInvocations,
+                        "maxBytesPerInvocation": arming.maxBytesPerInvocation,
+                    ] as JSONObject
                 }
 
                 return dict

@@ -14,6 +14,8 @@ interface ActiveSession {
     buffer: TraceBuffer;
     reader: TraceBufferReader;
     session: TraceSession;
+    drainTimer: ReturnType<typeof setInterval> | null;
+    bytesDrained: number;
 }
 
 const active = new Map<string, ActiveSession>();
@@ -24,6 +26,7 @@ export interface StartOptions {
     target: TraceStrategy;
     hookTarget?: string | null;
     prologueBytes?: ArrayBuffer | null;
+    maxBytes?: number;
 }
 
 export function startSession(opts: StartOptions): void {
@@ -31,12 +34,15 @@ export function startSession(opts: StartOptions): void {
     const session = new TraceSession(opts.target, buffer);
     const reader = new TraceBufferReader(buffer);
 
-    active.set(opts.sessionId, {
+    const entry: ActiveSession = {
         sessionId: opts.sessionId,
         buffer,
         reader,
         session,
-    });
+        drainTimer: null,
+        bytesDrained: 0,
+    };
+    active.set(opts.sessionId, entry);
 
     send({
         type: "itrace:start",
@@ -50,6 +56,24 @@ export function startSession(opts: StartOptions): void {
     });
 
     session.open();
+
+    if (opts.maxBytes !== undefined && opts.maxBytes > 0) {
+        const limit = opts.maxBytes;
+        entry.drainTimer = setInterval(() => {
+            const chunk = entry.reader.read();
+            if (chunk.byteLength > 0) {
+                entry.bytesDrained += chunk.byteLength;
+                send({
+                    type: "itrace:chunk",
+                    sessionId: entry.sessionId,
+                    lost: entry.reader.lost,
+                }, chunk);
+            }
+            if (entry.bytesDrained >= limit) {
+                stopSession(entry.sessionId);
+            }
+        }, 100);
+    }
 }
 
 export function stopSession(sessionId: string): void {
@@ -58,6 +82,10 @@ export function stopSession(sessionId: string): void {
         return;
     }
     active.delete(sessionId);
+
+    if (a.drainTimer !== null) {
+        clearInterval(a.drainTimer);
+    }
 
     a.session.close();
     const chunk = a.reader.read();

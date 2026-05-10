@@ -755,9 +755,9 @@ public enum MissionTools {
     private static func registerUpdateTracerHook(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "update_tracer_hook",
-            description: "Update one or more fields of a tracer hook. Only fields you pass change. Pass 'code' to swap the JS handler. Pass 'itrace_arming' to arm instruction tracing for this hook with a max-invocations safety cap (e.g. {\"max_invocations\": 5}); pass null to disarm. Tracing always self-disarms when the cap is reached.",
+            description: "Update one or more fields of a tracer hook. Only fields you pass change. Pass 'code' to swap the JS handler. Pass 'itrace_arming' to arm instruction tracing for this hook with safety caps (max_invocations stops new captures once it's reached; max_bytes_per_invocation auto-stops a single capture once it crosses that many bytes). Pass null to disarm.",
             inputSchemaJSON: """
-                {"type":"object","properties":{"session_id":{"type":"string"},"hook_id":{"type":"string"},"code":{"type":"string"},"display_name":{"type":"string"},"is_enabled":{"type":"boolean"},"is_pinned":{"type":"boolean"},"itrace_arming":{"type":["object","null"],"properties":{"max_invocations":{"type":"integer","minimum":1,"default":5}},"additionalProperties":false}},"required":["session_id","hook_id"],"additionalProperties":false}
+                {"type":"object","properties":{"session_id":{"type":"string"},"hook_id":{"type":"string"},"code":{"type":"string"},"display_name":{"type":"string"},"is_enabled":{"type":"boolean"},"is_pinned":{"type":"boolean"},"itrace_arming":{"type":["object","null"],"properties":{"max_invocations":{"type":"integer","minimum":1,"default":5},"max_bytes_per_invocation":{"type":"integer","minimum":1024,"default":1000000}},"additionalProperties":false}},"required":["session_id","hook_id"],"additionalProperties":false}
                 """,
             isObserve: false,
             requiresSession: true
@@ -783,8 +783,9 @@ public enum MissionTools {
                 if armingArg is NSNull {
                     hook.itraceArming = nil
                 } else if let armingObj = armingArg as? [String: Any] {
-                    let max = (armingObj["max_invocations"] as? Int) ?? ITraceArming.defaultMaxInvocations
-                    hook.itraceArming = ITraceArming(maxInvocations: max)
+                    let maxInvocations = (armingObj["max_invocations"] as? Int) ?? ITraceArming.defaultMaxInvocations
+                    let maxBytes = (armingObj["max_bytes_per_invocation"] as? Int) ?? ITraceArming.defaultMaxBytesPerInvocation
+                    hook.itraceArming = ITraceArming(maxInvocations: maxInvocations, maxBytesPerInvocation: maxBytes)
                 }
             }) else {
                 return errorResult("no tracer hook with id \(hookID)")
@@ -802,7 +803,10 @@ public enum MissionTools {
             "is_pinned": hook.isPinned,
         ]
         if let arming = hook.itraceArming {
-            entry["itrace_arming"] = ["max_invocations": arming.maxInvocations]
+            entry["itrace_arming"] = [
+                "max_invocations": arming.maxInvocations,
+                "max_bytes_per_invocation": arming.maxBytesPerInvocation,
+            ]
         }
         return entry
     }

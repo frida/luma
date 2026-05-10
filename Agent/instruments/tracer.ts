@@ -20,6 +20,7 @@ interface TracerHookConfig {
 
 interface ITraceArming {
     maxInvocations: number;
+    maxBytesPerInvocation: number;
 }
 
 type HookID = string;
@@ -245,6 +246,7 @@ class Tracer {
                             target: { type: "thread", threadId: this.threadId },
                             hookTarget: target?.toString() ?? null,
                             prologueBytes: prologueBackup,
+                            maxBytes: arming.maxBytesPerInvocation,
                         });
                     }
                 }

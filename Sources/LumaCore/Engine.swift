@@ -2523,7 +2523,10 @@ public final class Engine {
             ]
             if hook.isPinned { dict["isPinned"] = true }
             if let arming = hook.itraceArming {
-                dict["itraceArming"] = ["maxInvocations": arming.maxInvocations] as [String: Any]
+                dict["itraceArming"] = [
+                    "maxInvocations": arming.maxInvocations,
+                    "maxBytesPerInvocation": arming.maxBytesPerInvocation,
+                ] as [String: Any]
             }
             hooksJSON.append(dict)
         }
