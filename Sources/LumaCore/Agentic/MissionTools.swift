@@ -59,9 +59,9 @@ public enum MissionTools {
     private static func registerListProcesses(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "list_processes",
-            description: "List running processes on a Frida device. Use after list_devices when looking for a pid to attach to.",
+            description: "List running processes on a Frida device. Pass name_pattern (case-insensitive regex on the process name) to narrow the result; omit it to browse all processes. Use after list_devices when looking for a pid to attach to.",
             inputSchemaJSON: """
-                {"type":"object","properties":{"device_id":{"type":"string"},"scope":{"type":"string","enum":["minimal","metadata","full"],"default":"minimal","description":"metadata adds parameters; full also adds icons (slower)"}},"required":["device_id"],"additionalProperties":false}
+                {"type":"object","properties":{"device_id":{"type":"string"},"name_pattern":{"type":"string","description":"Case-insensitive regex matched against process names. Omit to return everything."},"scope":{"type":"string","enum":["minimal","metadata","full"],"default":"minimal","description":"metadata adds parameters; full also adds icons (slower)"}},"required":["device_id"],"additionalProperties":false}
                 """,
             isObserve: true,
             requiresSession: false
@@ -76,16 +76,52 @@ public enum MissionTools {
                 return errorResult("no device with id \(deviceID)")
             }
             let scope = parseProcessScope(invocation.args["scope"] as? String)
+            let patternString = (invocation.args["name_pattern"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let regex: Regex<AnyRegexOutput>?
+            if let patternString, !patternString.isEmpty {
+                do {
+                    regex = try Regex(patternString).ignoresCase()
+                } catch {
+                    return errorResult("invalid name_pattern: \(error.localizedDescription)")
+                }
+            } else {
+                regex = nil
+            }
             do {
                 let processes = try await device.enumerateProcesses(scope: scope)
-                let array: [[String: Any]] = processes.map { p in
+                let matches: [ProcessDetails]
+                if let regex {
+                    matches = processes.filter { $0.name.contains(regex) }
+                } else {
+                    matches = processes
+                }
+                let array: [[String: Any]] = matches.map { p in
                     ["pid": p.pid, "name": p.name]
                 }
-                return makeResult(jsonObject: array, summary: "Found \(processes.count) process\(processes.count == 1 ? "" : "es") on \(device.name)")
+                let payload: [String: Any] = [
+                    "matches": array,
+                    "match_count": matches.count,
+                    "total_scanned": processes.count,
+                ]
+                let summary = describeProcessMatchSummary(
+                    matchCount: matches.count,
+                    totalScanned: processes.count,
+                    pattern: patternString,
+                    deviceName: device.name
+                )
+                return makeResult(jsonObject: payload, summary: summary)
             } catch {
                 return errorResult("enumerate failed: \(error.localizedDescription)")
             }
         }
+    }
+
+    private static func describeProcessMatchSummary(matchCount: Int, totalScanned: Int, pattern: String?, deviceName: String) -> String {
+        let processWord = matchCount == 1 ? "process" : "processes"
+        if let pattern, !pattern.isEmpty {
+            return "Matched \(matchCount) \(processWord) of \(totalScanned) on \(deviceName) (pattern: \(pattern))"
+        }
+        return "Found \(totalScanned) \(processWord) on \(deviceName)"
     }
 
     // MARK: - list_sessions
