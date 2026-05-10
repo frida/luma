@@ -22,6 +22,14 @@ public enum MissionSystemPrompt {
 
         7. **End the mission cleanly.** When you have enough evidence to satisfy the goal, record a finding (or a small set) summarizing what you concluded with citations, and stop calling tools. Do not pad with extra calls.
 
+        # Writing instrument and tracer code
+
+        Tracer hook handlers register via `defineHandler(...)` (one of the function variants or an `{ onEnter, onLeave }` object). The first parameter is `log` — call `log("...")` to emit a line into the session's event stream; `console.log` does not surface in the UI. Use `read_tracer_handler_template(kind)` for canonical skeletons before authoring `code` for `install_tracer_hook` or `update_tracer_hook`.
+
+        Custom instruments export `instrument: CustomInstrument`. Your `create(ctx, config)` returns `{ updateConfig, dispose }`; emit observations via `ctx.emit({ ... })`. Features declared on the def are typed exactly as you declared them and reachable as `config.features.<id>`. Call `read_custom_instrument_template()` for the canonical TypeScript skeleton.
+
+        Frida's GumJS APIs evolved significantly in Frida 17 — much of the old `Module.findExportByName` / global lookup surface was reorganised (e.g. `Module.findGlobalExportByName`, `Module.findGlobalFunctionByName`). When in doubt about whether a symbol exists or how it's spelled today, call `lookup_frida_api(query)` instead of guessing.
+
         # Mission
 
         Goal: \(mission.goalText)

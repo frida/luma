@@ -33,6 +33,9 @@ public enum MissionTools {
         registerUpdateCustomInstrument(in: catalog, engine: engine)
         registerDeleteCustomInstrument(in: catalog, engine: engine)
         registerAttachCustomInstrument(in: catalog, engine: engine)
+        registerReadTracerHandlerTemplate(in: catalog)
+        registerReadCustomInstrumentTemplate(in: catalog)
+        registerLookupFridaAPI(in: catalog)
         registerPinAsInsight(in: catalog, engine: engine)
         registerRequestUserInput(in: catalog)
     }
@@ -952,6 +955,145 @@ public enum MissionTools {
             ]
             return makeResult(jsonObject: payload, summary: "Attached custom instrument to session")
         }
+    }
+
+    private static func registerReadTracerHandlerTemplate(in catalog: ToolCatalog) {
+        let spec = ActionSpec(
+            name: "read_tracer_handler_template",
+            description: "Return the canonical defineHandler() skeleton for a tracer hook. 'kind' is one of: instruction, native, objc, swift, java. Use this when authoring code for install_tracer_hook or update_tracer_hook.",
+            inputSchemaJSON: """
+                {"type":"object","properties":{"kind":{"type":"string","enum":["instruction","native","objc","swift","java"]}},"required":["kind"],"additionalProperties":false}
+                """,
+            isObserve: true,
+            requiresSession: false
+        )
+        catalog.register(spec: spec) { invocation in
+            guard let kind = invocation.args["kind"] as? String else {
+                return errorResult("missing kind")
+            }
+            guard let template = tracerHandlerTemplate(kind: kind) else {
+                return errorResult("unknown kind '\(kind)'")
+            }
+            return makeResult(jsonObject: ["kind": kind, "template": template], summary: "\(kind) tracer handler template")
+        }
+    }
+
+    private static func registerReadCustomInstrumentTemplate(in catalog: ToolCatalog) {
+        let spec = ActionSpec(
+            name: "read_custom_instrument_template",
+            description: "Return the canonical TypeScript skeleton for a custom instrument: how create(ctx, config) is called, how to emit events via ctx.emit, how features are typed, and how dispose() should undo every side effect.",
+            inputSchemaJSON: """
+                {"type":"object","properties":{},"additionalProperties":false}
+                """,
+            isObserve: true,
+            requiresSession: false
+        )
+        catalog.register(spec: spec) { _ in
+            return makeResult(
+                jsonObject: ["template": CustomInstrumentDef.exampleSource],
+                summary: "Custom instrument source template"
+            )
+        }
+    }
+
+    private static func registerLookupFridaAPI(in catalog: ToolCatalog) {
+        let spec = ActionSpec(
+            name: "lookup_frida_api",
+            description: "Search Frida's GumJS TypeScript declarations. Returns matching declarations with their doc comments. Use this when the LLM training data may be stale (Frida 17 reorganised the Module API; symbols like findGlobalExportByName replaced the older findExportByName). Pass a function or class name as 'query' (case-insensitive substring match).",
+            inputSchemaJSON: """
+                {"type":"object","properties":{"query":{"type":"string"},"max_matches":{"type":"integer","minimum":1,"maximum":40,"default":12}},"required":["query"],"additionalProperties":false}
+                """,
+            isObserve: true,
+            requiresSession: false
+        )
+        catalog.register(spec: spec) { invocation in
+            guard let query = (invocation.args["query"] as? String)?.trimmingCharacters(in: .whitespaces), !query.isEmpty else {
+                return errorResult("missing query")
+            }
+            guard let typings = TypeScriptTypings.fridaGum else {
+                return errorResult("Frida API reference unavailable in this build")
+            }
+            let cap = (invocation.args["max_matches"] as? Int) ?? 12
+            let matches = searchFridaDeclarations(in: typings.content, query: query, limit: cap)
+            let payload: [String: Any] = [
+                "query": query,
+                "match_count": matches.count,
+                "matches": matches,
+            ]
+            return makeResult(
+                jsonObject: payload,
+                summary: matches.isEmpty ? "No declarations matched '\(query)'" : "\(matches.count) declaration\(matches.count == 1 ? "" : "s") matched '\(query)'"
+            )
+        }
+    }
+
+    private static func tracerHandlerTemplate(kind: String) -> String? {
+        switch kind {
+        case "instruction":
+            return defaultTracerCode(kind: .instruction, anchor: .absolute(0), displayName: "myTarget")
+        case "native":
+            return defaultTracerCode(kind: .function, anchor: .absolute(0), displayName: "myTarget")
+        case "objc":
+            return defaultTracerCode(kind: .function, anchor: .objcMethod(selector: "-[MyClass doThing:]"), displayName: "-[MyClass doThing:]")
+        case "swift":
+            return defaultTracerCode(kind: .function, anchor: .swiftFunc(module: "MyModule", function: "MyType.doThing()"), displayName: "MyModule.MyType.doThing()")
+        case "java":
+            return defaultTracerCode(kind: .function, anchor: .javaMethod(className: "com.example.MyClass", methodName: "doThing"), displayName: "com.example.MyClass.doThing")
+        default:
+            return nil
+        }
+    }
+
+    private static func searchFridaDeclarations(in source: String, query: String, limit: Int) -> [[String: String]] {
+        let blocks = fridaDeclarationBlocks(from: source)
+        let needle = query.lowercased()
+        var matches: [[String: String]] = []
+        for block in blocks {
+            if block.declaration.lowercased().contains(needle) {
+                matches.append([
+                    "declaration": block.declaration,
+                    "doc": block.doc,
+                ])
+                if matches.count >= limit { break }
+            }
+        }
+        return matches
+    }
+
+    private struct FridaBlock {
+        var doc: String
+        var declaration: String
+    }
+
+    private static func fridaDeclarationBlocks(from source: String) -> [FridaBlock] {
+        var blocks: [FridaBlock] = []
+        var docLines: [String] = []
+        var inDoc = false
+        for raw in source.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = String(raw)
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if inDoc {
+                docLines.append(line)
+                if trimmed.hasSuffix("*/") { inDoc = false }
+                continue
+            }
+            if trimmed.hasPrefix("/**") {
+                docLines = [line]
+                if trimmed.hasSuffix("*/") {
+                    inDoc = false
+                } else {
+                    inDoc = true
+                }
+                continue
+            }
+            if trimmed.isEmpty || trimmed.hasPrefix("//") {
+                docLines = []
+                continue
+            }
+            blocks.append(FridaBlock(doc: docLines.joined(separator: "\n"), declaration: line))
+            docLines = []
+        }
+        return blocks
     }
 
     private static func describeIcon(_ icon: InstrumentIcon) -> String {
