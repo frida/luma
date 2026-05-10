@@ -178,13 +178,19 @@ struct CustomInstrumentFeaturesPopover: View {
     }
 
     private func toggleAdding() {
-        isAddingFeature.toggle()
         if isAddingFeature {
+            flushDraft()
+            isAddingFeature = false
+        } else {
+            isAddingFeature = true
             expandedFeatureID = nil
             DispatchQueue.main.async { draftFocus = .id }
-        } else {
-            resetDraft()
         }
+    }
+
+    private func flushDraft() {
+        addFeature()
+        resetDraft()
     }
 
     private func resetDraft() {
@@ -261,6 +267,9 @@ struct CustomInstrumentFeaturesPopover: View {
     }
 
     private func commit() {
+        if isAddingFeature {
+            flushDraft()
+        }
         var updated = def
         updated.features = draftFeatures
         Task { @MainActor in

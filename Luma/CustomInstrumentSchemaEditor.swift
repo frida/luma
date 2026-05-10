@@ -503,12 +503,14 @@ struct ObjectFieldsEditor: View {
     }
 
     private func toggleAdding() {
-        isAddingField.toggle()
         if isAddingField {
+            appendField()
+            resetDraft()
+            isAddingField = false
+        } else {
+            isAddingField = true
             expandedFieldID = nil
             DispatchQueue.main.async { draftFocus = .id }
-        } else {
-            resetDraft()
         }
     }
 

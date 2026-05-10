@@ -528,6 +528,9 @@ final class ObjectFieldsEditor {
 
     private func toggleAdding() {
         let nowVisible = !addRowBox.visible
+        if !nowVisible {
+            appendDraft()
+        }
         addRowBox.visible = nowVisible
         toggleAddButton.label = nowVisible ? "Done Adding" : "+ Add Field"
         if nowVisible {

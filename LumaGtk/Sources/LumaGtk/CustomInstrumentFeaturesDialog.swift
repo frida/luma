@@ -157,6 +157,9 @@ final class CustomInstrumentFeaturesDialog {
 
     private func toggleAdding() {
         let nowVisible = !addRowBox.visible
+        if !nowVisible {
+            appendFeature()
+        }
         addRowBox.visible = nowVisible
         toggleAddButton.label = nowVisible ? "Done Adding" : "+ Add Feature"
         if nowVisible {
@@ -202,6 +205,9 @@ final class CustomInstrumentFeaturesDialog {
     }
 
     private func commit() {
+        if addRowBox.visible {
+            appendFeature()
+        }
         var updated = def
         updated.features = draftFeatures
         let engine = self.engine
