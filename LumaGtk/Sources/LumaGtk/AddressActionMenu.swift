@@ -37,7 +37,7 @@ enum AddressActionMenu {
         address: UInt64,
         context: AddressContext = AddressContext()
     ) {
-        var items: [ContextMenu.Item] = [
+        let inspectSection: [ContextMenu.Item] = [
             .init("Open Disassembly") {
                 openInsight(engine: engine, sessionID: sessionID, address: address, kind: .disassembly, failureLabel: "Can\u{2019}t open disassembly")
             },
@@ -46,16 +46,18 @@ enum AddressActionMenu {
             },
         ]
 
-        for action in engine.addressActions(sessionID: sessionID, address: address, context: context) {
-            items.append(ContextMenu.Item(action.title, destructive: action.role == .destructive) {
-                Task { @MainActor in
-                    guard let target = await action.perform() else { return }
-                    navigateToTarget?(target)
+        let pluggableSection: [ContextMenu.Item] = engine
+            .addressActions(sessionID: sessionID, address: address, context: context)
+            .map { action in
+                ContextMenu.Item(action.title, destructive: action.role == .destructive) {
+                    Task { @MainActor in
+                        guard let target = await action.perform() else { return }
+                        navigateToTarget?(target)
+                    }
                 }
-            })
-        }
+            }
 
-        ContextMenu.present([items], at: anchor, x: x, y: y)
+        ContextMenu.present([inspectSection, pluggableSection], at: anchor, x: x, y: y)
     }
 
     static func openInsight(
