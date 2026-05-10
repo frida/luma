@@ -73,6 +73,7 @@ public final class ProcessNode: Identifiable {
     private let _moduleDeltas = AsyncEventSource<ModuleDelta>()
     private let _threadDeltas = AsyncEventSource<ThreadDelta>()
     private let _detachEvents = AsyncEventSource<SessionDetachReason>()
+    private let _widgetUpdates = AsyncEventSource<WidgetUpdate>()
 
     public var events: AsyncStream<RuntimeEvent> { _events.makeStream() }
     public var replResults: AsyncStream<REPLResult> { _replResults.makeStream() }
@@ -80,6 +81,7 @@ public final class ProcessNode: Identifiable {
     public var moduleDeltas: AsyncStream<ModuleDelta> { _moduleDeltas.makeStream() }
     public var threadDeltas: AsyncStream<ThreadDelta> { _threadDeltas.makeStream() }
     public var detachEvents: AsyncStream<SessionDetachReason> { _detachEvents.makeStream() }
+    public var widgetUpdates: AsyncStream<WidgetUpdate> { _widgetUpdates.makeStream() }
 
     private var scriptEventsStarted = false
     private var scriptEventsStartWaiters: [CheckedContinuation<Void, Never>] = []
@@ -383,6 +385,26 @@ public final class ProcessNode: Identifiable {
 
                 return true
 
+            case "widget-graph-point":
+                guard let update = decodeGraphPointUpdate(dict) else { return false }
+                _widgetUpdates.yield(update)
+                return true
+
+            case "widget-list-upsert":
+                guard let update = decodeListUpsertUpdate(dict) else { return false }
+                _widgetUpdates.yield(update)
+                return true
+
+            case "widget-list-remove":
+                guard let update = decodeListRemoveUpdate(dict) else { return false }
+                _widgetUpdates.yield(update)
+                return true
+
+            case "widget-clear":
+                guard let update = decodeClearUpdate(dict) else { return false }
+                _widgetUpdates.yield(update)
+                return true
+
             default:
                 return false
             }
@@ -411,6 +433,61 @@ public final class ProcessNode: Identifiable {
         default:
             return false
         }
+    }
+
+    // MARK: - Widget Updates
+
+    private func decodeGraphPointUpdate(_ dict: [String: Any]) -> WidgetUpdate? {
+        guard let context = decodeWidgetContext(dict),
+            let pointObj = dict["point"] as? [String: Any],
+            let series = pointObj["series"] as? String,
+            let x = decodeNumber(pointObj["x"]),
+            let y = decodeNumber(pointObj["y"])
+        else { return nil }
+        let point = WidgetGraphPoint(series: series, x: x, y: y)
+        return WidgetUpdate(instanceID: context.instanceID, widget: context.widget, kind: .graphPoint(point))
+    }
+
+    private func decodeListUpsertUpdate(_ dict: [String: Any]) -> WidgetUpdate? {
+        guard let context = decodeWidgetContext(dict),
+            let itemObj = dict["item"] as? [String: Any],
+            let id = itemObj["id"] as? String,
+            let title = itemObj["title"] as? String
+        else { return nil }
+        let item = WidgetListItem(
+            id: id,
+            title: title,
+            subtitle: itemObj["subtitle"] as? String,
+            accessory: itemObj["accessory"] as? String
+        )
+        return WidgetUpdate(instanceID: context.instanceID, widget: context.widget, kind: .listUpsert(item))
+    }
+
+    private func decodeListRemoveUpdate(_ dict: [String: Any]) -> WidgetUpdate? {
+        guard let context = decodeWidgetContext(dict),
+            let itemID = dict["item"] as? String
+        else { return nil }
+        return WidgetUpdate(instanceID: context.instanceID, widget: context.widget, kind: .listRemove(itemID: itemID))
+    }
+
+    private func decodeClearUpdate(_ dict: [String: Any]) -> WidgetUpdate? {
+        guard let context = decodeWidgetContext(dict) else { return nil }
+        return WidgetUpdate(instanceID: context.instanceID, widget: context.widget, kind: .clear)
+    }
+
+    private func decodeWidgetContext(_ dict: [String: Any]) -> (instanceID: UUID, widget: String)? {
+        guard let instanceId = dict["instance_id"] as? String,
+            let instanceID = UUID(uuidString: instanceId),
+            let widget = dict["widget"] as? String
+        else { return nil }
+        return (instanceID, widget)
+    }
+
+    private func decodeNumber(_ raw: Any?) -> Double? {
+        if let d = raw as? Double { return d }
+        if let i = raw as? Int { return Double(i) }
+        if let n = raw as? NSNumber { return n.doubleValue }
+        return nil
     }
 
     // MARK: - Module Snapshots
@@ -859,13 +936,15 @@ public final class ProcessNode: Identifiable {
         instanceID: UUID,
         moduleName: String,
         source: String,
-        config: Any
+        config: Any,
+        restored: [String: Any] = [:]
     ) async throws {
         try await script.exports.loadInstrument(JSValue([
             "instanceId": instanceID.uuidString,
             "moduleName": moduleName,
             "source": source,
             "config": config,
+            "restored": restored,
         ]))
     }
 
@@ -878,6 +957,16 @@ public final class ProcessNode: Identifiable {
             "instanceId": instanceID.uuidString,
             "config": config,
         ]))
+    }
+
+    public func invokeWidgetAction(instanceID: UUID, widget: String, action: String, item: String?) async throws {
+        var payload: [String: Any] = [
+            "instanceId": instanceID.uuidString,
+            "widget": widget,
+            "action": action,
+        ]
+        if let item { payload["item"] = item }
+        _ = try await script.exports.invokeWidgetAction(JSValue(payload))
     }
 
     // MARK: - ITrace Orchestration

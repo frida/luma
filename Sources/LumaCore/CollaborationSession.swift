@@ -292,12 +292,15 @@ public final class CollaborationSession {
     public var onSessionTraceRemoved: ((UUID, UUID) -> Void)?
     public var onSessionTraceDataProgressed: ((UUID, UUID, Int) -> Void)?
     public var onSessionEventReceived: ((UUID, RuntimeEvent) -> Void)?
+    public var onSessionWidgetUpdateReceived: ((UUID, WidgetUpdate) -> Void)?
+    public var onSessionWidgetActionRequested: ((UUID, UUID, String, String, String?) -> Void)?
     public var onReplEvalTimedOut: ((UUID) -> Void)?
     public var onSessionRemoved: ((UUID) -> Void)?
     public var onCustomInstrumentOpReceived: ((CustomInstrumentOp) -> Void)?
     public var onMissionOpReceived: ((MissionOp) -> Void)?
     public var onMissionSnapshot: ((MissionSnapshot) -> Void)?
     public var onCustomInstrumentSnapshot: (([CustomInstrumentDef]) -> Void)?
+    public var onWidgetStatesSnapshot: (([WidgetStateSnapshot]) -> Void)?
     public var onSessionOpRejected: ((UUID, String) -> Void)?
     public var onChatMessageReceived: ((ChatMessage) -> Void)?
     public var onAuthRejected: ((AuthFailure) async -> Void)?
@@ -929,6 +932,36 @@ public final class CollaborationSession {
         )
     }
 
+    public func sendWidgetUpdate(sessionID: UUID, update: WidgetUpdate) {
+        guard case .joined(let labID) = status else { return }
+        sendNotification(
+            to: "/labs/\(labID)/sessions/\(sessionID.uuidString)/widget-updates",
+            type: "+widget-update",
+            payload: update.toWireJSON()
+        )
+    }
+
+    public func sendWidgetAction(
+        sessionID: UUID,
+        instanceID: UUID,
+        widget: String,
+        action: String,
+        item: String?
+    ) {
+        guard case .joined(let labID) = status else { return }
+        var payload: [String: Any] = [
+            "instance_id": instanceID.uuidString,
+            "widget": widget,
+            "action": action,
+        ]
+        if let item { payload["item"] = item }
+        sendNotification(
+            to: "/labs/\(labID)/sessions/\(sessionID.uuidString)/widget-actions",
+            type: "+widget-action",
+            payload: payload
+        )
+    }
+
 
     public func sendReplEvalRequest(sessionID: UUID, code: String, cellID: UUID) {
         guard case .joined(let labID) = status else { return }
@@ -1284,6 +1317,10 @@ public final class CollaborationSession {
         let customDefs = customDicts.compactMap(CustomInstrumentDef.fromJSON)
         onCustomInstrumentSnapshot?(customDefs)
 
+        let widgetStateDicts = (payload["widget_states"] as? [JSONObject]) ?? []
+        let widgetSnapshots = widgetStateDicts.compactMap(WidgetStateSnapshot.fromWireJSON)
+        onWidgetStatesSnapshot?(widgetSnapshots)
+
         let missionsArr = (payload["missions"] as? [JSONObject]) ?? []
         let turnsArr = (payload["mission_turns"] as? [JSONObject]) ?? []
         let actionsArr = (payload["mission_actions"] as? [JSONObject]) ?? []
@@ -1552,6 +1589,23 @@ public final class CollaborationSession {
                 let event = RuntimeEvent.fromWireJSON(payload)
             else { return }
             onSessionEventReceived?(sessionID, event)
+
+        case ("+widget-update", let s)
+            where s.count == 5 && s[0] == "labs" && s[2] == "sessions" && s[4] == "widget-updates":
+            guard let sessionID = UUID(uuidString: s[3]),
+                let update = WidgetUpdate.fromWireJSON(payload)
+            else { return }
+            onSessionWidgetUpdateReceived?(sessionID, update)
+
+        case ("+widget-action", let s)
+            where s.count == 5 && s[0] == "labs" && s[2] == "sessions" && s[4] == "widget-actions":
+            guard let sessionID = UUID(uuidString: s[3]),
+                let instanceStr = payload["instance_id"] as? String,
+                let instanceID = UUID(uuidString: instanceStr),
+                let widget = payload["widget"] as? String,
+                let action = payload["action"] as? String
+            else { return }
+            onSessionWidgetActionRequested?(sessionID, instanceID, widget, action, payload["item"] as? String)
 
         case ("+add", let s) where s.count == 4 && s[0] == "labs" && s[2] == "chat" && s[3] == "messages":
             guard let localUser, let msgs = payload["messages"] as? [JSONObject] else { return }

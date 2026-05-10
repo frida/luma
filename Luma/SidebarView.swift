@@ -657,6 +657,7 @@ struct SidebarCustomInstrumentDefRow: View {
 
     @State private var isShowingRename = false
     @State private var isShowingFeatures = false
+    @State private var isShowingWidgets = false
     @State private var isShowingDeleteConfirm = false
     @State private var exportBundle: HookPackExportBundle?
     @State private var exportErrorMessage: String?
@@ -683,6 +684,11 @@ struct SidebarCustomInstrumentDefRow: View {
                 Label("Features\u{2026}", systemImage: "switch.2")
             }
             Button {
+                isShowingWidgets = true
+            } label: {
+                Label("Widgets\u{2026}", systemImage: "chart.xyaxis.line")
+            }
+            Button {
                 presentExportPicker()
             } label: {
                 Label("Export as Hookpack\u{2026}", systemImage: "square.and.arrow.up")
@@ -701,6 +707,12 @@ struct SidebarCustomInstrumentDefRow: View {
         }
         .popover(isPresented: $isShowingFeatures, arrowEdge: .trailing) {
             CustomInstrumentFeaturesPopover(
+                def: def,
+                workspace: workspace
+            )
+        }
+        .popover(isPresented: $isShowingWidgets, arrowEdge: .trailing) {
+            CustomInstrumentWidgetsPopover(
                 def: def,
                 workspace: workspace
             )

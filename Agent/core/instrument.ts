@@ -1,9 +1,10 @@
 import { encodeValue } from "./value.js";
 
-export interface Instrument<C = unknown> {
+export interface Instrument<C = unknown, R = unknown> {
     create(
         ctx: InstrumentContext,
-        initialConfig: C
+        initialConfig: C,
+        restored: R
     ): InstrumentHandle<C> | Promise<InstrumentHandle<C>>;
 }
 
@@ -11,10 +12,38 @@ export interface InstrumentContext {
     instanceId: string;
     emit(payload: unknown): void;
     post(type: string, payload: object, data?: ArrayBuffer | number[] | null): void;
+    widget(id: string): WidgetHandle;
+}
+
+export interface WidgetHandle {
+    push(point: GraphPoint): void;
+    upsertItem(item: ListItem): void;
+    removeItem(id: string): void;
+    clear(): void;
+}
+
+export interface GraphPoint {
+    series: string;
+    x: number;
+    y: number;
+}
+
+export interface ListItem {
+    id: string;
+    title: string;
+    subtitle?: string;
+    accessory?: string;
+}
+
+export interface WidgetAction {
+    widget: string;
+    action: string;
+    item?: string;
 }
 
 export interface InstrumentHandle<C = unknown> {
     updateConfig?(config: C): Promise<void> | void;
+    onAction?(action: WidgetAction): Promise<void> | void;
     dispose?(): Promise<void> | void;
 }
 
@@ -31,16 +60,17 @@ interface InstrumentModule {
 const instruments = new Map<string, InstrumentController>();
 const modules = new Map<string, Instrument>();
 
-export async function loadInstrument({ instanceId, moduleName, source, config }: {
+export async function loadInstrument({ instanceId, moduleName, source, config, restored }: {
     instanceId: string,
     moduleName: string,
     source: string,
     config: unknown,
+    restored: unknown,
 }): Promise<void> {
     const instrument = await loadInstrumentModule(moduleName, source);
     const ctx = makeInstrumentContext(instanceId);
 
-    const handle = await instrument.create(ctx, config);
+    const handle = await instrument.create(ctx, config, restored);
 
     const controller: InstrumentController = {
         instrument,
@@ -76,7 +106,28 @@ export async function disposeInstrument({ instanceId }: { instanceId: string }):
     instruments.delete(instanceId);
 }
 
+export async function invokeWidgetAction({ instanceId, widget, action, item }: {
+    instanceId: string,
+    widget: string,
+    action: string,
+    item?: string,
+}): Promise<void> {
+    const controller = instruments.get(instanceId);
+    if (controller === undefined) {
+        throw new Error(`No such instance: ${instanceId}`);
+    }
+
+    await controller.handle.onAction?.({ widget, action, item });
+}
+
 function makeInstrumentContext(instanceId: string): InstrumentContext {
+    const post = (type: string, payload: object, data?: ArrayBuffer | number[] | null) => {
+        send({
+            type,
+            instance_id: instanceId,
+            ...payload,
+        }, data ?? null);
+    };
     return {
         instanceId,
         emit(payload: unknown) {
@@ -87,12 +138,22 @@ function makeInstrumentContext(instanceId: string): InstrumentContext {
                 payload: tree,
             }, blob);
         },
-        post(type: string, payload: object, data?: ArrayBuffer | number[] | null) {
-            send({
-                type,
-                instance_id: instanceId,
-                ...payload,
-            }, data ?? null);
+        post,
+        widget(id: string): WidgetHandle {
+            return {
+                push(point) {
+                    post("widget-graph-point", { widget: id, point });
+                },
+                upsertItem(item) {
+                    post("widget-list-upsert", { widget: id, item });
+                },
+                removeItem(itemId) {
+                    post("widget-list-remove", { widget: id, item: itemId });
+                },
+                clear() {
+                    post("widget-clear", { widget: id });
+                },
+            };
         },
     };
 }

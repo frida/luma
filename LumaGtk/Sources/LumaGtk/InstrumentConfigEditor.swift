@@ -19,6 +19,7 @@ final class InstrumentConfigEditor {
     private let sharedTracerMonaco: MonacoEditor
     private var customFeatureEditors: [FeatureValueEditor] = []
     private var hookPackFeatureEditors: [FeatureValueEditor] = []
+    private var widgetRenderer: InstrumentWidgetsRenderer?
 
     init(engine: Engine, instrument: LumaCore.InstrumentInstance, tracerEditor: MonacoEditor) {
         self.engine = engine
@@ -38,6 +39,7 @@ final class InstrumentConfigEditor {
             child = current.nextSibling
             widget.remove(child: current)
         }
+        widgetRenderer = nil
 
         switch instrument.kind {
         case .tracer:
@@ -101,6 +103,8 @@ final class InstrumentConfigEditor {
         for feature in def.features {
             outer.append(child: customFeatureRow(feature: feature, config: config))
         }
+
+        appendWidgets(into: outer, widgets: def.widgets)
     }
 
     private func customFeatureRow(feature: CustomInstrumentDef.Feature, config: CustomInstrumentConfig) -> Box {
@@ -260,13 +264,21 @@ final class InstrumentConfigEditor {
 
         if pack.manifest.features.isEmpty {
             outer.append(child: dimLabel("This hook-pack does not declare any features."))
-            return
+        } else {
+            hookPackFeatureEditors.removeAll()
+            for feature in pack.manifest.features {
+                outer.append(child: hookPackFeatureRow(feature: feature, config: config))
+            }
         }
 
-        hookPackFeatureEditors.removeAll()
-        for feature in pack.manifest.features {
-            outer.append(child: hookPackFeatureRow(feature: feature, config: config))
-        }
+        appendWidgets(into: outer, widgets: pack.manifest.widgets)
+    }
+
+    private func appendWidgets(into outer: Box, widgets: [InstrumentWidget]) {
+        guard !widgets.isEmpty, let engine else { return }
+        let renderer = InstrumentWidgetsRenderer(engine: engine, instance: instrument, widgets: widgets)
+        widgetRenderer = renderer
+        outer.append(child: renderer.widget)
     }
 
     private func hookPackFeatureRow(feature: CustomInstrumentDef.Feature, config: HookPackConfig) -> Box {

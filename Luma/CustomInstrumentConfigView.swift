@@ -36,6 +36,11 @@ struct CustomInstrumentConfigView: View {
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+
+            if let def {
+                InstrumentWidgetsRenderer(widgets: def.widgets, workspace: workspace)
+            }
+
             Spacer()
         }
     }

@@ -1144,6 +1144,7 @@ final class MainWindow {
             [
                 .init("Rename & Icon\u{2026}") { [weak self] in self?.presentCustomInstrumentRenameDialog(def: def) },
                 .init("Features\u{2026}") { [weak self] in self?.presentCustomInstrumentFeaturesDialog(def: def) },
+                .init("Widgets\u{2026}") { [weak self] in self?.presentCustomInstrumentWidgetsDialog(def: def) },
                 .init("Export as Hookpack\u{2026}") { [weak self] in self?.presentExportHookPackDialog(def: def) },
             ],
             [.init("Delete Custom Instrument", destructive: true) { [weak self] in
@@ -1198,6 +1199,11 @@ final class MainWindow {
     private func presentCustomInstrumentFeaturesDialog(def: LumaCore.CustomInstrumentDef) {
         guard let engine else { return }
         CustomInstrumentFeaturesDialog(engine: engine, def: def).present(parent: window)
+    }
+
+    private func presentCustomInstrumentWidgetsDialog(def: LumaCore.CustomInstrumentDef) {
+        guard let engine else { return }
+        CustomInstrumentWidgetsDialog(engine: engine, def: def).present(parent: window)
     }
 
     private func presentCustomInstrumentRenameDialog(def: LumaCore.CustomInstrumentDef) {

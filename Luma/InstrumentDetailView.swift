@@ -33,6 +33,7 @@ struct InstrumentDetailView: View {
                 if let inst = instance, let ui = InstrumentUIRegistry.shared.ui(for: inst) {
                     ui.makeConfigEditor(configJSON: configBinding, workspace: workspace, selection: $selection)
                         .environment(\.instrumentSession, session)
+                        .environment(\.instrumentInstance, inst)
                 } else {
                     Text("This instrument doesn't expose any configurable settings yet.")
                         .font(.subheadline)

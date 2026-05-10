@@ -24,7 +24,8 @@ struct HookPackUI: InstrumentUI {
         return AnyView(
             HookPackConfigView(
                 pack: pack,
-                config: cfgBinding
+                config: cfgBinding,
+                workspace: workspace
             )
         )
     }

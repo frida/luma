@@ -232,7 +232,28 @@ public enum CustomInstrumentTypings {
     public static let ambientDeclarations = #"""
         declare interface CustomInstrumentContext {
             emit(value: unknown): void;
+            widget<K extends keyof CustomInstrumentWidgetMap>(id: K): CustomInstrumentWidgetMap[K];
         }
+
+        declare interface CustomInstrumentGraphWidget<Series extends string> {
+            push(point: { series: Series, x: number, y: number }): void;
+            clear(): void;
+        }
+
+        declare interface CustomInstrumentListWidget<Action extends string> {
+            upsertItem(item: { id: string, title: string, subtitle?: string, accessory?: string }): void;
+            removeItem(id: string): void;
+            clear(): void;
+        }
+
+        declare interface CustomInstrumentWidgetMap {
+        }
+
+        declare type CustomInstrumentAction = {
+            [K in keyof CustomInstrumentWidgetMap]: CustomInstrumentWidgetMap[K] extends CustomInstrumentListWidget<infer A>
+                ? { widget: K; action: A; item: string }
+                : never
+        }[keyof CustomInstrumentWidgetMap];
 
         declare type CustomFeatureValue = boolean | number | string | CustomFeatureValue[] | { [name: string]: CustomFeatureValue };
 
@@ -245,13 +266,26 @@ public enum CustomInstrumentTypings {
 
         declare interface CustomInstrumentHandle {
             updateConfig?(config: CustomInstrumentConfig): void | Promise<void>;
+            onAction?(action: CustomInstrumentAction): void | Promise<void>;
             dispose?(): void | Promise<void>;
+        }
+
+        declare interface CustomInstrumentGraphSnapshot<Series extends string> {
+            points: Array<{ series: Series; x: number; y: number }>;
+        }
+
+        declare interface CustomInstrumentListSnapshot {
+            items: Array<{ id: string; title: string; subtitle?: string; accessory?: string }>;
+        }
+
+        declare interface CustomInstrumentRestoredState {
         }
 
         declare interface CustomInstrument {
             create(
                 ctx: CustomInstrumentContext,
                 config: CustomInstrumentConfig,
+                restored: CustomInstrumentRestoredState,
             ): CustomInstrumentHandle | Promise<CustomInstrumentHandle>;
         }
         """#
@@ -262,11 +296,26 @@ public enum CustomInstrumentTypings {
     )
 
     public static func featureMapLib(for def: CustomInstrumentDef) -> EditorExtraLib? {
-        guard !def.features.isEmpty else { return nil }
+        guard !def.features.isEmpty || !def.widgets.isEmpty else { return nil }
         return EditorExtraLib(
-            content: featureMapDeclarations(for: def),
+            content: defScopedDeclarations(for: def),
             filePath: "@types/frida-luma/custom-instrument-\(def.id.uuidString).d.ts"
         )
+    }
+
+    public static func defScopedDeclarations(for def: CustomInstrumentDef) -> String {
+        var sections: [String] = []
+        if !def.features.isEmpty {
+            sections.append(featureMapDeclarations(for: def))
+        }
+        if !def.widgets.isEmpty {
+            sections.append(widgetMapDeclarations(for: def))
+        }
+        let persistentWidgets = def.widgets.filter { $0.persistence == .session }
+        if !persistentWidgets.isEmpty {
+            sections.append(restoredStateDeclarations(for: persistentWidgets))
+        }
+        return sections.joined(separator: "\n\n")
     }
 
     public static func featureMapDeclarations(for def: CustomInstrumentDef) -> String {
@@ -278,6 +327,49 @@ public enum CustomInstrumentTypings {
         }
         lines.append("}")
         return lines.joined(separator: "\n")
+    }
+
+    public static func widgetMapDeclarations(for def: CustomInstrumentDef) -> String {
+        var lines: [String] = ["declare interface CustomInstrumentWidgetMap {"]
+        for widget in def.widgets {
+            lines.append("    /** \(jsDocText(widget.name)) */")
+            lines.append("    \(featureKey(widget.id)): \(widgetType(for: widget.kind));")
+        }
+        lines.append("}")
+        return lines.joined(separator: "\n")
+    }
+
+    public static func restoredStateDeclarations(for persistentWidgets: [InstrumentWidget]) -> String {
+        var lines: [String] = ["declare interface CustomInstrumentRestoredState {"]
+        for widget in persistentWidgets {
+            lines.append("    /** \(jsDocText(widget.name)) */")
+            lines.append("    \(featureKey(widget.id)): \(snapshotType(for: widget.kind));")
+        }
+        lines.append("}")
+        return lines.joined(separator: "\n")
+    }
+
+    private static func widgetType(for kind: InstrumentWidget.Kind) -> String {
+        switch kind {
+        case .graph(let cfg):
+            return "CustomInstrumentGraphWidget<\(stringLiteralUnion(cfg.series.map(\.id)))>"
+        case .list(let cfg):
+            return "CustomInstrumentListWidget<\(stringLiteralUnion(cfg.actions.map(\.id)))>"
+        }
+    }
+
+    private static func snapshotType(for kind: InstrumentWidget.Kind) -> String {
+        switch kind {
+        case .graph(let cfg):
+            return "CustomInstrumentGraphSnapshot<\(stringLiteralUnion(cfg.series.map(\.id)))>"
+        case .list:
+            return "CustomInstrumentListSnapshot"
+        }
+    }
+
+    private static func stringLiteralUnion(_ ids: [String]) -> String {
+        guard !ids.isEmpty else { return "never" }
+        return ids.map(jsStringLiteral).joined(separator: " | ")
     }
 
     private static func featureKey(_ id: String) -> String {

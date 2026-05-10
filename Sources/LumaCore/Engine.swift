@@ -42,6 +42,10 @@ public final class Engine {
     private let _events = AsyncEventSource<RuntimeEvent>()
     public var events: AsyncStream<RuntimeEvent> { _events.makeStream() }
 
+    private let _widgetUpdates = AsyncEventSource<WidgetUpdate>()
+    public var widgetUpdates: AsyncStream<WidgetUpdate> { _widgetUpdates.makeStream() }
+    private var widgetStates: [UUID: [String: WidgetState]] = [:]
+
     public let eventLog = EventLog()
 
     private var deviceEventTasks: [String: Task<Void, Never>] = [:]
@@ -526,6 +530,24 @@ public final class Engine {
 
         collaboration.onSessionEventReceived = { [weak self] sessionID, event in
             self?.applyRemoteSessionEvent(sessionID: sessionID, event: event)
+        }
+
+        collaboration.onSessionWidgetUpdateReceived = { [weak self] sessionID, update in
+            self?.applyWidgetUpdate(update, sessionID: sessionID, origin: .remote)
+        }
+
+        collaboration.onSessionWidgetActionRequested = { [weak self] sessionID, instanceID, widget, action, item in
+            self?.handleRemoteWidgetActionRequest(
+                sessionID: sessionID,
+                instanceID: instanceID,
+                widget: widget,
+                action: action,
+                item: item
+            )
+        }
+
+        collaboration.onWidgetStatesSnapshot = { [weak self] snapshots in
+            self?.applyWidgetStateSnapshots(snapshots)
         }
 
         collaboration.onReplEvalTimedOut = { [weak self] cellID in
@@ -2082,6 +2104,8 @@ public final class Engine {
             node.removeInstrument(id: instance.id)
         }
         try? store.deleteInstrument(id: instance.id)
+        try? store.deleteWidgetStates(instanceID: instance.id)
+        widgetStates.removeValue(forKey: instance.id)
         onSessionListChanged?(.instrumentRemoved(id: instance.id, sessionID: instance.sessionID))
         rebuildAddressAnnotations(sessionID: instance.sessionID)
         if let sid {
@@ -2653,11 +2677,14 @@ public final class Engine {
         let hashHex = digest.map { String(format: "%02x", $0) }.joined()
         let moduleName = "/\(sourceSlug)/\(hashHex).js"
 
+        let restored = hydrateRestoredState(instanceID: instanceID, widgets: pack.manifest.widgets, on: node)
+
         try await node.loadInstrumentOnAgent(
             instanceID: instanceID,
             moduleName: moduleName,
             source: compiledSource,
-            config: config.toAgentJSON(features: pack.manifest.features)
+            config: config.toAgentJSON(features: pack.manifest.features),
+            restored: restored
         )
     }
 
@@ -2680,12 +2707,52 @@ public final class Engine {
         let hashHex = digest.map { String(format: "%02x", $0) }.joined()
         let moduleName = "/\(sourceSlug)/\(hashHex).js"
 
+        let restored = hydrateRestoredState(instanceID: instanceID, widgets: def.widgets, on: node)
+
         try await node.loadInstrumentOnAgent(
             instanceID: instanceID,
             moduleName: moduleName,
             source: compiledSource,
-            config: config.toAgentJSON(def: def)
+            config: config.toAgentJSON(def: def),
+            restored: restored
         )
+    }
+
+    private func hydrateRestoredState(
+        instanceID: UUID,
+        widgets: [InstrumentWidget],
+        on node: ProcessNode
+    ) -> [String: Any] {
+        let persistentWidgets = widgets.filter { $0.persistence == .session }
+        guard !persistentWidgets.isEmpty else { return [:] }
+        let states = (try? store.fetchWidgetStates(instanceID: instanceID)) ?? [:]
+        let persistentIDs = Set(persistentWidgets.map(\.id))
+        widgetStates[instanceID] = states.filter { persistentIDs.contains($0.key) }
+
+        var restored: [String: Any] = [:]
+        for widget in persistentWidgets {
+            let state = states[widget.id] ?? WidgetState()
+            switch widget.kind {
+            case .graph:
+                let points = state.graphSeries.flatMap { (seriesID, pts) -> [[String: Any]] in
+                    pts.map { ["series": seriesID, "x": $0.x, "y": $0.y] }
+                }
+                restored[widget.id] = ["points": points]
+            case .list:
+                let items = state.listItems.map { item -> [String: Any] in
+                    var obj: [String: Any] = ["id": item.id, "title": item.title]
+                    if let s = item.subtitle { obj["subtitle"] = s }
+                    if let a = item.accessory { obj["accessory"] = a }
+                    return obj
+                }
+                restored[widget.id] = ["items": items]
+            }
+        }
+        return restored
+    }
+
+    public func widgetState(instanceID: UUID, widget: String) -> WidgetState {
+        widgetStates[instanceID]?[widget] ?? WidgetState()
     }
 
     private func compileTypeScriptInstrumentSource(
@@ -2790,6 +2857,7 @@ public final class Engine {
             icon: icon,
             source: source,
             features: manifest.features,
+            widgets: manifest.widgets,
             createdAt: now,
             updatedAt: now
         )
@@ -2820,7 +2888,8 @@ public final class Engine {
             name: def.name,
             icon: manifestIcon,
             entry: entryName,
-            features: def.features
+            features: def.features,
+            widgets: def.widgets
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -2844,6 +2913,89 @@ public final class Engine {
         )
         if let icon = bundle.icon {
             try icon.data.write(to: folderURL.appendingPathComponent(icon.filename))
+        }
+    }
+
+    public func clearWidget(instance: InstrumentInstance, widget: String) {
+        applyWidgetUpdate(
+            WidgetUpdate(instanceID: instance.id, widget: widget, kind: .clear),
+            sessionID: instance.sessionID,
+            origin: .local
+        )
+    }
+
+    private enum WidgetUpdateOrigin {
+        case local
+        case remote
+    }
+
+    private func handleRemoteWidgetActionRequest(
+        sessionID: UUID,
+        instanceID: UUID,
+        widget: String,
+        action: String,
+        item: String?
+    ) {
+        guard let instance = instrumentsBySession[sessionID]?.first(where: { $0.id == instanceID }) else { return }
+        Task { @MainActor [weak self] in
+            await self?.invokeWidgetAction(instance: instance, widget: widget, action: action, item: item)
+        }
+    }
+
+    private func applyWidgetStateSnapshots(_ snapshots: [WidgetStateSnapshot]) {
+        for snapshot in snapshots {
+            widgetStates[snapshot.instanceID, default: [:]][snapshot.widget] = snapshot.state
+        }
+    }
+
+    private func applyWidgetUpdate(_ update: WidgetUpdate, sessionID: UUID, origin: WidgetUpdateOrigin) {
+        var states = widgetStates[update.instanceID, default: [:]]
+        var state = states[update.widget, default: WidgetState()]
+        state.apply(update.kind)
+        states[update.widget] = state
+        widgetStates[update.instanceID] = states
+        _widgetUpdates.yield(update)
+
+        if localUserHosts(sessionID),
+            let widget = widget(forInstanceID: update.instanceID, widgetID: update.widget),
+            widget.persistence == .session
+        {
+            try? store.saveWidgetState(
+                instanceID: update.instanceID,
+                widgetID: update.widget,
+                sessionID: sessionID,
+                state: state
+            )
+        }
+
+        if origin == .local, let collabSID = collabSessionID(forSessionID: sessionID) {
+            collaboration.sendWidgetUpdate(sessionID: collabSID, update: update)
+        }
+    }
+
+    public func invokeWidgetAction(
+        instance: InstrumentInstance,
+        widget: String,
+        action: String,
+        item: String? = nil
+    ) async {
+        if !localUserHosts(instance.sessionID) {
+            collaboration.sendWidgetAction(
+                sessionID: instance.sessionID,
+                instanceID: instance.id,
+                widget: widget,
+                action: action,
+                item: item
+            )
+            return
+        }
+        guard let node = node(forSessionID: instance.sessionID),
+            node.instruments.first(where: { $0.id == instance.id })?.attachment == .attached
+        else { return }
+        do {
+            try await node.invokeWidgetAction(instanceID: instance.id, widget: widget, action: action, item: item)
+        } catch {
+            print("[Engine] Failed to invoke widget action: \(error)")
         }
     }
 
@@ -3189,6 +3341,30 @@ public final class Engine {
                     self?.collaboration.enqueueUpdateSessionThreads(sessionID: sid, delta: delta)
                 }
             }
+        }
+
+        Task { @MainActor [weak self, weak node] in
+            guard let node else { return }
+            for await update in node.widgetUpdates {
+                self?.applyWidgetUpdate(update, sessionID: sessionID, origin: .local)
+            }
+        }
+    }
+
+    private func widget(forInstanceID instanceID: UUID, widgetID: String) -> InstrumentWidget? {
+        guard let instance = instrumentsBySession.values.flatMap({ $0 }).first(where: { $0.id == instanceID }) else {
+            return nil
+        }
+        switch instance.kind {
+        case .custom:
+            guard let defID = UUID(uuidString: instance.sourceIdentifier),
+                let def = customInstruments.def(withId: defID)
+            else { return nil }
+            return def.widgets.first { $0.id == widgetID }
+        case .hookPack:
+            return hookPacks.pack(withId: instance.sourceIdentifier)?.manifest.widgets.first { $0.id == widgetID }
+        default:
+            return nil
         }
     }
 
