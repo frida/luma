@@ -381,9 +381,9 @@ struct TracerConfigView: View {
             HooksListView(
                 hooks: config.hooks,
                 selection: $listSelection,
-                onToggleEnabled: { hook, newValue in
+                onSetState: { hook, newState in
                     if let idx = config.hooks.firstIndex(where: { $0.id == hook.id }) {
-                        config.hooks[idx].isEnabled = newValue
+                        config.hooks[idx].state = newState
                     }
                 },
                 onDeleteSingle: { hook in
@@ -738,13 +738,13 @@ struct TracerConfigView: View {
         Binding(
             get: {
                 guard let hook = selectedHook else { return false }
-                return config.hooks.first(where: { $0.id == hook.id })?.isEnabled ?? false
+                return config.hooks.first(where: { $0.id == hook.id })?.state == .enabled
             },
             set: { newValue in
                 guard let hook = selectedHook,
                     let idx = config.hooks.firstIndex(where: { $0.id == hook.id })
                 else { return }
-                config.hooks[idx].isEnabled = newValue
+                config.hooks[idx].state = newValue ? .enabled : .disabled
             }
         )
     }
@@ -786,7 +786,6 @@ struct TracerConfigView: View {
             displayName: api.displayName,
             addressAnchor: api.anchor,
             kind: .function,
-            isEnabled: true,
             code: defaultTracerCode(kind: .function, anchor: api.anchor, displayName: api.displayName)
         )
 
@@ -1074,7 +1073,7 @@ private struct HookEditorView: View {
 private struct HooksListView: View {
     let hooks: [TracerConfig.Hook]
     @Binding var selection: Set<UUID>
-    let onToggleEnabled: (TracerConfig.Hook, Bool) -> Void
+    let onSetState: (TracerConfig.Hook, TracerConfig.Hook.State) -> Void
     let onDeleteSingle: (TracerConfig.Hook) -> Void
     let onMultiDelete: () -> Void
     let onSelectionChange: (Set<UUID>) -> Void
@@ -1106,10 +1105,10 @@ private struct HooksListView: View {
                         "",
                         isOn: Binding(
                             get: {
-                                hooks.first(where: { $0.id == hook.id })?.isEnabled ?? false
+                                hooks.first(where: { $0.id == hook.id })?.state == .enabled
                             },
                             set: { newValue in
-                                onToggleEnabled(hook, newValue)
+                                onSetState(hook, newValue ? .enabled : .disabled)
                             }
                         )
                     )

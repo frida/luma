@@ -23,6 +23,11 @@ public struct ITraceArming: Codable, Equatable, Sendable {
 
 public struct TracerConfig: Codable, Equatable, Sendable {
     public struct Hook: Codable, Equatable, Identifiable, Sendable {
+        public enum State: String, Codable, Sendable, Equatable {
+            case enabled
+            case disabled
+        }
+
         public var id: UUID
 
         public var displayName: String
@@ -31,7 +36,7 @@ public struct TracerConfig: Codable, Equatable, Sendable {
 
         public var kind: TracerHookKind
 
-        public var isEnabled: Bool
+        public var state: State
 
         public var code: String
 
@@ -42,7 +47,7 @@ public struct TracerConfig: Codable, Equatable, Sendable {
             displayName: String,
             addressAnchor: AddressAnchor,
             kind: TracerHookKind,
-            isEnabled: Bool = true,
+            state: State = .enabled,
             code: String,
             itraceArming: ITraceArming? = nil
         ) {
@@ -50,7 +55,7 @@ public struct TracerConfig: Codable, Equatable, Sendable {
             self.displayName = displayName
             self.addressAnchor = addressAnchor
             self.kind = kind
-            self.isEnabled = isEnabled
+            self.state = state
             self.code = code
             self.itraceArming = itraceArming
         }
@@ -78,7 +83,7 @@ public struct TracerConfig: Codable, Equatable, Sendable {
                     "displayName": hook.displayName,
                     "addressAnchor": hook.addressAnchor.toJSON(),
                     "kind": hook.kind.rawValue,
-                    "isEnabled": hook.isEnabled,
+                    "state": hook.state.rawValue,
                     "code": hook.code,
                 ]
 

@@ -193,8 +193,8 @@ final class TracerConfigEditor {
                 onSelect: { [weak self] id in
                     self?.handleSelect(id)
                 },
-                onToggleEnabled: { [weak self] id, enabled in
-                    self?.toggleEnabled(id: id, enabled: enabled)
+                onSetHookState: { [weak self] id, state in
+                    self?.setHookState(id: id, state: state)
                 },
                 onDelete: { [weak self] id in
                     self?.deleteHook(id: id)
@@ -276,12 +276,12 @@ final class TracerConfigEditor {
 
         if let hook = selectedHook {
             let enabledSwitch = Switch()
-            enabledSwitch.active = hook.isEnabled
+            enabledSwitch.active = hook.state == .enabled
             enabledSwitch.valign = .center
             enabledSwitch.onStateSet { [weak self] _, state in
                 MainActor.assumeIsolated {
                     guard let self, let id = self.selectedHookID else { return }
-                    self.toggleEnabled(id: id, enabled: state)
+                    self.setHookState(id: id, state: state ? .enabled : .disabled)
                 }
                 return false
             }
@@ -476,9 +476,9 @@ final class TracerConfigEditor {
         editorPane?.setHook(selectedHook)
     }
 
-    private func toggleEnabled(id: UUID, enabled: Bool) {
+    private func setHookState(id: UUID, state: TracerConfig.Hook.State) {
         guard let idx = config.hooks.firstIndex(where: { $0.id == id }) else { return }
-        config.hooks[idx].isEnabled = enabled
+        config.hooks[idx].state = state
         emit()
     }
 
@@ -576,7 +576,6 @@ final class TracerConfigEditor {
             displayName: api.displayName,
             addressAnchor: api.anchor,
             kind: .function,
-            isEnabled: true,
             code: defaultTracerCode(kind: .function, anchor: api.anchor, displayName: api.displayName)
         )
         config.hooks.append(hook)
@@ -1102,7 +1101,7 @@ private final class HooksList {
         hooks: [TracerConfig.Hook],
         selectedID: UUID?,
         onSelect: @escaping (UUID?) -> Void,
-        onToggleEnabled: @escaping (UUID, Bool) -> Void,
+        onSetHookState: @escaping (UUID, TracerConfig.Hook.State) -> Void,
         onDelete: @escaping (UUID) -> Void,
         onDeleteSelected: @escaping (Set<UUID>) -> Void,
         onAddRequested: @escaping (WidgetRef) -> Void,
@@ -1184,7 +1183,7 @@ private final class HooksList {
             let nameRow = Box(orientation: .horizontal, spacing: 6)
             let titleLabel = Label(str: hook.displayName.isEmpty ? "(unnamed)" : hook.displayName)
             titleLabel.halign = .start
-            if !hook.isEnabled {
+            if hook.state != .enabled {
                 titleLabel.add(cssClass: "dim-label")
             }
             nameRow.append(child: titleLabel)
@@ -1208,12 +1207,12 @@ private final class HooksList {
             inner.append(child: textColumn)
 
             let toggle = Switch()
-            toggle.active = hook.isEnabled
+            toggle.active = hook.state == .enabled
             toggle.valign = .center
             let hookID = hook.id
-            toggle.onStateSet { _, state in
+            toggle.onStateSet { _, isOn in
                 MainActor.assumeIsolated {
-                    onToggleEnabled(hookID, state)
+                    onSetHookState(hookID, isOn ? .enabled : .disabled)
                 }
                 return false
             }
@@ -1485,7 +1484,7 @@ final class EditorPane {
         if let hook {
             titleLabel?.label = hook.displayName.isEmpty ? "(unnamed)" : hook.displayName
             subtitleLabel?.label = hook.addressAnchor.displayString
-            enabledSwitch?.active = hook.isEnabled
+            enabledSwitch?.active = hook.state == .enabled
             itracePill?.widget.visible = hook.kind == .function
             itracePill?.update(arming: hook.itraceArming, captured: initialCaptured)
             draftCode = hook.code
@@ -1517,9 +1516,10 @@ final class EditorPane {
             return
         }
         if showToolbar {
+            let switchState: TracerConfig.Hook.State = (enabledSwitch?.active ?? (hook.state == .enabled)) ? .enabled : .disabled
             isDirty =
                 draftCode != hook.code
-                || (enabledSwitch?.active ?? hook.isEnabled) != hook.isEnabled
+                || switchState != hook.state
         } else {
             isDirty = draftCode != hook.code
         }
@@ -1531,8 +1531,8 @@ final class EditorPane {
     func commit() {
         guard var hook else { return }
         hook.code = draftCode
-        if showToolbar {
-            hook.isEnabled = enabledSwitch?.active ?? hook.isEnabled
+        if showToolbar, let active = enabledSwitch?.active {
+            hook.state = active ? .enabled : .disabled
         }
         self.hook = hook
         isDirty = false

@@ -2343,7 +2343,6 @@ public final class Engine {
             displayName: displayName,
             addressAnchor: anchor,
             kind: kind,
-            isEnabled: true,
             code: hookCode
         )
 
@@ -2527,7 +2526,7 @@ public final class Engine {
         tracerInstanceIDBySession[sessionID] = tracer.id
 
         var map: [UInt64: AddressAnnotation] = [:]
-        for hook in config.hooks where hook.isEnabled {
+        for hook in config.hooks where hook.state == .enabled {
             guard let addr = try? node.resolveSyncIfReady(hook.addressAnchor) else { continue }
             var ann = map[addr] ?? AddressAnnotation()
             ann.decorations.append(InstrumentAddressDecoration(help: "Has instruction hook"))
@@ -2618,7 +2617,7 @@ public final class Engine {
                 "id": hook.id.uuidString,
                 "displayName": hook.displayName,
                 "addressAnchor": hook.addressAnchor.toJSON(),
-                "isEnabled": hook.isEnabled,
+                "state": hook.state.rawValue,
                 "code": js,
             ]
             if let arming = hook.itraceArming {

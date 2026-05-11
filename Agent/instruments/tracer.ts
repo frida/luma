@@ -8,11 +8,13 @@ interface TracerConfig {
     callCounters?: Record<string, number>;
 }
 
+type HookState = "enabled" | "disabled";
+
 interface TracerHookConfig {
     id: HookID;
     displayName: string;
     addressAnchor: AnchorJSON;
-    isEnabled: boolean;
+    state: HookState;
     code: string;
     itraceArming?: ITraceArming;
 }
@@ -102,7 +104,7 @@ class Tracer {
             if (existing !== undefined) {
                 const config = existing[1];
                 if (config.code === hookConfig.code &&
-                    config.isEnabled === hookConfig.isEnabled &&
+                    config.state === hookConfig.state &&
                     JSON.stringify(config.itraceArming ?? null) === JSON.stringify(hookConfig.itraceArming ?? null) &&
                     JSON.stringify(config.addressAnchor) === JSON.stringify(hookConfig.addressAnchor)) {
                     continue;
@@ -114,7 +116,7 @@ class Tracer {
                 hooks.delete(hookConfig.id);
             }
 
-            if (!hookConfig.isEnabled) {
+            if (hookConfig.state !== "enabled") {
                 continue;
             }
 
