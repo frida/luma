@@ -6,7 +6,7 @@
 # /usr/local/lib64/pkgconfig on Fedora). Ask the system pkg-config
 # where each module we care about actually lives and forward those
 # directories so SwiftPM can find the same .pc files.
-PKG_CONFIG_MODULES := frida-core-1.0 r_core
+PKG_CONFIG_MODULES := frida-core-1.0 r_core librsvg-2.0
 PKG_CONFIG_DIRS := $(sort $(foreach m,$(PKG_CONFIG_MODULES),$(shell pkg-config --variable=pcfiledir $(m))))
 SYSTEM_PKG_CONFIG_PATH := $(subst $(eval) ,:,$(strip $(PKG_CONFIG_DIRS)))
 export PKG_CONFIG_PATH := $(if $(PKG_CONFIG_PATH),$(PKG_CONFIG_PATH):)$(SYSTEM_PKG_CONFIG_PATH)

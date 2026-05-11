@@ -42,11 +42,49 @@ func sharedGitHubAuth() -> GitHubAuth { sharedWelcomeModel.gitHubAuth }
             .defaultSize(width: 1100, height: 680)
             .windowResizability(.contentMinSize)
             .commands {
+                CommandGroup(replacing: .appInfo) {
+                    Button("About Luma") { showAboutPanel() }
+                }
                 CommandGroup(after: .appInfo) {
                     CheckForUpdatesView(updater: updater)
                 }
             }
         }
+    }
+
+    @MainActor
+    private func showAboutPanel() {
+        NSApplication.shared.orderFrontStandardAboutPanel(options: [
+            .credits: nowSecureCreditsAttributedString()
+        ])
+    }
+
+    @MainActor
+    private func nowSecureCreditsAttributedString() -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+
+        let prefix = NSAttributedString(
+            string: "Sponsored by ",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+                .foregroundColor: NSColor.secondaryLabelColor,
+                .paragraphStyle: paragraph,
+            ]
+        )
+        result.append(prefix)
+
+        let link = NSAttributedString(
+            string: "NowSecure",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize, weight: .medium),
+                .link: URL(string: "https://www.nowsecure.com")!,
+                .paragraphStyle: paragraph,
+            ]
+        )
+        result.append(link)
+        return result
     }
 
     class LumaAppDelegate: NSObject, NSApplicationDelegate {

@@ -23,7 +23,7 @@ struct WelcomeView: View {
     @ViewBuilder
     private var contentBody: some View {
         #if os(macOS)
-            stack(topPadding: 56, bottomPadding: 56)
+            stack(topPadding: 56, bottomPadding: 100)
                 .containerBackground(for: .window) {
                     WelcomeBackdrop()
                 }
@@ -53,22 +53,29 @@ struct WelcomeView: View {
     private var heroBanner: some View {
         VStack(spacing: 14) {
             LumaWordmark()
-
-            Text("The official Frida GUI")
-                .font(.title3)
-                .foregroundStyle(taglineColor)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 360)
+            nowSecurePartnership
         }
         .frame(maxWidth: .infinity)
+        .padding(.bottom, 12)
     }
 
-    @Environment(\.colorScheme) private var colorScheme
-
-    private var taglineColor: Color {
-        colorScheme == .dark
-            ? Color.secondary
-            : Color(red: 0.369, green: 0.298, blue: 0.353) // plum
+    private var nowSecurePartnership: some View {
+        Link(destination: URL(string: "https://www.nowsecure.com")!) {
+            HStack(spacing: 8) {
+                Text("Sponsored by")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Image("NowSecureLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 20)
+                    .accessibilityLabel("NowSecure")
+            }
+            .opacity(0.9)
+        }
+        .buttonStyle(.plain)
+        .pointerStyle(.link)
+        .help("nowsecure.com")
     }
 
     private var quickActions: some View {
@@ -250,7 +257,7 @@ private struct LumaWordmark: View {
     var body: some View {
         VStack(spacing: 6) {
             Text("Luma")
-                .font(.system(size: 64, weight: .semibold, design: .rounded))
+                .font(.system(size: 64, weight: .semibold))
                 .tracking(-2)
                 .foregroundStyle(colorScheme == .dark ? Self.cream : Self.coral)
 

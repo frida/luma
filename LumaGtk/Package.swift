@@ -78,20 +78,20 @@ let lumaExecutableIconResource = compileWindowsExecutableIcon()
 #endif
 
 #if os(macOS)
-let cLumaSources: [String] = ["shim_gtk.c", "welcome_backdrop.c", "shim_webkit.m"]
+let cLumaSources: [String] = ["shim_gtk.c", "welcome_backdrop.c", "svg_paintable.c", "shim_webkit.m"]
 let cLumaCSettings: [CSetting] = [
-    .unsafeFlags(pkgConfigFlags(["gtk4", "epoxy"])),
+    .unsafeFlags(pkgConfigFlags(["gtk4", "epoxy", "librsvg-2.0"])),
 ]
 let cLumaCxxSettings: [CXXSetting] = []
 let cLumaLinkerSettings: [LinkerSetting] = [
     .linkedFramework("WebKit"),
-    .unsafeFlags(pkgConfigFlags(["epoxy"], libs: true)),
+    .unsafeFlags(pkgConfigFlags(["epoxy", "librsvg-2.0"], libs: true)),
 ]
 let lumaGtkLinkerSettings: [LinkerSetting] = []
 #elseif os(Windows)
-let cLumaSources: [String] = ["shim_gtk.c", "welcome_backdrop.c", "shim_webview2.cpp"]
+let cLumaSources: [String] = ["shim_gtk.c", "welcome_backdrop.c", "svg_paintable.c", "shim_webview2.cpp"]
 let cLumaCSettings: [CSetting] = [
-    .unsafeFlags(pkgConfigFlags(["gtk4", "epoxy"])),
+    .unsafeFlags(pkgConfigFlags(["gtk4", "epoxy", "librsvg-2.0"])),
 ]
 let cLumaCxxSettings: [CXXSetting] = [
     .unsafeFlags(pkgConfigFlags(["gtk4", "epoxy"])),
@@ -102,6 +102,7 @@ let cLumaLinkerSettings: [LinkerSetting] = [
     .linkedLibrary("oleaut32"),
     .linkedLibrary("runtimeobject"),
     .linkedLibrary("epoxy"),
+    .linkedLibrary("rsvg-2"),
 ]
 // Windows: produce a GUI app (no console window). Swift's runtime
 // still calls main(), so redirect the linker entry to the C runtime's
@@ -118,10 +119,10 @@ let lumaGtkLinkerSettings: [LinkerSetting] = [
     .unsafeFlags(windowsGuiLinkerFlags + (lumaExecutableIconResource.map { [$0] } ?? []))
 ]
 #else
-let cLumaSources: [String] = ["shim_gtk.c", "welcome_backdrop.c", "shim_webkitgtk.c"]
+let cLumaSources: [String] = ["shim_gtk.c", "welcome_backdrop.c", "svg_paintable.c", "shim_webkitgtk.c"]
 let cLumaCSettings: [CSetting] = [
     .unsafeFlags(
-        pkgConfigFlags(["webkitgtk-6.0", "gtk4", "libsoup-3.0", "epoxy"])
+        pkgConfigFlags(["webkitgtk-6.0", "gtk4", "libsoup-3.0", "epoxy", "librsvg-2.0"])
     ),
 ]
 let cLumaCxxSettings: [CXXSetting] = []
@@ -129,6 +130,7 @@ let cLumaLinkerSettings: [LinkerSetting] = [
     .linkedLibrary("webkitgtk-6.0"),
     .linkedLibrary("javascriptcoregtk-6.0"),
     .linkedLibrary("epoxy"),
+    .linkedLibrary("rsvg-2"),
 ]
 let lumaGtkLinkerSettings: [LinkerSetting] = [
     // Fedora's Swift 6.2 ships libswiftObservation.so with an unresolved
@@ -172,6 +174,7 @@ let package = Package(
             exclude: lumaGtkExcludes,
             resources: [
                 .copy("Resources/MonacoWeb"),
+                .copy("Resources/nowsecure-logo.svg"),
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),

@@ -2,6 +2,7 @@ import Adw
 import CGtk
 import CLuma
 import Foundation
+import Gdk
 import Gtk
 import LumaCore
 import Observation
@@ -37,7 +38,6 @@ final class WelcomeWindow {
     private var openSignInDialog: Adw.Dialog?
     private var backdropWidget: UnsafeMutableRawPointer?
     private var wordmarkLabel: Label?
-    private var taglineLabel: Label?
     private var themeToken: gulong = 0
 
     init(app: Gtk.Application, application: LumaApplication, welcome: WelcomeModel) {
@@ -54,9 +54,9 @@ final class WelcomeWindow {
         clamp.marginStart = 32
         clamp.marginEnd = 32
         clamp.marginTop = 140
-        clamp.marginBottom = 56
+        clamp.marginBottom = 100
 
-        contentBox = Box(orientation: .vertical, spacing: 24)
+        contentBox = Box(orientation: .vertical, spacing: 28)
         contentBox.hexpand = true
 
         quickActionsList = ListBox()
@@ -131,9 +131,6 @@ final class WelcomeWindow {
                 if let wordmark = owner.wordmarkLabel {
                     owner.applyDarkClass(wordmark)
                 }
-                if let tagline = owner.taglineLabel {
-                    owner.applyDarkClass(tagline)
-                }
             }
             let backdrop = WidgetRef(raw: raw)
             backdrop.hexpand = true
@@ -181,19 +178,44 @@ final class WelcomeWindow {
         wordmarkBox.append(child: trail)
 
         box.append(child: wordmarkBox)
-
-        let subtitle = Label(str: "The official Frida GUI")
-        subtitle.add(cssClass: "title-3")
-        subtitle.add(cssClass: "dim-label")
-        subtitle.add(cssClass: "luma-welcome-tagline")
-        subtitle.halign = .center
-        subtitle.wrap = true
-        subtitle.justify = .center
-        applyDarkClass(subtitle)
-        taglineLabel = subtitle
-        box.append(child: subtitle)
+        box.append(child: makeNowSecurePartnership())
+        box.marginBottom = 12
 
         return box
+    }
+
+    private func makeNowSecurePartnership() -> Widget {
+        let button = Button()
+        button.add(cssClass: "flat")
+        button.add(cssClass: "luma-welcome-sponsor")
+        button.halign = Gtk.Align.center
+        button.tooltipText = "nowsecure.com"
+        button.marginTop = 4
+        button.onClicked { [weak self] _ in
+            MainActor.assumeIsolated { self?.openNowSecure() }
+        }
+
+        let row = Box(orientation: .horizontal, spacing: 8)
+        row.halign = .center
+
+        let label = Label(str: "Sponsored by")
+        label.add(cssClass: "dim-label")
+        label.add(cssClass: "luma-welcome-sponsor-label")
+        row.append(child: label)
+
+        let logoURL = Bundle.module.url(forResource: "nowsecure-logo", withExtension: "svg")!
+        let rawPaintable = logoURL.path.withCString { luma_svg_paintable_new_from_path($0, 111, 20) }!
+        let picture = Picture(paintable: Gdk.Paintable(raw: rawPaintable))
+        picture.valign = Gtk.Align.center
+        row.append(child: picture)
+
+        button.set(child: row)
+        return button
+    }
+
+    private func openNowSecure() {
+        let launcher = UriLauncher(uri: "https://www.nowsecure.com")
+        launcher.launch(parent: Gtk.WindowRef(raw: window.ptr), cancellable: nil, callback: nil, userData: nil)
     }
 
     private func makeQuickActions() -> Widget {

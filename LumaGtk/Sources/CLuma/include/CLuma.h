@@ -99,6 +99,11 @@ void *luma_welcome_backdrop_new(void);
 // cream (false).
 void luma_welcome_backdrop_set_dark(void *widget, bool dark);
 
+// GdkPaintable backed by librsvg that re-rasterizes the SVG into
+// each snapshot's backing pixels at its logical-size aspect ratio.
+// Returns NULL on load failure; transfer-full.
+void *luma_svg_paintable_new_from_path(const char *path, int logical_width, int logical_height);
+
 #ifdef __cplusplus
 }
 #endif
