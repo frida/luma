@@ -67,12 +67,16 @@ public final class WelcomeModel {
     }
 
     public func refreshLabs() async {
-        fetchTask?.cancel()
+        if let existing = fetchTask {
+            await existing.value
+            return
+        }
         let task = Task { @MainActor in
             await performFetch()
         }
         fetchTask = task
         await task.value
+        fetchTask = nil
     }
 
     private func performFetch() async {
