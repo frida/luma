@@ -74,7 +74,9 @@ struct WelcomeView: View {
             .opacity(0.9)
         }
         .buttonStyle(.plain)
+        #if os(macOS)
         .pointerStyle(.link)
+        #endif
         .help("nowsecure.com")
     }
 
