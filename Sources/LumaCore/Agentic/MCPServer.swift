@@ -165,7 +165,8 @@ public final class MCPServer {
 
         let sessionID = (arguments["session_id"] as? String).flatMap(UUID.init(uuidString:))
         let argsJSON = serializeArgs(arguments)
-        let toolCallID = idString(rpcID) ?? UUID().uuidString
+        let priorActionCount = (try? engine.store.fetchMissionActions(missionID: mission.id))?.count ?? 0
+        let toolCallID = "t\(priorActionCount + 1)"
 
         var action = MissionAction(
             missionID: mission.id,
@@ -197,6 +198,7 @@ public final class MCPServer {
                 let payload: [String: Any] = [
                     "content": [["type": "text", "text": message]],
                     "isError": true,
+                    "_meta": ["tool_call_id": toolCallID],
                 ]
                 return jsonRPCResult(id: rpcID, result: payload)
             case .cancelled:
@@ -235,6 +237,7 @@ public final class MCPServer {
             let payload: [String: Any] = [
                 "content": [["type": "text", "text": "error: \(error.localizedDescription)"]],
                 "isError": true,
+                "_meta": ["tool_call_id": toolCallID],
             ]
             return jsonRPCResult(id: rpcID, result: payload)
         }
@@ -252,6 +255,7 @@ public final class MCPServer {
         let payload: [String: Any] = [
             "content": [["type": "text", "text": result.resultJSON]],
             "isError": result.isError,
+            "_meta": ["tool_call_id": toolCallID],
         ]
         return jsonRPCResult(id: rpcID, result: payload)
     }

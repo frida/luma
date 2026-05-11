@@ -2147,10 +2147,7 @@ public enum MissionTools {
             }
 
             let actions = (try? engine.store.fetchMissionActions(missionID: invocation.mission.id)) ?? []
-            let actionsByCallID = Dictionary(uniqueKeysWithValues: actions.compactMap { a -> (String, MissionAction)? in
-                guard let cid = a.toolCallID else { return nil }
-                return (cid, a)
-            })
+            let knownToolCallIDs = Set(actions.compactMap { $0.toolCallID })
 
             var validatedEvidence: [(MissionEvidenceKind, [String: Any])] = []
             for entry in evidenceList {
@@ -2163,7 +2160,7 @@ public enum MissionTools {
 
                 if evKind == .action {
                     guard let cid = ref["tool_call_id"] as? String,
-                        actionsByCallID[cid] != nil
+                        knownToolCallIDs.contains(cid)
                     else {
                         return errorResult("evidence references unknown tool_call_id; this finding is not grounded", code: .invalidInput)
                     }
