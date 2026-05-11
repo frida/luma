@@ -189,6 +189,7 @@ parts:
       - libgdk-pixbuf-2.0-dev
       - libgraphene-1.0-dev
       - libepoxy-dev
+      - librsvg2-dev
       - libsoup-3.0-dev
       - gobject-introspection
       - libgirepository1.0-dev
@@ -203,4 +204,5 @@ parts:
       - libadwaita-1-0
       - libwebkitgtk-6.0-4
       - libepoxy0
+      - librsvg2-2
       - libsoup-3.0-0

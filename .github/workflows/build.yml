@@ -766,6 +766,7 @@ jobs:
             gdk-pixbuf2-devel \
             graphene-devel \
             libepoxy-devel \
+            librsvg2-devel \
             libsoup3-devel \
             gobject-introspection-devel \
             atk-devel \
@@ -920,6 +921,7 @@ jobs:
             libgdk-pixbuf-2.0-dev \
             libgraphene-1.0-dev \
             libepoxy-dev \
+            librsvg2-dev \
             libsoup-3.0-dev \
             gobject-introspection \
             libgirepository1.0-dev \
@@ -1242,7 +1244,7 @@ jobs:
           --overlay-triplets=${{ github.workspace }}/.github/vcpkg-triplets
           --overlay-ports=${{ github.workspace }}/.github/vcpkg-ports
           --triplet ${{ matrix.vcpkg_triplet }}
-          glib glib-networking json-glib libsoup gtk[introspection] atk[introspection] libadwaita[introspection] libepoxy libxml2 graphite2 sqlite3[snapshot] webview2
+          glib glib-networking json-glib libsoup gtk[introspection] atk[introspection] libadwaita[introspection] libepoxy librsvg libxml2 graphite2 sqlite3[snapshot] webview2
 
       - name: Save vcpkg cache
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
