@@ -94,10 +94,10 @@ final class CustomInstrumentCompatibilityDialog {
         for (index, value) in orderedValues(known: known, axis: axis).enumerated() {
             let check = CheckButton(label: displayName(value))
             check.active = selection(for: axis).contains(value)
-            check.onToggled { [weak self, weak check] _ in
+            check.onToggled { [weak self] ref in
                 MainActor.assumeIsolated {
-                    guard let self, let check else { return }
-                    if check.active {
+                    guard let self else { return }
+                    if ref.active {
                         self.insert(value, into: axis)
                     } else {
                         self.remove(value, from: axis)

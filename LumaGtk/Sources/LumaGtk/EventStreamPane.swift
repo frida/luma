@@ -549,10 +549,10 @@ final class EventStreamPane {
         for filter in EventSourceFilter.allCases {
             let check = CheckButton(label: filter.menuTitle)
             check.active = enabledSources.contains(filter)
-            check.onToggled { [weak self, weak check] _ in
+            check.onToggled { [weak self] ref in
                 MainActor.assumeIsolated {
-                    guard let self, let check else { return }
-                    if check.active {
+                    guard let self else { return }
+                    if ref.active {
                         self.enabledSources.insert(filter)
                     } else {
                         self.enabledSources.remove(filter)
