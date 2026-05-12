@@ -68,6 +68,7 @@ final class MainWindow {
     private var sessionArmIcons: [UUID: Gtk.Image] = [:]
     private var instrumentRowLabels: [UUID: Label] = [:]
     private var instrumentRowIconHosts: [UUID: Box] = [:]
+    private var instrumentRowWarningHosts: [UUID: Box] = [:]
     private var traceRowIcons: [UUID: Gtk.Image] = [:]
     private var selection: SidebarSelection = .notebook
     private var addInstrumentButton: Button!
@@ -1061,7 +1062,23 @@ final class MainWindow {
             if let host = instrumentRowIconHosts[id] {
                 replaceIconHostContents(host, with: descriptor.icon)
             }
+            if let host = instrumentRowWarningHosts[id] {
+                populateIncompatibilityWarning(host: host, reason: instrumentIncompatibilityReason(for: instrument))
+            }
         }
+    }
+
+    private func populateIncompatibilityWarning(host: Box, reason: String?) {
+        var child = host.firstChild
+        while let cur = child {
+            child = cur.nextSibling
+            host.remove(child: cur)
+        }
+        guard let reason else { return }
+        let warning = Gtk.Image(iconName: "dialog-warning-symbolic")
+        warning.pixelSize = 12
+        warning.tooltipText = reason
+        host.append(child: warning)
     }
 
     private func replaceIconHostContents(_ host: Box, with icon: InstrumentIcon) {
@@ -1837,6 +1854,7 @@ final class MainWindow {
             for instrument in instrumentsBySession[id] ?? [] {
                 instrumentRowLabels.removeValue(forKey: instrument.id)
                 instrumentRowIconHosts.removeValue(forKey: instrument.id)
+                instrumentRowWarningHosts.removeValue(forKey: instrument.id)
             }
             instrumentsBySession.removeValue(forKey: id)
             insightsBySession.removeValue(forKey: id)
@@ -1872,6 +1890,7 @@ final class MainWindow {
             instrumentsBySession[sessionID]?.removeAll { $0.id == id }
             instrumentRowLabels.removeValue(forKey: id)
             instrumentRowIconHosts.removeValue(forKey: id)
+            instrumentRowWarningHosts.removeValue(forKey: id)
             removeChildRow(kind: .instrument(sessionID: sessionID, instrumentID: id))
         case .insightAdded(let insight):
             insightsBySession[insight.sessionID, default: []].append(insight)
@@ -2031,14 +2050,12 @@ final class MainWindow {
         let ilabel = Label(str: descriptor.displayName)
         ilabel.halign = .start
         rowBox.append(child: ilabel)
-        if let reason = instrumentIncompatibilityReason(for: instrument) {
-            let warning = Gtk.Image(iconName: "dialog-warning-symbolic")
-            warning.pixelSize = 12
-            warning.tooltipText = reason
-            rowBox.append(child: warning)
-        }
+        let warningHost = Box(orientation: .horizontal, spacing: 0)
+        rowBox.append(child: warningHost)
+        populateIncompatibilityWarning(host: warningHost, reason: instrumentIncompatibilityReason(for: instrument))
         instrumentRowLabels[instrument.id] = ilabel
         instrumentRowIconHosts[instrument.id] = iconHost
+        instrumentRowWarningHosts[instrument.id] = warningHost
         if instrument.state == .disabled {
             rowBox.opacity = 0.3
         }
