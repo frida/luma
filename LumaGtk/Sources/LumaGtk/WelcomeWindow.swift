@@ -195,7 +195,7 @@ final class WelcomeWindow {
             MainActor.assumeIsolated { self?.openNowSecure() }
         }
 
-        let row = Box(orientation: .horizontal, spacing: 8)
+        let row = Box(orientation: .horizontal, spacing: 4)
         row.halign = .center
 
         let label = Label(str: "Sponsored by")

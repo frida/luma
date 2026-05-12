@@ -61,7 +61,7 @@ struct WelcomeView: View {
 
     private var nowSecurePartnership: some View {
         Link(destination: URL(string: "https://www.nowsecure.com")!) {
-            HStack(spacing: 8) {
+            HStack(spacing: 4) {
                 Text("Sponsored by")
                     .font(.callout)
                     .foregroundStyle(.secondary)
