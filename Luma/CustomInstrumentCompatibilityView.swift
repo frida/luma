@@ -61,7 +61,7 @@ struct CustomInstrumentCompatibilityPopover: View {
         Toggle(isOn: bindingForValue(value, in: selection)) {
             Text(displayName(value))
         }
-        .toggleStyle(.checkbox)
+        .platformCheckboxToggleStyle()
     }
 
     private func bindingForValue(_ value: String, in selection: Binding<Set<String>>) -> Binding<Bool> {
