@@ -32,14 +32,8 @@ struct WelcomeWindow: View {
     }
 
     private func createFromLab(_ lab: WelcomeModel.LabSummary) {
-        let url = LumaAppPaths.shared.untitledDirectory
-            .appendingPathComponent("\(sanitizedFilename(for: lab.title)).luma")
-        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         CollaborationJoinQueue.shared.enqueue(labID: lab.id)
-        NSDocumentController.shared.openDocument(
-            withContentsOf: url,
-            display: true
-        ) { _, _, _ in }
+        NSDocumentController.shared.newDocument(nil)
         dismissAfterOpen()
     }
 
@@ -47,13 +41,6 @@ struct WelcomeWindow: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             dismissWindow(id: Self.id)
         }
-    }
-
-    private func sanitizedFilename(for title: String) -> String {
-        let illegal = CharacterSet(charactersIn: "/\\:*?\"<>|")
-        let trimmed = title.components(separatedBy: illegal).joined(separator: "-")
-            .trimmingCharacters(in: .whitespaces)
-        return trimmed.isEmpty ? "Lab" : trimmed
     }
 }
 
