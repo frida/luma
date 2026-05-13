@@ -212,7 +212,7 @@ extension Binding where Value == [PhoneRoute] {
                 case .insight(let sid, let iid):
                     self.wrappedValue.append(.insight(sid, iid))
                 case .instrument(let sid, let iid),
-                     .instrumentComponent(let sid, let iid, _, _):
+                     .instrumentComponent(let sid, let iid, _):
                     self.wrappedValue.append(.instrument(sid, iid))
                 case .itrace(let sid, let tid):
                     self.wrappedValue.append(.trace(sid, tid))

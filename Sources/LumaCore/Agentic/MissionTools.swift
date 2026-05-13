@@ -1218,7 +1218,7 @@ public enum MissionTools {
             let armingArg = invocation.args["itrace_arming"]
 
             guard let updated = await engine.updateTracerHook(sessionID: sessionID, hookID: hookID, { hook in
-                if let code { hook.code = code }
+                if let code { hook.updateCode(code) }
                 if let displayName { hook.displayName = displayName }
                 if let state { hook.state = state }
                 if armingArg is NSNull {

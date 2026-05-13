@@ -40,9 +40,7 @@ struct CustomInstrumentEditorView: View {
 
     @ViewBuilder
     private func content(def: CustomInstrumentDef, file: CustomInstrumentFile) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            header(def: def, file: file)
-                .padding(.horizontal, 16)
+        ZStack(alignment: .topTrailing) {
             CodeEditorView(
                 text: $draftContent,
                 profile: EditorProfile.fridaCustomInstrument(
@@ -55,13 +53,20 @@ struct CustomInstrumentEditorView: View {
                 engine: engine,
             )
             .accessibilityIdentifier("customInstrument.editor")
+
+            SaveBarOverlay(
+                isDirty: isDirty,
+                showSavedCheck: showSavedCheck,
+                saveTooltip: "Save current file (\u{2318}S)",
+                onSave: saveDraft
+            )
         }
-        .padding(.top, 8)
         .onAppear {
             syncFromFile(file)
             isEditorFocused = true
         }
-        .onChange(of: file.path) { _, _ in
+        .onChange(of: file.path) { oldPath, _ in
+            flushDraft(toPath: oldPath)
             syncFromFile(file)
             isEditorFocused = true
         }
@@ -70,44 +75,6 @@ struct CustomInstrumentEditorView: View {
         }
         .onChange(of: draftContent) { _, _ in recomputeDirty() }
         .onDisappear { flushDraftIfNeeded() }
-    }
-
-    private func header(def: CustomInstrumentDef, file: CustomInstrumentFile) -> some View {
-        HStack(spacing: 8) {
-            InstrumentIconView(icon: def.icon, pointSize: 18)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(def.name).font(.headline)
-                HStack(spacing: 6) {
-                    Text(file.path).font(.caption).foregroundStyle(.secondary)
-                    if file.path == def.entrypoint {
-                        Text("entrypoint")
-                            .font(.caption2)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(Capsule().fill(Color.accentColor.opacity(0.2)))
-                    }
-                }
-            }
-            Spacer()
-            saveStatusIcon
-            Button("Save") { saveDraft() }
-                .disabled(!isDirty)
-                .accessibilityIdentifier("customInstrument.save")
-                .keyboardShortcut("s", modifiers: [.command])
-        }
-    }
-
-    private var saveStatusIcon: some View {
-        ZStack {
-            if isDirty {
-                Circle().frame(width: 6, height: 6)
-            }
-            if showSavedCheck {
-                Image(systemName: "checkmark.circle.fill")
-                    .transition(.opacity.combined(with: .scale))
-            }
-        }
-        .frame(width: 14, height: 14)
     }
 
     private func saveDraft() {
@@ -124,11 +91,15 @@ struct CustomInstrumentEditorView: View {
     }
 
     private func flushDraftIfNeeded() {
-        guard isDirty, let file else { return }
-        let pathToSave = file.path
+        guard let file else { return }
+        flushDraft(toPath: file.path)
+    }
+
+    private func flushDraft(toPath path: String) {
+        guard isDirty else { return }
         let content = draftContent
         Task { @MainActor in
-            await engine.writeCustomInstrumentFile(defID: defID, path: pathToSave, content: content)
+            await engine.writeCustomInstrumentFile(defID: defID, path: path, content: content)
         }
     }
 

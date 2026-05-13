@@ -253,9 +253,9 @@ final class EventStreamPane {
             }
         }
 
-        clearEventsButton.onClicked { [weak self, weak overflowPopover] _ in
+        clearEventsButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
-                overflowPopover?.popdown()
+                self?.overflowMenuButton.popdown()
                 self?.clearEvents()
             }
         }
@@ -297,7 +297,7 @@ final class EventStreamPane {
             self?.handleEventsAppended(newEvents)
         }
         engine.eventLog.onEventsCleared = { [weak self] in
-            self?.clearEvents()
+            self?.handleEventsCleared()
         }
 
         syncSnapshot()
@@ -410,6 +410,9 @@ final class EventStreamPane {
 
     private func clearEvents() {
         engine?.clearEventLog()
+    }
+
+    private func handleEventsCleared() {
         displayedEvents.removeAll()
         filteredEvents.removeAll()
         pendingNewEvents = 0

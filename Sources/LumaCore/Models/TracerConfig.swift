@@ -42,6 +42,8 @@ public struct TracerConfig: Codable, Equatable, Sendable {
 
         public var itraceArming: ITraceArming?
 
+        public var lastEditedAt: Date?
+
         public init(
             id: UUID = UUID(),
             displayName: String,
@@ -49,7 +51,8 @@ public struct TracerConfig: Codable, Equatable, Sendable {
             kind: TracerHookKind,
             state: State = .enabled,
             code: String,
-            itraceArming: ITraceArming? = nil
+            itraceArming: ITraceArming? = nil,
+            lastEditedAt: Date? = .now
         ) {
             self.id = id
             self.displayName = displayName
@@ -58,6 +61,12 @@ public struct TracerConfig: Codable, Equatable, Sendable {
             self.state = state
             self.code = code
             self.itraceArming = itraceArming
+            self.lastEditedAt = lastEditedAt
+        }
+
+        public mutating func updateCode(_ newCode: String, at date: Date = .now) {
+            code = newCode
+            lastEditedAt = date
         }
     }
 
@@ -65,6 +74,13 @@ public struct TracerConfig: Codable, Equatable, Sendable {
 
     public init(hooks: [Hook] = []) {
         self.hooks = hooks
+    }
+
+    public func hooksByMostRecentlyEdited() -> [Hook] {
+        return hooks.enumerated()
+            .map { (originalIndex: $0.offset, hook: $0.element) }
+            .sorted(by: hookRecencyComesFirst)
+            .map(\.hook)
     }
 
     public static func decode(from data: Data) throws -> TracerConfig {
@@ -98,6 +114,25 @@ public struct TracerConfig: Codable, Equatable, Sendable {
             }
         ]
     }
+}
+
+private func hookRecencyComesFirst(
+    _ lhs: (originalIndex: Int, hook: TracerConfig.Hook),
+    _ rhs: (originalIndex: Int, hook: TracerConfig.Hook)
+) -> Bool {
+    if let l = lhs.hook.lastEditedAt, let r = rhs.hook.lastEditedAt, l != r {
+        return l > r
+    }
+    let lhsHasTimestamp = lhs.hook.lastEditedAt != nil
+    let rhsHasTimestamp = rhs.hook.lastEditedAt != nil
+    if lhsHasTimestamp != rhsHasTimestamp {
+        return lhsHasTimestamp
+    }
+    let nameComparison = lhs.hook.displayName.localizedCaseInsensitiveCompare(rhs.hook.displayName)
+    if nameComparison != .orderedSame {
+        return nameComparison == .orderedAscending
+    }
+    return lhs.originalIndex < rhs.originalIndex
 }
 
 public func defaultTracerCode(kind: TracerHookKind, anchor: AddressAnchor, displayName: String) -> String {

@@ -500,7 +500,7 @@ struct ProjectToolbar: ToolbarContent {
         case .session(let sessionID),
             .repl(let sessionID),
             .instrument(let sessionID, _),
-            .instrumentComponent(let sessionID, _, _, _),
+            .instrumentComponent(let sessionID, _, _),
             .insight(let sessionID, _),
             .itrace(let sessionID, _):
             return engine.session(id: sessionID)
@@ -516,7 +516,7 @@ struct ProjectToolbar: ToolbarContent {
         case .session(let sessionID),
             .repl(let sessionID),
             .instrument(let sessionID, _),
-            .instrumentComponent(let sessionID, _, _, _),
+            .instrumentComponent(let sessionID, _, _),
             .insight(let sessionID, _),
             .itrace(let sessionID, _):
             return engine.node(forSessionID: sessionID)

@@ -11,6 +11,24 @@ public enum AddressAnchor: Codable, Hashable, Sendable {
     case debugSymbol(name: String)
     case javaMethod(className: String, methodName: String)
 
+    public var moduleGroupName: String {
+        switch self {
+        case .moduleOffset(let name, _),
+            .moduleExport(let name, _):
+            return name
+        case .swiftFunc(let module, _):
+            return module
+        case .objcMethod:
+            return "Objective-C"
+        case .javaMethod:
+            return "Java"
+        case .debugSymbol:
+            return "Debug Symbols"
+        case .absolute:
+            return "Absolute Addresses"
+        }
+    }
+
     public var displayString: String {
         switch self {
         case .absolute(let a):

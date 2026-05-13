@@ -52,7 +52,7 @@ struct DetailView: View {
                 }
 
             case .some(.instrument(let sessionID, let instID)),
-                .some(.instrumentComponent(let sessionID, let instID, _, _)):
+                .some(.instrumentComponent(let sessionID, let instID, _)):
                 if (try? engine.store.fetchInstrument(id: instID)) != nil {
                     SessionContent(sessionID: sessionID, engine: engine) {
                         InstrumentDetailView(

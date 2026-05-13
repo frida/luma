@@ -8,6 +8,18 @@ enum StyleSheet {
         padding: 0;
     }
 
+    .luma-tight-sidebar > row {
+        padding-left: 4px;
+        margin-left: 0;
+        margin-right: 0;
+    }
+
+    button.luma-sidebar-chevron {
+        padding: 0;
+        min-width: 24px;
+        min-height: 24px;
+    }
+
     .event-stream-pane {
         border-top: 1px solid alpha(@theme_fg_color, 0.18);
     }
@@ -38,6 +50,25 @@ enum StyleSheet {
         background-color: alpha(@accent_bg_color, 0.12);
         border: 1px solid alpha(@accent_bg_color, 0.45);
         border-radius: 6px;
+    }
+
+    window banner > revealer > widget,
+    window banner > revealer > widget:backdrop {
+        background-color: rgba(255, 149, 0, 0.15);
+        border-bottom: 1px solid rgba(255, 149, 0, 0.40);
+        color: @theme_fg_color;
+        transition: none;
+    }
+
+    window banner > revealer > widget > label,
+    window banner > revealer > widget > label:backdrop,
+    window banner > revealer > widget:backdrop > label,
+    window banner > revealer > widget > button,
+    window banner > revealer > widget > button:backdrop,
+    window banner > revealer > widget:backdrop > button {
+        filter: none;
+        opacity: 1;
+        transition: none;
     }
 
     .luma-disasm-row:hover {

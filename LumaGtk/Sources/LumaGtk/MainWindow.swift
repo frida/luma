@@ -8,7 +8,7 @@ import Observation
 import Pango
 
 @MainActor
-final class MainWindow {
+final class MainWindow: InstrumentUIHost {
     private let app: Gtk.Application
     private weak var application: LumaApplication?
     let window: Adw.ApplicationWindow
@@ -35,6 +35,7 @@ final class MainWindow {
     private var missionsExpansionChevron: Gtk.Image!
     private var missionsExpansionButton: Button!
     private var missionsExpanded: Bool = true
+    private var isReconcilingSidebar: Bool = false
     private var missions: [Mission] = []
     private var missionRowIDs: [UUID] = []
     private var currentMissionsListPane: MissionsListPane?
@@ -67,6 +68,14 @@ final class MainWindow {
     private var sessionNameLabels: [UUID: Label] = [:]
     private var sessionDeviceLabels: [UUID: Label] = [:]
     private var sessionArmIcons: [UUID: Gtk.Image] = [:]
+    private var sessionChevronImages: [UUID: Gtk.Image] = [:]
+    private var instrumentChildActions: [String: @MainActor () -> Void] = [:]
+    private var instrumentChildKeyByComponent: [InstrumentComponentReference: String] = [:]
+
+    private struct InstrumentComponentReference: Hashable {
+        let instrumentID: UUID
+        let componentID: UUID
+    }
     private var instrumentRowLabels: [UUID: Label] = [:]
     private var instrumentRowIconHosts: [UUID: Box] = [:]
     private var instrumentRowWarningHosts: [UUID: Box] = [:]
@@ -93,6 +102,7 @@ final class MainWindow {
         case session(UUID)
         case repl(UUID)
         case instrument(sessionID: UUID, instrumentID: UUID)
+        case instrumentComponent(sessionID: UUID, instrumentID: UUID, componentID: UUID)
         case insight(sessionID: UUID, insightID: UUID)
         case itrace(sessionID: UUID, traceID: UUID)
         case package(UUID)
@@ -110,13 +120,18 @@ final class MainWindow {
         case session(UUID)
         case repl(UUID)
         case instrument(sessionID: UUID, instrumentID: UUID)
+        case instrumentChild(sessionID: UUID, instrumentID: UUID, key: String)
         case insight(sessionID: UUID, insightID: UUID)
         case itrace(sessionID: UUID, traceID: UUID)
 
         var sessionID: UUID {
             switch self {
             case .session(let id), .repl(let id): return id
-            case .instrument(let id, _), .insight(let id, _), .itrace(let id, _): return id
+            case .instrument(let id, _),
+                .instrumentChild(let id, _, _),
+                .insight(let id, _),
+                .itrace(let id, _):
+                return id
             }
         }
     }
@@ -250,6 +265,8 @@ final class MainWindow {
         }
         let toastOverlay = ToastOverlay(content: column)
         self.toastOverlay = toastOverlay
+
+        registerInstrumentUIs()
 
         let toolbarView = Adw.ToolbarView()
         toolbarView.addTopBar(widget: header)
@@ -460,7 +477,7 @@ final class MainWindow {
         }
         eventStreamPane.attach(engine: engine)
         eventStreamPane.onNavigateToHook = { [weak self] sessionID, instrumentID, hookID in
-            self?.navigateToHook(sessionID: sessionID, instrumentID: instrumentID, hookID: hookID)
+            self?.navigateToInstrumentComponent(sessionID: sessionID, instrumentID: instrumentID, componentID: hookID)
         }
         AddressActionMenu.navigator = { [weak self] sessionID, insightID in
             guard let self else { return }
@@ -948,10 +965,11 @@ final class MainWindow {
     private func buildSessionsSection() -> Box {
         sessionsList.selectionMode = .single
         sessionsList.add(cssClass: "navigation-sidebar")
-        sessionsList.add(cssClass: "sidebar-sessions")
+        sessionsList.add(cssClass: "luma-tight-sidebar")
         sessionsList.onRowSelected { [weak self] _, row in
             MainActor.assumeIsolated {
                 guard let self, let row else { return }
+                guard !self.isReconcilingSidebar else { return }
                 let index = Int(row.index)
                 guard index >= 0, index < self.sessionsRowKinds.count else { return }
                 switch self.sessionsRowKinds[index] {
@@ -961,6 +979,8 @@ final class MainWindow {
                     self.select(.repl(id))
                 case .instrument(let sid, let iid):
                     self.select(.instrument(sessionID: sid, instrumentID: iid))
+                case .instrumentChild(let sid, let iid, let key):
+                    self.activateInstrumentChild(sessionID: sid, instrumentID: iid, key: key)
                 case .insight(let sid, let iid):
                     self.select(.insight(sessionID: sid, insightID: iid))
                 case .itrace(let sid, let tid):
@@ -993,6 +1013,7 @@ final class MainWindow {
     private func buildCustomInstrumentsSection() -> Box {
         customInstrumentsList.selectionMode = .single
         customInstrumentsList.add(cssClass: "navigation-sidebar")
+        customInstrumentsList.add(cssClass: "luma-tight-sidebar")
         customInstrumentsList.onRowSelected { [weak self] _, row in
             MainActor.assumeIsolated {
                 guard let self, let row else { return }
@@ -1093,8 +1114,8 @@ final class MainWindow {
         isExpanded: Bool
     ) -> ListBoxRow {
         let row = ListBoxRow()
-        let box = Box(orientation: .horizontal, spacing: 6)
-        box.marginStart = 12
+        let box = Box(orientation: .horizontal, spacing: MainWindow.sidebarColumnSpacing)
+        box.marginStart = MainWindow.sidebarHeaderMarginStart
         box.marginEnd = 12
         box.marginTop = 4
         box.marginBottom = 4
@@ -1103,9 +1124,16 @@ final class MainWindow {
             box.append(child: makeCustomInstrumentChevron(isExpanded: isExpanded) { [weak self] in
                 self?.toggleCustomInstrumentExpansion(defID: def.id)
             })
+        } else {
+            box.append(child: makeChevronSpacer())
         }
 
-        box.append(child: InstrumentIconView.makeImage(for: def.icon, pixelSize: 16))
+        let iconHost = MainWindow.makeIconHost()
+        let icon = InstrumentIconView.makeImage(for: def.icon, pixelSize: 16)
+        MainWindow.centerInIconHost(icon)
+        iconHost.append(child: icon)
+        box.append(child: iconHost)
+
         let label = Label(str: def.name)
         label.halign = .start
         label.hexpand = true
@@ -1113,6 +1141,12 @@ final class MainWindow {
         row.set(child: box)
         attachCustomInstrumentContextMenu(row: row, anchor: box, def: def)
         return row
+    }
+
+    private func makeChevronSpacer() -> Widget {
+        let spacer = Box(orientation: .horizontal, spacing: 0)
+        spacer.setSizeRequest(width: MainWindow.sidebarChevronColumnWidth, height: -1)
+        return spacer
     }
 
     private func toggleCustomInstrumentExpansion(defID: UUID) {
@@ -1132,7 +1166,7 @@ final class MainWindow {
         let button = Button()
         button.set(child: chevronImage)
         button.add(cssClass: "flat")
-        button.add(cssClass: "circular")
+        button.add(cssClass: "luma-sidebar-chevron")
         button.valign = .center
         button.onClicked { _ in
             MainActor.assumeIsolated { onToggle() }
@@ -1145,21 +1179,11 @@ final class MainWindow {
         file: LumaCore.CustomInstrumentFile
     ) -> ListBoxRow {
         let row = ListBoxRow()
-        let box = Box(orientation: .horizontal, spacing: 6)
-        box.marginStart = 12
-        box.marginEnd = 12
-        box.marginTop = 2
-        box.marginBottom = 2
-
-        let indentSlot = makeCustomInstrumentChevron(isExpanded: true) {}
-        indentSlot.opacity = 0
-        indentSlot.sensitive = false
-        indentSlot.canFocus = false
-        box.append(child: indentSlot)
-
+        let (box, iconHost) = MainWindow.makeChildRowBox()
         let icon = Gtk.Image(iconName: "text-x-generic-symbolic")
-        icon.pixelSize = 12
-        box.append(child: icon)
+        icon.pixelSize = 16
+        MainWindow.centerInIconHost(icon)
+        iconHost.append(child: icon)
         let label = Label(str: file.path)
         label.halign = .start
         label.hexpand = true
@@ -1553,7 +1577,7 @@ final class MainWindow {
             currentREPLPane = nil
             currentREPLSessionID = nil
         }
-        if case .instrument(_, let iid) = selection {
+        if let iid = activeInstrumentID(in: selection) {
             if currentInstrumentDetail?.instrumentID != iid {
                 reclaimSharedEditors()
                 currentInstrumentDetail = nil
@@ -1683,7 +1707,8 @@ final class MainWindow {
                     subtitle: "This ITrace is no longer in the store."
                 )
             }
-        case .instrument(let sid, let iid):
+        case .instrument(let sid, let iid),
+            .instrumentComponent(let sid, let iid, _):
             if let session = sessions.first(where: { $0.id == sid }),
                 let instrument = (instrumentsBySession[sid] ?? []).first(where: { $0.id == iid })
             {
@@ -1780,7 +1805,10 @@ final class MainWindow {
         switch selection {
         case .session(let id), .repl(let id):
             return id
-        case .instrument(let id, _), .insight(let id, _), .itrace(let id, _):
+        case .instrument(let id, _),
+            .instrumentComponent(let id, _, _),
+            .insight(let id, _),
+            .itrace(let id, _):
             return id
         default:
             return nil
@@ -1800,14 +1828,22 @@ final class MainWindow {
         }
         if let existing = currentInstrumentDetail, existing.instrumentID == instrument.id {
             existing.applySessionState()
+            if existing.widget.parent != nil {
+                existing.widget.unparent()
+            }
             return existing.widget
         }
+        let sessionID = session.id
+        let instrumentID = instrument.id
         let pane = InstrumentDetailPane(
             engine: engine,
             session: session,
             instrument: instrument,
             owner: self,
-            tracerEditor: sharedTracerEditor
+            host: self,
+            onComponentAdded: { [weak self] componentID in
+                self?.navigateToInstrumentComponent(sessionID: sessionID, instrumentID: instrumentID, componentID: componentID)
+            }
         )
         currentInstrumentDetail = pane
         return pane.widget
@@ -2018,15 +2054,52 @@ final class MainWindow {
 
     // MARK: - Selection
 
-    private func navigateToHook(sessionID: UUID, instrumentID: UUID, hookID: UUID) {
+    private func registerInstrumentUIs() {
+        let registry = InstrumentUIRegistry.shared
+        registry.register(.tracer, ui: TracerUIKind(sharedMonaco: sharedTracerEditor))
+        registry.register(.hookPack, ui: HookPackUIKind())
+        registry.register(.codeShare, ui: CodeShareUIKind())
+        registry.register(.custom, ui: CustomUIKind())
+    }
+
+    func navigateToInstrument(sessionID: UUID, instrumentID: UUID) {
         select(.instrument(sessionID: sessionID, instrumentID: instrumentID))
-        currentInstrumentDetail?.selectTracerHook(id: hookID)
+    }
+
+    func selectedComponentID(sessionID: UUID, instrumentID: UUID) -> UUID? {
+        guard case .instrumentComponent(let sid, let iid, let cid) = selection,
+            sid == sessionID, iid == instrumentID
+        else { return nil }
+        return cid
+    }
+
+    func navigateToInstrumentComponent(sessionID: UUID, instrumentID: UUID, componentID: UUID) {
+        if let engine, engine.sidebarExpansion(forSessionID: sessionID) == .collapsed {
+            setSessionExpansion(sessionID: sessionID, .expanded)
+        }
+        isReconcilingSidebar = true
+        select(.instrumentComponent(sessionID: sessionID, instrumentID: instrumentID, componentID: componentID))
+        currentInstrumentDetail?.selectComponent(id: componentID)
+        if let instrument = instrumentsBySession[sessionID]?.first(where: { $0.id == instrumentID }) {
+            reconcileInstrumentChildren(for: instrument)
+        }
+        Task { @MainActor in
+            await Task.yield()
+            isReconcilingSidebar = false
+            restoreSidebarSelectionVisual()
+        }
+    }
+
+    private func instrumentComponentExistsInSidebar(sessionID: UUID, instrumentID: UUID, componentID: UUID) -> Bool {
+        instrumentChildKeyByComponent[
+            InstrumentComponentReference(instrumentID: instrumentID, componentID: componentID)
+        ] != nil
     }
 
     func navigate(to target: LumaCore.NavigationTarget) {
         switch target {
         case .instrumentComponent(let sessionID, let instrumentID, let componentID):
-            navigateToHook(sessionID: sessionID, instrumentID: instrumentID, hookID: componentID)
+            navigateToInstrumentComponent(sessionID: sessionID, instrumentID: instrumentID, componentID: componentID)
         case .itrace(let sessionID, let traceID):
             select(.itrace(sessionID: sessionID, traceID: traceID))
         }
@@ -2042,7 +2115,7 @@ final class MainWindow {
             customInstrumentsList.unselectAll()
             missionsListBox.unselectAll()
             notebookListBox.select(row: notebookRow)
-        case .session, .repl, .instrument, .insight, .itrace:
+        case .session, .repl, .instrument, .instrumentComponent, .insight, .itrace:
             notebookListBox.unselectAll()
             packagesList.unselectAll()
             customInstrumentsList.unselectAll()
@@ -2050,7 +2123,7 @@ final class MainWindow {
             if let idx = currentSelectionRowIndex(),
                 let row = sessionsList.getRowAt(index: idx)
             {
-                sessionsList.select(row: row)
+                selectSessionsRow(row)
             }
         case .package:
             notebookListBox.unselectAll()
@@ -2097,6 +2170,14 @@ final class MainWindow {
         }
         updateResumeButtonVisibility()
         renderDetail()
+        switch newValue {
+        case .instrument:
+            currentInstrumentDetail?.showConfigurationView()
+        case .instrumentComponent(_, _, let componentID):
+            currentInstrumentDetail?.selectComponent(id: componentID)
+        default:
+            break
+        }
         focusEditorIfNeeded(for: newValue)
     }
 
@@ -2151,8 +2232,14 @@ final class MainWindow {
             sessionNameLabels.removeValue(forKey: id)
             sessionDeviceLabels.removeValue(forKey: id)
             sessionArmIcons.removeValue(forKey: id)
+            sessionChevronImages.removeValue(forKey: id)
             switch selection {
-            case .session(let sid), .repl(let sid), .instrument(let sid, _), .insight(let sid, _), .itrace(let sid, _):
+            case .session(let sid),
+                .repl(let sid),
+                .instrument(let sid, _),
+                .instrumentComponent(let sid, _, _),
+                .insight(let sid, _),
+                .itrace(let sid, _):
                 if sid == id {
                     select(.notebook)
                     notebookListBox.select(row: notebookRow)
@@ -2162,6 +2249,7 @@ final class MainWindow {
         case .instrumentAdded(let instrument):
             instrumentsBySession[instrument.sessionID, default: []].append(instrument)
             insertChildRow(makeInstrumentRow(instrument), kind: .instrument(sessionID: instrument.sessionID, instrumentID: instrument.id), sessionID: instrument.sessionID)
+            reconcileInstrumentChildren(for: instrument)
         case .instrumentUpdated(let instrument):
             if let arr = instrumentsBySession[instrument.sessionID],
                 let i = arr.firstIndex(where: { $0.id == instrument.id })
@@ -2171,6 +2259,7 @@ final class MainWindow {
             if let warningHost = instrumentRowWarningHosts[instrument.id] {
                 populateIncompatibilityWarning(host: warningHost, reason: instrumentIncompatibilityReason(for: instrument))
             }
+            reconcileInstrumentChildren(for: instrument)
             if let detail = currentInstrumentDetail, detail.instrumentID == instrument.id {
                 detail.update(instrument)
             }
@@ -2179,7 +2268,11 @@ final class MainWindow {
             instrumentRowLabels.removeValue(forKey: id)
             instrumentRowIconHosts.removeValue(forKey: id)
             instrumentRowWarningHosts.removeValue(forKey: id)
+            removeInstrumentChildRows(sessionID: sessionID, instrumentID: id)
             removeChildRow(kind: .instrument(sessionID: sessionID, instrumentID: id))
+            if case .instrumentComponent(let sid, let iid, _) = selection, sid == sessionID, iid == id {
+                select(.session(sessionID))
+            }
         case .insightAdded(let insight):
             insightsBySession[insight.sessionID, default: []].append(insight)
             insertChildRow(makeInsightRow(insight), kind: .insight(sessionID: insight.sessionID, insightID: insight.id), sessionID: insight.sessionID)
@@ -2212,11 +2305,18 @@ final class MainWindow {
         }
 
         let headerRow = ListBoxRow()
-        let headerBox = Box(orientation: .horizontal, spacing: 8)
-        headerBox.marginStart = 8
+        let headerBox = Box(orientation: .horizontal, spacing: MainWindow.sidebarColumnSpacing)
+        headerBox.marginStart = MainWindow.sidebarHeaderMarginStart
         headerBox.marginEnd = 12
         headerBox.marginTop = 4
         headerBox.marginBottom = 4
+
+        let expansion = engine?.sidebarExpansion(forSessionID: session.id) ?? .expanded
+        let chevron = makeSessionChevron(expansion: expansion) { [weak self] in
+            self?.toggleSessionExpansion(sessionID: session.id)
+        }
+        sessionChevronImages[session.id] = chevron.image
+        headerBox.append(child: chevron.button)
 
         let icon = makeSessionIcon(for: session, node: engine?.node(forSessionID: session.id))
         headerBox.append(child: icon)
@@ -2252,20 +2352,65 @@ final class MainWindow {
         sessionsRowKinds.insert(.session(session.id), at: pos)
 
         let replRow = ListBoxRow()
-        let replBox = Box(orientation: .horizontal, spacing: 6)
-        replBox.marginStart = 28
-        replBox.marginEnd = 12
-        replBox.marginTop = 2
-        replBox.marginBottom = 2
+        let (replBox, replIconHost) = MainWindow.makeChildRowBox()
         let replIcon = Gtk.Image(iconName: "utilities-terminal-symbolic")
         replIcon.pixelSize = 16
-        replBox.append(child: replIcon)
+        MainWindow.centerInIconHost(replIcon)
+        replIconHost.append(child: replIcon)
         let replLabel = Label(str: "REPL")
         replLabel.halign = .start
         replBox.append(child: replLabel)
         replRow.set(child: replBox)
+        replRow.visible = expansion == .expanded
         sessionsList.insert(child: replRow, position: pos + 1)
         sessionsRowKinds.insert(.repl(session.id), at: pos + 1)
+    }
+
+    private func makeSessionChevron(
+        expansion: SidebarExpansion,
+        onToggle: @escaping () -> Void
+    ) -> (button: Button, image: Gtk.Image) {
+        let image = Gtk.Image(iconName: chevronIconName(for: expansion))
+        image.pixelSize = 12
+        image.add(cssClass: "dim-label")
+        let button = Button()
+        button.set(child: image)
+        button.add(cssClass: "flat")
+        button.add(cssClass: "luma-sidebar-chevron")
+        button.valign = .center
+        button.tooltipText = "Toggle session"
+        button.onClicked { _ in
+            MainActor.assumeIsolated { onToggle() }
+        }
+        return (button, image)
+    }
+
+    private func chevronIconName(for expansion: SidebarExpansion) -> String {
+        expansion == .expanded ? "pan-down-symbolic" : "pan-end-symbolic"
+    }
+
+    private func toggleSessionExpansion(sessionID: UUID) {
+        guard let engine else { return }
+        let current = engine.sidebarExpansion(forSessionID: sessionID)
+        setSessionExpansion(sessionID: sessionID, current == .expanded ? .collapsed : .expanded)
+    }
+
+    private func setSessionExpansion(sessionID: UUID, _ expansion: SidebarExpansion) {
+        guard let engine else { return }
+        engine.setSidebarExpansion(sessionID: sessionID, expansion)
+        sessionChevronImages[sessionID]?.setFrom(iconName: chevronIconName(for: expansion))
+        for (index, kind) in sessionsRowKinds.enumerated() {
+            guard kind.sessionID == sessionID,
+                let row = sessionsList.getRowAt(index: index)
+            else { continue }
+            if case .session = kind { continue }
+            row.visible = expansion == .expanded
+        }
+    }
+
+    private func applySessionExpansionVisibility(row: ListBoxRow, sessionID: UUID) {
+        let expansion = engine?.sidebarExpansion(forSessionID: sessionID) ?? .expanded
+        row.visible = expansion == .expanded
     }
 
     private func removeSessionRows(_ sessionID: UUID) {
@@ -2283,6 +2428,7 @@ final class MainWindow {
 
     private func insertChildRow(_ row: ListBoxRow, kind: SessionsRow, sessionID: UUID) {
         let pos = insertPosition(for: kind, sessionID: sessionID)
+        applySessionExpansionVisibility(row: row, sessionID: sessionID)
         sessionsList.insert(child: row, position: pos)
         sessionsRowKinds.insert(kind, at: pos)
     }
@@ -2307,7 +2453,7 @@ final class MainWindow {
             switch k {
             case .session: return 0
             case .repl: return 1
-            case .instrument: return 2
+            case .instrument, .instrumentChild: return 2
             case .insight: return 3
             case .itrace: return 4
             }
@@ -2323,18 +2469,138 @@ final class MainWindow {
         return pos
     }
 
-    private func makeInstrumentRow(_ instrument: LumaCore.InstrumentInstance) -> ListBoxRow {
-        let row = ListBoxRow()
-        let descriptor = engine!.descriptor(for: instrument)
-        let rowBox = Box(orientation: .horizontal, spacing: 6)
+    private func activeInstrumentID(in selection: SidebarSelection) -> UUID? {
+        switch selection {
+        case .instrument(_, let iid), .instrumentComponent(_, _, let iid):
+            return iid
+        default:
+            return nil
+        }
+    }
+
+    private func reconcileInstrumentChildren(for instrument: LumaCore.InstrumentInstance) {
+        let outerGuard = isReconcilingSidebar
+        isReconcilingSidebar = true
+        defer {
+            if !outerGuard {
+                isReconcilingSidebar = false
+                restoreSidebarSelectionVisual()
+            }
+        }
+
+        removeInstrumentChildRows(sessionID: instrument.sessionID, instrumentID: instrument.id)
+        guard let engine else { return }
+
+        let children = InstrumentUIRegistry.shared
+            .ui(for: instrument.kind)
+            .makeSidebarChildren(engine: engine, instrument: instrument, host: self)
+        guard !children.isEmpty else { return }
+
+        guard let instrumentIndex = sessionsRowKinds.firstIndex(where: { row in
+            if case .instrument(let sid, let iid) = row {
+                return sid == instrument.sessionID && iid == instrument.id
+            }
+            return false
+        }) else { return }
+
+        var insertAt = instrumentIndex + 1
+        for child in children {
+            applySessionExpansionVisibility(row: child.row, sessionID: instrument.sessionID)
+            sessionsList.insert(child: child.row, position: insertAt)
+            sessionsRowKinds.insert(
+                .instrumentChild(sessionID: instrument.sessionID, instrumentID: instrument.id, key: child.key),
+                at: insertAt
+            )
+            instrumentChildActions[instrumentChildActionKey(instrumentID: instrument.id, key: child.key)] = child.onActivate
+            if let componentID = child.componentID {
+                instrumentChildKeyByComponent[InstrumentComponentReference(instrumentID: instrument.id, componentID: componentID)] = child.key
+            }
+            insertAt += 1
+        }
+    }
+
+    private func restoreSidebarSelectionVisual() {
+        guard let idx = currentSelectionRowIndex(),
+            let row = sessionsList.getRowAt(index: idx)
+        else { return }
+        selectSessionsRow(row)
+    }
+
+    private func selectSessionsRow<T: ListBoxRowProtocol>(_ row: T) {
+        let wasGuarded = isReconcilingSidebar
+        isReconcilingSidebar = true
+        sessionsList.select(row: row)
+        if !wasGuarded {
+            isReconcilingSidebar = false
+        }
+    }
+
+    private func removeInstrumentChildRows(sessionID: UUID, instrumentID: UUID) {
+        var index = 0
+        while index < sessionsRowKinds.count {
+            if case .instrumentChild(let sid, let iid, let key) = sessionsRowKinds[index],
+                sid == sessionID, iid == instrumentID
+            {
+                if let row = sessionsList.getRowAt(index: index) {
+                    sessionsList.remove(child: row)
+                }
+                sessionsRowKinds.remove(at: index)
+                instrumentChildActions.removeValue(forKey: instrumentChildActionKey(instrumentID: instrumentID, key: key))
+            } else {
+                index += 1
+            }
+        }
+        instrumentChildKeyByComponent = instrumentChildKeyByComponent.filter { $0.key.instrumentID != instrumentID }
+    }
+
+    private func activateInstrumentChild(sessionID: UUID, instrumentID: UUID, key: String) {
+        let actionKey = instrumentChildActionKey(instrumentID: instrumentID, key: key)
+        instrumentChildActions[actionKey]?()
+    }
+
+    private func instrumentChildActionKey(instrumentID: UUID, key: String) -> String {
+        "\(instrumentID.uuidString)/\(key)"
+    }
+
+    private static let sidebarHeaderMarginStart = 0
+    private static let sidebarChevronColumnWidth = 24
+    private static let sidebarIconColumnWidth = 24
+    private static let sidebarColumnSpacing = 8
+    private static let sessionChildMarginStart = sidebarHeaderMarginStart
+        + sidebarChevronColumnWidth
+        + sidebarColumnSpacing
+
+    private static func makeChildRowBox() -> (rowBox: Box, iconHost: Box) {
+        let rowBox = Box(orientation: .horizontal, spacing: sidebarColumnSpacing)
         rowBox.halign = .start
-        rowBox.marginStart = 28
+        rowBox.marginStart = sessionChildMarginStart
         rowBox.marginEnd = 12
         rowBox.marginTop = 2
         rowBox.marginBottom = 2
-        let iconHost = Box(orientation: .horizontal, spacing: 0)
-        iconHost.append(child: InstrumentIconView.makeImage(for: descriptor.icon, pixelSize: 16))
+        let iconHost = makeIconHost()
         rowBox.append(child: iconHost)
+        return (rowBox, iconHost)
+    }
+
+    private static func makeIconHost() -> Box {
+        let iconHost = Box(orientation: .horizontal, spacing: 0)
+        iconHost.setSizeRequest(width: sidebarIconColumnWidth, height: -1)
+        iconHost.hexpand = false
+        return iconHost
+    }
+
+    private static func centerInIconHost<T: WidgetProtocol>(_ icon: T) {
+        icon.hexpand = true
+        icon.halign = .center
+    }
+
+    private func makeInstrumentRow(_ instrument: LumaCore.InstrumentInstance) -> ListBoxRow {
+        let row = ListBoxRow()
+        let descriptor = engine!.descriptor(for: instrument)
+        let (rowBox, iconHost) = MainWindow.makeChildRowBox()
+        let instrumentImage = InstrumentIconView.makeImage(for: descriptor.icon, pixelSize: 16)
+        MainWindow.centerInIconHost(instrumentImage)
+        iconHost.append(child: instrumentImage)
         let ilabel = Label(str: descriptor.displayName)
         ilabel.halign = .start
         rowBox.append(child: ilabel)
@@ -2359,16 +2625,12 @@ final class MainWindow {
 
     private func makeInsightRow(_ insight: LumaCore.AddressInsight) -> ListBoxRow {
         let row = ListBoxRow()
-        let rowBox = Box(orientation: .horizontal, spacing: 6)
-        rowBox.halign = .start
-        rowBox.marginStart = 28
-        rowBox.marginEnd = 12
-        rowBox.marginTop = 2
-        rowBox.marginBottom = 2
-        let iconName = insight.kind == .memory ? "text-x-generic-symbolic" : "applications-engineering-symbolic"
+        let (rowBox, iconHost) = MainWindow.makeChildRowBox()
+        let iconName = insight.kind == .memory ? "memorychip-symbolic" : "cpu-symbolic"
         let iconImage = Gtk.Image(iconName: iconName)
         iconImage.pixelSize = 16
-        rowBox.append(child: iconImage)
+        MainWindow.centerInIconHost(iconImage)
+        iconHost.append(child: iconImage)
         let lbl = Label(str: insight.title)
         lbl.halign = .start
         rowBox.append(child: lbl)
@@ -2379,16 +2641,12 @@ final class MainWindow {
 
     private func makeTraceRow(_ trace: LumaCore.ITrace) -> ListBoxRow {
         let row = ListBoxRow()
-        let rowBox = Box(orientation: .horizontal, spacing: 6)
-        rowBox.halign = .start
-        rowBox.marginStart = 28
-        rowBox.marginEnd = 12
-        rowBox.marginTop = 2
-        rowBox.marginBottom = 2
+        let (rowBox, iconHost) = MainWindow.makeChildRowBox()
         let iconImage = Gtk.Image(iconName: traceIconName(for: trace))
         iconImage.pixelSize = 16
+        MainWindow.centerInIconHost(iconImage)
         traceRowIcons[trace.id] = iconImage
-        rowBox.append(child: iconImage)
+        iconHost.append(child: iconImage)
         let lbl = Label(str: trace.displayName)
         lbl.halign = .start
         rowBox.append(child: lbl)
@@ -2802,6 +3060,16 @@ final class MainWindow {
         case .instrument(_, let id):
             return sessionsRowKinds.firstIndex {
                 if case .instrument(_, let i) = $0 { return i == id }
+                return false
+            }
+        case .instrumentComponent(_, let instrumentID, let componentID):
+            guard let key = instrumentChildKeyByComponent[
+                InstrumentComponentReference(instrumentID: instrumentID, componentID: componentID)
+            ] else { return nil }
+            return sessionsRowKinds.firstIndex {
+                if case .instrumentChild(_, let iid, let k) = $0 {
+                    return iid == instrumentID && k == key
+                }
                 return false
             }
         case .insight(_, let id):

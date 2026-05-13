@@ -12,6 +12,10 @@ final class InstrumentDetailPane {
     private var sessionID: UUID
     private let bannerSlot: Box
     private var currentBanner: Widget?
+    private var lastBannerPhase: LumaCore.ProcessSession.Phase?
+    private var lastBannerError: String?
+    private var lastBannerArmed: Bool?
+    private var lastBannerGatingActive: Bool?
     private let editor: InstrumentConfigEditor
 
     init(
@@ -19,7 +23,8 @@ final class InstrumentDetailPane {
         session: LumaCore.ProcessSession,
         instrument: LumaCore.InstrumentInstance,
         owner: MainWindow,
-        tracerEditor: MonacoEditor
+        host: InstrumentUIHost,
+        onComponentAdded: @escaping (UUID) -> Void
     ) {
         self.engine = engine
         self.sessionID = session.id
@@ -34,43 +39,66 @@ final class InstrumentDetailPane {
         bannerSlot.hexpand = true
         widget.append(child: bannerSlot)
 
-        editor = InstrumentConfigEditor(engine: engine, instrument: instrument, tracerEditor: tracerEditor)
+        editor = InstrumentConfigEditor(engine: engine, instrument: instrument, host: host)
         widget.append(child: editor.widget)
+
+        editor.setOnComponentAdded(onComponentAdded)
 
         applySessionState()
     }
 
     func applySessionState() {
+        editor.applySessionState()
         guard let engine else { return }
-        guard let session = engine.sessions.first(where: { $0.id == sessionID }) else { return }
+        let session = engine.sessions.first(where: { $0.id == sessionID })
 
-        if SessionDetachedBanner.shouldShow(for: session) {
-            let gatingActive = engine.isGatingActive(forDeviceID: session.deviceID)
-            let banner = SessionDetachedBanner.make(
-                for: session,
-                gatingActive: gatingActive,
-                onReattach: { [weak self] in self?.owner?.reestablishSession(id: session.id) },
-                onDisarm: { [weak engine] in
-                    Task { @MainActor in await engine?.disarmSession(id: session.id) }
-                },
-                onArm: { [weak self] in self?.owner?.presentArmDialog(session: session) },
-                onResumeGating: { [weak engine] in
-                    Task { @MainActor in await engine?.resumeGating(forSessionID: session.id) }
-                }
-            )
-            if let existing = currentBanner {
-                bannerSlot.remove(child: existing)
-            }
-            bannerSlot.append(child: banner)
-            currentBanner = banner
-        } else if let existing = currentBanner {
+        let wantsBanner = session.map { SessionDetachedBanner.shouldShow(for: $0) } ?? false
+        let phase = session?.phase
+        let error = session?.lastError
+        let armed: Bool? = session.map {
+            if case .armed = $0.armingState { return true }
+            return false
+        }
+        let gatingActive: Bool? = session.map { engine.isGatingActive(forDeviceID: $0.deviceID) }
+        let bannerDirty = wantsBanner != (currentBanner != nil)
+            || phase != lastBannerPhase
+            || error != lastBannerError
+            || armed != lastBannerArmed
+            || gatingActive != lastBannerGatingActive
+        lastBannerPhase = phase
+        lastBannerError = error
+        lastBannerArmed = armed
+        lastBannerGatingActive = gatingActive
+
+        guard bannerDirty else { return }
+
+        if let existing = currentBanner {
             bannerSlot.remove(child: existing)
             currentBanner = nil
         }
+        guard let session, wantsBanner else { return }
+        let banner = SessionDetachedBanner.make(
+            for: session,
+            gatingActive: engine.isGatingActive(forDeviceID: session.deviceID),
+            onReattach: { [weak self] in self?.owner?.reestablishSession(id: session.id) },
+            onDisarm: { [weak engine] in
+                Task { @MainActor in await engine?.disarmSession(id: session.id) }
+            },
+            onArm: { [weak self] in self?.owner?.presentArmDialog(session: session) },
+            onResumeGating: { [weak engine] in
+                Task { @MainActor in await engine?.resumeGating(forSessionID: session.id) }
+            }
+        )
+        bannerSlot.append(child: banner)
+        currentBanner = banner
     }
 
-    func selectTracerHook(id: UUID) {
-        editor.selectTracerHook(id: id)
+    func selectComponent(id: UUID) {
+        editor.selectComponent(id: id)
+    }
+
+    func showConfigurationView() {
+        editor.showConfigurationView()
     }
 
     func update(_ instrument: LumaCore.InstrumentInstance) {

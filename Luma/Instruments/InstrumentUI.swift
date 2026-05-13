@@ -19,6 +19,13 @@ protocol InstrumentUI {
         engine: Engine,
         selection: Binding<SidebarItemID?>
     ) -> [InstrumentEventMenuItem]
+
+    func sidebarChildren(
+        sessionID: UUID,
+        instance: LumaCore.InstrumentInstance,
+        engine: Engine,
+        selection: Binding<SidebarItemID?>
+    ) -> AnyView
 }
 
 extension InstrumentUI {
@@ -28,5 +35,14 @@ extension InstrumentUI {
         selection: Binding<SidebarItemID?>
     ) -> [InstrumentEventMenuItem] {
         []
+    }
+
+    func sidebarChildren(
+        sessionID: UUID,
+        instance: LumaCore.InstrumentInstance,
+        engine: Engine,
+        selection: Binding<SidebarItemID?>
+    ) -> AnyView {
+        AnyView(EmptyView())
     }
 }

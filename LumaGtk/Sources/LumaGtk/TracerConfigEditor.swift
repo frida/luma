@@ -17,32 +17,16 @@ final class TracerConfigEditor {
 
     fileprivate var config: TracerConfig
     private var selectedHookID: UUID?
-    private var preferredLayoutMode: LayoutMode = .compact
-    private var lastKnownWidth: Int = 0
+    private var forceEmptyState: Bool = false
+    private var onHookAdded: ((UUID) -> Void)?
 
     private let contentSlot: Box
-    private var hooksList: HooksList?
     private var editorPane: EditorPane?
+    private var saveBar: SaveBar?
     private var emptyStateSearch: TracerHookSearch?
     private var popoverSearch: TracerHookSearch?
     private var addPopover: Popover?
-    private var compactPill: TracerITracePill?
     private var tracesObservation: StoreObservation?
-
-    private nonisolated(unsafe) let sensorRaw: UnsafeMutableRawPointer
-    private var sensorHandlerID: gulong = 0
-
-    enum LayoutMode {
-        case compact
-        case expanded
-    }
-
-    private var effectiveLayoutMode: LayoutMode {
-        if lastKnownWidth > 0 && lastKnownWidth < 800 {
-            return .compact
-        }
-        return preferredLayoutMode
-    }
 
     init(
         engine: Engine,
@@ -56,7 +40,7 @@ final class TracerConfigEditor {
         self.config = config
         self.sharedEditor = tracerEditor
         self.apply = apply
-        self.selectedHookID = config.hooks.first?.id
+        self.selectedHookID = nil
 
         widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
@@ -65,21 +49,6 @@ final class TracerConfigEditor {
         contentSlot = Box(orientation: .vertical, spacing: 0)
         contentSlot.hexpand = true
         contentSlot.vexpand = true
-
-        let sensorPtr = gtk_drawing_area_new()!
-        gtk_widget_set_hexpand(sensorPtr, 1)
-        gtk_widget_set_size_request(sensorPtr, -1, 0)
-        sensorRaw = UnsafeMutableRawPointer(sensorPtr)
-        let context = Unmanaged.passUnretained(self).toOpaque()
-        sensorHandlerID = g_signal_connect_data(
-            sensorPtr,
-            "resize",
-            unsafeBitCast(widthSensorResized, to: GCallback.self),
-            context,
-            nil,
-            GConnectFlags(rawValue: 0)
-        )
-        widget.append(child: WidgetRef(raw: sensorRaw))
         widget.append(child: contentSlot)
 
         rebuildContent()
@@ -93,25 +62,36 @@ final class TracerConfigEditor {
         }
     }
 
-    deinit {
-        g_signal_handler_disconnect(sensorRaw, sensorHandlerID)
-    }
-
     func update(config newConfig: TracerConfig) {
         self.config = newConfig
         if let id = selectedHookID, !newConfig.hooks.contains(where: { $0.id == id }) {
-            selectedHookID = newConfig.hooks.first?.id
-        } else if selectedHookID == nil {
-            selectedHookID = newConfig.hooks.first?.id
+            selectedHookID = nil
         }
         rebuildContent()
     }
 
     func selectHook(id: UUID) {
         guard config.hooks.contains(where: { $0.id == id }) else { return }
+        forceEmptyState = false
         guard id != selectedHookID else { return }
         selectedHookID = id
         rebuildContent()
+    }
+
+    func showConfigurationView() {
+        forceEmptyState = true
+        if selectedHookID != nil {
+            selectedHookID = nil
+        }
+        rebuildContent()
+    }
+
+    func setOnHookAdded(_ handler: ((UUID) -> Void)?) {
+        onHookAdded = handler
+    }
+
+    func applySessionState() {
+        emptyStateSearch?.refreshAttached()
     }
 
     private func rebuildContent() {
@@ -120,20 +100,26 @@ final class TracerConfigEditor {
             child = cur.nextSibling
             contentSlot.remove(child: cur)
         }
-        hooksList = nil
         editorPane = nil
+        saveBar = nil
         emptyStateSearch = nil
-        compactPill = nil
         dismissAddPopover()
         dismissUnsavedChangesDialog()
 
-        if config.hooks.isEmpty {
+        if config.hooks.isEmpty || forceEmptyState {
             let search = TracerHookSearch(
                 engine: engine,
                 sessionID: sessionID,
                 layout: .emptyState,
+                hasExistingHooks: !config.hooks.isEmpty,
+                existingHookByAnchor: { [weak self] anchor in
+                    self?.config.hooks.first(where: { $0.addressAnchor == anchor })
+                },
                 onPick: { [weak self] api in
                     self?.appendHook(for: api)
+                },
+                onView: { [weak self] hook in
+                    self?.onHookAdded?(hook.id)
                 }
             )
             emptyStateSearch = search
@@ -141,232 +127,32 @@ final class TracerConfigEditor {
             return
         }
 
-        switch effectiveLayoutMode {
-        case .compact:
-            let editorPane = EditorPane(
-                engine: engine,
-                hook: selectedHook,
-                sharedEditor: sharedEditor,
-                showToolbar: false,
-                onSave: { [weak self] updated in
-                    self?.saveHook(updated)
-                }
-            )
-            self.editorPane = editorPane
-
-            let toolbar = buildCompactToolbar()
-            contentSlot.append(child: toolbar)
-            let separator = Separator(orientation: .horizontal)
-            contentSlot.append(child: separator)
-            contentSlot.append(child: editorPane.widget)
-
-        case .expanded:
-            let captured = selectedHook.map { itraceCaptured(for: $0.id) } ?? 0
-            let editorPane = EditorPane(
-                engine: engine,
-                hook: selectedHook,
-                sharedEditor: sharedEditor,
-                showToolbar: true,
-                captured: captured,
-                onSave: { [weak self] updated in
-                    self?.saveHook(updated)
-                },
-                onITraceChanged: { [weak self] id, arming in
-                    self?.setITraceArming(id: id, arming: arming)
-                }
-            )
-            self.editorPane = editorPane
-
-            let paned = Paned(orientation: .horizontal)
-            paned.resizeStartChild = true
-            paned.resizeEndChild = false
-            paned.shrinkStartChild = false
-            paned.shrinkEndChild = false
-            paned.hexpand = true
-            paned.vexpand = true
-            let sashPosition = max(400, lastKnownWidth - 320)
-            paned.position = sashPosition
-
-            let hooksList = HooksList(
-                hooks: config.hooks,
-                selectedID: selectedHookID,
-                onSelect: { [weak self] id in
-                    self?.handleSelect(id)
-                },
-                onSetHookState: { [weak self] id, state in
-                    self?.setHookState(id: id, state: state)
-                },
-                onDelete: { [weak self] id in
-                    self?.deleteHook(id: id)
-                },
-                onDeleteSelected: { [weak self] ids in
-                    self?.deleteHooks(ids: ids)
-                },
-                onAddRequested: { [weak self] anchor in
-                    self?.presentAddPopover(anchor: anchor)
-                },
-                onLayoutToggle: { [weak self] in
-                    self?.setLayoutMode(.compact)
-                },
-                attached: engine?.node(forSessionID: sessionID) != nil
-            )
-            self.hooksList = hooksList
-
-            paned.startChild = WidgetRef(editorPane.widget)
-            paned.endChild = WidgetRef(hooksList.widget)
-            contentSlot.append(child: paned)
-        }
-    }
-
-    private func setLayoutMode(_ mode: LayoutMode) {
-        guard mode != preferredLayoutMode else { return }
-        preferredLayoutMode = mode
-        scheduleRebuild()
-    }
-
-    private var rebuildScheduled = false
-
-    private func scheduleRebuild() {
-        guard !rebuildScheduled else { return }
-        rebuildScheduled = true
-        Task { @MainActor in
-            self.rebuildScheduled = false
-            self.rebuildContent()
-        }
-    }
-
-    private func buildCompactToolbar() -> Box {
-        let toolbar = Box(orientation: .horizontal, spacing: 8)
-        toolbar.marginStart = 12
-        toolbar.marginEnd = 12
-        toolbar.marginTop = 8
-        toolbar.marginBottom = 8
-
-        if config.hooks.count > 1 {
-            let names = config.hooks.map { $0.displayName.isEmpty ? "(unnamed)" : $0.displayName }
-            let cStrings = names.map { strdup($0) }
-            var ptrs = cStrings.map { UnsafePointer($0) as UnsafePointer<CChar>? }
-            ptrs.append(nil)
-            let dropdownPtr = ptrs.withUnsafeBufferPointer { buf in
-                gtk_drop_down_new_from_strings(buf.baseAddress)
-            }!
-            g_object_ref_sink(UnsafeMutableRawPointer(dropdownPtr))
-            let dropdown = DropDown(raw: UnsafeMutableRawPointer(dropdownPtr))
-            for ptr in cStrings { free(ptr) }
-            if let selID = selectedHookID,
-                let idx = config.hooks.firstIndex(where: { $0.id == selID })
-            {
-                dropdown.selected = idx
+        let editorPane = EditorPane(
+            engine: engine,
+            hook: selectedHook,
+            sharedEditor: sharedEditor,
+            showToolbar: false,
+            onSave: { [weak self] updated in
+                self?.saveHook(updated)
             }
-            let context = Unmanaged.passUnretained(self).toOpaque()
-            g_signal_connect_data(
-                dropdownPtr,
-                "notify::selected",
-                unsafeBitCast(compactDropdownChanged, to: GCallback.self),
-                context,
-                nil,
-                GConnectFlags(rawValue: 0)
-            )
-            toolbar.append(child: dropdown)
-        } else if let hook = config.hooks.first {
-            let title = Label(str: hook.displayName)
-            title.add(cssClass: "heading")
-            toolbar.append(child: title)
+        )
+        self.editorPane = editorPane
+
+        let saveBar = SaveBar(saveTooltip: "Save current hook script") { [weak editorPane] in
+            editorPane?.commit()
         }
-
-        if let hook = selectedHook {
-            let enabledSwitch = Switch()
-            enabledSwitch.active = hook.state == .enabled
-            enabledSwitch.valign = .center
-            enabledSwitch.onStateSet { [weak self] _, state in
-                MainActor.assumeIsolated {
-                    guard let self, let id = self.selectedHookID else { return }
-                    self.setHookState(id: id, state: state ? .enabled : .disabled)
-                }
-                return false
-            }
-            toolbar.append(child: enabledSwitch)
-
-            if hook.kind == .function {
-                let pill = TracerITracePill()
-                pill.update(arming: hook.itraceArming, captured: itraceCaptured(for: hook.id))
-                pill.onArmingChanged = { [weak self] arming in
-                    guard let self, let id = self.selectedHookID else { return }
-                    self.setITraceArming(id: id, arming: arming)
-                }
-                compactPill = pill
-                toolbar.append(child: pill.widget)
-            }
+        saveBar.setDirty(editorPane.isDirty)
+        editorPane.onDirtyChanged = { [weak saveBar] dirty in
+            saveBar?.setDirty(dirty)
         }
+        self.saveBar = saveBar
 
-        let spacer = Box(orientation: .horizontal, spacing: 0)
-        spacer.hexpand = true
-        toolbar.append(child: spacer)
-
-        if let editorPane {
-            let dirtyIcon = Image(iconName: "media-record-symbolic")
-            dirtyIcon.tooltipText = "Unsaved changes"
-            dirtyIcon.visible = editorPane.isDirty
-            toolbar.append(child: dirtyIcon)
-
-            let saveButton = Button(label: "Save")
-            saveButton.add(cssClass: "suggested-action")
-            saveButton.sensitive = editorPane.isDirty
-            saveButton.tooltipText = "Save current hook script"
-            saveButton.onClicked { [weak self] _ in
-                MainActor.assumeIsolated { self?.editorPane?.commit() }
-            }
-            editorPane.onDirtyChanged = { [weak dirtyIcon, weak saveButton] dirty in
-                dirtyIcon?.visible = dirty
-                saveButton?.sensitive = dirty
-            }
-            toolbar.append(child: saveButton)
-        }
-
-        let attached = engine?.node(forSessionID: sessionID) != nil
-        let addButton = Button()
-        let addIcon = Image(iconName: "list-add-symbolic")
-        addButton.set(child: addIcon)
-        addButton.add(cssClass: "flat")
-        addButton.tooltipText = attached ? "Add hooks by searching functions" : "Attach to a process to search APIs."
-        addButton.sensitive = attached
-        addButton.onClicked { [weak self, weak addButton] _ in
-            MainActor.assumeIsolated {
-                guard let self, let addButton, let ref = WidgetRef(addButton.widget_ptr) else { return }
-                self.presentAddPopover(anchor: ref)
-            }
-        }
-        toolbar.append(child: addButton)
-
-        if selectedHook != nil {
-            let deleteButton = Button()
-            let deleteIcon = Image(iconName: "user-trash-symbolic")
-            deleteButton.set(child: deleteIcon)
-            deleteButton.add(cssClass: "flat")
-            deleteButton.add(cssClass: "error")
-            deleteButton.tooltipText = "Delete selected hook"
-            deleteButton.onClicked { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self, let id = self.selectedHookID else { return }
-                    self.deleteHook(id: id)
-                }
-            }
-            toolbar.append(child: deleteButton)
-        }
-
-        if !(lastKnownWidth > 0 && lastKnownWidth < 800) {
-            let expandButton = Button()
-            let expandIcon = Image(iconName: "view-dual-symbolic")
-            expandButton.set(child: expandIcon)
-            expandButton.add(cssClass: "flat")
-            expandButton.tooltipText = "Show hooks list"
-            expandButton.onClicked { [weak self] _ in
-                MainActor.assumeIsolated { self?.setLayoutMode(.expanded) }
-            }
-            toolbar.append(child: expandButton)
-        }
-
-        return toolbar
+        let overlay = Overlay()
+        overlay.hexpand = true
+        overlay.vexpand = true
+        overlay.set(child: editorPane.widget)
+        overlay.addOverlay(widget: saveBar.widget)
+        contentSlot.append(child: overlay)
     }
 
     private var selectedHook: TracerConfig.Hook? {
@@ -425,7 +211,6 @@ final class TracerConfigEditor {
                 guard let self else { return }
                 self.pendingSelectionID = nil
                 self.dismissUnsavedChangesDialog()
-                self.hooksList?.restoreSelection(id: self.selectedHookID)
             }
         }
         buttons.append(child: cancelButton)
@@ -504,7 +289,6 @@ final class TracerConfigEditor {
             let hook = config.hooks.first(where: { $0.id == hookID })
         else { return }
         let captured = capturedCount(in: traces, hookID: hookID)
-        compactPill?.update(arming: hook.itraceArming, captured: captured)
         editorPane?.refreshITrace(arming: hook.itraceArming, captured: captured)
     }
 
@@ -522,9 +306,6 @@ final class TracerConfigEditor {
         config.hooks.removeAll { ids.contains($0.id) }
         if let sel = selectedHookID, ids.contains(sel) {
             selectedHookID = config.hooks.first?.id
-        }
-        if config.hooks.count <= 1 {
-            preferredLayoutMode = .compact
         }
         emit()
         rebuildContent()
@@ -549,9 +330,16 @@ final class TracerConfigEditor {
             engine: engine,
             sessionID: sessionID,
             layout: .popover,
+            existingHookByAnchor: { [weak self] anchor in
+                self?.config.hooks.first(where: { $0.addressAnchor == anchor })
+            },
             onPick: { [weak self] api in
                 self?.appendHook(for: api)
                 self?.dismissAddPopover()
+            },
+            onView: { [weak self] hook in
+                self?.dismissAddPopover()
+                self?.onHookAdded?(hook.id)
             }
         )
         popover.set(child: search.widget)
@@ -571,7 +359,6 @@ final class TracerConfigEditor {
     }
 
     fileprivate func appendHook(for api: ResolvedApi) {
-        let hadMultipleHooks = config.hooks.count > 1
         let hook = TracerConfig.Hook(
             displayName: api.displayName,
             addressAnchor: api.anchor,
@@ -579,33 +366,11 @@ final class TracerConfigEditor {
             code: defaultTracerCode(kind: .function, anchor: api.anchor, displayName: api.displayName)
         )
         config.hooks.append(hook)
+        forceEmptyState = false
         selectedHookID = hook.id
-        if !hadMultipleHooks && config.hooks.count > 1 {
-            preferredLayoutMode = .expanded
-        }
         emit()
         rebuildContent()
-    }
-}
-
-private let compactDropdownChanged: @convention(c) (
-    UnsafeMutableRawPointer,
-    UnsafeMutableRawPointer?,
-    UnsafeMutableRawPointer?
-) -> Void = { widget, _, userData in
-    guard let userData else { return }
-    let rawSelf = UInt(bitPattern: userData)
-    let rawWidget = UInt(bitPattern: widget)
-    MainActor.assumeIsolated {
-        let editor = Unmanaged<TracerConfigEditor>.fromOpaque(
-            UnsafeMutableRawPointer(bitPattern: rawSelf)!
-        ).takeUnretainedValue()
-        let dropdownPtr = UnsafeMutablePointer<GtkDropDown>(
-            OpaquePointer(bitPattern: rawWidget)!
-        )
-        let idx = Int(gtk_drop_down_get_selected(dropdownPtr))
-        guard idx >= 0, idx < editor.config.hooks.count else { return }
-        editor.handleSelect(editor.config.hooks[idx].id)
+        onHookAdded?(hook.id)
     }
 }
 
@@ -646,34 +411,6 @@ private let scopeDropdownChanged: @convention(c) (
     }
 }
 
-private let widthSensorResized: @convention(c) (
-    UnsafeMutableRawPointer,
-    Int32,
-    Int32,
-    UnsafeMutableRawPointer?
-) -> Void = { _, width, _, userData in
-    guard let userData else { return }
-    let rawSelf = UInt(bitPattern: userData)
-    let w = Int(width)
-    MainActor.assumeIsolated {
-        let editor = Unmanaged<TracerConfigEditor>.fromOpaque(
-            UnsafeMutableRawPointer(bitPattern: rawSelf)!
-        ).takeUnretainedValue()
-        editor.handleWidthChanged(w)
-    }
-}
-
-extension TracerConfigEditor {
-    fileprivate func handleWidthChanged(_ width: Int) {
-        let oldEffective = effectiveLayoutMode
-        lastKnownWidth = width
-        let newEffective = effectiveLayoutMode
-        if oldEffective != newEffective {
-            scheduleRebuild()
-        }
-    }
-}
-
 @MainActor
 private final class TracerHookSearch {
     enum Layout {
@@ -686,6 +423,8 @@ private final class TracerHookSearch {
     private weak var engine: Engine?
     private let sessionID: UUID
     private let onPick: (TracerConfigEditor.ResolvedApi) -> Void
+    private let existingHookByAnchor: (AddressAnchor) -> TracerConfig.Hook?
+    private let onView: (TracerConfig.Hook) -> Void
 
     private let entry: Entry
     private let scopeDropdown: DropDown
@@ -698,6 +437,7 @@ private final class TracerHookSearch {
     private let installButton: Button
     private let listBox: ListBox
     private let scroll: ScrolledWindow
+    private var heroRevealer: Revealer?
 
     private var scope: TracerTargetScope = .function
     private var results: [TracerConfigEditor.ResolvedApi] = []
@@ -710,11 +450,16 @@ private final class TracerHookSearch {
         engine: Engine?,
         sessionID: UUID,
         layout: Layout,
-        onPick: @escaping (TracerConfigEditor.ResolvedApi) -> Void
+        hasExistingHooks: Bool = false,
+        existingHookByAnchor: @escaping (AddressAnchor) -> TracerConfig.Hook?,
+        onPick: @escaping (TracerConfigEditor.ResolvedApi) -> Void,
+        onView: @escaping (TracerConfig.Hook) -> Void
     ) {
         self.engine = engine
         self.sessionID = sessionID
         self.onPick = onPick
+        self.existingHookByAnchor = existingHookByAnchor
+        self.onView = onView
 
         widget = Box(orientation: .vertical, spacing: 12)
         widget.hexpand = true
@@ -737,20 +482,35 @@ private final class TracerHookSearch {
         }
 
         if layout == .emptyState {
+            let hero = Box(orientation: .vertical, spacing: 12)
+            hero.halign = .center
+
             let icon = Image(iconName: "edit-find-symbolic")
             icon.set(pixelSize: 48)
             icon.add(cssClass: "dim-label")
-            widget.append(child: icon)
+            hero.append(child: icon)
 
-            let title = Label(str: "Start tracing functions")
+            let title = Label(str: hasExistingHooks
+                ? "Trace another function"
+                : "Start tracing functions")
             title.add(cssClass: "title-3")
-            widget.append(child: title)
+            hero.append(child: title)
 
-            let subtitleLabel = Label(str: "Search for functions in the attached process and add them as hooks.")
+            let subtitleLabel = Label(str: hasExistingHooks
+                ? "Search for more functions to add, or select an existing hook to edit it."
+                : "Search for functions in the attached process and add them as hooks.")
             subtitleLabel.add(cssClass: "dim-label")
             subtitleLabel.wrap = true
             subtitleLabel.justify = .center
-            widget.append(child: subtitleLabel)
+            hero.append(child: subtitleLabel)
+
+            let revealer = Revealer()
+            revealer.transitionType = .slideUp
+            revealer.transitionDuration = 200
+            revealer.revealChild = true
+            revealer.set(child: hero)
+            widget.append(child: revealer)
+            heroRevealer = revealer
         }
 
         let attached = engine?.node(forSessionID: sessionID) != nil
@@ -837,7 +597,10 @@ private final class TracerHookSearch {
         widget.append(child: scroll)
 
         entry.onChanged { [anchor = self] _ in
-            MainActor.assumeIsolated { anchor.scheduleSearch() }
+            MainActor.assumeIsolated {
+                anchor.updateHeroVisibility()
+                anchor.scheduleSearch()
+            }
         }
         entry.onActivate { [anchor = self] _ in
             MainActor.assumeIsolated { anchor.runSearchNow() }
@@ -856,7 +619,7 @@ private final class TracerHookSearch {
         addAllButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                for api in self.results {
+                for api in self.results where self.existingHookByAnchor(api.anchor) == nil {
                     self.onPick(api)
                 }
             }
@@ -903,6 +666,22 @@ private final class TracerHookSearch {
         } else {
             scheduleSearch()
         }
+    }
+
+    func refreshAttached() {
+        let attached = engine?.node(forSessionID: sessionID) != nil
+        entry.sensitive = attached
+        if !attached {
+            setSearchStatus("Attach to a process to search APIs.")
+        } else if (entry.text ?? "").isEmpty {
+            setSearchStatus("Type a query to search.")
+        }
+    }
+
+    fileprivate func updateHeroVisibility() {
+        let empty = (entry.text ?? "").isEmpty
+        heroRevealer?.revealChild = empty
+        widget.valign = empty ? .center : .fill
     }
 
     private func scheduleSearch() {
@@ -1067,257 +846,30 @@ private final class TracerHookSearch {
 
             inner.append(child: textColumn)
 
-            let addButton = Button(label: "Add")
-            addButton.add(cssClass: "flat")
-            addButton.valign = .center
+            let existing = existingHookByAnchor(api.anchor)
+            let actionButton = Button(label: existing != nil ? "View Handler" : "Add")
+            actionButton.add(cssClass: "flat")
+            actionButton.valign = .center
             let capturedIdx = idx
-            addButton.onClicked { [anchor = self] _ in
+            actionButton.onClicked { [anchor = self] _ in
                 MainActor.assumeIsolated {
                     guard capturedIdx < anchor.results.count else { return }
-                    anchor.onPick(anchor.results[capturedIdx])
-                }
-            }
-            inner.append(child: addButton)
-
-            row.set(child: inner)
-            listBox.append(child: row)
-        }
-    }
-}
-
-// MARK: - Hooks list (right pane in SwiftUI expanded layout)
-
-@MainActor
-private final class HooksList {
-    let widget: Box
-
-    private let listBox: ListBox
-    private let deleteSelectedButton: Button
-    private var rowToHookID: [Int: UUID] = [:]
-    private var hookIDToRow: [UUID: ListBoxRow] = [:]
-    private let onSelect: (UUID?) -> Void
-
-    init(
-        hooks: [TracerConfig.Hook],
-        selectedID: UUID?,
-        onSelect: @escaping (UUID?) -> Void,
-        onSetHookState: @escaping (UUID, TracerConfig.Hook.State) -> Void,
-        onDelete: @escaping (UUID) -> Void,
-        onDeleteSelected: @escaping (Set<UUID>) -> Void,
-        onAddRequested: @escaping (WidgetRef) -> Void,
-        onLayoutToggle: @escaping () -> Void,
-        attached: Bool
-    ) {
-        self.onSelect = onSelect
-
-        widget = Box(orientation: .vertical, spacing: 6)
-        widget.hexpand = true
-        widget.vexpand = true
-        widget.marginStart = 8
-        widget.marginEnd = 8
-        widget.marginTop = 8
-        widget.marginBottom = 8
-        widget.setSizeRequest(width: 280, height: -1)
-
-        let header = Box(orientation: .horizontal, spacing: 6)
-        let title = Label(str: "Hooks")
-        title.add(cssClass: "heading")
-        title.halign = .start
-        title.hexpand = true
-        header.append(child: title)
-
-        deleteSelectedButton = Button()
-        let deleteIcon = Image(iconName: "user-trash-symbolic")
-        deleteSelectedButton.set(child: deleteIcon)
-        deleteSelectedButton.add(cssClass: "flat")
-        deleteSelectedButton.add(cssClass: "error")
-        deleteSelectedButton.tooltipText = "Delete selected hooks"
-        deleteSelectedButton.visible = false
-        header.append(child: deleteSelectedButton)
-
-        let addButton = Button()
-        let addIcon = Image(iconName: "list-add-symbolic")
-        addButton.set(child: addIcon)
-        addButton.add(cssClass: "flat")
-        addButton.tooltipText = attached ? "Add hooks by searching functions" : "Attach to a process to search APIs."
-        addButton.sensitive = attached
-        addButton.onClicked { [anchor = addButton] _ in
-            MainActor.assumeIsolated {
-                guard let ref = WidgetRef(anchor.widget_ptr) else { return }
-                onAddRequested(ref)
-            }
-        }
-        header.append(child: addButton)
-
-        let compactButton = Button()
-        let compactIcon = Image(iconName: "view-paged-symbolic")
-        compactButton.set(child: compactIcon)
-        compactButton.add(cssClass: "flat")
-        compactButton.tooltipText = "Hide hooks list"
-        compactButton.onClicked { _ in
-            MainActor.assumeIsolated { onLayoutToggle() }
-        }
-        header.append(child: compactButton)
-
-        widget.append(child: header)
-
-        listBox = ListBox()
-        listBox.selectionMode = .multiple
-        listBox.add(cssClass: "boxed-list")
-
-        var rowToHookID: [Int: UUID] = [:]
-        var hookIDToRow: [UUID: ListBoxRow] = [:]
-        var initialRow: ListBoxRow?
-
-        for (idx, hook) in hooks.enumerated() {
-            let row = ListBoxRow()
-            let inner = Box(orientation: .horizontal, spacing: 8)
-            inner.marginStart = 10
-            inner.marginEnd = 10
-            inner.marginTop = 6
-            inner.marginBottom = 6
-
-            let textColumn = Box(orientation: .vertical, spacing: 2)
-            textColumn.hexpand = true
-
-            let nameRow = Box(orientation: .horizontal, spacing: 6)
-            let titleLabel = Label(str: hook.displayName.isEmpty ? "(unnamed)" : hook.displayName)
-            titleLabel.halign = .start
-            if hook.state != .enabled {
-                titleLabel.add(cssClass: "dim-label")
-            }
-            nameRow.append(child: titleLabel)
-
-            if hook.itraceArming != nil {
-                let badge = Label(str: "IT")
-                badge.add(cssClass: "caption")
-                badge.add(cssClass: "luma-itrace-badge")
-                nameRow.append(child: badge)
-            }
-            textColumn.append(child: nameRow)
-
-            if let sub = subtitle(for: hook) {
-                let subtitleLabel = Label(str: sub)
-                subtitleLabel.halign = .start
-                subtitleLabel.add(cssClass: "caption")
-                subtitleLabel.add(cssClass: "dim-label")
-                textColumn.append(child: subtitleLabel)
-            }
-
-            inner.append(child: textColumn)
-
-            let toggle = Switch()
-            toggle.active = hook.state == .enabled
-            toggle.valign = .center
-            let hookID = hook.id
-            toggle.onStateSet { _, isOn in
-                MainActor.assumeIsolated {
-                    onSetHookState(hookID, isOn ? .enabled : .disabled)
-                }
-                return false
-            }
-            inner.append(child: toggle)
-
-            row.set(child: inner)
-            listBox.append(child: row)
-            rowToHookID[idx] = hook.id
-            hookIDToRow[hook.id] = row
-            if hook.id == selectedID {
-                initialRow = row
-            }
-        }
-        self.rowToHookID = rowToHookID
-        self.hookIDToRow = hookIDToRow
-
-        listBox.onSelectedRowsChanged { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                let selectedIDs = self.collectSelectedIDs()
-                let count = selectedIDs.count
-                self.deleteSelectedButton.visible = count > 1
-                if count > 1 {
-                    self.deleteSelectedButton.tooltipText = "Delete \(count) selected hooks"
-                }
-                if count == 1, let id = selectedIDs.first {
-                    onSelect(id)
-                } else if count == 0 {
-                    onSelect(nil)
-                }
-            }
-        }
-
-        deleteSelectedButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                let ids = self.collectSelectedIDs()
-                guard ids.count > 1 else { return }
-                onDeleteSelected(ids)
-            }
-        }
-
-        let scroll = ScrolledWindow()
-        scroll.hexpand = true
-        scroll.vexpand = true
-        scroll.set(child: listBox)
-        widget.append(child: scroll)
-
-        if let initialRow {
-            listBox.select(row: initialRow)
-        }
-
-        let gesture = GestureClick()
-        gesture.button = 3
-        gesture.onPressed { [weak self, weak listBox] _, _, x, y in
-            MainActor.assumeIsolated {
-                guard let self, let listBox else { return }
-                let selectedIDs = self.collectSelectedIDs()
-                if selectedIDs.count > 1 {
-                    onDeleteSelected(selectedIDs)
-                } else if let row = listBox.getRowAt(y: Int(y)) {
-                    let idx = Int(row.index)
-                    if let hookID = self.rowToHookID[idx] {
-                        onDelete(hookID)
+                    let api = anchor.results[capturedIdx]
+                    if let existing = anchor.existingHookByAnchor(api.anchor) {
+                        anchor.onView(existing)
+                    } else {
+                        anchor.onPick(api)
                     }
                 }
             }
-        }
-        listBox.install(controller: gesture)
-    }
+            inner.append(child: actionButton)
 
-    func restoreSelection(id: UUID?) {
-        guard let id, let row = hookIDToRow[id] else { return }
-        listBox.select(row: row)
-    }
-
-    private func collectSelectedIDs() -> Set<UUID> {
-        var ids = Set<UUID>()
-        guard let rows = listBox.selectedRows else { return ids }
-        for rowRef in rows {
-            let idx = Int(rowRef.index)
-            if let hookID = rowToHookID[idx] {
-                ids.insert(hookID)
-            }
-        }
-        return ids
-    }
-
-    private func subtitle(for hook: TracerConfig.Hook) -> String? {
-        switch hook.addressAnchor {
-        case .absolute:
-            return hook.addressAnchor.displayString
-        case .moduleOffset(let name, _),
-            .moduleExport(let name, _),
-            .swiftFunc(let name, _):
-            return name
-        case .objcMethod:
-            return nil
-        case .javaMethod(let className, _):
-            return className
-        case .debugSymbol:
-            return nil
+            row.set(child: inner)
+            listBox.append(child: row)
         }
     }
 }
+
 
 // MARK: - Editor pane (left side in SwiftUI expanded layout)
 
@@ -1496,6 +1048,10 @@ final class EditorPane {
             toolbar?.visible = true
             editorHost.visible = true
             placeholder.visible = false
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                self.monaco.focus()
+            }
         } else {
             toolbar?.visible = false
             editorHost.visible = false
@@ -1530,7 +1086,7 @@ final class EditorPane {
 
     func commit() {
         guard var hook else { return }
-        hook.code = draftCode
+        hook.updateCode(draftCode)
         if showToolbar, let active = enabledSwitch?.active {
             hook.state = active ? .enabled : .disabled
         }

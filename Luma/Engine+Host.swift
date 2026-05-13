@@ -46,7 +46,7 @@ extension SidebarItemID {
     init(navigationTarget target: NavigationTarget) {
         switch target {
         case .instrumentComponent(let sid, let iid, let cid):
-            self = .instrumentComponent(sid, iid, cid, UUID())
+            self = .instrumentComponent(sid, iid, cid)
         case .itrace(let sid, let tid):
             self = .itrace(sid, tid)
         }

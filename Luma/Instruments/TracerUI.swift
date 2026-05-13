@@ -96,11 +96,25 @@ struct TracerUI: InstrumentUI {
                 selection.wrappedValue = .instrumentComponent(
                     sessionID,
                     instrumentID,
-                    ev.id,
-                    UUID()
+                    ev.id
                 )
             },
         ]
     }
 
+    func sidebarChildren(
+        sessionID: UUID,
+        instance: LumaCore.InstrumentInstance,
+        engine: Engine,
+        selection: Binding<SidebarItemID?>
+    ) -> AnyView {
+        AnyView(
+            TracerSidebarChildren(
+                sessionID: sessionID,
+                instance: instance,
+                engine: engine,
+                selection: selection
+            )
+        )
+    }
 }

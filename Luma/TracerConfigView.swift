@@ -9,6 +9,7 @@ struct TracerConfigView: View {
     @Binding var selection: SidebarItemID?
 
     @Environment(\.instrumentSession) private var instrumentSession
+    @Environment(\.instrumentInstance) private var instrumentInstance
     @Environment(\.instrumentConfigCommitCoordinator) private var commitCoordinator
 
     @State private var searchQuery = ""
@@ -21,8 +22,6 @@ struct TracerConfigView: View {
     @State private var installingPackage: String?
 
     @State private var selectedHookID: UUID?
-    @State private var listSelection: Set<UUID> = []
-    @State private var lastHandledNavigationID: UUID?
 
     @State private var isShowingSearchPopover = false
     @State private var showDeleteConfirmation = false
@@ -30,11 +29,6 @@ struct TracerConfigView: View {
 
     @State private var showUnsavedChangesAlert = false
     @State private var pendingSelectionID: UUID?
-
-    @State private var showMultiDeleteAlert = false
-    @State private var pendingMultiDeleteIDs: Set<UUID> = []
-
-    @State private var layoutMode: LayoutMode = .compact
 
     @State private var draftCode: String = ""
     @State private var isDirty: Bool = false
@@ -48,44 +42,21 @@ struct TracerConfigView: View {
     private var isCompactWidth: Bool { false }
     #endif
 
-    enum LayoutMode: String, CaseIterable, Identifiable {
-        case compact
-        case expanded
-
-        var id: String { rawValue }
-
-        var label: String {
-            switch self {
-            case .compact: return "Compact"
-            case .expanded: return "List"
-            }
-        }
-    }
-
     var body: some View {
-        GeometryReader { geo in
-            let isNarrow = geo.size.width < 800
-            content(isNarrow: isNarrow)
-        }
+        content
     }
 
     @ViewBuilder
-    private func content(isNarrow: Bool) -> some View {
-        let effectiveMode: LayoutMode = isNarrow ? .compact : layoutMode
-
+    private var content: some View {
         Group {
-            if config.hooks.isEmpty {
+            if isTracerItemSelected || config.hooks.isEmpty {
                 emptyState
             } else {
-                switch effectiveMode {
-                case .compact:
-                    compactLayout(isNarrow: isNarrow)
-                case .expanded:
-                    expandedLayout(isNarrow: isNarrow)
-                }
+                hookLayout
             }
         }
         .onAppear {
+            handleSelectionChangeFromOutside(selection)
             ensureValidSelection()
             if let coordinator = commitCoordinator, commitRegistrationToken == nil {
                 commitRegistrationToken = coordinator.register {
@@ -105,8 +76,8 @@ struct TracerConfigView: View {
             } else if let sel = selectedHookID,
                 !hooks.contains(where: { $0.id == sel })
             {
-                selectedHookID = hooks.first?.id
-            } else if selectedHookID == nil {
+                selectedHookID = isConfigOnlyContext ? hooks.first?.id : nil
+            } else if selectedHookID == nil, isConfigOnlyContext {
                 selectedHookID = hooks.first?.id
             }
         }
@@ -136,17 +107,6 @@ struct TracerConfigView: View {
                 await performSearch()
             }
         }
-        .onChange(of: layoutMode) { _, newValue in
-            if newValue == .expanded {
-                if let sel = selectedHookID {
-                    listSelection = [sel]
-                } else {
-                    listSelection = []
-                }
-            } else {
-                listSelection = []
-            }
-        }
         .onChange(of: searchQuery) { _, newValue in
             searchTask?.cancel()
             resolveResults = []
@@ -168,17 +128,6 @@ struct TracerConfigView: View {
         } message: { hook in
             Text("Are you sure you want to delete \"\(hook.displayName)\"?")
         }
-        .alert("Delete \(pendingMultiDeleteIDs.count) Hooks?", isPresented: $showMultiDeleteAlert) {
-            Button("Delete", role: .destructive) {
-                removeHooks(ids: pendingMultiDeleteIDs)
-                pendingMultiDeleteIDs = []
-            }
-            Button("Cancel", role: .cancel) {
-                pendingMultiDeleteIDs = []
-            }
-        } message: {
-            Text("This action cannot be undone.")
-        }
         .alert("Unsaved Changes", isPresented: $showUnsavedChangesAlert) {
             Button("Save") {
                 saveDraft()
@@ -189,19 +138,11 @@ struct TracerConfigView: View {
                 applyPendingSelection()
             }
             Button("Cancel", role: .cancel) {
-                if layoutMode == .expanded {
-                    if let sel = selectedHookID {
-                        listSelection = [sel]
-                    } else {
-                        listSelection = []
-                    }
-                }
                 pendingSelectionID = nil
             }
         } message: {
             Text("You have unsaved changes to this hook’s script.")
         }
-        .animation(.none, value: layoutMode)
     }
 
     private var selectedHook: TracerConfig.Hook? {
@@ -239,25 +180,46 @@ struct TracerConfigView: View {
         return config.hooks.first(where: { $0.addressAnchor == api.anchor })
     }
 
-    private func handleSelectionChangeFromOutside(_ newSelection: SidebarItemID?) {
-        guard
-            let session = instrumentSession,
-            case .instrumentComponent(let sessionID, let instrumentID, let hookID, let navID) = newSelection,
+    private var thisInstrumentID: UUID? {
+        instrumentInstance?.id
+    }
+
+    private var isConfigOnlyContext: Bool {
+        instrumentInstance == nil
+    }
+
+    private var isTracerItemSelected: Bool {
+        guard let session = instrumentSession,
+            let myID = thisInstrumentID,
+            case .instrument(let sessionID, let instrumentID) = selection,
             sessionID == session.id,
-            let thisInstrumentID = (try? engine.store.fetchInstruments(sessionID: session.id))?.first(where: { $0.kind == .tracer })?.id,
-            thisInstrumentID == instrumentID
-        else {
-            return
+            instrumentID == myID
+        else { return false }
+        return true
+    }
+
+    private func handleSelectionChangeFromOutside(_ newSelection: SidebarItemID?) {
+        guard let session = instrumentSession,
+            let thisInstrumentID = thisInstrumentID
+        else { return }
+
+        switch newSelection {
+        case .instrument(let sessionID, let instrumentID)
+        where sessionID == session.id && instrumentID == thisInstrumentID:
+            handleUserSelectionChange(nil)
+        case .instrumentComponent(let sessionID, let instrumentID, let hookID)
+        where sessionID == session.id && instrumentID == thisInstrumentID:
+            handleUserSelectionChange(hookID)
+        default:
+            break
         }
-
-        guard navID != lastHandledNavigationID else { return }
-
-        handleUserSelectionChange(hookID)
-
-        lastHandledNavigationID = navID
     }
 
     private func ensureValidSelection() {
+        if isTracerItemSelected {
+            selectedHookID = nil
+            return
+        }
         if config.hooks.isEmpty {
             selectedHookID = nil
             return
@@ -267,7 +229,7 @@ struct TracerConfigView: View {
         {
             return
         }
-        selectedHookID = config.hooks.first?.id
+        selectedHookID = isConfigOnlyContext ? config.hooks.first?.id : nil
     }
 
     private func syncDraftWithSelection() {
@@ -280,35 +242,58 @@ struct TracerConfigView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 24) {
-            Spacer()
+        VStack(spacing: 16) {
+            if shouldShowEmptyHero {
+                Spacer(minLength: 0)
+                heroBlock
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .bottom)))
+            }
+            searchSection
+                .frame(maxWidth: isCompactWidth ? .infinity : 520, alignment: .top)
+                .frame(maxHeight: shouldShowEmptyHero ? nil : .infinity, alignment: .top)
+            if shouldShowEmptyHero {
+                Spacer(minLength: 0)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.easeInOut(duration: 0.3), value: shouldShowEmptyHero)
+    }
 
+    private var shouldShowEmptyHero: Bool {
+        searchQuery.isEmpty && resolveResults.isEmpty && !isResolving && searchError == nil
+    }
+
+    private var heroBlock: some View {
+        VStack(spacing: 12) {
             Image(systemName: "scope")
                 .font(.system(size: 40, weight: .regular))
                 .foregroundStyle(.secondary)
 
             VStack(spacing: 4) {
-                Text("Start tracing functions")
+                Text(heroTitle)
                     .font(.title3.weight(.semibold))
 
-                Text("Search for functions in the attached process and add them as hooks.")
+                Text(heroSubtitle)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
-
-            searchSection
-                .frame(maxWidth: isCompactWidth ? .infinity : 420)
-                .padding(12)
-
-            Spacer()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.top, 24)
     }
 
-    private func compactLayout(isNarrow: Bool) -> some View {
-        VStack(spacing: 0) {
-            compactToolbar(showLayoutPicker: !isNarrow)
-            Divider()
+    private var heroTitle: String {
+        config.hooks.isEmpty ? "Start tracing functions" : "Trace another function"
+    }
+
+    private var heroSubtitle: String {
+        config.hooks.isEmpty
+            ? "Search for functions in the attached process and add them as hooks."
+            : "Search for more functions to add, or select an existing hook to edit it."
+    }
+
+    private var hookLayout: some View {
+        ZStack(alignment: .topTrailing) {
             if selectedHook != nil {
                 HookEditorView(
                     draftCode: $draftCode,
@@ -321,189 +306,14 @@ struct TracerConfigView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
-        }
-    }
 
-    private func expandedLayout(isNarrow: Bool) -> some View {
-        PlatformHSplit {
-            leftPane(isNarrow: isNarrow)
-            rightPane(isNarrow: isNarrow)
-        }
-    }
-
-    @ViewBuilder
-    private func leftPane(isNarrow: Bool) -> some View {
-        Group {
-            if listSelection.count <= 1, selectedHook != nil {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Spacer()
-                        HStack(spacing: 6) {
-                            saveStatusIcon
-                            saveButton
-                        }
-                    }
-
-                    HookEditorView(
-                        draftCode: $draftCode,
-                        isDirty: $isDirty,
-                        selectedHook: selectedHook,
-                        engine: engine,
-                    )
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if listSelection.count > 1 {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Multiple hooks selected")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Text("Choose a single hook to edit its handler.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding()
-            } else {
-                Text("Select a hook to edit its script.")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-            }
-        }
-        .frame(minWidth: 320, idealWidth: 1024, maxHeight: .infinity)
-        .padding(.trailing, 10)
-    }
-
-    private func rightPane(isNarrow: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            expandedToolbar(showLayoutPicker: !isNarrow)
-
-            HooksListView(
-                hooks: config.hooks,
-                selection: $listSelection,
-                onSetState: { hook, newState in
-                    if let idx = config.hooks.firstIndex(where: { $0.id == hook.id }) {
-                        config.hooks[idx].state = newState
-                    }
-                },
-                onDeleteSingle: { hook in
-                    hookToDelete = hook
-                    showDeleteConfirmation = true
-                },
-                onMultiDelete: {
-                    pendingMultiDeleteIDs = listSelection
-                    showMultiDeleteAlert = true
-                },
-                onSelectionChange: { newValue in
-                    if newValue.count == 1, let id = newValue.first {
-                        handleUserSelectionChange(id)
-                    } else if newValue.isEmpty {
-                        handleUserSelectionChange(nil)
-                    }
-                }
+            SaveBarOverlay(
+                isDirty: selectedHook != nil && isDirty,
+                showSavedCheck: selectedHook != nil && showSavedCheck,
+                saveTooltip: "Save current hook script (\u{2318}S)",
+                onSave: saveDraft
             )
         }
-        .frame(minWidth: 320, idealWidth: 320, maxWidth: 500, maxHeight: .infinity)
-    }
-
-    private func compactToolbar(showLayoutPicker: Bool) -> some View {
-        HStack(spacing: 8) {
-            if config.hooks.count > 1 {
-                Picker(
-                    "Hook",
-                    selection: Binding<UUID>(
-                        get: {
-                            selectedHookID ?? config.hooks.first!.id
-                        },
-                        set: { newID in
-                            handleUserSelectionChange(newID)
-                        }
-                    )
-                ) {
-                    ForEach(config.hooks) { hook in
-                        Text(hook.displayName).tag(hook.id)
-                    }
-                }
-                .labelsHidden()
-            } else if let hook = config.hooks.first {
-                Text(hook.displayName)
-                    .font(.headline)
-            }
-
-            if selectedHook != nil {
-                Toggle("Enabled", isOn: bindingForSelectedHookEnabled())
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-
-                if selectedHookIsFunctionHook, let hook = selectedHook {
-                    ITracePill(
-                        captured: itraceCaptured(for: hook.id),
-                        arming: bindingForSelectedHookITraceArming()
-                    )
-                    .id(hook.id)
-                }
-            }
-
-            Spacer()
-
-            HStack(spacing: 6) {
-                saveStatusIcon
-                saveButton
-            }
-
-            addHookButton
-
-            if selectedHook != nil {
-                Button(role: .destructive) {
-                    hookToDelete = selectedHook
-                    showDeleteConfirmation = true
-                } label: {
-                    Image(systemName: "trash")
-                }
-                .help("Delete selected hook")
-            }
-
-            if showLayoutPicker {
-                layoutPicker
-            }
-        }
-        .padding(.bottom, 6)
-    }
-
-    private func expandedToolbar(showLayoutPicker: Bool) -> some View {
-        HStack(spacing: 8) {
-            Text("Hooks")
-                .font(.headline)
-
-            Spacer()
-
-            if listSelection.count > 1 {
-                Button(role: .destructive) {
-                    pendingMultiDeleteIDs = listSelection
-                    showMultiDeleteAlert = true
-                } label: {
-                    Label("Delete (\(listSelection.count))", systemImage: "trash")
-                }
-            }
-
-            addHookButton
-
-            if showLayoutPicker {
-                layoutPicker
-            }
-        }
-        .padding(.horizontal)
-        .padding(.top, 2)
-        .padding(.bottom, 6)
-    }
-
-    private var saveButton: some View {
-        Button("Save") {
-            saveDraft()
-        }
-        .disabled(!isDirty || selectedHook == nil)
-        .keyboardShortcut("s", modifiers: [.command])
-        .help("Save current hook script")
     }
 
     private var addHookButton: some View {
@@ -515,20 +325,15 @@ struct TracerConfigView: View {
         .help("Add hooks by searching functions")
         .popover(isPresented: $isShowingSearchPopover) {
             searchSection
-                .frame(maxWidth: isCompactWidth ? .infinity : 420)
+                .frame(
+                    width: isCompactWidth ? nil : 520,
+                    height: isCompactWidth ? nil : 400,
+                    alignment: .top
+                )
                 .padding(12)
+                .id("tracer.searchPopover")
+                .transaction { $0.animation = nil }
         }
-    }
-
-    private var layoutPicker: some View {
-        Picker("", selection: $layoutMode) {
-            ForEach(LayoutMode.allCases) { mode in
-                Text(mode.label).tag(mode)
-            }
-        }
-        .pickerStyle(.segmented)
-        .frame(width: 160)
-        .help("Change hooks layout")
     }
 
     private var searchSection: some View {
@@ -594,14 +399,12 @@ struct TracerConfigView: View {
                         Spacer()
                         if let hook = existingHook(for: api) {
                             Button("View Handler") {
-                                handleUserSelectionChange(hook.id)
-                                isShowingSearchPopover = false
+                                openHook(hook)
                             }
                             .platformLinkButtonStyle()
                         } else {
                             Button("Add") {
-                                _ = addResultAsHook(api, select: false)
-                                isShowingSearchPopover = false
+                                addAndOpen(api)
                             }
                             .platformLinkButtonStyle()
                         }
@@ -609,15 +412,19 @@ struct TracerConfigView: View {
                     .contentShape(Rectangle())
                     .onTapGesture {
                         if let hook = existingHook(for: api) {
-                            handleUserSelectionChange(hook.id)
-                            isShowingSearchPopover = false
+                            openHook(hook)
                         } else {
-                            _ = addResultAsHook(api, select: false)
-                            isShowingSearchPopover = false
+                            addAndOpen(api)
                         }
                     }
                 }
-                .frame(minHeight: 120, maxHeight: 200)
+                .listStyle(.plain)
+                .frame(maxHeight: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(Color.secondary.opacity(0.25), lineWidth: 1)
+                )
             } else if !searchQuery.isEmpty && !isResolving && canResolve && searchError == nil {
                 Text("No results. Try another pattern.")
                     .font(.caption)
@@ -695,14 +502,8 @@ struct TracerConfigView: View {
     private func applyPendingSelection() {
         if let id = pendingSelectionID {
             selectedHookID = id
-            if layoutMode == .expanded {
-                listSelection = [id]
-            }
         } else {
             selectedHookID = nil
-            if layoutMode == .expanded {
-                listSelection = []
-            }
         }
         pendingSelectionID = nil
     }
@@ -754,7 +555,7 @@ struct TracerConfigView: View {
             let idx = config.hooks.firstIndex(where: { $0.id == hook.id })
         else { return }
 
-        config.hooks[idx].code = draftCode
+        config.hooks[idx].updateCode(draftCode)
         isDirty = false
 
         showSavedCheck = true
@@ -777,7 +578,7 @@ struct TracerConfigView: View {
     private func addResultAsHook(_ api: ResolvedApi, select: Bool) -> TracerConfig.Hook {
         if let existing = existingHook(for: api) {
             if select {
-                handleUserSelectionChange(existing.id)
+                navigateOuterSelection(toHookID: existing.id)
             }
             return existing
         }
@@ -792,10 +593,31 @@ struct TracerConfigView: View {
         config.hooks.append(hook)
 
         if select {
-            handleUserSelectionChange(hook.id)
+            navigateOuterSelection(toHookID: hook.id)
         }
 
         return hook
+    }
+
+    private func openHook(_ hook: TracerConfig.Hook) {
+        navigateOuterSelection(toHookID: hook.id)
+        isShowingSearchPopover = false
+    }
+
+    private func addAndOpen(_ api: ResolvedApi) {
+        addResultAsHook(api, select: true)
+        isShowingSearchPopover = false
+    }
+
+    private func navigateOuterSelection(toHookID hookID: UUID) {
+        guard let session = instrumentSession,
+            let instrumentID = thisInstrumentID
+        else {
+            handleUserSelectionChange(hookID)
+            return
+        }
+        selectedHookID = hookID
+        selection = .instrumentComponent(session.id, instrumentID, hookID)
     }
 
     private func addAllResultsAsHooks() {
@@ -814,7 +636,6 @@ struct TracerConfigView: View {
         if let currentID = selectedHookID, idsSet.contains(currentID) {
             selectedHookID = config.hooks.first?.id
         }
-        listSelection.subtract(idsSet)
 
         syncDraftWithSelection()
     }
@@ -988,7 +809,7 @@ private struct ITracePill: View {
     }
 }
 
-private struct ITracePopover: View {
+struct ITracePopover: View {
     let captured: Int
     let isOn: Bool
     @Binding var draftMaxInvocations: Int
@@ -1056,97 +877,34 @@ private struct HookEditorView: View {
     let selectedHook: TracerConfig.Hook?
     let engine: Engine
 
+    @State private var editorFocused: Bool = false
+
     var body: some View {
         let packages = (try? engine.store.fetchPackagesState().packages) ?? []
         CodeEditorView(
             text: $draftCode,
             profile: EditorProfile.fridaTracerHook(packages: packages),
+            focused: $editorFocused,
             engine: engine,
         )
         .onChange(of: draftCode) { _, _ in
             isDirty = (draftCode != selectedHook?.code)
         }
+        .onChange(of: selectedHook?.id) { _, _ in
+            scheduleFocus()
+        }
+        .task(id: selectedHook?.id) {
+            scheduleFocus()
+        }
         .accessibilityIdentifier("tracer.hookEditor")
     }
-}
 
-private struct HooksListView: View {
-    let hooks: [TracerConfig.Hook]
-    @Binding var selection: Set<UUID>
-    let onSetState: (TracerConfig.Hook, TracerConfig.Hook.State) -> Void
-    let onDeleteSingle: (TracerConfig.Hook) -> Void
-    let onMultiDelete: () -> Void
-    let onSelectionChange: (Set<UUID>) -> Void
-
-    var body: some View {
-        List(selection: $selection) {
-            ForEach(hooks) { hook in
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 4) {
-                            Text(hook.displayName)
-                            if hook.itraceArming != nil {
-                                Text("IT")
-                                    .font(.system(.caption2, design: .monospaced).bold())
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 1)
-                                    .background(Color.orange, in: RoundedRectangle(cornerRadius: 3))
-                            }
-                        }
-                        if let sub = subtitle(for: hook) {
-                            Text(sub)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    Spacer(minLength: 8)
-                    Toggle(
-                        "",
-                        isOn: Binding(
-                            get: {
-                                hooks.first(where: { $0.id == hook.id })?.state == .enabled
-                            },
-                            set: { newValue in
-                                onSetState(hook, newValue ? .enabled : .disabled)
-                            }
-                        )
-                    )
-                    .labelsHidden()
-                }
-                .tag(hook.id)
-                .contextMenu {
-                    if selection.count > 1 {
-                        Button("Delete (\(selection.count))", role: .destructive) {
-                            onMultiDelete()
-                        }
-                    }
-                    Button("Delete This Hook", role: .destructive) {
-                        onDeleteSingle(hook)
-                    }
-                }
-            }
-        }
-        .onChange(of: selection) { _, newValue in
-            onSelectionChange(newValue)
-        }
-    }
-
-    private func subtitle(for hook: TracerConfig.Hook) -> String? {
-        let anchor = hook.addressAnchor
-        switch anchor {
-        case .absolute:
-            return anchor.displayString
-        case .moduleOffset(let name, _),
-            .moduleExport(let name, _),
-            .swiftFunc(let name, _):
-            return name
-        case .objcMethod:
-            return nil
-        case .javaMethod(let className, _):
-            return className
-        case .debugSymbol:
-            return nil
+    private func scheduleFocus() {
+        guard selectedHook != nil else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            editorFocused = true
         }
     }
 }
+
