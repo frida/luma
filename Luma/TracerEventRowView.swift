@@ -56,7 +56,7 @@ private struct TracerBacktraceView: View {
     let engine: Engine
     @Binding var selection: SidebarItemID?
 
-    @State private var symbols: [SymbolicateResult] = []
+    @State private var symbols: [SymbolicateResult?] = []
     @State private var isLoading = false
     @State private var lastError: String?
 
@@ -127,23 +127,10 @@ private struct TracerBacktraceView: View {
         idx: Int,
         anchor: AddressAnchor
     ) -> String {
-        guard idx < symbols.count else {
+        guard idx < symbols.count, let symbol = symbols[idx] else {
             return anchor.displayString
         }
-
-        switch symbols[idx] {
-        case .failure:
-            return anchor.displayString
-
-        case .module(let moduleName, let name):
-            return "\(moduleName)!\(name)"
-
-        case .file(let moduleName, let name, let fileName, let lineNumber):
-            return "\(moduleName)!\(name) — \(fileName):\(lineNumber)"
-
-        case .fileColumn(let moduleName, let name, let fileName, let lineNumber, let column):
-            return "\(moduleName)!\(name) — \(fileName):\(lineNumber):\(column)"
-        }
+        return symbol.displayString
     }
 
     private func openDisassembly(at address: UInt64) {

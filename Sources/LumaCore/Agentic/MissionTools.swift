@@ -21,6 +21,7 @@ public enum MissionTools {
         registerResumeSession(in: catalog, engine: engine)
         registerSummarizeRecentEvents(in: catalog, engine: engine)
         registerWaitForEvent(in: catalog, engine: engine)
+        registerReadEvent(in: catalog, engine: engine)
         registerResolveSymbol(in: catalog, engine: engine)
         registerDisassemble(in: catalog, engine: engine)
         registerDecompile(in: catalog, engine: engine)
@@ -581,9 +582,9 @@ public enum MissionTools {
     private static func registerSummarizeRecentEvents(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "summarize_recent_events",
-            description: "Read the most recent runtime events from the global event log. Filter by session_id, kind (substring on the event kind name), or match_pattern (case-insensitive regex on the event summary). Pass since_event_id to only get events newer than a previously-seen id.",
+            description: "Read the most recent runtime events from the global event log. Filter by session_id, kind (substring on the event kind name), or match_pattern (case-insensitive regex on the event summary). Pass since_event_id to only get events newer than a previously-seen id. Each event includes a compact structured 'payload' field using $type-tagged JS values (NativePointer / BigInt / Date / RegExp / Uint8Array / Function / Error / Map / Set / Truncated / ref). Tracer events are decoded into named fields with caller and backtrace pre-symbolicated as $type:Symbol references. Pass include_payload=false to omit payloads, or symbolicate=false to keep tracer addresses as raw NativePointer.",
             inputSchemaJSON: """
-                {"type":"object","properties":{"session_id":{"type":"string"},"kind":{"type":"string","description":"Filter by event kind, e.g. tracer, repl"},"match_pattern":{"type":"string","description":"Case-insensitive regex matched against the event summary."},"since_event_id":{"type":"string","description":"Only return events that arrived after this id."},"limit":{"type":"integer","minimum":1,"maximum":200,"description":"Max events to return (default 50)"}},"additionalProperties":false}
+                {"type":"object","properties":{"session_id":{"type":"string"},"kind":{"type":"string","description":"Filter by event kind, e.g. tracer, repl"},"match_pattern":{"type":"string","description":"Case-insensitive regex matched against the event summary."},"since_event_id":{"type":"string","description":"Only return events that arrived after this id."},"limit":{"type":"integer","minimum":1,"maximum":200,"description":"Max events to return (default 50)"},"include_payload":{"type":"boolean","description":"Include each event's structured payload (default true, capped to a compact depth)."},"symbolicate":{"type":"boolean","description":"For tracer events, symbolicate caller and backtrace addresses (default true)."}},"additionalProperties":false}
                 """,
             isObserve: true,
             requiresSession: false
@@ -592,9 +593,10 @@ public enum MissionTools {
             guard let engine else { return errorResult("engine unavailable", code: .unavailable) }
             let limit = (invocation.args["limit"] as? Int) ?? 50
             do {
-                let filter = try parseEventFilter(invocation.args)
-                let matched = filteredEvents(engine.eventLog.events, filter: filter)
-                return eventsResult(Array(matched.suffix(limit)), totalConsidered: matched.count)
+                let request = try parseEventListingRequest(invocation.args, defaultDetail: .compact)
+                let matched = filteredEvents(engine.eventLog.events, filter: request.filter)
+                let returned = Array(matched.suffix(limit))
+                return await eventListingResult(returned, totalConsidered: matched.count, options: request.options, engine: engine)
             } catch let error as EventFilterError {
                 return errorResult(error.message, code: .invalidInput)
             } catch {
@@ -606,9 +608,9 @@ public enum MissionTools {
     private static func registerWaitForEvent(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "wait_for_event",
-            description: "Block until at least one matching runtime event arrives, or the timeout elapses. Same filter shape as summarize_recent_events. Pair it with a hook install or a user-driven trigger so the agent doesn't need to poll. Returns matching events newer than since_event_id, or an empty list on timeout.",
+            description: "Block until at least one matching runtime event arrives, or the timeout elapses. Same filter and payload shape as summarize_recent_events. Pair it with a hook install or a user-driven trigger so the agent doesn't need to poll. Returns matching events newer than since_event_id, or an empty list on timeout.",
             inputSchemaJSON: """
-                {"type":"object","properties":{"session_id":{"type":"string"},"kind":{"type":"string"},"match_pattern":{"type":"string"},"since_event_id":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":200,"description":"Max events to return (default 50)"},"timeout_ms":{"type":"integer","minimum":100,"maximum":60000,"description":"Maximum wait in milliseconds (default 30000, capped at 60000)"}},"additionalProperties":false}
+                {"type":"object","properties":{"session_id":{"type":"string"},"kind":{"type":"string"},"match_pattern":{"type":"string"},"since_event_id":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":200,"description":"Max events to return (default 50)"},"timeout_ms":{"type":"integer","minimum":100,"maximum":60000,"description":"Maximum wait in milliseconds (default 30000, capped at 60000)"},"include_payload":{"type":"boolean"},"symbolicate":{"type":"boolean"}},"additionalProperties":false}
                 """,
             isObserve: true,
             requiresSession: false
@@ -617,9 +619,9 @@ public enum MissionTools {
             guard let engine else { return errorResult("engine unavailable", code: .unavailable) }
             let limit = (invocation.args["limit"] as? Int) ?? 50
             let timeoutMs = min((invocation.args["timeout_ms"] as? Int) ?? 30_000, 60_000)
-            let filter: EventFilter
+            let request: EventListingRequest
             do {
-                filter = try parseEventFilter(invocation.args)
+                request = try parseEventListingRequest(invocation.args, defaultDetail: .compact)
             } catch let error as EventFilterError {
                 return errorResult(error.message, code: .invalidInput)
             } catch {
@@ -630,16 +632,69 @@ public enum MissionTools {
             let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000.0)
             while true {
                 try? Task.checkCancellation()
-                let matched = filteredEvents(engine.eventLog.events, filter: filter)
+                let matched = filteredEvents(engine.eventLog.events, filter: request.filter)
                 if !matched.isEmpty {
-                    return eventsResult(Array(matched.suffix(limit)), totalConsidered: matched.count)
+                    let returned = Array(matched.suffix(limit))
+                    return await eventListingResult(returned, totalConsidered: matched.count, options: request.options, engine: engine)
                 }
                 if Date() >= deadline {
-                    return eventsResult([], totalConsidered: 0, summary: "No matching events within \(timeoutMs)ms")
+                    return await eventListingResult([], totalConsidered: 0, options: request.options, engine: engine, summary: "No matching events within \(timeoutMs)ms")
                 }
                 try? await Task.sleep(nanoseconds: pollIntervalNs)
             }
         }
+    }
+
+    // MARK: - read_event
+
+    private static func registerReadEvent(in catalog: ToolCatalog, engine: Engine) {
+        let spec = ActionSpec(
+            name: "read_event",
+            description: "Read a single runtime event by id, returning its full structured payload (uncapped depth). Tracer events are decoded into named fields with caller and backtrace pre-symbolicated as $type:Symbol references. The event log is a bounded ring buffer, so older ids may have been evicted; in that case the tool returns not-found.",
+            inputSchemaJSON: """
+                {"type":"object","properties":{"event_id":{"type":"string"},"symbolicate":{"type":"boolean","description":"For tracer events, symbolicate caller and backtrace addresses (default true)."}},"required":["event_id"],"additionalProperties":false}
+                """,
+            isObserve: true,
+            requiresSession: false
+        )
+        catalog.register(spec: spec) { [weak engine] invocation in
+            guard let engine else { return errorResult("engine unavailable", code: .unavailable) }
+            guard let raw = invocation.args["event_id"] as? String, let eventID = UUID(uuidString: raw) else {
+                return errorResult("missing or invalid event_id", code: .invalidInput)
+            }
+            guard let event = engine.eventLog.events.first(where: { $0.id == eventID }) else {
+                return errorResult("no event with id \(eventID); the ring buffer may have evicted it", code: .notFound)
+            }
+            let symbolicate = (invocation.args["symbolicate"] as? Bool) ?? true
+            let options = EventListingOptions(payloadDetail: .full, symbolicateAddresses: symbolicate)
+            let symbols = await collectSymbolLookup(in: [event], options: options, engine: engine)
+            let obj = renderEventJSON(event, options: options, symbols: symbols)
+            return makeResult(jsonObject: obj, summary: "Event \(eventID.uuidString) (\(describeEventKind(event)))")
+        }
+    }
+
+    private struct EventListingRequest {
+        let filter: EventFilter
+        let options: EventListingOptions
+    }
+
+    private struct EventListingOptions {
+        enum PayloadDetail {
+            case omit
+            case compact
+            case full
+
+            var jsonOptions: JSInspectValue.AgentJSONOptions? {
+                switch self {
+                case .omit: return nil
+                case .compact: return .compact
+                case .full: return .full
+                }
+            }
+        }
+
+        let payloadDetail: PayloadDetail
+        let symbolicateAddresses: Bool
     }
 
     private struct EventFilter {
@@ -651,6 +706,17 @@ public enum MissionTools {
 
     private struct EventFilterError: Swift.Error {
         let message: String
+    }
+
+    private static func parseEventListingRequest(_ args: [String: Any], defaultDetail: EventListingOptions.PayloadDetail) throws -> EventListingRequest {
+        let filter = try parseEventFilter(args)
+        let includePayload = (args["include_payload"] as? Bool) ?? true
+        let symbolicate = (args["symbolicate"] as? Bool) ?? true
+        let options = EventListingOptions(
+            payloadDetail: includePayload ? defaultDetail : .omit,
+            symbolicateAddresses: symbolicate
+        )
+        return EventListingRequest(filter: filter, options: options)
     }
 
     private static func parseEventFilter(_ args: [String: Any]) throws -> EventFilter {
@@ -688,20 +754,184 @@ public enum MissionTools {
         }
     }
 
-    private static func eventsResult(_ events: [RuntimeEvent], totalConsidered: Int, summary: String? = nil) -> ActionResult {
-        let formatter = ISO8601DateFormatter()
-        let array: [[String: Any]] = events.map { event in
-            var obj: [String: Any] = [
-                "id": event.id.uuidString,
-                "kind": describeEventKind(event),
-                "timestamp": formatter.string(from: event.timestamp),
-                "summary": describeEventSummary(event),
-            ]
-            if let sid = event.sessionID { obj["session_id"] = sid.uuidString }
-            return obj
-        }
+    private static func eventListingResult(
+        _ events: [RuntimeEvent],
+        totalConsidered: Int,
+        options: EventListingOptions,
+        engine: Engine,
+        summary: String? = nil
+    ) async -> ActionResult {
+        let symbols = await collectSymbolLookup(in: events, options: options, engine: engine)
+        let array = events.map { renderEventJSON($0, options: options, symbols: symbols) }
         let resolvedSummary = summary ?? "Returned \(events.count) of \(totalConsidered) matching event\(totalConsidered == 1 ? "" : "s")"
         return makeResult(jsonObject: array, summary: resolvedSummary)
+    }
+
+    private static func collectSymbolLookup(in events: [RuntimeEvent], options: EventListingOptions, engine: Engine) async -> SymbolLookup {
+        guard options.symbolicateAddresses else { return SymbolLookup() }
+
+        var addressesBySession: [UUID: Set<UInt64>] = [:]
+        for event in events {
+            guard let sid = event.sessionID, isTracerEvent(event) else { continue }
+            guard case .jsValue(let value) = event.payload,
+                let tracer = Engine.parseTracerEvent(from: value)
+            else { continue }
+            var addresses = addressesBySession[sid] ?? []
+            if let address = tracer.caller.nativePointerAddress {
+                addresses.insert(address)
+            }
+            for pointer in tracer.backtrace ?? [] {
+                if let address = pointer.nativePointerAddress {
+                    addresses.insert(address)
+                }
+            }
+            addressesBySession[sid] = addresses
+        }
+
+        var bySession: [UUID: [UInt64: SymbolicateResult]] = [:]
+        for (sessionID, addressSet) in addressesBySession {
+            guard let node = engine.node(forSessionID: sessionID), !addressSet.isEmpty else { continue }
+            let addresses = Array(addressSet)
+            guard let results = try? await node.symbolicate(addresses: addresses) else { continue }
+            var map: [UInt64: SymbolicateResult] = [:]
+            for (idx, result) in results.enumerated() where idx < addresses.count {
+                if let result {
+                    map[addresses[idx]] = result
+                }
+            }
+            bySession[sessionID] = map
+        }
+
+        return SymbolLookup(bySession: bySession)
+    }
+
+    private struct SymbolLookup {
+        private let bySession: [UUID: [UInt64: SymbolicateResult]]
+
+        init(bySession: [UUID: [UInt64: SymbolicateResult]] = [:]) {
+            self.bySession = bySession
+        }
+
+        func symbol(for address: UInt64, sessionID: UUID) -> SymbolicateResult? {
+            bySession[sessionID]?[address]
+        }
+    }
+
+    private static func renderEventJSON(_ event: RuntimeEvent, options: EventListingOptions, symbols: SymbolLookup) -> [String: Any] {
+        let formatter = ISO8601DateFormatter()
+        var obj: [String: Any] = [
+            "id": event.id.uuidString,
+            "kind": describeEventKind(event),
+            "timestamp": formatter.string(from: event.timestamp),
+            "summary": describeEventSummary(event),
+        ]
+        if let sid = event.sessionID { obj["session_id"] = sid.uuidString }
+        if let jsonOptions = options.payloadDetail.jsonOptions,
+            let payload = renderEventPayload(event, jsonOptions: jsonOptions, symbols: symbols) {
+            obj["payload"] = payload
+        }
+        return obj
+    }
+
+    private static func renderEventPayload(_ event: RuntimeEvent, jsonOptions: JSInspectValue.AgentJSONOptions, symbols: SymbolLookup) -> Any? {
+        switch event.payload {
+        case .consoleMessage(let msg):
+            return [
+                "$type": "ConsoleMessage",
+                "level": msg.level.rawValue,
+                "values": msg.values.map { $0.toAgentJSON(options: jsonOptions) },
+            ] as [String: Any]
+        case .jsError(let err):
+            return jsErrorPayload(err, jsonOptions: jsonOptions)
+        case .jsValue(let value):
+            if isTracerEvent(event),
+                let decoded = decodeTracerPayload(value, sessionID: event.sessionID, jsonOptions: jsonOptions, symbols: symbols) {
+                return decoded
+            }
+            return value.toAgentJSON(options: jsonOptions)
+        case .raw:
+            return nil
+        }
+    }
+
+    private static func isTracerEvent(_ event: RuntimeEvent) -> Bool {
+        if case .instrument(_, let name) = event.source, name == "tracer" { return true }
+        return false
+    }
+
+    private static func decodeTracerPayload(
+        _ value: JSInspectValue,
+        sessionID: UUID?,
+        jsonOptions: JSInspectValue.AgentJSONOptions,
+        symbols: SymbolLookup
+    ) -> [String: Any]? {
+        guard let tracer = Engine.parseTracerEvent(from: value) else { return nil }
+        var obj: [String: Any] = [
+            "$type": "TracerEvent",
+            "hook_id": tracer.id.uuidString,
+            "timestamp_ms": tracer.timestamp,
+            "thread_id": tracer.threadId,
+            "depth": tracer.depth,
+            "caller": symbolReferenceJSON(for: tracer.caller, sessionID: sessionID, symbols: symbols),
+            "message": tracer.message.toAgentJSON(options: jsonOptions),
+        ]
+        if let backtrace = tracer.backtrace {
+            obj["backtrace"] = backtrace.map { symbolReferenceJSON(for: $0, sessionID: sessionID, symbols: symbols) }
+        }
+        return obj
+    }
+
+    private static func symbolReferenceJSON(for pointer: JSInspectValue, sessionID: UUID?, symbols: SymbolLookup) -> Any {
+        guard case .nativePointer(let raw) = pointer else {
+            return pointer.toAgentJSON(options: .compact)
+        }
+        guard let sid = sessionID,
+            let address = pointer.nativePointerAddress,
+            let resolved = symbols.symbol(for: address, sessionID: sid)
+        else {
+            return ["$type": "NativePointer", "value": raw] as [String: Any]
+        }
+        return symbolJSON(resolved, address: raw)
+    }
+
+    private static func symbolJSON(_ symbol: SymbolicateResult, address: String) -> [String: Any] {
+        var obj: [String: Any] = [
+            "$type": "Symbol",
+            "address": address,
+            "module": symbol.module,
+            "name": symbol.name,
+        ]
+        if let offset = symbol.offset {
+            obj["offset"] = offset
+        }
+        if let source = symbol.source {
+            obj["file"] = source.file
+            obj["line"] = source.line
+            if let column = source.column {
+                obj["column"] = column
+            }
+        }
+        return obj
+    }
+
+    private static func jsErrorPayload(_ err: JSError, jsonOptions: JSInspectValue.AgentJSONOptions) -> [String: Any] {
+        var dict: [String: Any] = [
+            "$type": "Error",
+            "message": err.text,
+        ]
+        if let fileName = err.fileName {
+            dict["file"] = fileName
+        }
+        if let lineNumber = err.lineNumber {
+            dict["line"] = lineNumber
+        }
+        if let columnNumber = err.columnNumber {
+            dict["column"] = columnNumber
+        }
+        if let stack = err.stack, !stack.isEmpty {
+            dict["stack"] = stack
+        }
+        return dict
     }
 
     // MARK: - resolve_symbol
@@ -2986,8 +3216,11 @@ public enum MissionTools {
             return msg.description
         case .jsError(let err):
             return err.text
-        case .jsValue:
-            return "[JS value]"
+        case .jsValue(let value):
+            if isTracerEvent(event), let tracer = Engine.parseTracerEvent(from: value) {
+                return tracer.message.agentSummary()
+            }
+            return value.agentSummary()
         case .raw:
             return "[raw payload]"
         }

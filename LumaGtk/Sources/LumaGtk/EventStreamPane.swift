@@ -1180,17 +1180,8 @@ final class EventStreamPane {
         }
     }
 
-    private func symbolLabel(for result: SymbolicateResult, fallback: String) -> String {
-        switch result {
-        case .failure:
-            return fallback
-        case .module(let module, let name):
-            return "\(module)!\(name)"
-        case .file(let module, let name, let file, let line):
-            return "\(module)!\(name) — \(file):\(line)"
-        case .fileColumn(let module, let name, let file, let line, let col):
-            return "\(module)!\(name) — \(file):\(line):\(col)"
-        }
+    private func symbolLabel(for result: SymbolicateResult?, fallback: String) -> String {
+        result?.displayString ?? fallback
     }
 
     private func processName(for event: RuntimeEvent) -> String {

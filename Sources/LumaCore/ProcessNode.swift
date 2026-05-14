@@ -897,65 +897,38 @@ public final class ProcessNode: Identifiable {
         return try parseAgentHexAddress(rawString)
     }
 
-    public func symbolicate(addresses: [UInt64]) async throws -> [SymbolicateResult] {
-        let any = try await script.exports.symbolicate(addresses.map { String(format: "0x%llx", $0) })
+    public func symbolicate(addresses: [UInt64]) async throws -> [SymbolicateResult?] {
+        let raw = try await script.exports.symbolicate(addresses.map { String(format: "0x%llx", $0) })
 
-        guard let arr = any as? [Any],
-            arr.count == addresses.count
+        guard let arr = raw as? [Any], arr.count == addresses.count else {
+            throw LumaCoreError.protocolViolation("Invalid reply")
+        }
+
+        return try arr.map(decodeSymbolicateEntry)
+    }
+
+    private func decodeSymbolicateEntry(_ entry: Any) throws -> SymbolicateResult? {
+        if entry is NSNull { return nil }
+
+        guard let dict = entry as? [String: Any],
+            let module = dict["module"] as? String,
+            let name = dict["name"] as? String
         else {
             throw LumaCoreError.protocolViolation("Invalid reply")
         }
 
-        var out: [SymbolicateResult] = []
-        out.reserveCapacity(arr.count)
+        let offset = (dict["offset"] as? NSNumber).map { UInt64(truncating: $0) }
+        let source = decodeSymbolSource(from: dict)
 
-        for entry in arr {
-            if entry is NSNull {
-                out.append(.failure)
-                continue
-            }
+        return SymbolicateResult(module: module, name: name, offset: offset, source: source)
+    }
 
-            guard let tuple = entry as? [Any] else {
-                throw LumaCoreError.protocolViolation("Invalid reply")
-            }
-
-            switch tuple.count {
-            case 2:
-                guard let moduleName = tuple[0] as? String,
-                    let name = tuple[1] as? String
-                else {
-                    throw LumaCoreError.protocolViolation("Invalid reply")
-                }
-                out.append(.module(moduleName: moduleName, name: name))
-
-            case 4:
-                guard let moduleName = tuple[0] as? String,
-                    let name = tuple[1] as? String,
-                    let fileName = tuple[2] as? String,
-                    let lineNumber = tuple[3] as? Int
-                else {
-                    throw LumaCoreError.protocolViolation("Invalid reply")
-                }
-                out.append(.file(moduleName: moduleName, name: name, fileName: fileName, lineNumber: lineNumber))
-
-            case 5:
-                guard let moduleName = tuple[0] as? String,
-                    let name = tuple[1] as? String,
-                    let fileName = tuple[2] as? String,
-                    let lineNumber = tuple[3] as? Int,
-                    let column = tuple[4] as? Int
-                else {
-                    throw LumaCoreError.protocolViolation("Invalid reply")
-                }
-                out.append(.fileColumn(
-                    moduleName: moduleName, name: name, fileName: fileName, lineNumber: lineNumber, column: column))
-
-            default:
-                throw LumaCoreError.protocolViolation("Invalid reply")
-            }
-        }
-
-        return out
+    private func decodeSymbolSource(from dict: [String: Any]) -> SymbolicateResult.SourceLocation? {
+        guard let file = dict["file"] as? String,
+            let line = dict["line"] as? Int
+        else { return nil }
+        let column = dict["column"] as? Int
+        return SymbolicateResult.SourceLocation(file: file, line: line, column: column)
     }
 
     public func fetchThreadSnapshot(id: UInt) async throws -> ThreadSnapshot? {
@@ -1343,14 +1316,9 @@ public final class ProcessNode: Identifiable {
         var symbolicated = false
         if let results = try? await symbolicate(addresses: addresses) {
             for (i, result) in results.enumerated() where i < metadata.blocks.count {
-                let name: String?
-                switch result {
-                case .module(let m, let n): name = "\(m)!\(n)"
-                case .file(let m, let n, _, _): name = "\(m)!\(n)"
-                case .fileColumn(let m, let n, _, _, _): name = "\(m)!\(n)"
-                case .failure: name = nil
-                }
-                if let name { metadata.blocks[i].name = name; symbolicated = true }
+                guard let result else { continue }
+                metadata.blocks[i].name = result.qualifiedName
+                symbolicated = true
             }
         }
 

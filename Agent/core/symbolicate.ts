@@ -1,3 +1,12 @@
+export interface SymbolicateResult {
+    module: string;
+    name: string;
+    offset?: number;
+    file?: string;
+    line?: number;
+    column?: number;
+}
+
 interface ExportEntry {
     address: NativePointer;
     name: string;
@@ -5,47 +14,40 @@ interface ExportEntry {
 
 const exportIndexByModule = new Map<string, ExportEntry[]>();
 
-export function symbolicate(addresses: string[]): (
-  | null
-  | [string, string]
-  | [string, string, string, number]
-  | [string, string, string, number, number]
-)[] {
+export function symbolicate(addresses: string[]): (SymbolicateResult | null)[] {
     return addresses.map(address => {
         const p = ptr(address);
         const sym = DebugSymbol.fromAddress(p);
 
         const name = sym.name;
         if (name !== null) {
-            const { moduleName, fileName, lineNumber, column } = sym as any;
-
-            if (lineNumber === 0) {
-                return [moduleName, name];
-            }
-
-            if (column === 0) {
-                return [moduleName, name, fileName, lineNumber];
-            }
-
-            return [moduleName, name, fileName, lineNumber, column];
+            return debugSymbolResult(sym, name);
         }
 
-        // DebugSymbol failed; fall back to nearest export.
-        const nearest = findNearestExport(p);
-        if (nearest !== null) {
-            return [nearest.moduleName, nearest.symbolName];
-        }
-
-        return null;
+        return nearestExportResult(p);
     });
 }
 
-interface NearestExportResult {
-    moduleName: string;
-    symbolName: string;
+function debugSymbolResult(sym: DebugSymbol, name: string): SymbolicateResult {
+    const { moduleName, fileName, lineNumber, column } = sym as DebugSymbol & { column?: number };
+
+    const result: SymbolicateResult = {
+        module: moduleName as string,
+        name,
+    };
+
+    if (lineNumber !== null && lineNumber !== 0) {
+        result.file = fileName as string;
+        result.line = lineNumber;
+        if (column !== undefined && column !== 0) {
+            result.column = column;
+        }
+    }
+
+    return result;
 }
 
-function findNearestExport(address: NativePointer): NearestExportResult | null {
+function nearestExportResult(address: NativePointer): SymbolicateResult | null {
     const mod = Process.findModuleByAddress(address);
     if (mod === null) {
         return null;
@@ -56,7 +58,24 @@ function findNearestExport(address: NativePointer): NearestExportResult | null {
         return null;
     }
 
-    // Binary search for the nearest export at or before the address.
+    const entry = nearestExportAtOrBefore(exports, address);
+    if (entry === null) {
+        return null;
+    }
+
+    const offset = address.sub(entry.address).toUInt32();
+
+    const result: SymbolicateResult = {
+        module: mod.name,
+        name: entry.name,
+    };
+    if (offset !== 0) {
+        result.offset = offset;
+    }
+    return result;
+}
+
+function nearestExportAtOrBefore(exports: ExportEntry[], address: NativePointer): ExportEntry | null {
     let lo = 0;
     let hi = exports.length - 1;
     let best = -1;
@@ -71,19 +90,7 @@ function findNearestExport(address: NativePointer): NearestExportResult | null {
         }
     }
 
-    if (best === -1) {
-        return null;
-    }
-
-    const entry = exports[best];
-    const offset = address.sub(entry.address).toUInt32();
-
-    return {
-        moduleName: mod.name,
-        symbolName: offset === 0
-            ? entry.name
-            : `${entry.name}+0x${offset.toString(16)}`,
-    };
+    return best === -1 ? null : exports[best];
 }
 
 function getExportIndex(mod: Module): ExportEntry[] {
