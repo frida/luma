@@ -6,35 +6,49 @@ struct CustomInstrumentEditorView: View {
     let defID: UUID
     let path: String?
     let engine: Engine
+    @Binding var selection: SidebarItemID?
 
     @State private var isEditorFocused: Bool = false
     @State private var draftContent: String = ""
     @State private var isDirty = false
     @State private var showSavedCheck = false
+    @State private var activePath: String?
+    @State private var pendingPath: String?
+    @State private var showUnsavedAlert = false
 
     private var def: CustomInstrumentDef? {
         engine.customInstruments.def(withId: defID)
     }
 
-    private var resolvedPath: String? {
-        if let path { return path }
-        return def?.entrypoint
+    private var requestedPath: String? {
+        path ?? def?.entrypoint
     }
 
-    private var file: CustomInstrumentFile? {
-        guard let resolvedPath else { return nil }
-        return engine.customInstruments.file(defID: defID, path: resolvedPath)
+    private var displayedFile: CustomInstrumentFile? {
+        guard let activePath else { return nil }
+        return engine.customInstruments.file(defID: defID, path: activePath)
     }
 
     var body: some View {
         Group {
-            if let def, let file {
+            if let def, let file = displayedFile {
                 content(def: def, file: file)
             } else if def == nil {
                 missingMessage("Custom instrument not found.")
             } else {
                 missingMessage("File not found.")
             }
+        }
+        .onAppear {
+            if activePath == nil {
+                activePath = requestedPath
+                if let file = displayedFile {
+                    syncFromFile(file)
+                }
+            }
+        }
+        .onChange(of: requestedPath) { _, newPath in
+            handleNavigationRequest(toPath: newPath)
         }
     }
 
@@ -62,12 +76,6 @@ struct CustomInstrumentEditorView: View {
             )
         }
         .onAppear {
-            syncFromFile(file)
-            isEditorFocused = true
-        }
-        .onChange(of: file.path) { oldPath, _ in
-            flushDraft(toPath: oldPath)
-            syncFromFile(file)
             isEditorFocused = true
         }
         .onChange(of: file.content) { _, newValue in
@@ -75,10 +83,50 @@ struct CustomInstrumentEditorView: View {
         }
         .onChange(of: draftContent) { _, _ in recomputeDirty() }
         .onDisappear { flushDraftIfNeeded() }
+        .unsavedChangesAlert(
+            isPresented: $showUnsavedAlert,
+            message: "You have unsaved changes to \u{201C}\(file.path)\u{201D}.",
+            onSave: {
+                saveDraft()
+                applyNavigation(toPath: pendingPath)
+                pendingPath = nil
+            },
+            onDiscard: {
+                applyNavigation(toPath: pendingPath)
+                pendingPath = nil
+            },
+            onCancel: {
+                revertSidebarToActive()
+                pendingPath = nil
+            }
+        )
+    }
+
+    private func handleNavigationRequest(toPath newPath: String?) {
+        guard newPath != activePath else { return }
+        if isDirty {
+            pendingPath = newPath
+            showUnsavedAlert = true
+        } else {
+            applyNavigation(toPath: newPath)
+        }
+    }
+
+    private func applyNavigation(toPath newPath: String?) {
+        activePath = newPath
+        if let file = displayedFile {
+            syncFromFile(file)
+        }
+        isEditorFocused = true
+    }
+
+    private func revertSidebarToActive() {
+        guard let activePath else { return }
+        selection = .customInstrumentFile(defID, activePath)
     }
 
     private func saveDraft() {
-        guard let file else { return }
+        guard let file = displayedFile else { return }
         let pathToSave = file.path
         let content = draftContent
         Task { @MainActor in
@@ -91,15 +139,11 @@ struct CustomInstrumentEditorView: View {
     }
 
     private func flushDraftIfNeeded() {
-        guard let file else { return }
-        flushDraft(toPath: file.path)
-    }
-
-    private func flushDraft(toPath path: String) {
-        guard isDirty else { return }
+        guard isDirty, let file = displayedFile else { return }
+        let pathToSave = file.path
         let content = draftContent
         Task { @MainActor in
-            await engine.writeCustomInstrumentFile(defID: defID, path: path, content: content)
+            await engine.writeCustomInstrumentFile(defID: defID, path: pathToSave, content: content)
         }
     }
 
@@ -109,7 +153,7 @@ struct CustomInstrumentEditorView: View {
     }
 
     private func recomputeDirty() {
-        guard let file else { return }
+        guard let file = displayedFile else { return }
         isDirty = draftContent != file.content
     }
 

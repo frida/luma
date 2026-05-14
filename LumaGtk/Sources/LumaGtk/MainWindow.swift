@@ -1272,6 +1272,9 @@ final class MainWindow: InstrumentUIHost {
                 file: file,
                 sourceEditor: sharedCustomInstrumentEditor
             )
+            pane.onRevertNavigation = { [weak self] revertedPath in
+                self?.select(.customInstrumentFile(defID, revertedPath))
+            }
             currentCustomInstrumentDefPane = pane
         }
         if pane.widget.parent != nil {
@@ -2079,12 +2082,11 @@ final class MainWindow: InstrumentUIHost {
         }
         isReconcilingSidebar = true
         select(.instrumentComponent(sessionID: sessionID, instrumentID: instrumentID, componentID: componentID))
-        currentInstrumentDetail?.selectComponent(id: componentID)
-        if let instrument = instrumentsBySession[sessionID]?.first(where: { $0.id == instrumentID }) {
-            reconcileInstrumentChildren(for: instrument)
-        }
         Task { @MainActor in
             await Task.yield()
+            if let instrument = instrumentsBySession[sessionID]?.first(where: { $0.id == instrumentID }) {
+                reconcileInstrumentChildren(for: instrument)
+            }
             isReconcilingSidebar = false
             restoreSidebarSelectionVisual()
         }
@@ -2471,7 +2473,9 @@ final class MainWindow: InstrumentUIHost {
 
     private func activeInstrumentID(in selection: SidebarSelection) -> UUID? {
         switch selection {
-        case .instrument(_, let iid), .instrumentComponent(_, _, let iid):
+        case .instrument(_, let iid):
+            return iid
+        case .instrumentComponent(_, let iid, _):
             return iid
         default:
             return nil

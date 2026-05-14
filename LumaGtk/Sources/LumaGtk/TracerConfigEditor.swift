@@ -63,24 +63,89 @@ final class TracerConfigEditor {
     }
 
     func update(config newConfig: TracerConfig) {
-        self.config = newConfig
-        if let id = selectedHookID, !newConfig.hooks.contains(where: { $0.id == id }) {
+        let structureChanged = config.hooks.map(\.id) != newConfig.hooks.map(\.id)
+        let selectedRemoved = selectedHookID.map { id in
+            !newConfig.hooks.contains(where: { $0.id == id })
+        } ?? false
+
+        config = newConfig
+
+        if selectedRemoved {
             selectedHookID = nil
+            rebuildContent()
+            return
         }
-        rebuildContent()
+
+        if structureChanged {
+            rebuildContent()
+            return
+        }
+
+        guard let id = selectedHookID,
+            let hook = newConfig.hooks.first(where: { $0.id == id }),
+            let pane = editorPane
+        else { return }
+        pane.refreshHookMetadata(hook)
     }
+
+    var onRevertNavigation: ((UUID) -> Void)?
 
     func selectHook(id: UUID) {
         guard config.hooks.contains(where: { $0.id == id }) else { return }
-        forceEmptyState = false
-        guard id != selectedHookID else { return }
-        selectedHookID = id
-        rebuildContent()
+        guard id != selectedHookID || forceEmptyState else { return }
+        requestNavigation(to: .hook(id))
     }
 
     func showConfigurationView() {
-        forceEmptyState = true
-        if selectedHookID != nil {
+        guard !forceEmptyState else { return }
+        requestNavigation(to: .configurationView)
+    }
+
+    private enum NavigationTarget {
+        case hook(UUID)
+        case configurationView
+    }
+    private var pendingNavigation: NavigationTarget?
+
+    private func requestNavigation(to target: NavigationTarget) {
+        guard let editorPane, editorPane.isDirty else {
+            applyNavigation(target)
+            return
+        }
+        pendingNavigation = target
+        UnsavedChangesDialog.present(
+            anchor: editorPane.widget,
+            message: "You have unsaved changes to this hook\u{2019}s script.",
+            onSave: { [weak self] in
+                self?.editorPane?.commit()
+                self?.applyPendingNavigation()
+            },
+            onDiscard: { [weak self] in
+                self?.applyPendingNavigation()
+            },
+            onCancel: { [weak self] in
+                guard let self else { return }
+                self.pendingNavigation = nil
+                if let oldID = self.selectedHookID {
+                    self.onRevertNavigation?(oldID)
+                }
+            }
+        )
+    }
+
+    private func applyPendingNavigation() {
+        guard let target = pendingNavigation else { return }
+        pendingNavigation = nil
+        applyNavigation(target)
+    }
+
+    private func applyNavigation(_ target: NavigationTarget) {
+        switch target {
+        case .hook(let id):
+            forceEmptyState = false
+            selectedHookID = id
+        case .configurationView:
+            forceEmptyState = true
             selectedHookID = nil
         }
         rebuildContent()
@@ -104,7 +169,6 @@ final class TracerConfigEditor {
         saveBar = nil
         emptyStateSearch = nil
         dismissAddPopover()
-        dismissUnsavedChangesDialog()
 
         if config.hooks.isEmpty || forceEmptyState {
             let search = TracerHookSearch(
@@ -158,107 +222,6 @@ final class TracerConfigEditor {
     private var selectedHook: TracerConfig.Hook? {
         guard let id = selectedHookID else { return nil }
         return config.hooks.first(where: { $0.id == id })
-    }
-
-    fileprivate func handleSelect(_ id: UUID?) {
-        guard id != selectedHookID else { return }
-
-        if let editorPane, editorPane.isDirty {
-            pendingSelectionID = id
-            showUnsavedChangesDialog()
-            return
-        }
-
-        selectedHookID = id
-        editorPane?.setHook(selectedHook)
-    }
-
-    private var pendingSelectionID: UUID?
-    private var unsavedChangesPopover: Popover?
-
-    private func showUnsavedChangesDialog() {
-        dismissUnsavedChangesDialog()
-
-        guard let editorPane else { return }
-
-        let popover = Popover()
-        popover.autohide = true
-
-        let content = Box(orientation: .vertical, spacing: 12)
-        content.marginStart = 16
-        content.marginEnd = 16
-        content.marginTop = 16
-        content.marginBottom = 16
-        content.setSizeRequest(width: 280, height: -1)
-
-        let title = Label(str: "Unsaved Changes")
-        title.add(cssClass: "title-4")
-        title.halign = .start
-        content.append(child: title)
-
-        let message = Label(str: "You have unsaved changes to this hook\u{2019}s script.")
-        message.wrap = true
-        message.halign = .start
-        message.add(cssClass: "dim-label")
-        content.append(child: message)
-
-        let buttons = Box(orientation: .horizontal, spacing: 8)
-        buttons.halign = .end
-
-        let cancelButton = Button(label: "Cancel")
-        cancelButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.pendingSelectionID = nil
-                self.dismissUnsavedChangesDialog()
-            }
-        }
-        buttons.append(child: cancelButton)
-
-        let discardButton = Button(label: "Discard")
-        discardButton.add(cssClass: "destructive-action")
-        discardButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.dismissUnsavedChangesDialog()
-                self.applyPendingSelection()
-            }
-        }
-        buttons.append(child: discardButton)
-
-        let saveButton = Button(label: "Save")
-        saveButton.add(cssClass: "suggested-action")
-        saveButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.editorPane?.commit()
-                self.dismissUnsavedChangesDialog()
-                self.applyPendingSelection()
-            }
-        }
-        buttons.append(child: saveButton)
-
-        content.append(child: buttons)
-        popover.set(child: content)
-        let anchor: WidgetProtocol = editorPane.saveButton ?? editorPane.widget
-        popover.set(parent: WidgetRef(anchor))
-        unsavedChangesPopover = popover
-        popover.popup()
-    }
-
-    private func dismissUnsavedChangesDialog() {
-        if let popover = unsavedChangesPopover {
-            popover.popdown()
-            popover.unparent()
-        }
-        unsavedChangesPopover = nil
-    }
-
-    private func applyPendingSelection() {
-        let id = pendingSelectionID
-        pendingSelectionID = nil
-        selectedHookID = id
-        editorPane?.setHook(selectedHook)
     }
 
     private func setHookState(id: UUID, state: TracerConfig.Hook.State) {
@@ -1030,6 +993,15 @@ final class EditorPane {
     func setHook(_ newHook: TracerConfig.Hook?) {
         self.hook = newHook
         applyHookToUI()
+    }
+
+    func refreshHookMetadata(_ newHook: TracerConfig.Hook) {
+        hook = newHook
+        titleLabel?.label = newHook.displayName.isEmpty ? "(unnamed)" : newHook.displayName
+        subtitleLabel?.label = newHook.addressAnchor.displayString
+        itracePill?.widget.visible = newHook.kind == .function
+        itracePill?.update(arming: newHook.itraceArming, captured: initialCaptured)
+        recomputeDirty()
     }
 
     private func applyHookToUI() {

@@ -128,21 +128,21 @@ struct TracerConfigView: View {
         } message: { hook in
             Text("Are you sure you want to delete \"\(hook.displayName)\"?")
         }
-        .alert("Unsaved Changes", isPresented: $showUnsavedChangesAlert) {
-            Button("Save") {
+        .unsavedChangesAlert(
+            isPresented: $showUnsavedChangesAlert,
+            message: "You have unsaved changes to this hook’s script.",
+            onSave: {
                 saveDraft()
                 applyPendingSelection()
-            }
-            Button("Discard Changes", role: .destructive) {
+            },
+            onDiscard: {
                 discardDraft()
                 applyPendingSelection()
-            }
-            Button("Cancel", role: .cancel) {
+            },
+            onCancel: {
                 pendingSelectionID = nil
             }
-        } message: {
-            Text("You have unsaved changes to this hook’s script.")
-        }
+        )
     }
 
     private var selectedHook: TracerConfig.Hook? {

@@ -19,7 +19,8 @@ final class TracerUIKind: InstrumentUIKind {
         TracerDetailUI(
             engine: engine,
             instrument: instrument,
-            sharedMonaco: sharedMonaco
+            sharedMonaco: sharedMonaco,
+            host: host
         )
     }
 
@@ -156,7 +157,8 @@ private final class TracerDetailUI: InstrumentDetailUI {
     init(
         engine: Engine,
         instrument: LumaCore.InstrumentInstance,
-        sharedMonaco: MonacoEditor
+        sharedMonaco: MonacoEditor,
+        host: InstrumentUIHost
     ) {
         self.engine = engine
         self.instrument = instrument
@@ -173,6 +175,15 @@ private final class TracerDetailUI: InstrumentDetailUI {
         )
         self.editor = editor
         widget = editor.widget
+        let sessionID = instrument.sessionID
+        let instrumentID = instrument.id
+        editor.onRevertNavigation = { [weak host] hookID in
+            host?.navigateToInstrumentComponent(
+                sessionID: sessionID,
+                instrumentID: instrumentID,
+                componentID: hookID
+            )
+        }
         box = self
     }
 

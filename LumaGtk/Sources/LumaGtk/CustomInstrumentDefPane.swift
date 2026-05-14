@@ -11,10 +11,14 @@ final class CustomInstrumentDefPane {
     private(set) var def: CustomInstrumentDef
     private(set) var file: CustomInstrumentFile
 
+    var onRevertNavigation: ((String) -> Void)?
+
     private weak var engine: Engine?
     private let sourceEditor: MonacoEditor
     private let saveBar: SaveBar
     private var draftContent: String
+    private var pendingDef: CustomInstrumentDef?
+    private var pendingFile: CustomInstrumentFile?
 
     init(engine: Engine, def: CustomInstrumentDef, file: CustomInstrumentFile, sourceEditor: MonacoEditor) {
         self.engine = engine
@@ -38,10 +42,18 @@ final class CustomInstrumentDefPane {
 
     func refresh(def: CustomInstrumentDef, file: CustomInstrumentFile) {
         let pathChanged = self.file.path != file.path
-        let storedContentChanged = self.file.content != file.content
-        if pathChanged {
-            flushDraftIfNeeded()
+        if pathChanged && isDirty() {
+            pendingDef = def
+            pendingFile = file
+            presentUnsavedChangesPrompt()
+            return
         }
+        applyRefresh(def: def, file: file)
+    }
+
+    private func applyRefresh(def: CustomInstrumentDef, file: CustomInstrumentFile) {
+        let pathChanged = self.file.path != file.path
+        let storedContentChanged = self.file.content != file.content
         self.def = def
         self.file = file
         let packages = (try? engine?.store.fetchPackagesState().packages) ?? []
@@ -51,6 +63,34 @@ final class CustomInstrumentDefPane {
             draftContent = file.content
             saveBar.setDirty(false)
         }
+    }
+
+    private func presentUnsavedChangesPrompt() {
+        let oldFilename = file.path
+        UnsavedChangesDialog.present(
+            anchor: widget,
+            message: "You have unsaved changes to \u{201C}\(oldFilename)\u{201D}.",
+            onSave: { [weak self] in
+                self?.commit()
+                self?.applyPendingRefresh()
+            },
+            onDiscard: { [weak self] in
+                self?.applyPendingRefresh()
+            },
+            onCancel: { [weak self] in
+                guard let self else { return }
+                self.pendingDef = nil
+                self.pendingFile = nil
+                self.onRevertNavigation?(oldFilename)
+            }
+        )
+    }
+
+    private func applyPendingRefresh() {
+        guard let def = pendingDef, let file = pendingFile else { return }
+        pendingDef = nil
+        pendingFile = nil
+        applyRefresh(def: def, file: file)
     }
 
     private func currentProfile(
