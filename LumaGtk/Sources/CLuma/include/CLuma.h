@@ -17,7 +17,6 @@ LumaMonacoView *luma_monaco_view_new(void);
 void *luma_monaco_view_widget(LumaMonacoView *view);
 
 void luma_monaco_view_load_uri(LumaMonacoView *view, const char *uri);
-void luma_monaco_view_set_overlay_visible(LumaMonacoView *view, bool visible);
 void luma_monaco_view_grab_focus(LumaMonacoView *view);
 void luma_monaco_view_evaluate(LumaMonacoView *view, const char *script_utf8);
 void luma_monaco_view_set_load_finished(LumaMonacoView *view,

@@ -3040,12 +3040,6 @@ final class MainWindow: InstrumentUIHost {
                 }
             }
         }
-        MonacoEditor.suspendOverlays()
-        dialog.onClosed { _ in
-            MainActor.assumeIsolated {
-                MonacoEditor.resumeOverlays()
-            }
-        }
         dialog.present(parent: window)
     }
 

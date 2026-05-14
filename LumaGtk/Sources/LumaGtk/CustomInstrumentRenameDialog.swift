@@ -69,10 +69,6 @@ final class CustomInstrumentRenameDialog {
 
     func present() {
         Self.retained[ObjectIdentifier(dialog)] = self
-        MonacoEditor.suspendOverlays()
-        dialog.onClosed { _ in
-            MainActor.assumeIsolated { MonacoEditor.resumeOverlays() }
-        }
         dialog.present(parent: parentWindow)
         Task { @MainActor in _ = nameEntry.grabFocus() }
     }

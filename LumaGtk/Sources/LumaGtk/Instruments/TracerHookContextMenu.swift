@@ -127,10 +127,6 @@ enum TracerHookContextMenu {
                 }
             }
         }
-        MonacoEditor.suspendOverlays()
-        dialog.onClosed { _ in
-            MainActor.assumeIsolated { MonacoEditor.resumeOverlays() }
-        }
         dialog.present(parent: WidgetRef(anchor))
     }
 
@@ -179,7 +175,6 @@ private final class ITraceConfigPopover {
         popover.position = .right
         popover.onClosed { _ in
             MainActor.assumeIsolated {
-                MonacoEditor.resumeOverlays()
                 ITraceConfigPopover.active = nil
             }
         }
@@ -202,7 +197,6 @@ private final class ITraceConfigPopover {
 
     func present(anchor: Widget) {
         ITraceConfigPopover.active = self
-        MonacoEditor.suspendOverlays()
         popover.set(parent: WidgetRef(anchor))
         popover.popup()
     }

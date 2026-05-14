@@ -121,10 +121,6 @@ private final class CustomInstrumentPathDialog {
 
     func present(parent: Gtk.Window) {
         Self.retained[ObjectIdentifier(dialog)] = self
-        MonacoEditor.suspendOverlays()
-        dialog.onClosed { _ in
-            MainActor.assumeIsolated { MonacoEditor.resumeOverlays() }
-        }
         dialog.present(parent: parent)
         Task { @MainActor in _ = pathEntry.grabFocus() }
     }

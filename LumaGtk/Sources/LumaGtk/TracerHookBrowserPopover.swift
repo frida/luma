@@ -27,13 +27,11 @@ final class TracerHookBrowserPopover {
 
     func presentAnchored(to anchor: WidgetProtocol) {
         TracerHookBrowserPopover.active = self
-        MonacoEditor.suspendOverlays()
         let popover = Popover()
         popover.autohide = true
         popover.position = .right
         popover.onClosed { _ in
             MainActor.assumeIsolated {
-                MonacoEditor.resumeOverlays()
                 TracerHookBrowserPopover.active = nil
             }
         }

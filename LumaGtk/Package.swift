@@ -80,12 +80,12 @@ let lumaExecutableIconResource = compileWindowsExecutableIcon()
 #if os(macOS)
 let cLumaSources: [String] = ["shim_gtk.c", "welcome_backdrop.c", "svg_paintable.c", "shim_webkit.m"]
 let cLumaCSettings: [CSetting] = [
-    .unsafeFlags(pkgConfigFlags(["gtk4", "epoxy", "librsvg-2.0"])),
+    .unsafeFlags(pkgConfigFlags(["gtk4", "libadwaita-1", "epoxy", "librsvg-2.0"])),
 ]
 let cLumaCxxSettings: [CXXSetting] = []
 let cLumaLinkerSettings: [LinkerSetting] = [
     .linkedFramework("WebKit"),
-    .unsafeFlags(pkgConfigFlags(["epoxy", "librsvg-2.0"], libs: true)),
+    .unsafeFlags(pkgConfigFlags(["libadwaita-1", "epoxy", "librsvg-2.0"], libs: true)),
 ]
 let lumaGtkLinkerSettings: [LinkerSetting] = []
 #elseif os(Windows)

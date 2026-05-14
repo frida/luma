@@ -52,12 +52,6 @@ final class CustomInstrumentWidgetsDialog {
 
     func present(parent: Gtk.Window) {
         Self.retain(self, dialog: dialog)
-        MonacoEditor.suspendOverlays()
-        dialog.onClosed { _ in
-            MainActor.assumeIsolated {
-                MonacoEditor.resumeOverlays()
-            }
-        }
         dialog.present(parent: parent)
     }
 
