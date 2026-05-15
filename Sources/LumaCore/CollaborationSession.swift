@@ -219,10 +219,28 @@ public final class CollaborationSession {
         public static func fromJSON(_ obj: [String: Any], localUser: UserInfo) -> ChatMessage? {
             guard let text = obj["text"] as? String,
                 let senderObj = obj["user"] as? [String: Any],
-                let sender = UserInfo.fromJSON(senderObj)
+                let sender = UserInfo.fromJSON(senderObj),
+                let timestampString = obj["timestamp"] as? String,
+                let timestamp = parseTimestamp(timestampString)
             else { return nil }
-            return ChatMessage(text: text, sender: sender, isLocal: sender.id == localUser.id)
+            return ChatMessage(text: text, sender: sender, isLocal: sender.id == localUser.id, timestamp: timestamp)
         }
+
+        private static func parseTimestamp(_ s: String) -> Date? {
+            timestampWithFractionalSeconds.date(from: s) ?? timestampWithoutFractionalSeconds.date(from: s)
+        }
+
+        private nonisolated(unsafe) static let timestampWithFractionalSeconds: ISO8601DateFormatter = {
+            let f = ISO8601DateFormatter()
+            f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return f
+        }()
+
+        private nonisolated(unsafe) static let timestampWithoutFractionalSeconds: ISO8601DateFormatter = {
+            let f = ISO8601DateFormatter()
+            f.formatOptions = [.withInternetDateTime]
+            return f
+        }()
     }
 
     private let deviceManager: DeviceManager
