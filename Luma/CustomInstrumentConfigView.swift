@@ -7,6 +7,8 @@ struct CustomInstrumentConfigView: View {
     let engine: Engine
     @Binding var selection: SidebarItemID?
 
+    @Environment(\.instrumentInstance) private var instrumentInstance
+
     private var def: CustomInstrumentDef? {
         engine.customInstruments.def(withId: defID)
     }
@@ -55,14 +57,16 @@ struct CustomInstrumentConfigView: View {
                 Text("Custom Instrument").font(.headline)
             }
             Spacer()
-            Button("Edit Source\u{2026}") {
-                if let entrypoint = def?.entrypoint {
-                    selection = .customInstrumentFile(defID, entrypoint)
-                } else {
-                    selection = .customInstrumentDef(defID)
+            if instrumentInstance != nil {
+                Button("Edit Source\u{2026}") {
+                    if let entrypoint = def?.entrypoint {
+                        selection = .customInstrumentFile(defID, entrypoint)
+                    } else {
+                        selection = .customInstrumentDef(defID)
+                    }
                 }
+                .accessibilityIdentifier("customInstrument.editSource")
             }
-            .accessibilityIdentifier("customInstrument.editSource")
         }
     }
 
