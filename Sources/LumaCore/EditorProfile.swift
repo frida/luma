@@ -1,9 +1,29 @@
 import Foundation
 
-/// Editor color theme.
-public enum EditorTheme: String, Sendable, Codable {
-    case light
-    case dark
+/// Editor color theme identified by Monaco theme name. Use the bundled
+/// static constants for built-in or first-party themes; pass a custom
+/// name (with a matching `EditorCustomTheme` in the profile's
+/// `customThemes`) to use third-party themes.
+public struct EditorTheme: Sendable, Equatable, Codable {
+    public let name: String
+
+    public init(_ name: String) {
+        self.name = name
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.name = try decoder.singleValueContainer().decode(String.self)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(name)
+    }
+
+    public static let light = EditorTheme("vs")
+    public static let dark = EditorTheme("vs-dark")
+    public static let gitHubLight = EditorTheme("github-light")
+    public static let gitHubDark = EditorTheme("github-dark")
 }
 
 /// TypeScript `target` compiler option. Raw values match Monaco's enum.
@@ -123,6 +143,7 @@ public struct EditorProfile: Sendable, Equatable, Codable {
     public var tsExtraLibs: [EditorExtraLib]
     public var jsCompilerOptions: EditorCompilerOptions
     public var jsExtraLibs: [EditorExtraLib]
+    public var customThemes: [EditorCustomTheme]
 
     public init(
         languageId: String = "javascript",
@@ -135,7 +156,8 @@ public struct EditorProfile: Sendable, Equatable, Codable {
         tsCompilerOptions: EditorCompilerOptions = .init(),
         tsExtraLibs: [EditorExtraLib] = [],
         jsCompilerOptions: EditorCompilerOptions = .init(),
-        jsExtraLibs: [EditorExtraLib] = []
+        jsExtraLibs: [EditorExtraLib] = [],
+        customThemes: [EditorCustomTheme] = []
     ) {
         self.languageId = languageId
         self.projectFiles = projectFiles
@@ -148,7 +170,209 @@ public struct EditorProfile: Sendable, Equatable, Codable {
         self.tsExtraLibs = tsExtraLibs
         self.jsCompilerOptions = jsCompilerOptions
         self.jsExtraLibs = jsExtraLibs
+        self.customThemes = customThemes
     }
+}
+
+public struct EditorCustomTheme: Sendable, Equatable, Codable {
+    public var name: String
+    public var base: EditorBaseTheme
+    public var inherit: Bool
+    public var rules: [EditorTokenRule]
+    public var colors: [String: String]
+
+    public init(
+        name: String,
+        base: EditorBaseTheme,
+        inherit: Bool = true,
+        rules: [EditorTokenRule] = [],
+        colors: [String: String] = [:]
+    ) {
+        self.name = name
+        self.base = base
+        self.inherit = inherit
+        self.rules = rules
+        self.colors = colors
+    }
+}
+
+public enum EditorBaseTheme: String, Sendable, Equatable, Codable {
+    case vs
+    case vsDark = "vs-dark"
+    case hcLight = "hc-light"
+    case hcBlack = "hc-black"
+}
+
+public struct EditorTokenRule: Sendable, Equatable, Codable {
+    public var token: String
+    public var foreground: String?
+    public var background: String?
+    public var fontStyle: String?
+
+    public init(token: String, foreground: String? = nil, background: String? = nil, fontStyle: String? = nil) {
+        self.token = token
+        self.foreground = foreground
+        self.background = background
+        self.fontStyle = fontStyle
+    }
+}
+
+extension EditorCustomTheme {
+    /// GitHub Light Default — palette mirrored from GitHub's VS Code theme.
+    /// Editor chrome colors match exactly; syntax token coverage is
+    /// approximate because Monaco's tokenizer is coarser than TextMate's.
+    public static let gitHubLight = EditorCustomTheme(
+        name: "github-light",
+        base: .vs,
+        rules: [
+            EditorTokenRule(token: "", foreground: "1F2328", background: "FFFFFF"),
+            EditorTokenRule(token: "comment", foreground: "59636E", fontStyle: "italic"),
+            EditorTokenRule(token: "string", foreground: "0A3069"),
+            EditorTokenRule(token: "string.escape", foreground: "0550AE"),
+            EditorTokenRule(token: "regexp", foreground: "0A3069"),
+            EditorTokenRule(token: "number", foreground: "0550AE"),
+            EditorTokenRule(token: "number.hex", foreground: "0550AE"),
+            EditorTokenRule(token: "number.float", foreground: "0550AE"),
+            EditorTokenRule(token: "keyword", foreground: "CF222E"),
+            EditorTokenRule(token: "keyword.flow", foreground: "CF222E"),
+            EditorTokenRule(token: "keyword.json", foreground: "CF222E"),
+            EditorTokenRule(token: "operator", foreground: "0550AE"),
+            EditorTokenRule(token: "delimiter", foreground: "1F2328"),
+            EditorTokenRule(token: "delimiter.bracket", foreground: "1F2328"),
+            EditorTokenRule(token: "delimiter.parenthesis", foreground: "1F2328"),
+            EditorTokenRule(token: "delimiter.square", foreground: "1F2328"),
+            EditorTokenRule(token: "identifier", foreground: "1F2328"),
+            EditorTokenRule(token: "type", foreground: "953800"),
+            EditorTokenRule(token: "type.identifier", foreground: "953800"),
+            EditorTokenRule(token: "class", foreground: "953800"),
+            EditorTokenRule(token: "interface", foreground: "953800"),
+            EditorTokenRule(token: "enum", foreground: "953800"),
+            EditorTokenRule(token: "function", foreground: "8250DF"),
+            EditorTokenRule(token: "predefined", foreground: "0550AE"),
+            EditorTokenRule(token: "variable.predefined", foreground: "0550AE"),
+            EditorTokenRule(token: "constant", foreground: "0550AE"),
+            EditorTokenRule(token: "tag", foreground: "116329"),
+            EditorTokenRule(token: "attribute.name", foreground: "0550AE"),
+            EditorTokenRule(token: "attribute.value", foreground: "0A3069"),
+            EditorTokenRule(token: "metatag", foreground: "116329"),
+            EditorTokenRule(token: "metatag.content.html", foreground: "0A3069"),
+            EditorTokenRule(token: "annotation", foreground: "953800"),
+            EditorTokenRule(token: "namespace", foreground: "953800"),
+            EditorTokenRule(token: "typeParameter", foreground: "953800"),
+            EditorTokenRule(token: "parameter", foreground: "1F2328"),
+            EditorTokenRule(token: "property", foreground: "0550AE"),
+            EditorTokenRule(token: "variable", foreground: "1F2328"),
+            EditorTokenRule(token: "variable.defaultLibrary", foreground: "0550AE"),
+            EditorTokenRule(token: "enumMember", foreground: "0550AE"),
+            EditorTokenRule(token: "member", foreground: "8250DF"),
+            EditorTokenRule(token: "function.defaultLibrary", foreground: "8250DF"),
+        ],
+        colors: [
+            "editor.background": "#FFFFFF",
+            "editor.foreground": "#1F2328",
+            "editorLineNumber.foreground": "#8C959F",
+            "editorLineNumber.activeForeground": "#1F2328",
+            "editorCursor.foreground": "#0969DA",
+            "editor.selectionBackground": "#0969DA33",
+            "editor.inactiveSelectionBackground": "#1F23281A",
+            "editor.lineHighlightBackground": "#EAEEF280",
+            "editor.lineHighlightBorder": "#00000000",
+            "editorIndentGuide.background1": "#D0D7DE80",
+            "editorIndentGuide.activeBackground1": "#8C959F",
+            "editorWhitespace.foreground": "#AFB8C1",
+            "editorBracketMatch.background": "#0969DA1F",
+            "editorBracketMatch.border": "#0969DA80",
+            "editorGutter.background": "#FFFFFF",
+            "editorWidget.background": "#FFFFFF",
+            "editorWidget.border": "#D0D7DE",
+            "editorSuggestWidget.background": "#FFFFFF",
+            "editorSuggestWidget.border": "#D0D7DE",
+            "editorSuggestWidget.foreground": "#1F2328",
+            "editorSuggestWidget.selectedBackground": "#0969DA1F",
+            "editorHoverWidget.background": "#FFFFFF",
+            "editorHoverWidget.border": "#D0D7DE",
+            "scrollbarSlider.background": "#8C959F40",
+            "scrollbarSlider.hoverBackground": "#8C959F66",
+            "scrollbarSlider.activeBackground": "#8C959F99",
+        ]
+    )
+
+    /// GitHub Dark Default — palette mirrored from GitHub's VS Code theme.
+    public static let gitHubDark = EditorCustomTheme(
+        name: "github-dark",
+        base: .vsDark,
+        rules: [
+            EditorTokenRule(token: "", foreground: "E6EDF3", background: "0D1117"),
+            EditorTokenRule(token: "comment", foreground: "8B949E", fontStyle: "italic"),
+            EditorTokenRule(token: "string", foreground: "A5D6FF"),
+            EditorTokenRule(token: "string.escape", foreground: "79C0FF"),
+            EditorTokenRule(token: "regexp", foreground: "A5D6FF"),
+            EditorTokenRule(token: "number", foreground: "79C0FF"),
+            EditorTokenRule(token: "number.hex", foreground: "79C0FF"),
+            EditorTokenRule(token: "number.float", foreground: "79C0FF"),
+            EditorTokenRule(token: "keyword", foreground: "FF7B72"),
+            EditorTokenRule(token: "keyword.flow", foreground: "FF7B72"),
+            EditorTokenRule(token: "keyword.json", foreground: "FF7B72"),
+            EditorTokenRule(token: "operator", foreground: "79C0FF"),
+            EditorTokenRule(token: "delimiter", foreground: "E6EDF3"),
+            EditorTokenRule(token: "delimiter.bracket", foreground: "E6EDF3"),
+            EditorTokenRule(token: "delimiter.parenthesis", foreground: "E6EDF3"),
+            EditorTokenRule(token: "delimiter.square", foreground: "E6EDF3"),
+            EditorTokenRule(token: "identifier", foreground: "E6EDF3"),
+            EditorTokenRule(token: "type", foreground: "FFA657"),
+            EditorTokenRule(token: "type.identifier", foreground: "FFA657"),
+            EditorTokenRule(token: "class", foreground: "FFA657"),
+            EditorTokenRule(token: "interface", foreground: "FFA657"),
+            EditorTokenRule(token: "enum", foreground: "FFA657"),
+            EditorTokenRule(token: "function", foreground: "D2A8FF"),
+            EditorTokenRule(token: "predefined", foreground: "79C0FF"),
+            EditorTokenRule(token: "variable.predefined", foreground: "79C0FF"),
+            EditorTokenRule(token: "constant", foreground: "79C0FF"),
+            EditorTokenRule(token: "tag", foreground: "7EE787"),
+            EditorTokenRule(token: "attribute.name", foreground: "79C0FF"),
+            EditorTokenRule(token: "attribute.value", foreground: "A5D6FF"),
+            EditorTokenRule(token: "metatag", foreground: "7EE787"),
+            EditorTokenRule(token: "metatag.content.html", foreground: "A5D6FF"),
+            EditorTokenRule(token: "annotation", foreground: "FFA657"),
+            EditorTokenRule(token: "namespace", foreground: "FFA657"),
+            EditorTokenRule(token: "typeParameter", foreground: "FFA657"),
+            EditorTokenRule(token: "parameter", foreground: "E6EDF3"),
+            EditorTokenRule(token: "property", foreground: "79C0FF"),
+            EditorTokenRule(token: "variable", foreground: "E6EDF3"),
+            EditorTokenRule(token: "variable.defaultLibrary", foreground: "79C0FF"),
+            EditorTokenRule(token: "enumMember", foreground: "79C0FF"),
+            EditorTokenRule(token: "member", foreground: "D2A8FF"),
+            EditorTokenRule(token: "function.defaultLibrary", foreground: "D2A8FF"),
+        ],
+        colors: [
+            "editor.background": "#0D1117",
+            "editor.foreground": "#E6EDF3",
+            "editorLineNumber.foreground": "#6E7681",
+            "editorLineNumber.activeForeground": "#E6EDF3",
+            "editorCursor.foreground": "#58A6FF",
+            "editor.selectionBackground": "#388BFD66",
+            "editor.inactiveSelectionBackground": "#388BFD33",
+            "editor.lineHighlightBackground": "#6E768133",
+            "editor.lineHighlightBorder": "#00000000",
+            "editorIndentGuide.background1": "#21262D",
+            "editorIndentGuide.activeBackground1": "#6E7681",
+            "editorWhitespace.foreground": "#484F58",
+            "editorBracketMatch.background": "#3FB95040",
+            "editorBracketMatch.border": "#3FB950",
+            "editorGutter.background": "#0D1117",
+            "editorWidget.background": "#161B22",
+            "editorWidget.border": "#30363D",
+            "editorSuggestWidget.background": "#161B22",
+            "editorSuggestWidget.border": "#30363D",
+            "editorSuggestWidget.foreground": "#E6EDF3",
+            "editorSuggestWidget.selectedBackground": "#388BFD33",
+            "editorHoverWidget.background": "#161B22",
+            "editorHoverWidget.border": "#30363D",
+            "scrollbarSlider.background": "#6E768140",
+            "scrollbarSlider.hoverBackground": "#6E768166",
+            "scrollbarSlider.activeBackground": "#6E768199",
+        ]
+    )
 }
 
 // MARK: - Frida defaults and factory methods
@@ -176,14 +400,15 @@ extension EditorProfile {
     /// global package alias typings.
     public static func fridaTracerHook(
         packages: [InstalledPackage],
-        theme: EditorTheme = .dark,
+        theme: EditorTheme = .gitHubDark,
         fontSize: Int = 13
     ) -> EditorProfile {
         var profile = EditorProfile(
             languageId: "typescript",
             theme: theme,
             fontSize: fontSize,
-            tsCompilerOptions: fridaCompilerOptions
+            tsCompilerOptions: fridaCompilerOptions,
+            customThemes: [.gitHubLight, .gitHubDark]
         )
         if let gum = fridaGumLib {
             profile.tsExtraLibs.append(gum)
@@ -201,7 +426,7 @@ extension EditorProfile {
     /// and the gum typings.
     public static func fridaCodeShare(
         readOnly: Bool = false,
-        theme: EditorTheme = .dark,
+        theme: EditorTheme = .gitHubDark,
         fontSize: Int = 13
     ) -> EditorProfile {
         var profile = EditorProfile(
@@ -209,7 +434,8 @@ extension EditorProfile {
             theme: theme,
             fontSize: fontSize,
             readOnly: readOnly,
-            jsCompilerOptions: fridaCompilerOptions
+            jsCompilerOptions: fridaCompilerOptions,
+            customThemes: [.gitHubLight, .gitHubDark]
         )
         if let gum = fridaGumLib {
             profile.jsExtraLibs.append(gum)
@@ -226,7 +452,7 @@ extension EditorProfile {
         def: CustomInstrumentDef? = nil,
         files: [CustomInstrumentFile] = [],
         activePath: String? = nil,
-        theme: EditorTheme = .dark,
+        theme: EditorTheme = .gitHubDark,
         fontSize: Int = 13
     ) -> EditorProfile {
         var profile = EditorProfile(
@@ -240,7 +466,8 @@ extension EditorProfile {
             activePath: activePath,
             theme: theme,
             fontSize: fontSize,
-            tsCompilerOptions: fridaCompilerOptions
+            tsCompilerOptions: fridaCompilerOptions,
+            customThemes: [.gitHubLight, .gitHubDark]
         )
         if let gum = fridaGumLib {
             profile.tsExtraLibs.append(gum)
