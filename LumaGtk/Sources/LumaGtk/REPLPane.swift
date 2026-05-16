@@ -1,8 +1,4 @@
-import CGraphene
-import CGtk
 import Foundation
-import Gdk
-import struct Graphene.PointRef
 import Gtk
 import LumaCore
 
@@ -18,28 +14,12 @@ final class REPLPane {
     private var lastBannerError: String?
     private var lastBannerGatingActive: Bool?
     private var lastBannerArmed: Bool?
-    private let contentSlot: Box
-    private let cellsBox: Box
-    private let cellsScroll: ScrolledWindow
-    private let emptyState: Box
-    private let inputEntry: Entry
-    private let runButton: Button
+    private let console: ConsoleView
     private let timeFormatter: DateFormatter
     private weak var owner: MainWindow?
 
     private var cells: [LumaCore.REPLCell] = []
     private var rowKeepers: [Any] = []
-    private var historyCursor: Int = 0
-    private var draftBeforeHistory: String = ""
-    private var completionTask: Task<Void, Never>?
-    private var completionDebounceTask: Task<Void, Never>?
-    private var completionGeneration: UInt = 0
-    private var suppressingChanged = false
-    private var completionPopover: Popover?
-    private var completionList: ListBox?
-    private var completionScroll: ScrolledWindow?
-    private var completionItems: [String] = []
-    private var completionBaseCode: String = ""
 
     init(engine: Engine, sessionID: UUID, owner: MainWindow? = nil) {
         self.engine = engine
@@ -54,95 +34,29 @@ final class REPLPane {
         bannerSlot.hexpand = true
         widget.append(child: bannerSlot)
 
-        cellsBox = Box(orientation: .vertical, spacing: 4)
-        cellsBox.marginStart = 16
-        cellsBox.marginEnd = 16
-        cellsBox.marginTop = 12
-        cellsBox.marginBottom = 12
-        cellsBox.hexpand = true
-        cellsBox.vexpand = true
-        cellsBox.valign = .end
-
-        cellsScroll = ScrolledWindow()
-        cellsScroll.hexpand = true
-        cellsScroll.vexpand = true
-        cellsScroll.add(cssClass: "view")
-        cellsScroll.set(child: cellsBox)
-
-        emptyState = REPLPane.makeEmptyState()
-
-        contentSlot = Box(orientation: .vertical, spacing: 0)
-        contentSlot.hexpand = true
-        contentSlot.vexpand = true
-        widget.append(child: contentSlot)
-
-        widget.append(child: Separator(orientation: .horizontal))
-
-        let inputRow = Box(orientation: .horizontal, spacing: 8)
-        inputRow.marginStart = 12
-        inputRow.marginEnd = 12
-        inputRow.marginTop = 6
-        inputRow.marginBottom = 6
-
-        let prompt = Label(str: "›")
-        prompt.add(cssClass: "monospace")
-        prompt.add(cssClass: "dim-label")
-        inputRow.append(child: prompt)
-
-        inputEntry = Entry()
-        inputEntry.hexpand = true
-        inputEntry.placeholderText = "Enter JavaScript\u{2026}"
-        inputEntry.add(cssClass: "monospace")
-        inputRow.append(child: inputEntry)
-
-        runButton = Button(label: "Run")
-        runButton.add(cssClass: "suggested-action")
-        inputRow.append(child: runButton)
-
-        widget.append(child: inputRow)
+        console = ConsoleView(
+            style: ConsoleView.Style(
+                promptGlyph: "\u{203A}",
+                placeholder: "Enter JavaScript\u{2026}",
+                runButtonLabel: "Run"
+            ),
+            emptyState: REPLPane.makeEmptyState()
+        )
+        widget.append(child: console.widget)
 
         timeFormatter = DateFormatter()
         timeFormatter.dateFormat = "HH:mm:ss"
 
-        inputEntry.onActivate { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.submit()
-            }
+        console.onSubmit = { [weak self] code in self?.submit(code: code) }
+        console.onComplete = { [weak self] code, cursor in
+            guard let node = self?.engine?.node(forSessionID: self?.sessionID ?? UUID()) else { return [] }
+            return await node.completeInREPL(code: code, cursor: cursor)
         }
-        inputEntry.onChanged { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, !self.suppressingChanged else { return }
-                self.scheduleCompletionRequest()
-            }
+        console.onBackgroundContextMenu = { [weak self] anchor, x, y in
+            self?.presentScrollAreaContextMenu(at: anchor, x: x, y: y)
         }
-        runButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.submit()
-            }
-        }
-
-        let keyController = EventControllerKey()
-        keyController.propagationPhase = GTK_PHASE_CAPTURE
-        keyController.onKeyPressed { [weak self] _, keyval, _, _ in
-            return MainActor.assumeIsolated {
-                guard let self else { return false }
-                return self.handleKeyPress(keyval: keyval)
-            }
-        }
-        inputEntry.install(controller: keyController)
-
-        let scrollGesture = GestureClick()
-        scrollGesture.set(button: 3)
-        scrollGesture.onPressed { [weak self] _, _, x, y in
-            MainActor.assumeIsolated {
-                guard let self, !self.cells.isEmpty else { return }
-                self.presentScrollAreaContextMenu(at: self.cellsScroll, x: x, y: y)
-            }
-        }
-        cellsScroll.install(controller: scrollGesture)
 
         loadCells()
-        refresh()
         applySessionState()
     }
 
@@ -153,18 +67,32 @@ final class REPLPane {
         let localIsDriver = engine.localUserIsDriver(ofSessionID: sessionID)
         let canType = isAttached && localIsDriver
 
-        inputEntry.sensitive = canType
-        runButton.sensitive = canType
+        let placeholder: String
         if let driver = engine.driver(forSessionID: sessionID), !localIsDriver {
-            inputEntry.placeholderText = "Driving: @\(driver.id)"
+            placeholder = "Driving: @\(driver.id)"
         } else if isAttached {
-            inputEntry.placeholderText = "Enter JavaScript\u{2026}"
+            placeholder = "Enter JavaScript\u{2026}"
         } else if let session {
-            inputEntry.placeholderText = inactiveMessage(for: session)
+            placeholder = inactiveMessage(for: session)
         } else {
-            inputEntry.placeholderText = "Session not attached."
+            placeholder = "Session not attached."
         }
+        console.setInputEnabled(canType, placeholder: placeholder)
 
+        updateBanner(for: session, engine: engine)
+    }
+
+    func focusInput() {
+        console.focusInput()
+    }
+
+    func appendCell(_ cell: LumaCore.REPLCell) {
+        guard cell.sessionID == sessionID else { return }
+        cells.append(cell)
+        console.appendEntry(makeRow(for: cell))
+    }
+
+    private func updateBanner(for session: LumaCore.ProcessSession?, engine: Engine) {
         let wantsBanner = session.map { SessionDetachedBanner.shouldShow(for: $0) } ?? false
         let phase = session?.phase
         let error = session?.lastError
@@ -183,32 +111,31 @@ final class REPLPane {
         lastBannerArmed = armed
         lastBannerGatingActive = gatingActive
 
-        if bannerDirty {
-            if let rootPtr = widget.root?.ptr {
-                WindowRef(raw: rootPtr).focus = nil
-            }
-            if let existing = currentBanner {
-                bannerSlot.remove(child: existing)
-                currentBanner = nil
-            }
-            if let session, wantsBanner {
-                let gatingActive = engine.isGatingActive(forDeviceID: session.deviceID)
-                let banner = SessionDetachedBanner.make(
-                    for: session,
-                    gatingActive: gatingActive,
-                    onReattach: { [weak self] in self?.owner?.reestablishSession(id: session.id) },
-                    onDisarm: { [weak engine] in
-                        Task { @MainActor in await engine?.disarmSession(id: session.id) }
-                    },
-                    onArm: { [weak self] in self?.owner?.presentArmDialog(session: session) },
-                    onResumeGating: { [weak engine] in
-                        Task { @MainActor in await engine?.resumeGating(forSessionID: session.id) }
-                    }
-                )
-                bannerSlot.append(child: banner)
-                currentBanner = banner
-            }
+        guard bannerDirty else { return }
+
+        if let rootPtr = widget.root?.ptr {
+            WindowRef(raw: rootPtr).focus = nil
         }
+        if let existing = currentBanner {
+            bannerSlot.remove(child: existing)
+            currentBanner = nil
+        }
+        guard let session, wantsBanner else { return }
+
+        let banner = SessionDetachedBanner.make(
+            for: session,
+            gatingActive: engine.isGatingActive(forDeviceID: session.deviceID),
+            onReattach: { [weak self] in self?.owner?.reestablishSession(id: session.id) },
+            onDisarm: { [weak engine] in
+                Task { @MainActor in await engine?.disarmSession(id: session.id) }
+            },
+            onArm: { [weak self] in self?.owner?.presentArmDialog(session: session) },
+            onResumeGating: { [weak engine] in
+                Task { @MainActor in await engine?.resumeGating(forSessionID: session.id) }
+            }
+        )
+        bannerSlot.append(child: banner)
+        currentBanner = banner
     }
 
     private func inactiveMessage(for session: LumaCore.ProcessSession) -> String {
@@ -227,30 +154,24 @@ final class REPLPane {
     private func loadCells() {
         guard let engine else { return }
         cells = (try? engine.store.fetchREPLCells(sessionID: sessionID)) ?? []
-        historyCursor = orderedHistory.count
+        console.clearEntries()
+        rowKeepers.removeAll()
+        let sorted = cells.sorted(by: { $0.timestamp < $1.timestamp })
+        for cell in sorted {
+            console.appendEntry(makeRow(for: cell))
+        }
+        console.setHistory(sorted.filter { !$0.isSessionBoundary }.map { $0.code })
     }
 
-    private var orderedHistory: [LumaCore.REPLCell] {
-        cells
-            .filter { !$0.isSessionBoundary }
-            .sorted { $0.timestamp < $1.timestamp }
-    }
-
-    private func submit() {
-        let raw = inputEntry.text ?? ""
-        let code = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !code.isEmpty, let engine else { return }
-        inputEntry.text = ""
-        historyCursor = orderedHistory.count + 1
-        draftBeforeHistory = ""
-
+    private func submit(code: String) {
+        guard let engine else { return }
         if !engine.localUserHosts(sessionID) {
             let cellID = UUID()
             let placeholder = LumaCore.REPLCell(
                 id: cellID,
                 sessionID: sessionID,
                 code: code,
-                result: .text("Running…"),
+                result: .text("Running\u{2026}"),
                 timestamp: Date()
             )
             try? engine.store.save(placeholder)
@@ -262,361 +183,6 @@ final class REPLPane {
         } else if let node = engine.node(forSessionID: sessionID) {
             Task { @MainActor in
                 await node.evalInREPL(code)
-            }
-        }
-    }
-
-    // MARK: - History + completion
-
-    private func handleKeyPress(keyval: UInt) -> Bool {
-        let key = Int32(keyval)
-        if completionPopover != nil {
-            if key == Gdk.keyEscape {
-                dismissCompletionPopover()
-                return true
-            }
-            if key == Gdk.keyUp {
-                moveCompletionSelection(delta: -1)
-                return true
-            }
-            if key == Gdk.keyDown {
-                moveCompletionSelection(delta: 1)
-                return true
-            }
-            if key == Gdk.keyTab || key == Gdk.keyISOLeftTab
-                || key == Gdk.keyReturn || key == Gdk.keyKPEnter || key == Gdk.keyISOEnter
-            {
-                acceptSelectedCompletion()
-                return true
-            }
-        }
-        if key == Gdk.keyReturn || key == Gdk.keyKPEnter || key == Gdk.keyISOEnter {
-            submit()
-            return true
-        }
-        if key == Gdk.keyUp {
-            historyPrevious()
-            return true
-        }
-        if key == Gdk.keyDown {
-            historyNext()
-            return true
-        }
-        if key == Gdk.keyTab || key == Gdk.keyISOLeftTab {
-            requestCompletion()
-            return true
-        }
-        return false
-    }
-
-    private func historyPrevious() {
-        let history = orderedHistory
-        guard !history.isEmpty else { return }
-        if historyCursor == history.count {
-            draftBeforeHistory = inputEntry.text ?? ""
-        }
-        if historyCursor > 0 {
-            historyCursor -= 1
-        }
-        replaceInput(with: history[historyCursor].code)
-    }
-
-    private func historyNext() {
-        let history = orderedHistory
-        guard !history.isEmpty else { return }
-        if historyCursor < history.count - 1 {
-            historyCursor += 1
-            replaceInput(with: history[historyCursor].code)
-        } else {
-            historyCursor = history.count
-            replaceInput(with: draftBeforeHistory)
-            draftBeforeHistory = ""
-        }
-    }
-
-    private func replaceInput(with text: String) {
-        suppressingChanged = true
-        defer { suppressingChanged = false }
-        inputEntry.text = text
-        inputEntry.position = -1
-        inputEntry.selectRegion(startPos: -1, endPos: -1)
-    }
-
-    private func scheduleCompletionRequest() {
-        completionDebounceTask?.cancel()
-        let text = inputEntry.text ?? ""
-        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            completionTask?.cancel()
-            dismissCompletionPopover()
-            return
-        }
-        let gen = completionGeneration
-        completionDebounceTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 200_000_000)
-            guard !Task.isCancelled, self?.completionGeneration == gen else { return }
-            self?.requestCompletion(showPopoverOnly: true)
-        }
-    }
-
-    private func requestCompletion(showPopoverOnly: Bool = false) {
-        guard let node = engine?.node(forSessionID: sessionID) else { return }
-        let code = inputEntry.text ?? ""
-        let cursor = code.count
-        completionTask?.cancel()
-        let gen = completionGeneration
-        completionTask = Task { @MainActor in
-            let suggestions = await node.completeInREPL(code: code, cursor: cursor)
-            guard !Task.isCancelled, self.completionGeneration == gen, (inputEntry.text ?? "") == code else { return }
-            guard !suggestions.isEmpty else {
-                self.dismissCompletionPopover()
-                return
-            }
-            self.showCompletionPopover(suggestions: suggestions)
-        }
-    }
-
-    private func applyCompletion(to code: String, suggestion: String) {
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._$"))
-        let scalars = Array(code.unicodeScalars)
-        var start = scalars.count
-        while start > 0, allowed.contains(scalars[start - 1]) {
-            start -= 1
-        }
-        let token = String(String.UnicodeScalarView(scalars[start..<scalars.count]))
-        let before = String(String.UnicodeScalarView(scalars[0..<start]))
-
-        let newToken: String
-        if let dotIdx = token.lastIndex(of: ".") {
-            let baseExpr = String(token[..<dotIdx])
-            let lastSegment: String
-            if let sugDot = suggestion.lastIndex(of: ".") {
-                lastSegment = String(suggestion[suggestion.index(after: sugDot)...])
-            } else {
-                lastSegment = suggestion
-            }
-            newToken = baseExpr + "." + lastSegment
-        } else {
-            newToken = suggestion
-        }
-
-        replaceInput(with: before + newToken)
-    }
-
-    private func showCompletionPopover(suggestions: [String]) {
-        dismissCompletionPopover()
-
-        let popover = Popover()
-        popover.autohide = false
-        popover.canFocus = false
-
-        let listBox = ListBox()
-        listBox.selectionMode = .single
-        listBox.canFocus = false
-        listBox.add(cssClass: "boxed-list")
-        listBox.setSizeRequest(width: 280, height: -1)
-        for suggestion in suggestions {
-            let row = ListBoxRow()
-            row.canFocus = false
-            let label = Label(str: suggestion)
-            label.add(cssClass: "monospace")
-            label.halign = .start
-            label.marginStart = 8
-            label.marginEnd = 8
-            label.marginTop = 4
-            label.marginBottom = 4
-            row.set(child: label)
-            listBox.append(child: row)
-        }
-        listBox.onRowActivated { [weak self] _, _ in
-            MainActor.assumeIsolated {
-                self?.acceptSelectedCompletion()
-            }
-        }
-
-        let inlineRowLimit = 6
-        if suggestions.count > inlineRowLimit {
-            let scroll = ScrolledWindow()
-            scroll.setPolicy(hscrollbarPolicy: GTK_POLICY_NEVER, vscrollbarPolicy: GTK_POLICY_AUTOMATIC)
-            scroll.propagateNaturalHeight = true
-            scroll.maxContentHeight = 160
-            scroll.set(child: listBox)
-            popover.set(child: scroll)
-            completionScroll = scroll
-        } else {
-            popover.set(child: listBox)
-        }
-        popover.set(parent: inputEntry)
-        popover.position = GTK_POS_BOTTOM
-
-        completionPopover = popover
-        completionList = listBox
-        completionItems = suggestions
-        completionBaseCode = inputEntry.text ?? ""
-
-        if let first = listBox.getRowAt(index: 0) {
-            listBox.select(row: first)
-        }
-
-        let caret = caretRectInEntry()
-        var rect = GdkRectangle(
-            x: gint(caret.x),
-            y: gint(caret.y),
-            width: gint(caret.width),
-            height: gint(caret.height)
-        )
-        withUnsafeMutablePointer(to: &rect) { ptr in
-            gtk_popover_set_pointing_to(popover.popover_ptr, ptr)
-        }
-        popover.popup()
-    }
-
-    private func caretRectInEntry() -> (x: Double, y: Double, width: Double, height: Double) {
-        let text = inputEntry.text ?? ""
-        let position = Int(inputEntry.position)
-        let clamped = max(0, min(position, text.count))
-        let prefix = String(text.prefix(clamped))
-
-        let layoutPtr = gtk_widget_create_pango_layout(inputEntry.widget_ptr, prefix)
-        defer { if let p = layoutPtr { g_object_unref(p) } }
-
-        var prefixWidth: Int32 = 0
-        var unusedHeight: Int32 = 0
-        if let layoutPtr {
-            pango_layout_get_pixel_size(layoutPtr, &prefixWidth, &unusedHeight)
-        }
-
-        let approxLeftPadding: Int32 = 8
-        let entryHeight = inputEntry.height
-        return (
-            x: Double(prefixWidth + approxLeftPadding),
-            y: 0,
-            width: 1,
-            height: Double(entryHeight)
-        )
-    }
-
-    private func moveCompletionSelection(delta: Int) {
-        guard let listBox = completionList, !completionItems.isEmpty else { return }
-        let current = listBox.selectedRow.map { Int($0.index) } ?? -1
-        var next = current + delta
-        if next < 0 { next = completionItems.count - 1 }
-        if next >= completionItems.count { next = 0 }
-        if let row = listBox.getRowAt(index: next) {
-            listBox.select(row: row)
-            scrollCompletionRowIntoView(row)
-        }
-    }
-
-    private func scrollCompletionRowIntoView(_ row: ListBoxRowRef) {
-        guard let scroll = completionScroll,
-              let listBox = completionList,
-              let vadj = scroll.vadjustment else { return }
-        var source = graphene_point_t(x: 0, y: 0)
-        var destination = graphene_point_t(x: 0, y: 0)
-        let translated = withUnsafeMutablePointer(to: &source) { srcPtr in
-            withUnsafeMutablePointer(to: &destination) { dstPtr in
-                row.computePoint(target: listBox, point: PointRef(srcPtr), outPoint: PointRef(dstPtr))
-            }
-        }
-        guard translated else { return }
-        let rowY = Double(destination.y)
-        vadj.clampPage(lower: rowY, upper: rowY + Double(row.height))
-    }
-
-    private func acceptSelectedCompletion() {
-        guard let listBox = completionList else { return }
-        let idx = listBox.selectedRow.map { Int($0.index) } ?? 0
-        guard idx >= 0, idx < completionItems.count else {
-            dismissCompletionPopover()
-            return
-        }
-        let suggestion = completionItems[idx]
-        let base = completionBaseCode
-        dismissCompletionPopover()
-        applyCompletion(to: base, suggestion: suggestion)
-    }
-
-    private func dismissCompletionPopover() {
-        completionGeneration &+= 1
-        completionDebounceTask?.cancel()
-        completionDebounceTask = nil
-        completionTask?.cancel()
-        completionTask = nil
-        completionPopover?.popdown()
-        completionPopover?.unparent()
-        completionPopover = nil
-        completionList = nil
-        completionScroll = nil
-        completionItems = []
-    }
-
-    func focusInput() {
-        _ = inputEntry.grabFocus()
-    }
-
-    private func longestCommonPrefix(_ strings: [String]) -> String {
-        guard let first = strings.first else { return "" }
-        var prefix = first
-        for s in strings.dropFirst() {
-            while !s.hasPrefix(prefix) {
-                prefix = String(prefix.dropLast())
-                if prefix.isEmpty { return "" }
-            }
-        }
-        return prefix
-    }
-
-    func appendCell(_ cell: LumaCore.REPLCell) {
-        guard cell.sessionID == sessionID else { return }
-        let wasEmpty = cells.isEmpty
-        cells.append(cell)
-        historyCursor = orderedHistory.count
-        if wasEmpty {
-            refresh()
-        } else {
-            cellsBox.append(child: makeRow(for: cell))
-            scrollToBottomSoon()
-        }
-    }
-
-    private func refresh() {
-        clearChildren(of: cellsBox)
-        rowKeepers.removeAll()
-        if cells.isEmpty {
-            showEmptyState()
-            return
-        }
-        showCellList()
-        for cell in cells.sorted(by: { $0.timestamp < $1.timestamp }) {
-            cellsBox.append(child: makeRow(for: cell))
-        }
-        scrollToBottomSoon()
-    }
-
-    private func showEmptyState() {
-        if cellsScroll.parent != nil {
-            contentSlot.remove(child: cellsScroll)
-        }
-        if emptyState.parent == nil {
-            contentSlot.append(child: emptyState)
-        }
-    }
-
-    private func showCellList() {
-        if emptyState.parent != nil {
-            contentSlot.remove(child: emptyState)
-        }
-        if cellsScroll.parent == nil {
-            contentSlot.append(child: cellsScroll)
-        }
-    }
-
-    private func scrollToBottomSoon() {
-        Task { @MainActor in
-            guard let adj = cellsScroll.vadjustment else { return }
-            let target = adj.upper - adj.pageSize
-            if target > adj.value {
-                adj.value = target
             }
         }
     }
@@ -641,7 +207,7 @@ final class REPLPane {
         column.hexpand = true
 
         let codeRow = Box(orientation: .horizontal, spacing: 8)
-        let prompt = Label(str: "›")
+        let prompt = Label(str: "\u{203A}")
         prompt.add(cssClass: "monospace")
         prompt.add(cssClass: "dim-label")
         codeRow.append(child: prompt)
@@ -657,7 +223,7 @@ final class REPLPane {
 
         let resultRow = Box(orientation: .horizontal, spacing: 6)
         resultRow.hexpand = true
-        let resultArrow = Label(str: "←")
+        let resultArrow = Label(str: "\u{2190}")
         resultArrow.add(cssClass: "monospace")
         resultArrow.add(cssClass: "dim-label")
         resultArrow.valign = .start
@@ -750,8 +316,9 @@ final class REPLPane {
 
     private func clearHistory() {
         cells.removeAll()
-        historyCursor = 0
-        refresh()
+        rowKeepers.removeAll()
+        console.clearEntries()
+        console.setHistory([])
     }
 
     private func addCellToNotebook(_ cell: LumaCore.REPLCell) {
@@ -841,14 +408,6 @@ final class REPLPane {
         return out
     }
 
-    private func clearChildren(of container: Box) {
-        var child = container.firstChild
-        while let current = child {
-            child = current.nextSibling
-            container.remove(child: current)
-        }
-    }
-
     private static func makeEmptyState() -> Box {
         let outer = Box(orientation: .vertical, spacing: 0)
         outer.hexpand = true
@@ -893,7 +452,7 @@ final class REPLPane {
 
         for text in [
             "Type an expression and press Return to evaluate it.",
-            "Step through previous expressions with ↑ and ↓.",
+            "Step through previous expressions with \u{2191} and \u{2193}.",
             "Try Process.mainModule.base.readByteArray(64).",
         ] {
             tips.append(child: makeTipRow(text: text))
@@ -909,7 +468,7 @@ final class REPLPane {
         let row = Box(orientation: .horizontal, spacing: 8)
         row.halign = .start
 
-        let bullet = Label(str: "•")
+        let bullet = Label(str: "\u{2022}")
         bullet.valign = .start
         bullet.add(cssClass: "dim-label")
         row.append(child: bullet)
