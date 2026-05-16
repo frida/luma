@@ -1997,8 +1997,15 @@ final class MainWindow: InstrumentUIHost {
 
     func reestablishSession(id: UUID) {
         guard let engine else { return }
+        let session = engine.sessions.first(where: { $0.id == id })
+        let ownsHost = session?.host.map { $0.id == engine.collaboration.localUser?.id } ?? true
         Task { @MainActor in
-            let result = await engine.reestablishSession(id: id)
+            let result: Engine.ReestablishResult
+            if ownsHost {
+                result = await engine.reestablishSession(id: id)
+            } else {
+                result = await engine.reHost(sessionID: id)
+            }
             if case .needsUserInput(let reason, let session) = result {
                 self.openTargetPicker(reusing: session, reason: reason)
             }

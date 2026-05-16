@@ -341,8 +341,14 @@ struct PhoneSessionsListView: View {
     }
 
     private func reestablish(_ session: LumaCore.ProcessSession) {
+        let ownsHost = session.host.map { $0.id == engine.collaboration.localUser?.id } ?? true
         Task { @MainActor in
-            let result = await engine.reestablishSession(id: session.id)
+            let result: Engine.ReestablishResult
+            if ownsHost {
+                result = await engine.reestablishSession(id: session.id)
+            } else {
+                result = await engine.reHost(sessionID: session.id)
+            }
             if case .needsUserInput(let reason, let s) = result {
                 picker.context = .reestablish(session: s, reason: reason)
             }

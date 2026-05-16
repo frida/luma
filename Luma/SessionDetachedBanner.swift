@@ -256,13 +256,30 @@ struct SessionDetachedBanner: View {
                 Button {
                     reestablish()
                 } label: {
-                    Label("\(session.kind.reestablishLabel)…", systemImage: "arrow.clockwise")
+                    Label(actionLabel, systemImage: "arrow.clockwise")
                 }
-                .disabled(session.phase == .attaching)
+                .disabled(session.phase == .attaching || !canAct)
                 .buttonStyle(.bordered)
                 .font(.caption)
             }
         }
+    }
+
+    private var localUserOwnsHost: Bool {
+        guard let host = session.host else { return true }
+        return host.id == engine.collaboration.localUser?.id
+    }
+
+    private var canAct: Bool {
+        if localUserOwnsHost { return true }
+        return engine.collaboration.isOwner
+    }
+
+    private var actionLabel: String {
+        if localUserOwnsHost {
+            return "\(session.kind.reestablishLabel)\u{2026}"
+        }
+        return "Run on My Device\u{2026}"
     }
 
     private var bannerStyle: LumaBannerStyle {
@@ -295,7 +312,12 @@ struct SessionDetachedBanner: View {
 
     private func reestablish() {
         Task { @MainActor in
-            let result = await engine.reestablishSession(id: session.id)
+            let result: Engine.ReestablishResult
+            if localUserOwnsHost {
+                result = await engine.reestablishSession(id: session.id)
+            } else {
+                result = await engine.reHost(sessionID: session.id)
+            }
             if case .needsUserInput(let reason, let session) = result {
                 picker.context = .reestablish(session: session, reason: reason)
             }

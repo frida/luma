@@ -534,7 +534,12 @@ private struct SidebarSessionHeaderRow: View {
 
     private func reestablish() {
         Task { @MainActor in
-            let result = await engine.reestablishSession(id: session.id)
+            let result: Engine.ReestablishResult
+            if localUserOwnsHost {
+                result = await engine.reestablishSession(id: session.id)
+            } else {
+                result = await engine.reHost(sessionID: session.id)
+            }
             if case .needsUserInput(let reason, let session) = result {
                 picker.context = .reestablish(session: session, reason: reason)
             }
@@ -548,6 +553,11 @@ private struct SidebarSessionHeaderRow: View {
                 picker.context = .reestablish(session: session, reason: reason)
             }
         }
+    }
+
+    private var localUserOwnsHost: Bool {
+        guard let host = session.host else { return true }
+        return host.id == engine.collaboration.localUser?.id
     }
 
     private func killProcess() {
