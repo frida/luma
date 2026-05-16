@@ -1219,10 +1219,7 @@ final class MainWindow: InstrumentUIHost {
             host.remove(child: cur)
         }
         guard let status else { return }
-        let warning = Gtk.Image(iconName: "dialog-warning-symbolic")
-        warning.pixelSize = 12
-        warning.tooltipText = status.summary
-        host.append(child: warning)
+        host.append(child: InstrumentStatusPopover.makeIndicator(status: status))
     }
 
     private func replaceIconHostContents(_ host: Box, with icon: InstrumentIcon) {
@@ -3227,5 +3224,16 @@ private let hookPackExportPathThunk: @convention(c) (
     let path = String(cString: pathPtr)
     Task { @MainActor in
         context.window.handleHookPackExport(def: context.def, path: path)
+    }
+}
+
+extension InstrumentStatus {
+    var gtkIconName: String {
+        switch self {
+        case .incompatible:
+            return "dialog-warning-symbolic"
+        case .loadFailed, .reloadFailed, .configInvalid:
+            return "dialog-error-symbolic"
+        }
     }
 }

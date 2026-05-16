@@ -41,9 +41,13 @@ final class TracerUIKind: InstrumentUIKind {
             selectedID: host.selectedComponentID(sessionID: sessionID, instrumentID: instrumentID)
         )
 
+        let componentStatuses = engine.node(forSessionID: sessionID)?
+            .instruments.first(where: { $0.id == instrumentID })?
+            .componentStatuses ?? [:]
+
         var children: [InstrumentSidebarChild] = []
         for hook in inline {
-            let (row, anchor) = TracerSidebar.makeHookRow(hook: hook)
+            let (row, anchor) = TracerSidebar.makeHookRow(hook: hook, status: componentStatuses[hook.id])
             let hookID = hook.id
             attachHookContextMenu(
                 row: row,

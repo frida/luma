@@ -7,7 +7,7 @@ enum TracerSidebar {
     static let inlineLimit = 5
     static let rowMarginStart = 64
 
-    static func makeHookRow(hook: TracerConfig.Hook) -> (row: ListBoxRow, anchor: Box) {
+    static func makeHookRow(hook: TracerConfig.Hook, status: InstrumentStatus?) -> (row: ListBoxRow, anchor: Box) {
         let row = ListBoxRow()
         let (rowBox, iconHost) = makeGrandchildRowBox()
         iconHost.append(child: makeHookKindIcon(kind: hook.kind))
@@ -15,6 +15,9 @@ enum TracerSidebar {
         label.halign = .start
         label.ellipsize = .end
         rowBox.append(child: label)
+        if let status {
+            rowBox.append(child: InstrumentStatusPopover.makeIndicator(status: status))
+        }
         if hook.state == .disabled {
             rowBox.opacity = 0.5
         }
