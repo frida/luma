@@ -27,6 +27,8 @@ final class InstrumentWidgetsRenderer {
             let canvas = WidgetCanvas(
                 definition: definition,
                 snapshot: snapshot,
+                engine: engine,
+                sessionID: instance.sessionID,
                 onAction: { [weak self] action, item in
                     self?.invoke(widget: definition.id, action: action, item: item)
                 },
@@ -101,6 +103,8 @@ private final class WidgetCanvas {
     init(
         definition: InstrumentWidget,
         snapshot: WidgetState,
+        engine: Engine,
+        sessionID: UUID,
         onAction: @escaping (_ action: String, _ item: String?) -> Void,
         onClear: @escaping () -> Void,
         onConsoleSubmit: @escaping (_ text: String) -> Void
@@ -160,7 +164,13 @@ private final class WidgetCanvas {
             hexView = view
             column.append(child: view.widget)
         case .console(let cfg):
-            let view = ConsoleWidget(config: cfg, initialEntries: snapshot.consoleEntries, onSubmit: onConsoleSubmit)
+            let view = ConsoleWidget(
+                config: cfg,
+                initialEntries: snapshot.consoleEntries,
+                engine: engine,
+                sessionID: sessionID,
+                onSubmit: onConsoleSubmit
+            )
             consoleWidget = view
             column.append(child: view.widget)
         }
@@ -203,13 +213,20 @@ private final class WidgetCanvas {
 @MainActor
 private final class ConsoleWidget {
     let widget: Box
+    private weak var engine: Engine?
+    private let sessionID: UUID
     private let console: ConsoleView
+    private var valueWidgetKeepers: [JSInspectValueWidget] = []
 
     init(
         config: InstrumentWidget.ConsoleConfig,
         initialEntries: [WidgetConsoleEntry],
+        engine: Engine,
+        sessionID: UUID,
         onSubmit: @escaping (_ text: String) -> Void
     ) {
+        self.engine = engine
+        self.sessionID = sessionID
         let style = ConsoleView.Style(
             promptGlyph: config.prompt ?? "\u{203A}",
             placeholder: config.placeholder ?? "",
@@ -224,22 +241,23 @@ private final class ConsoleWidget {
 
         var seededHistory: [String] = []
         for entry in initialEntries {
-            console.appendEntry(Self.makeRow(for: entry))
+            console.appendEntry(makeRow(for: entry))
             if entry.kind == .input { seededHistory.append(entry.text) }
         }
         console.setHistory(seededHistory)
     }
 
     func append(entry: WidgetConsoleEntry) {
-        console.appendEntry(Self.makeRow(for: entry))
+        console.appendEntry(makeRow(for: entry))
     }
 
     func clear() {
         console.clearEntries()
         console.setHistory([])
+        valueWidgetKeepers.removeAll()
     }
 
-    private static func makeRow(for entry: WidgetConsoleEntry) -> Widget {
+    private func makeRow(for entry: WidgetConsoleEntry) -> Widget {
         let row = Box(orientation: .horizontal, spacing: 8)
         let glyph: String
         let bodyCssClass: String?
@@ -259,15 +277,24 @@ private final class ConsoleWidget {
         glyphLabel.add(cssClass: "dim-label")
         glyphLabel.valign = .start
         row.append(child: glyphLabel)
+        row.append(child: makeBody(for: entry, cssClass: bodyCssClass))
+        return row
+    }
+
+    private func makeBody(for entry: WidgetConsoleEntry, cssClass: String?) -> Widget {
+        if let value = entry.value, let engine {
+            let valueWidget = JSInspectValueWidget.make(value: value, engine: engine, sessionID: sessionID)
+            valueWidgetKeepers.append(valueWidget)
+            return valueWidget.widget
+        }
         let body = Label(str: entry.text)
         body.add(cssClass: "monospace")
-        if let cssClass = bodyCssClass { body.add(cssClass: cssClass) }
+        if let cssClass { body.add(cssClass: cssClass) }
         body.halign = .start
         body.hexpand = true
         body.wrap = true
         body.selectable = true
-        row.append(child: body)
-        return row
+        return body
     }
 
     private static func makeEmptyState() -> Widget {
