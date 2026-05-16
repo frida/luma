@@ -243,19 +243,32 @@ public struct WidgetConsoleEntry: Codable, Sendable, Equatable, Identifiable {
     public let id: String
     public let kind: Kind
     public var text: String
+    public var value: JSInspectValue?
 
-    public init(id: String = UUID().uuidString, kind: Kind, text: String) {
+    public init(
+        id: String = UUID().uuidString,
+        kind: Kind,
+        text: String,
+        value: JSInspectValue? = nil
+    ) {
         self.id = id
         self.kind = kind
         self.text = text
+        self.value = value
     }
 
     public func toWireJSON() -> [String: Any] {
-        [
+        var obj: [String: Any] = [
             "id": id,
             "kind": kind.rawValue,
             "text": text,
         ]
+        if let value, let encoded = try? JSONEncoder().encode(value),
+           let valueJSON = try? JSONSerialization.jsonObject(with: encoded)
+        {
+            obj["value"] = valueJSON
+        }
+        return obj
     }
 
     public static func fromWireJSON(_ obj: [String: Any]) -> WidgetConsoleEntry? {
@@ -264,7 +277,13 @@ public struct WidgetConsoleEntry: Codable, Sendable, Equatable, Identifiable {
             let kind = Kind(rawValue: kindStr),
             let text = obj["text"] as? String
         else { return nil }
-        return WidgetConsoleEntry(id: id, kind: kind, text: text)
+        var value: JSInspectValue? = nil
+        if let raw = obj["value"],
+           let data = try? JSONSerialization.data(withJSONObject: raw)
+        {
+            value = try? JSONDecoder().decode(JSInspectValue.self, from: data)
+        }
+        return WidgetConsoleEntry(id: id, kind: kind, text: text, value: value)
     }
 }
 

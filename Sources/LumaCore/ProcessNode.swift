@@ -437,7 +437,7 @@ public final class ProcessNode: Identifiable {
                 return true
 
             case "widget-console-append":
-                guard let update = decodeConsoleAppendUpdate(dict) else { return false }
+                guard let update = decodeConsoleAppendUpdate(dict, data: data) else { return false }
                 _widgetUpdates.yield(update)
                 return true
 
@@ -592,12 +592,22 @@ public final class ProcessNode: Identifiable {
         )
     }
 
-    private func decodeConsoleAppendUpdate(_ dict: [String: Any]) -> WidgetUpdate? {
+    private func decodeConsoleAppendUpdate(_ dict: [String: Any], data: [UInt8]?) -> WidgetUpdate? {
         guard let context = decodeWidgetContext(dict),
             let entryObj = dict["entry"] as? [String: Any],
-            let entry = WidgetConsoleEntry.fromWireJSON(entryObj)
+            let id = entryObj["id"] as? String,
+            let kindStr = entryObj["kind"] as? String,
+            let kind = WidgetConsoleEntry.Kind(rawValue: kindStr)
         else { return nil }
+        let text = (entryObj["text"] as? String) ?? ""
+        let value = decodeConsoleEntryValue(entryObj["value"], data: data)
+        let entry = WidgetConsoleEntry(id: id, kind: kind, text: text, value: value)
         return WidgetUpdate(instanceID: context.instanceID, widget: context.widget, kind: .consoleAppend(entry))
+    }
+
+    private func decodeConsoleEntryValue(_ raw: Any?, data: [UInt8]?) -> JSInspectValue? {
+        guard let raw else { return nil }
+        return try? JSInspectValue.decodePacked(tree: raw, blobBytes: data)
     }
 
     private func decodeClearUpdate(_ dict: [String: Any]) -> WidgetUpdate? {
