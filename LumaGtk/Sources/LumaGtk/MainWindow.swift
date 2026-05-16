@@ -54,8 +54,6 @@ final class MainWindow: InstrumentUIHost {
     private var currentITraceDetail: ITraceDetailView?
     private var currentITraceID: UUID?
     private var sessionDetailViews: [UUID: SessionDetailView] = [:]
-    private var currentCollabHeader: SessionCollaborationHeader?
-    private var currentCollabHeaderSessionID: UUID?
     private(set) lazy var sharedTracerEditor: MonacoEditor = makeSharedTracerEditor()
     private(set) lazy var sharedCodeShareEditor: MonacoEditor = makeSharedCodeShareEditor()
     private(set) lazy var sharedCustomInstrumentEditor: MonacoEditor = makeSharedCustomInstrumentEditor()
@@ -1807,30 +1805,6 @@ final class MainWindow: InstrumentUIHost {
         column.hexpand = true
         column.vexpand = true
 
-        if let engine, let sid = currentSessionID() {
-            let hostChipShownInline: Bool = {
-                if case .itrace = selection { return true }
-                return false
-            }()
-            let header = SessionCollaborationHeader(
-                engine: engine,
-                sessionID: sid,
-                showHostChip: !hostChipShownInline,
-                onClaimDriver: { [weak self] in
-                    self?.engine?.collaboration.enqueueClaimDriver(sessionID: sid)
-                },
-                onRehost: { [weak self] in
-                    self?.rehost(sessionID: sid)
-                }
-            )
-            currentCollabHeader = header
-            currentCollabHeaderSessionID = sid
-            column.append(child: header.widget)
-        } else {
-            currentCollabHeader = nil
-            currentCollabHeaderSessionID = nil
-        }
-
         widget.hexpand = true
         widget.vexpand = true
         column.append(child: widget)
@@ -2246,9 +2220,6 @@ final class MainWindow: InstrumentUIHost {
             currentInstrumentDetail?.applySessionState()
             currentInsightDetail?.applySessionState()
             sessionDetailViews[session.id]?.applySessionState()
-            if currentCollabHeaderSessionID == session.id {
-                currentCollabHeader?.applySessionState()
-            }
             updateResumeButtonVisibility()
         case .sessionRemoved(let id):
             removeSessionRows(id)
@@ -2745,10 +2716,6 @@ final class MainWindow: InstrumentUIHost {
     ) -> Widget {
         let pixelSize = 24
 
-        if let host = session.host, host.id != engine?.collaboration.localUser?.id {
-            return makeHostAvatar(host: host, size: pixelSize)
-        }
-
         if let lastIcon = node?.processIcons.last,
             let image = IconPixbuf.makeImage(from: lastIcon, pixelSize: pixelSize)
         {
@@ -2863,6 +2830,11 @@ final class MainWindow: InstrumentUIHost {
             child = cur.nextSibling
             host.remove(child: cur)
         }
+
+        if let badge = makeHostBadge(for: session) {
+            host.append(child: badge)
+        }
+
         guard shouldShowDetachedIndicator(session) else { return }
         if session.phase == .attaching {
             let spinner = Adw.Spinner()
@@ -2884,6 +2856,22 @@ final class MainWindow: InstrumentUIHost {
             MainActor.assumeIsolated { self?.reestablishSession(id: sessionID) }
         }
         host.append(child: button)
+    }
+
+    private func makeHostBadge(for session: LumaCore.ProcessSession) -> Widget? {
+        guard let engine,
+              let host = session.host,
+              engine.node(forSessionID: session.id) == nil
+        else { return nil }
+        let avatar = makeHostAvatar(host: host, size: 18)
+        let tooltip: String
+        if host.id == engine.collaboration.localUser?.id {
+            tooltip = "Hosted by you on \(session.deviceName)"
+        } else {
+            tooltip = "Hosted by @\(host.id) on \(session.deviceName)"
+        }
+        avatar.tooltipText = tooltip
+        return avatar
     }
 
     private func shouldShowDetachedIndicator(_ session: LumaCore.ProcessSession) -> Bool {

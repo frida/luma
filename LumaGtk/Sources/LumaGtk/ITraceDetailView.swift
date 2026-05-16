@@ -70,11 +70,6 @@ final class ITraceDetailView {
         titleLabel.halign = .start
         titleLabel.add(cssClass: "title-3")
         titleRow.append(child: titleLabel)
-        if let host = SessionCollaborationHeader.host(in: engine, sessionID: sessionID) {
-            let chip = SessionCollaborationHeader.makeChip(prefix: "Hosted by", user: host)
-            chip.valign = .center
-            titleRow.append(child: chip)
-        }
         headerLeft.append(child: titleRow)
 
         let captionLabel = Label(str: baseCaption)

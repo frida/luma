@@ -401,10 +401,26 @@ struct PhoneSessionRow: View {
 
             Spacer()
 
+            hostBadge
             statusBadge
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private var hostBadge: some View {
+        if let host = session.host, !engine.isHostingNode(session.id) {
+            UserAvatarView(user: host, size: 18)
+                .help(hostBadgeTooltip(host: host))
+        }
+    }
+
+    private func hostBadgeTooltip(host: LumaCore.CollaborationSession.UserInfo) -> String {
+        if host.id == engine.collaboration.localUser?.id {
+            return "Hosted by you on \(session.deviceName)"
+        }
+        return "Hosted by @\(host.id) on \(session.deviceName)"
     }
 
     @ViewBuilder

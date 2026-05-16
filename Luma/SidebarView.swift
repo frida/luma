@@ -312,6 +312,8 @@ private struct SidebarSessionHeaderRow: View {
 
             Spacer()
 
+            hostBadge
+
             if isDetached {
                 detachedIndicator
             }
@@ -491,9 +493,7 @@ private struct SidebarSessionHeaderRow: View {
 
     @ViewBuilder
     private var iconView: some View {
-        if let host = session.host, host.id != engine.collaboration.localUser?.id {
-            hostAvatarView(host: host)
-        } else if let data = session.iconPNGData {
+        if let data = session.iconPNGData {
             Icon.png(data: Array(data)).swiftUIImage
                 .resizable()
                 .interpolation(.high)
@@ -509,8 +509,18 @@ private struct SidebarSessionHeaderRow: View {
     }
 
     @ViewBuilder
-    private func hostAvatarView(host: LumaCore.CollaborationSession.UserInfo) -> some View {
-        UserAvatarView(user: host, size: 24)
+    private var hostBadge: some View {
+        if let host = session.host, !engine.isHostingNode(session.id) {
+            UserAvatarView(user: host, size: 16)
+                .help(hostBadgeTooltip(host: host))
+        }
+    }
+
+    private func hostBadgeTooltip(host: LumaCore.CollaborationSession.UserInfo) -> String {
+        if host.id == engine.collaboration.localUser?.id {
+            return "Hosted by you on \(session.deviceName)"
+        }
+        return "Hosted by @\(host.id) on \(session.deviceName)"
     }
 
     private var placeholderSeed: String {
