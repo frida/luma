@@ -63,10 +63,19 @@ final class ITraceDetailView {
 
         let headerLeft = Box(orientation: .vertical, spacing: 0)
         headerLeft.hexpand = true
+
+        let titleRow = Box(orientation: .horizontal, spacing: 8)
+        titleRow.halign = .start
         let titleLabel = Label(str: trace.displayName)
         titleLabel.halign = .start
         titleLabel.add(cssClass: "title-3")
-        headerLeft.append(child: titleLabel)
+        titleRow.append(child: titleLabel)
+        if let host = SessionCollaborationHeader.host(in: engine, sessionID: sessionID) {
+            let chip = SessionCollaborationHeader.makeChip(prefix: "Hosted by", user: host)
+            chip.valign = .center
+            titleRow.append(child: chip)
+        }
+        headerLeft.append(child: titleRow)
 
         let captionLabel = Label(str: baseCaption)
         captionLabel.halign = .start

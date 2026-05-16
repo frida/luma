@@ -1808,9 +1808,14 @@ final class MainWindow: InstrumentUIHost {
         column.vexpand = true
 
         if let engine, let sid = currentSessionID() {
+            let hostChipShownInline: Bool = {
+                if case .itrace = selection { return true }
+                return false
+            }()
             let header = SessionCollaborationHeader(
                 engine: engine,
                 sessionID: sid,
+                showHostChip: !hostChipShownInline,
                 onClaimDriver: { [weak self] in
                     self?.engine?.collaboration.enqueueClaimDriver(sessionID: sid)
                 },
