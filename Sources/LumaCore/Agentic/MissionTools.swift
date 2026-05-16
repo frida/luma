@@ -1281,7 +1281,7 @@ public enum MissionTools {
     private static func registerEvalREPL(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "eval_repl",
-            description: "Run a one-off JavaScript snippet in the target process via Frida's REPL. Use for quick one-shot probes (e.g. read a global). The result string is the stringified value or any console output. Requires user approval — `intent` is shown to the approver and recorded in the audit log, so write a sentence that makes the why obvious.",
+            description: "Run a one-off JavaScript snippet in the target process via Frida's REPL and return its value inline. The result is `{cell_id, code, kind, value?, text?}` where kind is 'value' (JS expression result, `value` is the $type-tagged structured encoding used elsewhere) or 'text' (pipeline output or error message in `text`). Requires user approval — `intent` is shown to the approver and recorded in the audit log, so write a sentence that makes the why obvious.",
             inputSchemaJSON: """
                 {"type":"object","properties":{"session_id":{"type":"string"},"code":{"type":"string"},"intent":{"type":"string","description":"One sentence shown to the approver explaining why you're running this; logged with the action."}},"required":["session_id","code","intent"],"additionalProperties":false}
                 """,
@@ -1299,16 +1299,32 @@ public enum MissionTools {
                 return errorResult("no attached session for id \(sessionID)", code: .notFound)
             }
             let cellID = UUID()
-            await node.evalInREPL(code, cellID: cellID)
-            let payload: [String: Any] = [
-                "cell_id": cellID.uuidString,
-                "summary": "REPL evaluation submitted; results stream into the session's REPL log.",
-            ]
-            return makeResult(
-                jsonObject: payload,
-                summary: "Submitted REPL evaluation (cell \(cellID.uuidString.prefix(8)))"
-            )
+            guard let result = await node.evalInREPL(code, cellID: cellID) else {
+                return errorResult("REPL evaluation produced no result", code: .unavailable)
+            }
+            return evalREPLResult(result)
         }
+    }
+
+    private static func evalREPLResult(_ result: REPLResult) -> ActionResult {
+        let cellShort = result.id.uuidString.prefix(8)
+        var payload: [String: Any] = [
+            "cell_id": result.id.uuidString,
+            "code": result.code,
+        ]
+        let summary: String
+        switch result.value {
+        case .js(let value):
+            payload["kind"] = "value"
+            payload["value"] = value.toAgentJSON(options: .compact)
+            summary = "REPL cell \(cellShort) → \(value.agentSummary())"
+        case .text(let text):
+            payload["kind"] = "text"
+            payload["text"] = text
+            let preview = text.count > 96 ? text.prefix(95) + "…" : Substring(text)
+            summary = "REPL cell \(cellShort) → \(preview)"
+        }
+        return makeResult(jsonObject: payload, summary: summary)
     }
 
     // MARK: - install_tracer_hook (act)
