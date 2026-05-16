@@ -13,6 +13,7 @@ final class InstrumentWidgetsRenderer {
     private let instance: LumaCore.InstrumentInstance
     private var canvases: [WidgetCanvas] = []
     private var subscriber: Task<Void, Never>?
+    private var live = false
 
     init(engine: Engine, instance: LumaCore.InstrumentInstance, widgets: [InstrumentWidget]) {
         self.engine = engine
@@ -48,6 +49,14 @@ final class InstrumentWidgetsRenderer {
 
     deinit {
         subscriber?.cancel()
+    }
+
+    func setLive(_ live: Bool) {
+        guard live != self.live else { return }
+        self.live = live
+        for canvas in canvases {
+            canvas.setLive(live)
+        }
     }
 
     private func startSubscriber() {
@@ -177,6 +186,10 @@ private final class WidgetCanvas {
         }
     }
 
+    func setLive(_ live: Bool) {
+        consoleWidget?.setLive(live)
+    }
+
     func apply(_ update: WidgetUpdate) {
         switch update.kind {
         case .counterSet(let value):
@@ -228,6 +241,7 @@ private final class ConsoleWidget {
     private let sessionID: UUID
     private let widgetName: String
     private let console: ConsoleView
+    private let inputPlaceholder: String
     private var valueWidgetKeepers: [JSInspectValueWidget] = []
 
     init(
@@ -241,13 +255,16 @@ private final class ConsoleWidget {
         self.engine = engine
         self.sessionID = sessionID
         self.widgetName = widgetName
+        let placeholder = config.placeholder ?? ""
+        inputPlaceholder = placeholder
         let style = ConsoleView.Style(
             promptGlyph: config.prompt ?? "\u{203A}",
-            placeholder: config.placeholder ?? "",
+            placeholder: placeholder,
             runButtonLabel: config.runButtonLabel ?? "Run"
         )
         console = ConsoleView(style: style, emptyState: Self.makeEmptyState())
         console.onSubmit = onSubmit
+        console.setInputEnabled(false, placeholder: "Session not attached.")
         widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
         widget.setSizeRequest(width: -1, height: 280)
@@ -259,6 +276,10 @@ private final class ConsoleWidget {
             if entry.kind == .input { seededHistory.append(entry.text) }
         }
         console.setHistory(seededHistory)
+    }
+
+    func setLive(_ live: Bool) {
+        console.setInputEnabled(live, placeholder: live ? inputPlaceholder : "Session not attached.")
     }
 
     func append(entry: WidgetConsoleEntry) {

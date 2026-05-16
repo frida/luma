@@ -43,6 +43,17 @@ private final class HookPackDetailUI: InstrumentDetailUI {
         guard instrument.configJSON != self.instrument.configJSON else { return }
         self.instrument = instrument
         rebuild()
+        applySessionState()
+    }
+
+    func applySessionState() {
+        guard let engine else { return }
+        widgetRenderer?.setLive(isLive(engine: engine))
+    }
+
+    private func isLive(engine: Engine) -> Bool {
+        let sessionID = instrument.sessionID
+        return engine.isHostingNode(sessionID) || engine.isHostedRemotelyLive(sessionID)
     }
 
     private func rebuild() {
@@ -84,6 +95,7 @@ private final class HookPackDetailUI: InstrumentDetailUI {
                 engine: engine,
                 instance: instrument
             )
+            widgetRenderer?.setLive(isLive(engine: engine))
         }
     }
 
