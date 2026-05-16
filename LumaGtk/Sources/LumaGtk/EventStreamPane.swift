@@ -171,7 +171,7 @@ final class EventStreamPane {
 
         eventListBox = Box(orientation: .vertical, spacing: 0)
         eventListBox.hexpand = true
-        eventListBox.vexpand = true
+        eventListBox.valign = .end
 
         scroll = ScrolledWindow()
         scroll.hexpand = true

@@ -292,6 +292,7 @@ struct EventStreamView: View {
                 }
             }
         }
+        .defaultScrollAnchor(.bottom)
     }
 
     enum EmptyReason {
