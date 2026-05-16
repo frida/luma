@@ -28,6 +28,7 @@ export interface WidgetHandle {
     appendConsole(entry: ConsoleEntry): void;
     appendOutput(text: string): void;
     appendError(text: string): void;
+    appendValue(value: unknown): void;
     clear(): void;
 }
 
@@ -272,6 +273,13 @@ function makeInstrumentContext(instanceId: string): InstrumentContext {
                         widget: id,
                         entry: { id: makeId(), kind: "error", text },
                     });
+                },
+                appendValue(value) {
+                    const [tree, blob] = encodeValue(value);
+                    post("widget-console-append", {
+                        widget: id,
+                        entry: { id: makeId(), kind: "output", text: "", value: tree },
+                    }, blob);
                 },
                 clear() {
                     post("widget-clear", { widget: id });

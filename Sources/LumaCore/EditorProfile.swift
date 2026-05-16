@@ -527,6 +527,7 @@ public enum CustomInstrumentTypings {
         declare interface CustomInstrumentConsoleWidget {
             appendOutput(text: string): void;
             appendError(text: string): void;
+            appendValue(value: unknown): void;
             appendConsole(entry: { id?: string, kind: "input" | "output" | "error", text: string }): void;
             clear(): void;
         }
