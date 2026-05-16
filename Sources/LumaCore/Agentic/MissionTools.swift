@@ -2411,7 +2411,7 @@ public enum MissionTools {
     }
 
     private static let widgetsSchemaJSON: String = """
-        {"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"kind":{"type":"string","enum":["graph","list","table","counter","histogram","hex"]},"persistence":{"type":"string","enum":["none","session"],"default":"none","description":"'none' = data lives in memory, lost on detach. 'session' = data survives reattach and app restart, replayed to create() via the `restored` argument."},"max_points":{"type":"integer","minimum":1,"default":5000,"description":"For kind=graph: rolling cap per series. Oldest points drop when exceeded."},"max_items":{"type":"integer","minimum":1,"default":1000,"description":"For kind=list: rolling cap. Oldest items drop when exceeded."},"max_rows":{"type":"integer","minimum":1,"default":1000,"description":"For kind=table: rolling cap on rows."},"max_buckets":{"type":"integer","minimum":1,"default":100,"description":"For kind=histogram: rolling cap on bucket count."},"max_bytes":{"type":"integer","minimum":1,"default":16384,"description":"For kind=hex: trailing-window cap on bytes shown."},"unit":{"type":"string","description":"For kind=counter: optional default unit label rendered next to the value."},"series":{"type":"array","description":"For kind=graph: line series the agent will push points to.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":false}},"columns":{"type":"array","description":"For kind=table: ordered columns; each row's cells map column id to string.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"alignment":{"type":"string","enum":["leading","trailing"],"default":"leading"}},"required":["id","name"],"additionalProperties":false}},"actions":{"type":"array","description":"For kind=list/table: per-item action buttons; clicks invoke onAction with {widget,action,item}.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":false}}},"required":["id","name","kind"],"additionalProperties":false}}
+        {"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"kind":{"type":"string","enum":["counter","histogram","graph","list","table","hex","console"]},"persistence":{"type":"string","enum":["none","session"],"default":"none","description":"'none' = data lives in memory, lost on detach. 'session' = data survives reattach and app restart, replayed to create() via the `restored` argument."},"max_points":{"type":"integer","minimum":1,"default":5000,"description":"For kind=graph: rolling cap per series. Oldest points drop when exceeded."},"max_items":{"type":"integer","minimum":1,"default":1000,"description":"For kind=list: rolling cap. Oldest items drop when exceeded."},"max_rows":{"type":"integer","minimum":1,"default":1000,"description":"For kind=table: rolling cap on rows."},"max_buckets":{"type":"integer","minimum":1,"default":100,"description":"For kind=histogram: rolling cap on bucket count."},"max_bytes":{"type":"integer","minimum":1,"default":16384,"description":"For kind=hex: trailing-window cap on bytes shown."},"max_entries":{"type":"integer","minimum":1,"default":1000,"description":"For kind=console: rolling cap on entries shown. Oldest entries drop when exceeded."},"unit":{"type":"string","description":"For kind=counter: optional default unit label rendered next to the value."},"prompt":{"type":"string","description":"For kind=console: optional prompt glyph rendered before each entry and on the input row (default '›')."},"placeholder":{"type":"string","description":"For kind=console: optional placeholder text shown in the input field."},"run_button_label":{"type":"string","description":"For kind=console: optional label for the submit button (default 'Run')."},"series":{"type":"array","description":"For kind=graph: line series the agent will push points to.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":false}},"columns":{"type":"array","description":"For kind=table: ordered columns; each row's cells map column id to string.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"alignment":{"type":"string","enum":["leading","trailing"],"default":"leading"}},"required":["id","name"],"additionalProperties":false}},"actions":{"type":"array","description":"For kind=list/table: per-item action buttons; clicks invoke onAction with {widget,action,item}.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":false}}},"required":["id","name","kind"],"additionalProperties":false}}
         """
 
     private static func parseWidgetsArg(_ raw: Any?) -> [InstrumentWidget] {
@@ -2441,6 +2441,14 @@ public enum MissionTools {
             case "hex":
                 let maxBytes = (obj["max_bytes"] as? Int) ?? InstrumentWidget.HexConfig.defaultMaxBytes
                 return InstrumentWidget(id: id, name: name, kind: .hex(InstrumentWidget.HexConfig(maxBytes: max(1, maxBytes))), persistence: persistence)
+            case "console":
+                let cfg = parseConsoleConfigArg(
+                    promptRaw: obj["prompt"],
+                    placeholderRaw: obj["placeholder"],
+                    runLabelRaw: obj["run_button_label"],
+                    maxEntriesRaw: obj["max_entries"]
+                )
+                return InstrumentWidget(id: id, name: name, kind: .console(cfg), persistence: persistence)
             default:
                 return nil
             }
@@ -2481,6 +2489,26 @@ public enum MissionTools {
         }
         let maxRows = (maxRowsRaw as? Int) ?? InstrumentWidget.TableConfig.defaultMaxRows
         return InstrumentWidget.TableConfig(columns: columns, actions: actions, maxRows: max(1, maxRows))
+    }
+
+    private static func parseConsoleConfigArg(
+        promptRaw: Any?,
+        placeholderRaw: Any?,
+        runLabelRaw: Any?,
+        maxEntriesRaw: Any?
+    ) -> InstrumentWidget.ConsoleConfig {
+        let maxEntries = (maxEntriesRaw as? Int) ?? InstrumentWidget.ConsoleConfig.defaultMaxEntries
+        return InstrumentWidget.ConsoleConfig(
+            prompt: optionalString(promptRaw),
+            placeholder: optionalString(placeholderRaw),
+            runButtonLabel: optionalString(runLabelRaw),
+            maxEntries: max(1, maxEntries)
+        )
+    }
+
+    private static func optionalString(_ raw: Any?) -> String? {
+        guard let str = raw as? String, !str.isEmpty else { return nil }
+        return str
     }
 
     private static func customInstrumentJSON(def: CustomInstrumentDef, files: [CustomInstrumentFile]) -> [String: Any] {
