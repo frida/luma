@@ -441,6 +441,11 @@ public final class ProcessNode: Identifiable {
                 _widgetUpdates.yield(update)
                 return true
 
+            case "widget-console-reply-done":
+                guard let update = decodeConsoleReplyDoneUpdate(dict) else { return false }
+                _widgetUpdates.yield(update)
+                return true
+
             case "widget-clear":
                 guard let update = decodeClearUpdate(dict) else { return false }
                 _widgetUpdates.yield(update)
@@ -601,13 +606,25 @@ public final class ProcessNode: Identifiable {
         else { return nil }
         let text = (entryObj["text"] as? String) ?? ""
         let value = decodeConsoleEntryValue(entryObj["value"], data: data)
-        let entry = WidgetConsoleEntry(id: id, kind: kind, text: text, value: value)
+        let replyTo = entryObj["reply_to"] as? String
+        let entry = WidgetConsoleEntry(id: id, kind: kind, text: text, value: value, replyTo: replyTo)
         return WidgetUpdate(instanceID: context.instanceID, widget: context.widget, kind: .consoleAppend(entry))
     }
 
     private func decodeConsoleEntryValue(_ raw: Any?, data: [UInt8]?) -> JSInspectValue? {
         guard let raw else { return nil }
         return try? JSInspectValue.decodePacked(tree: raw, blobBytes: data)
+    }
+
+    private func decodeConsoleReplyDoneUpdate(_ dict: [String: Any]) -> WidgetUpdate? {
+        guard let context = decodeWidgetContext(dict),
+            let replyTo = dict["reply_to"] as? String
+        else { return nil }
+        return WidgetUpdate(
+            instanceID: context.instanceID,
+            widget: context.widget,
+            kind: .consoleReplyDone(inputEntryID: replyTo)
+        )
     }
 
     private func decodeClearUpdate(_ dict: [String: Any]) -> WidgetUpdate? {

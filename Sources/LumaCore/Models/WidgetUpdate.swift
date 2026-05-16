@@ -24,6 +24,10 @@ public struct WidgetUpdate: Sendable, Identifiable {
         case tableRemove(rowID: String)
         case hexSet(WidgetHexState)
         case consoleAppend(WidgetConsoleEntry)
+        /// Posted by the agent when `onConsoleInput` has finished posting
+        /// replies for `inputEntryID`. Lets request/response waiters exit
+        /// before their timeout elapses.
+        case consoleReplyDone(inputEntryID: String)
         case clear
         /// In-memory snapshot replay. Emitted locally when widget state is
         /// hydrated from disk so listening views can refresh in one shot.
@@ -77,6 +81,9 @@ public struct WidgetUpdate: Sendable, Identifiable {
         case .consoleAppend(let entry):
             obj["kind"] = "console-append"
             obj["entry"] = entry.toWireJSON()
+        case .consoleReplyDone(let inputEntryID):
+            obj["kind"] = "console-reply-done"
+            obj["reply_to"] = inputEntryID
         case .clear:
             obj["kind"] = "clear"
         case .snapshot:
@@ -158,6 +165,9 @@ public struct WidgetUpdate: Sendable, Identifiable {
                 let entry = WidgetConsoleEntry.fromWireJSON(entryObj)
             else { return nil }
             return .consoleAppend(entry)
+        case "console-reply-done":
+            guard let replyTo = obj["reply_to"] as? String else { return nil }
+            return .consoleReplyDone(inputEntryID: replyTo)
         case "clear":
             return .clear
         default:
@@ -250,17 +260,20 @@ public struct WidgetConsoleEntry: Codable, Sendable, Equatable, Identifiable {
     public let kind: Kind
     public var text: String
     public var value: JSInspectValue?
+    public var replyTo: String?
 
     public init(
         id: String = UUID().uuidString,
         kind: Kind,
         text: String,
-        value: JSInspectValue? = nil
+        value: JSInspectValue? = nil,
+        replyTo: String? = nil
     ) {
         self.id = id
         self.kind = kind
         self.text = text
         self.value = value
+        self.replyTo = replyTo
     }
 
     public func toWireJSON() -> [String: Any] {
@@ -274,6 +287,7 @@ public struct WidgetConsoleEntry: Codable, Sendable, Equatable, Identifiable {
         {
             obj["value"] = valueJSON
         }
+        if let replyTo { obj["reply_to"] = replyTo }
         return obj
     }
 
@@ -289,7 +303,8 @@ public struct WidgetConsoleEntry: Codable, Sendable, Equatable, Identifiable {
         {
             value = try? JSONDecoder().decode(JSInspectValue.self, from: data)
         }
-        return WidgetConsoleEntry(id: id, kind: kind, text: text, value: value)
+        let replyTo = obj["reply_to"] as? String
+        return WidgetConsoleEntry(id: id, kind: kind, text: text, value: value, replyTo: replyTo)
     }
 }
 
@@ -481,6 +496,8 @@ public struct WidgetState: Codable, Sendable, Equatable {
             hex = value
         case .consoleAppend(let entry):
             consoleEntries.append(entry)
+        case .consoleReplyDone:
+            break
         case .clear:
             counter = nil
             histogram.removeAll()
