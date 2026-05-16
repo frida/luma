@@ -501,38 +501,60 @@ struct NotebookEmptyStateView: View {
             VStack {
                 Spacer(minLength: 0)
 
-                VStack(spacing: 24) {
-                    VStack(spacing: 8) {
-                        Image(systemName: "book.pages")
-                            .font(.system(size: 40))
-                            .foregroundStyle(.secondary)
-
-                        Text("Notebook")
-                            .font(.title2.weight(.semibold))
-
-                        Text("Capture interesting findings here.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .center)
-
-                    if !isCompact {
-                        walkthrough
-                    }
-
-                    Button(action: onAddNote) {
-                        Label("New Note", systemImage: "plus")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
+                if engine.collaboration.status == .connecting {
+                    joiningContent
+                } else {
+                    defaultContent
                 }
-                .padding(.horizontal, 24)
 
                 Spacer(minLength: 0)
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
+    }
+
+    private var joiningContent: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .controlSize(.large)
+            Text("Joining lab\u{2026}")
+                .font(.title3.weight(.semibold))
+            Text("Syncing this project's shared state.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, 24)
+    }
+
+    private var defaultContent: some View {
+        VStack(spacing: 24) {
+            VStack(spacing: 8) {
+                Image(systemName: "book.pages")
+                    .font(.system(size: 40))
+                    .foregroundStyle(.secondary)
+
+                Text("Notebook")
+                    .font(.title2.weight(.semibold))
+
+                Text("Capture interesting findings here.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+
+            if !isCompact {
+                walkthrough
+            }
+
+            Button(action: onAddNote) {
+                Label("New Note", systemImage: "plus")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        }
+        .padding(.horizontal, 24)
     }
 
     private var walkthrough: some View {

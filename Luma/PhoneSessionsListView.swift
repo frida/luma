@@ -220,6 +220,31 @@ struct PhoneSessionsListView: View {
     }
 
     private var emptyState: some View {
+        Group {
+            if engine.collaboration.status == .connecting {
+                joiningLabState
+            } else {
+                noSessionsState
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+
+    private var joiningLabState: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .controlSize(.large)
+            Text("Joining lab\u{2026}")
+                .font(.headline)
+            Text("Syncing this project's shared state.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+    }
+
+    private var noSessionsState: some View {
         VStack(spacing: 16) {
             Image(systemName: "target")
                 .font(.system(size: 44))
@@ -239,8 +264,6 @@ struct PhoneSessionsListView: View {
             .controlSize(.large)
             .padding(.top, 4)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
     }
 
     private func handleSpawn(device: Device, config: SpawnConfig) {
