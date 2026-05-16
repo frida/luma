@@ -52,21 +52,41 @@ private struct WidgetCanvas: View {
     var body: some View {
         Group {
             switch widget.kind {
+            case .counter(let cfg):
+                counterView(cfg)
+            case .histogram:
+                histogramView()
             case .graph(let cfg):
                 graphView(cfg)
             case .list(let cfg):
                 listView(cfg)
             case .table(let cfg):
                 tableView(cfg)
-            case .counter(let cfg):
-                counterView(cfg)
-            case .histogram:
-                histogramView()
             case .hex:
                 hexView()
+            case .console(let cfg):
+                consoleView(cfg)
             }
         }
         .task(id: instance?.id) { await consumeUpdates() }
+    }
+
+    @ViewBuilder
+    private func consoleView(_ cfg: InstrumentWidget.ConsoleConfig) -> some View {
+        ConsoleWidgetView(
+            entries: state.consoleEntries,
+            config: cfg,
+            onSubmit: { text in submitConsoleInput(text: text) }
+        )
+    }
+
+    private func submitConsoleInput(text: String) {
+        guard let instance else { return }
+        let widgetID = widget.id
+        let engine = engine
+        Task { @MainActor in
+            await engine.submitConsoleInput(instance: instance, widget: widgetID, text: text)
+        }
     }
 
     @ViewBuilder
@@ -263,5 +283,89 @@ private struct WidgetCanvas: View {
         where update.instanceID == instanceID && update.widget == widgetID {
             state.apply(update.kind)
         }
+    }
+}
+
+private struct ConsoleWidgetView: View {
+    let entries: [WidgetConsoleEntry]
+    let config: InstrumentWidget.ConsoleConfig
+    let onSubmit: (String) -> Void
+
+    @State private var draft: String = ""
+    @FocusState private var inputFocused: Bool
+
+    private var promptGlyph: String { config.prompt ?? "›" }
+    private var placeholder: String { config.placeholder ?? "" }
+    private var runLabel: String { config.runButtonLabel ?? "Run" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        if entries.isEmpty {
+                            Text("No entries.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        ForEach(entries) { entry in
+                            entryRow(entry)
+                                .id(entry.id)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 220)
+                .onChange(of: entries.count) { _, _ in
+                    if let last = entries.last?.id {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            proxy.scrollTo(last, anchor: .bottom)
+                        }
+                    }
+                }
+            }
+
+            HStack(spacing: 6) {
+                Text(promptGlyph)
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                TextField(placeholder, text: $draft)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($inputFocused)
+                    .onSubmit(submit)
+                Button(runLabel, action: submit)
+                    .disabled(!canSubmit)
+            }
+        }
+    }
+
+    private func entryRow(_ entry: WidgetConsoleEntry) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            switch entry.kind {
+            case .input:
+                Text(promptGlyph)
+                    .foregroundStyle(.secondary)
+            case .output:
+                Text(" ")
+            case .error:
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+            }
+            Text(entry.text)
+                .foregroundStyle(entry.kind == .error ? Color.red : .primary)
+                .textSelection(.enabled)
+        }
+        .font(.system(.caption, design: .monospaced))
+    }
+
+    private var canSubmit: Bool {
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func submit() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        draft = ""
+        onSubmit(text)
     }
 }

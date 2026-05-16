@@ -168,40 +168,43 @@ struct CustomInstrumentWidgetsPopover: View {
 private enum NewWidgetField: Hashable { case id, name }
 
 enum WidgetKindChoice: String, CaseIterable, Identifiable {
-    case graph, list, table, counter, histogram, hex
+    case counter, histogram, graph, list, table, hex, console
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
+        case .counter: return "Counter"
+        case .histogram: return "Histogram"
         case .graph: return "Graph"
         case .list: return "List"
         case .table: return "Table"
-        case .counter: return "Counter"
-        case .histogram: return "Histogram"
         case .hex: return "Hex Dump"
+        case .console: return "Console"
         }
     }
 
     init(from kind: InstrumentWidget.Kind) {
         switch kind {
+        case .counter: self = .counter
+        case .histogram: self = .histogram
         case .graph: self = .graph
         case .list: self = .list
         case .table: self = .table
-        case .counter: self = .counter
-        case .histogram: self = .histogram
         case .hex: self = .hex
+        case .console: self = .console
         }
     }
 
     func defaultKind() -> InstrumentWidget.Kind {
         switch self {
+        case .counter: return .counter(InstrumentWidget.CounterConfig())
+        case .histogram: return .histogram(InstrumentWidget.HistogramConfig())
         case .graph: return .graph(InstrumentWidget.GraphConfig())
         case .list: return .list(InstrumentWidget.ListConfig())
         case .table: return .table(InstrumentWidget.TableConfig())
-        case .counter: return .counter(InstrumentWidget.CounterConfig())
-        case .histogram: return .histogram(InstrumentWidget.HistogramConfig())
         case .hex: return .hex(InstrumentWidget.HexConfig())
+        case .console: return .console(InstrumentWidget.ConsoleConfig())
         }
     }
 }
@@ -273,6 +276,15 @@ private struct WidgetRow: View {
     @ViewBuilder
     private var kindEditor: some View {
         switch widget.kind {
+        case .counter:
+            HStack(spacing: 8) {
+                Text("Unit").font(.subheadline).frame(width: 160, alignment: .leading)
+                TextField("(optional)", text: counterUnitBinding)
+                    .textFieldStyle(.roundedBorder)
+                Spacer()
+            }
+        case .histogram:
+            capRow(label: "Max buckets", binding: histogramMaxBucketsBinding)
         case .graph:
             VStack(alignment: .leading, spacing: 8) {
                 capRow(label: "Max points / series", binding: graphMaxPointsBinding)
@@ -289,18 +301,69 @@ private struct WidgetRow: View {
                 TableColumnsEditor(columns: tableColumnsBinding)
                 ListActionsEditor(actions: tableActionsBinding)
             }
-        case .counter:
-            HStack(spacing: 8) {
-                Text("Unit").font(.subheadline).frame(width: 160, alignment: .leading)
-                TextField("(optional)", text: counterUnitBinding)
-                    .textFieldStyle(.roundedBorder)
-                Spacer()
-            }
-        case .histogram:
-            capRow(label: "Max buckets", binding: histogramMaxBucketsBinding)
         case .hex:
             capRow(label: "Max bytes", binding: hexMaxBytesBinding)
+        case .console:
+            VStack(alignment: .leading, spacing: 8) {
+                capRow(label: "Max entries", binding: consoleMaxEntriesBinding)
+                consoleTextRow(label: "Prompt", binding: consolePromptBinding)
+                consoleTextRow(label: "Placeholder", binding: consolePlaceholderBinding)
+                consoleTextRow(label: "Run button label", binding: consoleRunLabelBinding)
+            }
         }
+    }
+
+    private func consoleTextRow(label: String, binding: Binding<String>) -> some View {
+        HStack(spacing: 8) {
+            Text(label).font(.subheadline).frame(width: 160, alignment: .leading)
+            TextField("(optional)", text: binding)
+                .textFieldStyle(.roundedBorder)
+            Spacer()
+        }
+    }
+
+    private var consoleMaxEntriesBinding: Binding<Int> {
+        Binding(
+            get: {
+                if case .console(let cfg) = widget.kind { return cfg.maxEntries }
+                return InstrumentWidget.ConsoleConfig.defaultMaxEntries
+            },
+            set: { newValue in
+                if case .console(var cfg) = widget.kind {
+                    cfg.maxEntries = max(1, newValue)
+                    widget.kind = .console(cfg)
+                }
+            }
+        )
+    }
+
+    private var consolePromptBinding: Binding<String> {
+        consoleStringBinding(keyPath: \.prompt)
+    }
+
+    private var consolePlaceholderBinding: Binding<String> {
+        consoleStringBinding(keyPath: \.placeholder)
+    }
+
+    private var consoleRunLabelBinding: Binding<String> {
+        consoleStringBinding(keyPath: \.runButtonLabel)
+    }
+
+    private func consoleStringBinding(
+        keyPath: WritableKeyPath<InstrumentWidget.ConsoleConfig, String?>
+    ) -> Binding<String> {
+        Binding(
+            get: {
+                if case .console(let cfg) = widget.kind { return cfg[keyPath: keyPath] ?? "" }
+                return ""
+            },
+            set: { newValue in
+                if case .console(var cfg) = widget.kind {
+                    cfg[keyPath: keyPath] = newValue.isEmpty ? nil : newValue
+                    widget.kind = .console(cfg)
+                }
+            }
+        )
     }
 
     private func capRow(label: String, binding: Binding<Int>) -> some View {
