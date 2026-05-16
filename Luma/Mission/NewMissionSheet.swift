@@ -41,13 +41,88 @@ struct NewMissionSheet: View {
     }
 
     var body: some View {
+        #if os(macOS)
+        desktopLayout
+        #else
+        NavigationStack { compactLayout }
+        #endif
+    }
+
+    #if !os(macOS)
+    private var compactLayout: some View {
+        formContent
+            .formStyle(.grouped)
+            .navigationTitle("New Mission")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { isPresented = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(isStarting ? "Starting…" : "Start") {
+                        Task { await start() }
+                    }
+                    .disabled(!canStart)
+                }
+            }
+            .task(id: selectedProviderID) {
+                baseURLInput = LumaAppState.shared.providerBaseURL(providerID: selectedProviderID) ?? ""
+                await refreshAPIKeyStatus()
+                await refreshModels()
+            }
+            .onChange(of: hasStoredAPIKey) { _, _ in Task { await refreshModels() } }
+            .onChange(of: apiKey) { _, _ in scheduleAPIKeyRefresh() }
+            .onChange(of: selectedProviderID) { _, _ in
+                let descriptor = engine.llmRegistry.provider(id: selectedProviderID)?.descriptor
+                selectedModelID = descriptor?.defaultModelID ?? selectedModelID
+                if let options = descriptor?.capabilities.reasoningEffortOptions, !options.contains(reasoningEffort) {
+                    reasoningEffort = descriptor?.capabilities.defaultReasoningEffort ?? options.first ?? "auto"
+                }
+            }
+    }
+    #endif
+
+    private var desktopLayout: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("New Mission")
                 .font(.title2.bold())
                 .padding(.horizontal)
                 .padding(.top)
 
-            Form {
+            formContent
+                .formStyle(.grouped)
+
+            HStack {
+                Button("Cancel") { isPresented = false }
+                Spacer()
+                Button(isStarting ? "Starting…" : "Start Mission") {
+                    Task { await start() }
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .disabled(!canStart)
+            }
+            .padding()
+        }
+        .frame(minWidth: 560, minHeight: 600)
+        .task(id: selectedProviderID) {
+            baseURLInput = LumaAppState.shared.providerBaseURL(providerID: selectedProviderID) ?? ""
+            await refreshAPIKeyStatus()
+            await refreshModels()
+        }
+        .onChange(of: hasStoredAPIKey) { _, _ in Task { await refreshModels() } }
+        .onChange(of: apiKey) { _, _ in scheduleAPIKeyRefresh() }
+        .onChange(of: selectedProviderID) { _, _ in
+            let descriptor = engine.llmRegistry.provider(id: selectedProviderID)?.descriptor
+            selectedModelID = descriptor?.defaultModelID ?? selectedModelID
+            if let options = descriptor?.capabilities.reasoningEffortOptions, !options.contains(reasoningEffort) {
+                reasoningEffort = descriptor?.capabilities.defaultReasoningEffort ?? options.first ?? "auto"
+            }
+        }
+    }
+
+    private var formContent: some View {
+        Form {
                 Section("Goal") {
                     TextEditor(text: $goalText)
                         .font(.body.monospaced())
@@ -122,35 +197,6 @@ struct NewMissionSheet: View {
                         }
                     }
                 }
-            }
-            .formStyle(.grouped)
-
-            HStack {
-                Button("Cancel") { isPresented = false }
-                Spacer()
-                Button(isStarting ? "Starting…" : "Start Mission") {
-                    Task { await start() }
-                }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
-                .disabled(!canStart)
-            }
-            .padding()
-        }
-        .frame(minWidth: 560, minHeight: 600)
-        .task(id: selectedProviderID) {
-            baseURLInput = LumaAppState.shared.providerBaseURL(providerID: selectedProviderID) ?? ""
-            await refreshAPIKeyStatus()
-            await refreshModels()
-        }
-        .onChange(of: hasStoredAPIKey) { _, _ in Task { await refreshModels() } }
-        .onChange(of: apiKey) { _, _ in scheduleAPIKeyRefresh() }
-        .onChange(of: selectedProviderID) { _, _ in
-            let descriptor = engine.llmRegistry.provider(id: selectedProviderID)?.descriptor
-            selectedModelID = descriptor?.defaultModelID ?? selectedModelID
-            if let options = descriptor?.capabilities.reasoningEffortOptions, !options.contains(reasoningEffort) {
-                reasoningEffort = descriptor?.capabilities.defaultReasoningEffort ?? options.first ?? "auto"
-            }
         }
     }
 
