@@ -287,13 +287,16 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         //
         // Action buttons on a list or table widget invoke onAction({
         // widget, action, item }) on the handle. Submissions from a
-        // console widget invoke onConsoleInput({ widget, entryId, text })
-        // — echo the result back with the matching widget's
-        // appendOutput / appendError. The `widget` and `action` fields are
-        // narrowed to the ids you declared. The `restored` argument
-        // carries the last snapshot for each widget whose Persistence is
-        // set to Session — widgets left at None do not appear on
-        // `restored`.
+        // console widget invoke
+        //   onConsoleInput({ widget, entryId, text }, respond)
+        // and `respond.output` / `respond.error` / `respond.value` post
+        // entries that are visually grouped with the originating input.
+        // For unsolicited output, call appendOutput / appendError /
+        // appendValue on the widget directly. The `widget` and `action`
+        // fields are narrowed to the ids you declared. The `restored`
+        // argument carries the last snapshot for each widget whose
+        // Persistence is set to Session — widgets left at None do not
+        // appear on `restored`.
         //
         // The example below assumes:
         //   - one feature `logStack` (Boolean)
@@ -337,9 +340,9 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
                             ctx.emit({ bookmarked: action.item });
                         }
                     },
-                    onConsoleInput({ widget, text }) {
+                    onConsoleInput({ widget, text }, respond) {
                         if (widget === "repl") {
-                            ctx.widget("repl").appendOutput(`echo: ${text}`);
+                            respond.output(`echo: ${text}`);
                         }
                     },
                     dispose() {

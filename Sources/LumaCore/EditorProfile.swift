@@ -551,6 +551,12 @@ public enum CustomInstrumentTypings {
                     : never
         }[keyof CustomInstrumentWidgetMap];
 
+        declare interface CustomInstrumentConsoleResponder {
+            output(text: string): void;
+            error(text: string): void;
+            value(v: unknown): void;
+        }
+
         declare type CustomFeatureValue = boolean | number | string | CustomFeatureValue[] | { [name: string]: CustomFeatureValue };
 
         declare interface CustomInstrumentFeatureMap {
@@ -563,7 +569,10 @@ public enum CustomInstrumentTypings {
         declare interface CustomInstrumentHandle {
             updateConfig?(config: CustomInstrumentConfig): void | Promise<void>;
             onAction?(action: CustomInstrumentAction): void | Promise<void>;
-            onConsoleInput?(input: CustomInstrumentConsoleInput): void | Promise<void>;
+            onConsoleInput?(
+                input: CustomInstrumentConsoleInput,
+                respond: CustomInstrumentConsoleResponder
+            ): void | Promise<void>;
             dispose?(): void | Promise<void>;
         }
 
