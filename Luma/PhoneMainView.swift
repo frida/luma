@@ -278,7 +278,6 @@ private struct DrawerHost<Content: View>: View {
                                     }
                                 }
                         )
-                        .ignoresSafeArea(edges: .bottom)
                 }
             }
             .animation(.spring(response: 0.3, dampingFraction: 0.85), value: active)
