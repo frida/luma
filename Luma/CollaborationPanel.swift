@@ -436,6 +436,7 @@ struct CollaborationPanel: View {
                         .frame(minHeight: outer.size.height, alignment: .bottomLeading)
                     }
                     .scrollBounceBehavior(.basedOnSize)
+                    .scrollDismissesKeyboard(.interactively)
                     .coordinateSpace(name: "chatScroll")
                     .simultaneousGesture(
                         DragGesture().onChanged { _ in

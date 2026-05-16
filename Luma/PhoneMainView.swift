@@ -273,6 +273,7 @@ private struct DrawerHost<Content: View>: View {
 
                 if let kind = active {
                     drawerBody(for: kind)
+                        .keyboardAdaptive()
                         .frame(width: drawerWidth)
                         .frame(maxHeight: .infinity)
                         .background(Color.platformWindowBackground)
