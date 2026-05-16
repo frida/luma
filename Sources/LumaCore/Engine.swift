@@ -647,6 +647,10 @@ public final class Engine {
         return host.id == collaboration.localUser?.id
     }
 
+    public func isHostingNode(_ sessionID: UUID) -> Bool {
+        node(forSessionID: sessionID) != nil
+    }
+
     public var canHostNewSessions: Bool {
         !collaboration.isCollaborative || collaboration.isOwner
     }
@@ -669,13 +673,13 @@ public final class Engine {
     private func broadcastInstrumentStatus(instanceID: UUID, sessionID: UUID) {
         guard let instance = try? store.fetchInstrument(id: instanceID) else { return }
         onSessionListChanged?(.instrumentUpdated(instance))
-        if localUserHosts(sessionID) {
+        if isHostingNode(sessionID) {
             broadcastInstrumentUpdate(instance)
         }
     }
 
     private func broadcastInstrumentUpdate(_ instance: InstrumentInstance) {
-        guard localUserHosts(instance.sessionID) else { return }
+        guard isHostingNode(instance.sessionID) else { return }
         let status = node(forSessionID: instance.sessionID)?.instruments.first(where: { $0.id == instance.id })?.status
         collaboration.enqueueUpdateInstrument(sessionID: instance.sessionID, instance: instance, runtimeStatus: status)
     }
@@ -692,7 +696,7 @@ public final class Engine {
         instanceID: UUID,
         state: InstrumentState
     ) {
-        guard localUserHosts(sessionID),
+        guard isHostingNode(sessionID),
             let instance = try? store.fetchInstrument(id: instanceID)
         else { return }
         Task { @MainActor in
@@ -701,7 +705,7 @@ public final class Engine {
     }
 
     private func handleRemoteInstrumentRemoveRequest(sessionID: UUID, instanceID: UUID) {
-        guard localUserHosts(sessionID),
+        guard isHostingNode(sessionID),
             let instance = try? store.fetchInstrument(id: instanceID)
         else { return }
         Task { @MainActor in
@@ -715,7 +719,7 @@ public final class Engine {
         sourceIdentifier: String,
         configJSON: Data
     ) {
-        guard localUserHosts(sessionID) else { return }
+        guard isHostingNode(sessionID) else { return }
         Task { @MainActor in
             _ = await addInstrument(
                 kind: kind,
@@ -731,7 +735,7 @@ public final class Engine {
         instanceID: UUID,
         configJSON: Data
     ) {
-        guard localUserHosts(sessionID),
+        guard isHostingNode(sessionID),
             let instance = try? store.fetchInstrument(id: instanceID)
         else { return }
         Task { @MainActor in
@@ -1592,7 +1596,7 @@ public final class Engine {
 
     private func broadcastArmingChangeIfHosting(_ session: ProcessSession) {
         guard collaboration.isCollaborative,
-              localUserHosts(session.id),
+              isHostingNode(session.id),
               let collabID = collabSessionID(forSessionID: session.id)
         else { return }
         collaboration.enqueueUpdateSessionArming(sessionID: collabID, armingState: session.armingState)
@@ -2158,7 +2162,7 @@ public final class Engine {
         configJSON: Data,
         sessionID: UUID
     ) async -> InstrumentInstance? {
-        if !localUserHosts(sessionID) {
+        if !isHostingNode(sessionID) {
             collaboration.sendInstrumentAdd(
                 sessionID: sessionID,
                 kind: kind,
@@ -2202,7 +2206,7 @@ public final class Engine {
     }
 
     public func removeInstrument(_ instance: InstrumentInstance) async {
-        if !localUserHosts(instance.sessionID) {
+        if !isHostingNode(instance.sessionID) {
             collaboration.sendInstrumentRemove(sessionID: instance.sessionID, instanceID: instance.id)
             return
         }
@@ -2225,7 +2229,7 @@ public final class Engine {
     }
 
     public func setInstrumentState(_ instance: InstrumentInstance, state: InstrumentState) async {
-        if !localUserHosts(instance.sessionID) {
+        if !isHostingNode(instance.sessionID) {
             collaboration.sendInstrumentSetState(
                 sessionID: instance.sessionID,
                 instanceID: instance.id,
@@ -2262,7 +2266,7 @@ public final class Engine {
     }
 
     public func applyInstrumentConfig(_ instance: InstrumentInstance, configJSON: Data) async {
-        if !localUserHosts(instance.sessionID) {
+        if !isHostingNode(instance.sessionID) {
             collaboration.sendInstrumentUpdateConfig(
                 sessionID: instance.sessionID,
                 instanceID: instance.id,
@@ -3302,7 +3306,6 @@ public final class Engine {
         let update = WidgetUpdate(instanceID: instance.id, widget: widget, kind: .consoleAppend(entry))
         applyWidgetUpdate(update, sessionID: instance.sessionID, origin: .local)
 
-        guard localUserHosts(instance.sessionID) else { return }
         guard let node = node(forSessionID: instance.sessionID),
             node.instruments.first(where: { $0.id == instance.id })?.attachment == .attached
         else { return }
@@ -3319,7 +3322,7 @@ public final class Engine {
         action: String,
         item: String? = nil
     ) async {
-        if !localUserHosts(instance.sessionID) {
+        if !isHostingNode(instance.sessionID) {
             collaboration.sendWidgetAction(
                 sessionID: instance.sessionID,
                 instanceID: instance.id,
