@@ -554,7 +554,7 @@ final class InsightDetailView {
         let decorationsBox = Box(orientation: .horizontal, spacing: 3)
         decorationsBox.halign = .end
         decorationsBox.valign = .center
-        decorationsBox.setSizeRequest(width: 16, height: -1)
+        decorationsBox.setSizeRequest(width: 16, height: 16)
 
         let annotation = engine?.addressAnnotations[sessionID]?[line.address]
         let decorations = annotation?.decorations ?? []
@@ -568,19 +568,20 @@ final class InsightDetailView {
         }
         let noteCount = annotation?.noteCount ?? 0
         if noteCount > 0 {
-            let bubble = Button()
-            let bubbleIcon = Gtk.Image(iconName: "mail-unread-symbolic")
-            bubbleIcon.pixelSize = 10
-            bubble.set(child: bubbleIcon)
-            bubble.add(cssClass: "flat")
+            let bubble = Gtk.Image(iconName: "mail-unread-symbolic")
+            bubble.pixelSize = 12
             bubble.add(cssClass: "luma-disasm-note-bubble")
             bubble.tooltipText = "\(noteCount) thread\(noteCount == 1 ? "" : "s")"
+            bubble.valign = .center
             let bubbleAddress = line.address
-            bubble.onClicked { [weak self] _ in
+            let click = GestureClick()
+            click.set(button: 1)
+            click.onPressed { [weak self] _, _, _, _ in
                 MainActor.assumeIsolated {
                     self?.openNotePopover(anchoredAt: bubble, address: bubbleAddress)
                 }
             }
+            bubble.install(controller: click)
             decorationsBox.append(child: bubble)
         }
         row.append(child: decorationsBox)
