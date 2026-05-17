@@ -2820,10 +2820,6 @@ public enum MissionTools {
             }
             let focus = (invocation.args["focus"] as? String) ?? ""
 
-            if let viaR2AI = await tryExplainViaR2AI(disassembler: dis, address: address, addrString: addrString, focus: focus) {
-                return viaR2AI
-            }
-
             let lines = await dis.disassemble(DisassemblyRequest(address: address, count: 64, isDarkMode: false))
             let disasmText = lines.map { line in
                 String(format: "0x%llx", line.address) + "  " + line.asmText.plainText
@@ -2842,37 +2838,11 @@ public enum MissionTools {
 
             switch summary {
             case .success(let explanation):
-                let payload: [String: Any] = ["address": addrString, "explanation": explanation, "source": "luma_llm"]
+                let payload: [String: Any] = ["address": addrString, "explanation": explanation]
                 return makeResult(jsonObject: payload, summary: "Explained function at \(addrString)")
             case .failure(let reason):
                 return errorResult("explanation failed: \(reason)")
             }
-        }
-    }
-
-    private static func tryExplainViaR2AI(
-        disassembler: Disassembler,
-        address: UInt64,
-        addrString: String,
-        focus: String
-    ) async -> ActionResult? {
-        let query: String = {
-            var s = "Analyse and explain the function at \(addrString). Use r2 commands as needed (pdf, axt, decai). 2-4 sentences, lead with the conclusion."
-            if !focus.isEmpty {
-                s += " Focus on: \(focus)."
-            }
-            return s
-        }()
-
-        let outcome = await disassembler.runR2AISubMission(query: query, timeoutSeconds: 90)
-        switch outcome {
-        case .unavailable, .timeout, .failed:
-            return nil
-        case .completed(let text):
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty { return nil }
-            let payload: [String: Any] = ["address": addrString, "explanation": trimmed, "source": "r2ai"]
-            return makeResult(jsonObject: payload, summary: "Explained function at \(addrString) (via r2ai)")
         }
     }
 

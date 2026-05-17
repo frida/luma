@@ -47,50 +47,6 @@ public final class Disassembler {
         return await r2.cmd("pdc @ 0x\(hex)")
     }
 
-    public func runR2AISubMission(
-        query: String,
-        timeoutSeconds: TimeInterval = 60
-    ) async -> R2AISubMissionResult {
-        await ensureOpened()
-
-        let probe = await r2.cmd("r2ai -h")
-        if probe.isEmpty || probe.contains("Unknown") {
-            return .unavailable
-        }
-
-        await r2.config.set("r2ai.async", bool: true)
-
-        let escapedQuery = query.replacingOccurrences(of: "\"", with: "\\\"")
-        let submitOutput = await r2.cmd("r2ai -a \"\(escapedQuery)\"")
-        guard let taskID = parseR2AITaskID(submitOutput) else {
-            return .failed("could not parse task id from: \(submitOutput.prefix(120))")
-        }
-
-        let deadline = Date().addingTimeInterval(timeoutSeconds)
-        while Date() < deadline {
-            let json = await r2.cmd("r2ai -sj")
-            guard let task = pickR2AITask(fromJSON: json, id: taskID) else {
-                try? await Task.sleep(nanoseconds: 200_000_000)
-                continue
-            }
-            switch task.state {
-            case "complete":
-                return .completed(task.output ?? "")
-            case "error":
-                return .failed(task.error ?? "r2ai task errored")
-            case "cancelled":
-                return .failed("r2ai task was cancelled")
-            case "wait-approve":
-                _ = await r2.cmd("r2ai -sy \(taskID)")
-            default:
-                break
-            }
-            try? await Task.sleep(nanoseconds: 200_000_000)
-        }
-        _ = await r2.cmd("r2ai -sk \(taskID)")
-        return .timeout
-    }
-
     private func ensureOpened() async {
         if let openTask {
             await openTask.value
@@ -189,42 +145,6 @@ private struct FridaMemURI {
         guard raw.hasPrefix("0x"), let base = UInt64(raw.dropFirst(2), radix: 16) else { return nil }
         return FridaMemURI(baseAddress: base)
     }
-}
-
-public enum R2AISubMissionResult: Sendable {
-    case unavailable
-    case timeout
-    case failed(String)
-    case completed(String)
-}
-
-private struct R2AITaskSnapshot {
-    let id: Int
-    let state: String
-    let output: String?
-    let error: String?
-}
-
-private func parseR2AITaskID(_ text: String) -> Int? {
-    guard let range = text.range(of: "task ") else { return nil }
-    let scanner = Scanner(string: String(text[range.upperBound...]))
-    return scanner.scanInt()
-}
-
-private func pickR2AITask(fromJSON json: String, id: Int) -> R2AITaskSnapshot? {
-    guard let data = json.data(using: .utf8),
-        let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-        let tasks = root["tasks"] as? [[String: Any]]
-    else { return nil }
-    guard let task = tasks.first(where: { ($0["id"] as? Int) == id }),
-        let state = task["state"] as? String
-    else { return nil }
-    return R2AITaskSnapshot(
-        id: id,
-        state: state,
-        output: task["output"] as? String,
-        error: task["error"] as? String
-    )
 }
 
 private struct R2DisasmOp: Decodable {
