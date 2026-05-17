@@ -87,6 +87,7 @@ public final class Engine {
     @ObservationIgnored public var onSessionListChanged: (@MainActor (SessionListChange) -> Void)?
     @ObservationIgnored public var onREPLCellAdded: (@MainActor (REPLCell) -> Void)?
     @ObservationIgnored public var onNotebookChanged: (@MainActor (NotebookChange) -> Void)?
+    @ObservationIgnored public var onAddressNoteChanged: (@MainActor (AddressNoteChange) -> Void)?
     @ObservationIgnored public var onInstalledPackagesChanged: (@MainActor ([InstalledPackage]) -> Void)?
     @ObservationIgnored public var onUserNotification: (@MainActor (UserNotification) -> Void)?
     @ObservationIgnored public var onMissionsChanged: (@MainActor ([Mission]) -> Void)?
@@ -307,6 +308,86 @@ public final class Engine {
         notebookEntries.removeAll { $0.id == entry.id }
         onNotebookChanged?(.removed(entry.id))
         collaboration.enqueueRemove(entryID: entry.id)
+    }
+
+    // MARK: - Address Notes
+
+    public func createAddressNote(
+        sessionID: UUID,
+        address: UInt64,
+        title: String? = nil
+    ) -> AddressNote? {
+        guard let node = node(forSessionID: sessionID) else { return nil }
+        let anchor = node.anchor(for: address)
+        let note = AddressNote(sessionID: sessionID, anchor: anchor, title: title)
+        try? store.save(note)
+        rebuildAddressAnnotations(sessionID: sessionID)
+        onAddressNoteChanged?(.noteAdded(note))
+        collaboration.enqueueAddressNoteUpsert(note)
+        return note
+    }
+
+    public func updateAddressNote(_ note: AddressNote) {
+        var updated = note
+        updated.updatedAt = Date()
+        try? store.save(updated)
+        onAddressNoteChanged?(.noteUpdated(updated))
+        collaboration.enqueueAddressNoteUpsert(updated)
+    }
+
+    public func deleteAddressNote(_ note: AddressNote) {
+        try? store.deleteAddressNote(id: note.id)
+        rebuildAddressAnnotations(sessionID: note.sessionID)
+        onAddressNoteChanged?(.noteRemoved(noteID: note.id, sessionID: note.sessionID))
+        collaboration.enqueueAddressNoteRemove(noteID: note.id)
+    }
+
+    public func appendUserMessage(noteID: UUID, body: String) -> AddressNoteMessage? {
+        guard let note = try? store.fetchAddressNote(id: noteID) else { return nil }
+        let existing = (try? store.fetchAddressNoteMessages(noteID: noteID)) ?? []
+        let nextIndex = (existing.last?.index ?? -1) + 1
+        let message = AddressNoteMessage(
+            noteID: noteID,
+            index: nextIndex,
+            role: .user,
+            bodyMarkdown: body
+        )
+        try? store.save(message)
+        bumpNoteUpdatedAt(note)
+        onAddressNoteChanged?(.messageAppended(message))
+        collaboration.enqueueAddressNoteMessageAppend(message)
+        return message
+    }
+
+    public func editUserMessage(noteID: UUID, messageID: UUID, body: String) -> AddressNoteMessage? {
+        guard var message = try? store.fetchAddressNoteMessage(id: messageID),
+            message.noteID == noteID,
+            message.role == .user
+        else { return nil }
+        message.bodyMarkdown = body
+        try? store.save(message)
+        if let note = try? store.fetchAddressNote(id: noteID) {
+            bumpNoteUpdatedAt(note)
+        }
+        onAddressNoteChanged?(.messageEdited(message))
+        collaboration.enqueueAddressNoteMessageEdit(noteID: noteID, messageID: messageID, bodyMarkdown: body)
+        return message
+    }
+
+    public func addressNotes(sessionID: UUID, anchor: AddressAnchor? = nil) -> [AddressNote] {
+        let all = (try? store.fetchAddressNotes(sessionID: sessionID)) ?? []
+        guard let anchor else { return all }
+        return all.filter { $0.anchor == anchor }
+    }
+
+    public func addressNoteMessages(noteID: UUID) -> [AddressNoteMessage] {
+        (try? store.fetchAddressNoteMessages(noteID: noteID)) ?? []
+    }
+
+    private func bumpNoteUpdatedAt(_ note: AddressNote) {
+        var updated = note
+        updated.updatedAt = Date()
+        try? store.save(updated)
     }
 
     /// Move `entry` into the slot between `previous` and `next` (either may
@@ -4416,20 +4497,23 @@ public final class Engine {
     private func applyRemoteAddressNoteOp(_ op: AddressNoteOp) {
         switch op {
         case .noteUpsert(let u):
+            let existed = (try? store.fetchAddressNote(id: u.note.id)) != nil
             try? store.save(u.note)
             rebuildAddressAnnotations(sessionID: u.note.sessionID)
+            onAddressNoteChanged?(existed ? .noteUpdated(u.note) : .noteAdded(u.note))
         case .noteRemove(let r):
-            let sessionID = (try? store.fetchAddressNote(id: r.noteID))?.sessionID
+            guard let prior = try? store.fetchAddressNote(id: r.noteID) else { return }
             try? store.deleteAddressNote(id: r.noteID)
-            if let sessionID {
-                rebuildAddressAnnotations(sessionID: sessionID)
-            }
+            rebuildAddressAnnotations(sessionID: prior.sessionID)
+            onAddressNoteChanged?(.noteRemoved(noteID: r.noteID, sessionID: prior.sessionID))
         case .messageAppend(let a):
             try? store.save(a.message)
+            onAddressNoteChanged?(.messageAppended(a.message))
         case .messageEdit(let e):
             guard var message = try? store.fetchAddressNoteMessage(id: e.messageID) else { return }
             message.bodyMarkdown = e.bodyMarkdown
             try? store.save(message)
+            onAddressNoteChanged?(.messageEdited(message))
         }
     }
 
