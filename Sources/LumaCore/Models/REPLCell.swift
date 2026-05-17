@@ -6,6 +6,7 @@ public struct REPLCell: Codable, Identifiable, Sendable, FetchableRecord, Persis
 
     public var id: UUID
     public var sessionID: UUID
+    public var author: Author?
     public var code: String
     public var result: Result
     public var timestamp: Date
@@ -14,6 +15,7 @@ public struct REPLCell: Codable, Identifiable, Sendable, FetchableRecord, Persis
     enum CodingKeys: String, CodingKey {
         case id
         case sessionID = "session_id"
+        case author
         case code
         case result
         case timestamp
@@ -23,6 +25,7 @@ public struct REPLCell: Codable, Identifiable, Sendable, FetchableRecord, Persis
     public init(
         id: UUID = UUID(),
         sessionID: UUID,
+        author: Author? = nil,
         code: String,
         result: Result,
         timestamp: Date = .now,
@@ -30,6 +33,7 @@ public struct REPLCell: Codable, Identifiable, Sendable, FetchableRecord, Persis
     ) {
         self.id = id
         self.sessionID = sessionID
+        self.author = author
         self.code = code
         self.result = result
         self.timestamp = timestamp
