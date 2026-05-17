@@ -533,7 +533,8 @@ final class InsightDetailView {
         decorationsBox.valign = .center
         decorationsBox.setSizeRequest(width: 16, height: -1)
 
-        let decorations = engine?.addressAnnotations[sessionID]?[line.address]?.decorations ?? []
+        let annotation = engine?.addressAnnotations[sessionID]?[line.address]
+        let decorations = annotation?.decorations ?? []
         for deco in decorations.prefix(3) {
             let dot = Label(str: "●")
             dot.add(cssClass: "luma-disasm-decoration")
@@ -541,6 +542,23 @@ final class InsightDetailView {
                 dot.tooltipText = help
             }
             decorationsBox.append(child: dot)
+        }
+        let noteCount = annotation?.noteCount ?? 0
+        if noteCount > 0 {
+            let bubble = Button()
+            let bubbleIcon = Gtk.Image(iconName: "mail-unread-symbolic")
+            bubbleIcon.pixelSize = 10
+            bubble.set(child: bubbleIcon)
+            bubble.add(cssClass: "flat")
+            bubble.add(cssClass: "luma-disasm-note-bubble")
+            bubble.tooltipText = "\(noteCount) thread\(noteCount == 1 ? "" : "s")"
+            let bubbleAddress = line.address
+            bubble.onClicked { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.openNotePopover(at: bubble, address: bubbleAddress)
+                }
+            }
+            decorationsBox.append(child: bubble)
         }
         row.append(child: decorationsBox)
 
@@ -673,7 +691,7 @@ final class InsightDetailView {
     private func showAddressMenu(at anchor: Widget, x: Double, y: Double, address: UInt64) {
         guard let engine else { return }
 
-        var items: [ContextMenu.Item] = [
+        let primary: [ContextMenu.Item] = [
             .init("Copy Address") {
                 let hex = String(format: "0x%llx", address)
                 guard let display = gdk_display_get_default() else { return }
@@ -683,8 +701,20 @@ final class InsightDetailView {
             }
         ]
 
+        let navigation: [ContextMenu.Item] = [
+            .init("Notes & AI…") { [weak self] in
+                self?.openNotePopover(at: anchor, address: address)
+            },
+            .init("Go to Function Start") { [weak self] in
+                Task { @MainActor in
+                    await self?.goToFunctionStart(address: address)
+                }
+            }
+        ]
+
+        var engineItems: [ContextMenu.Item] = []
         for action in engine.addressActions(sessionID: sessionID, address: address) {
-            items.append(ContextMenu.Item(action.title, destructive: action.role == .destructive) { [weak self] in
+            engineItems.append(ContextMenu.Item(action.title, destructive: action.role == .destructive) { [weak self] in
                 Task { @MainActor in
                     guard let target = await action.perform() else { return }
                     self?.owner?.navigate(to: target)
@@ -692,7 +722,29 @@ final class InsightDetailView {
             })
         }
 
-        ContextMenu.present([items], at: anchor, x: x, y: y)
+        ContextMenu.present([primary, navigation, engineItems], at: anchor, x: x, y: y)
+    }
+
+    private func openNotePopover(at anchor: Widget, address: UInt64) {
+        guard let engine else { return }
+        let popover = AddressNotePopover(engine: engine, sessionID: sessionID, address: address)
+        popover.presentAnchored(to: anchor)
+    }
+
+    private func goToFunctionStart(address: UInt64) async {
+        guard let engine, let dis = engine.disassembler(forSessionID: sessionID) else { return }
+        let hex = String(address, radix: 16)
+        let output = await dis.runCommand("?v $FB @ 0x\(hex)").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let target = parseFunctionStart(output), target != 0 else { return }
+        jumpTo(target: target)
+    }
+
+    private func parseFunctionStart(_ text: String) -> UInt64? {
+        let trimmed = text.lowercased()
+        if trimmed.hasPrefix("0x") {
+            return UInt64(trimmed.dropFirst(2), radix: 16)
+        }
+        return UInt64(trimmed, radix: 16) ?? UInt64(trimmed)
     }
 
     // MARK: - Theme
