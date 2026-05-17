@@ -195,12 +195,7 @@ public final class MCPServer {
                 try? engine.store.save(action)
                 engine.collaboration.enqueueMissionAction(action)
                 let message = reason.map { "User declined: \($0)" } ?? "User declined to run this tool."
-                let payload: [String: Any] = [
-                    "content": [["type": "text", "text": message]],
-                    "isError": true,
-                    "_meta": ["tool_call_id": toolCallID],
-                ]
-                return jsonRPCResult(id: rpcID, result: payload)
+                return jsonRPCResult(id: rpcID, result: toolCallPayload(toolCallID: toolCallID, body: message, isError: true))
             case .cancelled:
                 action.status = .failed
                 action.error = "mission cancelled while awaiting approval"
@@ -234,12 +229,7 @@ public final class MCPServer {
             action.completedAt = Date()
             try? engine.store.save(action)
             engine.collaboration.enqueueMissionAction(action)
-            let payload: [String: Any] = [
-                "content": [["type": "text", "text": "error: \(error.localizedDescription)"]],
-                "isError": true,
-                "_meta": ["tool_call_id": toolCallID],
-            ]
-            return jsonRPCResult(id: rpcID, result: payload)
+            return jsonRPCResult(id: rpcID, result: toolCallPayload(toolCallID: toolCallID, body: "error: \(error.localizedDescription)", isError: true))
         }
 
         action.status = result.isError ? .failed : .succeeded
@@ -252,12 +242,17 @@ public final class MCPServer {
 
         onToolFinished?(toolName, result)
 
-        let payload: [String: Any] = [
-            "content": [["type": "text", "text": result.resultJSON]],
-            "isError": result.isError,
-            "_meta": ["tool_call_id": toolCallID],
+        return jsonRPCResult(id: rpcID, result: toolCallPayload(toolCallID: toolCallID, body: result.resultJSON, isError: result.isError))
+    }
+
+    private func toolCallPayload(toolCallID: String, body: String, isError: Bool) -> [String: Any] {
+        let envelope: [String: Any] = ["tool_call_id": toolCallID, "body": body]
+        let data = try! JSONSerialization.data(withJSONObject: envelope, options: [.sortedKeys])
+        let text = String(decoding: data, as: UTF8.self)
+        return [
+            "content": [["type": "text", "text": text]],
+            "isError": isError,
         ]
-        return jsonRPCResult(id: rpcID, result: payload)
     }
 
     private func serializeArgs(_ args: [String: Any]) -> String {
