@@ -8,6 +8,7 @@ struct MainWindowView: View {
 
     @State private var engineResult: Result<Engine, any Swift.Error>
     @State private var picker = TargetPicker()
+    @State private var autosaver: ProjectAutosaver?
     @State private var collapsedEventBaselineVersion: Int = 0
     @State private var collapsedNewEvents: Int = 0
     @State private var isShowingHostingBlockedAlert = false
@@ -15,6 +16,12 @@ struct MainWindowView: View {
     init(projectURL: URL, fileURL: URL? = nil) {
         self.projectURL = projectURL
         self.fileURL = fileURL
+        if let fileURL {
+            self._autosaver = State(initialValue: ProjectAutosaver(
+                workingURL: projectURL,
+                destinationURL: fileURL
+            ))
+        }
         let result: Result<Engine, any Swift.Error>
         do {
             let engine = try EngineRegistry.shared.engine(
@@ -37,6 +44,7 @@ struct MainWindowView: View {
                 picker: picker,
                 projectURL: projectURL,
                 restorationPath: restorationPath,
+                autosaver: autosaver,
                 collapsedEventBaselineVersion: $collapsedEventBaselineVersion,
                 collapsedNewEvents: $collapsedNewEvents,
                 isShowingHostingBlockedAlert: $isShowingHostingBlockedAlert
@@ -65,6 +73,7 @@ private struct ProjectContentView: View {
     let picker: TargetPicker
     let projectURL: URL
     let restorationPath: String
+    let autosaver: ProjectAutosaver?
 
     @Binding var collapsedEventBaselineVersion: Int
     @Binding var collapsedNewEvents: Int
@@ -124,9 +133,17 @@ private struct ProjectContentView: View {
         }
         .onDisappear {
             let url = projectURL
+            let autosaver = autosaver
             Task { @MainActor in
+                await autosaver?.flush()
                 await EngineRegistry.shared.release(workingProjectURL: url)
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: ProjectStore.didCommitNotification)) { note in
+            guard let id = note.userInfo?["instanceID"] as? UUID,
+                id == engine.store.instanceID
+            else { return }
+            autosaver?.scheduleSnapshot()
         }
         .onChange(of: engine.eventLog.totalReceived) { _, newVersion in
             if engine.projectUIState.isEventStreamCollapsed {

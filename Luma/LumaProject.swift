@@ -35,11 +35,25 @@ struct LumaProject: FileDocument {
             .appendingPathComponent("luma-save-\(UUID().uuidString).luma", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: staging) }
 
-        try snapshotProject(from: workingProjectURL, to: staging)
+        try Self.snapshotProject(from: workingProjectURL, to: staging)
         return try FileWrapper(url: staging, options: .immediate)
     }
 
-    private func snapshotProject(from source: URL, to destination: URL) throws {
+    static func writeSnapshot(workingURL: URL, to destination: URL) throws {
+        let staging = FileManager.default.temporaryDirectory
+            .appendingPathComponent("luma-save-\(UUID().uuidString).luma", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: staging) }
+        try snapshotProject(from: workingURL, to: staging)
+        let fm = FileManager.default
+        if fm.fileExists(atPath: destination.path) {
+            _ = try fm.replaceItemAt(destination, withItemAt: staging)
+        } else {
+            try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fm.moveItem(at: staging, to: destination)
+        }
+    }
+
+    private static func snapshotProject(from source: URL, to destination: URL) throws {
         let fm = FileManager.default
         if fm.fileExists(atPath: destination.path) {
             try fm.removeItem(at: destination)
