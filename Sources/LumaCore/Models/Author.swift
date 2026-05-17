@@ -14,6 +14,6 @@ public struct Author: Codable, Hashable, Sendable {
     enum CodingKeys: String, CodingKey {
         case id
         case name
-        case avatarURL = "avatar_url"
+        case avatarURL = "avatar"
     }
 }
