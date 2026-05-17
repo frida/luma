@@ -87,6 +87,7 @@ private struct MissionListRow: View {
                 Label(mission.modelID, systemImage: "sparkles")
                 Spacer()
                 Text(mission.createdAt, style: .relative)
+                AuthorAvatarStack(authors: mission.editors, avatarSize: 18)
             }
             .font(.caption)
             .foregroundStyle(.secondary)

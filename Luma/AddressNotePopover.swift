@@ -45,6 +45,9 @@ struct AddressNotePopover: View {
                 .foregroundStyle(.secondary)
             Text(addressLabel)
                 .font(.system(.callout, design: .monospaced))
+            if let editors = activeNote?.editors, !editors.isEmpty {
+                AuthorAvatarStack(authors: editors, avatarSize: 18)
+            }
             Spacer()
             if notes.count > 1 {
                 Menu {
@@ -230,8 +233,12 @@ private struct MessageRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .foregroundStyle(tint)
+                if let author = message.author {
+                    AuthorAvatar(author: author, size: 16)
+                } else {
+                    Image(systemName: icon)
+                        .foregroundStyle(tint)
+                }
                 Text(roleLabel)
                     .font(.caption)
                     .foregroundStyle(.secondary)

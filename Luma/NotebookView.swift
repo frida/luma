@@ -305,38 +305,7 @@ struct NotebookEntryRow: View {
 
     @ViewBuilder
     private var editorStack: some View {
-        if !entry.editors.isEmpty {
-            HStack(spacing: -8) {
-                ForEach(Array(entry.editors.enumerated()), id: \.element.id) { index, editor in
-                    editorAvatar(editor)
-                        .zIndex(Double(entry.editors.count - index))
-                }
-            }
-        }
-    }
-
-    private func editorAvatar(_ editor: LumaCore.Author) -> some View {
-        let name = editor.name.isEmpty ? "@\(editor.id)" : editor.name
-        return AsyncImage(url: URL(string: editor.avatarURL)) { phase in
-            switch phase {
-            case .success(let image):
-                image.resizable().scaledToFill()
-            default:
-                Image(systemName: "person.crop.circle")
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(width: 20, height: 20)
-        .clipShape(Circle())
-        .overlay(Circle().strokeBorder(Color.platformWindowBackground, lineWidth: 2))
-        .help(name)
-        .onTapGesture {
-            if let url = URL(string: "https://github.com/\(editor.id)") {
-                Platform.openURL(url)
-            }
-        }
+        AuthorAvatarStack(authors: entry.editors)
     }
 
     private func handleDrop(items: [String], location: CGPoint) -> Bool {

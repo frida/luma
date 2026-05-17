@@ -191,6 +191,9 @@ private struct MissionHeader: View {
     @ViewBuilder
     private var metadataItems: some View {
         statusIndicator
+        if !mission.editors.isEmpty {
+            AuthorAvatarStack(authors: mission.editors, avatarSize: 18)
+        }
         Label(mission.providerID, systemImage: "cpu")
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
