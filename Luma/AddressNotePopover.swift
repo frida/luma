@@ -12,6 +12,7 @@ struct AddressNotePopover: View {
     @State private var messages: [AddressNoteMessage] = []
     @State private var draft: String = ""
     @State private var pending: PendingState = .idle
+    @State private var unusedTransientNoteIDs: Set<UUID> = []
 
     private enum PendingState {
         case idle
@@ -32,6 +33,7 @@ struct AddressNotePopover: View {
         .frame(width: 460, height: 460)
         .onAppear(perform: refresh)
         .onChange(of: activeNoteID) { _, _ in reloadMessages() }
+        .onDisappear(perform: discardUnusedTransientNotes)
     }
 
     private var activeNote: AddressNote? {
@@ -129,6 +131,13 @@ struct AddressNotePopover: View {
                 TextField("Write a note or ask…", text: $draft, axis: .vertical)
                     .lineLimit(1...6)
                     .textFieldStyle(.roundedBorder)
+                    .onKeyPress(keys: [.return], phases: .down) { press in
+                        if press.modifiers.contains(.shift) { return .ignored }
+                        if let note = activeNote, !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !isSending {
+                            askAI(note: note)
+                        }
+                        return .handled
+                    }
                 Button {
                     saveNote(note: note)
                 } label: {
@@ -178,11 +187,13 @@ struct AddressNotePopover: View {
         notes.insert(note, at: 0)
         activeNoteID = note.id
         messages = []
+        unusedTransientNoteIDs.insert(note.id)
     }
 
     private func delete(note: AddressNote) {
         engine.deleteAddressNote(note)
         notes.removeAll { $0.id == note.id }
+        unusedTransientNoteIDs.remove(note.id)
         activeNoteID = notes.first?.id
         reloadMessages()
         if notes.isEmpty {
@@ -196,6 +207,7 @@ struct AddressNotePopover: View {
             let message = engine.appendUserMessage(noteID: note.id, body: body)
         else { return }
         messages.append(message)
+        unusedTransientNoteIDs.remove(note.id)
         draft = ""
     }
 
@@ -204,6 +216,7 @@ struct AddressNotePopover: View {
         guard !body.isEmpty else { return }
         guard let userMessage = engine.appendUserMessage(noteID: note.id, body: body) else { return }
         messages.append(userMessage)
+        unusedTransientNoteIDs.remove(note.id)
         draft = ""
         pending = .sending
         let defaults = LumaAppState.shared.missionDefaults
@@ -220,6 +233,15 @@ struct AddressNotePopover: View {
                 pending = .error("Reply failed. Check provider settings.")
             }
         }
+    }
+
+    private func discardUnusedTransientNotes() {
+        for noteID in unusedTransientNoteIDs {
+            guard let note = notes.first(where: { $0.id == noteID }) else { continue }
+            guard engine.addressNoteMessages(noteID: noteID).isEmpty else { continue }
+            engine.deleteAddressNote(note)
+        }
+        unusedTransientNoteIDs.removeAll()
     }
 
     private func noteTitle(_ note: AddressNote) -> String {
