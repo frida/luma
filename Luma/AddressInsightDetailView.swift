@@ -202,6 +202,7 @@ struct DisassemblyView: View {
     @State private var pulseTask: Task<Void, Never>?
 
     @State private var requestedJumpTarget: UInt64?
+    @State private var openNotePopoverAddress: UInt64?
 
     let rowHeight: CGFloat = 20
 
@@ -220,6 +221,7 @@ struct DisassemblyView: View {
                             hoveredAddr: $hoveredAddr,
                             isPulsing: pulsingAddr == line.address,
                             pulsePhase: pulsePhase,
+                            openNotePopoverAddress: $openNotePopoverAddress,
                             onSelect: {
                                 selectedAddr = line.address
                                 isFocused = true
@@ -375,6 +377,7 @@ private struct DisasmRow: View {
     @Binding var hoveredAddr: UInt64?
     let isPulsing: Bool
     let pulsePhase: Bool
+    @Binding var openNotePopoverAddress: UInt64?
     let onSelect: () -> Void
     let onJump: (UInt64) throws -> Void
     let requestedJumpTarget: UInt64?
@@ -392,7 +395,9 @@ private struct DisasmRow: View {
                 .frame(width: 110, alignment: .leading)
                 .contentShape(Rectangle())
                 .overlay(alignment: .leading) {
-                    let decorations = engine.addressAnnotations[sessionID]?[line.address]?.decorations ?? []
+                    let annotation = engine.addressAnnotations[sessionID]?[line.address]
+                    let decorations = annotation?.decorations ?? []
+                    let noteCount = annotation?.noteCount ?? 0
 
                     HStack(spacing: 3) {
                         ForEach(decorations.prefix(3)) { deco in
@@ -402,15 +407,42 @@ private struct DisasmRow: View {
                                 .opacity(0.45)
                                 .help(deco.help ?? "")
                         }
+                        if noteCount > 0 {
+                            Button {
+                                openNotePopoverAddress = line.address
+                            } label: {
+                                Image(systemName: "bubble.left.fill")
+                                    .font(.system(size: 8))
+                                    .foregroundStyle(.tint)
+                            }
+                            .buttonStyle(.plain)
+                            .help("\(noteCount) thread\(noteCount == 1 ? "" : "s")")
+                        }
                     }
-                    .frame(width: 12, alignment: .trailing)
-                    .offset(x: -19)
+                    .frame(width: 24, alignment: .trailing)
+                    .offset(x: -28)
                 }
                 .contextMenu {
                     Button {
                         Platform.copyToClipboard(String(format: "0x%llx", line.address))
                     } label: {
                         Label("Copy Address", systemImage: "doc.on.doc")
+                    }
+
+                    Divider()
+
+                    Button {
+                        openNotePopoverAddress = line.address
+                    } label: {
+                        Label("Notes & AI…", systemImage: "bubble.left.and.text.bubble.right")
+                    }
+
+                    Button {
+                        Task { @MainActor in
+                            await goToFunctionStart()
+                        }
+                    } label: {
+                        Label("Go to Function Start", systemImage: "arrow.up.left.and.arrow.down.right")
                     }
 
                     Divider()
@@ -430,6 +462,29 @@ private struct DisasmRow: View {
                             }
                         }
                     }
+                }
+                .popover(
+                    isPresented: Binding(
+                        get: { openNotePopoverAddress == line.address },
+                        set: { presented in
+                            if !presented, openNotePopoverAddress == line.address {
+                                openNotePopoverAddress = nil
+                            }
+                        }
+                    ),
+                    arrowEdge: .leading
+                ) {
+                    AddressNotePopover(
+                        engine: engine,
+                        sessionID: sessionID,
+                        address: line.address,
+                        isPresented: Binding(
+                            get: { openNotePopoverAddress == line.address },
+                            set: { presented in
+                                if !presented { openNotePopoverAddress = nil }
+                            }
+                        )
+                    )
                 }
 
             Text(line.bytesText.attributed)
@@ -527,6 +582,22 @@ private struct DisasmRow: View {
         let s = asm.plainText.lowercased()
         let hex = String(format: "0x%llx", target).lowercased()
         return s.contains(hex)
+    }
+
+    private func goToFunctionStart() async {
+        guard let dis = engine.disassembler(forSessionID: sessionID) else { return }
+        let hex = String(line.address, radix: 16)
+        let output = await dis.runCommand("?v $FB @ 0x\(hex)").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let target = parseFunctionStart(output), target != 0 else { return }
+        try? onJump(target)
+    }
+
+    private func parseFunctionStart(_ text: String) -> UInt64? {
+        let trimmed = text.lowercased()
+        if trimmed.hasPrefix("0x") {
+            return UInt64(trimmed.dropFirst(2), radix: 16)
+        }
+        return UInt64(trimmed, radix: 16) ?? UInt64(trimmed)
     }
 }
 
