@@ -2654,25 +2654,36 @@ public final class Engine {
     // MARK: - Address Annotations
 
     public func rebuildAddressAnnotations(sessionID: UUID) {
-        guard let tracer = tracerInstance(forSessionID: sessionID),
-            let node = node(forSessionID: sessionID),
-            let config = try? TracerConfig.decode(from: tracer.configJSON)
-        else {
+        guard let node = node(forSessionID: sessionID) else {
             addressAnnotations[sessionID] = [:]
             tracerInstanceIDBySession[sessionID] = nil
             return
         }
 
-        tracerInstanceIDBySession[sessionID] = tracer.id
-
         var map: [UInt64: AddressAnnotation] = [:]
-        for hook in config.hooks where hook.state == .enabled {
-            guard let addr = try? node.resolveSyncIfReady(hook.addressAnchor) else { continue }
+
+        if let tracer = tracerInstance(forSessionID: sessionID),
+            let config = try? TracerConfig.decode(from: tracer.configJSON)
+        {
+            tracerInstanceIDBySession[sessionID] = tracer.id
+            for hook in config.hooks where hook.state == .enabled {
+                guard let addr = try? node.resolveSyncIfReady(hook.addressAnchor) else { continue }
+                var ann = map[addr] ?? AddressAnnotation()
+                ann.decorations.append(InstrumentAddressDecoration(help: "Has instruction hook"))
+                ann.tracerHookID = hook.id
+                map[addr] = ann
+            }
+        } else {
+            tracerInstanceIDBySession[sessionID] = nil
+        }
+
+        for note in (try? store.fetchAddressNotes(sessionID: sessionID)) ?? [] {
+            guard let addr = try? node.resolveSyncIfReady(note.anchor) else { continue }
             var ann = map[addr] ?? AddressAnnotation()
-            ann.decorations.append(InstrumentAddressDecoration(help: "Has instruction hook"))
-            ann.tracerHookID = hook.id
+            ann.noteCount += 1
             map[addr] = ann
         }
+
         addressAnnotations[sessionID] = map
     }
 

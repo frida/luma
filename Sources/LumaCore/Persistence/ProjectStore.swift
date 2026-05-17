@@ -462,6 +462,44 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    // MARK: - Address notes
+
+    public func fetchAddressNotes(sessionID: UUID) throws -> [AddressNote] {
+        try db.read { db in
+            try AddressNote
+                .filter(Column("session_id") == sessionID)
+                .order(Column("created_at"))
+                .fetchAll(db)
+        }
+    }
+
+    public func fetchAddressNoteMessages(noteID: UUID) throws -> [AddressNoteMessage] {
+        try db.read { db in
+            try AddressNoteMessage
+                .filter(Column("note_id") == noteID)
+                .order(Column("index"))
+                .fetchAll(db)
+        }
+    }
+
+    public func save(_ note: AddressNote) throws {
+        try db.write { db in
+            try note.save(db)
+        }
+    }
+
+    public func save(_ message: AddressNoteMessage) throws {
+        try db.write { db in
+            try message.save(db)
+        }
+    }
+
+    public func deleteAddressNote(id: UUID) throws {
+        try db.write { db in
+            _ = try AddressNote.deleteOne(db, key: id)
+        }
+    }
+
     // MARK: - Missions
 
     public func observeMissions(
@@ -1147,6 +1185,31 @@ public final class ProjectStore: Sendable {
             t.column("anchor", .blob).notNull()
             t.column("byte_count", .integer).notNull()
             t.column("last_resolved_address", .integer)
+        }
+
+        try db.create(table: "address_note", ifNotExists: true) { t in
+            t.primaryKey("id", .text).notNull()
+            t.column("session_id", .text).notNull()
+                .references("process_session", onDelete: .cascade)
+            t.column("anchor", .blob).notNull()
+            t.column("title", .text)
+            t.column("editors", .blob).notNull()
+            t.column("created_at", .datetime).notNull()
+            t.column("updated_at", .datetime).notNull()
+        }
+
+        try db.create(table: "address_note_message", ifNotExists: true) { t in
+            t.primaryKey("id", .text).notNull()
+            t.column("note_id", .text).notNull()
+                .references("address_note", onDelete: .cascade)
+            t.column("index", .integer).notNull()
+            t.column("role", .text).notNull()
+            t.column("author", .blob)
+            t.column("body_markdown", .text).notNull()
+            t.column("provider_id", .text)
+            t.column("model_id", .text)
+            t.column("action_id", .text)
+            t.column("created_at", .datetime).notNull()
         }
 
         try db.create(table: "remote_device_config", ifNotExists: true) { t in
