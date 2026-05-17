@@ -335,7 +335,10 @@ struct DisassemblyView: View {
     private func moveSelection(_ delta: Int, scrollProxy: ScrollViewProxy) {
         guard !lines.isEmpty else { return }
 
-        let indexByAddr = Dictionary(uniqueKeysWithValues: lines.enumerated().map { ($0.element.address, $0.offset) })
+        let indexByAddr = Dictionary(
+            lines.enumerated().map { ($0.element.address, $0.offset) },
+            uniquingKeysWith: { first, _ in first }
+        )
 
         let currentIndex: Int
         if let sel = selectedAddr, let i = indexByAddr[sel] {
@@ -609,7 +612,8 @@ private struct DisasmFlowOverlay: View {
         GeometryReader { proxy in
             Canvas { context, size in
                 let indexByAddr: [UInt64: Int] = Dictionary(
-                    uniqueKeysWithValues: lines.enumerated().map { ($0.element.address, $0.offset) }
+                    lines.enumerated().map { ($0.element.address, $0.offset) },
+                    uniquingKeysWith: { first, _ in first }
                 )
 
                 func centerY(forRow row: Int) -> CGFloat {

@@ -832,7 +832,8 @@ final class InsightDetailView {
         guard rowHeight > 0 else { return }
 
         let indexByAddr: [UInt64: Int] = Dictionary(
-            uniqueKeysWithValues: disasmLines.enumerated().map { ($0.element.address, $0.offset) }
+            disasmLines.enumerated().map { ($0.element.address, $0.offset) },
+            uniquingKeysWith: { first, _ in first }
         )
 
         var edges: [FlowEdge] = []
