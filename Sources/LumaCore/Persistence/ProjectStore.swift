@@ -1225,6 +1225,7 @@ public final class ProjectStore: Sendable {
             t.column("detail_section", .text)
             t.column("last_selected_module_id", .text)
             t.column("last_selected_thread_id", .integer)
+            t.column("ambient_mission_id", .text)
         }
 
         try db.create(table: "address_insight", ifNotExists: true) { t in

@@ -390,6 +390,198 @@ public final class Engine {
         try? store.save(updated)
     }
 
+    public func requestAIReply(
+        noteID: UUID,
+        providerID: String,
+        modelID: String
+    ) async -> AddressNoteMessage? {
+        guard let note = try? store.fetchAddressNote(id: noteID),
+            let provider = llmRegistry.provider(id: providerID)
+        else { return nil }
+
+        let thread = (try? store.fetchAddressNoteMessages(noteID: noteID)) ?? []
+        guard !thread.isEmpty else { return nil }
+
+        let mission = getOrCreateAmbientMission(
+            sessionID: note.sessionID,
+            providerID: providerID,
+            modelID: modelID
+        )
+        guard let mission else { return nil }
+
+        let system = await buildAddressNoteSystemPrompt(note: note)
+        let messages = thread.map { msg -> LLMMessage in
+            let role: LLMRole = (msg.role == .assistant) ? .assistant : .user
+            return LLMMessage(role: role, blocks: [.text(msg.bodyMarkdown)])
+        }
+
+        let toolCallID = "n\(thread.count)"
+        let argsJSON: String = {
+            let payload: [String: Any] = [
+                "note_id": noteID.uuidString,
+                "address_anchor": note.anchor.displayString,
+                "thread_length": thread.count,
+            ]
+            let data = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])) ?? Data("{}".utf8)
+            return String(data: data, encoding: .utf8) ?? "{}"
+        }()
+
+        var action = MissionAction(
+            missionID: mission.id,
+            turnID: nil,
+            toolName: "address_note_reply",
+            argsJSON: argsJSON,
+            isObserve: true,
+            sessionID: note.sessionID,
+            toolCallID: toolCallID
+        )
+        action.status = .running
+        action.decidedAt = Date()
+        try? store.save(action)
+        collaboration.enqueueMissionAction(action)
+
+        let apiKey = (try? await llmCredentials.apiKey(providerID: providerID)) ?? nil
+        if provider.descriptor.capabilities.supports(.apiKey), apiKey == nil {
+            action.status = .failed
+            action.error = "missing API key for provider \(providerID)"
+            action.completedAt = Date()
+            try? store.save(action)
+            collaboration.enqueueMissionAction(action)
+            return nil
+        }
+
+        let request = LLMTurnRequest(
+            modelID: modelID,
+            systemBlocks: [LLMContentBlock(content: .text(system), cacheBoundary: true)],
+            messages: messages,
+            tools: [],
+            maxOutputTokens: 1024,
+            thinkingBudget: 0,
+            temperature: 0.3
+        )
+
+        let baseURL = LumaAppState.shared.providerBaseURL(providerID: providerID).flatMap(URL.init(string:))
+        var responseText = ""
+        var usage = LLMUsage.zero
+        do {
+            for try await event in provider.streamTurn(request, apiKey: apiKey, baseURL: baseURL) {
+                switch event {
+                case .finalMessage(_, let blocks):
+                    for block in blocks {
+                        if case .text(let t) = block.content { responseText += t }
+                    }
+                case .usage(let u):
+                    usage = u
+                default:
+                    break
+                }
+            }
+        } catch {
+            action.status = .failed
+            action.error = error.localizedDescription
+            action.completedAt = Date()
+            try? store.save(action)
+            collaboration.enqueueMissionAction(action)
+            return nil
+        }
+
+        let trimmed = responseText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            action.status = .failed
+            action.error = "model returned empty response"
+            action.completedAt = Date()
+            try? store.save(action)
+            collaboration.enqueueMissionAction(action)
+            return nil
+        }
+
+        action.status = .succeeded
+        action.resultJSON = trimmed
+        action.resultSummary = String(trimmed.prefix(120))
+        action.completedAt = Date()
+        try? store.save(action)
+        collaboration.enqueueMissionAction(action)
+
+        var updatedMission = mission
+        updatedMission.tokensUsedInput += usage.inputTokens
+        updatedMission.tokensUsedOutput += usage.outputTokens
+        updatedMission.cacheReadTokens += usage.cacheReadTokens
+        updatedMission.cacheCreateTokens += usage.cacheCreateTokens
+        updatedMission.updatedAt = Date()
+        try? store.save(updatedMission)
+        collaboration.enqueueMissionUpsert(updatedMission)
+
+        let nextIndex = (thread.last?.index ?? -1) + 1
+        let message = AddressNoteMessage(
+            noteID: noteID,
+            index: nextIndex,
+            role: .assistant,
+            bodyMarkdown: trimmed,
+            providerID: providerID,
+            modelID: modelID,
+            actionID: action.id
+        )
+        try? store.save(message)
+        bumpNoteUpdatedAt(note)
+        onAddressNoteChanged?(.messageAppended(message))
+        collaboration.enqueueAddressNoteMessageAppend(message)
+        return message
+    }
+
+    private func getOrCreateAmbientMission(
+        sessionID: UUID,
+        providerID: String,
+        modelID: String
+    ) -> Mission? {
+        var state = sessionUIStates[sessionID] ?? SessionUIState(sessionID: sessionID)
+        if let existingID = state.ambientMissionID,
+            let mission = try? store.fetchMission(id: existingID)
+        {
+            return mission
+        }
+
+        var mission = Mission(
+            goalText: "Address notes for this session.",
+            providerID: providerID,
+            modelID: modelID,
+            tokenBudgetInput: 0,
+            tokenBudgetOutput: 0
+        )
+        mission.title = "Ambient — address notes"
+        mission.status = .running
+        try? store.save(mission)
+        collaboration.enqueueMissionUpsert(mission)
+
+        state.ambientMissionID = mission.id
+        sessionUIStates[sessionID] = state
+        try? store.save(state)
+        return mission
+    }
+
+    private func buildAddressNoteSystemPrompt(note: AddressNote) async -> String {
+        var lines = [
+            "You are an interactive reverse-engineering assistant pinned to one address. Be specific and concise. Lead with the conclusion; cite registers/strings/calls when relevant.",
+            "Anchor: \(note.anchor.displayString)",
+        ]
+        if let dis = disassembler(forSessionID: note.sessionID),
+            let node = node(forSessionID: note.sessionID),
+            let address = try? node.resolveSyncIfReady(note.anchor)
+        {
+            let lines64 = await dis.disassemble(DisassemblyRequest(address: address, count: 32, isDarkMode: false))
+            let disasm = lines64.map {
+                String(format: "0x%llx", $0.address) + "  " + $0.asmText.plainText
+            }.joined(separator: "\n")
+            let pdc = await dis.decompile(at: address)
+            lines.append("")
+            lines.append("Disassembly window:")
+            lines.append(disasm)
+            lines.append("")
+            lines.append("Pseudo-C:")
+            lines.append(pdc)
+        }
+        return lines.joined(separator: "\n")
+    }
+
     /// Move `entry` into the slot between `previous` and `next` (either may
     /// be nil to mean "no neighbor on that side"). Computes a position as
     /// the midpoint of the two neighbors' positions; if the slot is at an

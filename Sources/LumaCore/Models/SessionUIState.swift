@@ -14,6 +14,7 @@ public struct SessionUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
     public var detailSection: String?
     public var lastSelectedModuleID: String?
     public var lastSelectedThreadID: UInt?
+    public var ambientMissionID: UUID?
 
     public var id: UUID { sessionID }
 
@@ -23,6 +24,7 @@ public struct SessionUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
         case detailSection = "detail_section"
         case lastSelectedModuleID = "last_selected_module_id"
         case lastSelectedThreadID = "last_selected_thread_id"
+        case ambientMissionID = "ambient_mission_id"
     }
 
     public init(
@@ -30,12 +32,14 @@ public struct SessionUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
         sidebarExpansion: SidebarExpansion = .expanded,
         detailSection: String? = nil,
         lastSelectedModuleID: String? = nil,
-        lastSelectedThreadID: UInt? = nil
+        lastSelectedThreadID: UInt? = nil,
+        ambientMissionID: UUID? = nil
     ) {
         self.sessionID = sessionID
         self.sidebarExpansion = sidebarExpansion
         self.detailSection = detailSection
         self.lastSelectedModuleID = lastSelectedModuleID
         self.lastSelectedThreadID = lastSelectedThreadID
+        self.ambientMissionID = ambientMissionID
     }
 }
