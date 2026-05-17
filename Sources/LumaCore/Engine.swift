@@ -757,7 +757,22 @@ public final class Engine {
         for session in snapshot {
             adoptRemoteSession(session)
         }
+        markOrphanedHostsDetached(serverKnown: serverKnown)
         announceMissingLocalSessions(serverKnown: serverKnown)
+    }
+
+    private func markOrphanedHostsDetached(serverKnown: Set<UUID>) {
+        for cached in sessions
+            where localUserHosts(cached)
+            && !isHostingNode(cached.id)
+            && (cached.phase == .attached || cached.phase == .attaching)
+        {
+            let sid = cached.id
+            updateSession(id: sid) { $0.phase = .idle }
+            if serverKnown.contains(sid) {
+                collaboration.enqueueUpdateSessionPhase(sessionID: sid, phase: .detached)
+            }
+        }
     }
 
     private func announceMissingLocalSessions(serverKnown: Set<UUID>) {
