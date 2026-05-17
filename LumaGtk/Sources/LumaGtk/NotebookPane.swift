@@ -502,7 +502,7 @@ final class NotebookPane {
         return header
     }
 
-    private func makeEditorStack(_ editors: [LumaCore.NotebookEntry.Author]) -> Widget {
+    private func makeEditorStack(_ editors: [LumaCore.Author]) -> Widget {
         let avatarSize = 20
         let overlap = 8
         let step = avatarSize - overlap
@@ -521,7 +521,7 @@ final class NotebookPane {
         return fixed
     }
 
-    private func makeEditorAvatar(_ editor: LumaCore.NotebookEntry.Author) -> Button {
+    private func makeEditorAvatar(_ editor: LumaCore.Author) -> Button {
         let name = editor.name.isEmpty ? "@\(editor.id)" : editor.name
         let button = Button()
         button.hasFrame = false

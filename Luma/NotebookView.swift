@@ -315,7 +315,7 @@ struct NotebookEntryRow: View {
         }
     }
 
-    private func editorAvatar(_ editor: LumaCore.NotebookEntry.Author) -> some View {
+    private func editorAvatar(_ editor: LumaCore.Author) -> some View {
         let name = editor.name.isEmpty ? "@\(editor.id)" : editor.name
         return AsyncImage(url: URL(string: editor.avatarURL)) { phase in
             switch phase {

@@ -11,24 +11,6 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
         case capture
     }
 
-    public struct Author: Codable, Hashable, Sendable {
-        public let id: String
-        public let name: String
-        public let avatarURL: String
-
-        public init(id: String, name: String, avatarURL: String) {
-            self.id = id
-            self.name = name
-            self.avatarURL = avatarURL
-        }
-
-        enum CodingKeys: String, CodingKey {
-            case id
-            case name
-            case avatarURL = "avatar_url"
-        }
-    }
-
     public var id: UUID
     public var kind: Kind
     /// Original creator at index 0, followed by everyone who's edited the
