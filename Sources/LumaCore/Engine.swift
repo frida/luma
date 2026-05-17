@@ -365,6 +365,10 @@ public final class Engine {
             self?.applyRemoteMissionOp(op)
         }
 
+        collaboration.onAddressNoteOpReceived = { [weak self] op in
+            self?.applyRemoteAddressNoteOp(op)
+        }
+
         collaboration.onMissionSnapshot = { [weak self] snapshot in
             self?.applyRemoteMissionSnapshot(snapshot)
         }
@@ -4407,6 +4411,26 @@ public final class Engine {
         for action in snapshot.actions { try? store.save(action) }
         for finding in snapshot.findings { try? store.save(finding) }
         for evidence in snapshot.evidence { try? store.save(evidence) }
+    }
+
+    private func applyRemoteAddressNoteOp(_ op: AddressNoteOp) {
+        switch op {
+        case .noteUpsert(let u):
+            try? store.save(u.note)
+            rebuildAddressAnnotations(sessionID: u.note.sessionID)
+        case .noteRemove(let r):
+            let sessionID = (try? store.fetchAddressNote(id: r.noteID))?.sessionID
+            try? store.deleteAddressNote(id: r.noteID)
+            if let sessionID {
+                rebuildAddressAnnotations(sessionID: sessionID)
+            }
+        case .messageAppend(let a):
+            try? store.save(a.message)
+        case .messageEdit(let e):
+            guard var message = try? store.fetchAddressNoteMessage(id: e.messageID) else { return }
+            message.bodyMarkdown = e.bodyMarkdown
+            try? store.save(message)
+        }
     }
 
     private func applyRemoteMissionOp(_ op: MissionOp) {

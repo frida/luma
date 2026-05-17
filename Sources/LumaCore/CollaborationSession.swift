@@ -318,6 +318,7 @@ public final class CollaborationSession {
     public var onSessionRemoved: ((UUID) -> Void)?
     public var onCustomInstrumentOpReceived: ((CustomInstrumentOp) -> Void)?
     public var onMissionOpReceived: ((MissionOp) -> Void)?
+    public var onAddressNoteOpReceived: ((AddressNoteOp) -> Void)?
     public var onMissionSnapshot: ((MissionSnapshot) -> Void)?
     public var onCustomInstrumentSnapshot: (([CustomInstrumentBundle]) -> Void)?
     public var onWidgetStatesSnapshot: (([WidgetStateSnapshot]) -> Void)?
@@ -600,6 +601,41 @@ public final class CollaborationSession {
         )
     }
 
+    public func enqueueAddressNoteUpsert(_ note: AddressNote) {
+        enqueueAddressNoteOp(.noteUpsert(.init(note: note)))
+    }
+
+    public func enqueueAddressNoteRemove(noteID: UUID) {
+        enqueueAddressNoteOp(.noteRemove(.init(noteID: noteID)))
+    }
+
+    public func enqueueAddressNoteMessageAppend(_ message: AddressNoteMessage) {
+        enqueueAddressNoteOp(.messageAppend(.init(message: message)))
+    }
+
+    public func enqueueAddressNoteMessageEdit(noteID: UUID, messageID: UUID, bodyMarkdown: String) {
+        enqueueAddressNoteOp(.messageEdit(.init(noteID: noteID, messageID: messageID, bodyMarkdown: bodyMarkdown)))
+    }
+
+    private func enqueueAddressNoteOp(_ op: AddressNoteOp) {
+        guard isCollaborative else { return }
+        try? store.saveAddressNoteOutboxOp(op)
+        sendAddressNoteOpIfJoined(op)
+    }
+
+    private func sendAddressNoteOpIfJoined(_ op: AddressNoteOp) {
+        guard case .joined(let labID) = status else { return }
+        sendAddressNoteOpOverWire(op, labID: labID)
+    }
+
+    private func sendAddressNoteOpOverWire(_ op: AddressNoteOp, labID: String) {
+        sendNotification(
+            to: "/labs/\(labID)/address-notes",
+            type: "+op",
+            payload: op.toJSON()
+        )
+    }
+
     /// Resend every op still in the outbox. Called after a successful
     /// join/create so unsynced mutations propagate. The server dedupes by
     /// `op_id`, so redundant replays are safe.
@@ -624,6 +660,10 @@ public final class CollaborationSession {
         let missionOps = (try? store.fetchMissionOutboxOps()) ?? []
         for op in missionOps {
             sendMissionOpOverWire(op, labID: labID)
+        }
+        let addressNoteOps = (try? store.fetchAddressNoteOutboxOps()) ?? []
+        for op in addressNoteOps {
+            sendAddressNoteOpOverWire(op, labID: labID)
         }
     }
 
@@ -1599,6 +1639,16 @@ public final class CollaborationSession {
             guard let idStr = payload["op_id"] as? String,
                 let opID = UUID(uuidString: idStr) else { return }
             try? store.removeMissionOutboxOp(opID: opID)
+
+        case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "address-notes":
+            guard let op = AddressNoteOp.fromJSON(payload) else { return }
+            onAddressNoteOpReceived?(op)
+            try? store.removeAddressNoteOutboxOp(opID: op.opID)
+
+        case ("+op-rejected", let s) where s.count == 3 && s[0] == "labs" && s[2] == "address-notes":
+            guard let idStr = payload["op_id"] as? String,
+                let opID = UUID(uuidString: idStr) else { return }
+            try? store.removeAddressNoteOutboxOp(opID: opID)
 
         case ("+op", let s) where s.count == 4 && s[0] == "labs" && s[2] == "sessions":
             guard let sessionID = UUID(uuidString: s[3]) else { return }

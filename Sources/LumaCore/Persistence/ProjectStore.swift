@@ -464,6 +464,18 @@ public final class ProjectStore: Sendable {
 
     // MARK: - Address notes
 
+    public func fetchAddressNote(id: UUID) throws -> AddressNote? {
+        try db.read { db in
+            try AddressNote.fetchOne(db, key: id)
+        }
+    }
+
+    public func fetchAddressNoteMessage(id: UUID) throws -> AddressNoteMessage? {
+        try db.read { db in
+            try AddressNoteMessage.fetchOne(db, key: id)
+        }
+    }
+
     public func fetchAddressNotes(sessionID: UUID) throws -> [AddressNote] {
         try db.read { db in
             try AddressNote
@@ -497,6 +509,46 @@ public final class ProjectStore: Sendable {
     public func deleteAddressNote(id: UUID) throws {
         try db.write { db in
             _ = try AddressNote.deleteOne(db, key: id)
+        }
+    }
+
+    public func saveAddressNoteOutboxOp(_ op: AddressNoteOp) throws {
+        try db.write { db in
+            let payload = op.toJSON()
+            let data = try JSONSerialization.data(
+                withJSONObject: payload,
+                options: [.sortedKeys]
+            )
+            let json = String(data: data, encoding: .utf8) ?? "{}"
+            let record = AddressNoteOutboxRecord(
+                opID: op.opID.uuidString,
+                kind: op.kind,
+                noteID: op.noteID.uuidString,
+                payloadJSON: json,
+                createdAt: Date()
+            )
+            try record.save(db)
+        }
+    }
+
+    public func fetchAddressNoteOutboxOps() throws -> [AddressNoteOp] {
+        try db.read { db in
+            let rows = try AddressNoteOutboxRecord
+                .order(Column("created_at").asc, Column("op_id").asc)
+                .fetchAll(db)
+            return rows.compactMap { $0.toOp() }
+        }
+    }
+
+    public func removeAddressNoteOutboxOp(opID: UUID) throws {
+        try db.write { db in
+            _ = try AddressNoteOutboxRecord.deleteOne(db, key: opID.uuidString)
+        }
+    }
+
+    public func clearAddressNoteOutbox() throws {
+        try db.write { db in
+            _ = try AddressNoteOutboxRecord.deleteAll(db)
         }
     }
 
@@ -1392,6 +1444,14 @@ public final class ProjectStore: Sendable {
             t.primaryKey("op_id", .text).notNull()
             t.column("kind", .text).notNull()
             t.column("mission_id", .text).notNull()
+            t.column("payload_json", .text).notNull()
+            t.column("created_at", .datetime).notNull()
+        }
+
+        try db.create(table: "address_note_outbox", ifNotExists: true) { t in
+            t.primaryKey("op_id", .text).notNull()
+            t.column("kind", .text).notNull()
+            t.column("note_id", .text).notNull()
             t.column("payload_json", .text).notNull()
             t.column("created_at", .datetime).notNull()
         }
