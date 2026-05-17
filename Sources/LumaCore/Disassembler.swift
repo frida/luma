@@ -40,6 +40,11 @@ public final class Disassembler {
         return ops.map { $0.toDisassemblyLine() }
     }
 
+    public func runCommand(_ command: String) async -> String {
+        await ensureOpened()
+        return await r2.cmd(command)
+    }
+
     public func decompile(at address: UInt64) async -> String {
         await ensureOpened()
         let hex = String(address, radix: 16)

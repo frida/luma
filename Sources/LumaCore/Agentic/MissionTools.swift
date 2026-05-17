@@ -24,6 +24,7 @@ public enum MissionTools {
         registerReadEvent(in: catalog, engine: engine)
         registerResolveSymbol(in: catalog, engine: engine)
         registerDisassemble(in: catalog, engine: engine)
+        registerR2Cmd(in: catalog, engine: engine)
         registerDecompile(in: catalog, engine: engine)
         registerExplainFunction(in: catalog, engine: engine)
         registerReadMemory(in: catalog, engine: engine)
@@ -2762,6 +2763,51 @@ public enum MissionTools {
             obj["ref"] = ref
         }
         return obj
+    }
+
+    // MARK: - r2_cmd
+
+    private static func registerR2Cmd(in catalog: ToolCatalog, engine: Engine) {
+        let spec = ActionSpec(
+            name: "r2_cmd",
+            description: "Run a radare2 command in this session's r2 context and return its stdout. Use for ad-hoc queries the typed tools don't cover (e.g. axt for xrefs, izz~pattern for strings, iiq for imports, afi for function info). The r2 instance analyses the target process via Frida-backed memory IO; commands cannot affect the live process. Output is truncated to max_output_chars.",
+            inputSchemaJSON: """
+                {"type":"object","properties":{"session_id":{"type":"string"},"command":{"type":"string","description":"r2 command line, e.g. 'axt @ 0x1004500' or 'izz~http'"},"max_output_chars":{"type":"integer","minimum":256,"maximum":262144,"default":32768}},"required":["session_id","command"],"additionalProperties":false}
+                """,
+            isObserve: true,
+            requiresSession: true
+        )
+        catalog.register(spec: spec) { [weak engine] invocation in
+            guard let engine, let sessionID = parseSessionID(invocation.args) else {
+                return errorResult("missing or invalid session_id", code: .invalidInput)
+            }
+            guard let command = (invocation.args["command"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                !command.isEmpty
+            else {
+                return errorResult("missing or empty command", code: .invalidInput)
+            }
+            guard let dis = engine.disassembler(forSessionID: sessionID) else {
+                return errorResult("no disassembler for session", code: .notFound)
+            }
+            let limit = (invocation.args["max_output_chars"] as? Int) ?? 32_768
+            let raw = await dis.runCommand(command)
+            let (text, truncated) = truncated(raw, to: limit)
+            var payload: [String: Any] = ["command": command, "output": text]
+            if truncated {
+                payload["truncated"] = true
+                payload["original_chars"] = raw.count
+            }
+            let suffix = truncated ? " (truncated)" : ""
+            return makeResult(jsonObject: payload, summary: "r2: \(command)\(suffix)")
+        }
+    }
+
+    private static func truncated(_ text: String, to limit: Int) -> (String, Bool) {
+        if text.count <= limit {
+            return (text, false)
+        }
+        let head = text.prefix(limit)
+        return (head + "\n[truncated]", true)
     }
 
     // MARK: - decompile
