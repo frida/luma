@@ -5,6 +5,7 @@ public struct Mission: Codable, Identifiable, Sendable, FetchableRecord, Persist
     public static let databaseTableName = "mission"
 
     public var id: UUID
+    public var editors: [Author]
     public var createdAt: Date
     public var updatedAt: Date
     public var title: String?
@@ -24,8 +25,11 @@ public struct Mission: Codable, Identifiable, Sendable, FetchableRecord, Persist
     public var reasoningEffort: String?
     public var temperature: Double?
 
+    public var author: Author? { editors.first }
+
     enum CodingKeys: String, CodingKey {
         case id
+        case editors
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case title
@@ -59,6 +63,7 @@ public struct Mission: Codable, Identifiable, Sendable, FetchableRecord, Persist
     ) {
         let now = Date()
         self.id = id
+        self.editors = []
         self.createdAt = now
         self.updatedAt = now
         self.title = nil
