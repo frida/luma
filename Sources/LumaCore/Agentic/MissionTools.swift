@@ -1,5 +1,6 @@
 import Foundation
 import Frida
+import SwiftyR2
 
 @MainActor
 public enum MissionTools {
@@ -2794,15 +2795,41 @@ public enum MissionTools {
                 return errorResult("no disassembler for session", code: .notFound)
             }
             let limit = (invocation.args["max_output_chars"] as? Int) ?? 32_768
-            let raw = await dis.runCommand(command)
-            let (text, truncated) = truncated(raw, to: limit)
+            let result = await dis.runCommand(command)
+            let (text, wasTruncated) = truncated(result.output, to: limit)
             var payload: [String: Any] = ["command": command, "output": text]
-            if truncated {
+            if wasTruncated {
                 payload["truncated"] = true
-                payload["original_chars"] = raw.count
+                payload["original_chars"] = result.output.count
             }
-            let suffix = truncated ? " (truncated)" : ""
+            if !result.logs.isEmpty {
+                payload["logs"] = result.logs.map(logEntryToJSON)
+            }
+            let suffix = result.hasErrors ? " (errors)" : (wasTruncated ? " (truncated)" : "")
             return makeResult(jsonObject: payload, summary: "r2: \(command)\(suffix)")
+        }
+    }
+
+    private static func logEntryToJSON(_ entry: R2LogEntry) -> [String: Any] {
+        var obj: [String: Any] = [
+            "level": logLevelName(entry.level),
+            "message": entry.message,
+        ]
+        if let origin = entry.origin {
+            obj["origin"] = origin
+        }
+        return obj
+    }
+
+    private static func logLevelName(_ level: R2LogLevel) -> String {
+        switch level {
+        case .fatal: return "fatal"
+        case .error: return "error"
+        case .warn: return "warn"
+        case .info: return "info"
+        case .todo: return "todo"
+        case .debug: return "debug"
+        case .trace: return "trace"
         }
     }
 
@@ -2838,7 +2865,7 @@ public enum MissionTools {
             guard let dis = engine.disassembler(forSessionID: sessionID) else {
                 return errorResult("no disassembler for session", code: .notFound)
             }
-            let text = await dis.decompile(at: address)
+            let text = await dis.decompile(at: address).output
             let payload: [String: Any] = ["address": addrString, "text": text]
             return makeResult(jsonObject: payload, summary: "Decompiled function at \(addrString) (\(text.split(separator: "\n").count) lines)")
         }
@@ -2874,7 +2901,7 @@ public enum MissionTools {
             let disasmText = lines.map { line in
                 String(format: "0x%llx", line.address) + "  " + line.asmText.plainText
             }.joined(separator: "\n")
-            let decompText = await dis.decompile(at: address)
+            let decompText = await dis.decompile(at: address).output
 
             let system = "You are a concise reverse-engineering assistant. Given disassembly and a pseudo-decompile of a function, produce a 2-4 sentence explanation of what the function does. Be specific about what the function reads/writes/calls. Do not restate the input."
             var user = "Address: \(addrString)\n\nDisassembly:\n\(disasmText)\n\nPseudo-C:\n\(decompText)\n"
@@ -2926,9 +2953,9 @@ public enum MissionTools {
             }
             let hex = String(address, radix: 16)
             _ = await dis.runCommand("af @ 0x\(hex)")
-            let xrefs = await dis.runCommand("axff~$[3] @ 0x\(hex)")
-            let nearby = await dis.runCommand("fd. @ 0x\(hex)")
-            let decomp = await dis.decompile(at: address)
+            let xrefs = await dis.runCommand("axff~$[3] @ 0x\(hex)").output
+            let nearby = await dis.runCommand("fd. @ 0x\(hex)").output
+            let decomp = await dis.decompile(at: address).output
 
             let system = "You suggest concise, descriptive function names for reverse-engineered binaries. Output exactly one line: an `afn NEWNAME` r2 command. NEWNAME must be a single alphanumeric/underscore identifier. No prose, no markdown."
             let user = "Address: \(addrString)\n\nCallees / xrefs:\n\(xrefs)\n\nNearby flags:\n\(nearby)\n\nPseudo-C:\n\(decomp)\n"
@@ -2976,9 +3003,9 @@ public enum MissionTools {
             }
             let hex = String(address, radix: 16)
             _ = await dis.runCommand("af @ 0x\(hex)")
-            let vars = await dis.runCommand("afv @ 0x\(hex)")
-            let current = await dis.runCommand("afs @ 0x\(hex)")
-            let decomp = await dis.decompile(at: address)
+            let vars = await dis.runCommand("afv @ 0x\(hex)").output
+            let current = await dis.runCommand("afs @ 0x\(hex)").output
+            let decomp = await dis.decompile(at: address).output
 
             let system = "You infer C function signatures from low-level analysis. Output exactly one line: an `afs SIGNATURE` r2 command. Do NOT print the function body. No prose, no markdown."
             let user = "Variables:\n\(vars)\n\nCurrent signature:\n\(current)\n\nPseudo-C:\n\(decomp)\n"
@@ -3026,8 +3053,8 @@ public enum MissionTools {
             }
             let hex = String(address, radix: 16)
             _ = await dis.runCommand("af @ 0x\(hex)")
-            let vars = await dis.runCommand("afv @ 0x\(hex)")
-            let decomp = await dis.decompile(at: address)
+            let vars = await dis.runCommand("afv @ 0x\(hex)").output
+            let decomp = await dis.decompile(at: address).output
 
             let system = "You rename local variables and arguments based on how they're used. Output an r2 script of `afvn` (rename) and `afvt` (retype) commands, one per line. No prose, no markdown."
             let user = "Variables:\n\(vars)\n\nPseudo-C:\n\(decomp)\n"
@@ -3073,7 +3100,7 @@ public enum MissionTools {
             guard let dis = engine.disassembler(forSessionID: sessionID) else {
                 return errorResult("no disassembler for session", code: .notFound)
             }
-            let decomp = await dis.decompile(at: address)
+            let decomp = await dis.decompile(at: address).output
 
             let system = "You are a security analyst. Given a function's pseudo-decompile, identify likely vulnerabilities or bugs. Do not show the input code. Produce a short analysis with: (1) findings, (2) suggested mitigations, (3) a brief exploit sketch where relevant."
             let user = "Address: \(addrString)\n\nPseudo-C:\n\(decomp)\n"

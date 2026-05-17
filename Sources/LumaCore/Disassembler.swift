@@ -41,9 +41,9 @@ public final class Disassembler {
         return ops.map { $0.toDisassemblyLine() }
     }
 
-    public func runCommand(_ command: String) async -> String {
+    public func runCommand(_ command: String) async -> R2CommandResult {
         await ensureOpened()
-        return await r2.cmd(command)
+        return await r2.cmdWithLogs(command)
     }
 
     public func findFunctionStart(containing address: UInt64) async -> UInt64? {
@@ -63,7 +63,9 @@ public final class Disassembler {
     }
 
     private func fetchFunctionBegin(hex: String) async -> UInt64? {
-        let raw = await r2.cmd("?v $FB @ 0x\(hex)").trimmingCharacters(in: .whitespacesAndNewlines)
+        let result = await r2.cmdWithLogs("?v $FB @ 0x\(hex)")
+        if result.hasErrors { return nil }
+        let raw = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let value = parseHex(raw), value != 0 else { return nil }
         return value
     }
@@ -76,11 +78,11 @@ public final class Disassembler {
         return UInt64(lower, radix: 16) ?? UInt64(lower)
     }
 
-    public func decompile(at address: UInt64) async -> String {
+    public func decompile(at address: UInt64) async -> R2CommandResult {
         await ensureOpened()
         let hex = String(address, radix: 16)
         await r2.cmd("af @ 0x\(hex)")
-        return await r2.cmd("pdc @ 0x\(hex)")
+        return await r2.cmdWithLogs("pdc @ 0x\(hex)")
     }
 
     private func ensureOpened() async {

@@ -571,7 +571,7 @@ public final class Engine {
             let disasm = lines64.map {
                 String(format: "0x%llx", $0.address) + "  " + $0.asmText.plainText
             }.joined(separator: "\n")
-            let pdc = await dis.decompile(at: address)
+            let pdc = await dis.decompile(at: address).output
             lines.append("")
             lines.append("Disassembly window:")
             lines.append(disasm)
