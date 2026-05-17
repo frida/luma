@@ -1077,6 +1077,7 @@ public final class ProjectStore: Sendable {
             t.primaryKey("id", .text).notNull()
             t.column("session_id", .text).notNull()
                 .references("process_session", onDelete: .cascade)
+            t.column("author", .blob)
             t.column("code", .text).notNull()
             t.column("result", .blob).notNull()
             t.column("timestamp", .datetime).notNull()
