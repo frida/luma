@@ -27,6 +27,10 @@ public enum MissionTools {
         registerR2Cmd(in: catalog, engine: engine)
         registerDecompile(in: catalog, engine: engine)
         registerExplainFunction(in: catalog, engine: engine)
+        registerSuggestFunctionName(in: catalog, engine: engine)
+        registerSuggestFunctionSignature(in: catalog, engine: engine)
+        registerSuggestLocalNames(in: catalog, engine: engine)
+        registerFindVulnerabilities(in: catalog, engine: engine)
         registerReadMemory(in: catalog, engine: engine)
         registerWriteMemory(in: catalog, engine: engine)
         registerRecordFinding(in: catalog, engine: engine)
@@ -2872,22 +2876,222 @@ public enum MissionTools {
             }.joined(separator: "\n")
             let decompText = await dis.decompile(at: address)
 
-            let summary = await summarizeViaLLM(
+            let system = "You are a concise reverse-engineering assistant. Given disassembly and a pseudo-decompile of a function, produce a 2-4 sentence explanation of what the function does. Be specific about what the function reads/writes/calls. Do not restate the input."
+            var user = "Address: \(addrString)\n\nDisassembly:\n\(disasmText)\n\nPseudo-C:\n\(decompText)\n"
+            if !focus.isEmpty {
+                user += "\nFocus on: \(focus)\n"
+            }
+
+            let outcome = await runLLMQuery(
                 engine: engine,
                 providerID: invocation.mission.providerID,
                 modelID: invocation.mission.modelID,
-                disasm: disasmText,
-                decompile: decompText,
-                address: addrString,
-                focus: focus
+                system: system,
+                user: user
             )
 
-            switch summary {
+            switch outcome {
             case .success(let explanation):
                 let payload: [String: Any] = ["address": addrString, "explanation": explanation]
                 return makeResult(jsonObject: payload, summary: "Explained function at \(addrString)")
             case .failure(let reason):
                 return errorResult("explanation failed: \(reason)")
+            }
+        }
+    }
+
+    // MARK: - suggest_function_name
+
+    private static func registerSuggestFunctionName(in catalog: ToolCatalog, engine: Engine) {
+        let spec = ActionSpec(
+            name: "suggest_function_name",
+            description: "Propose a better name for a function based on its callers, callees, strings, and decompile. Returns a proposal only — does not rename anything in the project. The agent can choose to apply it via r2_cmd with the suggested `afn` line.",
+            inputSchemaJSON: """
+                {"type":"object","properties":{"session_id":{"type":"string"},"address":{"type":"string","description":"Hex address of function start"}},"required":["session_id","address"],"additionalProperties":false}
+                """,
+            isObserve: true,
+            requiresSession: true
+        )
+        catalog.register(spec: spec) { [weak engine] invocation in
+            guard let engine, let sessionID = parseSessionID(invocation.args) else {
+                return errorResult("missing or invalid session_id", code: .invalidInput)
+            }
+            guard let addrString = invocation.args["address"] as? String,
+                let address = parseHexAddress(addrString)
+            else {
+                return errorResult("missing or invalid address", code: .invalidInput)
+            }
+            guard let dis = engine.disassembler(forSessionID: sessionID) else {
+                return errorResult("no disassembler for session", code: .notFound)
+            }
+            let hex = String(address, radix: 16)
+            _ = await dis.runCommand("af @ 0x\(hex)")
+            let xrefs = await dis.runCommand("axff~$[3] @ 0x\(hex)")
+            let nearby = await dis.runCommand("fd. @ 0x\(hex)")
+            let decomp = await dis.decompile(at: address)
+
+            let system = "You suggest concise, descriptive function names for reverse-engineered binaries. Output exactly one line: an `afn NEWNAME` r2 command. NEWNAME must be a single alphanumeric/underscore identifier. No prose, no markdown."
+            let user = "Address: \(addrString)\n\nCallees / xrefs:\n\(xrefs)\n\nNearby flags:\n\(nearby)\n\nPseudo-C:\n\(decomp)\n"
+
+            let outcome = await runLLMQuery(
+                engine: engine,
+                providerID: invocation.mission.providerID,
+                modelID: invocation.mission.modelID,
+                system: system,
+                user: user
+            )
+            switch outcome {
+            case .success(let line):
+                let payload: [String: Any] = ["address": addrString, "afn_command": line]
+                return makeResult(jsonObject: payload, summary: "Name suggestion for \(addrString)")
+            case .failure(let reason):
+                return errorResult("name suggestion failed: \(reason)")
+            }
+        }
+    }
+
+    // MARK: - suggest_function_signature
+
+    private static func registerSuggestFunctionSignature(in catalog: ToolCatalog, engine: Engine) {
+        let spec = ActionSpec(
+            name: "suggest_function_signature",
+            description: "Propose an improved C-style signature for a function based on argument/return usage. Returns a proposal only — does not modify the project.",
+            inputSchemaJSON: """
+                {"type":"object","properties":{"session_id":{"type":"string"},"address":{"type":"string","description":"Hex address of function start"}},"required":["session_id","address"],"additionalProperties":false}
+                """,
+            isObserve: true,
+            requiresSession: true
+        )
+        catalog.register(spec: spec) { [weak engine] invocation in
+            guard let engine, let sessionID = parseSessionID(invocation.args) else {
+                return errorResult("missing or invalid session_id", code: .invalidInput)
+            }
+            guard let addrString = invocation.args["address"] as? String,
+                let address = parseHexAddress(addrString)
+            else {
+                return errorResult("missing or invalid address", code: .invalidInput)
+            }
+            guard let dis = engine.disassembler(forSessionID: sessionID) else {
+                return errorResult("no disassembler for session", code: .notFound)
+            }
+            let hex = String(address, radix: 16)
+            _ = await dis.runCommand("af @ 0x\(hex)")
+            let vars = await dis.runCommand("afv @ 0x\(hex)")
+            let current = await dis.runCommand("afs @ 0x\(hex)")
+            let decomp = await dis.decompile(at: address)
+
+            let system = "You infer C function signatures from low-level analysis. Output exactly one line: an `afs SIGNATURE` r2 command. Do NOT print the function body. No prose, no markdown."
+            let user = "Variables:\n\(vars)\n\nCurrent signature:\n\(current)\n\nPseudo-C:\n\(decomp)\n"
+
+            let outcome = await runLLMQuery(
+                engine: engine,
+                providerID: invocation.mission.providerID,
+                modelID: invocation.mission.modelID,
+                system: system,
+                user: user
+            )
+            switch outcome {
+            case .success(let line):
+                let payload: [String: Any] = ["address": addrString, "afs_command": line]
+                return makeResult(jsonObject: payload, summary: "Signature suggestion for \(addrString)")
+            case .failure(let reason):
+                return errorResult("signature suggestion failed: \(reason)")
+            }
+        }
+    }
+
+    // MARK: - suggest_local_names
+
+    private static func registerSuggestLocalNames(in catalog: ToolCatalog, engine: Engine) {
+        let spec = ActionSpec(
+            name: "suggest_local_names",
+            description: "Propose better names and types for local variables and arguments of a function. Returns an r2 script of `afvn`/`afvt` commands — the agent can apply them via r2_cmd.",
+            inputSchemaJSON: """
+                {"type":"object","properties":{"session_id":{"type":"string"},"address":{"type":"string","description":"Hex address of function start"}},"required":["session_id","address"],"additionalProperties":false}
+                """,
+            isObserve: true,
+            requiresSession: true
+        )
+        catalog.register(spec: spec) { [weak engine] invocation in
+            guard let engine, let sessionID = parseSessionID(invocation.args) else {
+                return errorResult("missing or invalid session_id", code: .invalidInput)
+            }
+            guard let addrString = invocation.args["address"] as? String,
+                let address = parseHexAddress(addrString)
+            else {
+                return errorResult("missing or invalid address", code: .invalidInput)
+            }
+            guard let dis = engine.disassembler(forSessionID: sessionID) else {
+                return errorResult("no disassembler for session", code: .notFound)
+            }
+            let hex = String(address, radix: 16)
+            _ = await dis.runCommand("af @ 0x\(hex)")
+            let vars = await dis.runCommand("afv @ 0x\(hex)")
+            let decomp = await dis.decompile(at: address)
+
+            let system = "You rename local variables and arguments based on how they're used. Output an r2 script of `afvn` (rename) and `afvt` (retype) commands, one per line. No prose, no markdown."
+            let user = "Variables:\n\(vars)\n\nPseudo-C:\n\(decomp)\n"
+
+            let outcome = await runLLMQuery(
+                engine: engine,
+                providerID: invocation.mission.providerID,
+                modelID: invocation.mission.modelID,
+                system: system,
+                user: user
+            )
+            switch outcome {
+            case .success(let script):
+                let payload: [String: Any] = ["address": addrString, "script": script]
+                return makeResult(jsonObject: payload, summary: "Local-name suggestions for \(addrString)")
+            case .failure(let reason):
+                return errorResult("local-name suggestion failed: \(reason)")
+            }
+        }
+    }
+
+    // MARK: - find_vulnerabilities
+
+    private static func registerFindVulnerabilities(in catalog: ToolCatalog, engine: Engine) {
+        let spec = ActionSpec(
+            name: "find_vulnerabilities",
+            description: "Inspect a function's pseudo-decompile for likely vulnerabilities or bugs. Returns a short analysis with suggested mitigations and, where relevant, a sketched exploit. Heuristic — verify before recording findings.",
+            inputSchemaJSON: """
+                {"type":"object","properties":{"session_id":{"type":"string"},"address":{"type":"string","description":"Hex address of function start"}},"required":["session_id","address"],"additionalProperties":false}
+                """,
+            isObserve: true,
+            requiresSession: true
+        )
+        catalog.register(spec: spec) { [weak engine] invocation in
+            guard let engine, let sessionID = parseSessionID(invocation.args) else {
+                return errorResult("missing or invalid session_id", code: .invalidInput)
+            }
+            guard let addrString = invocation.args["address"] as? String,
+                let address = parseHexAddress(addrString)
+            else {
+                return errorResult("missing or invalid address", code: .invalidInput)
+            }
+            guard let dis = engine.disassembler(forSessionID: sessionID) else {
+                return errorResult("no disassembler for session", code: .notFound)
+            }
+            let decomp = await dis.decompile(at: address)
+
+            let system = "You are a security analyst. Given a function's pseudo-decompile, identify likely vulnerabilities or bugs. Do not show the input code. Produce a short analysis with: (1) findings, (2) suggested mitigations, (3) a brief exploit sketch where relevant."
+            let user = "Address: \(addrString)\n\nPseudo-C:\n\(decomp)\n"
+
+            let outcome = await runLLMQuery(
+                engine: engine,
+                providerID: invocation.mission.providerID,
+                modelID: invocation.mission.modelID,
+                system: system,
+                user: user,
+                maxOutputTokens: 2048
+            )
+            switch outcome {
+            case .success(let analysis):
+                let payload: [String: Any] = ["address": addrString, "analysis": analysis]
+                return makeResult(jsonObject: payload, summary: "Vulnerability analysis for \(addrString)")
+            case .failure(let reason):
+                return errorResult("vulnerability analysis failed: \(reason)")
             }
         }
     }
@@ -3277,20 +3481,20 @@ public enum MissionTools {
         case failed = "failed"
     }
 
-    private enum ExplainOutcome {
+    private enum LLMQueryOutcome {
         case success(String)
         case failure(String)
     }
 
-    private static func summarizeViaLLM(
+    private static func runLLMQuery(
         engine: Engine,
         providerID: String,
         modelID: String,
-        disasm: String,
-        decompile: String,
-        address: String,
-        focus: String
-    ) async -> ExplainOutcome {
+        system: String,
+        user: String,
+        maxOutputTokens: Int = 1024,
+        temperature: Double = 0.2
+    ) async -> LLMQueryOutcome {
         guard let provider = engine.llmRegistry.provider(id: providerID) else {
             return .failure("provider \(providerID) not registered")
         }
@@ -3299,35 +3503,24 @@ public enum MissionTools {
             return .failure("missing API key for provider \(providerID)")
         }
 
-        let systemText = """
-            You are a concise reverse-engineering assistant. Given disassembly and a pseudo-decompile of a function, produce a 2-4 sentence explanation of what the function does. Be specific about what the function reads/writes/calls. Do not restate the input.
-            """
-        let userPrompt: String = {
-            var s = "Address: \(address)\n\nDisassembly:\n\(disasm)\n\nPseudo-C:\n\(decompile)\n"
-            if !focus.isEmpty {
-                s += "\nFocus on: \(focus)\n"
-            }
-            return s
-        }()
-
         let request = LLMTurnRequest(
             modelID: modelID,
-            systemBlocks: [LLMContentBlock(content: .text(systemText), cacheBoundary: true)],
-            messages: [LLMMessage(role: .user, blocks: [.text(userPrompt)])],
+            systemBlocks: [LLMContentBlock(content: .text(system), cacheBoundary: true)],
+            messages: [LLMMessage(role: .user, blocks: [.text(user)])],
             tools: [],
-            maxOutputTokens: 1024,
+            maxOutputTokens: maxOutputTokens,
             thinkingBudget: 0,
-            temperature: 0.2
+            temperature: temperature
         )
 
-        var explanation = ""
+        var output = ""
         do {
             let baseURL = LumaAppState.shared.providerBaseURL(providerID: providerID).flatMap(URL.init(string:))
             for try await event in provider.streamTurn(request, apiKey: apiKey, baseURL: baseURL) {
                 if case .finalMessage(_, let blocks) = event {
                     for block in blocks {
                         if case .text(let t) = block.content {
-                            explanation += t
+                            output += t
                         }
                     }
                 }
@@ -3335,9 +3528,9 @@ public enum MissionTools {
         } catch {
             return .failure(error.localizedDescription)
         }
-        let trimmed = explanation.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
-            return .failure("model returned empty explanation")
+            return .failure("model returned empty response")
         }
         return .success(trimmed)
     }
