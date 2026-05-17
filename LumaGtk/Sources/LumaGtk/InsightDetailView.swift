@@ -733,18 +733,13 @@ final class InsightDetailView {
 
     private func goToFunctionStart(address: UInt64) async {
         guard let engine, let dis = engine.disassembler(forSessionID: sessionID) else { return }
-        let hex = String(address, radix: 16)
-        let output = await dis.runCommand("?v $FB @ 0x\(hex)").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let target = parseFunctionStart(output), target != 0 else { return }
-        jumpTo(target: target)
-    }
-
-    private func parseFunctionStart(_ text: String) -> UInt64? {
-        let trimmed = text.lowercased()
-        if trimmed.hasPrefix("0x") {
-            return UInt64(trimmed.dropFirst(2), radix: 16)
+        guard let target = await dis.findFunctionStart(containing: address) else {
+            InsightDetailView.copyFeedback?(
+                "No function containing \(String(format: "0x%llx", address))"
+            )
+            return
         }
-        return UInt64(trimmed, radix: 16) ?? UInt64(trimmed)
+        jumpTo(target: target)
     }
 
     // MARK: - Theme

@@ -21,6 +21,7 @@ public final class Disassembler {
     private var r2: R2Core!
     private var openTask: Task<Void, Never>?
     private var currentDarkMode: Bool?
+    private var didRunPreludeScan = false
 
     public init(node: ProcessNode, processInfo: ProcessSession.ProcessInfo) {
         self.node = node
@@ -43,6 +44,36 @@ public final class Disassembler {
     public func runCommand(_ command: String) async -> String {
         await ensureOpened()
         return await r2.cmd(command)
+    }
+
+    public func findFunctionStart(containing address: UInt64) async -> UInt64? {
+        await ensureOpened()
+        let hex = String(address, radix: 16)
+        if let direct = await fetchFunctionBegin(hex: hex) {
+            return direct
+        }
+        if !didRunPreludeScan {
+            _ = await r2.cmd("aap")
+            didRunPreludeScan = true
+            if let primed = await fetchFunctionBegin(hex: hex) {
+                return primed
+            }
+        }
+        return nil
+    }
+
+    private func fetchFunctionBegin(hex: String) async -> UInt64? {
+        let raw = await r2.cmd("?v $FB @ 0x\(hex)").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value = parseHex(raw), value != 0 else { return nil }
+        return value
+    }
+
+    private func parseHex(_ text: String) -> UInt64? {
+        let lower = text.lowercased()
+        if lower.hasPrefix("0x") {
+            return UInt64(lower.dropFirst(2), radix: 16)
+        }
+        return UInt64(lower, radix: 16) ?? UInt64(lower)
     }
 
     public func decompile(at address: UInt64) async -> String {

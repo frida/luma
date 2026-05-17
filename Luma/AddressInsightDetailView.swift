@@ -586,18 +586,18 @@ private struct DisasmRow: View {
 
     private func goToFunctionStart() async {
         guard let dis = engine.disassembler(forSessionID: sessionID) else { return }
-        let hex = String(line.address, radix: 16)
-        let output = await dis.runCommand("?v $FB @ 0x\(hex)").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let target = parseFunctionStart(output), target != 0 else { return }
-        try? onJump(target)
-    }
-
-    private func parseFunctionStart(_ text: String) -> UInt64? {
-        let trimmed = text.lowercased()
-        if trimmed.hasPrefix("0x") {
-            return UInt64(trimmed.dropFirst(2), radix: 16)
+        guard let target = await dis.findFunctionStart(containing: line.address) else {
+            errorPresenter.present(
+                "No enclosing function",
+                "Couldn’t locate a function containing \(String(format: "0x%llx", line.address)). The binary may not have been analyzed at this address."
+            )
+            return
         }
-        return UInt64(trimmed, radix: 16) ?? UInt64(trimmed)
+        do {
+            try onJump(target)
+        } catch {
+            errorPresenter.present("Can’t jump here", error.localizedDescription)
+        }
     }
 }
 
