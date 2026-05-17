@@ -1241,6 +1241,7 @@ public final class ProjectStore: Sendable {
 
         try db.create(table: "mission", ifNotExists: true) { t in
             t.primaryKey("id", .text).notNull()
+            t.column("editors", .blob).notNull()
             t.column("created_at", .datetime).notNull()
             t.column("updated_at", .datetime).notNull()
             t.column("title", .text)
