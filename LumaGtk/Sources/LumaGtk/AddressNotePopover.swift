@@ -6,6 +6,14 @@ import Gtk
 import LumaCore
 
 @MainActor
+struct AddressNotePointingRect {
+    let x: Double
+    let y: Double
+    let width: Double
+    let height: Double
+}
+
+@MainActor
 final class AddressNotePopover {
     private static var active: AddressNotePopover?
 
@@ -36,6 +44,7 @@ final class AddressNotePopover {
     private var activeNoteID: UUID?
     private var messages: [AddressNoteMessage] = []
     private var pending: PendingState = .idle
+    private var unusedTransientNoteIDs: Set<UUID> = []
 
     init(engine: Engine, sessionID: UUID, address: UInt64) {
         self.engine = engine
@@ -43,7 +52,7 @@ final class AddressNotePopover {
         self.address = address
     }
 
-    func presentAnchored(to anchor: WidgetProtocol) {
+    func presentAnchored(to parent: WidgetProtocol, pointingTo rect: AddressNotePointingRect) {
         AddressNotePopover.active?.dismiss()
         AddressNotePopover.active = self
 
@@ -52,9 +61,9 @@ final class AddressNotePopover {
         popover.position = .right
         popover.onClosed { _ in
             MainActor.assumeIsolated {
-                if AddressNotePopover.active === self {
-                    AddressNotePopover.active = nil
-                }
+                guard AddressNotePopover.active === self else { return }
+                self.discardUnusedTransientNotes()
+                AddressNotePopover.active = nil
             }
         }
 
@@ -83,7 +92,18 @@ final class AddressNotePopover {
         column.append(child: host)
 
         popover.set(child: column)
-        popover.set(parent: WidgetRef(anchor))
+        popover.set(parent: WidgetRef(parent))
+
+        var gdkRect = GdkRectangle(
+            x: gint(rect.x),
+            y: gint(rect.y),
+            width: gint(max(1, rect.width)),
+            height: gint(max(1, rect.height))
+        )
+        withUnsafeMutablePointer(to: &gdkRect) { ptr in
+            gtk_popover_set_pointing_to(popover.popover_ptr, ptr)
+        }
+
         self.popover = popover
 
         reloadNotes()
@@ -92,6 +112,7 @@ final class AddressNotePopover {
 
     private func dismiss() {
         guard let popover else { return }
+        discardUnusedTransientNotes()
         popover.popdown()
         popover.unparent()
         self.popover = nil
@@ -362,6 +383,21 @@ final class AddressNotePopover {
         entry.acceptsTab = false
         inputView = entry
 
+        let submitKey = EventControllerKey()
+        submitKey.onKeyPressed { [weak self] _, keyval, _, state in
+            MainActor.assumeIsolated {
+                let key = Int32(keyval)
+                guard key == Gdk.keyReturn || key == Gdk.keyKPEnter else { return false }
+                if state.contains(.shiftMask) { return false }
+                guard let self else { return true }
+                if case .sending = self.pending { return true }
+                if self.draftText().isEmpty { return true }
+                self.askAI()
+                return true
+            }
+        }
+        entry.install(controller: submitKey)
+
         let scroll = ScrolledWindow()
         scroll.hexpand = true
         scroll.setSizeRequest(width: -1, height: 64)
@@ -458,6 +494,7 @@ final class AddressNotePopover {
         notes.insert(note, at: 0)
         activeNoteID = note.id
         messages = []
+        unusedTransientNoteIDs.insert(note.id)
         rebuildBody()
     }
 
@@ -465,6 +502,7 @@ final class AddressNotePopover {
         guard let engine, let id = activeNoteID, let note = notes.first(where: { $0.id == id }) else { return }
         engine.deleteAddressNote(note)
         notes.removeAll { $0.id == id }
+        unusedTransientNoteIDs.remove(id)
         activeNoteID = notes.first?.id
         reloadMessages()
         if notes.isEmpty {
@@ -479,6 +517,7 @@ final class AddressNotePopover {
         let body = draftText()
         guard !body.isEmpty, let message = engine.appendUserMessage(noteID: id, body: body) else { return }
         appendMessageRow(message)
+        unusedTransientNoteIDs.remove(id)
         clearDraft()
     }
 
@@ -488,6 +527,7 @@ final class AddressNotePopover {
         guard !body.isEmpty else { return }
         guard let userMessage = engine.appendUserMessage(noteID: id, body: body) else { return }
         appendMessageRow(userMessage)
+        unusedTransientNoteIDs.remove(id)
         clearDraft()
         pending = .sending
         refreshPendingUI()
@@ -506,6 +546,19 @@ final class AddressNotePopover {
             }
             self.refreshPendingUI()
         }
+    }
+
+    private func discardUnusedTransientNotes() {
+        guard let engine else {
+            unusedTransientNoteIDs.removeAll()
+            return
+        }
+        for noteID in unusedTransientNoteIDs {
+            guard let note = notes.first(where: { $0.id == noteID }) else { continue }
+            guard engine.addressNoteMessages(noteID: noteID).isEmpty else { continue }
+            engine.deleteAddressNote(note)
+        }
+        unusedTransientNoteIDs.removeAll()
     }
 
     private func noteTitle(_ note: AddressNote) -> String {

@@ -1,9 +1,11 @@
 import Adw
 import CCairo
+import CGraphene
 import CGtk
 import Cairo
 import Foundation
 import Gdk
+import struct Graphene.PointRef
 import Gtk
 import LumaCore
 import Pango
@@ -155,10 +157,31 @@ final class InsightDetailView {
 
         applySessionState()
         scheduleRefresh()
+
+        engine.onAddressNoteChanged = { [weak self] change in
+            MainActor.assumeIsolated {
+                self?.handleAddressNoteChanged(change)
+            }
+        }
     }
 
     deinit {
         ThemeWatcher.unsubscribe(handlerID: themeSignalID)
+    }
+
+    private func handleAddressNoteChanged(_ change: AddressNoteChange) {
+        guard let engine else { return }
+        let changedSessionID: UUID?
+        switch change {
+        case .noteAdded(let note), .noteUpdated(let note):
+            changedSessionID = note.sessionID
+        case .noteRemoved(_, let sid):
+            changedSessionID = sid
+        case .messageAppended(let m), .messageEdited(let m):
+            changedSessionID = (try? engine.store.fetchAddressNote(id: m.noteID))?.sessionID
+        }
+        guard changedSessionID == sessionID else { return }
+        scheduleRefresh()
     }
 
     // MARK: - Session banner
@@ -555,7 +578,7 @@ final class InsightDetailView {
             let bubbleAddress = line.address
             bubble.onClicked { [weak self] _ in
                 MainActor.assumeIsolated {
-                    self?.openNotePopover(at: bubble, address: bubbleAddress)
+                    self?.openNotePopover(anchoredAt: bubble, address: bubbleAddress)
                 }
             }
             decorationsBox.append(child: bubble)
@@ -577,7 +600,9 @@ final class InsightDetailView {
         addrGesture.propagationPhase = GTK_PHASE_CAPTURE
         addrGesture.onPressed { [weak self] _, _, x, y in
             MainActor.assumeIsolated {
-                self?.showAddressMenu(at: addrLabel, x: x, y: y, address: address)
+                guard let self else { return }
+                let (tx, ty) = self.translatePoint(x: x, y: y, from: addrLabel, to: self.widget)
+                self.showAddressMenu(anchor: addrLabel, x: tx, y: ty, address: address)
             }
         }
         addrLabel.install(controller: addrGesture)
@@ -688,7 +713,23 @@ final class InsightDetailView {
 
     // MARK: - Context menu
 
-    private func showAddressMenu(at anchor: Widget, x: Double, y: Double, address: UInt64) {
+    private func translatePoint<Src: WidgetProtocol, Dst: WidgetProtocol>(
+        x: Double,
+        y: Double,
+        from src: Src,
+        to dst: Dst
+    ) -> (x: Double, y: Double) {
+        var source = graphene_point_t(x: Float(x), y: Float(y))
+        var destination = graphene_point_t(x: 0, y: 0)
+        _ = withUnsafeMutablePointer(to: &source) { srcPtr in
+            withUnsafeMutablePointer(to: &destination) { dstPtr in
+                src.computePoint(target: dst, point: PointRef(srcPtr), outPoint: PointRef(dstPtr))
+            }
+        }
+        return (Double(destination.x), Double(destination.y))
+    }
+
+    private func showAddressMenu(anchor: Widget, x: Double, y: Double, address: UInt64) {
         guard let engine else { return }
 
         let primary: [ContextMenu.Item] = [
@@ -703,7 +744,7 @@ final class InsightDetailView {
 
         let navigation: [ContextMenu.Item] = [
             .init("Notes & AI…") { [weak self] in
-                self?.openNotePopover(at: anchor, address: address)
+                self?.openNotePopover(anchoredAt: anchor, address: address)
             },
             .init("Go to Function Start") { [weak self] in
                 Task { @MainActor in
@@ -722,13 +763,20 @@ final class InsightDetailView {
             })
         }
 
-        ContextMenu.present([primary, navigation, engineItems], at: anchor, x: x, y: y)
+        ContextMenu.present([primary, navigation, engineItems], at: widget, x: x, y: y)
     }
 
-    private func openNotePopover(at anchor: Widget, address: UInt64) {
+    private func openNotePopover(anchoredAt anchor: Widget, address: UInt64) {
         guard let engine else { return }
+        let (originX, originY) = translatePoint(x: 0, y: 0, from: anchor, to: widget)
+        let rect = AddressNotePointingRect(
+            x: originX,
+            y: originY,
+            width: max(1, Double(anchor.width)),
+            height: max(1, Double(anchor.height))
+        )
         let popover = AddressNotePopover(engine: engine, sessionID: sessionID, address: address)
-        popover.presentAnchored(to: anchor)
+        popover.presentAnchored(to: widget, pointingTo: rect)
     }
 
     private func goToFunctionStart(address: UInt64) async {
