@@ -18,6 +18,8 @@ struct AddressNotePopover: View {
     @State private var editingDraft: String = ""
     @State private var pendingDeleteThread: AddressNote?
     @State private var pendingDeleteMessage: AddressNoteMessage?
+    @State private var renamingNoteID: UUID?
+    @State private var renameDraft: String = ""
 
     @FocusState private var inputFocused: Bool
     @FocusState private var editFocused: Bool
@@ -69,6 +71,17 @@ struct AddressNotePopover: View {
             Button("Delete", role: .destructive) { commitDelete(message: message) }
             Button("Cancel", role: .cancel) {}
         }
+        .alert(
+            "Rename thread",
+            isPresented: Binding(
+                get: { renamingNoteID != nil },
+                set: { if !$0 { renamingNoteID = nil } }
+            )
+        ) {
+            TextField("Title", text: $renameDraft)
+            Button("Save") { commitRename() }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 
     private var activeNote: AddressNote? {
@@ -110,6 +123,14 @@ struct AddressNotePopover: View {
             .buttonStyle(.borderless)
             .help("New thread")
             if let note = activeNote {
+                Button {
+                    renameDraft = noteTitle(note)
+                    renamingNoteID = note.id
+                } label: {
+                    Image(systemName: "pencil")
+                }
+                .buttonStyle(.borderless)
+                .help("Rename thread")
                 Button(role: .destructive) {
                     pendingDeleteThread = note
                 } label: {
@@ -311,6 +332,18 @@ struct AddressNotePopover: View {
     private func commitDelete(message: AddressNoteMessage) {
         engine.deleteAddressNoteMessage(message)
         messages.removeAll { $0.id == message.id }
+    }
+
+    private func commitRename() {
+        guard let id = renamingNoteID,
+            var note = notes.first(where: { $0.id == id })
+        else { return }
+        let trimmed = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newTitle = trimmed.isEmpty ? nil : trimmed
+        guard newTitle != note.title else { return }
+        note.title = newTitle
+        engine.updateAddressNote(note)
+        notes = notes.map { $0.id == note.id ? note : $0 }
     }
 
     private func commitEdit(message: AddressNoteMessage) {

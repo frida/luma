@@ -22,6 +22,7 @@ final class AddressNotePopover {
     private var popover: Popover?
     private var headerTitleLabel: Label?
     private var switchButton: MenuButton?
+    private var renameButton: Button?
     private var deleteButton: Button?
     private var bodyHost: Box?
     private var messagesBox: Box?
@@ -125,6 +126,7 @@ final class AddressNotePopover {
         errorLabel = nil
         headerTitleLabel = nil
         switchButton = nil
+        renameButton = nil
         deleteButton = nil
     }
 
@@ -166,6 +168,19 @@ final class AddressNotePopover {
             MainActor.assumeIsolated { self?.createNote() }
         }
         header.append(child: addBtn)
+
+        let renameBtn = Button()
+        let renameIcon = Gtk.Image(iconName: "document-edit-symbolic")
+        renameIcon.pixelSize = 12
+        renameBtn.set(child: renameIcon)
+        renameBtn.add(cssClass: "flat")
+        renameBtn.tooltipText = "Rename thread"
+        renameBtn.visible = false
+        renameBtn.onClicked { [weak self] _ in
+            MainActor.assumeIsolated { self?.renameActive() }
+        }
+        renameButton = renameBtn
+        header.append(child: renameBtn)
 
         let delBtn = Button()
         let delIcon = Gtk.Image(iconName: "user-trash-symbolic")
@@ -230,6 +245,7 @@ final class AddressNotePopover {
         if let sb = switchButton, notes.count > 1 {
             sb.set(popover: makeSwitchPopover())
         }
+        renameButton?.visible = activeNoteID != nil
         deleteButton?.visible = activeNoteID != nil
     }
 
@@ -638,6 +654,83 @@ final class AddressNotePopover {
         unusedTransientNoteIDs.insert(note.id)
         rebuildBody()
         _ = inputView?.grabFocus()
+    }
+
+    private func renameActive() {
+        guard let id = activeNoteID,
+            let note = notes.first(where: { $0.id == id }),
+            let anchor = renameButton
+        else { return }
+        presentRenamePopover(note: note, anchor: anchor)
+    }
+
+    private func presentRenamePopover(note: AddressNote, anchor: Widget) {
+        let popover = Popover()
+        popover.autohide = true
+        popover.position = .bottom
+        popover.set(parent: anchor)
+
+        let column = Box(orientation: .vertical, spacing: 8)
+        column.marginStart = 12
+        column.marginEnd = 12
+        column.marginTop = 12
+        column.marginBottom = 12
+
+        let heading = Label(str: "Rename thread")
+        heading.add(cssClass: "heading")
+        heading.halign = .start
+        heading.xalign = 0
+        column.append(child: heading)
+
+        let entry = Entry()
+        entry.text = noteTitle(note)
+        entry.placeholderText = "Title"
+        entry.widthChars = 28
+        column.append(child: entry)
+
+        let buttonRow = Box(orientation: .horizontal, spacing: 6)
+        buttonRow.halign = .end
+
+        let cancelBtn = Button(label: "Cancel")
+        cancelBtn.add(cssClass: "flat")
+        cancelBtn.onClicked { _ in
+            MainActor.assumeIsolated { popover.popdown() }
+        }
+        buttonRow.append(child: cancelBtn)
+
+        let saveBtn = Button(label: "Save")
+        saveBtn.add(cssClass: "suggested-action")
+        saveBtn.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                popover.popdown()
+                self?.commitRename(note: note, title: entry.text)
+            }
+        }
+        buttonRow.append(child: saveBtn)
+
+        entry.onActivate { [weak self] _ in
+            MainActor.assumeIsolated {
+                popover.popdown()
+                self?.commitRename(note: note, title: entry.text)
+            }
+        }
+
+        column.append(child: buttonRow)
+        popover.set(child: column)
+        popover.popup()
+        _ = entry.grabFocus()
+    }
+
+    private func commitRename(note: AddressNote, title: String) {
+        guard let engine else { return }
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newTitle = trimmed.isEmpty ? nil : trimmed
+        guard newTitle != note.title else { return }
+        var updated = note
+        updated.title = newTitle
+        engine.updateAddressNote(updated)
+        notes = notes.map { $0.id == updated.id ? updated : $0 }
+        refreshHeaderControls()
     }
 
     private func deleteActive() {
