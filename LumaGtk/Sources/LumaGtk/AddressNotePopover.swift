@@ -417,6 +417,18 @@ final class AddressNotePopover {
         let buttonColumn = Box(orientation: .vertical, spacing: 4)
         buttonColumn.valign = .end
 
+        let saveBtn = Button()
+        let saveIcon = Gtk.Image(iconName: "document-edit-symbolic")
+        saveIcon.pixelSize = 14
+        saveBtn.set(child: saveIcon)
+        saveBtn.add(cssClass: "flat")
+        saveBtn.tooltipText = "Save as user note"
+        saveBtn.onClicked { [weak self] _ in
+            MainActor.assumeIsolated { self?.saveNote() }
+        }
+        saveButton = saveBtn
+        buttonColumn.append(child: saveBtn)
+
         let askBtn = Button()
         let askIcon = Gtk.Image(iconName: "mail-send-symbolic")
         askIcon.pixelSize = 14
@@ -435,18 +447,6 @@ final class AddressNotePopover {
         askButton = askBtn
         askSpinner = spinner
         buttonColumn.append(child: askBtn)
-
-        let saveBtn = Button()
-        let saveIcon = Gtk.Image(iconName: "document-edit-symbolic")
-        saveIcon.pixelSize = 14
-        saveBtn.set(child: saveIcon)
-        saveBtn.add(cssClass: "flat")
-        saveBtn.tooltipText = "Save as user note"
-        saveBtn.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.saveNote() }
-        }
-        saveButton = saveBtn
-        buttonColumn.append(child: saveBtn)
 
         row.append(child: buttonColumn)
 
@@ -480,7 +480,6 @@ final class AddressNotePopover {
     }
 
     private func scrollToBottom() {
-        stickyBottom = true
         if let adj = messagesScroll?.vadjustment {
             adj.value = max(0, adj.upper - adj.pageSize)
         }
@@ -488,16 +487,9 @@ final class AddressNotePopover {
 
     private func installScrollStickiness() {
         guard let adj = messagesScroll?.vadjustment else { return }
-        adj.onChanged { [weak self] adj in
+        adj.onChanged { adj in
             MainActor.assumeIsolated {
-                guard let self, self.stickyBottom else { return }
                 adj.value = max(0, adj.upper - adj.pageSize)
-            }
-        }
-        adj.onValueChanged { [weak self] adj in
-            MainActor.assumeIsolated {
-                let atBottom = adj.value + adj.pageSize >= adj.upper - 1.0
-                self?.stickyBottom = atBottom
             }
         }
     }
