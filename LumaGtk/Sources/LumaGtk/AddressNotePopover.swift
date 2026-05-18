@@ -637,6 +637,7 @@ final class AddressNotePopover {
         messages = []
         unusedTransientNoteIDs.insert(note.id)
         rebuildBody()
+        _ = inputView?.grabFocus()
     }
 
     private func deleteActive() {
