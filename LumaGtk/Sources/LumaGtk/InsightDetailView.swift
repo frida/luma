@@ -209,6 +209,9 @@ final class InsightDetailView {
         click.onPressed { [weak self] _, _, _, _ in
             MainActor.assumeIsolated {
                 guard let self, let anchor = self.addressLabelsByAddress[address] else { return }
+                if let rowIndex = self.disasmLines.firstIndex(where: { $0.address == address }) {
+                    self.selectRow(at: rowIndex, focus: true)
+                }
                 self.openNotePopover(anchoredAt: anchor, address: address)
             }
         }
