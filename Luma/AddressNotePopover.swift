@@ -14,6 +14,13 @@ struct AddressNotePopover: View {
     @State private var pending: PendingState = .idle
     @State private var unusedTransientNoteIDs: Set<UUID> = []
     @State private var streamingPlaceholder: AddressNoteMessage?
+    @State private var editingMessageID: UUID?
+    @State private var editingDraft: String = ""
+    @State private var pendingDeleteThread: AddressNote?
+    @State private var pendingDeleteMessage: AddressNoteMessage?
+
+    @FocusState private var inputFocused: Bool
+    @FocusState private var editFocused: Bool
 
     private enum PendingState {
         case idle
@@ -32,9 +39,36 @@ struct AddressNotePopover: View {
             }
         }
         .frame(width: 460, height: 460)
-        .onAppear(perform: refresh)
+        .onAppear {
+            refresh()
+            DispatchQueue.main.async { inputFocused = true }
+        }
         .onChange(of: activeNoteID) { _, _ in reloadMessages() }
         .onDisappear(perform: discardUnusedTransientNotes)
+        .confirmationDialog(
+            "Delete thread?",
+            isPresented: Binding(
+                get: { pendingDeleteThread != nil },
+                set: { if !$0 { pendingDeleteThread = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingDeleteThread
+        ) { note in
+            Button("Delete", role: .destructive) { commitDelete(note: note) }
+            Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog(
+            "Delete message?",
+            isPresented: Binding(
+                get: { pendingDeleteMessage != nil },
+                set: { if !$0 { pendingDeleteMessage = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingDeleteMessage
+        ) { message in
+            Button("Delete", role: .destructive) { commitDelete(message: message) }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 
     private var activeNote: AddressNote? {
@@ -77,7 +111,7 @@ struct AddressNotePopover: View {
             .help("New thread")
             if let note = activeNote {
                 Button(role: .destructive) {
-                    delete(note: note)
+                    pendingDeleteThread = note
                 } label: {
                     Image(systemName: "trash")
                 }
@@ -97,35 +131,135 @@ struct AddressNotePopover: View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(messages) { message in
-                            MessageRow(message: message)
-                                .id(message.id)
+                    VStack(spacing: 0) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(messages) { message in
+                                messageRow(message)
+                                    .id(message.id)
+                            }
+                            if let placeholder = streamingPlaceholder {
+                                MessageRow(message: placeholder, isEditing: false, editingDraft: .constant(""))
+                                    .id(placeholder.id)
+                            }
                         }
-                        if let placeholder = streamingPlaceholder {
-                            MessageRow(message: placeholder)
-                                .id(placeholder.id)
-                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 12)
+
+                        Color.clear
+                            .frame(height: 12)
+                            .id(Self.bottomAnchorID)
                     }
-                    .padding(12)
+                }
+                .defaultScrollAnchor(.bottom)
+                .onAppear {
+                    proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
                 }
                 .onChange(of: messages.count) { _, _ in
-                    scrollToLastID(proxy: proxy)
+                    proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
                 }
                 .onChange(of: streamingPlaceholder?.bodyMarkdown) { _, _ in
-                    scrollToLastID(proxy: proxy)
+                    proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
                 }
-                .onAppear { scrollToLastID(proxy: proxy) }
+                .onChange(of: editingMessageID) { _, newID in
+                    guard let newID else { return }
+                    withAnimation { proxy.scrollTo(newID, anchor: .bottom) }
+                }
             }
             Divider()
             inputBar(note: note)
         }
     }
 
-    private func scrollToLastID(proxy: ScrollViewProxy) {
-        let lastID = streamingPlaceholder?.id ?? messages.last?.id
-        guard let lastID else { return }
-        proxy.scrollTo(lastID, anchor: .bottom)
+    @ViewBuilder
+    private func messageRow(_ message: AddressNoteMessage) -> some View {
+        let isEditing = editingMessageID == message.id
+        VStack(alignment: .trailing, spacing: 4) {
+            MessageRow(message: message, isEditing: isEditing, editingDraft: $editingDraft)
+                .focused($editFocused, equals: isEditing)
+            if isEditing {
+                HStack(spacing: 6) {
+                    Button("Cancel") { editingMessageID = nil }
+                        .buttonStyle(.bordered)
+                    Button("Save") { commitEdit(message: message) }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(editingDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+            .contextMenu {
+                if message.role == .user {
+                    Button {
+                        editingDraft = message.bodyMarkdown
+                        editingMessageID = message.id
+                        DispatchQueue.main.async { editFocused = true }
+                    } label: {
+                        Label("Edit", systemImage: "pencil")
+                    }
+                    Button(role: .destructive) {
+                        pendingDeleteMessage = message
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
+            }
+    }
+
+    private static let bottomAnchorID = "address-note-bottom"
+
+    private func inputBar(note: AddressNote) -> some View {
+        VStack(spacing: 6) {
+            if case .error(let reason) = pending {
+                Text(reason)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            HStack(alignment: .center, spacing: 6) {
+                TextEditor(text: $draft)
+                    .font(.body)
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color(nsColor: .textBackgroundColor)))
+                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.secondary.opacity(0.3)))
+                    .frame(height: 64)
+                    .focused($inputFocused)
+                VStack(spacing: 0) {
+                    Button {
+                        saveNote(note: note)
+                    } label: {
+                        Image(systemName: "square.and.pencil")
+                            .frame(width: 18, height: 18)
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Save as user note")
+                    .disabled(isSending || draft.isEmpty)
+                    Spacer(minLength: 0)
+                    Button {
+                        askAI(note: note)
+                    } label: {
+                        Group {
+                            if isSending {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "paperplane.fill")
+                            }
+                        }
+                        .frame(width: 18, height: 18)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .help("Ask AI")
+                    .disabled(isSending || draft.isEmpty)
+                }
+                .frame(height: 64)
+            }
+        }
+        .padding(10)
+    }
+
+    private var isSending: Bool {
+        if case .sending = pending { return true }
+        return false
     }
 
     private var emptyState: some View {
@@ -138,55 +272,6 @@ struct AddressNotePopover: View {
             .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func inputBar(note: AddressNote) -> some View {
-        VStack(spacing: 6) {
-            if case .error(let reason) = pending {
-                Text(reason)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            HStack(alignment: .bottom, spacing: 6) {
-                TextField("Write a note or ask…", text: $draft, axis: .vertical)
-                    .lineLimit(1...6)
-                    .textFieldStyle(.roundedBorder)
-                    .onKeyPress(keys: [.return], phases: .down) { press in
-                        if press.modifiers.contains(.shift) { return .ignored }
-                        if let note = activeNote, !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !isSending {
-                            askAI(note: note)
-                        }
-                        return .handled
-                    }
-                Button {
-                    saveNote(note: note)
-                } label: {
-                    Image(systemName: "square.and.pencil")
-                }
-                .buttonStyle(.borderless)
-                .help("Save as user note")
-                .disabled(isSending || draft.isEmpty)
-                Button {
-                    askAI(note: note)
-                } label: {
-                    if isSending {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: "paperplane.fill")
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .help("Ask AI")
-                .disabled(isSending || draft.isEmpty)
-            }
-        }
-        .padding(10)
-    }
-
-    private var isSending: Bool {
-        if case .sending = pending { return true }
-        return false
     }
 
     private func refresh() {
@@ -209,9 +294,10 @@ struct AddressNotePopover: View {
         activeNoteID = note.id
         messages = []
         unusedTransientNoteIDs.insert(note.id)
+        DispatchQueue.main.async { inputFocused = true }
     }
 
-    private func delete(note: AddressNote) {
+    private func commitDelete(note: AddressNote) {
         engine.deleteAddressNote(note)
         notes.removeAll { $0.id == note.id }
         unusedTransientNoteIDs.remove(note.id)
@@ -220,6 +306,23 @@ struct AddressNotePopover: View {
         if notes.isEmpty {
             isPresented = false
         }
+    }
+
+    private func commitDelete(message: AddressNoteMessage) {
+        engine.deleteAddressNoteMessage(message)
+        messages.removeAll { $0.id == message.id }
+    }
+
+    private func commitEdit(message: AddressNoteMessage) {
+        let body = editingDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty, body != message.bodyMarkdown,
+            let updated = engine.editUserMessage(noteID: message.noteID, messageID: message.id, body: body)
+        else {
+            editingMessageID = nil
+            return
+        }
+        messages = messages.map { $0.id == updated.id ? updated : $0 }
+        editingMessageID = nil
     }
 
     private func saveNote(note: AddressNote) {
@@ -271,9 +374,7 @@ struct AddressNotePopover: View {
     }
 
     private func discardUnusedTransientNotes() {
-        for noteID in unusedTransientNoteIDs {
-            guard let note = notes.first(where: { $0.id == noteID }) else { continue }
-            guard engine.addressNoteMessages(noteID: noteID).isEmpty else { continue }
+        for note in notes where engine.addressNoteMessages(noteID: note.id).isEmpty {
             engine.deleteAddressNote(note)
         }
         unusedTransientNoteIDs.removeAll()
@@ -286,6 +387,8 @@ struct AddressNotePopover: View {
 
 private struct MessageRow: View {
     let message: AddressNoteMessage
+    let isEditing: Bool
+    @Binding var editingDraft: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -304,11 +407,21 @@ private struct MessageRow: View {
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
-            Text(message.bodyMarkdown)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(8)
-                .background(background, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            if isEditing {
+                TextEditor(text: $editingDraft)
+                    .font(.body)
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color(nsColor: .textBackgroundColor)))
+                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.secondary.opacity(0.3)))
+                    .frame(height: 120)
+            } else {
+                Text(message.bodyMarkdown)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+                    .background(background, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
         }
     }
 

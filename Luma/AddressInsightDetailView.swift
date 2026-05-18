@@ -266,22 +266,27 @@ struct DisassemblyView: View {
                 isFocused = true
             }
             .onKeyPress(.upArrow) {
+                if openNotePopoverAddress != nil { return .ignored }
                 moveSelection(-1, scrollProxy: scrollProxy)
                 return .handled
             }
             .onKeyPress(.downArrow) {
+                if openNotePopoverAddress != nil { return .ignored }
                 moveSelection(1, scrollProxy: scrollProxy)
                 return .handled
             }
             .onKeyPress("k") {
+                if openNotePopoverAddress != nil { return .ignored }
                 moveSelection(-1, scrollProxy: scrollProxy)
                 return .handled
             }
             .onKeyPress("j") {
+                if openNotePopoverAddress != nil { return .ignored }
                 moveSelection(1, scrollProxy: scrollProxy)
                 return .handled
             }
             .onKeyPress(.return) {
+                if openNotePopoverAddress != nil { return .ignored }
                 jumpSelection(scrollProxy: scrollProxy)
                 return .handled
             }
@@ -392,7 +397,33 @@ private struct DisasmRow: View {
     @Environment(\.errorPresenter) private var errorPresenter
 
     var body: some View {
+        let annotation = engine.addressAnnotations[sessionID]?[line.address]
+        let decorations = annotation?.decorations ?? []
+        let noteCount = annotation?.noteCount ?? 0
+
         HStack(alignment: .firstTextBaseline, spacing: 10) {
+            HStack(spacing: 3) {
+                ForEach(decorations.prefix(3)) { deco in
+                    Circle()
+                        .frame(width: 5, height: 5)
+                        .foregroundStyle(.secondary)
+                        .opacity(0.45)
+                        .help(deco.help ?? "")
+                }
+                if noteCount > 0 {
+                    Image(systemName: "bubble.left.fill")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.tint)
+                        .frame(width: 14, height: 14)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            openNotePopoverAddress = line.address
+                        }
+                        .help("\(noteCount) thread\(noteCount == 1 ? "" : "s")")
+                }
+            }
+            .frame(width: 24, alignment: .trailing)
+
             Text(line.addressText.attributed)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -400,34 +431,6 @@ private struct DisasmRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 110, alignment: .leading)
                 .contentShape(Rectangle())
-                .overlay(alignment: .leading) {
-                    let annotation = engine.addressAnnotations[sessionID]?[line.address]
-                    let decorations = annotation?.decorations ?? []
-                    let noteCount = annotation?.noteCount ?? 0
-
-                    HStack(spacing: 3) {
-                        ForEach(decorations.prefix(3)) { deco in
-                            Circle()
-                                .frame(width: 5, height: 5)
-                                .foregroundStyle(.secondary)
-                                .opacity(0.45)
-                                .help(deco.help ?? "")
-                        }
-                        if noteCount > 0 {
-                            Button {
-                                openNotePopoverAddress = line.address
-                            } label: {
-                                Image(systemName: "bubble.left.fill")
-                                    .font(.system(size: 8))
-                                    .foregroundStyle(.tint)
-                            }
-                            .buttonStyle(.plain)
-                            .help("\(noteCount) thread\(noteCount == 1 ? "" : "s")")
-                        }
-                    }
-                    .frame(width: 24, alignment: .trailing)
-                    .offset(x: -28)
-                }
                 .contextMenu {
                     Button {
                         Platform.copyToClipboard(String(format: "0x%llx", line.address))
@@ -478,7 +481,7 @@ private struct DisasmRow: View {
                             }
                         }
                     ),
-                    arrowEdge: .leading
+                    arrowEdge: .trailing
                 ) {
                     AddressNotePopover(
                         engine: engine,
