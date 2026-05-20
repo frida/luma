@@ -1,6 +1,7 @@
 import Frida
 import SwiftUI
 import LumaCore
+import UniformTypeIdentifiers
 
 struct TargetPickerView: View {
     enum Mode: String {
@@ -61,6 +62,7 @@ struct TargetPickerView: View {
     @State private var appExecutionExpanded: Bool = false
 
     @State private var programPath: String = ""
+    @State private var isShowingProgramBrowser: Bool = false
     @State private var programArgumentsText: String = ""
     @State private var programEnvEntries: [EnvEntry] = []
     @State private var programWorkingDirectory: String = ""
@@ -537,15 +539,32 @@ struct TargetPickerView: View {
         VStack(spacing: 0) {
             Form {
                 Section("Program") {
-                    TextField("Absolute program path", text: $programPath)
-                        #if canImport(UIKit)
-                            .textInputAutocapitalization(.never)
+                    HStack {
+                        TextField("Absolute program path", text: $programPath)
+                            #if canImport(UIKit)
+                                .textInputAutocapitalization(.never)
+                            #endif
+                            .disableAutocorrection(true)
+                        #if os(macOS)
+                            if device.kind == .local {
+                                Button("Browse…") { isShowingProgramBrowser = true }
+                            }
                         #endif
-                        .disableAutocorrection(true)
+                    }
                     Text("Provide an absolute path on the target device, e.g. /usr/bin/foo.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+                #if os(macOS)
+                    .fileImporter(
+                        isPresented: $isShowingProgramBrowser,
+                        allowedContentTypes: [.executable, .unixExecutable, .item]
+                    ) { result in
+                        if case .success(let url) = result {
+                            programPath = url.path
+                        }
+                    }
+                #endif
 
                 Section("Arguments") {
                     TextField("Arguments (optional)", text: $programArgumentsText, axis: .vertical)
