@@ -48,7 +48,7 @@ struct TracerConfigView: View {
 
     var body: some View {
         content
-            .padding(.top, 8)
+            .padding(.top, isConfigOnlyContext ? 0 : 8)
             .padding(.leading, 8)
             .padding(.bottom, 8)
     }
@@ -305,9 +305,8 @@ struct TracerConfigView: View {
 
     private var hookLayout: some View {
         VStack(spacing: 0) {
-            if isCompactWidth {
+            if isCompactWidth || isConfigOnlyContext {
                 compactHookSwitcher
-                Divider()
             }
             ZStack(alignment: .topTrailing) {
                 if selectedHook != nil {
@@ -410,7 +409,8 @@ struct TracerConfigView: View {
             addHookButton
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.top, isConfigOnlyContext ? 0 : 8)
+        .padding(.bottom, isConfigOnlyContext ? 6 : 8)
     }
 
     private func seedITraceDrafts(from hook: TracerConfig.Hook) {
