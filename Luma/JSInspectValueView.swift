@@ -31,7 +31,7 @@ struct JSInspectValueView: View {
     var body: some View {
         JSInspectNodeView(
             value: value,
-            isRoot: true,
+            depth: 0,
             sessionID: sessionID,
             engine: engine,
             selection: selection
@@ -74,19 +74,36 @@ struct JSInspectValueView: View {
 }
 
 private struct JSInspectNodeView: View {
+    static let chunkSize = 5
+
     let value: JSInspectValue
-    let isRoot: Bool
+    let depth: Int
 
     let sessionID: UUID
     let engine: Engine
     let selection: Binding<SidebarItemID?>
 
-    @State private var isExpanded: Bool = true
-    @State private var childLimit: Int = 50
+    @State private var isExpanded: Bool
+    @State private var childLimit: Int = Self.chunkSize
 
     @Environment(\.errorPresenter) private var errorPresenter
     @Environment(\.circularTargets) private var circularTargets
     @EnvironmentObject private var anchorStore: CircularAnchorStore
+
+    init(
+        value: JSInspectValue,
+        depth: Int,
+        sessionID: UUID,
+        engine: Engine,
+        selection: Binding<SidebarItemID?>
+    ) {
+        self.value = value
+        self.depth = depth
+        self.sessionID = sessionID
+        self.engine = engine
+        self.selection = selection
+        self._isExpanded = State(initialValue: depth == 0)
+    }
 
     var body: some View {
         switch value {
@@ -114,13 +131,13 @@ private struct JSInspectNodeView: View {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     ForEach(0..<min(props.count, childLimit), id: \.self) { idx in
                         let prop = props[idx]
-                        HStack(alignment: .top, spacing: 4) {
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
                             Text(prop.displayKey + ":")
                                 .foregroundStyle(.green)
 
                             JSInspectNodeView(
                                 value: prop.value,
-                                isRoot: false,
+                                depth: depth + 1,
                                 sessionID: sessionID,
                                 engine: engine,
                                 selection: selection
@@ -129,10 +146,7 @@ private struct JSInspectNodeView: View {
                     }
 
                     if props.count > childLimit {
-                        Button("Show all \(props.count) properties…") {
-                            childLimit = props.count
-                        }
-                        platformLinkButtonStyle()
+                        showMoreButton(total: props.count, noun: "properties")
                     }
                 }
                 .padding(.leading, 12)
@@ -144,6 +158,15 @@ private struct JSInspectNodeView: View {
                 )
             }
         )
+    }
+
+    private func showMoreButton(total: Int, noun: String) -> some View {
+        let remaining = total - childLimit
+        let next = min(Self.chunkSize, remaining)
+        return Button("Show \(next) more (\(remaining) \(noun) left)…") {
+            childLimit = min(childLimit + Self.chunkSize, total)
+        }
+        .platformLinkButtonStyle()
     }
 
     private func disclosureLabel(typeText: String, preview: String?) -> some View {
@@ -165,13 +188,13 @@ private struct JSInspectNodeView: View {
             content: {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     ForEach(0..<min(elements.count, childLimit), id: \.self) { idx in
-                        HStack(alignment: .top, spacing: 4) {
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
                             Text("[\(idx)]")
                                 .foregroundStyle(.secondary)
 
                             JSInspectNodeView(
                                 value: elements[idx],
-                                isRoot: false,
+                                depth: depth + 1,
                                 sessionID: sessionID,
                                 engine: engine,
                                 selection: selection
@@ -180,10 +203,7 @@ private struct JSInspectNodeView: View {
                     }
 
                     if elements.count > childLimit {
-                        Button("Show all \(elements.count) items…") {
-                            childLimit = elements.count
-                        }
-                        platformLinkButtonStyle()
+                        showMoreButton(total: elements.count, noun: "items")
                     }
                 }
                 .padding(.leading, 12)
@@ -204,10 +224,10 @@ private struct JSInspectNodeView: View {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     ForEach(0..<min(entries.count, childLimit), id: \.self) { idx in
                         let entry = entries[idx]
-                        HStack(alignment: .top, spacing: 4) {
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
                             JSInspectNodeView(
                                 value: entry.key,
-                                isRoot: false,
+                                depth: depth + 1,
                                 sessionID: sessionID,
                                 engine: engine,
                                 selection: selection
@@ -219,7 +239,7 @@ private struct JSInspectNodeView: View {
 
                             JSInspectNodeView(
                                 value: entry.value,
-                                isRoot: false,
+                                depth: depth + 1,
                                 sessionID: sessionID,
                                 engine: engine,
                                 selection: selection
@@ -228,10 +248,7 @@ private struct JSInspectNodeView: View {
                     }
 
                     if entries.count > childLimit {
-                        Button("Show all \(entries.count) entries…") {
-                            childLimit = entries.count
-                        }
-                        platformLinkButtonStyle()
+                        showMoreButton(total: entries.count, noun: "entries")
                     }
                 }
                 .padding(.leading, 12)
@@ -251,13 +268,13 @@ private struct JSInspectNodeView: View {
             content: {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     ForEach(0..<min(elements.count, childLimit), id: \.self) { idx in
-                        HStack(alignment: .top, spacing: 4) {
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
                             Text("•")
                                 .foregroundStyle(.secondary)
 
                             JSInspectNodeView(
                                 value: elements[idx],
-                                isRoot: false,
+                                depth: depth + 1,
                                 sessionID: sessionID,
                                 engine: engine,
                                 selection: selection
@@ -266,10 +283,7 @@ private struct JSInspectNodeView: View {
                     }
 
                     if elements.count > childLimit {
-                        Button("Show all \(elements.count) items…") {
-                            childLimit = elements.count
-                        }
-                        platformLinkButtonStyle()
+                        showMoreButton(total: elements.count, noun: "items")
                     }
                 }
                 .padding(.leading, 12)
