@@ -86,6 +86,7 @@ public final class CollaborationSession {
         public var traces: [ITrace]
         public var processInfo: ProcessSession.ProcessInfo?
         public var moduleAnalyses: [ModuleAnalysis]
+        public var moduleSymbols: [SessionOp.UpdateModuleSymbols.Entry]
 
         public init(
             id: UUID,
@@ -106,7 +107,8 @@ public final class CollaborationSession {
             insights: [AddressInsight] = [],
             traces: [ITrace] = [],
             processInfo: ProcessSession.ProcessInfo? = nil,
-            moduleAnalyses: [ModuleAnalysis] = []
+            moduleAnalyses: [ModuleAnalysis] = [],
+            moduleSymbols: [SessionOp.UpdateModuleSymbols.Entry] = []
         ) {
             self.id = id
             self.host = host
@@ -127,6 +129,7 @@ public final class CollaborationSession {
             self.traces = traces
             self.processInfo = processInfo
             self.moduleAnalyses = moduleAnalyses
+            self.moduleSymbols = moduleSymbols
         }
 
         public static func fromJSON(_ obj: [String: Any]) -> Session? {
@@ -194,6 +197,18 @@ public final class CollaborationSession {
             let analysisObjs = (obj["module_analyses"] as? [[String: Any]]) ?? []
             let moduleAnalyses = analysisObjs.compactMap(ModuleAnalysis.fromWireJSON)
 
+            let symbolObjs = (obj["module_symbols"] as? [[String: Any]]) ?? []
+            let moduleSymbols: [SessionOp.UpdateModuleSymbols.Entry] = symbolObjs.compactMap { entry in
+                guard let modulePath = entry["module_path"] as? String,
+                    let name = entry["name"] as? String
+                else { return nil }
+                let rawOffset: Int64
+                if let n = entry["offset"] as? Int64 { rawOffset = n }
+                else if let n = entry["offset"] as? Int { rawOffset = Int64(n) }
+                else { return nil }
+                return .init(modulePath: modulePath, offset: UInt64(bitPattern: rawOffset), name: name)
+            }
+
             let armingState: ProcessSession.ArmingState
             if let stateObj = obj["arming_state"] as? [String: Any],
                 let parsed = decodeArmingState(stateObj) {
@@ -221,7 +236,8 @@ public final class CollaborationSession {
                 insights: insights,
                 traces: traces,
                 processInfo: processInfo,
-                moduleAnalyses: moduleAnalyses
+                moduleAnalyses: moduleAnalyses,
+                moduleSymbols: moduleSymbols
             )
         }
     }
@@ -336,6 +352,7 @@ public final class CollaborationSession {
     public var onSessionInsightRemoved: ((UUID, UUID) -> Void)?
     public var onSessionProcessInfoUpdated: ((UUID, ProcessSession.ProcessInfo) -> Void)?
     public var onSessionModuleAnalysisUpdated: ((UUID, ModuleAnalysis) -> Void)?
+    public var onSessionModuleSymbolsUpdated: ((UUID, [SessionOp.UpdateModuleSymbols.Entry]) -> Void)?
     public var onSessionTraceUpserted: ((UUID, ITrace) -> Void)?
     public var onSessionTraceRemoved: ((UUID, UUID) -> Void)?
     public var onSessionTraceDataProgressed: ((UUID, UUID, Int) -> Void)?
@@ -1024,6 +1041,11 @@ public final class CollaborationSession {
         enqueueSessionOp(.updateProcessInfo(.init(sessionID: sessionID, info: info)))
     }
 
+    public func enqueueUpdateModuleSymbols(sessionID: UUID, entries: [SessionOp.UpdateModuleSymbols.Entry]) {
+        guard !entries.isEmpty else { return }
+        enqueueSessionOp(.updateModuleSymbols(.init(sessionID: sessionID, entries: entries)))
+    }
+
     public func enqueueUpdateModuleAnalysis(sessionID: UUID, analysis: ModuleAnalysis) {
         var wire = analysis
         wire.sessionID = sessionID
@@ -1312,6 +1334,9 @@ public final class CollaborationSession {
 
         case .updateModuleAnalysis(let u):
             onSessionModuleAnalysisUpdated?(u.sessionID, u.analysis)
+
+        case .updateModuleSymbols(let u):
+            onSessionModuleSymbolsUpdated?(u.sessionID, u.entries)
 
         case .updateThreads(let u):
             onSessionThreadsUpdated?(u.sessionID, u.delta)

@@ -833,6 +833,10 @@ public final class Engine {
             self?.applyRemoteSessionModuleAnalysis(sessionID: sessionID, analysis: analysis)
         }
 
+        collaboration.onSessionModuleSymbolsUpdated = { [weak self] sessionID, entries in
+            self?.applyRemoteSessionModuleSymbols(sessionID: sessionID, entries: entries)
+        }
+
         collaboration.onSessionTraceUpserted = { [weak self] sessionID, trace in
             self?.applyRemoteSessionTraceUpserted(sessionID: sessionID, trace: trace)
         }
@@ -941,6 +945,17 @@ public final class Engine {
         var stored = analysis
         stored.sessionID = sessionID
         try? store.save(stored)
+    }
+
+    private func applyRemoteSessionModuleSymbols(sessionID: UUID, entries: [SessionOp.UpdateModuleSymbols.Entry]) {
+        for entry in entries {
+            try? store.upsertModuleSymbol(
+                sessionID: sessionID,
+                modulePath: entry.modulePath,
+                offset: entry.offset,
+                name: entry.name
+            )
+        }
     }
 
     private func applyRemoteSessionInstrumentAdded(sessionID: UUID, instance: InstrumentInstance) {
@@ -1164,6 +1179,14 @@ public final class Engine {
                 var stored = analysis
                 stored.sessionID = session.id
                 try? store.save(stored)
+            }
+            for entry in session.moduleSymbols {
+                try? store.upsertModuleSymbol(
+                    sessionID: session.id,
+                    modulePath: entry.modulePath,
+                    offset: entry.offset,
+                    name: entry.name
+                )
             }
         } else {
             var record = ProcessSession(
@@ -2282,12 +2305,17 @@ public final class Engine {
 
     private func persistSymbolicateResults(sessionID: UUID, byAddress: [UInt64: SymbolicateResult]) {
         let modules = modulesSnapshot(forSessionID: sessionID)
+        var entries: [SessionOp.UpdateModuleSymbols.Entry] = []
         for (address, result) in byAddress {
             guard let module = modules.first(where: { $0.name == result.module || $0.path == result.module }) else { continue }
             let entryAddress = address &- (result.offset ?? 0)
             guard entryAddress >= module.base, entryAddress < (module.base &+ module.size) else { continue }
             let entryOffset = entryAddress &- module.base
             try? store.upsertModuleSymbol(sessionID: sessionID, modulePath: module.path, offset: entryOffset, name: result.name)
+            entries.append(.init(modulePath: module.path, offset: entryOffset, name: result.name))
+        }
+        if !entries.isEmpty {
+            collaboration.enqueueUpdateModuleSymbols(sessionID: sessionID, entries: entries)
         }
     }
 

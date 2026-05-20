@@ -12,6 +12,7 @@ public enum SessionOp: Sendable {
     case updateArming(UpdateArming)
     case updateModules(UpdateModules)
     case updateModuleAnalysis(UpdateModuleAnalysis)
+    case updateModuleSymbols(UpdateModuleSymbols)
     case updateThreads(UpdateThreads)
     case claimHost(ClaimHost)
     case claimDriver(ClaimDriver)
@@ -35,6 +36,7 @@ public enum SessionOp: Sendable {
         case .updateArming(let u): return u.opID
         case .updateModules(let u): return u.opID
         case .updateModuleAnalysis(let u): return u.opID
+        case .updateModuleSymbols(let u): return u.opID
         case .updateThreads(let u): return u.opID
         case .claimHost(let c): return c.opID
         case .claimDriver(let c): return c.opID
@@ -60,6 +62,7 @@ public enum SessionOp: Sendable {
         case .updateArming(let u): return u.sessionID
         case .updateModules(let u): return u.sessionID
         case .updateModuleAnalysis(let u): return u.sessionID
+        case .updateModuleSymbols(let u): return u.sessionID
         case .updateThreads(let u): return u.sessionID
         case .claimHost(let c): return c.sessionID
         case .claimDriver(let c): return c.sessionID
@@ -85,6 +88,7 @@ public enum SessionOp: Sendable {
         case .updateArming: return "update-arming"
         case .updateModules: return "update-modules"
         case .updateModuleAnalysis: return "update-module-analysis"
+        case .updateModuleSymbols: return "update-module-symbols"
         case .updateThreads: return "update-threads"
         case .claimHost: return "claim-host"
         case .claimDriver: return "claim-driver"
@@ -192,6 +196,30 @@ public enum SessionOp: Sendable {
             self.opID = opID
             self.sessionID = sessionID
             self.analysis = analysis
+        }
+    }
+
+    public struct UpdateModuleSymbols: Sendable {
+        public let opID: UUID
+        public let sessionID: UUID
+        public let entries: [Entry]
+
+        public struct Entry: Sendable, Hashable {
+            public let modulePath: String
+            public let offset: UInt64
+            public let name: String
+
+            public init(modulePath: String, offset: UInt64, name: String) {
+                self.modulePath = modulePath
+                self.offset = offset
+                self.name = name
+            }
+        }
+
+        public init(opID: UUID = UUID(), sessionID: UUID, entries: [Entry]) {
+            self.opID = opID
+            self.sessionID = sessionID
+            self.entries = entries
         }
     }
 
@@ -450,6 +478,14 @@ public enum SessionOp: Sendable {
             obj["removed"] = u.delta.removed.map { $0.toJSON() }
         case .updateModuleAnalysis(let u):
             obj["analysis"] = u.analysis.toWireJSON() ?? [:]
+        case .updateModuleSymbols(let u):
+            obj["entries"] = u.entries.map { entry -> [String: Any] in
+                [
+                    "module_path": entry.modulePath,
+                    "offset": Int64(bitPattern: entry.offset),
+                    "name": entry.name,
+                ]
+            }
         case .updateThreads(let u):
             obj["added"] = u.delta.added.map { $0.toJSON() }
             obj["removed"] = u.delta.removed.map { Int($0) }
@@ -592,6 +628,25 @@ public enum SessionOp: Sendable {
                 opID: opID,
                 sessionID: sessionID,
                 analysis: analysis
+            ))
+
+        case "update-module-symbols":
+            let raw = (obj["entries"] as? [[String: Any]]) ?? []
+            let entries: [UpdateModuleSymbols.Entry] = raw.compactMap { entry in
+                guard let modulePath = entry["module_path"] as? String,
+                    let rawOffset = entry["offset"] as? Int64 ?? (entry["offset"] as? Int).map(Int64.init),
+                    let name = entry["name"] as? String
+                else { return nil }
+                return UpdateModuleSymbols.Entry(
+                    modulePath: modulePath,
+                    offset: UInt64(bitPattern: rawOffset),
+                    name: name
+                )
+            }
+            return .updateModuleSymbols(UpdateModuleSymbols(
+                opID: opID,
+                sessionID: sessionID,
+                entries: entries
             ))
 
         case "update-modules":
