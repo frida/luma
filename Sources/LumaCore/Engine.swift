@@ -1786,6 +1786,10 @@ public final class Engine {
                 drainAgentSource: LumaAgent.drainSource,
                 traceStore: traces
             )
+            node.onResolveBlockNames = { [weak self] addresses in
+                guard let self else { return Array(repeating: "", count: addresses.count) }
+                return await self.symbolDisplay(sessionID: s.id, addresses: addresses).map { $0.primary }
+            }
 
             let existingCells = (try? store.fetchREPLCells(sessionID: s.id)) ?? []
             if !existingCells.isEmpty {
@@ -2259,6 +2263,92 @@ public final class Engine {
         let offset = address &- module.base
         guard let analysis = try? store.fetchModuleAnalysis(sessionID: insight.sessionID, modulePath: module.path) else { return false }
         return analysis.functions.contains(where: { $0.offset == offset })
+    }
+
+    public func symbolDisplay(sessionID: UUID, addresses: [UInt64]) async -> [SymbolDisplay] {
+        var liveByAddress: [UInt64: SymbolicateResult] = [:]
+        if let node = node(forSessionID: sessionID),
+            let live = try? await node.symbolicate(addresses: addresses)
+        {
+            for (idx, result) in live.enumerated() where idx < addresses.count {
+                if let result { liveByAddress[addresses[idx]] = result }
+            }
+            persistSymbolicateResults(sessionID: sessionID, byAddress: liveByAddress)
+        }
+        return addresses.map { address in
+            renderSymbolDisplay(sessionID: sessionID, address: address, live: liveByAddress[address])
+        }
+    }
+
+    private func persistSymbolicateResults(sessionID: UUID, byAddress: [UInt64: SymbolicateResult]) {
+        let modules = modulesSnapshot(forSessionID: sessionID)
+        for (address, result) in byAddress {
+            guard let module = modules.first(where: { $0.name == result.module || $0.path == result.module }) else { continue }
+            let entryAddress = address &- (result.offset ?? 0)
+            guard entryAddress >= module.base, entryAddress < (module.base &+ module.size) else { continue }
+            let entryOffset = entryAddress &- module.base
+            try? store.upsertModuleSymbol(sessionID: sessionID, modulePath: module.path, offset: entryOffset, name: result.name)
+        }
+    }
+
+    public func symbolicNameOverlay(sessionID: UUID, address: UInt64) -> (title: String, offset: UInt64)? {
+        let insights = insightsBySession[sessionID] ?? []
+        if let exact = insights.first(where: { $0.lastResolvedAddress == address && hasUserTitle($0) }) {
+            return (exact.userTitle!, 0)
+        }
+        guard let function = enclosingFunction(sessionID: sessionID, address: address) else { return nil }
+        guard let named = insights.first(where: { $0.lastResolvedAddress == function.entryAddress && hasUserTitle($0) }) else { return nil }
+        return (named.userTitle!, address &- function.entryAddress)
+    }
+
+    public func enclosingFunction(sessionID: UUID, address: UInt64) -> (entryAddress: UInt64, name: String?)? {
+        guard let module = enclosingModule(at: address, sessionID: sessionID) else { return nil }
+        let offset = address &- module.base
+        guard let result = try? store.enclosingFunction(sessionID: sessionID, modulePath: module.path, offset: offset) else {
+            return nil
+        }
+        return (module.base &+ result.functionOffset, result.name)
+    }
+
+    private func renderSymbolDisplay(sessionID: UUID, address: UInt64, live: SymbolicateResult?) -> SymbolDisplay {
+        if let overlay = symbolicNameOverlay(sessionID: sessionID, address: address) {
+            let suffix = overlay.offset == 0 ? "" : "+0x\(String(overlay.offset, radix: 16))"
+            return SymbolDisplay(
+                primary: overlay.title + suffix,
+                source: live?.source,
+                raw: live,
+                overlay: SymbolDisplay.Overlay(title: overlay.title, offset: overlay.offset)
+            )
+        }
+        if let live {
+            return SymbolDisplay(primary: live.qualifiedName, source: live.source, raw: live)
+        }
+        if let derived = derivedSymbolDisplay(sessionID: sessionID, address: address) {
+            return derived
+        }
+        return SymbolDisplay(primary: anchor(sessionID: sessionID, address: address).displayString)
+    }
+
+    private func derivedSymbolDisplay(sessionID: UUID, address: UInt64) -> SymbolDisplay? {
+        guard let module = enclosingModule(at: address, sessionID: sessionID) else { return nil }
+        let offset = address &- module.base
+        if let symbol = try? store.enclosingModuleSymbol(sessionID: sessionID, modulePath: module.path, offset: offset) {
+            let delta = offset &- symbol.offset
+            let suffix = delta == 0 ? "" : "+0x\(String(delta, radix: 16))"
+            return SymbolDisplay(primary: "\(module.name)!\(symbol.name)\(suffix)")
+        }
+        if let function = enclosingFunction(sessionID: sessionID, address: address) {
+            let delta = address &- function.entryAddress
+            let suffix = delta == 0 ? "" : "+0x\(String(delta, radix: 16))"
+            let name = function.name ?? "sub_\(String(function.entryAddress &- module.base, radix: 16))"
+            return SymbolDisplay(primary: "\(module.name)!\(name)\(suffix)")
+        }
+        return nil
+    }
+
+    private func hasUserTitle(_ insight: AddressInsight) -> Bool {
+        guard let title = insight.userTitle else { return false }
+        return !title.isEmpty
     }
 
     private func applyInsightNameToR2(_ insight: AddressInsight) {

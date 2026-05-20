@@ -55,3 +55,18 @@ struct ModuleAnalysisBlockRow: Codable, FetchableRecord, PersistableRecord {
     }
 }
 
+struct ModuleSymbolRow: Codable, FetchableRecord, PersistableRecord {
+    static let databaseTableName = "module_symbol"
+
+    var sessionID: UUID
+    var modulePath: String
+    var offset: Int64
+    var name: String
+
+    enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+        case modulePath = "module_path"
+        case offset
+        case name
+    }
+}

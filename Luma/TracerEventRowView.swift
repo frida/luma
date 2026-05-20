@@ -56,9 +56,10 @@ private struct TracerBacktraceView: View {
     let engine: Engine
     @Binding var selection: SidebarItemID?
 
-    @State private var symbols: [SymbolicateResult?] = []
+    @State private var symbols: [SymbolDisplay] = []
     @State private var isLoading = false
-    @State private var lastError: String?
+
+    @Environment(\.errorPresenter) private var errorPresenter
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -71,31 +72,19 @@ private struct TracerBacktraceView: View {
                 if isLoading {
                     ProgressView()
                         .controlSize(.small)
-                } else if lastError != nil, engine.node(forSessionID: sessionID) != nil {
-                    Button("Symbolicate") {
-                        Task { await symbolicate() }
-                    }
-                    .buttonStyle(.borderless)
                 }
-            }
-
-            if let lastError {
-                Text(lastError)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
                     ForEach(Array(pointers.enumerated()), id: \.offset) { idx, ptrValue in
                         let addr = ptrValue.nativePointerAddress ?? 0
-                        let anchor = engine.anchor(sessionID: sessionID, address: addr)
 
                         HStack(alignment: .center, spacing: 8) {
                             Text("#\(idx + 1)")
                                 .font(.system(.footnote, design: .monospaced))
                                 .foregroundStyle(.secondary)
-                            Text(displayString(idx: idx, anchor: anchor))
+                            Text(displayString(idx: idx, address: addr))
                                 .font(.system(.footnote, design: .monospaced))
                                 .textSelection(.enabled)
 
@@ -123,14 +112,11 @@ private struct TracerBacktraceView: View {
         }
     }
 
-    private func displayString(
-        idx: Int,
-        anchor: AddressAnchor
-    ) -> String {
-        guard idx < symbols.count, let symbol = symbols[idx] else {
-            return anchor.displayString
+    private func displayString(idx: Int, address: UInt64) -> String {
+        if idx < symbols.count {
+            return symbols[idx].displayString
         }
-        return symbol.displayString
+        return engine.anchor(sessionID: sessionID, address: address).displayString
     }
 
     private func openDisassembly(at address: UInt64) {
@@ -142,25 +128,14 @@ private struct TracerBacktraceView: View {
             )
             selection = .insight(sessionID, insight.id)
         } catch {
-            lastError = "Can’t open disassembly: \(error.localizedDescription)"
+            errorPresenter.present("Can’t open disassembly", error.localizedDescription)
         }
     }
 
     private func symbolicate() async {
-        guard let node = engine.node(forSessionID: sessionID) else {
-            lastError = "Symbolication needs a live session."
-            return
-        }
         if isLoading { return }
         isLoading = true
-        lastError = nil
-
-        do {
-            symbols = try await node.symbolicate(addresses: pointers.compactMap { $0.nativePointerAddress })
-        } catch {
-            lastError = "Symbolication failed: \(error)"
-        }
-
+        symbols = await engine.symbolDisplay(sessionID: sessionID, addresses: pointers.map { $0.nativePointerAddress ?? 0 })
         isLoading = false
     }
 }

@@ -113,6 +113,8 @@ public final class ProcessNode: Identifiable {
     private let drainAgentSource: String?
     private let traceStore: TraceStore?
 
+    public var onResolveBlockNames: (@MainActor ([UInt64]) async -> [String])?
+
     struct PendingTrace {
         let id: UUID
         let origin: ITrace.Origin
@@ -1410,27 +1412,15 @@ public final class ProcessNode: Identifiable {
     }
 
     private func annotateBlocksWithSymbols(metadataJSON: inout Data) async {
+        guard let onResolveBlockNames else { return }
         guard var metadata = try? JSONDecoder().decode(ITraceMetadata.self, from: metadataJSON) else { return }
 
         let addresses = metadata.blocks.compactMap { ITraceDecoder.parseHexAddress($0.address) }
         guard !addresses.isEmpty else { return }
 
-        var symbolicated = false
-        if let results = try? await symbolicate(addresses: addresses) {
-            for (i, result) in results.enumerated() where i < metadata.blocks.count {
-                guard let result else { continue }
-                metadata.blocks[i].name = result.qualifiedName
-                symbolicated = true
-            }
-        }
-
-        if !symbolicated {
-            for (i, addr) in addresses.enumerated() where i < metadata.blocks.count {
-                if let mod = modules.first(where: { addr >= $0.base && addr < $0.base + $0.size }) {
-                    let offset = addr - mod.base
-                    metadata.blocks[i].name = "\(mod.name)!0x\(String(offset, radix: 16))"
-                }
-            }
+        let names = await onResolveBlockNames(addresses)
+        for (i, name) in names.enumerated() where i < metadata.blocks.count {
+            metadata.blocks[i].name = name
         }
 
         if let data = try? JSONEncoder().encode(metadata) {

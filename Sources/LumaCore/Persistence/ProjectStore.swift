@@ -512,6 +512,30 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    public func upsertModuleSymbol(sessionID: UUID, modulePath: String, offset: UInt64, name: String) throws {
+        let record = ModuleSymbolRow(
+            sessionID: sessionID,
+            modulePath: modulePath,
+            offset: Int64(bitPattern: offset),
+            name: name
+        )
+        try db.write { db in try record.upsert(db) }
+    }
+
+    public func enclosingModuleSymbol(sessionID: UUID, modulePath: String, offset: UInt64) throws -> (offset: UInt64, name: String)? {
+        let key = Int64(bitPattern: offset)
+        return try db.read { db in
+            guard let row = try ModuleSymbolRow
+                .filter(Column("session_id") == sessionID)
+                .filter(Column("module_path") == modulePath)
+                .filter(Column("offset") <= key)
+                .order(Column("offset").desc)
+                .fetchOne(db)
+            else { return nil }
+            return (UInt64(bitPattern: row.offset), row.name)
+        }
+    }
+
     public func enclosingFunction(sessionID: UUID, modulePath: String, offset: UInt64) throws -> (functionOffset: UInt64, name: String?)? {
         let key = Int64(bitPattern: offset)
         return try db.read { db in
@@ -1533,6 +1557,15 @@ public final class ProjectStore: Sendable {
             columns: ["session_id", "module_path", "offset"],
             ifNotExists: true
         )
+
+        try db.create(table: "module_symbol", ifNotExists: true) { t in
+            t.column("session_id", .text).notNull()
+                .references("process_session", onDelete: .cascade)
+            t.column("module_path", .text).notNull()
+            t.column("offset", .integer).notNull()
+            t.column("name", .text).notNull()
+            t.primaryKey(["session_id", "module_path", "offset"])
+        }
 
         try db.create(table: "remote_device_config", ifNotExists: true) { t in
             t.primaryKey("id", .text).notNull()

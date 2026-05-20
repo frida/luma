@@ -824,16 +824,13 @@ public enum MissionTools {
             addressesBySession[sid] = addresses
         }
 
-        var bySession: [UUID: [UInt64: SymbolicateResult]] = [:]
-        for (sessionID, addressSet) in addressesBySession {
-            guard let node = engine.node(forSessionID: sessionID), !addressSet.isEmpty else { continue }
+        var bySession: [UUID: [UInt64: SymbolDisplay]] = [:]
+        for (sessionID, addressSet) in addressesBySession where !addressSet.isEmpty {
             let addresses = Array(addressSet)
-            guard let results = try? await node.symbolicate(addresses: addresses) else { continue }
-            var map: [UInt64: SymbolicateResult] = [:]
-            for (idx, result) in results.enumerated() where idx < addresses.count {
-                if let result {
-                    map[addresses[idx]] = result
-                }
+            let displays = await engine.symbolDisplay(sessionID: sessionID, addresses: addresses)
+            var map: [UInt64: SymbolDisplay] = [:]
+            for (idx, display) in displays.enumerated() where idx < addresses.count {
+                map[addresses[idx]] = display
             }
             bySession[sessionID] = map
         }
@@ -842,13 +839,13 @@ public enum MissionTools {
     }
 
     private struct SymbolLookup {
-        private let bySession: [UUID: [UInt64: SymbolicateResult]]
+        private let bySession: [UUID: [UInt64: SymbolDisplay]]
 
-        init(bySession: [UUID: [UInt64: SymbolicateResult]] = [:]) {
+        init(bySession: [UUID: [UInt64: SymbolDisplay]] = [:]) {
             self.bySession = bySession
         }
 
-        func symbol(for address: UInt64, sessionID: UUID) -> SymbolicateResult? {
+        func symbol(for address: UInt64, sessionID: UUID) -> SymbolDisplay? {
             bySession[sessionID]?[address]
         }
     }
@@ -923,24 +920,34 @@ public enum MissionTools {
         }
         guard let sid = sessionID,
             let address = pointer.nativePointerAddress,
-            let resolved = symbols.symbol(for: address, sessionID: sid)
+            let display = symbols.symbol(for: address, sessionID: sid),
+            display.raw != nil || display.overlay != nil
         else {
             return ["$type": "NativePointer", "value": raw] as [String: Any]
         }
-        return symbolJSON(resolved, address: raw)
+        return symbolJSON(display, address: raw)
     }
 
-    private static func symbolJSON(_ symbol: SymbolicateResult, address: String) -> [String: Any] {
+    private static func symbolJSON(_ display: SymbolDisplay, address: String) -> [String: Any] {
         var obj: [String: Any] = [
             "$type": "Symbol",
             "address": address,
-            "module": symbol.module,
-            "name": symbol.name,
+            "name": display.primary,
         ]
-        if let offset = symbol.offset {
-            obj["offset"] = offset
+        if let raw = display.raw {
+            obj["module"] = raw.module
+            obj["raw_name"] = raw.name
+            if let offset = raw.offset {
+                obj["raw_offset"] = offset
+            }
         }
-        if let source = symbol.source {
+        if let overlay = display.overlay {
+            obj["insight_name"] = overlay.title
+            if overlay.offset != 0 {
+                obj["insight_offset"] = overlay.offset
+            }
+        }
+        if let source = display.source {
             obj["file"] = source.file
             obj["line"] = source.line
             if let column = source.column {

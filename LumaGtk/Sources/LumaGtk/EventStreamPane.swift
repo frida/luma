@@ -1081,20 +1081,7 @@ final class EventStreamPane {
         spinner.valign = .center
         spinner.visible = false
         header.append(child: spinner)
-        let retryButton = Button(label: "Symbolicate")
-        retryButton.add(cssClass: "flat")
-        retryButton.visible = false
-        header.append(child: retryButton)
         column.append(child: header)
-
-        let errorLabel = Label(str: "")
-        errorLabel.add(cssClass: "dim-label")
-        errorLabel.add(cssClass: "caption")
-        errorLabel.halign = .start
-        errorLabel.wrap = true
-        errorLabel.xalign = 0
-        errorLabel.visible = false
-        column.append(child: errorLabel)
 
         let scroll = ScrolledWindow()
         scroll.hexpand = true
@@ -1145,40 +1132,13 @@ final class EventStreamPane {
         popover.set(child: column)
         popover.popup()
 
-        let symbolicate: () -> Void = { [weak self] in
-            guard let self, let node = engine.node(forSessionID: sessionID) else {
-                spinner.visible = false
-                errorLabel.setText(str: "Symbolication needs a live session.")
-                errorLabel.visible = true
-                return
+        spinner.visible = true
+        Task { @MainActor in
+            defer { spinner.visible = false }
+            let displays = await engine.symbolDisplay(sessionID: sessionID, addresses: addresses)
+            for (idx, display) in displays.enumerated() where idx < lineLabels.count {
+                lineLabels[idx].setText(str: display.displayString)
             }
-            spinner.visible = true
-            retryButton.visible = false
-            errorLabel.visible = false
-            Task { @MainActor in
-                defer { spinner.visible = false }
-                do {
-                    let symbols = try await node.symbolicate(addresses: addresses)
-                    for (idx, symbol) in symbols.enumerated() {
-                        guard idx < lineLabels.count else { break }
-                        let fallback = engine.anchor(sessionID: sessionID, address: addresses[idx]).displayString
-                        lineLabels[idx].setText(str: self.symbolLabel(for: symbol, fallback: fallback))
-                    }
-                } catch {
-                    errorLabel.setText(str: "Symbolication failed: \(error.localizedDescription)")
-                    errorLabel.visible = true
-                    retryButton.visible = true
-                }
-            }
-        }
-        retryButton.onClicked { _ in
-            MainActor.assumeIsolated { symbolicate() }
-        }
-        if engine.node(forSessionID: sessionID) != nil {
-            symbolicate()
-        } else {
-            errorLabel.setText(str: "Symbolication needs a live session.")
-            errorLabel.visible = true
         }
     }
 
@@ -1194,10 +1154,6 @@ final class EventStreamPane {
         } catch {
             AddressActionMenu.errorReporter?("Can\u{2019}t open disassembly: \(error.localizedDescription)")
         }
-    }
-
-    private func symbolLabel(for result: SymbolicateResult?, fallback: String) -> String {
-        result?.displayString ?? fallback
     }
 
     private func processName(for event: RuntimeEvent) -> String {
