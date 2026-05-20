@@ -105,9 +105,38 @@ export function resolveAnchor(anchor: AnchorJSON): NativePointer | null {
 
 function resolveFunctionScope(query: string): ResolvedTarget[] {
     const pattern = query.includes("!") ? query : `*!${query}`;
-    return getModuleResolver()
-        .enumerateMatches(`exports:${pattern}`)
-        .map(moduleExportTargetFromMatch);
+    const matches = getModuleResolver().enumerateMatches(`exports:${pattern}`);
+    return dedupeMatchesByAddress(matches).map(moduleExportTargetFromMatch);
+}
+
+function dedupeMatchesByAddress(matches: ApiResolverMatch[]): ApiResolverMatch[] {
+    const byAddress = new Map<string, ApiResolverMatch[]>();
+    for (const match of matches) {
+        const key = match.address.toString();
+        const bucket = byAddress.get(key);
+        if (bucket === undefined) {
+            byAddress.set(key, [match]);
+        } else {
+            bucket.push(match);
+        }
+    }
+    return Array.from(byAddress.values()).map(pickDefiningMatch);
+}
+
+function pickDefiningMatch(candidates: ApiResolverMatch[]): ApiResolverMatch {
+    if (candidates.length === 1) {
+        return candidates[0];
+    }
+    const address = candidates[0].address;
+    const owning = candidates.find(c => {
+        const module = Process.findModuleByName(splitScopedName(c.name)[0]);
+        if (module === null) {
+            return false;
+        }
+        const base = module.base;
+        return address.compare(base) >= 0 && address.compare(base.add(module.size)) < 0;
+    });
+    return owning ?? candidates[0];
 }
 
 function resolveModuleScope(query: string): ResolvedTarget[] {
