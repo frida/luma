@@ -87,8 +87,8 @@ final class MissionDetailPane {
     func start() {
         guard let engine else { return }
         observations = []
-        liveText = ""
-        transcript.setLiveText("")
+        liveText = engine.missionLiveText(missionID: missionID)
+        transcript.setLiveText(liveText)
 
         let store = engine.store
         let id = missionID

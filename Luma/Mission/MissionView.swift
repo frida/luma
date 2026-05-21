@@ -85,7 +85,7 @@ struct MissionView: View {
 
     private func startObservations() {
         observations = []
-        liveText = ""
+        liveText = engine.missionLiveText(missionID: missionID)
 
         turns = (try? engine.store.fetchMissionTurns(missionID: missionID)) ?? []
         actions = (try? engine.store.fetchMissionActions(missionID: missionID)) ?? []

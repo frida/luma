@@ -32,9 +32,12 @@ public final class Engine {
     public let missionTools: ToolCatalog
     private let missionExecutor: MissionExecutor
 
+    private var activeNoteReplyTasks: [UUID: Task<AddressNoteMessage?, Never>] = [:]
+    private var missionLiveTextByID: [UUID: String] = [:]
+    private var externalMissionLiveDeltaSink: (@MainActor (UUID, LLMTurnEvent) -> Void)?
+
     #if canImport(Network) || canImport(CSoup)
     private var activeMCPServersByMissionID: [UUID: MCPServer] = [:]
-    private var activeNoteReplyTasks: [UUID: Task<AddressNoteMessage?, Never>] = [:]
 
     public private(set) var externalMCPServer: MCPServer?
     public private(set) var externalMCPURL: URL?
@@ -171,6 +174,9 @@ public final class Engine {
             self?.refreshCustomInstrumentDescriptors()
         }
         bindCollaborationCallbacks()
+        missionExecutor.liveDeltaSink = { [weak self] missionID, event in
+            self?.handleMissionLiveEvent(missionID: missionID, event: event)
+        }
 
         registerAddressActionProvider { [weak self] sessionID, address, context in
             self?.tracerAddressActions(sessionID: sessionID, address: address, context: context) ?? []
@@ -4940,7 +4946,23 @@ public final class Engine {
     public func setMissionLiveDeltaSink(
         _ sink: (@MainActor (UUID, LLMTurnEvent) -> Void)?
     ) {
-        missionExecutor.liveDeltaSink = sink
+        externalMissionLiveDeltaSink = sink
+    }
+
+    public func missionLiveText(missionID: UUID) -> String {
+        missionLiveTextByID[missionID] ?? ""
+    }
+
+    private func handleMissionLiveEvent(missionID: UUID, event: LLMTurnEvent) {
+        switch event {
+        case .textDelta(let text):
+            missionLiveTextByID[missionID, default: ""] += text
+        case .messageStop, .finalMessage:
+            missionLiveTextByID.removeValue(forKey: missionID)
+        default:
+            break
+        }
+        externalMissionLiveDeltaSink?(missionID, event)
     }
 
     #if canImport(Network) || canImport(CSoup)
