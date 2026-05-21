@@ -34,7 +34,7 @@ final class GlobalActionQueuePopover {
         button.set(popover: popover)
 
         let buttonContent = Box(orientation: .horizontal, spacing: 4)
-        icon = Gtk.Image(iconName: "view-list-symbolic")
+        icon = Gtk.Image(iconName: "mail-unread-symbolic")
         icon.pixelSize = 16
         buttonContent.append(child: icon)
 
@@ -71,7 +71,7 @@ final class GlobalActionQueuePopover {
                 popover.popup()
             }
         } else {
-            icon.set(name: "view-list-symbolic")
+            icon.set(name: "mail-unread-symbolic")
             icon.remove(cssClass: "warning")
             badgeLabel.label = ""
             badgeLabel.visible = false
