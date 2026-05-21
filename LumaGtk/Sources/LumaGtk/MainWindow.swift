@@ -2307,7 +2307,7 @@ final class MainWindow: InstrumentUIHost {
             if let idx = insightsBySession[insight.sessionID]?.firstIndex(where: { $0.id == insight.id }) {
                 insightsBySession[insight.sessionID]?[idx] = insight
             }
-            refreshInsightRowLabels(sessionID: insight.sessionID)
+            insightRowLabels[insight.id]?.label = engine?.displayTitle(for: insight) ?? insight.anchor.displayString
             currentInsightDetail?.handleInsightUpdated(insight)
         case .insightRemoved(let id, let sessionID):
             insightsBySession[sessionID]?.removeAll { $0.id == id }
@@ -2678,13 +2678,6 @@ final class MainWindow: InstrumentUIHost {
     private func instrumentRuntimeStatus(for instrument: LumaCore.InstrumentInstance) -> InstrumentStatus? {
         guard let node = engine?.node(forSessionID: instrument.sessionID) else { return nil }
         return node.instruments.first(where: { $0.id == instrument.id })?.status
-    }
-
-    private func refreshInsightRowLabels(sessionID: UUID) {
-        guard let insights = insightsBySession[sessionID] else { return }
-        for insight in insights {
-            insightRowLabels[insight.id]?.set(name: engine?.displayTitle(for: insight) ?? insight.anchor.displayString)
-        }
     }
 
     private func makeInsightRow(_ insight: LumaCore.AddressInsight) -> ListBoxRow {

@@ -1144,20 +1144,23 @@ public final class Engine {
     private func applyRemoteSessionInsightAdded(sessionID: UUID, insight: AddressInsight) {
         var stored = insight
         stored.sessionID = sessionID
-        try? store.save(stored)
+        persistInsight(stored)
         onSessionListChanged?(.insightAdded(stored))
     }
 
     private func applyRemoteSessionInsightUpdated(sessionID: UUID, insight: AddressInsight) {
         var stored = insight
         stored.sessionID = sessionID
-        try? store.save(stored)
-        onSessionListChanged?(.insightUpdated(stored))
+        persistInsight(stored)
         applyInsightNameToR2(stored)
+        emitInsightUpdated(stored)
     }
 
     private func applyRemoteSessionInsightRemoved(sessionID: UUID, insightID: UUID) {
         try? store.deleteInsight(id: insightID)
+        for (sid, list) in insightsBySession {
+            insightsBySession[sid] = list.filter { $0.id != insightID }
+        }
         onSessionListChanged?(.insightRemoved(id: insightID, sessionID: sessionID))
     }
 
@@ -2444,12 +2447,12 @@ public final class Engine {
                 guard let addr = sibling.lastResolvedAddress, addr > begin, addr < end else { continue }
                 var updated = sibling
                 updated.parentInsightID = parent.id
-                try? store.save(updated)
+                persistInsight(updated)
                 changed.append(updated)
             }
             for c in changed {
                 collaboration.enqueueUpdateInsight(sessionID: sessionID, insight: c)
-                onSessionListChanged?(.insightUpdated(c))
+                emitInsightUpdated(c)
             }
         }
     }
@@ -2478,17 +2481,55 @@ public final class Engine {
     public func recordInsightResolution(_ insight: AddressInsight, resolved: UInt64) {
         var updated = insight
         updated.lastResolvedAddress = resolved
-        try? store.save(updated)
+        persistInsight(updated)
         collaboration.enqueueUpdateInsight(sessionID: updated.sessionID, insight: updated)
     }
 
     public func renameInsight(_ insight: AddressInsight, to newTitle: String) {
         var updated = insight
         updated.userTitle = newTitle
-        try? store.save(updated)
+        persistInsight(updated)
         collaboration.enqueueUpdateInsight(sessionID: updated.sessionID, insight: updated)
         applyInsightNameToR2(updated)
-        onSessionListChanged?(.insightUpdated(updated))
+        emitInsightUpdated(updated)
+    }
+
+    private func persistInsight(_ insight: AddressInsight) {
+        try? store.save(insight)
+        upsertInsightCache(insight)
+    }
+
+    private func upsertInsightCache(_ insight: AddressInsight) {
+        var list = insightsBySession[insight.sessionID] ?? []
+        if let idx = list.firstIndex(where: { $0.id == insight.id }) {
+            list[idx] = insight
+        } else {
+            list.append(insight)
+        }
+        insightsBySession[insight.sessionID] = list
+    }
+
+    private func emitInsightUpdated(_ insight: AddressInsight) {
+        onSessionListChanged?(.insightUpdated(insight))
+        for dependent in computedNameDependents(of: insight) {
+            onSessionListChanged?(.insightUpdated(dependent))
+        }
+    }
+
+    private func computedNameDependents(of insight: AddressInsight) -> [AddressInsight] {
+        let siblings = insightsBySession[insight.sessionID] ?? []
+        var result: [AddressInsight] = []
+        var frontier: Set<UUID> = [insight.id]
+        while !frontier.isEmpty {
+            let parents = frontier
+            frontier.removeAll()
+            for candidate in siblings where candidate.userTitle?.isEmpty ?? true {
+                guard let parentID = candidate.parentInsightID, parents.contains(parentID) else { continue }
+                result.append(candidate)
+                frontier.insert(candidate.id)
+            }
+        }
+        return result
     }
 
     public func displayTitle(for insight: AddressInsight) -> String {
@@ -4532,6 +4573,7 @@ public final class Engine {
         )
         insight.lastResolvedAddress = pointer
         try store.save(insight)
+        upsertInsightCache(insight)
         onSessionListChanged?(.insightAdded(insight))
         if let node = node(forSessionID: sessionID), let sid = collabSessionID(forNode: node) {
             collaboration.enqueueAddInsight(sessionID: sid, insight: insight)
@@ -4553,9 +4595,9 @@ public final class Engine {
             if let parent = siblings.first(where: { $0.lastResolvedAddress == begin }), self.parentInsightID != parent.id {
                 var updated = self
                 updated.parentInsightID = parent.id
-                try? store.save(updated)
+                persistInsight(updated)
                 collaboration.enqueueUpdateInsight(sessionID: sessionID, insight: updated)
-                onSessionListChanged?(.insightUpdated(updated))
+                emitInsightUpdated(updated)
             }
             return
         }
@@ -4565,9 +4607,9 @@ public final class Engine {
             guard let addr = sibling.lastResolvedAddress, addr > begin, addr < end else { continue }
             var updated = sibling
             updated.parentInsightID = insightID
-            try? store.save(updated)
+            persistInsight(updated)
             collaboration.enqueueUpdateInsight(sessionID: sessionID, insight: updated)
-            onSessionListChanged?(.insightUpdated(updated))
+            emitInsightUpdated(updated)
         }
     }
 
