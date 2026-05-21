@@ -5,6 +5,10 @@ public struct LumaAppPaths: Sendable {
     public let untitledDirectory: URL
     public let dataDirectory: URL
 
+    public var workingDirectory: URL {
+        untitledDirectory.appendingPathComponent(".working", isDirectory: true)
+    }
+
     public init(stateURL: URL, untitledDirectory: URL, dataDirectory: URL) {
         self.stateURL = stateURL
         self.untitledDirectory = untitledDirectory

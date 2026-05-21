@@ -58,6 +58,7 @@ public final class Engine {
     private var gatingIntendedDevices: Set<String> = []
     private var deviceChangeWatcher: Task<Void, Never>?
     private var eventLogTask: Task<Void, Never>?
+    private var eventStoreFlushTail: Task<Void, Never> = Task {}
 
     public let hookPacks: HookPackLibrary
     public let customInstruments: CustomInstrumentLibrary
@@ -211,8 +212,13 @@ public final class Engine {
         }
 
         if let eventStore {
-            eventLog.onEventsToPersist = { batch in
-                Task { await eventStore.append(batch) }
+            eventLog.onEventsToPersist = { [weak self] batch in
+                guard let self else { return }
+                let previous = self.eventStoreFlushTail
+                self.eventStoreFlushTail = Task {
+                    await previous.value
+                    await eventStore.append(batch)
+                }
             }
         }
 
@@ -1616,6 +1622,8 @@ public final class Engine {
 
         eventLogTask?.cancel()
         eventLogTask = nil
+        eventLog.flushNow()
+        await eventStoreFlushTail.value
         deviceChangeWatcher?.cancel()
         deviceChangeWatcher = nil
         for task in deviceEventTasks.values { task.cancel() }

@@ -13,6 +13,7 @@ final class LumaApplication {
     private struct OpenDocument {
         let window: MainWindow
         let engine: Engine
+        let workingURL: URL
         var document: LumaDocument
     }
 
@@ -51,6 +52,16 @@ final class LumaApplication {
         StyleSheet.install()
         registerDevelopmentIconPaths()
         installActions()
+        purgeStaleWorkingCopies()
+    }
+
+    private func purgeStaleWorkingCopies() {
+        let fm = FileManager.default
+        let workingDir = LumaAppPaths.shared.workingDirectory
+        guard let entries = try? fm.contentsOfDirectory(at: workingDir, includingPropertiesForKeys: nil) else { return }
+        for entry in entries {
+            try? fm.removeItem(at: entry)
+        }
     }
 
     private func registerDevelopmentIconPaths() {
@@ -135,21 +146,14 @@ final class LumaApplication {
         let key = ObjectIdentifier(window)
 
         do {
-            let fm = FileManager.default
-            try? fm.createDirectory(at: document.url, withIntermediateDirectories: true)
-            try? fm.createDirectory(at: document.tracesDirectory, withIntermediateDirectories: true)
-
-            let store = try ProjectStore(path: document.sqlitePath)
-            let traces = try TraceStore(directory: document.tracesDirectory)
-            let eventStore = EventStore(fileURL: document.eventsLogURL)
-            let engine = Engine(
-                store: store,
-                traces: traces,
-                eventStore: eventStore,
-                dataDirectory: LumaAppPaths.shared.dataDirectory,
-                gitHubAuth: ensuredWelcomeModel().gitHubAuth
+            let workingURL = try prepareWorkingCopy(of: document)
+            let engine = try buildEngine(workingURL: workingURL)
+            openDocuments[key] = OpenDocument(
+                window: window,
+                engine: engine,
+                workingURL: workingURL,
+                document: document
             )
-            openDocuments[key] = OpenDocument(window: window, engine: engine, document: document)
             window.present()
 
             Task { @MainActor in
@@ -157,11 +161,7 @@ final class LumaApplication {
                 window.attach(engine: engine)
             }
 
-            LumaAppState.shared.lastDocumentPath = document.url.path
-            if !document.isUntitled {
-                LumaAppState.shared.recordRecent(path: document.url.path)
-                rebuildPrimaryMenu()
-            }
+            recordDocumentOpened(document)
         } catch {
             window.present()
             window.showFatalError("Failed to open project: \(error)")
@@ -185,30 +185,94 @@ final class LumaApplication {
         }
     }
 
-    func windowDidClose(_ window: MainWindow) {
-        let entry = openDocuments.removeValue(forKey: ObjectIdentifier(window))
-        if let entry {
-            Task { @MainActor in
-                await entry.engine.shutdown()
-            }
+    func beginWindowClose(_ window: MainWindow) {
+        let key = ObjectIdentifier(window)
+        guard let entry = openDocuments.removeValue(forKey: key) else {
+            window.destroyWindow()
+            return
         }
-        if openDocuments.isEmpty && activeWelcome == nil {
-            showWelcome()
+        app.hold()
+        Task { @MainActor in
+            await persistAndShutDown(entry)
+            window.destroyWindow()
+            app.release()
+            if openDocuments.isEmpty && activeWelcome == nil {
+                showWelcome()
+            }
         }
     }
 
     func saveAs(window: MainWindow, destination: URL) {
         let key = ObjectIdentifier(window)
-        guard let entry = openDocuments[key] else { return }
+        guard var entry = openDocuments[key] else { return }
         do {
-            let updated = try LumaDocumentLoader.saveAs(entry.document, to: destination)
-            updateDocumentForWindow(window, to: updated)
+            try ProjectSnapshot.write(workingURL: entry.workingURL, to: destination)
+            let updated = LumaDocument(storage: .file(destination))
+            entry.document = updated
+            openDocuments[key] = entry
+            LumaAppState.shared.lastDocumentPath = updated.url.path
+            LumaAppState.shared.recordRecent(path: updated.url.path)
+            rebuildPrimaryMenu()
             window.documentDidChange()
         } catch {
             FileHandle.standardError.write(
                 "Save As failed: \(error)\n".data(using: .utf8)!
             )
         }
+    }
+
+    private func prepareWorkingCopy(of document: LumaDocument) throws -> URL {
+        let fm = FileManager.default
+        let workingDir = LumaAppPaths.shared.workingDirectory
+        try fm.createDirectory(at: workingDir, withIntermediateDirectories: true)
+        let workingURL = workingDir.appendingPathComponent(
+            "Working-\(UUID().uuidString).luma",
+            isDirectory: true
+        )
+
+        if fm.fileExists(atPath: document.sqliteURL.path) {
+            try fm.copyItem(at: document.url, to: workingURL)
+        } else {
+            try fm.createDirectory(at: workingURL, withIntermediateDirectories: true)
+        }
+        try fm.createDirectory(
+            at: workingURL.appendingPathComponent("traces", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        return workingURL
+    }
+
+    private func buildEngine(workingURL: URL) throws -> Engine {
+        let store = try ProjectStore(path: workingURL.appendingPathComponent("db.sqlite").path)
+        let traces = try TraceStore(
+            directory: workingURL.appendingPathComponent("traces", isDirectory: true)
+        )
+        let eventStore = EventStore(fileURL: workingURL.appendingPathComponent("events.log"))
+        return Engine(
+            store: store,
+            traces: traces,
+            eventStore: eventStore,
+            dataDirectory: LumaAppPaths.shared.dataDirectory,
+            gitHubAuth: ensuredWelcomeModel().gitHubAuth
+        )
+    }
+
+    private func recordDocumentOpened(_ document: LumaDocument) {
+        LumaAppState.shared.lastDocumentPath = document.url.path
+        if !document.isUntitled {
+            LumaAppState.shared.recordRecent(path: document.url.path)
+            rebuildPrimaryMenu()
+        }
+    }
+
+    private func persistAndShutDown(_ entry: OpenDocument) async {
+        await entry.engine.shutdown()
+        let workingURL = entry.workingURL
+        let destination = entry.document.url
+        await Task.detached(priority: .userInitiated) {
+            try? ProjectSnapshot.write(workingURL: workingURL, to: destination)
+            try? FileManager.default.removeItem(at: workingURL)
+        }.value
     }
 
     fileprivate func handleOpenPath(_ path: String) {

@@ -55,6 +55,11 @@ public final class EventLog {
         onEventsCleared?()
     }
 
+    public func flushNow() {
+        isFlushScheduled = false
+        flush()
+    }
+
     private func scheduleFlush() {
         guard !isFlushScheduled else { return }
         isFlushScheduled = true

@@ -2,6 +2,7 @@
 import AppKit
 #endif
 import Foundation
+import LumaCore
 
 @MainActor
 final class ProjectAutosaver {
@@ -36,7 +37,7 @@ final class ProjectAutosaver {
         let destinationURL = self.destinationURL
         let modificationDate = await Task.detached(priority: .utility) { () -> Date? in
             do {
-                try LumaProject.writeSnapshot(workingURL: workingURL, to: destinationURL)
+                try ProjectSnapshot.write(workingURL: workingURL, to: destinationURL)
             } catch {
                 return nil
             }

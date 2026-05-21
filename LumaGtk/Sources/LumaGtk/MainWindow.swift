@@ -15,6 +15,7 @@ final class MainWindow: InstrumentUIHost {
     private(set) var document: LumaDocument
 
     private var engine: Engine?
+    private var isClosing = false
 
     private let sessionsList: ListBox
     private let packagesList: ListBox
@@ -308,11 +309,13 @@ final class MainWindow: InstrumentUIHost {
 
         let closeHandler: (Gtk.WindowRef) -> Bool = { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self else { return }
+                guard let self else { return false }
+                if self.isClosing { return false }
+                self.isClosing = true
                 self.persistWindowState()
-                self.application?.windowDidClose(self)
+                self.application?.beginWindowClose(self)
+                return true
             }
-            return false
         }
         window.onCloseRequest(handler: closeHandler)
     }
@@ -373,6 +376,10 @@ final class MainWindow: InstrumentUIHost {
         }
         window.title = MainWindow.makeTitle(for: document)
         showToast("Saved as \(document.displayName).luma")
+    }
+
+    func destroyWindow() {
+        window.destroy()
     }
 
     private static func makeTitle(for document: LumaDocument) -> String {
