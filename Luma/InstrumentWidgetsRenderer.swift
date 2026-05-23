@@ -403,12 +403,12 @@ private struct ConsoleWidgetView: View {
 
     @ViewBuilder
     private func entryBody(_ entry: WidgetConsoleEntry) -> some View {
-        if let image = entry.image, let nsImage = NSImage(data: image.data) {
+        if let image = entry.image, let swiftUIImage = Image(platformImageData: image.data) {
             VStack(alignment: .leading, spacing: 2) {
                 if !entry.text.isEmpty {
                     Text(DisplayTruncation.truncated(entry.text)).textSelection(.enabled)
                 }
-                Image(nsImage: nsImage)
+                swiftUIImage
                     .resizable()
                     .scaledToFit()
                     .frame(maxWidth: 480, maxHeight: 360, alignment: .leading)

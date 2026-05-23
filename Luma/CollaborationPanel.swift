@@ -682,15 +682,7 @@ private struct LabPictureView: View {
     }
 
     private static func loadImage(from data: Data) -> Image? {
-        #if canImport(AppKit)
-        if let ns = NSImage(data: data) { return Image(nsImage: ns) }
-        return nil
-        #elseif canImport(UIKit)
-        if let ui = UIImage(data: data) { return Image(uiImage: ui) }
-        return nil
-        #else
-        return nil
-        #endif
+        Image(platformImageData: data)
     }
 
     #if canImport(AppKit)

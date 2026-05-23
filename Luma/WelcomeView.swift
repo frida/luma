@@ -382,16 +382,7 @@ private struct LabRow: View {
     }
 
     private static func makeImage(from data: Data) -> Image? {
-        #if canImport(AppKit)
-        if let nsImage = NSImage(data: data) {
-            return Image(nsImage: nsImage)
-        }
-        #elseif canImport(UIKit)
-        if let uiImage = UIImage(data: data) {
-            return Image(uiImage: uiImage)
-        }
-        #endif
-        return nil
+        Image(platformImageData: data)
     }
 
     private var secondaryLabel: String {

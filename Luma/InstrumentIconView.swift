@@ -17,28 +17,15 @@ struct InstrumentIconView: View {
 
     @ViewBuilder
     private func pixelsImage(data: Data) -> some View {
-        #if canImport(AppKit)
-            if let nsImage = NSImage(data: data) {
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .interpolation(.high)
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: pointSize, height: pointSize)
-            } else {
-                fallback
-            }
-        #elseif canImport(UIKit)
-            if let uiImage = UIImage(data: data) {
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: pointSize, height: pointSize)
-            } else {
-                fallback
-            }
-        #else
+        if let image = Image(platformImageData: data) {
+            image
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: pointSize, height: pointSize)
+        } else {
             fallback
-        #endif
+        }
     }
 
     private var fallback: some View {
