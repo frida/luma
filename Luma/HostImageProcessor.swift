@@ -1,4 +1,4 @@
-import AppKit
+import CoreGraphics
 import Foundation
 import ImageIO
 import LumaCore
