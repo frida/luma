@@ -16,12 +16,6 @@ struct MainWindowView: View {
     init(projectURL: URL, fileURL: URL? = nil) {
         self.projectURL = projectURL
         self.fileURL = fileURL
-        if let fileURL {
-            self._autosaver = State(initialValue: ProjectAutosaver(
-                workingURL: projectURL,
-                destinationURL: fileURL
-            ))
-        }
         let result: Result<Engine, any Swift.Error>
         do {
             let engine = try EngineRegistry.shared.engine(
@@ -49,6 +43,18 @@ struct MainWindowView: View {
                 collapsedNewEvents: $collapsedNewEvents,
                 isShowingHostingBlockedAlert: $isShowingHostingBlockedAlert
             )
+            .onChange(of: fileURL, initial: true) { _, newURL in
+                if let newURL {
+                    if autosaver?.destinationURL != newURL {
+                        autosaver = ProjectAutosaver(
+                            workingURL: projectURL,
+                            destinationURL: newURL
+                        )
+                    }
+                } else {
+                    autosaver = nil
+                }
+            }
         case .failure(let error):
             VStack(spacing: 12) {
                 Text("Failed to open project")

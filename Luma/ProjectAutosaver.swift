@@ -6,8 +6,8 @@ import LumaCore
 
 @MainActor
 final class ProjectAutosaver {
+    let destinationURL: URL
     private let workingURL: URL
-    private let destinationURL: URL
     private let debounce: Duration
     private var pending: Task<Void, Never>?
 
