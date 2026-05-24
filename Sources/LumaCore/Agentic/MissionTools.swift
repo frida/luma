@@ -1910,7 +1910,7 @@ public enum MissionTools {
     private static func registerWriteCustomInstrumentFile(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "write_custom_instrument_file",
-            description: "Create or replace the contents of one file in a custom instrument. Path is relative inside the instrument's source tree (subdirectories allowed). Running instances are recompiled.",
+            description: "Create or replace the contents of one file in a custom instrument. Path is relative inside the instrument's source tree (subdirectories allowed). Use this to split an instrument across multiple files by concept (e.g. symbols.ts, decoder.ts); imports between them must use a `.js` extension even though the on-disk file is `.ts` (e.g. `import { resolveSymbol } from \"./symbols.js\"`) — standard NodeNext/ESM convention enforced by the bundler. Running instances are recompiled.",
             inputSchemaJSON: """
                 {"type":"object","properties":{"def_id":{"type":"string"},"path":{"type":"string"},"content":{"type":"string"}},"required":["def_id","path","content"],"additionalProperties":false}
                 """,
