@@ -115,6 +115,7 @@ public final class MCPServer {
                 "protocolVersion": clientVersion,
                 "capabilities": ["tools": ["listChanged": false] as [String: Any]],
                 "serverInfo": ["name": "luma", "version": "1"],
+                "instructions": MissionSystemPrompt.codeStyle,
             ])
 
         case "notifications/initialized", "notifications/cancelled", "notifications/progress":
