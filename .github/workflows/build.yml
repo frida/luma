@@ -897,8 +897,16 @@ jobs:
 
   ubuntu:
     runs-on: ubuntu-latest
-    container: ubuntu:26.04
+    container: ubuntu:${{ matrix.release }}
     needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - release: "24.04"
+            libzip_dep: libzip4t64
+          - release: "26.04"
+            libzip_dep: libzip5
     env:
       LUMA_VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -955,8 +963,10 @@ jobs:
 
       - name: Install Swift
         run: |
-          ln -sf libxml2.so.16 /usr/lib/x86_64-linux-gnu/libxml2.so.2
-          ldconfig
+          if [ "${{ matrix.release }}" = "26.04" ]; then
+            ln -sf libxml2.so.16 /usr/lib/x86_64-linux-gnu/libxml2.so.2
+            ldconfig
+          fi
           curl -sLO "https://download.swift.org/swift-${SWIFT_VERSION}-release/ubuntu2404/swift-${SWIFT_VERSION}-RELEASE/swift-${SWIFT_VERSION}-RELEASE-ubuntu24.04.tar.gz"
           tar xzf swift-*.tar.gz -C /usr/local --strip-components=2
           rm swift-*.tar.gz
@@ -968,7 +978,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: /tmp/frida-destdir
-          key: ${{ runner.os }}-ubuntu2604-frida-core-${{ env.FRIDA_CORE_REF }}-v3
+          key: ${{ runner.os }}-ubuntu${{ matrix.release }}-frida-core-${{ env.FRIDA_CORE_REF }}-v3
 
       - name: Build frida-core (shared)
         if: steps.frida-cache.outputs.cache-hit != 'true'
@@ -986,7 +996,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: /tmp/frida-destdir
-          key: ${{ runner.os }}-ubuntu2604-frida-core-${{ env.FRIDA_CORE_REF }}-v3
+          key: ${{ runner.os }}-ubuntu${{ matrix.release }}-frida-core-${{ env.FRIDA_CORE_REF }}-v3
 
       - name: Install frida-core
         run: |
@@ -998,7 +1008,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: /tmp/r2-destdir
-          key: ${{ runner.os }}-ubuntu2604-radare2-${{ env.RADARE2_REF }}-v2
+          key: ${{ runner.os }}-ubuntu${{ matrix.release }}-radare2-${{ env.RADARE2_REF }}-v2
 
       - name: Build radare2 (static)
         if: steps.r2-cache.outputs.cache-hit != 'true'
@@ -1014,7 +1024,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: /tmp/r2-destdir
-          key: ${{ runner.os }}-ubuntu2604-radare2-${{ env.RADARE2_REF }}-v2
+          key: ${{ runner.os }}-ubuntu${{ matrix.release }}-radare2-${{ env.RADARE2_REF }}-v2
 
       - name: Install radare2
         run: |
@@ -1038,16 +1048,16 @@ jobs:
               /usr/local/lib/swift/linux \
               /usr/lib/x86_64-linux-gnu/libxml2.so.16
           mkdir -p $PKG/DEBIAN
-          printf 'Package: luma\nVersion: %s\nSection: devel\nPriority: optional\nArchitecture: amd64\nDepends: libadwaita-1-0, libwebkitgtk-6.0-4, libepoxy0, libzip5, libnice10\nMaintainer: Ole Andre Vadla Ravnas <oleavr@frida.re>\nHomepage: https://luma.frida.re/\nDescription: the official Frida GUI\n Luma is a native app for interactive dynamic instrumentation,\n built on Frida. Persistent sessions, a live REPL, pluggable\n instruments, and real-time collaboration in a workspace that\n remembers where you left off.\n' "$NATIVE_VERSION" > $PKG/DEBIAN/control
+          printf 'Package: luma\nVersion: %s\nSection: devel\nPriority: optional\nArchitecture: amd64\nDepends: libadwaita-1-0, libwebkitgtk-6.0-4, libepoxy0, %s, libnice10\nMaintainer: Ole Andre Vadla Ravnas <oleavr@frida.re>\nHomepage: https://luma.frida.re/\nDescription: the official Frida GUI\n Luma is a native app for interactive dynamic instrumentation,\n built on Frida. Persistent sessions, a live REPL, pluggable\n instruments, and real-time collaboration in a workspace that\n remembers where you left off.\n' "$NATIVE_VERSION" "${{ matrix.libzip_dep }}" > $PKG/DEBIAN/control
           install -m0755 LumaGtk/build-aux/linux/deb-postinst $PKG/DEBIAN/postinst
           install -m0755 LumaGtk/build-aux/linux/deb-postrm   $PKG/DEBIAN/postrm
           dpkg-deb --build $PKG
-          mv ${PKG}.deb luma-${LUMA_VERSION}-ubuntu-26.04-x86_64.deb
+          mv ${PKG}.deb luma-${LUMA_VERSION}-ubuntu-${{ matrix.release }}-x86_64.deb
 
       - uses: actions/upload-artifact@v7
         with:
-          name: luma-${{ env.LUMA_VERSION }}-ubuntu-26.04-x86_64.deb
-          path: luma-${{ env.LUMA_VERSION }}-ubuntu-26.04-x86_64.deb
+          name: luma-${{ env.LUMA_VERSION }}-ubuntu-${{ matrix.release }}-x86_64.deb
+          path: luma-${{ env.LUMA_VERSION }}-ubuntu-${{ matrix.release }}-x86_64.deb
 
   flatpak:
     runs-on: ubuntu-latest
@@ -1560,8 +1570,8 @@ jobs:
           VERSION: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          deb=$(ls artifacts/luma-${VERSION}-ubuntu-*-x86_64.deb | head -1)
-          ubuntu_rel=$(basename "$deb" | sed -nE "s/^luma-${VERSION}-ubuntu-([0-9.]+)-x86_64\\.deb$/\\1/p")
+          deb=artifacts/luma-${VERSION}-ubuntu-24.04-x86_64.deb
+          ubuntu_rel=24.04
           hash="sha256-$(openssl dgst -sha256 -binary "$deb" | base64)"
           cd repo
           sed -i \
