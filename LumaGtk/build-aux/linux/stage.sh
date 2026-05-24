@@ -15,7 +15,8 @@
 #   LIBXML2       - optional; libxml2 .so to ship beside libFoundationXML;
 #                   renamed to libxml2.so.2 so the legacy SONAME the Swift
 #                   runtime expects keeps resolving regardless of host ABI
-#                   bumps. Required when SWIFT_LIBDIR is given.
+#                   bumps. Omit when the host distro already provides a
+#                   matching libxml2.so.2 (declared via package Depends).
 
 set -euo pipefail
 
@@ -55,17 +56,15 @@ cp -P "$frida_libdir"/libfrida-core-1.0.so* "$luma_lib/"
 rsync -aL --exclude='frida-gadget*' "$frida_libdir/frida-1.0/" "$luma_lib/frida-1.0/"
 
 if [ -n "$swift_libdir" ]; then
-    if [ -z "$libxml2" ]; then
-        echo "stage.sh: SWIFT_LIBDIR requires LIBXML2 too" >&2
-        exit 1
-    fi
     for so in "$swift_libdir"/*.so; do
         case "$(basename "$so")" in
             libXCTest.so|libTesting.so|lib_Testing_Foundation.so) continue ;;
         esac
         cp -P "$so" "$luma_lib/swift/"
     done
-    install -m644 "$libxml2" "$luma_lib/swift/libxml2.so.2"
+    if [ -n "$libxml2" ]; then
+        install -m644 "$libxml2" "$luma_lib/swift/libxml2.so.2"
+    fi
 fi
 
 strip --strip-unneeded "$luma_lib/luma"
