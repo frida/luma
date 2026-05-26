@@ -1476,6 +1476,17 @@ public final class ProcessNode: Identifiable {
     private func finalizePendingTracesOnCrash() async {
         let keys = Array(pendingTraces.keys)
         for key in keys {
+            if systemDrainOwner == key, let drainScript {
+                drainTimer?.cancel()
+                drainTimer = nil
+                do {
+                    if let finalChunk = try await drainScript.exports.close() as? [UInt8], !finalChunk.isEmpty {
+                        pendingTraces[key]?.accumulated.append(contentsOf: finalChunk)
+                    }
+                } catch {
+                }
+                systemDrainOwner = nil
+            }
             await finalizeTrace(sessionId: key)
         }
     }
