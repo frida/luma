@@ -21,10 +21,11 @@ enum SessionDetachedBanner {
                 onResumeGating: onResumeGating
             )
         }
-        if session.lastAttachedAt == nil {
-            return makeIdle(for: session, onArm: onArm)
+        let hasError = session.lastError?.isEmpty == false
+        if session.lastAttachedAt == nil, !hasError, case .spawn = session.kind {
+            return makeIdle(for: session, onReattach: onReattach, onArm: onArm)
         }
-        let style: LumaBannerStyle = (session.detachReason == .applicationRequested) ? .warning : .error
+        let style: LumaBannerStyle = hasError || session.detachReason != .applicationRequested ? .error : .warning
         let actionLabel = "\(session.kind.reestablishLabel)\u{2026}"
         return buildBanner(
             style: style,
@@ -72,6 +73,7 @@ enum SessionDetachedBanner {
 
     private static func makeIdle(
         for session: LumaCore.ProcessSession,
+        onReattach: @escaping () -> Void,
         onArm: @escaping () -> Void
     ) -> Widget {
         return buildBanner(
@@ -79,10 +81,12 @@ enum SessionDetachedBanner {
             iconName: "network-offline-symbolic",
             processName: session.processName,
             message: "Idle — not waiting for a launch.",
-            actionLabel: "Arm\u{2026}",
+            actionLabel: "\(session.kind.reestablishLabel)\u{2026}",
             actionStyle: .suggested,
             actionEnabled: true,
-            onAction: onArm
+            onAction: onReattach,
+            secondaryActionLabel: "Arm\u{2026}",
+            onSecondaryAction: onArm
         )
     }
 
@@ -94,7 +98,9 @@ enum SessionDetachedBanner {
         actionLabel: String,
         actionStyle: BannerActionStyle,
         actionEnabled: Bool,
-        onAction: @escaping () -> Void
+        onAction: @escaping () -> Void,
+        secondaryActionLabel: String? = nil,
+        onSecondaryAction: (() -> Void)? = nil
     ) -> Widget {
         let row = Box(orientation: .horizontal, spacing: 8)
         row.hexpand = true
@@ -129,6 +135,15 @@ enum SessionDetachedBanner {
         }
 
         row.append(child: leading)
+
+        if let secondaryActionLabel, let onSecondaryAction {
+            let secondaryButton = Button(label: secondaryActionLabel)
+            secondaryButton.valign = .center
+            secondaryButton.onClicked { _ in
+                MainActor.assumeIsolated { onSecondaryAction() }
+            }
+            row.append(child: secondaryButton)
+        }
 
         let button = Button(label: actionLabel)
         button.valign = .center
