@@ -20,7 +20,6 @@ typedef struct {
 } LumaWelcomeBackdrop;
 
 static const char *backdrop_vertex_src =
-    "#version 150 core\n"
     "in vec2 a_pos;\n"
     "out vec2 v_uv;\n"
     "void main() {\n"
@@ -29,7 +28,6 @@ static const char *backdrop_vertex_src =
     "}\n";
 
 static const char *backdrop_fragment_src =
-    "#version 150 core\n"
     "in vec2 v_uv;\n"
     "out vec4 frag_color;\n"
     "uniform vec2 u_resolution;\n"
@@ -75,10 +73,11 @@ static const char *backdrop_fragment_src =
     "}\n";
 
 static GLuint
-compile_shader(GLenum kind, const char *src)
+compile_shader(GLenum kind, const char *preamble, const char *src)
 {
     GLuint shader = glCreateShader(kind);
-    glShaderSource(shader, 1, &src, NULL);
+    const char *sources[] = { preamble, src };
+    glShaderSource(shader, G_N_ELEMENTS(sources), sources, NULL);
     glCompileShader(shader);
     GLint ok = 0;
     glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
@@ -93,10 +92,13 @@ compile_shader(GLenum kind, const char *src)
 }
 
 static GLuint
-link_program(void)
+link_program(gboolean gles)
 {
-    GLuint vs = compile_shader(GL_VERTEX_SHADER, backdrop_vertex_src);
-    GLuint fs = compile_shader(GL_FRAGMENT_SHADER, backdrop_fragment_src);
+    const char *preamble = gles
+        ? "#version 300 es\nprecision highp float;\n"
+        : "#version 150 core\n";
+    GLuint vs = compile_shader(GL_VERTEX_SHADER, preamble, backdrop_vertex_src);
+    GLuint fs = compile_shader(GL_FRAGMENT_SHADER, preamble, backdrop_fragment_src);
     if (vs == 0 || fs == 0) {
         if (vs != 0) glDeleteShader(vs);
         if (fs != 0) glDeleteShader(fs);
@@ -140,7 +142,9 @@ on_realize(GtkGLArea *area, gpointer user_data)
     if (gtk_gl_area_get_error(area) != NULL)
         return;
 
-    self->program = link_program();
+    GdkGLContext *context = gtk_gl_area_get_context(area);
+    gboolean gles = gdk_gl_context_get_api(context) == GDK_GL_API_GLES;
+    self->program = link_program(gles);
     if (self->program == 0)
         return;
     self->loc_resolution = glGetUniformLocation(self->program, "u_resolution");
