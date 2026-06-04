@@ -207,7 +207,7 @@ final class LumaApplication {
         let key = ObjectIdentifier(window)
         guard var entry = openDocuments[key] else { return }
         do {
-            try ProjectSnapshot.write(workingURL: entry.workingURL, to: destination)
+            try Self.writeSnapshot(workingURL: entry.workingURL, to: destination)
             let updated = LumaDocument(storage: .file(destination))
             entry.document = updated
             openDocuments[key] = entry
@@ -273,9 +273,25 @@ final class LumaApplication {
         let workingURL = entry.workingURL
         let destination = entry.document.url
         await Task.detached(priority: .userInitiated) {
-            try? ProjectSnapshot.write(workingURL: workingURL, to: destination)
+            try? Self.writeSnapshot(workingURL: workingURL, to: destination)
             try? FileManager.default.removeItem(at: workingURL)
         }.value
+    }
+
+    private nonisolated static func writeSnapshot(workingURL: URL, to destination: URL) throws {
+        let fm = FileManager.default
+        let parent = destination.deletingLastPathComponent()
+        try fm.createDirectory(at: parent, withIntermediateDirectories: true)
+        let staging = parent
+            .appendingPathComponent(".luma-save-\(UUID().uuidString).luma", isDirectory: true)
+        defer { try? fm.removeItem(at: staging) }
+
+        try ProjectSnapshot.snapshot(from: workingURL, to: staging)
+
+        if fm.fileExists(atPath: destination.path) {
+            try fm.removeItem(at: destination)
+        }
+        try fm.moveItem(at: staging, to: destination)
     }
 
     fileprivate func handleOpenPath(_ path: String) {
