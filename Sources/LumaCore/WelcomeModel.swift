@@ -31,7 +31,7 @@ public final class WelcomeModel {
 
     private let portalAddress = BackendConfig.portalAddress
     private let portalCertificate = BackendConfig.certificate
-    private let deviceManager = DeviceManager()
+    private let deviceManager = DeviceManager.shared
     private var fetchTask: Task<Void, Never>?
     private var didBootstrap = false
 

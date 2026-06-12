@@ -16,7 +16,7 @@ public enum EngineError: Swift.Error, LocalizedError {
 @Observable
 @MainActor
 public final class Engine {
-    public let deviceManager = DeviceManager()
+    public let deviceManager: DeviceManager
     public let systemParameters = SystemParametersCache()
     public let store: ProjectStore
     public let traces: TraceStore
@@ -124,8 +124,10 @@ public final class Engine {
         eventStore: EventStore? = nil,
         dataDirectory: URL,
         tokenStore: TokenStore? = nil,
-        gitHubAuth: GitHubAuth? = nil
+        gitHubAuth: GitHubAuth? = nil,
+        deviceManager: DeviceManager = .shared
     ) {
+        self.deviceManager = deviceManager
         self.store = store
         self.traces = traces
         self.eventStore = eventStore
