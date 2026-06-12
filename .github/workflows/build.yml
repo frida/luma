@@ -1358,7 +1358,6 @@ jobs:
         with:
           msystem: ${{ matrix.msys2_system }}
           install: ${{ matrix.msys2_package }}
-          path-type: inherit
 
 
       - name: Build frida-core (shared)
