@@ -37,6 +37,11 @@
             swift
             adwaita-icon-theme
             hicolor-icon-theme
+            libgee
+            libxml2
+            atk
+            sqlite
+            glib-networking
           ];
 
           unpackPhase = "dpkg-deb -x $src .";
@@ -45,6 +50,9 @@
             runHook preInstall
             mkdir -p $out
             cp -r usr/. $out/
+            patchelf --replace-needed libzip.so.4 libzip.so $out/bin/luma
+            patchelf --replace-needed libxml2.so.2 libxml2.so \
+              $out/lib/luma/swift/libFoundationXML.so
             runHook postInstall
           '';
 
