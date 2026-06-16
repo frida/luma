@@ -1320,7 +1320,16 @@ jobs:
           $url = "https://download.gnome.org/sources/adwaita-icon-theme/50/adwaita-icon-theme-$version.tar.xz"
           $dest = "$env:GITHUB_WORKSPACE\LumaGtk\build\adwaita-icon-theme-$version.tar.xz"
           New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dest) | Out-Null
-          Invoke-WebRequest -Uri $url -OutFile $dest
+          for ($attempt = 1; ; $attempt++) {
+              try {
+                  Invoke-WebRequest -Uri $url -OutFile $dest -TimeoutSec 120
+                  break
+              } catch {
+                  if ($attempt -ge 5) { throw }
+                  Write-Host "Adwaita download attempt $attempt failed: $($_.Exception.Message); retrying in 10s..."
+                  Start-Sleep -Seconds 10
+              }
+          }
           $actualSha = (Get-FileHash $dest -Algorithm SHA256).Hash.ToLower()
           if ($actualSha -ne $expectedSha) {
               throw "Adwaita SHA-256 mismatch: expected $expectedSha, got $actualSha"

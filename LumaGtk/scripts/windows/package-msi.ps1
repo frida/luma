@@ -206,7 +206,16 @@ $adwaitaUrl     = "https://download.gnome.org/sources/adwaita-icon-theme/50/adwa
 $adwaitaTar     = Join-Path $OutputDir "adwaita-icon-theme-$adwaitaVersion.tar.xz"
 $adwaitaSrc     = Join-Path $OutputDir "adwaita-icon-theme-$adwaitaVersion"
 if (-not (Test-Path $adwaitaTar)) {
-    Invoke-WebRequest -Uri $adwaitaUrl -OutFile $adwaitaTar
+    for ($attempt = 1; ; $attempt++) {
+        try {
+            Invoke-WebRequest -Uri $adwaitaUrl -OutFile $adwaitaTar -TimeoutSec 120
+            break
+        } catch {
+            if ($attempt -ge 5) { throw }
+            Write-Host "Adwaita download attempt $attempt failed: $($_.Exception.Message); retrying in 10s..."
+            Start-Sleep -Seconds 10
+        }
+    }
 }
 $actualSha = (Get-FileHash $adwaitaTar -Algorithm SHA256).Hash.ToLower()
 if ($actualSha -ne $adwaitaSha256) {
