@@ -119,48 +119,21 @@ $dllSearchPath = @(
     $swiftRuntimeDir
 ) | Where-Object { Test-Path $_ }
 
-$dumpbin = Get-Command dumpbin.exe -ErrorAction SilentlyContinue
-if (-not $dumpbin) { throw "dumpbin.exe not on PATH. Run from a Developer PowerShell for VS." }
-
-function Get-DllDependents {
-    param([string] $Binary)
-    $out = [System.IO.Path]::GetTempFileName()
-    $err = [System.IO.Path]::GetTempFileName()
-    try {
-        $proc = Start-Process -FilePath $dumpbin.Path -ArgumentList '/DEPENDENTS', $Binary `
-            -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
-        if (-not $proc.WaitForExit(60000)) {
-            $proc.Kill()
-            Write-Host "WARNING: dumpbin /DEPENDENTS hung on $Binary (>60s); skipping its dependents"
-            return @()
-        }
-        Get-Content $out | ForEach-Object {
-            if ($_ -match '^\s+([^\s].*\.dll)\s*$') { $Matches[1] }
-        }
-    } finally {
-        Remove-Item $out, $err -ErrorAction SilentlyContinue
-    }
-}
-
-$seen = @{}
-function Add-DllClosure {
-    param([string] $Binary)
-    foreach ($dep in (Get-DllDependents $Binary)) {
-        $key = $dep.ToLowerInvariant()
-        if ($seen.ContainsKey($key)) { continue }
-        $seen[$key] = $true
-        foreach ($dir in $dllSearchPath) {
-            $path = Join-Path $dir $dep
-            if (Test-Path $path) {
-                Write-Host "  staging $dep"
-                Copy-Item $path (Join-Path $stage $dep) -Force
-                Add-DllClosure $path
-                break
-            }
+# Stage every DLL from the runtime search paths. We used to walk the
+# import closure with dumpbin /DEPENDENTS, one spawn per dependency,
+# but those spawns are minutes-slow on the hosted runners and a single
+# one can wedge indefinitely. Copying the lot is instant and can't
+# hang; the few unused DLLs are negligible beside the GTK/Swift
+# runtime we ship anyway. First search path wins on name clashes,
+# matching the old closure-walk order.
+foreach ($dir in $dllSearchPath) {
+    Get-ChildItem -Path $dir -Filter *.dll -File | ForEach-Object {
+        $target = Join-Path $stage $_.Name
+        if (-not (Test-Path $target)) {
+            Copy-Item $_.FullName $target
         }
     }
 }
-Add-DllClosure $exe
 
 # frida-core loads its per-arch agent and helper at runtime from
 # <install>\frida-1.0\<arch>\, alongside dbghelp.dll and symsrv.dll.
@@ -192,10 +165,9 @@ Copy-Tree (Join-Path $pkg 'data\icons\hicolor')                  (Join-Path $sta
 # satisfy libsoup HTTPS. vcpkg's portfile relocates the modules from
 # lib\gio\modules to plugins\glib-networking and then wipes lib\, so
 # we have to fish them out of plugins\ and replant them where GIO
-# expects to find them. The OpenSSL runtime DLLs are imported by
-# the module rather than by Luma.exe, so Add-DllClosure above never
-# sees them — re-run it against the module to pull in libssl,
-# libcrypto, etc. alongside Luma.exe.
+# expects to find them. The OpenSSL runtime DLLs (libssl, libcrypto)
+# the module imports are already staged by the bulk DLL copy above,
+# since they live in vcpkg's bin.
 #
 # We deliberately ship *only* gioopenssl.dll. vcpkg defaults to the
 # OpenSSL backend on Windows, but if anyone rebuilds with
@@ -210,7 +182,6 @@ if (-not (Test-Path $gioOpenssl)) {
 $gioModulesStage = Join-Path $stage 'lib\gio\modules'
 New-Item -ItemType Directory -Force -Path $gioModulesStage | Out-Null
 Copy-Item $gioOpenssl $gioModulesStage -Force
-Add-DllClosure (Join-Path $gioModulesStage 'gioopenssl.dll')
 
 # vcpkg has no adwaita-icon-theme port, so fetch the upstream tarball
 # and stage Adwaita directly. Symbolic icons (e.g. accessories-
