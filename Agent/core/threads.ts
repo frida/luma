@@ -6,8 +6,8 @@ export interface ThreadSnapshot {
 }
 
 export function getThreadSnapshot(id: ThreadId): ThreadSnapshot | null {
-    const details = Process.enumerateThreads().find(t => t.id === id);
-    if (details === undefined) {
+    const details = Process.findThreadById(id);
+    if (details === null) {
         return null;
     }
 
