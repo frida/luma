@@ -103,7 +103,7 @@ export function enumerateModuleSymbols(name: string): ModuleSymbolBundle {
             if (i.slot !== undefined) out.slot = i.slot.toString();
             return out;
         }),
-        symbols: module.enumerateSymbols().map(s => {
+        symbols: module.enumerateSymbols().filter(s => !s.address.isNull()).map(s => {
             const out: SymbolEntry = {
                 name: s.name,
                 type: s.type,
