@@ -37,6 +37,7 @@ struct ModuleDetailView: View {
 
             content
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task(id: module.id) {
             guard bundles[module.id] == nil, loadError == nil else { return }
             await load(module)
@@ -46,7 +47,9 @@ struct ModuleDetailView: View {
     @ViewBuilder
     private var content: some View {
         if let loadError {
-            Text(loadError).foregroundStyle(.red)
+            Text(loadError)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             switch tab {
             case .exports: exportsTable(displayBundle.exports)

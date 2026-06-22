@@ -37,6 +37,7 @@ final class ModuleSymbolsPane {
 
         widget = Box(orientation: .vertical, spacing: 8)
         widget.hexpand = true
+        widget.vexpand = true
 
         exportsButton = ToggleButton()
         exportsButton.label = "Exports"
