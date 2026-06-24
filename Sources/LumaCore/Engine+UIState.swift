@@ -65,14 +65,15 @@ extension Engine {
         mutateSessionUIState(sessionID: sessionID) { $0.lastSelectedThreadID = threadID }
     }
 
-    private func mutateSessionUIState(sessionID: UUID, _ mutate: @escaping (inout SessionUIState) -> Void) {
+    private func mutateSessionUIState(sessionID: UUID, _ mutate: (inout SessionUIState) -> Void) {
+        var state = sessionUIStates[sessionID] ?? SessionUIState(sessionID: sessionID)
+        mutate(&state)
+        guard state != sessionUIStates[sessionID] else { return }
+        sessionUIStates[sessionID] = state
+
+        let saved = state
         Task { @MainActor [weak self] in
-            guard let self else { return }
-            var state = self.sessionUIStates[sessionID] ?? SessionUIState(sessionID: sessionID)
-            mutate(&state)
-            guard state != self.sessionUIStates[sessionID] else { return }
-            self.sessionUIStates[sessionID] = state
-            try? self.store.save(state)
+            try? self?.store.save(saved)
         }
     }
 
