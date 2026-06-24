@@ -262,8 +262,9 @@ class Tracer {
 
                 const arming = config.itraceArming;
                 if (arming !== undefined) {
-                    const callIndex = tracer.#nextCallIndex(config.id);
+                    const callIndex = tracer.#callCounters.get(config.id) ?? 0;
                     if (arming.maxInvocations < 0 || callIndex < arming.maxInvocations) {
+                        tracer.#callCounters.set(config.id, callIndex + 1);
                         const target = tracer.#hookTargets.get(config.id);
                         const prologueBackup = target !== undefined
                             ? tracer.#prologueBackups.get(target.toString()) ?? null
@@ -347,12 +348,6 @@ class Tracer {
         };
 
         return callback.call(context, log, param);
-    }
-
-    #nextCallIndex(hookId: string): number {
-        const current = this.#callCounters.get(hookId) ?? 0;
-        this.#callCounters.set(hookId, current + 1);
-        return current;
     }
 
     #updateDepth(threadId: ThreadId, cutPoint: CutPoint): number {
