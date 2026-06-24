@@ -30,6 +30,7 @@ extension View {
         value: String,
         address: UInt64,
         context: AddressContext = AddressContext(),
+        copyTitle: String = "Copy",
         selection: Binding<SidebarItemID?>,
         @ViewBuilder extraItems: @escaping () -> Extra = { EmptyView() }
     ) -> some View {
@@ -40,6 +41,7 @@ extension View {
                 value: value,
                 address: address,
                 context: context,
+                copyTitle: copyTitle,
                 selection: selection,
                 extraItems: extraItems
             )
@@ -53,6 +55,7 @@ private struct PointerActions<Extra: View>: ViewModifier {
     let value: String
     let address: UInt64
     let context: AddressContext
+    let copyTitle: String
     @Binding var selection: SidebarItemID?
     @ViewBuilder let extraItems: () -> Extra
 
@@ -81,7 +84,7 @@ private struct PointerActions<Extra: View>: ViewModifier {
         Button {
             Platform.copyToClipboard(value)
         } label: {
-            Label("Copy", systemImage: "doc.on.doc")
+            Label(copyTitle, systemImage: "doc.on.doc")
         }
 
         if let facts {

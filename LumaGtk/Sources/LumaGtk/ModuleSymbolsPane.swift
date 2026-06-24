@@ -226,7 +226,7 @@ final class ModuleSymbolsPane {
         }
         row.install(controller: click)
 
-        AddressActionMenu.attach(to: row, engine: engine, sessionID: sessionID, address: address, value: String(format: "0x%llx", address), context: context)
+        AddressActionMenu.attach(to: row, engine: engine, sessionID: sessionID, address: address, value: String(format: "0x%llx", address), copyLabel: "Copy Address", context: context)
 
         return row
     }
