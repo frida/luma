@@ -68,17 +68,12 @@ private struct PointerActions<Extra: View>: ViewModifier {
     }
 
     private var factsKey: FactsKey {
-        FactsKey(
-            address: address,
-            attached: engine.node(forSessionID: sessionID) != nil,
-            identity: engine.session(id: sessionID)?.processInfo?.identity
-        )
+        FactsKey(address: address, attached: engine.node(forSessionID: sessionID) != nil)
     }
 
     private struct FactsKey: Equatable {
         let address: UInt64
         let attached: Bool
-        let identity: String?
     }
 
     @ViewBuilder private var menu: some View {

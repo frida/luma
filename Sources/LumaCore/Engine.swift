@@ -90,11 +90,11 @@ public final class Engine {
     @ObservationIgnored private var cachedNodeModulesSnapshotFiles: [EditorFSSnapshotFile]?
 
     private var addressActionProviders: [AddressActionProvider] = []
-    private var protectionRegionsBySession: [UUID: [ProtectionRegion]] = [:]
-    private var unmappedPagesBySession: [UUID: Set<UInt64>] = [:]
-    private var mappingProbesBySession: [UUID: [UInt64: Task<AddressFacts.Mapping, Never>]] = [:]
-    private var functionStartsBySession: [UUID: [UInt64: Bool]] = [:]
-    private var factsIdentityBySession: [UUID: String] = [:]
+    @ObservationIgnored private var protectionRegionsBySession: [UUID: [ProtectionRegion]] = [:]
+    @ObservationIgnored private var unmappedPagesBySession: [UUID: Set<UInt64>] = [:]
+    @ObservationIgnored private var mappingProbesBySession: [UUID: [UInt64: Task<AddressFacts.Mapping, Never>]] = [:]
+    @ObservationIgnored private var functionStartsBySession: [UUID: [UInt64: Bool]] = [:]
+    @ObservationIgnored private var factsIdentityBySession: [UUID: String] = [:]
     private var runningCustomInstrumentReloads: Set<UUID> = []
     private var pendingCustomInstrumentReloads: Set<UUID> = []
     private var customInstrumentReloadWaiters: [UUID: [CheckedContinuation<Void, Never>]] = [:]
