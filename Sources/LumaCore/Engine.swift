@@ -4906,6 +4906,33 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         return sessionID
     }
 
+    private func routeTracerError(_ event: RuntimeEvent, node: ProcessNode) -> Bool {
+        guard case .instrument(let instrumentID, _) = event.source,
+            tracerInstanceIDBySession[node.sessionID] == instrumentID,
+            case .jsValue(let value) = event.payload,
+            case .object(_, let properties) = value,
+            jsStringProperty(properties, "type") == "tracer-error",
+            let hookIDString = jsStringProperty(properties, "id"),
+            let hookID = UUID(uuidString: hookIDString)
+        else { return false }
+
+        let message = jsStringProperty(properties, "message") ?? "Unable to install hook."
+        var statuses = node.instruments.first(where: { $0.id == instrumentID })?.componentStatuses ?? [:]
+        statuses[hookID] = .loadFailed(message: message, stack: nil)
+        node.replaceComponentStatuses(instrumentID: instrumentID, statuses)
+        broadcastInstrumentStatus(instanceID: instrumentID, sessionID: node.sessionID)
+        return true
+    }
+
+    private func jsStringProperty(_ properties: [JSInspectValue.Property], _ name: String) -> String? {
+        for property in properties {
+            if case .string(let key) = property.key, key == name, case .string(let value) = property.value {
+                return value
+            }
+        }
+        return nil
+    }
+
     private func subscribeToNodeStreams(_ node: ProcessNode) {
         let sessionID = node.sessionID
 
@@ -4932,6 +4959,9 @@ public func deleteCustomInstrument(_ defID: UUID) async {
             guard let node else { return }
             for await var event in node.events {
                 event.sessionID = sessionID
+                if self?.routeTracerError(event, node: node) == true {
+                    continue
+                }
                 self?._events.yield(event)
                 if let sid = self?.collabSessionID(forNode: node) {
                     switch event.source {
