@@ -399,11 +399,19 @@ final class ITraceDetailView {
                 return await d.disassemble(at: addr, size: size, appearance: appearance, withFlags: false)
             }
         }
+        let addressesProvider: ((UInt64, Int) async -> [UInt64])? = disassembler.map { d in
+            { addr, size in
+                await d.instructionAddresses(at: addr, size: size)
+            }
+        }
 
         let view = ITraceCFGView(
             decoded: decoded,
+            engine: engine,
+            sessionID: sessionID,
             selectedCallIndex: selectedCallIndex,
-            disasmProvider: provider
+            disasmProvider: provider,
+            instructionAddressesProvider: addressesProvider
         )
         view.onSelect = { [weak self] key in
             MainActor.assumeIsolated {

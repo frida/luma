@@ -19,9 +19,14 @@ struct ITraceCFGView: NSViewRepresentable {
     let nodeRegisterInfo: [CFGGraph.NodeKey: NodeRegisterInfo]
     let registerNames: [String]
     let disasmProvider: ((UInt64, Int) async -> StyledText)?
+    let instructionAddressesProvider: ((UInt64, Int) async -> [UInt64])?
+    let engine: Engine
+    let sessionID: UUID
+    let functionEntries: Set<UInt64>
     @Binding var selectedNodeKey: CFGGraph.NodeKey?
     var onNavigateFunction: ((Int) -> Void)?
     var onJumpToFunction: ((Int) -> Void)?  // absolute index: 0 = first, -1 = last
+    var onNavigate: ((SidebarItemID) -> Void)?
     @Environment(\.colorScheme) private var colorScheme
 
     func makeNSView(context: Context) -> CFGContainerView {
@@ -59,6 +64,11 @@ struct ITraceCFGView: NSViewRepresentable {
     func updateNSView(_ container: CFGContainerView, context: Context) {
         let coordinator = context.coordinator
         coordinator.disasmProvider = disasmProvider
+        coordinator.instructionAddressesProvider = instructionAddressesProvider
+        coordinator.engine = engine
+        coordinator.sessionID = sessionID
+        coordinator.onNavigate = onNavigate
+        coordinator.functionEntries = functionEntries
         coordinator.blockBytes = blockBytes
         coordinator.nodeRegisterInfo = nodeRegisterInfo
         coordinator.registerNames = registerNames
@@ -153,6 +163,10 @@ class CFGContainerView: NSView {
     weak var coordinator: ITraceCFGView.Coordinator?
 
     override var acceptsFirstResponder: Bool { true }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        coordinator?.contextMenu(at: convert(event.locationInWindow, from: nil), in: self)
+    }
 
     override func keyDown(with event: NSEvent) {
         guard let coordinator else {
@@ -379,6 +393,12 @@ extension ITraceCFGView {
         var selectedKey: CFGGraph.NodeKey?
         var selectedInstructionLine: Int = 0  // line index within selected node's disasm
         var disasmProvider: ((UInt64, Int) async -> StyledText)?
+        var instructionAddressesProvider: ((UInt64, Int) async -> [UInt64])?
+        var engine: Engine?
+        var sessionID: UUID?
+        var onNavigate: ((SidebarItemID) -> Void)?
+        var functionEntries: Set<UInt64> = []
+        private var disasmAddresses: [UInt64: [UInt64]] = [:]
         var blockBytes: [UInt64: Data] = [:]
         var nodeRegisterInfo: [CFGGraph.NodeKey: NodeRegisterInfo] = [:]
         var registerNames: [String] = []
@@ -506,6 +526,11 @@ extension ITraceCFGView {
                 } else {
                     self.container?.metalView.needsDisplay = true
                     self.container?.textOverlay.needsDisplay = true
+                }
+
+                for (addr, size) in toFetch {
+                    guard !Task.isCancelled else { return }
+                    self.disasmAddresses[addr] = await self.instructionAddressesProvider?(addr, size) ?? []
                 }
             }
         }
@@ -734,16 +759,26 @@ extension ITraceCFGView {
         @objc func handleClick(_ gesture: NSClickGestureRecognizer) {
             guard let view = gesture.view else { return }
             view.window?.makeFirstResponder(view)
-            let raw = gesture.location(in: view)
+
+            let hit = nodeAndLine(at: gesture.location(in: view), in: view)
+            select(hit?.node.key, line: hit?.line ?? 0)
+
+            if let node = hit?.node, node.section != currentSection {
+                onJumpToFunction?(node.section)
+            }
+
+            container?.metalView.needsDisplay = true
+            container?.textOverlay.needsDisplay = true
+        }
+
+        private func nodeAndLine(at raw: CGPoint, in view: NSView) -> (node: CFGGraph.Node, line: Int)? {
             let viewSize = view.bounds.size
             let loc = CGPoint(x: raw.x, y: viewSize.height - raw.y)
-
             let worldX = (loc.x - viewSize.width / 2 - camera.offset.x) / camera.zoom
             let worldY = (loc.y - viewSize.height / 2 - camera.offset.y) / camera.zoom
 
-            var bestKey: CFGGraph.NodeKey?
+            var bestNode: CFGGraph.Node?
             var bestDist: CGFloat = .greatestFiniteMagnitude
-
             for (_, node) in graph.nodes {
                 let h = nodeHeight(for: node)
                 let dx = CGFloat(node.position.x) - worldX
@@ -751,30 +786,78 @@ extension ITraceCFGView {
                 let dist = dx * dx + dy * dy
                 if dist < bestDist && abs(dx) < nodeWidth / 2 && abs(dy) < h / 2 {
                     bestDist = dist
-                    bestKey = node.key
+                    bestNode = node
                 }
             }
 
-            // Compute which instruction line was clicked.
-            var clickedLine = 0
-            if let key = bestKey, let node = graph.nodes[key] {
-                let nodeTop = node.position.y - nodeHeight(for: node) / 2
-                let disasmY = nodeTop + titleHeight + 2
-                let lineH = ceil(disasmFont.ascender - disasmFont.descender + disasmFont.leading)
-                let relY = worldY - disasmY
-                if relY > 0, lineH > 0 {
-                    clickedLine = max(0, min(instructionCount(for: node) - 1, Int(relY / lineH)))
+            guard let node = bestNode else { return nil }
+
+            var line = 0
+            let nodeTop = node.position.y - nodeHeight(for: node) / 2
+            let disasmY = nodeTop + titleHeight + 2
+            let lineH = ceil(disasmFont.ascender - disasmFont.descender + disasmFont.leading)
+            let relY = worldY - disasmY
+            if relY > 0, lineH > 0 {
+                line = max(0, min(instructionCount(for: node) - 1, Int(relY / lineH)))
+            }
+            return (node, line)
+        }
+
+        // MARK: - Context Menu
+
+        func contextMenu(at raw: CGPoint, in view: NSView) -> NSMenu? {
+            guard let engine, let sessionID,
+                let hit = nodeAndLine(at: raw, in: view),
+                let addresses = disasmAddresses[hit.node.address],
+                hit.line < addresses.count
+            else { return nil }
+
+            let address = addresses[hit.line]
+            let value = String(format: "0x%llx", address)
+            let context = AddressContext(kind: .code)
+            let facts = AddressFacts(mapping: .executable, isFunctionStart: functionEntries.contains(address))
+
+            let menu = NSMenu()
+            menu.addItem(menuItem("Copy Address") {
+                Platform.copyToClipboard(value)
+            })
+            if facts.mapping != .unmapped {
+                menu.addItem(menuItem("Open Memory") { [weak self] in
+                    self?.openInsight(address: address, kind: .memory)
+                })
+            }
+
+            let actions = engine.addressActions(sessionID: sessionID, address: address, context: context, facts: facts)
+            if !actions.isEmpty {
+                menu.addItem(.separator())
+                for action in actions {
+                    menu.addItem(menuItem(action.title) { [weak self] in
+                        Task { @MainActor in
+                            guard let target = await action.perform() else { return }
+                            self?.onNavigate?(SidebarItemID(navigationTarget: target))
+                        }
+                    })
                 }
             }
+            return menu
+        }
 
-            select(bestKey, line: clickedLine)
+        private func menuItem(_ title: String, handler: @escaping () -> Void) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: #selector(invokeMenuItem(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = MenuActionBox(handler)
+            return item
+        }
 
-            if let key = bestKey, let node = graph.nodes[key], node.section != currentSection {
-                onJumpToFunction?(node.section)
-            }
+        @objc private func invokeMenuItem(_ sender: NSMenuItem) {
+            (sender.representedObject as? MenuActionBox)?.handler()
+        }
 
-            container?.metalView.needsDisplay = true
-            container?.textOverlay.needsDisplay = true
+        private func openInsight(address: UInt64, kind: LumaCore.AddressInsight.Kind) {
+            guard let engine, let sessionID,
+                let insight = try? engine.getOrCreateInsight(sessionID: sessionID, pointer: address, kind: kind)
+            else { return }
+            onNavigate?(.insight(sessionID, insight.id))
         }
 
         // MARK: - Keyboard Navigation
@@ -1148,8 +1231,12 @@ extension ITraceCFGView {
             // Content bottom edge at screen `viewSize.height - margin`:
             let minOffsetY = (viewSize.height - margin) - content.maxY * camera.zoom - hh
 
-            camera.offset.x = max(minOffsetX, min(maxOffsetX, camera.offset.x))
-            camera.offset.y = max(minOffsetY, min(maxOffsetY, camera.offset.y))
+            camera.offset.x = minOffsetX > maxOffsetX
+                ? maxOffsetX
+                : max(minOffsetX, min(maxOffsetX, camera.offset.x))
+            camera.offset.y = minOffsetY > maxOffsetY
+                ? maxOffsetY
+                : max(minOffsetY, min(maxOffsetY, camera.offset.y))
         }
 
         func sectionBounds(_ section: Int) -> CGRect {
@@ -1252,6 +1339,14 @@ extension ITraceCFGView {
     }
 }
 
+private final class MenuActionBox {
+    let handler: () -> Void
+
+    init(_ handler: @escaping () -> Void) {
+        self.handler = handler
+    }
+}
+
 #else
 
 struct ITraceCFGView: View {
@@ -1261,9 +1356,14 @@ struct ITraceCFGView: View {
     let nodeRegisterInfo: [CFGGraph.NodeKey: NodeRegisterInfo]
     let registerNames: [String]
     let disasmProvider: ((UInt64, Int) async -> StyledText)?
+    let instructionAddressesProvider: ((UInt64, Int) async -> [UInt64])?
+    let engine: Engine
+    let sessionID: UUID
+    let functionEntries: Set<UInt64>
     @Binding var selectedNodeKey: CFGGraph.NodeKey?
     var onNavigateFunction: ((Int) -> Void)?
     var onJumpToFunction: ((Int) -> Void)?
+    var onNavigate: ((SidebarItemID) -> Void)?
 
     var body: some View {
         VStack(spacing: 12) {

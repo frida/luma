@@ -101,6 +101,14 @@ struct ITraceDetailView: View {
                                     await d.disassemble(at: addr, size: size, appearance: colorScheme == .dark ? .dark : .light, withFlags: false)
                                 }
                             },
+                            instructionAddressesProvider: disassembler.map { d in
+                                { addr, size in
+                                    await d.instructionAddresses(at: addr, size: size)
+                                }
+                            },
+                            engine: engine,
+                            sessionID: session.id,
+                            functionEntries: Set(decoded.functionCalls.map { decoded.entries[$0.startIndex].blockAddress }),
                             selectedNodeKey: $cfgSelectedNodeKey,
                             onNavigateFunction: { direction in
                                 let newIdx = (selectedCallIndex ?? 0) + direction
@@ -111,7 +119,8 @@ struct ITraceDetailView: View {
                                 let target = index < 0 ? decoded.functionCalls.count - 1 : index
                                 guard target >= 0, target < decoded.functionCalls.count else { return }
                                 selectedCallIndex = target
-                            }
+                            },
+                            onNavigate: { selection = $0 }
                         )
                     } else {
                         emptyCFGState(isRecording: liveTrace.isRunning)

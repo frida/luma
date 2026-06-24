@@ -23,8 +23,12 @@ final class ITraceCFGView {
     var onJumpToFunction: ((Int) -> Void)?
 
     private var decoded: DecodedITrace
+    private let engine: Engine
+    private let sessionID: UUID
     private let windowRadius: Int
     private let disasmProvider: ((UInt64, Int) async -> StyledText)?
+    private let instructionAddressesProvider: ((UInt64, Int) async -> [UInt64])?
+    private var disasmAddresses: [UInt64: [UInt64]] = [:]
 
     private var graph: CFGGraph = CFGGraph(nodes: [:], edges: [], entryKey: 0)
     private var nodeRegisterInfo: [CFGGraph.NodeKey: NodeRegisterInfo] = [:]
@@ -62,14 +66,20 @@ final class ITraceCFGView {
 
     init(
         decoded: DecodedITrace,
+        engine: Engine,
+        sessionID: UUID,
         selectedCallIndex: Int,
         windowRadius: Int = 10,
-        disasmProvider: ((UInt64, Int) async -> StyledText)?
+        disasmProvider: ((UInt64, Int) async -> StyledText)?,
+        instructionAddressesProvider: ((UInt64, Int) async -> [UInt64])?
     ) {
         self.decoded = decoded
+        self.engine = engine
+        self.sessionID = sessionID
         self.selectedCallIndex = selectedCallIndex
         self.windowRadius = windowRadius
         self.disasmProvider = disasmProvider
+        self.instructionAddressesProvider = instructionAddressesProvider
 
         let root = Box(orientation: .vertical, spacing: 0)
         root.hexpand = true
@@ -368,6 +378,7 @@ final class ITraceCFGView {
                     let styled = await provider(addr, size)
                     if Task.isCancelled { return }
                     self.disasmCache[addr] = styled
+                    self.disasmAddresses[addr] = await self.instructionAddressesProvider?(addr, size) ?? []
                 }
                 if let styled = self.disasmCache[addr] {
                     self.applyDisasm(key: key, styled: styled, relayoutAfter: false)
@@ -389,9 +400,10 @@ final class ITraceCFGView {
         }
 
         let lines = splitLines(styled)
+        let lineAddresses = graph.nodes[key].flatMap { disasmAddresses[$0.address] } ?? []
         var rows: [ListBoxRow] = []
         rows.reserveCapacity(lines.count)
-        for line in lines {
+        for (index, line) in lines.enumerated() {
             let row = ListBoxRow()
             row.add(cssClass: "luma-cfg-instr")
             let label = Label(str: "")
@@ -407,6 +419,18 @@ final class ITraceCFGView {
             row.set(child: label)
             instrList.append(child: row)
             rows.append(row)
+            if index < lineAddresses.count {
+                let address = lineAddresses[index]
+                AddressActionMenu.attach(
+                    to: label,
+                    engine: engine,
+                    sessionID: sessionID,
+                    address: address,
+                    value: String(format: "0x%llx", address),
+                    copyLabel: "Copy Address",
+                    includeDisassembly: false,
+                    context: AddressContext(kind: .code))
+            }
         }
         nodeInstructionRows[key] = rows
 
