@@ -22,6 +22,7 @@ struct TracerConfigView: View {
     @State private var installingPackage: String?
 
     @State private var selectedHookID: UUID?
+    @State private var hookAddresses: [UUID: UInt64] = [:]
 
     @State private var isShowingSearchPopover = false
     @State private var showDeleteConfirmation = false
@@ -188,7 +189,20 @@ struct TracerConfigView: View {
     }
 
     private func existingHook(for api: ResolvedApi) -> TracerConfig.Hook? {
-        return config.hooks.first(where: { $0.addressAnchor == api.anchor })
+        if let exact = config.hooks.first(where: { $0.addressAnchor == api.anchor }) {
+            return exact
+        }
+        return config.hooks.first(where: { hookAddresses[$0.id] == api.address })
+    }
+
+    private func refreshHookAddresses(using node: LumaCore.ProcessNode) async {
+        var resolved: [UUID: UInt64] = [:]
+        for hook in config.hooks {
+            if let address = try? await node.resolve(hook.addressAnchor) {
+                resolved[hook.id] = address
+            }
+        }
+        hookAddresses = resolved
     }
 
     private var thisInstrumentID: UUID? {
@@ -824,6 +838,7 @@ struct TracerConfigView: View {
             let arr = try await node.resolveTargets(scope: searchScope.rawValue, query: searchQuery)
 
             resolveResults = try arr.map(parseResolvedTarget)
+            await refreshHookAddresses(using: node)
             searchError = nil
             searchErrorHint = nil
         } catch {

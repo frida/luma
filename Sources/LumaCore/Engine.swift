@@ -3447,7 +3447,7 @@ public final class Engine {
 
         if let existing = tracerInstance(forSessionID: sessionID) {
             var config = (try? TracerConfig.decode(from: existing.configJSON)) ?? TracerConfig()
-            if let existingID = config.hooks.first(where: { $0.addressAnchor == anchor })?.id {
+            if let existingID = await existingHookID(in: config, anchor: anchor, sessionID: sessionID) {
                 return (instrumentID: existing.id, hookID: existingID)
             }
             config.hooks.append(newHook)
@@ -3464,6 +3464,21 @@ public final class Engine {
             sessionID: sessionID
         ) else { return nil }
         return (instrumentID: added.id, hookID: newHook.id)
+    }
+
+    private func existingHookID(in config: TracerConfig, anchor: AddressAnchor, sessionID: UUID) async -> UUID? {
+        if let exact = config.hooks.first(where: { $0.addressAnchor == anchor }) {
+            return exact.id
+        }
+        guard let node = node(forSessionID: sessionID),
+            let target = try? await node.resolve(anchor)
+        else { return nil }
+        for hook in config.hooks where hook.addressAnchor != anchor {
+            if let resolved = try? await node.resolve(hook.addressAnchor), resolved == target {
+                return hook.id
+            }
+        }
+        return nil
     }
 
     // MARK: - Address Actions

@@ -182,6 +182,7 @@ final class TracerConfigEditor {
                 existingHookByAnchor: { [weak self] anchor in
                     self?.config.hooks.first(where: { $0.addressAnchor == anchor })
                 },
+                hooksProvider: { [weak self] in self?.config.hooks ?? [] },
                 onPick: { [weak self] apis in
                     self?.handlePickedAPIs(apis)
                 },
@@ -319,6 +320,7 @@ final class TracerConfigEditor {
             existingHookByAnchor: { [weak self] anchor in
                 self?.config.hooks.first(where: { $0.addressAnchor == anchor })
             },
+            hooksProvider: { [weak self] in self?.config.hooks ?? [] },
             onPick: { [weak self, weak popover] apis in
                 self?.handlePickedAPIs(apis)
                 popover?.popdown()
@@ -411,6 +413,7 @@ final class TracerConfigEditor {
             existingHookByAnchor: { [weak self] anchor in
                 self?.config.hooks.first(where: { $0.addressAnchor == anchor })
             },
+            hooksProvider: { [weak self] in self?.config.hooks ?? [] },
             onPick: { [weak self] apis in
                 self?.handlePickedAPIs(apis)
                 self?.dismissAddPopover()
@@ -520,6 +523,7 @@ private final class TracerHookSearch {
     private let sessionID: UUID
     private let onPick: ([TracerConfigEditor.ResolvedApi]) -> Void
     private let existingHookByAnchor: (AddressAnchor) -> TracerConfig.Hook?
+    private let hooksProvider: () -> [TracerConfig.Hook]
     private let onView: (TracerConfig.Hook) -> Void
 
     private let entry: Entry
@@ -537,6 +541,7 @@ private final class TracerHookSearch {
 
     private var scope: TracerTargetScope = .function
     private var results: [TracerConfigEditor.ResolvedApi] = []
+    private var hookAddresses: [UUID: UInt64] = [:]
     private var debounceTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
     private var pendingInstallHint: SearchInstallHint?
@@ -548,6 +553,7 @@ private final class TracerHookSearch {
         layout: Layout,
         hasExistingHooks: Bool = false,
         existingHookByAnchor: @escaping (AddressAnchor) -> TracerConfig.Hook?,
+        hooksProvider: @escaping () -> [TracerConfig.Hook],
         onPick: @escaping ([TracerConfigEditor.ResolvedApi]) -> Void,
         onView: @escaping (TracerConfig.Hook) -> Void
     ) {
@@ -555,6 +561,7 @@ private final class TracerHookSearch {
         self.sessionID = sessionID
         self.onPick = onPick
         self.existingHookByAnchor = existingHookByAnchor
+        self.hooksProvider = hooksProvider
         self.onView = onView
 
         widget = Box(orientation: .vertical, spacing: 12)
@@ -715,7 +722,7 @@ private final class TracerHookSearch {
         addAllButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                let toAdd = self.results.filter { self.existingHookByAnchor($0.anchor) == nil }
+                let toAdd = self.results.filter { self.existingHook(for: $0) == nil }
                 self.onPick(toAdd)
             }
         }
@@ -803,6 +810,27 @@ private final class TracerHookSearch {
         performSearch(query: query)
     }
 
+    private func existingHook(for api: TracerConfigEditor.ResolvedApi) -> TracerConfig.Hook? {
+        if let exact = existingHookByAnchor(api.anchor) {
+            return exact
+        }
+        return hooksProvider().first(where: { hookAddresses[$0.id] == api.address })
+    }
+
+    private func refreshHookAddresses() async {
+        guard let node = engine?.node(forSessionID: sessionID) else {
+            hookAddresses = [:]
+            return
+        }
+        var resolved: [UUID: UInt64] = [:]
+        for hook in hooksProvider() {
+            if let address = try? await node.resolve(hook.addressAnchor) {
+                resolved[hook.id] = address
+            }
+        }
+        hookAddresses = resolved
+    }
+
     private func performSearch(query: String) {
         guard let node = engine?.node(forSessionID: sessionID) else {
             setSearchStatus("Attach to a process to search APIs.")
@@ -838,6 +866,8 @@ private final class TracerHookSearch {
                     )
                 }
                 anchor.results = decoded
+                await anchor.refreshHookAddresses()
+                if Task.isCancelled { return }
                 anchor.rebuildResults()
                 anchor.setSearchStatus(
                     decoded.isEmpty
@@ -941,7 +971,7 @@ private final class TracerHookSearch {
 
             inner.append(child: textColumn)
 
-            let existing = existingHookByAnchor(api.anchor)
+            let existing = existingHook(for: api)
             let actionButton = Button(label: existing != nil ? "View Handler" : "Add")
             actionButton.add(cssClass: "flat")
             actionButton.valign = .center
@@ -950,7 +980,7 @@ private final class TracerHookSearch {
                 MainActor.assumeIsolated {
                     guard capturedIdx < anchor.results.count else { return }
                     let api = anchor.results[capturedIdx]
-                    if let existing = anchor.existingHookByAnchor(api.anchor) {
+                    if let existing = anchor.existingHook(for: api) {
                         anchor.onView(existing)
                     } else {
                         anchor.onPick([api])

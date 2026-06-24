@@ -896,13 +896,13 @@ public final class ProcessNode: Identifiable {
             return a
 
         case .moduleOffset(let name, let offset):
-            guard let m = modules.first(where: { $0.name == name }) else {
+            guard let m = modules.first(where: { $0.name == name || $0.path == name }) else {
                 throw LumaCoreError.invalidArgument("Module '\(name)' not loaded in the current process")
             }
             return m.base &+ offset
 
         case .moduleExport(let name, _):
-            guard modules.first(where: { $0.name == name }) != nil else {
+            guard modules.first(where: { $0.name == name || $0.path == name }) != nil else {
                 throw LumaCoreError.invalidArgument("Module '\(name)' not loaded in the current process")
             }
             return try await lookupAnchor(anchor)
