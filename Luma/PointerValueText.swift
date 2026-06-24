@@ -61,10 +61,11 @@ private struct PointerActions<Extra: View>: ViewModifier {
     func body(content: Content) -> some View {
         content
             .textSelection(.disabled)
-            .contextMenu { menu }
-            .task(id: factsKey) {
-                facts = await engine.addressFacts(sessionID: sessionID, address: address, context: context)
+            .onHover { hovering in
+                guard hovering, facts == nil else { return }
+                Task { facts = await engine.addressFacts(sessionID: sessionID, address: address, context: context) }
             }
+            .contextMenu { menu }
     }
 
     private var factsKey: FactsKey {
@@ -98,6 +99,12 @@ private struct PointerActions<Extra: View>: ViewModifier {
                     actionButton(action)
                 }
             }
+        } else {
+            Divider()
+            Button {} label: {
+                Label("Analyzing\u{2026}", systemImage: "hourglass")
+            }
+            .disabled(true)
         }
 
         extraItems()
