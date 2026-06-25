@@ -19,7 +19,10 @@ struct AddressNotePopover: View {
     @State private var draft: String = ""
     @State private var pending: PendingState = .idle
     @State private var unusedTransientNoteIDs: Set<UUID> = []
-    @State private var streamingPlaceholder: AddressNoteMessage?
+    @State private var pendingActions: [MissionAction] = []
+    @State private var actionsObservation: LumaCore.StoreObservation?
+    @State private var rejectingAction: MissionAction?
+    @State private var rejectReason: String = ""
     @State private var editingMessageID: UUID?
     @State private var editingDraft: String = ""
     @State private var pendingDeleteThread: AddressNote?
@@ -49,10 +52,18 @@ struct AddressNotePopover: View {
         .frame(width: 460, height: 460)
         .onAppear {
             refresh()
+            observePendingActions()
             DispatchQueue.main.async { inputFocused = true }
         }
-        .onChange(of: activeNoteID) { _, _ in reloadMessages() }
-        .onDisappear(perform: discardUnusedTransientNotes)
+        .onChange(of: activeNoteID) { _, _ in reloadActiveNote() }
+        .onChange(of: hasActiveReply) { _, active in
+            pending = active ? .sending : .idle
+            if !active { reloadMessages() }
+        }
+        .onDisappear {
+            actionsObservation = nil
+            discardUnusedTransientNotes()
+        }
         .confirmationDialog(
             "Delete thread?",
             isPresented: Binding(
@@ -87,6 +98,24 @@ struct AddressNotePopover: View {
             TextField("Title", text: $renameDraft)
             Button("Save") { commitRename() }
             Button("Cancel", role: .cancel) {}
+        }
+        .alert("Reject action?", isPresented: Binding(
+            get: { rejectingAction != nil },
+            set: { if !$0 { rejectingAction = nil } }
+        )) {
+            TextField("Reason (optional)", text: $rejectReason)
+            Button("Reject", role: .destructive) {
+                if let a = rejectingAction {
+                    let reason = rejectReason.isEmpty ? nil : rejectReason
+                    Task { await engine.rejectMissionAction(actionID: a.id, reason: reason) }
+                }
+                rejectingAction = nil
+            }
+            Button("Cancel", role: .cancel) { rejectingAction = nil }
+        } message: {
+            if let a = rejectingAction {
+                Text("Tell the agent why you rejected \(a.toolName). This signal can help it adjust.")
+            }
         }
     }
 
@@ -168,7 +197,7 @@ struct AddressNotePopover: View {
                                 messageRow(message)
                                     .id(message.id)
                             }
-                            if let placeholder = streamingPlaceholder {
+                            if let placeholder = livePlaceholder {
                                 MessageRow(message: placeholder, isEditing: false, editingDraft: .constant(""))
                                     .id(placeholder.id)
                             }
@@ -189,7 +218,7 @@ struct AddressNotePopover: View {
                 .onChange(of: messages.count) { _, _ in
                     proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
                 }
-                .onChange(of: streamingPlaceholder?.bodyMarkdown) { _, _ in
+                .onChange(of: livePlaceholder?.bodyMarkdown) { _, _ in
                     proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
                 }
                 .onChange(of: editingMessageID) { _, newID in
@@ -197,9 +226,37 @@ struct AddressNotePopover: View {
                     withAnimation { proxy.scrollTo(newID, anchor: .bottom) }
                 }
             }
+            if !pendingActions.isEmpty {
+                Divider()
+                pendingApprovals
+            }
             Divider()
             inputBar(note: note)
         }
+    }
+
+    private var pendingApprovals: some View {
+        VStack(spacing: 8) {
+            ForEach(pendingActions) { action in
+                if action.toolName == MissionTools.requestUserInputToolName {
+                    RequestUserInputCard(action: action) { answer in
+                        engine.submitUserInputResponse(actionID: action.id, answer: answer)
+                    }
+                } else {
+                    ActionCard(
+                        engine: engine,
+                        action: action,
+                        onApprove: { Task { await engine.approveMissionAction(actionID: action.id) } },
+                        onReject: {
+                            rejectingAction = action
+                            rejectReason = ""
+                        }
+                    )
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     @ViewBuilder
@@ -309,13 +366,48 @@ struct AddressNotePopover: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    private var hasActiveReply: Bool {
+        engine.noteReplyProgress[sessionID]?.noteID == activeNoteID
+    }
+
+    private var livePlaceholder: AddressNoteMessage? {
+        guard isSending, let noteID = activeNoteID else { return nil }
+        let progress = engine.noteReplyProgress[sessionID]
+        let text = progress?.noteID == noteID ? progress?.text ?? "" : ""
+        return AddressNoteMessage(
+            noteID: noteID,
+            index: -1,
+            role: .assistant,
+            bodyMarkdown: text,
+            modelID: LumaAppState.shared.missionDefaults.modelID
+        )
+    }
+
     private func refresh() {
         notes = engine.addressNotes(sessionID: sessionID)
             .filter { engine.resolveSync(sessionID: sessionID, anchor: $0.anchor) == address }
         if activeNoteID == nil {
             activeNoteID = notes.last?.id
         }
+        reloadActiveNote()
+    }
+
+    private func reloadActiveNote() {
         reloadMessages()
+        if hasActiveReply { pending = .sending }
+    }
+
+    private func observePendingActions() {
+        applyPendingActions((try? engine.store.fetchAllPendingMissionActions()) ?? [])
+        actionsObservation = engine.store.observeAllPendingMissionActions { rows in
+            Task { @MainActor in applyPendingActions(rows) }
+        }
+    }
+
+    private func applyPendingActions(_ rows: [MissionAction]) {
+        pendingActions = rows.filter {
+            $0.sessionID == sessionID && engine.isAmbientMission($0.missionID)
+        }
     }
 
     private func reloadMessages() {
@@ -397,32 +489,14 @@ struct AddressNotePopover: View {
         draft = ""
         pending = .sending
         let defaults = LumaAppState.shared.missionDefaults
-        streamingPlaceholder = AddressNoteMessage(
-            noteID: note.id,
-            index: -1,
-            role: .assistant,
-            bodyMarkdown: "",
-            modelID: defaults.modelID
-        )
         Task { @MainActor in
             let reply = await engine.requestAIReply(
                 noteID: note.id,
                 providerID: defaults.providerID,
-                modelID: defaults.modelID,
-                onDelta: { delta in
-                    if var placeholder = streamingPlaceholder {
-                        placeholder.bodyMarkdown += delta
-                        streamingPlaceholder = placeholder
-                    }
-                }
+                modelID: defaults.modelID
             )
-            streamingPlaceholder = nil
-            if let reply {
-                messages.append(reply)
-                pending = .idle
-            } else {
-                pending = .error("Reply failed. Check provider settings.")
-            }
+            reloadMessages()
+            pending = reply == nil ? .error("Reply failed. Check provider settings.") : .idle
         }
     }
 

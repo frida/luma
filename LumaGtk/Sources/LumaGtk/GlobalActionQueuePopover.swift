@@ -59,7 +59,8 @@ final class GlobalActionQueuePopover {
         }
     }
 
-    private func apply(actions: [MissionAction]) {
+    private func apply(actions allActions: [MissionAction]) {
+        let actions = allActions.filter { engine?.isAmbientMission($0.missionID) != true }
         queue?.update(actions: actions)
         let hasPending = !actions.isEmpty
         if hasPending {

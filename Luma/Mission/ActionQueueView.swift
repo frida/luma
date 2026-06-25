@@ -79,7 +79,7 @@ struct ActionQueueView: View {
     }
 }
 
-private struct ActionCard: View {
+struct ActionCard: View {
     let engine: Engine
     let action: MissionAction
     var onApprove: () -> Void
@@ -197,7 +197,7 @@ private func parsedArgs(_ json: String) -> [String: Any] {
     return obj
 }
 
-private struct RequestUserInputCard: View {
+struct RequestUserInputCard: View {
     let action: MissionAction
     var onSubmit: (String) -> Void
 

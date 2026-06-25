@@ -19,7 +19,7 @@ final class AddressNotePopover {
     private let sessionID: UUID
     private let address: UInt64
 
-    private var popover: Popover?
+    private var dialog: Adw.Dialog?
     private var headerTitleLabel: Label?
     private var switchButton: MenuButton?
     private var renameButton: Button?
@@ -45,6 +45,9 @@ final class AddressNotePopover {
     private var messages: [AddressNoteMessage] = []
     private var pending: PendingState = .idle
     private var unusedTransientNoteIDs: Set<UUID> = []
+    private var pendingActions: [MissionAction] = []
+    private var actionsObservation: StoreObservation?
+    private var approvalsBox: Box?
 
     init(engine: Engine, sessionID: UUID, address: UInt64) {
         self.engine = engine
@@ -56,32 +59,15 @@ final class AddressNotePopover {
         AddressNotePopover.active?.dismiss()
         AddressNotePopover.active = self
 
-        let popover = Popover()
-        popover.autohide = true
-        popover.position = .right
-        popover.onClosed { _ in
-            MainActor.assumeIsolated {
-                guard AddressNotePopover.active === self else { return }
-                self.discardUnusedTransientNotes()
-                AddressNotePopover.active = nil
-            }
+        let dialog = Adw.Dialog()
+        dialog.set(title: "Notes & AI")
+        dialog.set(contentWidth: 460)
+        dialog.set(contentHeight: 520)
+        dialog.onClosed { _ in
+            MainActor.assumeIsolated { self.teardown() }
         }
-
-        let key = EventControllerKey()
-        key.onKeyPressed { [weak self] _, keyval, _, _ in
-            MainActor.assumeIsolated {
-                if Int32(keyval) == Gdk.keyEscape {
-                    self?.dismiss()
-                    return true
-                }
-                return false
-            }
-        }
-        popover.install(controller: key)
 
         let column = Box(orientation: .vertical, spacing: 0)
-        column.setSizeRequest(width: 460, height: 460)
-
         column.append(child: makeHeader())
         column.append(child: Separator(orientation: .horizontal))
 
@@ -91,32 +77,46 @@ final class AddressNotePopover {
         bodyHost = host
         column.append(child: host)
 
-        popover.set(child: column)
-        popover.set(parent: WidgetRef(anchor))
+        dialog.set(child: column)
 
-        let anchorHeight = max(1, Int(anchor.height))
-        var gdkRect = GdkRectangle(
-            x: gint(pointingX),
-            y: gint(anchorHeight / 2),
-            width: 1,
-            height: 1
-        )
-        withUnsafeMutablePointer(to: &gdkRect) { ptr in
-            popover.setPointingTo(rect: Gdk.RectangleRef(ptr))
-        }
-
-        self.popover = popover
+        self.dialog = dialog
 
         reloadNotes()
-        popover.popup()
+        observePendingActions()
+        dialog.present(parent: anchor)
+    }
+
+    private func observePendingActions() {
+        guard let engine else { return }
+        updatePendingActions((try? engine.store.fetchAllPendingMissionActions()) ?? [])
+        actionsObservation = engine.store.observeAllPendingMissionActions { [weak self] rows in
+            Task { @MainActor in self?.updatePendingActions(rows) }
+        }
+    }
+
+    private func updatePendingActions(_ rows: [MissionAction]) {
+        guard let engine else {
+            pendingActions = []
+            refreshApprovals()
+            return
+        }
+        pendingActions = rows.filter {
+            $0.sessionID == sessionID && engine.isAmbientMission($0.missionID)
+        }
+        refreshApprovals()
     }
 
     private func dismiss() {
-        guard let popover else { return }
+        teardown()
+    }
+
+    private func teardown() {
+        guard let dialog else { return }
         discardUnusedTransientNotes()
-        popover.popdown()
-        popover.unparent()
-        self.popover = nil
+        actionsObservation = nil
+        approvalsBox = nil
+        self.dialog = nil
+        _ = dialog.close()
         bodyHost = nil
         messagesBox = nil
         messagesScroll = nil
@@ -131,6 +131,9 @@ final class AddressNotePopover {
         switchButton = nil
         renameButton = nil
         deleteButton = nil
+        if AddressNotePopover.active === self {
+            AddressNotePopover.active = nil
+        }
     }
 
     private func makeHeader() -> Widget {
@@ -198,6 +201,17 @@ final class AddressNotePopover {
         }
         deleteButton = delBtn
         header.append(child: delBtn)
+
+        let closeBtn = Button()
+        let closeIcon = Gtk.Image(iconName: "window-close-symbolic")
+        closeIcon.pixelSize = 12
+        closeBtn.set(child: closeIcon)
+        closeBtn.add(cssClass: "flat")
+        closeBtn.tooltipText = "Close"
+        closeBtn.onClicked { [weak self] _ in
+            MainActor.assumeIsolated { self?.dismiss() }
+        }
+        header.append(child: closeBtn)
 
         return header
     }
@@ -345,10 +359,198 @@ final class AddressNotePopover {
             list.append(child: makeMessageRow(message))
         }
 
+        let approvals = Box(orientation: .vertical, spacing: 6)
+        approvals.marginStart = 12
+        approvals.marginEnd = 12
+        approvals.marginTop = 8
+        approvals.marginBottom = 8
+        approvals.add(cssClass: "luma-address-note-approvals")
+        approvalsBox = approvals
+        column.append(child: approvals)
+
         column.append(child: Separator(orientation: .horizontal))
         column.append(child: makeInputBar())
+        refreshApprovals()
         scrollToBottom()
         return column
+    }
+
+    private func refreshApprovals() {
+        guard let container = approvalsBox else { return }
+        while let child = container.firstChild {
+            container.remove(child: child)
+        }
+        container.visible = !pendingActions.isEmpty
+        for action in pendingActions {
+            if action.toolName == MissionTools.requestUserInputToolName {
+                container.append(child: makeRequestInputCard(action))
+            } else {
+                container.append(child: makeApprovalCard(action))
+            }
+        }
+    }
+
+    private func makeApprovalCard(_ action: MissionAction) -> Widget {
+        let card = Box(orientation: .vertical, spacing: 6)
+        card.add(cssClass: "card")
+        card.add(cssClass: "luma-mission-queue-card")
+
+        let inner = Box(orientation: .vertical, spacing: 6)
+        inner.marginStart = 12
+        inner.marginEnd = 12
+        inner.marginTop = 10
+        inner.marginBottom = 10
+        card.append(child: inner)
+
+        let header = Box(orientation: .horizontal, spacing: 8)
+        let icon = Gtk.Image(iconName: "applications-engineering-symbolic")
+        icon.pixelSize = 14
+        icon.add(cssClass: "accent")
+        header.append(child: icon)
+        let name = Label(str: action.toolName)
+        name.add(cssClass: "monospace")
+        name.add(cssClass: "heading")
+        name.halign = .start
+        name.hexpand = true
+        name.xalign = 0
+        header.append(child: name)
+        inner.append(child: header)
+
+        let args = parseArgs(action.argsJSON)
+        if let source = codeSource(toolName: action.toolName, args: args) {
+            inner.append(child: makeCodeView(source))
+        }
+        if let json = remainingArgsJSON(toolName: action.toolName, args: args) {
+            let jsonLabel = Label(str: json)
+            jsonLabel.add(cssClass: "monospace")
+            jsonLabel.add(cssClass: "caption")
+            jsonLabel.halign = .start
+            jsonLabel.xalign = 0
+            jsonLabel.wrap = true
+            jsonLabel.selectable = true
+            inner.append(child: jsonLabel)
+        }
+        if let rationale = action.rationale {
+            let r = Label(str: rationale)
+            r.add(cssClass: "dim-label")
+            r.halign = .start
+            r.xalign = 0
+            r.wrap = true
+            inner.append(child: r)
+        }
+
+        let buttons = Box(orientation: .horizontal, spacing: 6)
+        buttons.halign = .end
+        let rejectBtn = Button(label: "Reject")
+        rejectBtn.add(cssClass: "destructive-action")
+        rejectBtn.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let engine = self?.engine else { return }
+                Task { @MainActor in await engine.rejectMissionAction(actionID: action.id) }
+            }
+        }
+        let approveBtn = Button(label: "Approve")
+        approveBtn.add(cssClass: "suggested-action")
+        approveBtn.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let engine = self?.engine else { return }
+                Task { @MainActor in await engine.approveMissionAction(actionID: action.id) }
+            }
+        }
+        buttons.append(child: rejectBtn)
+        buttons.append(child: approveBtn)
+        inner.append(child: buttons)
+
+        return card
+    }
+
+    private func makeRequestInputCard(_ action: MissionAction) -> Widget {
+        let card = Box(orientation: .vertical, spacing: 8)
+        card.add(cssClass: "card")
+
+        let inner = Box(orientation: .vertical, spacing: 8)
+        inner.marginStart = 12
+        inner.marginEnd = 12
+        inner.marginTop = 10
+        inner.marginBottom = 10
+        card.append(child: inner)
+
+        let args = parseArgs(action.argsJSON)
+        let question = Label(str: (args["question"] as? String) ?? "(no question provided)")
+        question.wrap = true
+        question.halign = .start
+        question.xalign = 0
+        inner.append(child: question)
+
+        if let options = args["options"] as? [String], !options.isEmpty {
+            for option in options {
+                let button = Button(label: option)
+                button.onClicked { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        self?.engine?.submitUserInputResponse(actionID: action.id, answer: option)
+                    }
+                }
+                inner.append(child: button)
+            }
+        } else {
+            let entry = Entry()
+            entry.placeholderText = "Your answer"
+            inner.append(child: entry)
+            let submit = Button(label: "Submit")
+            submit.add(cssClass: "suggested-action")
+            submit.halign = .end
+            submit.onClicked { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.engine?.submitUserInputResponse(actionID: action.id, answer: entry.text ?? "")
+                }
+            }
+            inner.append(child: submit)
+        }
+
+        return card
+    }
+
+    private func makeCodeView(_ source: String) -> Widget {
+        let view = TextView()
+        view.editable = false
+        view.monospace = true
+        view.topMargin = 6
+        view.bottomMargin = 6
+        view.leftMargin = 8
+        view.rightMargin = 8
+        view.buffer?.set(text: source, len: Int(source.utf8.count))
+
+        let scroll = ScrolledWindow()
+        scroll.add(cssClass: "card")
+        scroll.setSizeRequest(width: -1, height: 160)
+        scroll.set(child: view)
+        return scroll
+    }
+
+    private func codeSource(toolName: String, args: [String: Any]) -> String? {
+        guard let field = engine?.missionTools.spec(named: toolName)?.codePreview?.field,
+            let source = args[field] as? String
+        else { return nil }
+        return source
+    }
+
+    private func remainingArgsJSON(toolName: String, args: [String: Any]) -> String? {
+        var stripped = args
+        if let field = engine?.missionTools.spec(named: toolName)?.codePreview?.field {
+            stripped.removeValue(forKey: field)
+        }
+        if stripped.isEmpty { return nil }
+        guard let data = try? JSONSerialization.data(withJSONObject: stripped, options: [.prettyPrinted, .sortedKeys]),
+            let json = String(data: data, encoding: .utf8)
+        else { return nil }
+        return json
+    }
+
+    private func parseArgs(_ json: String) -> [String: Any] {
+        guard let data = json.data(using: .utf8),
+            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return [:] }
+        return obj
     }
 
     private func makeMessageRow(_ message: AddressNoteMessage) -> Box {
@@ -691,6 +893,7 @@ final class AddressNotePopover {
         popover.autohide = true
         popover.position = .bottom
         popover.set(parent: anchor)
+        popover.onClosed { _ in MainActor.assumeIsolated { popover.unparent() } }
 
         let column = Box(orientation: .vertical, spacing: 8)
         column.marginStart = 12
@@ -788,6 +991,7 @@ final class AddressNotePopover {
         confirmation.autohide = true
         confirmation.position = .bottom
         confirmation.set(parent: anchor)
+        confirmation.onClosed { _ in MainActor.assumeIsolated { confirmation.unparent() } }
 
         let column = Box(orientation: .vertical, spacing: 8)
         column.marginStart = 12

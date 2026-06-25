@@ -42,11 +42,12 @@ struct GlobalActionQueueToolbarItem: View {
     }
 
     private func applyPending(_ rows: [MissionAction]) {
-        let wasEmpty = pending.isEmpty
+        let hadForeground = pending.contains { !engine.isAmbientMission($0.missionID) }
         pending = rows
-        if wasEmpty, !rows.isEmpty, !isPresented {
+        let hasForeground = rows.contains { !engine.isAmbientMission($0.missionID) }
+        if hasForeground, !hadForeground, !isPresented {
             isPresented = true
-        } else if !wasEmpty, rows.isEmpty, isPresented {
+        } else if rows.isEmpty, isPresented {
             isPresented = false
         }
     }

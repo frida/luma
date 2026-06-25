@@ -34,6 +34,7 @@ public final class Engine {
     private let missionExecutor: MissionExecutor
 
     private var activeNoteReplyTasks: [UUID: Task<AddressNoteMessage?, Never>] = [:]
+    private(set) public var noteReplyProgress: [UUID: NoteReplyProgress] = [:]
     private var missionLiveTextByID: [UUID: String] = [:]
     private var externalMissionLiveDeltaSink: (@MainActor (UUID, LLMTurnEvent) -> Void)?
 
@@ -424,6 +425,11 @@ public final class Engine {
         try? store.save(updated)
     }
 
+    public struct NoteReplyProgress: Equatable {
+        public let noteID: UUID
+        public var text: String
+    }
+
     public func requestAIReply(
         noteID: UUID,
         providerID: String,
@@ -455,6 +461,13 @@ public final class Engine {
 
         let thread = (try? store.fetchAddressNoteMessages(noteID: noteID)) ?? []
         guard !thread.isEmpty else { return nil }
+
+        noteReplyProgress[note.sessionID] = NoteReplyProgress(noteID: noteID, text: "")
+        defer { noteReplyProgress.removeValue(forKey: note.sessionID) }
+        let liveDelta: @MainActor (String) -> Void = { [weak self] delta in
+            self?.noteReplyProgress[note.sessionID]?.text += delta
+            onDelta?(delta)
+        }
 
         let mission = getOrCreateAmbientMission(
             sessionID: note.sessionID,
@@ -529,7 +542,7 @@ public final class Engine {
                     request: request,
                     apiKey: apiKey,
                     baseURL: baseURL,
-                    onDelta: onDelta
+                    onDelta: liveDelta
                 )
                 responseText += outcome.text
                 usage.inputTokens += outcome.usage.inputTokens
@@ -633,6 +646,14 @@ public final class Engine {
         sessionUIStates[sessionID] = state
         try? store.save(state)
         return mission
+    }
+
+    public func ambientMissionID(sessionID: UUID) -> UUID? {
+        sessionUIStates[sessionID]?.ambientMissionID
+    }
+
+    public func isAmbientMission(_ missionID: UUID) -> Bool {
+        sessionUIStates.values.contains { $0.ambientMissionID == missionID }
     }
 
     private static let noteTurnMaxIterations = 6
