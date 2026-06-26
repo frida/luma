@@ -711,7 +711,7 @@ final class CollaborationPanel {
             inviteRow.append(child: copyButton)
             inviteFrame.append(child: inviteRow)
 
-            let hint = Label(str: "Share this link to invite others to this notebook.")
+            let hint = Label(str: "Share this link to invite others to this lab.")
             hint.halign = .fill
             hint.hexpand = true
             hint.wrap = true

@@ -218,7 +218,7 @@ struct CollaborationPanel: View {
                             .accessibilityLabel("Copy invite link")
                         }
 
-                        Text("Share this link to invite others to this notebook.")
+                        Text("Share this link to invite others to this lab.")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .padding(.top, 2)
