@@ -74,6 +74,28 @@ The resulting app will be located at:
 
     build/Luma.app
 
+## Nix
+
+Luma provides a [Nix](https://nixos.org) flake for running and
+installing on Linux:
+
+```sh
+nix run github:frida/luma        # run Luma without installing
+nix shell github:frida/luma      # shell with luma in PATH
+nix build github:frida/luma      # build into the Nix store
+```
+
+The flake exposes an overlay so you can add Luma to your own Nix
+configuration:
+
+```nix
+inputs.luma.url = "github:frida/luma";
+nixpkgs.overlays = [ luma.overlays.default ];
+```
+
+After applying the overlay, `pkgs.luma` is available in your
+package set.
+
 ## Building the GTK frontend (Linux)
 
 ### Prerequisites (Fedora)
