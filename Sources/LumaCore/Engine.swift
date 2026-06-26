@@ -2489,6 +2489,54 @@ public final class Engine {
         return replValue(forR2Result: result)
     }
 
+    private static let maxRadare2Completions = 64
+
+    private func radare2REPLCompletions(forCode code: String, cursor: Int, sessionID: UUID) async -> [String] {
+        guard let disassembler = disassembler(forSessionID: sessionID) else { return [] }
+
+        let head = String(code.prefix(cursor))
+        let token = trailingToken(head)
+        guard !token.isEmpty else { return [] }
+
+        let atCommandPosition = head.dropLast(token.count).allSatisfy(\.isWhitespace)
+        if atCommandPosition {
+            return await commandCompletions(prefix: token, disassembler: disassembler)
+        }
+        return await flagCompletions(prefix: token, disassembler: disassembler)
+    }
+
+    private func commandCompletions(prefix: String, disassembler: Disassembler) async -> [String] {
+        let result = await disassembler.runCommand("\(prefix)?")
+        var seen: Set<String> = []
+        var names: [String] = []
+        for rawLine in result.output.split(separator: "\n") {
+            let line = StyledText.parseAnsi(String(rawLine)).plainText
+            guard line.hasPrefix("|") else { continue }
+            let entry = line.dropFirst().trimmingCharacters(in: .whitespaces)
+            guard let first = entry.split(separator: " ").first else { continue }
+            let name = String(first.prefix(while: isCompletionTokenCharacter))
+            guard name.hasPrefix(prefix), seen.insert(name).inserted else { continue }
+            names.append(name)
+        }
+        return Array(names.prefix(Self.maxRadare2Completions))
+    }
+
+    private func flagCompletions(prefix: String, disassembler: Disassembler) async -> [String] {
+        let result = await disassembler.runCommand("fq~\(prefix)")
+        let names = result.output.split(separator: "\n").map { String($0).trimmingCharacters(in: .whitespaces) }
+        let prefixMatches = names.filter { $0.hasPrefix(prefix) }
+        let chosen = prefixMatches.isEmpty ? names : prefixMatches
+        return Array(chosen.prefix(Self.maxRadare2Completions))
+    }
+
+    private func trailingToken(_ text: String) -> String {
+        String(text.reversed().prefix(while: isCompletionTokenCharacter).reversed())
+    }
+
+    private func isCompletionTokenCharacter(_ character: Character) -> Bool {
+        character.isLetter || character.isNumber || character == "." || character == "_" || character == "$"
+    }
+
     private func replValue(forR2Result result: R2CommandResult) -> REPLResult.Value {
         let output = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
         if !result.hasErrors, let structured = JSInspectValue.fromJSONText(output) {
@@ -5035,6 +5083,11 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         node.evaluateRadare2 = { [weak self] command in
             guard let self else { return .text("Session unavailable.") }
             return await self.radare2REPLValue(forCommand: command, sessionID: sessionID)
+        }
+
+        node.completeRadare2 = { [weak self] code, cursor in
+            guard let self else { return [] }
+            return await self.radare2REPLCompletions(forCode: code, cursor: cursor, sessionID: sessionID)
         }
 
         Task { @MainActor [weak self, weak node] in

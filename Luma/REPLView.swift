@@ -191,8 +191,9 @@ struct REPLView: View {
                         },
                         requestCompletions: { code, cursor in
                             guard let node = engine.node(forSessionID: sessionID) else { return [] as [String] }
-                            return await node.completeInREPL(code: code, cursor: cursor)
-                        }
+                            return await node.completeInREPL(code: code, cursor: cursor, language: mode)
+                        },
+                        language: mode
                     )
                     .frame(minHeight: 22)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -205,7 +206,8 @@ struct REPLView: View {
                             onCommit: { _ in },
                             onHistoryUp: {},
                             onHistoryDown: {},
-                            requestCompletions: { _, _ in [] as [String] }
+                            requestCompletions: { _, _ in [] as [String] },
+                            language: .javascript
                         )
                         .disabled(true)
                         .opacity(0.35)
@@ -552,6 +554,7 @@ private struct REPLInputField: View {
     let onHistoryUp: () -> Void
     let onHistoryDown: () -> Void
     let requestCompletions: (String, Int) async -> [String]
+    let language: LumaCore.REPLLanguage
 
     var body: some View {
         #if canImport(AppKit)
@@ -561,7 +564,8 @@ private struct REPLInputField: View {
                 onCommit: onCommit,
                 onHistoryUp: onHistoryUp,
                 onHistoryDown: onHistoryDown,
-                requestCompletions: requestCompletions
+                requestCompletions: requestCompletions,
+                language: language
             )
         #else
             TextField("", text: $text, axis: .horizontal)
@@ -590,6 +594,7 @@ private struct REPLInputField: View {
         let onHistoryDown: () -> Void
 
         let requestCompletions: (String, Int) async -> [String]
+        let language: LumaCore.REPLLanguage
 
         func makeCoordinator() -> Coordinator {
             Coordinator(self)
@@ -619,6 +624,8 @@ private struct REPLInputField: View {
         }
 
         func updateNSView(_ nsView: NSTextField, context: Context) {
+            context.coordinator.parent = self
+
             if text != context.coordinator.lastSyncedText {
                 context.coordinator.lastSyncedText = text
                 if nsView.stringValue != text {
@@ -803,6 +810,10 @@ private struct REPLInputField: View {
                 let after = nsText.substring(from: end)
 
                 let symbol: String = item.representedValue
+
+                if parent.language == .r2 {
+                    return before + symbol + after
+                }
 
                 let newToken: String
                 if let dotIndex = token.lastIndex(of: ".") {

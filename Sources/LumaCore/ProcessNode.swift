@@ -863,7 +863,18 @@ public final class ProcessNode: Identifiable {
         #endif
     }
 
-    public func completeInREPL(code: String, cursor: Int) async -> [String] {
+    public var completeRadare2: ((String, Int) async -> [String])!
+
+    public func completeInREPL(code: String, cursor: Int, language: REPLLanguage = .javascript) async -> [String] {
+        switch language {
+        case .javascript:
+            return await completeJavaScript(code: code, cursor: cursor)
+        case .r2:
+            return await completeRadare2(code, cursor)
+        }
+    }
+
+    private func completeJavaScript(code: String, cursor: Int) async -> [String] {
         do {
             let anyResult = try await script.exports.complete(code, cursor)
 
