@@ -30,7 +30,7 @@ public final class TraceDisassembler {
         if !withFlags {
             await r2.config.set("asm.flags", bool: false)
         }
-        var raw = await r2.cmd("pD \(size) @ 0x\(String(address, radix: 16))")
+        var raw = await r2.cmd("pD \(size) @ 0x\(String(address, radix: 16))").output ?? ""
         if !withFlags {
             await r2.config.set("asm.flags", bool: true)
         }
@@ -40,7 +40,7 @@ public final class TraceDisassembler {
 
     public func instructionAddresses(at address: UInt64, size: Int) async -> [UInt64] {
         await ensureOpened()
-        let raw = await r2.cmd("pDj \(size) @ 0x\(String(address, radix: 16))")
+        let raw = await r2.cmd("pDj \(size) @ 0x\(String(address, radix: 16))").output ?? ""
         guard let data = raw.data(using: .utf8),
             let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
         else { return [] }

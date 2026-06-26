@@ -99,7 +99,7 @@ public final class Disassembler {
         if let bounded = await disassembleFunctionIfStart(at: request.address, hex: hex) {
             return DisassemblyPage(lines: bounded, scope: .function)
         }
-        let out = await r2.cmd("pdJ \(request.count) @ 0x\(hex)")
+        let out = await r2.cmd("pdJ \(request.count) @ 0x\(hex)").output ?? ""
         return DisassemblyPage(lines: decodeOps(out), scope: .span)
     }
 
@@ -108,7 +108,7 @@ public final class Disassembler {
             let end = await fetchFunctionEnd(hex: hex), end > begin
         else { return nil }
         let bytes = end &- begin
-        let out = await r2.cmd("pDJ \(bytes) @ 0x\(hex)")
+        let out = await r2.cmd("pDJ \(bytes) @ 0x\(hex)").output ?? ""
         guard let ops = try? JSONDecoder().decode([R2DisasmOp].self, from: Data(out.utf8)) else {
             return nil
         }
@@ -120,9 +120,9 @@ public final class Disassembler {
     }
 
 private func fetchFunctionEnd(hex: String) async -> UInt64? {
-        let result = await r2.cmdWithLogs("?v $FE @ 0x\(hex)")
+        let result = await r2.cmd("?v $FE @ 0x\(hex)")
         if result.hasErrors { return nil }
-        let raw = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        let raw = (result.output ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard let value = parseHex(raw), value != 0 else { return nil }
         return value
     }
@@ -136,7 +136,7 @@ private func fetchFunctionEnd(hex: String) async -> UInt64? {
 
     public func runCommand(_ command: String) async -> R2CommandResult {
         await ensureOpened()
-        return await r2.cmdWithLogs(command)
+        return await r2.cmd(command)
     }
 
     public func findFunctionStart(containing address: UInt64) async -> UInt64? {
@@ -289,7 +289,7 @@ private func fetchFunctionEnd(hex: String) async -> UInt64? {
     }
 
     private func harvestPreludeFunctions(module: ProcessModule, into functions: inout [ModuleAnalysis.Function]) async {
-        let raw = await r2.cmd("aflj")
+        let raw = await r2.cmd("aflj").output ?? ""
         guard let entries = try? JSONDecoder().decode([R2FunctionEntry].self, from: Data(raw.utf8)) else { return }
         let lo = module.base
         let hi = module.base &+ module.size
@@ -307,7 +307,7 @@ private func fetchFunctionEnd(hex: String) async -> UInt64? {
     private func harvestBasicBlocks(module: ProcessModule, into functions: inout [ModuleAnalysis.Function]) async {
         for index in functions.indices {
             let entry = module.base &+ functions[index].offset
-            let raw = await r2.cmd("afbj @ 0x\(String(entry, radix: 16))")
+            let raw = await r2.cmd("afbj @ 0x\(String(entry, radix: 16))").output ?? ""
             guard let entries = try? JSONDecoder().decode([R2BasicBlockEntry].self, from: Data(raw.utf8)) else { continue }
             functions[index].blocks = entries
                 .compactMap { block -> ModuleAnalysis.Function.Block? in
@@ -333,9 +333,9 @@ private func fetchFunctionEnd(hex: String) async -> UInt64? {
     }
 
     private func fetchFunctionBegin(hex: String) async -> UInt64? {
-        let result = await r2.cmdWithLogs("?v $FB @ 0x\(hex)")
+        let result = await r2.cmd("?v $FB @ 0x\(hex)")
         if result.hasErrors { return nil }
-        let raw = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        let raw = (result.output ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard let value = parseHex(raw), value != 0 else { return nil }
         return value
     }
@@ -352,7 +352,7 @@ private func fetchFunctionEnd(hex: String) async -> UInt64? {
         await ensureOpened()
         let hex = String(address, radix: 16)
         await r2.cmd("af @ 0x\(hex)")
-        return await r2.cmdWithLogs("pdc @ 0x\(hex)")
+        return await r2.cmd("pdc @ 0x\(hex)")
     }
 
     private func ensureOpened() async {

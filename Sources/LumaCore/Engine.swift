@@ -853,7 +853,7 @@ public final class Engine {
             let disasm = lines64.map {
                 String(format: "0x%llx", $0.address) + "  " + $0.asmText.plainText
             }.joined(separator: "\n")
-            let pdc = await dis.decompile(at: address).output
+            let pdc = await dis.decompile(at: address).output ?? ""
             lines.append("")
             lines.append("Disassembly window:")
             lines.append(disasm)
@@ -2523,7 +2523,7 @@ public final class Engine {
 
     private func evalCompletions(prefix: String, disassembler: Disassembler) async -> [REPLCompletion] {
         let result = await disassembler.runCommand("e?j")
-        guard let data = result.output.data(using: .utf8),
+        guard let data = result.output?.data(using: .utf8),
             let variables = try? JSONDecoder().decode([R2EvalVariable].self, from: data)
         else { return [] }
         return variables
@@ -2534,7 +2534,7 @@ public final class Engine {
 
     private func flagspaceCompletions(prefix: String, disassembler: Disassembler) async -> [REPLCompletion] {
         let result = await disassembler.runCommand("fsq")
-        return result.output
+        return (result.output ?? "")
             .split(separator: "\n")
             .map { String($0).trimmingCharacters(in: .whitespaces) }
             .filter { $0.hasPrefix(prefix) }
@@ -2546,7 +2546,7 @@ public final class Engine {
         let result = await disassembler.runCommand("\(prefix)?")
         var seen: Set<String> = []
         var entries: [(name: String, signature: String, description: String)] = []
-        for rawLine in result.output.split(separator: "\n") {
+        for rawLine in (result.output ?? "").split(separator: "\n") {
             let line = StyledText.parseAnsi(String(rawLine)).plainText
             guard line.hasPrefix("|") else { continue }
             let entry = line.dropFirst().trimmingCharacters(in: .whitespaces)
@@ -2575,7 +2575,7 @@ public final class Engine {
 
     private func flagCompletions(prefix: String, disassembler: Disassembler) async -> [REPLCompletion] {
         let result = await disassembler.runCommand("fq~\(prefix)")
-        let names = result.output.split(separator: "\n").map { String($0).trimmingCharacters(in: .whitespaces) }
+        let names = (result.output ?? "").split(separator: "\n").map { String($0).trimmingCharacters(in: .whitespaces) }
         let prefixMatches = names.filter { $0.hasPrefix(prefix) }
         let chosen = prefixMatches.isEmpty ? names : prefixMatches
         return Array(chosen.prefix(Self.maxRadare2Completions)).map(REPLCompletion.init)
@@ -2604,11 +2604,12 @@ public final class Engine {
     }
 
     private func replValue(forR2Result result: R2CommandResult) -> REPLResult.Value {
-        if !result.hasErrors, let structured = JSInspectValue.fromJSONText(result.output) {
+        let output = result.output ?? ""
+        if !result.hasErrors, let structured = JSInspectValue.fromJSONText(output) {
             return .js(structured)
         }
-        let output = String(result.output.reversed().drop(while: \.isNewline).reversed())
-        return .styled(StyledText.parseAnsi(combine(output, errors: result.errors)))
+        let trimmed = String(output.reversed().drop(while: \.isNewline).reversed())
+        return .styled(StyledText.parseAnsi(combine(trimmed, errors: result.errors)))
     }
 
     private func combine(_ output: String, errors: [R2LogEntry]) -> String {
