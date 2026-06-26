@@ -453,6 +453,15 @@ private struct REPLCellView: View {
     let engine: Engine
     @Binding var selection: SidebarItemID?
 
+    private var isResultEmpty: Bool {
+        switch cell.result {
+        case .text(let s): return s.isEmpty
+        case .styled(let s): return s.isEmpty
+        case .js(let v): return v == .undefined
+        case .binary(let data, _): return data.isEmpty
+        }
+    }
+
     var body: some View {
         if cell.isSessionBoundary {
             HStack(spacing: 8) {
@@ -489,33 +498,35 @@ private struct REPLCellView: View {
                         .help(cell.timestamp.formatted())
                 }
 
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("←")
-                        .foregroundStyle(.secondary)
+                if !isResultEmpty {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("←")
+                            .foregroundStyle(.secondary)
 
-                    switch cell.result {
-                    case .text(let s):
-                        Text(DisplayTruncation.truncated(s))
-                            .textSelection(.enabled)
+                        switch cell.result {
+                        case .text(let s):
+                            Text(DisplayTruncation.truncated(s))
+                                .textSelection(.enabled)
 
-                    case .styled(let s):
-                        Text(DisplayTruncation.truncated(s).attributed)
-                            .textSelection(.enabled)
+                        case .styled(let s):
+                            Text(DisplayTruncation.truncated(s).attributed)
+                                .textSelection(.enabled)
 
-                    case .js(let v):
-                        JSInspectValueView(
-                            value: v,
-                            sessionID: sessionID,
-                            engine: engine,
-                            selection: $selection
-                        )
+                        case .js(let v):
+                            JSInspectValueView(
+                                value: v,
+                                sessionID: sessionID,
+                                engine: engine,
+                                selection: $selection
+                            )
 
-                    case .binary(let data, _):
-                        HexView(data: data)
-                            .fixedSize(horizontal: false, vertical: true)
+                        case .binary(let data, _):
+                            HexView(data: data)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
+                    .font(.system(.caption, design: .monospaced))
                 }
-                .font(.system(.caption, design: .monospaced))
             }
             .padding(.bottom, 4)
             .contentShape(Rectangle())
