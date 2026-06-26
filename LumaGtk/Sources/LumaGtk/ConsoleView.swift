@@ -49,6 +49,10 @@ final class ConsoleView {
     private var completionItems: [REPLCompletion] = []
     private var completionBaseCode: String = ""
 
+    private var wantBottom = true
+    private var autoScrolling = false
+    private var scrollPending = false
+
     init(style: Style, emptyState: Widget) {
         self.style = style
         self.emptyState = emptyState
@@ -113,7 +117,19 @@ final class ConsoleView {
             hasEntries = true
         }
         cellsBox.append(child: child)
-        scrollToBottomSoon()
+        wantBottom = true
+    }
+
+    private func scheduleBottomScroll() {
+        guard !scrollPending else { return }
+        scrollPending = true
+        Task { @MainActor in
+            self.scrollPending = false
+            guard self.wantBottom, let adj = self.cellsScroll.vadjustment else { return }
+            self.autoScrolling = true
+            adj.value = adj.upper - adj.pageSize
+            self.autoScrolling = false
+        }
     }
 
     func clearEntries() {
@@ -175,6 +191,21 @@ final class ConsoleView {
             MainActor.assumeIsolated { self?.onPromptClicked?() }
         }
         prompt.install(controller: promptClick)
+
+        if let vadj = cellsScroll.vadjustment {
+            vadj.onChanged { [weak self] adj in
+                MainActor.assumeIsolated {
+                    guard let self, self.wantBottom else { return }
+                    self.scheduleBottomScroll()
+                }
+            }
+            vadj.onValueChanged { [weak self] adj in
+                MainActor.assumeIsolated {
+                    guard let self, !self.autoScrolling else { return }
+                    self.wantBottom = (adj.upper - (adj.value + adj.pageSize)) < 2.0
+                }
+            }
+        }
 
         let keyController = EventControllerKey()
         keyController.propagationPhase = GTK_PHASE_CAPTURE
@@ -368,6 +399,7 @@ final class ConsoleView {
             let title = Label(str: suggestion.displayText)
             title.add(cssClass: "monospace")
             title.halign = .start
+            title.xalign = 0
             titleGroup.add(widget: title)
             line.append(child: title)
             if let detail = suggestion.detailText {
@@ -519,15 +551,6 @@ final class ConsoleView {
         }
     }
 
-    private func scrollToBottomSoon() {
-        Task { @MainActor in
-            guard let adj = cellsScroll.vadjustment else { return }
-            let target = adj.upper - adj.pageSize
-            if target > adj.value {
-                adj.value = target
-            }
-        }
-    }
 
     private func clearChildren(of container: Box) {
         var child = container.firstChild
