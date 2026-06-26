@@ -1402,7 +1402,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}\r2-prefix
-          key: ${{ runner.os }}-${{ matrix.win_arch }}-radare2-${{ env.RADARE2_REF }}-v3
+          key: ${{ runner.os }}-${{ matrix.win_arch }}-radare2-${{ env.RADARE2_REF }}-v4
 
       - name: Build radare2 (shared)
         if: steps.r2-cache.outputs.cache-hit != 'true'
@@ -1411,7 +1411,7 @@ jobs:
           Push-Location $env:RUNNER_TEMP\radare2
           git checkout $env:RADARE2_REF
           $env:CFLAGS = "/D_Static_assert=static_assert /std:c11"
-          meson setup build "--prefix=$env:RUNNER_TEMP\r2-prefix" --default-library=shared -Dcli=disabled
+          meson setup build "--prefix=$env:RUNNER_TEMP\r2-prefix" --buildtype=release --default-library=shared -Dcli=disabled
           meson compile -C build
           meson install -C build
           Get-ChildItem "$env:RUNNER_TEMP\r2-prefix\lib\pkgconfig\*.pc" | ForEach-Object {
@@ -1425,7 +1425,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}\r2-prefix
-          key: ${{ runner.os }}-${{ matrix.win_arch }}-radare2-${{ env.RADARE2_REF }}-v3
+          key: ${{ runner.os }}-${{ matrix.win_arch }}-radare2-${{ env.RADARE2_REF }}-v4
 
       - name: Update environment
         shell: bash
