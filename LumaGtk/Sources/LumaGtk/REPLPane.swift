@@ -300,6 +300,7 @@ final class REPLPane {
         let prompt = Label(str: "")
         prompt.add(cssClass: "monospace")
         prompt.useMarkup = true
+        prompt.valign = .start
         prompt.setMarkup(str: Self.promptMarkup(for: cell.language))
         codeRow.append(child: prompt)
         let codeLabel = Label(str: cell.code)
@@ -313,6 +314,8 @@ final class REPLPane {
         codeScroll.setPolicy(hscrollbarPolicy: GTK_POLICY_AUTOMATIC, vscrollbarPolicy: GTK_POLICY_NEVER)
         codeScroll.propagateNaturalHeight = true
         codeScroll.hexpand = true
+        codeScroll.vexpand = false
+        codeScroll.valign = .start
         codeScroll.set(child: codeLabel)
         codeRow.append(child: codeScroll)
         column.append(child: codeRow)
@@ -327,6 +330,7 @@ final class REPLPane {
             resultRow.append(child: resultArrow)
 
             let resultWidget: Widget
+            var fillsWidth = false
             switch cell.result {
             case .js(let value):
                 if let engine {
@@ -340,6 +344,7 @@ final class REPLPane {
                 let view = REPLStyledResult(styled)
                 rowKeepers.append(view)
                 resultWidget = view.widget
+                fillsWidth = true
             case .binary(let data, let meta):
                 let column2 = Box(orientation: .vertical, spacing: 4)
                 column2.hexpand = true
@@ -360,9 +365,10 @@ final class REPLPane {
                 let view = REPLStyledResult(LumaCore.StyledText(s))
                 rowKeepers.append(view)
                 resultWidget = view.widget
+                fillsWidth = true
             }
             resultWidget.hexpand = true
-            resultWidget.halign = .fill
+            resultWidget.halign = fillsWidth ? .fill : .start
             resultRow.append(child: resultWidget)
             column.append(child: resultRow)
         }

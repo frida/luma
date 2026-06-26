@@ -59,7 +59,7 @@ final class ConsoleView {
         widget.vexpand = true
 
         cellsBox = Box(orientation: .vertical, spacing: 4)
-        cellsBox.marginStart = 16
+        cellsBox.marginStart = 12
         cellsBox.marginEnd = 16
         cellsBox.marginTop = 12
         cellsBox.marginBottom = 12

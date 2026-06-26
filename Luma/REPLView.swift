@@ -179,7 +179,7 @@ struct REPLView: View {
                     toggleMode()
                 } label: {
                     Text(mode.promptGlyph)
-                        .font(.system(.body, design: .monospaced))
+                        .font(.system(size: 13, design: .monospaced))
                         .foregroundStyle(mode.promptColor)
                 }
                 .buttonStyle(.plain)
@@ -471,6 +471,13 @@ private struct REPLCellView: View {
         }
     }
 
+    private var resultAlignment: VerticalAlignment {
+        switch cell.result {
+        case .text, .styled: return .top
+        case .js, .binary: return .firstTextBaseline
+        }
+    }
+
     var body: some View {
         if cell.isSessionBoundary {
             HStack(spacing: 8) {
@@ -491,7 +498,7 @@ private struct REPLCellView: View {
             .padding(.vertical, 4)
         } else {
             VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                HStack(alignment: .top, spacing: 6) {
                     Text(cell.language.promptGlyph)
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(cell.language.promptColor)
@@ -510,7 +517,7 @@ private struct REPLCellView: View {
                 }
 
                 if !isResultEmpty {
-                    HStack(alignment: .top, spacing: 6) {
+                    HStack(alignment: resultAlignment, spacing: 6) {
                         Text("←")
                             .foregroundStyle(.secondary)
 
