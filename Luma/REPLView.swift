@@ -50,6 +50,10 @@ struct REPLView: View {
         cells.sorted { $0.timestamp < $1.timestamp }
     }
 
+    private var commandHistory: [LumaCore.REPLCell] {
+        orderedCells.filter { !$0.isSessionBoundary }
+    }
+
     private var replInactiveMessage: String {
         guard let session else { return "Session not attached." }
         if case .armed = session.armingState {
@@ -245,7 +249,7 @@ struct REPLView: View {
                 isInputFocused = node != nil
 
                 if !historyCursorInitialized {
-                    historyCursor = orderedCells.count
+                    historyCursor = commandHistory.count
                     historyCursorInitialized = true
                 }
             }
@@ -300,12 +304,12 @@ struct REPLView: View {
                 cellID: cellID
             )
             reloadCells()
-            historyCursor = orderedCells.count
+            historyCursor = commandHistory.count
         } else if let node {
             Task { @MainActor in
                 await node.evalInREPL(code)
                 reloadCells()
-                historyCursor = orderedCells.count
+                historyCursor = commandHistory.count
             }
         }
 
@@ -313,7 +317,7 @@ struct REPLView: View {
     }
 
     private func historyPrevious() {
-        let history = orderedCells
+        let history = commandHistory
         guard !history.isEmpty else {
             return
         }
@@ -326,7 +330,7 @@ struct REPLView: View {
     }
 
     private func historyNext() {
-        let history = orderedCells
+        let history = commandHistory
         guard !history.isEmpty else {
             return
         }
