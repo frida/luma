@@ -437,7 +437,7 @@ private struct REPLEmptyState: View {
             tip("Type an expression and press Return to evaluate it.")
             tip("Click the prompt — or type :js / :r2 — to switch between JavaScript and radare2.")
             tip("In JavaScript, try Process.mainModule or Process.enumerateModules().")
-            tip("In r2 mode, run commands like pdf, afl, or px 64.")
+            tip("In r2 mode, the seek starts at the main module — try x for a hexdump, or afl to list functions.")
             tip("Step through previous expressions with ↑ and ↓.")
         }
         .font(.callout)

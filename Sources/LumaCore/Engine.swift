@@ -2145,6 +2145,7 @@ public final class Engine {
                     $0.processInfo = storedInfo
                     $0.lastKnownMainModule = mainModule
                 }
+                seedReplSeekToMainModule(sessionID: s.id)
                 collaboration.enqueueUpdateProcessInfo(sessionID: s.id, info: storedInfo)
             }
 
@@ -2676,14 +2677,25 @@ public final class Engine {
     }
 
     private func restoreReplSeek(sessionID: UUID) {
+        guard let seekAnchor = replSeekAnchor(forSessionID: sessionID) else { return }
         guard seekRestoredSessions.insert(sessionID).inserted else { return }
         guard let disassembler = disassembler(forSessionID: sessionID) else { return }
-        guard let seekAnchor = replSeekAnchor(forSessionID: sessionID) else { return }
 
         Task(priority: .utility) { @MainActor in
             if let address = await self.resolve(sessionID: sessionID, anchor: seekAnchor) {
                 await disassembler.seek(to: address)
             }
+        }
+    }
+
+    private func seedReplSeekToMainModule(sessionID: UUID) {
+        guard replSeekAnchor(forSessionID: sessionID) == nil else { return }
+        guard seekRestoredSessions.insert(sessionID).inserted else { return }
+        guard let base = session(id: sessionID)?.lastKnownMainModule?.base else { return }
+        guard let disassembler = disassembler(forSessionID: sessionID) else { return }
+
+        Task(priority: .utility) { @MainActor in
+            await disassembler.seek(to: base)
         }
     }
 
