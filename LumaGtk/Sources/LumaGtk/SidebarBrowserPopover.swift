@@ -52,8 +52,8 @@ final class SidebarBrowserPopover<Item> {
         let popover = Popover()
         popover.autohide = true
         popover.position = .right
-        popover.onClosed { _ in
-            MainActor.assumeIsolated { self.retainer = nil }
+        popover.onClosed { [weak self] _ in
+            MainActor.assumeIsolated { self?.cleanup() }
         }
 
         let key = EventControllerKey()
@@ -86,6 +86,9 @@ final class SidebarBrowserPopover<Item> {
         }
         searchEntry.onActivate { [weak self] _ in
             MainActor.assumeIsolated { self?.chooseFirstMatch() }
+        }
+        searchEntry.onStopSearch { [weak self] _ in
+            MainActor.assumeIsolated { self?.dismiss() }
         }
         column.append(child: searchEntry)
 
@@ -219,10 +222,14 @@ final class SidebarBrowserPopover<Item> {
     }
 
     private func dismiss() {
-        guard let popover else { return }
-        popover.popdown()
-        popover.unparent()
-        self.popover = nil
+        popover?.popdown()
+        cleanup()
+    }
+
+    private func cleanup() {
+        popover?.unparent()
+        popover = nil
         listBox = nil
+        retainer = nil
     }
 }

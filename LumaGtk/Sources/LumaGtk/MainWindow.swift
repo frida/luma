@@ -1141,6 +1141,23 @@ final class MainWindow: InstrumentUIHost {
                 }
             }
         }
+        sessionsList.onRowActivated { [weak self] _, row in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let index = Int(row.index)
+                guard index >= 0, index < self.sessionsRowKinds.count else { return }
+                switch self.sessionsRowKinds[index] {
+                case .moduleChild(let sid, let key) where key == "browse":
+                    self.activateGroupChild(sessionID: sid, group: .modules, key: key)
+                case .threadChild(let sid, let key) where key == "browse":
+                    self.activateGroupChild(sessionID: sid, group: .threads, key: key)
+                case .instrumentChild(let sid, let iid, let key) where key == "browse":
+                    self.activateInstrumentChild(sessionID: sid, instrumentID: iid, key: key)
+                default:
+                    break
+                }
+            }
+        }
 
         let headerLabel = Label(str: "Sessions (0)")
         headerLabel.halign = .start
@@ -2301,6 +2318,12 @@ final class MainWindow: InstrumentUIHost {
             packagesList.unselectAll()
             customInstrumentsList.unselectAll()
             missionsListBox.unselectAll()
+            if case .module(let sid, _) = newValue {
+                reconcileGroupChildren(sessionID: sid, group: .modules)
+            }
+            if case .thread(let sid, _) = newValue {
+                reconcileGroupChildren(sessionID: sid, group: .threads)
+            }
             if let idx = currentSelectionRowIndex(),
                 let row = sessionsList.getRowAt(index: idx)
             {

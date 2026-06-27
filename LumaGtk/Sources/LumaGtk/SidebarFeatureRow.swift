@@ -40,7 +40,9 @@ enum SidebarFeatureRow {
         icon.hexpand = true
         icon.halign = .center
         icon.add(cssClass: "dim-label")
-        return make(icon: icon, title: "Browse all \(totalCount)\u{2026}", titleDimmed: true)
+        let result = make(icon: icon, title: "Browse all \(totalCount)\u{2026}", titleDimmed: true)
+        result.row.selectable = false
+        return result
     }
 
     private static func makeGrandchildRowBox() -> (rowBox: Box, iconHost: Box) {
