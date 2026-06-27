@@ -118,6 +118,10 @@ final class ConsoleView {
         scroller.pin()
     }
 
+    func pinToBottom() {
+        scroller.pin()
+    }
+
     func clearEntries() {
         clearChildren(of: cellsBox)
         hasEntries = false

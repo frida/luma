@@ -14,13 +14,15 @@ final class REPLStyledResult {
     private var revealed: Int
     private let label: Label
     private let buttonRow: Box
+    private let onExpand: () -> Void
 
     private static let chunk = 4096
 
-    init(_ styled: StyledText) {
+    init(_ styled: StyledText, onExpand: @escaping () -> Void) {
         self.styled = styled
         self.total = styled.plainText.count
         self.revealed = min(Self.chunk, total)
+        self.onExpand = onExpand
 
         widget = Box(orientation: .vertical, spacing: 2)
         widget.hexpand = true
@@ -69,11 +71,13 @@ final class REPLStyledResult {
     private func revealMore() {
         revealed = min(revealed + Self.chunk, total)
         render()
+        onExpand()
     }
 
     private func revealAll() {
         revealed = total
         render()
+        onExpand()
     }
 
     private func render() {

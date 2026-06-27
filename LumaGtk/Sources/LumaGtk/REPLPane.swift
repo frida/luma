@@ -341,14 +341,16 @@ final class REPLPane {
             switch cell.result {
             case .js(let value):
                 if let engine {
-                    let wrapper = JSInspectValueWidget.make(value: value, engine: engine, sessionID: sessionID)
+                    let wrapper = JSInspectValueWidget.make(value: value, engine: engine, sessionID: sessionID) { [weak self] in
+                        self?.console.pinToBottom()
+                    }
                     rowKeepers.append(wrapper)
                     resultWidget = wrapper.widget
                 } else {
                     resultWidget = makePlainResultLabel(text: format(result: cell.result))
                 }
             case .styled(let styled):
-                let view = REPLStyledResult(styled)
+                let view = REPLStyledResult(styled) { [weak self] in self?.console.pinToBottom() }
                 rowKeepers.append(view)
                 resultWidget = view.widget
                 fillsWidth = true
@@ -369,7 +371,7 @@ final class REPLPane {
                 column2.append(child: hex.widget)
                 resultWidget = column2
             case .text(let s):
-                let view = REPLStyledResult(LumaCore.StyledText(s))
+                let view = REPLStyledResult(LumaCore.StyledText(s)) { [weak self] in self?.console.pinToBottom() }
                 rowKeepers.append(view)
                 resultWidget = view.widget
                 fillsWidth = true

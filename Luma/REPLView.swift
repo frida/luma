@@ -36,6 +36,7 @@ struct REPLView: View {
 
     @State private var cells: [LumaCore.REPLCell] = []
     @State private var cellsObservation: StoreObservation?
+    @State private var expandTick = 0
 
     private var session: LumaCore.ProcessSession? {
         engine.sessions.first { $0.id == sessionID }
@@ -155,11 +156,15 @@ struct REPLView: View {
                                 .frame(height: 2)
                                 .id("repl-bottom-anchor")
                         }
+                        .environment(\.replExpandAction, { expandTick += 1 })
                         .onAppear {
                             reloadCells()
                             scrollToBottom(proxy: proxy)
                         }
                         .onChange(of: cells.count) {
+                            scrollToBottom(proxy: proxy)
+                        }
+                        .onChange(of: expandTick) {
                             scrollToBottom(proxy: proxy)
                         }
                     }
@@ -602,6 +607,7 @@ private struct REPLResultText: View {
 
     private static let chunk = 4096
     @State private var revealed = REPLResultText.chunk
+    @Environment(\.replExpandAction) private var onExpand
 
     var body: some View {
         let total = styled.plainText.count
@@ -614,8 +620,8 @@ private struct REPLResultText: View {
             }
             if shown < total {
                 HStack(spacing: 12) {
-                    Button("Show more") { revealed = min(revealed + Self.chunk, total) }
-                    Button("Show all") { revealed = total }
+                    Button("Show more") { revealed = min(revealed + Self.chunk, total); onExpand() }
+                    Button("Show all") { revealed = total; onExpand() }
                 }
                 .font(.caption2)
                 .platformLinkButtonStyle()
@@ -968,3 +974,14 @@ private struct REPLInputField: View {
     }
 
 #endif
+
+private struct REPLExpandActionKey: EnvironmentKey {
+    static let defaultValue: () -> Void = {}
+}
+
+extension EnvironmentValues {
+    var replExpandAction: () -> Void {
+        get { self[REPLExpandActionKey.self] }
+        set { self[REPLExpandActionKey.self] = newValue }
+    }
+}

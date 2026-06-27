@@ -86,6 +86,7 @@ private struct JSInspectNodeView: View {
     @State private var isExpanded: Bool
     @State private var childLimit: Int = Self.chunkSize
 
+    @Environment(\.replExpandAction) private var onExpand
     @Environment(\.errorPresenter) private var errorPresenter
     @Environment(\.circularTargets) private var circularTargets
     @EnvironmentObject private var anchorStore: CircularAnchorStore
@@ -165,6 +166,7 @@ private struct JSInspectNodeView: View {
         let next = min(Self.chunkSize, remaining)
         return Button("Show \(next) more (\(remaining) \(noun) left)…") {
             childLimit = min(childLimit + Self.chunkSize, total)
+            onExpand()
         }
         .platformLinkButtonStyle()
     }
