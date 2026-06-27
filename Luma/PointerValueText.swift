@@ -31,7 +31,6 @@ extension View {
         address: UInt64,
         context: AddressContext = AddressContext(),
         copyTitle: String = "Copy",
-        keepsTextSelectable: Bool = false,
         selection: Binding<SidebarItemID?>,
         @ViewBuilder extraItems: @escaping () -> Extra = { EmptyView() }
     ) -> some View {
@@ -43,7 +42,6 @@ extension View {
                 address: address,
                 context: context,
                 copyTitle: copyTitle,
-                keepsTextSelectable: keepsTextSelectable,
                 selection: selection,
                 extraItems: extraItems
             )
@@ -58,28 +56,19 @@ private struct PointerActions<Extra: View>: ViewModifier {
     let address: UInt64
     let context: AddressContext
     let copyTitle: String
-    let keepsTextSelectable: Bool
     @Binding var selection: SidebarItemID?
     @ViewBuilder let extraItems: () -> Extra
 
     @State private var facts: AddressFacts?
 
     func body(content: Content) -> some View {
-        selectable(content)
+        content
+            .textSelection(.disabled)
             .onHover { hovering in
                 guard hovering, facts == nil else { return }
                 Task { facts = await engine.addressFacts(sessionID: sessionID, address: address, context: context) }
             }
             .contextMenu { menu }
-    }
-
-    @ViewBuilder
-    private func selectable(_ content: Content) -> some View {
-        if keepsTextSelectable {
-            content.textSelection(.enabled)
-        } else {
-            content.textSelection(.disabled)
-        }
     }
 
     private var factsKey: FactsKey {

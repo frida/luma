@@ -709,7 +709,6 @@ private struct DisassemblyAsmText: View {
                             value: String(format: "0x%llx", address),
                             address: address,
                             copyTitle: "Copy Address",
-                            keepsTextSelectable: true,
                             selection: $selection
                         )
                 } else {

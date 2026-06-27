@@ -815,9 +815,10 @@ final class InsightDetailView {
         let gesture = GestureClick()
         gesture.set(button: 3)
         gesture.propagationPhase = GTK_PHASE_CAPTURE
-        gesture.onPressed { [weak self] _, _, x, y in
+        gesture.onPressed { [weak self] gesture, _, x, y in
             MainActor.assumeIsolated {
                 guard let self else { return }
+                _ = gesture.set(state: GTK_EVENT_SEQUENCE_CLAIMED)
                 let (tx, ty) = self.translatePoint(x: x, y: y, from: label, to: self.widget)
                 self.showAddressMenu(anchor: label, x: tx, y: ty, address: address)
             }
