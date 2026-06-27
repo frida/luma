@@ -946,6 +946,36 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    public func countMissionActions(missionID: UUID) throws -> Int {
+        try db.read { db in
+            try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM mission_action WHERE mission_id = ?",
+                arguments: [missionID.uuidString]
+            ) ?? 0
+        }
+    }
+
+    public func hasPendingMissionActions(missionID: UUID) throws -> Bool {
+        try db.read { db in
+            let count = try Int.fetchOne(
+                db,
+                sql: "SELECT 1 FROM mission_action WHERE mission_id = ? AND status = ? LIMIT 1",
+                arguments: [missionID.uuidString, MissionActionStatus.pending.rawValue]
+            )
+            return count != nil
+        }
+    }
+
+    public func fetchPendingMissionActions(missionID: UUID) throws -> [MissionAction] {
+        try db.read { db in
+            try MissionAction
+                .filter(Column("mission_id") == missionID && Column("status") == MissionActionStatus.pending.rawValue)
+                .order(Column("requested_at").asc)
+                .fetchAll(db)
+        }
+    }
+
     public func fetchMissionAction(id: UUID) throws -> MissionAction? {
         try db.read { db in
             try MissionAction.fetchOne(db, key: id)

@@ -161,7 +161,7 @@ public final class MissionExecutor {
                 await runAction(action, mission: mission)
             }
 
-            let stillPending = (try? store.fetchMissionActions(missionID: mission.id))?.contains(where: { $0.status == .pending }) ?? false
+            let stillPending = (try? store.hasPendingMissionActions(missionID: mission.id)) ?? false
             if stillPending {
                 mission.status = .awaitingApproval
                 persistMission(mission)

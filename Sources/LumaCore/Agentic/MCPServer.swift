@@ -20,6 +20,8 @@ public final class MCPServer {
     private let resolveMission: MissionResolver
     private let toolNames: Set<String>
     private var pendingApprovals: [UUID: CheckedContinuation<ApprovalDecision, Never>] = [:]
+    private var cachedMCPTools: [[String: Any]]?
+    private var nextToolCallOrdinalByMission: [UUID: Int] = [:]
 
     #if canImport(Network)
     private let queue = DispatchQueue(label: "luma.mcp.server")
@@ -133,8 +135,9 @@ public final class MCPServer {
     }
 
     private func listMCPTools() -> [[String: Any]] {
+        if let cachedMCPTools { return cachedMCPTools }
         guard let engine else { return [] }
-        return engine.missionTools.specs()
+        let tools = engine.missionTools.specs()
             .filter { toolNames.isEmpty || toolNames.contains($0.name) }
             .map { spec -> [String: Any] in
                 let schema = (try? JSONSerialization.jsonObject(with: Data(spec.inputSchemaJSON.utf8)))
@@ -145,6 +148,8 @@ public final class MCPServer {
                     "inputSchema": schema,
                 ]
             }
+        cachedMCPTools = tools
+        return tools
     }
 
     private func handleToolCall(id rpcID: Any?, params: [String: Any]) async -> HTTPResponse {
@@ -167,8 +172,8 @@ public final class MCPServer {
 
         let sessionID = (arguments["session_id"] as? String).flatMap(UUID.init(uuidString:))
         let argsJSON = serializeArgs(arguments)
-        let priorActionCount = (try? engine.store.fetchMissionActions(missionID: mission.id))?.count ?? 0
-        let toolCallID = "t\(priorActionCount + 1)"
+        let toolCallOrdinal = nextToolCallOrdinal(for: mission.id, store: engine.store)
+        let toolCallID = "t\(toolCallOrdinal)"
 
         var action = MissionAction(
             missionID: mission.id,
@@ -259,6 +264,13 @@ public final class MCPServer {
             "content": [["type": "text", "text": text]],
             "isError": isError,
         ]
+    }
+
+    private func nextToolCallOrdinal(for missionID: UUID, store: ProjectStore) -> Int {
+        let previous = nextToolCallOrdinalByMission[missionID] ?? ((try? store.countMissionActions(missionID: missionID)) ?? 0)
+        let next = previous + 1
+        nextToolCallOrdinalByMission[missionID] = next
+        return next
     }
 
     private func serializeArgs(_ args: [String: Any]) -> String {

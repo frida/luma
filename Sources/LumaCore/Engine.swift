@@ -5867,7 +5867,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
 
         await missionExecutor.runActionByID(approved.id, mission: mission)
 
-        let stillPending = (try? store.fetchMissionActions(missionID: approved.missionID))?.contains(where: { $0.status == .pending }) ?? false
+        let stillPending = (try? store.hasPendingMissionActions(missionID: approved.missionID)) ?? false
         if !stillPending {
             missionExecutor.resume(missionID: approved.missionID)
         }
@@ -5888,7 +5888,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         try? store.save(action)
         collaboration.enqueueMissionAction(action)
 
-        let stillPending = (try? store.fetchMissionActions(missionID: action.missionID))?.contains(where: { $0.status == .pending }) ?? false
+        let stillPending = (try? store.hasPendingMissionActions(missionID: action.missionID)) ?? false
         if !stillPending {
             missionExecutor.resume(missionID: action.missionID)
         }
@@ -5897,7 +5897,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
     public func cancelAddressNoteReply(sessionID: UUID) async {
         activeNoteReplyTasks[sessionID]?.cancel()
         guard let missionID = sessionUIStates[sessionID]?.ambientMissionID else { return }
-        let pending = (try? store.fetchMissionActions(missionID: missionID))?.filter { $0.status == .pending } ?? []
+        let pending = (try? store.fetchPendingMissionActions(missionID: missionID)) ?? []
         for action in pending {
             await rejectMissionAction(actionID: action.id, reason: "User cancelled the note reply.")
         }
@@ -5922,7 +5922,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         try? store.save(action)
         collaboration.enqueueMissionAction(action)
 
-        let stillPending = (try? store.fetchMissionActions(missionID: action.missionID))?.contains(where: { $0.status == .pending }) ?? false
+        let stillPending = (try? store.hasPendingMissionActions(missionID: action.missionID)) ?? false
         if !stillPending {
             missionExecutor.resume(missionID: action.missionID)
         }

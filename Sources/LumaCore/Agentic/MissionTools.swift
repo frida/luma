@@ -432,9 +432,9 @@ public enum MissionTools {
     private static func registerListModules(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "list_modules",
-            description: "List loaded modules (libraries, frameworks, main binary) in the target process. Real processes can have ~1000 modules, so the result is filtered and capped by default. Pass 'match' (case-insensitive substring matched against name and path) to narrow, 'limit' to cap, and 'detail' to choose projection. Default detail 'summary' returns {name, base}; 'full' adds size and path. Response shape: {total, matched, returned, truncated, modules}.",
+            description: "List loaded modules (libraries, frameworks, main binary) in the target process. Real processes can have ~1000 modules, so the result is filtered and capped by default. Pass 'match' (case-insensitive substring matched against name and path) to narrow, 'offset'/'limit' to page, and 'detail' to choose projection. Default detail 'summary' returns {name, base}; 'full' adds size and path. Response shape: {total, matched, offset, returned, truncated, modules}.",
             inputSchemaJSON: """
-                {"type":"object","properties":{"session_id":{"type":"string","description":"Session UUID to query"},"match":{"type":"string","description":"Case-insensitive substring matched against module name and path. Omit to consider all modules."},"limit":{"type":"integer","minimum":1,"maximum":500,"description":"Max modules to return (default 64)"},"detail":{"type":"string","enum":["summary","full"],"description":"'summary' = name+base only (default). 'full' adds size and path."}},"required":["session_id"],"additionalProperties":false}
+                {"type":"object","properties":{"session_id":{"type":"string","description":"Session UUID to query"},"match":{"type":"string","description":"Case-insensitive substring matched against module name and path. Omit to consider all modules."},"offset":{"type":"integer","minimum":0,"description":"Number of matched modules to skip before returning rows (default 0)."},"limit":{"type":"integer","minimum":1,"maximum":500,"description":"Max modules to return (default 64)"},"detail":{"type":"string","enum":["summary","full"],"description":"'summary' = name+base only (default). 'full' adds size and path."}},"required":["session_id"],"additionalProperties":false}
                 """,
             isObserve: true,
             requiresSession: true
@@ -455,9 +455,10 @@ public enum MissionTools {
             } else {
                 matched = all
             }
+            let offset = max(0, (invocation.args["offset"] as? Int) ?? 0)
             let limit = max(1, min(500, (invocation.args["limit"] as? Int) ?? 64))
-            let returned = Array(matched.prefix(limit))
-            let truncated = matched.count > returned.count
+            let returned = Array(matched.dropFirst(offset).prefix(limit))
+            let truncated = matched.count > offset + returned.count
             let detail = (invocation.args["detail"] as? String) ?? "summary"
             let modulesJSON: [[String: Any]] = returned.map { m in
                 var entry: [String: Any] = [
@@ -473,6 +474,7 @@ public enum MissionTools {
             let payload: [String: Any] = [
                 "total": all.count,
                 "matched": matched.count,
+                "offset": offset,
                 "returned": returned.count,
                 "truncated": truncated,
                 "modules": modulesJSON,
@@ -481,7 +483,7 @@ public enum MissionTools {
             if let needle {
                 summary = "Matched \(matched.count)/\(all.count) module\(matched.count == 1 ? "" : "s") for '\(needle)'\(truncated ? " (returning \(returned.count))" : "")"
             } else {
-                summary = "\(all.count) module\(all.count == 1 ? "" : "s") loaded\(truncated ? "; returning first \(returned.count)" : "")"
+                summary = "\(all.count) module\(all.count == 1 ? "" : "s") loaded\(truncated ? "; returning \(returned.count) from offset \(offset)" : "")"
             }
             return makeResult(jsonObject: payload, summary: summary)
         }
@@ -492,9 +494,9 @@ public enum MissionTools {
     private static func registerListThreads(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "list_threads",
-            description: "List the target process's known threads: tid, name (when assigned), and entrypoint routine address. Live for attached sessions; falls back to the last cached snapshot when the session is detached.",
+            description: "List the target process's known threads. Thread-heavy processes can have hundreds of rows, so the result is capped by default. Pass 'offset'/'limit' to page and 'detail' to choose projection. Default detail 'summary' returns {id, name}; 'full' also includes entrypoint. Live for attached sessions; falls back to the last cached snapshot when the session is detached. Response shape: {total, offset, returned, truncated, threads}.",
             inputSchemaJSON: """
-                {"type":"object","properties":{"session_id":{"type":"string"}},"required":["session_id"],"additionalProperties":false}
+                {"type":"object","properties":{"session_id":{"type":"string"},"offset":{"type":"integer","minimum":0,"description":"Number of threads to skip before returning rows (default 0)."},"limit":{"type":"integer","minimum":1,"maximum":500,"description":"Max threads to return (default 64)."},"detail":{"type":"string","enum":["summary","full"],"description":"'summary' = id+name only (default). 'full' adds entrypoint."}},"required":["session_id"],"additionalProperties":false}
                 """,
             isObserve: true,
             requiresSession: true
@@ -508,9 +510,37 @@ public enum MissionTools {
             guard let threads = liveThreads ?? cached else {
                 return errorResult("no thread data for session \(sessionID)", code: .notFound)
             }
-            let array: [[String: Any]] = threads.map { $0.toJSON() }
-            return makeResult(jsonObject: array, summary: "Listed \(threads.count) thread\(threads.count == 1 ? "" : "s")")
+            let offset = max(0, (invocation.args["offset"] as? Int) ?? 0)
+            let limit = max(1, min(500, (invocation.args["limit"] as? Int) ?? 64))
+            let returned = Array(threads.dropFirst(offset).prefix(limit))
+            let truncated = threads.count > offset + returned.count
+            let detail = (invocation.args["detail"] as? String) ?? "summary"
+            let array: [[String: Any]] = returned.map { threadJSON($0, detail: detail) }
+            let payload: [String: Any] = [
+                "total": threads.count,
+                "offset": offset,
+                "returned": returned.count,
+                "truncated": truncated,
+                "threads": array,
+            ]
+            let suffix = truncated ? "; returning \(returned.count) from offset \(offset)" : ""
+            return makeResult(jsonObject: payload, summary: "Listed \(threads.count) thread\(threads.count == 1 ? "" : "s")\(suffix)")
         }
+    }
+
+    private static func threadJSON(_ thread: ProcessThread, detail: String) -> [String: Any] {
+        var obj: [String: Any] = ["id": Int(thread.id)]
+        if let name = thread.name {
+            obj["name"] = name
+        }
+        if detail == "full", let entrypoint = thread.entrypoint {
+            var ep: [String: Any] = ["routine": String(format: "0x%llx", entrypoint.routine)]
+            if let parameter = entrypoint.parameter {
+                ep["parameter"] = String(format: "0x%llx", parameter)
+            }
+            obj["entrypoint"] = ep
+        }
+        return obj
     }
 
     // MARK: - list_session_instruments

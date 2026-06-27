@@ -7,6 +7,8 @@ public final class ToolCatalog {
     private var specsByName: [String: ActionSpec] = [:]
     private var executorsByName: [String: Executor] = [:]
     private var registrationOrder: [String] = []
+    private var cachedSpecs: [ActionSpec]?
+    private var cachedToolSpecs: [LLMToolSpec]?
 
     public init() {}
 
@@ -16,12 +18,16 @@ public final class ToolCatalog {
         }
         specsByName[spec.name] = spec
         executorsByName[spec.name] = executor
+        cachedSpecs = nil
+        cachedToolSpecs = nil
     }
 
     public func unregister(name: String) {
         specsByName.removeValue(forKey: name)
         executorsByName.removeValue(forKey: name)
         registrationOrder.removeAll { $0 == name }
+        cachedSpecs = nil
+        cachedToolSpecs = nil
     }
 
     public func spec(named name: String) -> ActionSpec? {
@@ -29,14 +35,20 @@ public final class ToolCatalog {
     }
 
     public func specs() -> [ActionSpec] {
-        registrationOrder.compactMap { specsByName[$0] }
+        if let cachedSpecs { return cachedSpecs }
+        let specs = registrationOrder.compactMap { specsByName[$0] }
+        cachedSpecs = specs
+        return specs
     }
 
     public func toolSpecs() -> [LLMToolSpec] {
+        if let cachedToolSpecs { return cachedToolSpecs }
         let specs = self.specs()
-        return specs.enumerated().map { index, spec in
+        let toolSpecs = specs.enumerated().map { index, spec in
             spec.toToolSpec(cacheBoundary: index == specs.count - 1)
         }
+        cachedToolSpecs = toolSpecs
+        return toolSpecs
     }
 
     public func execute(_ name: String, invocation: ActionInvocation) async throws -> ActionResult {

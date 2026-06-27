@@ -13,6 +13,7 @@ public final class ClaudeCodeProvider: LLMProvider {
     public let descriptor: LLMProviderDescriptor
     private let executablePath: String
     private weak var engine: Engine?
+    private var initializedMissionSessionIDs: Set<UUID> = []
 
     public init(engine: Engine?, executablePath: String = "claude") {
         self.engine = engine
@@ -21,7 +22,7 @@ public final class ClaudeCodeProvider: LLMProvider {
             id: Self.providerID,
             displayName: "Claude Code (subprocess)",
             capabilities: LLMProviderCapabilities(
-                supported: engine != nil ? [.toolUse] : [],
+                supported: engine != nil ? [.streaming, .promptCaching, .toolUse] : [.streaming, .promptCaching],
                 reasoningEffortOptions: ["auto", "low", "medium", "high", "xhigh", "max"],
                 defaultReasoningEffort: "auto"
             ),
@@ -72,7 +73,8 @@ public final class ClaudeCodeProvider: LLMProvider {
         request: LLMTurnRequest,
         continuation: AsyncThrowingStream<LLMTurnEvent, Error>.Continuation
     ) async throws {
-        let prompt = renderConversation(request.messages)
+        let sessionPlan = makeSessionPlan(for: request)
+        let prompt = sessionPlan.prompt
         let systemText = renderSystemPrompt(request.systemBlocks)
 
         var arguments: [String] = [
@@ -82,7 +84,11 @@ public final class ClaudeCodeProvider: LLMProvider {
             "--output-format", "stream-json",
             "--include-partial-messages",
             "--verbose",
+            "--exclude-dynamic-system-prompt-sections",
         ]
+        if let sessionID = sessionPlan.sessionID {
+            arguments.append(contentsOf: ["--session-id", sessionID.uuidString])
+        }
         if !systemText.isEmpty {
             arguments.append(contentsOf: ["--append-system-prompt", systemText])
         }
@@ -185,6 +191,9 @@ public final class ClaudeCodeProvider: LLMProvider {
             let message = detail.isEmpty ? "claude exited with status \(process.terminationStatus)" : detail
             throw LLMProviderError.requestFailed(status: Int(process.terminationStatus), message: message)
         }
+        if let sessionID = sessionPlan.sessionID {
+            initializedMissionSessionIDs.insert(sessionID)
+        }
 
         let finalText = !assistantText.isEmpty ? assistantText : streamedText
         if !finalText.isEmpty {
@@ -278,6 +287,31 @@ public final class ClaudeCodeProvider: LLMProvider {
             }
         }
         return lines.joined(separator: "\n\n")
+    }
+
+    private struct ClaudeSessionPlan {
+        var prompt: String
+        var sessionID: UUID?
+    }
+
+    private func makeSessionPlan(for request: LLMTurnRequest) -> ClaudeSessionPlan {
+        guard let missionID = request.mission?.id else {
+            return ClaudeSessionPlan(prompt: renderConversation(request.messages), sessionID: nil)
+        }
+
+        if initializedMissionSessionIDs.contains(missionID), let latest = latestUserMessage(in: request.messages) {
+            return ClaudeSessionPlan(prompt: renderConversation([latest]), sessionID: missionID)
+        }
+
+        if request.messages.count <= 1 {
+            return ClaudeSessionPlan(prompt: renderConversation(request.messages), sessionID: missionID)
+        }
+
+        return ClaudeSessionPlan(prompt: renderConversation(request.messages), sessionID: nil)
+    }
+
+    private func latestUserMessage(in messages: [LLMMessage]) -> LLMMessage? {
+        messages.reversed().first { $0.role == .user }
     }
 
     private func renderSystemPrompt(_ blocks: [LLMContentBlock]) -> String {
