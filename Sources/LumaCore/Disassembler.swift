@@ -113,10 +113,14 @@ public final class Disassembler {
             return DisassemblyPage(lines: bounded, scope: .function)
         }
         let out = await r2.cmd("pdJ \(request.count) @ 0x\(hex)").output ?? ""
-        return DisassemblyPage(lines: decodeOps(out), scope: .span)
+        let flow = await flowTargets(forCommand: "pdj \(request.count) @ 0x\(hex)")
+        return DisassemblyPage(lines: decodeOps(out, flow: flow), scope: .span)
     }
 
     private func disassembleFunctionIfStart(at address: UInt64, hex: String) async -> [DisassemblyLine]? {
+        if await fetchFunctionBegin(hex: hex) == nil {
+            _ = await r2.cmd("af 0x\(hex)")
+        }
         guard let begin = await fetchFunctionBegin(hex: hex), begin == address,
             let end = await fetchFunctionEnd(hex: hex), end > begin
         else { return nil }
@@ -125,9 +129,10 @@ public final class Disassembler {
         guard let ops = try? JSONDecoder().decode([R2DisasmOp].self, from: Data(out.utf8)) else {
             return nil
         }
+        let flow = await flowTargets(forCommand: "pDj \(bytes) @ 0x\(hex)")
         let lines = ops
             .filter { $0.isInstructionEntry }
-            .map { $0.toDisassemblyLine() }
+            .map { $0.toDisassemblyLine(flow: flow[$0.addrValue]) }
             .filter { $0.address < end }
         return lines.isEmpty ? nil : lines
     }
@@ -140,11 +145,24 @@ private func fetchFunctionEnd(hex: String) async -> UInt64? {
         return value
     }
 
-    private func decodeOps(_ raw: String) -> [DisassemblyLine] {
+    private func decodeOps(_ raw: String, flow: [UInt64: DisassemblyFlow]) -> [DisassemblyLine] {
         guard let ops = try? JSONDecoder().decode([R2DisasmOp].self, from: Data(raw.utf8)) else {
             return []
         }
-        return ops.filter { $0.isInstructionEntry }.map { $0.toDisassemblyLine() }
+        return ops.filter { $0.isInstructionEntry }.map { $0.toDisassemblyLine(flow: flow[$0.addrValue]) }
+    }
+
+    private func flowTargets(forCommand command: String) async -> [UInt64: DisassemblyFlow] {
+        let raw = await r2.cmd(command).output ?? ""
+        guard let ops = try? JSONDecoder().decode([R2FlowOp].self, from: Data(raw.utf8)) else {
+            return [:]
+        }
+        var targets: [UInt64: DisassemblyFlow] = [:]
+        for op in ops {
+            guard let address = parseHex(op.addr), let jump = op.jump.flatMap(parseHex) else { continue }
+            targets[address] = op.type == "call" ? DisassemblyFlow(branch: nil, call: jump) : DisassemblyFlow(branch: jump, call: nil)
+        }
+        return targets
     }
 
     public func runCommand(_ command: String) async -> R2CommandResult {
@@ -690,21 +708,28 @@ private struct R2BasicBlockEntry: Decodable {
     let size: R2Hex
 }
 
+struct DisassemblyFlow {
+    let branch: UInt64?
+    let call: UInt64?
+}
+
+private struct R2FlowOp: Decodable {
+    let addr: String
+    let type: String?
+    let jump: String?
+}
+
 private struct R2DisasmOp: Decodable {
     let addr: String
     let text: String
-    let arrow: String?
-    let call: String?
 
     var addrValue: UInt64 { UInt64(addr.dropFirst(2), radix: 16) ?? 0 }
-    var arrowValue: UInt64? { arrow.flatMap { UInt64($0.dropFirst(2), radix: 16) } }
-    var callValue: UInt64? { call.flatMap { UInt64($0.dropFirst(2), radix: 16) } }
 
     var isInstructionEntry: Bool {
         StyledText.parseAnsi(text).plainText.contains(addr)
     }
 
-    func toDisassemblyLine() -> DisassemblyLine {
+    func toDisassemblyLine(flow: DisassemblyFlow?) -> DisassemblyLine {
         let styled = StyledText.parseAnsi(text)
         let plain = styled.plainText
 
@@ -752,8 +777,8 @@ private struct R2DisasmOp: Decodable {
 
         return DisassemblyLine(
             address: addrValue,
-            branchTarget: arrowValue,
-            callTarget: callValue,
+            branchTarget: flow?.branch,
+            callTarget: flow?.call,
             addressText: styled.slice(charRange: addrStart..<addrEnd),
             bytesText: styled.slice(charRange: bytesStart..<bytesEnd),
             asmText: styled.slice(charRange: asmStart..<asmEnd),
