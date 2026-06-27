@@ -59,6 +59,40 @@ extension StyledText {
         return StyledText(spans: spans)
     }
 
+    public func addressSegments(minimumValue: UInt64 = 0x1000) -> [AddressSegment] {
+        let chars = Array(plainText)
+        var segments: [AddressSegment] = []
+        var runStart = 0
+        var i = 0
+
+        func flushPlain(upTo end: Int) {
+            if end > runStart {
+                segments.append(AddressSegment(text: slice(charRange: runStart..<end), address: nil))
+            }
+        }
+
+        while i < chars.count {
+            guard chars[i] == "0", i + 1 < chars.count, chars[i + 1] == "x" || chars[i + 1] == "X" else {
+                i += 1
+                continue
+            }
+            var j = i + 2
+            while j < chars.count, chars[j].isHexDigit { j += 1 }
+            let precededByWord = i > 0 && (chars[i - 1].isLetter || chars[i - 1].isNumber || chars[i - 1] == "_")
+            if j > i + 2, !precededByWord,
+                let value = UInt64(String(chars[(i + 2)..<j]), radix: 16), value >= minimumValue
+            {
+                flushPlain(upTo: i)
+                segments.append(AddressSegment(text: slice(charRange: i..<j), address: value))
+                runStart = j
+            }
+            i = j
+        }
+
+        flushPlain(upTo: chars.count)
+        return segments
+    }
+
     public func slice(charRange: Range<Int>) -> StyledText {
         var out: [Span] = []
         var cursor = 0

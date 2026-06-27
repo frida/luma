@@ -93,6 +93,7 @@ final class InsightDetailView {
 
         refreshBar = Box(orientation: .horizontal, spacing: 6)
         refreshBar.halign = .end
+        refreshBar.valign = .start
         refreshBar.marginTop = 4
         refreshBar.marginEnd = 8
         refreshBar.marginStart = 8
@@ -104,7 +105,6 @@ final class InsightDetailView {
         reanalyzeButton.hasFrame = false
         refreshBar.append(child: rereadButton)
         refreshBar.append(child: reanalyzeButton)
-        widget.append(child: refreshBar)
 
         contentOverlay = Overlay()
         contentOverlay.hexpand = true
@@ -119,6 +119,7 @@ final class InsightDetailView {
         contentHost.marginTop = 8
         contentHost.marginBottom = 8
         contentOverlay.set(child: contentHost)
+        contentOverlay.addOverlay(widget: refreshBar)
 
         spinner = makeSpinner()
 
@@ -700,18 +701,7 @@ final class InsightDetailView {
         addrLabel.maxWidthChars = 18
         addressLabelsByAddress[line.address] = addrLabel
 
-        let address = line.address
-        let addrGesture = GestureClick()
-        addrGesture.set(button: 3)
-        addrGesture.propagationPhase = GTK_PHASE_CAPTURE
-        addrGesture.onPressed { [weak self] _, _, x, y in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                let (tx, ty) = self.translatePoint(x: x, y: y, from: addrLabel, to: self.widget)
-                self.showAddressMenu(anchor: addrLabel, x: tx, y: ty, address: address)
-            }
-        }
-        addrLabel.install(controller: addrGesture)
+        attachAddressMenu(to: addrLabel, address: line.address)
 
         row.append(child: addrLabel)
 
@@ -730,14 +720,7 @@ final class InsightDetailView {
         asmRow.halign = .fill
         asmRow.setSizeRequest(width: 240, height: -1)
 
-        let asmLabel = Label(str: "")
-        asmLabel.setMarkup(str: StyledTextPango.markup(for: line.asmText))
-        asmLabel.add(cssClass: "monospace")
-        asmLabel.halign = .start
-        asmLabel.xalign = 0
-        asmLabel.ellipsize = EllipsizeMode.end
-        asmLabel.selectable = true
-        asmRow.append(child: asmLabel)
+        asmRow.append(child: makeAsmBox(line.asmText))
 
         if let target = line.branchTarget ?? line.callTarget {
             let button = Button()
@@ -809,6 +792,37 @@ final class InsightDetailView {
         row.install(controller: motion)
 
         return row
+    }
+
+    private func makeAsmBox(_ asm: StyledText) -> Box {
+        let box = Box(orientation: .horizontal, spacing: 0)
+        for segment in asm.addressSegments() {
+            let label = Label(str: "")
+            label.setMarkup(str: StyledTextPango.markup(for: segment.text))
+            label.add(cssClass: "monospace")
+            label.halign = .start
+            label.xalign = 0
+            label.selectable = true
+            if let address = segment.address {
+                attachAddressMenu(to: label, address: address)
+            }
+            box.append(child: label)
+        }
+        return box
+    }
+
+    private func attachAddressMenu(to label: Label, address: UInt64) {
+        let gesture = GestureClick()
+        gesture.set(button: 3)
+        gesture.propagationPhase = GTK_PHASE_CAPTURE
+        gesture.onPressed { [weak self] _, _, x, y in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let (tx, ty) = self.translatePoint(x: x, y: y, from: label, to: self.widget)
+                self.showAddressMenu(anchor: label, x: tx, y: ty, address: address)
+            }
+        }
+        label.install(controller: gesture)
     }
 
     private func containsPrintedTarget(_ asm: StyledText, target: UInt64) -> Bool {

@@ -46,6 +46,16 @@ public struct StyledText: Sendable, Hashable, Codable {
     }
 }
 
+public struct AddressSegment: Sendable, Hashable {
+    public let text: StyledText
+    public let address: UInt64?
+
+    public init(text: StyledText, address: UInt64?) {
+        self.text = text
+        self.address = address
+    }
+}
+
 public struct DisassemblyLine: Identifiable, Sendable, Hashable {
     public let address: UInt64
     public let branchTarget: UInt64?

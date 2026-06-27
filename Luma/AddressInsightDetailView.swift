@@ -28,45 +28,43 @@ struct AddressInsightDetailView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            refreshBar
-            Group {
-                if let err = errorText {
-                    Text(err)
-                        .font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
-                } else if let kind = insight?.kind {
-                    switch kind {
-                    case .memory:
-                        ScrollView([.vertical]) {
-                            HexView(data: memoryData)
-                                .padding(.vertical, 2)
-                        }
-                    case .disassembly:
-                        DisassemblyView(
-                            lines: disasmLines,
-                            sessionID: session.id,
-                            engine: engine,
-                            selection: $selection,
-                            onNeedMore: { loadMoreDisasm() }
-                        )
+        Group {
+            if let err = errorText {
+                Text(err)
+                    .font(.system(.body, design: .monospaced))
+                    .textSelection(.enabled)
+            } else if let kind = insight?.kind {
+                switch kind {
+                case .memory:
+                    ScrollView([.vertical]) {
+                        HexView(data: memoryData)
+                            .padding(.vertical, 2)
                     }
+                case .disassembly:
+                    DisassemblyView(
+                        lines: disasmLines,
+                        sessionID: session.id,
+                        engine: engine,
+                        selection: $selection,
+                        onNeedMore: { loadMoreDisasm() }
+                    )
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(8)
-            .overlay(alignment: .center) {
-                if showRefreshSpinner {
-                    ProgressView()
-                        .controlSize(.small)
-                        .padding(8)
-                        .background(.regularMaterial, in: Capsule())
-                        .padding(8)
-                        .transition(.opacity)
-                }
-            }
-            .animation(.default, value: showRefreshSpinner)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(8)
+        .overlay(alignment: .topTrailing) { refreshBar }
+        .overlay(alignment: .center) {
+            if showRefreshSpinner {
+                ProgressView()
+                    .controlSize(.small)
+                    .padding(8)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(8)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.default, value: showRefreshSpinner)
         .onAppear { refresh() }
         .onChange(of: colorScheme) { _, _ in refresh() }
         .onChange(of: node != nil) { _, attached in
@@ -77,7 +75,6 @@ struct AddressInsightDetailView: View {
 
     @ViewBuilder private var refreshBar: some View {
         HStack(spacing: 6) {
-            Spacer()
             Button {
                 rereadBytes()
             } label: {
@@ -588,12 +585,12 @@ private struct DisasmRow: View {
                 .frame(width: 88, alignment: .leading)
 
             HStack(spacing: 6) {
-                Text(line.asmText.attributed)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .font(.system(.footnote, design: .monospaced))
-                    .foregroundStyle(.primary)
-                    .textSelection(.enabled)
+                DisassemblyAsmText(
+                    asm: line.asmText,
+                    engine: engine,
+                    sessionID: sessionID,
+                    selection: $selection
+                )
 
                 if let target = line.branchTarget ?? line.callTarget {
                     Group {
@@ -692,6 +689,39 @@ private struct DisasmRow: View {
         } catch {
             errorPresenter.present("Can’t open function", error.localizedDescription)
         }
+    }
+}
+
+private struct DisassemblyAsmText: View {
+    let asm: StyledText
+    let engine: Engine
+    let sessionID: UUID
+    @Binding var selection: SidebarItemID?
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(asm.addressSegments().enumerated()), id: \.offset) { _, segment in
+                if let address = segment.address {
+                    Text(segment.text.attributed)
+                        .pointerActions(
+                            engine: engine,
+                            sessionID: sessionID,
+                            value: String(format: "0x%llx", address),
+                            address: address,
+                            copyTitle: "Copy Address",
+                            keepsTextSelectable: true,
+                            selection: $selection
+                        )
+                } else {
+                    Text(segment.text.attributed)
+                }
+            }
+        }
+        .lineLimit(1)
+        .truncationMode(.tail)
+        .font(.system(.footnote, design: .monospaced))
+        .foregroundStyle(.primary)
+        .textSelection(.enabled)
     }
 }
 
