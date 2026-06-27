@@ -2650,7 +2650,7 @@ public final class Engine {
         if !result.hasErrors, let structured = JSInspectValue.fromJSONText(output) {
             return .js(structured)
         }
-        let trimmed = String(output.reversed().drop(while: \.isNewline).reversed())
+        let trimmed = String(output.drop(while: \.isNewline).reversed().drop(while: \.isNewline).reversed())
         return .styled(StyledText.parseAnsi(combine(trimmed, errors: result.errors)))
     }
 
