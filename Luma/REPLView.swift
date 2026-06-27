@@ -10,12 +10,7 @@ extension LumaCore.REPLLanguage {
         }
     }
 
-    var promptColor: Color {
-        switch self {
-        case .javascript: return .orange
-        case .r2: return .blue
-        }
-    }
+    var promptColor: Color { .secondary }
 
     var inputPlaceholder: String {
         switch self {

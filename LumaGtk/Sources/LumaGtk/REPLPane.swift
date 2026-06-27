@@ -119,9 +119,8 @@ final class REPLPane {
     }
 
     private static func promptMarkup(for language: LumaCore.REPLLanguage) -> String {
-        let color = language == .r2 ? "#3584e4" : "#e5a50a"
         let glyph = language == .r2 ? "\u{00BB}" : "\u{203A}"
-        return "<span foreground=\"\(color)\">\(glyph)</span>"
+        return "<span alpha=\"55%\">\(glyph)</span>"
     }
 
     func applySessionState() {
