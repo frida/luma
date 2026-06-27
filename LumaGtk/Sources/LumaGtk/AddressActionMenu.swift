@@ -41,8 +41,9 @@ enum AddressActionMenu {
         let gesture = GestureClick()
         gesture.set(button: 3)
         gesture.propagationPhase = GTK_PHASE_CAPTURE
-        gesture.onPressed { [anchor] _, _, x, y in
+        gesture.onPressed { [anchor] gesture, _, x, y in
             MainActor.assumeIsolated {
+                _ = gesture.set(state: GTK_EVENT_SEQUENCE_CLAIMED)
                 present(at: anchor, x: x, y: y, engine: engine, sessionID: sessionID, address: address, value: value, copyLabel: copyLabel, includeDisassembly: includeDisassembly, context: context)
             }
         }
