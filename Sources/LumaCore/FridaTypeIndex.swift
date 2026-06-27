@@ -22,6 +22,7 @@ enum FridaTypeIndex {
     private static func parse(_ content: String, into details: inout [String: String], ambiguous: inout Set<String>) {
         var pendingDoc: String?
         var docSummary: String?
+        var paragraphEnded = false
         var inDoc = false
 
         for rawLine in content.split(separator: "\n", omittingEmptySubsequences: false) {
@@ -30,21 +31,24 @@ enum FridaTypeIndex {
             if inDoc {
                 if trimmed.contains("*/") {
                     inDoc = false
-                    pendingDoc = docSummary
-                } else if docSummary == nil {
-                    let body = trimmed.drop(while: { $0 == "*" || $0 == " " }).trimmingCharacters(in: .whitespaces)
-                    if !body.isEmpty, !body.hasPrefix("@") {
-                        docSummary = body
-                    }
+                    pendingDoc = docSummary.map(firstSentence)
+                    continue
+                }
+                let body = trimmed.drop(while: { $0 == "*" || $0 == " " }).trimmingCharacters(in: .whitespaces)
+                if body.isEmpty || body.hasPrefix("@") {
+                    paragraphEnded = docSummary != nil
+                } else if !paragraphEnded {
+                    docSummary = docSummary.map { "\($0) \(body)" } ?? body
                 }
                 continue
             }
 
             if trimmed.hasPrefix("/**") {
                 docSummary = nil
+                paragraphEnded = false
                 inDoc = !trimmed.contains("*/")
                 if !inDoc {
-                    pendingDoc = singleLineDoc(trimmed)
+                    pendingDoc = singleLineDoc(trimmed).map(firstSentence)
                 }
                 continue
             }
@@ -79,6 +83,16 @@ enum FridaTypeIndex {
             return (match.name, cleanSignature(match.rest))
         }
         return nil
+    }
+
+    private static func firstSentence(_ text: String) -> String {
+        let collapsed = text
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        if let stop = collapsed.range(of: ". ") {
+            return String(collapsed[..<stop.lowerBound]) + "."
+        }
+        return collapsed
     }
 
     private static func singleLineDoc(_ line: String) -> String? {
