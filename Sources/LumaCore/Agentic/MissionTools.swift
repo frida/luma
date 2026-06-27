@@ -1940,14 +1940,18 @@ public enum MissionTools {
                 guard let content = invocation.args["content"] as? String else {
                     return errorResult("missing content", code: .invalidInput)
                 }
-                engine.writeCustomInstrumentFile(defID: defID, path: path, content: content)
-                await engine.awaitCustomInstrumentReload(defID: defID)
-                return customInstrumentEditResult(
-                    engine: engine,
-                    defID: defID,
-                    summaryPrefix: "Wrote \(path)",
-                    extraFields: ["path": path]
-                )
+                do {
+                    let writtenPath = try engine.writeCustomInstrumentFile(defID: defID, path: path, content: content)
+                    await engine.awaitCustomInstrumentReload(defID: defID)
+                    return customInstrumentEditResult(
+                        engine: engine,
+                        defID: defID,
+                        summaryPrefix: "Wrote \(writtenPath)",
+                        extraFields: ["path": writtenPath]
+                    )
+                } catch {
+                    return errorResult(error.localizedDescription, code: .invalidInput)
+                }
             }
         }
     }
@@ -1987,14 +1991,18 @@ public enum MissionTools {
                 case .failure(let message):
                     return errorResult(message, code: .invalidInput)
                 }
-                engine.writeCustomInstrumentFile(defID: defID, path: file.path, content: updated)
-                await engine.awaitCustomInstrumentReload(defID: defID)
-                return customInstrumentEditResult(
-                    engine: engine,
-                    defID: defID,
-                    summaryPrefix: "Edited \(file.path) lines \(startLine)–\(endLine)",
-                    extraFields: ["path": file.path, "line_count": lineCount(of: updated)]
-                )
+                do {
+                    let writtenPath = try engine.writeCustomInstrumentFile(defID: defID, path: file.path, content: updated)
+                    await engine.awaitCustomInstrumentReload(defID: defID)
+                    return customInstrumentEditResult(
+                        engine: engine,
+                        defID: defID,
+                        summaryPrefix: "Edited \(writtenPath) lines \(startLine)–\(endLine)",
+                        extraFields: ["path": writtenPath, "line_count": lineCount(of: updated)]
+                    )
+                } catch {
+                    return errorResult(error.localizedDescription, code: .invalidInput)
+                }
             }
         }
     }
@@ -2014,14 +2022,18 @@ public enum MissionTools {
                 if def.entrypoint == file.path {
                     return errorResult("cannot delete entrypoint '\(file.path)' — re-point with set_custom_instrument_entrypoint first", code: .invalidInput)
                 }
-                engine.deleteCustomInstrumentFile(defID: defID, path: file.path)
-                await engine.awaitCustomInstrumentReload(defID: defID)
-                return customInstrumentEditResult(
-                    engine: engine,
-                    defID: defID,
-                    summaryPrefix: "Deleted \(file.path)",
-                    extraFields: ["path": file.path]
-                )
+                do {
+                    try engine.deleteCustomInstrumentFile(defID: defID, path: file.path)
+                    await engine.awaitCustomInstrumentReload(defID: defID)
+                    return customInstrumentEditResult(
+                        engine: engine,
+                        defID: defID,
+                        summaryPrefix: "Deleted \(file.path)",
+                        extraFields: ["path": file.path]
+                    )
+                } catch {
+                    return errorResult(error.localizedDescription, code: .invalidInput)
+                }
             }
         }
     }
@@ -2046,14 +2058,18 @@ public enum MissionTools {
                 guard engine.customInstruments.file(defID: defID, path: from) != nil else {
                     return errorResult("no file '\(from)'", code: .notFound)
                 }
-                engine.renameCustomInstrumentFile(defID: defID, from: from, to: to)
-                await engine.awaitCustomInstrumentReload(defID: defID)
-                return customInstrumentEditResult(
-                    engine: engine,
-                    defID: defID,
-                    summaryPrefix: "Renamed \(from) → \(to)",
-                    extraFields: ["from": from, "to": to]
-                )
+                do {
+                    let renamedPath = try engine.renameCustomInstrumentFile(defID: defID, from: from, to: to)
+                    await engine.awaitCustomInstrumentReload(defID: defID)
+                    return customInstrumentEditResult(
+                        engine: engine,
+                        defID: defID,
+                        summaryPrefix: "Renamed \(from) → \(renamedPath)",
+                        extraFields: ["from": from, "to": renamedPath]
+                    )
+                } catch {
+                    return errorResult(error.localizedDescription, code: .invalidInput)
+                }
             }
         }
     }
@@ -2070,14 +2086,18 @@ public enum MissionTools {
         )
         catalog.register(spec: spec) { [weak engine] invocation in
             await withResolvedCustomInstrumentFile(invocation.args, engine: engine) { engine, defID, _, file in
-                engine.setCustomInstrumentEntrypoint(defID: defID, path: file.path)
-                await engine.awaitCustomInstrumentReload(defID: defID)
-                return customInstrumentEditResult(
-                    engine: engine,
-                    defID: defID,
-                    summaryPrefix: "Entrypoint set to \(file.path)",
-                    extraFields: ["entrypoint": file.path]
-                )
+                do {
+                    let entrypoint = try engine.setCustomInstrumentEntrypoint(defID: defID, path: file.path)
+                    await engine.awaitCustomInstrumentReload(defID: defID)
+                    return customInstrumentEditResult(
+                        engine: engine,
+                        defID: defID,
+                        summaryPrefix: "Entrypoint set to \(entrypoint)",
+                        extraFields: ["entrypoint": entrypoint]
+                    )
+                } catch {
+                    return errorResult(error.localizedDescription, code: .invalidInput)
+                }
             }
         }
     }

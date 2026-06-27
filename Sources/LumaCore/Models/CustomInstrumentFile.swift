@@ -34,7 +34,8 @@ public struct CustomInstrumentFile: Sendable, Equatable, FetchableRecord, Persis
         guard let path = obj["path"] as? String,
             let content = obj["content"] as? String
         else { return nil }
-        return CustomInstrumentFile(defID: defID, path: path, content: content)
+        guard let validatedPath = try? validateRelativePath(path) else { return nil }
+        return CustomInstrumentFile(defID: defID, path: validatedPath, content: content)
     }
 
     public static func sortedByPath(_ files: [CustomInstrumentFile], entrypoint: String) -> [CustomInstrumentFile] {
@@ -48,6 +49,32 @@ public struct CustomInstrumentFile: Sendable, Equatable, FetchableRecord, Persis
     public static func workspaceRelativePath(defID: UUID, path: String) -> String {
         let encoded = path.replacingOccurrences(of: " ", with: "%20")
         return "InstrumentSources/Custom/\(defID.uuidString)/\(encoded)"
+    }
+
+    public static func validateRelativePath(_ rawPath: String) throws -> String {
+        let path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty else {
+            throw LumaCoreError.invalidArgument("File path must not be empty.")
+        }
+        guard path.utf8.count <= 512 else {
+            throw LumaCoreError.invalidArgument("File path is too long.")
+        }
+        guard !path.hasPrefix("/"), !path.hasPrefix("\\") else {
+            throw LumaCoreError.invalidArgument("File path must be relative.")
+        }
+        guard !path.contains("\\") else {
+            throw LumaCoreError.invalidArgument("File path must use '/' separators.")
+        }
+        guard path.rangeOfCharacter(from: .controlCharacters) == nil else {
+            throw LumaCoreError.invalidArgument("File path contains a control character.")
+        }
+
+        let components = path.split(separator: "/", omittingEmptySubsequences: false)
+        guard components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else {
+            throw LumaCoreError.invalidArgument("File path must not contain '.', '..', or empty path segments.")
+        }
+
+        return path
     }
 }
 

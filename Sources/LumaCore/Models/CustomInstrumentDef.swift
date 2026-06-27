@@ -179,8 +179,9 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
     private static func parseFeature(_ obj: [String: Any]) -> Feature? {
         guard let id = obj["id"] as? String, let name = obj["name"] as? String else { return nil }
         let schema = parseFeatureSchema(obj["schema"]) ?? .boolean(default: false)
+        let optional = (obj["optional"] as? Bool) ?? true
         let enabledByDefault = (obj["enabled_by_default"] as? Bool) ?? true
-        return Feature(id: id, name: name, schema: schema, enabledByDefault: enabledByDefault)
+        return Feature(id: id, name: name, schema: schema, optional: optional, enabledByDefault: enabledByDefault)
     }
 
     private static func parseFeatureSchema(_ raw: Any?) -> FeatureSchema? {
@@ -198,6 +199,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         var out: [String: Any] = [
             "id": feature.id,
             "name": feature.name,
+            "optional": feature.optional,
             "enabled_by_default": feature.enabledByDefault,
         ]
         if let data = try? JSONEncoder().encode(feature.schema),

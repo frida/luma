@@ -12,6 +12,7 @@ struct CustomInstrumentMetadataMenu: View {
     @State private var isShowingWidgetsEditor = false
     @State private var isShowingDeleteConfirm = false
     @State private var renameEntrypointPrompt = RenamePromptState()
+    @State private var errorMessage: String?
 
     private var def: CustomInstrumentDef? {
         engine.customInstruments.def(withId: defID)
@@ -100,6 +101,11 @@ struct CustomInstrumentMetadataMenu: View {
         } message: {
             Text("This removes the custom instrument from the project and from any sessions where it is loaded.")
         }
+        .alert("Custom instrument error", isPresented: errorBinding, presenting: errorMessage) { _ in
+            Button("OK") { errorMessage = nil }
+        } message: { message in
+            Text(message)
+        }
     }
 
     private func commitRenameEntrypoint() {
@@ -107,10 +113,13 @@ struct CustomInstrumentMetadataMenu: View {
         guard !trimmed.isEmpty, let original = def?.entrypoint, trimmed != original else { return }
         let id = defID
         Task { @MainActor in
-            engine.renameCustomInstrumentFile(defID: id, from: original, to: trimmed)
-            engine.setCustomInstrumentEntrypoint(defID: id, path: trimmed)
-            if selection == .customInstrumentFile(id, original) {
-                selection = .customInstrumentFile(id, trimmed)
+            do {
+                let renamedPath = try engine.renameCustomInstrumentFile(defID: id, from: original, to: trimmed)
+                if selection == .customInstrumentFile(id, original) {
+                    selection = .customInstrumentFile(id, renamedPath)
+                }
+            } catch {
+                errorMessage = error.localizedDescription
             }
         }
     }
@@ -123,5 +132,12 @@ struct CustomInstrumentMetadataMenu: View {
                 selection = .notebook
             }
         }
+    }
+
+    private var errorBinding: Binding<Bool> {
+        Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )
     }
 }

@@ -199,7 +199,7 @@ struct SidebarCustomInstrumentDefRow: View {
             }
             exportBundle = nil
         }
-        .alert("Export failed", isPresented: exportErrorBinding, presenting: exportErrorMessage) { _ in
+        .alert("Custom instrument error", isPresented: exportErrorBinding, presenting: exportErrorMessage) { _ in
             Button("OK") { exportErrorMessage = nil }
         } message: { message in
             Text(message)
@@ -252,8 +252,12 @@ struct SidebarCustomInstrumentDefRow: View {
         guard !trimmed.isEmpty else { return }
         let defID = def.id
         Task { @MainActor in
-            engine.writeCustomInstrumentFile(defID: defID, path: trimmed, content: "")
-            selection = .customInstrumentFile(defID, trimmed)
+            do {
+                let path = try engine.writeCustomInstrumentFile(defID: defID, path: trimmed, content: "")
+                selection = .customInstrumentFile(defID, path)
+            } catch {
+                exportErrorMessage = error.localizedDescription
+            }
         }
         addFilePrompt.reset()
     }
@@ -264,9 +268,13 @@ struct SidebarCustomInstrumentDefRow: View {
         guard !to.isEmpty, to != from else { return }
         let defID = def.id
         Task { @MainActor in
-            engine.renameCustomInstrumentFile(defID: defID, from: from, to: to)
-            if selection == .customInstrumentFile(defID, from) {
-                selection = .customInstrumentFile(defID, to)
+            do {
+                let renamedPath = try engine.renameCustomInstrumentFile(defID: defID, from: from, to: to)
+                if selection == .customInstrumentFile(defID, from) {
+                    selection = .customInstrumentFile(defID, renamedPath)
+                }
+            } catch {
+                exportErrorMessage = error.localizedDescription
             }
         }
         renameEntrypointPrompt.reset()
@@ -312,6 +320,7 @@ struct SidebarCustomInstrumentFileRow: View {
 
     @State private var renamePrompt = RenamePromptState()
     @State private var isShowingDeleteConfirm = false
+    @State private var errorMessage: String?
 
     private var isEntrypoint: Bool { file.path == def.entrypoint }
     private var canDelete: Bool { !isEntrypoint }
@@ -370,13 +379,22 @@ struct SidebarCustomInstrumentFileRow: View {
         } message: {
             Text("Removes this file from the instrument.")
         }
+        .alert("Custom instrument error", isPresented: errorBinding, presenting: errorMessage) { _ in
+            Button("OK") { errorMessage = nil }
+        } message: { message in
+            Text(message)
+        }
     }
 
     private func setAsEntrypoint() {
         let defID = def.id
         let path = file.path
         Task { @MainActor in
-            engine.setCustomInstrumentEntrypoint(defID: defID, path: path)
+            do {
+                _ = try engine.setCustomInstrumentEntrypoint(defID: defID, path: path)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -386,9 +404,13 @@ struct SidebarCustomInstrumentFileRow: View {
         guard !to.isEmpty, to != from else { return }
         let defID = def.id
         Task { @MainActor in
-            engine.renameCustomInstrumentFile(defID: defID, from: from, to: to)
-            if selection == .customInstrumentFile(defID, from) {
-                selection = .customInstrumentFile(defID, to)
+            do {
+                let renamedPath = try engine.renameCustomInstrumentFile(defID: defID, from: from, to: to)
+                if selection == .customInstrumentFile(defID, from) {
+                    selection = .customInstrumentFile(defID, renamedPath)
+                }
+            } catch {
+                errorMessage = error.localizedDescription
             }
         }
         renamePrompt.reset()
@@ -399,11 +421,22 @@ struct SidebarCustomInstrumentFileRow: View {
         let path = file.path
         let entrypoint = def.entrypoint
         Task { @MainActor in
-            engine.deleteCustomInstrumentFile(defID: defID, path: path)
-            if selection == .customInstrumentFile(defID, path) {
-                selection = .customInstrumentFile(defID, entrypoint)
+            do {
+                try engine.deleteCustomInstrumentFile(defID: defID, path: path)
+                if selection == .customInstrumentFile(defID, path) {
+                    selection = .customInstrumentFile(defID, entrypoint)
+                }
+            } catch {
+                errorMessage = error.localizedDescription
             }
         }
+    }
+
+    private var errorBinding: Binding<Bool> {
+        Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )
     }
 }
 

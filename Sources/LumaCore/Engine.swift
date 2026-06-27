@@ -904,7 +904,7 @@ public final class Engine {
             guard let self else { return }
             switch op {
             case .upsert(let u):
-                var bundle = u.bundle
+                guard var bundle = try? Self.validatedCustomInstrumentBundle(u.bundle) else { return }
                 bundle.def.normalize()
                 try? self.store.save(bundle.def)
                 try? self.store.replaceCustomInstrumentFiles(defID: bundle.def.id, files: bundle.files)
@@ -1842,7 +1842,7 @@ public final class Engine {
             }
 
             try await node.loadPackages([entry])
-            node.loadedPackageNames.insert(entry["name"] as! String)
+            node.loadedPackageNames.insert(package.name)
         } catch {
             var message = "Failed to load package \(package.name): \(userFacingMessage(error))"
             if let compile = error as? CompileFailure, !compile.diagnostics.isEmpty {
@@ -4172,7 +4172,6 @@ public final class Engine {
 
         let options = BuildOptions()
         options.projectRoot = paths.root.path
-        options.typeCheck = .none
         options.sourceMaps = .omitted
         options.compression = .terser
 
@@ -4423,16 +4422,16 @@ public final class Engine {
         try fm.createDirectory(at: dirURL, withIntermediateDirectories: true)
 
         for file in files {
-            let fileURL = dirURL.appendingPathComponent(file.path)
+            let path = try CustomInstrumentFile.validateRelativePath(file.path)
+            let fileURL = dirURL.appendingPathComponent(path)
             try fm.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try file.content.write(to: fileURL)
         }
 
-        let entryRelPath = "\(dirRelPath)/\(entrypoint)"
+        let entryRelPath = "\(dirRelPath)/\(try CustomInstrumentFile.validateRelativePath(entrypoint))"
 
         let options = BuildOptions()
         options.projectRoot = paths.root.path
-        options.typeCheck = .none
         options.sourceMaps = .omitted
         options.compression = .terser
 
@@ -4472,9 +4471,30 @@ public final class Engine {
             if relativePath == "manifest.json" { continue }
             if relativePath == iconPath { continue }
             let data = try Data(contentsOf: url)
-            result.append((path: relativePath, content: data))
+            result.append((path: try CustomInstrumentFile.validateRelativePath(relativePath), content: data))
         }
         return result
+    }
+
+    private static func validatedCustomInstrumentBundle(_ bundle: CustomInstrumentBundle) throws -> CustomInstrumentBundle {
+        let files = try bundle.files.map { file in
+            CustomInstrumentFile(
+                defID: file.defID,
+                path: try CustomInstrumentFile.validateRelativePath(file.path),
+                content: file.content
+            )
+        }
+        var def = bundle.def
+        def.entrypoint = try validatedEntrypoint(def.entrypoint, files: files)
+        return CustomInstrumentBundle(def: def, files: files)
+    }
+
+    private static func validatedEntrypoint(_ entrypoint: String, files: [CustomInstrumentFile]) throws -> String {
+        let path = try CustomInstrumentFile.validateRelativePath(entrypoint)
+        guard files.contains(where: { $0.path == path }) else {
+            throw LumaCoreError.invalidArgument("Entrypoint '\(path)' does not exist in this custom instrument.")
+        }
+        return path
     }
 
     private func customInstrumentDef(for config: CustomInstrumentConfig) -> CustomInstrumentDef? {
@@ -4530,38 +4550,60 @@ public final class Engine {
         scheduleCustomInstrumentReload(defID: updated.id)
     }
 
-    public func writeCustomInstrumentFile(defID: UUID, path: String, content: String) {
-        let file = CustomInstrumentFile(defID: defID, path: path, content: content)
-        try? store.save(file)
-        try? store.save(touchUpdatedAt(defID: defID))
+    @discardableResult
+    public func writeCustomInstrumentFile(defID: UUID, path: String, content: String) throws -> String {
+        let validatedPath = try CustomInstrumentFile.validateRelativePath(path)
+        let file = CustomInstrumentFile(defID: defID, path: validatedPath, content: content)
+        _ = try requireCustomInstrumentDef(defID: defID)
+        try store.save(file)
+        try store.save(touchUpdatedAt(defID: defID))
         broadcastCustomInstrumentUpsert(defID: defID)
         scheduleCustomInstrumentReload(defID: defID)
+        return validatedPath
     }
 
-    public func deleteCustomInstrumentFile(defID: UUID, path: String) {
-        try? store.deleteCustomInstrumentFile(defID: defID, path: path)
-        try? store.save(touchUpdatedAt(defID: defID))
-        broadcastCustomInstrumentUpsert(defID: defID)
-        scheduleCustomInstrumentReload(defID: defID)
-    }
-
-    public func renameCustomInstrumentFile(defID: UUID, from: String, to: String) {
-        try? store.renameCustomInstrumentFile(defID: defID, from: from, to: to)
-        var def = touchUpdatedAt(defID: defID)
-        if def.entrypoint == from {
-            def.entrypoint = to
+    public func deleteCustomInstrumentFile(defID: UUID, path: String) throws {
+        let validatedPath = try CustomInstrumentFile.validateRelativePath(path)
+        let def = try requireCustomInstrumentDef(defID: defID)
+        guard def.entrypoint != validatedPath else {
+            throw LumaCoreError.invalidOperation("Cannot delete the entrypoint file.")
         }
-        try? store.save(def)
+        try store.deleteCustomInstrumentFile(defID: defID, path: validatedPath)
+        try store.save(touchUpdatedAt(defID: defID))
         broadcastCustomInstrumentUpsert(defID: defID)
         scheduleCustomInstrumentReload(defID: defID)
     }
 
-    public func setCustomInstrumentEntrypoint(defID: UUID, path: String) {
-        var def = touchUpdatedAt(defID: defID)
-        def.entrypoint = path
-        try? store.save(def)
+    @discardableResult
+    public func renameCustomInstrumentFile(defID: UUID, from: String, to: String) throws -> String {
+        let fromPath = try CustomInstrumentFile.validateRelativePath(from)
+        let toPath = try CustomInstrumentFile.validateRelativePath(to)
+        guard try store.fetchCustomInstrumentFile(defID: defID, path: fromPath) != nil else {
+            throw LumaCoreError.invalidArgument("No file '\(fromPath)' in this custom instrument.")
+        }
+        try store.renameCustomInstrumentFile(defID: defID, from: fromPath, to: toPath)
+        var def = try touchUpdatedAt(defID: defID)
+        if def.entrypoint == fromPath {
+            def.entrypoint = toPath
+        }
+        try store.save(def)
         broadcastCustomInstrumentUpsert(defID: defID)
         scheduleCustomInstrumentReload(defID: defID)
+        return toPath
+    }
+
+    @discardableResult
+    public func setCustomInstrumentEntrypoint(defID: UUID, path: String) throws -> String {
+        let validatedPath = try CustomInstrumentFile.validateRelativePath(path)
+        guard try store.fetchCustomInstrumentFile(defID: defID, path: validatedPath) != nil else {
+            throw LumaCoreError.invalidArgument("No file '\(validatedPath)' in this custom instrument.")
+        }
+        var def = try touchUpdatedAt(defID: defID)
+        def.entrypoint = validatedPath
+        try store.save(def)
+        broadcastCustomInstrumentUpsert(defID: defID)
+        scheduleCustomInstrumentReload(defID: defID)
+        return validatedPath
     }
 
     private func scheduleCustomInstrumentReload(defID: UUID) {
@@ -4592,8 +4634,18 @@ public final class Engine {
         }
     }
 
-    private func touchUpdatedAt(defID: UUID) -> CustomInstrumentDef {
-        var def = customInstruments.def(withId: defID) ?? (try? store.fetchCustomInstrumentDef(id: defID))!
+    private func requireCustomInstrumentDef(defID: UUID) throws -> CustomInstrumentDef {
+        if let cached = customInstruments.def(withId: defID) {
+            return cached
+        }
+        if let stored = try store.fetchCustomInstrumentDef(id: defID) {
+            return stored
+        }
+        throw LumaCoreError.invalidArgument("No custom instrument with id \(defID).")
+    }
+
+    private func touchUpdatedAt(defID: UUID) throws -> CustomInstrumentDef {
+        var def = try requireCustomInstrumentDef(defID: defID)
         def.updatedAt = Date()
         return def
     }
@@ -4611,7 +4663,7 @@ public final class Engine {
         case .symbolic(let id):
             icon = .symbolic(id)
         case .file(let path):
-            let iconURL = folderURL.appendingPathComponent(path)
+            let iconURL = folderURL.appendingPathComponent(try CustomInstrumentFile.validateRelativePath(path))
             icon = .pixels(try Data(contentsOf: iconURL))
         }
 
@@ -4619,22 +4671,26 @@ public final class Engine {
 
         let now = Date()
         let defID = UUID()
+        let files = try packFiles.map { pf in
+            CustomInstrumentFile(
+                defID: defID,
+                path: try CustomInstrumentFile.validateRelativePath(pf.path),
+                content: String(decoding: pf.content, as: UTF8.self)
+            )
+        }
+
         var def = CustomInstrumentDef(
             id: defID,
             name: uniquedCustomInstrumentName(manifest.name),
             icon: icon,
             compatibility: manifest.compatibility,
-            entrypoint: manifest.entrypoint,
+            entrypoint: try Self.validatedEntrypoint(manifest.entrypoint, files: files),
             features: manifest.features,
             widgets: manifest.widgets,
             createdAt: now,
             updatedAt: now
         )
         def.normalize()
-
-        let files = packFiles.map { pf in
-            CustomInstrumentFile(defID: defID, path: pf.path, content: String(decoding: pf.content, as: UTF8.self))
-        }
 
         try store.save(def)
         try store.replaceCustomInstrumentFiles(defID: defID, files: files)
@@ -4657,11 +4713,20 @@ public final class Engine {
             iconAttachment = HookPackBundle.IconAttachment(filename: iconName, data: data)
         }
 
+        let defFiles = try customInstruments.files(forDefID: def.id).map { file in
+            CustomInstrumentFile(
+                defID: file.defID,
+                path: try CustomInstrumentFile.validateRelativePath(file.path),
+                content: file.content
+            )
+        }
+        let entrypoint = try Self.validatedEntrypoint(def.entrypoint, files: defFiles)
+
         let manifest = HookPackManifest(
             name: def.name,
             icon: manifestIcon,
             compatibility: def.compatibility,
-            entrypoint: def.entrypoint,
+            entrypoint: entrypoint,
             features: def.features,
             widgets: def.widgets
         )
@@ -4669,7 +4734,6 @@ public final class Engine {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let manifestData = try encoder.encode(manifest)
 
-        let defFiles = customInstruments.files(forDefID: def.id)
         let bundleFiles = defFiles.map { HookPackBundle.File(path: $0.path, content: Data($0.content.utf8)) }
 
         return HookPackBundle(

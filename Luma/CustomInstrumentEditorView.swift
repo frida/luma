@@ -15,6 +15,7 @@ struct CustomInstrumentEditorView: View {
     @State private var activePath: String?
     @State private var pendingPath: String?
     @State private var showUnsavedAlert = false
+    @State private var errorMessage: String?
 
     private var def: CustomInstrumentDef? {
         engine.customInstruments.def(withId: defID)
@@ -55,6 +56,11 @@ struct CustomInstrumentEditorView: View {
             if displayedFile == nil {
                 applyNavigation(toPath: newEntrypoint)
             }
+        }
+        .alert("Custom instrument error", isPresented: errorBinding, presenting: errorMessage) { _ in
+            Button("OK") { errorMessage = nil }
+        } message: { message in
+            Text(message)
         }
     }
 
@@ -169,11 +175,15 @@ struct CustomInstrumentEditorView: View {
         let pathToSave = file.path
         let content = draftContent
         Task { @MainActor in
-            engine.writeCustomInstrumentFile(defID: defID, path: pathToSave, content: content)
-            isDirty = false
-            showSavedCheck = true
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            withAnimation { showSavedCheck = false }
+            do {
+                _ = try engine.writeCustomInstrumentFile(defID: defID, path: pathToSave, content: content)
+                isDirty = false
+                showSavedCheck = true
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                withAnimation { showSavedCheck = false }
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -182,8 +192,19 @@ struct CustomInstrumentEditorView: View {
         let pathToSave = file.path
         let content = draftContent
         Task { @MainActor in
-            engine.writeCustomInstrumentFile(defID: defID, path: pathToSave, content: content)
+            do {
+                _ = try engine.writeCustomInstrumentFile(defID: defID, path: pathToSave, content: content)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
+    }
+
+    private var errorBinding: Binding<Bool> {
+        Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )
     }
 
     private func syncFromFile(_ file: CustomInstrumentFile) {

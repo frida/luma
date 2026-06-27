@@ -25,8 +25,12 @@ enum CustomInstrumentFileDialogs {
             },
             onCommit: { input in
                 Task { @MainActor in
-                    engine.writeCustomInstrumentFile(defID: defID, path: input, content: "")
-                    onCreated(input)
+                    do {
+                        let path = try engine.writeCustomInstrumentFile(defID: defID, path: input, content: "")
+                        onCreated(path)
+                    } catch {
+                        presentError(error, parent: parent)
+                    }
                 }
             }
         ).present(parent: parent)
@@ -57,11 +61,23 @@ enum CustomInstrumentFileDialogs {
             },
             onCommit: { input in
                 Task { @MainActor in
-                    engine.renameCustomInstrumentFile(defID: defID, from: oldPath, to: input)
-                    onRenamed(input)
+                    do {
+                        let renamedPath = try engine.renameCustomInstrumentFile(defID: defID, from: oldPath, to: input)
+                        onRenamed(renamedPath)
+                    } catch {
+                        presentError(error, parent: parent)
+                    }
                 }
             }
         ).present(parent: parent)
+    }
+
+    private static func presentError(_ error: Error, parent: Gtk.Window) {
+        let dialog = Adw.AlertDialog(heading: "Custom instrument error", body: error.localizedDescription)
+        dialog.addResponse(id: "ok", label: "OK")
+        dialog.setDefault(response: "ok")
+        dialog.setClose(response: "ok")
+        dialog.present(parent: parent)
     }
 }
 

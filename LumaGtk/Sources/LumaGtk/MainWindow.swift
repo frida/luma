@@ -1546,7 +1546,11 @@ final class MainWindow: InstrumentUIHost {
     private func setCustomInstrumentEntrypoint(defID: UUID, path: String) {
         guard let engine else { return }
         Task { @MainActor in
-            engine.setCustomInstrumentEntrypoint(defID: defID, path: path)
+            do {
+                _ = try engine.setCustomInstrumentEntrypoint(defID: defID, path: path)
+            } catch {
+                self.presentCustomInstrumentError(message: error.localizedDescription)
+            }
         }
     }
 
@@ -1564,9 +1568,13 @@ final class MainWindow: InstrumentUIHost {
             let path = file.path
             let entrypoint = def.entrypoint
             Task { @MainActor in
-                engine.deleteCustomInstrumentFile(defID: defID, path: path)
-                if self.selection == .customInstrumentFile(defID, path) {
-                    self.select(.customInstrumentFile(defID, entrypoint))
+                do {
+                    try engine.deleteCustomInstrumentFile(defID: defID, path: path)
+                    if self.selection == .customInstrumentFile(defID, path) {
+                        self.select(.customInstrumentFile(defID, entrypoint))
+                    }
+                } catch {
+                    self.presentCustomInstrumentError(message: error.localizedDescription)
                 }
             }
         }
@@ -1592,6 +1600,14 @@ final class MainWindow: InstrumentUIHost {
         } catch {
             presentExportError(message: error.localizedDescription)
         }
+    }
+
+    private func presentCustomInstrumentError(message: String) {
+        let dialog = Adw.AlertDialog(heading: "Custom instrument error", body: message)
+        dialog.addResponse(id: "ok", label: "OK")
+        dialog.setDefault(response: "ok")
+        dialog.setClose(response: "ok")
+        dialog.present(parent: window)
     }
 
     private func presentExportError(message: String) {
