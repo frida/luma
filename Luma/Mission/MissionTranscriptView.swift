@@ -5,13 +5,27 @@ struct MissionTranscriptView: View {
     let turns: [MissionTurn]
     let actions: [MissionAction]
     let liveText: String
+    private let actionsByTurnID: [UUID: [MissionAction]]
+
+    init(turns: [MissionTurn], actions: [MissionAction], liveText: String) {
+        self.turns = turns
+        self.actions = actions
+        self.liveText = liveText
+        actionsByTurnID = Dictionary(grouping: actions.compactMap { action -> (UUID, MissionAction)? in
+            guard let turnID = action.turnID else { return nil }
+            return (turnID, action)
+        }, by: \.0).mapValues { pairs in
+            pairs.map(\.1)
+        }
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     ForEach(turns) { turn in
-                        TurnCard(turn: turn, actions: actionsForTurn(turn.id))
+                        TurnCard(turn: turn, actions: actionsByTurnID[turn.id] ?? [])
+                            .equatable()
                             .id(turn.id)
                     }
                     if !liveText.isEmpty {
@@ -25,19 +39,24 @@ struct MissionTranscriptView: View {
                 if let last { withAnimation { proxy.scrollTo(last, anchor: .bottom) } }
             }
             .onChange(of: liveText) { _, _ in
-                if !liveText.isEmpty { withAnimation { proxy.scrollTo("live", anchor: .bottom) } }
+                if !liveText.isEmpty { proxy.scrollTo("live", anchor: .bottom) }
             }
         }
     }
-
-    private func actionsForTurn(_ turnID: UUID) -> [MissionAction] {
-        actions.filter { $0.turnID == turnID }
-    }
 }
 
-private struct TurnCard: View {
+private struct TurnCard: View, Equatable {
     let turn: MissionTurn
     let actions: [MissionAction]
+    private let parsedBlocks: [LLMContentBlock]
+    private let actionKeys: [ActionRenderKey]
+
+    init(turn: MissionTurn, actions: [MissionAction]) {
+        self.turn = turn
+        self.actions = actions
+        parsedBlocks = Self.decodeBlocks(from: turn)
+        actionKeys = actions.map(ActionRenderKey.init)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -56,6 +75,14 @@ private struct TurnCard: View {
         }
         .padding()
         .background(roleColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    static func == (lhs: TurnCard, rhs: TurnCard) -> Bool {
+        lhs.turn.id == rhs.turn.id
+            && lhs.turn.role == rhs.turn.role
+            && lhs.turn.contentJSON == rhs.turn.contentJSON
+            && lhs.turn.outputTokens == rhs.turn.outputTokens
+            && lhs.actionKeys == rhs.actionKeys
     }
 
     private var roleLabel: String {
@@ -89,11 +116,27 @@ private struct TurnCard: View {
         return true
     }
 
-    private var parsedBlocks: [LLMContentBlock] {
+    private static func decodeBlocks(from turn: MissionTurn) -> [LLMContentBlock] {
         guard let data = turn.contentJSON.data(using: .utf8) else { return [] }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return (try? decoder.decode([LLMContentBlock].self, from: data)) ?? []
+    }
+}
+
+private struct ActionRenderKey: Equatable {
+    let id: UUID
+    let status: MissionActionStatus
+    let isObserve: Bool
+    let resultSummary: String?
+    let toolCallID: String?
+
+    init(_ action: MissionAction) {
+        id = action.id
+        status = action.status
+        isObserve = action.isObserve
+        resultSummary = action.resultSummary
+        toolCallID = action.toolCallID
     }
 }
 
@@ -124,6 +167,15 @@ private struct ToolUseBlock: View {
     let name: String
     let inputJSON: String
     let action: MissionAction?
+    private let prettyInputJSON: String
+
+    init(id: String, name: String, inputJSON: String, action: MissionAction?) {
+        self.id = id
+        self.name = name
+        self.inputJSON = inputJSON
+        self.action = action
+        prettyInputJSON = prettyJSON(inputJSON)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -135,7 +187,7 @@ private struct ToolUseBlock: View {
                 Spacer()
             }
             if !inputJSON.isEmpty, inputJSON != "{}" {
-                Text(prettyJSON(inputJSON))
+                Text(prettyInputJSON)
                     .font(.caption.monospaced())
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -167,6 +219,12 @@ private struct ToolResultBlock: View {
 
 private struct TurnLiveCard: View {
     let text: String
+    private let stableText: String
+
+    init(text: String) {
+        self.text = text
+        stableText = MarkdownStreaming.stablePrefix(of: text)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -175,7 +233,7 @@ private struct TurnLiveCard: View {
                 Text("Streaming…").font(.caption.weight(.semibold)).foregroundStyle(.blue)
                 Spacer()
             }
-            MarkdownView(MarkdownStreaming.stablePrefix(of: text))
+            MarkdownView(stableText)
         }
         .padding()
         .background(Color.blue.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))

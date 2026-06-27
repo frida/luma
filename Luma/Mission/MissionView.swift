@@ -11,6 +11,8 @@ struct MissionView: View {
     @State private var findings: [MissionFinding] = []
     @State private var observations: [LumaCore.StoreObservation] = []
     @State private var liveText: String = ""
+    @State private var pendingLiveText: String = ""
+    @State private var liveFlushTask: Task<Void, Never>?
     @State private var compactPane: CompactPane = .transcript
 
     #if canImport(UIKit)
@@ -53,8 +55,12 @@ struct MissionView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.background)
         .task(id: missionID) { startObservations() }
+        .onDisappear { stopLiveObservation() }
         .onChange(of: turns.count) { oldCount, newCount in
             if newCount > oldCount, !liveText.isEmpty {
+                pendingLiveText = ""
+                liveFlushTask?.cancel()
+                liveFlushTask = nil
                 liveText = ""
             }
         }
@@ -85,7 +91,10 @@ struct MissionView: View {
 
     private func startObservations() {
         observations = []
+        liveFlushTask?.cancel()
+        liveFlushTask = nil
         liveText = engine.missionLiveText(missionID: missionID)
+        pendingLiveText = liveText
 
         turns = (try? engine.store.fetchMissionTurns(missionID: missionID)) ?? []
         actions = (try? engine.store.fetchMissionActions(missionID: missionID)) ?? []
@@ -105,13 +114,33 @@ struct MissionView: View {
             guard eventMissionID == missionID else { return }
             switch event {
             case .textDelta(let text):
-                liveText.append(text)
+                pendingLiveText.append(text)
+                scheduleLiveFlush()
             case .messageStop, .finalMessage:
+                pendingLiveText = ""
+                liveFlushTask?.cancel()
+                liveFlushTask = nil
                 liveText = ""
             default:
                 break
             }
         }
+    }
+
+    private func scheduleLiveFlush() {
+        guard liveFlushTask == nil else { return }
+        liveFlushTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            guard !Task.isCancelled else { return }
+            liveText = pendingLiveText
+            liveFlushTask = nil
+        }
+    }
+
+    private func stopLiveObservation() {
+        engine.setMissionLiveDeltaSink(nil)
+        liveFlushTask?.cancel()
+        liveFlushTask = nil
     }
 }
 
