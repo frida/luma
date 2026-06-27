@@ -101,6 +101,11 @@ final class TracerUIKind: InstrumentUIKind {
         return children
     }
 
+    func hasSidebarChildren(instrument: LumaCore.InstrumentInstance) -> Bool {
+        guard let config = try? TracerConfig.decode(from: instrument.configJSON) else { return false }
+        return !config.hooksByMostRecentlyEdited().isEmpty
+    }
+
     private func attachHookContextMenu(
         row: ListBoxRow,
         anchor: Widget,

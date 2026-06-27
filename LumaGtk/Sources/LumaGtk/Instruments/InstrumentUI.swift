@@ -32,6 +32,8 @@ protocol InstrumentUIKind: AnyObject {
         instrument: LumaCore.InstrumentInstance,
         host: InstrumentUIHost
     ) -> [InstrumentSidebarChild]
+
+    func hasSidebarChildren(instrument: LumaCore.InstrumentInstance) -> Bool
 }
 
 extension InstrumentUIKind {
@@ -41,6 +43,10 @@ extension InstrumentUIKind {
         host: InstrumentUIHost
     ) -> [InstrumentSidebarChild] {
         []
+    }
+
+    func hasSidebarChildren(instrument: LumaCore.InstrumentInstance) -> Bool {
+        false
     }
 }
 
