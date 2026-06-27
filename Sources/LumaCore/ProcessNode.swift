@@ -887,8 +887,9 @@ public final class ProcessNode: Identifiable {
         .map { REPLCompletion(insertText: $0.0, displayText: ":\($0.0)", detailText: $0.1) }
     }
 
-    private func annotatedCompletion(_ name: String) -> REPLCompletion {
-        guard let detail = FridaTypeIndex.detail(for: name) else { return REPLCompletion(name) }
+    private func annotatedCompletion(_ name: String, base: String?) -> REPLCompletion {
+        let detail = base.flatMap { FridaTypeIndex.detail(for: "\($0).\(name)") } ?? FridaTypeIndex.detail(for: name)
+        guard let detail else { return REPLCompletion(name) }
         return REPLCompletion(insertText: name, displayText: name, detailText: detail)
     }
 
@@ -897,17 +898,35 @@ public final class ProcessNode: Identifiable {
             let anyResult = try await script.exports.complete(code, cursor)
 
             if let items = anyResult as? [[String: Any]] {
+                let base = Self.completionBase(code: code, cursor: cursor)
                 let members = items.compactMap { item -> (name: String, callable: Bool)? in
                     guard let name = item["name"] as? String else { return nil }
                     return (name, (item["callable"] as? Bool) ?? false)
                 }
-                return members.sorted(by: Self.memberPrecedes).map { annotatedCompletion($0.name) }
+                return members.sorted(by: Self.memberPrecedes).map { annotatedCompletion($0.name, base: base) }
             }
         } catch {
             yieldEngineEvent(subsystem: "repl", level: .warning, text: "Failed to fetch REPL completions: \(error)")
         }
 
         return []
+    }
+
+    private static func completionBase(code: String, cursor: Int) -> String? {
+        let end = code.index(code.startIndex, offsetBy: min(cursor, code.count))
+        let prefix = code[..<end]
+        var start = prefix.endIndex
+        while start > prefix.startIndex {
+            let prev = prefix.index(before: start)
+            let ch = prefix[prev]
+            guard ch.isLetter || ch.isNumber || ch == "_" || ch == "$" || ch == "." else { break }
+            start = prev
+        }
+        let token = prefix[start...]
+        guard let lastDot = token.lastIndex(of: ".") else { return nil }
+        let base = token[..<lastDot]
+        let segment = base.lastIndex(of: ".").map { base[base.index(after: $0)...] } ?? base[...]
+        return segment.isEmpty ? nil : String(segment)
     }
 
     private static func memberPrecedes(_ a: (name: String, callable: Bool), _ b: (name: String, callable: Bool)) -> Bool {

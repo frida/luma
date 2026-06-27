@@ -24,9 +24,18 @@ enum FridaTypeIndex {
         var docSummary: String?
         var paragraphEnded = false
         var inDoc = false
+        var container: String?
 
         for rawLine in content.split(separator: "\n", omittingEmptySubsequences: false) {
             let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
+
+            if !inDoc {
+                if let opened = topLevelContainer(rawLine) {
+                    container = opened
+                } else if rawLine == "}" {
+                    container = nil
+                }
+            }
 
             if inDoc {
                 if trimmed.contains("*/") {
@@ -54,7 +63,11 @@ enum FridaTypeIndex {
             }
 
             if let (name, signature) = memberDeclaration(trimmed) {
-                record(name: name, detail: pendingDoc ?? signature, into: &details, ambiguous: &ambiguous)
+                let detail = pendingDoc ?? signature
+                record(name: name, detail: detail, into: &details, ambiguous: &ambiguous)
+                if let container {
+                    record(name: "\(container).\(name)", detail: detail, into: &details, ambiguous: &ambiguous)
+                }
             }
             pendingDoc = nil
             docSummary = nil
@@ -119,6 +132,14 @@ enum FridaTypeIndex {
         "return", "new", "typeof", "keyof", "readonly", "public", "private",
     ]
 
+    private static func topLevelContainer(_ line: Substring) -> String? {
+        guard let first = line.first, first.isLetter, line.hasSuffix("{") else { return nil }
+        return containerPattern.firstCapture(in: String(line))?.name
+    }
+
+    private static let containerPattern = CapturePattern(
+        #"^(?:export\s+|declare\s+)*(?:namespace|interface|class)\s+([A-Za-z_$][\w$]*)(.*)$"#
+    )
     private static let functionPattern = CapturePattern(
         #"^(?:export\s+)?(?:declare\s+)?function\s+([A-Za-z_$][\w$]*)\s*(\(.*)$"#
     )
