@@ -97,7 +97,9 @@ export class Trace {
 
         let drain: DrainMode = "in-agent";
         recv("itrace:ack:" + token, message => {
-            drain = message.drain;
+            if (message.drain === "system" || message.drain === "in-agent") {
+                drain = message.drain;
+            }
         }).wait();
         return drain;
     }

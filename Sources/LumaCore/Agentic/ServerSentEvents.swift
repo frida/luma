@@ -11,7 +11,9 @@ struct ServerSentEventStream {
 func openServerSentEventStream(session: URLSession, request: URLRequest) async throws -> ServerSentEventStream {
     #if canImport(FoundationNetworking)
     let (data, response) = try await session.data(for: request)
-    let http = response as! HTTPURLResponse
+    guard let http = response as? HTTPURLResponse else {
+        throw LumaCoreError.protocolViolation("Server sent an invalid HTTP response.")
+    }
     let body = String(decoding: data, as: UTF8.self)
     let lines = AsyncThrowingStream<String, Error> { continuation in
         for line in body.split(separator: "\n", omittingEmptySubsequences: false) {
@@ -22,7 +24,9 @@ func openServerSentEventStream(session: URLSession, request: URLRequest) async t
     return ServerSentEventStream(http: http, lines: lines)
     #else
     let (bytes, response) = try await session.bytes(for: request)
-    let http = response as! HTTPURLResponse
+    guard let http = response as? HTTPURLResponse else {
+        throw LumaCoreError.protocolViolation("Server sent an invalid HTTP response.")
+    }
     let lines = AsyncThrowingStream<String, Error> { continuation in
         let task = Task {
             do {

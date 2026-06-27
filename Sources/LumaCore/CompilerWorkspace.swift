@@ -390,25 +390,41 @@ public struct CompilerDiagnostic: Sendable, Hashable, CustomStringConvertible {
     }
 
     static func parse(_ payload: Any, pathDisplay: ((String) -> String)?) -> [CompilerDiagnostic] {
-        let entries = payload as! [[String: Any]]
+        guard let entries = payload as? [[String: Any]] else { return [] }
         return entries.map { decode($0, pathDisplay: pathDisplay) }
     }
 
     private static func decode(_ obj: [String: Any], pathDisplay: ((String) -> String)?) -> CompilerDiagnostic {
         return CompilerDiagnostic(
-            category: obj["category"] as! String,
-            code: Int(obj["code"] as! Int64),
-            location: (obj["file"] as? [String: Any]).map { decodeLocation($0, pathDisplay: pathDisplay) },
-            text: obj["text"] as! String
+            category: obj["category"] as? String ?? "error",
+            code: decodeInt(obj["code"]) ?? -1,
+            location: (obj["file"] as? [String: Any]).flatMap { decodeLocation($0, pathDisplay: pathDisplay) },
+            text: obj["text"] as? String ?? "Compiler returned an invalid diagnostic payload."
         )
     }
 
-    private static func decodeLocation(_ obj: [String: Any], pathDisplay: ((String) -> String)?) -> Location {
-        let rawPath = obj["path"] as! String
+    private static func decodeLocation(_ obj: [String: Any], pathDisplay: ((String) -> String)?) -> Location? {
+        guard let rawPath = obj["path"] as? String,
+            let line = decodeInt(obj["line"]),
+            let character = decodeInt(obj["character"])
+        else { return nil }
         return Location(
             path: pathDisplay?(rawPath) ?? rawPath,
-            line: Int(obj["line"] as! Int64),
-            character: Int(obj["character"] as! Int64)
+            line: line,
+            character: character
         )
+    }
+
+    private static func decodeInt(_ raw: Any?) -> Int? {
+        switch raw {
+        case let value as Int:
+            return value
+        case let value as Int64:
+            return Int(value)
+        case let value as Double:
+            return Int(exactly: value)
+        default:
+            return nil
+        }
     }
 }

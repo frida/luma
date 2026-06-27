@@ -249,8 +249,12 @@ public final class MCPServer {
 
     private func toolCallPayload(toolCallID: String, body: String, isError: Bool) -> [String: Any] {
         let envelope: [String: Any] = ["tool_call_id": toolCallID, "body": body]
-        let data = try! JSONSerialization.data(withJSONObject: envelope, options: [.sortedKeys])
-        let text = String(decoding: data, as: UTF8.self)
+        let text: String
+        if let data = try? JSONSerialization.data(withJSONObject: envelope, options: [.sortedKeys]) {
+            text = String(decoding: data, as: UTF8.self)
+        } else {
+            text = #"{"body":"Failed to serialize tool result.","tool_call_id":""}"#
+        }
         return [
             "content": [["type": "text", "text": text]],
             "isError": isError,
@@ -351,8 +355,18 @@ public final class MCPServer {
             if error != nil { conn.cancel(); return }
             var buffer = accumulated
             if let data { buffer.append(data) }
-            guard let parsed = parseHTTPRequest(buffer) else {
+            let parsed: ParsedRequest
+            switch parseHTTPRequest(buffer) {
+            case .complete(let request):
+                parsed = request
+            case .incomplete:
                 self.readRequest(on: conn, accumulated: buffer)
+                return
+            case .rejected(let response):
+                let bytes = encodeHTTPResponse(response)
+                conn.send(content: bytes, isComplete: true, completion: .contentProcessed { _ in
+                    conn.cancel()
+                })
                 return
             }
 
@@ -522,16 +536,39 @@ private struct ParsedRequest {
     let body: Data
 }
 
-private func parseHTTPRequest(_ buffer: Data) -> ParsedRequest? {
+private let maxHTTPRequestHeaderBytes = 16 * 1024
+private let maxHTTPRequestBodyBytes = 8 * 1024 * 1024
+
+private enum HTTPParseResult {
+    case complete(ParsedRequest)
+    case incomplete
+    case rejected(HTTPResponse)
+}
+
+private func parseHTTPRequest(_ buffer: Data) -> HTTPParseResult {
     guard let separator = "\r\n\r\n".data(using: .utf8),
         let headerEnd = buffer.range(of: separator)
-    else { return nil }
+    else {
+        if buffer.count > maxHTTPRequestHeaderBytes {
+            return .rejected(HTTPResponse(status: 431, body: Data("Request Header Fields Too Large".utf8), contentType: "text/plain"))
+        }
+        return .incomplete
+    }
     let headerData = buffer[..<headerEnd.lowerBound]
-    guard let header = String(data: headerData, encoding: .utf8) else { return nil }
+    guard headerData.count <= maxHTTPRequestHeaderBytes else {
+        return .rejected(HTTPResponse(status: 431, body: Data("Request Header Fields Too Large".utf8), contentType: "text/plain"))
+    }
+    guard let header = String(data: headerData, encoding: .utf8) else {
+        return .rejected(HTTPResponse(status: 400, body: Data("Bad Request".utf8), contentType: "text/plain"))
+    }
     let lines = header.components(separatedBy: "\r\n")
-    guard let requestLine = lines.first else { return nil }
+    guard let requestLine = lines.first else {
+        return .rejected(HTTPResponse(status: 400, body: Data("Bad Request".utf8), contentType: "text/plain"))
+    }
     let parts = requestLine.split(separator: " ", maxSplits: 2).map(String.init)
-    guard parts.count >= 2 else { return nil }
+    guard parts.count >= 2 else {
+        return .rejected(HTTPResponse(status: 400, body: Data("Bad Request".utf8), contentType: "text/plain"))
+    }
     let method = parts[0]
     let path = parts[1]
 
@@ -542,13 +579,24 @@ private func parseHTTPRequest(_ buffer: Data) -> ParsedRequest? {
         let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
         headers[String(name)] = value
     }
-    let contentLength = (headers["content-length"]).flatMap(Int.init) ?? 0
+    let contentLength: Int
+    if let value = headers["content-length"] {
+        guard let parsed = Int(value), parsed >= 0 else {
+            return .rejected(HTTPResponse(status: 400, body: Data("Bad Request".utf8), contentType: "text/plain"))
+        }
+        contentLength = parsed
+    } else {
+        contentLength = 0
+    }
+    guard contentLength <= maxHTTPRequestBodyBytes else {
+        return .rejected(HTTPResponse(status: 413, body: Data("Payload Too Large".utf8), contentType: "text/plain"))
+    }
 
     let bodyStart = headerEnd.upperBound
     let available = buffer.count - bodyStart
-    guard available >= contentLength else { return nil }
+    guard available >= contentLength else { return .incomplete }
     let body = Data(buffer[bodyStart..<(bodyStart + contentLength)])
-    return ParsedRequest(method: method, path: path, headers: headers, body: body)
+    return .complete(ParsedRequest(method: method, path: path, headers: headers, body: body))
 }
 
 private func encodeHTTPResponse(_ response: HTTPResponse) -> Data {
@@ -558,7 +606,9 @@ private func encodeHTTPResponse(_ response: HTTPResponse) -> Data {
     case 204: reason = "No Content"
     case 400: reason = "Bad Request"
     case 401: reason = "Unauthorized"
+    case 413: reason = "Payload Too Large"
     case 405: reason = "Method Not Allowed"
+    case 431: reason = "Request Header Fields Too Large"
     case 500: reason = "Internal Server Error"
     default: reason = "Status"
     }

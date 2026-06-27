@@ -15,7 +15,8 @@ struct WelcomeBackdrop {
     func makeCoordinator() -> Renderer { Renderer() }
 
     fileprivate func install(into view: MTKView, coordinator: Renderer) {
-        view.device = MTLCreateSystemDefaultDevice()
+        guard let device = MTLCreateSystemDefaultDevice() else { return }
+        view.device = device
         view.colorPixelFormat = .bgra8Unorm
         view.framebufferOnly = true
         view.isPaused = true
@@ -76,8 +77,11 @@ final class Renderer: NSObject, MTKViewDelegate {
               let descriptor = view.currentRenderPassDescriptor
         else { return }
 
-        let buffer = commandQueue!.makeCommandBuffer()!
-        let encoder = buffer.makeRenderCommandEncoder(descriptor: descriptor)!
+        guard let commandQueue,
+              let pipeline,
+              let buffer = commandQueue.makeCommandBuffer(),
+              let encoder = buffer.makeRenderCommandEncoder(descriptor: descriptor)
+        else { return }
 
         var uniforms = Uniforms(
             resolution: SIMD2(Float(view.drawableSize.width),
@@ -86,7 +90,7 @@ final class Renderer: NSObject, MTKViewDelegate {
             scheme: scheme
         )
 
-        encoder.setRenderPipelineState(pipeline!)
+        encoder.setRenderPipelineState(pipeline)
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()
@@ -120,15 +124,15 @@ final class Renderer: NSObject, MTKViewDelegate {
     private func startDisplayLink() {
         displayLink?.invalidate()
         proxy.renderer = self
-        let link = makeScreenDisplayLink()
+        guard let link = makeScreenDisplayLink() else { return }
         link.add(to: .main, forMode: .common)
         displayLink = link
     }
 
-    private func makeScreenDisplayLink() -> CADisplayLink {
+    private func makeScreenDisplayLink() -> CADisplayLink? {
         let selector = #selector(DisplayLinkProxy.fire(_:))
         #if os(macOS)
-        return NSScreen.main!.displayLink(target: proxy, selector: selector)
+        return (view?.window?.screen ?? NSScreen.main)?.displayLink(target: proxy, selector: selector)
         #else
         return CADisplayLink(target: proxy, selector: selector)
         #endif

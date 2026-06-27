@@ -33,13 +33,19 @@ struct ITraceCFGView: NSViewRepresentable {
         let container = CFGContainerView()
 
         let metalView = container.metalView
-        metalView.device = MTLCreateSystemDefaultDevice()
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            context.coordinator.container = container
+            container.coordinator = context.coordinator
+            return container
+        }
+
+        metalView.device = device
         metalView.delegate = context.coordinator
         metalView.enableSetNeedsDisplay = true
         metalView.isPaused = true
         metalView.clearColor = MTLClearColor(red: 0.1, green: 0.1, blue: 0.12, alpha: 1)  // Updated in updateNSView
 
-        context.coordinator.setup(device: metalView.device!, view: metalView)
+        context.coordinator.setup(device: device, view: metalView)
         context.coordinator.container = container
 
         let click = NSClickGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleClick(_:)))
@@ -420,9 +426,9 @@ extension ITraceCFGView {
         private var nodeHeightCache: [UInt64: CGFloat] = [:]
         private var fetchTask: Task<Void, Never>?
 
-        private var device: MTLDevice!
-        private var commandQueue: MTLCommandQueue!
-        private var pipelineState: MTLRenderPipelineState!
+        private var device: MTLDevice?
+        private var commandQueue: MTLCommandQueue?
+        private var pipelineState: MTLRenderPipelineState?
 
         var camera = Camera()
 
@@ -446,19 +452,22 @@ extension ITraceCFGView {
 
         func setup(device: MTLDevice, view: MTKView) {
             self.device = device
-            self.commandQueue = device.makeCommandQueue()
-
-            let library = try! device.makeDefaultLibrary(bundle: Bundle.main)
+            guard let commandQueue = device.makeCommandQueue(),
+                let library = try? device.makeDefaultLibrary(bundle: Bundle.main),
+                let vertex = library.makeFunction(name: "cfgVertexShader"),
+                let fragment = library.makeFunction(name: "cfgFragmentShader")
+            else { return }
+            self.commandQueue = commandQueue
 
             let desc = MTLRenderPipelineDescriptor()
-            desc.vertexFunction = library.makeFunction(name: "cfgVertexShader")
-            desc.fragmentFunction = library.makeFunction(name: "cfgFragmentShader")
+            desc.vertexFunction = vertex
+            desc.fragmentFunction = fragment
             desc.colorAttachments[0].pixelFormat = view.colorPixelFormat
             desc.colorAttachments[0].isBlendingEnabled = true
             desc.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
             desc.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
 
-            pipelineState = try! device.makeRenderPipelineState(descriptor: desc)
+            pipelineState = try? device.makeRenderPipelineState(descriptor: desc)
         }
 
         private let titleHeight: CGFloat = 16
@@ -541,7 +550,10 @@ extension ITraceCFGView {
         func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
         func draw(in view: MTKView) {
-            guard let drawable = view.currentDrawable,
+            guard let device,
+                let commandQueue,
+                let pipelineState,
+                let drawable = view.currentDrawable,
                 let descriptor = view.currentRenderPassDescriptor
             else { return }
 
@@ -702,14 +714,15 @@ extension ITraceCFGView {
 
             guard !vertices.isEmpty else { return }
 
-            let buffer = device.makeBuffer(
+            guard let buffer = device.makeBuffer(
                 bytes: vertices,
                 length: vertices.count * MemoryLayout<Vertex>.stride,
                 options: .storageModeShared
-            )
+            ) else { return }
 
-            let commandBuffer = commandQueue.makeCommandBuffer()!
-            let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor)!
+            guard let commandBuffer = commandQueue.makeCommandBuffer(),
+                let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor)
+            else { return }
             encoder.setRenderPipelineState(pipelineState)
             encoder.setVertexBuffer(buffer, offset: 0, index: 0)
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertices.count)
@@ -1400,4 +1413,3 @@ struct ITraceCFGView: View {
 }
 
 #endif
-
