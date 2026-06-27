@@ -1,6 +1,33 @@
 // swift-tools-version: 6.1
 
+import Foundation
 import PackageDescription
+
+#if canImport(Darwin)
+let manifestArgs = CommandLine.arguments
+let manifestFileno = manifestArgs.firstIndex(of: "-fileno").flatMap { index -> String? in
+    let valueIndex = manifestArgs.index(after: index)
+    guard valueIndex < manifestArgs.endIndex else { return nil }
+    return manifestArgs[valueIndex]
+}
+let usesXcodePackageResolution = manifestFileno != nil && manifestFileno != "4"
+#else
+let usesXcodePackageResolution = false
+#endif
+let lumaCoreExcludes = usesXcodePackageResolution ? [] : ["Generated"]
+let lumaCorePlugins: [Target.PluginUsage] = usesXcodePackageResolution ? [] : [
+    .plugin(name: "LumaBundlePlugin"),
+]
+let lumaBundlePluginTargets: [Target] = usesXcodePackageResolution ? [] : [
+    .plugin(
+        name: "LumaBundlePlugin",
+        capability: .buildTool(),
+        dependencies: [
+            .target(name: "LumaBundleCompiler"),
+        ],
+        path: "Plugins/LumaBundlePlugin"
+    ),
+]
 
 #if !canImport(Darwin)
 let cSoupTargets: [Target] = [
@@ -30,6 +57,7 @@ let package = Package(
     products: [
         .library(name: "LumaCore", targets: ["LumaCore"]),
         .executable(name: "luma-bundle-compiler", targets: ["LumaBundleCompiler"]),
+        .executable(name: "LumaBundleCompiler", targets: ["LumaBundleCompiler"]),
     ],
     dependencies: [
         .package(url: "https://github.com/frida/frida-swift", branch: "main"),
@@ -47,12 +75,14 @@ let package = Package(
                 .product(name: "SwiftyR2", package: "SwiftyR2"),
             ] + lumaCoreSoupDeps,
             path: "Sources/LumaCore",
+            exclude: lumaCoreExcludes,
             resources: [
                 .process("Resources"),
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
-            ]
+            ],
+            plugins: lumaCorePlugins
         ),
         .executableTarget(
             name: "LumaBundleCompiler",
@@ -64,5 +94,5 @@ let package = Package(
                 .swiftLanguageMode(.v5),
             ]
         ),
-    ]
+    ] + lumaBundlePluginTargets
 )

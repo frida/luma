@@ -83,6 +83,7 @@ struct LumaBundleCompiler {
         var stagingDir: String?
         var manifestPath: String?
         var lockfilePath: String?
+        var shouldUpdateLockfile = true
         var entries: [Entry] = []
         var typingsEntries: [TypingsEntry] = []
         var packageSpecs: [String] = []
@@ -135,6 +136,9 @@ struct LumaBundleCompiler {
             case "--staging-dir":
                 guard !args.isEmpty else { throw ToolError.usage("Missing value for --staging-dir") }
                 stagingDir = args.removeFirst()
+
+            case "--no-lockfile-update":
+                shouldUpdateLockfile = false
 
             case "--package":
                 guard !args.isEmpty else { throw ToolError.usage("Missing value for --package") }
@@ -232,13 +236,24 @@ struct LumaBundleCompiler {
                 opts.role = .runtime
                 opts.specs = packageSpecs
 
-                _ = try await pm.install(options: opts)
+                do {
+                    _ = try await pm.install(options: opts)
+                } catch {
+                    fputs("[packages] frida install failed: \(error.localizedDescription)\n", stderr)
+                    fputs("[packages] falling back to npm\n", stderr)
+                    let stagingLockfile = URL(fileURLWithPath: stagingDir)
+                        .appendingPathComponent("package-lock.json").path
+                    try runNPMInstall(
+                        in: stagingDir,
+                        specs: packageSpecs,
+                        preferCleanInstall: packageSpecs.isEmpty && fm.fileExists(atPath: stagingLockfile))
+                }
 
                 fputs("[packages] done\n", stderr)
 
                 let stagingLockfile = URL(fileURLWithPath: stagingDir)
                     .appendingPathComponent("package-lock.json").path
-                if let dst = lockfilePath, fm.fileExists(atPath: stagingLockfile) {
+                if shouldUpdateLockfile, let dst = lockfilePath, fm.fileExists(atPath: stagingLockfile) {
                     if fm.fileExists(atPath: dst) {
                         try fm.removeItem(atPath: dst)
                     }
@@ -438,6 +453,7 @@ struct LumaBundleCompiler {
               --config <path>               JSON config listing packages, typings, agents, modules
               --project-root <path>         Root that agent entrypoints resolve against
               --staging-dir <path>          Directory for package installation and compilation
+              --no-lockfile-update          Do not copy the staging lockfile back to the config directory
               --swift-out <path>            Override agent output path from config
               --typings-out <path>          Override typings output path from config
               --package <spec>              Install an extra npm package
@@ -464,15 +480,20 @@ struct LumaBundleCompiler {
 
         let enumerator = fm.enumerator(
             at: srcDir,
-            includingPropertiesForKeys: [.isRegularFileKey],
+            includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
             options: [.skipsHiddenFiles]
         )
 
         while let url = enumerator?.nextObject() as? URL {
-            let values = try url.resourceValues(forKeys: [.isRegularFileKey])
+            let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
+            if values.isDirectory == true, url.lastPathComponent == "node_modules" {
+                enumerator?.skipDescendants()
+                continue
+            }
             guard values.isRegularFile == true else { continue }
 
             let relPath = url.path.replacingOccurrences(of: srcDir.path + "/", with: "")
+            guard relPath != "package.json", relPath != "package-lock.json" else { continue }
             let dst = dstDir.appendingPathComponent(relPath)
 
             if fm.fileExists(atPath: dst.path) {
@@ -480,6 +501,29 @@ struct LumaBundleCompiler {
             }
             try fm.createDirectory(at: dst.deletingLastPathComponent(), withIntermediateDirectories: true)
             try fm.copyItem(at: url, to: dst)
+        }
+    }
+
+    static func runNPMInstall(in directory: String, specs: [String], preferCleanInstall: Bool) throws {
+        let args: [String]
+        if preferCleanInstall {
+            args = ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"]
+        } else {
+            args = ["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund"] + specs
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = args
+        process.currentDirectoryURL = URL(fileURLWithPath: directory, isDirectory: true)
+        process.standardOutput = FileHandle.standardError
+        process.standardError = FileHandle.standardError
+
+        try process.run()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else {
+            throw ToolError.buildFailed("npm \(args.dropFirst().joined(separator: " ")) exited with \(process.terminationStatus)")
         }
     }
 }
