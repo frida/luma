@@ -3135,7 +3135,9 @@ final class MainWindow: InstrumentUIHost {
     ) -> (rowBox: Box, iconHost: Box, chevronImage: Gtk.Image) {
         let rowBox = Box(orientation: .horizontal, spacing: 0)
         rowBox.halign = .start
-        rowBox.marginStart = MainWindow.sidebarRowLeadingPad
+        rowBox.marginStart = MainWindow.sessionChildMarginStart
+            - MainWindow.sidebarChevronColumnWidth
+            - MainWindow.sidebarChevronToIconSpacing
         rowBox.marginEnd = 12
         rowBox.marginTop = 2
         rowBox.marginBottom = 2
@@ -3144,10 +3146,6 @@ final class MainWindow: InstrumentUIHost {
         chevron.button.setSizeRequest(width: MainWindow.sidebarChevronColumnWidth, height: -1)
         chevron.button.marginEnd = MainWindow.sidebarChevronToIconSpacing
         rowBox.append(child: chevron.button)
-
-        let iconColumnSpacer = Box(orientation: .horizontal, spacing: 0)
-        iconColumnSpacer.setSizeRequest(width: MainWindow.sidebarIconColumnWidth, height: -1)
-        rowBox.append(child: iconColumnSpacer)
 
         let iconHost = MainWindow.makeChildIconHost()
         iconHost.marginEnd = MainWindow.sidebarIconToLabelSpacing
