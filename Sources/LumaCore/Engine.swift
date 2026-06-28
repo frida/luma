@@ -242,6 +242,7 @@ public final class Engine {
         llmRegistry.register(AnthropicProvider())
         llmRegistry.register(OpenAIProvider())
         llmRegistry.register(LocalOpenAICompatibleProvider())
+        llmRegistry.register(OpenAICompatibleURLProvider())
         MissionTools.registerStandard(in: missionTools, engine: self)
         missionsObservation = store.observeMissions { [weak self] missions in
             Task { @MainActor in
@@ -5508,7 +5509,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         switch event {
         case .textDelta(let text):
             missionLiveTextByID[missionID, default: ""] += text
-        case .messageStop, .finalMessage:
+        case .liveTextCleared:
             missionLiveTextByID.removeValue(forKey: missionID)
         default:
             break

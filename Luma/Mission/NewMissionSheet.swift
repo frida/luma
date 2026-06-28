@@ -166,11 +166,11 @@ struct NewMissionSheet: View {
                         }
                     }
 
-                    if currentProviderRequiresKey {
+                    if currentProviderSupportsKey {
                         if checkingAPIKey {
                             HStack { ProgressView().scaleEffect(0.7); Text("Checking saved API key…").foregroundStyle(.secondary) }
                         } else if !hasStoredAPIKey {
-                            SecureField("API key for \(currentProviderDisplayName)", text: $apiKey)
+                            SecureField(apiKeyPrompt, text: $apiKey)
                                 .textFieldStyle(.roundedBorder)
                             Text("Stored under the app's data directory. Never written to the project document.")
                                 .font(.caption)
@@ -231,6 +231,20 @@ struct NewMissionSheet: View {
             .descriptor.capabilities.supports(.apiKey) ?? false
     }
 
+    private var currentProviderSupportsKey: Bool {
+        guard let capabilities = engine.llmRegistry.provider(id: selectedProviderID)?.descriptor.capabilities else {
+            return false
+        }
+        return capabilities.supports(.apiKey) || capabilities.supports(.optionalAPIKey)
+    }
+
+    private var apiKeyPrompt: String {
+        if currentProviderRequiresKey {
+            return "API key for \(currentProviderDisplayName)"
+        }
+        return "API key for \(currentProviderDisplayName) (optional)"
+    }
+
     private var currentProviderSupportsThinking: Bool {
         engine.llmRegistry.provider(id: selectedProviderID)?
             .descriptor.capabilities.supports(.thinking) ?? false
@@ -258,7 +272,7 @@ struct NewMissionSheet: View {
     }
 
     private func refreshAPIKeyStatus() async {
-        guard currentProviderRequiresKey else {
+        guard currentProviderSupportsKey else {
             hasStoredAPIKey = false
             checkingAPIKey = false
             return

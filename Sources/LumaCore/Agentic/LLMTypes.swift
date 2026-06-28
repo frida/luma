@@ -218,6 +218,7 @@ public enum LLMTurnEvent: Sendable {
     case usage(LLMUsage)
     case messageStop(LLMStopReason)
     case finalMessage(role: LLMRole, blocks: [LLMContentBlock])
+    case liveTextCleared
 }
 
 public enum LLMProviderError: LocalizedError, Sendable {

@@ -106,7 +106,7 @@ struct MissionView: View {
             switch event {
             case .textDelta(let text):
                 liveText.append(text)
-            case .messageStop, .finalMessage:
+            case .liveTextCleared:
                 liveText = ""
             default:
                 break

@@ -135,7 +135,7 @@ final class MissionDetailPane {
             case .textDelta(let text):
                 self.liveText += text
                 self.transcript.setLiveText(self.liveText)
-            case .messageStop, .finalMessage:
+            case .liveTextCleared:
                 self.liveText = ""
                 self.transcript.setLiveText("")
             default:
