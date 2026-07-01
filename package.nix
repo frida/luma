@@ -20,11 +20,11 @@
 }:
 stdenv.mkDerivation (finalAttrs: {
   pname = "luma";
-  version = "1.0.4";
+  version = "1.1.0";
 
   src = fetchurl {
     url = "https://github.com/frida/luma/releases/download/${finalAttrs.version}/luma-${finalAttrs.version}-ubuntu-24.04-x86_64.deb";
-    hash = "sha256-zz2T0kGrJaCp3eC75onyjJRrYg/6gWhH/ZHln1G80KA=";
+    hash = "sha256-Lb1cfzALmeed92EYxIDDQUvPnIRZzzBeLA8bautCXQ0=";
   };
 
   nativeBuildInputs = [
