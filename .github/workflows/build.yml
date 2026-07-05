@@ -1567,14 +1567,14 @@ jobs:
             artifacts/luma-*.flatpak
           fail_on_unmatched_files: true
 
-      - name: Check out main for flake.nix bump
+      - name: Check out main for package.nix bump
         uses: actions/checkout@v6
         with:
           ref: main
           path: repo
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pin flake.nix to ${{ github.ref_name }}
+      - name: Pin package.nix to ${{ github.ref_name }}
         env:
           VERSION: ${{ github.ref_name }}
         run: |
@@ -1587,15 +1587,15 @@ jobs:
             -e "s|version = \"[^\"]*\";|version = \"${VERSION}\";|" \
             -e "s|ubuntu-[0-9.]*-x86_64\\.deb|ubuntu-${ubuntu_rel}-x86_64.deb|" \
             -e "s|hash = \"sha256-[^\"]*\";|hash = \"${hash}\";|" \
-            flake.nix
-          if git diff --quiet flake.nix; then
-            echo "flake.nix already up to date"
+            package.nix
+          if git diff --quiet package.nix; then
+            echo "package.nix already up to date"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add flake.nix
-          git commit -m "nix: Pin flake.nix to ${VERSION}"
+          git add package.nix
+          git commit -m "nix: Pin package.nix to ${VERSION}"
           git push
 
       - name: Notify luma-website
