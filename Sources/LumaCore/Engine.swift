@@ -241,7 +241,8 @@ public final class Engine {
         #endif
         llmRegistry.register(AnthropicProvider())
         llmRegistry.register(OpenAIProvider())
-        llmRegistry.register(LocalOpenAICompatibleProvider())
+        llmRegistry.register(OpenAICompatibleProvider.local())
+        llmRegistry.register(OpenAICompatibleProvider.remote())
         MissionTools.registerStandard(in: missionTools, engine: self)
         missionsObservation = store.observeMissions { [weak self] missions in
             Task { @MainActor in

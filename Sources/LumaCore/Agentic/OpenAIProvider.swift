@@ -67,8 +67,7 @@ func fetchOpenAICompatibleModels(
     baseURL: URL,
     apiKey: String?
 ) async throws -> [LLMModelInfo] {
-    var url = baseURL
-    url.append(path: "/v1/models")
+    let url = openAICompatibleURL(baseURL: baseURL, path: "/v1/models")
 
     var request = URLRequest(url: url)
     request.setValue("application/json", forHTTPHeaderField: "accept")
@@ -143,12 +142,7 @@ private func driveOpenAIStream(
         }
     }
 
-    var url = baseURL
-    if !url.path.contains("/v1") {
-        url.append(path: "/v1/chat/completions")
-    } else {
-        url.append(path: "/chat/completions")
-    }
+    let url = openAICompatibleURL(baseURL: baseURL, path: "/v1/chat/completions")
 
     var urlRequest = URLRequest(url: url)
     urlRequest.httpMethod = "POST"
@@ -193,6 +187,18 @@ private func driveOpenAIStream(
         continuation.yield(.finalMessage(role: .assistant, blocks: blocks))
     }
     continuation.yield(.messageStop(accumulator.stopReason ?? .endTurn))
+}
+
+private func openAICompatibleURL(baseURL: URL, path: String) -> URL {
+    var url = baseURL
+    let normalizedPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
+    let components = url.path.split(separator: "/").map(String.init)
+    if components.contains("v1"), normalizedPath.hasPrefix("v1/") {
+        url.append(path: String(normalizedPath.dropFirst(3)))
+    } else {
+        url.append(path: normalizedPath)
+    }
+    return url
 }
 
 private func buildOpenAIRequestBody(_ request: LLMTurnRequest) -> [String: Any] {
