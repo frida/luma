@@ -116,7 +116,7 @@ struct MissionView: View {
             case .textDelta(let text):
                 pendingLiveText.append(text)
                 scheduleLiveFlush()
-            case .messageStop, .finalMessage:
+            case .liveTextCleared:
                 pendingLiveText = ""
                 liveFlushTask?.cancel()
                 liveFlushTask = nil

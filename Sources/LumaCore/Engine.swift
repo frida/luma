@@ -5572,7 +5572,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         switch event {
         case .textDelta(let text):
             missionLiveTextByID[missionID, default: ""] += text
-        case .messageStop, .finalMessage:
+        case .liveTextCleared:
             missionLiveTextByID.removeValue(forKey: missionID)
         default:
             break

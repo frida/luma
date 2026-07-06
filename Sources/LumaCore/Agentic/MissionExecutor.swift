@@ -47,6 +47,7 @@ public final class MissionExecutor {
         if var mission = try? store.fetchMission(id: missionID), mission.status.isLive {
             mission.status = .cancelled
             persistMission(mission)
+            liveDeltaSink?(missionID, .liveTextCleared)
         }
     }
 
@@ -122,6 +123,7 @@ public final class MissionExecutor {
             if !outcome.blocks.isEmpty {
                 do {
                     try persistAssistantTurn(mission: &mission, outcome: outcome)
+                    liveDeltaSink?(mission.id, .liveTextCleared)
                 } catch {
                     failMission(&mission, reason: "Could not persist turn: \(error.localizedDescription)")
                     return
@@ -503,6 +505,7 @@ public final class MissionExecutor {
             try? store.save(turn)
             collaboration?.enqueueMissionTurn(turn)
         }
+        liveDeltaSink?(mission.id, .liveTextCleared)
     }
 }
 
