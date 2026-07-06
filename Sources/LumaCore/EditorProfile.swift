@@ -795,19 +795,23 @@ public enum CustomInstrumentTypings {
 /// `defineHandler({...})` autocompletes correctly.
 public enum TracerTypings {
     public static let handlerDeclarations = #"""
-        declare function defineHandler(h: Handler): void;
+        export {};
 
-        type Handler = FunctionHandlers | InstructionHandler;
+        declare global {
+            function defineHandler(h: Handler): void;
 
-        interface FunctionHandlers {
-            onEnter?: EnterHandler;
-            onLeave?: LeaveHandler;
+            type Handler = FunctionHandlers | InstructionHandler;
+
+            interface FunctionHandlers {
+                onEnter?: EnterHandler;
+                onLeave?: LeaveHandler;
+            }
+
+            type EnterHandler = (this: InvocationContext, log: LogHandler, args: InvocationArguments) => void;
+            type LeaveHandler = (this: InvocationContext, log: LogHandler, retval: InvocationReturnValue) => any;
+            type InstructionHandler = (this: InvocationContext, log: LogHandler, args: InvocationArguments) => void;
+            type LogHandler = (...args: any[]) => void;
         }
-
-        type EnterHandler = (this: InvocationContext, log: LogHandler, args: InvocationArguments) => void;
-        type LeaveHandler = (this: InvocationContext, log: LogHandler, retval: InvocationReturnValue) => any;
-        type InstructionHandler = (this: InvocationContext, log: LogHandler, args: InvocationArguments) => void;
-        type LogHandler = (...args: any[]) => void;
         """#
 
     public static let handlerLib = EditorExtraLib(

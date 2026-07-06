@@ -4179,15 +4179,19 @@ public final class Engine {
             try fm.createDirectory(at: dirURL, withIntermediateDirectories: true)
         }
 
+        let typingsRelPath = "\(dirRelPath)/luma-tracer-typings.ts"
         let moduleRelPath = "\(dirRelPath)/\(id.uuidString).ts"
         let entryRelPath = "\(dirRelPath)/\(id.uuidString).entry.ts"
 
+        let typingsURL = paths.root.appendingPathComponent(typingsRelPath)
         let moduleURL = paths.root.appendingPathComponent(moduleRelPath)
         let entryURL = paths.root.appendingPathComponent(entryRelPath)
 
+        try TracerTypings.handlerDeclarations.write(to: typingsURL, atomically: true, encoding: .utf8)
         try tsSource.write(to: moduleURL, atomically: true, encoding: .utf8)
 
         let entrySource = """
+            import "./luma-tracer-typings.ts";
             import "./\(id.uuidString).ts";
             export {};
             """
