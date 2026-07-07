@@ -33,7 +33,7 @@ final class PackageDetailPane {
         widget = Box(orientation: .vertical, spacing: 12)
         widget.marginStart = 24
         widget.marginEnd = 24
-        widget.marginTop = 24
+        widget.marginTop = 0
         widget.marginBottom = 24
         widget.hexpand = true
         widget.vexpand = true
