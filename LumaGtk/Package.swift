@@ -189,10 +189,12 @@ func pkgConfigFlags(_ packages: [String], libs: Bool = false) -> [String] {
     proc.waitUntilExit()
     guard proc.terminationStatus == 0 else { return [] }
     let data = pipe.fileHandleForReading.readDataToEndOfFile()
-    return String(data: data, encoding: .utf8)?
+    let tokens = String(data: data, encoding: .utf8)?
         .trimmingCharacters(in: .whitespacesAndNewlines)
         .split(separator: " ")
         .map(String.init) ?? []
+    var seen = Set<String>()
+    return tokens.filter { seen.insert($0).inserted }
 }
 
 func pkgConfigAtLeast(_ package: String, _ version: String) -> Bool {
