@@ -224,7 +224,7 @@ final class MainWindow: InstrumentUIHost {
         self.actionQueuePopover = actionQueuePopover
 
         let installPackageButton = Button()
-        installPackageButton.set(iconName: "folder-download-symbolic")
+        installPackageButton.set(iconName: "package-x-generic-symbolic")
         installPackageButton.tooltipText = "Install Package\u{2026}"
         header.packEnd(child: installPackageButton)
         self.installPackageButton = installPackageButton
@@ -3834,13 +3834,25 @@ final class MainWindow: InstrumentUIHost {
         packagesList.removeAll()
         for package in snapshot {
             let row = ListBoxRow()
-            let label = Label(str: "\(package.name)  \(package.version)")
-            label.halign = .start
-            label.marginStart = 12
-            label.marginEnd = 12
-            label.marginTop = 4
-            label.marginBottom = 4
-            row.set(child: label)
+            let content = Box(orientation: .horizontal, spacing: 8)
+            content.marginStart = 12
+            content.marginEnd = 12
+            content.marginTop = 4
+            content.marginBottom = 4
+            let icon = Image(iconName: "package-x-generic-symbolic")
+            content.append(child: icon)
+            let textColumn = Box(orientation: .vertical, spacing: 2)
+            let nameLabel = Label(str: package.name)
+            nameLabel.halign = .start
+            nameLabel.add(cssClass: "heading")
+            textColumn.append(child: nameLabel)
+            let versionLabel = Label(str: package.version)
+            versionLabel.halign = .start
+            versionLabel.add(cssClass: "caption")
+            versionLabel.add(cssClass: "dim-label")
+            textColumn.append(child: versionLabel)
+            content.append(child: textColumn)
+            row.set(child: content)
             packagesList.append(child: row)
         }
         packagesHeaderLabel?.label = "Packages (\(snapshot.count))"
