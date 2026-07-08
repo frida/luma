@@ -56,6 +56,33 @@ function Repair-PkgConfigPrefix {
 Repair-PkgConfigPrefix (Join-Path $frida 'lib\pkgconfig')
 Repair-PkgConfigPrefix (Join-Path $r2    'lib\pkgconfig')
 
+# SwiftPM emits a `-L<dir> -l<lib>` pair for every library, repeating the same
+# few lib dirs hundreds of times. On the GTK/frida/r2 stack the final link
+# overshoots Windows' ~32 KB command-line limit and swift build aborts with
+# "The filename or extension is too long". Mirror each pkgconfig dir into a
+# sibling `pkgconfig-nolibpath` with the `-L` stripped from its Libs lines, and
+# put the real lib dirs on the linker's LIB search path instead. The mirror sits
+# at the same depth (prefix/lib/...), so each file's `prefix=${pcfiledir}/../..`
+# still resolves. The link line then carries only -l flags and fits, so no
+# drive-letter subst or post-link relink is needed. Returns the mirror path.
+function New-PkgConfigMirrorWithoutLibPath {
+    param([string] $PkgConfigDir)
+    if (-not (Test-Path $PkgConfigDir)) { return $null }
+    $mirror = Join-Path (Split-Path -Parent $PkgConfigDir) 'pkgconfig-nolibpath'
+    New-Item -ItemType Directory -Force -Path $mirror | Out-Null
+    Get-ChildItem -Path $PkgConfigDir -Filter '*.pc' -File | ForEach-Object {
+        $dst = Join-Path $mirror $_.Name
+        if ((Test-Path $dst) -and (Get-Item $dst).LastWriteTimeUtc -ge $_.LastWriteTimeUtc) { return }
+        $patched = Get-Content -LiteralPath $_.FullName | ForEach-Object {
+            # -creplace: case-sensitive, so -L (search path) is stripped but the
+            # -l library flags are kept.
+            if ($_ -match '^Libs(\.private)?\s*:') { ($_ -creplace '(^|\s)"?-L\S+', '$1').TrimEnd() } else { $_ }
+        }
+        [System.IO.File]::WriteAllLines($dst, [string[]]$patched, [System.Text.UTF8Encoding]::new($false))
+    }
+    return $mirror
+}
+
 # vcpkg ships pkgconf.exe but SwiftGtk's Package.swift invokes
 # "pkg-config". Provide an alias next to pkgconf.exe.
 $pkgconfTools = Join-Path $vcpkg 'tools\pkgconf'
@@ -79,11 +106,11 @@ Get-ChildItem (Join-Path $vcpkg 'include\*.h') -File | Where-Object {
     }
 }
 
-$pkgConfigDirs = @(
-    (Join-Path $frida 'lib\pkgconfig'),
-    (Join-Path $r2    'lib\pkgconfig'),
-    (Join-Path $vcpkg 'lib\pkgconfig')
-) | ForEach-Object { $_ -replace '\\','/' } | Select-Object -Unique
+$pkgConfigDirs = @($frida, $r2, $vcpkg) |
+    ForEach-Object { New-PkgConfigMirrorWithoutLibPath (Join-Path $_ 'lib\pkgconfig') } |
+    Where-Object { $_ } |
+    ForEach-Object { $_ -replace '\\','/' } |
+    Select-Object -Unique
 
 # Root-level vcpkg headers (WebView2.h, sqlite3.h, ...) aren't
 # reachable through pkg-config, so point clang at the vcpkg-shim
@@ -100,6 +127,22 @@ $env:PKG_CONFIG_PATH       = $pkgConfigDirs -join ';'
 $env:GIR_EXTRA_SEARCH_PATH = (Join-Path $vcpkg 'share\gir-1.0') -replace '\\','/'
 $env:CPATH                 = $shimDir
 $env:CPLUS_INCLUDE_PATH    = $shimDir
+
+# The pkgconfig-nolibpath mirror above drops the per-library -L; put the real
+# lib dirs on the linker's LIB search path so lld-link still finds the import
+# libs.
+$libDirs = @($vcpkg, $frida, $r2) |
+    ForEach-Object { Join-Path $_ 'lib' } |
+    Where-Object { Test-Path $_ } |
+    Select-Object -Unique
+$env:LIB = (@($libDirs) + @($env:LIB | Where-Object { $_ })) -join ';'
+
+# Link frida-swift against the system frida-core devkit rather than
+# downloading one, and point GLib at vcpkg's glib-networking so TLS
+# works — luma-bundle-compiler fetches npm type packages over HTTPS,
+# which fails with "TLS support is not available" without it.
+$env:USE_SYSTEM_FRIDA  = '1'
+$env:GIO_EXTRA_MODULES = (Join-Path $vcpkg 'plugins\glib-networking') -replace '\\','/'
 
 # gir2swift shells out to sed/awk to patch generated Swift. Git for
 # Windows' cygwin build of sed (typically first on PATH for most

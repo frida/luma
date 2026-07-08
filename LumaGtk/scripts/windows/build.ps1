@@ -15,6 +15,9 @@ param(
     [string] $FridaPrefix,
     [string] $R2Prefix,
 
+    # SwiftPM build directory; defaults to LumaGtk\.build.
+    [string] $BuildPath,
+
     [Parameter(ValueFromRemainingArguments=$true)]
     [string[]] $ExtraArgs
 )
@@ -48,6 +51,21 @@ if (-not (Get-Command cl -ErrorAction SilentlyContinue)) {
     -FridaPrefix $FridaPrefix `
     -R2Prefix    $R2Prefix
 
+$repo = Split-Path -Parent $pkg
+
+# LumaCore embeds a compiled agent bundle that is generated, not checked in.
+# Produce it before building anything that depends on LumaCore.
+Push-Location $repo
+try {
+    & swift run --package-path . luma-bundle-compiler `
+        --config       (Join-Path $repo 'Agent\bundle.json') `
+        --project-root $repo `
+        --staging-dir  (Join-Path $repo '.build\AgentStaging')
+    if ($LASTEXITCODE -ne 0) { throw "luma-bundle-compiler failed ($LASTEXITCODE)" }
+} finally {
+    Pop-Location
+}
+
 Push-Location $pkg
 try {
     # /ignore:importeddllmain silences vcpkg libxml2's DllMain re-export.
@@ -61,7 +79,9 @@ try {
         'build', '-c', $Configuration,
         '-Xlinker', '/ignore:importeddllmain',
         '-Xlinker', '/ignore:4217'
-    ) + $ExtraArgs
+    )
+    if ($BuildPath) { $swiftArgs += @('--build-path', $BuildPath) }
+    $swiftArgs += $ExtraArgs
     & swift @swiftArgs
     if ($LASTEXITCODE -ne 0) { throw "swift build failed ($LASTEXITCODE)" }
 } finally {
