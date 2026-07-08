@@ -12,6 +12,7 @@ struct ModuleDetailView: View {
     @State private var tab: Tab = .exports
     @State private var selectedRowID: String?
     @State private var facts: [UInt64: AddressFacts] = [:]
+    @State private var filterText: String = ""
 
     enum Tab: String, CaseIterable, Identifiable {
         case exports = "Exports"
@@ -27,19 +28,25 @@ struct ModuleDetailView: View {
     private var loadError: String? { loadErrors[module.id] }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Picker("", selection: $tab) {
-                ForEach(Tab.allCases) { t in
-                    Text(label(for: t)).tag(t)
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                Picker("", selection: $tab) {
+                    ForEach(Tab.allCases) { t in
+                        Text(label(for: t)).tag(t)
+                    }
                 }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+                .pickerStyle(.segmented)
+                .labelsHidden()
 
-            content
+                content
+            }
+            .padding(.leading, 12)
+            .padding(.top, 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+            Divider()
+            filterBar
         }
-        .padding(.leading, 12)
-        .padding(.top, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task(id: module.id) {
             guard bundles[module.id] == nil, loadError == nil else { return }
@@ -55,9 +62,9 @@ struct ModuleDetailView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             switch tab {
-            case .exports: exportsTable(displayBundle.exports)
-            case .imports: importsTable(displayBundle.imports)
-            case .symbols: symbolsTable(displayBundle.symbols)
+            case .exports: exportsTable(filteredExports)
+            case .imports: importsTable(filteredImports)
+            case .symbols: symbolsTable(filteredSymbols)
             }
         }
     }
@@ -69,6 +76,74 @@ struct ModuleDetailView: View {
         case .imports: return "Imports (\(bundle.imports.count))"
         case .symbols: return "Symbols (\(bundle.symbols.count))"
         }
+    }
+
+    private var filteredExports: [LumaCore.ModuleSymbolBundle.Export] {
+        let rows = displayBundle.exports
+        guard !filterText.isEmpty else { return rows }
+        let q = filterText.lowercased()
+        return rows.filter {
+            $0.name.lowercased().contains(q) ||
+            $0.kind.rawValue.lowercased().contains(q) ||
+            String(format: "0x%llx", $0.address).contains(q)
+        }
+    }
+
+    private var filteredImports: [LumaCore.ModuleSymbolBundle.Import] {
+        let rows = displayBundle.imports
+        guard !filterText.isEmpty else { return rows }
+        let q = filterText.lowercased()
+        return rows.filter {
+            $0.name.lowercased().contains(q) ||
+            ($0.module?.lowercased().contains(q) ?? false) ||
+            ($0.kind?.rawValue.lowercased().contains(q) ?? false) ||
+            ($0.address.map { String(format: "0x%llx", $0).contains(q) } ?? false)
+        }
+    }
+
+    private var filteredSymbols: [LumaCore.ModuleSymbolBundle.Symbol] {
+        let rows = displayBundle.symbols
+        guard !filterText.isEmpty else { return rows }
+        let q = filterText.lowercased()
+        return rows.filter {
+            $0.name.lowercased().contains(q) ||
+            $0.type.lowercased().contains(q) ||
+            ($0.sectionID?.lowercased().contains(q) ?? false) ||
+            ($0.size.map { String(format: "0x%x", $0).contains(q) } ?? false) ||
+            String(format: "0x%llx", $0.address).contains(q)
+        }
+    }
+
+    private var filterCounts: (shown: Int, total: Int) {
+        switch tab {
+        case .exports: return (filteredExports.count, displayBundle.exports.count)
+        case .imports: return (filteredImports.count, displayBundle.imports.count)
+        case .symbols: return (filteredSymbols.count, displayBundle.symbols.count)
+        }
+    }
+
+    private var filterBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .font(.system(size: 11))
+            TextField("Filter", text: $filterText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+            if !filterText.isEmpty {
+                let counts = filterCounts
+                Text("Showing \(counts.shown) of \(counts.total)")
+                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11))
+                Button(action: { filterText = "" }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
     }
 
     private func exportsTable(_ rows: [LumaCore.ModuleSymbolBundle.Export]) -> some View {
