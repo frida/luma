@@ -19,10 +19,13 @@ final class ModuleSymbolsPane {
     private let symbolsButton: ToggleButton
     private let listContainer: Box
     private let statusLabel: Label
+    private let filterEntry: SearchEntry
+    private let countLabel: Label
 
     private var bundle: LumaCore.ModuleSymbolBundle?
     private var loadTask: Task<Void, Never>?
     private var tab: Tab = .exports
+    private var filterText: String = ""
 
     enum Tab {
         case exports
@@ -35,11 +38,9 @@ final class ModuleSymbolsPane {
         self.sessionID = sessionID
         self.module = module
 
-        widget = Box(orientation: .vertical, spacing: 8)
+        widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
         widget.vexpand = true
-        widget.marginStart = 12
-        widget.marginBottom = 8
 
         exportsButton = ToggleButton()
         exportsButton.label = "Exports"
@@ -67,9 +68,34 @@ final class ModuleSymbolsPane {
         listContainer.hexpand = true
         listContainer.vexpand = true
 
-        widget.append(child: toggleBar)
-        widget.append(child: statusLabel)
-        widget.append(child: listContainer)
+        let contentBox = Box(orientation: .vertical, spacing: 8)
+        contentBox.hexpand = true
+        contentBox.vexpand = true
+        contentBox.marginStart = 12
+        contentBox.marginTop = 8
+        contentBox.append(child: toggleBar)
+        contentBox.append(child: statusLabel)
+        contentBox.append(child: listContainer)
+
+        filterEntry = SearchEntry()
+        filterEntry.placeholderText = "Filter"
+        filterEntry.hexpand = true
+
+        countLabel = Label(str: "")
+        countLabel.add(cssClass: "dim-label")
+        countLabel.add(cssClass: "caption")
+
+        let filterBar = Box(orientation: .horizontal, spacing: 6)
+        filterBar.marginStart = 10
+        filterBar.marginEnd = 10
+        filterBar.marginTop = 5
+        filterBar.marginBottom = 5
+        filterBar.append(child: filterEntry)
+        filterBar.append(child: countLabel)
+
+        widget.append(child: contentBox)
+        widget.append(child: Separator(orientation: .horizontal))
+        widget.append(child: filterBar)
 
         exportsButton.onToggled { [weak self] _ in
             MainActor.assumeIsolated {
@@ -89,6 +115,14 @@ final class ModuleSymbolsPane {
             MainActor.assumeIsolated {
                 guard let self, self.symbolsButton.active else { return }
                 self.tab = .symbols
+                self.renderCurrent()
+            }
+        }
+
+        filterEntry.onSearchChanged { [weak self] entry in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.filterText = entry.text
                 self.renderCurrent()
             }
         }
@@ -148,7 +182,8 @@ final class ModuleSymbolsPane {
 
         switch tab {
         case .exports:
-            for export in bundle.exports {
+            let rows = filtered(bundle.exports) { [$0.name, $0.kind.rawValue, hex($0.address)] }
+            for export in rows {
                 list.append(child: makeRow(
                     title: export.name,
                     typeLabel: export.kind.rawValue,
@@ -156,8 +191,10 @@ final class ModuleSymbolsPane {
                     context: exportContext(export)
                 ))
             }
+            setFilterCount(shown: rows.count, total: bundle.exports.count)
         case .imports:
-            for imp in bundle.imports {
+            let rows = filtered(bundle.imports) { [$0.name, $0.module, $0.kind?.rawValue, $0.address.map(hex)] }
+            for imp in rows {
                 let typeLabel = [imp.kind?.rawValue, imp.module].compactMap { $0 }.joined(separator: " · ")
                 let target = importTarget(imp)
                 list.append(child: makeRow(
@@ -167,8 +204,10 @@ final class ModuleSymbolsPane {
                     context: target.context
                 ))
             }
+            setFilterCount(shown: rows.count, total: bundle.imports.count)
         case .symbols:
-            for sym in bundle.symbols {
+            let rows = filtered(bundle.symbols) { [$0.name, $0.type, $0.sectionID, $0.size.map { String(format: "0x%x", $0) }, hex($0.address)] }
+            for sym in rows {
                 let typeLabel = [sym.type, sym.sectionID].compactMap { $0 }.joined(separator: " · ")
                 list.append(child: makeRow(
                     title: sym.name,
@@ -177,9 +216,26 @@ final class ModuleSymbolsPane {
                     context: symbolContext(sym)
                 ))
             }
+            setFilterCount(shown: rows.count, total: bundle.symbols.count)
         }
 
         listContainer.append(child: scroll)
+    }
+
+    private func filtered<T>(_ rows: [T], keys: (T) -> [String?]) -> [T] {
+        guard !filterText.isEmpty else { return rows }
+        let needle = filterText.lowercased()
+        return rows.filter { row in
+            keys(row).contains { $0?.lowercased().contains(needle) ?? false }
+        }
+    }
+
+    private func setFilterCount(shown: Int, total: Int) {
+        countLabel.setText(str: filterText.isEmpty ? "" : "Showing \(shown) of \(total)")
+    }
+
+    private func hex(_ address: UInt64) -> String {
+        String(format: "0x%llx", address)
     }
 
     private func makeRow(title: String, typeLabel: String, address: UInt64?, context: AddressContext) -> ListBoxRow {
