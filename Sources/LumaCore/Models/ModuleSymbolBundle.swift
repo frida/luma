@@ -137,6 +137,10 @@ extension ModuleSymbolBundle {
             )
         }
 
-        return ModuleSymbolBundle(exports: exports, imports: imports, symbols: symbols)
+        return ModuleSymbolBundle(
+            exports: exports.sorted { $0.name < $1.name },
+            imports: imports.sorted { $0.name < $1.name },
+            symbols: symbols.sorted { $0.name < $1.name }
+        )
     }
 }
