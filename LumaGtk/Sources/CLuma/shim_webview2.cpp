@@ -106,6 +106,7 @@ struct LumaMonacoView {
     EventRegistrationToken message_token{};
     EventRegistrationToken nav_token{};
     EventRegistrationToken cursor_token{};
+    EventRegistrationToken accel_token{};
     LumaWebViewCapture *capture = nullptr;
     std::wstring pending_uri;
     std::vector<std::wstring> pending_scripts;
@@ -117,6 +118,8 @@ struct LumaMonacoView {
     void *load_user_data = nullptr;
     LumaMonacoTextCallback text_callback = nullptr;
     void *text_user_data = nullptr;
+    LumaMonacoAcceleratorCallback accel_callback = nullptr;
+    void *accel_user_data = nullptr;
 
     // Owned by the GTK main thread.
     double scale = 1.0;
@@ -169,6 +172,8 @@ post_to_worker(LumaMonacoView *self, std::function<void()> fn)
 }
 
 static void sync_size(LumaMonacoView *self);
+static void activate_app_accelerator(LumaMonacoView *self, guint keyval, GdkModifierType mods);
+static bool editor_accelerator(ICoreWebView2AcceleratorKeyPressedEventArgs *args, guint *keyval, GdkModifierType *mods);
 
 // --- captured-frame delivery (main thread) ---------------------------------
 
@@ -279,6 +284,35 @@ worker_on_controller_created(LumaMonacoView *self, HRESULT result,
         return E_FAIL;
     }
 
+    // Otherwise Ctrl+S/P/F etc. trigger Edge's own save-page, print and find bar.
+    ComPtr<ICoreWebView2Settings> settings;
+    if (SUCCEEDED(self->webview->get_Settings(&settings))) {
+        ComPtr<ICoreWebView2Settings3> settings3;
+        if (SUCCEEDED(settings.As(&settings3))) {
+            settings3->put_AreBrowserAcceleratorKeysEnabled(FALSE);
+        }
+    }
+
+    // The focused editor swallows the keyboard, so forward app shortcuts to GTK.
+    self->controller->add_AcceleratorKeyPressed(
+        Callback<ICoreWebView2AcceleratorKeyPressedEventHandler>(
+            [self](ICoreWebView2Controller *, ICoreWebView2AcceleratorKeyPressedEventArgs *args) -> HRESULT {
+                guint keyval;
+                GdkModifierType mods;
+                if (!editor_accelerator(args, &keyval, &mods)) {
+                    return S_OK;
+                }
+                post_to_main([self, keyval, mods] {
+                    if (self->accel_callback &&
+                        self->accel_callback(keyval, static_cast<int>(mods), self->accel_user_data)) {
+                        return;
+                    }
+                    activate_app_accelerator(self, keyval, mods);
+                });
+                return S_OK;
+            }).Get(),
+        &self->accel_token);
+
     self->capture = new LumaWebViewCapture();
     self->capture->on_frame = [self](const uint8_t *bgra, int fw, int fh, int stride) {
         on_capture_frame(self, bgra, fw, fh, stride);
@@ -364,6 +398,39 @@ worker_on_controller_created(LumaMonacoView *self, HRESULT result,
     worker_flush_pending(self);
     post_to_main([self] { sync_size(self); });
     return S_OK;
+}
+
+// Maps a WebView2 accelerator keydown to the GDK keyval and modifiers GTK names
+// its accelerators with, for letter and digit keys held with Ctrl or Alt.
+static bool
+editor_accelerator(ICoreWebView2AcceleratorKeyPressedEventArgs *args, guint *keyval, GdkModifierType *mods)
+{
+    COREWEBVIEW2_KEY_EVENT_KIND kind;
+    args->get_KeyEventKind(&kind);
+    if (kind != COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN &&
+        kind != COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN) {
+        return false;
+    }
+
+    UINT vk = 0;
+    args->get_VirtualKey(&vk);
+    if (vk >= 'A' && vk <= 'Z') {
+        *keyval = vk + ('a' - 'A');
+    } else if (vk >= '0' && vk <= '9') {
+        *keyval = vk;
+    } else {
+        return false;
+    }
+
+    GdkModifierType m = static_cast<GdkModifierType>(0);
+    if (GetKeyState(VK_CONTROL) & 0x8000) m = static_cast<GdkModifierType>(m | GDK_CONTROL_MASK);
+    if (GetKeyState(VK_SHIFT) & 0x8000) m = static_cast<GdkModifierType>(m | GDK_SHIFT_MASK);
+    if (GetKeyState(VK_MENU) & 0x8000) m = static_cast<GdkModifierType>(m | GDK_ALT_MASK);
+    if (!(m & (GDK_CONTROL_MASK | GDK_ALT_MASK))) {
+        return false;
+    }
+    *mods = m;
+    return true;
 }
 
 static void
@@ -522,6 +589,20 @@ sync_size(LumaMonacoView *self)
         self->controller->put_IsVisible(TRUE);
         self->capture->resize(pixel_w, pixel_h);
     });
+}
+
+static void
+activate_app_accelerator(LumaMonacoView *self, guint keyval, GdkModifierType mods)
+{
+    GtkWindow *window = GTK_WINDOW(gtk_widget_get_root(self->placeholder));
+    GtkApplication *app = gtk_window_get_application(window);
+    char *accel = gtk_accelerator_name(keyval, mods);
+    char **actions = gtk_application_get_actions_for_accel(app, accel);
+    if (actions[0] != nullptr) {
+        gtk_widget_activate_action(self->placeholder, actions[0], nullptr);
+    }
+    g_strfreev(actions);
+    g_free(accel);
 }
 
 // --- GTK widget callbacks (main thread) ------------------------------------
@@ -853,6 +934,18 @@ luma_monaco_view_set_text_handler(LumaMonacoView *view,
     }
     view->text_callback = callback;
     view->text_user_data = user_data;
+}
+
+void
+luma_monaco_view_set_accelerator_handler(LumaMonacoView *view,
+                                         LumaMonacoAcceleratorCallback callback,
+                                         void *user_data)
+{
+    if (view == nullptr) {
+        return;
+    }
+    view->accel_callback = callback;
+    view->accel_user_data = user_data;
 }
 
 } // extern "C"

@@ -2,6 +2,7 @@ import Adw
 import CGtk
 import Foundation
 import Frida
+import Gdk
 import GLibObject
 import Gtk
 import LumaCore
@@ -1139,6 +1140,17 @@ final class EditorPane {
                 guard let self else { return }
                 self.draftCode = text
                 self.recomputeDirty()
+            }
+        }
+
+        monaco.onAccelerator = { [weak self] keyval, modifiers in
+            MainActor.assumeIsolated {
+                guard let self else { return false }
+                let mods = Gdk.ModifierType(rawValue: UInt32(truncatingIfNeeded: modifiers))
+                let isSave = keyval == UInt(UInt8(ascii: "s")) && mods == .controlMask
+                guard isSave else { return false }
+                if self.isDirty { self.commit() }
+                return true
             }
         }
 

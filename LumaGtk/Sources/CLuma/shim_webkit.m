@@ -692,3 +692,15 @@ luma_monaco_view_set_text_handler(LumaMonacoView *view,
         addScriptMessageHandler:view->delegate
                            name:@"updateText"];
 }
+
+// Accelerator forwarding is specific to the off-thread WebView2 shim; the
+// in-tree WebKit view leaves key handling to GTK and WebKit.
+void
+luma_monaco_view_set_accelerator_handler(LumaMonacoView *view,
+                                          LumaMonacoAcceleratorCallback callback,
+                                          void *user_data)
+{
+    (void)view;
+    (void)callback;
+    (void)user_data;
+}

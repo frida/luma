@@ -11,6 +11,10 @@ public final class MonacoEditor {
     public let widget: WidgetRef
     private nonisolated(unsafe) let widgetRawPtr: UnsafeMutableRawPointer
     public var onTextChanged: ((String) -> Void)?
+    /// Called on GDK (keyval, modifiers) for a Ctrl/Alt accelerator the editor
+    /// swallowed. Return true to consume it; false falls back to the GTK action
+    /// bound to that accelerator.
+    public var onAccelerator: ((UInt, Int) -> Bool)?
     public private(set) var isReady = false
     private var readyCallbacks: [() -> Void] = []
 
@@ -54,6 +58,7 @@ public final class MonacoEditor {
 
         luma_monaco_view_set_load_finished(view, monacoEditorBootstrap, context)
         luma_monaco_view_set_text_handler(view, monacoEditorTextChanged, context)
+        luma_monaco_view_set_accelerator_handler(view, monacoEditorAccelerator, context)
 
         luma_monaco_view_load_uri(view, MonacoWebBundle.indexURL.absoluteString)
     }
@@ -153,6 +158,10 @@ public final class MonacoEditor {
         }
     }
 
+    fileprivate func handleAccelerator(_ keyval: UInt, _ modifiers: Int) -> Bool {
+        return onAccelerator?(keyval, modifiers) ?? false
+    }
+
     fileprivate func handleTextChanged(_ base64: String) {
         guard let data = Data(base64Encoded: base64),
             let text = String(data: data, encoding: .utf8)
@@ -246,6 +255,20 @@ private let monacoEditorBootstrap: @convention(c) (
         let ptr = UnsafeMutableRawPointer(bitPattern: raw)!
         let editor = Unmanaged<MonacoEditor>.fromOpaque(ptr).takeUnretainedValue()
         editor.handleLoadFinished()
+    }
+}
+
+private let monacoEditorAccelerator: @convention(c) (
+    UInt32,
+    Int32,
+    UnsafeMutableRawPointer?
+) -> Bool = { keyval, modifiers, userData in
+    guard let userData else { return false }
+    let raw = UInt(bitPattern: userData)
+    return MainActor.assumeIsolated {
+        let ptr = UnsafeMutableRawPointer(bitPattern: raw)!
+        let editor = Unmanaged<MonacoEditor>.fromOpaque(ptr).takeUnretainedValue()
+        return editor.handleAccelerator(UInt(keyval), Int(modifiers))
     }
 }
 
