@@ -31,7 +31,7 @@ let cLumaLinkerSettings: [LinkerSetting] = [
 ]
 let lumaGtkLinkerSettings: [LinkerSetting] = []
 #elseif os(Windows)
-let cLumaSources: [String] = ["shim_gtk.c", "welcome_backdrop.c", "svg_paintable.c", "shim_webview2.cpp"]
+let cLumaSources: [String] = ["shim_gtk.c", "welcome_backdrop.c", "svg_paintable.c", "shim_webview2.cpp", "webview2_capture.cpp"]
 let cLumaCSettings: [CSetting] = [
     .unsafeFlags(pkgConfigFlags(["gtk4", "epoxy", "librsvg-2.0"])),
 ]
