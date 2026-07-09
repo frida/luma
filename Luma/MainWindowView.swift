@@ -255,20 +255,9 @@ private struct ProjectContentView: View {
 
     private func handleSpawn(device: Device, config: SpawnConfig) {
         Task { @MainActor in
-            let sessionRecord = LumaCore.ProcessSession(
-                kind: .spawn(config),
-                deviceID: device.id,
-                deviceName: device.name,
-                processName: config.defaultDisplayName,
-                lastKnownPID: 0
-            )
-            try? engine.store.save(sessionRecord)
-            engine.selectedSidebarItem = .session(sessionRecord.id)
-
-            _ = try? await engine.spawnAndAttach(
-                device: device,
-                session: sessionRecord
-            )
+            let session = engine.prepareSpawnSession(device: device, config: config)
+            engine.selectedSidebarItem = .session(session.id)
+            _ = try? await engine.spawnAndAttach(device: device, session: session)
         }
     }
 
@@ -297,35 +286,10 @@ private struct ProjectContentView: View {
             let reusedFromReestablish: LumaCore.ProcessSession? =
                 if case .reestablish(let session, _) = pickerContext { session } else { nil }
 
-            var sessionRecord: LumaCore.ProcessSession
+            let session = engine.prepareAttachSession(device: device, process: proc, reusing: reusedFromReestablish)
+            engine.selectedSidebarItem = .session(session.id)
 
-            if let reused = reusedFromReestablish {
-                sessionRecord = reused
-            } else {
-                sessionRecord = LumaCore.ProcessSession(
-                    kind: .attach,
-                    deviceID: device.id,
-                    deviceName: device.name,
-                    processName: proc.name,
-                    lastKnownPID: proc.pid
-                )
-            }
-
-            sessionRecord.deviceID = device.id
-            sessionRecord.deviceName = device.name
-            sessionRecord.processName = proc.name
-            sessionRecord.lastKnownPID = proc.pid
-
-            sessionRecord.adoptIcon(from: proc)
-
-            try? engine.store.save(sessionRecord)
-            engine.selectedSidebarItem = .session(sessionRecord.id)
-
-            _ = try? await engine.attach(
-                device: device,
-                process: proc,
-                session: sessionRecord
-            )
+            _ = try? await engine.attach(device: device, process: proc, session: session)
         }
     }
 

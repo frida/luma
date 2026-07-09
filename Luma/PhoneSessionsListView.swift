@@ -281,15 +281,8 @@ struct PhoneSessionsListView: View {
 
     private func handleSpawn(device: Device, config: SpawnConfig) {
         Task { @MainActor in
-            let record = LumaCore.ProcessSession(
-                kind: .spawn(config),
-                deviceID: device.id,
-                deviceName: device.name,
-                processName: config.defaultDisplayName,
-                lastKnownPID: 0
-            )
-            try? engine.store.save(record)
-            _ = try? await engine.spawnAndAttach(device: device, session: record)
+            let session = engine.prepareSpawnSession(device: device, config: config)
+            _ = try? await engine.spawnAndAttach(device: device, session: session)
         }
     }
 
@@ -321,22 +314,10 @@ struct PhoneSessionsListView: View {
                 return nil
             }()
 
-            var record = reused ?? LumaCore.ProcessSession(
-                kind: .attach,
-                deviceID: device.id,
-                deviceName: device.name,
-                processName: proc.name,
-                lastKnownPID: proc.pid
-            )
-            record.deviceID = device.id
-            record.deviceName = device.name
-            record.processName = proc.name
-            record.lastKnownPID = proc.pid
-            record.adoptIcon(from: proc)
-            try? engine.store.save(record)
-            _ = try? await engine.attach(device: device, process: proc, session: record)
+            let session = engine.prepareAttachSession(device: device, process: proc, reusing: reused)
+            _ = try? await engine.attach(device: device, process: proc, session: session)
 
-            path.append(.session(record.id))
+            path.append(.session(session.id))
         }
     }
 

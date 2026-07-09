@@ -677,22 +677,7 @@ final class MainWindow: InstrumentUIHost {
         reusing existing: LumaCore.ProcessSession? = nil
     ) {
         guard let engine else { return }
-        var session = existing ?? LumaCore.ProcessSession(
-            kind: .spawn(config),
-            deviceID: device.id,
-            deviceName: device.name,
-            processName: config.defaultDisplayName,
-            lastKnownPID: 0
-        )
-        session.kind = .spawn(config)
-        session.deviceID = device.id
-        session.deviceName = device.name
-        session.processName = config.defaultDisplayName
-        if existing != nil {
-            engine.updateSession(id: session.id) { s in s = session }
-        } else {
-            engine.createSession(session)
-        }
+        let session = engine.prepareSpawnSession(device: device, config: config, reusing: existing)
         select(.session(session.id))
         Task { @MainActor in
             _ = try? await engine.spawnAndAttach(device: device, session: session)
@@ -706,22 +691,7 @@ final class MainWindow: InstrumentUIHost {
         reusing existing: LumaCore.ProcessSession? = nil
     ) {
         guard let engine else { return }
-        var session = existing ?? LumaCore.ProcessSession(
-            kind: .attach,
-            deviceID: device.id,
-            deviceName: device.name,
-            processName: process.name,
-            lastKnownPID: process.pid
-        )
-        session.deviceID = device.id
-        session.deviceName = device.name
-        session.processName = process.name
-        session.lastKnownPID = process.pid
-        if existing != nil {
-            engine.updateSession(id: session.id) { s in s = session }
-        } else {
-            engine.createSession(session)
-        }
+        let session = engine.prepareAttachSession(device: device, process: process, reusing: existing)
         select(.session(session.id))
         Task { @MainActor in
             _ = try? await engine.attach(device: device, process: process, session: session)

@@ -1980,6 +1980,37 @@ public final class Engine {
 
     // MARK: - Session Orchestration
 
+    public func prepareSpawnSession(
+        device: Device,
+        config: SpawnConfig,
+        reusing existing: ProcessSession? = nil
+    ) -> ProcessSession {
+        var session = existing ?? ProcessSession(kind: .spawn(config), deviceID: device.id, deviceName: device.name, processName: config.defaultDisplayName, lastKnownPID: 0)
+        session.kind = .spawn(config)
+        session.deviceID = device.id
+        session.deviceName = device.name
+        session.processName = config.defaultDisplayName
+        session.phase = .attaching
+        surfaceSession(session, isNew: existing == nil)
+        return session
+    }
+
+    public func prepareAttachSession(
+        device: Device,
+        process: ProcessDetails,
+        reusing existing: ProcessSession? = nil
+    ) -> ProcessSession {
+        var session = existing ?? ProcessSession(kind: .attach, deviceID: device.id, deviceName: device.name, processName: process.name, lastKnownPID: process.pid)
+        session.deviceID = device.id
+        session.deviceName = device.name
+        session.processName = process.name
+        session.lastKnownPID = process.pid
+        session.phase = .attaching
+        session.adoptIcon(from: process)
+        surfaceSession(session, isNew: existing == nil)
+        return session
+    }
+
     @discardableResult
     public func spawnAndAttach(
         device: Device,
@@ -2990,7 +3021,15 @@ public final class Engine {
         saveSession(s)
     }
 
-    public func createSession(_ session: ProcessSession) {
+    private func surfaceSession(_ session: ProcessSession, isNew: Bool) {
+        if isNew {
+            createSession(session)
+        } else {
+            saveSession(session)
+        }
+    }
+
+    func createSession(_ session: ProcessSession) {
         try? store.save(session)
         sessions.insert(session, at: 0)
         onSessionListChanged?(.sessionAdded(session))

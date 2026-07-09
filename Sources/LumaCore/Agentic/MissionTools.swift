@@ -251,14 +251,7 @@ public enum MissionTools {
                 if let existing = findExistingAttach(in: engine, deviceID: device.id, pid: pid) {
                     return await reuseAttachSession(existing, engine: engine, device: device, process: process)
                 }
-                let session = ProcessSession(
-                    kind: .attach,
-                    deviceID: device.id,
-                    deviceName: device.name,
-                    processName: process.name,
-                    lastKnownPID: pid
-                )
-                engine.createSession(session)
+                let session = engine.prepareAttachSession(device: device, process: process)
                 do {
                     let attached = try await engine.attach(device: device, process: process, session: session)
                     return attachSuccessResult(session: attached, process: process, device: device, reused: false, successVerb: "Attached")
@@ -329,14 +322,7 @@ public enum MissionTools {
             if let existing = findExistingSpawn(in: engine, deviceID: device.id, target: target) {
                 return await reuseSpawnSession(existing, engine: engine, device: device, config: config)
             }
-            let session = ProcessSession(
-                kind: .spawn(config),
-                deviceID: device.id,
-                deviceName: device.name,
-                processName: config.defaultDisplayName,
-                lastKnownPID: 0
-            )
-            engine.createSession(session)
+            let session = engine.prepareSpawnSession(device: device, config: config)
             do {
                 let attached = try await engine.spawnAndAttach(device: device, session: session)
                 return spawnSuccessResult(session: attached, processName: config.defaultDisplayName, device: device, autoResume: autoResume, reused: false, successVerb: "Spawned")
