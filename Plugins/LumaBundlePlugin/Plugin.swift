@@ -48,7 +48,7 @@ struct LumaBundlePlugin: BuildToolPlugin {
                     "--no-lockfile-update",
                 ],
                 inputFiles: inputFiles,
-                outputFiles: [swiftOutput, typingsOutput, stagingDirectory]
+                outputFiles: [swiftOutput, typingsOutput]
             ),
         ]
     }
