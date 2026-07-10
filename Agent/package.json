@@ -2,7 +2,7 @@
   "name": "luma-agent",
   "private": true,
   "dependencies": {
-    "@types/frida-gum": "^19.7.0",
+    "@types/frida-gum": "^19.8.0",
     "@types/node": "^18",
     "frida-itrace": "^6.1.0",
     "frida-java-bridge": "^7.0.13"
