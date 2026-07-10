@@ -64,14 +64,21 @@ public struct ProcessModule: Hashable, Identifiable, Codable, Sendable {
         self.size = size
     }
 
-    private static let systemPathPrefixes = ["/usr/lib", "/usr/local/lib", "/System/", "/Library/", "/lib/", "/lib64/", "/opt/"]
+    private static let rerootedSystemMarkers = ["/usr/lib/", "/usr/local/lib/", "/usr/libexec/"]
+    private static let systemPathPrefixes = [
+        "/usr/", "/lib/", "/lib64/", "/opt/", "/System/", "/Library/",
+        "/system/", "/apex/", "/vendor/", "/product/", "/system_ext/",
+    ]
 
     public var isSystemModule: Bool {
         let windows = path.lowercased()
         if windows.contains(":\\windows\\") || windows.hasPrefix("\\windows\\") {
             return true
         }
-        return Self.systemPathPrefixes.contains { path.hasPrefix($0) }
+        if Self.rerootedSystemMarkers.contains(where: path.contains) {
+            return true
+        }
+        return Self.systemPathPrefixes.contains(where: path.hasPrefix)
     }
 
     public func toJSON() -> [String: Any] {
