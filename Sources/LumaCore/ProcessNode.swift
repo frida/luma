@@ -1277,7 +1277,7 @@ public final class ProcessNode: Identifiable {
             let script = try await sysSession.createScript(
                 drainAgentSource,
                 name: "itrace-drain",
-                runtime: .v8
+                runtime: .qjs
             )
             try await script.load()
 
