@@ -1262,15 +1262,17 @@ public final class ProcessNode: Identifiable {
 
     // MARK: - ITrace Orchestration
 
-    public func setupITraceDraining() async {
-        guard let drainAgentSource else { return }
+    private func ensureDrainScript() async -> Script? {
+        if let drainScript { return drainScript }
+        guard let drainAgentSource, systemDrainCapable != false else { return nil }
 
         do {
             let params = try await device.querySystemParameters()
             guard (params["platform"] as? String) == "darwin",
                 (params["access"] as? String) == "full"
             else {
-                return
+                systemDrainCapable = false
+                return nil
             }
 
             let sysSession = try await device.attach(to: 0)
@@ -1283,13 +1285,11 @@ public final class ProcessNode: Identifiable {
 
             systemSession = sysSession
             drainScript = script
+            return script
         } catch {
-            // System session not available; fall back to in-agent draining.
+            systemDrainCapable = false
+            return nil
         }
-    }
-
-    public var hasSystemSession: Bool {
-        drainScript != nil
     }
 
     func handleITraceStart(
@@ -1322,7 +1322,7 @@ public final class ProcessNode: Identifiable {
     // while the buffer is still intact. task_for_pid capability is fixed per
     // target, so a single denial disqualifies system draining for good.
     private func negotiateDrain(sessionId: String, bufferLocation: String) async -> String {
-        guard let drainScript, systemDrainCapable != false else {
+        guard let drainScript = await ensureDrainScript() else {
             return "in-agent"
         }
 

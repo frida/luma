@@ -2181,8 +2181,6 @@ public final class Engine {
                 collaboration.enqueueUpdateProcessInfo(sessionID: s.id, info: storedInfo)
             }
 
-            await node.setupITraceDraining()
-
             await loadAllPackages(on: node)
 
             for ref in node.instruments where ref.state == .enabled {
