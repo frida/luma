@@ -100,16 +100,13 @@ public final class ProcessNode: Identifiable {
         case detached
     }
 
-    private var systemSession: Session?
-    private var drainScript: Script?
-    private var systemDrainCapable: Bool?
     private var systemDrainTasks: [String: Task<Void, Never>] = [:]
     private var pendingTraces: [String: PendingTrace] = [:]
     private var pendingEmits: [String: Task<Void, Never>] = [:]
     private static let runningTraceEmitInterval: UInt64 = 250_000_000
     private static let systemDrainInterval: UInt64 = 50_000_000
 
-    private let drainAgentSource: String?
+    private let drainService: SystemDrainService?
     private let traceStore: TraceStore?
 
     public var onResolveBlockNames: (@MainActor ([UInt64]) async -> [String])?
@@ -132,7 +129,7 @@ public final class ProcessNode: Identifiable {
         session: Session,
         script: Script,
         instruments: [InstrumentRef] = [],
-        drainAgentSource: String? = nil,
+        drainService: SystemDrainService? = nil,
         traceStore: TraceStore? = nil
     ) {
         self.sessionID = sessionID
@@ -148,7 +145,7 @@ public final class ProcessNode: Identifiable {
         self.phase = .attached
         self.lastSeenAt = Date()
         self.instruments = instruments
-        self.drainAgentSource = drainAgentSource
+        self.drainService = drainService
         self.traceStore = traceStore
 
         startObservingSessionState()
@@ -1262,36 +1259,6 @@ public final class ProcessNode: Identifiable {
 
     // MARK: - ITrace Orchestration
 
-    private func ensureDrainScript() async -> Script? {
-        if let drainScript { return drainScript }
-        guard let drainAgentSource, systemDrainCapable != false else { return nil }
-
-        do {
-            let params = try await device.querySystemParameters()
-            guard (params["platform"] as? String) == "darwin",
-                (params["access"] as? String) == "full"
-            else {
-                systemDrainCapable = false
-                return nil
-            }
-
-            let sysSession = try await device.attach(to: 0)
-            let script = try await sysSession.createScript(
-                drainAgentSource,
-                name: "itrace-drain",
-                runtime: .qjs
-            )
-            try await script.load()
-
-            systemSession = sysSession
-            drainScript = script
-            return script
-        } catch {
-            systemDrainCapable = false
-            return nil
-        }
-    }
-
     func handleITraceStart(
         token: Int,
         sessionId: String,
@@ -1322,19 +1289,14 @@ public final class ProcessNode: Identifiable {
     // while the buffer is still intact. task_for_pid capability is fixed per
     // target, so a single denial disqualifies system draining for good.
     private func negotiateDrain(sessionId: String, bufferLocation: String) async -> String {
-        guard let drainScript = await ensureDrainScript() else {
+        guard let drainService,
+            await drainService.openBuffer(sessionId: sessionId, location: bufferLocation)
+        else {
             return "in-agent"
         }
 
-        do {
-            try await drainScript.exports.openBuffer(sessionId, bufferLocation)
-            systemDrainCapable = true
-            startSystemDrainTimer(for: sessionId)
-            return "system"
-        } catch {
-            systemDrainCapable = false
-            return "in-agent"
-        }
+        startSystemDrainTimer(for: sessionId)
+        return "system"
     }
 
     func handleITraceChunk(sessionId: String, data: [UInt8], lost: Int) {
@@ -1344,11 +1306,11 @@ public final class ProcessNode: Identifiable {
     }
 
     func handleITraceStop(sessionId: String, lost: Int, data: [UInt8]?) async {
-        if let task = systemDrainTasks.removeValue(forKey: sessionId), let drainScript {
+        if let task = systemDrainTasks.removeValue(forKey: sessionId), let drainService {
             task.cancel()
             do {
-                let sysLost = (try? await drainScript.exports.getLost(sessionId)) as? Int ?? 0
-                if let finalChunk = try await drainScript.exports.close(sessionId) as? [UInt8], !finalChunk.isEmpty {
+                let sysLost = await drainService.lost(sessionId: sessionId)
+                if let finalChunk = try await drainService.close(sessionId: sessionId), !finalChunk.isEmpty {
                     pendingTraces[sessionId]?.accumulated.append(contentsOf: finalChunk)
                 }
                 let mergedLost = max(pendingTraces[sessionId]?.lost ?? 0, sysLost)
@@ -1423,11 +1385,11 @@ public final class ProcessNode: Identifiable {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: Self.systemDrainInterval)
 
-                guard let self, let drainScript = self.drainScript else { break }
+                guard let self, let drainService = self.drainService else { break }
                 if self.pendingTraces[sessionId] == nil { break }
 
                 do {
-                    if let chunk = try await drainScript.exports.drain(sessionId) as? [UInt8], !chunk.isEmpty {
+                    if let chunk = try await drainService.drain(sessionId: sessionId), !chunk.isEmpty {
                         self.pendingTraces[sessionId]?.accumulated.append(contentsOf: chunk)
                         self.scheduleRunningTraceEmit(sessionId: sessionId)
                     }
@@ -1527,10 +1489,10 @@ public final class ProcessNode: Identifiable {
         try? await Task.sleep(nanoseconds: 250_000_000)
         let keys = Array(pendingTraces.keys)
         for key in keys {
-            if let task = systemDrainTasks.removeValue(forKey: key), let drainScript {
+            if let task = systemDrainTasks.removeValue(forKey: key), let drainService {
                 task.cancel()
                 do {
-                    if let finalChunk = try await drainScript.exports.close(key) as? [UInt8], !finalChunk.isEmpty {
+                    if let finalChunk = try await drainService.close(sessionId: key), !finalChunk.isEmpty {
                         pendingTraces[key]?.accumulated.append(contentsOf: finalChunk)
                     }
                 } catch {
@@ -1541,20 +1503,17 @@ public final class ProcessNode: Identifiable {
     }
 
     public func tearDownITrace() async {
+        let drainedSessions = Array(systemDrainTasks.keys)
         for task in systemDrainTasks.values { task.cancel() }
         systemDrainTasks.removeAll()
         for task in pendingEmits.values { task.cancel() }
         pendingEmits.removeAll()
         pendingTraces.removeAll()
 
-        if let drainScript {
-            try? await drainScript.unload()
-            self.drainScript = nil
-        }
-
-        if let systemSession {
-            try? await systemSession.detach()
-            self.systemSession = nil
+        if let drainService {
+            for sessionId in drainedSessions {
+                _ = try? await drainService.close(sessionId: sessionId)
+            }
         }
     }
 

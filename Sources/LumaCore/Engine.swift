@@ -25,6 +25,7 @@ public final class Engine {
     public let compilerWorkspace: CompilerWorkspace
 
     public private(set) var processNodes: [ProcessNode] = []
+    private var drainServices: [String: SystemDrainService] = [:]
     public private(set) var descriptors: [InstrumentDescriptor] = []
     private var descriptorsByID: [String: InstrumentDescriptor] = [:]
 
@@ -1675,6 +1676,9 @@ public final class Engine {
         for node in processNodes { node.stop() }
         processNodes.removeAll()
 
+        for service in drainServices.values { await service.shutdown() }
+        drainServices.removeAll()
+
         await collaboration.stop()
     }
 
@@ -2126,7 +2130,7 @@ public final class Engine {
                 session: fridaSession,
                 script: script,
                 instruments: instrumentRefs,
-                drainAgentSource: LumaAgent.drainSource,
+                drainService: drainService(for: device),
                 traceStore: traces
             )
             node.onResolveBlockNames = { [weak self] addresses in
@@ -2248,9 +2252,25 @@ public final class Engine {
             let sid = node.sessionID
             processNodes.remove(at: idx)
             node.stop()
+            retireDrainService(deviceID: node.deviceID)
             updateSession(id: sid) { $0.phase = .idle }
             rebuildAddressAnnotations(sessionID: sid)
         }
+    }
+
+    private func drainService(for device: Device) -> SystemDrainService {
+        if let existing = drainServices[device.id] {
+            return existing
+        }
+        let service = SystemDrainService(device: device, agentSource: LumaAgent.drainSource)
+        drainServices[device.id] = service
+        return service
+    }
+
+    private func retireDrainService(deviceID: String) {
+        guard !processNodes.contains(where: { $0.deviceID == deviceID }) else { return }
+        guard let service = drainServices.removeValue(forKey: deviceID) else { return }
+        Task { await service.shutdown() }
     }
 
     // MARK: - Spawn Gating
