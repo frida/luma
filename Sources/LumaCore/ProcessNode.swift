@@ -1073,12 +1073,14 @@ public final class ProcessNode: Identifiable {
         name: String,
         category: ModuleSymbolCategory,
         query: String,
-        limit: Int = ModuleSymbolPage.queryLimit
+        offset: Int = 0,
+        limit: Int = ModuleSymbolPage.pageSize
     ) async throws -> ModuleSymbolPage {
         let raw = try await script.exports.queryModuleSymbols(JSValue([
             "module": name,
             "category": category.rawValue,
             "query": query,
+            "offset": offset,
             "limit": limit,
         ]))
         guard let dict = raw as? [String: Any] else {

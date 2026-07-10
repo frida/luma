@@ -152,12 +152,23 @@ public enum ModuleSymbolCategory: String, Sendable {
 }
 
 public struct ModuleSymbolPage: Sendable {
-    public static let queryLimit = 2000
+    public static let pageSize = 1000
 
     public let rows: Rows
     public let matched: Int
-    public let capped: Bool
+    public let offset: Int
     public let counts: Counts
+
+    public var count: Int {
+        switch rows {
+        case .exports(let r): return r.count
+        case .imports(let r): return r.count
+        case .symbols(let r): return r.count
+        }
+    }
+
+    public var hasPrevious: Bool { offset > 0 }
+    public var hasNext: Bool { offset + count < matched }
 
     public enum Rows: Sendable {
         case exports([ModuleSymbolBundle.Export])
@@ -198,7 +209,7 @@ public struct ModuleSymbolPage: Sendable {
         return ModuleSymbolPage(
             rows: rows,
             matched: obj["matched"] as? Int ?? rowDicts.count,
-            capped: obj["capped"] as? Bool ?? false,
+            offset: obj["offset"] as? Int ?? 0,
             counts: counts
         )
     }

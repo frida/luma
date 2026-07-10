@@ -14,6 +14,8 @@ struct ModuleDetailView: View {
     @State private var selectedRowID: String?
     @State private var facts: [UInt64: AddressFacts] = [:]
     @State private var filterText: String = ""
+    @State private var pageIndex = 0
+    @FocusState private var filterFocused: Bool
 
     enum Tab: String, CaseIterable, Identifiable {
         case exports = "Exports"
@@ -51,7 +53,14 @@ struct ModuleDetailView: View {
             Divider()
             filterBar
         }
+        .background {
+            Button("") { filterFocused = true }
+                .keyboardShortcut("f", modifiers: .command)
+                .hidden()
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onChange(of: filterText) { pageIndex = 0 }
+        .onChange(of: tab) { pageIndex = 0 }
         .task(id: queryKey) {
             try? await Task.sleep(for: .milliseconds(180))
             guard !Task.isCancelled else { return }
@@ -60,7 +69,7 @@ struct ModuleDetailView: View {
     }
 
     private var queryKey: String {
-        "\(module.id)\u{0}\(tab.rawValue)\u{0}\(filterText)"
+        "\(module.id)\u{0}\(tab.rawValue)\u{0}\(filterText)\u{0}\(pageIndex)"
     }
 
     @ViewBuilder
@@ -92,11 +101,7 @@ struct ModuleDetailView: View {
             TextField("Filter", text: $filterText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
-            if let page {
-                Text(filterStatus(page))
-                    .foregroundStyle(.secondary)
-                    .font(.system(size: 11))
-            }
+                .focused($filterFocused)
             if !filterText.isEmpty {
                 Button(action: { filterText = "" }) {
                     Image(systemName: "xmark.circle.fill")
@@ -104,20 +109,32 @@ struct ModuleDetailView: View {
                 }
                 .buttonStyle(.plain)
             }
+            if let page {
+                Text(rangeStatus(page))
+                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11))
+                Button { pageIndex = max(0, pageIndex - 1) } label: { Image(systemName: "chevron.left") }
+                    .buttonStyle(.plain)
+                    .disabled(!page.hasPrevious)
+                Button { pageIndex = min(lastPageIndex(page), pageIndex + 1) } label: { Image(systemName: "chevron.right") }
+                    .buttonStyle(.plain)
+                    .disabled(!page.hasNext)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
     }
 
-    private func filterStatus(_ page: LumaCore.ModuleSymbolPage) -> String {
-        let total = page.counts[tab.category]
-        if page.capped {
-            return "Showing first \(LumaCore.ModuleSymbolPage.queryLimit) of \(page.matched) — refine filter"
-        }
-        if !filterText.isEmpty {
-            return "Showing \(page.matched) of \(total)"
-        }
-        return ""
+    private func lastPageIndex(_ page: LumaCore.ModuleSymbolPage) -> Int {
+        guard page.matched > 0 else { return 0 }
+        return (page.matched - 1) / LumaCore.ModuleSymbolPage.pageSize
+    }
+
+    private func rangeStatus(_ page: LumaCore.ModuleSymbolPage) -> String {
+        guard page.matched > 0 else { return "No matches" }
+        let first = page.offset + 1
+        let last = page.offset + page.count
+        return "\(first)–\(last) of \(page.matched)"
     }
 
     private func exportsTable(_ rows: [LumaCore.ModuleSymbolBundle.Export]) -> some View {
@@ -225,7 +242,8 @@ struct ModuleDetailView: View {
             let result = try await node.queryModuleSymbols(
                 name: module.name,
                 category: tab.category,
-                query: filterText
+                query: filterText,
+                offset: pageIndex * LumaCore.ModuleSymbolPage.pageSize
             )
             page = result
             counts = result.counts

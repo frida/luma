@@ -21,12 +21,15 @@ final class ModuleSymbolsPane {
     private let statusLabel: Label
     private let filterEntry: SearchEntry
     private let countLabel: Label
+    private let prevButton: Button
+    private let nextButton: Button
 
     private var page: LumaCore.ModuleSymbolPage?
     private var counts: LumaCore.ModuleSymbolPage.Counts?
     private var queryTask: Task<Void, Never>?
     private var tab: Tab = .exports
     private var filterText: String = ""
+    private var pageIndex = 0
 
     enum Tab {
         case exports
@@ -94,6 +97,16 @@ final class ModuleSymbolsPane {
         countLabel.add(cssClass: "dim-label")
         countLabel.add(cssClass: "caption")
 
+        prevButton = Button()
+        prevButton.iconName = "go-previous-symbolic"
+        prevButton.add(cssClass: "flat")
+        prevButton.sensitive = false
+
+        nextButton = Button()
+        nextButton.iconName = "go-next-symbolic"
+        nextButton.add(cssClass: "flat")
+        nextButton.sensitive = false
+
         let filterBar = Box(orientation: .horizontal, spacing: 6)
         filterBar.marginStart = 10
         filterBar.marginEnd = 10
@@ -101,6 +114,8 @@ final class ModuleSymbolsPane {
         filterBar.marginBottom = 5
         filterBar.append(child: filterEntry)
         filterBar.append(child: countLabel)
+        filterBar.append(child: prevButton)
+        filterBar.append(child: nextButton)
 
         widget.append(child: contentBox)
         widget.append(child: Separator(orientation: .horizontal))
@@ -109,22 +124,19 @@ final class ModuleSymbolsPane {
         exportsButton.onToggled { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.exportsButton.active else { return }
-                self.tab = .exports
-                self.runQuery()
+                self.switchTab(.exports)
             }
         }
         importsButton.onToggled { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.importsButton.active else { return }
-                self.tab = .imports
-                self.runQuery()
+                self.switchTab(.imports)
             }
         }
         symbolsButton.onToggled { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.symbolsButton.active else { return }
-                self.tab = .symbols
-                self.runQuery()
+                self.switchTab(.symbols)
             }
         }
 
@@ -132,11 +144,47 @@ final class ModuleSymbolsPane {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.filterText = entry.text
+                self.pageIndex = 0
                 self.scheduleQuery()
             }
         }
 
+        prevButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.pageIndex > 0 else { return }
+                self.pageIndex -= 1
+                self.runQuery()
+            }
+        }
+        nextButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let page = self.page, self.pageIndex < self.lastPageIndex(page) else { return }
+                self.pageIndex += 1
+                self.runQuery()
+            }
+        }
+
+        installFilterShortcut()
         runQuery()
+    }
+
+    private func switchTab(_ tab: Tab) {
+        self.tab = tab
+        pageIndex = 0
+        runQuery()
+    }
+
+    private func installFilterShortcut() {
+        let key = EventControllerKey()
+        key.propagationPhase = .capture
+        key.onKeyPressed { [weak self] _, keyval, _, state in
+            MainActor.assumeIsolated {
+                guard let self, state.contains(.controlMask), keyval == 0x66 || keyval == 0x46 else { return false }
+                _ = self.filterEntry.grabFocus()
+                return true
+            }
+        }
+        widget.install(controller: key)
     }
 
     deinit {
@@ -163,9 +211,10 @@ final class ModuleSymbolsPane {
         let moduleName = module.name
         let category = tab.category
         let query = filterText
+        let offset = pageIndex * LumaCore.ModuleSymbolPage.pageSize
         queryTask = Task { @MainActor [weak self] in
             do {
-                let result = try await node.queryModuleSymbols(name: moduleName, category: category, query: query)
+                let result = try await node.queryModuleSymbols(name: moduleName, category: category, query: query, offset: offset)
                 guard let self, !Task.isCancelled else { return }
                 self.page = result
                 self.counts = result.counts
@@ -238,15 +287,19 @@ final class ModuleSymbolsPane {
         listContainer.append(child: scroll)
     }
 
+    private func lastPageIndex(_ page: LumaCore.ModuleSymbolPage) -> Int {
+        guard page.matched > 0 else { return 0 }
+        return (page.matched - 1) / LumaCore.ModuleSymbolPage.pageSize
+    }
+
     private func setFilterCount(_ page: LumaCore.ModuleSymbolPage) {
-        let total = page.counts[tab.category]
-        if page.capped {
-            countLabel.setText(str: "First \(LumaCore.ModuleSymbolPage.queryLimit) of \(page.matched) — refine filter")
-        } else if !filterText.isEmpty {
-            countLabel.setText(str: "Showing \(page.matched) of \(total)")
+        if page.matched == 0 {
+            countLabel.setText(str: "No matches")
         } else {
-            countLabel.setText(str: "")
+            countLabel.setText(str: "\(page.offset + 1)\u{2013}\(page.offset + page.count) of \(page.matched)")
         }
+        prevButton.sensitive = page.hasPrevious
+        nextButton.sensitive = page.hasNext
     }
 
 

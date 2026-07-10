@@ -101,13 +101,14 @@ export interface SymbolQueryRequest {
     module: string;
     category: SymbolCategory;
     query: string;
+    offset: number;
     limit: number;
 }
 
 export interface SymbolPage {
     rows: object[];
     matched: number;
-    capped: boolean;
+    offset: number;
     counts: { exports: number; imports: number; symbols: number };
 }
 
@@ -118,14 +119,13 @@ export function queryModuleSymbols(request: SymbolQueryRequest): SymbolPage {
     const needle = request.query.toLowerCase();
     const matched = needle === "" ? entries : entries.filter(e => e.key.includes(needle));
     const matchedCount = matched.length;
-    const limit = request.limit;
-    const capped = matchedCount > limit;
-    const page = capped ? matched.slice(0, limit) : matched;
+    const offset = Math.max(0, Math.min(request.offset, matchedCount - 1));
+    const page = matched.slice(offset, offset + request.limit);
 
     return {
         rows: page.map(e => e.row),
         matched: matchedCount,
-        capped,
+        offset,
         counts: {
             exports: index.exports.length,
             imports: index.imports.length,
