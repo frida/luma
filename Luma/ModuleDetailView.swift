@@ -11,7 +11,7 @@ struct ModuleDetailView: View {
     @State private var counts: LumaCore.ModuleSymbolPage.Counts?
     @State private var loadError: String?
     @State private var tab: Tab = .exports
-    @State private var selectedRowID: String?
+    @State private var selectedRowID: Int?
     @State private var facts: [UInt64: AddressFacts] = [:]
     @State private var filterText: String = ""
     @State private var pageIndex = 0
@@ -137,58 +137,72 @@ struct ModuleDetailView: View {
         return "\(first)–\(last) of \(page.matched)"
     }
 
+    // Symbols routinely share name+address (aliases, mapping symbols, empty
+    // names), so the models' data-derived ids collide; position gives the
+    // Table a collision-free identity so row selection stays stable.
+    private struct IndexedRow<T>: Identifiable {
+        let id: Int
+        let value: T
+    }
+
+    private func indexed<T>(_ rows: [T]) -> [IndexedRow<T>] {
+        rows.enumerated().map { IndexedRow(id: $0.offset, value: $0.element) }
+    }
+
     private func exportsTable(_ rows: [LumaCore.ModuleSymbolBundle.Export]) -> some View {
-        Table(rows, selection: $selectedRowID) {
-            TableColumn("Name") { e in rowCell(Text(e.name), address: e.address, context: addressContext(for: e)) }
-            TableColumn("Type") { e in rowCell(Text(e.kind.rawValue), address: e.address, context: addressContext(for: e)) }
-            TableColumn("Address") { e in rowCell(addressText(e.address), address: e.address, context: addressContext(for: e)) }
+        Table(indexed(rows), selection: $selectedRowID) {
+            TableColumn("Name") { r in rowCell(Text(r.value.name), address: r.value.address, context: addressContext(for: r.value)) }
+            TableColumn("Type") { r in rowCell(Text(r.value.kind.rawValue), address: r.value.address, context: addressContext(for: r.value)) }
+            TableColumn("Address") { r in rowCell(addressText(r.value.address), address: r.value.address, context: addressContext(for: r.value)) }
         }
         .frame(minHeight: 240, idealHeight: 360)
-        .contextMenu(forSelectionType: String.self) { ids in
-            if let id = ids.first, let e = rows.first(where: { $0.id == id }) {
+        .contextMenu(forSelectionType: Int.self) { ids in
+            if let id = ids.first, rows.indices.contains(id) {
+                let e = rows[id]
                 addressMenu(address: e.address, context: addressContext(for: e))
             }
         }
     }
 
     private func importsTable(_ rows: [LumaCore.ModuleSymbolBundle.Import]) -> some View {
-        Table(rows, selection: $selectedRowID) {
-            TableColumn("Name") { i in importCell(Text(i.name), i) }
-            TableColumn("Module") { i in importCell(Text(i.module ?? "—"), i) }
-            TableColumn("Type") { i in importCell(Text(i.kind?.rawValue ?? "—"), i) }
-            TableColumn("Address") { i in
-                if let addr = i.address {
-                    rowCell(addressText(addr), address: addr, context: addressContext(for: i))
+        Table(indexed(rows), selection: $selectedRowID) {
+            TableColumn("Name") { r in importCell(Text(r.value.name), r.value) }
+            TableColumn("Module") { r in importCell(Text(r.value.module ?? "—"), r.value) }
+            TableColumn("Type") { r in importCell(Text(r.value.kind?.rawValue ?? "—"), r.value) }
+            TableColumn("Address") { r in
+                if let addr = r.value.address {
+                    rowCell(addressText(addr), address: addr, context: addressContext(for: r.value))
                 } else {
                     Text("—")
                 }
             }
         }
         .frame(minHeight: 240, idealHeight: 360)
-        .contextMenu(forSelectionType: String.self) { ids in
-            if let id = ids.first, let i = rows.first(where: { $0.id == id }), let addr = i.address {
-                addressMenu(address: addr, context: addressContext(for: i))
+        .contextMenu(forSelectionType: Int.self) { ids in
+            if let id = ids.first, rows.indices.contains(id), let addr = rows[id].address {
+                addressMenu(address: addr, context: addressContext(for: rows[id]))
             }
         }
     }
 
     private func symbolsTable(_ rows: [LumaCore.ModuleSymbolBundle.Symbol]) -> some View {
-        Table(rows, selection: $selectedRowID) {
-            TableColumn("Name") { s in rowCell(Text(s.name), address: s.address, context: addressContext(for: s)) }
-            TableColumn("Type") { s in rowCell(Text(s.type), address: s.address, context: addressContext(for: s)) }
-            TableColumn("Section") { s in rowCell(Text(s.sectionID ?? "—"), address: s.address, context: addressContext(for: s)) }
-            TableColumn("Size") { s in
+        Table(indexed(rows), selection: $selectedRowID) {
+            TableColumn("Name") { r in rowCell(Text(r.value.name), address: r.value.address, context: addressContext(for: r.value)) }
+            TableColumn("Type") { r in rowCell(Text(r.value.type), address: r.value.address, context: addressContext(for: r.value)) }
+            TableColumn("Section") { r in rowCell(Text(r.value.sectionID ?? "—"), address: r.value.address, context: addressContext(for: r.value)) }
+            TableColumn("Size") { r in
                 rowCell(
-                    Text(s.size.map { String(format: "0x%x", $0) } ?? "—").font(.system(.body, design: .monospaced)),
-                    address: s.address,
-                    context: addressContext(for: s)
+                    Text(r.value.size.map { String(format: "0x%x", $0) } ?? "—").font(.system(.body, design: .monospaced)),
+                    address: r.value.address,
+                    context: addressContext(for: r.value)
                 )
             }
-            TableColumn("Address") { s in rowCell(addressText(s.address), address: s.address, context: addressContext(for: s)) }
+            TableColumn("Address") { r in rowCell(addressText(r.value.address), address: r.value.address, context: addressContext(for: r.value)) }
         }
         .frame(minHeight: 240, idealHeight: 360)
-        .contextMenu(forSelectionType: String.self) { ids in
-            if let id = ids.first, let s = rows.first(where: { $0.id == id }) {
+        .contextMenu(forSelectionType: Int.self) { ids in
+            if let id = ids.first, rows.indices.contains(id) {
+                let s = rows[id]
                 addressMenu(address: s.address, context: addressContext(for: s))
             }
         }
@@ -245,8 +259,10 @@ struct ModuleDetailView: View {
                 query: filterText,
                 offset: pageIndex * LumaCore.ModuleSymbolPage.pageSize
             )
+            guard !Task.isCancelled else { return }
             page = result
             counts = result.counts
+            selectedRowID = nil
             loadError = nil
         } catch {
             loadError = error.localizedDescription
