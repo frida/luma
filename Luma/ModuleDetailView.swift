@@ -7,8 +7,9 @@ struct ModuleDetailView: View {
     let engine: Engine
     @Binding var selection: SidebarItemID?
 
-    @State private var bundles: [LumaCore.ProcessModule.ID: LumaCore.ModuleSymbolBundle] = [:]
-    @State private var loadErrors: [LumaCore.ProcessModule.ID: String] = [:]
+    @State private var page: LumaCore.ModuleSymbolPage?
+    @State private var counts: LumaCore.ModuleSymbolPage.Counts?
+    @State private var loadError: String?
     @State private var tab: Tab = .exports
     @State private var selectedRowID: String?
     @State private var facts: [UInt64: AddressFacts] = [:]
@@ -20,12 +21,15 @@ struct ModuleDetailView: View {
         case symbols = "Symbols"
 
         var id: String { rawValue }
-    }
 
-    private var displayBundle: LumaCore.ModuleSymbolBundle {
-        bundles[module.id] ?? LumaCore.ModuleSymbolBundle()
+        var category: LumaCore.ModuleSymbolCategory {
+            switch self {
+            case .exports: return .exports
+            case .imports: return .imports
+            case .symbols: return .symbols
+            }
+        }
     }
-    private var loadError: String? { loadErrors[module.id] }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -48,10 +52,15 @@ struct ModuleDetailView: View {
             filterBar
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .task(id: module.id) {
-            guard bundles[module.id] == nil, loadError == nil else { return }
-            await load(module)
+        .task(id: queryKey) {
+            try? await Task.sleep(for: .milliseconds(180))
+            guard !Task.isCancelled else { return }
+            await runQuery()
         }
+    }
+
+    private var queryKey: String {
+        "\(module.id)\u{0}\(tab.rawValue)\u{0}\(filterText)"
     }
 
     @ViewBuilder
@@ -61,65 +70,18 @@ struct ModuleDetailView: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            switch tab {
-            case .exports: exportsTable(filteredExports)
-            case .imports: importsTable(filteredImports)
-            case .symbols: symbolsTable(filteredSymbols)
+            switch page?.rows {
+            case .exports(let rows) where tab == .exports: exportsTable(rows)
+            case .imports(let rows) where tab == .imports: importsTable(rows)
+            case .symbols(let rows) where tab == .symbols: symbolsTable(rows)
+            default: ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
 
     private func label(for tab: Tab) -> String {
-        guard let bundle = bundles[module.id] else { return tab.rawValue }
-        switch tab {
-        case .exports: return "Exports (\(bundle.exports.count))"
-        case .imports: return "Imports (\(bundle.imports.count))"
-        case .symbols: return "Symbols (\(bundle.symbols.count))"
-        }
-    }
-
-    private var filteredExports: [LumaCore.ModuleSymbolBundle.Export] {
-        let rows = displayBundle.exports
-        guard !filterText.isEmpty else { return rows }
-        let q = filterText.lowercased()
-        return rows.filter {
-            $0.name.lowercased().contains(q) ||
-            $0.kind.rawValue.lowercased().contains(q) ||
-            String(format: "0x%llx", $0.address).contains(q)
-        }
-    }
-
-    private var filteredImports: [LumaCore.ModuleSymbolBundle.Import] {
-        let rows = displayBundle.imports
-        guard !filterText.isEmpty else { return rows }
-        let q = filterText.lowercased()
-        return rows.filter {
-            $0.name.lowercased().contains(q) ||
-            ($0.module?.lowercased().contains(q) ?? false) ||
-            ($0.kind?.rawValue.lowercased().contains(q) ?? false) ||
-            ($0.address.map { String(format: "0x%llx", $0).contains(q) } ?? false)
-        }
-    }
-
-    private var filteredSymbols: [LumaCore.ModuleSymbolBundle.Symbol] {
-        let rows = displayBundle.symbols
-        guard !filterText.isEmpty else { return rows }
-        let q = filterText.lowercased()
-        return rows.filter {
-            $0.name.lowercased().contains(q) ||
-            $0.type.lowercased().contains(q) ||
-            ($0.sectionID?.lowercased().contains(q) ?? false) ||
-            ($0.size.map { String(format: "0x%x", $0).contains(q) } ?? false) ||
-            String(format: "0x%llx", $0.address).contains(q)
-        }
-    }
-
-    private var filterCounts: (shown: Int, total: Int) {
-        switch tab {
-        case .exports: return (filteredExports.count, displayBundle.exports.count)
-        case .imports: return (filteredImports.count, displayBundle.imports.count)
-        case .symbols: return (filteredSymbols.count, displayBundle.symbols.count)
-        }
+        guard let counts else { return tab.rawValue }
+        return "\(tab.rawValue) (\(counts[tab.category]))"
     }
 
     private var filterBar: some View {
@@ -130,11 +92,12 @@ struct ModuleDetailView: View {
             TextField("Filter", text: $filterText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
-            if !filterText.isEmpty {
-                let counts = filterCounts
-                Text("Showing \(counts.shown) of \(counts.total)")
+            if let page {
+                Text(filterStatus(page))
                     .foregroundStyle(.secondary)
                     .font(.system(size: 11))
+            }
+            if !filterText.isEmpty {
                 Button(action: { filterText = "" }) {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
@@ -144,6 +107,17 @@ struct ModuleDetailView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
+    }
+
+    private func filterStatus(_ page: LumaCore.ModuleSymbolPage) -> String {
+        let total = page.counts[tab.category]
+        if page.capped {
+            return "Showing first \(LumaCore.ModuleSymbolPage.queryLimit) of \(page.matched) — refine filter"
+        }
+        if !filterText.isEmpty {
+            return "Showing \(page.matched) of \(total)"
+        }
+        return ""
     }
 
     private func exportsTable(_ rows: [LumaCore.ModuleSymbolBundle.Export]) -> some View {
@@ -242,17 +216,22 @@ struct ModuleDetailView: View {
         }
     }
 
-    private func load(_ module: LumaCore.ProcessModule) async {
+    private func runQuery() async {
         guard let node = engine.node(forSessionID: sessionID) else {
-            loadErrors[module.id] = "Process is detached."
+            loadError = "Process is detached."
             return
         }
         do {
-            let result = try await node.enumerateModuleSymbols(name: module.name)
-            bundles[module.id] = result
-            loadErrors.removeValue(forKey: module.id)
+            let result = try await node.queryModuleSymbols(
+                name: module.name,
+                category: tab.category,
+                query: filterText
+            )
+            page = result
+            counts = result.counts
+            loadError = nil
         } catch {
-            loadErrors[module.id] = error.localizedDescription
+            loadError = error.localizedDescription
         }
     }
 }

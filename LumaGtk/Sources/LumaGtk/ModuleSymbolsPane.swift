@@ -22,8 +22,9 @@ final class ModuleSymbolsPane {
     private let filterEntry: SearchEntry
     private let countLabel: Label
 
-    private var bundle: LumaCore.ModuleSymbolBundle?
-    private var loadTask: Task<Void, Never>?
+    private var page: LumaCore.ModuleSymbolPage?
+    private var counts: LumaCore.ModuleSymbolPage.Counts?
+    private var queryTask: Task<Void, Never>?
     private var tab: Tab = .exports
     private var filterText: String = ""
 
@@ -31,6 +32,14 @@ final class ModuleSymbolsPane {
         case exports
         case imports
         case symbols
+
+        var category: LumaCore.ModuleSymbolCategory {
+            switch self {
+            case .exports: return .exports
+            case .imports: return .imports
+            case .symbols: return .symbols
+            }
+        }
     }
 
     init(engine: Engine, sessionID: UUID, module: LumaCore.ProcessModule) {
@@ -101,21 +110,21 @@ final class ModuleSymbolsPane {
             MainActor.assumeIsolated {
                 guard let self, self.exportsButton.active else { return }
                 self.tab = .exports
-                self.renderCurrent()
+                self.runQuery()
             }
         }
         importsButton.onToggled { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.importsButton.active else { return }
                 self.tab = .imports
-                self.renderCurrent()
+                self.runQuery()
             }
         }
         symbolsButton.onToggled { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.symbolsButton.active else { return }
                 self.tab = .symbols
-                self.renderCurrent()
+                self.runQuery()
             }
         }
 
@@ -123,19 +132,28 @@ final class ModuleSymbolsPane {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.filterText = entry.text
-                self.renderCurrent()
+                self.scheduleQuery()
             }
         }
 
-        load()
+        runQuery()
     }
 
     deinit {
-        loadTask?.cancel()
+        queryTask?.cancel()
     }
 
-    private func load() {
-        loadTask?.cancel()
+    private func scheduleQuery() {
+        queryTask?.cancel()
+        queryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.runQuery()
+        }
+    }
+
+    private func runQuery() {
+        queryTask?.cancel()
         guard let engine, let node = engine.node(forSessionID: sessionID) else {
             statusLabel.setText(str: "Process detached")
             statusLabel.visible = true
@@ -143,11 +161,14 @@ final class ModuleSymbolsPane {
         }
 
         let moduleName = module.name
-        loadTask = Task { @MainActor [weak self] in
+        let category = tab.category
+        let query = filterText
+        queryTask = Task { @MainActor [weak self] in
             do {
-                let result = try await node.enumerateModuleSymbols(name: moduleName)
-                guard let self else { return }
-                self.bundle = result
+                let result = try await node.queryModuleSymbols(name: moduleName, category: category, query: query)
+                guard let self, !Task.isCancelled else { return }
+                self.page = result
+                self.counts = result.counts
                 self.updateTabLabels()
                 self.statusLabel.visible = false
                 self.renderCurrent()
@@ -160,15 +181,15 @@ final class ModuleSymbolsPane {
     }
 
     private func updateTabLabels() {
-        guard let bundle else { return }
-        exportsButton.label = "Exports (\(bundle.exports.count))"
-        importsButton.label = "Imports (\(bundle.imports.count))"
-        symbolsButton.label = "Symbols (\(bundle.symbols.count))"
+        guard let counts else { return }
+        exportsButton.label = "Exports (\(counts.exports))"
+        importsButton.label = "Imports (\(counts.imports))"
+        symbolsButton.label = "Symbols (\(counts.symbols))"
     }
 
     private func renderCurrent() {
         clear(listContainer)
-        guard let bundle else { return }
+        guard let page else { return }
 
         let scroll = ScrolledWindow()
         scroll.hexpand = true
@@ -180,9 +201,8 @@ final class ModuleSymbolsPane {
         list.add(cssClass: "boxed-list")
         scroll.set(child: list)
 
-        switch tab {
-        case .exports:
-            let rows = filtered(bundle.exports) { [$0.name, $0.kind.rawValue, hex($0.address)] }
+        switch page.rows {
+        case .exports(let rows):
             for export in rows {
                 list.append(child: makeRow(
                     title: export.name,
@@ -191,9 +211,7 @@ final class ModuleSymbolsPane {
                     context: exportContext(export)
                 ))
             }
-            setFilterCount(shown: rows.count, total: bundle.exports.count)
-        case .imports:
-            let rows = filtered(bundle.imports) { [$0.name, $0.module, $0.kind?.rawValue, $0.address.map(hex)] }
+        case .imports(let rows):
             for imp in rows {
                 let typeLabel = [imp.kind?.rawValue, imp.module].compactMap { $0 }.joined(separator: " · ")
                 let target = importTarget(imp)
@@ -204,9 +222,7 @@ final class ModuleSymbolsPane {
                     context: target.context
                 ))
             }
-            setFilterCount(shown: rows.count, total: bundle.imports.count)
-        case .symbols:
-            let rows = filtered(bundle.symbols) { [$0.name, $0.type, $0.sectionID, $0.size.map { String(format: "0x%x", $0) }, hex($0.address)] }
+        case .symbols(let rows):
             for sym in rows {
                 let typeLabel = [sym.type, sym.sectionID].compactMap { $0 }.joined(separator: " · ")
                 list.append(child: makeRow(
@@ -216,27 +232,23 @@ final class ModuleSymbolsPane {
                     context: symbolContext(sym)
                 ))
             }
-            setFilterCount(shown: rows.count, total: bundle.symbols.count)
         }
 
+        setFilterCount(page)
         listContainer.append(child: scroll)
     }
 
-    private func filtered<T>(_ rows: [T], keys: (T) -> [String?]) -> [T] {
-        guard !filterText.isEmpty else { return rows }
-        let needle = filterText.lowercased()
-        return rows.filter { row in
-            keys(row).contains { $0?.lowercased().contains(needle) ?? false }
+    private func setFilterCount(_ page: LumaCore.ModuleSymbolPage) {
+        let total = page.counts[tab.category]
+        if page.capped {
+            countLabel.setText(str: "First \(LumaCore.ModuleSymbolPage.queryLimit) of \(page.matched) — refine filter")
+        } else if !filterText.isEmpty {
+            countLabel.setText(str: "Showing \(page.matched) of \(total)")
+        } else {
+            countLabel.setText(str: "")
         }
     }
 
-    private func setFilterCount(shown: Int, total: Int) {
-        countLabel.setText(str: filterText.isEmpty ? "" : "Showing \(shown) of \(total)")
-    }
-
-    private func hex(_ address: UInt64) -> String {
-        String(format: "0x%llx", address)
-    }
 
     private func makeRow(title: String, typeLabel: String, address: UInt64?, context: AddressContext) -> ListBoxRow {
         let row = ListBoxRow()

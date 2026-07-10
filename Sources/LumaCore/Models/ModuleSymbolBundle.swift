@@ -94,53 +94,112 @@ extension ModuleSymbolBundle {
         return UInt64(trimmed, radix: 16)
     }
 
+    static func decodeExport(_ dict: [String: Any]) -> Export? {
+        guard let typeRaw = dict["type"] as? String,
+            let kind = SymbolKind(rawValue: typeRaw),
+            let name = dict["name"] as? String,
+            let address = parseAddress(dict["address"] as? String)
+        else { return nil }
+        return Export(kind: kind, name: name, address: address)
+    }
+
+    static func decodeImport(_ dict: [String: Any]) -> Import? {
+        guard let name = dict["name"] as? String else { return nil }
+        let kind = (dict["type"] as? String).flatMap(SymbolKind.init(rawValue:))
+        return Import(
+            kind: kind,
+            name: name,
+            module: dict["module"] as? String,
+            address: parseAddress(dict["address"] as? String),
+            slot: parseAddress(dict["slot"] as? String)
+        )
+    }
+
+    static func decodeSymbol(_ dict: [String: Any]) -> Symbol? {
+        guard let name = dict["name"] as? String,
+            let type = dict["type"] as? String,
+            let address = parseAddress(dict["address"] as? String),
+            let isGlobal = dict["isGlobal"] as? Bool
+        else { return nil }
+        return Symbol(
+            name: name,
+            type: type,
+            address: address,
+            isGlobal: isGlobal,
+            size: dict["size"] as? Int,
+            sectionID: dict["sectionID"] as? String,
+            sectionProtection: dict["sectionProtection"] as? String
+        )
+    }
+
     public static func fromJSON(_ obj: [String: Any]) -> ModuleSymbolBundle {
         let exportDicts = (obj["exports"] as? [[String: Any]]) ?? []
         let importDicts = (obj["imports"] as? [[String: Any]]) ?? []
         let symbolDicts = (obj["symbols"] as? [[String: Any]]) ?? []
 
-        let exports: [Export] = exportDicts.compactMap { dict in
-            guard let typeRaw = dict["type"] as? String,
-                let kind = SymbolKind(rawValue: typeRaw),
-                let name = dict["name"] as? String,
-                let address = parseAddress(dict["address"] as? String)
-            else { return nil }
-            return Export(kind: kind, name: name, address: address)
-        }
-
-        let imports: [Import] = importDicts.compactMap { dict in
-            guard let name = dict["name"] as? String else { return nil }
-            let kind = (dict["type"] as? String).flatMap(SymbolKind.init(rawValue:))
-            return Import(
-                kind: kind,
-                name: name,
-                module: dict["module"] as? String,
-                address: parseAddress(dict["address"] as? String),
-                slot: parseAddress(dict["slot"] as? String)
-            )
-        }
-
-        let symbols: [Symbol] = symbolDicts.compactMap { dict in
-            guard let name = dict["name"] as? String,
-                let type = dict["type"] as? String,
-                let address = parseAddress(dict["address"] as? String),
-                let isGlobal = dict["isGlobal"] as? Bool
-            else { return nil }
-            return Symbol(
-                name: name,
-                type: type,
-                address: address,
-                isGlobal: isGlobal,
-                size: dict["size"] as? Int,
-                sectionID: dict["sectionID"] as? String,
-                sectionProtection: dict["sectionProtection"] as? String
-            )
-        }
-
         return ModuleSymbolBundle(
-            exports: exports.sorted { $0.name < $1.name },
-            imports: imports.sorted { $0.name < $1.name },
-            symbols: symbols.sorted { $0.name < $1.name }
+            exports: exportDicts.compactMap(decodeExport),
+            imports: importDicts.compactMap(decodeImport),
+            symbols: symbolDicts.compactMap(decodeSymbol)
+        )
+    }
+}
+
+public enum ModuleSymbolCategory: String, Sendable {
+    case exports
+    case imports
+    case symbols
+}
+
+public struct ModuleSymbolPage: Sendable {
+    public static let queryLimit = 2000
+
+    public let rows: Rows
+    public let matched: Int
+    public let capped: Bool
+    public let counts: Counts
+
+    public enum Rows: Sendable {
+        case exports([ModuleSymbolBundle.Export])
+        case imports([ModuleSymbolBundle.Import])
+        case symbols([ModuleSymbolBundle.Symbol])
+    }
+
+    public struct Counts: Sendable {
+        public let exports: Int
+        public let imports: Int
+        public let symbols: Int
+
+        public subscript(_ category: ModuleSymbolCategory) -> Int {
+            switch category {
+            case .exports: return exports
+            case .imports: return imports
+            case .symbols: return symbols
+            }
+        }
+    }
+
+    public static func fromJSON(_ obj: [String: Any], category: ModuleSymbolCategory) -> ModuleSymbolPage {
+        let rowDicts = (obj["rows"] as? [[String: Any]]) ?? []
+        let rows: Rows
+        switch category {
+        case .exports: rows = .exports(rowDicts.compactMap(ModuleSymbolBundle.decodeExport))
+        case .imports: rows = .imports(rowDicts.compactMap(ModuleSymbolBundle.decodeImport))
+        case .symbols: rows = .symbols(rowDicts.compactMap(ModuleSymbolBundle.decodeSymbol))
+        }
+
+        let countsObj = (obj["counts"] as? [String: Any]) ?? [:]
+        let counts = Counts(
+            exports: countsObj["exports"] as? Int ?? 0,
+            imports: countsObj["imports"] as? Int ?? 0,
+            symbols: countsObj["symbols"] as? Int ?? 0
+        )
+
+        return ModuleSymbolPage(
+            rows: rows,
+            matched: obj["matched"] as? Int ?? rowDicts.count,
+            capped: obj["capped"] as? Bool ?? false,
+            counts: counts
         )
     }
 }

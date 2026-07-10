@@ -1069,6 +1069,24 @@ public final class ProcessNode: Identifiable {
         return ModuleSymbolBundle.fromJSON(dict)
     }
 
+    public func queryModuleSymbols(
+        name: String,
+        category: ModuleSymbolCategory,
+        query: String,
+        limit: Int = ModuleSymbolPage.queryLimit
+    ) async throws -> ModuleSymbolPage {
+        let raw = try await script.exports.queryModuleSymbols(JSValue([
+            "module": name,
+            "category": category.rawValue,
+            "query": query,
+            "limit": limit,
+        ]))
+        guard let dict = raw as? [String: Any] else {
+            throw LumaCoreError.protocolViolation("queryModuleSymbols: unexpected response shape")
+        }
+        return ModuleSymbolPage.fromJSON(dict, category: category)
+    }
+
     public func enumerateModuleRanges(name: String) async throws -> [ModuleRange] {
         let raw = try await script.exports.enumerateModuleRanges(name)
         guard let arr = raw as? [[String: Any]] else {
