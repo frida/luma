@@ -167,16 +167,24 @@ function buildSymbolIndex(module: Module): SymbolIndex {
         return indexed(row, [name, type, addr]);
     });
 
-    const imports = module.enumerateImports().map(i => {
+    const seen = new Set<string>();
+    const imports: IndexedEntry<ImportEntry>[] = [];
+    for (const i of module.enumerateImports()) {
         const { name, type, module: origin, address, slot } = i;
+        const identity = name + "\x00" + (origin ?? "");
+        if (seen.has(identity)) {
+            continue;
+        }
+        seen.add(identity);
+
         const row: ImportEntry = { name };
         const addr = address?.toString();
         if (type !== undefined) row.type = type;
         if (origin !== undefined) row.module = origin;
         if (addr !== undefined) row.address = addr;
         if (slot !== undefined) row.slot = slot.toString();
-        return indexed(row, [name, origin, type, addr]);
-    });
+        imports.push(indexed(row, [name, origin, type, addr]));
+    }
 
     const symbols = module.enumerateSymbols().filter(s => !s.address.isNull()).map(s => {
         const { name, type, address, isGlobal, size, section } = s;
