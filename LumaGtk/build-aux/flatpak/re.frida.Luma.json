@@ -18,7 +18,7 @@
         "build-args": ["--share=network"],
         "append-path": "/app/lib/sdk-go/bin",
         "env": {
-            "PKG_CONFIG_PATH": "/app/lib64/pkgconfig"
+            "PKG_CONFIG_PATH": "/app/lib/pkgconfig"
         }
     },
     "cleanup": [
@@ -41,8 +41,8 @@
         "/bin/frida-server",
         "/bin/frida-portal",
         "/bin/frida-inject",
-        "/lib64/frida-1.0/*/frida-gadget*",
         "/include",
+        "/lib/frida-1.0/*/frida-gadget*",
         "/lib/liblldb*",
         "/lib/libsourcekitdInProc*",
         "/lib/libclang*",
@@ -57,14 +57,14 @@
         "/lib/sdk-go",
         "/lib/clang",
         "/lib/node_modules",
-        "/lib64/pkgconfig",
+        "/lib/girepository-1.0",
+        "/lib/pkgconfig",
         "/share/vala",
         "/share/docc",
         "/share/man",
         "/share/gir-1.0",
         "/share/radare2/*/scripts",
         "/share/radare2/*/www",
-        "/lib64/girepository-1.0",
         "*.a",
         "*.la",
         "*.pc"
@@ -124,7 +124,7 @@
             "name": "frida-core",
             "buildsystem": "simple",
             "build-commands": [
-                "./configure --enable-shared --enable-compiler-backend --without-prebuilds=sdk --prefix=/app -- --force-fallback-for=openssl,libbpf",
+                "./configure --enable-shared --enable-compiler-backend --without-prebuilds=sdk --prefix=/app -- --libdir=lib --force-fallback-for=openssl,libbpf",
                 "make -j$(nproc)",
                 "DESTDIR=$PWD/_destdir python3 releng/meson/meson.py install -C build --skip-subprojects --no-rebuild",
                 "cp -a _destdir/app/. /app/"
@@ -142,6 +142,7 @@
             "buildsystem": "cmake-ninja",
             "config-opts": [
                 "-DCMAKE_BUILD_TYPE=Release",
+                "-DCMAKE_INSTALL_LIBDIR=lib",
                 "-DBUILD_SHARED_LIBS=OFF",
                 "-DBUILD_TOOLS=OFF",
                 "-DBUILD_REGRESS=OFF",
@@ -166,6 +167,7 @@
             "name": "radare2",
             "buildsystem": "meson",
             "config-opts": [
+                "--libdir=lib",
                 "--default-library=static",
                 "-Dstatic_runtime=true",
                 "-Dcli=disabled",
@@ -184,7 +186,7 @@
             "name": "luma",
             "buildsystem": "simple",
             "build-options": {
-                "append-ld-library-path": "/app/lib:/app/lib64"
+                "append-ld-library-path": "/app/lib"
             },
             "build-commands": [
                 "cd LumaGtk && make build SWIFT_BUILD_FLAGS='-c release'",
