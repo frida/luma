@@ -2305,15 +2305,11 @@ final class MainWindow: InstrumentUIHost {
             customInstrumentsList.unselectAll()
             missionsListBox.unselectAll()
             if case .module(let sid, _) = newValue {
-                reconcileGroupChildren(sessionID: sid, group: .modules)
-            }
-            if case .thread(let sid, _) = newValue {
-                reconcileGroupChildren(sessionID: sid, group: .threads)
-            }
-            if let idx = currentSelectionRowIndex(),
-                let row = sessionsList.getRowAt(index: idx)
-            {
-                selectSessionsRow(row)
+                reconcileSidebarGroupAfterSelection(sessionID: sid, group: .modules)
+            } else if case .thread(let sid, _) = newValue {
+                reconcileSidebarGroupAfterSelection(sessionID: sid, group: .threads)
+            } else {
+                selectCurrentSessionsRow()
             }
         case .package(let id):
             notebookListBox.unselectAll()
@@ -2374,6 +2370,21 @@ final class MainWindow: InstrumentUIHost {
             break
         }
         focusEditorIfNeeded(for: newValue)
+    }
+
+    private func reconcileSidebarGroupAfterSelection(sessionID: UUID, group: SessionSidebarGroup) {
+        // Rebuild the rows after the row signal finishes emitting; mutating the
+        // list mid-emission faults inside GTK.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.reconcileGroupChildren(sessionID: sessionID, group: group)
+            self.selectCurrentSessionsRow()
+        }
+    }
+
+    private func selectCurrentSessionsRow() {
+        guard let idx = currentSelectionRowIndex(), let row = sessionsList.getRowAt(index: idx) else { return }
+        selectSessionsRow(row)
     }
 
     private func focusEditorIfNeeded(for selection: SidebarSelection) {
