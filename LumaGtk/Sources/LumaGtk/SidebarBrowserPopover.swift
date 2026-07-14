@@ -49,6 +49,14 @@ final class SidebarBrowserPopover<Item> {
 
     func presentAnchored(to anchor: WidgetProtocol) {
         retainer = self
+        // Pop up after the list-row signal that triggered us finishes emitting;
+        // grabbing and reparenting mid-emission faults inside GTK.
+        Task { @MainActor [weak self] in
+            self?.buildAndPresent(anchoredTo: anchor)
+        }
+    }
+
+    private func buildAndPresent(anchoredTo anchor: WidgetProtocol) {
         let popover = Popover()
         popover.autohide = true
         popover.position = .right
