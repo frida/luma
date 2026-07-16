@@ -24,6 +24,10 @@ final class SidebarBrowserPopover<Item> {
     private var listBox: ListBox?
     private var entries: [Entry] = []
     private var query: String = ""
+    private var filterTask: Task<Void, Never>?
+    private var refreshGeneration: UInt = 0
+
+    private static var visibleRowLimit: Int { 250 }
 
     init(
         items: [Item],
@@ -52,6 +56,7 @@ final class SidebarBrowserPopover<Item> {
         // Pop up after the list-row signal that triggered us finishes emitting;
         // grabbing and reparenting mid-emission faults inside GTK.
         Task { @MainActor [weak self] in
+            await Task.yield()
             self?.buildAndPresent(anchoredTo: anchor)
         }
     }
@@ -89,7 +94,7 @@ final class SidebarBrowserPopover<Item> {
         searchEntry.onSearchChanged { [weak self] entry in
             MainActor.assumeIsolated {
                 self?.query = entry.text
-                self?.refreshList()
+                self?.scheduleRefresh()
             }
         }
         searchEntry.onActivate { [weak self] _ in
@@ -132,17 +137,30 @@ final class SidebarBrowserPopover<Item> {
         _ = searchEntry.grabFocus()
     }
 
+    private func scheduleRefresh() {
+        filterTask?.cancel()
+        filterTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.refreshList()
+        }
+    }
+
     private func refreshList() {
         guard let listBox else { return }
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
         let matching = filteredItems()
+        let limit = Self.visibleRowLimit
+        let visible = Array(matching.prefix(limit))
+        let truncated = matching.count > limit
 
-        while let child = listBox.firstChild {
-            listBox.remove(child: child)
-        }
+        clearListBox(listBox)
 
         entries = []
         var previousGroup: String?
-        for item in matching {
+        for item in visible {
+            guard generation == refreshGeneration else { return }
             let group = groupName(item)
             if group != previousGroup {
                 entries.append(.sectionHeader(group))
@@ -155,6 +173,21 @@ final class SidebarBrowserPopover<Item> {
 
         if matching.isEmpty {
             listBox.append(child: makeEmptyRow())
+        } else if truncated {
+            listBox.append(child: makeTruncationRow(shown: visible.count, total: matching.count))
+        }
+    }
+
+    private func clearListBox(_ listBox: ListBox) {
+        // Snapshot children first; removing while walking firstChild races GTK.
+        var children: [Widget] = []
+        var current = listBox.firstChild
+        while let child = current {
+            children.append(child)
+            current = child.nextSibling
+        }
+        for child in children {
+            listBox.remove(child: child)
         }
     }
 
@@ -209,6 +242,23 @@ final class SidebarBrowserPopover<Item> {
         return row
     }
 
+    private func makeTruncationRow(shown: Int, total: Int) -> ListBoxRow {
+        let row = ListBoxRow()
+        row.selectable = false
+        row.activatable = false
+        let label = Label(str: "Showing \(shown) of \(total). Refine the filter to see more.")
+        label.halign = .start
+        label.marginStart = 12
+        label.marginEnd = 12
+        label.marginTop = 6
+        label.marginBottom = 6
+        label.wrap = true
+        label.add(cssClass: "dim-label")
+        label.add(cssClass: "caption")
+        row.set(child: label)
+        return row
+    }
+
     private func filteredItems() -> [Item] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return items }
@@ -235,6 +285,9 @@ final class SidebarBrowserPopover<Item> {
     }
 
     private func cleanup() {
+        filterTask?.cancel()
+        filterTask = nil
+        refreshGeneration &+= 1
         popover?.unparent()
         popover = nil
         listBox = nil

@@ -340,7 +340,10 @@ final class ModuleSymbolsPane {
         guard let page else { return }
         rows = rowData(for: page.rows)
 
-        symbolModel.splice(position: 0, nRemovals: symbolModel.nItems)
+        let previousCount = symbolModel.nItems
+        if previousCount > 0 {
+            symbolModel.splice(position: 0, nRemovals: previousCount)
+        }
         for _ in rows.indices {
             symbolModel.append(string: "")
         }
