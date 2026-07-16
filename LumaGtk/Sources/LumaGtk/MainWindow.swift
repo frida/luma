@@ -39,6 +39,8 @@ final class MainWindow: InstrumentUIHost {
     private var missionsExpansionButton: Button!
     private var missionsExpanded: Bool = true
     private var isReconcilingSidebar: Bool = false
+    private var pendingSidebarGroupReconciles: [String: Bool] = [:]
+    private var sidebarGroupReconcileTask: Task<Void, Never>?
     private var missions: [Mission] = []
     private var missionRowIDs: [UUID] = []
     private var missionSidebarRows: [UUID: ListBoxRow] = [:]
@@ -2375,10 +2377,45 @@ final class MainWindow: InstrumentUIHost {
     private func reconcileSidebarGroupAfterSelection(sessionID: UUID, group: SessionSidebarGroup) {
         // Rebuild the rows after the row signal finishes emitting; mutating the
         // list mid-emission faults inside GTK.
-        Task { @MainActor [weak self] in
+        scheduleGroupChildrenReconcile(sessionID: sessionID, group: group, force: true, reselect: true)
+    }
+
+    private func scheduleGroupChildrenReconcile(
+        sessionID: UUID,
+        group: SessionSidebarGroup,
+        force: Bool = false,
+        reselect: Bool = false
+    ) {
+        let key = groupKey(sessionID: sessionID, group: group)
+        pendingSidebarGroupReconciles[key] = (pendingSidebarGroupReconciles[key] ?? false) || force
+        if reselect {
+            pendingSidebarGroupReconciles["reselect"] = true
+        }
+        guard sidebarGroupReconcileTask == nil else { return }
+        sidebarGroupReconcileTask = Task { @MainActor [weak self] in
+            await Task.yield()
             guard let self else { return }
-            self.reconcileGroupChildren(sessionID: sessionID, group: group)
-            self.selectCurrentSessionsRow()
+            self.sidebarGroupReconcileTask = nil
+            let pending = self.pendingSidebarGroupReconciles
+            self.pendingSidebarGroupReconciles.removeAll()
+            let shouldReselect = pending["reselect"] == true
+            for (key, force) in pending where key != "reselect" {
+                guard let slash = key.lastIndex(of: "/") else { continue }
+                let sessionPart = String(key[..<slash])
+                let groupPart = String(key[key.index(after: slash)...])
+                guard let sessionID = UUID(uuidString: sessionPart) else { continue }
+                let group: SessionSidebarGroup? = switch groupPart {
+                case "modules": .modules
+                case "threads": .threads
+                default: nil
+                }
+                if let group {
+                    self.reconcileGroupChildren(sessionID: sessionID, group: group, force: force)
+                }
+            }
+            if shouldReselect {
+                self.selectCurrentSessionsRow()
+            }
         }
     }
 
@@ -2417,8 +2454,8 @@ final class MainWindow: InstrumentUIHost {
             currentInstrumentDetail?.applySessionState()
             currentInsightDetail?.applySessionState()
             sessionDetailViews[session.id]?.applySessionState()
-            reconcileGroupChildren(sessionID: session.id, group: .modules)
-            reconcileGroupChildren(sessionID: session.id, group: .threads)
+            scheduleGroupChildrenReconcile(sessionID: session.id, group: .modules)
+            scheduleGroupChildrenReconcile(sessionID: session.id, group: .threads)
             updateResumeButtonVisibility()
         case .sessionRemoved(let id):
             removeSessionRows(id)
@@ -2878,7 +2915,20 @@ final class MainWindow: InstrumentUIHost {
         return row
     }
 
-    private func reconcileGroupChildren(sessionID: UUID, group: SessionSidebarGroup) {
+    private func reconcileGroupChildren(sessionID: UUID, group: SessionSidebarGroup, force: Bool = false) {
+        let children = makeGroupChildren(sessionID: sessionID, group: group)
+        let desiredKeys = children.map(\.key)
+        let existingKeys = sessionsRowKinds.compactMap { groupChildKey($0, sessionID: sessionID, group: group) }
+        groupCountLabels[groupKey(sessionID: sessionID, group: group)]?.label =
+            groupCountText(sessionID: sessionID, group: group)
+        if !force, desiredKeys == existingKeys {
+            for child in children {
+                groupChildActions[groupChildActionKey(sessionID: sessionID, group: group, key: child.key)] =
+                    child.onActivate
+            }
+            return
+        }
+
         let outerGuard = isReconcilingSidebar
         isReconcilingSidebar = true
         defer {
@@ -2889,12 +2939,10 @@ final class MainWindow: InstrumentUIHost {
         }
 
         removeGroupChildRows(sessionID: sessionID, group: group)
-        groupCountLabels[groupKey(sessionID: sessionID, group: group)]?.label =
-            groupCountText(sessionID: sessionID, group: group)
         guard let headerIndex = groupHeaderIndex(sessionID: sessionID, group: group) else { return }
 
         var insertAt = headerIndex + 1
-        for child in makeGroupChildren(sessionID: sessionID, group: group) {
+        for child in children {
             let kind: SessionsRow = group == .modules
                 ? .moduleChild(sessionID: sessionID, key: child.key)
                 : .threadChild(sessionID: sessionID, key: child.key)
@@ -3123,7 +3171,7 @@ final class MainWindow: InstrumentUIHost {
             Task { @MainActor in
                 guard let self else { return }
                 for session in self.sessions {
-                    self.reconcileGroupChildren(sessionID: session.id, group: .modules)
+                    self.scheduleGroupChildrenReconcile(sessionID: session.id, group: .modules, force: true)
                 }
                 self.observeModuleAnalysis()
             }
