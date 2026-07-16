@@ -1186,10 +1186,8 @@ final class EventStreamPane {
     }
 
     private func clearChildren(of container: Box) {
-        var child = container.firstChild
-        while let current = child {
-            child = current.nextSibling
-            container.remove(child: current)
+        while let child = container.firstChild {
+            container.remove(child: child)
         }
     }
 }

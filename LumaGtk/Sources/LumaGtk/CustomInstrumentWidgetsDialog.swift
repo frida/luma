@@ -202,10 +202,8 @@ final class CustomInstrumentWidgetsDialog {
     }
 
     private func rebuildList() {
-        var child = listBox.firstChild
-        while let current = child {
-            child = current.nextSibling
-            listBox.remove(child: current)
+        while let child = listBox.firstChild {
+            listBox.remove(child: child)
         }
         widgetBodies.removeAll()
         if draftWidgets.isEmpty {
@@ -365,10 +363,8 @@ final class CustomInstrumentWidgetsDialog {
     }
 
     private func rebuildSeriesRows(into list: Box, items: [InstrumentWidget.Series], widgetIndex: Int) {
-        var child = list.firstChild
-        while let current = child {
-            child = current.nextSibling
-            list.remove(child: current)
+        while let child = list.firstChild {
+            list.remove(child: child)
         }
         for (i, item) in items.enumerated() {
             list.append(child: seriesRow(item: item, widgetIndex: widgetIndex, itemIndex: i, list: list))
@@ -508,10 +504,8 @@ final class CustomInstrumentWidgetsDialog {
     }
 
     private func rebuildActionRows(into list: Box, items: [InstrumentWidget.Action], widgetIndex: Int) {
-        var child = list.firstChild
-        while let current = child {
-            child = current.nextSibling
-            list.remove(child: current)
+        while let child = list.firstChild {
+            list.remove(child: child)
         }
         for (i, item) in items.enumerated() {
             list.append(child: actionRow(item: item, widgetIndex: widgetIndex, itemIndex: i, list: list))
@@ -658,10 +652,8 @@ final class CustomInstrumentWidgetsDialog {
     }
 
     private func rebuildColumnRows(into list: Box, items: [InstrumentWidget.Column], widgetIndex: Int) {
-        var child = list.firstChild
-        while let current = child {
-            child = current.nextSibling
-            list.remove(child: current)
+        while let child = list.firstChild {
+            list.remove(child: child)
         }
         for (i, item) in items.enumerated() {
             list.append(child: columnRow(item: item, widgetIndex: widgetIndex, itemIndex: i, list: list))
@@ -755,10 +747,8 @@ final class CustomInstrumentWidgetsDialog {
     }
 
     private func rebuildTableActionRows(into list: Box, items: [InstrumentWidget.Action], widgetIndex: Int) {
-        var child = list.firstChild
-        while let current = child {
-            child = current.nextSibling
-            list.remove(child: current)
+        while let child = list.firstChild {
+            list.remove(child: child)
         }
         for (i, item) in items.enumerated() {
             list.append(child: tableActionRow(item: item, widgetIndex: widgetIndex, itemIndex: i, list: list))

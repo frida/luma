@@ -213,10 +213,8 @@ final class CustomInstrumentFeaturesDialog {
     }
 
     private func rebuildList() {
-        var child = listBox.firstChild
-        while let current = child {
-            child = current.nextSibling
-            listBox.remove(child: current)
+        while let child = listBox.firstChild {
+            listBox.remove(child: child)
         }
         featureSchemaEditors.removeAll()
         featureBodies.removeAll()

@@ -164,10 +164,8 @@ final class TracerConfigEditor {
     }
 
     private func rebuildContent() {
-        var child = contentSlot.firstChild
-        while let cur = child {
-            child = cur.nextSibling
-            contentSlot.remove(child: cur)
+        while let child = contentSlot.firstChild {
+            contentSlot.remove(child: child)
         }
         editorPane = nil
         saveBar = nil
@@ -935,10 +933,8 @@ private final class TracerHookSearch {
     private func rebuildResults() {
         let restoreEntryFocus = entryHasFocus()
 
-        var child = listBox.firstChild
-        while let current = child {
-            child = current.nextSibling
-            listBox.remove(child: current)
+        while let child = listBox.firstChild {
+            listBox.remove(child: child)
         }
 
         scroll.visible = !results.isEmpty

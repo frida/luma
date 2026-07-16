@@ -179,14 +179,7 @@ final class SidebarBrowserPopover<Item> {
     }
 
     private func clearListBox(_ listBox: ListBox) {
-        // Snapshot children first; removing while walking firstChild races GTK.
-        var children: [Widget] = []
-        var current = listBox.firstChild
-        while let child = current {
-            children.append(child)
-            current = child.nextSibling
-        }
-        for child in children {
+        while let child = listBox.firstChild {
             listBox.remove(child: child)
         }
     }

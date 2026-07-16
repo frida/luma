@@ -405,10 +405,8 @@ private final class LiveCard {
     }
 
     private func fill(text: String) {
-        var child = bodySlot.firstChild
-        while let cur = child {
-            child = cur.nextSibling
-            bodySlot.remove(child: cur)
+        while let child = bodySlot.firstChild {
+            bodySlot.remove(child: child)
         }
         bodySlot.append(child: MarkdownWidget.make(markdown: MarkdownStreaming.stablePrefix(of: text)))
     }
@@ -497,19 +495,15 @@ final class MissionToolUseBlock {
                 : "applications-engineering-symbolic"
         )
 
-        var pc = pillSlot.firstChild
-        while let cur = pc {
-            pc = cur.nextSibling
-            pillSlot.remove(child: cur)
+        while let child = pillSlot.firstChild {
+            pillSlot.remove(child: child)
         }
         if let action {
             pillSlot.append(child: MissionPill.makeActionStatus(action.status))
         }
 
-        var sc = summarySlot.firstChild
-        while let cur = sc {
-            sc = cur.nextSibling
-            summarySlot.remove(child: cur)
+        while let child = summarySlot.firstChild {
+            summarySlot.remove(child: child)
         }
         if let summary = action?.resultSummary, !summary.isEmpty {
             let label = Label(str: summary)

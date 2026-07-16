@@ -220,10 +220,8 @@ final class ThreadDetailPane {
     }
 
     private func clear(_ box: FlowBox) {
-        var child = box.firstChild
-        while let current = child {
-            child = current.nextSibling
-            box.remove(widget: current)
+        while let child = box.firstChild {
+            box.remove(widget: child)
         }
     }
 }

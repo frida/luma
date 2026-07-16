@@ -63,10 +63,8 @@ private final class HookPackDetailUI: InstrumentDetailUI {
     }
 
     private func rebuild() {
-        var child = outer.firstChild
-        while let cur = child {
-            child = cur.nextSibling
-            outer.remove(child: cur)
+        while let child = outer.firstChild {
+            outer.remove(child: child)
         }
         widgetRenderer = nil
         featureEditors.removeAll()

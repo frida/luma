@@ -456,10 +456,8 @@ final class FeatureValueEditor {
     }
 
     private func clearChildren(of box: Box) {
-        var child = box.firstChild
-        while let current = child {
-            child = current.nextSibling
-            box.remove(child: current)
+        while let child = box.firstChild {
+            box.remove(child: child)
         }
     }
 

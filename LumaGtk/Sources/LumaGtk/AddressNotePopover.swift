@@ -599,10 +599,8 @@ final class AddressNotePopover {
     }
 
     private func renderBody(_ box: Box, markdown: String) {
-        var child = box.firstChild
-        while let cur = child {
-            child = cur.nextSibling
-            box.remove(child: cur)
+        while let child = box.firstChild {
+            box.remove(child: child)
         }
         box.append(child: MarkdownWidget.make(markdown: markdown))
     }

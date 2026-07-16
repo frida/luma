@@ -145,10 +145,8 @@ final class CustomInstrumentRenameDialog {
     }
 
     private func renderBitmapPreview() {
-        var child = bitmapPreview.firstChild
-        while let cur = child {
-            child = cur.nextSibling
-            bitmapPreview.remove(child: cur)
+        while let child = bitmapPreview.firstChild {
+            bitmapPreview.remove(child: child)
         }
         if case .pixels = draftIcon {
             bitmapPreview.append(child: InstrumentIconView.makeImage(for: draftIcon, pixelSize: 32))

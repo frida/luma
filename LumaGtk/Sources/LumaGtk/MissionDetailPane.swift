@@ -283,10 +283,8 @@ private final class MissionHeaderBar {
     }
 
     private func rebuildStatusPill(_ status: MissionStatus) {
-        var child = statusPillHolder.firstChild
-        while let cur = child {
-            child = cur.nextSibling
-            statusPillHolder.remove(child: cur)
+        while let child = statusPillHolder.firstChild {
+            statusPillHolder.remove(child: child)
         }
         if status == .running {
             runningSpinner.spinning = true

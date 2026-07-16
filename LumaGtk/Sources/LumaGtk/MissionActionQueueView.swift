@@ -141,10 +141,8 @@ final class MissionActionQueueView {
             inputCardsByActionID.removeValue(forKey: id)
         }
 
-        var child = bodyContainer.firstChild
-        while let cur = child {
-            child = cur.nextSibling
-            bodyContainer.remove(child: cur)
+        while let child = bodyContainer.firstChild {
+            bodyContainer.remove(child: child)
         }
         if actions.isEmpty {
             bodyContainer.append(child: placeholder)
@@ -424,10 +422,8 @@ private final class RequestUserInputCard {
         let parsed = parseArgs(action.argsJSON)
         questionLabel.label = (parsed["question"] as? String) ?? "(no question provided)"
 
-        var child = optionsBox.firstChild
-        while let cur = child {
-            child = cur.nextSibling
-            optionsBox.remove(child: cur)
+        while let child = optionsBox.firstChild {
+            optionsBox.remove(child: child)
         }
         let options = parsed["options"] as? [String]
         if let options, !options.isEmpty {
@@ -494,10 +490,8 @@ private func parsedArgs(_ json: String) -> [String: Any] {
 }
 
 private func removeAllChildren(of box: Box) {
-    var child = box.firstChild
-    while let cur = child {
-        child = cur.nextSibling
-        box.remove(child: cur)
+    while let child = box.firstChild {
+        box.remove(child: child)
     }
 }
 

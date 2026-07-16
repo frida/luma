@@ -295,10 +295,8 @@ final class PackageDetailPane {
     }
 
     private func clearFilesContainer() {
-        var child = filesContainer.firstChild
-        while let current = child {
-            child = current.nextSibling
-            filesContainer.remove(child: current)
+        while let child = filesContainer.firstChild {
+            filesContainer.remove(child: child)
         }
     }
 }

@@ -46,10 +46,8 @@ private final class CodeShareDetailUI: InstrumentDetailUI {
     }
 
     private func rebuild() {
-        var child = column.firstChild
-        while let cur = child {
-            child = cur.nextSibling
-            column.remove(child: cur)
+        while let child = column.firstChild {
+            column.remove(child: child)
         }
 
         guard let config = try? JSONDecoder().decode(CodeShareConfig.self, from: instrument.configJSON) else {

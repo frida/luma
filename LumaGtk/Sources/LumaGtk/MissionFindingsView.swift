@@ -119,10 +119,8 @@ final class MissionFindingsView {
             cardsByFindingID.removeValue(forKey: id)
         }
 
-        var child = bodyContainer.firstChild
-        while let cur = child {
-            child = cur.nextSibling
-            bodyContainer.remove(child: cur)
+        while let child = bodyContainer.firstChild {
+            bodyContainer.remove(child: child)
         }
         if findings.isEmpty {
             bodyContainer.append(child: placeholder)
@@ -306,10 +304,8 @@ private final class FindingCard {
     }
 
     private func applyEvidence(_ evidence: [MissionEvidence]) {
-        var child = evidenceList.firstChild
-        while let cur = child {
-            child = cur.nextSibling
-            evidenceList.remove(child: cur)
+        while let child = evidenceList.firstChild {
+            evidenceList.remove(child: child)
         }
         if evidence.isEmpty {
             evidenceSection.visible = false
@@ -348,10 +344,8 @@ private final class FindingCard {
     }
 
     private func replaceContents(of slot: Box, with widget: Widget) {
-        var child = slot.firstChild
-        while let cur = child {
-            child = cur.nextSibling
-            slot.remove(child: cur)
+        while let child = slot.firstChild {
+            slot.remove(child: child)
         }
         slot.append(child: widget)
     }

@@ -1193,10 +1193,8 @@ final class MainWindow: InstrumentUIHost {
         let defs = engine.customInstruments.defs
         customInstrumentDefs = defs
 
-        var child = customInstrumentsList.firstChild
-        while let current = child {
-            child = current.nextSibling
-            customInstrumentsList.remove(child: current)
+        while let child = customInstrumentsList.firstChild {
+            customInstrumentsList.remove(child: child)
         }
 
         var rows: [CustomInstrumentRow] = []
@@ -1358,20 +1356,16 @@ final class MainWindow: InstrumentUIHost {
     }
 
     private func populateStatusWarning(host: Box, status: InstrumentStatus?) {
-        var child = host.firstChild
-        while let cur = child {
-            child = cur.nextSibling
-            host.remove(child: cur)
+        while let child = host.firstChild {
+            host.remove(child: child)
         }
         guard let status else { return }
         host.append(child: InstrumentStatusPopover.makeIndicator(status: status))
     }
 
     private func replaceIconHostContents(_ host: Box, with icon: InstrumentIcon) {
-        var child = host.firstChild
-        while let cur = child {
-            child = cur.nextSibling
-            host.remove(child: cur)
+        while let child = host.firstChild {
+            host.remove(child: child)
         }
         host.append(child: InstrumentIconView.makeImage(for: icon, pixelSize: 16))
     }
@@ -2215,10 +2209,8 @@ final class MainWindow: InstrumentUIHost {
     }
 
     private func replaceDetail<T: WidgetProtocol>(with widget: T) {
-        var child = detailContainer.firstChild
-        while let current = child {
-            child = current.nextSibling
-            detailContainer.remove(child: current)
+        while let child = detailContainer.firstChild {
+            detailContainer.remove(child: child)
         }
         detailContainer.append(child: widget)
     }
@@ -3477,10 +3469,8 @@ final class MainWindow: InstrumentUIHost {
         if let rootPtr = host.root?.ptr {
             Gtk.WindowRef(raw: rootPtr).focus = nil
         }
-        var child = host.firstChild
-        while let cur = child {
-            child = cur.nextSibling
-            host.remove(child: cur)
+        while let child = host.firstChild {
+            host.remove(child: child)
         }
 
         if let badge = makeHostBadge(for: session) {

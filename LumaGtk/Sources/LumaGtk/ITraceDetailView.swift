@@ -269,10 +269,8 @@ final class ITraceDetailView {
     }
 
     private func showWaitingState() {
-        var child = bodyContainer.firstChild
-        while let current = child {
-            child = current.nextSibling
-            bodyContainer.remove(child: current)
+        while let child = bodyContainer.firstChild {
+            bodyContainer.remove(child: child)
         }
 
         let waiting = Box(orientation: .vertical, spacing: 8)
@@ -293,10 +291,8 @@ final class ITraceDetailView {
     }
 
     private func applyDecodeResult(_ result: Result<DecodedITrace, Error>) {
-        var child = bodyContainer.firstChild
-        while let current = child {
-            child = current.nextSibling
-            bodyContainer.remove(child: current)
+        while let child = bodyContainer.firstChild {
+            bodyContainer.remove(child: child)
         }
 
         switch result {

@@ -331,10 +331,8 @@ final class CustomInstrumentSchemaEditor {
     }
 
     private func clearChildren(of box: Box) {
-        var child = box.firstChild
-        while let current = child {
-            child = current.nextSibling
-            box.remove(child: current)
+        while let child = box.firstChild {
+            box.remove(child: child)
         }
     }
 
@@ -552,10 +550,8 @@ final class ObjectFieldsEditor {
     }
 
     private func rebuildList() {
-        var child = listBox.firstChild
-        while let current = child {
-            child = current.nextSibling
-            listBox.remove(child: current)
+        while let child = listBox.firstChild {
+            listBox.remove(child: child)
         }
         fieldSchemaEditors.removeAll()
         fieldBodies.removeAll()
@@ -845,10 +841,8 @@ final class ChoicesEditor {
     }
 
     private func rebuildList() {
-        var child = listBox.firstChild
-        while let current = child {
-            child = current.nextSibling
-            listBox.remove(child: current)
+        while let child = listBox.firstChild {
+            listBox.remove(child: child)
         }
         for (index, choice) in choices.enumerated() {
             listBox.append(child: choiceRow(choice: choice, index: index))

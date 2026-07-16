@@ -340,9 +340,7 @@ final class InsightDetailView {
     // MARK: - Content swap
 
     private func setContent(_ child: Widget) {
-        var c = contentHost.firstChild
-        while let cur = c {
-            c = cur.nextSibling
+        while let cur = contentHost.firstChild {
             clearFocusIfInside(cur)
             contentHost.remove(child: cur)
         }

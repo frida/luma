@@ -186,10 +186,8 @@ final class SessionDetailView {
     }
 
     private func clearBox(_ box: Box) {
-        var child = box.firstChild
-        while let current = child {
-            child = current.nextSibling
-            box.remove(child: current)
+        while let child = box.firstChild {
+            box.remove(child: child)
         }
     }
 }
