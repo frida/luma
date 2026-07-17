@@ -344,11 +344,15 @@ jobs:
 
       - name: Generate agent bundle
         run: |
+          # Fork PRs do not receive Apple signing secrets. Disable signing so
+          # LumaBundleCompiler still builds without a local codesign identity.
           xcodebuild \
             -project Luma.xcodeproj \
             -scheme AgentBundle \
             -configuration Release \
             -derivedDataPath build/.derived \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO \
             build
 
       - name: Build
@@ -643,11 +647,15 @@ jobs:
 
       - name: Generate agent bundle
         run: |
+          # Fork PRs do not receive Apple signing secrets. Disable signing so
+          # LumaBundleCompiler still builds without a local codesign identity.
           xcodebuild \
             -project Luma.xcodeproj \
             -scheme AgentBundle \
             -configuration Release \
             -derivedDataPath build/.derived-ios \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO \
             build
 
       - name: Build (unsigned, iOS Simulator)
