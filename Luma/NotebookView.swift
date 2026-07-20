@@ -21,6 +21,8 @@ struct NotebookView: View {
     }
 
     @State private var inspection: PharoInspection?
+    @State private var inspected: UUID?
+    @State private var inspectedCenter: CGFloat?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -28,10 +30,13 @@ struct NotebookView: View {
                 .pharoPane()
 
             if let inspection {
-                PharoInspectionPane(inspection: inspection) { self.inspection = nil }
-                    .frame(minWidth: 320)
+                PharoInspectionPane(inspection: inspection, pointsFrom: inspectedCenter) {
+                    self.inspection = nil
+                }
+                .frame(minWidth: 320)
             }
         }
+        .coordinateSpace(name: pharoPageSpace)
         .padding(8)
         .background(.pharoGutter)
     }
@@ -63,6 +68,8 @@ struct NotebookView: View {
                                 selection: $selection,
                                 autoBeginEditing: entry.id == lastInsertedID,
                                 inspection: $inspection,
+                                inspected: $inspected,
+                                inspectedCenter: $inspectedCenter,
                                 onEditingChanged: { editing in
                                     if editing {
                                         editingEntryIDs.insert(entry.id)
@@ -191,6 +198,8 @@ struct NotebookEntryRow: View {
     @Binding var selection: SidebarItemID?
     let autoBeginEditing: Bool
     @Binding var inspection: PharoInspection?
+    @Binding var inspected: UUID?
+    @Binding var inspectedCenter: CGFloat?
 
     let onEditingChanged: (Bool) -> Void
     let addNoteBelow: () -> Void
@@ -228,7 +237,12 @@ struct NotebookEntryRow: View {
                     readOnlyUserNoteBody
                 }
             } else if isPharo {
-                PharoNotebookCell(entry: entry, engine: engine, inspection: $inspection)
+                PharoNotebookCell(
+                    entry: entry,
+                    engine: engine,
+                    inspection: $inspection,
+                    inspected: $inspected,
+                    inspectedCenter: $inspectedCenter)
             } else {
                 systemEntryBody
             }

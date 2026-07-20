@@ -7,6 +7,8 @@ import SwiftyPharo
 struct PharoPlaygroundView: View {
     @State private var snippets: [Snippet] = [Snippet(source: "1 to: 20")]
     @State private var inspection: PharoInspection?
+    @State private var inspected: UUID?
+    @State private var inspectedCenter: CGFloat?
     @State private var failure: String?
     @State private var isReady = false
 
@@ -23,10 +25,13 @@ struct PharoPlaygroundView: View {
                 .pharoPane()
 
             if let inspection {
-                PharoInspectionPane(inspection: inspection) { self.inspection = nil }
-                    .frame(minWidth: 320)
+                PharoInspectionPane(inspection: inspection, pointsFrom: inspectedCenter) {
+                    self.inspection = nil
+                }
+                .frame(minWidth: 320)
             }
         }
+        .coordinateSpace(name: pharoPageSpace)
         .padding(8)
         .background(.pharoGutter)
         .task { await start() }
@@ -38,10 +43,15 @@ struct PharoPlaygroundView: View {
                 ForEach($snippets) { $snippet in
                     PharoSnippetView(
                         source: $snippet.source,
-                        evaluate: { Task { await evaluate(snippet.source) } },
+                        evaluate: { Task { await evaluate(snippet) } },
                         inspect: nil,
                         remove: snippets.count > 1 ? { remove(snippet) } : nil
                     )
+                    .onGeometryChange(for: CGFloat.self) { proxy in
+                        proxy.frame(in: .named(pharoPageSpace)).midY
+                    } action: { center in
+                        if snippet.id == inspected { inspectedCenter = center }
+                    }
                 }
 
                 addSnippetButton
@@ -79,9 +89,10 @@ struct PharoPlaygroundView: View {
         }
     }
 
-    private func evaluate(_ source: String) async {
+    private func evaluate(_ snippet: Snippet) async {
+        inspected = snippet.id
         do {
-            inspection = .live(try await runtime.evaluate(source))
+            inspection = .live(try await runtime.evaluate(snippet.source))
             failure = nil
         } catch {
             failure = error.localizedDescription
