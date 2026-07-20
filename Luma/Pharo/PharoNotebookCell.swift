@@ -26,28 +26,13 @@ struct PharoNotebookCell: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            TextEditor(text: $source)
-                .font(.system(.body, design: .monospaced))
-                .frame(minHeight: 44)
-                .onChange(of: source) { save() }
-                .accessibilityIdentifier("notebook.pharo.source")
-
-            HStack {
-                Button("Evaluate") { Task { await evaluate() } }
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .accessibilityIdentifier("notebook.pharo.evaluate")
-
-                Spacer()
-
-                if let snapshot {
-                    Button { inspection = .captured(snapshot) } label: {
-                        Image(systemName: "arrow.right")
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("notebook.pharo.inspect")
-                }
-            }
+            PharoSnippetView(
+                source: $source,
+                evaluate: { Task { await evaluate() } },
+                inspect: snapshot.map { captured in { inspection = .captured(captured) } },
+                remove: nil
+            )
+            .onChange(of: source) { save() }
 
             if let failure {
                 PharoFailureView(message: failure)

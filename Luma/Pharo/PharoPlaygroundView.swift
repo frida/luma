@@ -2,19 +2,24 @@ import LumaCore
 import SwiftUI
 import SwiftyPharo
 
-/// Evaluates Smalltalk against the embedded image, opening what comes back in
-/// the pane beside it.
+/// A scratch page of Smalltalk snippets, opening what they produce in the pane
+/// beside it. Nothing here is kept; the notebook is where work is saved.
 struct PharoPlaygroundView: View {
-    @State private var source = "1 to: 20"
+    @State private var snippets: [Snippet] = [Snippet(source: "1 to: 20")]
     @State private var inspection: PharoInspection?
     @State private var failure: String?
     @State private var isReady = false
 
     private let runtime = PharoRuntime.shared
 
+    private struct Snippet: Identifiable {
+        let id = UUID()
+        var source: String
+    }
+
     var body: some View {
         HStack(spacing: 0) {
-            editor
+            page
 
             if let inspection {
                 PharoInspectionPane(inspection: inspection) { self.inspection = nil }
@@ -24,31 +29,40 @@ struct PharoPlaygroundView: View {
         .task { await start() }
     }
 
-    private var editor: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            TextEditor(text: $source)
-                .font(.system(.body, design: .monospaced))
-                .frame(minHeight: 60)
-
-            HStack {
-                Button("Evaluate") { Task { await evaluate() } }
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(!isReady)
-
-                if !isReady {
-                    ProgressView().controlSize(.small)
-                    Text("Starting the image…").foregroundStyle(.secondary)
+    private var page: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach($snippets) { $snippet in
+                    PharoSnippetView(
+                        source: $snippet.source,
+                        evaluate: { Task { await evaluate(snippet.source) } },
+                        inspect: nil,
+                        remove: snippets.count > 1 ? { remove(snippet) } : nil
+                    )
                 }
 
-                Spacer()
-            }
+                addSnippetButton
 
-            if let failure {
-                PharoFailureView(message: failure)
+                if let failure {
+                    PharoFailureView(message: failure)
+                }
             }
+            .padding(12)
         }
-        .padding(8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var addSnippetButton: some View {
+        Button {
+            snippets.append(Snippet(source: ""))
+        } label: {
+            Label("Add Snippet", systemImage: "plus")
+                .font(.callout)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .disabled(!isReady)
+        .accessibilityIdentifier("pharo.playground.addSnippet")
     }
 
     private func start() async {
@@ -62,12 +76,16 @@ struct PharoPlaygroundView: View {
         }
     }
 
-    private func evaluate() async {
+    private func evaluate(_ source: String) async {
         do {
             inspection = .live(try await runtime.evaluate(source))
             failure = nil
         } catch {
             failure = error.localizedDescription
         }
+    }
+
+    private func remove(_ snippet: Snippet) {
+        snippets.removeAll { $0.id == snippet.id }
     }
 }
