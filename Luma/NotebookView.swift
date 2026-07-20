@@ -23,7 +23,7 @@ struct NotebookView: View {
     var body: some View {
         Group {
             if entries.isEmpty {
-                NotebookEmptyStateView(engine: engine, onAddNote: { addUserNote(after: nil) })
+                NotebookEmptyStateView(engine: engine, onAddNote: { addEntry(kind: .note, after: nil) })
             } else {
                 content
             }
@@ -52,12 +52,11 @@ struct NotebookView: View {
                                     } else {
                                         editingEntryIDs.remove(entry.id)
                                     }
-                                }
-                            ) {
-                                addUserNote(after: entry)
-                            } deleteAction: {
-                                engine.deleteNotebookEntry(entry)
-                            }
+                                },
+                                addNoteBelow: { addEntry(kind: .note, after: entry) },
+                                addPharoCellBelow: { addEntry(kind: .pharo, after: entry) },
+                                deleteAction: { engine.deleteNotebookEntry(entry) }
+                            )
                             .id(entry.id)
                         }
                         .padding(.horizontal, horizontalInset)
@@ -77,16 +76,29 @@ struct NotebookView: View {
                 }
             }
 
-            Button {
-                addUserNote(after: nil)
-            } label: {
-                Label("New Note", systemImage: "plus")
-                    .font(.callout.weight(.medium))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
+            HStack(spacing: 8) {
+                Button {
+                    addEntry(kind: .pharo, after: nil)
+                } label: {
+                    Label("New Pharo Cell", systemImage: "chevron.left.forwardslash.chevron.right")
+                        .font(.callout.weight(.medium))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                }
+                .accessibilityIdentifier("notebook.newPharoCell")
+                .buttonStyle(.bordered)
+
+                Button {
+                    addEntry(kind: .note, after: nil)
+                } label: {
+                    Label("New Note", systemImage: "plus")
+                        .font(.callout.weight(.medium))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                }
+                .accessibilityIdentifier("notebook.newNote")
+                .buttonStyle(.borderedProminent)
             }
-            .accessibilityIdentifier("notebook.newNote")
-            .buttonStyle(.borderedProminent)
             .buttonBorderShape(.capsule)
             #if canImport(UIKit)
             .controlSize(.regular)
@@ -107,16 +119,16 @@ struct NotebookView: View {
 
     @State private var lastInsertedID: UUID?
 
-    private func addUserNote(after entry: LumaCore.NotebookEntry?) {
-        let note = LumaCore.NotebookEntry(
-            kind: .note,
+    private func addEntry(kind: LumaCore.NotebookEntry.Kind, after entry: LumaCore.NotebookEntry?) {
+        let added = LumaCore.NotebookEntry(
+            kind: kind,
             title: "",
             details: "",
             binaryData: nil,
             processName: entry?.processName
         )
-        engine.addNotebookEntry(note, after: entry)
-        lastInsertedID = note.id
+        engine.addNotebookEntry(added, after: entry)
+        lastInsertedID = added.id
     }
 }
 
@@ -164,6 +176,7 @@ struct NotebookEntryRow: View {
 
     let onEditingChanged: (Bool) -> Void
     let addNoteBelow: () -> Void
+    let addPharoCellBelow: () -> Void
     let deleteAction: () -> Void
 
     @FocusState private var isTitleFocused: Bool
@@ -246,6 +259,12 @@ struct NotebookEntryRow: View {
                 addNoteBelow()
             } label: {
                 Label("Insert Note Below", systemImage: "plus")
+            }
+
+            Button {
+                addPharoCellBelow()
+            } label: {
+                Label("Insert Pharo Cell Below", systemImage: "chevron.left.forwardslash.chevron.right")
             }
 
             Divider()

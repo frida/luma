@@ -74,6 +74,7 @@ private struct PharoObjectColumn: View {
             Text(object.printString)
                 .font(.headline)
                 .lineLimit(2)
+                .accessibilityIdentifier("pharo.inspector.printString")
             Text(object.className)
                 .font(.caption)
                 .foregroundStyle(.secondary)
