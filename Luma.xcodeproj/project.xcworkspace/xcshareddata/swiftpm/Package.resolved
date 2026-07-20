@@ -1,78 +1,78 @@
 {
-  "originHash" : "ad049f15500378a0a573f0c21a7478257493d085c3d58ab5df3cef37d1f5ed6d",
-  "pins" : [
+  "originHash": "ad049f15500378a0a573f0c21a7478257493d085c3d58ab5df3cef37d1f5ed6d",
+  "pins": [
     {
-      "identity" : "frida-swift",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/frida-swift",
-      "state" : {
-        "branch" : "main",
-        "revision" : "467d0360c2cc8ae7db9444316656b4154d22213d"
+      "identity": "frida-swift",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/frida/frida-swift",
+      "state": {
+        "branch": "main",
+        "revision": "467d0360c2cc8ae7db9444316656b4154d22213d"
       }
     },
     {
-      "identity" : "grdb.swift",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/groue/GRDB.swift",
-      "state" : {
-        "revision" : "36e30a6f1ef10e4194f6af0cff90888526f0c115",
-        "version" : "7.10.0"
+      "identity": "grdb.swift",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/groue/GRDB.swift",
+      "state": {
+        "revision": "36e30a6f1ef10e4194f6af0cff90888526f0c115",
+        "version": "7.10.0"
       }
     },
     {
-      "identity" : "sparkle",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/sparkle-project/Sparkle",
-      "state" : {
-        "revision" : "066e75a8b3e99962685d6a90cdd5293ebffd9261",
-        "version" : "2.9.1"
+      "identity": "sparkle",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/sparkle-project/Sparkle",
+      "state": {
+        "revision": "066e75a8b3e99962685d6a90cdd5293ebffd9261",
+        "version": "2.9.1"
       }
     },
     {
-      "identity" : "swift-asn1",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/apple/swift-asn1.git",
-      "state" : {
-        "revision" : "eb50cbd14606a9161cbc5d452f18797c90ef0bab",
-        "version" : "1.7.0"
+      "identity": "swift-asn1",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/apple/swift-asn1.git",
+      "state": {
+        "revision": "eb50cbd14606a9161cbc5d452f18797c90ef0bab",
+        "version": "1.7.0"
       }
     },
     {
-      "identity" : "swift-crypto",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/apple/swift-crypto",
-      "state" : {
-        "revision" : "95ba0316a9b733e92bb6b071255ff46263bbe7dc",
-        "version" : "3.15.1"
+      "identity": "swift-crypto",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/apple/swift-crypto",
+      "state": {
+        "revision": "95ba0316a9b733e92bb6b071255ff46263bbe7dc",
+        "version": "3.15.1"
       }
     },
     {
-      "identity" : "swiftymonaco",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/SwiftyMonaco",
-      "state" : {
-        "branch" : "main",
-        "revision" : "01543b94abaa5dacd40e8685992e22c96f4ec145"
+      "identity": "swiftymonaco",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/frida/SwiftyMonaco",
+      "state": {
+        "branch": "main",
+        "revision": "01543b94abaa5dacd40e8685992e22c96f4ec145"
       }
     },
     {
-      "identity" : "swiftypharo",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/SwiftyPharo",
-      "state" : {
-        "branch" : "main",
-        "revision" : "5d2dba076738a18c024522bb545e1a9388db48fa"
+      "identity": "swiftypharo",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/frida/SwiftyPharo",
+      "state": {
+        "branch": "main",
+        "revision": "201ef53e1e6dc9592fc973d3d25c26599b2b360f"
       }
     },
     {
-      "identity" : "swiftyr2",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/radareorg/SwiftyR2",
-      "state" : {
-        "branch" : "main",
-        "revision" : "e040117b2dcac975ffc7f4130a6721ee327098da"
+      "identity": "swiftyr2",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/radareorg/SwiftyR2",
+      "state": {
+        "branch": "main",
+        "revision": "e040117b2dcac975ffc7f4130a6721ee327098da"
       }
     }
   ],
-  "version" : 3
+  "version": 3
 }

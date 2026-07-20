@@ -249,6 +249,7 @@
 				0CD209312EB511C400D027FC /* Frameworks */,
 				0CD209322EB511C400D027FC /* Resources */,
 				0CE0E5262ED0A38A000B1E01 /* Embed Frameworks */,
+				0CD2095A2EB511C400D027FC /* Stage Pharo image */,
 			);
 			buildRules = (
 			);
@@ -339,6 +340,25 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		0CD2095A2EB511C400D027FC /* Stage Pharo image */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Stage Pharo image";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/SwiftyPharo.image",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/zsh;
+			shellScript = "set -euo pipefail\nrelease=\"vm-20260720.2\"\ncache=\"${SRCROOT}/build/.pharo\"\nimage=\"${cache}/SwiftyPharo.image\"\nif [ ! -f \"${image}\" ]; then\n  mkdir -p \"${cache}\"\n  curl -sSL \"https://github.com/frida/SwiftyPharo/releases/download/${release}/SwiftyPharo.image.zip\" -o \"${cache}/image.zip\"\n  unzip -qo \"${cache}/image.zip\" -d \"${cache}\"\nfi\nresources=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\nmkdir -p \"${resources}\"\ncp \"${image}\" \"${image%.image}.changes\" \"${resources}/\"\n";
+		};
 		0CB2C6832FA5411A00426A24 /* Build observed.c fixture */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
