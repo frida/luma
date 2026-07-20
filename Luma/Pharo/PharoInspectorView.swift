@@ -176,7 +176,15 @@ private struct PharoItemsList: View {
             }
         }
         .listStyle(.plain)
-        .task { await loadNextPage() }
+        // Switching tabs hands the same list a different view to page through.
+        .task(id: view) { await reload() }
+    }
+
+    private func reload() async {
+        rows = []
+        total = 0
+        failure = nil
+        await loadNextPage()
     }
 
     private func loadNextPage() async {
