@@ -391,7 +391,6 @@
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/SwiftyPharo.image",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/zsh;
