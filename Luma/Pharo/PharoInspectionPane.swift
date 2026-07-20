@@ -19,17 +19,9 @@ struct PharoInspectionPane: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            arrow
+            PharoDrillArrow()
             inspected
         }
-    }
-
-    private var arrow: some View {
-        Image(systemName: "arrowtriangle.right.fill")
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
-            .frame(width: 18)
-            .frame(maxHeight: .infinity)
     }
 
     @ViewBuilder
@@ -52,5 +44,17 @@ struct PharoInspectionPane: View {
         .foregroundStyle(.secondary)
         .padding(8)
         .accessibilityIdentifier("pharo.inspection.close")
+    }
+}
+
+/// Marks a step from what was inspected to what came out of it, the way
+/// Glamorous Toolkit points from a page into its inspector and on down.
+struct PharoDrillArrow: View {
+    var body: some View {
+        Image(systemName: "arrowtriangle.right.fill")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .frame(width: 18)
+            .frame(maxHeight: .infinity)
     }
 }
