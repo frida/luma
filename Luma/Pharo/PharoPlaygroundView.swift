@@ -24,19 +24,28 @@ struct PharoPlaygroundView: View {
         HSplitView {
             page
                 .pharoPane()
+                .padding(8)
                 .frame(minWidth: 280, idealWidth: 420)
 
-            if let inspection {
-                PharoInspectionPane(inspection: inspection, pointsFrom: inspected.flatMap { centers[$0] }) {
-                    self.inspection = nil
-                }
+            inspectionSide
+                .padding(8)
                 .frame(minWidth: 320)
-            }
         }
         .coordinateSpace(name: pharoPageSpace)
-        .padding(8)
         .background(.pharoGutter)
         .task { await start() }
+    }
+
+
+    @ViewBuilder
+    private var inspectionSide: some View {
+        if let inspection {
+            PharoInspectionPane(inspection: inspection, pointsFrom: inspected.flatMap { centers[$0] }) {
+                self.inspection = nil
+            }
+        } else {
+            Color.clear
+        }
     }
 
     private var page: some View {
