@@ -16,6 +16,8 @@ struct PharoNotebookCell: View {
     @State private var snapshot: PharoSnapshot?
     @State private var failure: String?
 
+    @FocusState private var focused: UUID?
+
     private let runtime = PharoRuntime.shared
 
     init(
@@ -37,7 +39,9 @@ struct PharoNotebookCell: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             PharoSnippetView(
+                id: entry.id,
                 source: $source,
+                focused: $focused,
                 evaluate: { Task { await evaluate() } },
                 inspect: snapshot.map { captured in
                     {

@@ -6,6 +6,7 @@ import SwiftyPharo
 struct PharoInspectorView: View {
     let runtime: PharoRuntime
     let root: PharoObject
+    let onClose: () -> Void
 
     @State private var path: [PharoObject] = []
 
@@ -18,16 +19,18 @@ struct PharoInspectorView: View {
                             PharoDrillArrow()
                         }
 
-                        PharoObjectColumn(runtime: runtime, object: object) { selected in
-                            open(selected, from: depth)
-                        }
+                        PharoObjectColumn(
+                            runtime: runtime,
+                            object: object,
+                            onSelect: { open($0, from: depth) },
+                            onClose: { close(from: depth) })
                         .frame(width: 320)
                         .pharoPane()
                         .id(object.handle)
                     }
                 }
             }
-            .onChange(of: path.count) {
+            .onChange(of: path.last?.handle) {
                 withAnimation { scroller.scrollTo(path.last?.handle, anchor: .trailing) }
             }
             // SwiftUI hands a new root to the view it already has, so seeding
@@ -43,6 +46,11 @@ struct PharoInspectorView: View {
     private func startOver(at object: PharoObject) {
         path = [object]
     }
+
+    private func close(from depth: Int) {
+        guard depth > 0 else { return onClose() }
+        path = Array(path.prefix(depth))
+    }
 }
 
 /// One object's declared views, as a tab per view.
@@ -50,6 +58,7 @@ private struct PharoObjectColumn: View {
     let runtime: PharoRuntime
     let object: PharoObject
     let onSelect: (PharoObject) -> Void
+    let onClose: () -> Void
 
     @State private var declarations: [PharoViewDeclaration] = []
     @State private var shown: String?
@@ -58,6 +67,7 @@ private struct PharoObjectColumn: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
+                .overlay(alignment: .topTrailing) { closeButton }
 
             if declarations.count > 1 {
                 // More tabs than the card is wide should scroll rather than
@@ -93,6 +103,17 @@ private struct PharoObjectColumn: View {
                 .foregroundStyle(.secondary)
         }
         .padding(8)
+    }
+
+    private var closeButton: some View {
+        Button(action: onClose) {
+            Image(systemName: "xmark")
+                .font(.caption2)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .padding(6)
+        .accessibilityIdentifier("pharo.inspection.close")
     }
 
     @ViewBuilder
@@ -153,21 +174,15 @@ private struct PharoItemsList: View {
 
     @State private var rows: [String] = []
     @State private var total = 0
+    @State private var selection: Int?
     @State private var failure: String?
 
     private let pageSize = 50
 
     var body: some View {
-        List {
+        List(selection: $selection) {
             ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                Button {
-                    Task { await drill(into: index) }
-                } label: {
-                    Text(row)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+                Text(row).tag(index)
             }
 
             if rows.count < total {
@@ -187,11 +202,16 @@ private struct PharoItemsList: View {
         .listStyle(.plain)
         // Switching tabs hands the same list a different view to page through.
         .task(id: view) { await reload() }
+        .onChange(of: selection) { _, row in
+            guard let row else { return }
+            Task { await drill(into: row) }
+        }
     }
 
     private func reload() async {
         rows = []
         total = 0
+        selection = nil
         failure = nil
         await loadNextPage()
     }

@@ -25,9 +25,10 @@ struct NotebookView: View {
     @State private var centers: [UUID: CGFloat] = [:]
 
     var body: some View {
-        HStack(spacing: 0) {
+        HSplitView {
             page
                 .pharoPane()
+                .frame(minWidth: 320, idealWidth: 520)
 
             if let inspection {
                 PharoInspectionPane(inspection: inspection, pointsFrom: inspected.flatMap { centers[$0] }) {

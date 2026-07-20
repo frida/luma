@@ -4,12 +4,13 @@ import SwiftUI
 /// place whether or not they are showing, so a page does not shift under the
 /// pointer as snippets take and lose focus.
 struct PharoSnippetView: View {
+    let id: UUID
     @Binding var source: String
+    @FocusState.Binding var focused: UUID?
     let evaluate: () -> Void
     let inspect: (() -> Void)?
     let remove: (() -> Void)?
 
-    @FocusState private var isFocused: Bool
     @State private var isPointedAt = false
 
     var body: some View {
@@ -41,7 +42,7 @@ struct PharoSnippetView: View {
             .font(.system(.body, design: .monospaced))
             .lineLimit(1...)
             .padding(8)
-            .focused($isFocused)
+            .focused($focused, equals: id)
             .accessibilityIdentifier("notebook.pharo.source")
     }
 
@@ -77,6 +78,10 @@ struct PharoSnippetView: View {
         .buttonStyle(.bordered)
         .controlSize(.small)
         .help(name)
+    }
+
+    private var isFocused: Bool {
+        focused == id
     }
 
     private var showsActions: Bool {
