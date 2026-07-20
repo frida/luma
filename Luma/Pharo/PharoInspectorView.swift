@@ -89,7 +89,7 @@ private struct PharoObjectColumn: View {
     @ViewBuilder
     private var content: some View {
         if let failure {
-            ContentUnavailableView(failure, systemImage: "exclamationmark.triangle")
+            PharoFailureView(message: failure)
         } else if let shownDeclaration {
             body(of: shownDeclaration)
         } else {
@@ -129,7 +129,7 @@ private struct PharoObjectColumn: View {
             declarations = try await runtime.views(of: object)
             shown = declarations.first?.methodSelector
         } catch {
-            failure = "\(error)"
+            failure = error.localizedDescription
         }
     }
 }
@@ -186,7 +186,7 @@ private struct PharoItemsList: View {
             total = page.total
             rows += page.items
         } catch {
-            failure = "\(error)"
+            failure = error.localizedDescription
         }
     }
 
@@ -194,7 +194,7 @@ private struct PharoItemsList: View {
         do {
             onSelect(try await runtime.drillInto(object, view: view, index: index + 1))
         } catch {
-            failure = "\(error)"
+            failure = error.localizedDescription
         }
     }
 }
