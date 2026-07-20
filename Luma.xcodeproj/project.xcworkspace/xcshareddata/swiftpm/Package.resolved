@@ -56,15 +56,6 @@
       }
     },
     {
-      "identity": "swiftypharo",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/frida/SwiftyPharo",
-      "state": {
-        "branch": "main",
-        "revision": "4a1663037762b3113b94613e6a9050024b82e072"
-      }
-    },
-    {
       "identity": "swiftyr2",
       "kind": "remoteSourceControl",
       "location": "https://github.com/radareorg/SwiftyR2",
