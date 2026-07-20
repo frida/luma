@@ -14,13 +14,15 @@ struct PharoInspectorView: View {
             ScrollView(.horizontal) {
                 HStack(spacing: 0) {
                     ForEach(Array(path.enumerated()), id: \.element.handle) { depth, object in
+                        if depth > 0 {
+                            PharoDrillArrow()
+                        }
+
                         PharoObjectColumn(runtime: runtime, object: object) { selected in
                             open(selected, from: depth)
                         }
                         .frame(width: 280)
                         .id(object.handle)
-
-                        Divider()
                     }
                 }
             }
