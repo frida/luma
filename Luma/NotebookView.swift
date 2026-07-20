@@ -20,7 +20,20 @@ struct NotebookView: View {
         }
     }
 
+    @State private var inspection: PharoInspection?
+
     var body: some View {
+        HStack(spacing: 0) {
+            page
+
+            if let inspection {
+                PharoInspectionPane(inspection: inspection) { self.inspection = nil }
+                    .frame(minWidth: 320)
+            }
+        }
+    }
+
+    private var page: some View {
         Group {
             if entries.isEmpty {
                 NotebookEmptyStateView(engine: engine, onAddNote: { addEntry(kind: .note, after: nil) })
@@ -46,6 +59,7 @@ struct NotebookView: View {
                                 engine: engine,
                                 selection: $selection,
                                 autoBeginEditing: entry.id == lastInsertedID,
+                                inspection: $inspection,
                                 onEditingChanged: { editing in
                                     if editing {
                                         editingEntryIDs.insert(entry.id)
@@ -173,6 +187,7 @@ struct NotebookEntryRow: View {
     let engine: Engine
     @Binding var selection: SidebarItemID?
     let autoBeginEditing: Bool
+    @Binding var inspection: PharoInspection?
 
     let onEditingChanged: (Bool) -> Void
     let addNoteBelow: () -> Void
@@ -210,7 +225,7 @@ struct NotebookEntryRow: View {
                     readOnlyUserNoteBody
                 }
             } else if isPharo {
-                PharoNotebookCell(entry: entry, engine: engine)
+                PharoNotebookCell(entry: entry, engine: engine, inspection: $inspection)
             } else {
                 systemEntryBody
             }

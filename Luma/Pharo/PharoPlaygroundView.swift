@@ -2,20 +2,24 @@ import LumaCore
 import SwiftUI
 import SwiftyPharo
 
-/// Evaluates Smalltalk against the embedded image and hands the result to the
-/// inspector.
+/// Evaluates Smalltalk against the embedded image, opening what comes back in
+/// the pane beside it.
 struct PharoPlaygroundView: View {
     @State private var source = "1 to: 20"
-    @State private var result: PharoObject?
+    @State private var inspection: PharoInspection?
     @State private var failure: String?
     @State private var isReady = false
 
     private let runtime = PharoRuntime.shared
 
     var body: some View {
-        VSplitView {
+        HStack(spacing: 0) {
             editor
-            outcome
+
+            if let inspection {
+                PharoInspectionPane(inspection: inspection) { self.inspection = nil }
+                    .frame(minWidth: 320)
+            }
         }
         .task { await start() }
     }
@@ -38,19 +42,13 @@ struct PharoPlaygroundView: View {
 
                 Spacer()
             }
+
+            if let failure {
+                PharoFailureView(message: failure)
+            }
         }
         .padding(8)
-    }
-
-    @ViewBuilder
-    private var outcome: some View {
-        if let failure {
-            PharoFailureView(message: failure)
-        } else if let result {
-            PharoInspectorView(runtime: runtime, root: result)
-        } else {
-            ContentUnavailableView("Nothing evaluated yet", systemImage: "text.and.command.macwindow")
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func start() async {
@@ -66,10 +64,9 @@ struct PharoPlaygroundView: View {
 
     private func evaluate() async {
         do {
-            result = try await runtime.evaluate(source)
+            inspection = .live(try await runtime.evaluate(source))
             failure = nil
         } catch {
-            result = nil
             failure = error.localizedDescription
         }
     }
