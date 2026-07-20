@@ -50,6 +50,7 @@ private struct PharoObjectColumn: View {
 
     @State private var declarations: [PharoViewDeclaration] = []
     @State private var shown: String?
+    @State private var failure: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -67,7 +68,7 @@ private struct PharoObjectColumn: View {
             }
 
             Divider()
-            body(of: shownDeclaration)
+            content
         }
         .task { await loadDeclarations() }
     }
@@ -86,24 +87,36 @@ private struct PharoObjectColumn: View {
     }
 
     @ViewBuilder
-    private func body(of declaration: PharoViewDeclaration?) -> some View {
-        switch declaration?.viewName {
+    private var content: some View {
+        if let failure {
+            ContentUnavailableView(failure, systemImage: "exclamationmark.triangle")
+        } else if let shownDeclaration {
+            body(of: shownDeclaration)
+        } else {
+            ContentUnavailableView("No views", systemImage: "square.dashed")
+        }
+    }
+
+    @ViewBuilder
+    private func body(of declaration: PharoViewDeclaration) -> some View {
+        switch declaration.viewName {
         case "list", "columnedList", "tree":
             PharoItemsList(
                 runtime: runtime,
                 object: object,
-                view: declaration!.methodSelector,
+                view: declaration.methodSelector,
                 onSelect: onSelect)
         case "text":
             ScrollView {
-                Text(declaration?.text ?? "")
+                Text(declaration.text ?? "")
                     .font(.system(.body, design: .monospaced))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
             }
         default:
-            ContentUnavailableView("No views", systemImage: "square.dashed")
+            ContentUnavailableView(
+                "\(declaration.viewName) views are not rendered yet", systemImage: "square.dashed")
         }
     }
 
@@ -112,8 +125,12 @@ private struct PharoObjectColumn: View {
     }
 
     private func loadDeclarations() async {
-        declarations = (try? await runtime.views(of: object)) ?? []
-        shown = declarations.first?.methodSelector
+        do {
+            declarations = try await runtime.views(of: object)
+            shown = declarations.first?.methodSelector
+        } catch {
+            failure = "\(error)"
+        }
     }
 }
 
@@ -127,6 +144,7 @@ private struct PharoItemsList: View {
 
     @State private var rows: [String] = []
     @State private var total = 0
+    @State private var failure: String?
 
     private let pageSize = 50
 
@@ -150,24 +168,33 @@ private struct PharoItemsList: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
             }
+
+            if let failure {
+                Text(failure)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
         }
         .listStyle(.plain)
         .task { await loadNextPage() }
     }
 
     private func loadNextPage() async {
-        guard let page = try? await runtime.items(
-            of: object, view: view, from: rows.count + 1, count: pageSize)
-        else { return }
-
-        total = page.total
-        rows += page.items
+        do {
+            let page = try await runtime.items(
+                of: object, view: view, from: rows.count + 1, count: pageSize)
+            total = page.total
+            rows += page.items
+        } catch {
+            failure = "\(error)"
+        }
     }
 
     private func drill(into index: Int) async {
-        guard let selected = try? await runtime.drillInto(object, view: view, index: index + 1)
-        else { return }
-
-        onSelect(selected)
+        do {
+            onSelect(try await runtime.drillInto(object, view: view, index: index + 1))
+        } catch {
+            failure = "\(error)"
+        }
     }
 }

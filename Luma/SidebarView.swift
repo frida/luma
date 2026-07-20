@@ -28,7 +28,7 @@ struct SidebarView: View {
             Section {
                 SidebarNotebookRow()
                     .tag(SidebarItemID.notebook)
-                Label("Pharo", systemImage: "curlybraces.square")
+                SidebarPharoRow()
                     .tag(SidebarItemID.pharo)
                 SidebarMissionsRow(count: missions.count)
                     .tag(SidebarItemID.missions)
@@ -230,6 +230,18 @@ private struct SidebarNotebookRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("sidebar.notebook")
+    }
+}
+
+private struct SidebarPharoRow: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "curlybraces.square")
+                .frame(width: 18, alignment: .center)
+            Text("Pharo")
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("sidebar.pharo")
     }
 }
 
