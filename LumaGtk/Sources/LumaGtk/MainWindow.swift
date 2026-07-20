@@ -3062,7 +3062,16 @@ final class MainWindow: InstrumentUIHost {
     }
 
     private func activateGroupChild(sessionID: UUID, group: SessionSidebarGroup, key: String) {
-        groupChildActions[groupChildActionKey(sessionID: sessionID, group: group, key: key)]?()
+        let actionKey = groupChildActionKey(sessionID: sessionID, group: group, key: key)
+        // Browse-all opens a popover; keep that off the ListBox signal stack.
+        if key == "browse" {
+            Task { @MainActor [weak self] in
+                await Task.yield()
+                self?.groupChildActions[actionKey]?()
+            }
+            return
+        }
+        groupChildActions[actionKey]?()
     }
 
     private func toggleGroupExpansion(sessionID: UUID, group: SessionSidebarGroup) {

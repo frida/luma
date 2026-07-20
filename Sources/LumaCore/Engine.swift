@@ -4254,11 +4254,6 @@ public final class Engine {
             """
         try entrySource.write(to: entryURL, atomically: true, encoding: .utf8)
 
-        let options = BuildOptions()
-        options.projectRoot = paths.root.path
-        options.sourceMaps = .omitted
-        options.compression = .terser
-
         let hookID = id.uuidString
         let userPath = "TracerHooks/\(hookID).ts"
         let entryPath = "TracerHooks/\(hookID).entry.ts"
@@ -4271,7 +4266,11 @@ public final class Engine {
                 return path
             }
         ) { compiler in
-            try await compiler.build(entrypoint: entryRelPath, options: options)
+            try await compiler.build(
+                entrypoint: entryRelPath,
+                projectRoot: paths.root.path,
+                sourceMaps: .omitted,
+                compression: .terser)
         }
 
         let modules = try ESMBundleParser.parse(bundle)
@@ -4514,11 +4513,6 @@ public final class Engine {
 
         let entryRelPath = "\(dirRelPath)/\(try CustomInstrumentFile.validateRelativePath(entrypoint))"
 
-        let options = BuildOptions()
-        options.projectRoot = paths.root.path
-        options.sourceMaps = .omitted
-        options.compression = .terser
-
         let sourcePrefix = "\(dirRelPath)/"
         let bundle = try await compilerWorkspace.withCompilerDiagnostics(
             label: diagnosticLabel,
@@ -4527,7 +4521,11 @@ public final class Engine {
                 return String(path[range.upperBound...])
             }
         ) { compiler in
-            try await compiler.build(entrypoint: entryRelPath, options: options)
+            try await compiler.build(
+                entrypoint: entryRelPath,
+                projectRoot: paths.root.path,
+                sourceMaps: .omitted,
+                compression: .terser)
         }
 
         let modules = try ESMBundleParser.parse(bundle)

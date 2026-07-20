@@ -54,20 +54,16 @@ public final class CompilerWorkspace {
                 if packagesState.packageJSON != nil || packagesState.packageLockJSON != nil {
                     try self.writeManifestsToDisk(from: packagesState, paths: paths)
 
-                    let opts = PackageInstallOptions()
-                    opts.projectRoot = paths.root.path
-                    opts.role = .runtime
-
-                    _ = try await self.packageManager.install(options: opts)
+                    _ = try await self.packageManager.install(
+                        projectRoot: paths.root.path,
+                        role: .runtime)
                 } else if !packagesState.packages.isEmpty {
                     let specs = packagesState.packages.map { "\($0.name)@\($0.version)" }
 
-                    let opts = PackageInstallOptions()
-                    opts.projectRoot = paths.root.path
-                    opts.role = .runtime
-                    opts.specs = specs
-
-                    _ = try await self.packageManager.install(options: opts)
+                    _ = try await self.packageManager.install(
+                        specs: specs,
+                        projectRoot: paths.root.path,
+                        role: .runtime)
                 }
 
                 self.workspaceRoot = paths.root
@@ -117,12 +113,10 @@ public final class CompilerWorkspace {
 
         let spec = versionSpec.map { "\(name)@\($0)" } ?? name
 
-        let opts = PackageInstallOptions()
-        opts.projectRoot = paths.root.path
-        opts.role = .runtime
-        opts.specs = [spec]
-
-        let result = try await packageManager.install(options: opts)
+        let result = try await packageManager.install(
+            specs: [spec],
+            projectRoot: paths.root.path,
+            role: .runtime)
 
         let manifests = try readManifestsFromDisk(paths: paths)
         packagesState.packageJSON = manifests.packageJSON
@@ -171,12 +165,10 @@ public final class CompilerWorkspace {
 
             let specs = packagesState.packages.map { "\($0.name)@\($0.version)" }
 
-            let opts = PackageInstallOptions()
-            opts.projectRoot = paths.root.path
-            opts.role = .runtime
-            opts.specs = specs
-
-            _ = try await self.packageManager.install(options: opts)
+            _ = try await self.packageManager.install(
+                specs: specs,
+                projectRoot: paths.root.path,
+                role: .runtime)
 
             let manifests = try self.readManifestsFromDisk(paths: paths)
             packagesState.packageJSON = manifests.packageJSON
@@ -238,13 +230,12 @@ public final class CompilerWorkspace {
             """
         try source.write(to: wrapperURL, atomically: true, encoding: .utf8)
 
-        let options = BuildOptions()
-        options.projectRoot = paths.root.path
-        options.sourceMaps = .omitted
-        options.compression = .terser
-
         let bundle = try await withCompilerDiagnostics(label: "package \(package.name)") { compiler in
-            return try await compiler.build(entrypoint: wrapperRelPath, options: options)
+            return try await compiler.build(
+                entrypoint: wrapperRelPath,
+                projectRoot: paths.root.path,
+                sourceMaps: .omitted,
+                compression: .terser)
         }
 
         let modules = try ESMBundleParser.parse(bundle)

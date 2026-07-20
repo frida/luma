@@ -26,8 +26,11 @@ final class SidebarBrowserPopover<Item> {
     private var query: String = ""
     private var filterTask: Task<Void, Never>?
     private var refreshGeneration: UInt = 0
+    private var isChoosing = false
 
-    private static var visibleRowLimit: Int { 250 }
+    // Cap first paint so Windows GTK is not forced to allocate a huge ListBox
+    // while the popover is still mapping.
+    private static var visibleRowLimit: Int { 150 }
 
     init(
         items: [Item],
@@ -73,7 +76,7 @@ final class SidebarBrowserPopover<Item> {
         key.onKeyPressed { [weak self] _, keyval, _, _ in
             MainActor.assumeIsolated {
                 if Int32(keyval) == Gdk.keyEscape {
-                    self?.dismiss()
+                    self?.scheduleDismiss()
                     return true
                 }
                 return false
@@ -101,7 +104,7 @@ final class SidebarBrowserPopover<Item> {
             MainActor.assumeIsolated { self?.chooseFirstMatch() }
         }
         searchEntry.onStopSearch { [weak self] _ in
-            MainActor.assumeIsolated { self?.dismiss() }
+            MainActor.assumeIsolated { self?.scheduleDismiss() }
         }
         column.append(child: searchEntry)
 
@@ -119,7 +122,9 @@ final class SidebarBrowserPopover<Item> {
                 let index = Int(row.index)
                 guard index >= 0, index < self.entries.count else { return }
                 if case .item(let item) = self.entries[index] {
-                    self.choose(item)
+                    // Defer dismiss/unparent until after row-activated finishes;
+                    // tearing the popover down mid-emission faults inside GTK.
+                    self.scheduleChoose(item)
                 }
             }
         }
@@ -132,9 +137,15 @@ final class SidebarBrowserPopover<Item> {
         self.popover = popover
         self.listBox = listBox
 
-        refreshList()
+        // Map the empty popover first, then fill rows on a later turn so the
+        // initial present is not competing with a large ListBox rebuild.
         popover.popup()
         _ = searchEntry.grabFocus()
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self, self.popover != nil else { return }
+            self.refreshList()
+        }
     }
 
     private func scheduleRefresh() {
@@ -261,18 +272,32 @@ final class SidebarBrowserPopover<Item> {
     private func chooseFirstMatch() {
         for entry in entries {
             if case .item(let item) = entry {
-                choose(item)
+                scheduleChoose(item)
                 return
             }
         }
     }
 
-    private func choose(_ item: Item) {
-        dismiss()
-        onChoose(item)
+    private func scheduleChoose(_ item: Item) {
+        guard !isChoosing else { return }
+        isChoosing = true
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self else { return }
+            self.dismiss()
+            self.onChoose(item)
+        }
+    }
+
+    private func scheduleDismiss() {
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            self?.dismiss()
+        }
     }
 
     private func dismiss() {
+        guard popover != nil else { return }
         popover?.popdown()
         cleanup()
     }
@@ -281,7 +306,10 @@ final class SidebarBrowserPopover<Item> {
         filterTask?.cancel()
         filterTask = nil
         refreshGeneration &+= 1
-        popover?.unparent()
+        isChoosing = false
+        if let popover {
+            popover.unparent()
+        }
         popover = nil
         listBox = nil
         retainer = nil
