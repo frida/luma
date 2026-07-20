@@ -22,6 +22,8 @@ struct PharoInspectionPane: View {
     let pointsFrom: CGFloat?
     let onClose: () -> Void
 
+    @State private var top: CGFloat = 0
+
     private let runtime = PharoRuntime.shared
 
     var body: some View {
@@ -29,13 +31,18 @@ struct PharoInspectionPane: View {
             arrow
             inspected
         }
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.frame(in: .named(pharoPageSpace)).minY
+        } action: { top = $0 }
     }
 
     @ViewBuilder
     private var arrow: some View {
         if let pointsFrom {
             VStack(spacing: 0) {
-                Spacer().frame(height: pointsFrom)
+                // Measured against the page, so the pane's own offset and the
+                // arrow's height both come off before it lines up.
+                Spacer().frame(height: max(0, pointsFrom - top - arrowHeight / 2))
                 PharoDrillArrow().fixedSize()
                 Spacer(minLength: 0)
             }
@@ -55,6 +62,8 @@ struct PharoInspectionPane: View {
                 .pharoPane()
         }
     }
+
+    private let arrowHeight: CGFloat = 12
 
     private var closeButton: some View {
         Button(action: onClose) {
