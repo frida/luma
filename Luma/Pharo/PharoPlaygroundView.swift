@@ -45,7 +45,7 @@ struct PharoPlaygroundView: View {
     @ViewBuilder
     private var outcome: some View {
         if let failure {
-            ContentUnavailableView(failure, systemImage: "exclamationmark.triangle")
+            PharoFailureView(message: failure)
         } else if let result {
             PharoInspectorView(runtime: runtime, root: result)
         } else {
@@ -60,7 +60,7 @@ struct PharoPlaygroundView: View {
             try await runtime.startBundledImage()
             isReady = true
         } catch {
-            failure = "\(error)"
+            failure = error.localizedDescription
         }
     }
 
@@ -70,7 +70,7 @@ struct PharoPlaygroundView: View {
             failure = nil
         } catch {
             result = nil
-            failure = "\(error)"
+            failure = error.localizedDescription
         }
     }
 }

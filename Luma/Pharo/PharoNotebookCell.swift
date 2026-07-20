@@ -45,9 +45,8 @@ struct PharoNotebookCell: View {
     @ViewBuilder
     private var outcome: some View {
         if let failure {
-            Text(failure)
-                .font(.system(.footnote, design: .monospaced))
-                .foregroundStyle(.red)
+            PharoFailureView(message: failure)
+                .frame(height: 80)
         } else if let result {
             PharoInspectorView(runtime: runtime, root: result)
                 .frame(height: 260)
@@ -66,7 +65,7 @@ struct PharoNotebookCell: View {
             failure = nil
         } catch {
             result = nil
-            failure = "\(error)"
+            failure = error.localizedDescription
         }
         save()
     }
