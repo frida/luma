@@ -16,14 +16,13 @@ public struct PharoSnapshot: Codable, Sendable, Equatable {
         public var priority: Int
 
         public enum Content: Codable, Sendable, Equatable {
-            case items(shown: [String], total: Int)
+            case items(kept: [String], total: Int)
             case text(String)
             case empty
         }
     }
 
-    /// How much of a long view is worth keeping; the live inspector pages the
-    /// rest when a VM is around.
+    /// The live inspector pages the rest back in when a VM is around.
     static let retainedItemCount = 100
 
     public init(printString: String, className: String, views: [View]) {
@@ -69,6 +68,6 @@ extension PharoSnapshot {
         if page.total == 0 {
             return .empty
         }
-        return .items(shown: page.items, total: page.total)
+        return .items(kept: page.items, total: page.total)
     }
 }

@@ -45,15 +45,15 @@ struct PharoSnapshotView: View {
     @ViewBuilder
     private func body(of view: PharoSnapshot.View?) -> some View {
         switch view?.content {
-        case .items(let shown, let total):
+        case .items(let kept, let total):
             List {
-                ForEach(Array(shown.enumerated()), id: \.offset) { _, row in
+                ForEach(Array(kept.enumerated()), id: \.offset) { _, row in
                     Text(row)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                if shown.count < total {
-                    Text("\(total - shown.count) more, kept out of the snapshot")
+                if kept.count < total {
+                    Text("\(total - kept.count) more, kept out of the snapshot")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
