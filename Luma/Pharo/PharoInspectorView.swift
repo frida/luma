@@ -5,13 +5,9 @@ import SwiftyPharo
 /// column to its right so the path taken to reach a value stays on screen.
 struct PharoInspectorView: View {
     let runtime: PharoRuntime
+    let root: PharoObject
 
-    @State private var path: [PharoObject]
-
-    init(runtime: PharoRuntime, root: PharoObject) {
-        self.runtime = runtime
-        _path = State(initialValue: [root])
-    }
+    @State private var path: [PharoObject] = []
 
     var body: some View {
         ScrollViewReader { scroller in
@@ -31,11 +27,18 @@ struct PharoInspectorView: View {
             .onChange(of: path.count) {
                 withAnimation { scroller.scrollTo(path.last?.handle, anchor: .trailing) }
             }
+            // SwiftUI hands a new root to the view it already has, so seeding
+            // the path from an initializer would only ever run once.
+            .onChange(of: root.handle, initial: true) { startOver(at: root) }
         }
     }
 
     private func open(_ object: PharoObject, from depth: Int) {
         path = path.prefix(depth + 1) + [object]
+    }
+
+    private func startOver(at object: PharoObject) {
+        path = [object]
     }
 }
 
