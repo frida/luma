@@ -231,13 +231,12 @@ struct LumaBundleCompiler {
                 fputs("[packages] installing: \(summary)\n", stderr)
 
                 let pm = PackageManager()
-                let opts = PackageInstallOptions()
-                opts.projectRoot = stagingDir
-                opts.role = .runtime
-                opts.specs = packageSpecs
 
                 do {
-                    _ = try await pm.install(options: opts)
+                    _ = try await pm.install(
+                        specs: packageSpecs.isEmpty ? nil : packageSpecs,
+                        projectRoot: stagingDir,
+                        role: .runtime)
                 } catch {
                     fputs("[packages] frida install failed: \(error.localizedDescription)\n", stderr)
                     fputs("[packages] falling back to npm\n", stderr)
@@ -296,12 +295,6 @@ struct LumaBundleCompiler {
         }
 
         let compiler = Compiler()
-        let options = BuildOptions()
-        options.projectRoot = effectiveProjectRoot
-        options.sourceMaps = .omitted
-        if !externals.isEmpty {
-            options.externals = externals
-        }
 
         let eventsTask = Task {
             for await event in compiler.events {
@@ -322,7 +315,11 @@ struct LumaBundleCompiler {
         compiled.reserveCapacity(entries.count)
 
         for entry in entries {
-            let bundle = try await compiler.build(entrypoint: entry.entrypoint, options: options)
+            let bundle = try await compiler.build(
+                entrypoint: entry.entrypoint,
+                externals: externals.isEmpty ? nil : externals,
+                projectRoot: effectiveProjectRoot,
+                sourceMaps: .omitted)
 
             let source: String
             switch entry.kind {
