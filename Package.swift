@@ -64,6 +64,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-crypto", .upToNextMajor(from: "3.0.0")),
         .package(url: "https://github.com/groue/GRDB.swift", .upToNextMajor(from: "7.0.0")),
         .package(url: "https://github.com/radareorg/SwiftyR2", branch: "main"),
+        .package(url: "https://github.com/frida/SwiftyPharo", branch: "main"),
     ],
     targets: cSoupTargets + [
         .target(
@@ -73,6 +74,7 @@ let package = Package(
                 .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "GRDB", package: "GRDB.swift"),
                 .product(name: "SwiftyR2", package: "SwiftyR2"),
+                .product(name: "SwiftyPharo", package: "SwiftyPharo"),
             ] + lumaCoreSoupDeps,
             path: "Sources/LumaCore",
             exclude: lumaCoreExcludes,
