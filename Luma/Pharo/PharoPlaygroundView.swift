@@ -8,7 +8,7 @@ struct PharoPlaygroundView: View {
     @State private var snippets: [Snippet] = [Snippet(source: "1 to: 20")]
     @State private var inspection: PharoInspection?
     @State private var inspected: UUID?
-    @State private var inspectedCenter: CGFloat?
+    @State private var centers: [UUID: CGFloat] = [:]
     @State private var failure: String?
     @State private var isReady = false
 
@@ -25,7 +25,7 @@ struct PharoPlaygroundView: View {
                 .pharoPane()
 
             if let inspection {
-                PharoInspectionPane(inspection: inspection, pointsFrom: inspectedCenter) {
+                PharoInspectionPane(inspection: inspection, pointsFrom: inspected.flatMap { centers[$0] }) {
                     self.inspection = nil
                 }
                 .frame(minWidth: 320)
@@ -50,7 +50,7 @@ struct PharoPlaygroundView: View {
                     .onGeometryChange(for: CGFloat.self) { proxy in
                         proxy.frame(in: .named(pharoPageSpace)).midY
                     } action: { center in
-                        if snippet.id == inspected { inspectedCenter = center }
+                        centers[snippet.id] = center
                     }
                 }
 

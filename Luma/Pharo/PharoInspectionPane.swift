@@ -84,7 +84,10 @@ extension View {
     /// Lepiter floats each pane as a card, which is what tells one apart from
     /// the next once the arrow between them is all that separates them.
     func pharoPane() -> some View {
-        background(.pharoPane).clipShape(RoundedRectangle(cornerRadius: 8))
+        background(.pharoPane)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary) }
+            .shadow(color: .black.opacity(0.06), radius: 1, y: 0.5)
     }
 }
 
@@ -99,7 +102,7 @@ extension ShapeStyle where Self == Color {
 
     static var pharoGutter: Color {
         #if canImport(AppKit)
-        Color(nsColor: .underPageBackgroundColor)
+        Color(nsColor: .windowBackgroundColor)
         #else
         Color(uiColor: .systemGroupedBackground)
         #endif
