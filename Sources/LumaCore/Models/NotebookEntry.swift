@@ -9,6 +9,8 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
         case note
         /// Captured from an instrumented process via a hook / script.
         case capture
+        /// Smalltalk the reader can edit and run, its source held in `details`.
+        case pharo
     }
 
     public var id: UUID
