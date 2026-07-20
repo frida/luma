@@ -22,6 +22,7 @@ struct PharoInspectorView: View {
                             open(selected, from: depth)
                         }
                         .frame(width: 280)
+                        .pharoPane()
                         .id(object.handle)
                     }
                 }

@@ -33,6 +33,7 @@ struct PharoInspectionPane: View {
         case .captured(let snapshot):
             PharoSnapshotView(snapshot: snapshot)
                 .overlay(alignment: .topTrailing) { closeButton }
+                .pharoPane()
         }
     }
 
@@ -54,7 +55,33 @@ struct PharoDrillArrow: View {
         Image(systemName: "arrowtriangle.right.fill")
             .font(.caption2)
             .foregroundStyle(.tertiary)
-            .frame(width: 18)
+            .frame(width: 24)
             .frame(maxHeight: .infinity)
+    }
+}
+
+extension View {
+    /// Lepiter floats each pane as a card, which is what tells one apart from
+    /// the next once the arrow between them is all that separates them.
+    func pharoPane() -> some View {
+        background(.pharoPane).clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+extension ShapeStyle where Self == Color {
+    static var pharoPane: Color {
+        #if canImport(AppKit)
+        Color(nsColor: .textBackgroundColor)
+        #else
+        Color(uiColor: .systemBackground)
+        #endif
+    }
+
+    static var pharoGutter: Color {
+        #if canImport(AppKit)
+        Color(nsColor: .windowBackgroundColor)
+        #else
+        Color(uiColor: .systemGroupedBackground)
+        #endif
     }
 }

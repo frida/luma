@@ -25,12 +25,15 @@ struct NotebookView: View {
     var body: some View {
         HStack(spacing: 0) {
             page
+                .pharoPane()
 
             if let inspection {
                 PharoInspectionPane(inspection: inspection) { self.inspection = nil }
                     .frame(minWidth: 320)
             }
         }
+        .padding(8)
+        .background(.pharoGutter)
     }
 
     private var page: some View {
