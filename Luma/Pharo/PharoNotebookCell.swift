@@ -9,6 +9,8 @@ struct PharoNotebookCell: View {
     let entry: NotebookEntry
     let engine: Engine
     @Binding var inspection: PharoInspection?
+    @Binding var inspected: UUID?
+    @Binding var inspectedCenter: CGFloat?
 
     @State private var source: String
     @State private var snapshot: PharoSnapshot?
@@ -16,10 +18,18 @@ struct PharoNotebookCell: View {
 
     private let runtime = PharoRuntime.shared
 
-    init(entry: NotebookEntry, engine: Engine, inspection: Binding<PharoInspection?>) {
+    init(
+        entry: NotebookEntry,
+        engine: Engine,
+        inspection: Binding<PharoInspection?>,
+        inspected: Binding<UUID?>,
+        inspectedCenter: Binding<CGFloat?>
+    ) {
         self.entry = entry
         self.engine = engine
         _inspection = inspection
+        _inspected = inspected
+        _inspectedCenter = inspectedCenter
         _source = State(initialValue: entry.details)
         _snapshot = State(initialValue: entry.pharoSnapshot)
     }
@@ -29,10 +39,20 @@ struct PharoNotebookCell: View {
             PharoSnippetView(
                 source: $source,
                 evaluate: { Task { await evaluate() } },
-                inspect: snapshot.map { captured in { inspection = .captured(captured) } },
+                inspect: snapshot.map { captured in
+                    {
+                        inspected = entry.id
+                        inspection = .captured(captured)
+                    }
+                },
                 remove: nil
             )
             .onChange(of: source) { save() }
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.frame(in: .named(pharoPageSpace)).midY
+            } action: { center in
+                if entry.id == inspected { inspectedCenter = center }
+            }
 
             if let failure {
                 PharoFailureView(message: failure)
@@ -42,6 +62,7 @@ struct PharoNotebookCell: View {
     }
 
     private func evaluate() async {
+        inspected = entry.id
         do {
             try await runtime.startBundledImage()
             let evaluated = try await runtime.evaluate(source)

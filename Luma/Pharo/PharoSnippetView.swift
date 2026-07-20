@@ -21,8 +21,11 @@ struct PharoSnippetView: View {
                 actions
             }
         }
-        .background(Color.secondary.opacity(0.06))
+        .background(.pharoPane)
         .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay {
+            RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary)
+        }
         .onHover { isPointedAt = $0 }
     }
 
@@ -69,11 +72,10 @@ struct PharoSnippetView: View {
         Button(action: perform) {
             Image(systemName: symbol)
                 .font(.caption)
-                .frame(width: 22, height: 18)
-                .contentShape(Rectangle())
+                .frame(width: 16, height: 12)
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
+        .buttonStyle(.bordered)
+        .controlSize(.small)
         .help(name)
     }
 

@@ -2,6 +2,10 @@ import LumaCore
 import SwiftUI
 import SwiftyPharo
 
+/// The space a page and its pane share, so a page can say where in it the
+/// thing being inspected sits.
+let pharoPageSpace = "pharo.page"
+
 /// What a page is showing to its right: the object a cell just produced, or
 /// what its last run captured when there is no VM to ask again.
 enum PharoInspection {
@@ -13,14 +17,30 @@ enum PharoInspection {
 /// under the cell so drilling has somewhere to go.
 struct PharoInspectionPane: View {
     let inspection: PharoInspection
+    /// Where in the pane's own height the thing being inspected sits, so the
+    /// arrow points across from it rather than from the middle of the window.
+    let pointsFrom: CGFloat?
     let onClose: () -> Void
 
     private let runtime = PharoRuntime.shared
 
     var body: some View {
         HStack(spacing: 0) {
-            PharoDrillArrow()
+            arrow
             inspected
+        }
+    }
+
+    @ViewBuilder
+    private var arrow: some View {
+        if let pointsFrom {
+            VStack(spacing: 0) {
+                Spacer().frame(height: pointsFrom)
+                PharoDrillArrow().fixedSize()
+                Spacer(minLength: 0)
+            }
+        } else {
+            PharoDrillArrow()
         }
     }
 
@@ -79,7 +99,7 @@ extension ShapeStyle where Self == Color {
 
     static var pharoGutter: Color {
         #if canImport(AppKit)
-        Color(nsColor: .windowBackgroundColor)
+        Color(nsColor: .underPageBackgroundColor)
         #else
         Color(uiColor: .systemGroupedBackground)
         #endif
