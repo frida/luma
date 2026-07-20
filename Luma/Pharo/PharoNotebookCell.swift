@@ -2,23 +2,24 @@ import LumaCore
 import SwiftUI
 import SwiftyPharo
 
-/// A notebook entry holding Smalltalk the reader can edit and run, with the
-/// result opened for inspection below it. What the last run produced is kept
-/// with the entry, so the cell still shows its result with no VM around.
+/// A notebook entry holding Smalltalk the reader can edit and run. What it
+/// produces opens in the page's inspection pane; what the last run captured is
+/// kept with the entry, so it can be reopened with no VM around.
 struct PharoNotebookCell: View {
     let entry: NotebookEntry
     let engine: Engine
+    @Binding var inspection: PharoInspection?
 
     @State private var source: String
-    @State private var result: PharoObject?
     @State private var snapshot: PharoSnapshot?
     @State private var failure: String?
 
     private let runtime = PharoRuntime.shared
 
-    init(entry: NotebookEntry, engine: Engine) {
+    init(entry: NotebookEntry, engine: Engine, inspection: Binding<PharoInspection?>) {
         self.entry = entry
         self.engine = engine
+        _inspection = inspection
         _source = State(initialValue: entry.details)
         _snapshot = State(initialValue: entry.pharoSnapshot)
     }
@@ -35,24 +36,23 @@ struct PharoNotebookCell: View {
                 Button("Evaluate") { Task { await evaluate() } }
                     .keyboardShortcut(.return, modifiers: .command)
                     .accessibilityIdentifier("notebook.pharo.evaluate")
+
                 Spacer()
+
+                if let snapshot {
+                    Button { inspection = .captured(snapshot) } label: {
+                        Image(systemName: "arrow.right")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("notebook.pharo.inspect")
+                }
             }
 
-            outcome
-        }
-    }
-
-    @ViewBuilder
-    private var outcome: some View {
-        if let failure {
-            PharoFailureView(message: failure)
-                .frame(height: 80)
-        } else if let result {
-            PharoInspectorView(runtime: runtime, root: result)
-                .frame(height: 260)
-        } else if let snapshot {
-            PharoSnapshotView(snapshot: snapshot)
-                .frame(height: 260)
+            if let failure {
+                PharoFailureView(message: failure)
+                    .frame(height: 60)
+            }
         }
     }
 
@@ -60,11 +60,10 @@ struct PharoNotebookCell: View {
         do {
             try await runtime.startBundledImage()
             let evaluated = try await runtime.evaluate(source)
-            result = evaluated
             snapshot = try await PharoSnapshot.capture(of: evaluated, using: runtime)
+            inspection = .live(evaluated)
             failure = nil
         } catch {
-            result = nil
             failure = error.localizedDescription
         }
         save()
