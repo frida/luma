@@ -11,6 +11,7 @@ struct PharoPlaygroundView: View {
     @State private var centers: [UUID: CGFloat] = [:]
     @State private var failure: String?
     @State private var isReady = false
+    @FocusState private var focused: UUID?
 
     private let runtime = PharoRuntime.shared
 
@@ -20,9 +21,10 @@ struct PharoPlaygroundView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
+        HSplitView {
             page
                 .pharoPane()
+                .frame(minWidth: 280, idealWidth: 420)
 
             if let inspection {
                 PharoInspectionPane(inspection: inspection, pointsFrom: inspected.flatMap { centers[$0] }) {
@@ -42,7 +44,9 @@ struct PharoPlaygroundView: View {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach($snippets) { $snippet in
                     PharoSnippetView(
+                        id: snippet.id,
                         source: $snippet.source,
+                        focused: $focused,
                         evaluate: { Task { await evaluate(snippet) } },
                         inspect: nil,
                         remove: snippets.count > 1 ? { remove(snippet) } : nil
@@ -67,7 +71,9 @@ struct PharoPlaygroundView: View {
 
     private var addSnippetButton: some View {
         Button {
-            snippets.append(Snippet(source: ""))
+            let added = Snippet(source: "")
+            snippets.append(added)
+            focused = added.id
         } label: {
             Label("Add Snippet", systemImage: "plus")
                 .font(.callout)

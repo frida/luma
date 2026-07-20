@@ -48,8 +48,7 @@ struct PharoInspectionPane: View {
     private var inspected: some View {
         switch inspection {
         case .live(let object):
-            PharoInspectorView(runtime: runtime, root: object)
-                .overlay(alignment: .topTrailing) { closeButton }
+            PharoInspectorView(runtime: runtime, root: object, onClose: onClose)
         case .captured(let snapshot):
             PharoSnapshotView(snapshot: snapshot)
                 .overlay(alignment: .topTrailing) { closeButton }
@@ -60,11 +59,11 @@ struct PharoInspectionPane: View {
     private var closeButton: some View {
         Button(action: onClose) {
             Image(systemName: "xmark")
+                .font(.caption2)
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
-        .padding(8)
-        .accessibilityIdentifier("pharo.inspection.close")
+        .padding(6)
     }
 }
 
