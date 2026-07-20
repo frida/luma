@@ -21,7 +21,7 @@ struct PharoInspectorView: View {
                         PharoObjectColumn(runtime: runtime, object: object) { selected in
                             open(selected, from: depth)
                         }
-                        .frame(width: 280)
+                        .frame(width: 320)
                         .pharoPane()
                         .id(object.handle)
                     }
@@ -60,13 +60,19 @@ private struct PharoObjectColumn: View {
             header
 
             if declarations.count > 1 {
-                Picker("", selection: $shown) {
-                    ForEach(declarations, id: \.methodSelector) { declaration in
-                        Text(declaration.title).tag(Optional(declaration.methodSelector))
+                // More tabs than the card is wide should scroll rather than
+                // squeeze every title down to an ellipsis.
+                ScrollView(.horizontal) {
+                    Picker("", selection: $shown) {
+                        ForEach(declarations, id: \.methodSelector) { declaration in
+                            Text(declaration.title).tag(Optional(declaration.methodSelector))
+                        }
                     }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                .scrollIndicators(.hidden)
                 .padding(6)
             }
 
