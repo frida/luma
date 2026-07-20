@@ -85,6 +85,23 @@ final class LumaAppHarness {
         app.buttons["Save"].firstMatch.click()
     }
 
+    func evaluatePharoCell(_ source: String, timeout: TimeInterval = 10) throws {
+        let newCell = app.descendants(matching: .any).matching(identifier: "notebook.newPharoCell").firstMatch
+        if !newCell.waitForExistence(timeout: timeout) {
+            throw LumaAppHarnessError.elementNotFound("notebook.newPharoCell")
+        }
+        newCell.click()
+
+        let editor = app.descendants(matching: .any).matching(identifier: "notebook.pharo.source").firstMatch
+        if !editor.waitForExistence(timeout: timeout) {
+            throw LumaAppHarnessError.elementNotFound("notebook.pharo.source")
+        }
+        editor.click()
+        editor.typeText(source)
+
+        app.descendants(matching: .any).matching(identifier: "notebook.pharo.evaluate").firstMatch.click()
+    }
+
     func enableCollaboration(timeout: TimeInterval = 60) throws -> String {
         app.typeKey("c", modifierFlags: [.command, .option])
 

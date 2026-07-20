@@ -238,6 +238,28 @@ final class LumaUITests: XCTestCase {
         try await bobApp.captureScreenshot(to: scenarioOutputURL(name: "bob-joined"))
     }
 
+    /// Runs Smalltalk in a notebook cell and drills into what came back, which
+    /// exercises the embedded VM the same way the probe does but through the UI.
+    @MainActor
+    func testPharoNotebookCell() async throws {
+        let user = try TestUser(label: "pharo", token: "unused-outside-collaboration")
+        addTeardownBlock { user.cleanup() }
+
+        let app = LumaAppHarness(user: user)
+        app.launch()
+        addTeardownBlock { Task { @MainActor in app.terminate() } }
+
+        try app.newDocument()
+        try app.switchToNotebook()
+        try app.evaluatePharoCell("3 + 4")
+
+        let printString = app.app.descendants(matching: .any)
+            .matching(identifier: "pharo.inspector.printString").firstMatch
+        // The image boots on first evaluation, which dominates this wait.
+        XCTAssertTrue(printString.waitForExistence(timeout: 180), "inspector never showed a result")
+        XCTAssertEqual(printString.label, "7")
+    }
+
     @MainActor private func aliceCreateNewDocument(_ app: LumaAppHarness) throws {
         try app.newDocument()
     }

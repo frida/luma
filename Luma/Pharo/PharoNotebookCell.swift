@@ -26,10 +26,12 @@ struct PharoNotebookCell: View {
                 .font(.system(.body, design: .monospaced))
                 .frame(minHeight: 44)
                 .onChange(of: source) { save() }
+                .accessibilityIdentifier("notebook.pharo.source")
 
             HStack {
                 Button("Evaluate") { Task { await evaluate() } }
                     .keyboardShortcut(.return, modifiers: .command)
+                    .accessibilityIdentifier("notebook.pharo.evaluate")
                 Spacer()
             }
 
@@ -51,7 +53,7 @@ struct PharoNotebookCell: View {
 
     private func evaluate() async {
         do {
-            try await runtime.runningState()
+            try await runtime.startBundledImage()
             result = try await runtime.evaluate(source)
             failure = nil
         } catch {

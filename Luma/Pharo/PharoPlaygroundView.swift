@@ -56,14 +56,8 @@ struct PharoPlaygroundView: View {
     private func start() async {
         guard !isReady else { return }
 
-        guard let image = Self.bundledImage else {
-            failure = "No Pharo image in the app bundle"
-            return
-        }
-
-        runtime.boot(image: image)
         do {
-            try await runtime.runningState()
+            try await runtime.startBundledImage()
             isReady = true
         } catch {
             failure = "\(error)"
@@ -78,9 +72,5 @@ struct PharoPlaygroundView: View {
             result = nil
             failure = "\(error)"
         }
-    }
-
-    private static var bundledImage: URL? {
-        Bundle.main.urls(forResourcesWithExtension: "image", subdirectory: nil)?.first
     }
 }
