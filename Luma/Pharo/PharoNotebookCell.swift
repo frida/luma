@@ -10,7 +10,7 @@ struct PharoNotebookCell: View {
     let engine: Engine
     @Binding var inspection: PharoInspection?
     @Binding var inspected: UUID?
-    @Binding var inspectedCenter: CGFloat?
+    @Binding var centers: [UUID: CGFloat]
 
     @State private var source: String
     @State private var snapshot: PharoSnapshot?
@@ -23,13 +23,13 @@ struct PharoNotebookCell: View {
         engine: Engine,
         inspection: Binding<PharoInspection?>,
         inspected: Binding<UUID?>,
-        inspectedCenter: Binding<CGFloat?>
+        centers: Binding<[UUID: CGFloat]>
     ) {
         self.entry = entry
         self.engine = engine
         _inspection = inspection
         _inspected = inspected
-        _inspectedCenter = inspectedCenter
+        _centers = centers
         _source = State(initialValue: entry.details)
         _snapshot = State(initialValue: entry.pharoSnapshot)
     }
@@ -51,7 +51,7 @@ struct PharoNotebookCell: View {
             .onGeometryChange(for: CGFloat.self) { proxy in
                 proxy.frame(in: .named(pharoPageSpace)).midY
             } action: { center in
-                if entry.id == inspected { inspectedCenter = center }
+                centers[entry.id] = center
             }
 
             if let failure {
