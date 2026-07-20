@@ -28,6 +28,8 @@ struct SidebarView: View {
             Section {
                 SidebarNotebookRow()
                     .tag(SidebarItemID.notebook)
+                Label("Pharo", systemImage: "curlybraces.square")
+                    .tag(SidebarItemID.pharo)
                 SidebarMissionsRow(count: missions.count)
                     .tag(SidebarItemID.missions)
                 ForEach(missions) { mission in

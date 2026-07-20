@@ -184,6 +184,8 @@ struct NotebookEntryRow: View {
 
     private var isNote: Bool { entry.kind == .note }
 
+    private var isPharo: Bool { entry.kind == .pharo }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             header
@@ -194,6 +196,8 @@ struct NotebookEntryRow: View {
                 } else {
                     readOnlyUserNoteBody
                 }
+            } else if isPharo {
+                PharoNotebookCell(entry: entry, engine: engine)
             } else {
                 systemEntryBody
             }

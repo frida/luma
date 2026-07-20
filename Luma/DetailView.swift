@@ -28,6 +28,9 @@ struct DetailView: View {
             case .some(.notebook):
                 NotebookView(engine: engine, selection: $selection)
 
+            case .some(.pharo):
+                PharoPlaygroundView()
+
             case .some(.missions):
                 MissionsListView(engine: engine, selection: $selection)
 
