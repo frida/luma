@@ -32,10 +32,11 @@ struct PharoInspectorView: View {
         }
     }
 
-    /// The panes as blocks, the way Glamorous Toolkit previews them: no words,
-    /// just where in the path each one sits.
+    /// The panes as small squares, the way Glamorous Toolkit previews them: no
+    /// words, just where in the path each one sits, gathered in the middle
+    /// rather than stretched across the width.
     private func overview(_ scrollTo: @escaping (Int) -> Void) -> some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 3) {
             ForEach(Array(path.enumerated()), id: \.element.handle) { depth, object in
                 Button {
                     shown = depth
@@ -43,18 +44,19 @@ struct PharoInspectorView: View {
                 } label: {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(depth == shown ? Color.accentColor.opacity(0.7) : Color.secondary.opacity(0.25))
-                        .frame(height: previewHeight)
-                        .frame(maxWidth: .infinity)
+                        .frame(width: previewWidth, height: previewHeight)
                 }
                 .buttonStyle(.plain)
                 .help(object.printString)
             }
         }
+        .frame(maxWidth: .infinity)
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
     }
 
-    private let previewHeight: CGFloat = 14
+    private let previewWidth: CGFloat = 22
+    private let previewHeight: CGFloat = 12
 
     /// How much of the path is on screen, which the blocks above cannot say on
     /// their own once there are more panes than fit.
