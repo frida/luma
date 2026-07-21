@@ -13,7 +13,7 @@ struct PharoPlaygroundView: View {
     @State private var centers: [UUID: CGFloat] = [:]
     @State private var failure: String?
     @State private var isReady = false
-    @FocusState private var focused: UUID?
+    @State private var focused: UUID?
 
     private let runtime = PharoRuntime.shared
 
@@ -60,6 +60,7 @@ struct PharoPlaygroundView: View {
                         id: snippet.id,
                         source: $snippet.source,
                         focused: $focused,
+                        completions: runtime.completionList,
                         evaluate: { Task { await evaluate(snippet) } },
                         inspect: nil,
                         remove: snippets.count > 1 ? { remove(snippet) } : nil
