@@ -150,6 +150,18 @@ final class PharoTextView: NSTextView {
         markUp()
     }
 
+    override func layout() {
+        super.layout()
+        resizeOpenedClasses()
+    }
+
+    private func resizeOpenedClasses() {
+        for (content, attachment) in attachments {
+            guard case .opened = content, attachment.bounds.width != openedWidth else { continue }
+            attachment.bounds = bounds(for: content)
+        }
+    }
+
     override func didChangeText() {
         super.didChangeText()
         guard !isApplyingMarks else { return }
@@ -243,23 +255,51 @@ final class PharoTextView: NSTextView {
         }
 
         let made = PharoMarkAttachment(content: content, markView: markView(for: content))
+        made.bounds = bounds(for: content)
         attachments[content] = made
         return made
     }
 
+    /// A mark is as tall as a capital letter, which keeps it inside the ascent
+    /// so showing one never makes the line taller. An opened class instead
+    /// takes the width it is given, and so lands on a line of its own.
+    private func bounds(for content: PharoMarkContent) -> CGRect {
+        if case .opened = content {
+            return CGRect(x: 0, y: 0, width: openedWidth, height: openedHeight)
+        }
+
+        let side = (font ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular))
+            .capHeight.rounded()
+        return CGRect(x: 0, y: 0, width: side + 3, height: side)
+    }
+
+    private var openedWidth: CGFloat {
+        (textContainer?.size.width ?? bounds.width) - 2 * textContainerInset.width
+    }
+
+    private let openedHeight: CGFloat = 260
+
     private func markView(for content: PharoMarkContent) -> NSView {
         switch content {
         case .classToggle(let name, let isOpen):
-            NSHostingView(rootView: PharoClassToggle(isOpen: isOpen) { [onToggleClass] in onToggleClass?(name) })
+            laidOutByTheLine(PharoClassToggle(isOpen: isOpen) { [onToggleClass] in onToggleClass?(name) })
         case .opened(let name, let object):
-            NSHostingView(rootView: PharoOpenedClass(
+            laidOutByTheLine(PharoOpenedClass(
                 runtime: runtime!,
                 object: object,
                 onSelect: { [onOpen] in onOpen?($0) },
                 onClose: { [onToggleClass] in onToggleClass?(name) }))
         case .result(let object):
-            NSHostingView(rootView: PharoResultDot { [onOpen] in onOpen?(object) })
+            laidOutByTheLine(PharoResultDot { [onOpen] in onOpen?(object) })
         }
+    }
+
+    /// The line decides how big a mark is, so the hosting view must not offer a
+    /// size of its own for the layout to grow to.
+    private func laidOutByTheLine(_ mark: some View) -> NSView {
+        let hosting = NSHostingView(rootView: mark)
+        hosting.sizingOptions = []
+        return hosting
     }
 
     /// A source the reader did not type, so the text is replaced outright.
@@ -394,30 +434,9 @@ nonisolated final class PharoMarkAttachment: NSTextAttachment, @unchecked Sendab
 
 nonisolated final class PharoMarkViewProvider: NSTextAttachmentViewProvider, @unchecked Sendable {
     override func loadView() {
-        tracksTextAttachmentViewBounds = false
         view = (textAttachment as? PharoMarkAttachment)?.markView
     }
 
-    override func attachmentBounds(
-        for attributes: [NSAttributedString.Key: Any],
-        location: any NSTextLocation,
-        textContainer: NSTextContainer?,
-        proposedLineFragment: CGRect,
-        position: CGPoint
-    ) -> CGRect {
-        guard let mark = textAttachment as? PharoMarkAttachment else { return .zero }
-
-        if case .opened = mark.content {
-            return CGRect(x: 0, y: 0, width: proposedLineFragment.width, height: openedHeight)
-        }
-
-        let font = attributes[.font] as? NSFont ?? .systemFont(ofSize: NSFont.systemFontSize)
-        let side = PharoMarkAttachment.side(forCapHeight: font.capHeight)
-        view?.frame = CGRect(x: 0, y: 0, width: side, height: side)
-        return CGRect(x: 0, y: 0, width: side + 3, height: side)
-    }
-
-    private let openedHeight: CGFloat = 260
 }
 
 /// The triangle GT puts after a class name, which reads as a button because it
