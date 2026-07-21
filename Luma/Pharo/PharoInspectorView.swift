@@ -10,6 +10,8 @@ struct PharoInspectorView: View {
 
     @State private var path: [PharoObject] = []
     @State private var shown: Int?
+    @State private var leading: Int?
+    @State private var visibleWidth: CGFloat = 0
 
     var body: some View {
         ScrollViewReader { scroller in
@@ -17,6 +19,7 @@ struct PharoInspectorView: View {
                 overview { handle in
                     withAnimation { scroller.scrollTo(handle, anchor: .leading) }
                 }
+                thumb
                 Divider()
                 columns
             }
@@ -53,6 +56,29 @@ struct PharoInspectorView: View {
 
     private let previewHeight: CGFloat = 14
 
+    /// How much of the path is on screen, which the blocks above cannot say on
+    /// their own once there are more panes than fit.
+    private var thumb: some View {
+        GeometryReader { proxy in
+            let span = min(CGFloat(visiblePanes) / CGFloat(max(path.count, 1)), 1)
+            Capsule()
+                .fill(.tertiary)
+                .frame(width: max(proxy.size.width * span, 12), height: 3)
+                .offset(x: proxy.size.width * CGFloat(leadingPane) / CGFloat(max(path.count, 1)))
+        }
+        .frame(height: 3)
+        .padding(.horizontal, 6)
+        .padding(.bottom, 4)
+    }
+
+    private var visiblePanes: Int {
+        max(Int(visibleWidth / 320), 1)
+    }
+
+    private var leadingPane: Int {
+        path.firstIndex { $0.handle == leading } ?? 0
+    }
+
     private var columns: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 0) {
@@ -71,7 +97,10 @@ struct PharoInspectorView: View {
                     .id(object.handle)
                 }
             }
+            .scrollTargetLayout()
         }
+        .scrollPosition(id: $leading, anchor: .leading)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { visibleWidth = $0 }
     }
 
     private func open(_ object: PharoObject, from depth: Int) {
