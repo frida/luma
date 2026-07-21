@@ -17,6 +17,7 @@ struct PharoNotebookCell: View {
     @State private var failure: String?
 
     @State private var focused: UUID?
+    @State private var evaluated: PharoObject?
 
     private let runtime = PharoRuntime.shared
 
@@ -43,6 +44,11 @@ struct PharoNotebookCell: View {
                 source: $source,
                 focused: $focused,
                 runtime: runtime,
+                result: evaluated,
+                open: { object in
+                    inspected = entry.id
+                    inspection = .live(object)
+                },
                 evaluate: { Task { await evaluate() } },
                 inspect: snapshot.map { captured in
                     {
@@ -70,9 +76,10 @@ struct PharoNotebookCell: View {
         inspected = entry.id
         do {
             try await runtime.startBundledImage(for: engine)
-            let evaluated = try await runtime.evaluate(source)
-            snapshot = try await PharoSnapshot.capture(of: evaluated, using: runtime)
-            inspection = .live(evaluated)
+            let produced = try await runtime.evaluate(source)
+            evaluated = produced
+            snapshot = try await PharoSnapshot.capture(of: produced, using: runtime)
+            inspection = .live(produced)
             failure = nil
         } catch {
             failure = error.localizedDescription
