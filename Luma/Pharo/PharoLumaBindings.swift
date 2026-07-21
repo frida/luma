@@ -39,7 +39,7 @@ enum PharoLumaBindings {
             | fields |
             fields := aDictionary at: ''fields''.
             fields at: ''headline'' put: (aDictionary at: ''headline'').
-            (aDictionary at: ''icon'') ifNotNil: [ :icon |
+            (aDictionary at: ''icon'' ifAbsent: [ nil ]) ifNotNil: [ :icon |
                 fields at: ''icon'' put: icon ].
             ^ self new setFields: fields; yourself'.
 
