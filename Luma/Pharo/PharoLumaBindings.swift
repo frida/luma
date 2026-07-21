@@ -13,16 +13,21 @@ enum PharoLumaBindings {
     /// fields, so opening one shows what the host knows about it rather than
     /// the line it would have printed.
     private static let source = """
-        | record project |
-        record := Object << #LumaRecord slots: { #fields }; package: 'Luma'; install.
-        record compile: 'fields
-            ^ fields'.
-        record compile: 'setFields: aDictionary
-            fields := aDictionary'.
+        | record sessions project |
+        record := Object << #LumaRecord slots: { #fields. #icon }; package: 'Luma'; install.
+        record compile: 'setFields: aDictionary icon: anIcon
+            fields := aDictionary.
+            icon := anIcon'.
         record compile: 'at: aKey
             ^ fields at: aKey asString ifAbsent: [ nil ]'.
+        record compile: 'name
+            ^ (self at: #headline) asString'.
         record compile: 'printOn: aStream
-            aStream nextPutAll: (self at: #headline) asString'.
+            aStream nextPutAll: self name'.
+        record compile: 'icon
+            icon isString ifFalse: [ ^ icon ].
+            icon := PNGReadWriter formFromStream: icon base64Decoded readStream.
+            ^ icon'.
         record compile: 'inspectionFields: aBuilder
             <inspectorPresentationOrder: 0 title: ''Fields''>
             ^ aBuilder newTable
@@ -30,28 +35,29 @@ enum PharoLumaBindings {
                 addColumn: (SpStringTableColumn title: ''Value'' evaluated: [ :each | each value ]);
                 items: fields associations;
                 yourself'.
-        record compile: 'icon
-            | encoded |
-            encoded := self at: #icon.
-            encoded ifNil: [ ^ nil ].
-            ^ PNGReadWriter formFromStream: encoded base64Decoded readStream'.
         record class compile: 'fromJSON: aDictionary
             | fields |
             fields := aDictionary at: ''fields''.
             fields at: ''headline'' put: (aDictionary at: ''headline'').
-            (aDictionary at: ''icon'' ifAbsent: [ nil ]) ifNotNil: [ :icon |
-                fields at: ''icon'' put: icon ].
-            ^ self new setFields: fields; yourself'.
-
-        record class compile: 'inspectionRecords: aBuilder
-            <inspectorPresentationOrder: 0 title: ''Sessions''>
-            ^ aBuilder newTable
-                addColumn: (SpImageTableColumn evaluated: [ :each | each icon ]);
-                addColumn: (SpStringTableColumn title: ''Name'' evaluated: [ :each | each printString ]);
+            ^ self new
+                setFields: fields icon: (aDictionary at: ''icon'' ifAbsent: [ nil ]);
                 yourself'.
 
         #(#LumaSession #LumaNotebookEntry #LumaEvent) do: [ :each |
             record << each slots: {}; package: 'Luma'; install ].
+
+        sessions := Object << #LumaSessions slots: { #items }; package: 'Luma'; install.
+        sessions compile: 'setItems: aCollection
+            items := aCollection'.
+        sessions compile: 'items
+            ^ items'.
+        sessions compile: 'gtSessionsFor: aView
+            <gtView>
+            ^ aView columnedList
+                title: ''Sessions'';
+                items: [ items ];
+                column: ''Icon'' icon: [ :each | each icon ];
+                column: ''Name'' text: [ :each | each name ]'.
 
         project := Object << #LumaProject slots: {}; package: 'Luma'; install.
         project class compile: 'fetch: aName as: aClass
@@ -63,7 +69,7 @@ enum PharoLumaBindings {
                 readString utf8Decoded.
             ^ (STONJSON fromString: json) collect: [ :each | aClass fromJSON: each ]'.
         project class compile: 'sessions
-            ^ self fetch: ''luma_sessions'' as: LumaSession'.
+            ^ LumaSessions new setItems: (self fetch: ''luma_sessions'' as: LumaSession); yourself'.
         project class compile: 'notebookEntries
             ^ self fetch: ''luma_notebook_entries'' as: LumaNotebookEntry'.
         project class compile: 'events
