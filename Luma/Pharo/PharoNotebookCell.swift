@@ -42,7 +42,7 @@ struct PharoNotebookCell: View {
                 id: entry.id,
                 source: $source,
                 focused: $focused,
-                completions: runtime.completionList,
+                runtime: runtime,
                 evaluate: { Task { await evaluate() } },
                 inspect: snapshot.map { captured in
                     {
