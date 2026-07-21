@@ -158,7 +158,7 @@ final class PharoTextView: NSTextView {
     private func resizeOpenedClasses() {
         for (content, attachment) in attachments {
             guard case .opened = content, attachment.bounds.width != openedWidth else { continue }
-            attachment.bounds = bounds(for: content)
+            attachment.resize(to: bounds(for: content))
         }
     }
 
@@ -255,7 +255,7 @@ final class PharoTextView: NSTextView {
         }
 
         let made = PharoMarkAttachment(content: content, markView: markView(for: content))
-        made.bounds = bounds(for: content)
+        made.resize(to: bounds(for: content))
         attachments[content] = made
         return made
     }
@@ -294,12 +294,8 @@ final class PharoTextView: NSTextView {
         }
     }
 
-    /// The line decides how big a mark is, so the hosting view must not offer a
-    /// size of its own for the layout to grow to.
     private func laidOutByTheLine(_ mark: some View) -> NSView {
-        let hosting = NSHostingView(rootView: mark)
-        hosting.sizingOptions = []
-        return hosting
+        NSHostingView(rootView: mark)
     }
 
     /// A source the reader did not type, so the text is replaced outright.
@@ -408,6 +404,13 @@ nonisolated final class PharoMarkAttachment: NSTextAttachment, @unchecked Sendab
 
     let content: PharoMarkContent
     let markView: NSView
+
+    /// The view is given the size too, not just the attachment: left at zero it
+    /// draws nothing until something else forces it to lay out.
+    func resize(to size: CGRect) {
+        bounds = size
+        markView.frame = size
+    }
 
     init(content: PharoMarkContent, markView: NSView) {
         self.content = content
