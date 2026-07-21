@@ -394,7 +394,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/zsh;
-			shellScript = "set -euo pipefail\nrelease=\"vm-20260721.4\"\nlocal=\"${SRCROOT}/../SwiftyPharo/artifacts/SwiftyPharo.image\"\ncache=\"${SRCROOT}/build/.pharo/${release}\"\nimage=\"${cache}/SwiftyPharo.image\"\nif [ -f \"${local}\" ]; then\n  image=\"${local}\"\nelif [ ! -f \"${image}\" ]; then\n  mkdir -p \"${cache}\"\n  curl -sSL \"https://github.com/frida/SwiftyPharo/releases/download/${release}/SwiftyPharo.image.zip\" -o \"${cache}/image.zip\"\n  unzip -qo \"${cache}/image.zip\" -d \"${cache}\"\nfi\nresources=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\nmkdir -p \"${resources}\"\ncp \"${image}\" \"${image%.image}.changes\" \"${resources}/\"\n";
+			shellScript = "set -euo pipefail\nrelease=\"vm-20260721.5\"\nlocal=\"${SRCROOT}/../SwiftyPharo/artifacts/SwiftyPharo.image\"\ncache=\"${SRCROOT}/build/.pharo/${release}\"\nimage=\"${cache}/SwiftyPharo.image\"\nif [ -f \"${local}\" ]; then\n  image=\"${local}\"\nelif [ ! -f \"${image}\" ]; then\n  mkdir -p \"${cache}\"\n  curl -sSL \"https://github.com/frida/SwiftyPharo/releases/download/${release}/SwiftyPharo.image.zip\" -o \"${cache}/image.zip\"\n  unzip -qo \"${cache}/image.zip\" -d \"${cache}\"\nfi\nresources=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\nmkdir -p \"${resources}\"\ncp \"${image}\" \"${image%.image}.changes\" \"${resources}/\"\n";
 		};
 		0CE0E3DD2ECA3CBE000B1E01 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;

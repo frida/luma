@@ -60,7 +60,7 @@ struct PharoPlaygroundView: View {
                         id: snippet.id,
                         source: $snippet.source,
                         focused: $focused,
-                        completions: runtime.completionList,
+                        runtime: runtime,
                         evaluate: { Task { await evaluate(snippet) } },
                         inspect: nil,
                         remove: snippets.count > 1 ? { remove(snippet) } : nil
