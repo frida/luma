@@ -353,7 +353,7 @@ final class PharoTextView: NSTextView {
         }
 
         let source = self.source
-        let cursor = selectedRange().location
+        let cursor = sourceCursor
         Task { @MainActor in
             guard let list = await completions?(source, cursor), self.source == source else { return }
             fetched = list
@@ -368,10 +368,12 @@ final class PharoTextView: NSTextView {
         fetched?.candidates
     }
 
+    /// The image counts the token from one, and in the source it was given,
+    /// which the marks in the text have since shifted along.
     override var rangeForUserCompletion: NSRange {
         guard let fetched else { return super.rangeForUserCompletion }
         let cursor = selectedRange().location
-        let start = min(max(fetched.tokenStart - 1, 0), cursor)
+        let start = min(storageOffset(forSource: fetched.tokenStart - 1), cursor)
         return NSRange(location: start, length: cursor - start)
     }
 
