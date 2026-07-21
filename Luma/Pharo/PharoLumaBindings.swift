@@ -24,12 +24,22 @@ enum PharoLumaBindings {
             ^ TFSameThreadRunner uniqueInstance invokeFunction: function withArguments: #()'.
         meta compile: 'sessionCount
             ^ self callOut: ''luma_session_count'''.
+        meta compile: 'callOutString: aName
+            | address definition function |
+            address := ExternalAddress loadSymbol: aName module: nil.
+            definition := TFFunctionDefinition parameterTypes: #() returnType: TFBasicType pointer.
+            function := TFExternalFunction fromAddress: address definition: definition.
+            ^ (TFSameThreadRunner uniqueInstance invokeFunction: function withArguments: #())
+                readString utf8Decoded'.
+        meta compile: 'events
+            ^ (self callOutString: ''luma_event_lines'') lines'.
         meta compile: 'notebookEntryCount
             ^ self callOut: ''luma_notebook_entry_count'''.
         meta compile: 'summary
             ^ Dictionary new
                 at: #sessions put: self sessionCount;
                 at: #notebookEntries put: self notebookEntryCount;
+                at: #events put: self events;
                 yourself'.
         cls
         """
