@@ -48,8 +48,7 @@ struct PharoSnapshotView: View {
         case .items(let kept, let total):
             List {
                 ForEach(Array(kept.enumerated()), id: \.offset) { _, row in
-                    Text(row)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    PharoRowView(cells: row)
                 }
 
                 if kept.count < total {
