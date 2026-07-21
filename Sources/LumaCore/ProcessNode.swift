@@ -1554,3 +1554,10 @@ extension CollaborationSession.Session.Phase {
         }
     }
 }
+
+extension ProcessNode {
+    /// One line per session, which is as much as the image needs to list them.
+    public var lineForPharo: String {
+        "\(processName) (pid \(pid))"
+    }
+}
