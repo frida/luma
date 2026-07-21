@@ -4,7 +4,7 @@ import SwiftyPharo
 
 /// The space a page and its pane share, so a page can say where in it the
 /// thing being inspected sits.
-let pharoPageSpace = "pharo.page"
+nonisolated let pharoPageSpace = "pharo.page"
 
 /// What a page is showing to its right: the object a cell just produced, or
 /// what its last run captured when there is no VM to ask again.

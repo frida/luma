@@ -90,15 +90,23 @@ struct PharoCompletionList: Sendable {
 }
 
 extension PharoRuntime {
-    /// A page that cannot reach the image simply does not complete.
+    /// A page that cannot reach the image simply does not complete. Waiting for
+    /// the image to answer is done here rather than in the request itself,
+    /// which would park a thread on one still starting up.
     func completionList(for source: String, at position: Int) async -> PharoCompletionList {
-        guard let answer = try? await completions(for: source, at: position) else { return .none }
+        guard let answer = try? await whenRunning({ try await completions(for: source, at: position) })
+        else { return .none }
         return PharoCompletionList(tokenStart: answer.tokenStart, candidates: answer.completions)
     }
 
     /// Nor does a page that cannot reach the image name any classes.
     func namedClasses(in source: String) async -> [PharoClassReference] {
-        (try? await classReferences(in: source)) ?? []
+        (try? await whenRunning { try await classReferences(in: source) }) ?? []
+    }
+
+    private func whenRunning<Answer>(_ request: () async throws -> Answer) async throws -> Answer {
+        try await runningState()
+        return try await request()
     }
 }
 
@@ -138,6 +146,12 @@ final class PharoTextView: NSTextView {
         self.onOpen = onOpen
         guard self.marks != marks else { return }
         self.marks = marks
+        markUp()
+    }
+
+    override func didChangeText() {
+        super.didChangeText()
+        guard !isApplyingMarks else { return }
         markUp()
     }
 
@@ -202,16 +216,42 @@ final class PharoTextView: NSTextView {
     }
 
     /// Rewriting the storage would otherwise read back as the reader typing.
+    /// The marks shift the text under the cursor, so it is carried across in
+    /// source coordinates and put back where the reader left it.
     private func replaceText(with attributed: NSAttributedString) {
         guard !isApplyingMarks, let storage = textStorage else { return }
         guard !storage.isEqual(to: attributed) else { return }
 
         isApplyingMarks = true
-        let selection = selectedRange()
+        let cursor = sourceCursor
         storage.setAttributedString(attributed)
-        setSelectedRange(NSRange(location: min(selection.location, storage.length), length: 0))
+        setSelectedRange(NSRange(location: cursorOffset(forSource: cursor), length: 0))
         isApplyingMarks = false
     }
+
+    private var sourceCursor: Int {
+        string.utf16.prefix(selectedRange().location).count { $0 != markCharacter }
+    }
+
+    /// Typing on past a class name belongs after its mark, not between the
+    /// name and the mark, so trailing marks are stepped over.
+    private func cursorOffset(forSource cursor: Int) -> Int {
+        let units = Array(string.utf16)
+        var counted = 0
+        var offset = 0
+        while offset < units.count, counted < cursor {
+            if units[offset] != markCharacter {
+                counted += 1
+            }
+            offset += 1
+        }
+        while offset < units.count, units[offset] == markCharacter {
+            offset += 1
+        }
+        return offset
+    }
+
+    private let markCharacter: UTF16.CodeUnit = 0xFFFC
 
     private var sourceAttributes: [NSAttributedString.Key: Any] {
         [
@@ -220,11 +260,6 @@ final class PharoTextView: NSTextView {
         ]
     }
 
-    override func didChangeText() {
-        super.didChangeText()
-        guard !isApplyingMarks else { return }
-        markUp()
-    }
 
     override func complete(_ sender: Any?) {
         if let fetched {
@@ -323,12 +358,18 @@ nonisolated final class PharoMarkViewProvider: NSTextAttachmentViewProvider, @un
 
         switch mark.content {
         case .classToggle:
-            return CGRect(x: 0, y: -3, width: 16, height: 14)
+            return sittingOnBaseline(width: 15, height: 11)
         case .opened:
             return CGRect(x: 0, y: 0, width: proposedLineFragment.width, height: openedHeight)
         case .result:
-            return CGRect(x: 0, y: -1, width: 14, height: 10)
+            return sittingOnBaseline(width: 13, height: 9)
         }
+    }
+
+    /// Marks sit on the baseline the way the letters beside them do, and stay
+    /// shorter than the ascent so that showing one never reflows the line.
+    private func sittingOnBaseline(width: CGFloat, height: CGFloat) -> CGRect {
+        CGRect(x: 0, y: 0, width: width, height: height)
     }
 
     private let openedHeight: CGFloat = 260

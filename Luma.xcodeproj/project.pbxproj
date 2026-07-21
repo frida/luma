@@ -387,6 +387,7 @@
 			);
 			inputPaths = (
 			);
+			alwaysOutOfDate = 1;
 			name = "Stage Pharo image";
 			outputFileListPaths = (
 			);
