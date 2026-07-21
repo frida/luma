@@ -18,14 +18,17 @@ public final class PharoHostBridge: @unchecked Sendable {
     /// replaces one between requests, while the image sits idle waiting.
     private var feeds: [PharoHostFeed: UnsafeMutablePointer<CChar>] = [:]
 
-    public func publish(_ lines: [String], as feed: PharoHostFeed) {
+    public func publish(_ records: [PharoHostRecord], as feed: PharoHostFeed) {
+        let json = (try? JSONEncoder().encode(records))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+
         lock.lock()
         defer { lock.unlock() }
         free(feeds[feed])
-        feeds[feed] = strdup(lines.joined(separator: "\n"))
+        feeds[feed] = strdup(json)
     }
 
-    fileprivate func lines(of feed: PharoHostFeed) -> UnsafeMutablePointer<CChar>? {
+    fileprivate func records(of feed: PharoHostFeed) -> UnsafeMutablePointer<CChar>? {
         lock.lock()
         defer { lock.unlock() }
         return feeds[feed]
@@ -34,15 +37,15 @@ public final class PharoHostBridge: @unchecked Sendable {
 
 @_cdecl("luma_sessions")
 public func luma_sessions() -> UnsafeMutablePointer<CChar>? {
-    PharoHostBridge.shared.lines(of: .sessions)
+    PharoHostBridge.shared.records(of: .sessions)
 }
 
 @_cdecl("luma_notebook_entries")
 public func luma_notebook_entries() -> UnsafeMutablePointer<CChar>? {
-    PharoHostBridge.shared.lines(of: .notebookEntries)
+    PharoHostBridge.shared.records(of: .notebookEntries)
 }
 
 @_cdecl("luma_events")
 public func luma_events() -> UnsafeMutablePointer<CChar>? {
-    PharoHostBridge.shared.lines(of: .events)
+    PharoHostBridge.shared.records(of: .events)
 }
