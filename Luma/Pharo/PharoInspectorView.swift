@@ -60,9 +60,16 @@ private struct PharoObjectColumn: View {
     let onSelect: (PharoObject) -> Void
     let onClose: () -> Void
 
-    @State private var declarations: [PharoViewDeclaration] = []
+    @State private var declared: Declared = .pending
     @State private var shown: String?
-    @State private var failure: String?
+
+    /// Nothing declared and not asked yet are different things: rendering them
+    /// alike flashes "No views" over every object on its way in.
+    private enum Declared {
+        case pending
+        case ready([PharoViewDeclaration])
+        case failed(String)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -119,12 +126,17 @@ private struct PharoObjectColumn: View {
 
     @ViewBuilder
     private var content: some View {
-        if let failure {
-            PharoFailureView(message: failure)
-        } else if let shownDeclaration {
-            body(of: shownDeclaration)
-        } else {
-            ContentUnavailableView("No views", systemImage: "square.dashed")
+        switch declared {
+        case .pending:
+            Color.clear
+        case .failed(let message):
+            PharoFailureView(message: message)
+        case .ready:
+            if let shownDeclaration {
+                body(of: shownDeclaration)
+            } else {
+                ContentUnavailableView("No views", systemImage: "square.dashed")
+            }
         }
     }
 
@@ -155,12 +167,18 @@ private struct PharoObjectColumn: View {
         declarations.first { $0.methodSelector == shown } ?? declarations.first
     }
 
+    private var declarations: [PharoViewDeclaration] {
+        guard case .ready(let declarations) = declared else { return [] }
+        return declarations
+    }
+
     private func loadDeclarations() async {
         do {
-            declarations = try await runtime.views(of: object)
-            shown = declarations.first?.methodSelector
+            let loaded = try await runtime.views(of: object)
+            declared = .ready(loaded)
+            shown = loaded.first?.methodSelector
         } catch {
-            failure = error.localizedDescription
+            declared = .failed(error.localizedDescription)
         }
     }
 }
