@@ -29,8 +29,8 @@ struct PharoInspectorView: View {
         }
     }
 
-    /// The panes as one strip, so a path too wide to read can still be seen
-    /// whole and jumped around.
+    /// The panes as blocks, the way Glamorous Toolkit previews them: no words,
+    /// just where in the path each one sits.
     private func overview(_ scrollTo: @escaping (Int) -> Void) -> some View {
         HStack(spacing: 2) {
             ForEach(Array(path.enumerated()), id: \.element.handle) { depth, object in
@@ -38,15 +38,10 @@ struct PharoInspectorView: View {
                     shown = depth
                     scrollTo(object.handle)
                 } label: {
-                    Text(object.className)
-                        .font(.caption2)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(depth == shown ? Color.accentColor.opacity(0.7) : Color.secondary.opacity(0.25))
+                        .frame(height: previewHeight)
                         .frame(maxWidth: .infinity)
-                        .background(depth == shown ? Color.accentColor.opacity(0.25) : Color.secondary.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
                 }
                 .buttonStyle(.plain)
                 .help(object.printString)
@@ -55,6 +50,8 @@ struct PharoInspectorView: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
     }
+
+    private let previewHeight: CGFloat = 14
 
     private var columns: some View {
         ScrollView(.horizontal) {
