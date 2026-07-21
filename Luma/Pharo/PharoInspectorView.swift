@@ -9,26 +9,16 @@ struct PharoInspectorView: View {
     let onClose: () -> Void
 
     @State private var path: [PharoObject] = []
+    @State private var shown: Int?
 
     var body: some View {
         ScrollViewReader { scroller in
-            ScrollView(.horizontal) {
-                HStack(spacing: 0) {
-                    ForEach(Array(path.enumerated()), id: \.element.handle) { depth, object in
-                        if depth > 0 {
-                            PharoDrillArrow()
-                        }
-
-                        PharoObjectColumn(
-                            runtime: runtime,
-                            object: object,
-                            onSelect: { open($0, from: depth) },
-                            onClose: { close(from: depth) })
-                        .frame(width: 320)
-                        .pharoPane()
-                        .id(object.handle)
-                    }
+            VStack(spacing: 0) {
+                overview { handle in
+                    withAnimation { scroller.scrollTo(handle, anchor: .leading) }
                 }
+                Divider()
+                columns
             }
             .onChange(of: path.last?.handle) {
                 withAnimation { scroller.scrollTo(path.last?.handle, anchor: .trailing) }
@@ -39,17 +29,68 @@ struct PharoInspectorView: View {
         }
     }
 
+    /// The panes as one strip, so a path too wide to read can still be seen
+    /// whole and jumped around.
+    private func overview(_ scrollTo: @escaping (Int) -> Void) -> some View {
+        HStack(spacing: 2) {
+            ForEach(Array(path.enumerated()), id: \.element.handle) { depth, object in
+                Button {
+                    shown = depth
+                    scrollTo(object.handle)
+                } label: {
+                    Text(object.className)
+                        .font(.caption2)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .frame(maxWidth: .infinity)
+                        .background(depth == shown ? Color.accentColor.opacity(0.25) : Color.secondary.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
+                .buttonStyle(.plain)
+                .help(object.printString)
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+    }
+
+    private var columns: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 0) {
+                ForEach(Array(path.enumerated()), id: \.element.handle) { depth, object in
+                    if depth > 0 {
+                        PharoDrillArrow()
+                    }
+
+                    PharoObjectColumn(
+                        runtime: runtime,
+                        object: object,
+                        onSelect: { open($0, from: depth) },
+                        onClose: { close(from: depth) })
+                    .frame(width: 320)
+                    .pharoPane()
+                    .id(object.handle)
+                }
+            }
+        }
+    }
+
     private func open(_ object: PharoObject, from depth: Int) {
         path = path.prefix(depth + 1) + [object]
+        shown = path.count - 1
     }
 
     private func startOver(at object: PharoObject) {
         path = [object]
+        shown = 0
     }
 
     private func close(from depth: Int) {
         guard depth > 0 else { return onClose() }
         path = Array(path.prefix(depth))
+        shown = min(shown ?? 0, path.count - 1)
     }
 }
 
