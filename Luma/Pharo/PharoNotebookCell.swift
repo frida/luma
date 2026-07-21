@@ -16,7 +16,7 @@ struct PharoNotebookCell: View {
     @State private var snapshot: PharoSnapshot?
     @State private var failure: String?
 
-    @FocusState private var focused: UUID?
+    @State private var focused: UUID?
 
     private let runtime = PharoRuntime.shared
 
@@ -42,6 +42,7 @@ struct PharoNotebookCell: View {
                 id: entry.id,
                 source: $source,
                 focused: $focused,
+                completions: runtime.completionList,
                 evaluate: { Task { await evaluate() } },
                 inspect: snapshot.map { captured in
                     {

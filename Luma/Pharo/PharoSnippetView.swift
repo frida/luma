@@ -6,7 +6,8 @@ import SwiftUI
 struct PharoSnippetView: View {
     let id: UUID
     @Binding var source: String
-    @FocusState.Binding var focused: UUID?
+    @Binding var focused: UUID?
+    let completions: (String, Int) async -> PharoCompletionList
     let evaluate: () -> Void
     let inspect: (() -> Void)?
     let remove: (() -> Void)?
@@ -37,12 +38,8 @@ struct PharoSnippetView: View {
     }
 
     private var editor: some View {
-        TextField("", text: $source, axis: .vertical)
-            .textFieldStyle(.plain)
-            .font(.system(.body, design: .monospaced))
-            .lineLimit(1...)
-            .padding(8)
-            .focused($focused, equals: id)
+        PharoSourceEditor(id: id, source: $source, focused: $focused, completions: completions)
+            .padding(4)
             .accessibilityIdentifier("notebook.pharo.source")
     }
 
