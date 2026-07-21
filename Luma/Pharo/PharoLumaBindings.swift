@@ -30,11 +30,25 @@ enum PharoLumaBindings {
                 addColumn: (SpStringTableColumn title: ''Value'' evaluated: [ :each | each value ]);
                 items: fields associations;
                 yourself'.
+        record compile: 'icon
+            | encoded |
+            encoded := self at: #icon.
+            encoded ifNil: [ ^ nil ].
+            ^ PNGReadWriter formFromStream: encoded base64Decoded readStream'.
         record class compile: 'fromJSON: aDictionary
             | fields |
             fields := aDictionary at: ''fields''.
             fields at: ''headline'' put: (aDictionary at: ''headline'').
+            (aDictionary at: ''icon'') ifNotNil: [ :icon |
+                fields at: ''icon'' put: icon ].
             ^ self new setFields: fields; yourself'.
+
+        record class compile: 'inspectionRecords: aBuilder
+            <inspectorPresentationOrder: 0 title: ''Sessions''>
+            ^ aBuilder newTable
+                addColumn: (SpImageTableColumn evaluated: [ :each | each icon ]);
+                addColumn: (SpStringTableColumn title: ''Name'' evaluated: [ :each | each printString ]);
+                yourself'.
 
         #(#LumaSession #LumaNotebookEntry #LumaEvent) do: [ :each |
             record << each slots: {}; package: 'Luma'; install ].

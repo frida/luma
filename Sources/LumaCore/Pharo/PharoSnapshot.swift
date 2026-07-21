@@ -16,9 +16,16 @@ public struct PharoSnapshot: Codable, Sendable, Equatable {
         public var priority: Int
 
         public enum Content: Codable, Sendable, Equatable {
-            case items(kept: [String], total: Int)
+            case items(kept: [[Cell]], total: Int)
             case text(String)
             case empty
+        }
+
+        /// Mirrors what the image sends for a row's cell, so a captured view
+        /// keeps its pictures as well as its words.
+        public struct Cell: Codable, Sendable, Equatable {
+            public var text: String?
+            public var png: Data?
         }
     }
 
@@ -68,6 +75,9 @@ extension PharoSnapshot {
         if page.total == 0 {
             return .empty
         }
-        return .items(kept: page.items, total: page.total)
+        let kept = page.items.map { row in
+            row.map { View.Cell(text: $0.text, png: $0.png) }
+        }
+        return .items(kept: kept, total: page.total)
     }
 }

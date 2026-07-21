@@ -191,7 +191,7 @@ private struct PharoItemsList: View {
     let view: String
     let onSelect: (PharoObject) -> Void
 
-    @State private var rows: [String] = []
+    @State private var rows: [[PharoCell]] = []
     @State private var total = 0
     @State private var selection: Int?
     @State private var failure: String?
@@ -201,7 +201,7 @@ private struct PharoItemsList: View {
     var body: some View {
         List(selection: $selection) {
             ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                Text(row).tag(index)
+                PharoRowView(cells: row).tag(index)
             }
 
             if rows.count < total {
