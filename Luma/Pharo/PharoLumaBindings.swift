@@ -10,37 +10,25 @@ enum PharoLumaBindings {
     }
 
     /// Reaching a host export takes a symbol lookup, a signature and a runner;
-    /// `callOut:` is where that lives so the exposed methods read as the
-    /// questions they ask.
+    /// `linesOf:` is where that lives, so each feed reads as the question it
+    /// asks and is fetched only when it is asked for.
     private static let source = """
         | cls meta |
         cls := Object << #LumaProject slots: {}; package: 'Luma'; install.
         meta := cls class.
-        meta compile: 'callOut: aName
-            | address definition function |
-            address := ExternalAddress loadSymbol: aName module: nil.
-            definition := TFFunctionDefinition parameterTypes: #() returnType: TFBasicType sint32.
-            function := TFExternalFunction fromAddress: address definition: definition.
-            ^ TFSameThreadRunner uniqueInstance invokeFunction: function withArguments: #()'.
-        meta compile: 'sessionCount
-            ^ self callOut: ''luma_session_count'''.
-        meta compile: 'callOutString: aName
+        meta compile: 'linesOf: aName
             | address definition function |
             address := ExternalAddress loadSymbol: aName module: nil.
             definition := TFFunctionDefinition parameterTypes: #() returnType: TFBasicType pointer.
             function := TFExternalFunction fromAddress: address definition: definition.
-            ^ (TFSameThreadRunner uniqueInstance invokeFunction: function withArguments: #())
-                readString utf8Decoded'.
+            ^ ((TFSameThreadRunner uniqueInstance invokeFunction: function withArguments: #())
+                readString utf8Decoded) lines'.
+        meta compile: 'sessions
+            ^ self linesOf: ''luma_sessions'''.
+        meta compile: 'notebookEntries
+            ^ self linesOf: ''luma_notebook_entries'''.
         meta compile: 'events
-            ^ (self callOutString: ''luma_event_lines'') lines'.
-        meta compile: 'notebookEntryCount
-            ^ self callOut: ''luma_notebook_entry_count'''.
-        meta compile: 'summary
-            ^ Dictionary new
-                at: #sessions put: self sessionCount;
-                at: #notebookEntries put: self notebookEntryCount;
-                at: #events put: self events;
-                yourself'.
+            ^ self linesOf: ''luma_events'''.
         cls
         """
 }
