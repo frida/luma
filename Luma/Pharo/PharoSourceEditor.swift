@@ -5,12 +5,11 @@ import SwiftyPharo
 /// What the snippet shows alongside its text: the classes the reader opened,
 /// and the value the last evaluation produced.
 struct PharoSnippetMarks: Equatable {
-    var openedClasses: [String: PharoObject] = [:]
+    var openedClassNames: Set<String> = []
     var result: PharoObject?
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.result?.handle == rhs.result?.handle
-            && lhs.openedClasses.mapValues(\.handle) == rhs.openedClasses.mapValues(\.handle)
+        lhs.result?.handle == rhs.result?.handle && lhs.openedClassNames == rhs.openedClassNames
     }
 }
 
@@ -150,17 +149,6 @@ final class PharoTextView: NSTextView {
         markUp()
     }
 
-    override func layout() {
-        super.layout()
-        resizeOpenedClasses()
-    }
-
-    private func resizeOpenedClasses() {
-        for (content, attachment) in attachments {
-            guard case .opened = content, attachment.bounds.width != openedWidth else { continue }
-            attachment.resize(to: bounds(for: content))
-        }
-    }
 
     override func didChangeText() {
         super.didChangeText()
@@ -215,15 +203,9 @@ final class PharoTextView: NSTextView {
         var wanted: [PharoPlacedMark] = []
 
         for reference in references {
-            let opened = marks.openedClasses[reference.name]
             wanted.append(PharoPlacedMark(
                 sourceOffset: reference.stop,
-                content: .classToggle(reference.name, isOpen: opened != nil)))
-            if let opened {
-                wanted.append(PharoPlacedMark(
-                    sourceOffset: reference.stop,
-                    content: .opened(reference.name, opened)))
-            }
+                content: .classToggle(reference.name, isOpen: marks.openedClassNames.contains(reference.name))))
         }
 
         if let result = marks.result {
@@ -264,31 +246,15 @@ final class PharoTextView: NSTextView {
     /// so showing one never makes the line taller. An opened class instead
     /// takes the width it is given, and so lands on a line of its own.
     private func bounds(for content: PharoMarkContent) -> CGRect {
-        if case .opened = content {
-            return CGRect(x: 0, y: 0, width: openedWidth, height: openedHeight)
-        }
-
         let side = (font ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular))
             .capHeight.rounded()
         return CGRect(x: 0, y: 0, width: side + 3, height: side)
     }
 
-    private var openedWidth: CGFloat {
-        (textContainer?.size.width ?? bounds.width) - 2 * textContainerInset.width
-    }
-
-    private let openedHeight: CGFloat = 260
-
     private func markView(for content: PharoMarkContent) -> NSView {
         switch content {
         case .classToggle(let name, let isOpen):
             laidOutByTheLine(PharoClassToggle(isOpen: isOpen) { [onToggleClass] in onToggleClass?(name) })
-        case .opened(let name, let object):
-            laidOutByTheLine(PharoOpenedClass(
-                runtime: runtime!,
-                object: object,
-                onSelect: { [onOpen] in onOpen?($0) },
-                onClose: { [onToggleClass] in onToggleClass?(name) }))
         case .result(let object):
             laidOutByTheLine(PharoResultDot { [onOpen] in onOpen?(object) })
         }
@@ -391,7 +357,6 @@ final class PharoTextView: NSTextView {
 /// the value the snippet last produced.
 enum PharoMarkContent {
     case classToggle(String, isOpen: Bool)
-    case opened(String, PharoObject)
     case result(PharoObject)
 }
 
@@ -483,20 +448,6 @@ private struct PharoResultDot: View {
     }
 }
 
-/// An opened class sits in the snippet at full width. Drilling into anything
-/// here belongs in the inspection pane beside the page, not in the line.
-private struct PharoOpenedClass: View {
-    let runtime: PharoRuntime
-    let object: PharoObject
-    let onSelect: (PharoObject) -> Void
-    let onClose: () -> Void
-
-    var body: some View {
-        PharoObjectColumn(runtime: runtime, object: object, onSelect: onSelect, onClose: onClose)
-            .pharoPane()
-            .padding(.vertical, 4)
-    }
-}
 
 /// A mark and where in the source it belongs. Two marks are the same mark when
 /// they say the same thing in the same place.
@@ -510,8 +461,6 @@ extension PharoMarkContent: Hashable {
         switch (lhs, rhs) {
         case (.classToggle(let a, let aOpen), .classToggle(let b, let bOpen)):
             a == b && aOpen == bOpen
-        case (.opened(let a, let aObject), .opened(let b, let bObject)):
-            a == b && aObject.handle == bObject.handle
         case (.result(let a), .result(let b)):
             a.handle == b.handle
         default:
@@ -525,10 +474,6 @@ extension PharoMarkContent: Hashable {
             hasher.combine(0)
             hasher.combine(name)
             hasher.combine(isOpen)
-        case .opened(let name, let object):
-            hasher.combine(1)
-            hasher.combine(name)
-            hasher.combine(object.handle)
         case .result(let object):
             hasher.combine(2)
             hasher.combine(object.handle)
