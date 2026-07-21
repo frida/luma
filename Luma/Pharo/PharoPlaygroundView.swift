@@ -68,6 +68,7 @@ struct PharoPlaygroundView: View {
                         inspect: nil,
                         remove: snippets.count > 1 ? { remove(snippet) } : nil
                     )
+                    .onChange(of: snippet.source) { results[snippet.id] = nil }
                     .onGeometryChange(for: CGFloat.self) { proxy in
                         proxy.frame(in: .named(pharoPageSpace)).midY
                     } action: { center in

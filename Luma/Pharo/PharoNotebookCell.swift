@@ -58,7 +58,10 @@ struct PharoNotebookCell: View {
                 },
                 remove: nil
             )
-            .onChange(of: source) { save() }
+            .onChange(of: source) {
+                evaluated = nil
+                save()
+            }
             .onGeometryChange(for: CGFloat.self) { proxy in
                 proxy.frame(in: .named(pharoPageSpace)).midY
             } action: { center in
