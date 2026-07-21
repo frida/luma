@@ -68,7 +68,7 @@ struct PharoNotebookCell: View {
     private func evaluate() async {
         inspected = entry.id
         do {
-            try await runtime.startBundledImage()
+            try await runtime.startBundledImage(for: engine)
             let evaluated = try await runtime.evaluate(source)
             snapshot = try await PharoSnapshot.capture(of: evaluated, using: runtime)
             inspection = .live(evaluated)

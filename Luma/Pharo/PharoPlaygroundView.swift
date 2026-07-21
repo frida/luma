@@ -101,7 +101,7 @@ struct PharoPlaygroundView: View {
         guard !isReady else { return }
 
         do {
-            try await runtime.startBundledImage()
+            try await runtime.startBundledImage(for: engine)
             isReady = true
         } catch {
             failure = error.localizedDescription
