@@ -125,6 +125,7 @@ final class PharoTextView: NSTextView {
     private var references: [PharoClassReference] = []
     private var referencedSource: String?
     private var isApplyingMarks = false
+    private var attachments: [PharoMarkContent: PharoMarkAttachment] = [:]
 
     var source: String {
         string.replacingOccurrences(of: "\u{FFFC}", with: "")
@@ -171,68 +172,79 @@ final class PharoTextView: NSTextView {
     }
 
     /// Bring the marks in the text into line with the ones the snippet wants,
-    /// touching only what differs. Rebuilding wholesale would throw away marks
-    /// the reader is typing next to and leave the cursor to be guessed at.
+    /// touching only what differs. A mark that has not moved is left alone, so
+    /// typing beside one disturbs neither it nor the cursor.
     private func reconcileMarks() {
         guard let storage = textStorage else { return }
 
         let wanted = wantedMarks()
         let present = presentMarks()
-        let stale = present.filter { mark in !wanted.contains { $0.key == mark.key } }
-        let missing = wanted.filter { mark in !present.contains { $0.key == mark.key } }
+        let stale = present.filter { !wanted.contains($0.mark) }
+        let missing = wanted.filter { mark in !present.contains { $0.mark == mark } }
         guard !stale.isEmpty || !missing.isEmpty else { return }
 
         isApplyingMarks = true
         let cursor = sourceCursor
         storage.beginEditing()
-        for mark in stale.sorted(by: { $0.storageOffset > $1.storageOffset }) {
-            storage.deleteCharacters(in: NSRange(location: mark.storageOffset, length: 1))
+        for placed in stale.sorted(by: { $0.storageOffset > $1.storageOffset }) {
+            storage.deleteCharacters(in: NSRange(location: placed.storageOffset, length: 1))
         }
         for mark in missing.reversed() {
-            storage.insert(attachment(mark.content), at: storageOffset(forSource: mark.sourceOffset))
+            storage.insert(
+                NSAttributedString(attachment: attachment(for: mark.content)),
+                at: storageOffset(forSource: mark.sourceOffset))
         }
         storage.endEditing()
-        setSelectedRange(NSRange(location: cursorOffset(forSource: cursor), length: 0))
+        setSelectedRange(NSRange(location: storageOffset(forSource: cursor), length: 0))
         isApplyingMarks = false
     }
 
-    private func wantedMarks() -> [WantedMark] {
-        var wanted: [WantedMark] = []
+    private func wantedMarks() -> [PharoPlacedMark] {
+        var wanted: [PharoPlacedMark] = []
 
         for reference in references {
             let opened = marks.openedClasses[reference.name]
-            wanted.append(WantedMark(
+            wanted.append(PharoPlacedMark(
                 sourceOffset: reference.stop,
                 content: .classToggle(reference.name, isOpen: opened != nil)))
             if let opened {
-                wanted.append(WantedMark(
+                wanted.append(PharoPlacedMark(
                     sourceOffset: reference.stop,
                     content: .opened(reference.name, opened)))
             }
         }
 
         if let result = marks.result {
-            wanted.append(WantedMark(sourceOffset: source.utf16.count, content: .result(result)))
+            wanted.append(PharoPlacedMark(sourceOffset: source.utf16.count, content: .result(result)))
         }
 
         return wanted
     }
 
-    private func presentMarks() -> [PresentMark] {
-        var present: [PresentMark] = []
+    private func presentMarks() -> [(mark: PharoPlacedMark, storageOffset: Int)] {
+        var present: [(mark: PharoPlacedMark, storageOffset: Int)] = []
         textStorage?.enumerateAttribute(.attachment, in: NSRange(location: 0, length: string.utf16.count)) {
             value, range, _ in
-            guard let mark = value as? PharoMarkAttachment else { return }
-            present.append(PresentMark(
-                storageOffset: range.location,
-                sourceOffset: sourceOffset(ofStorage: range.location),
-                content: mark.content))
+            guard let attachment = value as? PharoMarkAttachment else { return }
+            present.append((
+                PharoPlacedMark(
+                    sourceOffset: sourceOffset(ofStorage: range.location),
+                    content: attachment.content),
+                range.location))
         }
         return present
     }
 
-    private func attachment(_ content: PharoMarkContent) -> NSAttributedString {
-        NSAttributedString(attachment: PharoMarkAttachment(content: content, markView: markView(for: content)))
+    /// Marks keep their attachment across a move, so an opened class does not
+    /// lose which of its views the reader was looking at.
+    private func attachment(for content: PharoMarkContent) -> PharoMarkAttachment {
+        if let known = attachments[content] {
+            return known
+        }
+
+        let made = PharoMarkAttachment(content: content, markView: markView(for: content))
+        attachments[content] = made
+        return made
     }
 
     private func markView(for content: PharoMarkContent) -> NSView {
@@ -265,16 +277,6 @@ final class PharoTextView: NSTextView {
         string.utf16.prefix(selectedRange().location).count { $0 != markCharacter }
     }
 
-    /// Typing on past a class name belongs after its mark, not between the
-    /// name and the mark, so trailing marks are stepped over.
-    private func cursorOffset(forSource cursor: Int) -> Int {
-        var offset = storageOffset(forSource: cursor)
-        let units = Array(string.utf16)
-        while offset < units.count, units[offset] == markCharacter {
-            offset += 1
-        }
-        return offset
-    }
 
     private func storageOffset(forSource cursor: Int) -> Int {
         let units = Array(string.utf16)
@@ -356,6 +358,12 @@ enum PharoMarkContent {
 }
 
 nonisolated final class PharoMarkAttachment: NSTextAttachment, @unchecked Sendable {
+    /// Marks are as tall as a capital letter, which keeps them inside the
+    /// ascent so showing one never makes the line taller.
+    static func side(forCapHeight capHeight: CGFloat) -> CGFloat {
+        capHeight.rounded()
+    }
+
     let content: PharoMarkContent
     let markView: NSView
 
@@ -386,6 +394,7 @@ nonisolated final class PharoMarkAttachment: NSTextAttachment, @unchecked Sendab
 
 nonisolated final class PharoMarkViewProvider: NSTextAttachmentViewProvider, @unchecked Sendable {
     override func loadView() {
+        tracksTextAttachmentViewBounds = false
         view = (textAttachment as? PharoMarkAttachment)?.markView
     }
 
@@ -398,20 +407,14 @@ nonisolated final class PharoMarkViewProvider: NSTextAttachmentViewProvider, @un
     ) -> CGRect {
         guard let mark = textAttachment as? PharoMarkAttachment else { return .zero }
 
-        switch mark.content {
-        case .classToggle:
-            return sittingOnBaseline(width: 15, height: 11)
-        case .opened:
+        if case .opened = mark.content {
             return CGRect(x: 0, y: 0, width: proposedLineFragment.width, height: openedHeight)
-        case .result:
-            return sittingOnBaseline(width: 13, height: 9)
         }
-    }
 
-    /// Marks sit on the baseline the way the letters beside them do, and stay
-    /// shorter than the ascent so that showing one never reflows the line.
-    private func sittingOnBaseline(width: CGFloat, height: CGFloat) -> CGRect {
-        CGRect(x: 0, y: 0, width: width, height: height)
+        let font = attributes[.font] as? NSFont ?? .systemFont(ofSize: NSFont.systemFontSize)
+        let side = PharoMarkAttachment.side(forCapHeight: font.capHeight)
+        view?.frame = CGRect(x: 0, y: 0, width: side, height: side)
+        return CGRect(x: 0, y: 0, width: side + 3, height: side)
     }
 
     private let openedHeight: CGFloat = 260
@@ -471,32 +474,40 @@ private struct PharoOpenedClass: View {
     }
 }
 
-/// A mark the snippet wants, and one the text already carries. Both answer the
-/// same key, so reconciling is a matter of comparing those.
-private struct WantedMark {
+/// A mark and where in the source it belongs. Two marks are the same mark when
+/// they say the same thing in the same place.
+struct PharoPlacedMark: Equatable {
     let sourceOffset: Int
     let content: PharoMarkContent
-
-    var key: String { content.key(at: sourceOffset) }
 }
 
-private struct PresentMark {
-    let storageOffset: Int
-    let sourceOffset: Int
-    let content: PharoMarkContent
+extension PharoMarkContent: Hashable {
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        switch (lhs, rhs) {
+        case (.classToggle(let a, let aOpen), .classToggle(let b, let bOpen)):
+            a == b && aOpen == bOpen
+        case (.opened(let a, let aObject), .opened(let b, let bObject)):
+            a == b && aObject.handle == bObject.handle
+        case (.result(let a), .result(let b)):
+            a.handle == b.handle
+        default:
+            false
+        }
+    }
 
-    var key: String { content.key(at: sourceOffset) }
-}
-
-extension PharoMarkContent {
-    func key(at sourceOffset: Int) -> String {
+    func hash(into hasher: inout Hasher) {
         switch self {
         case .classToggle(let name, let isOpen):
-            "toggle:\(name):\(isOpen):\(sourceOffset)"
+            hasher.combine(0)
+            hasher.combine(name)
+            hasher.combine(isOpen)
         case .opened(let name, let object):
-            "opened:\(name):\(object.handle):\(sourceOffset)"
+            hasher.combine(1)
+            hasher.combine(name)
+            hasher.combine(object.handle)
         case .result(let object):
-            "result:\(object.handle):\(sourceOffset)"
+            hasher.combine(2)
+            hasher.combine(object.handle)
         }
     }
 }
