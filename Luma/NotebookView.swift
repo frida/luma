@@ -32,7 +32,8 @@ struct NotebookView: View {
                 .frame(minWidth: 320, idealWidth: 520)
 
             inspectionSide
-                .padding(8)
+                .padding(.vertical, 8)
+                .padding(.trailing, 8)
                 .frame(minWidth: 320)
         }
         .coordinateSpace(name: pharoPageSpace)

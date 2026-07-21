@@ -5,7 +5,9 @@ import SwiftyPharo
 /// A scratch page of Smalltalk snippets, opening what they produce in the pane
 /// beside it. Nothing here is kept; the notebook is where work is saved.
 struct PharoPlaygroundView: View {
-    @State private var snippets: [Snippet] = [Snippet(source: "1 to: 20")]
+    let engine: Engine
+
+    @State private var snippets: [PharoPlaygroundSnippet] = []
     @State private var inspection: PharoInspection?
     @State private var inspected: UUID?
     @State private var centers: [UUID: CGFloat] = [:]
@@ -15,11 +17,6 @@ struct PharoPlaygroundView: View {
 
     private let runtime = PharoRuntime.shared
 
-    private struct Snippet: Identifiable {
-        let id = UUID()
-        var source: String
-    }
-
     var body: some View {
         HSplitView {
             page
@@ -28,12 +25,15 @@ struct PharoPlaygroundView: View {
                 .frame(minWidth: 280, idealWidth: 420)
 
             inspectionSide
-                .padding(8)
+                .padding(.vertical, 8)
+                .padding(.trailing, 8)
                 .frame(minWidth: 320)
         }
         .coordinateSpace(name: pharoPageSpace)
         .background(.pharoGutter)
         .task { await start() }
+        .onAppear { snippets = engine.pharoSnippets.isEmpty ? [PharoPlaygroundSnippet(source: "1 to: 20")] : engine.pharoSnippets }
+        .onChange(of: snippets) { engine.setPharoSnippets(snippets) }
     }
 
 
@@ -84,7 +84,7 @@ struct PharoPlaygroundView: View {
 
     private var addSnippetButton: some View {
         Button {
-            let added = Snippet(source: "")
+            let added = PharoPlaygroundSnippet(source: "")
             snippets.append(added)
             focused = added.id
         } label: {
@@ -108,7 +108,7 @@ struct PharoPlaygroundView: View {
         }
     }
 
-    private func evaluate(_ snippet: Snippet) async {
+    private func evaluate(_ snippet: PharoPlaygroundSnippet) async {
         inspected = snippet.id
         do {
             inspection = .live(try await runtime.evaluate(snippet.source))
@@ -118,7 +118,7 @@ struct PharoPlaygroundView: View {
         }
     }
 
-    private func remove(_ snippet: Snippet) {
+    private func remove(_ snippet: PharoPlaygroundSnippet) {
         snippets.removeAll { $0.id == snippet.id }
     }
 }

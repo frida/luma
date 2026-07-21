@@ -1,6 +1,24 @@
 import Foundation
 
 extension Engine {
+    public var pharoSnippets: [PharoPlaygroundSnippet] {
+        guard let json = projectUIState.pharoSnippetsJSON,
+            let data = json.data(using: .utf8),
+            let snippets = try? JSONDecoder().decode([PharoPlaygroundSnippet].self, from: data)
+        else { return [] }
+        return snippets
+    }
+
+    public func setPharoSnippets(_ snippets: [PharoPlaygroundSnippet]) {
+        let json = (try? JSONEncoder().encode(snippets)).flatMap { String(data: $0, encoding: .utf8) }
+        guard projectUIState.pharoSnippetsJSON != json else { return }
+        Task { @MainActor [weak self] in
+            guard let self, self.projectUIState.pharoSnippetsJSON != json else { return }
+            self.projectUIState.pharoSnippetsJSON = json
+            try? self.store.save(self.projectUIState)
+        }
+    }
+
     public func setEventStreamCollapsed(_ collapsed: Bool) {
         guard projectUIState.isEventStreamCollapsed != collapsed else { return }
         Task { @MainActor [weak self] in

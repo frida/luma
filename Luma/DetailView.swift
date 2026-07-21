@@ -29,7 +29,7 @@ struct DetailView: View {
                 NotebookView(engine: engine, selection: $selection)
 
             case .some(.pharo):
-                PharoPlaygroundView()
+                PharoPlaygroundView(engine: engine)
 
             case .some(.missions):
                 MissionsListView(engine: engine, selection: $selection)
