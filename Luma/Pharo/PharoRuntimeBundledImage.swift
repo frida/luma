@@ -12,7 +12,8 @@ extension PharoRuntime {
 
         PharoHostBridge.shared.publish(
             sessions: engine.processNodes.count,
-            notebookEntries: engine.notebookEntries.count)
+            notebookEntries: engine.notebookEntries.count,
+            events: engine.eventLog.events.suffix(200).map(\.lineForPharo))
 
         guard !Self.hasBindings else { return }
         try await PharoLumaBindings.install(into: self)
