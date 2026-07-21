@@ -13,7 +13,7 @@ enum PharoLumaBindings {
     /// fields, so opening one shows what the host knows about it rather than
     /// the line it would have printed.
     private static let source = """
-        | record sessions project |
+        | record records sessions entries events project |
         record := Object << #LumaRecord slots: { #fields. #icon }; package: 'Luma'; install.
         record compile: 'setFields: aDictionary icon: anIcon
             fields := aDictionary.
@@ -46,11 +46,13 @@ enum PharoLumaBindings {
         #(#LumaSession #LumaNotebookEntry #LumaEvent) do: [ :each |
             record << each slots: {}; package: 'Luma'; install ].
 
-        sessions := Object << #LumaSessions slots: { #items }; package: 'Luma'; install.
-        sessions compile: 'setItems: aCollection
+        records := Object << #LumaRecords slots: { #items }; package: 'Luma'; install.
+        records compile: 'setItems: aCollection
             items := aCollection'.
-        sessions compile: 'items
+        records compile: 'items
             ^ items'.
+
+        sessions := records << #LumaSessions slots: {}; package: 'Luma'; install.
         sessions compile: 'gtSessionsFor: aView
             <gtView>
             ^ aView columnedList
@@ -58,6 +60,24 @@ enum PharoLumaBindings {
                 items: [ items ];
                 column: ''Icon'' icon: [ :each | each icon ];
                 column: ''Name'' text: [ :each | each name ]'.
+
+        entries := records << #LumaNotebookEntries slots: {}; package: 'Luma'; install.
+        entries compile: 'gtEntriesFor: aView
+            <gtView>
+            ^ aView columnedList
+                title: ''Entries'';
+                items: [ items ];
+                column: ''Kind'' text: [ :each | each at: #kind ];
+                column: ''Title'' text: [ :each | each name ]'.
+
+        events := records << #LumaEvents slots: {}; package: 'Luma'; install.
+        events compile: 'gtEventsFor: aView
+            <gtView>
+            ^ aView columnedList
+                title: ''Events'';
+                items: [ items ];
+                column: ''Time'' text: [ :each | each at: #timestamp ];
+                column: ''Event'' text: [ :each | each name ]'.
 
         project := Object << #LumaProject slots: {}; package: 'Luma'; install.
         project class compile: 'fetch: aName as: aClass
@@ -71,9 +91,13 @@ enum PharoLumaBindings {
         project class compile: 'sessions
             ^ LumaSessions new setItems: (self fetch: ''luma_sessions'' as: LumaSession); yourself'.
         project class compile: 'notebookEntries
-            ^ self fetch: ''luma_notebook_entries'' as: LumaNotebookEntry'.
+            ^ LumaNotebookEntries new
+                setItems: (self fetch: ''luma_notebook_entries'' as: LumaNotebookEntry);
+                yourself'.
         project class compile: 'events
-            ^ self fetch: ''luma_events'' as: LumaEvent'.
+            ^ LumaEvents new
+                setItems: (self fetch: ''luma_events'' as: LumaEvent);
+                yourself'.
         project
         """
 }
