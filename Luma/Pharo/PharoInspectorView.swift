@@ -16,10 +16,14 @@ struct PharoInspectorView: View {
     var body: some View {
         ScrollViewReader { scroller in
             VStack(spacing: 0) {
-                overview { handle in
-                    withAnimation { scroller.scrollTo(handle, anchor: .leading) }
+                VStack(spacing: 2) {
+                    overview { handle in
+                        withAnimation { scroller.scrollTo(handle, anchor: .leading) }
+                    }
+                    thumb
                 }
-                thumb
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
                 Divider()
                 columns
             }
@@ -36,7 +40,7 @@ struct PharoInspectorView: View {
     /// words, just where in the path each one sits, gathered in the middle
     /// rather than stretched across the width.
     private func overview(_ scrollTo: @escaping (Int) -> Void) -> some View {
-        HStack(spacing: 3) {
+        HStack(spacing: previewSpacing) {
             ForEach(Array(path.enumerated()), id: \.element.handle) { depth, object in
                 Button {
                     shown = depth
@@ -50,32 +54,29 @@ struct PharoInspectorView: View {
                 .help(object.printString)
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
     }
 
     private let previewWidth: CGFloat = 22
     private let previewHeight: CGFloat = 12
+    private let previewSpacing: CGFloat = 3
 
-    /// How much of the path is on screen, which the blocks above cannot say on
-    /// their own once there are more panes than fit.
+    /// Under the squares and no wider than them, the way Glamorous Toolkit does
+    /// it: a scrollbar thumb spanning the columns on screen and sitting over
+    /// the squares they belong to.
     private var thumb: some View {
-        GeometryReader { proxy in
-            let span = min(CGFloat(visiblePanes) / CGFloat(max(path.count, 1)), 1)
-            Capsule()
-                .fill(.tertiary)
-                .frame(width: max(proxy.size.width * span, 12), height: 3)
-                .offset(x: proxy.size.width * CGFloat(leadingPane) / CGFloat(max(path.count, 1)))
-        }
-        .frame(height: 3)
-        .padding(.horizontal, 6)
-        .padding(.bottom, 4)
+        let visible = min(CGFloat(visibleWidth / columnWidth), CGFloat(path.count))
+        return Capsule()
+            .fill(.tertiary)
+            .frame(width: max(overviewWidth * visible / CGFloat(max(path.count, 1)), 8), height: 3)
+            .frame(width: overviewWidth, alignment: .leading)
+            .offset(x: overviewWidth * CGFloat(leadingPane) / CGFloat(max(path.count, 1)))
     }
 
-    private var visiblePanes: Int {
-        max(Int(visibleWidth / 320), 1)
+    private var overviewWidth: CGFloat {
+        CGFloat(path.count) * previewWidth + CGFloat(max(path.count - 1, 0)) * previewSpacing
     }
+
+    private let columnWidth: CGFloat = 320
 
     private var leadingPane: Int {
         path.firstIndex { $0.handle == leading } ?? 0
