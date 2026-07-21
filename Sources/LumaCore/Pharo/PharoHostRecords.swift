@@ -6,7 +6,7 @@ public struct PharoHostRecord: Codable, Sendable {
     /// What the image shows when it prints the record.
     public let headline: String
     /// Base64 PNG, which is how a picture reaches the image.
-    public let icon: String?
+    public var icon: String?
     public let fields: [String: String]
 
     public init(headline: String, icon: String? = nil, fields: [String: String]) {
