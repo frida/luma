@@ -11,9 +11,9 @@ extension PharoRuntime {
         try await runningState()
 
         let bridge = PharoHostBridge.shared
-        bridge.publish(engine.processNodes.map(\.lineForPharo), as: .sessions)
-        bridge.publish(engine.notebookEntries.map(\.lineForPharo), as: .notebookEntries)
-        bridge.publish(engine.eventLog.events.suffix(200).map(\.lineForPharo), as: .events)
+        bridge.publish(engine.sessions.map(\.recordForPharo), as: .sessions)
+        bridge.publish(engine.notebookEntries.map(\.recordForPharo), as: .notebookEntries)
+        bridge.publish(engine.eventLog.events.suffix(200).map(\.recordForPharo), as: .events)
 
         guard !Self.hasBindings else { return }
         try await PharoLumaBindings.install(into: self)

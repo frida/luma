@@ -268,11 +268,3 @@ public struct RuntimeEvent: Identifiable, Sendable {
         return String(describing: message)
     }
 }
-
-extension RuntimeEvent {
-    /// One line per event, which is as much as the image needs to list them
-    /// and open one up.
-    public var lineForPharo: String {
-        "\(timestamp.formatted(date: .omitted, time: .standard)) \(source) \(payload)"
-    }
-}

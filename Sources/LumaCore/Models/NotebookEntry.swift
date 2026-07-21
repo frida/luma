@@ -204,10 +204,3 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
         )
     }
 }
-
-extension NotebookEntry {
-    /// One line per entry, which is as much as the image needs to list them.
-    public var lineForPharo: String {
-        "\(kind.rawValue): \(title.isEmpty ? details : title)"
-    }
-}
