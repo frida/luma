@@ -46,9 +46,10 @@ struct PharoSnapshotView: View {
     private func body(of view: PharoSnapshot.View?) -> some View {
         switch view?.content {
         case .items(let kept, let total):
+            let leadingCharacters = kept.compactMap { $0.first?.text?.count }.max() ?? 0
             List {
                 ForEach(Array(kept.enumerated()), id: \.offset) { _, row in
-                    PharoRowView(cells: row)
+                    PharoRowView(cells: row, leadingCharacters: leadingCharacters)
                 }
 
                 if kept.count < total {

@@ -9,13 +9,14 @@ struct PharoSnippetView: View {
     @Binding var source: String
     @Binding var focused: UUID?
     let runtime: PharoRuntime
+    let result: PharoObject?
+    let open: (PharoObject) -> Void
     let evaluate: () -> Void
     let inspect: (() -> Void)?
     let remove: (() -> Void)?
 
     @State private var isPointedAt = false
-    @State private var expanded: [String] = []
-    @State private var expandedClasses: [String: PharoObject] = [:]
+    @State private var openedClasses: [String: PharoObject] = [:]
 
     var body: some View {
         HStack(spacing: 0) {
@@ -23,7 +24,6 @@ struct PharoSnippetView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 editor
-                expansions
                 actions
             }
         }
@@ -47,36 +47,24 @@ struct PharoSnippetView: View {
             source: $source,
             focused: $focused,
             runtime: runtime,
-            expanded: Set(expanded),
-            onToggle: toggle)
+            marks: marks,
+            onToggleClass: toggle,
+            onOpen: open)
         .padding(4)
         .accessibilityIdentifier("notebook.pharo.source")
     }
 
-    /// A class the reader opened stays open under the snippet, so the code and
-    /// what it names are readable together.
-    private var expansions: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(expanded, id: \.self) { name in
-                if let object = expandedClasses[name] {
-                    PharoInspectorView(runtime: runtime, root: object) { toggle(name) }
-                        .frame(height: 260)
-                        .pharoPane()
-                }
-            }
-        }
-        .padding(.horizontal, 6)
-        .padding(.bottom, expanded.isEmpty ? 0 : 6)
+    private var marks: PharoSnippetMarks {
+        PharoSnippetMarks(openedClasses: openedClasses, result: result)
     }
 
     private func toggle(_ name: String) {
-        guard !expanded.contains(name) else {
-            expanded.removeAll { $0 == name }
+        guard openedClasses[name] == nil else {
+            openedClasses[name] = nil
             return
         }
 
-        expanded.append(name)
-        Task { expandedClasses[name] = try? await runtime.evaluate(name) }
+        Task { openedClasses[name] = try? await runtime.evaluate(name) }
     }
 
     private var actions: some View {

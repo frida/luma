@@ -121,7 +121,7 @@ struct PharoInspectorView: View {
 }
 
 /// One object's declared views, as a tab per view.
-private struct PharoObjectColumn: View {
+struct PharoObjectColumn: View {
     let runtime: PharoRuntime
     let object: PharoObject
     let onSelect: (PharoObject) -> Void
@@ -265,10 +265,14 @@ private struct PharoItemsList: View {
 
     private let pageSize = 50
 
+    private var leadingCharacters: Int {
+        rows.compactMap { $0.first?.text?.count }.max() ?? 0
+    }
+
     var body: some View {
         List(selection: $selection) {
             ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                PharoRowView(cells: row).tag(index)
+                PharoRowView(cells: row, leadingCharacters: leadingCharacters).tag(index)
             }
 
             if rows.count < total {
