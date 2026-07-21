@@ -24,6 +24,7 @@ struct PharoSnippetView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 editor
+                openedClassesView
                 actions
             }
         }
@@ -54,8 +55,28 @@ struct PharoSnippetView: View {
         .accessibilityIdentifier("notebook.pharo.source")
     }
 
+    /// An opened class renders here rather than in the text: NSTextView only
+    /// instantiates an attachment's view at the layout where the attachment is
+    /// first present, so one that appears on a later click stays a blank
+    /// placeholder. The toggle in the text still says which classes are open.
+    private var openedClassesView: some View {
+        ForEach(Array(openedClasses.keys).sorted(), id: \.self) { name in
+            if let object = openedClasses[name] {
+                PharoObjectColumn(
+                    runtime: runtime,
+                    object: object,
+                    onSelect: open,
+                    onClose: { toggle(name) })
+                .pharoPane()
+                .frame(height: 260)
+                .padding(.horizontal, 4)
+                .padding(.bottom, 4)
+            }
+        }
+    }
+
     private var marks: PharoSnippetMarks {
-        PharoSnippetMarks(openedClasses: openedClasses, result: result)
+        PharoSnippetMarks(openedClassNames: Set(openedClasses.keys), result: result)
     }
 
     private func toggle(_ name: String) {
