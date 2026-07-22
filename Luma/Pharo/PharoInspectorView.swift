@@ -286,9 +286,12 @@ private struct PharoItemsList: View {
         List(selection: $selection) {
             ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
                 PharoRowView(cells: row, leadingCharacters: leadingCharacters)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                     .listRowInsets(EdgeInsets(top: 1, leading: 8, bottom: 1, trailing: 8))
                     .tag(index)
-                    // GT drills on activation, not on merely selecting a row.
+                    // GT drills on activation, not on merely selecting a row, and
+                    // the whole row answers, not only where its text sits.
                     .simultaneousGesture(TapGesture(count: 2).onEnded {
                         Task { await drill(into: index) }
                     })
