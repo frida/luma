@@ -217,8 +217,12 @@ final class PharoTextView: NSTextView {
         for (name, model) in classModels {
             let opened = marks.openedClasses[name]
             guard model.opened?.handle != opened?.handle else { continue }
-            model.opened = opened
-            resizeClassBody(name)
+            // apply() runs while SwiftUI is updating, and a mark's state is
+            // published, so it changes once that pass has finished.
+            DispatchQueue.main.async {
+                model.opened = opened
+                self.resizeClassBody(name)
+            }
         }
     }
 
@@ -502,8 +506,9 @@ final class PharoMarkHostingView: NSView {
         hosting.frame = bounds
     }
 
-    override var frame: NSRect {
-        didSet { subviews.first?.frame = bounds }
+    override func layout() {
+        super.layout()
+        subviews.first?.frame = bounds
     }
 
     @available(*, unavailable)
@@ -520,7 +525,8 @@ nonisolated final class PharoMarkAttachment: NSTextAttachment, @unchecked Sendab
     /// draws nothing until something else forces it to lay out.
     func resize(to size: CGRect) {
         bounds = size
-        markView.frame = size
+        let view = markView
+        MainActor.assumeIsolated { view.frame = size }
     }
 
     init(content: PharoMarkContent, markView: NSView) {
@@ -605,7 +611,6 @@ private struct PharoClassTriangle: View {
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
-        .pointerStyle(.link)
         .onHover { isPointedAt = $0 }
         .help(model.opened != nil ? "Hide" : "Show")
     }
@@ -645,7 +650,6 @@ private struct PharoResultDot: View {
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
-        .pointerStyle(.link)
         .onHover { isPointedAt = $0 }
         .help("Inspect the result")
     }
