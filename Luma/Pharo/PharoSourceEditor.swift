@@ -479,8 +479,24 @@ final class PharoMarkHostingView: NSView {
         hosting.frame = bounds
     }
 
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .pointingHand)
+    /// The text view keeps reasserting the I-beam as the pointer moves, and a
+    /// cursor rect does not outrank that. A tracking area does: the view under
+    /// the pointer is asked, and it answers with the hand.
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: .zero,
+            options: [.activeInKeyWindow, .cursorUpdate, .mouseEnteredAndExited, .inVisibleRect],
+            owner: self))
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        NSCursor.pointingHand.set()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        NSCursor.pointingHand.set()
     }
 
     override var frame: NSRect {
