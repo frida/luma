@@ -285,16 +285,6 @@ private struct PharoItemsList: View {
                     .contentShape(Rectangle())
                     .listRowInsets(EdgeInsets(top: 1, leading: 8, bottom: 1, trailing: 8))
                     .tag(index)
-                    // GT drills on activation, not on merely selecting a row, and
-                    // the whole row answers, not only where its text sits. Taking
-                    // the clicks here means saying what a single one does too.
-                    .onTapGesture(count: 2) {
-                        selection = index
-                        Task { await drill(into: index) }
-                    }
-                    .onTapGesture {
-                        selection = index
-                    }
             }
 
             if rows.count < total {
@@ -313,6 +303,18 @@ private struct PharoItemsList: View {
         }
         .listStyle(.plain)
         .environment(\.defaultMinListRowHeight, 18)
+        // GT drills on activation rather than on merely selecting a row. Watching
+        // for the second click leaves the list's own handling of the first alone,
+        // so selection stays quick and the arrow keys still walk the rows.
+        .background(PharoDoubleClickCatcher {
+            guard let row = selection else { return }
+            Task { await drill(into: row) }
+        })
+        .onKeyPress(.return) {
+            guard let row = selection else { return .ignored }
+            Task { await drill(into: row) }
+            return .handled
+        }
         // Switching tabs hands the same list a different view to page through.
         .task(id: view) { await reload() }
     }
@@ -417,5 +419,56 @@ private struct PharoCloseButton: View {
         .onHover { isPointedAt = $0 }
         .pointerStyle(.link)
         .help("Close")
+    }
+}
+
+/// Notices a double-click over the list without taking the click, so the list
+/// keeps handling selection and keyboard travel itself.
+private struct PharoDoubleClickCatcher: NSViewRepresentable {
+    let activate: () -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        context.coordinator.watch(view, activate: activate)
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        context.coordinator.activate = activate
+    }
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+        coordinator.stop()
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    final class Coordinator {
+        var activate: () -> Void = {}
+        private var monitor: Any?
+        private weak var view: NSView?
+
+        func watch(_ view: NSView, activate: @escaping () -> Void) {
+            self.view = view
+            self.activate = activate
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+                self?.noticed(event)
+                return event
+            }
+        }
+
+        private func noticed(_ event: NSEvent) {
+            guard event.clickCount == 2, let view, let window = view.window, event.window === window else { return }
+            let inView = view.convert(event.locationInWindow, from: nil)
+            guard view.bounds.contains(inView) else { return }
+            activate()
+        }
+
+        func stop() {
+            monitor.map(NSEvent.removeMonitor)
+            monitor = nil
+        }
     }
 }
