@@ -34,6 +34,7 @@ struct PharoSourceEditor: NSViewRepresentable {
     func makeNSView(context: Context) -> PharoTextView {
         let view = PharoTextView()
         view.delegate = context.coordinator
+        view.onFocused = { focused = id }
         view.completions = runtime.completionList
         view.classReferences = runtime.namedClasses(in:)
         view.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
@@ -49,6 +50,7 @@ struct PharoSourceEditor: NSViewRepresentable {
 
     func updateNSView(_ view: PharoTextView, context: Context) {
         context.coordinator.parent = self
+        view.onFocused = { focused = id }
         view.apply(runtime: runtime, marks: marks, onToggleClass: onToggleClass, onOpen: onOpen)
         if view.source != source {
             view.setSource(source)
@@ -73,10 +75,6 @@ struct PharoSourceEditor: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let view = notification.object as? PharoTextView else { return }
             parent.source = view.source
-        }
-
-        func textDidBeginEditing(_ notification: Notification) {
-            parent.focused = parent.id
         }
     }
 }
@@ -116,6 +114,13 @@ extension PharoRuntime {
 final class PharoTextView: NSTextView {
     var completions: ((String, Int) async -> PharoCompletionList)?
     var classReferences: ((String) async -> [PharoClassReference])?
+    var onFocused: (() -> Void)?
+
+    override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became { onFocused?() }
+        return became
+    }
 
     private var runtime: PharoRuntime?
     private var marks = PharoSnippetMarks()
@@ -163,13 +168,13 @@ final class PharoTextView: NSTextView {
             let opened = marks.openedClasses[name]
             guard model.opened?.handle != opened?.handle else { continue }
             model.opened = opened
-            resizeClassMark(name)
+            resizeClassBody(name)
         }
     }
 
-    private func resizeClassMark(_ name: String) {
-        guard let attachment = attachments[.classMark(name)] else { return }
-        let wanted = bounds(for: .classMark(name))
+    private func resizeClassBody(_ name: String) {
+        guard let attachment = attachments[.classBody(name)] else { return }
+        let wanted = bounds(for: .classBody(name))
         guard attachment.bounds != wanted else { return }
         attachment.resize(to: wanted)
         textLayoutManager.map { $0.invalidateLayout(for: $0.documentRange) }
@@ -178,7 +183,7 @@ final class PharoTextView: NSTextView {
     override func layout() {
         super.layout()
         for name in classModels.keys where classModels[name]?.opened != nil {
-            resizeClassMark(name)
+            resizeClassBody(name)
         }
     }
 
@@ -221,7 +226,10 @@ final class PharoTextView: NSTextView {
         for placed in stale.sorted(by: { $0.storageOffset > $1.storageOffset }) {
             storage.deleteCharacters(in: NSRange(location: placed.storageOffset, length: 1))
         }
-        for mark in missing.reversed() {
+        let ordered = missing.sorted {
+            ($0.sourceOffset, $0.content.insertionOrder) > ($1.sourceOffset, $1.content.insertionOrder)
+        }
+        for mark in ordered {
             storage.insert(
                 NSAttributedString(attachment: attachment(for: mark.content)),
                 at: storageOffset(forSource: mark.sourceOffset))
@@ -235,7 +243,8 @@ final class PharoTextView: NSTextView {
         var wanted: [PharoPlacedMark] = []
 
         for reference in references {
-            wanted.append(PharoPlacedMark(sourceOffset: reference.stop, content: .classMark(reference.name)))
+            wanted.append(PharoPlacedMark(sourceOffset: reference.stop, content: .classTriangle(reference.name)))
+            wanted.append(PharoPlacedMark(sourceOffset: reference.stop, content: .classBody(reference.name)))
         }
 
         if let result = marks.result {
@@ -272,17 +281,21 @@ final class PharoTextView: NSTextView {
         return made
     }
 
-    /// A collapsed mark is as tall as a capital letter, which keeps it inside
-    /// the ascent so showing one never makes the line taller. An opened class
-    /// takes the width it is given, and so lands on a line of its own.
+    /// A triangle or dot is as tall as a capital letter, which keeps it inside
+    /// the ascent so showing one never makes the line taller. A class's body
+    /// takes the full width when open, so it lands on a line of its own, and
+    /// takes no room at all when closed.
     private func bounds(for content: PharoMarkContent) -> CGRect {
-        if case .classMark(let name) = content, classModels[name]?.opened != nil {
-            return CGRect(x: 0, y: 0, width: openedWidth, height: openedHeight)
+        switch content {
+        case .classBody(let name):
+            return classModels[name]?.opened != nil
+                ? CGRect(x: 0, y: 0, width: openedWidth, height: openedHeight)
+                : .zero
+        case .classTriangle, .result:
+            let side = (font ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular))
+                .capHeight.rounded()
+            return CGRect(x: 0, y: 0, width: side + 3, height: side)
         }
-
-        let side = (font ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular))
-            .capHeight.rounded()
-        return CGRect(x: 0, y: 0, width: side + 3, height: side)
     }
 
     private var openedWidth: CGFloat {
@@ -293,8 +306,10 @@ final class PharoTextView: NSTextView {
 
     private func markView(for content: PharoMarkContent) -> NSView {
         switch content {
-        case .classMark(let name):
-            NSHostingView(rootView: PharoClassMark(model: classModel(name)))
+        case .classTriangle(let name):
+            NSHostingView(rootView: PharoClassTriangle(model: classModel(name)))
+        case .classBody(let name):
+            NSHostingView(rootView: PharoClassBody(model: classModel(name)))
         case .result(let object):
             NSHostingView(rootView: PharoResultDot { [onOpen] in onOpen?(object) })
         }
@@ -403,11 +418,24 @@ final class PharoTextView: NSTextView {
     }
 }
 
-/// The two things a snippet marks: a class it names, which the reader can open
-/// in place, and the value the snippet last produced.
+/// What a snippet marks: the triangle after a class it names, the class opened
+/// in place below that line, and the value the snippet last produced. The
+/// triangle and the opened class are separate so the triangle keeps its place
+/// in the line while the class lands on the next.
 enum PharoMarkContent {
-    case classMark(String)
+    case classTriangle(String)
+    case classBody(String)
     case result(PharoObject)
+
+    /// Where two marks share a source position, the lower order comes first in
+    /// the text, so a class's triangle sits ahead of its body.
+    var insertionOrder: Int {
+        switch self {
+        case .classTriangle: 0
+        case .classBody: 1
+        case .result: 0
+        }
+    }
 }
 
 nonisolated final class PharoMarkAttachment: NSTextAttachment, @unchecked Sendable {
@@ -474,39 +502,50 @@ final class PharoClassMarkModel: ObservableObject {
     }
 }
 
-/// The triangle GT puts after a class name, and the class itself opened below it
-/// in the line when the reader clicks. Drilling from here goes to the pane
-/// beside the page, not deeper into the line.
-private struct PharoClassMark: View {
+/// The triangle GT puts after a class name. It reads as a button: the pointer
+/// turns into a hand over it and it lights up, which the text view's own I-beam
+/// would otherwise hide.
+private struct PharoClassTriangle: View {
     @ObservedObject var model: PharoClassMarkModel
 
     @State private var isPointedAt = false
 
     var body: some View {
-        if let opened = model.opened {
-            VStack(alignment: .leading, spacing: 0) {
-                triangle
-                PharoObjectColumn(
-                    runtime: model.runtime,
-                    object: opened,
-                    onSelect: model.onOpen,
-                    onClose: model.onToggle)
-                .pharoPane()
-            }
-        } else {
-            triangle
-        }
-    }
-
-    private var triangle: some View {
         Button(action: model.onToggle) {
             Image(systemName: model.opened != nil ? "chevron.down.circle.fill" : "chevron.right.circle")
                 .font(.system(size: 11))
                 .foregroundStyle(isPointedAt || model.opened != nil ? Color.accentColor : .secondary)
         }
         .buttonStyle(.plain)
-        .onHover { isPointedAt = $0 }
+        .onContinuousHover { phase in
+            switch phase {
+            case .active:
+                isPointedAt = true
+                NSCursor.pointingHand.set()
+            case .ended:
+                isPointedAt = false
+                NSCursor.iBeam.set()
+            }
+        }
         .help(model.opened != nil ? "Hide" : "Show")
+    }
+}
+
+/// The class itself, opened on the line below its triangle. Drilling from here
+/// goes to the pane beside the page, not deeper into the line. Nothing when
+/// closed, so the line reads as if it were not there.
+private struct PharoClassBody: View {
+    @ObservedObject var model: PharoClassMarkModel
+
+    var body: some View {
+        if let opened = model.opened {
+            PharoObjectColumn(
+                runtime: model.runtime,
+                object: opened,
+                onSelect: model.onOpen,
+                onClose: model.onToggle)
+            .pharoPane()
+        }
     }
 }
 
@@ -540,7 +579,9 @@ struct PharoPlacedMark: Equatable {
 extension PharoMarkContent: Hashable {
     static func == (lhs: Self, rhs: Self) -> Bool {
         switch (lhs, rhs) {
-        case (.classMark(let a), .classMark(let b)):
+        case (.classTriangle(let a), .classTriangle(let b)):
+            a == b
+        case (.classBody(let a), .classBody(let b)):
             a == b
         case (.result(let a), .result(let b)):
             a.handle == b.handle
@@ -551,8 +592,11 @@ extension PharoMarkContent: Hashable {
 
     func hash(into hasher: inout Hasher) {
         switch self {
-        case .classMark(let name):
+        case .classTriangle(let name):
             hasher.combine(0)
+            hasher.combine(name)
+        case .classBody(let name):
+            hasher.combine(1)
             hasher.combine(name)
         case .result(let object):
             hasher.combine(2)
