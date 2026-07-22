@@ -48,6 +48,7 @@ struct PharoInspectorView: View {
                 } label: {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(depth == shown ? Color.accentColor.opacity(0.7) : Color.secondary.opacity(0.25))
+                        .opacity(isOnScreen(depth) ? 1 : 0.4)
                         .frame(width: previewWidth, height: previewHeight)
                 }
                 .buttonStyle(.plain)
@@ -61,22 +62,29 @@ struct PharoInspectorView: View {
     private let previewSpacing: CGFloat = 3
 
     /// Under the squares and no wider than them, the way Glamorous Toolkit does
-    /// it: a scrollbar thumb spanning the columns on screen and sitting over
-    /// the squares they belong to.
+    /// it: a scrollbar thumb as wide a fraction of the row as the columns it can
+    /// see are of all of them, sitting over the squares they belong to.
     private var thumb: some View {
-        let visible = min(CGFloat(visibleWidth / columnWidth), CGFloat(path.count))
-        return Capsule()
-            .fill(.tertiary)
-            .frame(width: max(overviewWidth * visible / CGFloat(max(path.count, 1)), 8), height: 3)
-            .frame(width: overviewWidth, alignment: .leading)
-            .offset(x: overviewWidth * CGFloat(leadingPane) / CGFloat(max(path.count, 1)))
+        PharoOverviewThumb(
+            trackWidth: overviewWidth,
+            fractionVisible: min(visibleColumns / CGFloat(max(path.count, 1)), 1),
+            fractionLeading: CGFloat(leadingPane) / CGFloat(max(path.count, 1)))
     }
 
     private var overviewWidth: CGFloat {
         CGFloat(path.count) * previewWidth + CGFloat(max(path.count - 1, 0)) * previewSpacing
     }
 
-    private let columnWidth: CGFloat = 320
+    /// One column is a pane plus the arrow before it, save the first with none.
+    private var visibleColumns: CGFloat {
+        max(visibleWidth / columnStride, 1)
+    }
+
+    private let columnStride: CGFloat = 320 + 24
+
+    private func isOnScreen(_ depth: Int) -> Bool {
+        depth >= leadingPane && CGFloat(depth) < CGFloat(leadingPane) + visibleColumns
+    }
 
     private var leadingPane: Int {
         path.firstIndex { $0.handle == leading } ?? 0
@@ -326,5 +334,25 @@ private struct PharoItemsList: View {
         } catch {
             failure = error.localizedDescription
         }
+    }
+}
+
+/// The pager's scroll thumb: a thin bar the width of the columns on screen,
+/// resting over the squares for those columns, and blue while pointed at.
+private struct PharoOverviewThumb: View {
+    let trackWidth: CGFloat
+    let fractionVisible: CGFloat
+    let fractionLeading: CGFloat
+
+    @State private var isPointedAt = false
+
+    var body: some View {
+        Capsule()
+            .fill(isPointedAt ? Color.accentColor : Color.secondary.opacity(0.5))
+            .frame(width: max(trackWidth * fractionVisible, 10), height: 3)
+            .padding(.leading, trackWidth * fractionLeading)
+            .frame(width: trackWidth, height: 8, alignment: .leading)
+            .contentShape(Rectangle())
+            .onHover { isPointedAt = $0 }
     }
 }
