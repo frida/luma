@@ -122,6 +122,30 @@ final class PharoTextView: NSTextView {
         return became
     }
 
+    /// The text view reasserts the I-beam as the pointer travels, so anything
+    /// else asking for the hand only wins between moves and the two flicker.
+    /// It has to be the one to decide, for the marks as well as for the text.
+    override func cursorUpdate(with event: NSEvent) {
+        guard isOverMark(event) else { return super.cursorUpdate(with: event) }
+        NSCursor.pointingHand.set()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard isOverMark(event) else { return super.mouseMoved(with: event) }
+        NSCursor.pointingHand.set()
+    }
+
+    private func isOverMark(_ event: NSEvent) -> Bool {
+        let point = convert(event.locationInWindow, from: nil)
+        return marksIn(self).contains { $0.convert($0.bounds, to: self).contains(point) }
+    }
+
+    private func marksIn(_ view: NSView) -> [NSView] {
+        view.subviews.flatMap { subview -> [NSView] in
+            subview is PharoMarkHostingView ? [subview] : marksIn(subview)
+        }
+    }
+
     /// The marks are invisible to the caret: crossing a class name's marks, and
     /// the space they push ahead of the next word, takes one press, not one per
     /// hidden character.
@@ -467,9 +491,8 @@ enum PharoMarkContent {
     }
 }
 
-/// The text view claims the I-beam across its whole area, so a mark has to ask
-/// for the hand over itself, for all of itself rather than only where its glyph
-/// happens to be filled in.
+/// Holds a mark's view, and tells the text view which of its subviews are marks
+/// so it can hand them the pointer.
 final class PharoMarkHostingView: NSView {
     init(content: some View) {
         super.init(frame: .zero)
@@ -477,26 +500,6 @@ final class PharoMarkHostingView: NSView {
         hosting.autoresizingMask = [.width, .height]
         addSubview(hosting)
         hosting.frame = bounds
-    }
-
-    /// The text view keeps reasserting the I-beam as the pointer moves, and a
-    /// cursor rect does not outrank that. A tracking area does: the view under
-    /// the pointer is asked, and it answers with the hand.
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(
-            rect: .zero,
-            options: [.activeInKeyWindow, .cursorUpdate, .mouseEnteredAndExited, .inVisibleRect],
-            owner: self))
-    }
-
-    override func cursorUpdate(with event: NSEvent) {
-        NSCursor.pointingHand.set()
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        NSCursor.pointingHand.set()
     }
 
     override var frame: NSRect {
