@@ -122,6 +122,32 @@ final class PharoTextView: NSTextView {
         return became
     }
 
+    /// The marks are invisible to the caret: crossing a class name's marks, and
+    /// the space they push ahead of the next word, takes one press, not one per
+    /// hidden character.
+    override func moveRight(_ sender: Any?) {
+        super.moveRight(sender)
+        skipMarksFromCaret(forward: true)
+    }
+
+    override func moveLeft(_ sender: Any?) {
+        super.moveLeft(sender)
+        skipMarksFromCaret(forward: false)
+    }
+
+    private func skipMarksFromCaret(forward: Bool) {
+        let selection = selectedRange()
+        guard selection.length == 0 else { return }
+
+        let units = Array(string.utf16)
+        var caret = selection.location
+        while caret > 0, caret <= units.count, units[caret - 1] == markCharacter {
+            caret += forward ? 1 : -1
+            guard caret >= 0, caret <= units.count else { break }
+        }
+        setSelectedRange(NSRange(location: max(0, min(caret, units.count)), length: 0))
+    }
+
     private var runtime: PharoRuntime?
     private var marks = PharoSnippetMarks()
     private var onToggleClass: ((String) -> Void)?
@@ -288,9 +314,12 @@ final class PharoTextView: NSTextView {
     private func bounds(for content: PharoMarkContent) -> CGRect {
         switch content {
         case .classBody(let name):
+            // A truly empty rect reads as "unset" and the line grows to the
+            // hosting view instead; a hair of size keeps the closed body from
+            // taking any the reader can see.
             return classModels[name]?.opened != nil
                 ? CGRect(x: 0, y: 0, width: openedWidth, height: openedHeight)
-                : .zero
+                : CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
         case .classTriangle, .result:
             let side = (font ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular))
                 .capHeight.rounded()
@@ -479,6 +508,18 @@ nonisolated final class PharoMarkViewProvider: NSTextAttachmentViewProvider, @un
         view = (textAttachment as? PharoMarkAttachment)?.markView
     }
 
+    /// Left to itself the provider measures the hosting view, which pads a mark
+    /// out and, when its size is zero, makes the line as tall as an empty view
+    /// rather than nothing. The attachment's own bounds are the truth.
+    override func attachmentBounds(
+        for attributes: [NSAttributedString.Key: Any],
+        location: any NSTextLocation,
+        textContainer: NSTextContainer?,
+        proposedLineFragment: CGRect,
+        position: CGPoint
+    ) -> CGRect {
+        (textAttachment as? PharoMarkAttachment)?.bounds ?? .zero
+    }
 }
 
 /// A class mark's state, which the view in the text observes: opening one has
@@ -514,7 +555,7 @@ private struct PharoClassTriangle: View {
         Button(action: model.onToggle) {
             Image(systemName: model.opened != nil ? "chevron.down.circle.fill" : "chevron.right.circle")
                 .font(.system(size: 11))
-                .foregroundStyle(isPointedAt || model.opened != nil ? Color.accentColor : .secondary)
+                .foregroundStyle(isPointedAt || model.opened != nil ? Color.fridaBrand : .secondary)
         }
         .buttonStyle(.plain)
         .onContinuousHover { phase in
@@ -559,7 +600,7 @@ private struct PharoResultDot: View {
     var body: some View {
         Button(action: open) {
             Circle()
-                .fill(isPointedAt ? Color.accentColor : Color.secondary)
+                .fill(isPointedAt ? Color.fridaBrand : Color.secondary)
                 .frame(width: 8, height: 8)
         }
         .buttonStyle(.plain)

@@ -37,6 +37,8 @@ struct PharoRowView: View {
                 .frame(width: 16, height: 16)
         } else {
             Text(cell.text ?? "")
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
     }
 
