@@ -336,11 +336,11 @@ final class PharoTextView: NSTextView {
     private func markView(for content: PharoMarkContent) -> NSView {
         switch content {
         case .classTriangle(let name):
-            NSHostingView(rootView: PharoClassTriangle(model: classModel(name)))
+            PharoMarkHostingView(content: PharoClassTriangle(model: classModel(name)))
         case .classBody(let name):
             NSHostingView(rootView: PharoClassBody(model: classModel(name)))
         case .result(let object):
-            NSHostingView(rootView: PharoResultDot { [onOpen] in onOpen?(object) })
+            PharoMarkHostingView(content: PharoResultDot { [onOpen] in onOpen?(object) })
         }
     }
 
@@ -467,6 +467,32 @@ enum PharoMarkContent {
     }
 }
 
+/// The text view claims the I-beam across its whole area, so a mark has to ask
+/// for the hand over itself, for all of itself rather than only where its glyph
+/// happens to be filled in.
+final class PharoMarkHostingView: NSView {
+    init(content: some View) {
+        super.init(frame: .zero)
+        let hosting = NSHostingView(rootView: content)
+        hosting.autoresizingMask = [.width, .height]
+        addSubview(hosting)
+        hosting.frame = bounds
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+
+    override var frame: NSRect {
+        didSet { subviews.first?.frame = bounds }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("PharoMarkHostingView is not loaded from a nib")
+    }
+}
+
 nonisolated final class PharoMarkAttachment: NSTextAttachment, @unchecked Sendable {
     let content: PharoMarkContent
     let markView: NSView
@@ -558,16 +584,9 @@ private struct PharoClassTriangle: View {
                 .foregroundStyle(isPointedAt || model.opened != nil ? Color.fridaBrand : .secondary)
         }
         .buttonStyle(.plain)
-        .onContinuousHover { phase in
-            switch phase {
-            case .active:
-                isPointedAt = true
-                NSCursor.pointingHand.set()
-            case .ended:
-                isPointedAt = false
-                NSCursor.iBeam.set()
-            }
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onHover { isPointedAt = $0 }
         .help(model.opened != nil ? "Hide" : "Show")
     }
 }
