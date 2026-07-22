@@ -183,6 +183,7 @@ final class PharoTextView: NSTextView {
     private var isApplyingMarks = false
     private var attachments: [PharoMarkContent: PharoMarkAttachment] = [:]
     private var classModels: [String: PharoClassMarkModel] = [:]
+    private let resultModel = PharoResultMarkModel()
 
     var source: String {
         string.replacingOccurrences(of: "\u{FFFC}", with: "")
@@ -205,6 +206,7 @@ final class PharoTextView: NSTextView {
         guard self.marks != marks else { return }
         self.marks = marks
         expandOpenedClasses()
+        showResult()
         markUp()
     }
 
@@ -223,6 +225,24 @@ final class PharoTextView: NSTextView {
                 model.opened = opened
                 self.resizeClassBody(name)
             }
+        }
+    }
+
+    /// The dot is already in the text, empty, so a result only has to fill it
+    /// in: inserting it now would leave a mark NSTextView never builds a view
+    /// for, and it would show as a placeholder until something forced a pass.
+    private func showResult() {
+        guard resultModel.object?.handle != marks.result?.handle else { return }
+
+        let result = marks.result
+        DispatchQueue.main.async {
+            self.resultModel.object = result
+            self.resultModel.onOpen = { [weak self] object in self?.onOpen?(object) }
+            guard let attachment = self.attachments[.result] else { return }
+            let wanted = self.bounds(for: .result)
+            guard attachment.bounds != wanted else { return }
+            attachment.resize(to: wanted)
+            self.textLayoutManager.map { $0.invalidateLayout(for: $0.documentRange) }
         }
     }
 
@@ -301,9 +321,7 @@ final class PharoTextView: NSTextView {
             wanted.append(PharoPlacedMark(sourceOffset: reference.stop, content: .classBody(reference.name)))
         }
 
-        if let result = marks.result {
-            wanted.append(PharoPlacedMark(sourceOffset: source.utf16.count, content: .result(result)))
-        }
+        wanted.append(PharoPlacedMark(sourceOffset: source.utf16.count, content: .result))
 
         return wanted
     }
@@ -348,6 +366,8 @@ final class PharoTextView: NSTextView {
             return classModels[name]?.opened != nil
                 ? CGRect(x: 0, y: 0, width: openedWidth, height: openedHeight)
                 : CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
+        case .result where resultModel.object == nil:
+            return CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
         case .classTriangle, .result:
             let side = (font ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular))
                 .capHeight.rounded()
@@ -367,8 +387,8 @@ final class PharoTextView: NSTextView {
             PharoMarkHostingView(content: PharoClassTriangle(model: classModel(name)))
         case .classBody(let name):
             NSHostingView(rootView: PharoClassBody(model: classModel(name)))
-        case .result(let object):
-            PharoMarkHostingView(content: PharoResultDot { [onOpen] in onOpen?(object) })
+        case .result:
+            PharoMarkHostingView(content: PharoResultDot(model: resultModel))
         }
     }
 
@@ -482,7 +502,7 @@ final class PharoTextView: NSTextView {
 enum PharoMarkContent {
     case classTriangle(String)
     case classBody(String)
-    case result(PharoObject)
+    case result
 
     /// Where two marks share a source position, the lower order comes first in
     /// the text, so a class's triangle sits ahead of its body.
@@ -575,6 +595,13 @@ nonisolated final class PharoMarkViewProvider: NSTextAttachmentViewProvider, @un
 
 /// A class mark's state, which the view in the text observes: opening one has
 /// the same view grow from the triangle alone to the triangle above the class.
+/// What the snippet last produced, which the dot in the text watches so a fresh
+/// result fills the mark already there rather than needing a new one.
+final class PharoResultMarkModel: ObservableObject {
+    @Published var object: PharoObject?
+    var onOpen: (PharoObject) -> Void = { _ in }
+}
+
 final class PharoClassMarkModel: ObservableObject {
     let runtime: PharoRuntime
     let onToggle: () -> Void
@@ -637,15 +664,16 @@ private struct PharoClassBody: View {
 /// The dot GT appends once a snippet has produced something, so the reader can
 /// go back to the value without evaluating again.
 private struct PharoResultDot: View {
-    let open: () -> Void
+    @ObservedObject var model: PharoResultMarkModel
 
     @State private var isPointedAt = false
 
     var body: some View {
-        Button(action: open) {
+        Button { model.object.map { model.onOpen($0) } } label: {
             Circle()
                 .fill(isPointedAt ? Color.fridaBrand : Color.secondary)
                 .frame(width: 8, height: 8)
+                .opacity(model.object == nil ? 0 : 1)
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -670,8 +698,8 @@ extension PharoMarkContent: Hashable {
             a == b
         case (.classBody(let a), .classBody(let b)):
             a == b
-        case (.result(let a), .result(let b)):
-            a.handle == b.handle
+        case (.result, .result):
+            true
         default:
             false
         }
@@ -685,9 +713,8 @@ extension PharoMarkContent: Hashable {
         case .classBody(let name):
             hasher.combine(1)
             hasher.combine(name)
-        case .result(let object):
+        case .result:
             hasher.combine(2)
-            hasher.combine(object.handle)
         }
     }
 }
