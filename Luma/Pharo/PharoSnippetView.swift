@@ -37,7 +37,7 @@ struct PharoSnippetView: View {
 
     private var focusBar: some View {
         Rectangle()
-            .fill(isFocused ? Color.accentColor : .clear)
+            .fill(isFocused ? Color.fridaBrand : .clear)
             .frame(width: 3)
     }
 
