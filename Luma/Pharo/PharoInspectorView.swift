@@ -194,14 +194,9 @@ struct PharoObjectColumn: View {
     }
 
     private var closeButton: some View {
-        Button(action: onClose) {
-            Image(systemName: "xmark")
-                .font(.caption2)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .padding(6)
-        .accessibilityIdentifier("pharo.inspection.close")
+        PharoCloseButton(close: onClose)
+            .padding(6)
+            .accessibilityIdentifier("pharo.inspection.close")
     }
 
     @ViewBuilder
@@ -291,10 +286,15 @@ private struct PharoItemsList: View {
                     .listRowInsets(EdgeInsets(top: 1, leading: 8, bottom: 1, trailing: 8))
                     .tag(index)
                     // GT drills on activation, not on merely selecting a row, and
-                    // the whole row answers, not only where its text sits.
-                    .simultaneousGesture(TapGesture(count: 2).onEnded {
+                    // the whole row answers, not only where its text sits. Taking
+                    // the clicks here means saying what a single one does too.
+                    .onTapGesture(count: 2) {
+                        selection = index
                         Task { await drill(into: index) }
-                    })
+                    }
+                    .onTapGesture {
+                        selection = index
+                    }
             }
 
             if rows.count < total {
@@ -393,5 +393,29 @@ private struct PharoOverviewSquare: View {
         if isCurrent { return .fridaBrand.opacity(0.75) }
         if isPointedAt { return .fridaBrand.opacity(0.4) }
         return .secondary.opacity(0.25)
+    }
+}
+
+/// Closing a pane is a button, and says so: it fills in and takes the hand when
+/// the pointer is over it.
+private struct PharoCloseButton: View {
+    let close: () -> Void
+
+    @State private var isPointedAt = false
+
+    var body: some View {
+        Button(action: close) {
+            Image(systemName: "xmark")
+                .font(.caption2)
+                .foregroundStyle(isPointedAt ? Color.fridaBrand : .secondary)
+                .frame(width: 16, height: 16)
+                .background(isPointedAt ? Color.secondary.opacity(0.15) : .clear)
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .onHover { isPointedAt = $0 }
+        .pointerStyle(.link)
+        .help("Close")
     }
 }
