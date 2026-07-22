@@ -602,6 +602,7 @@ private struct PharoClassTriangle: View {
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
+        .pointerStyle(.link)
         .onHover { isPointedAt = $0 }
         .help(model.opened != nil ? "Hide" : "Show")
     }
@@ -639,6 +640,9 @@ private struct PharoResultDot: View {
                 .frame(width: 8, height: 8)
         }
         .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .pointerStyle(.link)
         .onHover { isPointedAt = $0 }
         .help("Inspect the result")
     }
