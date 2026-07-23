@@ -43,6 +43,7 @@ struct PharoPlaygroundView: View {
                 id: Binding { columnPath.leading } set: { columnPath.leading = $0 },
                 anchor: .leading)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { columnPath.visibleWidth = $0 }
+            .onAppear { columnPath.pageWidth = pageWidth }
         }
         .coordinateSpace(name: pharoPageSpace)
         .background(.pharoGutter)
