@@ -238,7 +238,7 @@ private struct SidebarPharoRow: View {
         HStack(spacing: 8) {
             Image(systemName: "curlybraces.square")
                 .frame(width: 18, alignment: .center)
-            Text("Pharo")
+            Text("Playground")
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("sidebar.pharo")
