@@ -23,27 +23,19 @@ struct NotebookView: View {
     @State private var inspection: PharoInspection?
     @State private var inspected: UUID?
     @State private var centers: [UUID: CGFloat] = [:]
-    @State private var columnPath = PharoColumnPath()
 
     var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 0) {
-                page
-                    .frame(width: pageWidth)
-                    .pharoPane()
-                    .id(PharoColumnPath.snippetsID)
+        HSplitView {
+            page
+                .pharoPane()
+                .padding(8)
+                .frame(minWidth: 320, idealWidth: 520)
 
-                inspectionSide
-            }
-            .scrollTargetLayout()
+            inspectionSide
+                .padding(.vertical, 8)
+                .padding(.trailing, 8)
+                .frame(minWidth: 320)
         }
-        // A margin rather than padding, so that scrolling something to the
-        // leading edge leaves the same gap before it that it had at rest.
-        .contentMargins(8, for: .scrollContent)
-        .scrollPosition(
-            id: Binding { columnPath.leading } set: { columnPath.leading = $0 },
-            anchor: .leading)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { columnPath.visibleWidth = $0 }
         .coordinateSpace(name: pharoPageSpace)
         .background(.pharoGutter)
     }
@@ -52,14 +44,11 @@ struct NotebookView: View {
     @ViewBuilder
     private var inspectionSide: some View {
         if let inspection {
-            PharoInspectionPane(inspection: inspection, path: columnPath, pointsFrom: inspected.flatMap { centers[$0] }) {
+            PharoInspectionPane(inspection: inspection, pointsFrom: inspected.flatMap { centers[$0] }) {
                 self.inspection = nil
-                columnPath.clear()
             }
         }
     }
-
-    private let pageWidth: CGFloat = 520
 
     private var page: some View {
         Group {

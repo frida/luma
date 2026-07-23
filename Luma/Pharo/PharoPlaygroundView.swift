@@ -8,14 +8,13 @@ struct PharoPlaygroundView: View {
     let engine: Engine
 
     @State private var snippets: [PharoPlaygroundSnippet] = []
-    @State private var inspection: PharoInspection?
     @State private var inspected: UUID?
     @State private var centers: [UUID: CGFloat] = [:]
     @State private var failure: String?
     @State private var isReady = false
     @State private var focused: UUID?
     @State private var results: [UUID: PharoObject] = [:]
-    @State private var columnPath = PharoColumnPath()
+    @State private var columnPath = PharoColumnPath(includesPage: true)
 
     private let runtime = PharoRuntime.shared
 
@@ -31,7 +30,7 @@ struct PharoPlaygroundView: View {
                     page
                         .frame(width: pageWidth)
                         .pharoPane()
-                        .id(PharoColumnPath.snippetsID)
+                        .id(PharoColumnPath.pageID)
 
                     inspectionSide
                 }
@@ -53,13 +52,14 @@ struct PharoPlaygroundView: View {
     }
 
 
+    /// The columns ride in the page's own scroller, so the playground lays out
+    /// the arrow into them and the columns themselves rather than handing both
+    /// to a pane that would scroll on its own.
     @ViewBuilder
     private var inspectionSide: some View {
-        if let inspection {
-            PharoInspectionPane(inspection: inspection, path: columnPath, pointsFrom: inspected.flatMap { centers[$0] }) {
-                self.inspection = nil
-                columnPath.clear()
-            }
+        if !columnPath.objects.isEmpty {
+            PharoPointingArrow(pointsFrom: inspected.flatMap { centers[$0] })
+            PharoColumnsView(runtime: runtime, path: columnPath, onCloseAll: columnPath.clear)
         }
     }
 
@@ -138,7 +138,7 @@ struct PharoPlaygroundView: View {
 
     private func show(_ object: PharoObject, from snippet: UUID) {
         inspected = snippet
-        inspection = .live(object)
+        columnPath.startOver(at: object)
     }
 
     private func remove(_ snippet: PharoPlaygroundSnippet) {

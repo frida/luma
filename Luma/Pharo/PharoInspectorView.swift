@@ -1,41 +1,124 @@
 import SwiftUI
 import SwiftyPharo
 
-/// The columns a page has opened, kept where both the strip above the page and
-/// the pane beside it can see them.
+/// The columns opened from a page, and where along them the reader is looking.
+/// A playground scrolls its own page along with them and so counts it as the
+/// first slot; a notebook keeps its page aside and counts only the columns.
 @Observable
 final class PharoColumnPath {
     var objects: [PharoObject] = []
-    /// Which column is the current one, or nothing when the page of snippets is.
+    /// Which column is the current one, or nothing when the page itself is.
     var shown: Int?
     var leading: Int?
     var visibleWidth: CGFloat = 0
 
-    /// The page of snippets scrolls with the columns, and is the first of them
-    /// as far as the strip and the scroller are concerned.
-    static let snippetsID = 0
+    let includesPage: Bool
+
+    init(includesPage: Bool = false) {
+        self.includesPage = includesPage
+    }
+
+    /// The page scrolls with the columns, so it needs an identity among them.
+    static let pageID = 0
 
     /// One column is a pane plus the arrow before it, save the first with none.
     var visibleColumns: CGFloat {
         max(visibleWidth / 344, 1)
     }
 
-    /// Where the leftmost thing on screen sits in the strip, counting the page
-    /// of snippets as the first.
-    var leadingIndex: Int {
-        guard let leading, leading != Self.snippetsID else { return 0 }
-        return (objects.firstIndex { $0.handle == leading } ?? 0) + 1
+    var slotCount: Int {
+        pageSlots + objects.count
     }
 
-    func isOnScreen(_ index: Int) -> Bool {
-        index >= leadingIndex && CGFloat(index) < CGFloat(leadingIndex) + visibleColumns
+    var leadingSlot: Int {
+        guard let leading, leading != Self.pageID else { return 0 }
+        return (objects.firstIndex { $0.handle == leading } ?? 0) + pageSlots
     }
 
-    /// Nothing is open any more, so the strip is back to the snippets alone.
+    func isOnScreen(_ slot: Int) -> Bool {
+        slot >= leadingSlot && CGFloat(slot) < CGFloat(leadingSlot) + visibleColumns
+    }
+
+    func slot(ofColumn depth: Int) -> Int {
+        depth + pageSlots
+    }
+
+    func show(slot: Int) {
+        let clamped = min(max(slot, 0), slotCount - 1)
+        shown = clamped < pageSlots ? nil : clamped - pageSlots
+        leading = id(atSlot: clamped)
+    }
+
+    func startOver(at object: PharoObject) {
+        objects = [object]
+        shown = 0
+        leading = object.handle
+    }
+
+    func open(_ object: PharoObject, from depth: Int) {
+        objects = objects.prefix(depth + 1) + [object]
+        shown = objects.count - 1
+        revealLast()
+    }
+
+    /// Answers whether the page's own first column was the one closed, which is
+    /// the whole inspection going away rather than a column of it.
+    func close(from depth: Int) -> Bool {
+        guard depth > 0 else { return true }
+        objects = Array(objects.prefix(depth))
+        shown = min(shown ?? 0, objects.count - 1)
+        return false
+    }
+
+    /// Nothing is open any more, so the path is back to the page alone.
     func clear() {
         objects = []
         shown = nil
-        leading = Self.snippetsID
+        leading = Self.pageID
+    }
+
+    /// Bring the newest column to the right edge, keeping as many of the ones
+    /// before it on screen as fit.
+    private func revealLast() {
+        let onScreen = max(Int(visibleColumns), 1)
+        leading = id(atSlot: max(0, slotCount - 1 - onScreen + 1))
+    }
+
+    private func id(atSlot slot: Int) -> Int? {
+        slot < pageSlots ? Self.pageID : objects[slot - pageSlots].handle
+    }
+
+    private var pageSlots: Int {
+        includesPage ? 1 : 0
+    }
+}
+
+/// The columns themselves, laid side by side. Whoever shows them does the
+/// scrolling, so a playground can carry its page along in the same scroller.
+struct PharoColumnsView: View {
+    let runtime: PharoRuntime
+    let path: PharoColumnPath
+    let onCloseAll: () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(path.objects.enumerated()), id: \.element.handle) { depth, object in
+                // Whoever puts something before the first column draws the
+                // arrow into it, so that one points across from its source.
+                if depth > 0 {
+                    PharoDrillArrow()
+                }
+
+                PharoObjectColumn(
+                    runtime: runtime,
+                    object: object,
+                    onSelect: { path.open($0, from: depth) },
+                    onClose: { if path.close(from: depth) { onCloseAll() } })
+                .frame(width: 320)
+                .pharoPane()
+                .id(object.handle)
+            }
+        }
     }
 }
 
@@ -44,67 +127,22 @@ final class PharoColumnPath {
 struct PharoInspectorView: View {
     let runtime: PharoRuntime
     let root: PharoObject
-    let path: PharoColumnPath
     let onClose: () -> Void
 
+    @State private var path = PharoColumnPath()
+
     var body: some View {
-        columns
-            // SwiftUI hands a new root to the view it already has, so seeding
-            // the path from an initializer would only ever run once.
-            .onChange(of: root.handle, initial: true) { startOver(at: root) }
-    }
-
-    /// The columns alone: the page they belong to does the scrolling, so that
-    /// the snippets travel with them rather than beside them.
-    private var columns: some View {
-        HStack(spacing: 0) {
-            ForEach(Array(path.objects.enumerated()), id: \.element.handle) { depth, object in
-                // The pane before the first column draws the arrow into it, so
-                // that one points across from the snippet it came from.
-                if depth > 0 {
-                    PharoDrillArrow()
-                }
-
-                PharoObjectColumn(
-                    runtime: runtime,
-                    object: object,
-                    onSelect: { open($0, from: depth) },
-                    onClose: { close(from: depth) })
-                .frame(width: 320)
-                .pharoPane()
-                .id(object.handle)
-            }
+        ScrollView(.horizontal) {
+            PharoColumnsView(runtime: runtime, path: path, onCloseAll: onClose)
+                .scrollTargetLayout()
         }
-    }
-
-    private func open(_ object: PharoObject, from depth: Int) {
-        path.objects = path.objects.prefix(depth + 1) + [object]
-        path.shown = path.objects.count - 1
-        revealLast()
-    }
-
-    private func startOver(at object: PharoObject) {
-        path.objects = [object]
-        path.shown = 0
-        path.leading = object.handle
-    }
-
-    /// Bring the newest column to the right edge, keeping as many of the ones
-    /// before it on screen as fit. The page of snippets scrolls with them, so
-    /// the reckoning counts it as the first of them.
-    private func revealLast() {
-        let onScreen = max(Int(path.visibleColumns), 1)
-        let newest = path.objects.count
-        let leadingIndex = max(0, newest - onScreen + 1)
-        path.leading = leadingIndex == 0
-            ? PharoColumnPath.snippetsID
-            : path.objects[leadingIndex - 1].handle
-    }
-
-    private func close(from depth: Int) {
-        guard depth > 0 else { return onClose() }
-        path.objects = Array(path.objects.prefix(depth))
-        path.shown = min(path.shown ?? 0, path.objects.count - 1)
+        .scrollPosition(
+            id: Binding { path.leading } set: { path.leading = $0 },
+            anchor: .leading)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { path.visibleWidth = $0 }
+        // SwiftUI hands a new root to the view it already has, so seeding the
+        // path from an initializer would only ever run once.
+        .onChange(of: root.handle, initial: true) { path.startOver(at: root) }
     }
 }
 
@@ -487,19 +525,17 @@ struct PharoOverviewStrip: View {
                 printString: "Snippets",
                 width: previewWidth,
                 height: previewHeight) {
-                path.shown = nil
-                path.leading = PharoColumnPath.snippetsID
+                path.show(slot: 0)
             }
 
             ForEach(Array(path.objects.enumerated()), id: \.element.handle) { depth, object in
                 PharoOverviewSquare(
                     isCurrent: path.shown == depth,
-                    isOnScreen: path.isOnScreen(depth + 1),
+                    isOnScreen: path.isOnScreen(path.slot(ofColumn: depth)),
                     printString: object.printString,
                     width: previewWidth,
                     height: previewHeight) {
-                    path.shown = depth
-                    path.leading = object.handle
+                    path.show(slot: path.slot(ofColumn: depth))
                 }
             }
         }
@@ -510,23 +546,14 @@ struct PharoOverviewStrip: View {
         return PharoOverviewThumb(
             trackWidth: overviewWidth,
             fractionVisible: span,
-            fractionLeading: min(CGFloat(path.leadingIndex) / total, 1 - span),
-            scrollTo: scroll(toFraction:))
-    }
-
-    private func scroll(toFraction fraction: CGFloat) {
-        let index = Int((fraction * total).rounded())
-        let clamped = min(max(index, 0), path.objects.count)
-        path.shown = clamped == 0 ? nil : clamped - 1
-        path.leading = clamped == 0
-            ? PharoColumnPath.snippetsID
-            : path.objects[clamped - 1].handle
+            fractionLeading: min(CGFloat(path.leadingSlot) / total, 1 - span),
+            scrollTo: { path.show(slot: Int(($0 * total).rounded())) })
     }
 
     /// The page of snippets is always on screen and always counted, so the
     /// strip measures the whole page rather than the columns alone.
     private var total: CGFloat {
-        CGFloat(path.objects.count + 1)
+        CGFloat(path.slotCount)
     }
 
     private var onScreen: CGFloat {
