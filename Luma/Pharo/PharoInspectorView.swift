@@ -328,17 +328,33 @@ private struct PharoOverviewThumb: View {
     let trackWidth: CGFloat
     let fractionVisible: CGFloat
     let fractionLeading: CGFloat
+    /// Where along the track the reader has dragged the thumb to, as a fraction
+    /// of the whole path.
+    let scrollTo: (CGFloat) -> Void
 
     @State private var isPointedAt = false
+    @State private var draggedFrom: CGFloat?
 
     var body: some View {
         Capsule()
-            .fill(isPointedAt ? Color.fridaBrand : Color.secondary.opacity(0.5))
+            .fill(isPointedAt || draggedFrom != nil ? Color.fridaBrand : Color.secondary.opacity(0.5))
             .frame(width: max(trackWidth * fractionVisible, 10), height: 3)
             .padding(.leading, trackWidth * fractionLeading)
             .frame(width: trackWidth, height: 8, alignment: .leading)
             .contentShape(Rectangle())
             .onHover { isPointedAt = $0 }
+            .pointerStyle(.link)
+            .gesture(drag)
+    }
+
+    private var drag: some Gesture {
+        DragGesture(minimumDistance: 1)
+            .onChanged { movement in
+                let start = draggedFrom ?? fractionLeading
+                draggedFrom = start
+                scrollTo(start + movement.translation.width / max(trackWidth, 1))
+            }
+            .onEnded { _ in draggedFrom = nil }
     }
 }
 
@@ -494,7 +510,16 @@ struct PharoOverviewStrip: View {
         return PharoOverviewThumb(
             trackWidth: overviewWidth,
             fractionVisible: span,
-            fractionLeading: min(CGFloat(path.leadingIndex) / total, 1 - span))
+            fractionLeading: min(CGFloat(path.leadingIndex) / total, 1 - span),
+            scrollTo: scroll(toFraction:))
+    }
+
+    private func scroll(toFraction fraction: CGFloat) {
+        let index = Int((fraction * total).rounded())
+        let clamped = min(max(index, 0), path.objects.count)
+        path.leading = clamped == 0
+            ? PharoColumnPath.snippetsID
+            : path.objects[clamped - 1].handle
     }
 
     /// The page of snippets is always on screen and always counted, so the
