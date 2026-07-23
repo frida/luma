@@ -90,10 +90,15 @@ struct PharoInspectorView: View {
     }
 
     /// Bring the newest column to the right edge, keeping as many of the ones
-    /// before it on screen as fit.
+    /// before it on screen as fit. The page of snippets scrolls with them, so
+    /// the reckoning counts it as the first of them.
     private func revealLast() {
         let onScreen = max(Int(path.visibleColumns), 1)
-        path.leading = path.objects[max(0, path.objects.count - onScreen)].handle
+        let newest = path.objects.count
+        let leadingIndex = max(0, newest - onScreen + 1)
+        path.leading = leadingIndex == 0
+            ? PharoColumnPath.snippetsID
+            : path.objects[leadingIndex - 1].handle
     }
 
     private func close(from depth: Int) {
