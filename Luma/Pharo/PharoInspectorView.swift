@@ -1,92 +1,49 @@
 import SwiftUI
 import SwiftyPharo
 
+/// The columns a page has opened, kept where both the strip above the page and
+/// the pane beside it can see them.
+@Observable
+final class PharoColumnPath {
+    var objects: [PharoObject] = []
+    /// Which column is the current one, or nothing when the page of snippets is.
+    var shown: Int?
+    var leading: Int?
+    var visibleWidth: CGFloat = 0
+
+    /// One column is a pane plus the arrow before it, save the first with none.
+    var visibleColumns: CGFloat {
+        max(visibleWidth / 344, 1)
+    }
+
+    var leadingColumn: Int {
+        objects.firstIndex { $0.handle == leading } ?? 0
+    }
+
+    func isOnScreen(_ depth: Int) -> Bool {
+        depth >= leadingColumn && CGFloat(depth) < CGFloat(leadingColumn) + visibleColumns
+    }
+}
+
 /// Walks an object through the views it declares, opening each selection in a
 /// column to its right so the path taken to reach a value stays on screen.
 struct PharoInspectorView: View {
     let runtime: PharoRuntime
     let root: PharoObject
+    let path: PharoColumnPath
     let onClose: () -> Void
 
-    @State private var path: [PharoObject] = []
-    @State private var shown: Int?
-    @State private var leading: Int?
-    @State private var visibleWidth: CGFloat = 0
-
     var body: some View {
-        VStack(spacing: 0) {
-            VStack(spacing: 2) {
-                overview
-                thumb
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
-            Divider()
-            columns
-        }
-        // SwiftUI hands a new root to the view it already has, so seeding the
-        // path from an initializer would only ever run once.
-        .onChange(of: root.handle, initial: true) { startOver(at: root) }
-    }
-
-    /// The panes as small squares, the way Glamorous Toolkit previews them: no
-    /// words, just where in the path each one sits, gathered in the middle
-    /// rather than stretched across the width. Clicking one brings its column
-    /// to the front.
-    private var overview: some View {
-        HStack(spacing: previewSpacing) {
-            ForEach(Array(path.enumerated()), id: \.element.handle) { depth, object in
-                PharoOverviewSquare(
-                    isCurrent: depth == shown,
-                    isOnScreen: isOnScreen(depth),
-                    printString: object.printString,
-                    width: previewWidth,
-                    height: previewHeight) {
-                    shown = depth
-                    leading = object.handle
-                }
-            }
-        }
-    }
-
-    private let previewWidth: CGFloat = 22
-    private let previewHeight: CGFloat = 12
-    private let previewSpacing: CGFloat = 3
-
-    /// Under the squares and no wider than them, the way Glamorous Toolkit does
-    /// it: a scrollbar thumb as wide a fraction of the row as the columns it can
-    /// see are of all of them, sitting over the squares they belong to.
-    private var thumb: some View {
-        let span = min(visibleColumns / CGFloat(max(path.count, 1)), 1)
-        return PharoOverviewThumb(
-            trackWidth: overviewWidth,
-            fractionVisible: span,
-            fractionLeading: min(CGFloat(leadingPane) / CGFloat(max(path.count, 1)), 1 - span))
-    }
-
-    private var overviewWidth: CGFloat {
-        CGFloat(path.count) * previewWidth + CGFloat(max(path.count - 1, 0)) * previewSpacing
-    }
-
-    /// One column is a pane plus the arrow before it, save the first with none.
-    private var visibleColumns: CGFloat {
-        max(visibleWidth / columnStride, 1)
-    }
-
-    private let columnStride: CGFloat = 320 + 24
-
-    private func isOnScreen(_ depth: Int) -> Bool {
-        depth >= leadingPane && CGFloat(depth) < CGFloat(leadingPane) + visibleColumns
-    }
-
-    private var leadingPane: Int {
-        path.firstIndex { $0.handle == leading } ?? 0
+        columns
+            // SwiftUI hands a new root to the view it already has, so seeding
+            // the path from an initializer would only ever run once.
+            .onChange(of: root.handle, initial: true) { startOver(at: root) }
     }
 
     private var columns: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 0) {
-                ForEach(Array(path.enumerated()), id: \.element.handle) { depth, object in
+                ForEach(Array(path.objects.enumerated()), id: \.element.handle) { depth, object in
                     if depth > 0 {
                         PharoDrillArrow()
                     }
@@ -103,33 +60,35 @@ struct PharoInspectorView: View {
             }
             .scrollTargetLayout()
         }
-        .scrollPosition(id: $leading, anchor: .leading)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { visibleWidth = $0 }
+        .scrollPosition(
+            id: Binding { path.leading } set: { path.leading = $0 },
+            anchor: .leading)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { path.visibleWidth = $0 }
     }
 
     private func open(_ object: PharoObject, from depth: Int) {
-        path = path.prefix(depth + 1) + [object]
-        shown = path.count - 1
+        path.objects = path.objects.prefix(depth + 1) + [object]
+        path.shown = path.objects.count - 1
         revealLast()
     }
 
     private func startOver(at object: PharoObject) {
-        path = [object]
-        shown = 0
-        leading = object.handle
+        path.objects = [object]
+        path.shown = 0
+        path.leading = object.handle
     }
 
     /// Bring the newest column to the right edge, keeping as many of the ones
     /// before it on screen as fit.
     private func revealLast() {
-        let onScreen = max(Int(visibleColumns), 1)
-        leading = path[max(0, path.count - onScreen)].handle
+        let onScreen = max(Int(path.visibleColumns), 1)
+        path.leading = path.objects[max(0, path.objects.count - onScreen)].handle
     }
 
     private func close(from depth: Int) {
         guard depth > 0 else { return onClose() }
-        path = Array(path.prefix(depth))
-        shown = min(shown ?? 0, path.count - 1)
+        path.objects = Array(path.objects.prefix(depth))
+        path.shown = min(path.shown ?? 0, path.objects.count - 1)
     }
 }
 
@@ -471,4 +430,72 @@ private struct PharoDoubleClickCatcher: NSViewRepresentable {
             monitor = nil
         }
     }
+}
+
+/// The pager's strip, sitting above the whole page: a square for the snippets
+/// themselves and one for each column opened from them, with a scrollbar under
+/// them showing which are on screen.
+struct PharoOverviewStrip: View {
+    let path: PharoColumnPath
+
+    var body: some View {
+        VStack(spacing: 2) {
+            squares
+            thumb
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 4)
+    }
+
+    private var squares: some View {
+        HStack(spacing: previewSpacing) {
+            PharoOverviewSquare(
+                isCurrent: path.shown == nil,
+                isOnScreen: true,
+                printString: "Snippets",
+                width: previewWidth,
+                height: previewHeight) {
+                path.shown = nil
+                path.leading = path.objects.first?.handle
+            }
+
+            ForEach(Array(path.objects.enumerated()), id: \.element.handle) { depth, object in
+                PharoOverviewSquare(
+                    isCurrent: path.shown == depth,
+                    isOnScreen: path.isOnScreen(depth),
+                    printString: object.printString,
+                    width: previewWidth,
+                    height: previewHeight) {
+                    path.shown = depth
+                    path.leading = object.handle
+                }
+            }
+        }
+    }
+
+    private var thumb: some View {
+        let span = min(onScreen / total, 1)
+        return PharoOverviewThumb(
+            trackWidth: overviewWidth,
+            fractionVisible: span,
+            fractionLeading: min(CGFloat(path.leadingColumn) / total, 1 - span))
+    }
+
+    /// The page of snippets is always on screen and always counted, so the
+    /// strip measures the whole page rather than the columns alone.
+    private var total: CGFloat {
+        CGFloat(path.objects.count + 1)
+    }
+
+    private var onScreen: CGFloat {
+        min(path.visibleColumns, CGFloat(path.objects.count)) + 1
+    }
+
+    private var overviewWidth: CGFloat {
+        total * previewWidth + (total - 1) * previewSpacing
+    }
+
+    private let previewWidth: CGFloat = 22
+    private let previewHeight: CGFloat = 12
+    private let previewSpacing: CGFloat = 3
 }
