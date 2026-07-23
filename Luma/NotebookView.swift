@@ -41,9 +41,11 @@ struct NotebookView: View {
 
                     inspectionSide
                 }
-                .padding(8)
                 .scrollTargetLayout()
             }
+            // A margin rather than padding, so that scrolling something to the
+            // leading edge leaves the same gap before it that it had at rest.
+            .contentMargins(8, for: .scrollContent)
             .scrollPosition(
                 id: Binding { columnPath.leading } set: { columnPath.leading = $0 },
                 anchor: .leading)
@@ -59,6 +61,7 @@ struct NotebookView: View {
         if let inspection {
             PharoInspectionPane(inspection: inspection, path: columnPath, pointsFrom: inspected.flatMap { centers[$0] }) {
                 self.inspection = nil
+                columnPath.clear()
             }
         }
     }
