@@ -17,6 +17,7 @@ enum PharoInspection {
 /// under the cell so drilling has somewhere to go.
 struct PharoInspectionPane: View {
     let inspection: PharoInspection
+    let path: PharoColumnPath
     /// Where in the pane's own height the thing being inspected sits, so the
     /// arrow points across from it rather than from the middle of the window.
     let pointsFrom: CGFloat?
@@ -55,7 +56,7 @@ struct PharoInspectionPane: View {
     private var inspected: some View {
         switch inspection {
         case .live(let object):
-            PharoInspectorView(runtime: runtime, root: object, onClose: onClose)
+            PharoInspectorView(runtime: runtime, root: object, path: path, onClose: onClose)
         case .captured(let snapshot):
             PharoSnapshotView(snapshot: snapshot)
                 .overlay(alignment: .topTrailing) { closeButton }

@@ -23,18 +23,26 @@ struct NotebookView: View {
     @State private var inspection: PharoInspection?
     @State private var inspected: UUID?
     @State private var centers: [UUID: CGFloat] = [:]
+    @State private var columnPath = PharoColumnPath()
 
     var body: some View {
-        HSplitView {
-            page
-                .pharoPane()
-                .padding(8)
-                .frame(minWidth: 320, idealWidth: 520)
+        VStack(spacing: 0) {
+            // The strip stands over the whole page, entries included, rather
+            // than over the columns alone.
+            PharoOverviewStrip(path: columnPath)
+            Divider()
 
-            inspectionSide
-                .padding(.vertical, 8)
-                .padding(.trailing, 8)
-                .frame(minWidth: 320)
+            HSplitView {
+                page
+                    .pharoPane()
+                    .padding(8)
+                    .frame(minWidth: 320, idealWidth: 520)
+
+                inspectionSide
+                    .padding(.vertical, 8)
+                    .padding(.trailing, 8)
+                    .frame(minWidth: 320)
+            }
         }
         .coordinateSpace(name: pharoPageSpace)
         .background(.pharoGutter)
@@ -49,7 +57,7 @@ struct NotebookView: View {
             Color.clear
 
             if let inspection {
-                PharoInspectionPane(inspection: inspection, pointsFrom: inspected.flatMap { centers[$0] }) {
+                PharoInspectionPane(inspection: inspection, path: columnPath, pointsFrom: inspected.flatMap { centers[$0] }) {
                     self.inspection = nil
                 }
             }
