@@ -3,8 +3,7 @@ import SwiftUI
 import Combine
 import SwiftyPharo
 
-/// What the snippet shows alongside its text: the classes the reader opened,
-/// and the value the last evaluation produced.
+/// What the snippet shows alongside its text.
 struct PharoSnippetMarks: Equatable {
     var openedClasses: [String: PharoObject] = [:]
     var result: PharoObject?
@@ -15,9 +14,8 @@ struct PharoSnippetMarks: Equatable {
     }
 }
 
-/// A multi-line Smalltalk editor that grows with its text, completes from the
-/// image, and carries its marks as text attachments so they take up room in the
-/// line rather than sitting over the words after them.
+/// A multi-line Smalltalk editor. Its marks are text attachments, so they take
+/// up room in the line rather than sitting over the words after them.
 struct PharoSourceEditor: NSViewRepresentable {
     let id: UUID
     @Binding var source: String
@@ -79,8 +77,7 @@ struct PharoSourceEditor: NSViewRepresentable {
     }
 }
 
-/// What the image answers for a cursor: the candidates, and how far back they
-/// reach so accepting one replaces the whole token rather than appending.
+/// The candidates for a cursor, and how far back they reach.
 struct PharoCompletionList: Sendable {
     let tokenStart: Int
     let candidates: [String]
@@ -495,10 +492,9 @@ final class PharoTextView: NSTextView {
     }
 }
 
-/// What a snippet marks: the triangle after a class it names, the class opened
-/// in place below that line, and the value the snippet last produced. The
-/// triangle and the opened class are separate so the triangle keeps its place
-/// in the line while the class lands on the next.
+/// What a snippet marks. A class's triangle and its opened body are separate
+/// marks, so the triangle keeps its place in the line while the body lands on
+/// the next.
 enum PharoMarkContent {
     case classTriangle(String)
     case classBody(String)
@@ -515,8 +511,7 @@ enum PharoMarkContent {
     }
 }
 
-/// Holds a mark's view, and tells the text view which of its subviews are marks
-/// so it can hand them the pointer.
+/// Holds a mark's view, and marks it as one for the text view's sake.
 final class PharoMarkHostingView: NSView {
     init(content: some View) {
         super.init(frame: .zero)
@@ -593,10 +588,8 @@ nonisolated final class PharoMarkViewProvider: NSTextAttachmentViewProvider, @un
     }
 }
 
-/// A class mark's state, which the view in the text observes: opening one has
-/// the same view grow from the triangle alone to the triangle above the class.
-/// What the snippet last produced, which the dot in the text watches so a fresh
-/// result fills the mark already there rather than needing a new one.
+/// A class mark's state, which the view in the text observes.
+/// What the snippet last produced, which the dot in the text watches.
 final class PharoResultMarkModel: ObservableObject {
     @Published var object: PharoObject?
     var onOpen: (PharoObject) -> Void = { _ in }
@@ -621,9 +614,7 @@ final class PharoClassMarkModel: ObservableObject {
     }
 }
 
-/// The triangle GT puts after a class name. It reads as a button: the pointer
-/// turns into a hand over it and it lights up, which the text view's own I-beam
-/// would otherwise hide.
+/// The triangle GT puts after a class name.
 private struct PharoClassTriangle: View {
     @ObservedObject var model: PharoClassMarkModel
 
@@ -643,9 +634,7 @@ private struct PharoClassTriangle: View {
     }
 }
 
-/// The class itself, opened on the line below its triangle. Drilling from here
-/// goes to the pane beside the page, not deeper into the line. Nothing when
-/// closed, so the line reads as if it were not there.
+/// The class itself, opened on the line below its triangle.
 private struct PharoClassBody: View {
     @ObservedObject var model: PharoClassMarkModel
 
@@ -661,8 +650,7 @@ private struct PharoClassBody: View {
     }
 }
 
-/// The dot GT appends once a snippet has produced something, so the reader can
-/// go back to the value without evaluating again.
+/// The dot GT appends once a snippet has produced something.
 private struct PharoResultDot: View {
     @ObservedObject var model: PharoResultMarkModel
 
@@ -684,8 +672,7 @@ private struct PharoResultDot: View {
 }
 
 
-/// A mark and where in the source it belongs. Two marks are the same mark when
-/// they say the same thing in the same place.
+/// A mark and where in the source it belongs.
 struct PharoPlacedMark: Equatable {
     let sourceOffset: Int
     let content: PharoMarkContent
