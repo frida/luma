@@ -517,6 +517,7 @@ struct PharoOverviewStrip: View {
     private func scroll(toFraction fraction: CGFloat) {
         let index = Int((fraction * total).rounded())
         let clamped = min(max(index, 0), path.objects.count)
+        path.shown = clamped == 0 ? nil : clamped - 1
         path.leading = clamped == 0
             ? PharoColumnPath.snippetsID
             : path.objects[clamped - 1].handle
