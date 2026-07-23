@@ -30,6 +30,13 @@ final class PharoColumnPath {
     func isOnScreen(_ index: Int) -> Bool {
         index >= leadingIndex && CGFloat(index) < CGFloat(leadingIndex) + visibleColumns
     }
+
+    /// Nothing is open any more, so the strip is back to the snippets alone.
+    func clear() {
+        objects = []
+        shown = nil
+        leading = Self.snippetsID
+    }
 }
 
 /// Walks an object through the views it declares, opening each selection in a
