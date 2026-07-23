@@ -26,31 +26,24 @@ struct NotebookView: View {
     @State private var columnPath = PharoColumnPath()
 
     var body: some View {
-        VStack(spacing: 0) {
-            // The strip stands over the whole page, entries included, rather
-            // than over the columns alone.
-            PharoOverviewStrip(path: columnPath)
-            Divider()
+        ScrollView(.horizontal) {
+            HStack(spacing: 0) {
+                page
+                    .frame(width: pageWidth)
+                    .pharoPane()
+                    .id(PharoColumnPath.snippetsID)
 
-            ScrollView(.horizontal) {
-                HStack(spacing: 0) {
-                    page
-                        .frame(width: pageWidth)
-                        .pharoPane()
-                        .id(PharoColumnPath.snippetsID)
-
-                    inspectionSide
-                }
-                .scrollTargetLayout()
+                inspectionSide
             }
-            // A margin rather than padding, so that scrolling something to the
-            // leading edge leaves the same gap before it that it had at rest.
-            .contentMargins(8, for: .scrollContent)
-            .scrollPosition(
-                id: Binding { columnPath.leading } set: { columnPath.leading = $0 },
-                anchor: .leading)
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { columnPath.visibleWidth = $0 }
+            .scrollTargetLayout()
         }
+        // A margin rather than padding, so that scrolling something to the
+        // leading edge leaves the same gap before it that it had at rest.
+        .contentMargins(8, for: .scrollContent)
+        .scrollPosition(
+            id: Binding { columnPath.leading } set: { columnPath.leading = $0 },
+            anchor: .leading)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { columnPath.visibleWidth = $0 }
         .coordinateSpace(name: pharoPageSpace)
         .background(.pharoGutter)
     }
