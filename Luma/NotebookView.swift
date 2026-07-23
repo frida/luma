@@ -32,37 +32,38 @@ struct NotebookView: View {
             PharoOverviewStrip(path: columnPath)
             Divider()
 
-            HSplitView {
-                page
-                    .pharoPane()
-                    .padding(8)
-                    .frame(minWidth: 320, idealWidth: 520)
+            ScrollView(.horizontal) {
+                HStack(spacing: 0) {
+                    page
+                        .frame(width: pageWidth)
+                        .pharoPane()
+                        .id(PharoColumnPath.snippetsID)
 
-                inspectionSide
-                    .padding(.vertical, 8)
-                    .padding(.trailing, 8)
-                    .frame(minWidth: 320)
+                    inspectionSide
+                }
+                .padding(8)
+                .scrollTargetLayout()
             }
+            .scrollPosition(
+                id: Binding { columnPath.leading } set: { columnPath.leading = $0 },
+                anchor: .leading)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { columnPath.visibleWidth = $0 }
         }
         .coordinateSpace(name: pharoPageSpace)
         .background(.pharoGutter)
     }
 
 
-    /// Always the same view, whether or not it is showing anything: swapping
-    /// one out for another has HSplitView lay the divider out afresh, undoing
-    /// wherever the reader had put it.
+    @ViewBuilder
     private var inspectionSide: some View {
-        ZStack {
-            Color.clear
-
-            if let inspection {
-                PharoInspectionPane(inspection: inspection, path: columnPath, pointsFrom: inspected.flatMap { centers[$0] }) {
-                    self.inspection = nil
-                }
+        if let inspection {
+            PharoInspectionPane(inspection: inspection, path: columnPath, pointsFrom: inspected.flatMap { centers[$0] }) {
+                self.inspection = nil
             }
         }
     }
+
+    private let pageWidth: CGFloat = 520
 
     private var page: some View {
         Group {

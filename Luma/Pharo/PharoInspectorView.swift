@@ -11,17 +11,24 @@ final class PharoColumnPath {
     var leading: Int?
     var visibleWidth: CGFloat = 0
 
+    /// The page of snippets scrolls with the columns, and is the first of them
+    /// as far as the strip and the scroller are concerned.
+    static let snippetsID = 0
+
     /// One column is a pane plus the arrow before it, save the first with none.
     var visibleColumns: CGFloat {
         max(visibleWidth / 344, 1)
     }
 
-    var leadingColumn: Int {
-        objects.firstIndex { $0.handle == leading } ?? 0
+    /// Where the leftmost thing on screen sits in the strip, counting the page
+    /// of snippets as the first.
+    var leadingIndex: Int {
+        guard let leading, leading != Self.snippetsID else { return 0 }
+        return (objects.firstIndex { $0.handle == leading } ?? 0) + 1
     }
 
-    func isOnScreen(_ depth: Int) -> Bool {
-        depth >= leadingColumn && CGFloat(depth) < CGFloat(leadingColumn) + visibleColumns
+    func isOnScreen(_ index: Int) -> Bool {
+        index >= leadingIndex && CGFloat(index) < CGFloat(leadingIndex) + visibleColumns
     }
 }
 
@@ -40,30 +47,27 @@ struct PharoInspectorView: View {
             .onChange(of: root.handle, initial: true) { startOver(at: root) }
     }
 
+    /// The columns alone: the page they belong to does the scrolling, so that
+    /// the snippets travel with them rather than beside them.
     private var columns: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 0) {
-                ForEach(Array(path.objects.enumerated()), id: \.element.handle) { depth, object in
-                    if depth > 0 {
-                        PharoDrillArrow()
-                    }
-
-                    PharoObjectColumn(
-                        runtime: runtime,
-                        object: object,
-                        onSelect: { open($0, from: depth) },
-                        onClose: { close(from: depth) })
-                    .frame(width: 320)
-                    .pharoPane()
-                    .id(object.handle)
+        HStack(spacing: 0) {
+            ForEach(Array(path.objects.enumerated()), id: \.element.handle) { depth, object in
+                // The pane before the first column draws the arrow into it, so
+                // that one points across from the snippet it came from.
+                if depth > 0 {
+                    PharoDrillArrow()
                 }
+
+                PharoObjectColumn(
+                    runtime: runtime,
+                    object: object,
+                    onSelect: { open($0, from: depth) },
+                    onClose: { close(from: depth) })
+                .frame(width: 320)
+                .pharoPane()
+                .id(object.handle)
             }
-            .scrollTargetLayout()
         }
-        .scrollPosition(
-            id: Binding { path.leading } set: { path.leading = $0 },
-            anchor: .leading)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { path.visibleWidth = $0 }
     }
 
     private func open(_ object: PharoObject, from depth: Int) {
@@ -451,18 +455,18 @@ struct PharoOverviewStrip: View {
         HStack(spacing: previewSpacing) {
             PharoOverviewSquare(
                 isCurrent: path.shown == nil,
-                isOnScreen: true,
+                isOnScreen: path.isOnScreen(0),
                 printString: "Snippets",
                 width: previewWidth,
                 height: previewHeight) {
                 path.shown = nil
-                path.leading = path.objects.first?.handle
+                path.leading = PharoColumnPath.snippetsID
             }
 
             ForEach(Array(path.objects.enumerated()), id: \.element.handle) { depth, object in
                 PharoOverviewSquare(
                     isCurrent: path.shown == depth,
-                    isOnScreen: path.isOnScreen(depth),
+                    isOnScreen: path.isOnScreen(depth + 1),
                     printString: object.printString,
                     width: previewWidth,
                     height: previewHeight) {
@@ -478,7 +482,7 @@ struct PharoOverviewStrip: View {
         return PharoOverviewThumb(
             trackWidth: overviewWidth,
             fractionVisible: span,
-            fractionLeading: min(CGFloat(path.leadingColumn) / total, 1 - span))
+            fractionLeading: min(CGFloat(path.leadingIndex) / total, 1 - span))
     }
 
     /// The page of snippets is always on screen and always counted, so the
@@ -488,7 +492,7 @@ struct PharoOverviewStrip: View {
     }
 
     private var onScreen: CGFloat {
-        min(path.visibleColumns, CGFloat(path.objects.count)) + 1
+        min(path.visibleColumns, total)
     }
 
     private var overviewWidth: CGFloat {
