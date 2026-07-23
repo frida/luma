@@ -41,11 +41,18 @@ struct NotebookView: View {
     }
 
 
-    @ViewBuilder
+    /// Always the same view, whether or not it is showing anything: swapping
+    /// one out for another has HSplitView lay the divider out afresh, undoing
+    /// wherever the reader had put it, and leaves the page a box of its own
+    /// width rather than the whole width.
     private var inspectionSide: some View {
-        if let inspection {
-            PharoInspectionPane(inspection: inspection, pointsFrom: inspected.flatMap { centers[$0] }) {
-                self.inspection = nil
+        ZStack {
+            Color.clear
+
+            if let inspection {
+                PharoInspectionPane(inspection: inspection, pointsFrom: inspected.flatMap { centers[$0] }) {
+                    self.inspection = nil
+                }
             }
         }
     }
