@@ -18,6 +18,11 @@ final class PharoColumnPath {
 
     static let pageID = 0
 
+    /// A marker sits past the last column. Revealing the newest scrolls to it
+    /// rather than to the column, whose own list is a scroller that throws off
+    /// how far a scroll to the column reaches.
+    static let trailingID = -1
+
     var slotCount: Int {
         pageSlots + objects.count
     }
@@ -76,7 +81,7 @@ final class PharoColumnPath {
     }
 
     private func revealNewest() {
-        bring(slot: slotCount - 1, to: .trailing)
+        scrollTarget = PharoScrollTarget(id: Self.trailingID, anchor: .trailing)
     }
 
     private func bring(slot: Int, to anchor: UnitPoint) {
@@ -133,6 +138,10 @@ struct PharoColumnsView: View {
                 .pharoPane()
                 .id(object.handle)
             }
+
+            Color.clear
+                .frame(width: 1)
+                .id(PharoColumnPath.trailingID)
         }
     }
 }
