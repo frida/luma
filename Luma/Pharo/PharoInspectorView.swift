@@ -75,10 +75,6 @@ final class PharoColumnPath {
         visibleIDs = Set(ids)
     }
 
-    func scrolled() {
-        scrollTarget = nil
-    }
-
     private func revealNewest() {
         bring(slot: slotCount - 1, to: .trailing)
     }
@@ -176,25 +172,9 @@ private struct PharoColumnScrolling: ViewModifier {
             content
                 .onChange(of: path.scrollTarget) { _, target in
                     guard let target else { return }
-                    path.scrolled()
-                    scroll(to: target, with: proxy)
+                    proxy.scrollTo(target.id, anchor: target.anchor)
                 }
                 .onScrollTargetVisibilityChange(idType: Int.self) { path.markVisible($0) }
-        }
-    }
-
-    /// A newly opened column is not laid out under its id for a turn or two, so
-    /// the scroll to it is tried again until it takes; one already on screen is
-    /// there at once.
-    private func scroll(to target: PharoScrollTarget, with proxy: ScrollViewProxy) {
-        let attempts = target.anchor == .trailing ? 5 : 1
-        Task { @MainActor in
-            for attempt in 0..<attempts {
-                if attempt > 0 {
-                    try? await Task.sleep(for: .milliseconds(16))
-                }
-                proxy.scrollTo(target.id, anchor: target.anchor)
-            }
         }
     }
 }
