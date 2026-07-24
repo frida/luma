@@ -56,7 +56,7 @@ struct PharoPlaygroundView: View {
     private var inspectionSide: some View {
         if !columnPath.objects.isEmpty {
             PharoPointingArrow(pointsFrom: inspected.flatMap { centers[$0] })
-            PharoColumnsView(runtime: runtime, path: columnPath, onCloseAll: columnPath.clear)
+            pharoColumns(runtime: runtime, path: columnPath, onCloseAll: columnPath.clear)
         }
     }
 
