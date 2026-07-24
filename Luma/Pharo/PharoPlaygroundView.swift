@@ -39,11 +39,7 @@ struct PharoPlaygroundView: View {
             // A margin rather than padding, so that scrolling something to the
             // leading edge leaves the same gap before it that it had at rest.
             .contentMargins(8, for: .scrollContent)
-            .scrollPosition(
-                id: Binding { columnPath.leading } set: { columnPath.leading = $0 },
-                anchor: .leading)
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { columnPath.visibleWidth = $0 }
-            .onAppear { columnPath.pageWidth = pageWidth }
+            .pharoColumnScrolling(columnPath)
         }
         .coordinateSpace(name: pharoPageSpace)
         .background(.pharoGutter)
