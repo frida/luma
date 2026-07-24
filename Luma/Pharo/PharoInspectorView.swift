@@ -177,13 +177,24 @@ private struct PharoColumnScrolling: ViewModifier {
                 .onChange(of: path.scrollTarget) { _, target in
                     guard let target else { return }
                     path.scrolled()
-                    // A column opened this turn is not laid out under its id
-                    // yet, so scrolling to it waits for the turn to finish.
-                    DispatchQueue.main.async {
-                        proxy.scrollTo(target.id, anchor: target.anchor)
-                    }
+                    scroll(to: target, with: proxy)
                 }
                 .onScrollTargetVisibilityChange(idType: Int.self) { path.markVisible($0) }
+        }
+    }
+
+    /// A newly opened column is not laid out under its id for a turn or two, so
+    /// the scroll to it is tried again until it takes; one already on screen is
+    /// there at once.
+    private func scroll(to target: PharoScrollTarget, with proxy: ScrollViewProxy) {
+        let attempts = target.anchor == .trailing ? 5 : 1
+        Task { @MainActor in
+            for attempt in 0..<attempts {
+                if attempt > 0 {
+                    try? await Task.sleep(for: .milliseconds(16))
+                }
+                proxy.scrollTo(target.id, anchor: target.anchor)
+            }
         }
     }
 }
