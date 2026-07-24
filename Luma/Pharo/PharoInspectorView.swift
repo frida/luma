@@ -352,8 +352,8 @@ private struct PharoItemsList: View {
         // GT drills on activation rather than on merely selecting a row. Watching
         // for the second click leaves the list's own handling of the first alone,
         // so selection stays quick and the arrow keys still walk the rows.
-        .background(PharoDoubleClickCatcher {
-            guard let row = selection else { return }
+        .background(PharoDoubleClickCatcher { row in
+            selection = row
             Task { await drill(into: row) }
         })
         .onKeyPress(.return) {
@@ -480,8 +480,11 @@ private struct PharoCloseButton: View {
 
 /// Notices a double-click over the list without taking the click, so the list
 /// keeps handling selection and keyboard travel itself.
+/// Reports which row a double-click landed on, read from the table under the
+/// pointer rather than from the selection, which the first click of the two has
+/// not always finished settling by the time the second arrives.
 private struct PharoDoubleClickCatcher: NSViewRepresentable {
-    let activate: () -> Void
+    let activate: (Int) -> Void
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
@@ -502,11 +505,11 @@ private struct PharoDoubleClickCatcher: NSViewRepresentable {
     }
 
     final class Coordinator {
-        var activate: () -> Void = {}
+        var activate: (Int) -> Void = { _ in }
         private var monitor: Any?
         private weak var view: NSView?
 
-        func watch(_ view: NSView, activate: @escaping () -> Void) {
+        func watch(_ view: NSView, activate: @escaping (Int) -> Void) {
             self.view = view
             self.activate = activate
             monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
@@ -516,10 +519,25 @@ private struct PharoDoubleClickCatcher: NSViewRepresentable {
         }
 
         private func noticed(_ event: NSEvent) {
-            guard event.clickCount == 2, let view, let window = view.window, event.window === window else { return }
-            let inView = view.convert(event.locationInWindow, from: nil)
-            guard view.bounds.contains(inView) else { return }
-            activate()
+            guard event.clickCount == 2, let view, let window = view.window, event.window === window,
+                view.bounds.contains(view.convert(event.locationInWindow, from: nil)),
+                let table = table(under: event.locationInWindow, in: window)
+            else { return }
+
+            let row = table.row(at: table.convert(event.locationInWindow, from: nil))
+            guard row >= 0 else { return }
+            activate(row)
+        }
+
+        private func table(under point: NSPoint, in window: NSWindow) -> NSTableView? {
+            var hit = window.contentView?.hitTest(point)
+            while let view = hit {
+                if let table = view as? NSTableView {
+                    return table
+                }
+                hit = view.superview
+            }
+            return nil
         }
 
         func stop() {
