@@ -171,17 +171,16 @@ extension View {
 private struct PharoColumnScrolling: ViewModifier {
     let path: PharoColumnPath
 
-    @State private var position = ScrollPosition()
-
     func body(content: Content) -> some View {
-        content
-            .scrollPosition($position)
-            .onChange(of: path.scrollTarget) { _, target in
-                guard let target else { return }
-                position.scrollTo(id: target.id, anchor: target.anchor)
-                path.scrolled()
-            }
-            .onScrollTargetVisibilityChange(idType: Int.self) { path.markVisible($0) }
+        ScrollViewReader { proxy in
+            content
+                .onChange(of: path.scrollTarget) { _, target in
+                    guard let target else { return }
+                    proxy.scrollTo(target.id, anchor: target.anchor)
+                    path.scrolled()
+                }
+                .onScrollTargetVisibilityChange(idType: Int.self) { path.markVisible($0) }
+        }
     }
 }
 
