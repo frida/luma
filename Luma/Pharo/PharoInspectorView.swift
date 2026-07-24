@@ -8,8 +8,7 @@ final class PharoColumnPath {
     var objects: [PharoObject] = []
     /// Which column is the current one, or nothing when the page itself is.
     var shown: Int?
-    var leading: Int?
-    var visibleWidth: CGFloat = 0
+    private(set) var scrollTarget: PharoScrollTarget?
 
     let includesPage: Bool
 
@@ -19,54 +18,42 @@ final class PharoColumnPath {
 
     static let pageID = 0
 
-    static let columnWidth: CGFloat = 344
-
-    var pageWidth: CGFloat = 344
-
-    var visibleSlots: Int {
-        var used: CGFloat = 0
-        var count = 0
-        for slot in leadingSlot..<slotCount {
-            used += width(ofSlot: slot)
-            guard used <= visibleWidth else { break }
-            count += 1
-        }
-        return max(count, 1)
-    }
-
     var slotCount: Int {
         pageSlots + objects.count
-    }
-
-    var leadingSlot: Int {
-        guard let leading, leading != Self.pageID else { return 0 }
-        return (objects.firstIndex { $0.handle == leading } ?? 0) + pageSlots
-    }
-
-    func isOnScreen(_ slot: Int) -> Bool {
-        slot >= leadingSlot && slot < leadingSlot + visibleSlots
     }
 
     func slot(ofColumn depth: Int) -> Int {
         depth + pageSlots
     }
 
+    var leadingSlot: Int {
+        onScreenSlots.min() ?? 0
+    }
+
+    var visibleSlots: Int {
+        max(onScreenSlots.count, 1)
+    }
+
+    func isOnScreen(_ slot: Int) -> Bool {
+        onScreenSlots.contains(slot)
+    }
+
     func show(slot: Int) {
         let clamped = min(max(slot, 0), slotCount - 1)
         shown = clamped < pageSlots ? nil : clamped - pageSlots
-        leading = id(atSlot: clamped)
+        bring(slot: clamped, to: .leading)
     }
 
     func startOver(at object: PharoObject) {
         objects = [object]
         shown = 0
-        leading = object.handle
+        revealNewest()
     }
 
     func open(_ object: PharoObject, from depth: Int) {
         objects = objects.prefix(depth + 1) + [object]
         shown = objects.count - 1
-        revealLast()
+        revealNewest()
     }
 
     /// Answers whether the page's own first column was the one closed, which is
@@ -81,30 +68,51 @@ final class PharoColumnPath {
     func clear() {
         objects = []
         shown = nil
-        leading = Self.pageID
+        bring(slot: 0, to: .leading)
     }
 
-    private func revealLast() {
-        var slot = slotCount - 1
-        var used = width(ofSlot: slot)
-        while slot > 0, used + width(ofSlot: slot - 1) <= visibleWidth {
-            slot -= 1
-            used += width(ofSlot: slot)
-        }
-        leading = id(atSlot: slot)
+    func markVisible(_ ids: [Int]) {
+        visibleIDs = Set(ids)
     }
 
-    private func width(ofSlot slot: Int) -> CGFloat {
-        slot < pageSlots ? pageWidth : Self.columnWidth
+    func scrolled() {
+        scrollTarget = nil
     }
 
-    private func id(atSlot slot: Int) -> Int? {
+    private func revealNewest() {
+        bring(slot: slotCount - 1, to: .trailing)
+    }
+
+    private func bring(slot: Int, to anchor: UnitPoint) {
+        scrollTarget = PharoScrollTarget(id: id(atSlot: slot), anchor: anchor)
+    }
+
+    private var onScreenSlots: Set<Int> {
+        Set(visibleIDs.compactMap(slot(ofID:)))
+    }
+
+    private func slot(ofID id: Int) -> Int? {
+        guard id != Self.pageID else { return pageSlots > 0 ? 0 : nil }
+        return objects.firstIndex { $0.handle == id }.map { $0 + pageSlots }
+    }
+
+    private func id(atSlot slot: Int) -> Int {
         slot < pageSlots ? Self.pageID : objects[slot - pageSlots].handle
     }
 
     private var pageSlots: Int {
         includesPage ? 1 : 0
     }
+
+    private var visibleIDs: Set<Int> = []
+}
+
+/// A scroll the path is asking its scroller to make. The stamp sets each one
+/// apart, so asking twice for the same place scrolls both times.
+struct PharoScrollTarget: Equatable {
+    let id: Int
+    let anchor: UnitPoint
+    let stamp = UUID()
 }
 
 /// The columns side by side. Whoever shows them does the scrolling.
@@ -147,11 +155,33 @@ struct PharoInspectorView: View {
             PharoColumnsView(runtime: runtime, path: path, onCloseAll: onClose)
                 .scrollTargetLayout()
         }
-        .scrollPosition(
-            id: Binding { path.leading } set: { path.leading = $0 },
-            anchor: .leading)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { path.visibleWidth = $0 }
+        .pharoColumnScrolling(path)
         .onChange(of: root.handle, initial: true) { path.startOver(at: root) }
+    }
+}
+
+extension View {
+    /// Drives a horizontal scroller from a column path: it scrolls where the
+    /// path asks, and the path learns which columns are on screen.
+    func pharoColumnScrolling(_ path: PharoColumnPath) -> some View {
+        modifier(PharoColumnScrolling(path: path))
+    }
+}
+
+private struct PharoColumnScrolling: ViewModifier {
+    let path: PharoColumnPath
+
+    @State private var position = ScrollPosition()
+
+    func body(content: Content) -> some View {
+        content
+            .scrollPosition($position)
+            .onChange(of: path.scrollTarget) { _, target in
+                guard let target else { return }
+                position.scrollTo(id: target.id, anchor: target.anchor)
+                path.scrolled()
+            }
+            .onScrollTargetVisibilityChange(idType: Int.self) { path.markVisible($0) }
     }
 }
 
