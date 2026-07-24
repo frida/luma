@@ -176,8 +176,12 @@ private struct PharoColumnScrolling: ViewModifier {
             content
                 .onChange(of: path.scrollTarget) { _, target in
                     guard let target else { return }
-                    proxy.scrollTo(target.id, anchor: target.anchor)
                     path.scrolled()
+                    // A column opened this turn is not laid out under its id
+                    // yet, so scrolling to it waits for the turn to finish.
+                    DispatchQueue.main.async {
+                        proxy.scrollTo(target.id, anchor: target.anchor)
+                    }
                 }
                 .onScrollTargetVisibilityChange(idType: Int.self) { path.markVisible($0) }
         }
