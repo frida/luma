@@ -116,34 +116,34 @@ struct PharoScrollTarget: Equatable {
     let stamp = UUID()
 }
 
-/// The columns side by side. Whoever shows them does the scrolling.
-struct PharoColumnsView: View {
-    let runtime: PharoRuntime
-    let path: PharoColumnPath
-    let onCloseAll: () -> Void
-
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(Array(path.objects.enumerated()), id: \.element.handle) { depth, object in
-                if depth > 0 {
-                    PharoDrillArrow()
-                }
-
-                PharoObjectColumn(
-                    runtime: runtime,
-                    object: object,
-                    onSelect: { path.open($0, from: depth) },
-                    onClose: { if path.close(from: depth) { onCloseAll() } })
-                .frame(width: 320)
-                .pharoPane()
-                .id(object.handle)
-            }
-
-            Color.clear
-                .frame(width: 1)
-                .id(PharoColumnPath.trailingID)
+/// The columns side by side, as loose content for the page's own scroller to
+/// hold. Each is a direct child there, which is what has the scroller report it
+/// as it comes and goes on screen; wrapped in a view of their own they would
+/// not be seen. Whoever shows them does the scrolling.
+@ViewBuilder
+func pharoColumns(
+    runtime: PharoRuntime,
+    path: PharoColumnPath,
+    onCloseAll: @escaping () -> Void
+) -> some View {
+    ForEach(Array(path.objects.enumerated()), id: \.element.handle) { depth, object in
+        if depth > 0 {
+            PharoDrillArrow()
         }
+
+        PharoObjectColumn(
+            runtime: runtime,
+            object: object,
+            onSelect: { path.open($0, from: depth) },
+            onClose: { if path.close(from: depth) { onCloseAll() } })
+        .frame(width: 320)
+        .pharoPane()
+        .id(object.handle)
     }
+
+    Color.clear
+        .frame(width: 1)
+        .id(PharoColumnPath.trailingID)
 }
 
 /// Walks an object through the views it declares, opening each selection in a
@@ -157,8 +157,10 @@ struct PharoInspectorView: View {
 
     var body: some View {
         ScrollView(.horizontal) {
-            PharoColumnsView(runtime: runtime, path: path, onCloseAll: onClose)
-                .scrollTargetLayout()
+            HStack(spacing: 0) {
+                pharoColumns(runtime: runtime, path: path, onCloseAll: onClose)
+            }
+            .scrollTargetLayout()
         }
         .pharoColumnScrolling(path)
         .onChange(of: root.handle, initial: true) { path.startOver(at: root) }
