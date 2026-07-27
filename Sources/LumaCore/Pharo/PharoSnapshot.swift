@@ -69,7 +69,7 @@ extension PharoSnapshot {
         let page = try await runtime.items(
             of: object,
             view: declaration.methodSelector,
-            from: 0,
+            from: 1,
             count: retainedItemCount
         )
         if page.total == 0 {
