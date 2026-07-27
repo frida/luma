@@ -1469,6 +1469,7 @@ public final class ProjectStore: Sendable {
             t.column("styled_details", .blob)
             t.column("js_value", .blob)
             t.column("pharo_snapshot", .blob)
+            t.column("pharo_result_fuel", .blob)
             t.column("binary_data", .blob)
             t.column("session_id", .text)
             t.column("process_name", .text)
@@ -1836,6 +1837,7 @@ public final class ProjectStore: Sendable {
         try addColumnIfMissing(db, table: "repl_cell", column: "language", definition: "TEXT NOT NULL DEFAULT '\(javascript)'")
         try addColumnIfMissing(db, table: "notebook_entry", column: "styled_details", definition: "BLOB")
         try addColumnIfMissing(db, table: "notebook_entry", column: "pharo_snapshot", definition: "BLOB")
+        try addColumnIfMissing(db, table: "notebook_entry", column: "pharo_result_fuel", definition: "BLOB")
         try addColumnIfMissing(db, table: "project_ui_state", column: "pharo_snippets_json", definition: "TEXT")
         let collapsed = SidebarExpansion.collapsed.rawValue
         try addColumnIfMissing(db, table: "session_ui_state", column: "modules_expansion", definition: "TEXT NOT NULL DEFAULT '\(collapsed)'")

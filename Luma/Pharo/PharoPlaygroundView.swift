@@ -131,7 +131,8 @@ struct PharoPlaygroundView: View {
         do {
             let produced = try await runtime.evaluate(snippet.source)
             results[snippet.id] = produced
-            keep(try await PharoSnapshot.capture(of: produced, using: runtime), for: snippet.id)
+            let snapshot = try await PharoSnapshot.capture(of: produced, using: runtime)
+            keep(snapshot: snapshot, fuel: try? await runtime.serialize(produced), for: snippet.id)
             show(produced, from: snippet.id)
             failure = nil
         } catch {
@@ -139,16 +140,27 @@ struct PharoPlaygroundView: View {
         }
     }
 
-    /// The dot leads to the live result while the image still holds it, and to
-    /// what the run captured once it does not.
+    /// The dot leads to the result: the live object while the image holds it,
+    /// the Fuel bytes brought back to a live one once a later session opens it,
+    /// and the static capture when there is nothing to revive it from.
     private func openResult(for snippet: PharoPlaygroundSnippet) -> (() -> Void)? {
+        guard results[snippet.id] != nil || snippet.resultFuel != nil || snippet.snapshot != nil else {
+            return nil
+        }
+        return { Task { await reopen(snippet) } }
+    }
+
+    private func reopen(_ snippet: PharoPlaygroundSnippet) async {
         if let object = results[snippet.id] {
-            return { show(object, from: snippet.id) }
+            return show(object, from: snippet.id)
+        }
+        if let fuel = snippet.resultFuel, isReady, let revived = try? await runtime.materialize(fuel) {
+            results[snippet.id] = revived
+            return show(revived, from: snippet.id)
         }
         if let snapshot = snippet.snapshot {
-            return { showCaptured(snapshot, from: snippet.id) }
+            showCaptured(snapshot, from: snippet.id)
         }
-        return nil
     }
 
     private func show(_ object: PharoObject, from snippet: UUID) {
@@ -163,19 +175,17 @@ struct PharoPlaygroundView: View {
         captured = snapshot
     }
 
-    private func keep(_ snapshot: PharoSnapshot, for snippet: UUID) {
+    private func keep(snapshot: PharoSnapshot, fuel: Data?, for snippet: UUID) {
         guard let index = snippets.firstIndex(where: { $0.id == snippet }) else { return }
         snippets[index].snapshot = snapshot
+        snippets[index].resultFuel = fuel
     }
 
     private func forget(_ snippet: UUID) {
         results[snippet] = nil
-        keepNothing(for: snippet)
-    }
-
-    private func keepNothing(for snippet: UUID) {
         guard let index = snippets.firstIndex(where: { $0.id == snippet }) else { return }
         snippets[index].snapshot = nil
+        snippets[index].resultFuel = nil
     }
 
     private func remove(_ snippet: PharoPlaygroundSnippet) {
