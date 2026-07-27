@@ -114,62 +114,6 @@ final class PharoTextView: NSTextView {
     var classReferences: ((String) async -> [PharoClassReference])?
     var onFocused: (() -> Void)?
 
-    override func becomeFirstResponder() -> Bool {
-        let became = super.becomeFirstResponder()
-        if became { onFocused?() }
-        return became
-    }
-
-    /// The text view reasserts the I-beam as the pointer travels, so anything
-    /// else asking for the hand only wins between moves and the two flicker.
-    /// It has to be the one to decide, for the marks as well as for the text.
-    override func cursorUpdate(with event: NSEvent) {
-        guard isOverMark(event) else { return super.cursorUpdate(with: event) }
-        NSCursor.pointingHand.set()
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        guard isOverMark(event) else { return super.mouseMoved(with: event) }
-        NSCursor.pointingHand.set()
-    }
-
-    private func isOverMark(_ event: NSEvent) -> Bool {
-        let point = convert(event.locationInWindow, from: nil)
-        return marksIn(self).contains { $0.convert($0.bounds, to: self).contains(point) }
-    }
-
-    private func marksIn(_ view: NSView) -> [NSView] {
-        view.subviews.flatMap { subview -> [NSView] in
-            subview is PharoMarkHostingView ? [subview] : marksIn(subview)
-        }
-    }
-
-    /// The marks are invisible to the caret: crossing a class name's marks, and
-    /// the space they push ahead of the next word, takes one press, not one per
-    /// hidden character.
-    override func moveRight(_ sender: Any?) {
-        super.moveRight(sender)
-        skipMarksFromCaret(forward: true)
-    }
-
-    override func moveLeft(_ sender: Any?) {
-        super.moveLeft(sender)
-        skipMarksFromCaret(forward: false)
-    }
-
-    private func skipMarksFromCaret(forward: Bool) {
-        let selection = selectedRange()
-        guard selection.length == 0 else { return }
-
-        let units = Array(string.utf16)
-        var caret = selection.location
-        while caret > 0, caret <= units.count, units[caret - 1] == markCharacter {
-            caret += forward ? 1 : -1
-            guard caret >= 0, caret <= units.count else { break }
-        }
-        setSelectedRange(NSRange(location: max(0, min(caret, units.count)), length: 0))
-    }
-
     private var runtime: PharoRuntime?
     private var marks = PharoSnippetMarks()
     private var onToggleClass: ((String) -> Void)?
@@ -447,6 +391,61 @@ final class PharoTextView: NSTextView {
         ]
     }
 
+    override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became { onFocused?() }
+        return became
+    }
+
+    /// The marks are invisible to the caret: crossing a class name's marks, and
+    /// the space they push ahead of the next word, takes one press, not one per
+    /// hidden character.
+    override func moveRight(_ sender: Any?) {
+        super.moveRight(sender)
+        skipMarksFromCaret(forward: true)
+    }
+
+    override func moveLeft(_ sender: Any?) {
+        super.moveLeft(sender)
+        skipMarksFromCaret(forward: false)
+    }
+
+    private func skipMarksFromCaret(forward: Bool) {
+        let selection = selectedRange()
+        guard selection.length == 0 else { return }
+
+        let units = Array(string.utf16)
+        var caret = selection.location
+        while caret > 0, caret <= units.count, units[caret - 1] == markCharacter {
+            caret += forward ? 1 : -1
+            guard caret >= 0, caret <= units.count else { break }
+        }
+        setSelectedRange(NSRange(location: max(0, min(caret, units.count)), length: 0))
+    }
+
+    /// The text view reasserts the I-beam as the pointer travels, so anything
+    /// else asking for the hand only wins between moves and the two flicker.
+    /// It has to be the one to decide, for the marks as well as for the text.
+    override func cursorUpdate(with event: NSEvent) {
+        guard isOverMark(event) else { return super.cursorUpdate(with: event) }
+        NSCursor.pointingHand.set()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard isOverMark(event) else { return super.mouseMoved(with: event) }
+        NSCursor.pointingHand.set()
+    }
+
+    private func isOverMark(_ event: NSEvent) -> Bool {
+        let point = convert(event.locationInWindow, from: nil)
+        return marksIn(self).contains { $0.convert($0.bounds, to: self).contains(point) }
+    }
+
+    private func marksIn(_ view: NSView) -> [NSView] {
+        view.subviews.flatMap { subview -> [NSView] in
+            subview is PharoMarkHostingView ? [subview] : marksIn(subview)
+        }
+    }
 
     override func complete(_ sender: Any?) {
         if let fetched {
