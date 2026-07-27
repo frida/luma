@@ -44,18 +44,12 @@ struct PharoNotebookCell: View {
                 source: $source,
                 focused: $focused,
                 runtime: runtime,
-                result: evaluated,
                 open: { object in
                     inspected = entry.id
                     inspection = .live(object)
                 },
+                openResult: openResult,
                 evaluate: { Task { await evaluate() } },
-                inspect: snapshot.map { captured in
-                    {
-                        inspected = entry.id
-                        inspection = .captured(captured)
-                    }
-                },
                 remove: nil
             )
             .onChange(of: source) {
@@ -73,6 +67,24 @@ struct PharoNotebookCell: View {
                     .frame(height: 60)
             }
         }
+    }
+
+    /// The dot leads to the live result while the image still holds it, and to
+    /// what the run captured once it does not.
+    private var openResult: (() -> Void)? {
+        if let evaluated {
+            return {
+                inspected = entry.id
+                inspection = .live(evaluated)
+            }
+        }
+        if let snapshot {
+            return {
+                inspected = entry.id
+                inspection = .captured(snapshot)
+            }
+        }
+        return nil
     }
 
     private func evaluate() async {

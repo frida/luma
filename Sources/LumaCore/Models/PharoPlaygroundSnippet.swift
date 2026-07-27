@@ -6,9 +6,13 @@ import Foundation
 public struct PharoPlaygroundSnippet: Codable, Identifiable, Equatable, Sendable {
     public var id: UUID
     public var source: String
+    /// What the last run produced, captured so the result survives closing the
+    /// project, when the live object it came from is long gone.
+    public var snapshot: PharoSnapshot?
 
-    public init(id: UUID = UUID(), source: String) {
+    public init(id: UUID = UUID(), source: String, snapshot: PharoSnapshot? = nil) {
         self.id = id
         self.source = source
+        self.snapshot = snapshot
     }
 }

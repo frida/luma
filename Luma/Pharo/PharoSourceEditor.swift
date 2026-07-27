@@ -6,10 +6,10 @@ import SwiftyPharo
 /// What the snippet shows alongside its text.
 struct PharoSnippetMarks: Equatable {
     var openedClasses: [String: PharoObject] = [:]
-    var result: PharoObject?
+    var hasResult: Bool = false
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.result?.handle == rhs.result?.handle
+        lhs.hasResult == rhs.hasResult
             && lhs.openedClasses.mapValues(\.handle) == rhs.openedClasses.mapValues(\.handle)
     }
 }
@@ -24,6 +24,7 @@ struct PharoSourceEditor: NSViewRepresentable {
     let marks: PharoSnippetMarks
     let onToggleClass: (String) -> Void
     let onOpen: (PharoObject) -> Void
+    let onOpenResult: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -41,7 +42,7 @@ struct PharoSourceEditor: NSViewRepresentable {
         view.isAutomaticTextReplacementEnabled = false
         view.drawsBackground = false
         view.textContainerInset = NSSize(width: 4, height: 6)
-        view.apply(runtime: runtime, marks: marks, onToggleClass: onToggleClass, onOpen: onOpen)
+        view.apply(runtime: runtime, marks: marks, onToggleClass: onToggleClass, onOpen: onOpen, onOpenResult: onOpenResult)
         view.setSource(source)
         return view
     }
@@ -49,7 +50,7 @@ struct PharoSourceEditor: NSViewRepresentable {
     func updateNSView(_ view: PharoTextView, context: Context) {
         context.coordinator.parent = self
         view.onFocused = { focused = id }
-        view.apply(runtime: runtime, marks: marks, onToggleClass: onToggleClass, onOpen: onOpen)
+        view.apply(runtime: runtime, marks: marks, onToggleClass: onToggleClass, onOpen: onOpen, onOpenResult: onOpenResult)
         if view.source != source {
             view.setSource(source)
         }
@@ -195,11 +196,13 @@ final class PharoTextView: NSTextView {
         runtime: PharoRuntime,
         marks: PharoSnippetMarks,
         onToggleClass: @escaping (String) -> Void,
-        onOpen: @escaping (PharoObject) -> Void
+        onOpen: @escaping (PharoObject) -> Void,
+        onOpenResult: @escaping () -> Void
     ) {
         self.runtime = runtime
         self.onToggleClass = onToggleClass
         self.onOpen = onOpen
+        resultModel.open = onOpenResult
         guard self.marks != marks else { return }
         self.marks = marks
         expandOpenedClasses()
@@ -229,12 +232,11 @@ final class PharoTextView: NSTextView {
     /// in: inserting it now would leave a mark NSTextView never builds a view
     /// for, and it would show as a placeholder until something forced a pass.
     private func showResult() {
-        guard resultModel.object?.handle != marks.result?.handle else { return }
+        guard resultModel.hasResult != marks.hasResult else { return }
 
-        let result = marks.result
+        let hasResult = marks.hasResult
         DispatchQueue.main.async {
-            self.resultModel.object = result
-            self.resultModel.onOpen = { [weak self] object in self?.onOpen?(object) }
+            self.resultModel.hasResult = hasResult
             guard let attachment = self.attachments[.result] else { return }
             let wanted = self.bounds(for: .result)
             guard attachment.bounds != wanted else { return }
@@ -363,7 +365,7 @@ final class PharoTextView: NSTextView {
             return classModels[name]?.opened != nil
                 ? CGRect(x: 0, y: 0, width: openedWidth, height: openedHeight)
                 : CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
-        case .result where resultModel.object == nil:
+        case .result where !resultModel.hasResult:
             return CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
         case .classTriangle, .result:
             let side = (font ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular))
@@ -506,7 +508,7 @@ enum PharoMarkContent {
         switch self {
         case .classTriangle: 0
         case .classBody: 1
-        case .result: 0
+        case .result: 2
         }
     }
 }
@@ -591,8 +593,8 @@ nonisolated final class PharoMarkViewProvider: NSTextAttachmentViewProvider, @un
 /// A class mark's state, which the view in the text observes.
 /// What the snippet last produced, which the dot in the text watches.
 final class PharoResultMarkModel: ObservableObject {
-    @Published var object: PharoObject?
-    var onOpen: (PharoObject) -> Void = { _ in }
+    @Published var hasResult = false
+    var open: () -> Void = {}
 }
 
 final class PharoClassMarkModel: ObservableObject {
@@ -657,11 +659,11 @@ private struct PharoResultDot: View {
     @State private var isPointedAt = false
 
     var body: some View {
-        Button { model.object.map { model.onOpen($0) } } label: {
+        Button(action: model.open) {
             Circle()
                 .fill(isPointedAt ? Color.fridaBrand : Color.secondary)
                 .frame(width: 8, height: 8)
-                .opacity(model.object == nil ? 0 : 1)
+                .opacity(model.hasResult ? 1 : 0)
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
