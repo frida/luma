@@ -35,7 +35,7 @@ struct PharoSourceEditor: NSViewRepresentable {
         Coordinator(self)
     }
 
-    func makeNSView(context: Context) -> PharoTextView {
+    func makeNSView(context: Context) -> NSScrollView {
         let view = PharoTextView()
         view.delegate = context.coordinator
         view.onFocused = { if focused != id { focused = id } }
@@ -52,12 +52,25 @@ struct PharoSourceEditor: NSViewRepresentable {
         view.isAutomaticTextReplacementEnabled = false
         view.drawsBackground = false
         view.textContainerInset = NSSize(width: 4, height: 6)
+        view.isHorizontallyResizable = true
+        view.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        view.textContainer?.widthTracksTextView = false
+        view.textContainer?.size = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         view.apply(runtime: runtime, marks: marks, onToggleClass: onToggleClass, onOpen: onOpen, onOpenResult: onOpenResult)
         view.setSource(source)
-        return view
+
+        let scroll = NSScrollView()
+        scroll.documentView = view
+        scroll.drawsBackground = false
+        scroll.hasHorizontalScroller = true
+        scroll.hasVerticalScroller = false
+        scroll.verticalScrollElasticity = .none
+        scroll.autohidesScrollers = true
+        return scroll
     }
 
-    func updateNSView(_ view: PharoTextView, context: Context) {
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        let view = scroll.documentView as! PharoTextView
         context.coordinator.parent = self
         view.onFocused = { if focused != id { focused = id } }
         view.onEdit = { source = $0 }
@@ -70,9 +83,10 @@ struct PharoSourceEditor: NSViewRepresentable {
         }
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: PharoTextView, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView scroll: NSScrollView, context: Context) -> CGSize? {
         guard let width = proposal.width else { return nil }
-        return CGSize(width: width, height: nsView.height(fitting: width))
+        let view = scroll.documentView as! PharoTextView
+        return CGSize(width: width, height: view.height(fitting: width))
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
@@ -389,7 +403,7 @@ final class PharoTextView: NSTextView {
     }
 
     private var openedWidth: CGFloat {
-        (textContainer?.size.width ?? bounds.width) - 2 * textContainerInset.width
+        (enclosingScrollView?.contentSize.width ?? bounds.width) - 2 * textContainerInset.width
     }
 
     private let openedHeight: CGFloat = 260
@@ -645,8 +659,7 @@ final class PharoTextView: NSTextView {
     }
 
     func height(fitting width: CGFloat) -> CGFloat {
-        guard let layout = textLayoutManager, let container = textContainer else { return 0 }
-        container.size = NSSize(width: width - 2 * textContainerInset.width, height: .greatestFiniteMagnitude)
+        guard let layout = textLayoutManager else { return 0 }
         layout.ensureLayout(for: layout.documentRange)
         return layout.usageBoundsForTextContainer.height + 2 * textContainerInset.height
     }
