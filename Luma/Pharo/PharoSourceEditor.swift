@@ -26,6 +26,10 @@ struct PharoSourceEditor: NSViewRepresentable {
     let onOpen: (PharoObject) -> Void
     let onOpenResult: () -> Void
     var selfClass: String? = nil
+    /// Marks are attachment views, which NSTextView only builds at the level it
+    /// first lays them out; an editor already sitting inside a mark cannot host
+    /// marks of its own, so a nested one stays plain text.
+    var resolvesReferences: Bool = true
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -36,8 +40,10 @@ struct PharoSourceEditor: NSViewRepresentable {
         view.delegate = context.coordinator
         view.onFocused = { if focused != id { focused = id } }
         view.completions = runtime.completionList
-        view.classReferences = runtime.namedClasses(in:)
-        view.methodReferences = { source in await runtime.methods(in: source, selfClass: selfClass) }
+        if resolvesReferences {
+            view.classReferences = runtime.namedClasses(in:)
+            view.methodReferences = { source in await runtime.methods(in: source, selfClass: selfClass) }
+        }
         view.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
         view.isRichText = false
         view.isAutomaticQuoteSubstitutionEnabled = false
@@ -135,6 +141,7 @@ final class PharoTextView: NSTextView {
     private var attachments: [PharoMarkContent: PharoMarkAttachment] = [:]
     private var classModels: [String: PharoClassMarkModel] = [:]
     private var methodModels: [String: PharoMethodMarkModel] = [:]
+    private var methodBodyHeights: [String: CGFloat] = [:]
     private let resultModel = PharoResultMarkModel()
 
     var source: String {
@@ -332,7 +339,7 @@ final class PharoTextView: NSTextView {
                 : CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
         case .methodBody(let key):
             return methodModels[key]?.opened == true
-                ? CGRect(x: 0, y: 0, width: openedWidth, height: openedHeight)
+                ? CGRect(x: 0, y: 0, width: openedWidth, height: methodBodyHeights[key] ?? openedHeight)
                 : CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
         case .result where !resultModel.hasResult:
             return CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
@@ -389,6 +396,7 @@ final class PharoTextView: NSTextView {
             reference: reference,
             onToggle: { [weak self] in self?.toggleMethod(key) },
             onOpen: { [weak self] in self?.onOpen?($0) })
+        model.onHeight = { [weak self] in self?.noteMethodBodyHeight(key, $0) }
         methodModels[key] = model
         return model
     }
@@ -396,6 +404,13 @@ final class PharoTextView: NSTextView {
     private func toggleMethod(_ key: String) {
         guard let model = methodModels[key] else { return }
         model.opened.toggle()
+        resizeMethodBody(key)
+    }
+
+    private func noteMethodBodyHeight(_ key: String, _ height: CGFloat) {
+        let bounded = min(height, openedHeight)
+        guard methodBodyHeights[key] != bounded else { return }
+        methodBodyHeights[key] = bounded
         resizeMethodBody(key)
     }
 
@@ -684,6 +699,7 @@ final class PharoMethodMarkModel: ObservableObject {
     let reference: PharoMethodReference
     let onToggle: () -> Void
     let onOpen: (PharoObject) -> Void
+    var onHeight: (CGFloat) -> Void = { _ in }
     @Published var opened = false
 
     init(
@@ -731,6 +747,9 @@ private struct PharoMethodBody: View {
                 runtime: model.runtime,
                 onSelect: model.onOpen)
             .pharoPane()
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { model.onHeight($0) }
+            .frame(maxHeight: .infinity, alignment: .top)
         }
     }
 }

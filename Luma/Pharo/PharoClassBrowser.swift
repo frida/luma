@@ -199,7 +199,8 @@ private struct PharoMethodRow: View {
                 onToggleClass: toggleClass,
                 onOpen: onSelect,
                 onOpenResult: {},
-                selfClass: classObject.printString)
+                selfClass: classObject.printString,
+                resolvesReferences: false)
 
             if isDirty {
                 HStack(spacing: 6) {
@@ -320,7 +321,8 @@ struct PharoMethodEditor: View {
                 onToggleClass: toggleClass,
                 onOpen: onSelect,
                 onOpenResult: {},
-                selfClass: reference.className)
+                selfClass: reference.className,
+                resolvesReferences: false)
             .padding(.horizontal, 4)
             .padding(.bottom, 6)
         }
