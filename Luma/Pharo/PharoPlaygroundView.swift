@@ -48,7 +48,10 @@ struct PharoPlaygroundView: View {
         .coordinateSpace(name: pharoPageSpace)
         .background(.pharoGutter)
         .task { await start() }
-        .onAppear { snippets = engine.pharoSnippets.isEmpty ? [PharoPlaygroundSnippet(source: "1 to: 20")] : engine.pharoSnippets }
+        .onAppear {
+            snippets = engine.pharoSnippets.isEmpty ? [PharoPlaygroundSnippet(source: "1 to: 20")] : engine.pharoSnippets
+            pageWidth = engine.pharoPageWidth.map { CGFloat($0) } ?? 420
+        }
         .onChange(of: snippets) { engine.setPharoSnippets(snippets) }
     }
 
@@ -85,7 +88,10 @@ struct PharoPlaygroundView: View {
                         resizingFrom = base
                         pageWidth = min(max(base + drag.translation.width, 260), 900)
                     }
-                    .onEnded { _ in resizingFrom = nil })
+                    .onEnded { _ in
+                        resizingFrom = nil
+                        engine.setPharoPageWidth(pageWidth)
+                    })
     }
 
     private var page: some View {

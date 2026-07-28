@@ -13,6 +13,7 @@ struct PharoClassBrowser: View {
     @State private var failure: String?
     @State private var expanded: Set<String> = []
     @State private var focused: UUID?
+    @State private var reveal: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -62,18 +63,28 @@ struct PharoClassBrowser: View {
         if let failure {
             PharoFailureView(message: failure)
         } else {
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(info?.methods ?? []) { method in
-                        PharoMethodRow(
-                            method: method,
-                            runtime: runtime,
-                            isExpanded: expanded.contains(method.id),
-                            focused: $focused,
-                            toggleExpanded: { toggle(method.id) },
-                            onSelect: onSelect)
-                        Divider()
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(info?.methods ?? []) { method in
+                            PharoMethodRow(
+                                method: method,
+                                runtime: runtime,
+                                isExpanded: expanded.contains(method.id),
+                                focused: $focused,
+                                toggleExpanded: { toggle(method.id) },
+                                onSelect: onSelect)
+                            .id(method.id)
+                            Divider()
+                        }
                     }
+                }
+                .onChange(of: reveal) { _, target in
+                    guard let target else { return }
+                    reveal = nil
+                    // The opened method grows this turn, so scroll to it once it
+                    // has laid out.
+                    DispatchQueue.main.async { proxy.scrollTo(target) }
                 }
             }
         }
@@ -84,6 +95,7 @@ struct PharoClassBrowser: View {
             expanded.remove(id)
         } else {
             expanded.insert(id)
+            reveal = id
         }
     }
 
@@ -138,7 +150,9 @@ private struct PharoMethodRow: View {
             }
         }
         .onChange(of: isExpanded) {
-            if !isExpanded, isFocused {
+            if isExpanded {
+                focused = id
+            } else if isFocused {
                 focused = nil
             }
         }

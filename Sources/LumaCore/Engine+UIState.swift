@@ -19,6 +19,19 @@ extension Engine {
         }
     }
 
+    public var pharoPageWidth: Double? {
+        projectUIState.pharoPageWidth
+    }
+
+    public func setPharoPageWidth(_ width: Double) {
+        guard projectUIState.pharoPageWidth != width else { return }
+        Task { @MainActor [weak self] in
+            guard let self, self.projectUIState.pharoPageWidth != width else { return }
+            self.projectUIState.pharoPageWidth = width
+            try? self.store.save(self.projectUIState)
+        }
+    }
+
     public func setEventStreamCollapsed(_ collapsed: Bool) {
         guard projectUIState.isEventStreamCollapsed != collapsed else { return }
         Task { @MainActor [weak self] in
