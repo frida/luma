@@ -33,7 +33,7 @@ struct PharoSourceEditor: NSViewRepresentable {
     func makeNSView(context: Context) -> PharoTextView {
         let view = PharoTextView()
         view.delegate = context.coordinator
-        view.onFocused = { focused = id }
+        view.onFocused = { if focused != id { focused = id } }
         view.completions = runtime.completionList
         view.classReferences = runtime.namedClasses(in:)
         view.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
@@ -49,7 +49,7 @@ struct PharoSourceEditor: NSViewRepresentable {
 
     func updateNSView(_ view: PharoTextView, context: Context) {
         context.coordinator.parent = self
-        view.onFocused = { focused = id }
+        view.onFocused = { if focused != id { focused = id } }
         view.apply(runtime: runtime, marks: marks, onToggleClass: onToggleClass, onOpen: onOpen, onOpenResult: onOpenResult)
         if view.source != source {
             view.setSource(source)
