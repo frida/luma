@@ -42,16 +42,60 @@ struct PharoClassHeader: View {
 /// them. It stands in for the plain list our inspector would otherwise draw for
 /// the Methods view, so drilling and browsing meet in one place.
 struct PharoMethodList: View {
-    let methods: [PharoMethodInfo]
     let runtime: PharoRuntime
     let classObject: PharoObject
     let onSelect: (PharoObject) -> Void
 
+    @State private var methods: [PharoMethodInfo]
     @State private var expanded: Set<String> = []
     @State private var focused: UUID?
     @State private var reveal: String?
+    @State private var isAdding = false
+
+    init(
+        methods: [PharoMethodInfo],
+        runtime: PharoRuntime,
+        classObject: PharoObject,
+        onSelect: @escaping (PharoObject) -> Void
+    ) {
+        _methods = State(initialValue: methods)
+        self.runtime = runtime
+        self.classObject = classObject
+        self.onSelect = onSelect
+    }
 
     var body: some View {
+        VStack(spacing: 0) {
+            toolbar
+            if isAdding {
+                PharoNewMethodEditor(
+                    runtime: runtime,
+                    classObject: classObject,
+                    onSaved: { isAdding = false; Task { await reload() } },
+                    onCancel: { isAdding = false })
+                .padding(.horizontal, 4)
+                .padding(.bottom, 6)
+                Divider()
+            }
+            methodRows
+        }
+    }
+
+    private var toolbar: some View {
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+            Button { isAdding.toggle() } label: {
+                Image(systemName: "plus")
+                    .foregroundStyle(isAdding ? Color.fridaBrand : .secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Add a method")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+    }
+
+    private var methodRows: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
@@ -79,12 +123,94 @@ struct PharoMethodList: View {
         }
     }
 
+    private func reload() async {
+        guard let info = try? await runtime.classBrowser(of: classObject) else { return }
+        methods = info.methods
+    }
+
     private func toggle(_ id: String) {
         if expanded.contains(id) {
             expanded.remove(id)
         } else {
             expanded.insert(id)
             reveal = id
+        }
+    }
+}
+
+/// The coder GT opens from the Methods view's "+": a template method whose
+/// source, side and category the reader sets before it is compiled in.
+private struct PharoNewMethodEditor: View {
+    let runtime: PharoRuntime
+    let classObject: PharoObject
+    let onSaved: () -> Void
+    let onCancel: () -> Void
+
+    @State private var id = UUID()
+    @State private var source = "newMethod"
+    @State private var side = "instance"
+    @State private var category = "as yet unclassified"
+    @State private var focused: UUID?
+    @State private var saveError: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Button(action: save) {
+                    Image(systemName: "checkmark").font(.caption).frame(width: 16, height: 12)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .keyboardShortcut("s", modifiers: .command)
+                .help("Compile")
+                Button(action: onCancel) {
+                    Image(systemName: "xmark").font(.caption).frame(width: 16, height: 12)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("Discard")
+                if let saveError {
+                    Text(saveError).font(.caption).foregroundStyle(.red).lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                TextField("category", text: $category)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.caption)
+                    .frame(width: 140)
+                Picker("", selection: $side) {
+                    Text("instance").tag("instance")
+                    Text("class").tag("class")
+                }
+                .labelsHidden()
+                .controlSize(.small)
+                .fixedSize()
+            }
+            PharoSourceEditor(
+                id: id,
+                source: $source,
+                focused: $focused,
+                runtime: runtime,
+                marks: PharoSnippetMarks(openedClasses: [:], hasResult: false),
+                onToggleClass: { _ in },
+                onOpen: { _ in },
+                onOpenResult: {},
+                selfClass: classObject.printString,
+                resolvesReferences: false)
+        }
+    }
+
+    private func save() {
+        Task {
+            do {
+                _ = try await runtime.compileMethod(
+                    in: classObject,
+                    side: side,
+                    category: category,
+                    source: source)
+                onSaved()
+            } catch {
+                saveError = error.localizedDescription
+            }
         }
     }
 }
