@@ -35,7 +35,7 @@ struct PharoSourceEditor: NSViewRepresentable {
         Coordinator(self)
     }
 
-    func makeNSView(context: Context) -> NSScrollView {
+    func makeNSView(context: Context) -> PharoTextView {
         let view = PharoTextView()
         view.delegate = context.coordinator
         view.onFocused = { if focused != id { focused = id } }
@@ -52,25 +52,12 @@ struct PharoSourceEditor: NSViewRepresentable {
         view.isAutomaticTextReplacementEnabled = false
         view.drawsBackground = false
         view.textContainerInset = NSSize(width: 4, height: 6)
-        view.isHorizontallyResizable = true
-        view.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        view.textContainer?.widthTracksTextView = false
-        view.textContainer?.size = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         view.apply(runtime: runtime, marks: marks, onToggleClass: onToggleClass, onOpen: onOpen, onOpenResult: onOpenResult)
         view.setSource(source)
-
-        let scroll = NSScrollView()
-        scroll.documentView = view
-        scroll.drawsBackground = false
-        scroll.hasHorizontalScroller = true
-        scroll.hasVerticalScroller = false
-        scroll.verticalScrollElasticity = .none
-        scroll.autohidesScrollers = true
-        return scroll
+        return view
     }
 
-    func updateNSView(_ scroll: NSScrollView, context: Context) {
-        let view = scroll.documentView as! PharoTextView
+    func updateNSView(_ view: PharoTextView, context: Context) {
         context.coordinator.parent = self
         view.onFocused = { if focused != id { focused = id } }
         view.onEdit = { source = $0 }
@@ -83,10 +70,9 @@ struct PharoSourceEditor: NSViewRepresentable {
         }
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView scroll: NSScrollView, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: PharoTextView, context: Context) -> CGSize? {
         guard let width = proposal.width else { return nil }
-        let view = scroll.documentView as! PharoTextView
-        return CGSize(width: width, height: view.height(fitting: width))
+        return CGSize(width: width, height: nsView.height(fitting: width))
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
@@ -172,13 +158,7 @@ final class PharoTextView: NSTextView {
     private let resultModel = PharoResultMarkModel()
 
     var source: String {
-        let units = Array(string.utf16)
-        var kept: [UTF16.CodeUnit] = []
-        kept.reserveCapacity(units.count)
-        for index in units.indices where !isStructural(units, index) {
-            kept.append(units[index])
-        }
-        return String(utf16CodeUnits: kept, count: kept.count)
+        string.replacingOccurrences(of: "\u{FFFC}", with: "")
     }
 
     func setSource(_ newSource: String) {
@@ -240,43 +220,11 @@ final class PharoTextView: NSTextView {
     }
 
     private func resizeClassBody(_ name: String) {
-        updateOwnLine(.classBody(name), open: classModels[name]?.opened != nil)
         guard let attachment = attachments[.classBody(name)] else { return }
         let wanted = bounds(for: .classBody(name))
         guard attachment.bounds != wanted else { return }
         attachment.resize(to: wanted)
         textLayoutManager.map { $0.invalidateLayout(for: $0.documentRange) }
-    }
-
-    /// A closed body sits inline, taking no room; an open one needs the line to
-    /// itself, so opening one lays a newline ahead of it and closing takes it
-    /// back. The newline reads as structural, so the source never sees it.
-    private func updateOwnLine(_ content: PharoMarkContent, open: Bool) {
-        guard let storage = textStorage, let location = attachmentLocation(of: content) else { return }
-        let units = Array(string.utf16)
-        let hasNewline = location > 0 && units[location - 1] == newlineUnit
-        guard open != hasNewline else { return }
-
-        isApplyingMarks = true
-        let cursor = sourceCursor
-        if open {
-            storage.insert(NSAttributedString(string: "\n", attributes: sourceAttributes), at: location)
-        } else {
-            storage.deleteCharacters(in: NSRange(location: location - 1, length: 1))
-        }
-        setSelectedRange(NSRange(location: storageOffset(forSource: cursor), length: 0))
-        isApplyingMarks = false
-    }
-
-    private func attachmentLocation(of content: PharoMarkContent) -> Int? {
-        var found: Int?
-        textStorage?.enumerateAttribute(.attachment, in: NSRange(location: 0, length: string.utf16.count)) {
-            value, range, stop in
-            guard let attachment = value as? PharoMarkAttachment, attachment.content == content else { return }
-            found = range.location
-            stop.pointee = true
-        }
-        return found
     }
 
     override func layout() {
@@ -333,14 +281,8 @@ final class PharoTextView: NSTextView {
         isApplyingMarks = true
         let cursor = sourceCursor
         storage.beginEditing()
-        let units = Array(string.utf16)
         for placed in stale.sorted(by: { $0.storageOffset > $1.storageOffset }) {
-            let onOwnLine = placed.mark.content.startsOnOwnLine
-                && placed.storageOffset > 0
-                && units[placed.storageOffset - 1] == newlineUnit
-            storage.deleteCharacters(in: NSRange(
-                location: onOwnLine ? placed.storageOffset - 1 : placed.storageOffset,
-                length: onOwnLine ? 2 : 1))
+            storage.deleteCharacters(in: NSRange(location: placed.storageOffset, length: 1))
         }
         let ordered = missing.sorted {
             ($0.sourceOffset, $0.content.insertionOrder) > ($1.sourceOffset, $1.content.insertionOrder)
@@ -436,7 +378,7 @@ final class PharoTextView: NSTextView {
     }
 
     private var openedWidth: CGFloat {
-        (enclosingScrollView?.contentSize.width ?? bounds.width) - 2 * textContainerInset.width
+        (textContainer?.size.width ?? bounds.width) - 2 * textContainerInset.width
     }
 
     private let openedHeight: CGFloat = 260
@@ -505,7 +447,6 @@ final class PharoTextView: NSTextView {
     }
 
     private func resizeMethodBody(_ key: String) {
-        updateOwnLine(.methodBody(key), open: methodModels[key]?.opened == true)
         guard let attachment = attachments[.methodBody(key)] else { return }
         let wanted = bounds(for: .methodBody(key))
         guard attachment.bounds != wanted else { return }
@@ -525,9 +466,7 @@ final class PharoTextView: NSTextView {
 
 
     private var sourceCursor: Int {
-        let units = Array(string.utf16)
-        let location = min(selectedRange().location, units.count)
-        return (0..<location).count { !isStructural(units, $0) }
+        string.utf16.prefix(selectedRange().location).count { $0 != markCharacter }
     }
 
     private func storageOffset(forSource cursor: Int) -> Int {
@@ -535,7 +474,7 @@ final class PharoTextView: NSTextView {
         var counted = 0
         var offset = 0
         while offset < units.count, counted < cursor {
-            if !isStructural(units, offset) {
+            if units[offset] != markCharacter {
                 counted += 1
             }
             offset += 1
@@ -544,22 +483,10 @@ final class PharoTextView: NSTextView {
     }
 
     private func sourceOffset(ofStorage offset: Int) -> Int {
-        let units = Array(string.utf16)
-        let end = min(offset, units.count)
-        return (0..<end).count { !isStructural(units, $0) }
+        string.utf16.prefix(offset).count { $0 != markCharacter }
     }
 
     private let markCharacter: UTF16.CodeUnit = 0xFFFC
-    private let newlineUnit: UTF16.CodeUnit = 0x000A
-
-    /// A mark's character, and the newline that carries an opened body onto its
-    /// own line, are both the editor's doing: invisible to the source and to the
-    /// caret's count of it.
-    private func isStructural(_ units: [UTF16.CodeUnit], _ index: Int) -> Bool {
-        let unit = units[index]
-        if unit == markCharacter { return true }
-        return unit == newlineUnit && index + 1 < units.count && units[index + 1] == markCharacter
-    }
 
     private var sourceAttributes: [NSAttributedString.Key: Any] {
         [
@@ -593,7 +520,7 @@ final class PharoTextView: NSTextView {
 
         let units = Array(string.utf16)
         var caret = selection.location
-        while caret > 0, caret <= units.count, isStructural(units, caret - 1) {
+        while caret > 0, caret <= units.count, units[caret - 1] == markCharacter {
             caret += forward ? 1 : -1
             guard caret >= 0, caret <= units.count else { break }
         }
@@ -646,7 +573,6 @@ final class PharoTextView: NSTextView {
     }
 
     private func resizeNewClassBody(_ key: String) {
-        updateOwnLine(.newClassBody(key), open: undeclaredModels[key]?.isDefining == true)
         guard let attachment = attachments[.newClassBody(key)] else { return }
         let wanted = bounds(for: .newClassBody(key))
         guard attachment.bounds != wanted else { return }
@@ -717,7 +643,8 @@ final class PharoTextView: NSTextView {
     }
 
     func height(fitting width: CGFloat) -> CGFloat {
-        guard let layout = textLayoutManager else { return 0 }
+        guard let layout = textLayoutManager, let container = textContainer else { return 0 }
+        container.size = NSSize(width: width - 2 * textContainerInset.width, height: .greatestFiniteMagnitude)
         layout.ensureLayout(for: layout.documentRange)
         return layout.usageBoundsForTextContainer.height + 2 * textContainerInset.height
     }
@@ -746,15 +673,6 @@ enum PharoMarkContent {
         case .undeclaredWrench: 0
         case .newClassBody: 1
         case .result: 2
-        }
-    }
-
-    /// A body opens on the line below its trigger; a triangle, wrench or dot sits
-    /// inline where the words are.
-    var startsOnOwnLine: Bool {
-        switch self {
-        case .classBody, .methodBody, .newClassBody: true
-        default: false
         }
     }
 }
