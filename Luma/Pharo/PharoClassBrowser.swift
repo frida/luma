@@ -154,37 +154,7 @@ private struct PharoNewMethodEditor: View {
     @State private var saveError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Button(action: save) {
-                    Image(systemName: "checkmark").font(.caption).frame(width: 16, height: 12)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .keyboardShortcut("s", modifiers: .command)
-                .help("Compile")
-                Button(action: onCancel) {
-                    Image(systemName: "xmark").font(.caption).frame(width: 16, height: 12)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .help("Discard")
-                if let saveError {
-                    Text(saveError).font(.caption).foregroundStyle(.red).lineLimit(1)
-                }
-                Spacer(minLength: 8)
-                TextField("category", text: $category)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.caption)
-                    .frame(width: 140)
-                Picker("", selection: $side) {
-                    Text("instance").tag("instance")
-                    Text("class").tag("class")
-                }
-                .labelsHidden()
-                .controlSize(.small)
-                .fixedSize()
-            }
+        VStack(alignment: .leading, spacing: 6) {
             PharoSourceEditor(
                 id: id,
                 source: $source,
@@ -196,6 +166,35 @@ private struct PharoNewMethodEditor: View {
                 onOpenResult: {},
                 selfClass: classObject.printString,
                 resolvesReferences: false)
+            .frame(minHeight: 48, alignment: .topLeading)
+
+            HStack(spacing: 6) {
+                Button(action: save) {
+                    Image(systemName: "checkmark").font(.caption).frame(width: 16, height: 12)
+                }
+                .keyboardShortcut("s", modifiers: .command)
+                .help("Compile")
+                Button(action: onCancel) {
+                    Image(systemName: "trash").font(.caption).frame(width: 16, height: 12)
+                }
+                .help("Discard")
+                if let saveError {
+                    Text(saveError).font(.caption).foregroundStyle(.red).lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                TextField("category", text: $category)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.caption)
+                    .frame(width: 150)
+                Picker("", selection: $side) {
+                    Text("instance").tag("instance")
+                    Text("class").tag("class")
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
         }
     }
 
