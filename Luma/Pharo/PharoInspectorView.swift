@@ -131,7 +131,7 @@ func pharoColumns(
             PharoDrillArrow()
         }
 
-        PharoObjectColumn(
+        PharoObjectPane(
             runtime: runtime,
             object: object,
             onSelect: { path.open($0, from: depth) },
@@ -144,6 +144,23 @@ func pharoColumns(
     Color.clear
         .frame(width: 1)
         .id(PharoColumnPath.trailingID)
+}
+
+/// One column of the inspector: a class opens in its browser, anything else in
+/// the moldable inspector.
+struct PharoObjectPane: View {
+    let runtime: PharoRuntime
+    let object: PharoObject
+    let onSelect: (PharoObject) -> Void
+    let onClose: () -> Void
+
+    var body: some View {
+        if object.isClass {
+            PharoClassBrowser(runtime: runtime, object: object, onSelect: onSelect, onClose: onClose)
+        } else {
+            PharoObjectColumn(runtime: runtime, object: object, onSelect: onSelect, onClose: onClose)
+        }
+    }
 }
 
 /// Walks an object through the views it declares, opening each selection in a
