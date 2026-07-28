@@ -43,7 +43,9 @@ struct PharoSourceEditor: NSViewRepresentable {
         if resolvesReferences {
             view.classReferences = runtime.namedClasses(in:)
             view.methodReferences = { source in await runtime.methods(in: source, selfClass: selfClass) }
+            view.undeclaredVariables = runtime.undeclared(in:)
         }
+        view.onEdit = { source = $0 }
         view.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
         view.isRichText = false
         view.isAutomaticQuoteSubstitutionEnabled = false
@@ -58,6 +60,7 @@ struct PharoSourceEditor: NSViewRepresentable {
     func updateNSView(_ view: PharoTextView, context: Context) {
         context.coordinator.parent = self
         view.onFocused = { if focused != id { focused = id } }
+        view.onEdit = { source = $0 }
         view.apply(runtime: runtime, marks: marks, onToggleClass: onToggleClass, onOpen: onOpen, onOpenResult: onOpenResult)
         if view.source != source {
             view.setSource(source)
@@ -114,6 +117,11 @@ extension PharoRuntime {
         (try? await whenRunning { try await methodReferences(in: source, selfClass: selfClass) }) ?? []
     }
 
+    /// Nor the names it leaves undeclared.
+    func undeclared(in source: String) async -> [PharoUndeclaredVariable] {
+        (try? await whenRunning { try await undeclaredVariables(in: source) }) ?? []
+    }
+
     private func whenRunning<Answer>(_ request: () async throws -> Answer) async throws -> Answer {
         try await runningState()
         return try await request()
@@ -126,7 +134,9 @@ final class PharoTextView: NSTextView {
     var completions: ((String, Int) async -> PharoCompletionList)?
     var classReferences: ((String) async -> [PharoClassReference])?
     var methodReferences: ((String) async -> [PharoMethodReference])?
+    var undeclaredVariables: ((String) async -> [PharoUndeclaredVariable])?
     var onFocused: (() -> Void)?
+    var onEdit: ((String) -> Void)?
 
     private var runtime: PharoRuntime?
     private var marks = PharoSnippetMarks()
@@ -136,6 +146,8 @@ final class PharoTextView: NSTextView {
     private var fetched: PharoCompletionList?
     private var references: [PharoClassReference] = []
     private var methodRefs: [PharoMethodReference] = []
+    private var undeclared: [PharoUndeclaredVariable] = []
+    private var quickFix: NSPopover?
     private var referencedSource: String?
     private var isApplyingMarks = false
     private var attachments: [PharoMarkContent: PharoMarkAttachment] = [:]
@@ -241,11 +253,37 @@ final class PharoTextView: NSTextView {
         Task { @MainActor in
             let classes = await classReferences?(source) ?? []
             let methods = await methodReferences?(source) ?? []
+            let undeclaredNames = await undeclaredVariables?(source) ?? []
             guard self.source == source else { return }
             references = classes
             methodRefs = methods
+            undeclared = undeclaredNames
             reconcileMarks()
+            styleUndeclared()
         }
+    }
+
+    /// Underline each name the image left undeclared, the wavy red the coder
+    /// draws under one, so a click there can offer to make it real.
+    private func styleUndeclared() {
+        guard let storage = textStorage else { return }
+        let whole = NSRange(location: 0, length: storage.length)
+        storage.removeAttribute(.underlineStyle, range: whole)
+        storage.removeAttribute(.underlineColor, range: whole)
+        for variable in undeclared {
+            storage.addAttributes(
+                [
+                    .underlineStyle: NSUnderlineStyle.thick.rawValue | NSUnderlineStyle.patternDot.rawValue,
+                    .underlineColor: NSColor.systemRed,
+                ],
+                range: storageRange(of: variable))
+        }
+    }
+
+    private func storageRange(of variable: PharoUndeclaredVariable) -> NSRange {
+        let start = storageOffset(forSource: variable.start - 1)
+        let stop = storageOffset(forSource: variable.stop)
+        return NSRange(location: start, length: stop - start)
     }
 
     /// Bring the marks in the text into line with the ones the snippet wants,
@@ -494,6 +532,54 @@ final class PharoTextView: NSTextView {
             guard caret >= 0, caret <= units.count else { break }
         }
         setSelectedRange(NSRange(location: max(0, min(caret, units.count)), length: 0))
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if let variable = undeclaredVariable(at: event) {
+            return presentQuickFix(for: variable)
+        }
+        super.mouseDown(with: event)
+    }
+
+    private func undeclaredVariable(at event: NSEvent) -> PharoUndeclaredVariable? {
+        let point = convert(event.locationInWindow, from: nil)
+        let index = characterIndexForInsertion(at: point)
+        let source = sourceOffset(ofStorage: index)
+        return undeclared.first { source >= $0.start - 1 && source < $0.stop }
+    }
+
+    private func presentQuickFix(for variable: PharoUndeclaredVariable) {
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentViewController = NSHostingController(
+            rootView: PharoQuickFixMenu(
+                variable: variable,
+                onCreateClass: { [weak self] in self?.createClass(named: variable.name) },
+                onReplace: { [weak self] name in self?.replace(variable, with: name) },
+                onDismiss: { [weak self] in self?.quickFix?.close() }))
+        quickFix = popover
+
+        let range = storageRange(of: variable)
+        let onScreen = firstRect(forCharacterRange: range, actualRange: nil)
+        let inWindow = window?.convertFromScreen(onScreen) ?? onScreen
+        popover.show(relativeTo: convert(inWindow, from: nil), of: self, preferredEdge: .maxY)
+    }
+
+    private func createClass(named name: String) {
+        quickFix?.close()
+        guard let runtime else { return }
+        Task { @MainActor in
+            _ = try? await runtime.createClass(named: name)
+            referencedSource = nil
+            markUp()
+        }
+    }
+
+    private func replace(_ variable: PharoUndeclaredVariable, with name: String) {
+        quickFix?.close()
+        var characters = Array(source)
+        characters.replaceSubrange((variable.start - 1)..<variable.stop, with: name)
+        onEdit?(String(characters))
     }
 
     /// The text view reasserts the I-beam as the pointer travels, so anything
@@ -788,6 +874,45 @@ private struct PharoClassBody: View {
                 onClose: model.onToggle)
             .pharoPane()
         }
+    }
+}
+
+/// The fixes GT offers under an undeclared name: make it a class, or correct it
+/// to one that already exists.
+private struct PharoQuickFixMenu: View {
+    let variable: PharoUndeclaredVariable
+    let onCreateClass: () -> Void
+    let onReplace: (String) -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Variable is undeclared.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            Divider()
+            fix("Create class \(variable.name)", action: onCreateClass)
+            ForEach(variable.suggestions, id: \.self) { name in
+                fix("Use \(name) instead of \(variable.name)") { onReplace(name) }
+            }
+        }
+        .frame(width: 260)
+    }
+
+    private func fix(_ title: String, action: @escaping () -> Void) -> some View {
+        Button {
+            action()
+            onDismiss()
+        } label: {
+            Text(title)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
