@@ -467,7 +467,7 @@ private struct PharoOverviewSquare: View {
 }
 
 /// Closing a pane.
-private struct PharoCloseButton: View {
+struct PharoCloseButton: View {
     let close: () -> Void
 
     @State private var isPointedAt = false

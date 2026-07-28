@@ -635,13 +635,14 @@ private struct PharoClassTriangle: View {
     }
 }
 
-/// The class itself, opened on the line below its triangle.
+/// The class itself, opened on the line below its triangle: a browser of its
+/// place and methods rather than the generic inspector.
 private struct PharoClassBody: View {
     @ObservedObject var model: PharoClassMarkModel
 
     var body: some View {
         if let opened = model.opened {
-            PharoObjectColumn(
+            PharoClassBrowser(
                 runtime: model.runtime,
                 object: opened,
                 onSelect: model.onOpen,
