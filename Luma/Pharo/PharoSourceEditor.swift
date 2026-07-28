@@ -840,27 +840,26 @@ final class PharoUndeclaredMarkModel: ObservableObject {
 private struct PharoUndeclaredWrench: View {
     @ObservedObject var model: PharoUndeclaredMarkModel
 
-    @State private var isShowingMenu = false
     @State private var isPointedAt = false
 
     var body: some View {
-        Button { isShowingMenu.toggle() } label: {
+        Menu {
+            Section("Variable is undeclared.") {
+                Button("Create class \(model.variable.name)", action: model.startDefining)
+                ForEach(model.variable.suggestions, id: \.self) { name in
+                    Button("Use \(name) instead of \(model.variable.name)") { model.onReplace(name) }
+                }
+            }
+        } label: {
             Image(systemName: "wrench.adjustable")
                 .font(.system(size: 10))
-                .foregroundStyle(isPointedAt || isShowingMenu ? Color.fridaBrand : .secondary)
+                .foregroundStyle(isPointedAt ? Color.fridaBrand : .secondary)
         }
-        .buttonStyle(.plain)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .contentShape(Rectangle())
         .onHover { isPointedAt = $0 }
         .help("Fix")
-        .popover(isPresented: $isShowingMenu, arrowEdge: .bottom) {
-            PharoQuickFixMenu(
-                variable: model.variable,
-                onCreateClass: model.startDefining,
-                onReplace: model.onReplace,
-                onDismiss: { isShowingMenu = false })
-        }
     }
 }
 
@@ -998,45 +997,6 @@ private struct PharoClassBody: View {
                 onClose: model.onToggle)
             .pharoPane()
         }
-    }
-}
-
-/// The fixes GT offers under an undeclared name: make it a class, or correct it
-/// to one that already exists.
-private struct PharoQuickFixMenu: View {
-    let variable: PharoUndeclaredVariable
-    let onCreateClass: () -> Void
-    let onReplace: (String) -> Void
-    let onDismiss: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Variable is undeclared.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-            Divider()
-            fix("Create class \(variable.name)", action: onCreateClass)
-            ForEach(variable.suggestions, id: \.self) { name in
-                fix("Use \(name) instead of \(variable.name)") { onReplace(name) }
-            }
-        }
-        .frame(width: 260)
-    }
-
-    private func fix(_ title: String, action: @escaping () -> Void) -> some View {
-        Button {
-            action()
-            onDismiss()
-        } label: {
-            Text(title)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 }
 
