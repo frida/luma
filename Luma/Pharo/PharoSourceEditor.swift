@@ -162,6 +162,7 @@ final class PharoTextView: NSTextView {
     private var methodRefs: [PharoMethodReference] = []
     private var undeclared: [PharoUndeclaredVariable] = []
     private var undeclaredModels: [String: PharoUndeclaredMarkModel] = [:]
+    private var newClassHeights: [String: CGFloat] = [:]
     private var referencedSource: String?
     private var isApplyingMarks = false
     private var attachments: [PharoMarkContent: PharoMarkAttachment] = [:]
@@ -248,6 +249,9 @@ final class PharoTextView: NSTextView {
         for key in methodModels.keys where methodModels[key]?.opened == true {
             resizeMethodBody(key)
         }
+        for key in undeclaredModels.keys where undeclaredModels[key]?.isDefining == true {
+            resizeNewClassBody(key)
+        }
     }
 
     override func didChangeText() {
@@ -322,6 +326,7 @@ final class PharoTextView: NSTextView {
 
         for variable in undeclared {
             wanted.append(PharoPlacedMark(sourceOffset: variable.stop, content: .undeclaredWrench(variable.id)))
+            wanted.append(PharoPlacedMark(sourceOffset: variable.stop, content: .newClassBody(variable.id)))
         }
 
         wanted.append(PharoPlacedMark(sourceOffset: source.utf16.count, content: .result))
@@ -373,6 +378,10 @@ final class PharoTextView: NSTextView {
             return methodModels[key]?.opened == true
                 ? CGRect(x: 0, y: 0, width: openedWidth, height: methodBodyHeights[key] ?? openedHeight)
                 : CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
+        case .newClassBody(let key):
+            return undeclaredModels[key]?.isDefining == true
+                ? CGRect(x: 0, y: 0, width: openedWidth, height: newClassHeights[key] ?? openedHeight)
+                : CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
         case .result where !resultModel.hasResult:
             return CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
         case .classTriangle, .methodTriangle, .undeclaredWrench, .result:
@@ -387,6 +396,7 @@ final class PharoTextView: NSTextView {
     }
 
     private let openedHeight: CGFloat = 260
+    private let newClassMaxHeight: CGFloat = 460
 
     private func markView(for content: PharoMarkContent) -> NSView {
         switch content {
@@ -400,6 +410,8 @@ final class PharoTextView: NSTextView {
             NSHostingView(rootView: PharoMethodBody(model: methodModel(key)))
         case .undeclaredWrench(let key):
             PharoMarkHostingView(content: PharoUndeclaredWrench(model: undeclaredModel(key)))
+        case .newClassBody(let key):
+            NSHostingView(rootView: PharoNewClassBody(model: undeclaredModel(key)))
         case .result:
             PharoMarkHostingView(content: PharoResultDot(model: resultModel))
         }
@@ -439,20 +451,6 @@ final class PharoTextView: NSTextView {
         guard let model = methodModels[key] else { return }
         model.opened.toggle()
         resizeMethodBody(key)
-    }
-
-    private func undeclaredModel(_ key: String) -> PharoUndeclaredMarkModel {
-        if let existing = undeclaredModels[key] {
-            return existing
-        }
-
-        let variable = undeclared.first { $0.id == key }!
-        let model = PharoUndeclaredMarkModel(
-            variable: variable,
-            onCreateClass: { [weak self] in self?.createClass(named: variable.name) },
-            onReplace: { [weak self] name in self?.replace(variable, with: name) })
-        undeclaredModels[key] = model
-        return model
     }
 
     private func noteMethodBodyHeight(_ key: String, _ height: CGFloat) {
@@ -544,10 +542,33 @@ final class PharoTextView: NSTextView {
         setSelectedRange(NSRange(location: max(0, min(caret, units.count)), length: 0))
     }
 
-    private func createClass(named name: String) {
+    private func undeclaredModel(_ key: String) -> PharoUndeclaredMarkModel {
+        if let existing = undeclaredModels[key] {
+            return existing
+        }
+
+        let variable = undeclared.first { $0.id == key }!
+        let model = PharoUndeclaredMarkModel(variable: variable)
+        model.onReplace = { [weak self] name in self?.replace(variable, with: name) }
+        model.onConfirm = { [weak self, weak model] in model.map { self?.defineClass($0) } }
+        model.onNeedsResize = { [weak self] in self?.resizeNewClassBody(key) }
+        model.onHeight = { [weak self] in self?.noteNewClassHeight(key, $0) }
+        undeclaredModels[key] = model
+        return model
+    }
+
+    private func defineClass(_ model: PharoUndeclaredMarkModel) {
         guard let runtime else { return }
         Task { @MainActor in
-            _ = try? await runtime.createClass(named: name)
+            _ = try? await runtime.defineClass(
+                name: model.name,
+                superclass: model.superclassName,
+                package: model.package,
+                tag: model.tag,
+                instanceVariables: model.instanceVariables,
+                classVariables: model.classVariables,
+                classInstanceVariables: model.classInstanceVariables)
+            model.isDefining = false
             referencedSource = nil
             markUp()
         }
@@ -557,6 +578,21 @@ final class PharoTextView: NSTextView {
         var characters = Array(source)
         characters.replaceSubrange((variable.start - 1)..<variable.stop, with: name)
         onEdit?(String(characters))
+    }
+
+    private func noteNewClassHeight(_ key: String, _ height: CGFloat) {
+        let bounded = min(height, newClassMaxHeight)
+        guard newClassHeights[key] != bounded else { return }
+        newClassHeights[key] = bounded
+        resizeNewClassBody(key)
+    }
+
+    private func resizeNewClassBody(_ key: String) {
+        guard let attachment = attachments[.newClassBody(key)] else { return }
+        let wanted = bounds(for: .newClassBody(key))
+        guard attachment.bounds != wanted else { return }
+        attachment.resize(to: wanted)
+        textLayoutManager.map { $0.invalidateLayout(for: $0.documentRange) }
     }
 
     /// The text view reasserts the I-beam as the pointer travels, so anything
@@ -637,6 +673,7 @@ enum PharoMarkContent {
     case methodTriangle(String)
     case methodBody(String)
     case undeclaredWrench(String)
+    case newClassBody(String)
     case result
 
     /// Where two marks share a source position, the lower order comes first in
@@ -648,6 +685,7 @@ enum PharoMarkContent {
         case .methodTriangle: 0
         case .methodBody: 1
         case .undeclaredWrench: 0
+        case .newClassBody: 1
         case .result: 2
         }
     }
@@ -779,20 +817,36 @@ final class PharoMethodMarkModel: ObservableObject {
     }
 }
 
-/// An undeclared name's fixes, offered from the wrench the coder puts after it.
+/// An undeclared name's fixes, offered from the wrench the coder puts after it,
+/// and the fields of the class-definition form the "Create class" fix opens.
 final class PharoUndeclaredMarkModel: ObservableObject {
     let variable: PharoUndeclaredVariable
-    let onCreateClass: () -> Void
-    let onReplace: (String) -> Void
+    @Published var isDefining = false
+    @Published var name: String
+    @Published var superclassName = "Object"
+    @Published var package = "Playground"
+    @Published var tag = ""
+    @Published var instanceVariables = ""
+    @Published var classVariables = ""
+    @Published var classInstanceVariables = ""
+    var onReplace: (String) -> Void = { _ in }
+    var onConfirm: () -> Void = {}
+    var onNeedsResize: () -> Void = {}
+    var onHeight: (CGFloat) -> Void = { _ in }
 
-    init(
-        variable: PharoUndeclaredVariable,
-        onCreateClass: @escaping () -> Void,
-        onReplace: @escaping (String) -> Void
-    ) {
+    init(variable: PharoUndeclaredVariable) {
         self.variable = variable
-        self.onCreateClass = onCreateClass
-        self.onReplace = onReplace
+        self.name = variable.name
+    }
+
+    func startDefining() {
+        isDefining = true
+        onNeedsResize()
+    }
+
+    func cancel() {
+        isDefining = false
+        onNeedsResize()
     }
 }
 
@@ -817,9 +871,70 @@ private struct PharoUndeclaredWrench: View {
         .popover(isPresented: $isShowingMenu, arrowEdge: .bottom) {
             PharoQuickFixMenu(
                 variable: model.variable,
-                onCreateClass: model.onCreateClass,
+                onCreateClass: model.startDefining,
                 onReplace: model.onReplace,
                 onDismiss: { isShowingMenu = false })
+        }
+    }
+}
+
+/// The class-definition form GT opens for "Create class": the same fields the
+/// coder shows, confirmed to install the class or cancelled to drop it.
+private struct PharoNewClassBody: View {
+    @ObservedObject var model: PharoUndeclaredMarkModel
+
+    var body: some View {
+        if model.isDefining {
+            PharoNewClassForm(model: model)
+                .pharoPane()
+                .fixedSize(horizontal: false, vertical: true)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { model.onHeight($0) }
+                .frame(maxHeight: .infinity, alignment: .top)
+        }
+    }
+}
+
+private struct PharoNewClassForm: View {
+    @ObservedObject var model: PharoUndeclaredMarkModel
+
+    var body: some View {
+        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 8) {
+            field("Name", text: $model.name)
+            field("Superclass", text: $model.superclassName)
+            field("Package", text: $model.package)
+            field("Tag", text: $model.tag)
+            field("Instance-side slots", text: $model.instanceVariables)
+            field("Class-side slots", text: $model.classInstanceVariables)
+            field("Class vars", text: $model.classVariables)
+            GridRow {
+                Color.clear.frame(width: 0, height: 0)
+                HStack(spacing: 6) {
+                    Button(action: model.onConfirm) {
+                        Image(systemName: "checkmark").frame(width: 16, height: 12)
+                    }
+                    .keyboardShortcut("s", modifiers: .command)
+                    .help("Create")
+                    Button(action: model.cancel) {
+                        Image(systemName: "xmark").frame(width: 16, height: 12)
+                    }
+                    .help("Cancel")
+                    Spacer(minLength: 0)
+                }
+                .controlSize(.small)
+            }
+        }
+        .padding(10)
+    }
+
+    private func field(_ label: String, text: Binding<String>) -> some View {
+        GridRow {
+            Text(label)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .gridColumnAlignment(.trailing)
+            TextField("", text: text)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.callout, design: .monospaced))
         }
     }
 }
@@ -980,6 +1095,8 @@ extension PharoMarkContent: Hashable {
             a == b
         case (.undeclaredWrench(let a), .undeclaredWrench(let b)):
             a == b
+        case (.newClassBody(let a), .newClassBody(let b)):
+            a == b
         case (.result, .result):
             true
         default:
@@ -1003,6 +1120,9 @@ extension PharoMarkContent: Hashable {
             hasher.combine(key)
         case .undeclaredWrench(let key):
             hasher.combine(5)
+            hasher.combine(key)
+        case .newClassBody(let key):
+            hasher.combine(6)
             hasher.combine(key)
         case .result:
             hasher.combine(2)
