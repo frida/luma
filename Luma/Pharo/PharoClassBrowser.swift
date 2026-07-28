@@ -149,7 +149,7 @@ private struct PharoNewMethodEditor: View {
     @State private var id = UUID()
     @State private var source = "newMethod"
     @State private var side = "instance"
-    @State private var category = "as yet unclassified"
+    @State private var category = ""
     @State private var focused: UUID?
     @State private var saveError: String?
 
@@ -205,7 +205,7 @@ private struct PharoNewMethodEditor: View {
                 _ = try await runtime.compileMethod(
                     in: classObject,
                     side: side,
-                    category: category,
+                    category: category.isEmpty ? "as yet unclassified" : category,
                     source: source)
                 onSaved()
             } catch {

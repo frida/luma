@@ -322,9 +322,19 @@ struct PharoObjectColumn: View {
         declarations.first { $0.methodSelector == shown } ?? declarations.first
     }
 
+    /// A class with no methods has its (empty) Methods view dropped by the image,
+    /// but the browser still owns that tab -- and its way to add the first
+    /// method -- so it stands one in when the image left it out.
     private var declarations: [PharoViewDeclaration] {
-        guard case .ready(let declarations) = declared else { return [] }
-        return declarations
+        guard case .ready(let loaded) = declared else { return [] }
+        guard classInfo != nil, !loaded.contains(where: { $0.methodSelector == Self.methodsView }) else {
+            return loaded
+        }
+        return [methodsDeclaration] + loaded
+    }
+
+    private var methodsDeclaration: PharoViewDeclaration {
+        PharoViewDeclaration(viewName: "columnedList", title: "Methods", priority: 1, methodSelector: Self.methodsView)
     }
 
     private func loadDeclarations() async {
@@ -334,7 +344,7 @@ struct PharoObjectColumn: View {
         do {
             let loaded = try await runtime.views(of: object)
             declared = .ready(loaded)
-            shown = loaded.first?.methodSelector
+            shown = object.isClass ? Self.methodsView : loaded.first?.methodSelector
         } catch {
             declared = .failed(error.localizedDescription)
         }
