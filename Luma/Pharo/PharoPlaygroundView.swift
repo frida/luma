@@ -16,6 +16,8 @@ struct PharoPlaygroundView: View {
     @State private var results: [UUID: PharoObject] = [:]
     @State private var captured: PharoSnapshot?
     @State private var columnPath = PharoColumnPath(includesPage: true)
+    @State private var pageWidth: CGFloat = 420
+    @State private var resizingFrom: CGFloat?
 
     private let runtime = PharoRuntime.shared
 
@@ -31,6 +33,7 @@ struct PharoPlaygroundView: View {
                     page
                         .frame(width: pageWidth)
                         .pharoPane()
+                        .overlay(alignment: .trailing) { pageResizeHandle }
                         .id(PharoColumnPath.pageID)
 
                     inspectionSide
@@ -66,7 +69,24 @@ struct PharoPlaygroundView: View {
         }
     }
 
-    private let pageWidth: CGFloat = 420
+
+    /// The page keeps a width the reader sets by dragging its edge, the way a
+    /// split's divider used to move it before the columns shared its scroller.
+    private var pageResizeHandle: some View {
+        Rectangle()
+            .fill(.clear)
+            .frame(width: 8)
+            .contentShape(Rectangle())
+            .pointerStyle(.columnResize)
+            .gesture(
+                DragGesture()
+                    .onChanged { drag in
+                        let base = resizingFrom ?? pageWidth
+                        resizingFrom = base
+                        pageWidth = min(max(base + drag.translation.width, 260), 900)
+                    }
+                    .onEnded { _ in resizingFrom = nil })
+    }
 
     private var page: some View {
         ScrollView {

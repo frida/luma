@@ -137,6 +137,11 @@ private struct PharoMethodRow: View {
                 }
             }
         }
+        .onChange(of: isExpanded) {
+            if !isExpanded, isFocused {
+                focused = nil
+            }
+        }
     }
 
     private var ribbon: some View {
@@ -157,7 +162,9 @@ private struct PharoMethodRow: View {
                 Text(method.selector)
                     .font(.system(.body, design: .monospaced).weight(.semibold))
                 Spacer(minLength: 8)
-                tag(method.category)
+                if isClassified {
+                    tag(method.category)
+                }
                 tag(method.side)
             }
             .padding(.horizontal, 8)
@@ -193,6 +200,11 @@ private struct PharoMethodRow: View {
 
     private var isFocused: Bool {
         focused == id
+    }
+
+    /// Pharo's placeholder category is not one worth a tag of its own.
+    private var isClassified: Bool {
+        !method.category.isEmpty && method.category != "as yet unclassified"
     }
 
     private func toggleClass(_ name: String) {
