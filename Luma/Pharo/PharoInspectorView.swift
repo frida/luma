@@ -285,7 +285,11 @@ struct PharoObjectColumn: View {
     @ViewBuilder
     private func body(of declaration: PharoViewDeclaration) -> some View {
         if declaration.methodSelector == Self.methodsView, let classInfo {
-            PharoMethodList(methods: classInfo.methods, runtime: runtime, onSelect: onSelect)
+            PharoMethodList(
+                methods: classInfo.methods,
+                runtime: runtime,
+                classObject: object,
+                onSelect: onSelect)
         } else {
             declaredBody(of: declaration)
         }

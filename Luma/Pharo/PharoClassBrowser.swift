@@ -44,6 +44,7 @@ struct PharoClassHeader: View {
 struct PharoMethodList: View {
     let methods: [PharoMethodInfo]
     let runtime: PharoRuntime
+    let classObject: PharoObject
     let onSelect: (PharoObject) -> Void
 
     @State private var expanded: Set<String> = []
@@ -58,6 +59,7 @@ struct PharoMethodList: View {
                         PharoMethodRow(
                             method: method,
                             runtime: runtime,
+                            classObject: classObject,
                             isExpanded: expanded.contains(method.id),
                             focused: $focused,
                             toggleExpanded: { toggle(method.id) },
@@ -92,6 +94,7 @@ struct PharoMethodList: View {
 private struct PharoMethodRow: View {
     let method: PharoMethodInfo
     let runtime: PharoRuntime
+    let classObject: PharoObject
     let isExpanded: Bool
     @Binding var focused: UUID?
     let toggleExpanded: () -> Void
@@ -99,11 +102,14 @@ private struct PharoMethodRow: View {
 
     @State private var id = UUID()
     @State private var source: String
+    @State private var savedSource: String
+    @State private var saveError: String?
     @State private var openedClasses: [String: PharoObject] = [:]
 
     init(
         method: PharoMethodInfo,
         runtime: PharoRuntime,
+        classObject: PharoObject,
         isExpanded: Bool,
         focused: Binding<UUID?>,
         toggleExpanded: @escaping () -> Void,
@@ -111,11 +117,13 @@ private struct PharoMethodRow: View {
     ) {
         self.method = method
         self.runtime = runtime
+        self.classObject = classObject
         self.isExpanded = isExpanded
         _focused = focused
         self.toggleExpanded = toggleExpanded
         self.onSelect = onSelect
         _source = State(initialValue: method.source)
+        _savedSource = State(initialValue: method.source)
     }
 
     var body: some View {
@@ -181,17 +189,60 @@ private struct PharoMethodRow: View {
     }
 
     private var editor: some View {
-        PharoSourceEditor(
-            id: id,
-            source: $source,
-            focused: $focused,
-            runtime: runtime,
-            marks: PharoSnippetMarks(openedClasses: openedClasses, hasResult: false),
-            onToggleClass: toggleClass,
-            onOpen: onSelect,
-            onOpenResult: {})
+        VStack(alignment: .leading, spacing: 4) {
+            PharoSourceEditor(
+                id: id,
+                source: $source,
+                focused: $focused,
+                runtime: runtime,
+                marks: PharoSnippetMarks(openedClasses: openedClasses, hasResult: false),
+                onToggleClass: toggleClass,
+                onOpen: onSelect,
+                onOpenResult: {})
+
+            if isDirty {
+                HStack(spacing: 6) {
+                    if let saveError {
+                        Text(saveError)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                    Button(action: save) {
+                        Image(systemName: "checkmark")
+                            .font(.caption)
+                            .frame(width: 16, height: 12)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .keyboardShortcut("s", modifiers: .command)
+                    .help("Save")
+                }
+            }
+        }
         .padding(.horizontal, 4)
         .padding(.bottom, 6)
+    }
+
+    private var isDirty: Bool {
+        source != savedSource
+    }
+
+    private func save() {
+        Task {
+            do {
+                _ = try await runtime.compileMethod(
+                    in: classObject,
+                    side: method.side,
+                    category: method.category,
+                    source: source)
+                savedSource = source
+                saveError = nil
+            } catch {
+                saveError = error.localizedDescription
+            }
+        }
     }
 
     private var isFocused: Bool {
