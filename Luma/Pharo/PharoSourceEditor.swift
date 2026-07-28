@@ -161,7 +161,7 @@ final class PharoTextView: NSTextView {
     private var references: [PharoClassReference] = []
     private var methodRefs: [PharoMethodReference] = []
     private var undeclared: [PharoUndeclaredVariable] = []
-    private var quickFix: NSPopover?
+    private var undeclaredModels: [String: PharoUndeclaredMarkModel] = [:]
     private var referencedSource: String?
     private var isApplyingMarks = false
     private var attachments: [PharoMarkContent: PharoMarkAttachment] = [:]
@@ -273,31 +273,7 @@ final class PharoTextView: NSTextView {
             methodRefs = methods
             undeclared = undeclaredNames
             reconcileMarks()
-            styleUndeclared()
         }
-    }
-
-    /// Underline each name the image left undeclared, the wavy red the coder
-    /// draws under one, so a click there can offer to make it real.
-    private func styleUndeclared() {
-        guard let storage = textStorage else { return }
-        let whole = NSRange(location: 0, length: storage.length)
-        storage.removeAttribute(.underlineStyle, range: whole)
-        storage.removeAttribute(.underlineColor, range: whole)
-        for variable in undeclared {
-            storage.addAttributes(
-                [
-                    .underlineStyle: NSUnderlineStyle.thick.rawValue | NSUnderlineStyle.patternDot.rawValue,
-                    .underlineColor: NSColor.systemRed,
-                ],
-                range: storageRange(of: variable))
-        }
-    }
-
-    private func storageRange(of variable: PharoUndeclaredVariable) -> NSRange {
-        let start = storageOffset(forSource: variable.start - 1)
-        let stop = storageOffset(forSource: variable.stop)
-        return NSRange(location: start, length: stop - start)
     }
 
     /// Bring the marks in the text into line with the ones the snippet wants,
@@ -342,6 +318,10 @@ final class PharoTextView: NSTextView {
         for reference in methodRefs {
             wanted.append(PharoPlacedMark(sourceOffset: reference.stop, content: .methodTriangle(reference.id)))
             wanted.append(PharoPlacedMark(sourceOffset: reference.stop, content: .methodBody(reference.id)))
+        }
+
+        for variable in undeclared {
+            wanted.append(PharoPlacedMark(sourceOffset: variable.stop, content: .undeclaredWrench(variable.id)))
         }
 
         wanted.append(PharoPlacedMark(sourceOffset: source.utf16.count, content: .result))
@@ -395,7 +375,7 @@ final class PharoTextView: NSTextView {
                 : CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
         case .result where !resultModel.hasResult:
             return CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
-        case .classTriangle, .methodTriangle, .result:
+        case .classTriangle, .methodTriangle, .undeclaredWrench, .result:
             let side = (font ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular))
                 .capHeight.rounded()
             return CGRect(x: 0, y: 0, width: side + 3, height: side)
@@ -418,6 +398,8 @@ final class PharoTextView: NSTextView {
             PharoMarkHostingView(content: PharoMethodTriangle(model: methodModel(key)))
         case .methodBody(let key):
             NSHostingView(rootView: PharoMethodBody(model: methodModel(key)))
+        case .undeclaredWrench(let key):
+            PharoMarkHostingView(content: PharoUndeclaredWrench(model: undeclaredModel(key)))
         case .result:
             PharoMarkHostingView(content: PharoResultDot(model: resultModel))
         }
@@ -457,6 +439,20 @@ final class PharoTextView: NSTextView {
         guard let model = methodModels[key] else { return }
         model.opened.toggle()
         resizeMethodBody(key)
+    }
+
+    private func undeclaredModel(_ key: String) -> PharoUndeclaredMarkModel {
+        if let existing = undeclaredModels[key] {
+            return existing
+        }
+
+        let variable = undeclared.first { $0.id == key }!
+        let model = PharoUndeclaredMarkModel(
+            variable: variable,
+            onCreateClass: { [weak self] in self?.createClass(named: variable.name) },
+            onReplace: { [weak self] name in self?.replace(variable, with: name) })
+        undeclaredModels[key] = model
+        return model
     }
 
     private func noteMethodBodyHeight(_ key: String, _ height: CGFloat) {
@@ -548,39 +544,7 @@ final class PharoTextView: NSTextView {
         setSelectedRange(NSRange(location: max(0, min(caret, units.count)), length: 0))
     }
 
-    override func mouseDown(with event: NSEvent) {
-        if let variable = undeclaredVariable(at: event) {
-            return presentQuickFix(for: variable)
-        }
-        super.mouseDown(with: event)
-    }
-
-    private func undeclaredVariable(at event: NSEvent) -> PharoUndeclaredVariable? {
-        let point = convert(event.locationInWindow, from: nil)
-        let index = characterIndexForInsertion(at: point)
-        let source = sourceOffset(ofStorage: index)
-        return undeclared.first { source >= $0.start - 1 && source < $0.stop }
-    }
-
-    private func presentQuickFix(for variable: PharoUndeclaredVariable) {
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.contentViewController = NSHostingController(
-            rootView: PharoQuickFixMenu(
-                variable: variable,
-                onCreateClass: { [weak self] in self?.createClass(named: variable.name) },
-                onReplace: { [weak self] name in self?.replace(variable, with: name) },
-                onDismiss: { [weak self] in self?.quickFix?.close() }))
-        quickFix = popover
-
-        let range = storageRange(of: variable)
-        let onScreen = firstRect(forCharacterRange: range, actualRange: nil)
-        let inWindow = window?.convertFromScreen(onScreen) ?? onScreen
-        popover.show(relativeTo: convert(inWindow, from: nil), of: self, preferredEdge: .maxY)
-    }
-
     private func createClass(named name: String) {
-        quickFix?.close()
         guard let runtime else { return }
         Task { @MainActor in
             _ = try? await runtime.createClass(named: name)
@@ -590,7 +554,6 @@ final class PharoTextView: NSTextView {
     }
 
     private func replace(_ variable: PharoUndeclaredVariable, with name: String) {
-        quickFix?.close()
         var characters = Array(source)
         characters.replaceSubrange((variable.start - 1)..<variable.stop, with: name)
         onEdit?(String(characters))
@@ -673,6 +636,7 @@ enum PharoMarkContent {
     case classBody(String)
     case methodTriangle(String)
     case methodBody(String)
+    case undeclaredWrench(String)
     case result
 
     /// Where two marks share a source position, the lower order comes first in
@@ -683,6 +647,7 @@ enum PharoMarkContent {
         case .classBody: 1
         case .methodTriangle: 0
         case .methodBody: 1
+        case .undeclaredWrench: 0
         case .result: 2
         }
     }
@@ -811,6 +776,51 @@ final class PharoMethodMarkModel: ObservableObject {
         self.reference = reference
         self.onToggle = onToggle
         self.onOpen = onOpen
+    }
+}
+
+/// An undeclared name's fixes, offered from the wrench the coder puts after it.
+final class PharoUndeclaredMarkModel: ObservableObject {
+    let variable: PharoUndeclaredVariable
+    let onCreateClass: () -> Void
+    let onReplace: (String) -> Void
+
+    init(
+        variable: PharoUndeclaredVariable,
+        onCreateClass: @escaping () -> Void,
+        onReplace: @escaping (String) -> Void
+    ) {
+        self.variable = variable
+        self.onCreateClass = onCreateClass
+        self.onReplace = onReplace
+    }
+}
+
+/// The wrench GT puts after an undeclared name, opening its fixes on a click.
+private struct PharoUndeclaredWrench: View {
+    @ObservedObject var model: PharoUndeclaredMarkModel
+
+    @State private var isShowingMenu = false
+    @State private var isPointedAt = false
+
+    var body: some View {
+        Button { isShowingMenu.toggle() } label: {
+            Image(systemName: "wrench.adjustable")
+                .font(.system(size: 10))
+                .foregroundStyle(isPointedAt || isShowingMenu ? Color.fridaBrand : .secondary)
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onHover { isPointedAt = $0 }
+        .help("Fix")
+        .popover(isPresented: $isShowingMenu, arrowEdge: .bottom) {
+            PharoQuickFixMenu(
+                variable: model.variable,
+                onCreateClass: model.onCreateClass,
+                onReplace: model.onReplace,
+                onDismiss: { isShowingMenu = false })
+        }
     }
 }
 
@@ -968,6 +978,8 @@ extension PharoMarkContent: Hashable {
             a == b
         case (.methodBody(let a), .methodBody(let b)):
             a == b
+        case (.undeclaredWrench(let a), .undeclaredWrench(let b)):
+            a == b
         case (.result, .result):
             true
         default:
@@ -988,6 +1000,9 @@ extension PharoMarkContent: Hashable {
             hasher.combine(key)
         case .methodBody(let key):
             hasher.combine(4)
+            hasher.combine(key)
+        case .undeclaredWrench(let key):
+            hasher.combine(5)
             hasher.combine(key)
         case .result:
             hasher.combine(2)
