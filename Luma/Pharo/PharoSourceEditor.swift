@@ -25,6 +25,7 @@ struct PharoSourceEditor: NSViewRepresentable {
     let onToggleClass: (String) -> Void
     let onOpen: (PharoObject) -> Void
     let onOpenResult: () -> Void
+    var selfClass: String? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -36,6 +37,7 @@ struct PharoSourceEditor: NSViewRepresentable {
         view.onFocused = { if focused != id { focused = id } }
         view.completions = runtime.completionList
         view.classReferences = runtime.namedClasses(in:)
+        view.methodReferences = { source in await runtime.methods(in: source, selfClass: selfClass) }
         view.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
         view.isRichText = false
         view.isAutomaticQuoteSubstitutionEnabled = false
@@ -101,6 +103,11 @@ extension PharoRuntime {
         (try? await whenRunning { try await classReferences(in: source) }) ?? []
     }
 
+    /// Nor the methods it sends.
+    func methods(in source: String, selfClass: String?) async -> [PharoMethodReference] {
+        (try? await whenRunning { try await methodReferences(in: source, selfClass: selfClass) }) ?? []
+    }
+
     private func whenRunning<Answer>(_ request: () async throws -> Answer) async throws -> Answer {
         try await runningState()
         return try await request()
@@ -112,6 +119,7 @@ extension PharoRuntime {
 final class PharoTextView: NSTextView {
     var completions: ((String, Int) async -> PharoCompletionList)?
     var classReferences: ((String) async -> [PharoClassReference])?
+    var methodReferences: ((String) async -> [PharoMethodReference])?
     var onFocused: (() -> Void)?
 
     private var runtime: PharoRuntime?
@@ -121,10 +129,12 @@ final class PharoTextView: NSTextView {
 
     private var fetched: PharoCompletionList?
     private var references: [PharoClassReference] = []
+    private var methodRefs: [PharoMethodReference] = []
     private var referencedSource: String?
     private var isApplyingMarks = false
     private var attachments: [PharoMarkContent: PharoMarkAttachment] = [:]
     private var classModels: [String: PharoClassMarkModel] = [:]
+    private var methodModels: [String: PharoMethodMarkModel] = [:]
     private let resultModel = PharoResultMarkModel()
 
     var source: String {
@@ -202,6 +212,9 @@ final class PharoTextView: NSTextView {
         for name in classModels.keys where classModels[name]?.opened != nil {
             resizeClassBody(name)
         }
+        for key in methodModels.keys where methodModels[key]?.opened == true {
+            resizeMethodBody(key)
+        }
     }
 
     override func didChangeText() {
@@ -219,8 +232,11 @@ final class PharoTextView: NSTextView {
 
         referencedSource = source
         Task { @MainActor in
-            guard let found = await classReferences?(source), self.source == source else { return }
-            references = found
+            let classes = await classReferences?(source) ?? []
+            let methods = await methodReferences?(source) ?? []
+            guard self.source == source else { return }
+            references = classes
+            methodRefs = methods
             reconcileMarks()
         }
     }
@@ -262,6 +278,11 @@ final class PharoTextView: NSTextView {
         for reference in references {
             wanted.append(PharoPlacedMark(sourceOffset: reference.stop, content: .classTriangle(reference.name)))
             wanted.append(PharoPlacedMark(sourceOffset: reference.stop, content: .classBody(reference.name)))
+        }
+
+        for reference in methodRefs {
+            wanted.append(PharoPlacedMark(sourceOffset: reference.stop, content: .methodTriangle(reference.id)))
+            wanted.append(PharoPlacedMark(sourceOffset: reference.stop, content: .methodBody(reference.id)))
         }
 
         wanted.append(PharoPlacedMark(sourceOffset: source.utf16.count, content: .result))
@@ -309,9 +330,13 @@ final class PharoTextView: NSTextView {
             return classModels[name]?.opened != nil
                 ? CGRect(x: 0, y: 0, width: openedWidth, height: openedHeight)
                 : CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
+        case .methodBody(let key):
+            return methodModels[key]?.opened == true
+                ? CGRect(x: 0, y: 0, width: openedWidth, height: openedHeight)
+                : CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
         case .result where !resultModel.hasResult:
             return CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
-        case .classTriangle, .result:
+        case .classTriangle, .methodTriangle, .result:
             let side = (font ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular))
                 .capHeight.rounded()
             return CGRect(x: 0, y: 0, width: side + 3, height: side)
@@ -330,6 +355,10 @@ final class PharoTextView: NSTextView {
             PharoMarkHostingView(content: PharoClassTriangle(model: classModel(name)))
         case .classBody(let name):
             NSHostingView(rootView: PharoClassBody(model: classModel(name)))
+        case .methodTriangle(let key):
+            PharoMarkHostingView(content: PharoMethodTriangle(model: methodModel(key)))
+        case .methodBody(let key):
+            NSHostingView(rootView: PharoMethodBody(model: methodModel(key)))
         case .result:
             PharoMarkHostingView(content: PharoResultDot(model: resultModel))
         }
@@ -347,6 +376,35 @@ final class PharoTextView: NSTextView {
             onOpen: { [weak self] in self?.onOpen?($0) })
         classModels[name] = model
         return model
+    }
+
+    private func methodModel(_ key: String) -> PharoMethodMarkModel {
+        if let existing = methodModels[key] {
+            return existing
+        }
+
+        let reference = methodRefs.first { $0.id == key }!
+        let model = PharoMethodMarkModel(
+            runtime: runtime!,
+            reference: reference,
+            onToggle: { [weak self] in self?.toggleMethod(key) },
+            onOpen: { [weak self] in self?.onOpen?($0) })
+        methodModels[key] = model
+        return model
+    }
+
+    private func toggleMethod(_ key: String) {
+        guard let model = methodModels[key] else { return }
+        model.opened.toggle()
+        resizeMethodBody(key)
+    }
+
+    private func resizeMethodBody(_ key: String) {
+        guard let attachment = attachments[.methodBody(key)] else { return }
+        let wanted = bounds(for: .methodBody(key))
+        guard attachment.bounds != wanted else { return }
+        attachment.resize(to: wanted)
+        textLayoutManager.map { $0.invalidateLayout(for: $0.documentRange) }
     }
 
     /// A source the reader did not type, so the text is replaced outright.
@@ -499,14 +557,18 @@ final class PharoTextView: NSTextView {
 enum PharoMarkContent {
     case classTriangle(String)
     case classBody(String)
+    case methodTriangle(String)
+    case methodBody(String)
     case result
 
     /// Where two marks share a source position, the lower order comes first in
-    /// the text, so a class's triangle sits ahead of its body.
+    /// the text, so a triangle sits ahead of its body.
     var insertionOrder: Int {
         switch self {
         case .classTriangle: 0
         case .classBody: 1
+        case .methodTriangle: 0
+        case .methodBody: 1
         case .result: 2
         }
     }
@@ -615,6 +677,64 @@ final class PharoClassMarkModel: ObservableObject {
     }
 }
 
+/// A method a send resolves to, opened in place below the send. Its source
+/// comes with the reference, so opening one asks the image for nothing.
+final class PharoMethodMarkModel: ObservableObject {
+    let runtime: PharoRuntime
+    let reference: PharoMethodReference
+    let onToggle: () -> Void
+    let onOpen: (PharoObject) -> Void
+    @Published var opened = false
+
+    init(
+        runtime: PharoRuntime,
+        reference: PharoMethodReference,
+        onToggle: @escaping () -> Void,
+        onOpen: @escaping (PharoObject) -> Void
+    ) {
+        self.runtime = runtime
+        self.reference = reference
+        self.onToggle = onToggle
+        self.onOpen = onOpen
+    }
+}
+
+/// The triangle after a message send whose method is known.
+private struct PharoMethodTriangle: View {
+    @ObservedObject var model: PharoMethodMarkModel
+
+    @State private var isPointedAt = false
+
+    var body: some View {
+        Button(action: model.onToggle) {
+            Image(systemName: model.opened ? "chevron.down.circle.fill" : "chevron.right.circle")
+                .font(.system(size: 11))
+                .foregroundStyle(isPointedAt || model.opened ? Color.fridaBrand : .secondary)
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onHover { isPointedAt = $0 }
+        .help(model.opened ? "Hide" : "Show")
+    }
+}
+
+/// The sent method's source, editable and saved back to its class, opened below
+/// the send the way the class body opens below a class name.
+private struct PharoMethodBody: View {
+    @ObservedObject var model: PharoMethodMarkModel
+
+    var body: some View {
+        if model.opened {
+            PharoMethodEditor(
+                reference: model.reference,
+                runtime: model.runtime,
+                onSelect: model.onOpen)
+            .pharoPane()
+        }
+    }
+}
+
 /// The triangle GT puts after a class name.
 private struct PharoClassTriangle: View {
     @ObservedObject var model: PharoClassMarkModel
@@ -687,6 +807,10 @@ extension PharoMarkContent: Hashable {
             a == b
         case (.classBody(let a), .classBody(let b)):
             a == b
+        case (.methodTriangle(let a), .methodTriangle(let b)):
+            a == b
+        case (.methodBody(let a), .methodBody(let b)):
+            a == b
         case (.result, .result):
             true
         default:
@@ -702,6 +826,12 @@ extension PharoMarkContent: Hashable {
         case .classBody(let name):
             hasher.combine(1)
             hasher.combine(name)
+        case .methodTriangle(let key):
+            hasher.combine(3)
+            hasher.combine(key)
+        case .methodBody(let key):
+            hasher.combine(4)
+            hasher.combine(key)
         case .result:
             hasher.combine(2)
         }

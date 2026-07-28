@@ -198,7 +198,8 @@ private struct PharoMethodRow: View {
                 marks: PharoSnippetMarks(openedClasses: openedClasses, hasResult: false),
                 onToggleClass: toggleClass,
                 onOpen: onSelect,
-                onOpenResult: {})
+                onOpenResult: {},
+                selfClass: classObject.printString)
 
             if isDirty {
                 HStack(spacing: 6) {
@@ -260,6 +261,97 @@ private struct PharoMethodRow: View {
             return
         }
 
+        Task { openedClasses[name] = try? await runtime.evaluate(name) }
+    }
+}
+
+/// A sent method's source, editable and saved back to its class. Standalone so
+/// the editor can open one below a message send, not only in the class browser.
+struct PharoMethodEditor: View {
+    let reference: PharoMethodReference
+    let runtime: PharoRuntime
+    let onSelect: (PharoObject) -> Void
+
+    @State private var id = UUID()
+    @State private var source: String
+    @State private var savedSource: String
+    @State private var saveError: String?
+    @State private var focused: UUID?
+    @State private var openedClasses: [String: PharoObject] = [:]
+
+    init(reference: PharoMethodReference, runtime: PharoRuntime, onSelect: @escaping (PharoObject) -> Void) {
+        self.reference = reference
+        self.runtime = runtime
+        self.onSelect = onSelect
+        _source = State(initialValue: reference.source)
+        _savedSource = State(initialValue: reference.source)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Text("\(reference.className) » \(reference.selector)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if isDirty {
+                    if let saveError {
+                        Text(saveError).font(.caption).foregroundStyle(.red).lineLimit(1)
+                    }
+                    Button(action: save) {
+                        Image(systemName: "checkmark").font(.caption).frame(width: 16, height: 12)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .keyboardShortcut("s", modifiers: .command)
+                    .help("Save")
+                }
+            }
+            .padding(.horizontal, 6)
+            .padding(.top, 4)
+
+            PharoSourceEditor(
+                id: id,
+                source: $source,
+                focused: $focused,
+                runtime: runtime,
+                marks: PharoSnippetMarks(openedClasses: openedClasses, hasResult: false),
+                onToggleClass: toggleClass,
+                onOpen: onSelect,
+                onOpenResult: {},
+                selfClass: reference.className)
+            .padding(.horizontal, 4)
+            .padding(.bottom, 6)
+        }
+    }
+
+    private var isDirty: Bool {
+        source != savedSource
+    }
+
+    private func save() {
+        Task {
+            do {
+                let target = try await runtime.evaluate(reference.className)
+                _ = try await runtime.compileMethod(
+                    in: target,
+                    side: reference.side,
+                    category: reference.category,
+                    source: source)
+                savedSource = source
+                saveError = nil
+            } catch {
+                saveError = error.localizedDescription
+            }
+        }
+    }
+
+    private func toggleClass(_ name: String) {
+        guard openedClasses[name] == nil else {
+            openedClasses[name] = nil
+            return
+        }
         Task { openedClasses[name] = try? await runtime.evaluate(name) }
     }
 }
