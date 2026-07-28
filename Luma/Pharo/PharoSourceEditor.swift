@@ -66,7 +66,13 @@ struct PharoSourceEditor: NSViewRepresentable {
             view.setSource(source)
         }
         if focused == id, view.window?.firstResponder !== view {
-            view.window?.makeFirstResponder(view)
+            // Taking focus makes the view first responder, which resigns the old
+            // one and publishes focus changes: doing that mid-update is what
+            // SwiftUI warns against, so it waits for the pass to finish.
+            DispatchQueue.main.async {
+                guard view.window?.firstResponder !== view else { return }
+                view.window?.makeFirstResponder(view)
+            }
         }
     }
 
