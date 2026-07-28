@@ -1,49 +1,28 @@
 import SwiftUI
 import SwiftyPharo
 
-/// A class opened for browsing, the way Glamorous Toolkit's coder shows one:
-/// where the class sits above, then its methods, each opening to its source.
-struct PharoClassBrowser: View {
-    let runtime: PharoRuntime
-    let object: PharoObject
-    let onSelect: (PharoObject) -> Void
-    let onClose: () -> Void
-
-    @State private var info: PharoClassBrowserInfo?
-    @State private var failure: String?
-    @State private var expanded: Set<String> = []
-    @State private var focused: UUID?
-    @State private var reveal: String?
+/// The class heading Glamorous Toolkit's coder shows: where the class sits,
+/// above its views.
+struct PharoClassHeader: View {
+    let info: PharoClassBrowserInfo
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-                .overlay(alignment: .topTrailing) { PharoCloseButton(close: onClose).padding(6) }
-            Divider()
-            methods
-        }
-        .task { await load() }
-    }
-
-    private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Class")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text(info?.name ?? object.printString)
+            Text(info.name)
                 .font(.title3.bold())
                 .accessibilityIdentifier("pharo.class.name")
 
-            if let info {
-                HStack(spacing: 16) {
-                    metaItem("Superclass", info.superclass)
-                    metaItem("Package", info.package)
-                    if !info.tag.isEmpty {
-                        metaItem("Tag", info.tag)
-                    }
+            HStack(spacing: 16) {
+                metaItem("Superclass", info.superclass)
+                metaItem("Package", info.package)
+                if !info.tag.isEmpty {
+                    metaItem("Tag", info.tag)
                 }
-                .lineLimit(1)
             }
+            .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
@@ -57,35 +36,43 @@ struct PharoClassBrowser: View {
         }
         .font(.caption)
     }
+}
 
-    @ViewBuilder
-    private var methods: some View {
-        if let failure {
-            PharoFailureView(message: failure)
-        } else {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(info?.methods ?? []) { method in
-                            PharoMethodRow(
-                                method: method,
-                                runtime: runtime,
-                                isExpanded: expanded.contains(method.id),
-                                focused: $focused,
-                                toggleExpanded: { toggle(method.id) },
-                                onSelect: onSelect)
-                            .id(method.id)
-                            Divider()
-                        }
+/// The methods of a class, each opening to its source, the way the coder lists
+/// them. It stands in for the plain list our inspector would otherwise draw for
+/// the Methods view, so drilling and browsing meet in one place.
+struct PharoMethodList: View {
+    let methods: [PharoMethodInfo]
+    let runtime: PharoRuntime
+    let onSelect: (PharoObject) -> Void
+
+    @State private var expanded: Set<String> = []
+    @State private var focused: UUID?
+    @State private var reveal: String?
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(methods) { method in
+                        PharoMethodRow(
+                            method: method,
+                            runtime: runtime,
+                            isExpanded: expanded.contains(method.id),
+                            focused: $focused,
+                            toggleExpanded: { toggle(method.id) },
+                            onSelect: onSelect)
+                        .id(method.id)
+                        Divider()
                     }
                 }
-                .onChange(of: reveal) { _, target in
-                    guard let target else { return }
-                    reveal = nil
-                    // The opened method grows this turn, so scroll to it once it
-                    // has laid out.
-                    DispatchQueue.main.async { proxy.scrollTo(target) }
-                }
+            }
+            .onChange(of: reveal) { _, target in
+                guard let target else { return }
+                reveal = nil
+                // The opened method grows this turn, so scroll to it once it
+                // has laid out.
+                DispatchQueue.main.async { proxy.scrollTo(target) }
             }
         }
     }
@@ -96,14 +83,6 @@ struct PharoClassBrowser: View {
         } else {
             expanded.insert(id)
             reveal = id
-        }
-    }
-
-    private func load() async {
-        do {
-            info = try await runtime.classBrowser(of: object)
-        } catch {
-            failure = error.localizedDescription
         }
     }
 }

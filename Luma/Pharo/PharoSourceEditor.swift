@@ -642,7 +642,7 @@ private struct PharoClassBody: View {
 
     var body: some View {
         if let opened = model.opened {
-            PharoClassBrowser(
+            PharoObjectColumn(
                 runtime: model.runtime,
                 object: opened,
                 onSelect: model.onOpen,

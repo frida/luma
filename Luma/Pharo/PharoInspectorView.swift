@@ -131,7 +131,7 @@ func pharoColumns(
             PharoDrillArrow()
         }
 
-        PharoObjectPane(
+        PharoObjectColumn(
             runtime: runtime,
             object: object,
             onSelect: { path.open($0, from: depth) },
@@ -144,23 +144,6 @@ func pharoColumns(
     Color.clear
         .frame(width: 1)
         .id(PharoColumnPath.trailingID)
-}
-
-/// One column of the inspector: a class opens in its browser, anything else in
-/// the moldable inspector.
-struct PharoObjectPane: View {
-    let runtime: PharoRuntime
-    let object: PharoObject
-    let onSelect: (PharoObject) -> Void
-    let onClose: () -> Void
-
-    var body: some View {
-        if object.isClass {
-            PharoClassBrowser(runtime: runtime, object: object, onSelect: onSelect, onClose: onClose)
-        } else {
-            PharoObjectColumn(runtime: runtime, object: object, onSelect: onSelect, onClose: onClose)
-        }
-    }
 }
 
 /// Walks an object through the views it declares, opening each selection in a
@@ -216,6 +199,11 @@ struct PharoObjectColumn: View {
 
     @State private var declared: Declared = .pending
     @State private var shown: String?
+    @State private var classInfo: PharoClassBrowserInfo?
+
+    /// The image names its Methods view this, which the browser draws richly
+    /// while the rest of the object's views draw as they always do.
+    private static let methodsView = "swpMethodsFor:"
 
     /// Nothing declared and not asked yet are different things: rendering them
     /// alike flashes "No views" over every object on its way in.
@@ -253,18 +241,23 @@ struct PharoObjectColumn: View {
         .task { await loadDeclarations() }
     }
 
+    @ViewBuilder
     private var header: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(object.printString)
-                .font(.headline)
-                .lineLimit(2)
-                .accessibilityIdentifier("pharo.inspector.printString")
-            Text(object.className)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        if let classInfo {
+            PharoClassHeader(info: classInfo)
+        } else {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(object.printString)
+                    .font(.headline)
+                    .lineLimit(2)
+                    .accessibilityIdentifier("pharo.inspector.printString")
+                Text(object.className)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(8)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
     }
 
     private var closeButton: some View {
@@ -291,6 +284,15 @@ struct PharoObjectColumn: View {
 
     @ViewBuilder
     private func body(of declaration: PharoViewDeclaration) -> some View {
+        if declaration.methodSelector == Self.methodsView, let classInfo {
+            PharoMethodList(methods: classInfo.methods, runtime: runtime, onSelect: onSelect)
+        } else {
+            declaredBody(of: declaration)
+        }
+    }
+
+    @ViewBuilder
+    private func declaredBody(of declaration: PharoViewDeclaration) -> some View {
         switch declaration.viewName {
         case "list", "columnedList", "tree":
             PharoItemsList(
@@ -322,6 +324,9 @@ struct PharoObjectColumn: View {
     }
 
     private func loadDeclarations() async {
+        if object.isClass {
+            classInfo = try? await runtime.classBrowser(of: object)
+        }
         do {
             let loaded = try await runtime.views(of: object)
             declared = .ready(loaded)
