@@ -151,12 +151,13 @@ private struct PharoMethodRow: View {
 
     private var heading: some View {
         Button(action: toggleExpanded) {
-            HStack(spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(method.selector)
                     .font(.system(.body, design: .monospaced).weight(.semibold))
+                    .layoutPriority(1)
                 Spacer(minLength: 8)
                 if isClassified {
-                    tag(method.category)
+                    tag(method.category).frame(maxWidth: 130, alignment: .trailing)
                 }
                 tag(method.side)
             }
@@ -171,6 +172,8 @@ private struct PharoMethodRow: View {
         Text(text)
             .font(.caption2)
             .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(Color.secondary.opacity(0.15))
