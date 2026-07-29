@@ -451,6 +451,25 @@ final class PharoTextView: NSTextView {
         storage.endEditing()
         setSelectedRange(NSRange(location: storageOffset(forSource: cursor), length: 0))
         isApplyingMarks = false
+        if !missing.isEmpty { layoutMarkViews() }
+    }
+
+    /// A freshly inserted mark's view is built only when the viewport lays its
+    /// line out; on a loaded snippet that first pass has already gone by, so it
+    /// stays a placeholder until a click forces another. Laying the viewport out
+    /// here, and once the view reaches a window, builds it without that click.
+    private func layoutMarkViews() {
+        guard window != nil else { return }
+        textLayoutManager?.textViewportLayoutController.layoutViewport()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil, let layout = textLayoutManager else { return }
+        DispatchQueue.main.async {
+            layout.invalidateLayout(for: layout.documentRange)
+            layout.textViewportLayoutController.layoutViewport()
+        }
     }
 
     private func wantedMarks() -> [PharoPlacedMark] {
