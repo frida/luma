@@ -803,8 +803,8 @@ final class PharoTextView: NSTextView {
                 index += 1
             case 40, 91, 123:
                 openers.append(index)
-            case 41, 93, 125 where !openers.isEmpty:
-                openers.removeLast()
+            case 41, 93, 125:
+                if !openers.isEmpty { openers.removeLast() }
             default:
                 break
             }
@@ -866,8 +866,8 @@ final class PharoTextView: NSTextView {
                 index += 1
             case "(", "[", "{":
                 depth += 1
-            case ")", "]", "}" where depth > 0:
-                depth -= 1
+            case ")", "]", "}":
+                if depth > 0 { depth -= 1 }
             default:
                 break
             }
