@@ -717,21 +717,15 @@ final class PharoTextView: NSTextView {
         return String(text.substring(with: line).prefix { $0 == " " || $0 == "\t" })
     }
 
-    /// Tab indents: it steps a line in over a selection that spans lines, and is
-    /// a plain tab otherwise. Shift-tab always steps a line back out.
+    /// Tab indents: it steps in every line a selection touches, and is a plain
+    /// tab when nothing is selected. Shift-tab always steps a line back out.
     override func insertTab(_ sender: Any?) {
-        guard selectionSpansLines else { return super.insertText("\t", replacementRange: selectedRange()) }
+        guard selectedRange().length > 0 else { return super.insertText("\t", replacementRange: selectedRange()) }
         shiftSelectedLines(indenting: true)
     }
 
     override func insertBacktab(_ sender: Any?) {
         shiftSelectedLines(indenting: false)
-    }
-
-    private var selectionSpansLines: Bool {
-        let range = selectedRange()
-        guard range.length > 0 else { return false }
-        return (string as NSString).substring(with: range).contains("\n")
     }
 
     /// Steps every line the selection touches, adding or dropping one level at
