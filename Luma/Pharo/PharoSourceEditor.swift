@@ -648,6 +648,80 @@ final class PharoTextView: NSTextView {
         complete(nil)
     }
 
+    /// A new line keeps the indentation of the one it left, so the caret lands
+    /// under the first word rather than back at the margin.
+    override func insertNewline(_ sender: Any?) {
+        let indent = caretLineIndent()
+        super.insertNewline(sender)
+        guard !indent.isEmpty else { return }
+        super.insertText(indent, replacementRange: selectedRange())
+    }
+
+    private func caretLineIndent() -> String {
+        let text = string as NSString
+        let line = text.lineRange(for: NSRange(location: selectedRange().location, length: 0))
+        return String(text.substring(with: line).prefix { $0 == " " || $0 == "\t" })
+    }
+
+    /// Tab indents: it steps a line in over a selection that spans lines, and is
+    /// a plain tab otherwise. Shift-tab always steps a line back out.
+    override func insertTab(_ sender: Any?) {
+        guard selectionSpansLines else { return super.insertText("\t", replacementRange: selectedRange()) }
+        shiftSelectedLines(indenting: true)
+    }
+
+    override func insertBacktab(_ sender: Any?) {
+        shiftSelectedLines(indenting: false)
+    }
+
+    private var selectionSpansLines: Bool {
+        let range = selectedRange()
+        guard range.length > 0 else { return false }
+        return (string as NSString).substring(with: range).contains("\n")
+    }
+
+    /// Steps every line the selection touches, adding or dropping one level at
+    /// its start. Editing the starts rather than rewriting the lines leaves any
+    /// marks they carry in place.
+    private func shiftSelectedLines(indenting: Bool) {
+        guard let storage = textStorage else { return }
+        let text = string as NSString
+        let block = text.lineRange(for: selectedRange())
+        var starts: [Int] = []
+        var location = block.location
+        while location < NSMaxRange(block) {
+            starts.append(location)
+            location = NSMaxRange(text.lineRange(for: NSRange(location: location, length: 0)))
+        }
+
+        storage.beginEditing()
+        var delta = 0
+        for start in starts.reversed() {
+            if indenting {
+                storage.insert(NSAttributedString(string: "\t", attributes: sourceAttributes), at: start)
+                delta += 1
+            } else {
+                let width = leadingIndentWidth(in: text, at: start)
+                guard width > 0 else { continue }
+                storage.deleteCharacters(in: NSRange(location: start, length: width))
+                delta -= width
+            }
+        }
+        storage.endEditing()
+        didChangeText()
+        setSelectedRange(NSRange(location: block.location, length: max(0, block.length + delta)))
+    }
+
+    private func leadingIndentWidth(in text: NSString, at start: Int) -> Int {
+        guard start < text.length else { return 0 }
+        if text.character(at: start) == 9 { return 1 }
+        var spaces = 0
+        while spaces < 4, start + spaces < text.length, text.character(at: start + spaces) == 32 {
+            spaces += 1
+        }
+        return spaces
+    }
+
     func height(fitting width: CGFloat) -> CGFloat {
         guard let layout = textLayoutManager, let container = textContainer else { return 0 }
         container.size = NSSize(width: width - 2 * textContainerInset.width, height: .greatestFiniteMagnitude)
