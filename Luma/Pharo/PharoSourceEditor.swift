@@ -451,25 +451,24 @@ final class PharoTextView: NSTextView {
         storage.endEditing()
         setSelectedRange(NSRange(location: storageOffset(forSource: cursor), length: 0))
         isApplyingMarks = false
-        if !missing.isEmpty { layoutMarkViews() }
+        layoutMarkViews()
     }
 
-    /// A freshly inserted mark's view is built only when the viewport lays its
-    /// line out; on a loaded snippet that first pass has already gone by, so it
-    /// stays a placeholder until a click forces another. Laying the viewport out
-    /// here, and once the view reaches a window, builds it without that click.
+    /// A mark's view is added by the viewport layout controller as it lays the
+    /// mark's line out, and only for lines in the viewport. On a loaded snippet
+    /// the two happen out of order -- the scroll view sizes this one before or
+    /// after the marks go in -- and whichever comes first lays an empty or
+    /// mark-less viewport, leaving the views as placeholders until a click lays
+    /// it again. So the viewport is laid out on both: after the marks change,
+    /// and whenever the size this view is finally given lands.
     private func layoutMarkViews() {
-        guard window != nil else { return }
-        textLayoutManager?.textViewportLayoutController.layoutViewport()
+        guard bounds.width > 0, let layout = textLayoutManager else { return }
+        layout.textViewportLayoutController.layoutViewport()
     }
 
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        guard window != nil, let layout = textLayoutManager else { return }
-        DispatchQueue.main.async {
-            layout.invalidateLayout(for: layout.documentRange)
-            layout.textViewportLayoutController.layoutViewport()
-        }
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        layoutMarkViews()
     }
 
     private func wantedMarks() -> [PharoPlacedMark] {
