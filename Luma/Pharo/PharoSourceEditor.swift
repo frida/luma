@@ -293,6 +293,7 @@ final class PharoTextView: NSTextView {
     private var references: [PharoClassReference] = []
     private var methodRefs: [PharoMethodReference] = []
     private var undeclared: [PharoUndeclaredVariable] = []
+    private var spans: [PharoStyleSpan] = []
     private var referencedSource: String?
     private var isApplyingMarks = false
     private var attachments: [PharoMarkContent: PharoMarkAttachment] = [:]
@@ -387,16 +388,25 @@ final class PharoTextView: NSTextView {
             references = classes
             methodRefs = methods
             undeclared = undeclaredNames
+            self.spans = spans
             reconcileMarks()
             refreshOpenBodies()
-            applyStyle(spans)
+            applyStyle()
         }
+    }
+
+    /// The system appearance decides which of a span's two colours to draw, so a
+    /// flip between light and dark repaints without asking the image again.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyStyle()
     }
 
     /// Paint the coloured runs GT would over the source, mapped past the mark
     /// characters, on a plain label-coloured ground.
-    private func applyStyle(_ spans: [PharoStyleSpan]) {
+    private func applyStyle() {
         guard let storage = textStorage else { return }
+        let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         let plain = font ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
         let bold = NSFont.monospacedSystemFont(ofSize: plain.pointSize, weight: .bold)
         let whole = NSRange(location: 0, length: storage.length)
@@ -408,8 +418,8 @@ final class PharoTextView: NSTextView {
             let end = storageOffset(forSource: span.stop)
             guard end > start, end <= storage.length else { continue }
             let range = NSRange(location: start, length: end - start)
-            if let color = span.color {
-                storage.addAttribute(.foregroundColor, value: NSColor(pharoHex: color), range: range)
+            if let hex = isDark ? span.dark : span.light {
+                storage.addAttribute(.foregroundColor, value: NSColor(pharoHex: hex), range: range)
             }
             if span.bold {
                 storage.addAttribute(.font, value: bold, range: range)
