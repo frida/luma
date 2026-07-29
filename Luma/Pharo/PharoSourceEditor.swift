@@ -397,17 +397,23 @@ final class PharoTextView: NSTextView {
     /// characters, on a plain label-coloured ground.
     private func applyStyle(_ spans: [PharoStyleSpan]) {
         guard let storage = textStorage else { return }
+        let plain = font ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        let bold = NSFont.monospacedSystemFont(ofSize: plain.pointSize, weight: .bold)
         let whole = NSRange(location: 0, length: storage.length)
         storage.beginEditing()
         storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: whole)
+        storage.addAttribute(.font, value: plain, range: whole)
         for span in spans {
             let start = storageOffset(forSource: span.start - 1)
             let end = storageOffset(forSource: span.stop)
             guard end > start, end <= storage.length else { continue }
-            storage.addAttribute(
-                .foregroundColor,
-                value: NSColor(pharoHex: span.color),
-                range: NSRange(location: start, length: end - start))
+            let range = NSRange(location: start, length: end - start)
+            if let color = span.color {
+                storage.addAttribute(.foregroundColor, value: NSColor(pharoHex: color), range: range)
+            }
+            if span.bold {
+                storage.addAttribute(.font, value: bold, range: range)
+            }
         }
         storage.endEditing()
     }
