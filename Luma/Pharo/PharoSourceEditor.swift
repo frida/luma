@@ -165,6 +165,8 @@ struct PharoTextEditor: NSViewRepresentable {
         view.drawsBackground = false
         view.textContainerInset = NSSize(width: 4, height: 6)
         view.isHorizontallyResizable = true
+        view.isVerticallyResizable = true
+        view.minSize = .zero
         view.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         view.textContainer?.widthTracksTextView = false
         view.textContainer?.size = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
