@@ -184,15 +184,7 @@ struct PharoTextEditor: NSViewRepresentable {
         if view.source != source {
             view.setSource(source)
         }
-        if focused == id, view.window?.firstResponder !== view {
-            // Taking focus makes the view first responder, which resigns the old
-            // one and publishes focus changes: doing that mid-update is what
-            // SwiftUI warns against, so it waits for the pass to finish.
-            DispatchQueue.main.async {
-                guard view.window?.firstResponder !== view else { return }
-                view.window?.makeFirstResponder(view)
-            }
-        }
+        context.coordinator.reconcileFocus(id: id, focused: focused, view: view)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView scroll: NSScrollView, context: Context) -> CGSize? {
@@ -202,6 +194,7 @@ struct PharoTextEditor: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: PharoTextEditor
+        private var appliedFocused: UUID?
 
         init(_ parent: PharoTextEditor) {
             self.parent = parent
@@ -210,6 +203,20 @@ struct PharoTextEditor: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let view = notification.object as? PharoTextView else { return }
             parent.source = view.source
+        }
+
+        /// Takes first responder only as focus arrives, not on every update: a
+        /// body opened below the editor is a separate responder, and reclaiming
+        /// focus each pass would snatch it back from there mid-edit.
+        func reconcileFocus(id: UUID, focused: UUID?, view: PharoTextView) {
+            guard focused == id else { appliedFocused = nil; return }
+            guard appliedFocused != id else { return }
+            appliedFocused = id
+            guard view.window?.firstResponder !== view else { return }
+            DispatchQueue.main.async {
+                guard view.window?.firstResponder !== view else { return }
+                view.window?.makeFirstResponder(view)
+            }
         }
     }
 }
@@ -492,7 +499,14 @@ final class PharoTextView: NSTextView {
                 ordered.append((variable.stop, .newClass(model)))
             }
         }
-        bodies?.items = ordered.sorted { $0.offset < $1.offset }.map(\.item)
+
+        let items = ordered.sorted { $0.offset < $1.offset }.map(\.item)
+        guard items.map(\.id) != (bodies?.items.map(\.id) ?? []) else { return }
+        // markUp() reaches here from apply() during a SwiftUI update, so the
+        // published change waits for the pass to finish.
+        DispatchQueue.main.async { [weak self] in
+            self?.bodies?.items = items
+        }
     }
 
     private func classModel(_ name: String) -> PharoClassMarkModel {
