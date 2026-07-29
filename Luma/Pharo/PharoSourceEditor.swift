@@ -918,6 +918,26 @@ final class PharoTextView: NSTextView {
         shiftSelectedLines(indenting: false)
     }
 
+    /// Backspace in space indentation clears a whole level back to the previous
+    /// tab stop, not one space; a real tab already deletes as one.
+    override func deleteBackward(_ sender: Any?) {
+        let caret = selectedRange()
+        guard caret.length == 0, caret.location > 0 else { return super.deleteBackward(sender) }
+
+        let text = string as NSString
+        let line = text.lineRange(for: NSRange(location: caret.location, length: 0))
+        let lead = text.substring(with: NSRange(location: line.location, length: caret.location - line.location))
+        guard !lead.isEmpty, lead.allSatisfy({ $0 == " " }) else { return super.deleteBackward(sender) }
+
+        let width = 4
+        let column = caret.location - line.location
+        let count = column - (column - 1) / width * width
+        let range = NSRange(location: caret.location - count, length: count)
+        guard shouldChangeText(in: range, replacementString: "") else { return }
+        textStorage?.deleteCharacters(in: range)
+        didChangeText()
+    }
+
     /// Steps every line the selection touches, adding or dropping one level at
     /// its start. Editing the starts rather than rewriting the lines leaves any
     /// marks they carry in place.
