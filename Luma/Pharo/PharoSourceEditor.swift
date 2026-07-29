@@ -712,8 +712,75 @@ final class PharoTextView: NSTextView {
 
     override func insertText(_ string: Any, replacementRange: NSRange) {
         super.insertText(string, replacementRange: replacementRange)
-        guard let typed = string as? String, typed.allSatisfy(\.isLetter) else { return }
-        complete(nil)
+        guard let typed = string as? String else { return }
+        if typed.count == 1, let unit = typed.utf16.first, unit == 41 || unit == 93 || unit == 125 {
+            dedentCloserLine()
+        } else if typed.allSatisfy(\.isLetter) {
+            complete(nil)
+        }
+    }
+
+    /// A closer typed as the first thing on its line drops back to line up under
+    /// the line that opened it.
+    private func dedentCloserLine() {
+        guard let storage = textStorage else { return }
+        let text = string as NSString
+        let closer = selectedRange().location - 1
+        guard closer >= 0 else { return }
+
+        let line = text.lineRange(for: NSRange(location: closer, length: 0))
+        let leading = NSRange(location: line.location, length: closer - line.location)
+        let indent = text.substring(with: leading)
+        guard indent.allSatisfy({ $0 == " " || $0 == "\t" }) else { return }
+        guard let opener = matchingOpenerOffset(before: closer) else { return }
+
+        let openerLine = text.lineRange(for: NSRange(location: opener, length: 0))
+        let openerIndent = String(text.substring(with: openerLine).prefix { $0 == " " || $0 == "\t" })
+        guard openerIndent != indent else { return }
+
+        storage.replaceCharacters(in: leading, with: NSAttributedString(string: openerIndent, attributes: sourceAttributes))
+        setSelectedRange(NSRange(location: line.location + (openerIndent as NSString).length + 1, length: 0))
+    }
+
+    /// The offset of the bracket that a closer at `closerOffset` matches, found
+    /// by lexing forward with the same blindness to strings, comments and
+    /// character literals as the indenter.
+    private func matchingOpenerOffset(before closerOffset: Int) -> Int? {
+        let units = Array(string.utf16)
+        let end = min(closerOffset, units.count)
+        var openers: [Int] = []
+        var index = 0
+        while index < end {
+            switch units[index] {
+            case 39:
+                index = endOfQuotedUnit(units, after: index, terminator: 39)
+            case 34:
+                index = endOfQuotedUnit(units, after: index, terminator: 34)
+            case 36:
+                index += 1
+            case 40, 91, 123:
+                openers.append(index)
+            case 41, 93, 125 where !openers.isEmpty:
+                openers.removeLast()
+            default:
+                break
+            }
+            index += 1
+        }
+        return openers.last
+    }
+
+    private func endOfQuotedUnit(_ units: [UTF16.CodeUnit], after open: Int, terminator: UTF16.CodeUnit) -> Int {
+        var index = open + 1
+        while index < units.count {
+            if units[index] == terminator {
+                guard index + 1 < units.count, units[index + 1] == terminator else { return index }
+                index += 2
+                continue
+            }
+            index += 1
+        }
+        return units.count
     }
 
     /// A new line follows the nesting: it keeps the indentation of the one it
