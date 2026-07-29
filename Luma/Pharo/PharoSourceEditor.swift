@@ -297,6 +297,7 @@ final class PharoTextView: NSTextView {
     private var undeclared: [PharoUndeclaredVariable] = []
     private var spans: [PharoStyleSpan] = []
     private var referencedSource: String?
+    private var pendingMarkUp: DispatchWorkItem?
     private var isApplyingMarks = false
     private var attachments: [PharoMarkContent: PharoMarkAttachment] = [:]
     private var classModels: [String: PharoClassMarkModel] = [:]
@@ -360,7 +361,50 @@ final class PharoTextView: NSTextView {
             guard attachment.bounds != wanted else { return }
             attachment.resize(to: wanted)
             self.textLayoutManager.map { $0.invalidateLayout(for: $0.documentRange) }
+            self.positionMarkOverlays()
         }
+    }
+
+    /// Each mark's view is a real subview, laid over the space its attachment
+    /// holds open, so it shows the moment its line is laid out rather than
+    /// waiting for the text view to be first responder.
+    override func layout() {
+        super.layout()
+        positionMarkOverlays()
+    }
+
+    private func positionMarkOverlays() {
+        guard let storage = textStorage, let layout = textLayoutManager else { return }
+        let origin = textContainerOrigin
+        var present: Set<PharoMarkContent> = []
+        storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) {
+            value, range, _ in
+            guard let attachment = value as? PharoMarkAttachment else { return }
+            present.insert(attachment.content)
+            guard let frame = markFrame(forStorage: range, in: layout) else { return }
+            let view = attachment.markView
+            if view.superview !== self { addSubview(view) }
+            view.frame = frame.offsetBy(dx: origin.x, dy: origin.y)
+        }
+        for (content, attachment) in attachments where !present.contains(content) {
+            attachment.markView.removeFromSuperview()
+        }
+    }
+
+    private func markFrame(forStorage range: NSRange, in layout: NSTextLayoutManager) -> CGRect? {
+        guard let content = layout.textContentManager,
+            let start = content.location(content.documentRange.location, offsetBy: range.location),
+            let end = content.location(start, offsetBy: range.length),
+            let textRange = NSTextRange(location: start, end: end)
+        else { return nil }
+
+        var frame: CGRect?
+        layout.ensureLayout(for: textRange)
+        layout.enumerateTextSegments(in: textRange, type: .standard, options: []) { _, segment, _, _ in
+            frame = segment
+            return false
+        }
+        return frame
     }
 
     override func didChangeText() {
@@ -380,7 +424,16 @@ final class PharoTextView: NSTextView {
             return
         }
 
-        referencedSource = source
+        // Each fetch is four image round trips, served one at a time, so asking
+        // on every keystroke queues a backlog that shows stale marks for seconds.
+        // Waiting for a pause coalesces a burst of edits into a single ask.
+        pendingMarkUp?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.fetchMarks(for: source) }
+        pendingMarkUp = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+    }
+
+    private func fetchMarks(for source: String) {
         Task { @MainActor in
             let classes = await classReferences?(source) ?? []
             let methods = await methodReferences?(source) ?? []
@@ -391,6 +444,7 @@ final class PharoTextView: NSTextView {
             methodRefs = methods
             undeclared = undeclaredNames
             self.spans = spans
+            referencedSource = source
             reconcileMarks()
             refreshOpenBodies()
             applyStyle()
@@ -453,6 +507,7 @@ final class PharoTextView: NSTextView {
         storage.endEditing()
         setSelectedRange(NSRange(location: storageOffset(forSource: cursor), length: 0))
         isApplyingMarks = false
+        positionMarkOverlays()
     }
 
     private func wantedMarks() -> [PharoPlacedMark] {
@@ -759,7 +814,9 @@ final class PharoTextView: NSTextView {
         super.insertText(string, replacementRange: replacementRange)
         guard let typed = string as? String else { return }
         if typed.count == 1, let unit = typed.utf16.first, unit == 41 || unit == 93 || unit == 125 {
-            dedentCloserLine()
+            // Editing the storage now, mid-insert, does not take; it lands once
+            // this input has finished.
+            DispatchQueue.main.async { [weak self] in self?.dedentCloserLine() }
         } else if typed.allSatisfy(\.isLetter) {
             complete(nil)
         }
@@ -782,8 +839,10 @@ final class PharoTextView: NSTextView {
         let openerLine = text.lineRange(for: NSRange(location: opener, length: 0))
         let openerIndent = String(text.substring(with: openerLine).prefix { $0 == " " || $0 == "\t" })
         guard openerIndent != indent else { return }
+        guard shouldChangeText(in: leading, replacementString: openerIndent) else { return }
 
         storage.replaceCharacters(in: leading, with: NSAttributedString(string: openerIndent, attributes: sourceAttributes))
+        didChangeText()
         setSelectedRange(NSRange(location: line.location + (openerIndent as NSString).length + 1, length: 0))
     }
 
@@ -1023,77 +1082,31 @@ final class PharoMarkHostingView: NSView {
     }
 }
 
+/// The attachment only holds the line open for its mark: it draws nothing, and
+/// the mark's view is placed over it as a real subview. NSTextView builds an
+/// attachment's own view lazily, and only once it is first responder, so a
+/// loaded snippet's marks would otherwise stay placeholders until a click.
 nonisolated final class PharoMarkAttachment: NSTextAttachment, @unchecked Sendable {
     let content: PharoMarkContent
     let markView: NSView
 
-    /// The view is given the size too, not just the attachment: left at zero it
-    /// draws nothing until something else forces it to lay out.
     func resize(to size: CGRect) {
         bounds = size
-        let view = markView
-        MainActor.assumeIsolated { view.frame = size }
+        // An empty image of the wanted size holds the space and draws nothing; an
+        // attachment with no contents would draw the placeholder document icon.
+        image = NSImage(size: size.size)
     }
 
     init(content: PharoMarkContent, markView: NSView) {
         self.content = content
         self.markView = markView
         super.init(data: nil, ofType: nil)
-        allowsTextAttachmentView = true
-    }
-
-    override func viewProvider(
-        for parentView: NSView?,
-        location: any NSTextLocation,
-        textContainer: NSTextContainer?
-    ) -> NSTextAttachmentViewProvider? {
-        PharoMarkViewProvider(
-            textAttachment: self,
-            parentView: parentView,
-            textLayoutManager: textContainer?.textLayoutManager,
-            location: location)
+        image = NSImage(size: .zero)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("PharoMarkAttachment is not loaded from a nib")
-    }
-}
-
-nonisolated final class PharoMarkViewProvider: NSTextAttachmentViewProvider, @unchecked Sendable {
-    /// Tracking the view's bounds is what has the layout place and show the view
-    /// as it lays the line out; without it the view stays a placeholder until a
-    /// click forces another pass.
-    override init(
-        textAttachment: NSTextAttachment,
-        parentView: NSView?,
-        textLayoutManager: NSTextLayoutManager?,
-        location: any NSTextLocation
-    ) {
-        super.init(
-            textAttachment: textAttachment,
-            parentView: parentView,
-            textLayoutManager: textLayoutManager,
-            location: location)
-        tracksTextAttachmentViewBounds = true
-    }
-
-    override func loadView() {
-        super.loadView()
-        view = (textAttachment as? PharoMarkAttachment)?.markView
-    }
-
-    /// Left to itself the provider measures the hosting view, which pads a mark
-    /// out and, when its size is zero, makes the line as tall as an empty view
-    /// rather than nothing. The attachment's own bounds are the truth.
-    override func attachmentBounds(
-        for attributes: [NSAttributedString.Key: Any],
-        location: any NSTextLocation,
-        textContainer: NSTextContainer?,
-        proposedLineFragment: CGRect,
-        position: CGPoint
-    ) -> CGRect {
-        (textAttachment as? PharoMarkAttachment)?.bounds ?? .zero
     }
 }
 

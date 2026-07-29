@@ -1,0 +1,415 @@
+THERE_BE_DRAGONS_HERE
+Could not find symbol named: 'swifty_pharo_thunk_ready' searching in main module
+29 July 2026 10:30:17.428548 pm
+
+VM: Mac OS - arm64 - 1000 - CoInterpreter
+StackToRegisterMappingCogit
+23e5a5a76c90fcb95a4aa5e4fccb5f1318ad0ad2+0.23e5a5a - Commit: 23e5a5a - Date: 2026-07-15 14:26:30 +0200
+
+Image: Pharo13.1.0SNAPSHOT [Build information: Pharo-13.1.0+SNAPSHOT.build.745.sha.4f7563dfe5e465d0cb0a269e3ba58a351b1a8cde (64 Bit)]
+
+TFFIBackend>>primLoadSymbol:module:
+	Receiver: a TFFIBackend
+	Arguments and temporary variables: 
+<<error during printing>>
+	Receiver's instance variables: 
+a TFFIBackend
+
+TFFIBackend>>loadSymbol:module:
+	Receiver: a TFFIBackend
+	Arguments and temporary variables: 
+		arg1: 	'swifty_pharo_thunk_ready'
+		arg2: 	nil
+		tmp1: 	nil
+	Receiver's instance variables: 
+a TFFIBackend
+
+ExternalAddress class>>loadSymbol:module:
+	Receiver: ExternalAddress
+	Arguments and temporary variables: 
+		arg1: 	'swifty_pharo_thunk_ready'
+		arg2: 	nil
+	Receiver's instance variables: 
+		superclass: 	ByteArray
+		methodDict: 	a MethodDictionary(#+->ExternalAddress>>#+ #=->ExternalAddress>[..]
+		format: 	1048576
+		layout: 	a ByteLayout
+		protocols: 	an Array(Protocol (arithmetic) - 1 selector(s) Protocol (compari[..]
+		subclasses: 	nil
+		name: 	#ExternalAddress
+		classPool: 	nil
+		sharedPools: 	an OrderedCollection()
+		environment: 	a SystemEnvironment(lots of globals)
+		commentSourcePointer: 	17321592
+		packageTag: 	a PackageTag(Uncategorized)
+		wordSize: 	8
+
+
+SwpBridge>>registerThunk
+	Receiver: a SwpBridge
+	Arguments and temporary variables: 
+		address: 	nil
+		definition: 	nil
+		function: 	nil
+	Receiver's instance variables: 
+		callback: 	a TFCallback(@ 16r128C18000)
+		session: 	a SwpSession
+		worker: 	a TFWorker(@ 16r884A17CA0)
+
+
+SwpBridge>>install
+	Receiver: a SwpBridge
+	Arguments and temporary variables: 
+x
+	Receiver's instance variables: 
+		callback: 	a TFCallback(@ 16r128C18000)
+		session: 	a SwpSession
+		worker: 	a TFWorker(@ 16r884A17CA0)
+
+
+SwpBridge class>>install
+	Receiver: SwpBridge
+	Arguments and temporary variables: 
+x
+	Receiver's instance variables: 
+		superclass: 	Object
+		methodDict: 	a MethodDictionary(#install->SwpBridge>>#install #registerThunk[..]
+		format: 	65539
+		layout: 	a FixedLayout
+		protocols: 	an Array(Protocol (installing) - 2 selector(s) Protocol (request[..]
+		subclasses: 	nil
+		name: 	#SwpBridge
+		classPool: 	a Dictionary(#Installed->nil )
+		sharedPools: 	an OrderedCollection()
+		environment: 	a SystemEnvironment(lots of globals)
+		commentSourcePointer: 	2173
+		packageTag: 	a PackageTag(Uncategorized)
+
+
+UndefinedObject>>DoIt
+	Receiver: nil
+	Arguments and temporary variables: 
+x
+	Receiver's instance variables: 
+nil
+
+OCReceiverDoItSemanticScope(OCDoItSemanticScope)>>evaluateDoIt:
+	Receiver: an OCReceiverDoItSemanticScope
+	Arguments and temporary variables: 
+		arg1: 	UndefinedObject>>#DoIt
+	Receiver's instance variables: 
+		outerScope: 	nil
+		targetReceiver: 	nil
+
+
+OpalCompiler>>evaluate
+	Receiver: an OpalCompiler
+	Arguments and temporary variables: 
+		tmp1: 	nil
+		tmp2: 	UndefinedObject>>#DoIt
+	Receiver's instance variables: 
+		ast: 	DoIt
+
+	SwpBridge install.
+	[ (Delay forSeconds: 3600) wait ] repeat
+		source: 	'SwpBridge install. [ (Delay forSeconds: 3600) wait ] repeat'
+		compilationContext: 	an OCCompilationContext
+		compilationContextClass: 	nil
+		permitFaulty: 	false
+		permitUndeclared: 	false
+		failBlock: 	nil
+		logged: 	nil
+		changeStamp: 	nil
+		protocol: 	nil
+		requestor: 	nil
+		priorMethod: 	nil
+
+
+OpalCompiler>>evaluate:
+	Receiver: an OpalCompiler
+	Arguments and temporary variables: 
+		arg1: 	'SwpBridge install. [ (Delay forSeconds: 3600) wait ] repeat'
+	Receiver's instance variables: 
+		ast: 	DoIt
+
+	SwpBridge install.
+	[ (Delay forSeconds: 3600) wait ] repeat
+		source: 	'SwpBridge install. [ (Delay forSeconds: 3600) wait ] repeat'
+		compilationContext: 	an OCCompilationContext
+		compilationContextClass: 	nil
+		permitFaulty: 	false
+		permitUndeclared: 	false
+		failBlock: 	nil
+		logged: 	nil
+		changeStamp: 	nil
+		protocol: 	nil
+		requestor: 	nil
+		priorMethod: 	nil
+
+
+[
+		tmp2 := Smalltalk compiler evaluate: arg1.
+		self hasSessionChanged ifFalse: [
+				| tmp4 |
+				tmp4 := self stdout.
+				tmp4
+					print: tmp2;
+					lf ] ] in EvaluateCommandLineHandler>>evaluate:
+	Receiver: an EvaluateCommandLineHandler
+	Arguments and temporary variables: 
+		arg1: 	'SwpBridge install. [ (Delay forSeconds: 3600) wait ] repeat'
+		tmp2: 	nil
+	Receiver's instance variables: 
+		commandLine: 	a CommandLineArguments
+		session: 	a WorkingSession
+		stdout: 	a VTermOutputDriver
+		stderr: 	a VTermOutputDriver
+		sourceFiles: 	nil
+
+
+FullBlockClosure(BlockClosure)>>on:do:
+	Receiver: [
+		tmp2 := Smalltalk compiler evaluate: arg1.
+		self hasSessionChanged ifFalse: [
+			[..]
+	Arguments and temporary variables: 
+		arg1: 	Error
+		arg2: 	[ :arg2 | self handleError: arg2 ]
+	Receiver's instance variables: 
+		outerContext: 	EvaluateCommandLineHandler>>evaluate:
+		compiledBlock: 	a CompiledBlock: [
+		tmp2 := Smalltalk compiler evaluate: ar[..]
+		numArgs: 	0
+		receiver: 	an EvaluateCommandLineHandler
+
+
+EvaluateCommandLineHandler>>evaluate:
+	Receiver: an EvaluateCommandLineHandler
+	Arguments and temporary variables: 
+		tmp2: 	nil
+		arg1: 	'SwpBridge install. [ (Delay forSeconds: 3600) wait ] repeat'
+	Receiver's instance variables: 
+		commandLine: 	a CommandLineArguments
+		session: 	a WorkingSession
+		stdout: 	a VTermOutputDriver
+		stderr: 	a VTermOutputDriver
+		sourceFiles: 	nil
+
+
+EvaluateCommandLineHandler>>evaluateArguments
+	Receiver: an EvaluateCommandLineHandler
+	Arguments and temporary variables: 
+		tmp1: 	'SwpBridge install. [ (Delay forSeconds: 3600) wait ] repeat'
+	Receiver's instance variables: 
+		commandLine: 	a CommandLineArguments
+		session: 	a WorkingSession
+		stdout: 	a VTermOutputDriver
+		stderr: 	a VTermOutputDriver
+		sourceFiles: 	nil
+
+
+EvaluateCommandLineHandler>>activate
+	Receiver: an EvaluateCommandLineHandler
+	Arguments and temporary variables: 
+x
+	Receiver's instance variables: 
+		commandLine: 	a CommandLineArguments
+		session: 	a WorkingSession
+		stdout: 	a VTermOutputDriver
+		stderr: 	a VTermOutputDriver
+		sourceFiles: 	nil
+
+
+EvaluateCommandLineHandler class(CommandLineHandler class)>>activateWith:
+	Receiver: EvaluateCommandLineHandler
+	Arguments and temporary variables: 
+<<error during printing>>
+	Receiver's instance variables: 
+		superclass: 	STCommandLineHandler
+		methodDict: 	a MethodDictionary(#activate->EvaluateCommandLineHandler>>#acti[..]
+		format: 	65541
+		layout: 	a FixedLayout
+		protocols: 	an Array(Protocol (commands) - 1 selector(s) Protocol (activatio[..]
+		subclasses: 	nil
+		name: 	#EvaluateCommandLineHandler
+		classPool: 	nil
+		sharedPools: 	an OrderedCollection()
+		environment: 	a SystemEnvironment(lots of globals)
+		commentSourcePointer: 	16991718
+		packageTag: 	a PackageTag(Base)
+
+
+[ arg1 activateWith: commandLine ] in PharoCommandLineHandler(BasicCommandLineHandler)>>activateSubCommand:
+	Receiver: a PharoCommandLineHandler
+	Arguments and temporary variables: 
+		arg1: 	EvaluateCommandLineHandler
+	Receiver's instance variables: 
+		commandLine: 	a CommandLineArguments
+		session: 	a WorkingSession
+		stdout: 	a VTermOutputDriver
+		stderr: 	a VTermOutputDriver
+
+
+FullBlockClosure(BlockClosure)>>on:do:
+	Receiver: [ arg1 activateWith: commandLine ]
+	Arguments and temporary variables: 
+		arg1: 	Exit
+		arg2: 	[ :arg2 | ^ self handleExit: arg2 for: arg1 ]
+	Receiver's instance variables: 
+		outerContext: 	PharoCommandLineHandler(BasicCommandLineHandler)>>activateSub[..]
+		compiledBlock: 	a CompiledBlock: [ arg1 activateWith: commandLine ]
+		numArgs: 	0
+		receiver: 	a PharoCommandLineHandler
+
+
+PharoCommandLineHandler(BasicCommandLineHandler)>>activateSubCommand:
+	Receiver: a PharoCommandLineHandler
+	Arguments and temporary variables: 
+		arg1: 	EvaluateCommandLineHandler
+	Receiver's instance variables: 
+		commandLine: 	a CommandLineArguments
+		session: 	a WorkingSession
+		stdout: 	a VTermOutputDriver
+		stderr: 	a VTermOutputDriver
+
+
+PharoCommandLineHandler(BasicCommandLineHandler)>>handleSubcommand
+	Receiver: a PharoCommandLineHandler
+	Arguments and temporary variables: 
+		tmp1: 	an OrderedCollection(EvaluateCommandLineHandler)
+	Receiver's instance variables: 
+		commandLine: 	a CommandLineArguments
+		session: 	a WorkingSession
+		stdout: 	a VTermOutputDriver
+		stderr: 	a VTermOutputDriver
+
+
+PharoCommandLineHandler(BasicCommandLineHandler)>>handleArgument:
+	Receiver: a PharoCommandLineHandler
+	Arguments and temporary variables: 
+		arg1: 	'eval'
+	Receiver's instance variables: 
+		commandLine: 	a CommandLineArguments
+		session: 	a WorkingSession
+		stdout: 	a VTermOutputDriver
+		stderr: 	a VTermOutputDriver
+
+
+[ self handleArgument: self firstArgument ] in [
+		[ self handleArgument: self firstArgument ]
+			on: Exit
+			do: [ :arg2 |
+					self class commandLinePasswordManager hasPasswordSet ifTrue: [
+						Smalltalk snapshot: false andQuit: true ].
+					self handleExit: arg2 ] ] in PharoCommandLineHandler(BasicCommandLineHandler)>>activate
+	Receiver: a PharoCommandLineHandler
+	Arguments and temporary variables: 
+x
+	Receiver's instance variables: 
+		commandLine: 	a CommandLineArguments
+		session: 	a WorkingSession
+		stdout: 	a VTermOutputDriver
+		stderr: 	a VTermOutputDriver
+
+
+FullBlockClosure(BlockClosure)>>on:do:
+	Receiver: [ self handleArgument: self firstArgument ]
+	Arguments and temporary variables: 
+		arg1: 	Exit
+		arg2: 	[ :arg2 |
+					self class commandLinePasswordManager hasPasswordSet i[..]
+	Receiver's instance variables: 
+		outerContext: 	[
+		[ self handleArgument: self firstArgument ]
+			on: Exit
+	[..]
+		compiledBlock: 	a CompiledBlock: [ self handleArgument: self firstArgument ]
+		numArgs: 	0
+		receiver: 	a PharoCommandLineHandler
+
+
+[
+		[ self handleArgument: self firstArgument ]
+			on: Exit
+			do: [ :arg2 |
+					self class commandLinePasswordManager hasPasswordSet ifTrue: [
+						Smalltalk snapshot: false andQuit: true ].
+					self handleExit: arg2 ] ] in PharoCommandLineHandler(BasicCommandLineHandler)>>activate
+	Receiver: a PharoCommandLineHandler
+	Arguments and temporary variables: 
+x
+	Receiver's instance variables: 
+		commandLine: 	a CommandLineArguments
+		session: 	a WorkingSession
+		stdout: 	a VTermOutputDriver
+		stderr: 	a VTermOutputDriver
+
+
+[
+				  self value.
+				  Processor terminateRealActive ] in FullBlockClosure(BlockClosure)>>newProcess
+	Receiver: [
+		[ self handleArgument: self firstArgument ]
+			on: Exit
+			do: [ :arg2 |
+					self[..]
+	Arguments and temporary variables: 
+x
+	Receiver's instance variables: 
+		outerContext: 	PharoCommandLineHandler(BasicCommandLineHandler)>>activate
+		compiledBlock: 	a CompiledBlock: [
+		[ self handleArgument: self firstArgume[..]
+		numArgs: 	0
+		receiver: 	a PharoCommandLineHandler
+
+
+
+--- The full stack ---
+TFFIBackend>>primLoadSymbol:module:
+TFFIBackend>>loadSymbol:module:
+ExternalAddress class>>loadSymbol:module:
+SwpBridge>>registerThunk
+SwpBridge>>install
+SwpBridge class>>install
+UndefinedObject>>DoIt
+OCReceiverDoItSemanticScope(OCDoItSemanticScope)>>evaluateDoIt:
+OpalCompiler>>evaluate
+OpalCompiler>>evaluate:
+[
+		tmp2 := Smalltalk compiler evaluate: arg1.
+		self hasSessionChanged ifFalse: [
+				| tmp4 |
+				tmp4 := self stdout.
+				tmp4
+					print: tmp2;
+					lf ] ] in EvaluateCommandLineHandler>>evaluate:
+FullBlockClosure(BlockClosure)>>on:do:
+EvaluateCommandLineHandler>>evaluate:
+EvaluateCommandLineHandler>>evaluateArguments
+EvaluateCommandLineHandler>>activate
+EvaluateCommandLineHandler class(CommandLineHandler class)>>activateWith:
+[ arg1 activateWith: commandLine ] in PharoCommandLineHandler(BasicCommandLineHandler)>>activateSubCommand:
+FullBlockClosure(BlockClosure)>>on:do:
+PharoCommandLineHandler(BasicCommandLineHandler)>>activateSubCommand:
+PharoCommandLineHandler(BasicCommandLineHandler)>>handleSubcommand
+PharoCommandLineHandler(BasicCommandLineHandler)>>handleArgument:
+[ self handleArgument: self firstArgument ] in [
+		[ self handleArgument: self firstArgument ]
+			on: Exit
+			do: [ :arg2 |
+					self class commandLinePasswordManager hasPasswordSet ifTrue: [
+						Smalltalk snapshot: false andQuit: true ].
+					self handleExit: arg2 ] ] in PharoCommandLineHandler(BasicCommandLineHandler)>>activate
+FullBlockClosure(BlockClosure)>>on:do:
+[
+		[ self handleArgument: self firstArgument ]
+			on: Exit
+			do: [ :arg2 |
+					self class commandLinePasswordManager hasPasswordSet ifTrue: [
+						Smalltalk snapshot: false andQuit: true ].
+					self handleExit: arg2 ] ] in PharoCommandLineHandler(BasicCommandLineHandler)>>activate
+[
+				  self value.
+				  Processor terminateRealActive ] in FullBlockClosure(BlockClosure)>>newProcess
+-------------------------------------------------------------------------------
+
