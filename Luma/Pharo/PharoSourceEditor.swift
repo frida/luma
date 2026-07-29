@@ -395,18 +395,12 @@ final class PharoTextView: NSTextView {
         }
     }
 
-    /// The system appearance decides which of a span's two colours to draw, so a
-    /// flip between light and dark repaints without asking the image again.
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        applyStyle()
-    }
-
     /// Paint the coloured runs GT would over the source, mapped past the mark
-    /// characters, on a plain label-coloured ground.
+    /// characters, on a plain label-coloured ground. Each run's colour resolves
+    /// the light or dark shade itself, so a theme flip redraws without another
+    /// attribute pass -- which would relayout and unsettle the marks.
     private func applyStyle() {
         guard let storage = textStorage else { return }
-        let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         let plain = font ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
         let bold = NSFont.monospacedSystemFont(ofSize: plain.pointSize, weight: .bold)
         let whole = NSRange(location: 0, length: storage.length)
@@ -418,8 +412,8 @@ final class PharoTextView: NSTextView {
             let end = storageOffset(forSource: span.stop)
             guard end > start, end <= storage.length else { continue }
             let range = NSRange(location: start, length: end - start)
-            if let hex = isDark ? span.dark : span.light {
-                storage.addAttribute(.foregroundColor, value: NSColor(pharoHex: hex), range: range)
+            if let color = NSColor(lightHex: span.light, darkHex: span.dark) {
+                storage.addAttribute(.foregroundColor, value: color, range: range)
             }
             if span.bold {
                 storage.addAttribute(.font, value: bold, range: range)
@@ -1351,6 +1345,16 @@ extension NSColor {
             green: CGFloat((value >> 8) & 0xFF) / 255,
             blue: CGFloat(value & 0xFF) / 255,
             alpha: 1)
+    }
+
+    /// A run colour that resolves its own light or dark shade as the appearance
+    /// changes, so a theme flip never has to rewrite the text's attributes.
+    convenience init?(lightHex: String?, darkHex: String?) {
+        guard let lightHex, let darkHex else { return nil }
+        self.init(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            return NSColor(pharoHex: isDark ? darkHex : lightHex)
+        }
     }
 }
 
