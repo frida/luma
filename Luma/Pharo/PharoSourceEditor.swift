@@ -716,19 +716,79 @@ final class PharoTextView: NSTextView {
         complete(nil)
     }
 
-    /// A new line keeps the indentation of the one it left, so the caret lands
-    /// under the first word rather than back at the margin.
+    /// A new line follows the nesting: it keeps the indentation of the one it
+    /// left and steps in once for every bracket that line opened and had not
+    /// closed by the caret. Opening a bracket and pressing Enter with its closer
+    /// still ahead drops the closer to its own line at the outer indent.
     override func insertNewline(_ sender: Any?) {
-        let indent = caretLineIndent()
+        let text = string as NSString
+        let caret = selectedRange().location
+        let line = text.lineRange(for: NSRange(location: caret, length: 0))
+        let toCaret = text.substring(with: NSRange(location: line.location, length: caret - line.location))
+        let base = String(toCaret.prefix { $0 == " " || $0 == "\t" })
+        let depth = openDepth(in: toCaret)
+        let inner = depth > 0 ? base + String(repeating: "\t", count: depth) : base
+        let splitsCloser = depth > 0 && nextNonSpaceIsCloser(text, from: caret)
+
         super.insertNewline(sender)
-        guard !indent.isEmpty else { return }
-        super.insertText(indent, replacementRange: selectedRange())
+        if !inner.isEmpty {
+            super.insertText(inner, replacementRange: selectedRange())
+        }
+        guard splitsCloser else { return }
+        let caretAfterInner = selectedRange()
+        super.insertText("\n" + base, replacementRange: caretAfterInner)
+        setSelectedRange(caretAfterInner)
     }
 
-    private func caretLineIndent() -> String {
-        let text = string as NSString
-        let line = text.lineRange(for: NSRange(location: selectedRange().location, length: 0))
-        return String(text.substring(with: line).prefix { $0 == " " || $0 == "\t" })
+    /// The brackets a stretch of source leaves open, blind to those inside a
+    /// string, a comment or a character literal, where they are not grammar.
+    private func openDepth(in source: String) -> Int {
+        let characters = Array(source)
+        var depth = 0
+        var index = 0
+        while index < characters.count {
+            switch characters[index] {
+            case "'":
+                index = endOfQuoted(characters, after: index, terminator: "'")
+            case "\"":
+                index = endOfQuoted(characters, after: index, terminator: "\"")
+            case "$":
+                index += 1
+            case "(", "[", "{":
+                depth += 1
+            case ")", "]", "}" where depth > 0:
+                depth -= 1
+            default:
+                break
+            }
+            index += 1
+        }
+        return depth
+    }
+
+    /// The index of a quote's or comment's closing mark, treating a doubled mark
+    /// as an escaped one that stays inside.
+    private func endOfQuoted(_ characters: [Character], after open: Int, terminator: Character) -> Int {
+        var index = open + 1
+        while index < characters.count {
+            if characters[index] == terminator {
+                guard index + 1 < characters.count, characters[index + 1] == terminator else { return index }
+                index += 2
+                continue
+            }
+            index += 1
+        }
+        return characters.count
+    }
+
+    private func nextNonSpaceIsCloser(_ text: NSString, from caret: Int) -> Bool {
+        var index = caret
+        while index < text.length {
+            let unit = text.character(at: index)
+            if unit == 32 || unit == 9 { index += 1; continue }
+            return unit == 41 || unit == 93 || unit == 125
+        }
+        return false
     }
 
     /// Tab indents: it steps in every line a selection touches, and is a plain
