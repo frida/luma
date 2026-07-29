@@ -380,6 +380,7 @@
 		};
 		0CD2095A2EB511C400D027FC /* Stage Pharo image */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
@@ -387,7 +388,6 @@
 			);
 			inputPaths = (
 			);
-			alwaysOutOfDate = 1;
 			name = "Stage Pharo image";
 			outputFileListPaths = (
 			);
