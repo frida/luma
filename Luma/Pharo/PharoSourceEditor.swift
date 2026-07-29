@@ -451,24 +451,6 @@ final class PharoTextView: NSTextView {
         storage.endEditing()
         setSelectedRange(NSRange(location: storageOffset(forSource: cursor), length: 0))
         isApplyingMarks = false
-        layoutMarkViews()
-    }
-
-    /// A mark's view is added by the viewport layout controller as it lays the
-    /// mark's line out, and only for lines in the viewport. On a loaded snippet
-    /// the two happen out of order -- the scroll view sizes this one before or
-    /// after the marks go in -- and whichever comes first lays an empty or
-    /// mark-less viewport, leaving the views as placeholders until a click lays
-    /// it again. So the viewport is laid out on both: after the marks change,
-    /// and whenever the size this view is finally given lands.
-    private func layoutMarkViews() {
-        guard bounds.width > 0, let layout = textLayoutManager else { return }
-        layout.textViewportLayoutController.layoutViewport()
-    }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        layoutMarkViews()
     }
 
     private func wantedMarks() -> [PharoPlacedMark] {
@@ -1077,7 +1059,25 @@ nonisolated final class PharoMarkAttachment: NSTextAttachment, @unchecked Sendab
 }
 
 nonisolated final class PharoMarkViewProvider: NSTextAttachmentViewProvider, @unchecked Sendable {
+    /// Tracking the view's bounds is what has the layout place and show the view
+    /// as it lays the line out; without it the view stays a placeholder until a
+    /// click forces another pass.
+    override init(
+        textAttachment: NSTextAttachment,
+        parentView: NSView?,
+        textLayoutManager: NSTextLayoutManager?,
+        location: any NSTextLocation
+    ) {
+        super.init(
+            textAttachment: textAttachment,
+            parentView: parentView,
+            textLayoutManager: textLayoutManager,
+            location: location)
+        tracksTextAttachmentViewBounds = true
+    }
+
     override func loadView() {
+        super.loadView()
         view = (textAttachment as? PharoMarkAttachment)?.markView
     }
 
