@@ -48,6 +48,7 @@ struct PharoSourceEditor: View {
     let onOpenResult: () -> Void
     var selfClass: String? = nil
     var resolvesReferences: Bool = true
+    var isMethod: Bool = false
 
     @StateObject private var bodies = PharoOpenBodies()
 
@@ -61,7 +62,8 @@ struct PharoSourceEditor: View {
         onOpen: @escaping (PharoObject) -> Void,
         onOpenResult: @escaping () -> Void,
         selfClass: String? = nil,
-        resolvesReferences: Bool = true
+        resolvesReferences: Bool = true,
+        isMethod: Bool = false
     ) {
         self.id = id
         _source = source
@@ -73,6 +75,7 @@ struct PharoSourceEditor: View {
         self.onOpenResult = onOpenResult
         self.selfClass = selfClass
         self.resolvesReferences = resolvesReferences
+        self.isMethod = isMethod
     }
 
     var body: some View {
@@ -88,6 +91,7 @@ struct PharoSourceEditor: View {
                 onOpenResult: onOpenResult,
                 selfClass: selfClass,
                 resolvesReferences: resolvesReferences,
+                isMethod: isMethod,
                 bodies: bodies)
             PharoOpenBodiesView(bodies: bodies)
         }
@@ -134,6 +138,7 @@ struct PharoTextEditor: NSViewRepresentable {
     let onOpenResult: () -> Void
     var selfClass: String?
     var resolvesReferences: Bool
+    var isMethod: Bool
     let bodies: PharoOpenBodies
 
     func makeCoordinator() -> Coordinator {
@@ -146,6 +151,7 @@ struct PharoTextEditor: NSViewRepresentable {
         view.bodies = bodies
         view.onFocused = { if focused != id { focused = id } }
         view.completions = runtime.completionList
+        view.styleSpans = { source in await runtime.styles(in: source, isMethod: isMethod) }
         if resolvesReferences {
             view.classReferences = runtime.namedClasses(in:)
             view.methodReferences = { source in await runtime.methods(in: source, selfClass: selfClass) }
@@ -254,6 +260,11 @@ extension PharoRuntime {
         (try? await whenRunning { try await undeclaredVariables(in: source) }) ?? []
     }
 
+    /// Nor colours any of it.
+    func styles(in source: String, isMethod: Bool) async -> [PharoStyleSpan] {
+        (try? await whenRunning { try await styleSpans(in: source, isMethod: isMethod) }) ?? []
+    }
+
     private func whenRunning<Answer>(_ request: () async throws -> Answer) async throws -> Answer {
         try await runningState()
         return try await request()
@@ -268,6 +279,7 @@ final class PharoTextView: NSTextView {
     var classReferences: ((String) async -> [PharoClassReference])?
     var methodReferences: ((String) async -> [PharoMethodReference])?
     var undeclaredVariables: ((String) async -> [PharoUndeclaredVariable])?
+    var styleSpans: ((String) async -> [PharoStyleSpan])?
     var onFocused: (() -> Void)?
     var onEdit: ((String) -> Void)?
     var bodies: PharoOpenBodies?
@@ -370,13 +382,34 @@ final class PharoTextView: NSTextView {
             let classes = await classReferences?(source) ?? []
             let methods = await methodReferences?(source) ?? []
             let undeclaredNames = await undeclaredVariables?(source) ?? []
+            let spans = await styleSpans?(source) ?? []
             guard self.source == source else { return }
             references = classes
             methodRefs = methods
             undeclared = undeclaredNames
             reconcileMarks()
             refreshOpenBodies()
+            applyStyle(spans)
         }
+    }
+
+    /// Paint the coloured runs GT would over the source, mapped past the mark
+    /// characters, on a plain label-coloured ground.
+    private func applyStyle(_ spans: [PharoStyleSpan]) {
+        guard let storage = textStorage else { return }
+        let whole = NSRange(location: 0, length: storage.length)
+        storage.beginEditing()
+        storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: whole)
+        for span in spans {
+            let start = storageOffset(forSource: span.start - 1)
+            let end = storageOffset(forSource: span.stop)
+            guard end > start, end <= storage.length else { continue }
+            storage.addAttribute(
+                .foregroundColor,
+                value: NSColor(pharoHex: span.color),
+                range: NSRange(location: start, length: end - start))
+        }
+        storage.endEditing()
     }
 
     /// Bring the marks in the text into line with the ones the snippet wants,
@@ -1270,6 +1303,18 @@ private struct PharoResultDot: View {
         .contentShape(Rectangle())
         .onHover { isPointedAt = $0 }
         .help("Inspect the result")
+    }
+}
+
+extension NSColor {
+    /// An RRGGBB run colour from the image, read in the sRGB space it named it in.
+    convenience init(pharoHex hex: String) {
+        let value = UInt32(hex, radix: 16) ?? 0
+        self.init(
+            srgbRed: CGFloat((value >> 16) & 0xFF) / 255,
+            green: CGFloat((value >> 8) & 0xFF) / 255,
+            blue: CGFloat(value & 0xFF) / 255,
+            alpha: 1)
     }
 }
 

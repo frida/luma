@@ -165,7 +165,8 @@ private struct PharoNewMethodEditor: View {
                 onOpen: { _ in },
                 onOpenResult: {},
                 selfClass: classObject.printString,
-                resolvesReferences: false)
+                resolvesReferences: false,
+                isMethod: true)
             .frame(minHeight: 48, alignment: .topLeading)
 
             HStack(spacing: 6) {
@@ -325,7 +326,8 @@ private struct PharoMethodRow: View {
                 onOpen: onSelect,
                 onOpenResult: {},
                 selfClass: classObject.printString,
-                resolvesReferences: false)
+                resolvesReferences: false,
+                isMethod: true)
 
             if isDirty {
                 HStack(spacing: 6) {
@@ -447,7 +449,8 @@ struct PharoMethodEditor: View {
                 onOpen: onSelect,
                 onOpenResult: {},
                 selfClass: reference.className,
-                resolvesReferences: false)
+                resolvesReferences: false,
+                isMethod: true)
             .padding(.horizontal, 4)
             .padding(.bottom, 6)
         }
