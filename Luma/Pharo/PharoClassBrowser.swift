@@ -10,24 +10,15 @@ struct PharoClassBrowser: View {
     let onSelect: (PharoObject) -> Void
 
     @State private var info: PharoClassBrowserInfo?
-    @State private var shown = Tab.methods
+    @State private var shown: String? = "Methods"
 
-    private enum Tab: String, CaseIterable {
-        case methods = "Methods"
-        case definition = "Definition"
-        case comment = "Comment"
-    }
+    private let tabs = ["Methods", "Definition", "Comment"]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let info {
                 PharoClassHeader(info: info)
-                Picker("", selection: $shown) {
-                    ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .padding(6)
+                PharoTabBar(tabs: tabs.map { ($0, $0) }, selection: $shown)
                 Divider()
                 content(of: info)
             } else {
@@ -40,12 +31,12 @@ struct PharoClassBrowser: View {
     @ViewBuilder
     private func content(of info: PharoClassBrowserInfo) -> some View {
         switch shown {
-        case .methods:
-            PharoMethodList(methods: info.methods, runtime: runtime, classObject: classObject, onSelect: onSelect)
-        case .definition:
+        case "Definition":
             source(info.definition)
-        case .comment:
+        case "Comment":
             source(info.comment)
+        default:
+            PharoMethodList(methods: info.methods, runtime: runtime, classObject: classObject, onSelect: onSelect)
         }
     }
 
