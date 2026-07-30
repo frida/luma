@@ -293,7 +293,7 @@ struct PharoObjectColumn: View {
     private func body(of declaration: PharoViewDeclaration) -> some View {
         switch declaration.title {
         case "Preview":
-            preview
+            preview(declaration.text ?? object.printString)
         case "Print":
             source(object.printString)
         case "Meta":
@@ -305,9 +305,9 @@ struct PharoObjectColumn: View {
         }
     }
 
-    private var preview: some View {
+    private func preview(_ text: String) -> some View {
         ScrollView {
-            Text(object.printString)
+            Text(text)
                 .font(.largeTitle)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -355,11 +355,7 @@ struct PharoObjectColumn: View {
     private var declarations: [PharoViewDeclaration] {
         guard case .ready(let loaded) = declared else { return [] }
         let declared = loaded.filter { $0.title != "Meta" }
-        return [previewDeclaration] + declared + [printDeclaration, metaDeclaration]
-    }
-
-    private var previewDeclaration: PharoViewDeclaration {
-        PharoViewDeclaration(viewName: "preview", title: "Preview", priority: 0, methodSelector: "swpPreview")
+        return declared + [printDeclaration, metaDeclaration]
     }
 
     private var printDeclaration: PharoViewDeclaration {
