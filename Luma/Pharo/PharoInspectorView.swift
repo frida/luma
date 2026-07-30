@@ -73,7 +73,9 @@ final class PharoColumnPath {
     func clear() {
         objects = []
         shown = nil
-        bring(slot: 0, to: .leading)
+        if slotCount > 0 {
+            bring(slot: 0, to: .leading)
+        }
     }
 
     func markVisible(_ ids: [Int]) {
