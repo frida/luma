@@ -255,17 +255,16 @@ struct PharoObjectColumn: View {
     }
 
     private var printStringHeader: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(object.printString)
-                .font(.headline)
-                .lineLimit(2)
-                .accessibilityIdentifier("pharo.inspector.printString")
-            Text(object.className)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
+        Text("\(article(for: object.className)) \(object.className) (\(object.printString))")
+            .font(.headline)
+            .lineLimit(2)
+            .accessibilityIdentifier("pharo.inspector.printString")
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(8)
+    }
+
+    private func article(for className: String) -> String {
+        "aeiouAEIOU".contains(className.first ?? "x") ? "an" : "a"
     }
 
     private var closeButton: some View {
