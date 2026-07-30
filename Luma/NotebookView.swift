@@ -46,7 +46,10 @@ struct NotebookView: View {
     private var page: some View {
         Group {
             if entries.isEmpty {
-                NotebookEmptyStateView(engine: engine, onAddNote: { addEntry(kind: .note, after: nil) })
+                NotebookEmptyStateView(
+                    engine: engine,
+                    onAddNote: { addEntry(kind: .note, after: nil) },
+                    onAddPharoCell: { addEntry(kind: .pharo, after: nil) })
             } else {
                 content
             }
@@ -104,17 +107,6 @@ struct NotebookView: View {
 
             HStack(spacing: 8) {
                 Button {
-                    addEntry(kind: .pharo, after: nil)
-                } label: {
-                    Label("New Pharo Cell", systemImage: "chevron.left.forwardslash.chevron.right")
-                        .font(.callout.weight(.medium))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                }
-                .accessibilityIdentifier("notebook.newPharoCell")
-                .buttonStyle(.bordered)
-
-                Button {
                     addEntry(kind: .note, after: nil)
                 } label: {
                     Label("New Note", systemImage: "plus")
@@ -124,6 +116,17 @@ struct NotebookView: View {
                 }
                 .accessibilityIdentifier("notebook.newNote")
                 .buttonStyle(.borderedProminent)
+
+                Button {
+                    addEntry(kind: .pharo, after: nil)
+                } label: {
+                    Label("New Pharo Cell", systemImage: "chevron.left.forwardslash.chevron.right")
+                        .font(.callout.weight(.medium))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                }
+                .accessibilityIdentifier("notebook.newPharoCell")
+                .buttonStyle(.bordered)
             }
             .buttonBorderShape(.capsule)
             #if canImport(UIKit)
@@ -562,6 +565,7 @@ private let instructionsMaxWidth: CGFloat = 440
 struct NotebookEmptyStateView: View {
     let engine: Engine
     let onAddNote: () -> Void
+    let onAddPharoCell: () -> Void
 
     #if canImport(UIKit)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -622,10 +626,17 @@ struct NotebookEmptyStateView: View {
                 walkthrough
             }
 
-            Button(action: onAddNote) {
-                Label("New Note", systemImage: "plus")
+            HStack(spacing: 8) {
+                Button(action: onAddNote) {
+                    Label("New Note", systemImage: "plus")
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button(action: onAddPharoCell) {
+                    Label("New Pharo Cell", systemImage: "chevron.left.forwardslash.chevron.right")
+                }
+                .buttonStyle(.bordered)
             }
-            .buttonStyle(.borderedProminent)
             .controlSize(.large)
         }
         .padding(.horizontal, 24)
