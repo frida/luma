@@ -6,54 +6,6 @@ import SwiftyPharo
 /// thing being inspected sits.
 nonisolated let pharoPageSpace = "pharo.page"
 
-/// What a page is showing to its right: the object a cell just produced, or
-/// what its last run captured when there is no VM to ask again.
-enum PharoInspection {
-    case live(PharoObject)
-    case captured(PharoSnapshot)
-}
-
-/// The pane a page opens its values into, kept beside the page rather than
-/// under the cell so drilling has somewhere to go.
-struct PharoInspectionPane: View {
-    let inspection: PharoInspection
-    /// Where in the pane's own height the thing being inspected sits, so the
-    /// arrow points across from it rather than from the middle of the window.
-    let pointsFrom: CGFloat?
-    let onClose: () -> Void
-
-    private let runtime = PharoRuntime.shared
-
-    var body: some View {
-        HStack(spacing: 0) {
-            PharoPointingArrow(pointsFrom: pointsFrom)
-            inspected
-        }
-    }
-
-    @ViewBuilder
-    private var inspected: some View {
-        switch inspection {
-        case .live(let object):
-            PharoInspectorView(runtime: runtime, root: object, onClose: onClose)
-        case .captured(let snapshot):
-            PharoSnapshotView(snapshot: snapshot)
-                .overlay(alignment: .topTrailing) { closeButton }
-                .pharoPane()
-        }
-    }
-
-    private var closeButton: some View {
-        Button(action: onClose) {
-            Image(systemName: "xmark")
-                .font(.caption2)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .padding(6)
-    }
-}
-
 /// Marks a step from what was inspected to what came out of it, the way
 /// Glamorous Toolkit points from a page into its inspector and on down.
 struct PharoDrillArrow: View {
