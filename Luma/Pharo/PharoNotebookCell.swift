@@ -44,7 +44,7 @@ struct PharoNotebookCell: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 0) {
                 snippet
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
 
                 if let snapshot {
                     evaluatesTo
