@@ -1,6 +1,7 @@
 import Combine
 import LumaCore
 import SwiftUI
+import SwiftyPharo
 
 struct NotebookView: View {
     let engine: Engine
@@ -20,41 +21,26 @@ struct NotebookView: View {
         }
     }
 
-    @State private var inspection: PharoInspection?
+    @State private var drillPath = PharoColumnPath()
     @State private var inspected: UUID?
     @State private var centers: [UUID: CGFloat] = [:]
+    @State private var drillWidth: CGFloat = 520
+    @State private var resizingFrom: CGFloat?
+
+    private let runtime = PharoRuntime.shared
 
     var body: some View {
-        HSplitView {
+        HStack(spacing: 0) {
             page
-                .pharoPane()
-                .padding(8)
-                .frame(minWidth: 320, idealWidth: 520)
+                .frame(maxWidth: .infinity)
 
-            inspectionSide
-                .padding(.vertical, 8)
-                .padding(.trailing, 8)
-                .frame(minWidth: 320)
+            if !drillPath.objects.isEmpty {
+                Divider()
+                drillSide
+            }
         }
         .coordinateSpace(name: pharoPageSpace)
         .background(.pharoGutter)
-    }
-
-
-    /// Always the same view, whether or not it is showing anything: swapping
-    /// one out for another has HSplitView lay the divider out afresh, undoing
-    /// wherever the reader had put it, and leaves the page a box of its own
-    /// width rather than the whole width.
-    private var inspectionSide: some View {
-        ZStack {
-            Color.clear
-
-            if let inspection {
-                PharoInspectionPane(inspection: inspection, pointsFrom: inspected.flatMap { centers[$0] }) {
-                    self.inspection = nil
-                }
-            }
-        }
     }
 
     private var page: some View {
@@ -83,7 +69,7 @@ struct NotebookView: View {
                                 engine: engine,
                                 selection: $selection,
                                 autoBeginEditing: entry.id == lastInsertedID,
-                                inspection: $inspection,
+                                drillPath: drillPath,
                                 inspected: $inspected,
                                 centers: $centers,
                                 onEditingChanged: { editing in
@@ -170,6 +156,50 @@ struct NotebookView: View {
         engine.addNotebookEntry(added, after: entry)
         lastInsertedID = added.id
     }
+
+    /// A cell drills into the pane beside the page, its columns riding a scroller
+    /// of their own with the arrow that points across from the cell they came
+    /// from. It is here only while a drill is open, so the page is the whole
+    /// width the rest of the time.
+    private var drillSide: some View {
+        VStack(spacing: 0) {
+            PharoOverviewStrip(path: drillPath)
+            Divider()
+
+            ScrollView(.horizontal) {
+                HStack(spacing: 0) {
+                    PharoPointingArrow(pointsFrom: inspected.flatMap { centers[$0] })
+                    pharoColumns(runtime: runtime, path: drillPath, onCloseAll: closeDrill)
+                }
+                .scrollTargetLayout()
+            }
+            .contentMargins(8, for: .scrollContent)
+            .pharoColumnScrolling(drillPath)
+        }
+        .frame(width: drillWidth)
+        .overlay(alignment: .leading) { drillResizeHandle }
+    }
+
+    private func closeDrill() {
+        drillPath.clear()
+        inspected = nil
+    }
+
+    private var drillResizeHandle: some View {
+        Rectangle()
+            .fill(.clear)
+            .frame(width: 8)
+            .contentShape(Rectangle())
+            .pointerStyle(.columnResize)
+            .gesture(
+                DragGesture()
+                    .onChanged { drag in
+                        let base = resizingFrom ?? drillWidth
+                        resizingFrom = base
+                        drillWidth = min(max(base - drag.translation.width, 320), 1000)
+                    }
+                    .onEnded { _ in resizingFrom = nil })
+    }
 }
 
 /// Thin drop strip above the first entry so drags can actually land at
@@ -213,7 +243,7 @@ struct NotebookEntryRow: View {
     let engine: Engine
     @Binding var selection: SidebarItemID?
     let autoBeginEditing: Bool
-    @Binding var inspection: PharoInspection?
+    let drillPath: PharoColumnPath
     @Binding var inspected: UUID?
     @Binding var centers: [UUID: CGFloat]
 
@@ -256,7 +286,7 @@ struct NotebookEntryRow: View {
                 PharoNotebookCell(
                     entry: entry,
                     engine: engine,
-                    inspection: $inspection,
+                    drillPath: drillPath,
                     inspected: $inspected,
                     centers: $centers)
             } else {
