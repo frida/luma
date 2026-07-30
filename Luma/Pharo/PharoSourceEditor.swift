@@ -798,13 +798,19 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         fetched?.candidates
     }
 
-    /// The image counts the token from one, and in the source it was given,
-    /// which the marks in the text have since shifted along.
+    /// The token the caret sits at the end of, computed afresh so it tracks each
+    /// keystroke: once it is empty -- right after a colon -- there is nothing to
+    /// complete, and the panel dismisses rather than offering a stale selector.
     override var rangeForUserCompletion: NSRange {
-        guard let fetched else { return super.rangeForUserCompletion }
-        let cursor = selectedRange().location
-        let start = min(storageOffset(forSource: fetched.tokenStart - 1), cursor)
+        let units = Array(string.utf16)
+        let cursor = min(selectedRange().location, units.count)
+        var start = cursor
+        while start > 0, isTokenUnit(units[start - 1]) { start -= 1 }
         return NSRange(location: start, length: cursor - start)
+    }
+
+    private func isTokenUnit(_ unit: UTF16.CodeUnit) -> Bool {
+        (unit >= 48 && unit <= 57) || (unit >= 65 && unit <= 90) || (unit >= 97 && unit <= 122) || unit == 95
     }
 
     /// A keyword selector completes to its keywords spaced for arguments, each a
