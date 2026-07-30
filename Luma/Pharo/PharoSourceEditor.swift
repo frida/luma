@@ -493,7 +493,9 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         guard !stale.isEmpty || !missing.isEmpty else { return }
 
         isApplyingMarks = true
-        let cursor = sourceCursor
+        let selection = selectedRange()
+        let selectionStart = sourceOffset(ofStorage: selection.location)
+        let selectionEnd = sourceOffset(ofStorage: NSMaxRange(selection))
         storage.beginEditing()
         for placed in stale.sorted(by: { $0.storageOffset > $1.storageOffset }) {
             storage.deleteCharacters(in: NSRange(location: placed.storageOffset, length: 1))
@@ -507,7 +509,8 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
                 at: storageOffset(forSource: mark.sourceOffset))
         }
         storage.endEditing()
-        setSelectedRange(NSRange(location: storageOffset(forSource: cursor), length: 0))
+        let restoredStart = storageOffset(forSource: selectionStart)
+        setSelectedRange(NSRange(location: restoredStart, length: storageOffset(forSource: selectionEnd) - restoredStart))
         isApplyingMarks = false
         positionMarkOverlays()
     }
