@@ -406,6 +406,11 @@ private struct PharoItemsList: View {
         rows.enumerated().map { Row(id: $0.offset, cells: $0.element) }
     }
 
+    private var indexColumnWidth: CGFloat {
+        let digits = max(String(total).count, 3)
+        return CGFloat(digits) * PharoRowView.characterWidth + 24
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             table
@@ -432,6 +437,7 @@ private struct PharoItemsList: View {
                 TableColumn(title) { row in
                     cell(row.cells[column], isIndex: column == 0)
                 }
+                .width(column == 0 ? indexColumnWidth : nil)
             }
         }
     }
