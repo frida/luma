@@ -821,11 +821,17 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         guard isFinal, word.contains(":"), let storage = textStorage else {
             return super.insertCompletion(word, forPartialWordRange: charRange, movement: movement, isFinal: isFinal)
         }
+        // By the time the choice is final the panel has already previewed the
+        // word into the text over the token; the template replaces that preview,
+        // not the token, which would leave the preview's tail behind.
+        let previewed = NSRange(location: charRange.location, length: (word as NSString).length)
+        let replacing = NSMaxRange(previewed) <= (string as NSString).length
+            && (string as NSString).substring(with: previewed) == word ? previewed : charRange
         let (text, placeholders) = keywordTemplate(word)
-        guard shouldChangeText(in: charRange, replacementString: text.string) else { return }
-        storage.replaceCharacters(in: charRange, with: text)
+        guard shouldChangeText(in: replacing, replacementString: text.string) else { return }
+        storage.replaceCharacters(in: replacing, with: text)
         didChangeText()
-        argumentPlaceholders = placeholders.map { NSRange(location: charRange.location + $0.location, length: $0.length) }
+        argumentPlaceholders = placeholders.map { NSRange(location: replacing.location + $0.location, length: $0.length) }
         argumentPlaceholders.first.map { setSelectedRange($0) }
     }
 
