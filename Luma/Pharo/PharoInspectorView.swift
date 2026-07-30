@@ -390,25 +390,23 @@ private struct PharoItemsList: View {
     let columns: [String]
     let onSelect: (PharoObject) -> Void
 
-    @State private var rows: [[PharoCell]] = []
-    @State private var total = 0
+    @State private var loaded = Loaded()
     @State private var selection: Int?
     @State private var failure: String?
 
     private let pageSize = 50
 
+    /// The rows and the columns that head them, held together so the table never
+    /// renders one against the other's shape while a view switch is in flight.
+    private struct Loaded {
+        var columns: [String] = []
+        var rows: [Row] = []
+        var total = 0
+    }
+
     private struct Row: Identifiable {
         let id: Int
         let cells: [PharoCell]
-    }
-
-    private var indexedRows: [Row] {
-        rows.enumerated().map { Row(id: $0.offset, cells: $0.element) }
-    }
-
-    private var indexColumnWidth: CGFloat {
-        let digits = max(String(total).count, 3)
-        return CGFloat(digits) * PharoRowView.characterWidth + 24
     }
 
     var body: some View {
@@ -432,14 +430,17 @@ private struct PharoItemsList: View {
     }
 
     private var table: some View {
-        Table(indexedRows, selection: $selection) {
-            TableColumnForEach(Array(columns.enumerated()), id: \.offset) { column, title in
+        Table(loaded.rows, selection: $selection) {
+            TableColumnForEach(Array(loaded.columns.enumerated()), id: \.offset) { column, title in
                 TableColumn(title) { row in
                     cell(row.cells[column], isIndex: column == 0)
                 }
                 .width(column == 0 ? indexColumnWidth : nil)
             }
         }
+        // AppKit rebuilds a fresh NSTableView rather than adding a column under
+        // rows shaped for the old schema, which it renders before dropping.
+        .id(loaded.columns)
     }
 
     @ViewBuilder
@@ -455,10 +456,15 @@ private struct PharoItemsList: View {
         }
     }
 
+    private var indexColumnWidth: CGFloat {
+        let digits = max(String(loaded.total).count, 3)
+        return CGFloat(digits) * PharoRowView.characterWidth + 24
+    }
+
     @ViewBuilder
     private var footer: some View {
-        if rows.count < total {
-            Button("Show more (\(total - rows.count) left)") {
+        if loaded.rows.count < loaded.total {
+            Button("Show more (\(loaded.total - loaded.rows.count) left)") {
                 Task { await loadNextPage() }
             }
             .buttonStyle(.plain)
@@ -477,9 +483,16 @@ private struct PharoItemsList: View {
         }
     }
 
+    private func drill(into index: Int) async {
+        do {
+            onSelect(try await runtime.drillInto(object, view: view, index: index + 1))
+        } catch {
+            failure = error.localizedDescription
+        }
+    }
+
     private func reload() async {
-        rows = []
-        total = 0
+        loaded = Loaded(columns: columns)
         selection = nil
         failure = nil
         await loadNextPage()
@@ -488,17 +501,12 @@ private struct PharoItemsList: View {
     private func loadNextPage() async {
         do {
             let page = try await runtime.items(
-                of: object, view: view, from: rows.count + 1, count: pageSize)
-            total = page.total
-            rows += page.items
-        } catch {
-            failure = error.localizedDescription
-        }
-    }
-
-    private func drill(into index: Int) async {
-        do {
-            onSelect(try await runtime.drillInto(object, view: view, index: index + 1))
+                of: object, view: view, from: loaded.rows.count + 1, count: pageSize)
+            let rows = page.items.enumerated().map { offset, cells in
+                Row(id: loaded.rows.count + offset, cells: cells)
+            }
+            loaded.total = page.total
+            loaded.rows += rows
         } catch {
             failure = error.localizedDescription
         }
