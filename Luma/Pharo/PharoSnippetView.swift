@@ -23,9 +23,6 @@ struct PharoSnippetView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 editor
-                // Held taller than the code by a taller result beside it, the
-                // actions ride the bottom rather than trailing the code.
-                Spacer(minLength: 0)
                 actions
             }
         }
