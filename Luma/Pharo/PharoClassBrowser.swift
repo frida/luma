@@ -1,6 +1,65 @@
 import SwiftUI
 import SwiftyPharo
 
+/// Glamorous Toolkit's class coder: the class's heading above its methods,
+/// definition and comment. It is a class inspected on its own, and an
+/// instance's Meta view is its class shown here.
+struct PharoClassBrowser: View {
+    let runtime: PharoRuntime
+    let classObject: PharoObject
+    let onSelect: (PharoObject) -> Void
+
+    @State private var info: PharoClassBrowserInfo?
+    @State private var shown = Tab.methods
+
+    private enum Tab: String, CaseIterable {
+        case methods = "Methods"
+        case definition = "Definition"
+        case comment = "Comment"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let info {
+                PharoClassHeader(info: info)
+                Picker("", selection: $shown) {
+                    ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .padding(6)
+                Divider()
+                content(of: info)
+            } else {
+                Color.clear
+            }
+        }
+        .task { info = try? await runtime.classBrowser(of: classObject) }
+    }
+
+    @ViewBuilder
+    private func content(of info: PharoClassBrowserInfo) -> some View {
+        switch shown {
+        case .methods:
+            PharoMethodList(methods: info.methods, runtime: runtime, classObject: classObject, onSelect: onSelect)
+        case .definition:
+            source(info.definition)
+        case .comment:
+            source(info.comment)
+        }
+    }
+
+    private func source(_ text: String) -> some View {
+        ScrollView {
+            Text(text)
+                .font(.system(.body, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+        }
+    }
+}
+
 /// The class heading Glamorous Toolkit's coder shows: where the class sits,
 /// above its views.
 struct PharoClassHeader: View {
