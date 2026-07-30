@@ -116,7 +116,7 @@ struct PharoPlaygroundView: View {
                         open: { show($0, from: snippet.id) },
                         openResult: openResult(for: snippet),
                         evaluate: { Task { await evaluate(snippet) } },
-                        remove: snippets.count > 1 ? { remove(snippet) } : nil
+                        remove: { remove(snippet) }
                     )
                     .onChange(of: snippet.source) { forget(snippet.id) }
                     .onGeometryChange(for: CGFloat.self) { proxy in
