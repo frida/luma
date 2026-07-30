@@ -810,6 +810,18 @@ final class PharoTextView: NSTextView {
         return NSRange(location: start, length: cursor - start)
     }
 
+    /// A keyword selector completes to its keywords spaced for their arguments,
+    /// with the caret dropped in the first, rather than as a bare selector.
+    override func insertCompletion(_ word: String, forPartialWordRange charRange: NSRange, movement: Int, isFinal: Bool) {
+        guard isFinal, word.contains(":") else {
+            return super.insertCompletion(word, forPartialWordRange: charRange, movement: movement, isFinal: isFinal)
+        }
+        let template = word.replacingOccurrences(of: ":", with: ": ")
+        super.insertCompletion(template, forPartialWordRange: charRange, movement: movement, isFinal: isFinal)
+        let firstArgument = (template as NSString).range(of: ": ")
+        setSelectedRange(NSRange(location: charRange.location + NSMaxRange(firstArgument), length: 0))
+    }
+
     override func insertText(_ string: Any, replacementRange: NSRange) {
         super.insertText(string, replacementRange: replacementRange)
         guard let typed = string as? String else { return }
