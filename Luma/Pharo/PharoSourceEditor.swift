@@ -832,7 +832,10 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         storage.replaceCharacters(in: replacing, with: text)
         didChangeText()
         argumentPlaceholders = placeholders.map { NSRange(location: replacing.location + $0.location, length: $0.length) }
-        argumentPlaceholders.first.map { setSelectedRange($0) }
+        guard let first = argumentPlaceholders.first else { return }
+        // The completion sets its own insertion point once this returns, so the
+        // first placeholder is selected after that, not before.
+        DispatchQueue.main.async { [weak self] in self?.setSelectedRange(first) }
     }
 
     private func keywordTemplate(_ selector: String) -> (text: NSAttributedString, placeholders: [NSRange]) {
