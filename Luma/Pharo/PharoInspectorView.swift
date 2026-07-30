@@ -190,9 +190,31 @@ private struct PharoColumnScrolling: ViewModifier {
     }
 }
 
+/// One inspector's views as a tab per view, scrolling when there are more than
+/// fit across the card.
+struct PharoTabBar: View {
+    let tabs: [(id: String, title: String)]
+    @Binding var selection: String?
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            Picker("", selection: $selection) {
+                ForEach(tabs, id: \.id) { tab in
+                    Text(tab.title).tag(Optional(tab.id))
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+        }
+        .scrollIndicators(.hidden)
+        .padding(6)
+    }
+}
+
 /// A class shows as Glamorous Toolkit's class coder; any other object shows its
-/// declared views as tabs, with a Meta tab standing in that same coder for its
-/// class.
+/// declared views as tabs -- Preview, Print and a Meta that is that same coder
+/// for its class among them.
 struct PharoObjectColumn: View {
     let runtime: PharoRuntime
     let object: PharoObject
@@ -226,22 +248,7 @@ struct PharoObjectColumn: View {
     private var objectInspector: some View {
         VStack(alignment: .leading, spacing: 0) {
             printStringHeader
-
-            if declarations.count > 1 {
-                ScrollView(.horizontal) {
-                    Picker("", selection: $shown) {
-                        ForEach(declarations, id: \.methodSelector) { declaration in
-                            Text(declaration.title).tag(Optional(declaration.methodSelector))
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                }
-                .scrollIndicators(.hidden)
-                .padding(6)
-            }
-
+            PharoTabBar(tabs: declarations.map { ($0.methodSelector, $0.title) }, selection: $shown)
             Divider()
             content
         }
@@ -285,10 +292,37 @@ struct PharoObjectColumn: View {
 
     @ViewBuilder
     private func body(of declaration: PharoViewDeclaration) -> some View {
-        if declaration.title == "Meta", let receiverClass {
-            PharoClassBrowser(runtime: runtime, classObject: receiverClass, onSelect: onSelect)
-        } else {
+        switch declaration.title {
+        case "Preview":
+            preview
+        case "Print":
+            source(object.printString)
+        case "Meta":
+            if let receiverClass {
+                PharoClassBrowser(runtime: runtime, classObject: receiverClass, onSelect: onSelect)
+            }
+        default:
             declaredBody(of: declaration)
+        }
+    }
+
+    private var preview: some View {
+        ScrollView {
+            Text(object.printString)
+                .font(.largeTitle)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+        }
+    }
+
+    private func source(_ text: String) -> some View {
+        ScrollView {
+            Text(text)
+                .font(.system(.body, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
         }
     }
 
@@ -321,8 +355,16 @@ struct PharoObjectColumn: View {
 
     private var declarations: [PharoViewDeclaration] {
         guard case .ready(let loaded) = declared else { return [] }
-        guard !loaded.contains(where: { $0.title == "Meta" }) else { return loaded }
-        return loaded + [metaDeclaration]
+        let declared = loaded.filter { $0.title != "Meta" }
+        return [previewDeclaration] + declared + [printDeclaration, metaDeclaration]
+    }
+
+    private var previewDeclaration: PharoViewDeclaration {
+        PharoViewDeclaration(viewName: "preview", title: "Preview", priority: 0, methodSelector: "swpPreview")
+    }
+
+    private var printDeclaration: PharoViewDeclaration {
+        PharoViewDeclaration(viewName: "print", title: "Print", priority: .max - 1, methodSelector: "swpPrint")
     }
 
     private var metaDeclaration: PharoViewDeclaration {
@@ -336,7 +378,7 @@ struct PharoObjectColumn: View {
         do {
             let loaded = try await runtime.views(of: object)
             declared = .ready(loaded)
-            shown = loaded.first?.methodSelector
+            shown = declarations.first?.methodSelector
         } catch {
             declared = .failed(error.localizedDescription)
         }
