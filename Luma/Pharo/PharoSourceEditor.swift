@@ -810,79 +810,7 @@ final class PharoTextView: NSTextView {
         return NSRange(location: start, length: cursor - start)
     }
 
-    /// A keyword selector completes to its keywords spaced for their arguments,
-    /// each argument a placeholder the reader tabs through and types over.
-    override func insertCompletion(_ word: String, forPartialWordRange charRange: NSRange, movement: Int, isFinal: Bool) {
-        guard isFinal, word.contains(":"), let storage = textStorage else {
-            return super.insertCompletion(word, forPartialWordRange: charRange, movement: movement, isFinal: isFinal)
-        }
-        let template = keywordTemplate(word)
-        guard shouldChangeText(in: charRange, replacementString: template.string) else { return }
-        storage.replaceCharacters(in: charRange, with: template)
-        didChangeText()
-        placeholder(from: charRange.location, forward: true).map { setSelectedRange($0) }
-    }
-
-    private func keywordTemplate(_ selector: String) -> NSAttributedString {
-        let keywords = selector.split(separator: ":").map(String.init)
-        let template = NSMutableAttributedString()
-        for (index, keyword) in keywords.enumerated() {
-            template.append(NSAttributedString(string: "\(keyword): ", attributes: sourceAttributes))
-            template.append(NSAttributedString(string: keyword, attributes: placeholderAttributes))
-            if index < keywords.count - 1 {
-                template.append(NSAttributedString(string: " ", attributes: sourceAttributes))
-            }
-        }
-        return template
-    }
-
-    private var placeholderAttributes: [NSAttributedString.Key: Any] {
-        var attributes = sourceAttributes
-        attributes[Self.placeholderAttribute] = true
-        attributes[.backgroundColor] = NSColor.textColor.withAlphaComponent(0.1)
-        return attributes
-    }
-
-    private func placeholder(from location: Int, forward: Bool) -> NSRange? {
-        guard let storage = textStorage else { return nil }
-        var found: NSRange?
-        storage.enumerateAttribute(Self.placeholderAttribute, in: NSRange(location: 0, length: storage.length)) {
-            value, range, stop in
-            guard value != nil else { return }
-            if forward {
-                if range.location >= location { found = range; stop.pointee = true }
-            } else if range.location < location {
-                found = range
-            } else {
-                stop.pointee = true
-            }
-        }
-        return found
-    }
-
-    private func selectPlaceholder(forward: Bool) -> Bool {
-        let selection = selectedRange()
-        let from = forward ? NSMaxRange(selection) : selection.location
-        guard atPlaceholderOrCaret, let range = placeholder(from: from, forward: forward) else { return false }
-        setSelectedRange(range)
-        scrollRangeToVisible(range)
-        return true
-    }
-
-    private var atPlaceholderOrCaret: Bool {
-        let selection = selectedRange()
-        guard selection.length > 0 else { return true }
-        var flag = false
-        textStorage?.enumerateAttribute(Self.placeholderAttribute, in: selection) { value, _, stop in
-            if value != nil { flag = true; stop.pointee = true }
-        }
-        return flag
-    }
-
-    private static let placeholderAttribute = NSAttributedString.Key("pharoPlaceholder")
-
     override func insertText(_ string: Any, replacementRange: NSRange) {
-        typingAttributes = sourceAttributes
         super.insertText(string, replacementRange: replacementRange)
         guard let typed = string as? String else { return }
         if typed.count == 1, let unit = typed.utf16.first, unit == 41 || unit == 93 || unit == 125 {
@@ -1037,13 +965,11 @@ final class PharoTextView: NSTextView {
     /// Tab indents: it steps in every line a selection touches, and is a plain
     /// tab when nothing is selected. Shift-tab always steps a line back out.
     override func insertTab(_ sender: Any?) {
-        if selectPlaceholder(forward: true) { return }
         guard selectedRange().length > 0 else { return super.insertText("\t", replacementRange: selectedRange()) }
         shiftSelectedLines(indenting: true)
     }
 
     override func insertBacktab(_ sender: Any?) {
-        if selectPlaceholder(forward: false) { return }
         shiftSelectedLines(indenting: false)
     }
 
