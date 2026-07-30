@@ -42,14 +42,11 @@ struct PharoNotebookCell: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top, spacing: 0) {
-                snippet
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            snippet
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                if let snapshot {
-                    evaluatesTo
-                    resultSide(snapshot)
-                }
+            if let snapshot {
+                resultBelow(snapshot)
             }
 
             if let failure {
@@ -81,19 +78,21 @@ struct PharoNotebookCell: View {
         }
     }
 
-    private var evaluatesTo: some View {
-        Image(systemName: "arrow.right")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 10)
-            .padding(.top, 12)
+    private func resultBelow(_ snapshot: PharoSnapshot) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            evaluatesTo
+            PharoResultPreview(snapshot: snapshot)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .topTrailing) { inspectButton }
+                .pharoPane()
+        }
     }
 
-    private func resultSide(_ snapshot: PharoSnapshot) -> some View {
-        PharoResultPreview(snapshot: snapshot)
-            .frame(maxWidth: 260)
-            .overlay(alignment: .topTrailing) { inspectButton }
-            .pharoPane()
+    private var evaluatesTo: some View {
+        Image(systemName: "arrow.turn.down.right")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .padding(.top, 8)
     }
 
     private var inspectButton: some View {
