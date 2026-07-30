@@ -255,7 +255,7 @@ struct PharoObjectColumn: View {
     }
 
     private var printStringHeader: some View {
-        Text("\(article(for: object.className)) \(object.className) (\(object.printString))")
+        Text("\(article(for: object.className)) \(object.className) \(object.display)")
             .font(.headline)
             .lineLimit(2)
             .accessibilityIdentifier("pharo.inspector.printString")
@@ -333,6 +333,7 @@ struct PharoObjectColumn: View {
                 runtime: runtime,
                 object: object,
                 view: declaration.methodSelector,
+                columns: declaration.columns ?? [],
                 onSelect: onSelect)
         case "text":
             ScrollView {
@@ -386,6 +387,7 @@ private struct PharoItemsList: View {
     let runtime: PharoRuntime
     let object: PharoObject
     let view: String
+    let columns: [String]
     let onSelect: (PharoObject) -> Void
 
     @State private var rows: [[PharoCell]] = []
@@ -395,38 +397,22 @@ private struct PharoItemsList: View {
 
     private let pageSize = 50
 
-    private var leadingCharacters: Int {
-        rows.compactMap { $0.first?.text?.count }.max() ?? 0
+    private struct Row: Identifiable {
+        let id: Int
+        let cells: [PharoCell]
+    }
+
+    private var indexedRows: [Row] {
+        rows.enumerated().map { Row(id: $0.offset, cells: $0.element) }
     }
 
     var body: some View {
-        List(selection: $selection) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                PharoRowView(cells: row, leadingCharacters: leadingCharacters)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .listRowInsets(EdgeInsets(top: 1, leading: 8, bottom: 1, trailing: 8))
-                    .tag(index)
-            }
-
-            if rows.count < total {
-                Button("Show more (\(total - rows.count) left)") {
-                    Task { await loadNextPage() }
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-            }
-
-            if let failure {
-                Text(failure)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-            }
+        VStack(spacing: 0) {
+            table
+            footer
         }
-        .listStyle(.plain)
-        .environment(\.defaultMinListRowHeight, 18)
         // GT drills on activation rather than on merely selecting a row. Watching
-        // for the second click leaves the list's own handling of the first alone,
+        // for the second click leaves the table's own handling of the first alone,
         // so selection stays quick and the arrow keys still walk the rows.
         .background(PharoDoubleClickCatcher { row in
             selection = row
@@ -438,6 +424,51 @@ private struct PharoItemsList: View {
             return .handled
         }
         .task(id: view) { await reload() }
+    }
+
+    private var table: some View {
+        Table(indexedRows, selection: $selection) {
+            TableColumnForEach(Array(columns.enumerated()), id: \.offset) { column, title in
+                TableColumn(title) { row in
+                    cell(row.cells[column], isIndex: column == 0)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func cell(_ cell: PharoCell, isIndex: Bool) -> some View {
+        if let png = cell.png, let image = NSImage(data: png) {
+            Image(nsImage: image)
+                .resizable()
+                .frame(width: 16, height: 16)
+        } else {
+            Text(cell.text ?? "")
+                .foregroundStyle(isIndex ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                .lineLimit(1)
+        }
+    }
+
+    @ViewBuilder
+    private var footer: some View {
+        if rows.count < total {
+            Button("Show more (\(total - rows.count) left)") {
+                Task { await loadNextPage() }
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+        }
+
+        if let failure {
+            Text(failure)
+                .font(.footnote)
+                .foregroundStyle(.red)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+        }
     }
 
     private func reload() async {

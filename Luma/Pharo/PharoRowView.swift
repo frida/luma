@@ -22,7 +22,8 @@ struct PharoRowView: View {
         HStack(spacing: 6) {
             ForEach(Array(cells.enumerated()), id: \.offset) { column, cell in
                 content(of: cell)
-                    .frame(width: column == 0 ? leadingWidth : nil, alignment: .leading)
+                    .foregroundStyle(column == 0 && cells.count > 1 ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                    .frame(width: column == 0 ? leadingWidth(cells.count) : nil, alignment: .leading)
             }
 
             Spacer(minLength: 0)
@@ -42,12 +43,12 @@ struct PharoRowView: View {
         }
     }
 
-    private var leadingWidth: CGFloat? {
-        guard cells.count > 1, leadingCharacters > 0 else { return nil }
+    func leadingWidth(_ cellCount: Int) -> CGFloat? {
+        guard cellCount > 1, leadingCharacters > 0 else { return nil }
         return CGFloat(leadingCharacters) * PharoRowView.characterWidth
     }
 
-    private static let characterWidth = NSFont
+    static let characterWidth = NSFont
         .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
         .maximumAdvancement.width
 }
