@@ -22,6 +22,24 @@ struct PharoPlaygroundView: View {
     private let runtime = PharoRuntime.shared
 
     var body: some View {
+        Group {
+            if snippets.isEmpty {
+                PharoPlaygroundEmptyState(onAddSnippet: addSnippet)
+            } else {
+                workspace
+            }
+        }
+        .coordinateSpace(name: pharoPageSpace)
+        .background(.pharoGutter)
+        .task { await start() }
+        .onAppear {
+            snippets = engine.pharoSnippets
+            pageWidth = engine.pharoPageWidth.map { CGFloat($0) } ?? 420
+        }
+        .onChange(of: snippets) { engine.setPharoSnippets(snippets) }
+    }
+
+    private var workspace: some View {
         VStack(spacing: 0) {
             // The strip stands over the whole page, snippets included, rather
             // than over the columns alone.
@@ -45,14 +63,6 @@ struct PharoPlaygroundView: View {
             .contentMargins(8, for: .scrollContent)
             .pharoColumnScrolling(columnPath)
         }
-        .coordinateSpace(name: pharoPageSpace)
-        .background(.pharoGutter)
-        .task { await start() }
-        .onAppear {
-            snippets = engine.pharoSnippets.isEmpty ? [PharoPlaygroundSnippet(source: "1 to: 20")] : engine.pharoSnippets
-            pageWidth = engine.pharoPageWidth.map { CGFloat($0) } ?? 420
-        }
-        .onChange(of: snippets) { engine.setPharoSnippets(snippets) }
     }
 
 
@@ -128,11 +138,7 @@ struct PharoPlaygroundView: View {
     }
 
     private var addSnippetButton: some View {
-        Button {
-            let added = PharoPlaygroundSnippet(source: "")
-            snippets.append(added)
-            focused = added.id
-        } label: {
+        Button(action: addSnippet) {
             Label("Add Snippet", systemImage: "plus")
                 .font(.callout)
         }
@@ -140,6 +146,12 @@ struct PharoPlaygroundView: View {
         .foregroundStyle(.secondary)
         .disabled(!isReady)
         .accessibilityIdentifier("pharo.playground.addSnippet")
+    }
+
+    private func addSnippet() {
+        let added = PharoPlaygroundSnippet(source: "")
+        snippets.append(added)
+        focused = added.id
     }
 
     private func start() async {
@@ -216,5 +228,76 @@ struct PharoPlaygroundView: View {
 
     private func remove(_ snippet: PharoPlaygroundSnippet) {
         snippets.removeAll { $0.id == snippet.id }
+    }
+}
+
+/// Greets an empty playground the way the notebook and the REPL greet their
+/// own empty pages: what it is for, and a way to begin.
+private struct PharoPlaygroundEmptyState: View {
+    let onAddSnippet: () -> Void
+
+    #if canImport(UIKit)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    private var isCompact: Bool { horizontalSizeClass == .compact }
+    #else
+    private var isCompact: Bool { false }
+    #endif
+
+    var body: some View {
+        GeometryReader { geo in
+            VStack {
+                Spacer(minLength: 0)
+
+                VStack(spacing: 24) {
+                    VStack(spacing: 8) {
+                        Image(systemName: "chevron.left.forwardslash.chevron.right")
+                            .font(.system(size: 40))
+                            .foregroundStyle(.secondary)
+
+                        Text("Playground")
+                            .font(.title2.weight(.semibold))
+
+                        Text("Evaluate Smalltalk and inspect what it returns.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
+
+                    if !isCompact {
+                        tips
+                    }
+
+                    Button(action: onAddSnippet) {
+                        Label("New Snippet", systemImage: "plus")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .accessibilityIdentifier("pharo.playground.empty.addSnippet")
+                }
+                .padding(.horizontal, 24)
+
+                Spacer(minLength: 0)
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+        }
+    }
+
+    private var tips: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            tip("Type an expression and press \u{2318}Return to evaluate it.")
+            tip("Its result opens in the inspector beside the page; click a row to drill in.")
+            tip("Try 1 to: 20, 3 + 4, or Smalltalk globals.")
+        }
+        .font(.callout)
+    }
+
+    private func tip(_ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("\u{2022}")
+                .foregroundStyle(.secondary)
+            Text(text)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
