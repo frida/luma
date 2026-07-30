@@ -886,10 +886,11 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         guard editedMask.contains(.editedCharacters), !argumentPlaceholders.isEmpty else { return }
         let editStart = editedRange.location
         let editEnd = NSMaxRange(editedRange) - delta
+        let userEdit = !isApplyingMarks
         argumentPlaceholders = argumentPlaceholders.compactMap { placeholder in
             if NSMaxRange(placeholder) <= editStart { return placeholder }
             if placeholder.location >= editEnd { return NSRange(location: placeholder.location + delta, length: placeholder.length) }
-            return nil
+            return userEdit ? nil : NSRange(location: placeholder.location + delta, length: placeholder.length)
         }
     }
 
