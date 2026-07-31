@@ -77,7 +77,7 @@ struct PharoPlaygroundView: View {
         } else if let captured {
             PharoPointingArrow(pointsFrom: inspected.flatMap { centers[$0] })
             PharoSnapshotView(snapshot: captured)
-                .frame(width: 320)
+                .frame(width: pharoColumnWidth)
                 .pharoPane()
         }
     }
