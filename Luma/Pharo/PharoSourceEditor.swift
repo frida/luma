@@ -798,7 +798,9 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         forPartialWordRange charRange: NSRange,
         indexOfSelectedItem index: UnsafeMutablePointer<Int>?
     ) -> [String]? {
-        fetched?.candidates
+        let noPreselection = -1
+        index?.pointee = noPreselection
+        return fetched?.candidates
     }
 
     /// The token the caret sits at the end of, computed afresh so it tracks each

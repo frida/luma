@@ -440,8 +440,8 @@ private struct PharoItemsList: View {
                 .width(column == 0 ? indexColumnWidth : nil)
             }
         }
-        // AppKit rebuilds a fresh NSTableView rather than adding a column under
-        // rows shaped for the old schema, which it renders before dropping.
+        // A column-count change rebuilds the table rather than diffing a new
+        // column onto rows still shaped for the old one, which AppKit traps on.
         .id(loaded.columns)
     }
 
