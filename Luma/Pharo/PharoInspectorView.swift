@@ -118,6 +118,8 @@ struct PharoScrollTarget: Equatable {
     let stamp = UUID()
 }
 
+let pharoColumnWidth: CGFloat = 400
+
 /// The columns side by side, as loose content for the page's own scroller to
 /// hold. Each is a direct child there, which is what has the scroller report it
 /// as it comes and goes on screen; wrapped in a view of their own they would
@@ -138,7 +140,7 @@ func pharoColumns(
             object: object,
             onSelect: { path.open($0, from: depth) },
             onClose: { if path.close(from: depth) { onCloseAll() } })
-        .frame(width: 320)
+        .frame(width: pharoColumnWidth)
         .pharoPane()
         .id(object.handle)
     }
