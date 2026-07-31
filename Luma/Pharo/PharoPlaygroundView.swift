@@ -257,7 +257,7 @@ private struct PharoPlaygroundEmptyState: View {
                         Text("Playground")
                             .font(.title2.weight(.semibold))
 
-                        Text("Evaluate Smalltalk and inspect what it returns.")
+                        Text("Slice, dice, and visualize your project's data with Pharo.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -285,17 +285,28 @@ private struct PharoPlaygroundEmptyState: View {
 
     private var tips: some View {
         VStack(alignment: .leading, spacing: 8) {
-            tip("Type an expression and press \u{2318}Return to evaluate it.")
-            tip("Its result opens in the inspector beside the page; click a row to drill in.")
-            tip("Try 1 to: 20, 3 + 4, or Smalltalk globals.")
+            ForEach(Array(tipLines.enumerated()), id: \.offset) { index, text in
+                tip(number: index + 1, text: text)
+            }
         }
         .font(.callout)
     }
 
-    private func tip(_ text: String) -> some View {
+    private var tipLines: [String] {
+        [
+            "Type an expression and press \u{2318}Return to evaluate it.",
+            "Its result opens in the inspector beside the page; double-click a row to drill in.",
+            "Script your own views, or export what you find to a file.",
+            "Try LumaProject events, or LumaProject sessions.",
+        ]
+    }
+
+    private func tip(number: Int, text: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("\u{2022}")
+            Text("\(number).")
+                .monospacedDigit()
                 .foregroundStyle(.secondary)
+                .frame(width: 18, alignment: .trailing)
             Text(text)
                 .fixedSize(horizontal: false, vertical: true)
         }
