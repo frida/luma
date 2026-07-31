@@ -52,13 +52,21 @@ struct PharoPlaygroundView: View {
 
             ScrollView(.horizontal) {
                 HStack(spacing: 0) {
-                    page
-                        .frame(width: pageWidth)
-                        .pharoPane()
-                        .overlay(alignment: .trailing) { pageResizeHandle }
-                        .overlay(alignment: .topTrailing) { pageMenuButton }
-                        .onHover { isPagePointedAt = $0 }
-                        .id(PharoColumnPath.pageID)
+                    Group {
+                        // The maximized overlay holds the live page; a second copy
+                        // here would run the snippet editors twice over.
+                        if isPageMaximized {
+                            Color.clear
+                        } else {
+                            page
+                        }
+                    }
+                    .frame(width: pageWidth)
+                    .pharoPane()
+                    .overlay(alignment: .trailing) { pageResizeHandle }
+                    .overlay(alignment: .topTrailing) { if !isPageMaximized { pageMenuButton } }
+                    .onHover { isPagePointedAt = $0 }
+                    .id(PharoColumnPath.pageID)
 
                     inspectionSide
                 }
@@ -255,11 +263,13 @@ struct PharoPlaygroundView: View {
     private func show(_ object: PharoObject, from snippet: UUID) {
         inspected = snippet
         captured = nil
+        isPageMaximized = false
         columnPath.startOver(at: object)
     }
 
     private func showCaptured(_ snapshot: PharoSnapshot, from snippet: UUID) {
         inspected = snippet
+        isPageMaximized = false
         columnPath.clear()
         captured = snapshot
     }
