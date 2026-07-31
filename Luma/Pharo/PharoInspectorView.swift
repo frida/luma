@@ -252,19 +252,25 @@ func pharoColumns(
                 let handle = object.handle
                 let close = { if path.close(from: depth) { onCloseAll() } }
 
-                PharoObjectColumn(
-                    runtime: runtime,
-                    object: object,
-                    actions: PharoPaneActions(
-                        canCollapse: true,
-                        canMaximize: true,
-                        onCollapse: { path.toggleCollapsed(handle) },
-                        onMaximize: { path.toggleMaximized(handle) }),
-                    onSelect: { path.open($0, from: depth) },
-                    onClose: close)
-                .frame(width: pharoColumnWidth)
-                .pharoPane()
-                .id(handle)
+                if path.isMaximized(handle) {
+                    // The maximized overlay shows this pane; a second copy here
+                    // would drill twice from one click through its own catcher.
+                    Color.clear.frame(width: 0).id(handle)
+                } else {
+                    PharoObjectColumn(
+                        runtime: runtime,
+                        object: object,
+                        actions: PharoPaneActions(
+                            canCollapse: true,
+                            canMaximize: true,
+                            onCollapse: { path.toggleCollapsed(handle) },
+                            onMaximize: { path.toggleMaximized(handle) }),
+                        onSelect: { path.open($0, from: depth) },
+                        onClose: close)
+                    .frame(width: pharoColumnWidth)
+                    .pharoPane()
+                    .id(handle)
+                }
             }
         }
 
@@ -833,7 +839,7 @@ struct PharoPaneMenuButton: View {
     private var icon: String {
         switch mode {
         case .menu: "chevron.down"
-        case .collapse: "arrow.right.to.line"
+        case .collapse: "poweron"
         case .close: "xmark"
         }
     }
@@ -849,7 +855,7 @@ struct PharoPaneMenuButton: View {
     private var menu: some View {
         VStack(alignment: .leading, spacing: 0) {
             if actions.canCollapse {
-                item("Collapse pane", "arrow.right.to.line", "\u{2318}-click", actions.onCollapse)
+                item("Collapse pane", "poweron", "\u{2318}-click", actions.onCollapse)
             }
             if canClose {
                 item("Close pane", "xmark", "\u{2318}\u{21e7}-click", onClose)
@@ -934,11 +940,8 @@ struct PharoCollapsedStack: View {
                     showsConnector: hasFollowingExpanded && index == objects.count - 1,
                     onExpand: { onExpand(object) })
             }
-
-            Spacer(minLength: 0)
         }
-        .frame(maxHeight: .infinity, alignment: .top)
-        .padding(.top, 8)
+        .frame(maxHeight: .infinity, alignment: .center)
         .padding(.horizontal, 8)
     }
 }
