@@ -172,7 +172,9 @@ struct NotebookView: View {
 
             ScrollView(.horizontal) {
                 HStack(spacing: 0) {
-                    PharoPointingArrow(pointsFrom: inspected.flatMap { centers[$0] })
+                    if !drillPath.isFirstColumnCollapsed {
+                        PharoPointingArrow(pointsFrom: inspected.flatMap { centers[$0] })
+                    }
                     pharoColumns(runtime: runtime, path: drillPath, onCloseAll: closeDrill)
                 }
                 .scrollTargetLayout()
