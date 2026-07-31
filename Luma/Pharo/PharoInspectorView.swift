@@ -800,7 +800,6 @@ struct PharoPaneMenuButton: View {
     let onUpdate: () -> Void
 
     @State private var modifiers: NSEvent.ModifierFlags = []
-    @State private var isShowingMenu = false
     @State private var flagsMonitor: Any?
 
     private enum Mode { case menu, collapse, close }
@@ -819,9 +818,8 @@ struct PharoPaneMenuButton: View {
         .buttonStyle(.plain)
         .pointerStyle(.link)
         .help(help)
-        .opacity(isRevealed || isShowingMenu ? 1 : 0)
-        .allowsHitTesting(isRevealed || isShowingMenu)
-        .popover(isPresented: $isShowingMenu) { menu }
+        .opacity(isRevealed ? 1 : 0)
+        .allowsHitTesting(isRevealed)
         .onChange(of: isRevealed, initial: true) { _, revealed in
             revealed ? watchModifiers() : forgetModifiers()
         }
@@ -830,7 +828,7 @@ struct PharoPaneMenuButton: View {
 
     private func activate() {
         switch mode {
-        case .menu: isShowingMenu = true
+        case .menu: showMenu()
         case .collapse: actions.onCollapse()
         case .close: onClose()
         }
@@ -852,41 +850,25 @@ struct PharoPaneMenuButton: View {
         }
     }
 
-    private var menu: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if actions.canCollapse {
-                item("Collapse pane", "poweron", "\u{2318}-click", actions.onCollapse)
-            }
-            if canClose {
-                item("Close pane", "xmark", "\u{2318}\u{21e7}-click", onClose)
-            }
-            if actions.canMaximize {
-                item("Maximize pane", "arrow.up.left.and.arrow.down.right", nil, actions.onMaximize)
-            }
-            item("Update pane tool", "arrow.clockwise", nil, onUpdate)
-        }
-        .padding(4)
-        .frame(width: 220)
-    }
+    private func showMenu() {
+        let menu = NSMenu()
+        var runners: [PharoMenuRunner] = []
 
-    private func item(_ title: String, _ symbol: String, _ shortcut: String?, _ action: @escaping () -> Void) -> some View {
-        Button {
-            isShowingMenu = false
-            action()
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: symbol).frame(width: 16)
-                Text(title)
-                Spacer(minLength: 12)
-                if let shortcut {
-                    Text(shortcut).foregroundStyle(.secondary)
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .contentShape(Rectangle())
+        func add(_ title: String, _ symbol: String, _ run: @escaping () -> Void) {
+            let item = NSMenuItem(title: title, action: #selector(PharoMenuRunner.fire), keyEquivalent: "")
+            let runner = PharoMenuRunner(run)
+            runners.append(runner)
+            item.target = runner
+            item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+            menu.addItem(item)
         }
-        .buttonStyle(.plain)
+
+        if actions.canCollapse { add("Collapse pane", "poweron", actions.onCollapse) }
+        if canClose { add("Close pane", "xmark", onClose) }
+        if actions.canMaximize { add("Maximize pane", "arrow.up.left.and.arrow.down.right", actions.onMaximize) }
+        add("Update pane tool", "arrow.clockwise", onUpdate)
+
+        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
     private func watchModifiers() {
@@ -902,6 +884,20 @@ struct PharoPaneMenuButton: View {
         flagsMonitor.map(NSEvent.removeMonitor)
         flagsMonitor = nil
         modifiers = []
+    }
+}
+
+/// Carries a menu item's action, since an NSMenuItem calls a selector rather
+/// than a closure.
+final class PharoMenuRunner: NSObject {
+    private let run: () -> Void
+
+    init(_ run: @escaping () -> Void) {
+        self.run = run
+    }
+
+    @objc func fire() {
+        run()
     }
 }
 
