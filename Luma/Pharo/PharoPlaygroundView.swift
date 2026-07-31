@@ -18,6 +18,8 @@ struct PharoPlaygroundView: View {
     @State private var columnPath = PharoColumnPath(includesPage: true)
     @State private var pageWidth: CGFloat = 420
     @State private var resizingFrom: CGFloat?
+    @State private var isPageMaximized = false
+    @State private var isPagePointedAt = false
 
     private let runtime = PharoRuntime.shared
 
@@ -32,6 +34,7 @@ struct PharoPlaygroundView: View {
         .coordinateSpace(name: pharoPageSpace)
         .background(.pharoGutter)
         .pharoMaximizedPane(runtime: runtime, path: columnPath, onCloseAll: columnPath.clear)
+        .overlay { if isPageMaximized { maximizedPage } }
         .task { await start() }
         .onAppear {
             snippets = engine.pharoSnippets
@@ -53,6 +56,8 @@ struct PharoPlaygroundView: View {
                         .frame(width: pageWidth)
                         .pharoPane()
                         .overlay(alignment: .trailing) { pageResizeHandle }
+                        .overlay(alignment: .topTrailing) { pageMenuButton }
+                        .onHover { isPagePointedAt = $0 }
                         .id(PharoColumnPath.pageID)
 
                     inspectionSide
@@ -73,7 +78,9 @@ struct PharoPlaygroundView: View {
     @ViewBuilder
     private var inspectionSide: some View {
         if !columnPath.objects.isEmpty {
-            PharoPointingArrow(pointsFrom: inspected.flatMap { centers[$0] })
+            if !columnPath.isFirstColumnCollapsed {
+                PharoPointingArrow(pointsFrom: inspected.flatMap { centers[$0] })
+            }
             pharoColumns(runtime: runtime, path: columnPath, onCloseAll: columnPath.clear)
         } else if let captured {
             PharoPointingArrow(pointsFrom: inspected.flatMap { centers[$0] })
@@ -83,6 +90,49 @@ struct PharoPlaygroundView: View {
         }
     }
 
+
+    /// The page is a pane too: it maximizes over the whole playground, though
+    /// unlike a column it cannot be collapsed or closed, the way GT holds its
+    /// first pane in place.
+    private var pageMenuButton: some View {
+        PharoPaneMenuButton(
+            isRevealed: isPagePointedAt,
+            canClose: false,
+            actions: PharoPaneActions(canMaximize: true, onMaximize: { isPageMaximized = true }),
+            onClose: {},
+            onUpdate: {})
+            .padding(6)
+    }
+
+    private var maximizedPage: some View {
+        page
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .pharoPane()
+            .overlay(alignment: .topLeading) { pageRestoreButton }
+            .overlay(alignment: .topTrailing) { pageMaximizedMenuButton }
+            .padding(8)
+            .background(.pharoGutter)
+    }
+
+    private var pageRestoreButton: some View {
+        Button(action: { isPageMaximized = false }) {
+            PharoRoundIcon(systemName: "arrow.down.right.and.arrow.up.left")
+        }
+        .buttonStyle(.plain)
+        .pointerStyle(.link)
+        .help("Restore pane")
+        .padding(6)
+    }
+
+    private var pageMaximizedMenuButton: some View {
+        PharoPaneMenuButton(
+            isRevealed: true,
+            canClose: false,
+            actions: PharoPaneActions(),
+            onClose: {},
+            onUpdate: {})
+            .padding(6)
+    }
 
     /// The page keeps a width the reader sets by dragging its edge, the way a
     /// split's divider used to move it before the columns shared its scroller.

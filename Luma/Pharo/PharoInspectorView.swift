@@ -102,6 +102,12 @@ final class PharoColumnPath {
         maximized == handle
     }
 
+    /// When the leading column is folded away, its stack's own downward triangle
+    /// stands in for the arrow that would otherwise point into it.
+    var isFirstColumnCollapsed: Bool {
+        objects.first.map { collapsed.contains($0.handle) } ?? false
+    }
+
     func toggleMaximized(_ handle: Int) {
         maximized = maximized == handle ? nil : handle
     }
@@ -782,6 +788,7 @@ struct PharoPaneActions {
 /// the keys.
 struct PharoPaneMenuButton: View {
     let isRevealed: Bool
+    var canClose = true
     let actions: PharoPaneActions
     let onClose: () -> Void
     let onUpdate: () -> Void
@@ -794,8 +801,8 @@ struct PharoPaneMenuButton: View {
 
     private var mode: Mode {
         let held = modifiers.intersection([.command, .shift])
-        if held == [.command, .shift] { return .close }
-        if held == [.command], actions.canCollapse { return .collapse }
+        if canClose, held == [.command, .shift] { return .close }
+        if actions.canCollapse, held == [.command] { return .collapse }
         return .menu
     }
 
@@ -844,7 +851,9 @@ struct PharoPaneMenuButton: View {
             if actions.canCollapse {
                 item("Collapse pane", "arrow.right.to.line", "\u{2318}-click", actions.onCollapse)
             }
-            item("Close pane", "xmark", "\u{2318}\u{21e7}-click", onClose)
+            if canClose {
+                item("Close pane", "xmark", "\u{2318}\u{21e7}-click", onClose)
+            }
             if actions.canMaximize {
                 item("Maximize pane", "arrow.up.left.and.arrow.down.right", nil, actions.onMaximize)
             }
