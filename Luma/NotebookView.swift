@@ -41,6 +41,7 @@ struct NotebookView: View {
         }
         .coordinateSpace(name: pharoPageSpace)
         .background(.pharoGutter)
+        .pharoMaximizedPane(runtime: runtime, path: drillPath, onCloseAll: closeDrill)
     }
 
     private var page: some View {

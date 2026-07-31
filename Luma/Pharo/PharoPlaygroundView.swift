@@ -31,6 +31,7 @@ struct PharoPlaygroundView: View {
         }
         .coordinateSpace(name: pharoPageSpace)
         .background(.pharoGutter)
+        .pharoMaximizedPane(runtime: runtime, path: columnPath, onCloseAll: columnPath.clear)
         .task { await start() }
         .onAppear {
             snippets = engine.pharoSnippets
