@@ -9,6 +9,7 @@ import SwiftyPharo
 struct PharoNotebookCell: View {
     let entry: NotebookEntry
     let engine: Engine
+    let autoFocus: Bool
     let drillPath: PharoColumnPath
     @Binding var inspected: UUID?
     @Binding var centers: [UUID: CGFloat]
@@ -26,12 +27,14 @@ struct PharoNotebookCell: View {
     init(
         entry: NotebookEntry,
         engine: Engine,
+        autoFocus: Bool,
         drillPath: PharoColumnPath,
         inspected: Binding<UUID?>,
         centers: Binding<[UUID: CGFloat]>
     ) {
         self.entry = entry
         self.engine = engine
+        self.autoFocus = autoFocus
         self.drillPath = drillPath
         _inspected = inspected
         _centers = centers
@@ -54,6 +57,7 @@ struct PharoNotebookCell: View {
                     .frame(height: 60)
             }
         }
+        .onAppear { if autoFocus { focused = entry.id } }
     }
 
     private var snippet: some View {
