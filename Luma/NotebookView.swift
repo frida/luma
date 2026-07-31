@@ -289,6 +289,7 @@ struct NotebookEntryRow: View {
                 PharoNotebookCell(
                     entry: entry,
                     engine: engine,
+                    autoFocus: autoBeginEditing,
                     drillPath: drillPath,
                     inspected: $inspected,
                     centers: $centers)
