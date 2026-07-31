@@ -70,7 +70,9 @@ struct PharoSnippetView: View {
     private var actions: some View {
         HStack(spacing: 2) {
             action("play.fill", "Evaluate", evaluate)
-                .keyboardShortcut(.return, modifiers: .command)
+                // Only the focused snippet answers the shortcut, so the others'
+                // identical bindings do not race it for the keypress.
+                .keyboardShortcut(isFocused ? KeyboardShortcut(.return, modifiers: .command) : nil)
                 .accessibilityIdentifier("notebook.pharo.evaluate")
 
             Spacer()
