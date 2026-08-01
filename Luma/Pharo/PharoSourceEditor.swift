@@ -265,6 +265,12 @@ extension PharoRuntime {
         return PharoCompletionList(tokenStart: answer.tokenStart, candidates: answer.completions)
     }
 
+    /// The methods a browse turns up, or nothing when the image is down or the
+    /// cursor is on no selector.
+    func browsing(_ kind: PharoBrowseKind, in source: String, at position: Int) async -> PharoObject? {
+        (try? await whenRunning { try await browse(kind, source: source, at: position) })?.result
+    }
+
     /// Nor does a page that cannot reach the image name any classes.
     func namedClasses(in source: String) async -> [PharoClassReference] {
         (try? await whenRunning { try await classReferences(in: source) }) ?? []
@@ -829,6 +835,31 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
             fetched = list
             guard !list.candidates.isEmpty else { return }
             super.complete(sender)
+        }
+    }
+
+    // The browse keys are the system's Minimize and New; catching them here, while
+    // this editor holds focus, keeps them from the Window and File menus.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if window?.firstResponder === self,
+            event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
+            switch event.charactersIgnoringModifiers {
+            case "m": browse(.implementors); return true
+            case "n": browse(.senders); return true
+            default: break
+            }
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    private func browse(_ kind: PharoBrowseKind) {
+        guard let runtime, let onOpen else { return }
+        let source = self.source
+        let cursor = sourceCursor
+        Task { @MainActor in
+            if let methods = await runtime.browsing(kind, in: source, at: cursor) {
+                onOpen(methods)
+            }
         }
     }
 

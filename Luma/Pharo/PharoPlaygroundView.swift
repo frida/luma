@@ -391,6 +391,7 @@ private struct PharoPlaygroundEmptyState: View {
             "Type an expression and press \u{2318}D to evaluate it, or \u{2318}P to print the result beside it.",
             "Press \u{2318}G to evaluate and open the result beside the page; double-click a row to drill in.",
             "Press \u{2318}\u{21E7}F to reformat the snippet the way the image lays out code.",
+            "Put the cursor on a message and press \u{2318}M for its implementors, \u{2318}N for its senders.",
             "Script your own views, or export what you find to a file.",
             "Try LumaProject events, or LumaProject sessions.",
         ]
