@@ -21,6 +21,7 @@ struct PharoPlaygroundView: View {
     @State private var isPageMaximized = false
     @State private var isPagePointedAt = false
     @State private var errors: [UUID: PharoEvaluationError] = [:]
+    @State private var evaluating: Set<UUID> = []
 
     private let runtime = PharoRuntime.shared
 
@@ -182,7 +183,8 @@ struct PharoPlaygroundView: View {
                         evaluate: { Task { await run(snippet, inspect: false) } },
                         evaluateAndInspect: { Task { await run(snippet, inspect: true) } },
                         remove: { remove(snippet) },
-                        error: errors[snippet.id]
+                        error: errors[snippet.id],
+                        isEvaluating: evaluating.contains(snippet.id)
                     )
                     .onChange(of: snippet.source) { forget(snippet.id) }
                     .onGeometryChange(for: CGFloat.self) { proxy in
@@ -232,6 +234,8 @@ struct PharoPlaygroundView: View {
     }
 
     private func run(_ snippet: PharoPlaygroundSnippet, inspect: Bool) async {
+        guard evaluating.insert(snippet.id).inserted else { return }
+        defer { evaluating.remove(snippet.id) }
         do {
             let produced = try await runtime.evaluate(snippet.source)
             results[snippet.id] = produced

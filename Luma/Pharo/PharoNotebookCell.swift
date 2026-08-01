@@ -21,6 +21,7 @@ struct PharoNotebookCell: View {
 
     @State private var focused: UUID?
     @State private var evaluated: PharoObject?
+    @State private var isEvaluating = false
 
     private let runtime = PharoRuntime.shared
 
@@ -66,7 +67,8 @@ struct PharoNotebookCell: View {
             evaluate: { Task { await run(inspect: false) } },
             evaluateAndInspect: { Task { await run(inspect: true) } },
             remove: nil,
-            error: failure
+            error: failure,
+            isEvaluating: isEvaluating
         )
         .onChange(of: source) {
             forget()
@@ -140,6 +142,9 @@ struct PharoNotebookCell: View {
     }
 
     private func run(inspect: Bool) async {
+        guard !isEvaluating else { return }
+        isEvaluating = true
+        defer { isEvaluating = false }
         do {
             try await runtime.startBundledImage(for: engine)
             let produced = try await runtime.evaluate(source)
