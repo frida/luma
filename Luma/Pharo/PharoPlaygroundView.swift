@@ -21,6 +21,7 @@ struct PharoPlaygroundView: View {
     @State private var isPageMaximized = false
     @State private var isPagePointedAt = false
     @State private var errors: [UUID: PharoEvaluationError] = [:]
+    @State private var printStrings: [UUID: String] = [:]
     @State private var evaluating: Set<UUID> = []
 
     private let runtime = PharoRuntime.shared
@@ -180,10 +181,12 @@ struct PharoPlaygroundView: View {
                         runtime: runtime,
                         open: { show($0, from: snippet.id) },
                         openResult: openResult(for: snippet),
-                        evaluate: { Task { await run(snippet, inspect: false) } },
-                        evaluateAndInspect: { Task { await run(snippet, inspect: true) } },
+                        evaluate: { Task { await run(snippet, .evaluate) } },
+                        printIt: { Task { await run(snippet, .print) } },
+                        evaluateAndInspect: { Task { await run(snippet, .inspect) } },
                         remove: { remove(snippet) },
                         error: errors[snippet.id],
+                        printString: printStrings[snippet.id],
                         isEvaluating: evaluating.contains(snippet.id)
                     )
                     .onChange(of: snippet.source) { forget(snippet.id) }
@@ -233,7 +236,7 @@ struct PharoPlaygroundView: View {
         }
     }
 
-    private func run(_ snippet: PharoPlaygroundSnippet, inspect: Bool) async {
+    private func run(_ snippet: PharoPlaygroundSnippet, _ mode: PharoRunMode) async {
         guard evaluating.insert(snippet.id).inserted else { return }
         defer { evaluating.remove(snippet.id) }
         do {
@@ -241,10 +244,12 @@ struct PharoPlaygroundView: View {
             results[snippet.id] = produced
             let snapshot = try await PharoSnapshot.capture(of: produced, using: runtime)
             keep(snapshot: snapshot, fuel: try? await runtime.serialize(produced), for: snippet.id)
-            if inspect { show(produced, from: snippet.id) }
+            printStrings[snippet.id] = mode == .print ? produced.printString : nil
+            if mode == .inspect { show(produced, from: snippet.id) }
             errors[snippet.id] = nil
         } catch {
             errors[snippet.id] = evaluationError(from: error)
+            printStrings[snippet.id] = nil
         }
     }
 
@@ -300,6 +305,7 @@ struct PharoPlaygroundView: View {
     private func forget(_ snippet: UUID) {
         results[snippet] = nil
         errors[snippet] = nil
+        printStrings[snippet] = nil
         guard let index = snippets.firstIndex(where: { $0.id == snippet }) else { return }
         snippets[index].snapshot = nil
         snippets[index].resultFuel = nil
@@ -373,7 +379,7 @@ private struct PharoPlaygroundEmptyState: View {
 
     private var tipLines: [String] {
         [
-            "Type an expression and press \u{2318}D to evaluate it.",
+            "Type an expression and press \u{2318}D to evaluate it, or \u{2318}P to print the result beside it.",
             "Press \u{2318}G to evaluate and open the result beside the page; double-click a row to drill in.",
             "Script your own views, or export what you find to a file.",
             "Try LumaProject events, or LumaProject sessions.",
