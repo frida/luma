@@ -11,6 +11,7 @@ public struct ProjectUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
     public var isCollaborationPanelVisible: Bool
     public var pharoSnippetsJSON: String?
     public var pharoPageWidth: Double?
+    public var pharoPageMaximized: Bool
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -20,6 +21,7 @@ public struct ProjectUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
         case isCollaborationPanelVisible = "collaboration_panel_visible"
         case pharoSnippetsJSON = "pharo_snippets_json"
         case pharoPageWidth = "pharo_page_width"
+        case pharoPageMaximized = "pharo_page_maximized"
     }
 
     public init(
@@ -29,7 +31,8 @@ public struct ProjectUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
         eventStreamBottomHeight: Double = 0,
         isCollaborationPanelVisible: Bool = false,
         pharoSnippetsJSON: String? = nil,
-        pharoPageWidth: Double? = nil
+        pharoPageWidth: Double? = nil,
+        pharoPageMaximized: Bool = false
     ) {
         self.id = id
         self.selectedItemJSON = selectedItemJSON
@@ -38,5 +41,6 @@ public struct ProjectUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
         self.isCollaborationPanelVisible = isCollaborationPanelVisible
         self.pharoSnippetsJSON = pharoSnippetsJSON
         self.pharoPageWidth = pharoPageWidth
+        self.pharoPageMaximized = pharoPageMaximized
     }
 }

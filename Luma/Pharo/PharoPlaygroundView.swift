@@ -39,8 +39,10 @@ struct PharoPlaygroundView: View {
         .onAppear {
             snippets = engine.pharoSnippets
             pageWidth = engine.pharoPageWidth.map { CGFloat($0) } ?? 420
+            isPageMaximized = engine.pharoPageMaximized
         }
         .onChange(of: snippets) { engine.setPharoSnippets(snippets) }
+        .onChange(of: isPageMaximized) { engine.setPharoPageMaximized(isPageMaximized) }
     }
 
     private var workspace: some View {
