@@ -13,6 +13,7 @@ struct PharoSnippetView: View {
     let openResult: (() -> Void)?
     let evaluate: () -> Void
     let remove: (() -> Void)?
+    var error: String? = nil
 
     @State private var isPointedAt = false
     @State private var openedClasses: [String: PharoObject] = [:]
@@ -55,7 +56,7 @@ struct PharoSnippetView: View {
     }
 
     private var marks: PharoSnippetMarks {
-        PharoSnippetMarks(openedClasses: openedClasses, hasResult: openResult != nil)
+        PharoSnippetMarks(openedClasses: openedClasses, hasResult: openResult != nil, error: error)
     }
 
     private func toggle(_ name: String) {

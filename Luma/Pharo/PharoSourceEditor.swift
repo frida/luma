@@ -7,9 +7,11 @@ import SwiftyPharo
 struct PharoSnippetMarks: Equatable {
     var openedClasses: [String: PharoObject] = [:]
     var hasResult: Bool = false
+    var error: String?
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.hasResult == rhs.hasResult
+            && lhs.error == rhs.error
             && lhs.openedClasses.mapValues(\.handle) == rhs.openedClasses.mapValues(\.handle)
     }
 }
@@ -535,6 +537,9 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         for variable in undeclared {
             wanted.append(PharoPlacedMark(sourceOffset: variable.stop, content: .undeclaredWrench(variable.id)))
         }
+        if let error = marks.error {
+            wanted.append(PharoPlacedMark(sourceOffset: 0, content: .errorDot(error)))
+        }
         wanted.append(PharoPlacedMark(sourceOffset: source.utf16.count, content: .result))
 
         return wanted
@@ -570,13 +575,15 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
     /// A triangle, wrench or dot is as tall as a capital letter, which keeps it
     /// inside the ascent so showing one never makes the line taller.
     private func bounds(for content: PharoMarkContent) -> CGRect {
+        let capHeight = (font ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)).capHeight.rounded()
         switch content {
         case .result where !resultModel.hasResult:
             return CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
+        case .errorDot:
+            let side = (capHeight * 1.4).rounded()
+            return CGRect(x: 0, y: 0, width: side + 4, height: side)
         case .classTriangle, .methodTriangle, .undeclaredWrench, .result:
-            let side = (font ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular))
-                .capHeight.rounded()
-            return CGRect(x: 0, y: 0, width: side + 3, height: side)
+            return CGRect(x: 0, y: 0, width: capHeight + 3, height: capHeight)
         }
     }
 
@@ -590,6 +597,8 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
             PharoMarkHostingView(content: PharoUndeclaredWrench(model: undeclaredModel(key)))
         case .result:
             PharoMarkHostingView(content: PharoResultDot(model: resultModel))
+        case .errorDot(let message):
+            PharoMarkHostingView(content: PharoErrorDot(message: message))
         }
     }
 
@@ -1147,6 +1156,7 @@ enum PharoMarkContent {
     case methodTriangle(String)
     case undeclaredWrench(String)
     case result
+    case errorDot(String)
 
     /// The result dot sits at the very end, after any mark sharing its spot.
     var insertionOrder: Int {
@@ -1444,6 +1454,35 @@ private struct PharoClassBody: View {
     }
 }
 
+/// The larger red dot GT sets at the head of an expression that failed to run.
+/// Its message opens on a click.
+private struct PharoErrorDot: View {
+    let message: String
+
+    @State private var isPointedAt = false
+    @State private var isShowingMessage = false
+
+    var body: some View {
+        Button(action: { isShowingMessage = true }) {
+            Circle()
+                .fill(isPointedAt ? Color.red.opacity(0.8) : Color.red)
+                .frame(width: 11, height: 11)
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onHover { isPointedAt = $0 }
+        .help(message)
+        .popover(isPresented: $isShowingMessage) {
+            Text(message)
+                .font(.callout)
+                .textSelection(.enabled)
+                .padding(10)
+                .frame(maxWidth: 320)
+        }
+    }
+}
+
 /// The dot GT appends once a snippet has produced something.
 private struct PharoResultDot: View {
     @ObservedObject var model: PharoResultMarkModel
@@ -1504,6 +1543,8 @@ extension PharoMarkContent: Hashable {
             a == b
         case (.result, .result):
             true
+        case (.errorDot(let a), .errorDot(let b)):
+            a == b
         default:
             false
         }
@@ -1522,6 +1563,9 @@ extension PharoMarkContent: Hashable {
             hasher.combine(key)
         case .result:
             hasher.combine(2)
+        case .errorDot(let message):
+            hasher.combine(7)
+            hasher.combine(message)
         }
     }
 }

@@ -20,6 +20,7 @@ struct PharoPlaygroundView: View {
     @State private var resizingFrom: CGFloat?
     @State private var isPageMaximized = false
     @State private var isPagePointedAt = false
+    @State private var errors: [UUID: String] = [:]
 
     private let runtime = PharoRuntime.shared
 
@@ -177,7 +178,8 @@ struct PharoPlaygroundView: View {
                         open: { show($0, from: snippet.id) },
                         openResult: openResult(for: snippet),
                         evaluate: { Task { await evaluate(snippet) } },
-                        remove: { remove(snippet) }
+                        remove: { remove(snippet) },
+                        error: errors[snippet.id]
                     )
                     .onChange(of: snippet.source) { forget(snippet.id) }
                     .onGeometryChange(for: CGFloat.self) { proxy in
@@ -233,9 +235,9 @@ struct PharoPlaygroundView: View {
             let snapshot = try await PharoSnapshot.capture(of: produced, using: runtime)
             keep(snapshot: snapshot, fuel: try? await runtime.serialize(produced), for: snippet.id)
             show(produced, from: snippet.id)
-            failure = nil
+            errors[snippet.id] = nil
         } catch {
-            failure = error.localizedDescription
+            errors[snippet.id] = error.localizedDescription
         }
     }
 
@@ -284,6 +286,7 @@ struct PharoPlaygroundView: View {
 
     private func forget(_ snippet: UUID) {
         results[snippet] = nil
+        errors[snippet] = nil
         guard let index = snippets.firstIndex(where: { $0.id == snippet }) else { return }
         snippets[index].snapshot = nil
         snippets[index].resultFuel = nil

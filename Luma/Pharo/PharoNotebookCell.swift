@@ -48,13 +48,8 @@ struct PharoNotebookCell: View {
             snippet
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            if let snapshot {
+            if failure == nil, let snapshot {
                 resultBelow(snapshot)
-            }
-
-            if let failure {
-                PharoFailureView(message: failure)
-                    .frame(height: 60)
             }
         }
         .onAppear { if autoFocus { focused = entry.id } }
@@ -69,7 +64,8 @@ struct PharoNotebookCell: View {
             open: showInInspector,
             openResult: nil,
             evaluate: { Task { await evaluate() } },
-            remove: nil
+            remove: nil,
+            error: failure
         )
         .onChange(of: source) {
             forget()
@@ -154,6 +150,7 @@ struct PharoNotebookCell: View {
         evaluated = nil
         snapshot = nil
         fuel = nil
+        failure = nil
         if inspected == entry.id {
             drillPath.clear()
             inspected = nil
