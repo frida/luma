@@ -3,11 +3,18 @@ import SwiftUI
 import Combine
 import SwiftyPharo
 
+/// An error a snippet raised, with where in its source the image placed it --
+/// 1-based, or nothing for a runtime error -- so the dot marks the spot.
+struct PharoEvaluationError: Equatable {
+    let message: String
+    let position: Int?
+}
+
 /// What the snippet shows alongside its text.
 struct PharoSnippetMarks: Equatable {
     var openedClasses: [String: PharoObject] = [:]
     var hasResult: Bool = false
-    var error: String?
+    var error: PharoEvaluationError?
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.hasResult == rhs.hasResult
@@ -538,7 +545,8 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
             wanted.append(PharoPlacedMark(sourceOffset: variable.stop, content: .undeclaredWrench(variable.id)))
         }
         if let error = marks.error {
-            wanted.append(PharoPlacedMark(sourceOffset: 0, content: .errorDot(error)))
+            let offset = min(max((error.position ?? 1) - 1, 0), source.utf16.count)
+            wanted.append(PharoPlacedMark(sourceOffset: offset, content: .errorDot(error.message)))
         }
         wanted.append(PharoPlacedMark(sourceOffset: source.utf16.count, content: .result))
 

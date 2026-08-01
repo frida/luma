@@ -20,7 +20,7 @@ struct PharoPlaygroundView: View {
     @State private var resizingFrom: CGFloat?
     @State private var isPageMaximized = false
     @State private var isPagePointedAt = false
-    @State private var errors: [UUID: String] = [:]
+    @State private var errors: [UUID: PharoEvaluationError] = [:]
 
     private let runtime = PharoRuntime.shared
 
@@ -237,8 +237,14 @@ struct PharoPlaygroundView: View {
             show(produced, from: snippet.id)
             errors[snippet.id] = nil
         } catch {
-            errors[snippet.id] = error.localizedDescription
+            errors[snippet.id] = evaluationError(from: error)
         }
+    }
+
+    private func evaluationError(from error: Error) -> PharoEvaluationError {
+        PharoEvaluationError(
+            message: error.localizedDescription,
+            position: (error as? PharoRequestError)?.sourcePosition)
     }
 
     /// The dot leads to the result: the live object while the image holds it,

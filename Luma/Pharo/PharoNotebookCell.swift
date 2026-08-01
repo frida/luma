@@ -17,7 +17,7 @@ struct PharoNotebookCell: View {
     @State private var source: String
     @State private var snapshot: PharoSnapshot?
     @State private var fuel: Data?
-    @State private var failure: String?
+    @State private var failure: PharoEvaluationError?
 
     @State private var focused: UUID?
     @State private var evaluated: PharoObject?
@@ -128,8 +128,14 @@ struct PharoNotebookCell: View {
             try await runtime.startBundledImage(for: engine)
             evaluated = try await runtime.materialize(fuel)
         } catch {
-            failure = error.localizedDescription
+            failure = evaluationError(from: error)
         }
+    }
+
+    private func evaluationError(from error: Error) -> PharoEvaluationError {
+        PharoEvaluationError(
+            message: error.localizedDescription,
+            position: (error as? PharoRequestError)?.sourcePosition)
     }
 
     private func evaluate() async {
@@ -141,7 +147,7 @@ struct PharoNotebookCell: View {
             fuel = try? await runtime.serialize(produced)
             failure = nil
         } catch {
-            failure = error.localizedDescription
+            failure = evaluationError(from: error)
         }
         save()
     }

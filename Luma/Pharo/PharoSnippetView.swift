@@ -13,7 +13,7 @@ struct PharoSnippetView: View {
     let openResult: (() -> Void)?
     let evaluate: () -> Void
     let remove: (() -> Void)?
-    var error: String? = nil
+    var error: PharoEvaluationError? = nil
 
     @State private var isPointedAt = false
     @State private var openedClasses: [String: PharoObject] = [:]
