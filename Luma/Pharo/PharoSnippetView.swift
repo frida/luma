@@ -23,6 +23,7 @@ struct PharoSnippetView: View {
     let evaluate: () -> Void
     let printIt: () -> Void
     let evaluateAndInspect: () -> Void
+    let format: () -> Void
     let remove: (() -> Void)?
     var error: PharoEvaluationError? = nil
     var printString: String? = nil
@@ -54,6 +55,15 @@ struct PharoSnippetView: View {
         .background {
             Button("Print it", action: printIt)
                 .keyboardShortcut(shortcut(.init("p"), when: isFocused && !isEvaluating))
+                .opacity(0)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+        // Format has no button either, only a key, the way GT keeps it off the
+        // toolbar.
+        .background {
+            Button("Format", action: format)
+                .keyboardShortcut(shortcut(.init("f"), modifiers: [.command, .shift], when: isFocused && !isEvaluating))
                 .opacity(0)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
@@ -164,8 +174,8 @@ struct PharoSnippetView: View {
         .help(loading ? "Evaluating\u{2026}" : name)
     }
 
-    private func shortcut(_ key: KeyEquivalent, when active: Bool) -> KeyboardShortcut? {
-        active ? KeyboardShortcut(key, modifiers: .command) : nil
+    private func shortcut(_ key: KeyEquivalent, modifiers: EventModifiers = .command, when active: Bool) -> KeyboardShortcut? {
+        active ? KeyboardShortcut(key, modifiers: modifiers) : nil
     }
 
     private var isFocused: Bool {

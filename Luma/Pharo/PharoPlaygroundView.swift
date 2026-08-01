@@ -184,6 +184,7 @@ struct PharoPlaygroundView: View {
                         evaluate: { Task { await run(snippet, .evaluate) } },
                         printIt: { Task { await run(snippet, .print) } },
                         evaluateAndInspect: { Task { await run(snippet, .inspect) } },
+                        format: { Task { await format(snippet) } },
                         remove: { remove(snippet) },
                         error: errors[snippet.id],
                         printString: printStrings[snippet.id],
@@ -251,6 +252,14 @@ struct PharoPlaygroundView: View {
             errors[snippet.id] = evaluationError(from: error)
             printStrings[snippet.id] = nil
         }
+    }
+
+    private func format(_ snippet: PharoPlaygroundSnippet) async {
+        guard let formatted = try? await runtime.format(source: snippet.source),
+              let index = snippets.firstIndex(where: { $0.id == snippet.id }),
+              formatted != snippets[index].source
+        else { return }
+        snippets[index].source = formatted
     }
 
     private func evaluationError(from error: Error) -> PharoEvaluationError {
@@ -381,6 +390,7 @@ private struct PharoPlaygroundEmptyState: View {
         [
             "Type an expression and press \u{2318}D to evaluate it, or \u{2318}P to print the result beside it.",
             "Press \u{2318}G to evaluate and open the result beside the page; double-click a row to drill in.",
+            "Press \u{2318}\u{21E7}F to reformat the snippet the way the image lays out code.",
             "Script your own views, or export what you find to a file.",
             "Try LumaProject events, or LumaProject sessions.",
         ]

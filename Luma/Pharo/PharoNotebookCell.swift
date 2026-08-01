@@ -68,6 +68,7 @@ struct PharoNotebookCell: View {
             evaluate: { Task { await run(.evaluate) } },
             printIt: { Task { await run(.print) } },
             evaluateAndInspect: { Task { await run(.inspect) } },
+            format: { Task { await format() } },
             remove: nil,
             error: failure,
             printString: printString,
@@ -167,6 +168,12 @@ struct PharoNotebookCell: View {
             printString = nil
         }
         save()
+    }
+
+    private func format() async {
+        try? await runtime.startBundledImage(for: engine)
+        guard let formatted = try? await runtime.format(source: source), formatted != source else { return }
+        source = formatted
     }
 
     private func forget() {
