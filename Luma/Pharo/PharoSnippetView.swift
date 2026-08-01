@@ -18,6 +18,7 @@ struct PharoSnippetView: View {
     var isEvaluating: Bool = false
 
     @State private var isPointedAt = false
+    @State private var showsSpinner = false
     @State private var openedClasses: [String: PharoObject] = [:]
 
     var body: some View {
@@ -72,23 +73,17 @@ struct PharoSnippetView: View {
 
     private var actions: some View {
         HStack(spacing: 2) {
-            if isEvaluating {
-                ProgressView()
-                    .controlSize(.small)
-                    .scaleEffect(0.6)
-                    .frame(width: 16, height: 12)
-                    .accessibilityIdentifier("notebook.pharo.evaluating")
-            } else {
-                action("play.fill", "Evaluate and inspect (\u{2318}G)", evaluateAndInspect)
-                    // Only the focused snippet answers a shortcut, so the others'
-                    // identical bindings do not race it for the keypress.
-                    .keyboardShortcut(shortcut(.init("g"), when: isFocused))
-                    .accessibilityIdentifier("notebook.pharo.evaluateAndInspect")
+            action("play.fill", "Evaluate and inspect (\u{2318}G)", loading: showsSpinner, evaluateAndInspect)
+                // Only the focused snippet answers a shortcut, so the others'
+                // identical bindings do not race it for the keypress.
+                .keyboardShortcut(shortcut(.init("g"), when: isFocused))
+                .disabled(isEvaluating)
+                .accessibilityIdentifier("notebook.pharo.evaluateAndInspect")
 
-                action("play", "Evaluate (\u{2318}D)", evaluate)
-                    .keyboardShortcut(shortcut(.init("d"), when: isFocused))
-                    .accessibilityIdentifier("notebook.pharo.evaluate")
-            }
+            action("play", "Evaluate (\u{2318}D)", evaluate)
+                .keyboardShortcut(shortcut(.init("d"), when: isFocused))
+                .disabled(isEvaluating)
+                .accessibilityIdentifier("notebook.pharo.evaluate")
 
             Spacer()
 
@@ -96,21 +91,37 @@ struct PharoSnippetView: View {
                 action("trash", "Remove", remove)
             }
         }
+        // A run is often over in a blink; wait before spinning so a quick one
+        // does not flash the indicator.
+        .task(id: isEvaluating) {
+            showsSpinner = false
+            guard isEvaluating else { return }
+            try? await Task.sleep(for: .milliseconds(200))
+            if !Task.isCancelled { showsSpinner = true }
+        }
         .padding(.horizontal, 6)
         .padding(.bottom, 4)
         .opacity(showsActions ? 1 : 0)
         .allowsHitTesting(showsActions)
     }
 
-    private func action(_ symbol: String, _ name: String, _ perform: @escaping () -> Void) -> some View {
+    private func action(_ symbol: String, _ name: String, loading: Bool = false, _ perform: @escaping () -> Void) -> some View {
         Button(action: perform) {
-            Image(systemName: symbol)
-                .font(.caption)
-                .frame(width: 16, height: 12)
+            ZStack {
+                Image(systemName: symbol)
+                    .font(.caption)
+                    .opacity(loading ? 0 : 1)
+                if loading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.5)
+                }
+            }
+            .frame(width: 16, height: 12)
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
-        .help(name)
+        .help(loading ? "Evaluating\u{2026}" : name)
     }
 
     private func shortcut(_ key: KeyEquivalent, when active: Bool) -> KeyboardShortcut? {
@@ -122,6 +133,6 @@ struct PharoSnippetView: View {
     }
 
     private var showsActions: Bool {
-        isFocused || isPointedAt || isEvaluating
+        isFocused || isPointedAt || showsSpinner
     }
 }
