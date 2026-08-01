@@ -12,6 +12,7 @@ struct PharoSnippetView: View {
     let open: (PharoObject) -> Void
     let openResult: (() -> Void)?
     let evaluate: () -> Void
+    let evaluateAndInspect: () -> Void
     let remove: (() -> Void)?
     var error: PharoEvaluationError? = nil
 
@@ -70,10 +71,14 @@ struct PharoSnippetView: View {
 
     private var actions: some View {
         HStack(spacing: 2) {
-            action("play.fill", "Evaluate", evaluate)
-                // Only the focused snippet answers the shortcut, so the others'
+            action("play.fill", "Evaluate and inspect (\u{2318}G)", evaluateAndInspect)
+                // Only the focused snippet answers a shortcut, so the others'
                 // identical bindings do not race it for the keypress.
-                .keyboardShortcut(isFocused ? KeyboardShortcut(.return, modifiers: .command) : nil)
+                .keyboardShortcut(shortcut(.init("g"), when: isFocused))
+                .accessibilityIdentifier("notebook.pharo.evaluateAndInspect")
+
+            action("play", "Evaluate (\u{2318}D)", evaluate)
+                .keyboardShortcut(shortcut(.init("d"), when: isFocused))
                 .accessibilityIdentifier("notebook.pharo.evaluate")
 
             Spacer()
@@ -97,6 +102,10 @@ struct PharoSnippetView: View {
         .buttonStyle(.bordered)
         .controlSize(.small)
         .help(name)
+    }
+
+    private func shortcut(_ key: KeyEquivalent, when active: Bool) -> KeyboardShortcut? {
+        active ? KeyboardShortcut(key, modifiers: .command) : nil
     }
 
     private var isFocused: Bool {
