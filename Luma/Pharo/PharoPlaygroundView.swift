@@ -154,7 +154,9 @@ struct PharoPlaygroundView: View {
             .contentShape(Rectangle())
             .pointerStyle(.columnResize)
             .gesture(
-                DragGesture()
+                // Measured globally: the handle rides the page's edge, so a
+                // local translation would shrink as the page grows under it.
+                DragGesture(coordinateSpace: .global)
                     .onChanged { drag in
                         let base = resizingFrom ?? pageWidth
                         resizingFrom = base
