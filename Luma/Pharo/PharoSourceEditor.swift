@@ -333,6 +333,19 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         markUp()
     }
 
+    /// Copy and cut hand over the source alone, with the mark characters that
+    /// hold the triangles and dots taken back out, so a paste elsewhere is the
+    /// text the reader sees rather than that text peppered with placeholders.
+    override var writablePasteboardTypes: [NSPasteboard.PasteboardType] {
+        [.string]
+    }
+
+    override func writeSelection(to pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
+        let selected = (string as NSString).substring(with: selectedRange())
+        pboard.setString(selected.replacingOccurrences(of: "\u{FFFC}", with: ""), forType: .string)
+        return true
+    }
+
     func apply(
         runtime: PharoRuntime,
         marks: PharoSnippetMarks,
