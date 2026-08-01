@@ -63,7 +63,8 @@ struct PharoNotebookCell: View {
             runtime: runtime,
             open: showInInspector,
             openResult: nil,
-            evaluate: { Task { await evaluate() } },
+            evaluate: { Task { await run(inspect: false) } },
+            evaluateAndInspect: { Task { await run(inspect: true) } },
             remove: nil,
             error: failure
         )
@@ -138,7 +139,7 @@ struct PharoNotebookCell: View {
             position: (error as? PharoRequestError)?.sourcePosition)
     }
 
-    private func evaluate() async {
+    private func run(inspect: Bool) async {
         do {
             try await runtime.startBundledImage(for: engine)
             let produced = try await runtime.evaluate(source)
@@ -146,6 +147,7 @@ struct PharoNotebookCell: View {
             snapshot = try await PharoSnapshot.capture(of: produced, using: runtime)
             fuel = try? await runtime.serialize(produced)
             failure = nil
+            if inspect { showInInspector(produced) }
         } catch {
             failure = evaluationError(from: error)
         }

@@ -177,7 +177,8 @@ struct PharoPlaygroundView: View {
                         runtime: runtime,
                         open: { show($0, from: snippet.id) },
                         openResult: openResult(for: snippet),
-                        evaluate: { Task { await evaluate(snippet) } },
+                        evaluate: { Task { await run(snippet, inspect: false) } },
+                        evaluateAndInspect: { Task { await run(snippet, inspect: true) } },
                         remove: { remove(snippet) },
                         error: errors[snippet.id]
                     )
@@ -228,13 +229,13 @@ struct PharoPlaygroundView: View {
         }
     }
 
-    private func evaluate(_ snippet: PharoPlaygroundSnippet) async {
+    private func run(_ snippet: PharoPlaygroundSnippet, inspect: Bool) async {
         do {
             let produced = try await runtime.evaluate(snippet.source)
             results[snippet.id] = produced
             let snapshot = try await PharoSnapshot.capture(of: produced, using: runtime)
             keep(snapshot: snapshot, fuel: try? await runtime.serialize(produced), for: snippet.id)
-            show(produced, from: snippet.id)
+            if inspect { show(produced, from: snippet.id) }
             errors[snippet.id] = nil
         } catch {
             errors[snippet.id] = evaluationError(from: error)
