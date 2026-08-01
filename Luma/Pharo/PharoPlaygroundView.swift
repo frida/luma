@@ -367,8 +367,8 @@ private struct PharoPlaygroundEmptyState: View {
 
     private var tipLines: [String] {
         [
-            "Type an expression and press \u{2318}Return to evaluate it.",
-            "Its result opens in the inspector beside the page; double-click a row to drill in.",
+            "Type an expression and press \u{2318}D to evaluate it.",
+            "Press \u{2318}G to evaluate and open the result beside the page; double-click a row to drill in.",
             "Script your own views, or export what you find to a file.",
             "Try LumaProject events, or LumaProject sessions.",
         ]
