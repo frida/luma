@@ -159,6 +159,7 @@ struct PharoTextEditor: NSViewRepresentable {
         }
         view.onEdit = { source = $0 }
         view.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        view.allowsUndo = true
         view.isRichText = false
         view.isAutomaticQuoteSubstitutionEnabled = false
         view.isAutomaticTextReplacementEnabled = false
@@ -204,9 +205,16 @@ struct PharoTextEditor: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: PharoTextEditor
         private var appliedFocused: UUID?
+        private let textUndoManager = UndoManager()
 
         init(_ parent: PharoTextEditor) {
             self.parent = parent
+        }
+
+        // Each editor undoes its own edits rather than sharing the window's
+        // manager, where a snippet's undo could reach into another's.
+        func undoManager(for view: NSTextView) -> UndoManager? {
+            textUndoManager
         }
 
         func textDidChange(_ notification: Notification) {
