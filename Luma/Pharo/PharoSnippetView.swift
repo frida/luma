@@ -4,6 +4,15 @@ import SwiftyPharo
 /// A piece of Smalltalk on a page, sized to what it holds. Its actions stay in
 /// place whether or not they are showing, so a page does not shift under the
 /// pointer as snippets take and lose focus.
+/// The three ways to run a snippet, the way Glamorous Toolkit offers them: run
+/// it, run it and leave the print string beside it, or run it and open the
+/// result in the inspector.
+enum PharoRunMode {
+    case evaluate
+    case print
+    case inspect
+}
+
 struct PharoSnippetView: View {
     let id: UUID
     @Binding var source: String
@@ -12,9 +21,11 @@ struct PharoSnippetView: View {
     let open: (PharoObject) -> Void
     let openResult: (() -> Void)?
     let evaluate: () -> Void
+    let printIt: () -> Void
     let evaluateAndInspect: () -> Void
     let remove: (() -> Void)?
     var error: PharoEvaluationError? = nil
+    var printString: String? = nil
     var isEvaluating: Bool = false
 
     @State private var isPointedAt = false
@@ -27,6 +38,9 @@ struct PharoSnippetView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 editor
+                if let printString {
+                    printResult(printString)
+                }
                 actions
             }
         }
@@ -35,6 +49,15 @@ struct PharoSnippetView: View {
         .overlay {
             RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary)
         }
+        // Print it has no button, only a key, the way GT leaves it off the
+        // toolbar; the hidden control gives the shortcut somewhere to live.
+        .background {
+            Button("Print it", action: printIt)
+                .keyboardShortcut(shortcut(.init("p"), when: isFocused && !isEvaluating))
+                .opacity(0)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
         .onHover { isPointedAt = $0 }
     }
 
@@ -42,6 +65,23 @@ struct PharoSnippetView: View {
         Rectangle()
             .fill(isFocused ? Color.fridaBrand : .clear)
             .frame(width: 3)
+    }
+
+    /// What "Print it" leaves behind: the result's print string beside the code
+    /// it came from, the way Glamorous Toolkit adorns the expression with it.
+    private func printResult(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "arrow.turn.down.right")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            Text(text)
+                .font(.system(.callout, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .lineLimit(4)
+        }
+        .padding(.horizontal, 8)
+        .padding(.bottom, 4)
     }
 
     private var editor: some View {

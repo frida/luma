@@ -21,6 +21,7 @@ struct PharoNotebookCell: View {
 
     @State private var focused: UUID?
     @State private var evaluated: PharoObject?
+    @State private var printString: String?
     @State private var isEvaluating = false
 
     private let runtime = PharoRuntime.shared
@@ -64,10 +65,12 @@ struct PharoNotebookCell: View {
             runtime: runtime,
             open: showInInspector,
             openResult: nil,
-            evaluate: { Task { await run(inspect: false) } },
-            evaluateAndInspect: { Task { await run(inspect: true) } },
+            evaluate: { Task { await run(.evaluate) } },
+            printIt: { Task { await run(.print) } },
+            evaluateAndInspect: { Task { await run(.inspect) } },
             remove: nil,
             error: failure,
+            printString: printString,
             isEvaluating: isEvaluating
         )
         .onChange(of: source) {
@@ -141,7 +144,7 @@ struct PharoNotebookCell: View {
             position: (error as? PharoRequestError)?.sourcePosition)
     }
 
-    private func run(inspect: Bool) async {
+    private func run(_ mode: PharoRunMode) async {
         guard !isEvaluating else { return }
         isEvaluating = true
         defer { isEvaluating = false }
@@ -149,12 +152,19 @@ struct PharoNotebookCell: View {
             try await runtime.startBundledImage(for: engine)
             let produced = try await runtime.evaluate(source)
             evaluated = produced
-            snapshot = try await PharoSnapshot.capture(of: produced, using: runtime)
             fuel = try? await runtime.serialize(produced)
             failure = nil
-            if inspect { showInInspector(produced) }
+            if mode == .print {
+                printString = produced.printString
+                snapshot = nil
+            } else {
+                printString = nil
+                snapshot = try await PharoSnapshot.capture(of: produced, using: runtime)
+                if mode == .inspect { showInInspector(produced) }
+            }
         } catch {
             failure = evaluationError(from: error)
+            printString = nil
         }
         save()
     }
@@ -164,6 +174,7 @@ struct PharoNotebookCell: View {
         snapshot = nil
         fuel = nil
         failure = nil
+        printString = nil
         if inspected == entry.id {
             drillPath.clear()
             inspected = nil
