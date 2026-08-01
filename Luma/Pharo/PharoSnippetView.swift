@@ -15,6 +15,7 @@ struct PharoSnippetView: View {
     let evaluateAndInspect: () -> Void
     let remove: (() -> Void)?
     var error: PharoEvaluationError? = nil
+    var isEvaluating: Bool = false
 
     @State private var isPointedAt = false
     @State private var openedClasses: [String: PharoObject] = [:]
@@ -71,15 +72,23 @@ struct PharoSnippetView: View {
 
     private var actions: some View {
         HStack(spacing: 2) {
-            action("play.fill", "Evaluate and inspect (\u{2318}G)", evaluateAndInspect)
-                // Only the focused snippet answers a shortcut, so the others'
-                // identical bindings do not race it for the keypress.
-                .keyboardShortcut(shortcut(.init("g"), when: isFocused))
-                .accessibilityIdentifier("notebook.pharo.evaluateAndInspect")
+            if isEvaluating {
+                ProgressView()
+                    .controlSize(.small)
+                    .scaleEffect(0.6)
+                    .frame(width: 16, height: 12)
+                    .accessibilityIdentifier("notebook.pharo.evaluating")
+            } else {
+                action("play.fill", "Evaluate and inspect (\u{2318}G)", evaluateAndInspect)
+                    // Only the focused snippet answers a shortcut, so the others'
+                    // identical bindings do not race it for the keypress.
+                    .keyboardShortcut(shortcut(.init("g"), when: isFocused))
+                    .accessibilityIdentifier("notebook.pharo.evaluateAndInspect")
 
-            action("play", "Evaluate (\u{2318}D)", evaluate)
-                .keyboardShortcut(shortcut(.init("d"), when: isFocused))
-                .accessibilityIdentifier("notebook.pharo.evaluate")
+                action("play", "Evaluate (\u{2318}D)", evaluate)
+                    .keyboardShortcut(shortcut(.init("d"), when: isFocused))
+                    .accessibilityIdentifier("notebook.pharo.evaluate")
+            }
 
             Spacer()
 
@@ -113,6 +122,6 @@ struct PharoSnippetView: View {
     }
 
     private var showsActions: Bool {
-        isFocused || isPointedAt
+        isFocused || isPointedAt || isEvaluating
     }
 }
