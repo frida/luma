@@ -227,7 +227,6 @@ struct PharoMaximizedPane: View {
 /// hold. Each is a direct child there, which is what has the scroller report it
 /// as it comes and goes on screen; wrapped in a view of their own they would
 /// not be seen. Whoever shows them does the scrolling.
-@ViewBuilder
 func pharoColumns(
     runtime: PharoRuntime,
     path: PharoColumnPath,
