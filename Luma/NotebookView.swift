@@ -198,7 +198,8 @@ struct NotebookView: View {
             .contentShape(Rectangle())
             .pointerStyle(.columnResize)
             .gesture(
-                DragGesture()
+                // Global, since the handle rides the pane's edge as it resizes.
+                DragGesture(coordinateSpace: .global)
                     .onChanged { drag in
                         let base = resizingFrom ?? drillWidth
                         resizingFrom = base
