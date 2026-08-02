@@ -32,7 +32,6 @@ struct PharoGraphView: View {
             ZStack(alignment: .topLeading) {
                 Canvas { context, _ in
                     for edge in graph.edges {
-                        guard placed.indices.contains(edge.from), placed.indices.contains(edge.to) else { continue }
                         drawEdge(from: placed[edge.from], to: placed[edge.to], in: context)
                     }
                 }
@@ -46,27 +45,6 @@ struct PharoGraphView: View {
             .frame(width: placed.size.width, height: placed.size.height)
             .padding(PharoGraphLayout.margin)
         }
-    }
-
-    private func node(_ label: String, at index: Int) -> some View {
-        Button {
-            drill(into: index)
-        } label: {
-            Text(label)
-                .font(.caption)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .frame(maxWidth: PharoGraphLayout.nodeSize.width)
-                .background(.pharoPane, in: RoundedRectangle(cornerRadius: 6))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 6).strokeBorder(.tertiary)
-                }
-        }
-        .buttonStyle(.plain)
-        .disabled(drilling)
-        .help(label)
     }
 
     private func drawEdge(from: CGPoint, to: CGPoint, in context: GraphicsContext) {
@@ -104,6 +82,27 @@ struct PharoGraphView: View {
             y: tip.y - size * sin(angle + spread)))
         path.closeSubpath()
         return path
+    }
+
+    private func node(_ label: String, at index: Int) -> some View {
+        Button {
+            drill(into: index)
+        } label: {
+            Text(label)
+                .font(.caption)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .frame(maxWidth: PharoGraphLayout.nodeSize.width)
+                .background(.pharoPane, in: RoundedRectangle(cornerRadius: 6))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6).strokeBorder(.tertiary)
+                }
+        }
+        .buttonStyle(.plain)
+        .disabled(drilling)
+        .help(label)
     }
 
     private func drill(into index: Int) {
@@ -193,7 +192,6 @@ struct PharoGraphLayout {
         }
     }
 
-    /// Layers nodes by their distance from a root, then spreads each layer out.
     private func tree(horizontal: Bool) -> [CGPoint] {
         let depth = depths()
         var byLayer: [Int: [Int]] = [:]
@@ -217,7 +215,7 @@ struct PharoGraphLayout {
     private func depths() -> [Int] {
         var incoming = [Int](repeating: 0, count: nodeCount)
         for edge in edges where edge.from != edge.to {
-            if incoming.indices.contains(edge.to) { incoming[edge.to] += 1 }
+            incoming[edge.to] += 1
         }
         var depth = [Int](repeating: 0, count: nodeCount)
         var visited = [Bool](repeating: false, count: nodeCount)
@@ -259,7 +257,6 @@ struct PharoGraphLayout {
                 }
             }
             for edge in edges where edge.from != edge.to {
-                guard points.indices.contains(edge.from), points.indices.contains(edge.to) else { continue }
                 let dx = points[edge.from].x - points[edge.to].x
                 let dy = points[edge.from].y - points[edge.to].y
                 let dist = max(hypot(dx, dy), 0.01)
@@ -289,7 +286,6 @@ struct PharoGraphLayout {
     }
 
     private func normalized(_ raw: [CGPoint]) -> Solution {
-        guard !raw.isEmpty else { return Solution(points: [], size: CGSize(width: 1, height: 1)) }
         let minX = raw.map(\.x).min() ?? 0
         let minY = raw.map(\.y).min() ?? 0
         let maxX = raw.map(\.x).max() ?? 0
