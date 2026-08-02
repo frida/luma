@@ -1,5 +1,4 @@
 import CGtk
-import CGtkSource
 import Foundation
 import Gdk
 import Gtk
@@ -93,8 +92,8 @@ final class PharoPlaygroundPane {
             var dirs: [UnsafePointer<gchar>?] = [path, nil]
             dirs.withUnsafeBufferPointer { buffer in
                 languages.setSearchPath(dirs: buffer.baseAddress)
+                schemes.setSearchPath(path: buffer.baseAddress)
             }
-            gtk_source_style_scheme_manager_append_search_path(schemes.style_scheme_manager_ptr, path)
         }
 
         sourceBuffer.language = languages.getLanguage(id: "smalltalk")

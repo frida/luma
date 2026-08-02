@@ -1,5 +1,5 @@
 {
-  "originHash" : "8a47df6a6a8c9d9a2c0066c59be05c3361fe2655d741c76000cea6bb9bbb964d",
+  "originHash" : "b3c6db16ecd7b7b4a0548e9601de67621a01b5500ccb2ef063292703a58b9935",
   "pins" : [
     {
       "identity" : "frida-swift",
@@ -169,7 +169,7 @@
       "location" : "https://github.com/frida/SwiftGtkSourceView.git",
       "state" : {
         "branch" : "development",
-        "revision" : "af38bfb87d64b7595544eaca1dd6193b356c1ae2"
+        "revision" : "e8c76ae9314eb5e8431f94134116a5a57dfce24a"
       }
     },
     {
