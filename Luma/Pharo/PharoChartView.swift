@@ -1,7 +1,10 @@
-import AppKit
 import Charts
 import SwiftUI
 import SwiftyPharo
+
+#if canImport(AppKit)
+import AppKit
+#endif
 
 struct PharoChartView: View {
     let chart: PharoChart
@@ -129,10 +132,9 @@ struct PharoChartView: View {
                     }
                     .contextMenu {
                         if let selected {
-                            Button {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(readout(selected), forType: .string)
-                            } label: { Label("Copy Value", systemImage: "doc.on.doc") }
+                            Button { copyToPasteboard(readout(selected)) } label: {
+                                Label("Copy Value", systemImage: "doc.on.doc")
+                            }
                         }
                     }
 
@@ -256,6 +258,13 @@ struct PharoChartView: View {
 
     private func drillSelected() {
         if let selected { drill(into: selected) }
+    }
+
+    private func copyToPasteboard(_ text: String) {
+        #if canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #endif
     }
 
     private func drill(into index: Int) {
