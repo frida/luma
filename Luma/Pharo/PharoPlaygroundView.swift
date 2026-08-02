@@ -23,6 +23,8 @@ struct PharoPlaygroundView: View {
     @State private var errors: [UUID: PharoEvaluationError] = [:]
     @State private var printStrings: [UUID: String] = [:]
     @State private var evaluating: Set<UUID> = []
+    @State private var hoveredSnippet: UUID?
+    @State private var draggingSnippet: UUID?
 
     private let runtime = PharoRuntime.shared
 
@@ -205,6 +207,13 @@ struct PharoPlaygroundView: View {
                         Button(role: .destructive) { remove(snippet) } label: { Label("Remove", systemImage: "trash") }
                     }
                     .background { moveShortcuts(for: snippet, id: snippetID) }
+                    .overlay(alignment: .topTrailing) {
+                        if hoveredSnippet == snippetID || draggingSnippet == snippetID {
+                            dragHandle(snippetID)
+                        }
+                    }
+                    .opacity(draggingSnippet == snippetID ? 0.75 : 1)
+                    .onHover { hoveredSnippet = $0 ? snippetID : (hoveredSnippet == snippetID ? nil : hoveredSnippet) }
                 }
 
                 addSnippetButton
@@ -344,6 +353,30 @@ struct PharoPlaygroundView: View {
 
     private func remove(_ snippet: PharoPlaygroundSnippet) {
         snippets.removeAll { $0.id == snippet.id }
+    }
+
+    private func dragHandle(_ id: UUID) -> some View {
+        Image(systemName: "line.3.horizontal")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(6)
+            .contentShape(Rectangle())
+            .pointerStyle(.grabIdle)
+            .gesture(
+                DragGesture(coordinateSpace: .named(pharoPageSpace))
+                    .onChanged { dragToReorder(id, to: $0.location.y) }
+                    .onEnded { _ in draggingSnippet = nil })
+            .help("Drag to reorder")
+    }
+
+    private func dragToReorder(_ id: UUID, to y: CGFloat) {
+        draggingSnippet = id
+        guard let index = snippets.firstIndex(where: { $0.id == id }) else { return }
+        if index > 0, let above = centers[snippets[index - 1].id], y < above {
+            withAnimation(.snappy) { snippets.swapAt(index, index - 1) }
+        } else if index < snippets.count - 1, let below = centers[snippets[index + 1].id], y > below {
+            withAnimation(.snappy) { snippets.swapAt(index, index + 1) }
+        }
     }
 
     private func moveUp(_ snippet: PharoPlaygroundSnippet) {
