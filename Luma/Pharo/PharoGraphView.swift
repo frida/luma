@@ -1,6 +1,9 @@
-import AppKit
 import SwiftUI
 import SwiftyPharo
+
+#if canImport(AppKit)
+import AppKit
+#endif
 
 struct PharoGraphView: View {
     let graph: PharoGraph
@@ -208,8 +211,10 @@ struct PharoGraphView: View {
     }
 
     private func copyToPasteboard(_ text: String) {
+        #if canImport(AppKit)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+        #endif
     }
 
     private func activate(_ index: Int) {
