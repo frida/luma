@@ -26,7 +26,7 @@ final class PharoColumnView {
         self.isMaximized = isMaximized
 
         widget = Frame()
-        widget.hexpand = true
+        widget.hexpand = isMaximized
         widget.vexpand = true
 
         let column = Box(orientation: .vertical, spacing: 0)

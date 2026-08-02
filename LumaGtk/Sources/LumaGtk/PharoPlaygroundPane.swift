@@ -31,48 +31,67 @@ final class PharoPlaygroundPane {
     init(engine: Engine) {
         self.engine = engine
 
-        widget = Box(orientation: .vertical, spacing: 0)
+        widget = Box(orientation: .horizontal, spacing: 0)
         widget.hexpand = true
         widget.vexpand = true
 
         sourceBuffer = GtkSource.Buffer(table: Gtk.TextTagTable?.none)
         editor = GtkSource.View(buffer: sourceBuffer)
         editor.monospace = true
-        editor.showLineNumbers = true
-        editor.highlightCurrentLine = true
-        editor.leftMargin = 12
-        editor.rightMargin = 12
-        editor.topMargin = 12
-        editor.bottomMargin = 12
+        editor.showLineNumbers = false
+        editor.highlightCurrentLine = false
+        editor.leftMargin = 10
+        editor.rightMargin = 10
+        editor.topMargin = 8
+        editor.bottomMargin = 8
         editor.hexpand = true
         editor.vexpand = true
 
         let editorScroll = ScrolledWindow()
+        editorScroll.setPolicy(hscrollbarPolicy: .automatic, vscrollbarPolicy: .automatic)
         editorScroll.hexpand = true
-        editorScroll.vexpand = true
+        editorScroll.vexpand = false
+        editorScroll.setSizeRequest(width: -1, height: 132)
         editorScroll.set(child: editor)
 
-        runButton = Button(label: "Evaluate")
-        runButton.add(cssClass: "suggested-action")
+        runButton = Button(iconName: "media-playback-start-symbolic")
+        runButton.add(cssClass: "flat")
+        runButton.add(cssClass: "circular")
         runButton.tooltipText = "Inspect (Ctrl+Return) · Do it (Ctrl+D) · Print it (Ctrl+P)"
 
-        formatButton = Button(label: "Format")
+        formatButton = Button(iconName: "format-justify-left-symbolic")
         formatButton.add(cssClass: "flat")
+        formatButton.add(cssClass: "circular")
         formatButton.tooltipText = "Format (Ctrl+Shift+F)"
 
-        let buttons = Box(orientation: .horizontal, spacing: 8)
-        buttons.marginTop = 8
-        buttons.marginBottom = 8
-        buttons.marginStart = 12
-        buttons.marginEnd = 12
-        buttons.append(child: runButton)
-        buttons.append(child: formatButton)
+        let toolbar = Box(orientation: .horizontal, spacing: 2)
+        toolbar.halign = .end
+        toolbar.marginTop = 4
+        toolbar.marginBottom = 4
+        toolbar.marginStart = 6
+        toolbar.marginEnd = 6
+        toolbar.append(child: runButton)
+        toolbar.append(child: formatButton)
+
+        let card = Box(orientation: .vertical, spacing: 0)
+        card.add(cssClass: "card")
+        card.valign = .start
+        card.halign = .start
+        card.hexpand = false
+        card.vexpand = false
+        card.setSizeRequest(width: 340, height: -1)
+        card.marginTop = 12
+        card.marginBottom = 12
+        card.marginStart = 12
+        card.marginEnd = 12
+        card.append(child: editorScroll)
+        card.append(child: Separator(orientation: .horizontal))
+        card.append(child: toolbar)
 
         inspector = PharoColumnsView(runtime: PharoRuntime.shared)
 
-        widget.append(child: editorScroll)
-        widget.append(child: buttons)
-        widget.append(child: Separator(orientation: .horizontal))
+        widget.append(child: card)
+        widget.append(child: Separator(orientation: .vertical))
         widget.append(child: inspector.widget)
 
         runButton.onClicked { [weak self] _ in
