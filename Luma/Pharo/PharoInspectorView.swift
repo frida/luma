@@ -542,6 +542,15 @@ struct PharoObjectColumn: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
             }
+        case "graph":
+            if let graph = declaration.graph {
+                PharoGraphView(
+                    runtime: runtime,
+                    object: object,
+                    view: declaration.methodSelector,
+                    graph: graph,
+                    onSelect: onSelect)
+            }
         default:
             ContentUnavailableView(
                 "\(declaration.viewName) views are not rendered yet", systemImage: "square.dashed")
