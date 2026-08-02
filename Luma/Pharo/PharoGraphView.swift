@@ -46,14 +46,12 @@ struct PharoGraphView: View {
     }
 
     private func graphBody(_ placed: PharoGraphLayout.Solution) -> some View {
-        ZStack(alignment: .topLeading) {
-            Color.clear
-            canvas(placed)
-                .scaleEffect(scale, anchor: .topLeading)
-                .offset(offset)
-        }
-        .clipped()
-        .contentShape(Rectangle())
+        canvas(placed)
+            .scaleEffect(scale, anchor: .topLeading)
+            .offset(offset)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .clipped()
+            .contentShape(Rectangle())
         .onGeometryChange(for: CGSize.self) { $0.size } action: { viewport = $0; attemptInitialFit() }
         .gesture(panGesture)
         .gesture(
