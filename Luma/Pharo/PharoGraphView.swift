@@ -10,6 +10,8 @@ struct PharoGraphView: View {
 
     @State private var drilling = false
     @State private var placed: PharoGraphLayout.Solution?
+    @State private var selected: Int?
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         Group {
@@ -25,23 +27,36 @@ struct PharoGraphView: View {
     }
 
     private func graphBody(_ placed: PharoGraphLayout.Solution) -> some View {
-        ScrollView([.horizontal, .vertical]) {
-            ZStack(alignment: .topLeading) {
-                Canvas { context, _ in
-                    for edge in graph.edges {
-                        drawEdge(from: placed[edge.from], to: placed[edge.to], in: context)
+        ScrollViewReader { scroller in
+            ScrollView([.horizontal, .vertical]) {
+                ZStack(alignment: .topLeading) {
+                    Canvas { context, _ in
+                        for edge in graph.edges {
+                            drawEdge(from: placed[edge.from], to: placed[edge.to], in: context)
+                        }
+                    }
+                    .frame(width: placed.size.width, height: placed.size.height)
+
+                    ForEach(graph.nodes.indices, id: \.self) { index in
+                        node(graph.nodes[index].label, at: index)
+                            .position(placed[index])
+                            .id(index)
                     }
                 }
                 .frame(width: placed.size.width, height: placed.size.height)
-
-                ForEach(graph.nodes.indices, id: \.self) { index in
-                    node(graph.nodes[index].label, at: index)
-                        .position(placed[index])
-                }
+                .padding(PharoGraphLayout.margin)
             }
-            .frame(width: placed.size.width, height: placed.size.height)
-            .padding(PharoGraphLayout.margin)
+            .onChange(of: selected) { _, now in
+                if let now { withAnimation { scroller.scrollTo(now) } }
+            }
         }
+        .focusable()
+        .focused($isFocused)
+        .onKeyPress(.upArrow) { move(0, -1); return .handled }
+        .onKeyPress(.downArrow) { move(0, 1); return .handled }
+        .onKeyPress(.leftArrow) { move(-1, 0); return .handled }
+        .onKeyPress(.rightArrow) { move(1, 0); return .handled }
+        .onKeyPress(.return) { drillSelected(); return .handled }
     }
 
     private func drawEdge(from: CGPoint, to: CGPoint, in context: GraphicsContext) {
@@ -82,24 +97,63 @@ struct PharoGraphView: View {
     }
 
     private func node(_ label: String, at index: Int) -> some View {
-        Button {
-            drill(into: index)
-        } label: {
-            Text(label)
-                .font(.caption)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .frame(maxWidth: PharoGraphLayout.nodeSize.width)
-                .background(.pharoPane, in: RoundedRectangle(cornerRadius: 6))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 6).strokeBorder(.tertiary)
-                }
+        let isSelected = selected == index
+        return Text(label)
+            .font(.caption)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: PharoGraphLayout.nodeSize.width)
+            .background(.pharoPane, in: RoundedRectangle(cornerRadius: 6))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary), lineWidth: isSelected ? 2 : 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 6))
+            .onTapGesture(count: 2) { drill(into: index) }
+            .onTapGesture { select(index) }
+            .help(label)
+    }
+
+    private func select(_ index: Int) {
+        selected = index
+        isFocused = true
+    }
+
+    private func move(_ dx: Double, _ dy: Double) {
+        guard let placed else { return }
+        isFocused = true
+        guard let from = selected else {
+            selected = placed.points.isEmpty ? nil : 0
+            return
         }
-        .buttonStyle(.plain)
-        .disabled(drilling)
-        .help(label)
+        if let next = neighbor(of: from, dx: dx, dy: dy, in: placed) {
+            selected = next
+        }
+    }
+
+    private func neighbor(of index: Int, dx: Double, dy: Double, in placed: PharoGraphLayout.Solution) -> Int? {
+        let from = placed[index]
+        var best: Int?
+        var bestScore = Double.greatestFiniteMagnitude
+        for other in placed.indices where other != index {
+            let vx = placed[other].x - from.x
+            let vy = placed[other].y - from.y
+            let along = vx * dx + vy * dy
+            guard along > 0 else { continue }
+            let across = abs(vx * dy - vy * dx)
+            let score = along + across * 2
+            if score < bestScore {
+                bestScore = score
+                best = other
+            }
+        }
+        return best
+    }
+
+    private func drillSelected() {
+        if let selected { drill(into: selected) }
     }
 
     private func drill(into index: Int) {
