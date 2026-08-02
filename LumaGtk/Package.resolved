@@ -1,5 +1,5 @@
 {
-  "originHash" : "db7ee468b103b078d5a2b65b0c8625f425001d6c1f181f654dbb043611d5cede",
+  "originHash" : "8a47df6a6a8c9d9a2c0066c59be05c3361fe2655d741c76000cea6bb9bbb964d",
   "pins" : [
     {
       "identity" : "frida-swift",
@@ -161,6 +161,15 @@
       "state" : {
         "branch" : "gtk4-development",
         "revision" : "ce031dba7a76e01d2a40884e2330af4000fbe419"
+      }
+    },
+    {
+      "identity" : "swiftgtksourceview",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/frida/SwiftGtkSourceView.git",
+      "state" : {
+        "branch" : "development",
+        "revision" : "af38bfb87d64b7595544eaca1dd6193b356c1ae2"
       }
     },
     {
