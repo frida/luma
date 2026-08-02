@@ -197,6 +197,14 @@ struct PharoPlaygroundView: View {
                     } action: { center in
                         centers[snippetID] = center
                     }
+                    .contextMenu {
+                        Button { moveUp(snippet) } label: { Label("Move Up", systemImage: "arrow.up") }
+                        Button { moveDown(snippet) } label: { Label("Move Down", systemImage: "arrow.down") }
+                        Button { duplicate(snippet) } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
+                        Divider()
+                        Button(role: .destructive) { remove(snippet) } label: { Label("Remove", systemImage: "trash") }
+                    }
+                    .background { moveShortcuts(for: snippet, id: snippetID) }
                 }
 
                 addSnippetButton
@@ -217,8 +225,21 @@ struct PharoPlaygroundView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
+        .keyboardShortcut(.init("n"), modifiers: [.command, .option])
         .disabled(!isReady)
         .accessibilityIdentifier("pharo.playground.addSnippet")
+    }
+
+    private func moveShortcuts(for snippet: PharoPlaygroundSnippet, id: UUID) -> some View {
+        Group {
+            Button("Move Up") { moveUp(snippet) }
+                .keyboardShortcut(focused == id ? KeyboardShortcut(.upArrow, modifiers: [.command, .option]) : nil)
+            Button("Move Down") { moveDown(snippet) }
+                .keyboardShortcut(focused == id ? KeyboardShortcut(.downArrow, modifiers: [.command, .option]) : nil)
+        }
+        .opacity(0)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     private func addSnippet() {
@@ -323,6 +344,23 @@ struct PharoPlaygroundView: View {
 
     private func remove(_ snippet: PharoPlaygroundSnippet) {
         snippets.removeAll { $0.id == snippet.id }
+    }
+
+    private func moveUp(_ snippet: PharoPlaygroundSnippet) {
+        guard let index = snippets.firstIndex(where: { $0.id == snippet.id }), index > 0 else { return }
+        snippets.swapAt(index, index - 1)
+    }
+
+    private func moveDown(_ snippet: PharoPlaygroundSnippet) {
+        guard let index = snippets.firstIndex(where: { $0.id == snippet.id }), index < snippets.count - 1 else { return }
+        snippets.swapAt(index, index + 1)
+    }
+
+    private func duplicate(_ snippet: PharoPlaygroundSnippet) {
+        guard let index = snippets.firstIndex(where: { $0.id == snippet.id }) else { return }
+        let copy = PharoPlaygroundSnippet(source: snippet.source)
+        snippets.insert(copy, at: index + 1)
+        focused = copy.id
     }
 }
 
