@@ -3,11 +3,9 @@ import SwiftUI
 import SwiftyPharo
 
 struct PharoChartView: View {
-    let runtime: PharoRuntime
-    let object: PharoObject
-    let view: String
     let chart: PharoChart
-    let onSelect: (PharoObject) -> Void
+    var onDrill: ((Int) async -> PharoObject?)?
+    var onSelect: (PharoObject) -> Void = { _ in }
 
     @State private var drilling = false
     @State private var selected: Int?
@@ -251,11 +249,11 @@ struct PharoChartView: View {
     }
 
     private func drill(into index: Int) {
-        guard !drilling else { return }
+        guard let onDrill, !drilling else { return }
         drilling = true
         Task {
             defer { drilling = false }
-            if let drilled = try? await runtime.drillInto(object, view: view, index: index + 1) {
+            if let drilled = await onDrill(index) {
                 onSelect(drilled)
             }
         }
