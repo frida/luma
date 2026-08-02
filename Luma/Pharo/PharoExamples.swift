@@ -39,6 +39,24 @@ enum PharoExampleCatalog {
                 			 yourself);
                 	yourself.
                 """),
+            PharoExample(
+                title: "Line chart",
+                code: """
+                GtPlotterLineChart new
+                	with: (GtPlotterDataGroup new values: (1 to: 12));
+                	valueX: [ :n | n ];
+                	valueY: [ :n | n * n ];
+                	yourself.
+                """),
+            PharoExample(
+                title: "Scatter plot",
+                code: """
+                GtPlotterScatterChart new
+                	with: (GtPlotterDataGroup new values: (1 to: 30));
+                	valueX: [ :n | n ];
+                	valueY: [ :n | (n rem: 7) + n // 3 ];
+                	yourself.
+                """),
         ]),
         ("Explore", [
             PharoExample(
