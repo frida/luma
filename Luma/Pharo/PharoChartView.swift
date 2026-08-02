@@ -59,8 +59,10 @@ struct PharoChartView: View {
             switch series.kind {
             case "bar" where series.orientation == "vertical":
                 BarMark(x: .value("Label", p.label), y: .value("Value", p.y))
+                    .annotation(position: .top) { barValue(p.y) }
             case "bar":
                 BarMark(x: .value("Value", p.y), y: .value("Label", p.label))
+                    .annotation(position: .trailing) { barValue(p.y) }
             case "line":
                 LineMark(x: .value("X", p.x), y: .value("Y", p.y))
                     .foregroundStyle(by: .value("Series", index))
@@ -70,6 +72,23 @@ struct PharoChartView: View {
                     .foregroundStyle(by: .value("Series", index))
             }
         }
+    }
+
+    @ViewBuilder
+    private func barValue(_ value: Double) -> some View {
+        if showsBarValues {
+            Text(formatted(value))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var showsBarValues: Bool {
+        chart.series.reduce(0) { $0 + $1.points.count } <= 40
+    }
+
+    private func formatted(_ value: Double) -> String {
+        value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
     }
 
     private func tapCatcher(_ proxy: ChartProxy) -> some View {
