@@ -11,6 +11,7 @@ struct PharoGraphView: View {
     @State private var drilling = false
     @State private var placed: PharoGraphLayout.Solution?
     @State private var selected: Int?
+    @State private var hovered: Int?
     @State private var scale: CGFloat = 1
     @State private var zoomBase: CGFloat = 1
     @State private var offset: CGSize = .zero
@@ -181,6 +182,9 @@ struct PharoGraphView: View {
 
     private func node(_ label: String, at index: Int) -> some View {
         let isSelected = selected == index
+        let border: AnyShapeStyle = isSelected
+            ? AnyShapeStyle(Color.fridaBrand)
+            : (hovered == index ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
         return Text(label)
             .font(.caption)
             .lineLimit(1)
@@ -191,9 +195,11 @@ struct PharoGraphView: View {
             .background(.pharoPane, in: RoundedRectangle(cornerRadius: 6))
             .overlay {
                 RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(isSelected ? AnyShapeStyle(Color.fridaBrand) : AnyShapeStyle(.tertiary), lineWidth: isSelected ? 2 : 1)
+                    .strokeBorder(border, lineWidth: isSelected ? 2 : 1)
             }
             .contentShape(RoundedRectangle(cornerRadius: 6))
+            .pointerStyle(.link)
+            .onHover { hovered = $0 ? index : (hovered == index ? nil : hovered) }
             .onTapGesture { activate(index) }
             .help(label)
     }
