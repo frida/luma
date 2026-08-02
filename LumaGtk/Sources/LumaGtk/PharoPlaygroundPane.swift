@@ -5,8 +5,8 @@ import LumaCore
 import SwiftyPharo
 
 /// A first Smalltalk surface for the GTK frontend: a snippet to edit, a button
-/// to run it, and the result printed below. It drives the same PharoRuntime the
-/// macOS app does; the moldable inspector comes later.
+/// to run it, and the result opened in the moldable inspector below. It drives
+/// the same PharoRuntime the macOS app does.
 @MainActor
 final class PharoPlaygroundPane {
     let widget: Box
@@ -14,7 +14,7 @@ final class PharoPlaygroundPane {
     private weak var engine: Engine?
     private let editor: TextView
     private let runButton: Button
-    private let resultLabel: Label
+    private let inspector: PharoInspectorPane
     private var isEvaluating = false
 
     init(engine: Engine) {
@@ -46,24 +46,12 @@ final class PharoPlaygroundPane {
         runButton.marginEnd = 12
         runButton.halign = .start
 
-        resultLabel = Label(str: "")
-        resultLabel.selectable = true
-        resultLabel.wrap = true
-        resultLabel.xalign = 0
-        resultLabel.marginStart = 12
-        resultLabel.marginEnd = 12
-        resultLabel.marginTop = 8
-        resultLabel.marginBottom = 12
-        resultLabel.add(cssClass: "monospace")
-
-        let resultScroll = ScrolledWindow()
-        resultScroll.hexpand = true
-        resultScroll.set(child: resultLabel)
+        inspector = PharoInspectorPane(runtime: PharoRuntime.shared)
 
         widget.append(child: editorScroll)
         widget.append(child: runButton)
         widget.append(child: Separator(orientation: .horizontal))
-        widget.append(child: resultScroll)
+        widget.append(child: inspector.widget)
 
         runButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.evaluate() }
@@ -76,7 +64,7 @@ final class PharoPlaygroundPane {
         guard !source.isEmpty else { return }
         isEvaluating = true
         runButton.sensitive = false
-        resultLabel.text = "Evaluating…"
+        inspector.showMessage("Evaluating…")
 
         Task { @MainActor in
             defer {
@@ -86,9 +74,9 @@ final class PharoPlaygroundPane {
             do {
                 try await PharoRuntime.shared.startPlayground(for: engine)
                 let produced = try await PharoRuntime.shared.evaluate(source)
-                resultLabel.text = produced.printString
+                inspector.present(produced)
             } catch {
-                resultLabel.text = error.localizedDescription
+                inspector.showMessage(error.localizedDescription)
             }
         }
     }
