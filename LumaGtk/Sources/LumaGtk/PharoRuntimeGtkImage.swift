@@ -3,12 +3,18 @@ import LumaCore
 import SwiftyPharo
 
 extension PharoRuntime {
-    /// Boots the bundled image the first time a pane needs it, then waits for the
-    /// bridge to answer. The macOS app has its own richer bootstrap; this is the
-    /// minimum the GTK playground needs.
+    /// Boots the bundled image before GTK, WebKit and cairo reserve their large
+    /// virtual regions, so the Spur heap still finds its expected base free.
+    /// Returns at once; the image loads on its own thread.
+    static func bootBundledImage() {
+        _ = bootedImage
+    }
+
+    /// Waits for the already-booting image to answer. The macOS app has its own
+    /// richer bootstrap; this is the minimum the GTK playground needs.
     @MainActor
     func startPlayground(for engine: Engine) async throws {
-        _ = Self.bootedImage
+        Self.bootBundledImage()
         try await runningState()
     }
 

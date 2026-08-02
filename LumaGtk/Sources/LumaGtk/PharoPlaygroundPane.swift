@@ -100,13 +100,8 @@ final class PharoPlaygroundPane {
 
         let languages = GtkSource.LanguageManager()
         let schemes = GtkSource.StyleSchemeManager()
-        specs.withCString { path in
-            let dirs: [UnsafePointer<gchar>?] = [path, nil]
-            dirs.withUnsafeBufferPointer { buffer in
-                languages.setSearchPath(dirs: buffer.baseAddress)
-                schemes.setSearchPath(path: buffer.baseAddress)
-            }
-        }
+        languages.appendSearchPath(path: specs)
+        schemes.appendSearchPath(path: specs)
 
         sourceBuffer.language = languages.getLanguage(id: "smalltalk")
         sourceBuffer.styleScheme = schemes.getScheme(schemeId: "luma")
