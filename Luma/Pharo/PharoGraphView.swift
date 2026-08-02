@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import SwiftyPharo
 
@@ -199,7 +200,15 @@ struct PharoGraphView: View {
             .pointerStyle(.link)
             .onHover { hovered = $0 ? index : (hovered == index ? nil : hovered) }
             .onTapGesture { activate(index) }
+            .contextMenu {
+                Button { copyToPasteboard(label) } label: { Label("Copy Label", systemImage: "doc.on.doc") }
+            }
             .help(label)
+    }
+
+    private func copyToPasteboard(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     private func activate(_ index: Int) {

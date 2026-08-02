@@ -1,3 +1,4 @@
+import AppKit
 import Charts
 import SwiftUI
 import SwiftyPharo
@@ -123,6 +124,14 @@ struct PharoChartView: View {
                         switch phase {
                         case .active(let location): hovered = point(at: location, proxy: proxy, in: geometry)
                         case .ended: hovered = nil
+                        }
+                    }
+                    .contextMenu {
+                        if let selected {
+                            Button {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(readout(selected), forType: .string)
+                            } label: { Label("Copy Value", systemImage: "doc.on.doc") }
                         }
                     }
 
