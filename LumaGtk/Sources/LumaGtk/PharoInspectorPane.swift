@@ -103,6 +103,10 @@ final class PharoInspectorPane {
             return listPage(for: view, of: object)
         case "text":
             return textPage(view.text ?? "")
+        case "graph":
+            return view.graph.map(PharoVisualArea.graph) ?? textPage("Empty graph.")
+        case "chart":
+            return view.chart.map(PharoVisualArea.chart) ?? textPage("Empty chart.")
         default:
             return textPage("\(view.viewName) views are not drawn yet.")
         }

@@ -1,4 +1,5 @@
 #if os(macOS)
+import LumaCore
 import SwiftUI
 import SwiftyPharo
 
@@ -290,24 +291,12 @@ struct PharoGraphView: View {
     }
 }
 
+/// The `CGPoint` face the view draws against, over the portable layout the two
+/// frontends share.
 struct PharoGraphLayout {
     let nodeCount: Int
     let edges: [PharoGraphEdge]
-    let kind: Kind
-
-    enum Kind: String {
-        case tree
-        case horizontalTree
-        case grid
-        case circle
-        case horizontalLine
-        case verticalLine
-        case force
-
-        init(_ name: String) {
-            self = Kind(rawValue: name) ?? .grid
-        }
-    }
+    let kind: LumaCore.PharoGraphLayout.Kind
 
     struct Solution {
         let points: [CGPoint]
@@ -316,155 +305,20 @@ struct PharoGraphLayout {
         subscript(_ i: Int) -> CGPoint { points[i] }
     }
 
-    static let nodeSize = CGSize(width: 160, height: 28)
+    static let nodeSize = CGSize(
+        width: LumaCore.PharoGraphLayout.nodeWidth,
+        height: LumaCore.PharoGraphLayout.nodeHeight)
     static let margin = 24.0
-    static let gap = CGSize(width: 40, height: 56)
 
     func solve() -> Solution {
-        let raw = positions()
-        return normalized(raw)
-    }
-
-    private func positions() -> [CGPoint] {
-        switch kind {
-        case .grid: return grid()
-        case .circle: return circle()
-        case .horizontalLine: return line(horizontal: true)
-        case .verticalLine: return line(horizontal: false)
-        case .tree: return tree(horizontal: false)
-        case .horizontalTree: return tree(horizontal: true)
-        case .force: return force()
-        }
-    }
-
-    private func grid() -> [CGPoint] {
-        let columns = max(1, Int(Double(nodeCount).squareRoot().rounded(.up)))
-        let step = stride()
-        return (0..<nodeCount).map { i in
-            CGPoint(x: Double(i % columns) * step.width, y: Double(i / columns) * step.height)
-        }
-    }
-
-    private func circle() -> [CGPoint] {
-        guard nodeCount > 1 else { return [.zero] }
-        let radius = Double(nodeCount) * stride().width / (2 * .pi)
-        return (0..<nodeCount).map { i in
-            let theta = 2 * .pi * Double(i) / Double(nodeCount)
-            return CGPoint(x: radius * cos(theta), y: radius * sin(theta))
-        }
-    }
-
-    private func line(horizontal: Bool) -> [CGPoint] {
-        let step = stride()
-        return (0..<nodeCount).map { i in
-            horizontal
-                ? CGPoint(x: Double(i) * step.width, y: 0)
-                : CGPoint(x: 0, y: Double(i) * step.height)
-        }
-    }
-
-    private func tree(horizontal: Bool) -> [CGPoint] {
-        let depth = depths()
-        var byLayer: [Int: [Int]] = [:]
-        for node in 0..<nodeCount {
-            byLayer[depth[node], default: []].append(node)
-        }
-        let step = stride()
-        var points = [CGPoint](repeating: .zero, count: nodeCount)
-        for (layer, nodes) in byLayer {
-            for (slot, node) in nodes.enumerated() {
-                let across = Double(slot) - Double(nodes.count - 1) / 2
-                let along = Double(layer)
-                points[node] = horizontal
-                    ? CGPoint(x: along * step.width, y: across * step.height)
-                    : CGPoint(x: across * step.width, y: along * step.height)
-            }
-        }
-        return points
-    }
-
-    private func depths() -> [Int] {
-        var incoming = [Int](repeating: 0, count: nodeCount)
-        for edge in edges where edge.from != edge.to {
-            incoming[edge.to] += 1
-        }
-        var depth = [Int](repeating: 0, count: nodeCount)
-        var visited = [Bool](repeating: false, count: nodeCount)
-        var frontier = (0..<nodeCount).filter { incoming[$0] == 0 }
-        if frontier.isEmpty { frontier = Array(0..<min(1, nodeCount)) }
-        var level = 0
-        while !frontier.isEmpty {
-            var next: [Int] = []
-            for node in frontier where !visited[node] {
-                visited[node] = true
-                depth[node] = level
-                for edge in edges where edge.from == node && !visited[edge.to] {
-                    next.append(edge.to)
-                }
-            }
-            frontier = next
-            level += 1
-        }
-        return depth
-    }
-
-    private func force() -> [CGPoint] {
-        guard nodeCount > 1 else { return [.zero] }
-        let area = Double(nodeCount) * 10000
-        let k = area.squareRoot() / Double(nodeCount).squareRoot()
-        var points = circle()
-        for _ in 0..<300 {
-            var disp = [CGPoint](repeating: .zero, count: nodeCount)
-            for a in 0..<nodeCount {
-                for b in 0..<nodeCount where a != b {
-                    let dx = points[a].x - points[b].x
-                    let dy = points[a].y - points[b].y
-                    let dist = max(hypot(dx, dy), 0.01)
-                    let repel = k * k / dist
-                    disp[a].x += dx / dist * repel
-                    disp[a].y += dy / dist * repel
-                }
-            }
-            for edge in edges where edge.from != edge.to {
-                let dx = points[edge.from].x - points[edge.to].x
-                let dy = points[edge.from].y - points[edge.to].y
-                let dist = max(hypot(dx, dy), 0.01)
-                let attract = dist * dist / k
-                let fx = dx / dist * attract
-                let fy = dy / dist * attract
-                disp[edge.from].x -= fx
-                disp[edge.from].y -= fy
-                disp[edge.to].x += fx
-                disp[edge.to].y += fy
-            }
-            let limit = k
-            for i in 0..<nodeCount {
-                let length = max(hypot(disp[i].x, disp[i].y), 0.01)
-                let capped = min(length, limit)
-                points[i].x += disp[i].x / length * capped
-                points[i].y += disp[i].y / length * capped
-            }
-        }
-        return points
-    }
-
-    private func stride() -> CGSize {
-        CGSize(
-            width: Self.nodeSize.width + Self.gap.width,
-            height: Self.nodeSize.height + Self.gap.height)
-    }
-
-    private func normalized(_ raw: [CGPoint]) -> Solution {
-        let minX = raw.map(\.x).min() ?? 0
-        let minY = raw.map(\.y).min() ?? 0
-        let maxX = raw.map(\.x).max() ?? 0
-        let maxY = raw.map(\.y).max() ?? 0
-        let half = CGSize(width: Self.nodeSize.width / 2, height: Self.nodeSize.height / 2)
-        let points = raw.map { CGPoint(x: $0.x - minX + half.width, y: $0.y - minY + half.height) }
-        let size = CGSize(
-            width: maxX - minX + Self.nodeSize.width,
-            height: maxY - minY + Self.nodeSize.height)
-        return Solution(points: points, size: size)
+        let solved = LumaCore.PharoGraphLayout(
+            nodeCount: nodeCount,
+            edges: edges.map { .init(from: $0.from, to: $0.to) },
+            kind: kind
+        ).solve()
+        return Solution(
+            points: solved.points.map { CGPoint(x: $0.x, y: $0.y) },
+            size: CGSize(width: solved.width, height: solved.height))
     }
 }
 #endif
