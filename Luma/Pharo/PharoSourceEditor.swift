@@ -330,8 +330,9 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
             value, range, _ in
             guard value is NSTextAttachment else { return }
             carried.insert(range.location)
-            if value is PharoBodyAttachment, range.location > 0 {
+            if value is PharoBodyAttachment {
                 carried.insert(range.location - 1)
+                carried.insert(range.location + 1)
             }
         }
         return carried
@@ -668,11 +669,11 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         let selectionEnd = sourceOffset(ofStorage: NSMaxRange(selectedRange()))
         storage.beginEditing()
         for id in stale.sorted(by: { present[$0]! > present[$1]! }) {
-            storage.deleteCharacters(in: NSRange(location: present[id]! - 1, length: 2))
+            storage.deleteCharacters(in: NSRange(location: present[id]! - 1, length: 3))
             bodyAttachments[id] = nil
         }
         for entry in missing.sorted(by: { $0.markLocation > $1.markLocation }) {
-            insertBody(entry.item, at: markLineEnd(from: entry.markLocation), in: storage)
+            insertBody(entry.item, at: entry.markLocation + 1, in: storage)
         }
         storage.endEditing()
         let restoredStart = storageOffset(forSource: selectionStart)
@@ -715,18 +716,20 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         return located
     }
 
-    /// A body sits on a line of its own under the mark: a newline breaks that
-    /// line off, the attachment anchors it, and the line's paragraph holds it
-    /// open to the body's height.
+    /// A body sits on a line of its own right after its mark, with the rest of the
+    /// send carried on below it: a newline breaks the line off before the body and
+    /// another after it, the attachment anchors it, and the line's paragraph holds
+    /// it open to the body's height.
     private func insertBody(_ item: PharoBodyItem, at location: Int, in storage: NSTextStorage) {
         let attachment = makeBodyAttachment(for: item)
         bodyAttachments[item.id] = attachment
         let carrier = NSMutableAttributedString(string: "\n", attributes: sourceAttributes)
         carrier.append(NSAttributedString(attachment: attachment))
+        carrier.append(NSAttributedString(string: "\n", attributes: sourceAttributes))
         carrier.addAttribute(
             .paragraphStyle,
             value: bodyLineHeight(attachment.height),
-            range: NSRange(location: 1, length: 1))
+            range: NSRange(location: 1, length: 2))
         storage.insert(carrier, at: location)
     }
 
@@ -787,8 +790,9 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) {
             value, range, _ in
             guard let body = value as? PharoBodyAttachment else { return }
-            storage.addAttribute(.paragraphStyle, value: bodyLineHeight(body.height), range: range)
-            storage.edited(.editedAttributes, range: range, changeInLength: 0)
+            let line = NSRange(location: range.location, length: 2)
+            storage.addAttribute(.paragraphStyle, value: bodyLineHeight(body.height), range: line)
+            storage.edited(.editedAttributes, range: line, changeInLength: 0)
         }
         storage.endEditing()
         isApplyingMarks = false
@@ -801,13 +805,6 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         positionMarkOverlays()
         let metrics = metrics
         DispatchQueue.main.async { metrics?.revision += 1 }
-    }
-
-    private func markLineEnd(from location: Int) -> Int {
-        let units = Array(string.utf16)
-        var end = location
-        while end < units.count, units[end] != 0x0A { end += 1 }
-        return end
     }
 
     private func markLocation(of content: PharoMarkContent) -> Int? {
