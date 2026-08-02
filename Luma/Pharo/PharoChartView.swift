@@ -18,19 +18,38 @@ struct PharoChartView: View {
             }
         }
         .chartOverlay { proxy in tapCatcher(proxy) }
-        .padding()
+        .chartLegend(chart.series.count > 1 ? .visible : .hidden)
 
-        if isNumeric {
-            core
-                .chartXScale(type: chart.scaleX == "log" ? .log : .linear)
-                .chartYScale(type: chart.scaleY == "log" ? .log : .linear)
-        } else {
-            core
-        }
+        titled(scaled(core)).padding()
     }
 
     private var isNumeric: Bool {
         chart.series.allSatisfy { $0.kind != "bar" }
+    }
+
+    @ViewBuilder
+    private func scaled(_ content: some View) -> some View {
+        if isNumeric {
+            content
+                .chartXScale(type: chart.scaleX == "log" ? .log : .linear)
+                .chartYScale(type: chart.scaleY == "log" ? .log : .linear)
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder
+    private func titled(_ content: some View) -> some View {
+        switch (chart.titleX.isEmpty, chart.titleY.isEmpty) {
+        case (false, false):
+            content.chartXAxisLabel(chart.titleX).chartYAxisLabel(chart.titleY)
+        case (false, true):
+            content.chartXAxisLabel(chart.titleX)
+        case (true, false):
+            content.chartYAxisLabel(chart.titleY)
+        case (true, true):
+            content
+        }
     }
 
     @ChartContentBuilder
