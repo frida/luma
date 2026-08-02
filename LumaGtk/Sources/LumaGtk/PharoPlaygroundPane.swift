@@ -1,4 +1,5 @@
 import CGtk
+import CGtkSource
 import Foundation
 import Gdk
 import Gtk
@@ -15,6 +16,7 @@ final class PharoPlaygroundPane {
 
     private weak var engine: Engine?
     private let editor: GtkSource.View
+    private let sourceBuffer: GtkSource.Buffer
     private let runButton: Button
     private let formatButton: Button
     private let inspector: PharoColumnsView
@@ -27,7 +29,8 @@ final class PharoPlaygroundPane {
         widget.hexpand = true
         widget.vexpand = true
 
-        editor = GtkSource.View()
+        sourceBuffer = GtkSource.Buffer(table: Gtk.TextTagTable?.none)
+        editor = GtkSource.View(buffer: sourceBuffer)
         editor.monospace = true
         editor.showLineNumbers = true
         editor.highlightCurrentLine = true
@@ -73,7 +76,30 @@ final class PharoPlaygroundPane {
             MainActor.assumeIsolated { self?.format() }
         }
         installShortcuts()
+        highlightSmalltalk()
         inspector.showMessage("Evaluate a snippet with Ctrl+Return to open its result here.")
+    }
+
+    /// Colour the source through GtkSourceView's own highlighter, from the
+    /// Smalltalk language and Luma scheme bundled beside the app.
+    private func highlightSmalltalk() {
+        guard let specs = Bundle.module.url(forResource: "smalltalk", withExtension: "lang", subdirectory: "pharo")?
+            .deletingLastPathComponent().path
+        else { return }
+
+        let languages = GtkSource.LanguageManager()
+        let schemes = GtkSource.StyleSchemeManager()
+        specs.withCString { path in
+            var dirs: [UnsafePointer<gchar>?] = [path, nil]
+            dirs.withUnsafeBufferPointer { buffer in
+                languages.setSearchPath(dirs: buffer.baseAddress)
+            }
+            gtk_source_style_scheme_manager_append_search_path(schemes.style_scheme_manager_ptr, path)
+        }
+
+        sourceBuffer.language = languages.getLanguage(id: "smalltalk")
+        sourceBuffer.styleScheme = schemes.getScheme(schemeId: "luma")
+        sourceBuffer.highlightSyntax = true
     }
 
     private func installShortcuts() {
@@ -104,7 +130,7 @@ final class PharoPlaygroundPane {
         Task { @MainActor in
             try? await PharoRuntime.shared.startPlayground(for: engine)
             if let formatted = try? await PharoRuntime.shared.format(source: source) {
-                editor.buffer?.set(text: formatted, len: Int(formatted.utf8.count))
+                sourceBuffer.set(text: formatted, len: Int(formatted.utf8.count))
             }
         }
     }
@@ -133,6 +159,6 @@ final class PharoPlaygroundPane {
     }
 
     private func editorText() -> String {
-        editor.buffer?.text ?? ""
+        sourceBuffer.text ?? ""
     }
 }

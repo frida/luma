@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<language id="smalltalk" name="Smalltalk" version="2.0" _section="Source">
+  <metadata>
+    <property name="mimetypes">text/x-smalltalk</property>
+    <property name="globs">*.st</property>
+  </metadata>
+  <styles>
+    <style id="comment"   name="Comment"         map-to="def:comment"/>
+    <style id="string"    name="String"          map-to="def:string"/>
+    <style id="symbol"    name="Symbol"          map-to="def:constant"/>
+    <style id="character" name="Character"        map-to="def:character"/>
+    <style id="pseudo"    name="Pseudo-variable"  map-to="def:keyword"/>
+    <style id="keyword"   name="Keyword message"  map-to="def:builtin"/>
+    <style id="number"    name="Number"           map-to="def:number"/>
+    <style id="type"      name="Class"            map-to="def:type"/>
+  </styles>
+  <definitions>
+    <context id="smalltalk">
+      <include>
+        <context id="comment" style-ref="comment" class="comment" class-disabled="no-spell-check">
+          <start>"</start>
+          <end>"</end>
+        </context>
+        <context id="string" style-ref="string" class="string" class-disabled="no-spell-check">
+          <start>'</start>
+          <end>'</end>
+          <include>
+            <context id="string-escape">
+              <match>''</match>
+            </context>
+          </include>
+        </context>
+        <context id="symbol" style-ref="symbol">
+          <match>#[A-Za-z_][A-Za-z0-9_:]*|#'[^']*'|#[-+*/~&lt;&gt;=&amp;|@%,?!]+</match>
+        </context>
+        <context id="character" style-ref="character">
+          <match>\$.</match>
+        </context>
+        <context id="pseudo" style-ref="pseudo">
+          <keyword>self</keyword>
+          <keyword>super</keyword>
+          <keyword>nil</keyword>
+          <keyword>true</keyword>
+          <keyword>false</keyword>
+          <keyword>thisContext</keyword>
+        </context>
+        <context id="keyword-message" style-ref="keyword">
+          <match>\b[a-z_][A-Za-z0-9_]*:</match>
+        </context>
+        <context id="type" style-ref="type">
+          <match>\b[A-Z][A-Za-z0-9_]*\b</match>
+        </context>
+        <context id="number" style-ref="number">
+          <match>\b(\d+r[0-9A-Za-z]+|\d+(\.\d+)?([eEdD]-?\d+)?)\b</match>
+        </context>
+      </include>
+    </context>
+  </definitions>
+</language>
