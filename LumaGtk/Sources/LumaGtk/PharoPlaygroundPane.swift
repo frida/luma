@@ -70,6 +70,7 @@ final class PharoPlaygroundPane {
             MainActor.assumeIsolated { self?.format() }
         }
         installShortcuts()
+        inspector.showMessage("Evaluate a snippet with Ctrl+Return to open its result here.")
     }
 
     private func installShortcuts() {
