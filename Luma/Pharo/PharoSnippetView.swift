@@ -1,3 +1,4 @@
+#if os(macOS)
 import SwiftUI
 import SwiftyPharo
 
@@ -223,3 +224,4 @@ struct PharoSnippetView: View {
         isFocused || isPointedAt || showsSpinner
     }
 }
+#endif

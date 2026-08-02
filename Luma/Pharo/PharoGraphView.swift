@@ -1,3 +1,4 @@
+#if os(macOS)
 import SwiftUI
 import SwiftyPharo
 
@@ -454,3 +455,4 @@ struct PharoGraphLayout {
         return Solution(points: points, size: size)
     }
 }
+#endif

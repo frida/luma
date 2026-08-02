@@ -1,3 +1,4 @@
+#if os(macOS)
 import LumaCore
 import SwiftUI
 import SwiftyPharo
@@ -481,3 +482,4 @@ private struct PharoPlaygroundEmptyState: View {
         }
     }
 }
+#endif
