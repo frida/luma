@@ -39,6 +39,12 @@ public struct PharoSnapshot: Codable, Sendable, Equatable {
     }
 }
 
+extension PharoViewDeclaration {
+    var carriesInlineData: Bool {
+        graph != nil || chart != nil
+    }
+}
+
 extension PharoSnapshot {
     public static func capture(of object: PharoObject, using runtime: PharoRuntime) async throws -> PharoSnapshot {
         var views: [View] = []
@@ -65,9 +71,7 @@ extension PharoSnapshot {
         if let text = declaration.text {
             return .text(text)
         }
-        // A graph or chart holds its data in the declaration, not in pageable
-        // rows; there is nothing to page, and asking would reach past the view.
-        if declaration.graph != nil || declaration.chart != nil {
+        if declaration.carriesInlineData {
             return .empty
         }
 
