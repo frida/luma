@@ -114,6 +114,12 @@ final class PharoPlaygroundPane {
                     guard state.contains(.shiftMask) else { return false }
                     self.format()
                     return true
+                case 0x006D, 0x004D:
+                    self.browse(.implementors)
+                    return true
+                case 0x006E, 0x004E:
+                    self.browse(.senders)
+                    return true
                 default:
                     return false
                 }
@@ -157,7 +163,36 @@ final class PharoPlaygroundPane {
         }
     }
 
+    private func browse(_ kind: PharoBrowseKind) {
+        guard let engine else { return }
+        let source = editorText()
+        guard !source.isEmpty else { return }
+        let position = cursorOffset()
+        inspector.showMessage("Browsing \(kind.rawValue)…")
+        Task { @MainActor in
+            do {
+                try await PharoRuntime.shared.startPlayground(for: engine)
+                let found = try await PharoRuntime.shared.browse(kind, source: source, at: position)
+                if let result = found.result {
+                    inspector.present(result)
+                } else {
+                    inspector.showMessage("No \(kind.rawValue) for the selector at the cursor.")
+                }
+            } catch {
+                inspector.showMessage(error.localizedDescription)
+            }
+        }
+    }
+
     private func editorText() -> String {
         sourceBuffer.text ?? ""
+    }
+
+    private func cursorOffset() -> Int {
+        let iterStorage = UnsafeMutablePointer<GtkTextIter>.allocate(capacity: 1)
+        defer { iterStorage.deallocate() }
+        let iter = TextIter(iterStorage)
+        sourceBuffer.getIterAtMark(iter: iter, mark: sourceBuffer.getInsert())
+        return Int(iter.offset)
     }
 }
