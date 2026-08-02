@@ -31,6 +31,7 @@ struct PharoSnippetView: View {
 
     @State private var isPointedAt = false
     @State private var showsSpinner = false
+    @State private var outcome: Bool?
     @State private var openedClasses: [String: PharoObject] = [:]
 
     var body: some View {
@@ -50,8 +51,6 @@ struct PharoSnippetView: View {
         .overlay {
             RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary)
         }
-        // Print it has no button, only a key, the way GT leaves it off the
-        // toolbar; the hidden control gives the shortcut somewhere to live.
         .background {
             Button("Print it", action: printIt)
                 .keyboardShortcut(shortcut(.init("p"), when: isFocused && !isEvaluating))
@@ -59,8 +58,6 @@ struct PharoSnippetView: View {
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }
-        // Format has no button either, only a key, the way GT keeps it off the
-        // toolbar.
         .background {
             Button("Format", action: format)
                 .keyboardShortcut(shortcut(.init("f"), modifiers: [.command, .shift], when: isFocused && !isEvaluating))
@@ -69,12 +66,25 @@ struct PharoSnippetView: View {
                 .accessibilityHidden(true)
         }
         .onHover { isPointedAt = $0 }
+        .onChange(of: isEvaluating) { was, now in
+            guard was, !now else { return }
+            withAnimation { outcome = error == nil }
+            Task {
+                try? await Task.sleep(for: .milliseconds(900))
+                withAnimation { outcome = nil }
+            }
+        }
     }
 
     private var focusBar: some View {
         Rectangle()
-            .fill(isFocused ? Color.fridaBrand : .clear)
+            .fill(barColor)
             .frame(width: 3)
+    }
+
+    private var barColor: Color {
+        if let outcome { return outcome ? .green : .red }
+        return isFocused ? .fridaBrand : .clear
     }
 
     /// What "Print it" leaves behind: the result's print string beside the code
