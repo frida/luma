@@ -19,6 +19,7 @@ final class PharoPlaygroundPane {
     private let runButton: Button
     private let formatButton: Button
     private let inspector: PharoColumnsView
+    private var completion: PharoCompletionController!
     private var isEvaluating = false
 
     init(engine: Engine) {
@@ -74,6 +75,11 @@ final class PharoPlaygroundPane {
         formatButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.format() }
         }
+        completion = PharoCompletionController(editor: editor, buffer: sourceBuffer) { [weak self] source, position in
+            guard let self, let engine = self.engine else { return nil }
+            try? await PharoRuntime.shared.startPlayground(for: engine)
+            return try? await PharoRuntime.shared.completions(for: source, at: position)
+        }
         installShortcuts()
         highlightSmalltalk()
         inspector.showMessage("Evaluate a snippet with Ctrl+Return to open its result here.")
@@ -103,12 +109,18 @@ final class PharoPlaygroundPane {
 
     private func installShortcuts() {
         let keys = EventControllerKey()
+        keys.propagationPhase = .capture
         keys.onKeyPressed { [weak self] _, keyval, _, state in
             MainActor.assumeIsolated {
-                guard let self, state.contains(.controlMask) else { return false }
+                guard let self else { return false }
+                if self.completion.handleKey(keyval) { return true }
+                guard state.contains(.controlMask) else { return false }
                 switch keyval {
                 case 0xFF0D, 0xFF8D:
                     self.evaluate()
+                    return true
+                case 0x0020, 0xFF80:
+                    self.completion.request()
                     return true
                 case 0x0066, 0x0046:
                     guard state.contains(.shiftMask) else { return false }
