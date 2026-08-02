@@ -710,9 +710,20 @@ private struct PharoItemsList: View {
                 .width(column == 0 ? indexColumnWidth : nil)
             }
         }
+        .contextMenu(forSelectionType: Int.self) { ids in
+            if let id = ids.first, let row = loaded.rows.first(where: { $0.id == id }) {
+                Button { copyRow(row) } label: { Label("Copy", systemImage: "doc.on.doc") }
+            }
+        }
         // A column-count change rebuilds the table rather than diffing a new
         // column onto rows still shaped for the old one, which AppKit traps on.
         .id(loaded.columns)
+    }
+
+    private func copyRow(_ row: Row) {
+        let text = row.cells.dropFirst().compactMap { $0.text }.joined(separator: "\t")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     @ViewBuilder
