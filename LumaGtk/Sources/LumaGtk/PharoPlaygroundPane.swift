@@ -14,7 +14,7 @@ final class PharoPlaygroundPane {
     private weak var engine: Engine?
     private let editor: TextView
     private let runButton: Button
-    private let inspector: PharoInspectorPane
+    private let inspector: PharoColumnsView
     private var isEvaluating = false
 
     init(engine: Engine) {
@@ -46,7 +46,7 @@ final class PharoPlaygroundPane {
         runButton.marginEnd = 12
         runButton.halign = .start
 
-        inspector = PharoInspectorPane(runtime: PharoRuntime.shared)
+        inspector = PharoColumnsView(runtime: PharoRuntime.shared)
 
         widget.append(child: editorScroll)
         widget.append(child: runButton)
