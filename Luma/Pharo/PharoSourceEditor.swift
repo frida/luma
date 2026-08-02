@@ -167,7 +167,7 @@ struct PharoTextEditor: NSViewRepresentable {
             view.undeclaredVariables = runtime.undeclared(in:)
         }
         view.onEdit = { source = $0 }
-        view.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        view.font = PharoTextView.sourceFont
         view.allowsUndo = true
         view.isRichText = false
         view.isAutomaticQuoteSubstitutionEnabled = false
@@ -495,7 +495,7 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
     /// attribute pass -- which would relayout and unsettle the marks.
     private func applyStyle() {
         guard let storage = textStorage else { return }
-        let plain = font ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        let plain = Self.sourceFont
         let bold = NSFont.monospacedSystemFont(ofSize: plain.pointSize, weight: .bold)
         let whole = NSRange(location: 0, length: storage.length)
         storage.beginEditing()
@@ -602,7 +602,7 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
     /// A triangle, wrench or dot is as tall as a capital letter, which keeps it
     /// inside the ascent so showing one never makes the line taller.
     private func bounds(for content: PharoMarkContent) -> CGRect {
-        let capHeight = (font ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)).capHeight.rounded()
+        let capHeight = Self.sourceFont.capHeight.rounded()
         switch content {
         case .result where !resultModel.hasResult:
             return CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
@@ -764,9 +764,11 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
 
     private let markCharacter: UTF16.CodeUnit = 0xFFFC
 
+    static let sourceFont = NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+
     private var sourceAttributes: [NSAttributedString.Key: Any] {
         [
-            .font: font ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
+            .font: Self.sourceFont,
             .foregroundColor: NSColor.labelColor,
         ]
     }

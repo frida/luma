@@ -174,6 +174,7 @@ struct PharoPlaygroundView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach($snippets) { $snippet in
+                    let snippetID = snippet.id
                     PharoSnippetView(
                         id: snippet.id,
                         source: $snippet.source,
@@ -190,11 +191,11 @@ struct PharoPlaygroundView: View {
                         printString: printStrings[snippet.id],
                         isEvaluating: evaluating.contains(snippet.id)
                     )
-                    .onChange(of: snippet.source) { forget(snippet.id) }
+                    .onChange(of: snippet.source) { forget(snippetID) }
                     .onGeometryChange(for: CGFloat.self) { proxy in
                         proxy.frame(in: .named(pharoPageSpace)).midY
                     } action: { center in
-                        centers[snippet.id] = center
+                        centers[snippetID] = center
                     }
                 }
 
