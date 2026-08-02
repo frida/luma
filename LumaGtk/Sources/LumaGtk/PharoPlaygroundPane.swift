@@ -2,6 +2,7 @@ import CGtk
 import Foundation
 import Gdk
 import Gtk
+import GtkSource
 import LumaCore
 import SwiftyPharo
 
@@ -13,7 +14,7 @@ final class PharoPlaygroundPane {
     let widget: Box
 
     private weak var engine: Engine?
-    private let editor: TextView
+    private let editor: GtkSource.View
     private let runButton: Button
     private let formatButton: Button
     private let inspector: PharoColumnsView
@@ -26,8 +27,10 @@ final class PharoPlaygroundPane {
         widget.hexpand = true
         widget.vexpand = true
 
-        editor = TextView()
+        editor = GtkSource.View()
         editor.monospace = true
+        editor.showLineNumbers = true
+        editor.highlightCurrentLine = true
         editor.leftMargin = 12
         editor.rightMargin = 12
         editor.topMargin = 12
