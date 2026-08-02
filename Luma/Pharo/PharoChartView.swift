@@ -119,6 +119,7 @@ struct PharoChartView: View {
                 Rectangle()
                     .fill(.clear)
                     .contentShape(Rectangle())
+                    .pointerStyle(.link)
                     .onTapGesture { location in activate(at: location, proxy: proxy, in: geometry) }
                     .onContinuousHover { phase in
                         switch phase {
