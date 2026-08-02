@@ -59,8 +59,6 @@ struct PharoClassBrowser: View {
     }
 }
 
-/// A class's runnable examples -- its sample instances and worked examples. Each
-/// row runs its method and opens what it produced.
 struct PharoExampleList: View {
     let examples: [PharoExampleMethod]
     let runtime: PharoRuntime
