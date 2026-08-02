@@ -11,6 +11,8 @@ struct PharoGraphView: View {
     @State private var drilling = false
     @State private var placed: PharoGraphLayout.Solution?
     @State private var selected: Int?
+    @State private var scale: CGFloat = 1
+    @State private var zoomBase: CGFloat = 1
     @FocusState private var isFocused: Bool
 
     var body: some View {
@@ -44,19 +46,49 @@ struct PharoGraphView: View {
                     }
                 }
                 .frame(width: placed.size.width, height: placed.size.height)
+                .scaleEffect(scale, anchor: .topLeading)
+                .frame(width: placed.size.width * scale, height: placed.size.height * scale, alignment: .topLeading)
                 .padding(PharoGraphLayout.margin)
             }
             .onChange(of: selected) { _, now in
                 if let now { withAnimation { scroller.scrollTo(now) } }
             }
         }
+        .gesture(
+            MagnifyGesture()
+                .onChanged { zoom(to: zoomBase * $0.magnification) }
+                .onEnded { _ in zoomBase = scale })
+        .overlay(alignment: .bottomTrailing) { zoomControls }
         .focusable()
+        .focusEffectDisabled()
         .focused($isFocused)
         .onKeyPress(.upArrow) { move(0, -1); return .handled }
         .onKeyPress(.downArrow) { move(0, 1); return .handled }
         .onKeyPress(.leftArrow) { move(-1, 0); return .handled }
         .onKeyPress(.rightArrow) { move(1, 0); return .handled }
         .onKeyPress(.return) { drillSelected(); return .handled }
+    }
+
+    private var zoomControls: some View {
+        HStack(spacing: 2) {
+            zoomButton("minus.magnifyingglass") { zoom(to: scale / 1.3) }
+            zoomButton("1.magnifyingglass") { zoom(to: 1) }
+            zoomButton("plus.magnifyingglass") { zoom(to: scale * 1.3) }
+        }
+        .padding(8)
+    }
+
+    private func zoomButton(_ symbol: String, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            Image(systemName: symbol).font(.caption)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+    }
+
+    private func zoom(to value: CGFloat) {
+        scale = min(max(value, 0.3), 3)
+        zoomBase = scale
     }
 
     private func drawEdge(from: CGPoint, to: CGPoint, in context: GraphicsContext) {
@@ -111,9 +143,16 @@ struct PharoGraphView: View {
                     .strokeBorder(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary), lineWidth: isSelected ? 2 : 1)
             }
             .contentShape(RoundedRectangle(cornerRadius: 6))
-            .onTapGesture(count: 2) { drill(into: index) }
-            .onTapGesture { select(index) }
+            .onTapGesture { activate(index) }
             .help(label)
+    }
+
+    private func activate(_ index: Int) {
+        if selected == index {
+            drill(into: index)
+        } else {
+            select(index)
+        }
     }
 
     private func select(_ index: Int) {
