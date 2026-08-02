@@ -120,6 +120,7 @@ let package = Package(
             exclude: lumaGtkExcludes,
             resources: [
                 .copy("Resources/nowsecure-logo.svg"),
+                .copy("Resources/pharo"),
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
