@@ -4,103 +4,96 @@ import Gtk
 import LumaCore
 import SwiftyPharo
 
-/// A moldable inspector for a Pharo object: the views it declares about itself
-/// as tabs, each drawn natively, with a row drilling into the element behind it
-/// and a back step returning to where it came from. Mirrors the SwiftUI
-/// inspector against the same runtime, with GTK widgets in place of the columns.
+/// One column of a moldable inspection: the object's print string over the views
+/// it declares about itself as tabs, a list row drilling into the element behind
+/// it, and a header of pane actions -- collapse, maximise, reload, close.
 @MainActor
-final class PharoInspectorPane {
-    let widget: Box
+final class PharoColumnView {
+    let widget: Frame
+
+    var onDrill: (PharoObject) -> Void = { _ in }
+    var onClose: () -> Void = {}
+    var onCollapse: () -> Void = {}
+    var onMaximize: () -> Void = {}
 
     private let runtime: PharoRuntime
-    private let backButton: Button
-    private let titleLabel: Label
-    private let content: Box
-    private var trail: [PharoObject] = []
+    private let object: PharoObject
+    private let isMaximized: Bool
 
-    init(runtime: PharoRuntime) {
+    init(runtime: PharoRuntime, object: PharoObject, isMaximized: Bool) {
         self.runtime = runtime
+        self.object = object
+        self.isMaximized = isMaximized
 
-        widget = Box(orientation: .vertical, spacing: 0)
+        widget = Frame()
         widget.hexpand = true
         widget.vexpand = true
 
-        backButton = Button(label: "‹ Back")
-        backButton.sensitive = false
-        backButton.marginStart = 12
-        backButton.marginTop = 8
-        backButton.marginBottom = 8
-
-        titleLabel = Label(str: "")
-        titleLabel.xalign = 0
-        titleLabel.hexpand = true
-        titleLabel.marginEnd = 12
-        titleLabel.add(cssClass: "monospace")
-
-        let header = Box(orientation: .horizontal, spacing: 8)
-        header.append(child: backButton)
-        header.append(child: titleLabel)
-
-        content = Box(orientation: .vertical, spacing: 0)
-        content.hexpand = true
-        content.vexpand = true
-
-        widget.append(child: header)
-        widget.append(child: Separator(orientation: .horizontal))
-        widget.append(child: content)
-
-        backButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.stepBack() }
-        }
+        let column = Box(orientation: .vertical, spacing: 0)
+        column.append(child: header())
+        column.append(child: Separator(orientation: .horizontal))
+        column.append(child: tabs())
+        widget.set(child: column)
     }
 
-    func present(_ object: PharoObject) {
-        trail = [object]
-        render()
+    private func header() -> Box {
+        let title = Label(str: "\(article(object.className)) \(object.className) \(object.display)")
+        title.xalign = 0
+        title.hexpand = true
+        title.wrap = true
+        title.marginStart = 8
+        title.marginTop = 6
+        title.marginBottom = 6
+        title.add(cssClass: "heading")
+
+        let bar = Box(orientation: .horizontal, spacing: 2)
+        bar.append(child: title)
+        bar.append(child: action("⤢", "Restore pane", onMaximize, when: isMaximized))
+        bar.append(child: action("▢", "Maximise pane", onMaximize, when: !isMaximized))
+        bar.append(child: action("‹", "Collapse pane", onCollapse, when: !isMaximized))
+        bar.append(child: action("↻", "Reload", { [weak self] in self?.reload() }, when: true))
+        bar.append(child: action("✕", "Close pane", onClose, when: !isMaximized))
+        return bar
     }
 
-    func showMessage(_ text: String) {
-        trail = []
-        backButton.sensitive = false
-        titleLabel.text = ""
-        fill(content, with: textPage(text))
+    private func action(_ symbol: String, _ tip: String, _ run: @escaping () -> Void, when shown: Bool) -> Button {
+        let button = Button(label: symbol)
+        button.add(cssClass: "flat")
+        button.tooltipText = tip
+        button.marginTop = 4
+        button.marginBottom = 4
+        button.visible = shown
+        button.onClicked { _ in MainActor.assumeIsolated { run() } }
+        return button
     }
 
-    private func drill(into object: PharoObject) {
-        trail.append(object)
-        render()
-    }
+    private var notebook = Notebook()
 
-    private func stepBack() {
-        guard trail.count > 1 else { return }
-        trail.removeLast()
-        render()
-    }
-
-    private func render() {
-        guard let object = trail.last else { return }
-        backButton.sensitive = trail.count > 1
-        titleLabel.text = object.display.isEmpty ? object.printString : object.display
-
-        let notebook = Notebook()
+    private func tabs() -> Notebook {
         notebook.hexpand = true
         notebook.vexpand = true
         notebook.scrollable = true
         _ = notebook.appendPage(child: textPage(object.printString), tabLabel: tabLabel("Print"))
-        fill(content, with: notebook)
+        reload()
+        return notebook
+    }
 
+    private func reload() {
+        while notebook.getNPages() > 1 {
+            notebook.removePage(pageNum: notebook.getNPages() - 1)
+        }
         Task { @MainActor in
             let views = (try? await runtime.views(of: object)) ?? []
             for view in views.sorted(by: { $0.priority < $1.priority }) where view.title != "Meta" {
-                _ = notebook.appendPage(child: page(for: view, of: object), tabLabel: tabLabel(view.title))
+                _ = notebook.appendPage(child: page(for: view), tabLabel: tabLabel(view.title))
             }
         }
     }
 
-    private func page(for view: PharoViewDeclaration, of object: PharoObject) -> Box {
+    private func page(for view: PharoViewDeclaration) -> Box {
         switch view.viewName {
         case "list", "columnedList", "tree":
-            return listPage(for: view, of: object)
+            return listPage(for: view)
         case "text":
             return textPage(view.text ?? "")
         case "graph":
@@ -112,7 +105,7 @@ final class PharoInspectorPane {
         }
     }
 
-    private func listPage(for view: PharoViewDeclaration, of object: PharoObject) -> Box {
+    private func listPage(for view: PharoViewDeclaration) -> Box {
         let rows = ListBox()
         rows.selectionMode = .single
         rows.add(cssClass: "navigation-sidebar")
@@ -125,13 +118,14 @@ final class PharoInspectorPane {
         let page = Box(orientation: .vertical, spacing: 0)
         page.append(child: scroll)
 
+        let object = object
         rows.onRowActivated { [weak self] _, row in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 let index = row.getIndex()
                 Task { @MainActor in
                     if let element = try? await self.runtime.drillInto(object, view: view.methodSelector, index: index + 1) {
-                        self.drill(into: element)
+                        self.onDrill(element)
                     }
                 }
             }
@@ -187,10 +181,7 @@ final class PharoInspectorPane {
         return box
     }
 
-    private func fill(_ box: Box, with child: some WidgetProtocol) {
-        while let existing = box.getFirstChild() {
-            box.remove(child: existing)
-        }
-        box.append(child: child)
+    private func article(_ className: String) -> String {
+        "aeiouAEIOU".contains(className.first ?? "x") ? "an" : "a"
     }
 }
