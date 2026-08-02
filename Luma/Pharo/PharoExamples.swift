@@ -15,18 +15,22 @@ enum PharoExampleCatalog {
             PharoExample(
                 title: "Graph — a ring",
                 code: """
-                Mondrian new
-                	nodes with: (1 to: 8);
-                	edges connectTo: [ :n | (n rem: 8) + 1 ];
-                	layout circle.
+                | graph |
+                graph := Mondrian new.
+                graph nodes with: (1 to: 8).
+                graph edges connectTo: [ :n | (n rem: 8) + 1 ].
+                graph layout circle.
+                graph
                 """),
             PharoExample(
                 title: "Graph — a class tree",
                 code: """
-                Mondrian new
-                	nodes with: Number withAllSubclasses;
-                	edges connectFrom: [ :aClass | aClass superclass ];
-                	layout horizontalTree.
+                | graph |
+                graph := Mondrian new.
+                graph nodes with: Number withAllSubclasses.
+                graph edges connectFrom: [ :aClass | aClass superclass ].
+                graph layout horizontalTree.
+                graph
                 """),
             PharoExample(
                 title: "Bar chart",
