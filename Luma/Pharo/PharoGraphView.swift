@@ -13,6 +13,9 @@ struct PharoGraphView: View {
     @State private var selected: Int?
     @State private var scale: CGFloat = 1
     @State private var zoomBase: CGFloat = 1
+    @State private var offset: CGSize = .zero
+    @State private var panBase: CGSize = .zero
+    @State private var viewport: CGSize = .zero
     @FocusState private var isFocused: Bool
 
     var body: some View {
@@ -29,35 +32,23 @@ struct PharoGraphView: View {
     }
 
     private func graphBody(_ placed: PharoGraphLayout.Solution) -> some View {
-        ScrollViewReader { scroller in
-            ScrollView([.horizontal, .vertical]) {
-                ZStack(alignment: .topLeading) {
-                    Canvas { context, _ in
-                        for edge in graph.edges {
-                            drawEdge(from: placed[edge.from], to: placed[edge.to], in: context)
-                        }
-                    }
-                    .frame(width: placed.size.width, height: placed.size.height)
-
-                    ForEach(graph.nodes.indices, id: \.self) { index in
-                        node(graph.nodes[index].label, at: index)
-                            .position(placed[index])
-                            .id(index)
-                    }
-                }
-                .frame(width: placed.size.width, height: placed.size.height)
+        ZStack(alignment: .topLeading) {
+            Color.clear
+            canvas(placed)
                 .scaleEffect(scale, anchor: .topLeading)
-                .frame(width: placed.size.width * scale, height: placed.size.height * scale, alignment: .topLeading)
-                .padding(PharoGraphLayout.margin)
-            }
-            .onChange(of: selected) { _, now in
-                if let now { withAnimation { scroller.scrollTo(now) } }
-            }
+                .offset(offset)
         }
+        .clipped()
+        .contentShape(Rectangle())
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { viewport = $0 }
+        .gesture(panGesture)
         .gesture(
             MagnifyGesture()
                 .onChanged { zoom(to: zoomBase * $0.magnification) }
                 .onEnded { _ in zoomBase = scale })
+        .onChange(of: selected) { _, now in
+            if let now { reveal(now) }
+        }
         .overlay(alignment: .bottomTrailing) { zoomControls }
         .focusable()
         .focusEffectDisabled()
@@ -67,15 +58,64 @@ struct PharoGraphView: View {
         .onKeyPress(.leftArrow) { move(-1, 0); return .handled }
         .onKeyPress(.rightArrow) { move(1, 0); return .handled }
         .onKeyPress(.return) { drillSelected(); return .handled }
+        .onKeyPress(.escape) { selected = nil; return .handled }
+    }
+
+    private func canvas(_ placed: PharoGraphLayout.Solution) -> some View {
+        ZStack(alignment: .topLeading) {
+            Canvas { context, _ in
+                for edge in graph.edges {
+                    drawEdge(from: placed[edge.from], to: placed[edge.to], in: context)
+                }
+            }
+            .frame(width: placed.size.width, height: placed.size.height)
+
+            ForEach(graph.nodes.indices, id: \.self) { index in
+                node(graph.nodes[index].label, at: index)
+                    .position(placed[index])
+            }
+        }
+        .frame(width: placed.size.width, height: placed.size.height, alignment: .topLeading)
+    }
+
+    private var panGesture: some Gesture {
+        DragGesture()
+            .onChanged {
+                offset = CGSize(width: panBase.width + $0.translation.width, height: panBase.height + $0.translation.height)
+            }
+            .onEnded { _ in panBase = offset }
+    }
+
+    private func reveal(_ index: Int) {
+        guard let placed, viewport != .zero else { return }
+        let point = placed[index]
+        let onScreen = CGPoint(x: point.x * scale + offset.width, y: point.y * scale + offset.height)
+        let inset = PharoGraphLayout.nodeSize.width * scale
+        guard onScreen.x < inset || onScreen.y < inset
+            || onScreen.x > viewport.width - inset || onScreen.y > viewport.height - inset
+        else { return }
+        offset = CGSize(width: viewport.width / 2 - point.x * scale, height: viewport.height / 2 - point.y * scale)
+        panBase = offset
     }
 
     private var zoomControls: some View {
         HStack(spacing: 2) {
             zoomButton("minus.magnifyingglass") { zoom(to: scale / 1.3) }
-            zoomButton("1.magnifyingglass") { zoom(to: 1) }
+            zoomButton("arrow.up.left.and.down.right.magnifyingglass") { fitToViewport() }
             zoomButton("plus.magnifyingglass") { zoom(to: scale * 1.3) }
         }
         .padding(8)
+    }
+
+    private func fitToViewport() {
+        guard let placed, viewport.width > 0, viewport.height > 0 else { return }
+        let margin = PharoGraphLayout.margin * 2
+        let content = CGSize(width: placed.size.width + margin, height: placed.size.height + margin)
+        zoom(to: min(viewport.width / content.width, viewport.height / content.height))
+        offset = CGSize(
+            width: (viewport.width - placed.size.width * scale) / 2,
+            height: (viewport.height - placed.size.height * scale) / 2)
+        panBase = offset
     }
 
     private func zoomButton(_ symbol: String, _ act: @escaping () -> Void) -> some View {
