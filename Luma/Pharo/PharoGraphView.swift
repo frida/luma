@@ -143,7 +143,7 @@ struct PharoGraphView: View {
 
     private func drawEdge(from: CGPoint, to: CGPoint, incident: Bool, in context: GraphicsContext) {
         let clipped = trim(from: from, to: to)
-        let style: GraphicsContext.Shading = incident ? .color(.accentColor) : .color(.secondary.opacity(0.55))
+        let style: GraphicsContext.Shading = incident ? .color(.fridaBrand) : .color(.secondary.opacity(0.55))
         var line = Path()
         line.move(to: clipped.start)
         line.addLine(to: clipped.end)
@@ -191,7 +191,7 @@ struct PharoGraphView: View {
             .background(.pharoPane, in: RoundedRectangle(cornerRadius: 6))
             .overlay {
                 RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary), lineWidth: isSelected ? 2 : 1)
+                    .strokeBorder(isSelected ? AnyShapeStyle(Color.fridaBrand) : AnyShapeStyle(.tertiary), lineWidth: isSelected ? 2 : 1)
             }
             .contentShape(RoundedRectangle(cornerRadius: 6))
             .onTapGesture { activate(index) }

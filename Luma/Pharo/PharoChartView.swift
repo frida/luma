@@ -10,6 +10,8 @@ struct PharoChartView: View {
     let onSelect: (PharoObject) -> Void
 
     @State private var drilling = false
+    @State private var selected: Int?
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         let core = Chart {
@@ -18,13 +20,30 @@ struct PharoChartView: View {
             }
         }
         .chartOverlay { proxy in tapCatcher(proxy) }
+        .chartForegroundStyleScale(range: seriesColors)
         .chartLegend(chart.series.count > 1 ? .visible : .hidden)
 
-        titled(scaled(core)).padding()
+        titled(scaled(core))
+            .focusable()
+            .focusEffectDisabled()
+            .focused($isFocused)
+            .onKeyPress(.leftArrow) { move(-1); return .handled }
+            .onKeyPress(.rightArrow) { move(1); return .handled }
+            .onKeyPress(.upArrow) { move(-1); return .handled }
+            .onKeyPress(.downArrow) { move(1); return .handled }
+            .onKeyPress(.return) { drillSelected(); return .handled }
+            .onKeyPress(.escape) { selected = nil; return .handled }
+            .padding()
     }
 
     private var isNumeric: Bool {
         chart.series.allSatisfy { $0.kind != "bar" }
+    }
+
+    private var seriesColors: [Color] {
+        chart.series.count > 1
+            ? [.fridaBrand, .teal, .purple, .orange, .green, .pink]
+            : [.fridaBrand]
     }
 
     @ViewBuilder
@@ -59,9 +78,11 @@ struct PharoChartView: View {
             switch series.kind {
             case "bar" where series.orientation == "vertical":
                 BarMark(x: .value("Label", p.label), y: .value("Value", p.y))
+                    .foregroundStyle(by: .value("Series", index))
                     .annotation(position: .top) { barValue(p.y) }
             case "bar":
                 BarMark(x: .value("Value", p.y), y: .value("Label", p.label))
+                    .foregroundStyle(by: .value("Series", index))
                     .annotation(position: .trailing) { barValue(p.y) }
             case "line":
                 LineMark(x: .value("X", p.x), y: .value("Y", p.y))
@@ -84,7 +105,7 @@ struct PharoChartView: View {
     }
 
     private var showsBarValues: Bool {
-        chart.series.reduce(0) { $0 + $1.points.count } <= 40
+        flatCount <= 40
     }
 
     private func formatted(_ value: Double) -> String {
@@ -93,20 +114,39 @@ struct PharoChartView: View {
 
     private func tapCatcher(_ proxy: ChartProxy) -> some View {
         GeometryReader { geometry in
-            Rectangle()
-                .fill(.clear)
-                .contentShape(Rectangle())
-                .onTapGesture { location in drill(at: location, proxy: proxy, in: geometry) }
+            ZStack(alignment: .topLeading) {
+                Rectangle()
+                    .fill(.clear)
+                    .contentShape(Rectangle())
+                    .onTapGesture { location in activate(at: location, proxy: proxy, in: geometry) }
+
+                if let selected, let position = plotPosition(of: selected, proxy: proxy, in: geometry) {
+                    Circle()
+                        .fill(Color.fridaBrand)
+                        .overlay { Circle().strokeBorder(.background, lineWidth: 2) }
+                        .frame(width: 12, height: 12)
+                        .position(position)
+                        .allowsHitTesting(false)
+                }
+            }
         }
     }
 
-    private func drill(at location: CGPoint, proxy: ChartProxy, in geometry: GeometryProxy) {
-        guard let plot = proxy.plotFrame else { return }
+    private func activate(at location: CGPoint, proxy: ChartProxy, in geometry: GeometryProxy) {
+        guard let index = point(at: location, proxy: proxy, in: geometry) else { return }
+        if selected == index {
+            drill(into: index)
+        } else {
+            selected = index
+            isFocused = true
+        }
+    }
+
+    private func point(at location: CGPoint, proxy: ChartProxy, in geometry: GeometryProxy) -> Int? {
+        guard let plot = proxy.plotFrame else { return nil }
         let frame = geometry[plot]
         let at = CGPoint(x: location.x - frame.minX, y: location.y - frame.minY)
-        if let index = isNumeric ? nearestPoint(to: at, proxy: proxy) : barPoint(at: at, proxy: proxy) {
-            drill(into: index)
-        }
+        return isNumeric ? nearestPoint(to: at, proxy: proxy) : barPoint(at: at, proxy: proxy)
     }
 
     private func barPoint(at location: CGPoint, proxy: ChartProxy) -> Int? {
@@ -130,6 +170,28 @@ struct PharoChartView: View {
         return hypot(p.x - tap.x, p.y - tap.y)
     }
 
+    private func plotPosition(of flat: Int, proxy: ChartProxy, in geometry: GeometryProxy) -> CGPoint? {
+        guard let plot = proxy.plotFrame, let at = flatIndices().first(where: { $0.flat == flat }) else { return nil }
+        let frame = geometry[plot]
+        let series = chart.series[at.series]
+        let p = series.points[at.point]
+        let x: CGFloat?
+        let y: CGFloat?
+        switch (series.kind, series.orientation) {
+        case ("bar", "vertical"):
+            x = proxy.position(forX: p.label)
+            y = proxy.position(forY: p.y)
+        case ("bar", _):
+            x = proxy.position(forX: p.y)
+            y = proxy.position(forY: p.label)
+        default:
+            x = proxy.position(forX: p.x)
+            y = proxy.position(forY: p.y)
+        }
+        guard let x, let y else { return nil }
+        return CGPoint(x: frame.minX + x, y: frame.minY + y)
+    }
+
     private func flatIndices() -> [(series: Int, point: Int, flat: Int)] {
         var flat = 0
         var result: [(series: Int, point: Int, flat: Int)] = []
@@ -140,6 +202,24 @@ struct PharoChartView: View {
             }
         }
         return result
+    }
+
+    private var flatCount: Int {
+        chart.series.reduce(0) { $0 + $1.points.count }
+    }
+
+    private func move(_ delta: Int) {
+        guard flatCount > 0 else { return }
+        isFocused = true
+        if let selected {
+            self.selected = min(max(selected + delta, 0), flatCount - 1)
+        } else {
+            selected = delta > 0 ? 0 : flatCount - 1
+        }
+    }
+
+    private func drillSelected() {
+        if let selected { drill(into: selected) }
     }
 
     private func drill(into index: Int) {
