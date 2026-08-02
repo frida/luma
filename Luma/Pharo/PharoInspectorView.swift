@@ -545,19 +545,15 @@ struct PharoObjectColumn: View {
         case "graph":
             if let graph = declaration.graph {
                 PharoGraphView(
-                    runtime: runtime,
-                    object: object,
-                    view: declaration.methodSelector,
                     graph: graph,
+                    onDrill: { try? await runtime.drillInto(object, view: declaration.methodSelector, index: $0 + 1) },
                     onSelect: onSelect)
             }
         case "chart":
             if let chart = declaration.chart {
                 PharoChartView(
-                    runtime: runtime,
-                    object: object,
-                    view: declaration.methodSelector,
                     chart: chart,
+                    onDrill: { try? await runtime.drillInto(object, view: declaration.methodSelector, index: $0 + 1) },
                     onSelect: onSelect)
             }
         default:
