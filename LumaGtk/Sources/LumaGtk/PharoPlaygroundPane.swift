@@ -9,6 +9,12 @@ import SwiftyPharo
 /// A first Smalltalk surface for the GTK frontend: a snippet to edit, a button
 /// to run it, and the result opened in the moldable inspector below. It drives
 /// the same PharoRuntime the macOS app does.
+enum PharoRunMode {
+    case doIt
+    case printIt
+    case inspect
+}
+
 @MainActor
 final class PharoPlaygroundPane {
     let widget: Box
@@ -48,7 +54,7 @@ final class PharoPlaygroundPane {
 
         runButton = Button(label: "Evaluate")
         runButton.add(cssClass: "suggested-action")
-        runButton.tooltipText = "Evaluate (Ctrl+Return)"
+        runButton.tooltipText = "Inspect (Ctrl+Return) · Do it (Ctrl+D) · Print it (Ctrl+P)"
 
         formatButton = Button(label: "Format")
         formatButton.add(cssClass: "flat")
@@ -70,7 +76,7 @@ final class PharoPlaygroundPane {
         widget.append(child: inspector.widget)
 
         runButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.evaluate() }
+            MainActor.assumeIsolated { self?.run(.inspect) }
         }
         formatButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.format() }
@@ -95,7 +101,7 @@ final class PharoPlaygroundPane {
         let languages = GtkSource.LanguageManager()
         let schemes = GtkSource.StyleSchemeManager()
         specs.withCString { path in
-            var dirs: [UnsafePointer<gchar>?] = [path, nil]
+            let dirs: [UnsafePointer<gchar>?] = [path, nil]
             dirs.withUnsafeBufferPointer { buffer in
                 languages.setSearchPath(dirs: buffer.baseAddress)
                 schemes.setSearchPath(path: buffer.baseAddress)
@@ -117,7 +123,13 @@ final class PharoPlaygroundPane {
                 guard state.contains(.controlMask) else { return false }
                 switch keyval {
                 case 0xFF0D, 0xFF8D:
-                    self.evaluate()
+                    self.run(.inspect)
+                    return true
+                case 0x0064, 0x0044:
+                    self.run(.doIt)
+                    return true
+                case 0x0070, 0x0050:
+                    self.run(.printIt)
                     return true
                 case 0x0020, 0xFF80:
                     self.completion.request()
@@ -152,7 +164,7 @@ final class PharoPlaygroundPane {
         }
     }
 
-    private func evaluate() {
+    private func run(_ mode: PharoRunMode) {
         guard !isEvaluating, let engine else { return }
         let source = editorText()
         guard !source.isEmpty else { return }
@@ -168,7 +180,14 @@ final class PharoPlaygroundPane {
             do {
                 try await PharoRuntime.shared.startPlayground(for: engine)
                 let produced = try await PharoRuntime.shared.evaluate(source)
-                inspector.present(produced)
+                switch mode {
+                case .doIt:
+                    inspector.showMessage("Done.")
+                case .printIt:
+                    inspector.showMessage(produced.printString)
+                case .inspect:
+                    inspector.present(produced)
+                }
             } catch {
                 inspector.showMessage(error.localizedDescription)
             }
@@ -197,7 +216,7 @@ final class PharoPlaygroundPane {
     }
 
     private func editorText() -> String {
-        sourceBuffer.text ?? ""
+        sourceBuffer.text
     }
 
     private func cursorOffset() -> Int {

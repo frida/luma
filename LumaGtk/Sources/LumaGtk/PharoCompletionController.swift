@@ -33,7 +33,7 @@ final class PharoCompletionController {
     var isActive: Bool { popover != nil }
 
     func request() {
-        let source = buffer.text ?? ""
+        let source = buffer.text
         guard !source.isEmpty else { return }
         let cursor = cursorOffset()
         generation &+= 1
