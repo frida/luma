@@ -11,6 +11,7 @@ struct PharoChartView: View {
 
     @State private var drilling = false
     @State private var selected: Int?
+    @State private var hovered: Int?
     @FocusState private var isFocused: Bool
 
     var body: some View {
@@ -119,6 +120,12 @@ struct PharoChartView: View {
                     .fill(.clear)
                     .contentShape(Rectangle())
                     .onTapGesture { location in activate(at: location, proxy: proxy, in: geometry) }
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let location): hovered = point(at: location, proxy: proxy, in: geometry)
+                        case .ended: hovered = nil
+                        }
+                    }
 
                 if let selected, let position = plotPosition(of: selected, proxy: proxy, in: geometry) {
                     Circle()
@@ -128,8 +135,28 @@ struct PharoChartView: View {
                         .position(position)
                         .allowsHitTesting(false)
                 }
+
+                if let hovered, let position = plotPosition(of: hovered, proxy: proxy, in: geometry) {
+                    Text(readout(hovered))
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 4))
+                        .fixedSize()
+                        .position(x: position.x, y: position.y - 16)
+                        .allowsHitTesting(false)
+                }
             }
         }
+    }
+
+    private func readout(_ flat: Int) -> String {
+        guard let at = flatIndices().first(where: { $0.flat == flat }) else { return "" }
+        let series = chart.series[at.series]
+        let p = series.points[at.point]
+        return series.kind == "bar"
+            ? "\(p.label): \(formatted(p.y))"
+            : "\(formatted(p.x)), \(formatted(p.y))"
     }
 
     private func activate(at location: CGPoint, proxy: ChartProxy, in geometry: GeometryProxy) {
