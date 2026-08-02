@@ -1,5 +1,6 @@
 import CGtk
 import Foundation
+import Gdk
 import Gtk
 import LumaCore
 import SwiftyPharo
@@ -14,6 +15,7 @@ final class PharoPlaygroundPane {
     private weak var engine: Engine?
     private let editor: TextView
     private let runButton: Button
+    private let formatButton: Button
     private let inspector: PharoColumnsView
     private var isEvaluating = false
 
@@ -40,21 +42,66 @@ final class PharoPlaygroundPane {
 
         runButton = Button(label: "Evaluate")
         runButton.add(cssClass: "suggested-action")
-        runButton.marginTop = 8
-        runButton.marginBottom = 8
-        runButton.marginStart = 12
-        runButton.marginEnd = 12
-        runButton.halign = .start
+        runButton.tooltipText = "Evaluate (Ctrl+Return)"
+
+        formatButton = Button(label: "Format")
+        formatButton.add(cssClass: "flat")
+        formatButton.tooltipText = "Format (Ctrl+Shift+F)"
+
+        let buttons = Box(orientation: .horizontal, spacing: 8)
+        buttons.marginTop = 8
+        buttons.marginBottom = 8
+        buttons.marginStart = 12
+        buttons.marginEnd = 12
+        buttons.append(child: runButton)
+        buttons.append(child: formatButton)
 
         inspector = PharoColumnsView(runtime: PharoRuntime.shared)
 
         widget.append(child: editorScroll)
-        widget.append(child: runButton)
+        widget.append(child: buttons)
         widget.append(child: Separator(orientation: .horizontal))
         widget.append(child: inspector.widget)
 
         runButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.evaluate() }
+        }
+        formatButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated { self?.format() }
+        }
+        installShortcuts()
+    }
+
+    private func installShortcuts() {
+        let keys = EventControllerKey()
+        keys.onKeyPressed { [weak self] _, keyval, _, state in
+            MainActor.assumeIsolated {
+                guard let self, state.contains(.controlMask) else { return false }
+                switch keyval {
+                case 0xFF0D, 0xFF8D:
+                    self.evaluate()
+                    return true
+                case 0x0066, 0x0046:
+                    guard state.contains(.shiftMask) else { return false }
+                    self.format()
+                    return true
+                default:
+                    return false
+                }
+            }
+        }
+        editor.install(controller: keys)
+    }
+
+    private func format() {
+        guard let engine else { return }
+        let source = editorText()
+        guard !source.isEmpty else { return }
+        Task { @MainActor in
+            try? await PharoRuntime.shared.startPlayground(for: engine)
+            if let formatted = try? await PharoRuntime.shared.format(source: source) {
+                editor.buffer?.set(text: formatted, len: Int(formatted.utf8.count))
+            }
         }
     }
 
