@@ -64,6 +64,7 @@ struct PharoChartView: View {
             case "line":
                 LineMark(x: .value("X", p.x), y: .value("Y", p.y))
                     .foregroundStyle(by: .value("Series", index))
+                    .symbol(by: .value("Series", index))
             default:
                 PointMark(x: .value("X", p.x), y: .value("Y", p.y))
                     .foregroundStyle(by: .value("Series", index))
