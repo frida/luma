@@ -65,6 +65,11 @@ extension PharoSnapshot {
         if let text = declaration.text {
             return .text(text)
         }
+        // A graph or chart holds its data in the declaration, not in pageable
+        // rows; there is nothing to page, and asking would reach past the view.
+        if declaration.graph != nil || declaration.chart != nil {
+            return .empty
+        }
 
         let page = try await runtime.items(
             of: object,
