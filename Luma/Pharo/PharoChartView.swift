@@ -2,9 +2,6 @@ import Charts
 import SwiftUI
 import SwiftyPharo
 
-/// A GtPlotter chart, drawn with the native Charts framework rather than Bloc:
-/// bars, lines, or scattered dots over its series, each axis linear or
-/// logarithmic. A tap drills into the element behind the nearest point.
 struct PharoChartView: View {
     let runtime: PharoRuntime
     let object: PharoObject

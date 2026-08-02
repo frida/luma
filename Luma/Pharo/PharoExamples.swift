@@ -1,8 +1,5 @@
 import Foundation
 
-/// Snippets the examples button drops into a page, each one exercising a feature
-/// so a reader can discover it by running it. Several carry a hint in their title
-/// about a key to press once the result is up.
 struct PharoExample: Identifiable {
     var id: String { title }
     let title: String

@@ -1,9 +1,6 @@
 import SwiftUI
 import SwiftyPharo
 
-/// A mondrian graph, painted with native drawing rather than Bloc: edges on a
-/// Canvas, nodes as laid-out labels a click drills through. The layout the
-/// painting chose decides where the nodes sit.
 struct PharoGraphView: View {
     let runtime: PharoRuntime
     let object: PharoObject
@@ -117,8 +114,6 @@ struct PharoGraphView: View {
     }
 }
 
-/// Where each node sits for a given layout. The math is native and
-/// deterministic, so the same graph always draws the same way.
 struct PharoGraphLayout {
     let nodeCount: Int
     let edges: [PharoGraphEdge]
@@ -237,8 +232,6 @@ struct PharoGraphLayout {
         return depth
     }
 
-    /// A plain spring embedder: edges pull, every pair pushes, seeded on a circle
-    /// so there is no randomness to make the picture jump between runs.
     private func force() -> [CGPoint] {
         guard nodeCount > 1 else { return [.zero] }
         let area = Double(nodeCount) * 10000
