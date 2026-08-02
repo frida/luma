@@ -673,7 +673,7 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
             bodyAttachments[id] = nil
         }
         for entry in missing.sorted(by: { $0.markLocation > $1.markLocation }) {
-            insertBody(entry.item, at: entry.markLocation + 1, in: storage)
+            insertBody(entry.item, at: bodyStart(after: entry.markLocation), in: storage)
         }
         storage.endEditing()
         let restoredStart = storageOffset(forSource: selectionStart)
@@ -805,6 +805,16 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         positionMarkOverlays()
         let metrics = metrics
         DispatchQueue.main.async { metrics?.revision += 1 }
+    }
+
+    /// Where a body opens: past the mark and the spaces that follow it, so the
+    /// blanks stay at the end of the code line and the rest of the send starts
+    /// its own line clean rather than indented by them.
+    private func bodyStart(after markLocation: Int) -> Int {
+        let units = Array(string.utf16)
+        var at = markLocation + 1
+        while at < units.count, units[at] == 0x20 || units[at] == 0x09 { at += 1 }
+        return at
     }
 
     private func markLocation(of content: PharoMarkContent) -> Int? {
