@@ -46,31 +46,35 @@ struct PharoGraphView: View {
     }
 
     private func graphBody(_ placed: PharoGraphLayout.Solution) -> some View {
-        canvas(placed)
-            .scaleEffect(scale, anchor: .topLeading)
-            .offset(offset)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .clipped()
-            .contentShape(Rectangle())
-        .onGeometryChange(for: CGSize.self) { $0.size } action: { viewport = $0; attemptInitialFit() }
-        .gesture(panGesture)
-        .gesture(
-            MagnifyGesture()
-                .onChanged { zoom(to: zoomBase * $0.magnification) }
-                .onEnded { _ in zoomBase = scale })
-        .onChange(of: selected) { _, now in
-            if let now { reveal(now) }
+        GeometryReader { geo in
+            canvas(placed)
+                .scaleEffect(scale, anchor: .topLeading)
+                .offset(offset)
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+                .clipped()
+                .contentShape(Rectangle())
+                .gesture(panGesture)
+                .gesture(
+                    MagnifyGesture()
+                        .onChanged { zoom(to: zoomBase * $0.magnification) }
+                        .onEnded { _ in zoomBase = scale })
+                .onChange(of: selected) { _, now in
+                    if let now { reveal(now) }
+                }
+                .overlay(alignment: .bottomTrailing) { zoomControls }
+                .focusable()
+                .focusEffectDisabled()
+                .focused($isFocused)
+                .onKeyPress(.upArrow) { move(0, -1); return .handled }
+                .onKeyPress(.downArrow) { move(0, 1); return .handled }
+                .onKeyPress(.leftArrow) { move(-1, 0); return .handled }
+                .onKeyPress(.rightArrow) { move(1, 0); return .handled }
+                .onKeyPress(.return) { drillSelected(); return .handled }
+                .onKeyPress(.escape) { selected = nil; return .handled }
+                .onAppear { viewport = geo.size; attemptInitialFit() }
+                .onChange(of: geo.size) { viewport = $1; attemptInitialFit() }
         }
-        .overlay(alignment: .bottomTrailing) { zoomControls }
-        .focusable()
-        .focusEffectDisabled()
-        .focused($isFocused)
-        .onKeyPress(.upArrow) { move(0, -1); return .handled }
-        .onKeyPress(.downArrow) { move(0, 1); return .handled }
-        .onKeyPress(.leftArrow) { move(-1, 0); return .handled }
-        .onKeyPress(.rightArrow) { move(1, 0); return .handled }
-        .onKeyPress(.return) { drillSelected(); return .handled }
-        .onKeyPress(.escape) { selected = nil; return .handled }
+        .frame(minHeight: 240)
     }
 
     private func canvas(_ placed: PharoGraphLayout.Solution) -> some View {
@@ -82,10 +86,12 @@ struct PharoGraphView: View {
                 }
             }
             .frame(width: placed.size.width, height: placed.size.height)
+            .allowsHitTesting(false)
 
             ForEach(graph.nodes.indices, id: \.self) { index in
                 node(graph.nodes[index].label, at: index)
                     .position(placed[index])
+                    .allowsHitTesting(isOnScreen(placed[index]))
             }
         }
         .frame(width: placed.size.width, height: placed.size.height, alignment: .topLeading)
@@ -97,6 +103,14 @@ struct PharoGraphView: View {
                 offset = CGSize(width: panBase.width + $0.translation.width, height: panBase.height + $0.translation.height)
             }
             .onEnded { _ in panBase = offset }
+    }
+
+    private func isOnScreen(_ point: CGPoint) -> Bool {
+        guard viewport != .zero else { return true }
+        let onScreen = CGPoint(x: point.x * scale + offset.width, y: point.y * scale + offset.height)
+        let margin = PharoGraphLayout.nodeSize.width * scale
+        return onScreen.x > -margin && onScreen.x < viewport.width + margin
+            && onScreen.y > -margin && onScreen.y < viewport.height + margin
     }
 
     private func reveal(_ index: Int) {
