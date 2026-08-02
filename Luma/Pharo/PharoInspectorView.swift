@@ -167,6 +167,7 @@ struct PharoScrollTarget: Equatable {
 
 let pharoColumnWidth: CGFloat = 400
 
+#if os(macOS)
 extension View {
     /// Lays a maximized pane over the whole inspector -- page and carousel both
     /// -- the way Glamorous Toolkit fills its host when a pane is maximized.
@@ -1191,3 +1192,4 @@ struct PharoOverviewStrip: View {
     private let previewHeight: CGFloat = 12
     private let previewSpacing: CGFloat = 3
 }
+#endif

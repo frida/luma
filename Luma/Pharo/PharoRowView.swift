@@ -1,3 +1,4 @@
+#if os(macOS)
 import LumaCore
 import SwiftUI
 import SwiftyPharo
@@ -52,3 +53,4 @@ struct PharoRowView: View {
         .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
         .maximumAdvancement.width
 }
+#endif

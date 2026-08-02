@@ -1,3 +1,4 @@
+#if os(macOS)
 import SwiftUI
 import SwiftyPharo
 
@@ -612,3 +613,4 @@ struct PharoMethodEditor: View {
         Task { openedClasses[name] = try? await runtime.evaluate(name) }
     }
 }
+#endif

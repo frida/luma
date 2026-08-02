@@ -1,3 +1,4 @@
+#if os(macOS)
 import Charts
 import SwiftUI
 import SwiftyPharo
@@ -278,3 +279,4 @@ struct PharoChartView: View {
         }
     }
 }
+#endif

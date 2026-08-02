@@ -1,3 +1,4 @@
+#if os(macOS)
 import LumaCore
 import SwiftUI
 import SwiftyPharo
@@ -80,3 +81,4 @@ struct PharoSnapshotView: View {
         snapshot.views.first { $0.methodSelector == shown } ?? snapshot.views.first
     }
 }
+#endif

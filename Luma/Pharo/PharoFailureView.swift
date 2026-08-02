@@ -1,3 +1,4 @@
+#if os(macOS)
 import SwiftUI
 
 /// What the image said went wrong, laid out like the content it stands in for
@@ -17,3 +18,4 @@ struct PharoFailureView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
+#endif

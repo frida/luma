@@ -1,5 +1,7 @@
+import ImageIO
 import LumaCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Draws the icon a session shows in the sidebar when the process gave us
 /// none, so the image sees what the reader sees. Rasterising belongs to the
@@ -16,13 +18,15 @@ enum PharoSessionIcon {
             .frame(width: side, height: side))
         renderer.scale = 2
 
-        guard let image = renderer.nsImage,
-            let tiff = image.tiffRepresentation,
-            let bitmap = NSBitmapImageRep(data: tiff),
-            let png = bitmap.representation(using: .png, properties: [:])
-        else { return nil }
+        guard let image = renderer.cgImage else { return nil }
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else {
+            return nil
+        }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { return nil }
 
-        return png.base64EncodedString()
+        return (data as Data).base64EncodedString()
     }
 
     private static let side: CGFloat = 32
