@@ -34,6 +34,7 @@ struct PharoChartView: View {
             .onKeyPress(.return) { drillSelected(); return .handled }
             .onKeyPress(.escape) { selected = nil; return .handled }
             .padding()
+            .task { isFocused = true }
     }
 
     private var isNumeric: Bool {

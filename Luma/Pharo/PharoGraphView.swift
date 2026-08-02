@@ -31,6 +31,7 @@ struct PharoGraphView: View {
             didFit = false
             placed = PharoGraphLayout(nodeCount: graph.nodes.count, edges: graph.edges, kind: .init(graph.layout)).solve()
             attemptInitialFit()
+            isFocused = true
         }
     }
 
