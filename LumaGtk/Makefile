@@ -13,6 +13,13 @@ export PKG_CONFIG_PATH := $(if $(PKG_CONFIG_PATH),$(PKG_CONFIG_PATH):)$(SYSTEM_P
 export USE_SYSTEM_FRIDA := 1
 
 PROJECT_ROOT := $(abspath ..)
+
+PHARO_RELEASE := vm-20260802.8
+PHARO_IMAGE_DIR := Sources/LumaGtk/Resources/pharo-image
+PHARO_IMAGE := $(PHARO_IMAGE_DIR)/SwiftyPharo.image
+PHARO_LOCAL := $(PROJECT_ROOT)/../SwiftyPharo/artifacts/SwiftyPharo.image
+PHARO_CACHE := .build/.pharo/$(PHARO_RELEASE)
+
 AGENT_BUNDLE := $(PROJECT_ROOT)/Sources/LumaCore/Generated/LumaAgent.swift
 TYPINGS_BUNDLE := $(PROJECT_ROOT)/Sources/LumaCore/Generated/LumaTypings.swift
 AGENT_STAGING := $(PROJECT_ROOT)/.build/AgentStaging
@@ -31,8 +38,24 @@ $(AGENT_BUNDLE): $(AGENT_SOURCES) $(PROJECT_ROOT)/Agent/bundle.json
 
 $(TYPINGS_BUNDLE): $(AGENT_BUNDLE)
 
-build: bundle
+build: bundle $(PHARO_IMAGE)
 	swift build $(SWIFT_BUILD_FLAGS)
+
+$(PHARO_IMAGE):
+	@mkdir -p $(PHARO_IMAGE_DIR)
+	@if [ -f "$(PHARO_LOCAL)" ]; then \
+	    src="$(PHARO_LOCAL)"; \
+	elif [ -f "$(PHARO_CACHE)/SwiftyPharo.image" ]; then \
+	    src="$(PHARO_CACHE)/SwiftyPharo.image"; \
+	else \
+	    echo "Fetching Pharo image $(PHARO_RELEASE)"; \
+	    mkdir -p "$(PHARO_CACHE)"; \
+	    curl -sSL "https://github.com/frida/SwiftyPharo/releases/download/$(PHARO_RELEASE)/SwiftyPharo.image.zip" -o "$(PHARO_CACHE)/image.zip"; \
+	    unzip -qo "$(PHARO_CACHE)/image.zip" -d "$(PHARO_CACHE)"; \
+	    src="$(PHARO_CACHE)/SwiftyPharo.image"; \
+	fi; \
+	cp "$$src" "$(PHARO_IMAGE)"; \
+	cp "$${src%.image}.changes" "$(PHARO_IMAGE_DIR)/SwiftyPharo.changes"
 
 run: build
 	./.build/debug/LumaGtk
