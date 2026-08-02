@@ -16,6 +16,7 @@ struct PharoGraphView: View {
     @State private var offset: CGSize = .zero
     @State private var panBase: CGSize = .zero
     @State private var viewport: CGSize = .zero
+    @State private var didFit = false
     @FocusState private var isFocused: Bool
 
     var body: some View {
@@ -27,8 +28,16 @@ struct PharoGraphView: View {
             }
         }
         .task(id: graph.layout) {
+            didFit = false
             placed = PharoGraphLayout(nodeCount: graph.nodes.count, edges: graph.edges, kind: .init(graph.layout)).solve()
+            attemptInitialFit()
         }
+    }
+
+    private func attemptInitialFit() {
+        guard !didFit, placed != nil, viewport != .zero else { return }
+        didFit = true
+        fitToViewport()
     }
 
     private func graphBody(_ placed: PharoGraphLayout.Solution) -> some View {
@@ -40,7 +49,7 @@ struct PharoGraphView: View {
         }
         .clipped()
         .contentShape(Rectangle())
-        .onGeometryChange(for: CGSize.self) { $0.size } action: { viewport = $0 }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { viewport = $0; attemptInitialFit() }
         .gesture(panGesture)
         .gesture(
             MagnifyGesture()
@@ -65,7 +74,8 @@ struct PharoGraphView: View {
         ZStack(alignment: .topLeading) {
             Canvas { context, _ in
                 for edge in graph.edges {
-                    drawEdge(from: placed[edge.from], to: placed[edge.to], in: context)
+                    let incident = edge.from == selected || edge.to == selected
+                    drawEdge(from: placed[edge.from], to: placed[edge.to], incident: incident, in: context)
                 }
             }
             .frame(width: placed.size.width, height: placed.size.height)
@@ -111,7 +121,7 @@ struct PharoGraphView: View {
         guard let placed, viewport.width > 0, viewport.height > 0 else { return }
         let margin = PharoGraphLayout.margin * 2
         let content = CGSize(width: placed.size.width + margin, height: placed.size.height + margin)
-        zoom(to: min(viewport.width / content.width, viewport.height / content.height))
+        zoom(to: min(1, min(viewport.width / content.width, viewport.height / content.height)))
         offset = CGSize(
             width: (viewport.width - placed.size.width * scale) / 2,
             height: (viewport.height - placed.size.height * scale) / 2)
@@ -131,13 +141,14 @@ struct PharoGraphView: View {
         zoomBase = scale
     }
 
-    private func drawEdge(from: CGPoint, to: CGPoint, in context: GraphicsContext) {
+    private func drawEdge(from: CGPoint, to: CGPoint, incident: Bool, in context: GraphicsContext) {
         let clipped = trim(from: from, to: to)
+        let style: GraphicsContext.Shading = incident ? .color(.accentColor) : .color(.secondary.opacity(0.55))
         var line = Path()
         line.move(to: clipped.start)
         line.addLine(to: clipped.end)
-        context.stroke(line, with: .color(.secondary.opacity(0.55)), lineWidth: 1)
-        context.fill(arrowhead(at: clipped.end, from: clipped.start), with: .color(.secondary.opacity(0.55)))
+        context.stroke(line, with: style, lineWidth: incident ? 2 : 1)
+        context.fill(arrowhead(at: clipped.end, from: clipped.start), with: style)
     }
 
     private func trim(from: CGPoint, to: CGPoint) -> (start: CGPoint, end: CGPoint) {
