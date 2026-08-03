@@ -52,20 +52,78 @@ final class PharoColumnView {
         return bar
     }
 
+    private enum PaneMode {
+        case menu
+        case collapse
+        case close
+    }
+
+    private lazy var paneButton = makePaneButton()
+    private var modifierToken: UInt?
+
     private func menuButton() -> Button {
+        let button = paneButton
+        button.onMap { [weak self] _ in
+            MainActor.assumeIsolated { self?.watchModifiers() }
+        }
+        button.onUnmap { [weak self] _ in
+            MainActor.assumeIsolated { self?.forgetModifiers() }
+        }
+        return button
+    }
+
+    private func makePaneButton() -> Button {
         let button = Button(iconName: "view-more-symbolic")
         button.add(cssClass: "flat")
         button.tooltipText = "Pane actions"
         button.marginTop = 4
         button.marginBottom = 4
         button.marginEnd = 4
-        button.onClicked { [weak self, weak button] _ in
-            MainActor.assumeIsolated {
-                guard let self, let button else { return }
-                self.presentMenu(from: button)
-            }
+        button.onClicked { [weak self] _ in
+            MainActor.assumeIsolated { self?.activatePane() }
         }
         return button
+    }
+
+    private func watchModifiers() {
+        refreshPaneButton()
+        guard modifierToken == nil else { return }
+        modifierToken = PharoModifierWatcher.subscribe { [weak self] in self?.refreshPaneButton() }
+    }
+
+    private func forgetModifiers() {
+        modifierToken.map(PharoModifierWatcher.unsubscribe)
+        modifierToken = nil
+    }
+
+    /// Holding the primary key over the pane says it will collapse; adding Shift
+    /// says it will close. With nothing held the button just opens the menu.
+    private var paneMode: PaneMode {
+        if PharoModifierWatcher.primaryHeld, PharoModifierWatcher.shiftHeld { return .close }
+        if PharoModifierWatcher.primaryHeld, !isMaximized { return .collapse }
+        return .menu
+    }
+
+    private func refreshPaneButton() {
+        switch paneMode {
+        case .menu:
+            paneButton.iconName = "view-more-symbolic"
+            paneButton.tooltipText = "Pane actions"
+        case .collapse:
+            paneButton.iconName = "window-minimize-symbolic"
+            paneButton.tooltipText = "Collapse pane"
+        case .close:
+            paneButton.iconName = "window-close-symbolic"
+            paneButton.tooltipText = "Close pane"
+        }
+    }
+
+    private func activatePane() {
+        switch paneMode {
+        case .menu: presentMenu(from: paneButton)
+        case .collapse: onCollapse()
+        case .close: onClose()
+        }
     }
 
     private func presentMenu(from anchor: Button) {
