@@ -31,6 +31,15 @@ final class PharoGraphArea {
     private var mouse = (x: 0.0, y: 0.0)
     private var dragged = (x: 0.0, y: 0.0)
     private var pinchBase = 1.0
+    private var themeToken: gulong = 0
+
+    deinit {
+        ThemeWatcher.unsubscribe(handlerID: themeToken)
+    }
+
+    private func setSource(_ ctx: Cairo.ContextRef, _ c: PharoVizColors.RGBA) {
+        ctx.setSource(red: c.r, green: c.g, blue: c.b, alpha: c.a)
+    }
 
     init(graph: PharoGraph) {
         self.graph = graph
@@ -73,6 +82,7 @@ final class PharoGraphArea {
             MainActor.assumeIsolated { self?.draw(ctx, Double(width), Double(height)) }
         }
         installGestures()
+        themeToken = ThemeWatcher.subscribe(owner: self) { $0.area.queueDraw() }
     }
 
     private func zoomButton(_ icon: String, _ tip: String, _ action: @escaping () -> Void) -> Button {
@@ -285,14 +295,16 @@ final class PharoGraphArea {
         let nodeWidth = PharoGraphLayout.nodeWidth
         let nodeHeight = PharoGraphLayout.nodeHeight
         let m = PharoVisualArea.margin
+        let palette = PharoVizColors.current
+        let brand = PharoVizColors.brand
         PharoVisualArea.setFont(ctx, size: 12)
 
         for edge in graph.edges where edge.from < solution.points.count && edge.to < solution.points.count {
             if edge.from == selected || edge.to == selected {
-                ctx.setSource(red: 0.937, green: 0.392, blue: 0.337, alpha: 0.9)
+                setSource(ctx, brand)
                 ctx.lineWidth = 2
             } else {
-                ctx.setSource(red: 0.5, green: 0.5, blue: 0.56, alpha: 0.8)
+                setSource(ctx, palette.edge)
                 ctx.lineWidth = 1
             }
             let a = solution[edge.from]
@@ -307,24 +319,24 @@ final class PharoGraphArea {
             let x = center.x + m - nodeWidth / 2
             let y = center.y + m - nodeHeight / 2
 
-            ctx.setSource(red: 0.16, green: 0.20, blue: 0.27, alpha: 1)
+            setSource(ctx, palette.nodeFill)
             ctx.rectangle(x: x, y: y, width: nodeWidth, height: nodeHeight)
             ctx.fill()
 
             if selected == index {
-                ctx.setSource(red: 0.937, green: 0.392, blue: 0.337, alpha: 1)
+                setSource(ctx, brand)
                 ctx.lineWidth = 2
             } else if hovered == index {
-                ctx.setSource(red: 0.78, green: 0.80, blue: 0.85, alpha: 1)
+                setSource(ctx, palette.borderHover)
                 ctx.lineWidth = 1.5
             } else {
-                ctx.setSource(red: 0.42, green: 0.44, blue: 0.50, alpha: 1)
+                setSource(ctx, palette.border)
                 ctx.lineWidth = 1
             }
             ctx.rectangle(x: x, y: y, width: nodeWidth, height: nodeHeight)
             ctx.stroke()
 
-            ctx.setSource(red: 0.9, green: 0.9, blue: 0.93, alpha: 1)
+            setSource(ctx, palette.nodeText)
             let label = PharoVisualArea.fit(node.label, into: nodeWidth - 12, ctx: ctx)
             label.withCString { text in
                 let extents = ctx.textExtents(text)
