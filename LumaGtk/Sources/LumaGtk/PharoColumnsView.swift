@@ -342,23 +342,35 @@ final class PharoColumnsView {
     /// downward triangle; the last one draws an edge to the expanded column that
     /// follows. Clicking a miniature expands it.
     private func collapsedStack(from start: Int, to end: Int, hasFollowingExpanded: Bool) -> Box {
-        let connectorWidth = 10
+        let gap = 8
+        let connectorWidth = 8
+        let miniatureWidth = 22
 
+        // The stack keeps a gap to the column on its left; the connector edge
+        // reaches from the square to touch the column on its right, so both
+        // seams around it read the same width.
         let stack = Box(orientation: .vertical, spacing: 6)
         stack.valign = .center
-        stack.marginStart = 8
-        stack.marginEnd = 8
+        stack.halign = .start
+        stack.marginStart = gap
 
+        // The triangle rides a slot the width of a square, centred in it, so it
+        // sits over the squares rather than over the square-plus-edge.
+        let triangleSlot = Box(orientation: .horizontal, spacing: 0)
+        triangleSlot.setSizeRequest(width: miniatureWidth, height: -1)
+        triangleSlot.halign = .start
         let triangle = triangleGlyph("\u{25BC}")
         triangle.halign = .center
-        stack.append(child: triangle)
+        triangle.hexpand = false
+        triangleSlot.append(child: triangle)
+        stack.append(child: triangleSlot)
 
         for depth in start..<end {
             let object = state.objects[depth]
             let miniature = Button()
             miniature.add(cssClass: "luma-pharo-miniature")
-            miniature.setSizeRequest(width: 22, height: 26)
-            miniature.halign = .center
+            miniature.setSizeRequest(width: miniatureWidth, height: 26)
+            miniature.halign = .start
             miniature.valign = .center
             miniature.tooltipText = "Expand \(object.className)"
             miniature.onClicked { [weak self] _ in
@@ -371,14 +383,8 @@ final class PharoColumnsView {
                 }
             }
             if hasFollowingExpanded, depth == end - 1 {
-                // A spacer the width of the connector rides on the left so the
-                // square stays centred under the triangle while the edge reaches
-                // out to the right toward the column that follows.
                 let row = Box(orientation: .horizontal, spacing: 0)
-                row.halign = .center
-                let spacer = Box(orientation: .horizontal, spacing: 0)
-                spacer.setSizeRequest(width: connectorWidth, height: 1)
-                row.append(child: spacer)
+                row.halign = .start
                 row.append(child: miniature)
                 let connector = Box(orientation: .horizontal, spacing: 0)
                 connector.add(cssClass: "luma-pharo-connector")
