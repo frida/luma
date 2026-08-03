@@ -29,6 +29,7 @@ final class PharoColumnsView {
     private var leadingStack: Box?
     private var leadingStackHalf: Double = 0
     private var columnWidth = 380
+    private let columnsInset = 12
     private var columnViews: [PharoColumnView] = []
     private var columnAnchors: [(depth: Int, widget: WidgetRef)] = []
 
@@ -58,9 +59,15 @@ final class PharoColumnsView {
         widget.hexpand = true
         widget.vexpand = true
 
+        // The columns sit inside the same inset the page keeps above its top
+        // snippet, so cards on both sides start at the same height and a scroll
+        // to the end leaves matching air past the last column.
         columns = Box(orientation: .horizontal, spacing: 0)
         columns.hexpand = true
         columns.vexpand = true
+        columns.marginTop = columnsInset
+        columns.marginBottom = columnsInset
+        columns.marginEnd = columnsInset
 
         scroll = ScrolledWindow()
         scroll.hexpand = true
@@ -106,7 +113,7 @@ final class PharoColumnsView {
         if let stack = leadingStack, let y = pointingFromY {
             arrowArea.visible = false
             stack.valign = .start
-            stack.marginTop = Int(max(0, y - leadingStackHalf))
+            stack.marginTop = Int(max(0, y - leadingStackHalf - Double(columnsInset)))
         } else {
             arrowArea.visible = pointingFromY != nil && !state.objects.isEmpty
         }
@@ -114,12 +121,16 @@ final class PharoColumnsView {
 
     private func drawArrow(_ ctx: Cairo.ContextRef, _ width: Double, _ height: Double) {
         guard let y = pointingFromY else { return }
+        drawSeamTriangle(ctx, centerX: width / 2, centerY: y)
+    }
+
+    private func drawSeamTriangle(_ ctx: Cairo.ContextRef, centerX: Double, centerY: Double) {
         let color = PharoVizColors.current.edge
         ctx.setSource(red: color.r, green: color.g, blue: color.b, alpha: 1)
-        let x = width / 2 - 4
-        ctx.moveTo(x, y - 6)
-        ctx.lineTo(x + 8, y)
-        ctx.lineTo(x, y + 6)
+        let x = centerX - 4
+        ctx.moveTo(x, centerY - 6)
+        ctx.lineTo(x + 8, centerY)
+        ctx.lineTo(x, centerY + 6)
         cairo_close_path(ctx.context_ptr)
         ctx.fill()
     }
@@ -271,15 +282,19 @@ final class PharoColumnsView {
         onChanged?()
     }
 
-    /// The triangle between two expanded columns, centred down the seam, that
-    /// marks the drill from the left column into the right.
-    private func drillArrow() -> Label {
-        let arrow = triangleGlyph("\u{25B6}")
-        arrow.vexpand = true
-        arrow.valign = .center
-        arrow.marginStart = 2
-        arrow.marginEnd = 2
-        return arrow
+    /// The triangle between two expanded columns, drawn the same size and given
+    /// the same width as the one from the snippet into the first column, so the
+    /// seams read alike wherever they fall.
+    private func drillArrow() -> DrawingArea {
+        let area = DrawingArea()
+        area.setSizeRequest(width: 22, height: -1)
+        area.vexpand = true
+        area.setDrawFunc { [weak self] _, ctx, width, height in
+            MainActor.assumeIsolated {
+                self?.drawSeamTriangle(ctx, centerX: Double(width) / 2, centerY: Double(height) / 2)
+            }
+        }
+        return area
     }
 
     private func triangleGlyph(_ glyph: String) -> Label {
@@ -327,18 +342,24 @@ final class PharoColumnsView {
     /// downward triangle; the last one draws an edge to the expanded column that
     /// follows. Clicking a miniature expands it.
     private func collapsedStack(from start: Int, to end: Int, hasFollowingExpanded: Bool) -> Box {
+        let connectorWidth = 10
+
         let stack = Box(orientation: .vertical, spacing: 6)
         stack.valign = .center
         stack.marginStart = 8
         stack.marginEnd = 8
 
-        stack.append(child: triangleGlyph("\u{25BC}"))
+        let triangle = triangleGlyph("\u{25BC}")
+        triangle.halign = .center
+        stack.append(child: triangle)
 
         for depth in start..<end {
             let object = state.objects[depth]
             let miniature = Button()
             miniature.add(cssClass: "luma-pharo-miniature")
             miniature.setSizeRequest(width: 22, height: 26)
+            miniature.halign = .center
+            miniature.valign = .center
             miniature.tooltipText = "Expand \(object.className)"
             miniature.onClicked { [weak self] _ in
                 MainActor.assumeIsolated {
@@ -350,12 +371,19 @@ final class PharoColumnsView {
                 }
             }
             if hasFollowingExpanded, depth == end - 1 {
+                // A spacer the width of the connector rides on the left so the
+                // square stays centred under the triangle while the edge reaches
+                // out to the right toward the column that follows.
                 let row = Box(orientation: .horizontal, spacing: 0)
+                row.halign = .center
+                let spacer = Box(orientation: .horizontal, spacing: 0)
+                spacer.setSizeRequest(width: connectorWidth, height: 1)
+                row.append(child: spacer)
                 row.append(child: miniature)
                 let connector = Box(orientation: .horizontal, spacing: 0)
                 connector.add(cssClass: "luma-pharo-connector")
                 connector.valign = .center
-                connector.setSizeRequest(width: 10, height: 2)
+                connector.setSizeRequest(width: connectorWidth, height: 2)
                 row.append(child: connector)
                 stack.append(child: row)
             } else {

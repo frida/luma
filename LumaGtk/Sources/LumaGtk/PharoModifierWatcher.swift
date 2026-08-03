@@ -27,6 +27,19 @@ enum PharoModifierWatcher {
             return false
         }
         window.install(controller: keys)
+
+        // macOS drops the release of Command now and then, so a held state can
+        // linger; whenever focus leaves the window -- opening a menu, switching
+        // apps -- take that as the keys being let go.
+        let focus = EventControllerFocus()
+        focus.onLeave { _ in
+            MainActor.assumeIsolated { PharoModifierWatcher.reset() }
+        }
+        window.install(controller: focus)
+    }
+
+    static func reset() {
+        update(Gdk.ModifierType(rawValue: 0))
     }
 
     static func subscribe(_ onChange: @escaping () -> Void) -> UInt {

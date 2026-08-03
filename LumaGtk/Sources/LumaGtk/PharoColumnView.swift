@@ -122,9 +122,14 @@ final class PharoColumnView {
 
     private func activatePane() {
         switch paneMode {
-        case .menu: presentMenu(from: paneButton)
-        case .collapse: onCollapse()
-        case .close: onClose()
+        case .menu:
+            presentMenu(from: paneButton)
+        case .collapse:
+            onCollapse()
+            PharoModifierWatcher.reset()
+        case .close:
+            onClose()
+            PharoModifierWatcher.reset()
         }
     }
 
