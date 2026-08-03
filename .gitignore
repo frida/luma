@@ -15,3 +15,6 @@ LumaGtk/Sources/LumaGtk/luma.res
 /Luma.xctestplan
 LumaUITests/Resources/frida-gadget.dylib
 *.profraw
+
+# Pharo VM crash dump written on a fatal VM error
+LumaGtk/crash.dmp
