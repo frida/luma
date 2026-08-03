@@ -86,6 +86,7 @@ final class PharoSnippetCard {
 
         widget = Box(orientation: .horizontal, spacing: 0)
         widget.add(cssClass: "card")
+        widget.overflow = .hidden
         widget.valign = .start
         widget.vexpand = false
         widget.append(child: accent)
@@ -142,7 +143,9 @@ final class PharoSnippetCard {
 
     private func populateActions() {
         actions.append(child: iconButton("media-playback-start-symbolic", "Evaluate and inspect (Ctrl+Return)") { [weak self] in self?.onRun?(.inspect) })
-        actions.append(child: iconButton("media-seek-forward-symbolic", "Evaluate (Ctrl+D)") { [weak self] in self?.onRun?(.doIt) })
+        let evaluate = iconButton("media-playback-start-symbolic", "Evaluate (Ctrl+D)") { [weak self] in self?.onRun?(.doIt) }
+        evaluate.add(cssClass: "dim-label")
+        actions.append(child: evaluate)
 
         let spacer = Box(orientation: .horizontal, spacing: 0)
         spacer.hexpand = true
