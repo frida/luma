@@ -46,12 +46,13 @@ final class PharoGraphArea {
         area.focusable = true
         area.canFocus = true
 
-        let controls = Box(orientation: .vertical, spacing: 4)
+        let controls = Box(orientation: .horizontal, spacing: 0)
+        controls.add(cssClass: "linked")
+        controls.add(cssClass: "osd")
         controls.halign = .end
         controls.valign = .end
         controls.marginEnd = 10
         controls.marginBottom = 10
-        controls.canTarget = true
 
         let overlay = Overlay()
         overlay.hexpand = true
@@ -64,9 +65,9 @@ final class PharoGraphArea {
         widget.vexpand = true
         widget.append(child: overlay)
 
-        controls.append(child: zoomButton("zoom-in-symbolic", "Zoom in") { [weak self] in self?.zoomAroundCenter(1.25) })
-        controls.append(child: zoomButton("zoom-fit-best-symbolic", "Fit") { [weak self] in self?.fit(); self?.area.queueDraw() })
         controls.append(child: zoomButton("zoom-out-symbolic", "Zoom out") { [weak self] in self?.zoomAroundCenter(0.8) })
+        controls.append(child: zoomButton("zoom-fit-best-symbolic", "Fit") { [weak self] in self?.fit(); self?.area.queueDraw() })
+        controls.append(child: zoomButton("zoom-in-symbolic", "Zoom in") { [weak self] in self?.zoomAroundCenter(1.25) })
 
         area.setDrawFunc { [weak self] _, ctx, width, height in
             MainActor.assumeIsolated { self?.draw(ctx, Double(width), Double(height)) }
@@ -76,8 +77,6 @@ final class PharoGraphArea {
 
     private func zoomButton(_ icon: String, _ tip: String, _ action: @escaping () -> Void) -> Button {
         let button = Button(iconName: icon)
-        button.add(cssClass: "circular")
-        button.add(cssClass: "osd")
         button.tooltipText = tip
         button.onClicked { _ in MainActor.assumeIsolated { action() } }
         return button
