@@ -338,6 +338,10 @@ final class PharoSnippetCard {
             MainActor.assumeIsolated {
                 guard let self else { return false }
                 if self.completion.handleKey(keyval) { return true }
+                if Int32(keyval) == Gdk.keyEscape {
+                    self.completion.request()
+                    return true
+                }
                 guard state.contains(.controlMask) else { return false }
                 switch keyval {
                 case 0xFF0D, 0xFF8D:

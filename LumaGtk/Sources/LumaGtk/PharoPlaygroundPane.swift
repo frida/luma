@@ -116,6 +116,7 @@ final class PharoPlaygroundPane {
         let hasSnippets = !snippets.isEmpty
         overviewBar.widget.visible = hasSnippets
         contentSeparator.visible = hasSnippets
+        inspector.widget.visible = hasSnippets
         if !hasSnippets, !inspector.isEmpty {
             inspector.clearAll()
         }

@@ -41,6 +41,8 @@ final class PharoColumnView {
         title.xalign = 0
         title.hexpand = true
         title.wrap = true
+        title.lines = 2
+        title.ellipsize = .end
         title.marginStart = 8
         title.marginTop = 6
         title.marginBottom = 6
