@@ -6,113 +6,78 @@ import GtkSource
 import LumaCore
 import SwiftyPharo
 
-/// A first Smalltalk surface for the GTK frontend: a snippet to edit, a button
-/// to run it, and the result opened in the moldable inspector below. It drives
-/// the same PharoRuntime the macOS app does.
 enum PharoRunMode {
     case doIt
     case printIt
     case inspect
 }
 
+/// The Smalltalk playground: a resizable page of snippet cards on the left and
+/// the moldable inspector's columns on the right, drilling into what a snippet
+/// produces. The page and its snippets are kept with the project.
 @MainActor
 final class PharoPlaygroundPane {
     let widget: Box
 
     private weak var engine: Engine?
-    private let editor: GtkSource.View
-    private let sourceBuffer: GtkSource.Buffer
-    private let runButton: Button
-    private let formatButton: Button
     private let inspector: PharoColumnsView
-    private var completion: PharoCompletionController!
-    private var isEvaluating = false
+    private let paned: Paned
+    private let pageBox: Box
+
+    private var snippets: [PharoPlaygroundSnippet]
+    private var cards: [UUID: PharoSnippetCard] = [:]
+    private var liveResults: [UUID: PharoObject] = [:]
+    private var evaluating: Set<UUID> = []
+
+    private var smalltalkLanguage: GtkSource.LanguageRef?
+    private var lumaScheme: GtkSource.StyleSchemeRef?
+
+    private let defaultPageWidth = 420
 
     init(engine: Engine) {
         self.engine = engine
+        snippets = engine.pharoSnippets
 
         widget = Box(orientation: .horizontal, spacing: 0)
         widget.hexpand = true
         widget.vexpand = true
 
-        sourceBuffer = GtkSource.Buffer(table: Gtk.TextTagTable?.none)
-        editor = GtkSource.View(buffer: sourceBuffer)
-        editor.monospace = true
-        editor.showLineNumbers = false
-        editor.highlightCurrentLine = false
-        editor.leftMargin = 10
-        editor.rightMargin = 10
-        editor.topMargin = 8
-        editor.bottomMargin = 8
-        editor.hexpand = true
-        editor.vexpand = true
+        pageBox = Box(orientation: .vertical, spacing: 12)
+        pageBox.marginTop = 12
+        pageBox.marginBottom = 12
+        pageBox.marginStart = 12
+        pageBox.marginEnd = 12
 
-        let editorScroll = ScrolledWindow()
-        editorScroll.setPolicy(hscrollbarPolicy: .automatic, vscrollbarPolicy: .automatic)
-        editorScroll.hexpand = true
-        editorScroll.vexpand = false
-        editorScroll.setSizeRequest(width: -1, height: 132)
-        editorScroll.set(child: editor)
-
-        runButton = Button(iconName: "media-playback-start-symbolic")
-        runButton.add(cssClass: "flat")
-        runButton.add(cssClass: "circular")
-        runButton.tooltipText = "Inspect (Ctrl+Return) · Do it (Ctrl+D) · Print it (Ctrl+P)"
-
-        formatButton = Button(iconName: "format-justify-left-symbolic")
-        formatButton.add(cssClass: "flat")
-        formatButton.add(cssClass: "circular")
-        formatButton.tooltipText = "Format (Ctrl+Shift+F)"
-
-        let toolbar = Box(orientation: .horizontal, spacing: 2)
-        toolbar.halign = .end
-        toolbar.marginTop = 4
-        toolbar.marginBottom = 4
-        toolbar.marginStart = 6
-        toolbar.marginEnd = 6
-        toolbar.append(child: runButton)
-        toolbar.append(child: formatButton)
-
-        let card = Box(orientation: .vertical, spacing: 0)
-        card.add(cssClass: "card")
-        card.valign = .start
-        card.halign = .start
-        card.hexpand = false
-        card.vexpand = false
-        card.setSizeRequest(width: 340, height: -1)
-        card.marginTop = 12
-        card.marginBottom = 12
-        card.marginStart = 12
-        card.marginEnd = 12
-        card.append(child: editorScroll)
-        card.append(child: Separator(orientation: .horizontal))
-        card.append(child: toolbar)
+        let pageScroll = ScrolledWindow()
+        pageScroll.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
+        pageScroll.hexpand = true
+        pageScroll.vexpand = true
+        pageScroll.set(child: pageBox)
 
         inspector = PharoColumnsView(runtime: PharoRuntime.shared)
 
-        widget.append(child: card)
-        widget.append(child: Separator(orientation: .vertical))
-        widget.append(child: inspector.widget)
+        paned = Paned(orientation: .horizontal)
+        paned.hexpand = true
+        paned.vexpand = true
+        paned.resizeStartChild = false
+        paned.resizeEndChild = true
+        paned.shrinkStartChild = false
+        paned.shrinkEndChild = false
+        paned.position = Int(engine.pharoPageWidth ?? Double(defaultPageWidth))
+        paned.startChild = WidgetRef(pageScroll)
+        paned.endChild = WidgetRef(inspector.widget)
+        widget.append(child: paned)
 
-        runButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.run(.inspect) }
+        paned.onNotifyPosition { [weak self] paned, _ in
+            MainActor.assumeIsolated { self?.engine?.setPharoPageWidth(Double(paned.position)) }
         }
-        formatButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.format() }
-        }
-        completion = PharoCompletionController(editor: editor, buffer: sourceBuffer) { [weak self] source, position in
-            guard let self, let engine = self.engine else { return nil }
-            try? await PharoRuntime.shared.startPlayground(for: engine)
-            return try? await PharoRuntime.shared.completions(for: source, at: position)
-        }
-        installShortcuts()
-        highlightSmalltalk()
+
+        resolveHighlighting()
+        rebuildPage()
         inspector.showMessage("Evaluate a snippet with Ctrl+Return to open its result here.")
     }
 
-    /// Colour the source through GtkSourceView's own highlighter, from the
-    /// Smalltalk language and Luma scheme bundled beside the app.
-    private func highlightSmalltalk() {
+    private func resolveHighlighting() {
         guard let specs = Bundle.module.url(forResource: "smalltalk", withExtension: "lang", subdirectory: "pharo")?
             .deletingLastPathComponent().path
         else { return }
@@ -121,79 +86,181 @@ final class PharoPlaygroundPane {
         let schemes = GtkSource.StyleSchemeManager()
         languages.appendSearchPath(path: specs)
         schemes.appendSearchPath(path: specs)
-
-        sourceBuffer.language = languages.getLanguage(id: "smalltalk")
-        sourceBuffer.styleScheme = schemes.getScheme(schemeId: "luma")
-        sourceBuffer.highlightSyntax = true
+        smalltalkLanguage = languages.getLanguage(id: "smalltalk")
+        lumaScheme = schemes.getScheme(schemeId: "luma")
     }
 
-    private func installShortcuts() {
-        let keys = EventControllerKey()
-        keys.propagationPhase = .capture
-        keys.onKeyPressed { [weak self] _, keyval, _, state in
-            MainActor.assumeIsolated {
-                guard let self else { return false }
-                if self.completion.handleKey(keyval) { return true }
-                guard state.contains(.controlMask) else { return false }
-                switch keyval {
-                case 0xFF0D, 0xFF8D:
-                    self.run(.inspect)
-                    return true
-                case 0x0064, 0x0044:
-                    self.run(.doIt)
-                    return true
-                case 0x0070, 0x0050:
-                    self.run(.printIt)
-                    return true
-                case 0x0020, 0xFF80:
-                    self.completion.request()
-                    return true
-                case 0x0066, 0x0046:
-                    guard state.contains(.shiftMask) else { return false }
-                    self.format()
-                    return true
-                case 0x006D, 0x004D:
-                    self.browse(.implementors)
-                    return true
-                case 0x006E, 0x004E:
-                    self.browse(.senders)
-                    return true
-                default:
-                    return false
-                }
-            }
+    private func applyHighlighting(to buffer: GtkSource.Buffer) {
+        buffer.language = smalltalkLanguage
+        buffer.styleScheme = lumaScheme
+        buffer.highlightSyntax = true
+    }
+
+    private func rebuildPage() {
+        clear(pageBox)
+
+        guard !snippets.isEmpty else {
+            pruneCards()
+            pageBox.append(child: emptyState())
+            return
         }
-        editor.install(controller: keys)
+
+        for snippet in snippets {
+            let card = cards[snippet.id] ?? makeCard(for: snippet)
+            cards[snippet.id] = card
+            pageBox.append(child: card.widget)
+        }
+        pruneCards()
+        pageBox.append(child: addSnippetButton())
     }
 
-    private func format() {
-        guard let engine else { return }
-        let source = editorText()
-        guard !source.isEmpty else { return }
-        Task { @MainActor in
-            try? await PharoRuntime.shared.startPlayground(for: engine)
-            if let formatted = try? await PharoRuntime.shared.format(source: source) {
-                sourceBuffer.set(text: formatted, len: Int(formatted.utf8.count))
-            }
+    private func pruneCards() {
+        let live = Set(snippets.map(\.id))
+        for id in cards.keys where !live.contains(id) {
+            cards[id] = nil
+            liveResults[id] = nil
         }
     }
 
-    private func run(_ mode: PharoRunMode) {
-        guard !isEvaluating, let engine else { return }
-        let source = editorText()
+    private func makeCard(for snippet: PharoPlaygroundSnippet) -> PharoSnippetCard {
+        let id = snippet.id
+        let card = PharoSnippetCard(
+            id: id,
+            source: snippet.source,
+            highlight: { [weak self] buffer in self?.applyHighlighting(to: buffer) },
+            completion: { [weak self] source, position in
+                guard let self, let engine = self.engine else { return nil }
+                try? await PharoRuntime.shared.startPlayground(for: engine)
+                return try? await PharoRuntime.shared.completions(for: source, at: position)
+            }
+        )
+        card.onRun = { [weak self] mode in self?.run(id, mode) }
+        card.onFormat = { [weak self] in self?.format(id) }
+        card.onBrowse = { [weak self] kind in self?.browse(id, kind) }
+        card.onSourceChanged = { [weak self] source in self?.updateSource(id, source) }
+        card.onReopenResult = { [weak self] in self?.reopen(id) }
+        card.onMoveUp = { [weak self] in self?.moveUp(id) }
+        card.onMoveDown = { [weak self] in self?.moveDown(id) }
+        card.onDuplicate = { [weak self] in self?.duplicate(id) }
+        card.onRemove = { [weak self] in self?.removeSnippet(id) }
+        card.setResultAvailable(liveResults[id] != nil)
+        return card
+    }
+
+    private func addSnippetButton() -> Button {
+        let button = Button()
+        button.add(cssClass: "flat")
+        button.halign = .start
+        let content = Box(orientation: .horizontal, spacing: 6)
+        content.append(child: Image(iconName: "list-add-symbolic"))
+        content.append(child: Label(str: "Add Snippet"))
+        button.set(child: content)
+        button.onClicked { [weak self] _ in
+            MainActor.assumeIsolated { self?.addSnippet() }
+        }
+        return button
+    }
+
+    private func emptyState() -> Box {
+        let box = Box(orientation: .vertical, spacing: 16)
+        box.halign = .center
+        box.valign = .center
+        box.hexpand = true
+        box.vexpand = true
+        box.marginTop = 48
+        box.marginStart = 24
+        box.marginEnd = 24
+
+        let icon = Image(iconName: "utilities-terminal-symbolic")
+        icon.pixelSize = 48
+        icon.add(cssClass: "dim-label")
+
+        let title = Label(str: "Playground")
+        title.add(cssClass: "title-2")
+
+        let subtitle = Label(str: "Slice, dice, and visualize your project's data with Pharo.")
+        subtitle.add(cssClass: "dim-label")
+        subtitle.wrap = true
+        subtitle.justify = .center
+        subtitle.maxWidthChars = 32
+
+        let button = Button(label: "New Snippet")
+        button.add(cssClass: "suggested-action")
+        button.add(cssClass: "pill")
+        button.halign = .center
+        button.marginTop = 8
+        button.onClicked { [weak self] _ in
+            MainActor.assumeIsolated { self?.addSnippet() }
+        }
+
+        box.append(child: icon)
+        box.append(child: title)
+        box.append(child: subtitle)
+        box.append(child: button)
+        return box
+    }
+
+    private func addSnippet() {
+        let added = PharoPlaygroundSnippet(source: "")
+        snippets.append(added)
+        persist()
+        rebuildPage()
+        cards[added.id]?.focusEditor()
+    }
+
+    private func duplicate(_ id: UUID) {
+        guard let index = snippets.firstIndex(where: { $0.id == id }) else { return }
+        let copy = PharoPlaygroundSnippet(source: snippets[index].source)
+        snippets.insert(copy, at: index + 1)
+        persist()
+        rebuildPage()
+        cards[copy.id]?.focusEditor()
+    }
+
+    private func removeSnippet(_ id: UUID) {
+        snippets.removeAll { $0.id == id }
+        persist()
+        rebuildPage()
+    }
+
+    private func moveUp(_ id: UUID) {
+        guard let index = snippets.firstIndex(where: { $0.id == id }), index > 0 else { return }
+        snippets.swapAt(index, index - 1)
+        persist()
+        rebuildPage()
+    }
+
+    private func moveDown(_ id: UUID) {
+        guard let index = snippets.firstIndex(where: { $0.id == id }), index < snippets.count - 1 else { return }
+        snippets.swapAt(index, index + 1)
+        persist()
+        rebuildPage()
+    }
+
+    private func updateSource(_ id: UUID, _ source: String) {
+        guard let index = snippets.firstIndex(where: { $0.id == id }), snippets[index].source != source else { return }
+        snippets[index].source = source
+        persist()
+    }
+
+    private func persist() {
+        engine?.setPharoSnippets(snippets)
+    }
+
+    private func run(_ id: UUID, _ mode: PharoRunMode) {
+        guard let engine, let card = cards[id], !evaluating.contains(id) else { return }
+        let source = card.source
         guard !source.isEmpty else { return }
-        isEvaluating = true
-        runButton.sensitive = false
+        evaluating.insert(id)
         inspector.showMessage("Evaluating…")
 
         Task { @MainActor in
-            defer {
-                isEvaluating = false
-                runButton.sensitive = true
-            }
+            defer { evaluating.remove(id) }
             do {
                 try await PharoRuntime.shared.startPlayground(for: engine)
                 let produced = try await PharoRuntime.shared.evaluate(source)
+                liveResults[id] = produced
+                cards[id]?.setResultAvailable(true)
                 switch mode {
                 case .doIt:
                     inspector.showMessage("Done.")
@@ -208,11 +275,29 @@ final class PharoPlaygroundPane {
         }
     }
 
-    private func browse(_ kind: PharoBrowseKind) {
-        guard let engine else { return }
-        let source = editorText()
+    private func reopen(_ id: UUID) {
+        guard let object = liveResults[id] else { return }
+        inspector.present(object)
+    }
+
+    private func format(_ id: UUID) {
+        guard let engine, let card = cards[id] else { return }
+        let source = card.source
         guard !source.isEmpty else { return }
-        let position = cursorOffset()
+        Task { @MainActor in
+            try? await PharoRuntime.shared.startPlayground(for: engine)
+            if let formatted = try? await PharoRuntime.shared.format(source: source), formatted != card.source {
+                card.setSource(formatted)
+                updateSource(id, formatted)
+            }
+        }
+    }
+
+    private func browse(_ id: UUID, _ kind: PharoBrowseKind) {
+        guard let engine, let card = cards[id] else { return }
+        let source = card.source
+        guard !source.isEmpty else { return }
+        let position = card.cursorOffset()
         inspector.showMessage("Browsing \(kind.rawValue)…")
         Task { @MainActor in
             do {
@@ -229,15 +314,9 @@ final class PharoPlaygroundPane {
         }
     }
 
-    private func editorText() -> String {
-        sourceBuffer.text
-    }
-
-    private func cursorOffset() -> Int {
-        let iterStorage = UnsafeMutablePointer<GtkTextIter>.allocate(capacity: 1)
-        defer { iterStorage.deallocate() }
-        let iter = TextIter(iterStorage)
-        sourceBuffer.getIterAtMark(iter: iter, mark: sourceBuffer.getInsert())
-        return Int(iter.offset)
+    private func clear(_ box: Box) {
+        while let existing = box.getFirstChild() {
+            box.remove(child: existing)
+        }
     }
 }
