@@ -1,4 +1,6 @@
+import CCairo
 import CGtk
+import Cairo
 import Foundation
 import Gdk
 import Gtk
@@ -33,14 +35,15 @@ final class PharoInlineMarks {
     private final class Mark {
         let id: String
         let kind: Kind
-        let button: Button
+        let area: DrawingArea
         let anchor: TextChildAnchor
         var body: Body?
+        var hovered = false
 
-        init(id: String, kind: Kind, button: Button, anchor: TextChildAnchor) {
+        init(id: String, kind: Kind, area: DrawingArea, anchor: TextChildAnchor) {
             self.id = id
             self.kind = kind
-            self.button = button
+            self.area = area
             self.anchor = anchor
         }
     }
@@ -257,15 +260,42 @@ final class PharoInlineMarks {
         }
         guard let anchor else { return }
 
-        let button = triangleButton()
-        let mark = Mark(id: id, kind: kind, button: button, anchor: anchor)
-        button.onClicked { [weak self, weak mark] _ in
+        let area = DrawingArea()
+        area.setSizeRequest(width: 15, height: 16)
+        area.valign = .center
+        area.tooltipText = "Open"
+        let mark = Mark(id: id, kind: kind, area: area, anchor: anchor)
+
+        area.setDrawFunc { [weak mark] _, ctx, width, height in
+            MainActor.assumeIsolated {
+                guard let mark else { return }
+                self.drawMark(ctx, Double(width), Double(height), open: mark.body != nil, hovered: mark.hovered)
+            }
+        }
+        let click = GestureClick()
+        click.onReleased { [weak self, weak mark] _, _, _, _ in
             MainActor.assumeIsolated {
                 guard let self, let mark else { return }
                 self.toggle(mark)
             }
         }
-        editor.addChildAtAnchor(child: button, anchor: anchor)
+        area.install(controller: click)
+        let motion = EventControllerMotion()
+        motion.onEnter { [weak mark] _, _, _ in
+            MainActor.assumeIsolated {
+                mark?.hovered = true
+                mark?.area.queueDraw()
+            }
+        }
+        motion.onLeave { [weak mark] _ in
+            MainActor.assumeIsolated {
+                mark?.hovered = false
+                mark?.area.queueDraw()
+            }
+        }
+        area.install(controller: motion)
+
+        editor.addChildAtAnchor(child: area, anchor: anchor)
         marks[id] = mark
     }
 
@@ -274,17 +304,37 @@ final class PharoInlineMarks {
         deleteAnchorCharacter(mark.anchor)
     }
 
-    private func triangleButton() -> Button {
-        let button = Button()
-        button.add(cssClass: "flat")
-        button.add(cssClass: "luma-pharo-mark")
-        button.valign = .center
-        button.tooltipText = "Open"
-        let arrow = Label(str: "\u{25B8}")
-        arrow.add(cssClass: "dim-label")
-        arrow.add(cssClass: "caption")
-        button.set(child: arrow)
-        return button
+    /// The circled chevron the SwiftUI editor draws by an open reference: an
+    /// outlined ring with a right chevron at rest, a filled brand ring with a
+    /// down chevron once its body is open, and the brand tint under the pointer.
+    private func drawMark(_ ctx: Cairo.ContextRef, _ width: Double, _ height: Double, open: Bool, hovered: Bool) {
+        let palette = PharoVizColors.current
+        let centerX = width / 2
+        let centerY = height / 2
+        let radius = 5.5
+        let accent = open || hovered
+        let ring = accent ? PharoVizColors.brand : palette.label
+        ctx.lineWidth = 1.2
+
+        if open {
+            ctx.setSource(red: ring.r, green: ring.g, blue: ring.b, alpha: 1)
+            cairo_arc(ctx.context_ptr, centerX, centerY, radius, 0, 2 * Double.pi)
+            ctx.fill()
+            let mark = palette.nodeFill
+            ctx.setSource(red: mark.r, green: mark.g, blue: mark.b, alpha: 1)
+            ctx.moveTo(centerX - 2.4, centerY - 1.2)
+            ctx.lineTo(centerX, centerY + 1.6)
+            ctx.lineTo(centerX + 2.4, centerY - 1.2)
+            ctx.stroke()
+        } else {
+            ctx.setSource(red: ring.r, green: ring.g, blue: ring.b, alpha: accent ? 1 : 0.55)
+            cairo_arc(ctx.context_ptr, centerX, centerY, radius, 0, 2 * Double.pi)
+            ctx.stroke()
+            ctx.moveTo(centerX - 1.2, centerY - 2.4)
+            ctx.lineTo(centerX + 1.6, centerY)
+            ctx.lineTo(centerX - 1.2, centerY + 2.4)
+            ctx.stroke()
+        }
     }
 
     // MARK: - Opening and closing a body
@@ -400,6 +450,7 @@ final class PharoInlineMarks {
         sizeBody(widget)
         editor.addChildAtAnchor(child: widget, anchor: anchor)
         mark.body = Body(widget: widget, anchor: anchor)
+        mark.area.queueDraw()
     }
 
     /// An anchored widget keeps to its own size rather than the text's, so a body
@@ -419,6 +470,7 @@ final class PharoInlineMarks {
     private func close(_ mark: Mark) {
         guard let body = mark.body else { return }
         mark.body = nil
+        mark.area.queueDraw()
         classColumns[ObjectIdentifier(body.widget)] = nil
 
         applying = true
