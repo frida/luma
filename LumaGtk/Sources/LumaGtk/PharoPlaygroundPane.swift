@@ -203,17 +203,21 @@ final class PharoPlaygroundPane {
     }
 
     private func emptyState() -> Box {
-        let box = Box(orientation: .vertical, spacing: 16)
+        let box = Box(orientation: .vertical, spacing: 24)
         box.halign = .center
         box.valign = .center
         box.hexpand = true
         box.vexpand = true
-        box.marginTop = 48
+        box.marginTop = 24
+        box.marginBottom = 24
         box.marginStart = 24
         box.marginEnd = 24
 
+        let header = Box(orientation: .vertical, spacing: 8)
+        header.halign = .center
+
         let icon = Image(iconName: "utilities-terminal-symbolic")
-        icon.pixelSize = 48
+        icon.pixelSize = 40
         icon.add(cssClass: "dim-label")
 
         let title = Label(str: "Playground")
@@ -223,22 +227,64 @@ final class PharoPlaygroundPane {
         subtitle.add(cssClass: "dim-label")
         subtitle.wrap = true
         subtitle.justify = .center
-        subtitle.maxWidthChars = 32
+        subtitle.maxWidthChars = 40
 
-        let button = Button(label: "New Snippet")
+        header.append(child: icon)
+        header.append(child: title)
+        header.append(child: subtitle)
+
+        let button = Button()
         button.add(cssClass: "suggested-action")
         button.add(cssClass: "pill")
         button.halign = .center
-        button.marginTop = 8
+        let buttonContent = Box(orientation: .horizontal, spacing: 6)
+        buttonContent.append(child: Image(iconName: "list-add-symbolic"))
+        buttonContent.append(child: Label(str: "New Snippet"))
+        button.set(child: buttonContent)
         button.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.addSnippet() }
         }
 
-        box.append(child: icon)
-        box.append(child: title)
-        box.append(child: subtitle)
+        box.append(child: header)
+        box.append(child: tips())
         box.append(child: button)
         return box
+    }
+
+    private func tips() -> Box {
+        let lines = [
+            "Type an expression and press \u{2318}D to evaluate it, or \u{2318}P to print the result beside it.",
+            "Press \u{2318}G to evaluate and open the result beside the page; double-click a row to drill in.",
+            "Press \u{2318}\u{21E7}F to reformat the snippet the way the image lays out code.",
+            "Put the cursor on a message and press \u{2318}M for its implementors, \u{2318}N for its senders.",
+            "Paint a graph: Mondrian new nodes with: myThings; edges connectTo: #next; layout circle.",
+            "Script your own views, or export what you find to a file.",
+            "Try LumaProject events, or LumaProject sessions.",
+        ]
+
+        let list = Box(orientation: .vertical, spacing: 8)
+        list.halign = .center
+        for (index, text) in lines.enumerated() {
+            let row = Box(orientation: .horizontal, spacing: 8)
+            row.valign = .start
+
+            let number = Label(str: "\(index + 1).")
+            number.add(cssClass: "dim-label")
+            number.add(cssClass: "monospace")
+            number.xalign = 1
+            number.valign = .start
+            number.setSizeRequest(width: 18, height: -1)
+
+            let body = Label(str: text)
+            body.wrap = true
+            body.xalign = 0
+            body.maxWidthChars = 52
+
+            row.append(child: number)
+            row.append(child: body)
+            list.append(child: row)
+        }
+        return list
     }
 
     private func addSnippet() {
