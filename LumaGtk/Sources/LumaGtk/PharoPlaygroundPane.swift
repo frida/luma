@@ -21,6 +21,8 @@ final class PharoPlaygroundPane {
 
     private weak var engine: Engine?
     private let inspector: PharoColumnsView
+    private let overviewBar = PharoOverviewBar()
+    private let contentSeparator = Separator(orientation: .horizontal)
     private let paned: Paned
     private let pageBox: Box
 
@@ -39,7 +41,7 @@ final class PharoPlaygroundPane {
         self.engine = engine
         snippets = engine.pharoSnippets
 
-        widget = Box(orientation: .horizontal, spacing: 0)
+        widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
         widget.vexpand = true
 
@@ -67,15 +69,53 @@ final class PharoPlaygroundPane {
         paned.position = Int(engine.pharoPageWidth ?? Double(defaultPageWidth))
         paned.startChild = WidgetRef(pageScroll)
         paned.endChild = WidgetRef(inspector.widget)
+
+        widget.append(child: overviewBar.widget)
+        widget.append(child: contentSeparator)
         widget.append(child: paned)
 
         paned.onNotifyPosition { [weak self] paned, _ in
             MainActor.assumeIsolated { self?.engine?.setPharoPageWidth(Double(paned.position)) }
         }
 
+        configureOverviewBar()
+        inspector.onChanged = { [weak self] in self?.updateInspection() }
+        inspector.contentAdjustment?.onValueChanged { [weak self] _ in
+            MainActor.assumeIsolated { self?.overviewBar.refresh() }
+        }
+
         resolveHighlighting()
         rebuildPage()
-        inspector.showMessage("Evaluate a snippet with Ctrl+Return to open its result here.")
+        updateInspection()
+    }
+
+    /// The strip stands over the whole page: a square for the snippets, then one
+    /// per inspector column, with the current one drawn brightest.
+    private func configureOverviewBar() {
+        overviewBar.slotCount = { [weak self] in 1 + (self?.inspector.columnCount ?? 0) }
+        overviewBar.isCurrent = { [weak self] slot in
+            guard let self else { return false }
+            return slot == 0 ? self.inspector.shownDepth == nil : self.inspector.shownDepth == slot - 1
+        }
+        overviewBar.tooltip = { [weak self] slot in
+            guard let self else { return "" }
+            return slot == 0 ? "Snippets" : self.inspector.printString(at: slot - 1)
+        }
+        overviewBar.activate = { [weak self] slot in
+            guard let self else { return }
+            if slot == 0 { self.inspector.focusPage() } else { self.inspector.reveal(depth: slot - 1) }
+        }
+        overviewBar.adjustment = { [weak self] in self?.inspector.contentAdjustment }
+    }
+
+    /// The inspectors and their strip show only while there is something to
+    /// inspect; otherwise the snippets page has the whole width to itself.
+    private func updateInspection() {
+        let inspecting = !inspector.isEmpty
+        overviewBar.widget.visible = inspecting
+        contentSeparator.visible = inspecting
+        inspector.widget.visible = inspecting
+        if inspecting { overviewBar.reload() }
     }
 
     private func resolveHighlighting() {
@@ -248,7 +288,6 @@ final class PharoPlaygroundPane {
         let source = card.source
         guard !source.isEmpty else { return }
         evaluating.insert(id)
-        inspector.showMessage("Evaluating…")
 
         Task { @MainActor in
             defer { evaluating.remove(id) }
@@ -258,15 +297,16 @@ final class PharoPlaygroundPane {
                 cards[id]?.flashOutcome(success: true)
                 switch mode {
                 case .doIt:
-                    inspector.showMessage("Done.")
+                    cards[id]?.showResult(nil, isError: false)
                 case .printIt:
-                    inspector.showMessage(produced.printString)
+                    cards[id]?.showResult(produced.printString, isError: false)
                 case .inspect:
+                    cards[id]?.showResult(nil, isError: false)
                     inspector.present(produced)
                 }
             } catch {
                 cards[id]?.flashOutcome(success: false)
-                inspector.showMessage(error.localizedDescription)
+                cards[id]?.showResult(error.localizedDescription, isError: true)
             }
         }
     }
@@ -289,18 +329,18 @@ final class PharoPlaygroundPane {
         let source = card.source
         guard !source.isEmpty else { return }
         let position = card.cursorOffset()
-        inspector.showMessage("Browsing \(kind.rawValue)…")
         Task { @MainActor in
             do {
                 try await PharoRuntime.shared.startPlayground(for: engine)
                 let found = try await PharoRuntime.shared.browse(kind, source: source, at: position)
                 if let result = found.result {
+                    cards[id]?.showResult(nil, isError: false)
                     inspector.present(result)
                 } else {
-                    inspector.showMessage("No \(kind.rawValue) for the selector at the cursor.")
+                    cards[id]?.showResult("No \(kind.rawValue) for the selector at the cursor.", isError: true)
                 }
             } catch {
-                inspector.showMessage(error.localizedDescription)
+                cards[id]?.showResult(error.localizedDescription, isError: true)
             }
         }
     }

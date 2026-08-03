@@ -30,6 +30,8 @@ final class PharoSnippetCard {
     private let buffer: GtkSource.Buffer
     private let accent: DrawingArea
     private let actions: Box
+    private let resultRow: Box
+    private let resultLabel: Label
     private var completion: PharoCompletionController!
 
     private var suppressChange = false
@@ -78,9 +80,30 @@ final class PharoSnippetCard {
         actions.marginEnd = 6
         actions.opacity = 0
 
+        // What "Print it" leaves behind: the result's print string beside the
+        // code it came from, the way Glamorous Toolkit adorns the expression.
+        resultLabel = Label(str: "")
+        resultLabel.xalign = 0
+        resultLabel.wrap = true
+        resultLabel.selectable = true
+        resultLabel.hexpand = true
+        resultLabel.add(cssClass: "monospace")
+        resultLabel.add(cssClass: "dim-label")
+        let turn = Label(str: "\u{21B3}")
+        turn.add(cssClass: "dim-label")
+        turn.valign = .start
+        resultRow = Box(orientation: .horizontal, spacing: 6)
+        resultRow.marginStart = 12
+        resultRow.marginEnd = 12
+        resultRow.marginBottom = 4
+        resultRow.append(child: turn)
+        resultRow.append(child: resultLabel)
+        resultRow.visible = false
+
         let content = Box(orientation: .vertical, spacing: 0)
         content.hexpand = true
         content.append(child: editorScroll)
+        content.append(child: resultRow)
         content.append(child: actions)
 
         widget = Box(orientation: .horizontal, spacing: 0)
@@ -104,6 +127,7 @@ final class PharoSnippetCard {
         buffer.onChanged { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, !self.suppressChange else { return }
+                self.resultRow.visible = false
                 self.onSourceChanged?(self.buffer.text)
             }
         }
@@ -111,6 +135,18 @@ final class PharoSnippetCard {
 
     func focusEditor() {
         _ = editor.grabFocus()
+    }
+
+    func showResult(_ text: String?, isError: Bool) {
+        guard let text, !text.isEmpty else {
+            resultRow.visible = false
+            return
+        }
+        resultLabel.text = text
+        resultLabel.remove(cssClass: "dim-label")
+        resultLabel.remove(cssClass: "error")
+        resultLabel.add(cssClass: isError ? "error" : "dim-label")
+        resultRow.visible = true
     }
 
     func setSource(_ text: String) {

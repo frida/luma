@@ -9,27 +9,38 @@ final class PharoColumnState {
     private(set) var objects: [PharoObject] = []
     private(set) var collapsed: Set<Int> = []
     private(set) var maximized: Int?
+    /// Which column is the current one, or nothing when the page is; the strip
+    /// draws it brightest and a drill moves it to the newest.
+    private(set) var shown: Int?
 
     func startOver(at object: PharoObject) {
         objects = [object]
         collapsed = []
         maximized = nil
+        shown = 0
     }
 
     func open(_ object: PharoObject, from depth: Int) {
         objects = Array(objects.prefix(depth + 1)) + [object]
+        shown = objects.count - 1
         keepStatesOfPresent()
     }
 
     func close(from depth: Int) {
         objects = Array(objects.prefix(depth))
+        shown = objects.isEmpty ? nil : min(shown ?? 0, objects.count - 1)
         keepStatesOfPresent()
+    }
+
+    func show(_ depth: Int?) {
+        shown = depth
     }
 
     func clear() {
         objects = []
         collapsed = []
         maximized = nil
+        shown = nil
     }
 
     func isCollapsed(_ handle: Int) -> Bool {
