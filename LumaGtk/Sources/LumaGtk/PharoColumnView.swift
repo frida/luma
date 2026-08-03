@@ -143,6 +143,9 @@ final class PharoColumnView {
     }
 
     private func listPage(for view: PharoViewDeclaration) -> Box {
+        let titles = view.columns ?? []
+        let columnGroups = ColumnGroups(headers: titles)
+
         let rows = ListBox()
         rows.selectionMode = .single
         rows.activateOnSingleClick = false
@@ -154,6 +157,10 @@ final class PharoColumnView {
         scroll.set(child: rows)
 
         let page = Box(orientation: .vertical, spacing: 0)
+        if titles.count > 1 {
+            page.append(child: headerRow(titles, groups: columnGroups))
+            page.append(child: Separator(orientation: .horizontal))
+        }
         page.append(child: scroll)
 
         let object = object
@@ -170,12 +177,43 @@ final class PharoColumnView {
         }
 
         Task { @MainActor in
-            guard let page = try? await runtime.items(of: object, view: view.methodSelector, from: 1, count: 100) else { return }
-            for cells in page.items {
-                rows.append(child: itemRow(cells))
+            guard let items = try? await runtime.items(of: object, view: view.methodSelector, from: 1, count: 100) else { return }
+            for cells in items.items {
+                rows.append(child: itemRow(cells, groups: columnGroups))
             }
         }
         return page
+    }
+
+    /// Aligns a table's cells by keeping a size group per column, headers and
+    /// rows both joining, so the columns line up even as rows stream in.
+    private final class ColumnGroups {
+        private var groups: [SizeGroup]
+
+        init(headers: [String]) {
+            groups = headers.map { _ in SizeGroup(mode: .horizontal) }
+        }
+
+        func join(_ label: Label, at index: Int) {
+            while groups.count <= index { groups.append(SizeGroup(mode: .horizontal)) }
+            groups[index].add(widget: label)
+        }
+    }
+
+    private func headerRow(_ titles: [String], groups: ColumnGroups) -> Box {
+        let row = Box(orientation: .horizontal, spacing: 0)
+        row.marginStart = 8
+        row.marginEnd = 8
+        row.marginTop = 4
+        row.marginBottom = 4
+        for (index, title) in titles.enumerated() {
+            let label = cellLabel(title, expands: index == titles.count - 1)
+            label.add(cssClass: "dim-label")
+            label.add(cssClass: "caption-heading")
+            groups.join(label, at: index)
+            row.append(child: label)
+        }
+        return row
     }
 
     private var graphAreas: [PharoGraphArea] = []
@@ -194,17 +232,35 @@ final class PharoColumnView {
         return area.widget
     }
 
-    private func itemRow(_ cells: [PharoCell]) -> ListBoxRow {
-        let label = Label(str: cells.compactMap(\.text).joined(separator: "     "))
-        label.xalign = 0
-        label.marginStart = 8
-        label.marginEnd = 8
-        label.marginTop = 4
-        label.marginBottom = 4
-        label.add(cssClass: "monospace")
+    private func itemRow(_ cells: [PharoCell], groups: ColumnGroups) -> ListBoxRow {
+        let line = Box(orientation: .horizontal, spacing: 0)
+        line.marginStart = 8
+        line.marginEnd = 8
+        line.marginTop = 4
+        line.marginBottom = 4
+        if cells.count > 1 {
+            for (index, cell) in cells.enumerated() {
+                let label = cellLabel(cell.text ?? "", expands: index == cells.count - 1)
+                label.add(cssClass: "monospace")
+                groups.join(label, at: index)
+                line.append(child: label)
+            }
+        } else {
+            let label = cellLabel(cells.compactMap(\.text).joined(separator: " "), expands: true)
+            label.add(cssClass: "monospace")
+            line.append(child: label)
+        }
         let row = ListBoxRow()
-        row.set(child: label)
+        row.set(child: line)
         return row
+    }
+
+    private func cellLabel(_ text: String, expands: Bool) -> Label {
+        let label = Label(str: text)
+        label.xalign = 0
+        label.hexpand = expands
+        label.marginEnd = expands ? 0 : 16
+        return label
     }
 
     private func textPage(_ text: String) -> Box {
