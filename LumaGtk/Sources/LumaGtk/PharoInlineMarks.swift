@@ -159,8 +159,11 @@ final class PharoInlineMarks {
 
         // The caret is held in source terms across the shuffle so it lands where
         // the reader left it -- before a mark that a completion just dropped in,
-        // not behind it, where the next keystroke would edit the class name.
+        // not behind it, where the next keystroke would edit the class name. A
+        // range is left alone: a keyword template's selected placeholder must
+        // survive the marks it also drops in.
         let caret = sourceCursor()
+        let selecting = hasSelection()
 
         for (id, mark) in marks where !wantedIDs.contains(id) || mark.anchor.deleted {
             remove(mark)
@@ -174,7 +177,13 @@ final class PharoInlineMarks {
             place(id: entry.id, kind: entry.kind, atSource: entry.stop)
         }
 
-        setCaret(toSource: caret)
+        if !selecting { setCaret(toSource: caret) }
+    }
+
+    private func hasSelection() -> Bool {
+        withIters { start, end in
+            buffer.getSelectionBounds(start: start, end: end)
+        }
     }
 
     private func setCaret(toSource sourceOffset: Int) {
