@@ -1106,7 +1106,7 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
 
     private var placeholderAttributes: [NSAttributedString.Key: Any] {
         var attributes = sourceAttributes
-        attributes[.backgroundColor] = NSColor.textColor.withAlphaComponent(0.1)
+        attributes[.backgroundColor] = NSColor.controlAccentColor.withAlphaComponent(0.18)
         return attributes
     }
 

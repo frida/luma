@@ -346,6 +346,7 @@ final class PharoSnippetCard {
             MainActor.assumeIsolated {
                 guard let self else { return false }
                 if self.completion.handleKey(keyval) { return true }
+                if self.marks.handleCursorKey(keyval, shift: state.contains(.shiftMask)) { return true }
                 guard state.contains(.controlMask) else { return false }
                 switch keyval {
                 case 0xFF0D, 0xFF8D:

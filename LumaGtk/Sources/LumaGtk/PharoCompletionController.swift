@@ -2,6 +2,7 @@ import CGraphene
 import CGtk
 import Foundation
 import Gdk
+import GLibObject
 import struct Graphene.PointRef
 import Gtk
 import GtkSource
@@ -30,6 +31,16 @@ final class PharoCompletionController {
 
     private var placeholders: [(start: TextMarkRef, end: TextMarkRef)] = []
     private var placeholderIndex = 0
+
+    /// The tinted ground an argument slot wears until it is typed over, the way
+    /// Xcode shows a token placeholder.
+    private lazy var placeholderTag: TextTag? = {
+        guard let raw = gtk_text_tag_new(nil) else { return nil }
+        let tag = TextTag(raw)
+        tag.set(property: .background, value: GLibObject.Value("rgba(127,140,170,0.28)"))
+        _ = buffer.getTagTable().add(tag: tag)
+        return tag
+    }()
 
     init(editor: GtkSource.View, buffer: GtkSource.Buffer, suggest: @escaping (String, Int) async -> PharoCompletions?) {
         self.editor = editor
@@ -265,6 +276,13 @@ final class PharoCompletionController {
                 return (startMark, endMark)
             }
             if let pair { placeholders.append(pair) }
+            if let tag = placeholderTag {
+                withIters { first, second in
+                    buffer.getIterAtOffset(iter: first, charOffset: start + slot.offset)
+                    buffer.getIterAtOffset(iter: second, charOffset: start + slot.offset + slot.length)
+                    buffer.apply(tag: tag, start: first, end: second)
+                }
+            }
         }
         // Select the first slot on the next turn: the key that accepted the
         // choice sets its own caret as it finishes, and would drop a selection
