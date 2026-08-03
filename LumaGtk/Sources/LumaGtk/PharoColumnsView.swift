@@ -57,7 +57,9 @@ final class PharoColumnsView {
         scroll = ScrolledWindow()
         scroll.hexpand = true
         scroll.vexpand = true
-        scroll.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .never)
+        // External, not never: the columns still clip and scroll, we just draw
+        // our own thumb for them instead of GTK's scrollbar.
+        scroll.setPolicy(hscrollbarPolicy: .external, vscrollbarPolicy: .never)
         scroll.set(child: columns)
 
         widget.append(child: strip)
@@ -104,11 +106,12 @@ final class PharoColumnsView {
 
     private func drawThumb(_ ctx: Cairo.ContextRef, _ width: Double, _ height: Double) {
         guard let adjustment = scroll.hadjustment else { return }
-        let upper = adjustment.upper
-        let page = adjustment.pageSize
-        guard upper > page + 1, page > 0 else { return }
-        let thumbWidth = max(width * page / upper, 12)
-        let thumbX = min(width * adjustment.value / upper, width - thumbWidth)
+        let upper = max(adjustment.upper, 1)
+        let page = adjustment.pageSize > 0 ? adjustment.pageSize : upper
+        let fractionVisible = min(page / upper, 1)
+        let fractionLeading = min(adjustment.value / upper, 1 - fractionVisible)
+        let thumbWidth = max(width * fractionVisible, 12)
+        let thumbX = min(width * fractionLeading, width - thumbWidth)
         let y = height / 2
         if thumbHovered {
             ctx.setSource(red: 0.937, green: 0.392, blue: 0.337, alpha: 1)
@@ -173,6 +176,7 @@ final class PharoColumnsView {
             columnAnchors.append((depth, WidgetRef(view.widget)))
         } else {
             var depth = 0
+            var previousWasExpanded = false
             while depth < state.objects.count {
                 if state.isCollapsed(state.objects[depth].handle) {
                     let start = depth
@@ -180,16 +184,31 @@ final class PharoColumnsView {
                     let stack = collapsedStack(from: start, to: depth, hasFollowingExpanded: depth < state.objects.count)
                     columns.append(child: stack)
                     for buried in start..<depth { columnAnchors.append((buried, WidgetRef(stack))) }
+                    previousWasExpanded = false
                 } else {
+                    if previousWasExpanded { columns.append(child: drillArrow()) }
                     let view = column(at: depth, maximized: false)
                     view.widget.setSizeRequest(width: columnWidth, height: -1)
                     columns.append(child: view.widget)
                     columnAnchors.append((depth, WidgetRef(view.widget)))
+                    previousWasExpanded = true
                     depth += 1
                 }
             }
         }
         renderStrip()
+    }
+
+    /// The triangle between two expanded columns, centred down the seam, that
+    /// marks the drill from the left column into the right.
+    private func drillArrow() -> Image {
+        let arrow = Image(iconName: "pan-end-symbolic")
+        arrow.add(cssClass: "dim-label")
+        arrow.vexpand = true
+        arrow.valign = .center
+        arrow.marginStart = 2
+        arrow.marginEnd = 2
+        return arrow
     }
 
     /// The views own the row and header handlers, so they have to outlive this
