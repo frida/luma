@@ -1,13 +1,13 @@
 import Foundation
 
-struct PharoExample: Identifiable {
-    var id: String { title }
-    let title: String
-    let code: String
+public struct PharoExample: Identifiable, Sendable {
+    public var id: String { title }
+    public let title: String
+    public let code: String
 }
 
-enum PharoExampleCatalog {
-    static let sections: [(heading: String, examples: [PharoExample])] = [
+public enum PharoExampleCatalog {
+    public static let sections: [(heading: String, examples: [PharoExample])] = [
         ("Visualize", [
             PharoExample(
                 title: "Graph — a ring",

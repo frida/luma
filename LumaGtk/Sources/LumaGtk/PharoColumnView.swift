@@ -119,7 +119,10 @@ final class PharoColumnView {
             guard let graph = view.graph else { return textPage("Empty graph.") }
             return graphPage(graph, selector: view.methodSelector)
         case "chart":
-            return view.chart.map(PharoVisualArea.chart) ?? textPage("Empty chart.")
+            guard let chart = view.chart else { return textPage("Empty chart.") }
+            let area = PharoChartArea(chart: chart)
+            chartAreas.append(area)
+            return area.widget
         default:
             return textPage("\(view.viewName) views are not drawn yet.")
         }
@@ -208,6 +211,7 @@ final class PharoColumnView {
     }
 
     private var graphAreas: [PharoGraphArea] = []
+    private var chartAreas: [PharoChartArea] = []
 
     private func graphPage(_ graph: PharoGraph, selector: String) -> Box {
         let area = PharoGraphArea(graph: graph)

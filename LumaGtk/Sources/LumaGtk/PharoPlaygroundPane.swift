@@ -307,6 +307,9 @@ final class PharoPlaygroundPane {
                 case .inspect:
                     cards[id]?.showResult(nil, isError: false)
                     inspector.present(produced)
+                    if let card = cards[id] {
+                        inspector.pointArrow(fromCenterOf: WidgetRef(card.widget))
+                    }
                 }
             } catch {
                 cards[id]?.flashOutcome(success: false)

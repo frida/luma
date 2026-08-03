@@ -1,5 +1,7 @@
+import CCairo
 import CGraphene
 import CGtk
+import Cairo
 import Foundation
 import struct Graphene.RectRef
 import Gtk
@@ -22,6 +24,8 @@ final class PharoColumnsView {
     private let state = PharoColumnState()
     private let columns: Box
     private let scroll: ScrolledWindow
+    private let arrowArea: DrawingArea
+    private var pointingFromY: Double?
     private var columnWidth = 380
     private var columnViews: [PharoColumnView] = []
     private var columnAnchors: [(depth: Int, widget: WidgetRef)] = []
@@ -30,7 +34,15 @@ final class PharoColumnsView {
     init(runtime: PharoRuntime) {
         self.runtime = runtime
 
-        widget = Box(orientation: .vertical, spacing: 0)
+        // A fixed arrow down the left edge points from the snippet that opened
+        // the inspection into its first column, so it stays put as the columns
+        // scroll under it.
+        arrowArea = DrawingArea()
+        arrowArea.setSizeRequest(width: 22, height: -1)
+        arrowArea.vexpand = true
+        arrowArea.visible = false
+
+        widget = Box(orientation: .horizontal, spacing: 0)
         widget.hexpand = true
         widget.vexpand = true
 
@@ -45,11 +57,40 @@ final class PharoColumnsView {
         // draws its own thumb for them instead of GTK's scrollbar.
         scroll.setPolicy(hscrollbarPolicy: .external, vscrollbarPolicy: .never)
         scroll.set(child: columns)
+
+        widget.append(child: arrowArea)
         widget.append(child: scroll)
 
+        arrowArea.setDrawFunc { [weak self] _, ctx, width, height in
+            MainActor.assumeIsolated { self?.drawArrow(ctx, Double(width), Double(height)) }
+        }
         scroll.hadjustment?.onChanged { [weak self] _ in
             MainActor.assumeIsolated { self?.applyPendingScroll() }
         }
+    }
+
+    /// Point the leading arrow at the vertical centre of the snippet that opened
+    /// this inspection, measured in this pane's own space.
+    func pointArrow(fromCenterOf source: WidgetRef) {
+        var bounds = graphene_rect_t()
+        let ok = withUnsafeMutablePointer(to: &bounds) { pointer in
+            source.computeBounds(target: WidgetRef(widget), outBounds: RectRef(pointer))
+        }
+        pointingFromY = ok ? Double(bounds.origin.y + bounds.size.height / 2) : nil
+        arrowArea.visible = pointingFromY != nil && !state.objects.isEmpty
+        arrowArea.queueDraw()
+    }
+
+    private func drawArrow(_ ctx: Cairo.ContextRef, _ width: Double, _ height: Double) {
+        guard let y = pointingFromY else { return }
+        let color = PharoVizColors.current.edge
+        ctx.setSource(red: color.r, green: color.g, blue: color.b, alpha: 1)
+        let x = width / 2 - 4
+        ctx.moveTo(x, y - 6)
+        ctx.lineTo(x + 8, y)
+        ctx.lineTo(x, y + 6)
+        cairo_close_path(ctx.context_ptr)
+        ctx.fill()
     }
 
     var isEmpty: Bool { state.objects.isEmpty }
@@ -120,6 +161,11 @@ final class PharoColumnsView {
         clear(columns)
         columnViews.removeAll()
         columnAnchors.removeAll()
+
+        if state.objects.isEmpty {
+            pointingFromY = nil
+            arrowArea.visible = false
+        }
 
         if !state.objects.isEmpty {
             if let handle = state.maximized, let depth = state.objects.firstIndex(where: { $0.handle == handle }) {
