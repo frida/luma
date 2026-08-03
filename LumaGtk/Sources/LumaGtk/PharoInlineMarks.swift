@@ -264,6 +264,7 @@ final class PharoInlineMarks {
         area.setSizeRequest(width: 15, height: 16)
         area.valign = .center
         area.tooltipText = "Open"
+        gtk_widget_set_cursor_from_name(area.widget_ptr, "pointer")
         let mark = Mark(id: id, kind: kind, area: area, anchor: anchor)
 
         area.setDrawFunc { [weak mark] _, ctx, width, height in
@@ -310,7 +311,7 @@ final class PharoInlineMarks {
     private func drawMark(_ ctx: Cairo.ContextRef, _ width: Double, _ height: Double, open: Bool, hovered: Bool) {
         let palette = PharoVizColors.current
         let centerX = width / 2
-        let centerY = height / 2
+        let centerY = height / 2 + 2
         let radius = 5.5
         let accent = open || hovered
         let ring = accent ? PharoVizColors.brand : palette.label
