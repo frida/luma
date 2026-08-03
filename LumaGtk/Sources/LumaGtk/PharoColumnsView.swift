@@ -5,6 +5,7 @@ import Cairo
 import Foundation
 import struct Graphene.RectRef
 import Gtk
+import GtkSource
 import LumaCore
 import SwiftyPharo
 
@@ -21,6 +22,7 @@ final class PharoColumnsView {
     var onChanged: (() -> Void)?
 
     private let runtime: PharoRuntime
+    private let highlight: (GtkSource.Buffer) -> Void
     private let state = PharoColumnState()
     private let columns: Box
     private let scroll: ScrolledWindow
@@ -44,8 +46,9 @@ final class PharoColumnsView {
     private var scrollScheduled = false
     private var autoScrolling = false
 
-    init(runtime: PharoRuntime) {
+    init(runtime: PharoRuntime, highlight: @escaping (GtkSource.Buffer) -> Void) {
         self.runtime = runtime
+        self.highlight = highlight
 
         // A fixed arrow down the left edge points from the snippet that opened
         // the inspection into its first column, so it stays put as the columns
@@ -309,7 +312,7 @@ final class PharoColumnsView {
     /// drill and pane actions dead.
     private func column(at depth: Int, maximized: Bool) -> PharoColumnView {
         let object = state.objects[depth]
-        let view = PharoColumnView(runtime: runtime, object: object, isMaximized: maximized)
+        let view = PharoColumnView(runtime: runtime, object: object, isMaximized: maximized, highlight: highlight)
         columnViews.append(view)
         view.onDrill = { [weak self] element in
             guard let self else { return }

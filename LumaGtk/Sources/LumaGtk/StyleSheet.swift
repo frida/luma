@@ -513,6 +513,12 @@ enum StyleSheet {
         padding: 0;
         min-height: 0;
     }
+    label.luma-pharo-tag {
+        color: alpha(@window_fg_color, 0.7);
+        background-color: alpha(@window_fg_color, 0.12);
+        border-radius: 6px;
+        padding: 1px 6px;
+    }
     box.luma-pharo-body {
         margin: 2px 0;
         border: 1px solid alpha(@window_fg_color, 0.15);
