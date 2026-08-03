@@ -27,7 +27,7 @@ final class PharoColumnsView {
     private let arrowArea: DrawingArea
     private var pointingFromY: Double?
     private var leadingStack: Box?
-    private var leadingStackHalf: Double = 0
+    private let leadingTriangleHalf = 8.0
     private var columnWidth = 380
     private let columnsInset = 12
     private var columnViews: [PharoColumnView] = []
@@ -107,13 +107,14 @@ final class PharoColumnsView {
     }
 
     /// The snippet's connector into the first column: a triangle when that column
-    /// stands open, but when it is collapsed the stack itself steps into the
-    /// arrow's place, held to the snippet's centre rather than the column's.
+    /// stands open, but when it is collapsed the stack steps into the arrow's
+    /// place. Its own down-triangle -- not the whole stack -- lines up with the
+    /// snippet's centre, the way the open arrow does, and the squares hang below.
     private func positionLeadingConnector() {
         if let stack = leadingStack, let y = pointingFromY {
             arrowArea.visible = false
             stack.valign = .start
-            stack.marginTop = Int(max(0, y - leadingStackHalf - Double(columnsInset)))
+            stack.marginTop = Int(max(0, y - Double(columnsInset) - leadingTriangleHalf))
         } else {
             arrowArea.visible = pointingFromY != nil && !state.objects.isEmpty
         }
@@ -261,7 +262,6 @@ final class PharoColumnsView {
                         let stack = collapsedStack(from: start, to: depth, hasFollowingExpanded: depth < state.objects.count)
                         if start == 0 {
                             leadingStack = stack
-                            leadingStackHalf = collapsedStackHalfHeight(count: depth - start)
                         }
                         columns.append(child: stack)
                         for buried in start..<depth { columnAnchors.append((buried, WidgetRef(stack))) }
@@ -302,12 +302,6 @@ final class PharoColumnsView {
         label.add(cssClass: "dim-label")
         label.add(cssClass: "caption")
         return label
-    }
-
-    private func collapsedStackHalfHeight(count: Int) -> Double {
-        let triangle = 14.0, spacing = 6.0, miniature = 26.0
-        let height = triangle + spacing + Double(count) * miniature + Double(max(0, count - 1)) * spacing
-        return height / 2
     }
 
     /// The views own the row and header handlers, so they have to outlive this

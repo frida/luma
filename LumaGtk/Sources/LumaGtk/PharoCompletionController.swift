@@ -20,7 +20,6 @@ final class PharoCompletionController {
     private var list: ListBox?
     private var scroll: ScrolledWindow?
     private var candidates: [String] = []
-    private var tokenStart = 0
     private var generation: UInt = 0
     private var pending: Task<Void, Never>?
 
@@ -73,7 +72,7 @@ final class PharoCompletionController {
                 dismiss()
                 return
             }
-            show(tokenStart: answer.tokenStart, candidates: answer.completions)
+            show(candidates: answer.completions)
         }
     }
 
@@ -99,9 +98,8 @@ final class PharoCompletionController {
         }
     }
 
-    private func show(tokenStart: Int, candidates: [String]) {
+    private func show(candidates: [String]) {
         teardown()
-        self.tokenStart = tokenStart
         self.candidates = candidates
 
         let popover = Popover()
@@ -206,9 +204,23 @@ final class PharoCompletionController {
             return
         }
         let replacement = candidates[index]
-        let start = tokenStart
+        let start = currentTokenStart()
         dismiss()
         replaceToken(from: start, with: replacement)
+    }
+
+    /// Where the token under the caret begins, walked back over its own letters
+    /// here rather than trusted from the image, whose offset is one-based and
+    /// would leave the first character behind.
+    private func currentTokenStart() -> Int {
+        let characters = Array(buffer.text)
+        var start = min(cursorOffset(), characters.count)
+        while start > 0, isTokenCharacter(characters[start - 1]) { start -= 1 }
+        return start
+    }
+
+    private func isTokenCharacter(_ character: Character) -> Bool {
+        character == "_" || (character.isASCII && (character.isLetter || character.isNumber))
     }
 
     private func replaceToken(from start: Int, with text: String) {
