@@ -79,14 +79,14 @@ final class PharoPlaygroundPane {
         }
 
         configureOverviewBar()
-        inspector.onChanged = { [weak self] in self?.updateInspection() }
+        inspector.onChanged = { [weak self] in self?.overviewBar.reload() }
         inspector.contentAdjustment?.onValueChanged { [weak self] _ in
             MainActor.assumeIsolated { self?.overviewBar.refresh() }
         }
 
         resolveHighlighting()
         rebuildPage()
-        updateInspection()
+        refreshChrome()
     }
 
     /// The strip stands over the whole page: a square for the snippets, then one
@@ -108,14 +108,18 @@ final class PharoPlaygroundPane {
         overviewBar.adjustment = { [weak self] in self?.inspector.contentAdjustment }
     }
 
-    /// The inspectors and their strip show only while there is something to
-    /// inspect; otherwise the snippets page has the whole width to itself.
-    private func updateInspection() {
-        let inspecting = !inspector.isEmpty
-        overviewBar.widget.visible = inspecting
-        contentSeparator.visible = inspecting
-        inspector.widget.visible = inspecting
-        if inspecting { overviewBar.reload() }
+    /// The page keeps its own resizable width whether or not anything is being
+    /// inspected; the inspectors just sit empty beside it, no frame. The strip
+    /// stands over the page while there are snippets, and an empty page clears
+    /// any inspection so nothing lingers with nothing to open it.
+    private func refreshChrome() {
+        let hasSnippets = !snippets.isEmpty
+        overviewBar.widget.visible = hasSnippets
+        contentSeparator.visible = hasSnippets
+        if !hasSnippets, !inspector.isEmpty {
+            inspector.clearAll()
+        }
+        overviewBar.reload()
     }
 
     private func resolveHighlighting() {
@@ -138,19 +142,19 @@ final class PharoPlaygroundPane {
     private func rebuildPage() {
         clear(pageBox)
 
-        guard !snippets.isEmpty else {
+        if snippets.isEmpty {
             pruneCards()
             pageBox.append(child: emptyState())
-            return
+        } else {
+            for snippet in snippets {
+                let card = cards[snippet.id] ?? makeCard(for: snippet)
+                cards[snippet.id] = card
+                pageBox.append(child: card.widget)
+            }
+            pruneCards()
+            pageBox.append(child: addSnippetButton())
         }
-
-        for snippet in snippets {
-            let card = cards[snippet.id] ?? makeCard(for: snippet)
-            cards[snippet.id] = card
-            pageBox.append(child: card.widget)
-        }
-        pruneCards()
-        pageBox.append(child: addSnippetButton())
+        refreshChrome()
     }
 
     private func pruneCards() {

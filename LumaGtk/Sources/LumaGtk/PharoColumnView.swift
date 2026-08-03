@@ -52,50 +52,33 @@ final class PharoColumnView {
         return bar
     }
 
-    private func menuButton() -> MenuButton {
-        let button = MenuButton()
+    private func menuButton() -> Button {
+        let button = Button(iconName: "view-more-symbolic")
         button.add(cssClass: "flat")
-        button.iconName = "view-more-symbolic"
         button.tooltipText = "Pane actions"
         button.marginTop = 4
         button.marginBottom = 4
         button.marginEnd = 4
-
-        let popover = Popover()
-        popover.autohide = true
-        let box = Box(orientation: .vertical, spacing: 2)
-        box.marginTop = 6
-        box.marginBottom = 6
-        box.marginStart = 6
-        box.marginEnd = 6
-        if isMaximized {
-            box.append(child: menuItem("Restore pane", popover) { [weak self] in self?.onMaximize() })
-        } else {
-            box.append(child: menuItem("Collapse pane", popover) { [weak self] in self?.onCollapse() })
-            box.append(child: menuItem("Maximize pane", popover) { [weak self] in self?.onMaximize() })
-        }
-        box.append(child: menuItem("Update pane tool", popover) { [weak self] in self?.reload() })
-        box.append(child: Separator(orientation: .horizontal))
-        let close = menuItem("Close pane", popover) { [weak self] in self?.onClose() }
-        close.add(cssClass: "destructive-action")
-        box.append(child: close)
-        popover.set(child: box)
-        button.set(popover: popover)
-        return button
-    }
-
-    private func menuItem(_ label: String, _ popover: Popover, _ action: @escaping () -> Void) -> Button {
-        let button = Button(label: label)
-        button.add(cssClass: "flat")
-        button.hexpand = true
-        if let child = button.child { child.halign = .start }
-        button.onClicked { _ in
+        button.onClicked { [weak self, weak button] _ in
             MainActor.assumeIsolated {
-                popover.popdown()
-                action()
+                guard let self, let button else { return }
+                self.presentMenu(from: button)
             }
         }
         return button
+    }
+
+    private func presentMenu(from anchor: Button) {
+        var actions: [ContextMenu.Item] = []
+        if isMaximized {
+            actions.append(ContextMenu.Item("Restore pane") { [weak self] in self?.onMaximize() })
+        } else {
+            actions.append(ContextMenu.Item("Collapse pane") { [weak self] in self?.onCollapse() })
+            actions.append(ContextMenu.Item("Maximize pane") { [weak self] in self?.onMaximize() })
+        }
+        actions.append(ContextMenu.Item("Update pane tool") { [weak self] in self?.reload() })
+        let close = ContextMenu.Item("Close pane", destructive: true) { [weak self] in self?.onClose() }
+        ContextMenu.present([actions, [close]], at: anchor, x: 0, y: Double(anchor.height))
     }
 
     private var notebook = Notebook()
@@ -151,6 +134,7 @@ final class PharoColumnView {
         rows.activateOnSingleClick = false
         rows.vexpand = true
         rows.add(cssClass: "navigation-sidebar")
+        rows.add(cssClass: "luma-pharo-table")
 
         // Header and rows ride in one scroller so a wide table scrolls as a
         // whole and never widens the column past its set width.

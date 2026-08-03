@@ -506,6 +506,13 @@ enum StyleSheet {
     box.luma-pharo-connector {
         background-color: alpha(@window_fg_color, 0.4);
     }
+    list.luma-pharo-table {
+        padding: 0;
+    }
+    list.luma-pharo-table > row {
+        padding: 0;
+        min-height: 0;
+    }
     """
 
     static func install() {
