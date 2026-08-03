@@ -1,4 +1,5 @@
 #if os(macOS)
+import LumaCore
 import SwiftUI
 import SwiftyPharo
 
