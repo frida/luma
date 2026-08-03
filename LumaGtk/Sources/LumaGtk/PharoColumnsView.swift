@@ -29,7 +29,17 @@ final class PharoColumnsView {
     private var columnWidth = 380
     private var columnViews: [PharoColumnView] = []
     private var columnAnchors: [(depth: Int, widget: WidgetRef)] = []
-    private var pendingScrollToNewest = false
+
+    private enum ScrollGoal {
+        case none
+        case newest
+        case column(Int)
+        case origin
+    }
+
+    private var scrollGoal: ScrollGoal = .none
+    private var scrollScheduled = false
+    private var autoScrolling = false
 
     init(runtime: PharoRuntime) {
         self.runtime = runtime
@@ -65,7 +75,13 @@ final class PharoColumnsView {
             MainActor.assumeIsolated { self?.drawArrow(ctx, Double(width), Double(height)) }
         }
         scroll.hadjustment?.onChanged { [weak self] _ in
-            MainActor.assumeIsolated { self?.applyPendingScroll() }
+            MainActor.assumeIsolated { self?.scheduleScroll() }
+        }
+        scroll.hadjustment?.onValueChanged { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.autoScrolling else { return }
+                if case .newest = self.scrollGoal { self.scrollGoal = .none }
+            }
         }
     }
 
@@ -119,6 +135,7 @@ final class PharoColumnsView {
     func reveal(depth: Int) {
         guard depth >= 0, depth < state.objects.count else { return }
         if state.isCollapsed(state.objects[depth].handle) {
+            scrollGoal = .none
             state.toggleCollapsed(state.objects[depth].handle)
             state.show(depth)
             render()
@@ -131,30 +148,65 @@ final class PharoColumnsView {
 
     func focusPage() {
         state.show(nil)
+        scrollToOrigin()
         onChanged?()
     }
 
     private func scrollToNewest() {
-        pendingScrollToNewest = true
-        applyPendingScroll()
-    }
-
-    private func applyPendingScroll() {
-        guard pendingScrollToNewest, let adjustment = scroll.hadjustment, adjustment.pageSize > 0 else { return }
-        adjustment.value = max(adjustment.upper - adjustment.pageSize, adjustment.lower)
-        pendingScrollToNewest = false
+        scroll(toward: .newest)
     }
 
     private func scrollToColumn(_ depth: Int) {
-        guard let anchor = columnAnchors.first(where: { $0.depth == depth })?.widget,
-              let adjustment = scroll.hadjustment
-        else { return }
+        scroll(toward: .column(depth))
+    }
+
+    private func scrollToOrigin() {
+        scroll(toward: .origin)
+    }
+
+    private func scroll(toward goal: ScrollGoal) {
+        scrollGoal = goal
+        scheduleScroll()
+    }
+
+    // Scroll from a task the "changed" signal schedules, so it runs after layout
+    // -- a new column's width only lands in the adjustment once allocation
+    // settles, and poking it synchronously reads a stale upper and misses.
+    private func scheduleScroll() {
+        guard !scrollScheduled else { return }
+        if case .none = scrollGoal { return }
+        scrollScheduled = true
+        Task { @MainActor in
+            self.scrollScheduled = false
+            self.applyScroll()
+        }
+    }
+
+    private func applyScroll() {
+        guard let adjustment = scroll.hadjustment, adjustment.pageSize > 0 else { return }
+        let target: Double?
+        switch scrollGoal {
+        case .none: target = nil
+        case .newest: target = max(adjustment.upper - adjustment.pageSize, adjustment.lower)
+        case .origin: target = adjustment.lower
+        case .column(let depth): target = columnOffset(depth)
+        }
+        guard let target else { return }
+        autoScrolling = true
+        adjustment.value = target
+        autoScrolling = false
+        // Newest keeps following as later columns stream in; a jump to a fixed
+        // column or the origin is done the moment it lands.
+        if case .newest = scrollGoal {} else { scrollGoal = .none }
+    }
+
+    private func columnOffset(_ depth: Int) -> Double? {
+        guard let anchor = columnAnchors.first(where: { $0.depth == depth })?.widget else { return nil }
         var bounds = graphene_rect_t()
         let ok = withUnsafeMutablePointer(to: &bounds) { pointer in
             anchor.computeBounds(target: columns, outBounds: RectRef(pointer))
         }
-        guard ok else { return }
-        adjustment.value = Double(bounds.origin.x)
+        return ok ? Double(bounds.origin.x) : nil
     }
 
     private func render() {
@@ -260,6 +312,7 @@ final class PharoColumnsView {
             miniature.onClicked { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self else { return }
+                    self.scrollGoal = .none
                     self.state.toggleCollapsed(object.handle)
                     self.state.show(depth)
                     self.render()
