@@ -1,5 +1,6 @@
 import CGtk
 import Foundation
+import Gdk
 import Gtk
 import GtkSource
 import LumaCore
@@ -186,6 +187,53 @@ final class PharoInlineMarks {
         }
     }
 
+    /// Slide over a mark's anchor so it is not an extra cursor stop, and a space
+    /// typed at a token's end lands past its mark to carry the send on. Returns
+    /// whether the key is spent; a space is not, so it still types once moved.
+    func handleCursorKey(_ keyval: UInt, shift: Bool) -> Bool {
+        let cursor = cursorOffset()
+        switch keyval {
+        case 0xFF53 where !shift && anchorAt(cursor + 1):  // Right
+            moveCursor(to: skipForward(from: cursor + 1))
+            return true
+        case 0xFF51 where !shift && anchorAt(cursor - 1):  // Left
+            moveCursor(to: skipBackward(from: cursor - 1))
+            return true
+        case 0x0020 where anchorAt(cursor):  // space
+            moveCursor(to: skipForward(from: cursor))
+            return false
+        default:
+            return false
+        }
+    }
+
+    private func anchorAt(_ offset: Int) -> Bool {
+        guard offset >= 0, offset < Int(buffer.getCharCount()) else { return false }
+        return withIter { iter in
+            buffer.getIterAtOffset(iter: iter, charOffset: offset)
+            return iter.childAnchor != nil
+        }
+    }
+
+    private func skipForward(from offset: Int) -> Int {
+        var at = offset
+        while anchorAt(at) { at += 1 }
+        return at
+    }
+
+    private func skipBackward(from offset: Int) -> Int {
+        var at = offset
+        while at > 0, anchorAt(at) { at -= 1 }
+        return at
+    }
+
+    private func moveCursor(to offset: Int) {
+        withIter { iter in
+            buffer.getIterAtOffset(iter: iter, charOffset: offset)
+            buffer.placeCursor(where: iter)
+        }
+    }
+
     private func setCaret(toSource sourceOffset: Int) {
         let offset = bufferOffset(forSource: sourceOffset)
         withIter { iter in
@@ -260,6 +308,8 @@ final class PharoInlineMarks {
         case .classReference(let name):
             guard let object = try? await runtime.evaluate(name) else { return nil }
             let view = PharoColumnView(runtime: runtime, object: object, isMaximized: false)
+            view.widget.hexpand = true
+            view.widget.vexpand = true
             let frame = Box(orientation: .vertical, spacing: 0)
             frame.append(child: view.widget)
             classColumns[ObjectIdentifier(frame)] = view
@@ -347,8 +397,23 @@ final class PharoInlineMarks {
 
         widget.hexpand = true
         widget.add(cssClass: "luma-pharo-body")
+        sizeBody(widget)
         editor.addChildAtAnchor(child: widget, anchor: anchor)
         mark.body = Body(widget: widget, anchor: anchor)
+    }
+
+    /// An anchored widget keeps to its own size rather than the text's, so a body
+    /// is given the editor's width and stood tall, the way it fills the page on
+    /// the SwiftUI side. Reapplied as bodies open so a widened window carries.
+    private func sizeBody(_ widget: Box) {
+        let width = max(editor.getWidth() - 20, 260)
+        widget.setSizeRequest(width: width, height: 380)
+    }
+
+    private func resizeBodies() {
+        for mark in marks.values {
+            if let body = mark.body { sizeBody(body.widget) }
+        }
     }
 
     private func close(_ mark: Mark) {
