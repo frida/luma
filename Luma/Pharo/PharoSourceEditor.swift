@@ -554,6 +554,10 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
 
         isApplyingMarks = true
         let selection = selectedRange()
+        // A selected placeholder is a token attachment, which the source does not
+        // count, so mapping it through source offsets would collapse it; note it
+        // and re-select it once its range has shifted with the marks instead.
+        let selectedPlaceholder = argumentPlaceholders.firstIndex(of: selection)
         let selectionStart = sourceOffset(ofStorage: selection.location)
         let selectionEnd = sourceOffset(ofStorage: NSMaxRange(selection))
         storage.beginEditing()
@@ -571,6 +575,9 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         storage.endEditing()
         let restoredStart = storageOffset(forSource: selectionStart)
         setSelectedRange(NSRange(location: restoredStart, length: storageOffset(forSource: selectionEnd) - restoredStart))
+        if let index = selectedPlaceholder, index < argumentPlaceholders.count {
+            setSelectedRange(argumentPlaceholders[index])
+        }
         isApplyingMarks = false
         positionMarkOverlays()
     }
