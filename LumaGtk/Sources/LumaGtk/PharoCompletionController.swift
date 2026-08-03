@@ -230,7 +230,7 @@ final class PharoCompletionController {
 
         var spec = ""
         for (index, keyword) in keywords.enumerated() {
-            spec += "\(keyword): ${\(index + 1)}"
+            spec += "\(keyword): ${\(index + 1):\u{2026}}"
             if index < keywords.count - 1 { spec += " " }
         }
         spec += "$0"
