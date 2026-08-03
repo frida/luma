@@ -1,5 +1,7 @@
+import CCairo
 import CGraphene
 import CGtk
+import Cairo
 import Foundation
 import struct Graphene.RectRef
 import Gtk
@@ -17,11 +19,15 @@ final class PharoColumnsView {
     private let runtime: PharoRuntime
     private let state = PharoColumnState()
     private let strip: Box
+    private let squaresRow: Box
+    private let thumb: DrawingArea
     private let columns: Box
     private let scroll: ScrolledWindow
     private var columnWidth = 380
     private var columnViews: [PharoColumnView] = []
     private var columnAnchors: [(depth: Int, widget: WidgetRef)] = []
+    private var thumbHovered = false
+    private var thumbDragBase = 0.0
 
     init(runtime: PharoRuntime) {
         self.runtime = runtime
@@ -30,10 +36,19 @@ final class PharoColumnsView {
         widget.hexpand = true
         widget.vexpand = true
 
-        strip = Box(orientation: .horizontal, spacing: 3)
+        squaresRow = Box(orientation: .horizontal, spacing: 3)
+        squaresRow.halign = .center
+
+        thumb = DrawingArea()
+        thumb.setSizeRequest(width: -1, height: 8)
+        thumb.hexpand = true
+
+        strip = Box(orientation: .vertical, spacing: 3)
         strip.halign = .center
         strip.marginTop = 4
         strip.marginBottom = 4
+        strip.append(child: squaresRow)
+        strip.append(child: thumb)
 
         columns = Box(orientation: .horizontal, spacing: 0)
         columns.hexpand = true
@@ -42,12 +57,74 @@ final class PharoColumnsView {
         scroll = ScrolledWindow()
         scroll.hexpand = true
         scroll.vexpand = true
-        scroll.setPolicy(hscrollbarPolicy: .automatic, vscrollbarPolicy: .never)
+        scroll.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .never)
         scroll.set(child: columns)
 
         widget.append(child: strip)
         widget.append(child: Separator(orientation: .horizontal))
         widget.append(child: scroll)
+
+        installThumb()
+    }
+
+    private func installThumb() {
+        thumb.setDrawFunc { [weak self] _, ctx, width, height in
+            MainActor.assumeIsolated { self?.drawThumb(ctx, Double(width), Double(height)) }
+        }
+        if let adjustment = scroll.hadjustment {
+            adjustment.onValueChanged { [weak self] _ in
+                MainActor.assumeIsolated { self?.thumb.queueDraw() }
+            }
+            adjustment.onChanged { [weak self] _ in
+                MainActor.assumeIsolated { self?.thumb.queueDraw() }
+            }
+        }
+        let drag = GestureDrag()
+        drag.onDragBegin { [weak self] _, _, _ in
+            MainActor.assumeIsolated { self?.thumbDragBase = self?.scroll.hadjustment?.value ?? 0 }
+        }
+        drag.onDragUpdate { [weak self] _, offsetX, _ in
+            MainActor.assumeIsolated {
+                guard let self, let adjustment = self.scroll.hadjustment else { return }
+                let track = Double(self.thumb.width)
+                guard track > 0 else { return }
+                adjustment.value = self.thumbDragBase + offsetX / track * adjustment.upper
+            }
+        }
+        thumb.install(controller: drag)
+        let motion = EventControllerMotion()
+        motion.onEnter { [weak self] _, _, _ in
+            MainActor.assumeIsolated { self?.thumbHovered = true; self?.thumb.queueDraw() }
+        }
+        motion.onLeave { [weak self] _ in
+            MainActor.assumeIsolated { self?.thumbHovered = false; self?.thumb.queueDraw() }
+        }
+        thumb.install(controller: motion)
+    }
+
+    private func drawThumb(_ ctx: Cairo.ContextRef, _ width: Double, _ height: Double) {
+        guard let adjustment = scroll.hadjustment else { return }
+        let upper = adjustment.upper
+        let page = adjustment.pageSize
+        guard upper > page + 1, page > 0 else { return }
+        let thumbWidth = max(width * page / upper, 12)
+        let thumbX = min(width * adjustment.value / upper, width - thumbWidth)
+        let y = height / 2
+        if thumbHovered {
+            ctx.setSource(red: 0.937, green: 0.392, blue: 0.337, alpha: 1)
+        } else {
+            ctx.setSource(red: 0.55, green: 0.55, blue: 0.6, alpha: 0.6)
+        }
+        capsule(ctx, x: thumbX, y: y - 1.5, width: thumbWidth, height: 3)
+        ctx.fill()
+    }
+
+    private func capsule(_ ctx: Cairo.ContextRef, x: Double, y: Double, width: Double, height: Double) {
+        let radius = height / 2
+        cairo_new_sub_path(ctx.context_ptr)
+        cairo_arc(ctx.context_ptr, x + width - radius, y + radius, radius, -.pi / 2, .pi / 2)
+        cairo_arc(ctx.context_ptr, x + radius, y + radius, radius, .pi / 2, 3 * .pi / 2)
+        cairo_close_path(ctx.context_ptr)
     }
 
     func present(_ object: PharoObject) {
@@ -57,8 +134,9 @@ final class PharoColumnsView {
 
     func showMessage(_ text: String) {
         state.clear()
-        clear(strip)
+        clear(squaresRow)
         clear(columns)
+        strip.visible = false
         columnViews.removeAll()
         columnAnchors.removeAll()
         placeholder(text)
@@ -78,12 +156,13 @@ final class PharoColumnsView {
     }
 
     private func render() {
-        clear(strip)
+        clear(squaresRow)
         clear(columns)
         columnViews.removeAll()
         columnAnchors.removeAll()
 
         guard !state.objects.isEmpty else {
+            strip.visible = false
             placeholder("Evaluate a snippet with Ctrl+Return to open its result here.")
             return
         }
@@ -98,7 +177,7 @@ final class PharoColumnsView {
                 if state.isCollapsed(state.objects[depth].handle) {
                     let start = depth
                     while depth < state.objects.count, state.isCollapsed(state.objects[depth].handle) { depth += 1 }
-                    let stack = collapsedStack(from: start, to: depth)
+                    let stack = collapsedStack(from: start, to: depth, hasFollowingExpanded: depth < state.objects.count)
                     columns.append(child: stack)
                     for buried in start..<depth { columnAnchors.append((buried, WidgetRef(stack))) }
                 } else {
@@ -139,48 +218,66 @@ final class PharoColumnsView {
         return view
     }
 
-    private func collapsedStack(from start: Int, to end: Int) -> Box {
+    /// Consecutive collapsed columns fold into one stack of miniatures under a
+    /// downward triangle; the last one draws an edge to the expanded column that
+    /// follows. Clicking a miniature expands it.
+    private func collapsedStack(from start: Int, to end: Int, hasFollowingExpanded: Bool) -> Box {
         let stack = Box(orientation: .vertical, spacing: 6)
         stack.valign = .center
         stack.marginStart = 8
         stack.marginEnd = 8
+
+        let triangle = Image(iconName: "pan-down-symbolic")
+        triangle.add(cssClass: "dim-label")
+        stack.append(child: triangle)
+
         for depth in start..<end {
             let object = state.objects[depth]
-            let badge = Button()
-            badge.add(cssClass: "flat")
-            badge.setSizeRequest(width: 24, height: 28)
-            badge.tooltipText = "Expand \(object.className)"
-            badge.onClicked { [weak self] _ in
+            let miniature = Button()
+            miniature.add(cssClass: "luma-pharo-miniature")
+            miniature.setSizeRequest(width: 22, height: 26)
+            miniature.tooltipText = "Expand \(object.className)"
+            miniature.onClicked { [weak self] _ in
                 MainActor.assumeIsolated {
                     self?.state.toggleCollapsed(object.handle)
                     self?.render()
                 }
             }
-            stack.append(child: badge)
+            if hasFollowingExpanded, depth == end - 1 {
+                let row = Box(orientation: .horizontal, spacing: 0)
+                row.append(child: miniature)
+                let connector = Box(orientation: .horizontal, spacing: 0)
+                connector.add(cssClass: "luma-pharo-connector")
+                connector.valign = .center
+                connector.setSizeRequest(width: 10, height: 2)
+                row.append(child: connector)
+                stack.append(child: row)
+            } else {
+                stack.append(child: miniature)
+            }
         }
         return stack
     }
 
     /// A square per column that reaches it: a collapsed one expands, any other
-    /// scrolls into view. The maximized column wears the brand colour, a
-    /// collapsed one dims.
+    /// scrolls into view. The last, deepest column wears the brand colour.
     private func renderStrip() {
+        strip.visible = state.objects.count > 1
         guard state.objects.count > 1 else { return }
         for (depth, object) in state.objects.enumerated() {
             let square = Button()
             square.add(cssClass: "luma-pharo-strip")
-            square.setSizeRequest(width: 28, height: 14)
+            square.setSizeRequest(width: 22, height: 12)
             square.tooltipText = object.printString
-            if state.isMaximized(object.handle) {
-                square.add(cssClass: "suggested-action")
-            } else if state.isCollapsed(object.handle) {
-                square.add(cssClass: "dim-label")
+            if depth == state.objects.count - 1 {
+                square.add(cssClass: "current")
             }
             square.onClicked { [weak self] _ in
                 MainActor.assumeIsolated { self?.reveal(depth: depth) }
             }
-            strip.append(child: square)
+            squaresRow.append(child: square)
         }
+        thumb.queueDraw()
     }
 
     private func reveal(depth: Int) {
