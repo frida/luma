@@ -354,16 +354,13 @@ final class PharoColumnsView {
         stack.halign = .start
         stack.marginStart = gap
 
-        // The triangle rides a slot the width of a square, centred in it, so it
+        // The triangle takes a square's width and centres its glyph in it, so it
         // sits over the squares rather than over the square-plus-edge.
-        let triangleSlot = Box(orientation: .horizontal, spacing: 0)
-        triangleSlot.setSizeRequest(width: miniatureWidth, height: -1)
-        triangleSlot.halign = .start
         let triangle = triangleGlyph("\u{25BC}")
-        triangle.halign = .center
-        triangle.hexpand = false
-        triangleSlot.append(child: triangle)
-        stack.append(child: triangleSlot)
+        triangle.setSizeRequest(width: miniatureWidth, height: -1)
+        triangle.xalign = 0.5
+        triangle.halign = .start
+        stack.append(child: triangle)
 
         for depth in start..<end {
             let object = state.objects[depth]
