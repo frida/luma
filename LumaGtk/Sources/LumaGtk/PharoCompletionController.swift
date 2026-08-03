@@ -2,7 +2,6 @@ import CGraphene
 import CGtk
 import Foundation
 import Gdk
-import GLibObject
 import struct Graphene.PointRef
 import Gtk
 import GtkSource
@@ -29,18 +28,6 @@ final class PharoCompletionController {
     private var generation: UInt = 0
     private var pending: Task<Void, Never>?
 
-    private var placeholders: [(start: TextMarkRef, end: TextMarkRef)] = []
-    private var placeholderIndex = 0
-
-    /// The tinted ground an argument slot wears until it is typed over, the way
-    /// Xcode marks a token.
-    private lazy var placeholderTag: TextTag? = {
-        guard let raw = gtk_text_tag_new(nil) else { return nil }
-        let tag = TextTag(raw)
-        tag.set(property: .background, value: GLibObject.Value("rgba(127,140,170,0.28)"))
-        _ = buffer.getTagTable().add(tag: tag)
-        return tag
-    }()
 
 
     init(editor: GtkSource.View, buffer: GtkSource.Buffer, suggest: @escaping (String, Int) async -> PharoCompletions?) {
@@ -97,21 +84,6 @@ final class PharoCompletionController {
     }
 
     func handleKey(_ keyval: UInt) -> Bool {
-        if !placeholders.isEmpty {
-            switch Int32(keyval) {
-            case Gdk.keyTab:
-                selectPlaceholder(placeholderIndex + 1)
-                return true
-            case Gdk.keyISOLeftTab:
-                selectPlaceholder(placeholderIndex - 1)
-                return true
-            case Gdk.keyEscape:
-                clearPlaceholders()
-                return true
-            default:
-                break
-            }
-        }
         guard isActive else { return false }
         switch Int32(keyval) {
         case Gdk.keyEscape:
@@ -248,71 +220,35 @@ final class PharoCompletionController {
         }
     }
 
-    /// A keyword selector lays its keywords down spaced for arguments -- "to:by:"
-    /// becomes "to: … by: …" -- each slot a tinted placeholder the reader tabs
-    /// through and types over. The keyword already names it, so the slot is a
-    /// neutral marker rather than the keyword echoed back.
+    /// A keyword selector lays down as a source snippet -- "to:by:" becomes
+    /// "to: ⟨⟩ by: ⟨⟩" -- so the editor renders each argument as its own token,
+    /// selects the first, and tabs through them the way Xcode does. The keyword
+    /// already names the slot, so it is left blank rather than echoed.
     private func insertKeywordTemplate(_ selector: String, from start: Int) {
-        clearPlaceholders()
         let keywords = selector.split(separator: ":").map(String.init)
         guard !keywords.isEmpty else { return }
 
-        let slot = "\u{2026}"
-        var template = ""
-        var slots: [(offset: Int, length: Int)] = []
+        var spec = ""
         for (index, keyword) in keywords.enumerated() {
-            template += "\(keyword): "
-            slots.append((template.count, slot.count))
-            template += slot
-            if index < keywords.count - 1 { template += " " }
+            spec += "\(keyword): ${\(index + 1)}"
+            if index < keywords.count - 1 { spec += " " }
         }
+        spec += "$0"
 
-        replaceToken(from: start, with: template)
-
-        for slot in slots {
-            let pair: (TextMarkRef, TextMarkRef)? = withIters { first, second in
-                buffer.getIterAtOffset(iter: first, charOffset: start + slot.offset)
-                buffer.getIterAtOffset(iter: second, charOffset: start + slot.offset + slot.length)
-                guard let startMark = buffer.createMark(markName: nil, where: first, leftGravity: true),
-                      let endMark = buffer.createMark(markName: nil, where: second, leftGravity: false)
-                else { return nil }
-                return (startMark, endMark)
-            }
-            if let pair { placeholders.append(pair) }
-            if let tag = placeholderTag {
-                withIters { first, second in
-                    buffer.getIterAtOffset(iter: first, charOffset: start + slot.offset)
-                    buffer.getIterAtOffset(iter: second, charOffset: start + slot.offset + slot.length)
-                    buffer.apply(tag: tag, start: first, end: second)
-                }
-            }
-        }
-        // Select the first slot on the next turn: the key that accepted the choice
-        // sets its own caret as it finishes, and would drop a selection made now.
-        Task { @MainActor in self.selectPlaceholder(0) }
-    }
-
-    private func selectPlaceholder(_ index: Int) {
-        guard index >= 0, index < placeholders.count else {
-            clearPlaceholders()
+        guard let snippet = try? GtkSource.Snippet.new(parsed: spec) else {
+            replaceToken(from: start, with: selector)
             return
         }
-        placeholderIndex = index
-        let (startMark, endMark) = placeholders[index]
-        withIters { first, second in
-            buffer.getIterAtMark(iter: first, mark: startMark)
-            buffer.getIterAtMark(iter: second, mark: endMark)
-            buffer.selectRange(ins: second, bound: first)
-        }
-    }
 
-    private func clearPlaceholders() {
-        for (startMark, endMark) in placeholders {
-            buffer.delete(mark: startMark)
-            buffer.delete(mark: endMark)
+        withIters { first, second in
+            buffer.getIterAtOffset(iter: first, charOffset: start)
+            buffer.getIterAtMark(iter: second, mark: buffer.getInsert())
+            buffer.delete(start: first, end: second)
         }
-        placeholders = []
-        placeholderIndex = 0
+        withIter { iter in
+            buffer.getIterAtOffset(iter: iter, charOffset: start)
+            editor.push(snippet: snippet, location: iter)
+        }
     }
 
     /// Where the token under the caret begins, walked back over its own letters
