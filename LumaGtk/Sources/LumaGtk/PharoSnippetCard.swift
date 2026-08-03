@@ -81,7 +81,6 @@ final class PharoSnippetCard {
         let content = Box(orientation: .vertical, spacing: 0)
         content.hexpand = true
         content.append(child: editorScroll)
-        content.append(child: Separator(orientation: .horizontal))
         content.append(child: actions)
 
         widget = Box(orientation: .horizontal, spacing: 0)

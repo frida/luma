@@ -104,18 +104,23 @@ final class PharoColumnView {
         notebook.hexpand = true
         notebook.vexpand = true
         notebook.scrollable = true
-        _ = notebook.appendPage(child: textPage(object.printString), tabLabel: tabLabel("Print"))
         reload()
         return notebook
     }
 
+    /// The object's own views first, in priority order, then Print, then Meta
+    /// at the very end -- the order the SwiftUI inspector lays its tabs in.
     private func reload() {
-        while notebook.getNPages() > 1 {
+        while notebook.getNPages() > 0 {
             notebook.removePage(pageNum: notebook.getNPages() - 1)
         }
         Task { @MainActor in
-            let views = (try? await runtime.views(of: object)) ?? []
-            for view in views.sorted(by: { $0.priority < $1.priority }) where view.title != "Meta" {
+            let views = (try? await runtime.views(of: object))?.sorted(by: { $0.priority < $1.priority }) ?? []
+            for view in views where view.title != "Meta" {
+                _ = notebook.appendPage(child: page(for: view), tabLabel: tabLabel(view.title))
+            }
+            _ = notebook.appendPage(child: textPage(object.printString), tabLabel: tabLabel("Print"))
+            for view in views where view.title == "Meta" {
                 _ = notebook.appendPage(child: page(for: view), tabLabel: tabLabel(view.title))
             }
         }
