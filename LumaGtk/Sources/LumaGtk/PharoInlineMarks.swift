@@ -358,7 +358,7 @@ final class PharoInlineMarks {
         switch kind {
         case .classReference(let name):
             guard let object = try? await runtime.evaluate(name) else { return nil }
-            let view = PharoColumnView(runtime: runtime, object: object, isMaximized: false)
+            let view = PharoColumnView(runtime: runtime, object: object, isMaximized: false, highlight: highlight)
             view.widget.hexpand = true
             view.widget.vexpand = true
             let frame = Box(orientation: .vertical, spacing: 0)

@@ -1,6 +1,7 @@
 import CGtk
 import Foundation
 import Gtk
+import GtkSource
 import LumaCore
 import SwiftyPharo
 
@@ -19,11 +20,18 @@ final class PharoColumnView {
     private let runtime: PharoRuntime
     private let object: PharoObject
     private let isMaximized: Bool
+    private let highlight: (GtkSource.Buffer) -> Void
 
-    init(runtime: PharoRuntime, object: PharoObject, isMaximized: Bool) {
+    init(
+        runtime: PharoRuntime,
+        object: PharoObject,
+        isMaximized: Bool,
+        highlight: @escaping (GtkSource.Buffer) -> Void
+    ) {
         self.runtime = runtime
         self.object = object
         self.isMaximized = isMaximized
+        self.highlight = highlight
 
         widget = Frame()
         widget.hexpand = isMaximized
@@ -32,8 +40,17 @@ final class PharoColumnView {
         let column = Box(orientation: .vertical, spacing: 0)
         column.append(child: header())
         column.append(child: Separator(orientation: .horizontal))
-        column.append(child: tabs())
+        column.append(child: object.isClass ? classBrowserBody(of: object) : tabs())
         widget.set(child: column)
+    }
+
+    private var classBrowsers: [PharoClassBrowser] = []
+
+    private func classBrowserBody(of classObject: PharoObject) -> Widget {
+        let browser = PharoClassBrowser(
+            runtime: runtime, classObject: classObject, onSelect: onDrill, highlight: highlight)
+        classBrowsers.append(browser)
+        return browser.widget
     }
 
     private func header() -> Box {
@@ -168,8 +185,10 @@ final class PharoColumnView {
                 _ = notebook.appendPage(child: page(for: view), tabLabel: tabLabel(view.title))
             }
             _ = notebook.appendPage(child: textPage(object.printString), tabLabel: tabLabel("Print"))
-            for view in views where view.title == "Meta" {
-                _ = notebook.appendPage(child: page(for: view), tabLabel: tabLabel(view.title))
+            // The image's own Meta view is dropped for the coder shown on the
+            // object's class, the way the SwiftUI inspector synthesises it.
+            if let receiverClass = try? await runtime.classObject(of: object) {
+                _ = notebook.appendPage(child: classBrowserBody(of: receiverClass), tabLabel: tabLabel("Meta"))
             }
         }
     }
