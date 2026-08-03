@@ -1091,12 +1091,13 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
 
     private func keywordTemplate(_ selector: String) -> (text: NSAttributedString, placeholders: [NSRange]) {
         let keywords = selector.split(separator: ":").map(String.init)
+        let slot = "\u{2026}"
         let text = NSMutableAttributedString()
         var placeholders: [NSRange] = []
         for (index, keyword) in keywords.enumerated() {
             text.append(NSAttributedString(string: "\(keyword): ", attributes: sourceAttributes))
-            placeholders.append(NSRange(location: text.length, length: keyword.utf16.count))
-            text.append(NSAttributedString(string: keyword, attributes: placeholderAttributes))
+            placeholders.append(NSRange(location: text.length, length: slot.utf16.count))
+            text.append(NSAttributedString(string: slot, attributes: placeholderAttributes))
             if index < keywords.count - 1 {
                 text.append(NSAttributedString(string: " ", attributes: sourceAttributes))
             }

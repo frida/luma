@@ -33,7 +33,7 @@ final class PharoCompletionController {
     private var placeholderIndex = 0
 
     /// The tinted ground an argument slot wears until it is typed over, the way
-    /// Xcode shows a token placeholder.
+    /// Xcode marks a token.
     private lazy var placeholderTag: TextTag? = {
         guard let raw = gtk_text_tag_new(nil) else { return nil }
         let tag = TextTag(raw)
@@ -41,6 +41,7 @@ final class PharoCompletionController {
         _ = buffer.getTagTable().add(tag: tag)
         return tag
     }()
+
 
     init(editor: GtkSource.View, buffer: GtkSource.Buffer, suggest: @escaping (String, Int) async -> PharoCompletions?) {
         self.editor = editor
@@ -247,20 +248,22 @@ final class PharoCompletionController {
         }
     }
 
-    /// A keyword selector completes to its keywords spaced for arguments, each
-    /// keyword's name left as a placeholder the reader tabs through and types
-    /// over -- "to:by:" becomes "to: to by: by", the first slot selected.
+    /// A keyword selector lays its keywords down spaced for arguments -- "to:by:"
+    /// becomes "to: … by: …" -- each slot a tinted placeholder the reader tabs
+    /// through and types over. The keyword already names it, so the slot is a
+    /// neutral marker rather than the keyword echoed back.
     private func insertKeywordTemplate(_ selector: String, from start: Int) {
         clearPlaceholders()
         let keywords = selector.split(separator: ":").map(String.init)
         guard !keywords.isEmpty else { return }
 
+        let slot = "\u{2026}"
         var template = ""
         var slots: [(offset: Int, length: Int)] = []
         for (index, keyword) in keywords.enumerated() {
             template += "\(keyword): "
-            slots.append((template.count, keyword.count))
-            template += keyword
+            slots.append((template.count, slot.count))
+            template += slot
             if index < keywords.count - 1 { template += " " }
         }
 
@@ -284,9 +287,8 @@ final class PharoCompletionController {
                 }
             }
         }
-        // Select the first slot on the next turn: the key that accepted the
-        // choice sets its own caret as it finishes, and would drop a selection
-        // made now.
+        // Select the first slot on the next turn: the key that accepted the choice
+        // sets its own caret as it finishes, and would drop a selection made now.
         Task { @MainActor in self.selectPlaceholder(0) }
     }
 
@@ -364,6 +366,12 @@ final class PharoCompletionController {
         let iter = TextIter(storage)
         buffer.getIterAtMark(iter: iter, mark: buffer.getInsert())
         return Int(iter.offset)
+    }
+
+    private func withIter<R>(_ body: (TextIter) -> R) -> R {
+        let storage = UnsafeMutablePointer<GtkTextIter>.allocate(capacity: 1)
+        defer { storage.deallocate() }
+        return body(TextIter(storage))
     }
 
     private func withIters<R>(_ body: (TextIter, TextIter) -> R) -> R {
