@@ -33,10 +33,10 @@ final class PharoInlineMarks {
         let id: String
         let kind: Kind
         let button: Button
-        let anchor: TextChildAnchorRef
+        let anchor: TextChildAnchor
         var body: Body?
 
-        init(id: String, kind: Kind, button: Button, anchor: TextChildAnchorRef) {
+        init(id: String, kind: Kind, button: Button, anchor: TextChildAnchor) {
             self.id = id
             self.kind = kind
             self.button = button
@@ -46,9 +46,9 @@ final class PharoInlineMarks {
 
     private final class Body {
         let widget: Box
-        let anchor: TextChildAnchorRef
+        let anchor: TextChildAnchor
 
-        init(widget: Box, anchor: TextChildAnchorRef) {
+        init(widget: Box, anchor: TextChildAnchor) {
             self.widget = widget
             self.anchor = anchor
         }
@@ -157,6 +157,11 @@ final class PharoInlineMarks {
         applying = true
         defer { applying = false }
 
+        // The caret is held in source terms across the shuffle so it lands where
+        // the reader left it -- before a mark that a completion just dropped in,
+        // not behind it, where the next keystroke would edit the class name.
+        let caret = sourceCursor()
+
         for (id, mark) in marks where !wantedIDs.contains(id) || mark.anchor.deleted {
             remove(mark)
             marks[id] = nil
@@ -168,6 +173,16 @@ final class PharoInlineMarks {
         for entry in missing {
             place(id: entry.id, kind: entry.kind, atSource: entry.stop)
         }
+
+        setCaret(toSource: caret)
+    }
+
+    private func setCaret(toSource sourceOffset: Int) {
+        let offset = bufferOffset(forSource: sourceOffset)
+        withIter { iter in
+            buffer.getIterAtOffset(iter: iter, charOffset: offset)
+            buffer.placeCursor(where: iter)
+        }
     }
 
     private func markID(class name: String) -> String { "class:\(name)" }
@@ -178,9 +193,10 @@ final class PharoInlineMarks {
     private func place(id: String, kind: Kind, atSource sourceStop: Int) {
         guard marks[id] == nil else { return }
         let bufferOffset = self.bufferOffset(forSource: sourceStop)
-        let anchor: TextChildAnchorRef? = withIter { iter in
+        let anchor: TextChildAnchor? = withIter { iter in
             buffer.getIterAtOffset(iter: iter, charOffset: Int(bufferOffset))
-            return buffer.createChildAnchor(iter: iter)
+            guard let created = buffer.createChildAnchor(iter: iter) else { return nil }
+            return TextChildAnchor(textChildAnchor: created)
         }
         guard let anchor else { return }
 
@@ -309,14 +325,14 @@ final class PharoInlineMarks {
         guard let markOffset = offset(of: mark.anchor) else { return }
         let at = Int(markOffset) + 1
 
-        let anchor: TextChildAnchorRef? = withIter { iter in
+        let anchor: TextChildAnchor? = withIter { iter in
             buffer.getIterAtOffset(iter: iter, charOffset: at)
             buffer.getInsert(iter: iter, text: "\n", len: 1)
             buffer.getIterAtOffset(iter: iter, charOffset: at + 1)
-            let created = buffer.createChildAnchor(iter: iter)
+            guard let created = buffer.createChildAnchor(iter: iter) else { return nil }
             buffer.getIterAtOffset(iter: iter, charOffset: at + 2)
             buffer.getInsert(iter: iter, text: "\n", len: 1)
-            return created
+            return TextChildAnchor(textChildAnchor: created)
         }
         guard let anchor else { return }
 
@@ -358,7 +374,7 @@ final class PharoInlineMarks {
         return Int(total)
     }
 
-    private func offset(of anchor: TextChildAnchorRef) -> Int? {
+    private func offset(of anchor: TextChildAnchor) -> Int? {
         guard !anchor.deleted else { return nil }
         return withIter { iter in
             buffer.getIterAtChildAnchor(iter: iter, anchor: anchor)
@@ -373,7 +389,7 @@ final class PharoInlineMarks {
         }
     }
 
-    private func deleteAnchorCharacter(_ anchor: TextChildAnchorRef) {
+    private func deleteAnchorCharacter(_ anchor: TextChildAnchor) {
         guard let offset = offset(of: anchor) else { return }
         withIters { start, end in
             buffer.getIterAtOffset(iter: start, charOffset: offset)
