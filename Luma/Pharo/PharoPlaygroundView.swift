@@ -461,13 +461,9 @@ private struct PharoPlaygroundEmptyState: View {
 
     private var tipLines: [String] {
         [
-            "Type an expression and press \u{2318}D to evaluate it, or \u{2318}P to print the result beside it.",
-            "Press \u{2318}G to evaluate and open the result beside the page; double-click a row to drill in.",
-            "Press \u{2318}\u{21E7}F to reformat the snippet the way the image lays out code.",
-            "Put the cursor on a message and press \u{2318}M for its implementors, \u{2318}N for its senders.",
-            "Paint a graph: Mondrian new nodes with: myThings; edges connectTo: #next; layout circle.",
-            "Script your own views, or export what you find to a file.",
-            "Try LumaProject events, or LumaProject sessions.",
+            "Write an expression and run it to inspect what it makes; double-click a row to drill in.",
+            "Paint graphs and charts, or script your own views of the result.",
+            "Reach the project itself with LumaProject events and LumaProject sessions.",
         ]
     }
 
