@@ -1,5 +1,7 @@
+import CGraphene
 import CGtk
 import Foundation
+import struct Graphene.RectRef
 import Gtk
 import LumaCore
 import SwiftyPharo
@@ -19,6 +21,7 @@ final class PharoColumnsView {
     private let scroll: ScrolledWindow
     private var columnWidth = 380
     private var columnViews: [PharoColumnView] = []
+    private var columnAnchors: [(depth: Int, widget: WidgetRef)] = []
 
     init(runtime: PharoRuntime) {
         self.runtime = runtime
@@ -56,6 +59,12 @@ final class PharoColumnsView {
         state.clear()
         clear(strip)
         clear(columns)
+        columnViews.removeAll()
+        columnAnchors.removeAll()
+        placeholder(text)
+    }
+
+    private func placeholder(_ text: String) {
         let label = Label(str: text)
         label.marginStart = 12
         label.marginTop = 12
@@ -72,26 +81,36 @@ final class PharoColumnsView {
         clear(strip)
         clear(columns)
         columnViews.removeAll()
-        renderStrip()
+        columnAnchors.removeAll()
 
-        if let handle = state.maximized, let depth = state.objects.firstIndex(where: { $0.handle == handle }) {
-            columns.append(child: column(at: depth, maximized: true).widget)
+        guard !state.objects.isEmpty else {
+            placeholder("Evaluate a snippet with Ctrl+Return to open its result here.")
             return
         }
 
-        var depth = 0
-        while depth < state.objects.count {
-            if state.isCollapsed(state.objects[depth].handle) {
-                let start = depth
-                while depth < state.objects.count, state.isCollapsed(state.objects[depth].handle) { depth += 1 }
-                columns.append(child: collapsedStack(from: start, to: depth))
-            } else {
-                let view = column(at: depth, maximized: false)
-                view.widget.setSizeRequest(width: columnWidth, height: -1)
-                columns.append(child: view.widget)
-                depth += 1
+        if let handle = state.maximized, let depth = state.objects.firstIndex(where: { $0.handle == handle }) {
+            let view = column(at: depth, maximized: true)
+            columns.append(child: view.widget)
+            columnAnchors.append((depth, WidgetRef(view.widget)))
+        } else {
+            var depth = 0
+            while depth < state.objects.count {
+                if state.isCollapsed(state.objects[depth].handle) {
+                    let start = depth
+                    while depth < state.objects.count, state.isCollapsed(state.objects[depth].handle) { depth += 1 }
+                    let stack = collapsedStack(from: start, to: depth)
+                    columns.append(child: stack)
+                    for buried in start..<depth { columnAnchors.append((buried, WidgetRef(stack))) }
+                } else {
+                    let view = column(at: depth, maximized: false)
+                    view.widget.setSizeRequest(width: columnWidth, height: -1)
+                    columns.append(child: view.widget)
+                    columnAnchors.append((depth, WidgetRef(view.widget)))
+                    depth += 1
+                }
             }
         }
+        renderStrip()
     }
 
     /// The views own the row and header handlers, so they have to outlive this
@@ -142,28 +161,44 @@ final class PharoColumnsView {
         return stack
     }
 
+    /// A square per column that reaches it: a collapsed one expands, any other
+    /// scrolls into view. The maximized column wears the brand colour, a
+    /// collapsed one dims.
     private func renderStrip() {
+        guard state.objects.count > 1 else { return }
         for (depth, object) in state.objects.enumerated() {
             let square = Button()
-            square.setSizeRequest(width: 22, height: 12)
+            square.add(cssClass: "luma-pharo-strip")
+            square.setSizeRequest(width: 28, height: 14)
             square.tooltipText = object.printString
             if state.isMaximized(object.handle) {
                 square.add(cssClass: "suggested-action")
             } else if state.isCollapsed(object.handle) {
-                square.add(cssClass: "flat")
+                square.add(cssClass: "dim-label")
             }
             square.onClicked { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    if self.state.isCollapsed(object.handle) {
-                        self.state.toggleCollapsed(object.handle)
-                        self.render()
-                    }
-                }
+                MainActor.assumeIsolated { self?.reveal(depth: depth) }
             }
             strip.append(child: square)
-            _ = depth
         }
+    }
+
+    private func reveal(depth: Int) {
+        guard depth < state.objects.count else { return }
+        if state.isCollapsed(state.objects[depth].handle) {
+            state.toggleCollapsed(state.objects[depth].handle)
+            render()
+            return
+        }
+        guard let anchor = columnAnchors.first(where: { $0.depth == depth })?.widget,
+              let adjustment = scroll.hadjustment
+        else { return }
+        var bounds = graphene_rect_t()
+        let ok = withUnsafeMutablePointer(to: &bounds) { pointer in
+            anchor.computeBounds(target: columns, outBounds: RectRef(pointer))
+        }
+        guard ok else { return }
+        adjustment.value = Double(bounds.origin.x)
     }
 
     private func clear(_ box: Box) {

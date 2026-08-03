@@ -474,6 +474,24 @@ enum StyleSheet {
     button.luma-itrace-pill.luma-itrace-pill-on:hover {
         background-color: alpha(@accent_bg_color, 0.28);
     }
+    button.luma-pharo-strip {
+        min-width: 26px;
+        min-height: 12px;
+        padding: 0;
+        margin: 0;
+        border-radius: 4px;
+        background-color: alpha(@window_fg_color, 0.20);
+        box-shadow: none;
+    }
+    button.luma-pharo-strip:hover {
+        background-color: alpha(@window_fg_color, 0.38);
+    }
+    button.luma-pharo-strip.suggested-action {
+        background-color: @accent_bg_color;
+    }
+    button.luma-pharo-strip.dim-label {
+        background-color: alpha(@window_fg_color, 0.10);
+    }
     """
 
     static func install() {

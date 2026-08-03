@@ -48,22 +48,53 @@ final class PharoColumnView {
 
         let bar = Box(orientation: .horizontal, spacing: 2)
         bar.append(child: title)
-        bar.append(child: action("⤢", "Restore pane", onMaximize, when: isMaximized))
-        bar.append(child: action("▢", "Maximise pane", onMaximize, when: !isMaximized))
-        bar.append(child: action("‹", "Collapse pane", onCollapse, when: !isMaximized))
-        bar.append(child: action("↻", "Reload", { [weak self] in self?.reload() }, when: true))
-        bar.append(child: action("✕", "Close pane", onClose, when: !isMaximized))
+        bar.append(child: menuButton())
         return bar
     }
 
-    private func action(_ symbol: String, _ tip: String, _ run: @escaping () -> Void, when shown: Bool) -> Button {
-        let button = Button(label: symbol)
+    private func menuButton() -> MenuButton {
+        let button = MenuButton()
         button.add(cssClass: "flat")
-        button.tooltipText = tip
+        button.iconName = "view-more-symbolic"
+        button.tooltipText = "Pane actions"
         button.marginTop = 4
         button.marginBottom = 4
-        button.visible = shown
-        button.onClicked { _ in MainActor.assumeIsolated { run() } }
+        button.marginEnd = 4
+
+        let popover = Popover()
+        popover.autohide = true
+        let box = Box(orientation: .vertical, spacing: 2)
+        box.marginTop = 6
+        box.marginBottom = 6
+        box.marginStart = 6
+        box.marginEnd = 6
+        if isMaximized {
+            box.append(child: menuItem("Restore pane", popover) { [weak self] in self?.onMaximize() })
+        } else {
+            box.append(child: menuItem("Collapse pane", popover) { [weak self] in self?.onCollapse() })
+            box.append(child: menuItem("Maximize pane", popover) { [weak self] in self?.onMaximize() })
+        }
+        box.append(child: menuItem("Update pane tool", popover) { [weak self] in self?.reload() })
+        box.append(child: Separator(orientation: .horizontal))
+        let close = menuItem("Close pane", popover) { [weak self] in self?.onClose() }
+        close.add(cssClass: "destructive-action")
+        box.append(child: close)
+        popover.set(child: box)
+        button.set(popover: popover)
+        return button
+    }
+
+    private func menuItem(_ label: String, _ popover: Popover, _ action: @escaping () -> Void) -> Button {
+        let button = Button(label: label)
+        button.add(cssClass: "flat")
+        button.hexpand = true
+        if let child = button.child { child.halign = .start }
+        button.onClicked { _ in
+            MainActor.assumeIsolated {
+                popover.popdown()
+                action()
+            }
+        }
         return button
     }
 
@@ -109,6 +140,7 @@ final class PharoColumnView {
     private func listPage(for view: PharoViewDeclaration) -> Box {
         let rows = ListBox()
         rows.selectionMode = .single
+        rows.activateOnSingleClick = false
         rows.add(cssClass: "navigation-sidebar")
 
         let scroll = ScrolledWindow()
