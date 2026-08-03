@@ -56,6 +56,7 @@ final class PharoSnippetCard {
         buffer = GtkSource.Buffer(table: Gtk.TextTagTable?.none)
         editor = GtkSource.View(buffer: buffer)
         editor.monospace = true
+        editor.enableSnippets = true
         editor.showLineNumbers = false
         editor.highlightCurrentLine = false
         editor.leftMargin = 10
