@@ -97,7 +97,8 @@ final class PharoColumnView {
         case "text":
             return textPage(view.text ?? "")
         case "graph":
-            return view.graph.map(PharoVisualArea.graph) ?? textPage("Empty graph.")
+            guard let graph = view.graph else { return textPage("Empty graph.") }
+            return graphPage(graph, selector: view.methodSelector)
         case "chart":
             return view.chart.map(PharoVisualArea.chart) ?? textPage("Empty chart.")
         default:
@@ -138,6 +139,22 @@ final class PharoColumnView {
             }
         }
         return page
+    }
+
+    private var graphAreas: [PharoGraphArea] = []
+
+    private func graphPage(_ graph: PharoGraph, selector: String) -> Box {
+        let area = PharoGraphArea(graph: graph)
+        area.onDrill = { [weak self] index in
+            guard let self else { return }
+            Task { @MainActor in
+                if let element = try? await self.runtime.drillInto(self.object, view: selector, index: index + 1) {
+                    self.onDrill(element)
+                }
+            }
+        }
+        graphAreas.append(area)
+        return area.widget
     }
 
     private func itemRow(_ cells: [PharoCell]) -> ListBoxRow {
