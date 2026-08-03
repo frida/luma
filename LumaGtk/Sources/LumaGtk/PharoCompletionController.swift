@@ -28,6 +28,9 @@ final class PharoCompletionController {
     private var generation: UInt = 0
     private var pending: Task<Void, Never>?
 
+    private var placeholders: [(start: TextMarkRef, end: TextMarkRef)] = []
+    private var placeholderIndex = 0
+
     init(editor: GtkSource.View, buffer: GtkSource.Buffer, suggest: @escaping (String, Int) async -> PharoCompletions?) {
         self.editor = editor
         self.buffer = buffer
@@ -82,6 +85,21 @@ final class PharoCompletionController {
     }
 
     func handleKey(_ keyval: UInt) -> Bool {
+        if !placeholders.isEmpty {
+            switch Int32(keyval) {
+            case Gdk.keyTab:
+                selectPlaceholder(placeholderIndex + 1)
+                return true
+            case Gdk.keyISOLeftTab:
+                selectPlaceholder(placeholderIndex - 1)
+                return true
+            case Gdk.keyEscape:
+                clearPlaceholders()
+                return true
+            default:
+                break
+            }
+        }
         guard isActive else { return false }
         switch Int32(keyval) {
         case Gdk.keyEscape:
@@ -211,7 +229,70 @@ final class PharoCompletionController {
         let replacement = candidates[index]
         let start = currentTokenStart()
         dismiss()
-        replaceToken(from: start, with: replacement)
+        if replacement.contains(":") {
+            insertKeywordTemplate(replacement, from: start)
+        } else {
+            replaceToken(from: start, with: replacement)
+        }
+    }
+
+    /// A keyword selector completes to its keywords spaced for arguments, each
+    /// keyword's name left as a placeholder the reader tabs through and types
+    /// over -- "to:by:" becomes "to: to by: by", the first slot selected.
+    private func insertKeywordTemplate(_ selector: String, from start: Int) {
+        clearPlaceholders()
+        let keywords = selector.split(separator: ":").map(String.init)
+        guard !keywords.isEmpty else { return }
+
+        var template = ""
+        var slots: [(offset: Int, length: Int)] = []
+        for (index, keyword) in keywords.enumerated() {
+            template += "\(keyword): "
+            slots.append((template.count, keyword.count))
+            template += keyword
+            if index < keywords.count - 1 { template += " " }
+        }
+
+        replaceToken(from: start, with: template)
+
+        for slot in slots {
+            let pair: (TextMarkRef, TextMarkRef)? = withIters { first, second in
+                buffer.getIterAtOffset(iter: first, charOffset: start + slot.offset)
+                buffer.getIterAtOffset(iter: second, charOffset: start + slot.offset + slot.length)
+                guard let startMark = buffer.createMark(markName: nil, where: first, leftGravity: true),
+                      let endMark = buffer.createMark(markName: nil, where: second, leftGravity: false)
+                else { return nil }
+                return (startMark, endMark)
+            }
+            if let pair { placeholders.append(pair) }
+        }
+        // Select the first slot on the next turn: the key that accepted the
+        // choice sets its own caret as it finishes, and would drop a selection
+        // made now.
+        Task { @MainActor in self.selectPlaceholder(0) }
+    }
+
+    private func selectPlaceholder(_ index: Int) {
+        guard index >= 0, index < placeholders.count else {
+            clearPlaceholders()
+            return
+        }
+        placeholderIndex = index
+        let (startMark, endMark) = placeholders[index]
+        withIters { first, second in
+            buffer.getIterAtMark(iter: first, mark: startMark)
+            buffer.getIterAtMark(iter: second, mark: endMark)
+            buffer.selectRange(ins: second, bound: first)
+        }
+    }
+
+    private func clearPlaceholders() {
+        for (startMark, endMark) in placeholders {
+            buffer.delete(mark: startMark)
+            buffer.delete(mark: endMark)
+        }
+        placeholders = []
+        placeholderIndex = 0
     }
 
     /// Where the token under the caret begins, walked back over its own letters
@@ -265,5 +346,12 @@ final class PharoCompletionController {
         let iter = TextIter(storage)
         buffer.getIterAtMark(iter: iter, mark: buffer.getInsert())
         return Int(iter.offset)
+    }
+
+    private func withIters<R>(_ body: (TextIter, TextIter) -> R) -> R {
+        let first = UnsafeMutablePointer<GtkTextIter>.allocate(capacity: 1)
+        let second = UnsafeMutablePointer<GtkTextIter>.allocate(capacity: 1)
+        defer { first.deallocate(); second.deallocate() }
+        return body(TextIter(first), TextIter(second))
     }
 }
