@@ -26,9 +26,10 @@ final class PharoPlaygroundPane {
 
     private var snippets: [PharoPlaygroundSnippet]
     private var cards: [UUID: PharoSnippetCard] = [:]
-    private var liveResults: [UUID: PharoObject] = [:]
     private var evaluating: Set<UUID> = []
 
+    private let languageManager = GtkSource.LanguageManager()
+    private let schemeManager = GtkSource.StyleSchemeManager()
     private var smalltalkLanguage: GtkSource.LanguageRef?
     private var lumaScheme: GtkSource.StyleSchemeRef?
 
@@ -82,12 +83,10 @@ final class PharoPlaygroundPane {
             .deletingLastPathComponent().path
         else { return }
 
-        let languages = GtkSource.LanguageManager()
-        let schemes = GtkSource.StyleSchemeManager()
-        languages.appendSearchPath(path: specs)
-        schemes.appendSearchPath(path: specs)
-        smalltalkLanguage = languages.getLanguage(id: "smalltalk")
-        lumaScheme = schemes.getScheme(schemeId: "luma")
+        languageManager.appendSearchPath(path: specs)
+        schemeManager.appendSearchPath(path: specs)
+        smalltalkLanguage = languageManager.getLanguage(id: "smalltalk")
+        lumaScheme = schemeManager.getScheme(schemeId: "luma")
     }
 
     private func applyHighlighting(to buffer: GtkSource.Buffer) {
@@ -118,7 +117,6 @@ final class PharoPlaygroundPane {
         let live = Set(snippets.map(\.id))
         for id in cards.keys where !live.contains(id) {
             cards[id] = nil
-            liveResults[id] = nil
         }
     }
 
@@ -138,12 +136,10 @@ final class PharoPlaygroundPane {
         card.onFormat = { [weak self] in self?.format(id) }
         card.onBrowse = { [weak self] kind in self?.browse(id, kind) }
         card.onSourceChanged = { [weak self] source in self?.updateSource(id, source) }
-        card.onReopenResult = { [weak self] in self?.reopen(id) }
         card.onMoveUp = { [weak self] in self?.moveUp(id) }
         card.onMoveDown = { [weak self] in self?.moveDown(id) }
         card.onDuplicate = { [weak self] in self?.duplicate(id) }
         card.onRemove = { [weak self] in self?.removeSnippet(id) }
-        card.setResultAvailable(liveResults[id] != nil)
         return card
     }
 
@@ -259,8 +255,7 @@ final class PharoPlaygroundPane {
             do {
                 try await PharoRuntime.shared.startPlayground(for: engine)
                 let produced = try await PharoRuntime.shared.evaluate(source)
-                liveResults[id] = produced
-                cards[id]?.setResultAvailable(true)
+                cards[id]?.flashOutcome(success: true)
                 switch mode {
                 case .doIt:
                     inspector.showMessage("Done.")
@@ -270,14 +265,10 @@ final class PharoPlaygroundPane {
                     inspector.present(produced)
                 }
             } catch {
+                cards[id]?.flashOutcome(success: false)
                 inspector.showMessage(error.localizedDescription)
             }
         }
-    }
-
-    private func reopen(_ id: UUID) {
-        guard let object = liveResults[id] else { return }
-        inspector.present(object)
     }
 
     private func format(_ id: UUID) {
