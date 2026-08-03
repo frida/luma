@@ -16,6 +16,11 @@ final class PharoCompletionController {
     private let buffer: GtkSource.Buffer
     private let suggest: (String, Int) async -> PharoCompletions?
 
+    /// The source and caret the marks leave once their anchor characters are
+    /// taken out, so the image sees the code and not the placeholders.
+    var cleanSource: (() -> String?)?
+    var cleanCursor: (() -> Int?)?
+
     private var popover: Popover?
     private var list: ListBox?
     private var scroll: ScrolledWindow?
@@ -60,9 +65,9 @@ final class PharoCompletionController {
     var isActive: Bool { popover != nil }
 
     func request() {
-        let source = buffer.text
+        let source = cleanSource?() ?? buffer.text
         guard !source.isEmpty else { return }
-        let cursor = cursorOffset()
+        let cursor = cleanCursor?() ?? cursorOffset()
         generation &+= 1
         let generationAtRequest = generation
         pending?.cancel()

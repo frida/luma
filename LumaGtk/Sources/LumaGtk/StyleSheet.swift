@@ -513,6 +513,24 @@ enum StyleSheet {
         padding: 0;
         min-height: 0;
     }
+    button.luma-pharo-mark {
+        padding: 0 2px;
+        margin: 0 1px;
+        min-width: 14px;
+        min-height: 16px;
+    }
+    button.luma-pharo-mark:hover label {
+        color: @accent_color;
+    }
+    box.luma-pharo-body {
+        margin: 2px 0;
+        border: 1px solid alpha(@window_fg_color, 0.15);
+        border-radius: 6px;
+        background-color: alpha(@window_fg_color, 0.03);
+    }
+    box.luma-pharo-method-body {
+        margin: 4px 8px;
+    }
     """
 
     static func install() {
