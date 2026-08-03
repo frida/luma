@@ -380,6 +380,7 @@ final class MainWindow: InstrumentUIHost {
     }
 
     func present() {
+        PharoModifierWatcher.install(on: window)
         window.present()
         renderDetail()
     }
