@@ -1091,13 +1091,12 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
 
     private func keywordTemplate(_ selector: String) -> (text: NSAttributedString, placeholders: [NSRange]) {
         let keywords = selector.split(separator: ":").map(String.init)
-        let slot = "\u{2026}"
         let text = NSMutableAttributedString()
         var placeholders: [NSRange] = []
         for (index, keyword) in keywords.enumerated() {
             text.append(NSAttributedString(string: "\(keyword): ", attributes: sourceAttributes))
-            placeholders.append(NSRange(location: text.length, length: slot.utf16.count))
-            text.append(NSAttributedString(string: slot, attributes: placeholderAttributes))
+            placeholders.append(NSRange(location: text.length, length: 1))
+            text.append(NSAttributedString(attachment: placeholderAttachment()))
             if index < keywords.count - 1 {
                 text.append(NSAttributedString(string: " ", attributes: sourceAttributes))
             }
@@ -1105,11 +1104,49 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         return (text, placeholders)
     }
 
-    private var placeholderAttributes: [NSAttributedString.Key: Any] {
-        var attributes = sourceAttributes
-        attributes[.backgroundColor] = NSColor.controlAccentColor.withAlphaComponent(0.18)
-        return attributes
+    /// Each argument slot rides a token the way Xcode draws a placeholder: a
+    /// rounded capsule the reader tabs onto and types over. The keyword already
+    /// names it, so the capsule is a plain marker rather than the keyword echoed.
+    private func placeholderAttachment() -> NSTextAttachment {
+        let attachment = NSTextAttachment()
+        let pill = Self.placeholderPill
+        attachment.image = pill
+        attachment.bounds = CGRect(
+            x: 0,
+            y: (Self.sourceFont.descender - 1).rounded(),
+            width: pill.size.width,
+            height: pill.size.height)
+        return attachment
     }
+
+    private static let placeholderPill: NSImage = {
+        let height = (sourceFont.capHeight + 7).rounded()
+        let dotDiameter: CGFloat = 2.6
+        let dotSpacing: CGFloat = 4
+        let contentWidth = 2 * dotSpacing + dotDiameter
+        let width = (contentWidth + 12).rounded()
+        let image = NSImage(size: NSSize(width: width, height: height))
+        image.lockFocus()
+        let capsule = NSBezierPath(
+            roundedRect: NSRect(x: 0.5, y: 0.5, width: width - 1, height: height - 1),
+            xRadius: 4,
+            yRadius: 4)
+        NSColor(white: 0.5, alpha: 0.20).setFill()
+        capsule.fill()
+        NSColor(white: 0.42, alpha: 0.9).setFill()
+        let centerY = height / 2
+        let firstX = (width - contentWidth) / 2
+        for index in 0..<3 {
+            let centerX = firstX + CGFloat(index) * dotSpacing + dotDiameter / 2
+            NSBezierPath(ovalIn: NSRect(
+                x: centerX - dotDiameter / 2,
+                y: centerY - dotDiameter / 2,
+                width: dotDiameter,
+                height: dotDiameter)).fill()
+        }
+        image.unlockFocus()
+        return image
+    }()
 
     /// Steps to the next or previous argument placeholder, selecting it so a keypress
     /// types over it. The placeholders shift and clear with edits through the
