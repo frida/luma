@@ -18,6 +18,7 @@ final class PharoColumnsView {
     private let columns: Box
     private let scroll: ScrolledWindow
     private var columnWidth = 380
+    private var columnViews: [PharoColumnView] = []
 
     init(runtime: PharoRuntime) {
         self.runtime = runtime
@@ -70,6 +71,7 @@ final class PharoColumnsView {
     private func render() {
         clear(strip)
         clear(columns)
+        columnViews.removeAll()
         renderStrip()
 
         if let handle = state.maximized, let depth = state.objects.firstIndex(where: { $0.handle == handle }) {
@@ -92,9 +94,13 @@ final class PharoColumnsView {
         }
     }
 
+    /// The views own the row and header handlers, so they have to outlive this
+    /// call; keeping only their widgets would let them deallocate and leave the
+    /// drill and pane actions dead.
     private func column(at depth: Int, maximized: Bool) -> PharoColumnView {
         let object = state.objects[depth]
         let view = PharoColumnView(runtime: runtime, object: object, isMaximized: maximized)
+        columnViews.append(view)
         view.onDrill = { [weak self] element in
             self?.state.open(element, from: depth)
             self?.render()
