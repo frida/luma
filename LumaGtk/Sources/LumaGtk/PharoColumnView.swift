@@ -149,18 +149,25 @@ final class PharoColumnView {
         let rows = ListBox()
         rows.selectionMode = .single
         rows.activateOnSingleClick = false
+        rows.vexpand = true
         rows.add(cssClass: "navigation-sidebar")
+
+        // Header and rows ride in one scroller so a wide table scrolls as a
+        // whole and never widens the column past its set width.
+        let inner = Box(orientation: .vertical, spacing: 0)
+        if titles.count > 1 {
+            inner.append(child: headerRow(titles, groups: columnGroups))
+            inner.append(child: Separator(orientation: .horizontal))
+        }
+        inner.append(child: rows)
 
         let scroll = ScrolledWindow()
         scroll.hexpand = true
         scroll.vexpand = true
-        scroll.set(child: rows)
+        scroll.propagateNaturalWidth = false
+        scroll.set(child: inner)
 
         let page = Box(orientation: .vertical, spacing: 0)
-        if titles.count > 1 {
-            page.append(child: headerRow(titles, groups: columnGroups))
-            page.append(child: Separator(orientation: .horizontal))
-        }
         page.append(child: scroll)
 
         let object = object
