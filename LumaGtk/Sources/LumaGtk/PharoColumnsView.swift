@@ -26,6 +26,8 @@ final class PharoColumnsView {
     private let scroll: ScrolledWindow
     private let arrowArea: DrawingArea
     private var pointingFromY: Double?
+    private var leadingStack: Box?
+    private var leadingStackHalf: Double = 0
     private var columnWidth = 380
     private var columnViews: [PharoColumnView] = []
     private var columnAnchors: [(depth: Int, widget: WidgetRef)] = []
@@ -93,8 +95,21 @@ final class PharoColumnsView {
             source.computeBounds(target: WidgetRef(widget), outBounds: RectRef(pointer))
         }
         pointingFromY = ok ? Double(bounds.origin.y + bounds.size.height / 2) : nil
-        arrowArea.visible = pointingFromY != nil && !state.objects.isEmpty
+        positionLeadingConnector()
         arrowArea.queueDraw()
+    }
+
+    /// The snippet's connector into the first column: a triangle when that column
+    /// stands open, but when it is collapsed the stack itself steps into the
+    /// arrow's place, held to the snippet's centre rather than the column's.
+    private func positionLeadingConnector() {
+        if let stack = leadingStack, let y = pointingFromY {
+            arrowArea.visible = false
+            stack.valign = .start
+            stack.marginTop = Int(max(0, y - leadingStackHalf))
+        } else {
+            arrowArea.visible = pointingFromY != nil && !state.objects.isEmpty
+        }
     }
 
     private func drawArrow(_ ctx: Cairo.ContextRef, _ width: Double, _ height: Double) {
@@ -213,6 +228,7 @@ final class PharoColumnsView {
         clear(columns)
         columnViews.removeAll()
         columnAnchors.removeAll()
+        leadingStack = nil
 
         if state.objects.isEmpty {
             pointingFromY = nil
@@ -232,6 +248,10 @@ final class PharoColumnsView {
                         let start = depth
                         while depth < state.objects.count, state.isCollapsed(state.objects[depth].handle) { depth += 1 }
                         let stack = collapsedStack(from: start, to: depth, hasFollowingExpanded: depth < state.objects.count)
+                        if start == 0 {
+                            leadingStack = stack
+                            leadingStackHalf = collapsedStackHalfHeight(count: depth - start)
+                        }
                         columns.append(child: stack)
                         for buried in start..<depth { columnAnchors.append((buried, WidgetRef(stack))) }
                         previousWasExpanded = false
@@ -247,19 +267,32 @@ final class PharoColumnsView {
                 }
             }
         }
+        positionLeadingConnector()
         onChanged?()
     }
 
     /// The triangle between two expanded columns, centred down the seam, that
     /// marks the drill from the left column into the right.
-    private func drillArrow() -> Image {
-        let arrow = Image(iconName: "pan-end-symbolic")
-        arrow.add(cssClass: "dim-label")
+    private func drillArrow() -> Label {
+        let arrow = triangleGlyph("\u{25B6}")
         arrow.vexpand = true
         arrow.valign = .center
         arrow.marginStart = 2
         arrow.marginEnd = 2
         return arrow
+    }
+
+    private func triangleGlyph(_ glyph: String) -> Label {
+        let label = Label(str: glyph)
+        label.add(cssClass: "dim-label")
+        label.add(cssClass: "caption")
+        return label
+    }
+
+    private func collapsedStackHalfHeight(count: Int) -> Double {
+        let triangle = 14.0, spacing = 6.0, miniature = 26.0
+        let height = triangle + spacing + Double(count) * miniature + Double(max(0, count - 1)) * spacing
+        return height / 2
     }
 
     /// The views own the row and header handlers, so they have to outlive this
@@ -299,9 +332,7 @@ final class PharoColumnsView {
         stack.marginStart = 8
         stack.marginEnd = 8
 
-        let triangle = Image(iconName: "pan-down-symbolic")
-        triangle.add(cssClass: "dim-label")
-        stack.append(child: triangle)
+        stack.append(child: triangleGlyph("\u{25BC}"))
 
         for depth in start..<end {
             let object = state.objects[depth]

@@ -28,6 +28,34 @@ final class PharoCompletionController {
         self.editor = editor
         self.buffer = buffer
         self.suggest = suggest
+        installAutoTrigger()
+    }
+
+    /// Completions surface as the reader types, no key needed -- the way the
+    /// SwiftUI editor calls `complete:` on every letter. A single-character edit
+    /// asks afresh: a letter opens or narrows the list, a delimiter empties the
+    /// token and closes it. Deleting re-asks only while the list already stands,
+    /// so backspacing filters without conjuring a list from nothing. Longer
+    /// inserts -- setting the source, accepting a candidate -- are left alone.
+    private func installAutoTrigger() {
+        buffer.onInsertText { [weak self] _, _, text, _ in
+            MainActor.assumeIsolated {
+                guard let self, text.count == 1, let character = text.first else { return }
+                if character.isLetter || self.isActive { self.scheduleRequest() }
+            }
+        }
+        buffer.onDeleteRange { [weak self] _, _, _ in
+            MainActor.assumeIsolated {
+                guard let self, self.isActive else { return }
+                self.scheduleRequest()
+            }
+        }
+    }
+
+    /// Ask once the edit that prompted it has landed, so the token and caret read
+    /// their settled positions rather than the ones from mid-signal.
+    private func scheduleRequest() {
+        Task { @MainActor in self.request() }
     }
 
     var isActive: Bool { popover != nil }
@@ -65,7 +93,8 @@ final class PharoCompletionController {
             accept()
             return true
         default:
-            dismiss()
+            // Let the keystroke through and let the edit it makes decide whether
+            // the list refreshes or closes; dismissing here would fight typing.
             return false
         }
     }
