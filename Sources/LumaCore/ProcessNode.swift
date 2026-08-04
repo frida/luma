@@ -107,7 +107,7 @@ public final class ProcessNode: Identifiable {
     private static let systemDrainInterval: UInt64 = 50_000_000
 
     private let drainService: SystemDrainService?
-    private let traceStore: TraceStore?
+    private let blobStore: BlobStore?
 
     public var onResolveBlockNames: (@MainActor ([UInt64]) async -> [String])?
 
@@ -130,7 +130,7 @@ public final class ProcessNode: Identifiable {
         script: Script,
         instruments: [InstrumentRef] = [],
         drainService: SystemDrainService? = nil,
-        traceStore: TraceStore? = nil
+        blobStore: BlobStore? = nil
     ) {
         self.sessionID = sessionID
         self.device = device
@@ -146,7 +146,7 @@ public final class ProcessNode: Identifiable {
         self.lastSeenAt = Date()
         self.instruments = instruments
         self.drainService = drainService
-        self.traceStore = traceStore
+        self.blobStore = blobStore
 
         startObservingSessionState()
         startObservingScriptMessages()
@@ -1435,7 +1435,7 @@ public final class ProcessNode: Identifiable {
 
         await annotateBlocksWithSymbols(metadataJSON: &metadataJSON)
 
-        try? traceStore?.write(traceData, for: pending.id)
+        try? blobStore?.write(traceData, id: pending.id, kind: .trace)
 
         let trace = ITrace(
             id: pending.id,

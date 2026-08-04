@@ -20,7 +20,7 @@ public final class Engine {
     public let deviceManager: DeviceManager
     public let systemParameters = SystemParametersCache()
     public let store: ProjectStore
-    public let traces: TraceStore
+    public let blobs: BlobStore
     public let eventStore: EventStore?
     public let compilerWorkspace: CompilerWorkspace
 
@@ -129,7 +129,7 @@ public final class Engine {
 
     public init(
         store: ProjectStore,
-        traces: TraceStore,
+        blobs: BlobStore,
         eventStore: EventStore? = nil,
         dataDirectory: URL,
         tokenStore: TokenStore? = nil,
@@ -138,7 +138,7 @@ public final class Engine {
     ) {
         self.deviceManager = deviceManager
         self.store = store
-        self.traces = traces
+        self.blobs = blobs
         self.eventStore = eventStore
         self.dataDirectory = dataDirectory
         self.compilerWorkspace = CompilerWorkspace(store: store)
@@ -1176,12 +1176,12 @@ public final class Engine {
 
     private func applyRemoteSessionTraceRemoved(sessionID: UUID, traceID: UUID) {
         try? store.deleteITrace(id: traceID)
-        traces.delete(traceID: traceID)
+        blobs.delete(id: traceID, kind: .trace)
         onSessionListChanged?(.traceRemoved(id: traceID, sessionID: sessionID))
     }
 
     private func applyRemoteTraceDataProgressed(sessionID: UUID, traceID: UUID, totalSize: Int) {
-        let cachedSize = traces.size(traceID: traceID) ?? 0
+        let cachedSize = blobs.size(id: traceID, kind: .trace) ?? 0
         guard cachedSize < totalSize else { return }
         _traceCacheInvalidations.yield(TraceCacheInvalidation(traceID: traceID, knownTotalSize: totalSize))
     }
@@ -2141,7 +2141,7 @@ public final class Engine {
                 script: script,
                 instruments: instrumentRefs,
                 drainService: drainService(for: device),
-                traceStore: traces
+                blobStore: blobs
             )
             node.onResolveBlockNames = { [weak self] addresses in
                 guard let self else { return Array(repeating: "", count: addresses.count) }
@@ -3091,7 +3091,7 @@ public final class Engine {
     public func deleteITrace(id: UUID, sessionID: UUID) {
         if localUserHosts(sessionID) {
             try? store.deleteITrace(id: id)
-            traces.delete(traceID: id)
+            blobs.delete(id: id, kind: .trace)
             lastUploadedTraceSize.removeValue(forKey: id)
             onSessionListChanged?(.traceRemoved(id: id, sessionID: sessionID))
         }
@@ -3110,8 +3110,8 @@ public final class Engine {
         {
             return live.prefix(length)
         }
-        if traces.exists(traceID: traceID) {
-            let cached = try traces.load(traceID: traceID)
+        if blobs.exists(id: traceID, kind: .trace) {
+            let cached = try blobs.load(id: traceID, kind: .trace)
             if cached.count >= length {
                 return cached.prefix(length)
             }
@@ -3144,8 +3144,8 @@ public final class Engine {
         var data: Data
         var cursor: Int
 
-        if traces.exists(traceID: traceID) {
-            let cached = try traces.load(traceID: traceID)
+        if blobs.exists(id: traceID, kind: .trace) {
+            let cached = try blobs.load(id: traceID, kind: .trace)
             if expectedSize == nil || cached.count == expectedSize {
                 return cached
             }
@@ -3162,7 +3162,7 @@ public final class Engine {
         }
 
         guard let sid = collabID else {
-            return try traces.load(traceID: traceID)
+            return try blobs.load(id: traceID, kind: .trace)
         }
 
         while expectedSize.map({ cursor < $0 }) ?? true {
@@ -3181,7 +3181,7 @@ public final class Engine {
             if expectedSize == nil, cursor >= totalSize { break }
         }
 
-        try? traces.write(data, for: traceID)
+        try? blobs.write(data, id: traceID, kind: .trace)
         return data
     }
 
