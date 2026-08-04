@@ -204,9 +204,7 @@ final class PharoColumnView {
             return graphPage(graph, selector: view.methodSelector)
         case "chart":
             guard let chart = view.chart else { return textPage("Empty chart.") }
-            let area = PharoChartArea(chart: chart)
-            chartAreas.append(area)
-            return area.widget
+            return chartPage(chart, selector: view.methodSelector)
         default:
             return textPage("\(view.viewName) views are not drawn yet.")
         }
@@ -235,6 +233,20 @@ final class PharoColumnView {
             }
         }
         graphAreas.append(area)
+        return area.widget
+    }
+
+    private func chartPage(_ chart: PharoChart, selector: String) -> Box {
+        let area = PharoChartArea(chart: chart)
+        area.onDrill = { [weak self] index in
+            guard let self else { return }
+            Task { @MainActor in
+                if let element = try? await self.runtime.drillInto(self.object, view: selector, index: index + 1) {
+                    self.onDrill(element)
+                }
+            }
+        }
+        chartAreas.append(area)
         return area.widget
     }
 
