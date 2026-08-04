@@ -3134,18 +3134,35 @@ public final class Engine {
         expectedSize: Int? = nil,
         onProgress: (@MainActor (Int, Int) -> Void)? = nil
     ) async throws -> Data {
-        if let node = node(forSessionID: sessionID),
-            let live = node.livePendingTraceData(traceID: traceID)
+        try await loadBlob(
+            id: traceID, sessionID: sessionID, kind: .trace, expectedSize: expectedSize, onProgress: onProgress)
+    }
+
+    /// The three tiers a blob is read through: the live capture still in the
+    /// node, this session's on-disk store, then a paginated fetch from the lab.
+    /// The live tier and the fetch are the trace's to give -- other kinds live
+    /// only in the store until the blob transport is generalized -- so they are
+    /// skipped for everything else.
+    public func loadBlob(
+        id: UUID,
+        sessionID: UUID,
+        kind: BlobKind,
+        expectedSize: Int? = nil,
+        onProgress: (@MainActor (Int, Int) -> Void)? = nil
+    ) async throws -> Data {
+        if kind == .trace,
+            let node = node(forSessionID: sessionID),
+            let live = node.livePendingTraceData(traceID: id)
         {
             return live
         }
 
-        let collabID = collabSessionID(forSessionID: sessionID)
+        let collabID = kind == .trace ? collabSessionID(forSessionID: sessionID) : nil
         var data: Data
         var cursor: Int
 
-        if blobs.exists(id: traceID, kind: .trace) {
-            let cached = try blobs.load(id: traceID, kind: .trace)
+        if blobs.exists(id: id, kind: kind) {
+            let cached = try blobs.load(id: id, kind: kind)
             if expectedSize == nil || cached.count == expectedSize {
                 return cached
             }
@@ -3162,7 +3179,7 @@ public final class Engine {
         }
 
         guard let sid = collabID else {
-            return try blobs.load(id: traceID, kind: .trace)
+            return try blobs.load(id: id, kind: kind)
         }
 
         while expectedSize.map({ cursor < $0 }) ?? true {
@@ -3170,7 +3187,7 @@ public final class Engine {
             let length = remaining.map { min($0, Self.traceDataPageSize) } ?? Self.traceDataPageSize
             let (chunk, totalSize) = try await collaboration.fetchTraceData(
                 sessionID: sid,
-                traceID: traceID,
+                traceID: id,
                 offset: cursor,
                 length: length
             )
@@ -3181,7 +3198,7 @@ public final class Engine {
             if expectedSize == nil, cursor >= totalSize { break }
         }
 
-        try? blobs.write(data, id: traceID, kind: .trace)
+        try? blobs.write(data, id: id, kind: kind)
         return data
     }
 
