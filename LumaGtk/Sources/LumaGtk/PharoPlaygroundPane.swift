@@ -276,6 +276,7 @@ final class PharoPlaygroundPane {
         let button = Button()
         button.add(cssClass: "suggested-action")
         button.add(cssClass: "pill")
+        button.add(cssClass: "luma-fab")
         button.halign = .center
         let buttonContent = Box(orientation: .horizontal, spacing: 6)
         buttonContent.append(child: Image(iconName: "list-add-symbolic"))
