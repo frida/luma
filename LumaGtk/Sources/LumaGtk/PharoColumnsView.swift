@@ -21,6 +21,12 @@ final class PharoColumnsView {
     /// show or hide this pane.
     var onChanged: (() -> Void)?
 
+    /// Called with the pane blown up to fill, or nothing when none is, so the
+    /// page can lay it over the whole playground rather than only this side.
+    var onMaximizeChanged: ((Widget?) -> Void)?
+
+    private var maximizedView: PharoColumnView?
+
     private let runtime: PharoRuntime
     private let highlight: (GtkSource.Buffer) -> Void
     private let state = PharoColumnState()
@@ -248,14 +254,21 @@ final class PharoColumnsView {
         if state.objects.isEmpty {
             pointingFromY = nil
             arrowArea.visible = false
+            maximizedView = nil
+            onMaximizeChanged?(nil)
         }
 
         if !state.objects.isEmpty {
             if let handle = state.maximized, let depth = state.objects.firstIndex(where: { $0.handle == handle }) {
-                let view = column(at: depth, maximized: true)
-                columns.append(child: view.widget)
-                columnAnchors.append((depth, WidgetRef(view.widget)))
+                // The blown-up pane is laid over the whole playground by the page,
+                // so it leaves the columns behind it empty rather than filling
+                // only this side.
+                let view = maximizedColumn(at: depth, handle: handle)
+                maximizedView = view
+                onMaximizeChanged?(view.widget)
             } else {
+                maximizedView = nil
+                onMaximizeChanged?(nil)
                 var depth = 0
                 var previousWasExpanded = false
                 while depth < state.objects.count {
@@ -271,7 +284,7 @@ final class PharoColumnsView {
                         previousWasExpanded = false
                     } else {
                         if previousWasExpanded { columns.append(child: drillArrow()) }
-                        let view = column(at: depth, maximized: false)
+                        let view = column(at: depth)
                         view.widget.setSizeRequest(width: columnWidth, height: -1)
                         columns.append(child: view.widget)
                         columnAnchors.append((depth, WidgetRef(view.widget)))
@@ -310,9 +323,36 @@ final class PharoColumnsView {
     /// The views own the row and header handlers, so they have to outlive this
     /// call; keeping only their widgets would let them deallocate and leave the
     /// drill and pane actions dead.
-    private func column(at depth: Int, maximized: Bool) -> PharoColumnView {
+    /// The blown-up pane restores before it drills or closes, so the overlay
+    /// drops away and the columns behind it take over, the way the SwiftUI
+    /// maximized pane hands back to its carousel.
+    private func maximizedColumn(at depth: Int, handle: Int) -> PharoColumnView {
         let object = state.objects[depth]
-        let view = PharoColumnView(runtime: runtime, object: object, isMaximized: maximized, highlight: highlight)
+        let view = PharoColumnView(runtime: runtime, object: object, isMaximized: true, highlight: highlight)
+        view.onDrill = { [weak self] element in
+            guard let self else { return }
+            self.state.toggleMaximized(handle)
+            self.state.open(element, from: depth)
+            self.render()
+            self.scrollToNewest()
+        }
+        view.onClose = { [weak self] in
+            guard let self else { return }
+            self.state.toggleMaximized(handle)
+            self.state.close(from: depth)
+            self.render()
+        }
+        view.onMaximize = { [weak self] in
+            guard let self else { return }
+            self.state.toggleMaximized(handle)
+            self.render()
+        }
+        return view
+    }
+
+    private func column(at depth: Int) -> PharoColumnView {
+        let object = state.objects[depth]
+        let view = PharoColumnView(runtime: runtime, object: object, isMaximized: false, highlight: highlight)
         columnViews.append(view)
         view.onDrill = { [weak self] element in
             guard let self else { return }

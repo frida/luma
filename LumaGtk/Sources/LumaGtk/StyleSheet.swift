@@ -519,6 +519,9 @@ enum StyleSheet {
         border-radius: 6px;
         padding: 1px 6px;
     }
+    box.luma-pharo-maximized {
+        background-color: @window_bg_color;
+    }
     box.luma-pharo-body {
         margin: 2px 0;
         border: 1px solid alpha(@window_fg_color, 0.15);
