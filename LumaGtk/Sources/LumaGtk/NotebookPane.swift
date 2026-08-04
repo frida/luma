@@ -23,7 +23,7 @@ final class NotebookPane {
     private var autoEditedEntries: Set<UUID> = []
     private var draftEntries: Set<UUID> = []
     private var jsValueKeepers: [JSInspectValueWidget] = []
-    private var snapshotKeepers: [PharoSnapshotView] = []
+    private var pharoCells: [PharoNotebookCell] = []
     private var entryRows: [UUID: Widget] = [:]
     private var timestampLabels: [UUID: Label] = [:]
     private var timestampDates: [UUID: Date] = [:]
@@ -201,7 +201,7 @@ final class NotebookPane {
         clearWindowFocus()
         clearChildren(of: entriesBox)
         jsValueKeepers.removeAll()
-        snapshotKeepers.removeAll()
+        pharoCells.removeAll()
         entryRows.removeAll()
         timestampLabels.removeAll()
         timestampDates.removeAll()
@@ -394,22 +394,10 @@ final class NotebookPane {
                 body.selectable = true
                 inner.append(child: body)
             }
-        } else if entry.kind == .pharo {
-            if !entry.details.isEmpty {
-                let source = Label(str: entry.details)
-                source.add(cssClass: "monospace")
-                source.halign = .start
-                source.hexpand = true
-                source.wrap = true
-                source.selectable = true
-                source.xalign = 0
-                inner.append(child: source)
-            }
-            if let snapshot = entry.pharoSnapshot {
-                let view = PharoSnapshotView(snapshot: snapshot)
-                snapshotKeepers.append(view)
-                inner.append(child: view.widget)
-            }
+        } else if entry.kind == .pharo, let engine {
+            let cell = PharoNotebookCell(entry: entry, engine: engine)
+            pharoCells.append(cell)
+            inner.append(child: cell.widget)
         } else {
             if let jsValue = entry.jsValue, let engine {
                 let wrapper = JSInspectValueWidget.make(
