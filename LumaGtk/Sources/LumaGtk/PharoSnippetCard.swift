@@ -25,6 +25,7 @@ final class PharoSnippetCard {
     var onMoveDown: (() -> Void)?
     var onDuplicate: (() -> Void)?
     var onRemove: (() -> Void)?
+    var onAddToNotebook: (() -> Void)?
 
     private let editor: GtkSource.View
     private let buffer: GtkSource.Buffer
@@ -196,6 +197,7 @@ final class PharoSnippetCard {
         actions.append(child: spacer)
 
         actions.append(child: examplesButton())
+        actions.append(child: iconButton("bookmark-new-symbolic", "Add to notebook") { [weak self] in self?.onAddToNotebook?() })
         actions.append(child: iconButton("user-trash-symbolic", "Remove") { [weak self] in self?.onRemove?() })
     }
 
