@@ -288,13 +288,13 @@ final class LumaApplication {
 
     private func buildEngine(workingURL: URL) throws -> Engine {
         let store = try ProjectStore(path: workingURL.appendingPathComponent("db.sqlite").path)
-        let traces = try TraceStore(
+        let blobs = try BlobStore(
             directory: workingURL.appendingPathComponent("traces", isDirectory: true)
         )
         let eventStore = EventStore(fileURL: workingURL.appendingPathComponent("events.log"))
         let engine = Engine(
             store: store,
-            traces: traces,
+            blobs: blobs,
             eventStore: eventStore,
             dataDirectory: LumaAppPaths.shared.dataDirectory,
             gitHubAuth: ensuredWelcomeModel().gitHubAuth
