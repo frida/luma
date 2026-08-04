@@ -180,7 +180,13 @@ final class PharoColumnView {
             notebook.removePage(pageNum: notebook.getNPages() - 1)
         }
         Task { @MainActor in
-            let views = (try? await runtime.views(of: object))?.sorted(by: { $0.priority < $1.priority }) ?? []
+            let views: [PharoViewDeclaration]
+            do {
+                views = try await runtime.views(of: object).sorted(by: { $0.priority < $1.priority })
+            } catch {
+                _ = notebook.appendPage(child: failurePage(error.localizedDescription), tabLabel: tabLabel("Error"))
+                return
+            }
             for view in views where view.title != "Meta" {
                 _ = notebook.appendPage(child: page(for: view), tabLabel: tabLabel(view.title))
             }
@@ -248,6 +254,31 @@ final class PharoColumnView {
         }
         chartAreas.append(area)
         return area.widget
+    }
+
+    /// What the image said went wrong, laid out like the content it stands in
+    /// for so the pane keeps its shape rather than swallowing the complaint.
+    private func failurePage(_ message: String) -> Box {
+        let label = Label(str: message)
+        label.selectable = true
+        label.wrap = true
+        label.xalign = 0
+        label.yalign = 0
+        label.marginStart = 12
+        label.marginEnd = 12
+        label.marginTop = 8
+        label.marginBottom = 8
+        label.add(cssClass: "monospace")
+        label.add(cssClass: "error")
+
+        let scroll = ScrolledWindow()
+        scroll.hexpand = true
+        scroll.vexpand = true
+        scroll.set(child: label)
+
+        let page = Box(orientation: .vertical, spacing: 0)
+        page.append(child: scroll)
+        return page
     }
 
     private func textPage(_ text: String) -> Box {
