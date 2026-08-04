@@ -108,7 +108,8 @@ final class PharoSnapshotView {
         let scroll = ScrolledWindow()
         scroll.hexpand = true
         scroll.vexpand = true
-        scroll.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
+        scroll.propagateNaturalWidth = false
+        scroll.setPolicy(hscrollbarPolicy: .automatic, vscrollbarPolicy: .automatic)
         scroll.set(child: stack)
 
         let page = Box(orientation: .vertical, spacing: 0)
@@ -160,6 +161,7 @@ final class PharoSnapshotView {
         let scroll = ScrolledWindow()
         scroll.hexpand = true
         scroll.vexpand = true
+        scroll.propagateNaturalWidth = false
         scroll.set(child: label)
 
         let page = Box(orientation: .vertical, spacing: 0)
