@@ -332,12 +332,13 @@ public final class Engine {
             notebookEntries[i] = entry
         }
         onNotebookChanged?(.updated(entry, changed: changed))
-        if !changed.isDisjoint(with: [.title, .details, .processName]) {
+        if !changed.isDisjoint(with: [.title, .details, .processName, .pharoSnapshot]) {
             collaboration.enqueueUpdate(
                 entryID: entry.id,
                 title: entry.title,
                 details: entry.details,
-                processName: entry.processName
+                processName: entry.processName,
+                pharoSnapshot: changed.contains(.pharoSnapshot) ? entry.pharoSnapshot : nil
             )
         }
     }
