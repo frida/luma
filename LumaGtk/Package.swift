@@ -29,7 +29,11 @@ let cLumaLinkerSettings: [LinkerSetting] = [
     .linkedFramework("WebKit"),
     .unsafeFlags(pkgConfigFlags(["libadwaita-1", "epoxy", "librsvg-2.0"], libs: true)),
 ]
-let lumaGtkLinkerSettings: [LinkerSetting] = []
+// The embedded Pharo image resolves the host's luma_* exports through
+// dlsym, so keep them in the dynamic symbol table.
+let lumaGtkLinkerSettings: [LinkerSetting] = [
+    .unsafeFlags(["-Xlinker", "-export_dynamic"]),
+]
 #elseif os(Windows)
 let cLumaSources: [String] = ["shim_gtk.c", "welcome_backdrop.c", "svg_paintable.c", "shim_webview2.cpp", "webview2_capture.cpp"]
 let cLumaCSettings: [CSetting] = [
@@ -81,6 +85,9 @@ let lumaGtkLinkerSettings: [LinkerSetting] = [
     // linker to defer the symbol — it's only ever called on a fatal
     // assertion path inside Observation.
     .unsafeFlags(["-Xlinker", "--allow-shlib-undefined"]),
+    // The embedded Pharo image resolves the host's luma_* exports through
+    // dlsym, so keep them in the dynamic symbol table.
+    .unsafeFlags(["-Xlinker", "--export-dynamic"]),
 ]
 #endif
 

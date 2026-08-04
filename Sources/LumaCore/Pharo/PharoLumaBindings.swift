@@ -1,11 +1,10 @@
-import LumaCore
 import SwiftyPharo
 
 /// Teaches the image about the host it is running inside. The classes are
 /// compiled on the way up rather than baked into the image, so what Luma
 /// exposes stays in Luma.
-enum PharoLumaBindings {
-    static func install(into runtime: PharoRuntime) async throws {
+public enum PharoLumaBindings {
+    public static func install(into runtime: PharoRuntime) async throws {
         _ = try await runtime.evaluate(source)
     }
 
