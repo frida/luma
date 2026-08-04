@@ -17,6 +17,10 @@ final class PharoColumnView {
     var onCollapse: () -> Void = {}
     var onMaximize: () -> Void = {}
 
+    /// A column embedded inline has no carousel to shrink into or fill, so it
+    /// offers only to reload or close rather than collapse and maximize.
+    var offersLayoutActions = true
+
     private let runtime: PharoRuntime
     private let object: PharoObject
     private let isMaximized: Bool
@@ -119,7 +123,7 @@ final class PharoColumnView {
     /// says it will close. With nothing held the button just opens the menu.
     private var paneMode: PaneMode {
         if PharoModifierWatcher.primaryHeld, PharoModifierWatcher.shiftHeld { return .close }
-        if PharoModifierWatcher.primaryHeld, !isMaximized { return .collapse }
+        if offersLayoutActions, PharoModifierWatcher.primaryHeld, !isMaximized { return .collapse }
         return .menu
     }
 
@@ -152,11 +156,13 @@ final class PharoColumnView {
 
     private func presentMenu(from anchor: Button) {
         var actions: [ContextMenu.Item] = []
-        if isMaximized {
-            actions.append(ContextMenu.Item("Restore pane") { [weak self] in self?.onMaximize() })
-        } else {
-            actions.append(ContextMenu.Item("Collapse pane") { [weak self] in self?.onCollapse() })
-            actions.append(ContextMenu.Item("Maximize pane") { [weak self] in self?.onMaximize() })
+        if offersLayoutActions {
+            if isMaximized {
+                actions.append(ContextMenu.Item("Restore pane") { [weak self] in self?.onMaximize() })
+            } else {
+                actions.append(ContextMenu.Item("Collapse pane") { [weak self] in self?.onCollapse() })
+                actions.append(ContextMenu.Item("Maximize pane") { [weak self] in self?.onMaximize() })
+            }
         }
         actions.append(ContextMenu.Item("Update pane tool") { [weak self] in self?.reload() })
         let close = ContextMenu.Item("Close pane", destructive: true) { [weak self] in self?.onClose() }
