@@ -19,13 +19,27 @@ extension PharoRuntime {
         try await runningState()
 
         let bridge = PharoHostBridge.shared
-        bridge.publish(engine.sessions.map(\.recordForPharo), as: .sessions)
+        bridge.publish(engine.sessions.map(Self.recordWithIcon), as: .sessions)
         bridge.publish(engine.notebookEntries.map(\.recordForPharo), as: .notebookEntries)
         bridge.publish(engine.eventLog.events.suffix(200).map(\.recordForPharo), as: .events)
 
         guard !Self.hasBindings else { return }
         try await PharoLumaBindings.install(into: self)
         Self.hasBindings = true
+    }
+
+    /// A session the process gave no icon still shows one, drawn the way the
+    /// sidebar draws it.
+    @MainActor
+    private static func recordWithIcon(for session: ProcessSession) -> PharoHostRecord {
+        var record = session.recordForPharo
+        if record.icon == nil {
+            record.icon = IconPlaceholderView.base64PNG(
+                seed: "\(session.deviceID)/\(session.processName)",
+                displayName: session.processName,
+                pixelSize: 32)
+        }
+        return record
     }
 
     @MainActor
