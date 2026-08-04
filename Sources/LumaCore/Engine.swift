@@ -320,17 +320,26 @@ public final class Engine {
     }
 
     public func updateNotebookEntry(_ entry: NotebookEntry) {
+        updateNotebookEntry(entry, changed: .all)
+    }
+
+    /// The caller names the fields it moved so views apply just those; the model
+    /// does not diff the entry to find out. Only the fields the collaboration
+    /// protocol carries are enqueued, and only when one of them actually moved.
+    public func updateNotebookEntry(_ entry: NotebookEntry, changed: NotebookEntryFields) {
         try? store.save(entry)
         if let i = notebookEntries.firstIndex(where: { $0.id == entry.id }) {
             notebookEntries[i] = entry
         }
-        onNotebookChanged?(.updated(entry))
-        collaboration.enqueueUpdate(
-            entryID: entry.id,
-            title: entry.title,
-            details: entry.details,
-            processName: entry.processName
-        )
+        onNotebookChanged?(.updated(entry, changed: changed))
+        if !changed.isDisjoint(with: [.title, .details, .processName]) {
+            collaboration.enqueueUpdate(
+                entryID: entry.id,
+                title: entry.title,
+                details: entry.details,
+                processName: entry.processName
+            )
+        }
     }
 
     public func deleteNotebookEntry(_ entry: NotebookEntry) {
@@ -976,7 +985,7 @@ public final class Engine {
             } else {
                 self.notebookEntries.append(entry)
             }
-            self.onNotebookChanged?(existed ? .updated(entry) : .added(entry))
+            self.onNotebookChanged?(existed ? .updated(entry, changed: .all) : .added(entry))
         }
 
         collaboration.onEntryRemoved = { [weak self] id in

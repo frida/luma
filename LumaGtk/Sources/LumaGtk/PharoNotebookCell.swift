@@ -7,24 +7,30 @@ import LumaCore
 import SwiftyPharo
 
 /// A notebook entry holding Smalltalk the reader can edit and run again: the
-/// source over what its last run captured. Running re-evaluates it, keeps a
-/// fresh snapshot beside the code, and saves both back to the entry. Mirrors
-/// the SwiftUI PharoNotebookCell.
+/// source over what its last run captured. Running re-evaluates it and keeps a
+/// fresh snapshot beside the code; both the code and the result save back to
+/// the entry, and the cell refreshes in place rather than rebuilding its row.
+/// Mirrors the SwiftUI PharoNotebookCell.
 @MainActor
 final class PharoNotebookCell {
     let widget: Box
+    let id: UUID
 
-    private let entry: NotebookEntry
+    private var entry: NotebookEntry
     private let engine: Engine
     private let buffer: GtkSource.Buffer
     private let resultSlot = Box(orientation: .vertical, spacing: 0)
     private let failure = Label(str: "")
     private var completion: PharoCompletionController!
+    private var marks: PharoInlineMarks!
     private var snapshotView: PharoSnapshotView?
     private var running = false
 
+    private var source: String { marks.source }
+
     init(entry: NotebookEntry, engine: Engine) {
         self.entry = entry
+        self.id = entry.id
         self.engine = engine
 
         buffer = GtkSource.Buffer(table: Gtk.TextTagTable?.none)
@@ -75,11 +81,23 @@ final class PharoNotebookCell {
 
         showSnapshot(entry.pharoSnapshot)
 
+        marks = PharoInlineMarks(
+            editor: editor, buffer: buffer, runtime: PharoRuntime.shared, selfClass: nil,
+            highlight: { PharoHighlighting.apply(to: $0) })
         completion = PharoCompletionController(editor: editor, buffer: buffer) { source, position in
             try? await PharoRuntime.shared.completions(for: source, at: position)
         }
+        completion.cleanSource = { [weak self] in self?.marks.source }
+        completion.cleanCursor = { [weak self] in self?.marks.sourceCursor() }
 
         run.onClicked { [weak self] _ in MainActor.assumeIsolated { self?.run() } }
+
+        buffer.onChanged { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.marks.isApplying else { return }
+                self.marks.refresh()
+            }
+        }
 
         let keys = EventControllerKey()
         keys.propagationPhase = .capture
@@ -87,6 +105,7 @@ final class PharoNotebookCell {
             MainActor.assumeIsolated {
                 guard let self else { return false }
                 if self.completion.handleKey(keyval) { return true }
+                if self.marks.handleCursorKey(keyval, shift: state.contains(.shiftMask)) { return true }
                 guard state.contains(.controlMask) else { return false }
                 switch keyval {
                 case 0xFF0D, 0xFF8D:
@@ -101,15 +120,27 @@ final class PharoNotebookCell {
             }
         }
         editor.install(controller: keys)
+
+        let focus = EventControllerFocus()
+        focus.onLeave { [weak self] _ in MainActor.assumeIsolated { self?.persistSource() } }
+        editor.install(controller: focus)
     }
 
-    /// Running saves the edited source and the fresh snapshot together, which
-    /// rebuilds the row; a pure edit left unrun is not persisted, since saving
-    /// it would rebuild the row out from under the caret.
+    /// A field-scoped change lands here rather than rebuilding the row, so the
+    /// caret and the editor survive. The editor stays the source of truth for
+    /// the code -- an echo of a source change it originated is a no-op -- so
+    /// only the captured result is applied.
+    func apply(_ entry: NotebookEntry, changed: NotebookEntryFields) {
+        self.entry = entry
+        if changed.contains(.pharoSnapshot) {
+            showSnapshot(entry.pharoSnapshot)
+        }
+    }
+
     private func run() {
         guard !running else { return }
         running = true
-        let source = buffer.text
+        let source = source
 
         Task { @MainActor in
             defer { self.running = false }
@@ -118,15 +149,27 @@ final class PharoNotebookCell {
                 let produced = try await PharoRuntime.shared.evaluate(source)
                 let snapshot = try await PharoSnapshot.capture(of: produced, using: PharoRuntime.shared)
                 failure.visible = false
+                // The result reaches the view back through the model's change,
+                // which keeps the source and the snapshot moving together.
                 var updated = entry
                 updated.details = source
                 updated.pharoSnapshot = snapshot
-                engine.updateNotebookEntry(updated)
+                entry = updated
+                engine.updateNotebookEntry(updated, changed: [.details, .pharoSnapshot])
             } catch {
                 failure.setText(str: error.localizedDescription)
                 failure.visible = true
             }
         }
+    }
+
+    private func persistSource() {
+        let source = source
+        guard source != entry.details else { return }
+        var updated = entry
+        updated.details = source
+        entry = updated
+        engine.updateNotebookEntry(updated, changed: .details)
     }
 
     private func showSnapshot(_ snapshot: PharoSnapshot?) {
