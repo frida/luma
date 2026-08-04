@@ -350,7 +350,7 @@ enum StyleSheet {
         background-color: alpha(@theme_fg_color, 0.12);
     }
 
-    button.luma-notebook-fab {
+    button.luma-fab {
         min-height: 0;
         padding: 6px 18px;
     }
