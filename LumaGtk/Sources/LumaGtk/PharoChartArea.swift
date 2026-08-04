@@ -94,8 +94,12 @@ final class PharoChartArea {
 
         let secondary = GestureClick()
         secondary.button = Int(GDK_BUTTON_SECONDARY)
-        secondary.onPressed { [weak self] _, _, x, y in
-            MainActor.assumeIsolated { self?.presentCopyMenu(x, y) }
+        secondary.propagationPhase = .capture
+        secondary.onPressed { [weak self] gesture, _, x, y in
+            MainActor.assumeIsolated {
+                _ = gesture.set(state: .claimed)
+                self?.presentCopyMenu(x, y)
+            }
         }
         area.install(controller: secondary)
 

@@ -1,5 +1,6 @@
 import CGtk
 import Foundation
+import Gdk
 import Gtk
 import LumaCore
 import SwiftyPharo
@@ -207,7 +208,27 @@ final class PharoListView {
         }
         let row = ListBoxRow()
         row.set(child: line)
+
+        let copy = GestureClick()
+        copy.button = Int(GDK_BUTTON_SECONDARY)
+        copy.propagationPhase = .capture
+        copy.onPressed { [weak self, weak row] gesture, _, x, y in
+            MainActor.assumeIsolated {
+                _ = gesture.set(state: .claimed)
+                guard let self, let row else { return }
+                self.rows.select(row: row)
+                let text = cells.compactMap(\.text).joined(separator: "\t")
+                ContextMenu.present(
+                    [[ContextMenu.Item("Copy") { Self.copyToClipboard(text) }]], at: row, x: x, y: y)
+            }
+        }
+        row.install(controller: copy)
         return row
+    }
+
+    private static func copyToClipboard(_ value: String) {
+        guard let display = Display.getDefault() else { return }
+        display.clipboard.set(text: value)
     }
 
     /// A thumbnail cell where the image hands one back, otherwise its text; the
