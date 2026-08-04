@@ -24,6 +24,8 @@ final class PharoPlaygroundPane {
     private let overviewBar = PharoOverviewBar()
     private let contentSeparator = Separator(orientation: .horizontal)
     private let paned: Paned
+    private let inspectorOverlay = Overlay()
+    private var maximizedChild: Widget?
     private let pageBox: Box
 
     private var snippets: [PharoPlaygroundSnippet]
@@ -84,9 +86,17 @@ final class PharoPlaygroundPane {
         paned.startChild = WidgetRef(pageScroll)
         paned.endChild = WidgetRef(inspector.widget)
 
+        inspectorOverlay.hexpand = true
+        inspectorOverlay.vexpand = true
+        inspectorOverlay.set(child: paned)
+
         widget.append(child: overviewBar.widget)
         widget.append(child: contentSeparator)
-        widget.append(child: paned)
+        widget.append(child: inspectorOverlay)
+
+        inspector.onMaximizeChanged = { [weak self] content in
+            MainActor.assumeIsolated { self?.presentMaximized(content) }
+        }
 
         paned.onNotifyPosition { [weak self] paned, _ in
             MainActor.assumeIsolated { self?.engine?.setPharoPageWidth(Double(paned.position)) }
@@ -100,6 +110,33 @@ final class PharoPlaygroundPane {
 
         rebuildPage()
         refreshChrome()
+    }
+
+    /// A blown-up pane covers the page and the columns both, floating over the
+    /// paned rather than filling only the inspector side.
+    private func presentMaximized(_ content: Widget?) {
+        if let existing = maximizedChild {
+            inspectorOverlay.removeOverlay(widget: existing)
+            maximizedChild = nil
+        }
+        guard let content else { return }
+
+        let panel = Box(orientation: .vertical, spacing: 0)
+        panel.add(cssClass: "luma-pharo-maximized")
+        panel.hexpand = true
+        panel.vexpand = true
+        panel.halign = .fill
+        panel.valign = .fill
+        panel.marginTop = 8
+        panel.marginBottom = 8
+        panel.marginStart = 8
+        panel.marginEnd = 8
+        content.hexpand = true
+        content.vexpand = true
+        panel.append(child: content)
+
+        inspectorOverlay.addOverlay(widget: panel)
+        maximizedChild = panel
     }
 
     /// The strip stands over the whole page: a square for the snippets, then one
