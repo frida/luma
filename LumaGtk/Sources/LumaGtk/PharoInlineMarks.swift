@@ -217,41 +217,32 @@ final class PharoInlineMarks {
     /// Slide over a mark's anchor so it is not an extra cursor stop, and a space
     /// typed at a token's end lands past its mark to carry the send on. Returns
     /// whether the key is spent; a space is not, so it still types once moved.
+    /// A mark and its open body are one carried block the code caret steps over
+    /// whole rather than into, so arrowing across never strands the caret on a
+    /// body's tall line or between the anchors that carry it.
     func handleCursorKey(_ keyval: UInt, shift: Bool) -> Bool {
+        guard !shift else { return false }
         let cursor = cursorOffset()
+        let carried = carriedOffsets()
         switch keyval {
-        case 0xFF53 where !shift && anchorAt(cursor + 1):  // Right
-            moveCursor(to: skipForward(from: cursor + 1))
+        case 0xFF53 where carried.contains(cursor):  // Right
+            var at = cursor
+            while carried.contains(at) { at += 1 }
+            moveCursor(to: at)
             return true
-        case 0xFF51 where !shift && anchorAt(cursor - 1):  // Left
-            moveCursor(to: skipBackward(from: cursor - 1))
+        case 0xFF51 where cursor > 0 && carried.contains(cursor - 1):  // Left
+            var at = cursor - 1
+            while at > 0, carried.contains(at - 1) { at -= 1 }
+            moveCursor(to: at)
             return true
-        case 0x0020 where anchorAt(cursor):  // space
-            moveCursor(to: skipForward(from: cursor))
+        case 0x0020 where carried.contains(cursor):  // space
+            var at = cursor
+            while carried.contains(at) { at += 1 }
+            moveCursor(to: at)
             return false
         default:
             return false
         }
-    }
-
-    private func anchorAt(_ offset: Int) -> Bool {
-        guard offset >= 0, offset < Int(buffer.getCharCount()) else { return false }
-        return withIter { iter in
-            buffer.getIterAtOffset(iter: iter, charOffset: offset)
-            return iter.childAnchor != nil
-        }
-    }
-
-    private func skipForward(from offset: Int) -> Int {
-        var at = offset
-        while anchorAt(at) { at += 1 }
-        return at
-    }
-
-    private func skipBackward(from offset: Int) -> Int {
-        var at = offset
-        while at > 0, anchorAt(at) { at -= 1 }
-        return at
     }
 
     private func moveCursor(to offset: Int) {
@@ -373,18 +364,25 @@ final class PharoInlineMarks {
     }
 
     private func open(_ mark: Mark) async {
-        guard let content = await bodyContent(for: mark.kind) else { return }
+        guard let content = await bodyContent(for: mark) else { return }
         guard mark.body == nil, !mark.anchor.deleted else { return }
         insertBody(content, after: mark)
     }
 
-    private func bodyContent(for kind: Kind) async -> Box? {
-        switch kind {
+    private func bodyContent(for mark: Mark) async -> Box? {
+        switch mark.kind {
         case .classReference(let name):
             guard let object = try? await runtime.evaluate(name) else { return nil }
             let view = PharoColumnView(runtime: runtime, object: object, isMaximized: false, highlight: highlight)
             view.widget.hexpand = true
             view.widget.vexpand = true
+            view.offersLayoutActions = false
+            view.onClose = { [weak self, weak mark] in
+                MainActor.assumeIsolated {
+                    guard let self, let mark else { return }
+                    self.close(mark)
+                }
+            }
             let frame = Box(orientation: .vertical, spacing: 0)
             frame.append(child: view.widget)
             classColumns[ObjectIdentifier(frame)] = view
@@ -398,7 +396,6 @@ final class PharoInlineMarks {
 
     private func methodEditor(for reference: PharoMethodReference) -> Box {
         let container = Box(orientation: .vertical, spacing: 6)
-        container.add(cssClass: "luma-pharo-method-body")
         container.marginTop = 4
         container.marginBottom = 4
 
@@ -438,6 +435,14 @@ final class PharoInlineMarks {
         methodView.leftMargin = 8
         methodView.topMargin = 6
         methodView.bottomMargin = 6
+
+        // The enclosing editor otherwise keeps the click for its own caret, so
+        // the embedded editor is handed focus explicitly when it is pressed.
+        let focusClick = GestureClick()
+        focusClick.onReleased { [weak methodView] _, _, _, _ in
+            MainActor.assumeIsolated { _ = methodView?.grabFocus() }
+        }
+        methodView.install(controller: focusClick)
 
         let scroll = ScrolledWindow()
         scroll.setPolicy(hscrollbarPolicy: .automatic, vscrollbarPolicy: .automatic)
@@ -506,7 +511,12 @@ final class PharoInlineMarks {
         guard let anchor else { return }
 
         widget.hexpand = true
-        widget.add(cssClass: "luma-pharo-body")
+        // The class coder brings its own frame, so it only wants a margin; a
+        // method editor draws the body's own border around itself.
+        switch mark.kind {
+        case .classReference: widget.add(cssClass: "luma-pharo-class-body")
+        case .methodReference: widget.add(cssClass: "luma-pharo-body")
+        }
         sizeBody(widget, kind: mark.kind)
         editor.addChildAtAnchor(child: widget, anchor: anchor)
         mark.body = Body(widget: widget, anchor: anchor)

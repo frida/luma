@@ -528,8 +528,8 @@ enum StyleSheet {
         border-radius: 6px;
         background-color: alpha(@window_fg_color, 0.03);
     }
-    box.luma-pharo-method-body {
-        margin: 4px 8px;
+    box.luma-pharo-class-body {
+        margin: 2px 0;
     }
     """
 
