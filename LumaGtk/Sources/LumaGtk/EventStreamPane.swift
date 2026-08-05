@@ -297,10 +297,12 @@ final class EventStreamPane {
     }
 
     private func reportActivity(totalReceived: Int) {
-        guard let strip = activityStrip,
-              let rate = eventRate.observe(totalReceived: totalReceived, at: Date.timeIntervalSinceReferenceDate)
+        guard let rate = eventRate.observe(totalReceived: totalReceived, at: Date.timeIntervalSinceReferenceDate)
         else { return }
-        luma_shader_effect_report_activity(strip, rate)
+        if let strip = activityStrip {
+            luma_shader_effect_report_activity(strip, rate)
+        }
+        engine?.eventChime.report(activity: rate)
     }
 
     func attach(engine: Engine) {

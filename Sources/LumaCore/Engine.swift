@@ -56,6 +56,7 @@ public final class Engine {
     private var widgetStates: [UUID: [String: WidgetState]] = [:]
 
     public let eventLog = EventLog()
+    public let eventChime = EventChime()
 
     private var deviceEventTasks: [String: Task<Void, Never>] = [:]
     private var gatingEnabledDevices: Set<String> = []
