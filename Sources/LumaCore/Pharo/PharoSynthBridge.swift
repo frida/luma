@@ -1,8 +1,8 @@
 import CLumaAudio
 
-/// What the image is allowed to do to the synthesiser. The mixer is reached
-/// through a lock-free queue, so the image calling these from its own thread
-/// needs no hop to the host's.
+/// What the image is allowed to do to the synthesiser. The mixer takes
+/// commands through a lock-free queue, so the image calling these from its own
+/// thread needs no hop to the host's.
 ///
 /// A patch arrives field by field rather than as a struct, so the image has no
 /// layout to marshal.
@@ -15,7 +15,8 @@ public enum PharoSynthBridge {
 
 @_cdecl("luma_synth_start")
 public func luma_synth_start() -> Int32 {
-    luma_audio_start() ? 1 : 0
+    SynthEngine.prepare()
+    return luma_audio_start() ? 1 : 0
 }
 
 @_cdecl("luma_synth_stop")
@@ -25,11 +26,12 @@ public func luma_synth_stop() {
 
 @_cdecl("luma_synth_set_level")
 public func luma_synth_set_level(_ level: Float) {
-    luma_audio_set_level(level)
+    SynthEngine.level = level
 }
 
 @_cdecl("luma_synth_set_patch")
 public func luma_synth_set_patch(
+    _ channel: Int32,
     _ waveform: Int32,
     _ detuneSemitones: Float,
     _ attack: Float,
@@ -40,46 +42,45 @@ public func luma_synth_set_patch(
     _ resonance: Float,
     _ gain: Float
 ) {
-    var patch = LumaSynthPatch(
-        waveform: waveform,
-        detune_semitones: detuneSemitones,
-        attack_seconds: attack,
-        decay_seconds: decay,
-        sustain_level: sustain,
-        release_seconds: release,
-        cutoff_hz: cutoff,
-        resonance: resonance,
-        gain: gain
-    )
-    luma_audio_set_patch(&patch)
+    var patch = SynthEngine.PatchValues()
+    patch.waveform = waveform
+    patch.detuneSemitones = detuneSemitones
+    patch.attack = attack
+    patch.decay = decay
+    patch.sustain = sustain
+    patch.release = release
+    patch.cutoff = cutoff
+    patch.resonance = resonance
+    patch.gain = gain
+    SynthEngine.setPatch(patch, channel: Int(channel))
 }
 
 @_cdecl("luma_synth_play")
-public func luma_synth_play(_ frequency: Float, _ velocity: Float) -> Int32 {
-    luma_audio_note_on(frequency, velocity)
+public func luma_synth_play(_ channel: Int32, _ frequency: Float, _ velocity: Float) -> Int32 {
+    SynthEngine.play(frequency: frequency, velocity: velocity, channel: Int(channel))
 }
 
 @_cdecl("luma_synth_release")
 public func luma_synth_release(_ voice: Int32) {
-    luma_audio_note_off(voice)
+    SynthEngine.release(voice: voice)
 }
 
 @_cdecl("luma_synth_pattern_begin")
-public func luma_synth_pattern_begin() {
-    luma_audio_pattern_begin()
+public func luma_synth_pattern_begin(_ channel: Int32) {
+    SynthEngine.beginPattern(channel: Int(channel))
 }
 
 @_cdecl("luma_synth_pattern_add")
-public func luma_synth_pattern_add(_ frequency: Float, _ velocity: Float, _ steps: Int32) {
-    luma_audio_pattern_add(frequency, velocity, steps)
+public func luma_synth_pattern_add(_ channel: Int32, _ frequency: Float, _ velocity: Float, _ steps: Int32) {
+    SynthEngine.addStep(frequency: frequency, velocity: velocity, steps: steps, channel: Int(channel))
 }
 
 @_cdecl("luma_synth_pattern_commit")
-public func luma_synth_pattern_commit(_ stepSeconds: Float, _ loops: Int32) {
-    luma_audio_pattern_commit(stepSeconds, loops)
+public func luma_synth_pattern_commit(_ channel: Int32, _ stepSeconds: Float, _ loops: Int32) {
+    SynthEngine.commitPattern(stepSeconds: stepSeconds, loops: loops == 1, channel: Int(channel))
 }
 
 @_cdecl("luma_synth_pattern_stop")
-public func luma_synth_pattern_stop() {
-    luma_audio_pattern_stop()
+public func luma_synth_pattern_stop(_ channel: Int32) {
+    SynthEngine.stopPattern(channel: Int(channel))
 }

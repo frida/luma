@@ -175,6 +175,156 @@ public enum PharoLumaBindings {
                 parameters: { TFBasicType float }
                 return: TFBasicType void
                 with: { aLevel asFloat }'.
+        synth class compile: 'play: aFrequency velocity: aVelocity channel: aChannel
+            ^ self invoke: ''luma_synth_play''
+                parameters: { TFBasicType sint. TFBasicType float. TFBasicType float }
+                return: TFBasicType sint
+                with: { aChannel. aFrequency asFloat. aVelocity asFloat }'.
+        synth class compile: 'release: aVoice
+            ^ self invoke: ''luma_synth_release''
+                parameters: { TFBasicType sint }
+                return: TFBasicType void
+                with: { aVoice }'.
+        synth class compile: 'channel: aChannel waveform: aWaveform detune: aDetune attack: anAttack decay: aDecay sustain: aSustain release: aRelease cutoff: aCutoff resonance: aResonance gain: aGain
+            ^ self invoke: ''luma_synth_set_patch''
+                parameters: {
+                    TFBasicType sint. TFBasicType sint. TFBasicType float.
+                    TFBasicType float. TFBasicType float. TFBasicType float.
+                    TFBasicType float. TFBasicType float. TFBasicType float. TFBasicType float }
+                return: TFBasicType void
+                with: {
+                    aChannel. aWaveform. aDetune asFloat. anAttack asFloat.
+                    aDecay asFloat. aSustain asFloat. aRelease asFloat.
+                    aCutoff asFloat. aResonance asFloat. aGain asFloat }'.
+        synth class compile: 'sine ^ 0'.
+        synth class compile: 'triangle ^ 1'.
+        synth class compile: 'saw ^ 2'.
+        synth class compile: 'square ^ 3'.
+        synth class compile: 'noise ^ 4'.
+        synth class compile: 'pulse: aChannel
+            ^ self channel: aChannel waveform: self square detune: 0 attack: 0.001
+                decay: 0.09 sustain: 0 release: 0.01 cutoff: 0 resonance: 0 gain: 0.5'.
+        synth class compile: 'bass: aChannel
+            ^ self channel: aChannel waveform: self saw detune: 0.06 attack: 0.002
+                decay: 0.22 sustain: 0 release: 0.03 cutoff: 900 resonance: 0.5 gain: 0.7'.
+        synth class compile: 'noiseHit: aChannel
+            ^ self channel: aChannel waveform: self noise detune: 0 attack: 0.001
+                decay: 0.07 sustain: 0 release: 0.01 cutoff: 4200 resonance: 0.2 gain: 0.4'.
+        synth class compile: 'blip: aChannel
+            ^ self channel: aChannel waveform: self triangle detune: 0.08 attack: 0.004
+                decay: 0.18 sustain: 0 release: 0.05 cutoff: 2600 resonance: 0.35 gain: 0.5'.
+
+        tune := Object << #LumaTune slots: { #channel. #tempo. #division. #root. #scale. #notes. #loops. #playing }; package: 'Luma'; install.
+        tune compile: 'initialize
+            channel := 0.
+            tempo := 120.
+            division := 4.
+            root := 60.
+            scale := #(0 3 5 7 10).
+            notes := #().
+            loops := true.
+            playing := false'.
+        tune compile: 'channel ^ channel'.
+        tune compile: 'channel: aChannel
+            channel := aChannel.
+            self refresh'.
+        tune compile: 'tempo ^ tempo'.
+        tune compile: 'tempo: aTempo
+            tempo := aTempo.
+            self refresh'.
+        tune compile: 'division: aDivision
+            division := aDivision.
+            self refresh'.
+        tune compile: 'root: aMidiNote
+            root := aMidiNote.
+            self refresh'.
+        tune compile: 'scale: aCollection
+            scale := aCollection.
+            self refresh'.
+        tune compile: 'notes ^ notes'.
+        tune compile: 'notes: aCollection
+            notes := aCollection.
+            self refresh'.
+        tune compile: 'loops: aBoolean
+            loops := aBoolean.
+            self refresh'.
+        tune compile: 'patch: aSelector
+            LumaSynth perform: (aSelector , '':'') asSymbol with: channel'.
+        tune compile: 'refresh
+            playing ifTrue: [ self upload ]'.
+        tune compile: 'play
+            playing := true.
+            LumaSynth start.
+            self upload'.
+        tune compile: 'stop
+            playing := false.
+            ^ LumaSynth invoke: ''luma_synth_pattern_stop''
+                parameters: { TFBasicType sint }
+                return: TFBasicType void
+                with: { channel }'.
+        tune compile: 'upload
+            | stepSeconds |
+            LumaSynth invoke: ''luma_synth_pattern_begin''
+                parameters: { TFBasicType sint } return: TFBasicType void with: { channel }.
+            notes do: [ :each |
+                LumaSynth invoke: ''luma_synth_pattern_add''
+                    parameters: { TFBasicType sint. TFBasicType float. TFBasicType float. TFBasicType sint }
+                    return: TFBasicType void
+                    with: { channel. (self frequencyFor: each). 0.9. 1 } ].
+            stepSeconds := 60.0 / tempo / division.
+            ^ LumaSynth invoke: ''luma_synth_pattern_commit''
+                parameters: { TFBasicType sint. TFBasicType float. TFBasicType sint }
+                return: TFBasicType void
+                with: { channel. stepSeconds asFloat. loops ifTrue: [ 1 ] ifFalse: [ 0 ] }'.
+        tune compile: 'frequencyFor: aNote
+            | midi |
+            (aNote isNil or: [ aNote = #- ]) ifTrue: [ ^ 0.0 ].
+            midi := aNote isInteger
+                ifTrue: [ self midiForDegree: aNote ]
+                ifFalse: [ self midiForName: aNote ].
+            ^ (440.0 * (2 raisedTo: (midi - 69) / 12.0)) asFloat'.
+        tune compile: 'midiForName: aSymbol
+            | text octave step |
+            text := aSymbol asString asLowercase.
+            octave := (text select: [ :each | each isDigit ]) asNumber.
+            step := #(c cs d ds e f fs g gs a as b)
+                indexOf: (text select: [ :each | each isLetter ]) asSymbol.
+            ^ ((octave + 1) * 12) + step - 1'.
+        tune compile: 'midiForDegree: anInteger
+            | octave index |
+            octave := (anInteger / scale size) floor.
+            index := anInteger - (octave * scale size).
+            ^ root + (scale at: index + 1) + (octave * 12)'.
+        tune class compile: 'channel: aChannel
+            ^ self new channel: aChannel; yourself'.
+        tune class compile: 'hush
+            ^ self allInstances do: [ :each | each stop ]'.
+
+        project := Object << #LumaProject slots: {}; package: 'Luma'; install.
+        project class compile: 'fetch: aName as: aClass
+            | address definition function json |
+            address := ExternalAddress loadSymbol: aName module: nil.
+            definition := TFFunctionDefinition parameterTypes: #() returnType: TFBasicType pointer.
+            function := TFExternalFunction fromAddress: address definition: definition.
+            json := (TFSameThreadRunner uniqueInstance invokeFunction: function withArguments: #())
+                readString utf8Decoded.
+            ^ (STONJSON fromString: json) collect: [ :each | aClass fromJSON: each ]'.
+        synth := Object << #LumaSynth slots: {}; package: 'Luma'; install.
+        synth class compile: 'invoke: aName parameters: aParameterTypes return: aReturnType with: aCollection
+            | address definition function |
+            address := ExternalAddress loadSymbol: aName module: nil.
+            definition := TFFunctionDefinition parameterTypes: aParameterTypes returnType: aReturnType.
+            function := TFExternalFunction fromAddress: address definition: definition.
+            ^ TFSameThreadRunner uniqueInstance invokeFunction: function withArguments: aCollection'.
+        synth class compile: 'start
+            ^ self invoke: ''luma_synth_start'' parameters: #() return: TFBasicType sint with: #()'.
+        synth class compile: 'stop
+            ^ self invoke: ''luma_synth_stop'' parameters: #() return: TFBasicType void with: #()'.
+        synth class compile: 'level: aLevel
+            ^ self invoke: ''luma_synth_set_level''
+                parameters: { TFBasicType float }
+                return: TFBasicType void
+                with: { aLevel asFloat }'.
         synth class compile: 'play: aFrequency velocity: aVelocity
             ^ self invoke: ''luma_synth_play''
                 parameters: { TFBasicType float. TFBasicType float }
