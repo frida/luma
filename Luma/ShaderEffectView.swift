@@ -1,3 +1,4 @@
+import LumaCore
 import Metal
 import MetalKit
 import QuartzCore
@@ -18,6 +19,14 @@ import UIKit
 enum ShaderEffectProgram: Equatable {
     case builtIn(function: String)
     case translated(metal: String, function: String)
+    /// The author's own stages, drawing their own vertices.
+    case geometry(
+        vertexMetal: String,
+        vertexFunction: String,
+        fragmentMetal: String,
+        fragmentFunction: String,
+        geometry: CanvasGeometry
+    )
 }
 
 struct ShaderEffectView {
@@ -89,6 +98,7 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
     private weak var view: MTKView?
     private var commandQueue: MTLCommandQueue?
     private var pipeline: MTLRenderPipelineState?
+    private var vertexBuffer: MTLBuffer?
     private nonisolated(unsafe) var displayLink: CADisplayLink?
     private let proxy = DisplayLinkProxy()
     private let startTime = CACurrentMediaTime()
@@ -148,8 +158,19 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
         }
 
         encoder.setRenderPipelineState(pipeline)
-        encoder.setFragmentBytes(&uniforms, length: uniforms.count * MemoryLayout<Float>.stride, index: 0)
-        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        let uniformLength = uniforms.count * MemoryLayout<Float>.stride
+        encoder.setFragmentBytes(&uniforms, length: uniformLength, index: 0)
+        encoder.setVertexBytes(&uniforms, length: uniformLength, index: 0)
+
+        if case let .geometry(_, _, _, _, geometry) = program, let vertexBuffer {
+            encoder.setVertexBuffer(vertexBuffer, offset: 0, index: Self.vertexBufferIndex)
+            encoder.drawPrimitives(
+                type: Self.metalPrimitive(geometry.primitive),
+                vertexStart: 0,
+                vertexCount: geometry.vertexCount)
+        } else {
+            encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        }
         encoder.endEncoding()
         buffer.present(drawable)
         buffer.commit()
@@ -160,22 +181,74 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
     }
 
     private func buildPipeline(for view: MTKView) -> Bool {
-        guard let device = view.device,
-              let bundled = try? device.makeDefaultLibrary(bundle: Bundle.main),
-              let vertex = bundled.makeFunction(name: "shaderEffectVertex"),
-              let fragment = fragmentFunction(from: device, bundled: bundled),
-              let queue = device.makeCommandQueue()
-        else { return false }
+        guard let device = view.device, let queue = device.makeCommandQueue() else { return false }
 
         let desc = MTLRenderPipelineDescriptor()
-        desc.vertexFunction = vertex
-        desc.fragmentFunction = fragment
         desc.colorAttachments[0].pixelFormat = view.colorPixelFormat
+
+        if case let .geometry(vertexMetal, vertexName, fragmentMetal, fragmentName, geometry) = program {
+            guard let vertexLibrary = try? device.makeLibrary(source: vertexMetal, options: nil),
+                  let fragmentLibrary = try? device.makeLibrary(source: fragmentMetal, options: nil),
+                  let vertex = vertexLibrary.makeFunction(name: vertexName),
+                  let fragment = fragmentLibrary.makeFunction(name: fragmentName)
+            else { return false }
+
+            desc.vertexFunction = vertex
+            desc.fragmentFunction = fragment
+            desc.vertexDescriptor = Self.vertexDescriptor(for: geometry)
+            vertexBuffer = device.makeBuffer(
+                bytes: geometry.vertices,
+                length: max(geometry.vertices.count, 1) * MemoryLayout<Float>.stride,
+                options: [])
+        } else {
+            guard let bundled = try? device.makeDefaultLibrary(bundle: Bundle.main),
+                  let vertex = bundled.makeFunction(name: "shaderEffectVertex"),
+                  let fragment = fragmentFunction(from: device, bundled: bundled)
+            else { return false }
+            desc.vertexFunction = vertex
+            desc.fragmentFunction = fragment
+        }
+
         guard let state = try? device.makeRenderPipelineState(descriptor: desc) else { return false }
 
         commandQueue = queue
         pipeline = state
         return true
+    }
+
+    /// The uniform block takes buffer 0, so the author's vertices follow it.
+    static let vertexBufferIndex = 1
+
+    private static func vertexDescriptor(for geometry: CanvasGeometry) -> MTLVertexDescriptor {
+        let descriptor = MTLVertexDescriptor()
+        var offset = 0
+        for (index, attribute) in geometry.attributes.enumerated() {
+            descriptor.attributes[index].format = format(components: attribute.components)
+            descriptor.attributes[index].offset = offset
+            descriptor.attributes[index].bufferIndex = vertexBufferIndex
+            offset += attribute.components * MemoryLayout<Float>.stride
+        }
+        descriptor.layouts[vertexBufferIndex].stride = offset
+        return descriptor
+    }
+
+    private static func format(components: Int) -> MTLVertexFormat {
+        switch components {
+        case 1: return .float
+        case 2: return .float2
+        case 3: return .float3
+        default: return .float4
+        }
+    }
+
+    private static func metalPrimitive(_ primitive: CanvasGeometry.Primitive) -> MTLPrimitiveType {
+        switch primitive {
+        case .points: return .point
+        case .lines: return .line
+        case .lineStrip: return .lineStrip
+        case .triangles: return .triangle
+        case .triangleStrip: return .triangleStrip
+        }
     }
 
     /// A built-in effect is already in the default library; a translated one
@@ -187,6 +260,9 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
         case let .translated(metal, function):
             guard let library = try? device.makeLibrary(source: metal, options: nil) else { return nil }
             return library.makeFunction(name: function)
+        case .geometry:
+            // Built alongside its own vertex stage, in buildPipeline.
+            return nil
         }
     }
 

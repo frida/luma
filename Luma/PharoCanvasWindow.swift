@@ -63,6 +63,22 @@ final class CanvasFeed {
     var data: [Float] = []
 }
 
+extension PharoCanvasWindow {
+    static func program(for effect: CanvasEffect) -> ShaderEffectProgram {
+        guard let geometry = effect.geometry,
+              let vertexMetal = effect.vertexMetal,
+              let vertexFunction = effect.vertexFunction
+        else { return .translated(metal: effect.metal, function: effect.function) }
+
+        return .geometry(
+            vertexMetal: vertexMetal,
+            vertexFunction: vertexFunction,
+            fragmentMetal: effect.metal,
+            fragmentFunction: effect.function,
+            geometry: geometry)
+    }
+}
+
 private struct PharoCanvasView: View {
     let effect: CanvasEffect
     let feed: CanvasFeed
@@ -71,7 +87,7 @@ private struct PharoCanvasView: View {
 
     var body: some View {
         ShaderEffectView(
-            program: .translated(metal: effect.metal, function: effect.function),
+            program: PharoCanvasWindow.program(for: effect),
             scheme: colorScheme == .light ? 1.0 : 0.0,
             activity: feed.activity,
             data: feed.data
