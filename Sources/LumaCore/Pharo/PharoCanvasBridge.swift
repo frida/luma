@@ -239,3 +239,146 @@ public func luma_canvas_close() {
         MainActor.assumeIsolated { PharoCanvasHost.onClose?() }
     }
 }
+
+// MARK: Scenes the image holds by handle
+
+@_cdecl("luma_scene_create")
+public func luma_scene_create() -> Int32 {
+    Int32(CanvasRegistry.shared.makeScene())
+}
+
+@_cdecl("luma_scene_destroy")
+public func luma_scene_destroy(_ scene: Int32) {
+    CanvasRegistry.shared.discard(Int(scene))
+}
+
+@_cdecl("luma_scene_add_drawable")
+public func luma_scene_add_drawable(_ scene: Int32) -> Int32 {
+    Int32(CanvasRegistry.shared.makeDrawable(in: Int(scene)))
+}
+
+@_cdecl("luma_scene_remove_drawable")
+public func luma_scene_remove_drawable(_ scene: Int32, _ drawable: Int32) {
+    guard let updated = CanvasRegistry.shared.remove(Int(drawable), from: Int(scene)) else { return }
+    CanvasRegistry.shared.publish(Int(scene), updated)
+}
+
+@_cdecl("luma_drawable_add_attribute")
+public func luma_drawable_add_attribute(
+    _ scene: Int32,
+    _ drawable: Int32,
+    _ name: UnsafePointer<CChar>,
+    _ components: Int32,
+    _ isVarying: Int32
+) {
+    let attribute = ShaderAttribute(name: String(cString: name), components: Int(components))
+    CanvasRegistry.shared.update(Int(drawable), in: Int(scene)) { subject in
+        if isVarying == 1 {
+            subject.geometry.varyings.append(attribute)
+        } else {
+            subject.geometry.attributes.append(attribute)
+        }
+    }
+}
+
+@_cdecl("luma_drawable_clear_layout")
+public func luma_drawable_clear_layout(_ scene: Int32, _ drawable: Int32) {
+    CanvasRegistry.shared.update(Int(drawable), in: Int(scene)) { subject in
+        subject.geometry.attributes.removeAll()
+        subject.geometry.varyings.removeAll()
+    }
+}
+
+@_cdecl("luma_drawable_set_source")
+public func luma_drawable_set_source(
+    _ scene: Int32,
+    _ drawable: Int32,
+    _ vertex: UnsafePointer<CChar>,
+    _ fragment: UnsafePointer<CChar>
+) {
+    let vertexSource = String(cString: vertex)
+    let fragmentSource = String(cString: fragment)
+    CanvasRegistry.shared.update(Int(drawable), in: Int(scene)) { subject in
+        subject.authorVertex = vertexSource
+        subject.authorFragment = fragmentSource
+    }
+}
+
+@_cdecl("luma_drawable_set_vertices")
+public func luma_drawable_set_vertices(
+    _ scene: Int32,
+    _ drawable: Int32,
+    _ values: UnsafePointer<Float>,
+    _ count: Int32,
+    _ primitive: Int32
+) {
+    let vertices = Array(UnsafeBufferPointer(start: values, count: Int(max(count, 0))))
+    CanvasRegistry.shared.update(Int(drawable), in: Int(scene)) { subject in
+        subject.geometry.vertices = vertices
+        subject.geometry.primitive = CanvasGeometry.Primitive(rawValue: primitive) ?? .triangles
+        subject.primitive = subject.geometry.primitive
+    }
+}
+
+@_cdecl("luma_drawable_set_transform")
+public func luma_drawable_set_transform(
+    _ scene: Int32,
+    _ drawable: Int32,
+    _ values: UnsafePointer<Float>
+) {
+    let transform = Array(UnsafeBufferPointer(start: values, count: 16))
+    CanvasRegistry.shared.update(Int(drawable), in: Int(scene)) { $0.transform = transform }
+}
+
+@_cdecl("luma_drawable_set_visible")
+public func luma_drawable_set_visible(_ scene: Int32, _ drawable: Int32, _ visible: Int32) {
+    guard let updated = CanvasRegistry.shared.update(Int(drawable), in: Int(scene), {
+        $0.isVisible = visible == 1
+    }) else { return }
+    CanvasRegistry.shared.publish(Int(scene), updated)
+}
+
+/// Wraps the author's stages in declarations matching the layout they gave,
+/// and translates them for Metal. Answers 0 and keeps the compiler's
+/// complaint when either will not compile.
+@_cdecl("luma_drawable_commit")
+public func luma_drawable_commit(_ scene: Int32, _ drawable: Int32) -> Int32 {
+    guard let subject = CanvasRegistry.shared.scene(Int(scene))?.drawables[Int(drawable)] else {
+        return 0
+    }
+
+    let geometry = subject.geometry
+    let vertexGLSL = geometry.vertexPreamble(.openGL) + subject.authorVertex
+    let fragmentGLSL = geometry.fragmentPreamble(.openGL) + subject.authorFragment
+    let vertexMetal: String
+    let fragmentMetal: String
+    do {
+        vertexMetal = try ShaderTranslator.metalSource(
+            forComplete: geometry.vertexPreamble(.metal) + subject.authorVertex,
+            stage: .vertex, entryPoint: "canvasVertex")
+        fragmentMetal = try ShaderTranslator.metalSource(
+            forComplete: geometry.fragmentPreamble(.metal) + subject.authorFragment,
+            stage: .fragment, entryPoint: "canvasFragment")
+    } catch {
+        canvasError.withLock { $0 = "\(error)" }
+        return 0
+    }
+    canvasError.withLock { $0 = "" }
+
+    guard let updated = CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
+        subject.vertexGLSL = vertexGLSL
+        subject.fragmentGLSL = fragmentGLSL
+        subject.vertexMetal = vertexMetal
+        subject.fragmentMetal = fragmentMetal
+    }) else { return 0 }
+
+    CanvasRegistry.shared.publish(Int(scene), updated)
+    return 1
+}
+
+@_cdecl("luma_scene_show")
+public func luma_scene_show(_ scene: Int32) -> Int32 {
+    guard let subject = CanvasRegistry.shared.scene(Int(scene)) else { return 0 }
+    CanvasRegistry.shared.publish(Int(scene), subject)
+    return 1
+}

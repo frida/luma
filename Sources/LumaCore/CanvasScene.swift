@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// One thing a scene draws: the author's own stages, over their own vertices,
 /// with their own uniforms and where it sits. A scene holds as many as the
@@ -10,6 +11,10 @@ public struct CanvasDrawable: Sendable, Equatable {
     public var vertexMetal: String = ""
     public var fragmentMetal: String = ""
     public var transform: [Float] = CanvasDrawable.identity
+    /// What the author wrote, before the host wrapped it in declarations.
+    public var authorVertex: String = ""
+    public var authorFragment: String = ""
+    public var primitive: CanvasGeometry.Primitive = .triangles
     /// Named by the author, in the order they declared them.
     public var uniforms: [CanvasUniform] = []
     public var isVisible = true
@@ -62,59 +67,88 @@ public struct CanvasScene: Sendable, Equatable {
 
 /// The scenes the image is holding. Handles rather than one staged canvas, so
 /// a snippet can build several and change any of them.
-@MainActor
-public final class CanvasRegistry {
+///
+/// Reached from the image's own thread, which is why the state sits behind a
+/// lock rather than on the main actor: a handle has to come back at once.
+public final class CanvasRegistry: Sendable {
     public static let shared = CanvasRegistry()
 
-    private var scenes: [Int: CanvasScene] = [:]
-    private var nextHandle = 1
+    private let state = Mutex(State())
 
-    /// Told when a scene changes, so whatever is showing it can redraw.
-    public var onChange: ((Int, CanvasScene) -> Void)?
+    private struct State {
+        var scenes: [Int: CanvasScene] = [:]
+        var nextHandle = 1
+    }
+
+    /// Told when a scene changes, so whatever shows it can follow. Called on
+    /// the main thread.
+    @MainActor public static var onChange: ((Int, CanvasScene) -> Void)?
 
     public func makeScene() -> Int {
-        let handle = nextHandle
-        nextHandle += 1
-        scenes[handle] = CanvasScene()
-        return handle
+        state.withLock { state in
+            let handle = state.nextHandle
+            state.nextHandle += 1
+            state.scenes[handle] = CanvasScene()
+            return handle
+        }
     }
 
     public func scene(_ handle: Int) -> CanvasScene? {
-        scenes[handle]
+        state.withLock { $0.scenes[handle] }
     }
 
     public func discard(_ handle: Int) {
-        scenes[handle] = nil
+        state.withLock { $0.scenes[handle] = nil }
     }
 
     public func makeDrawable(in handle: Int) -> Int {
-        guard var scene = scenes[handle] else { return 0 }
+        state.withLock { state in
+            guard var scene = state.scenes[handle] else { return 0 }
 
-        let drawable = nextHandle
-        nextHandle += 1
-        scene.drawables[drawable] = CanvasDrawable()
-        scene.order.append(drawable)
-        scenes[handle] = scene
-        return drawable
+            let drawable = state.nextHandle
+            state.nextHandle += 1
+            scene.drawables[drawable] = CanvasDrawable()
+            scene.order.append(drawable)
+            state.scenes[handle] = scene
+            return drawable
+        }
     }
 
-    /// Changes one drawable and tells whoever is showing the scene. Every edit
-    /// goes through here, so a scene never draws half-changed.
-    public func update(_ drawable: Int, in handle: Int, _ change: (inout CanvasDrawable) -> Void) {
-        guard var scene = scenes[handle], var subject = scene.drawables[drawable] else { return }
+    /// Changes one drawable. Answers the scene as it now stands, so the caller
+    /// can hand it to whatever is showing it.
+    @discardableResult
+    public func update(
+        _ drawable: Int,
+        in handle: Int,
+        _ change: (inout CanvasDrawable) -> Void
+    ) -> CanvasScene? {
+        state.withLock { state in
+            guard var scene = state.scenes[handle], var subject = scene.drawables[drawable] else {
+                return nil
+            }
 
-        change(&subject)
-        scene.drawables[drawable] = subject
-        scenes[handle] = scene
-        onChange?(handle, scene)
+            change(&subject)
+            scene.drawables[drawable] = subject
+            state.scenes[handle] = scene
+            return scene
+        }
     }
 
-    public func remove(_ drawable: Int, from handle: Int) {
-        guard var scene = scenes[handle] else { return }
+    public func remove(_ drawable: Int, from handle: Int) -> CanvasScene? {
+        state.withLock { state in
+            guard var scene = state.scenes[handle] else { return nil }
 
-        scene.drawables[drawable] = nil
-        scene.order.removeAll { $0 == drawable }
-        scenes[handle] = scene
-        onChange?(handle, scene)
+            scene.drawables[drawable] = nil
+            scene.order.removeAll { $0 == drawable }
+            state.scenes[handle] = scene
+            return scene
+        }
+    }
+
+    /// Hands the scene to whoever shows it, on the thread they expect.
+    public func publish(_ handle: Int, _ scene: CanvasScene) {
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { CanvasRegistry.onChange?(handle, scene) }
+        }
     }
 }
