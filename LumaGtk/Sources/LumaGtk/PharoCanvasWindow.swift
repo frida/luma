@@ -19,6 +19,9 @@ final class PharoCanvasWindow {
         PharoCanvasHost.onReport = { activity in
             shared?.report(activity)
         }
+        PharoCanvasHost.onData = { values in
+            shared?.feed(values)
+        }
         PharoCanvasHost.onClose = {
             shared?.window.close()
             shared = nil
@@ -69,6 +72,14 @@ final class PharoCanvasWindow {
 
     deinit {
         ThemeWatcher.unsubscribe(handlerID: themeToken)
+    }
+
+    private func feed(_ values: [Float]) {
+        guard let area else { return }
+        var storage = values
+        storage.withUnsafeMutableBufferPointer { buffer in
+            luma_shader_effect_set_data(area, buffer.baseAddress, Int32(buffer.count))
+        }
     }
 
     private func report(_ activity: Float) {

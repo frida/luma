@@ -28,6 +28,9 @@ struct ShaderEffectView {
     /// was last handed, so a caller only sets this when there is news.
     var activity: Float = 0
 
+    /// Values the effect reads through `dataAt()`, up to 64.
+    var data: [Float] = []
+
     func makeCoordinator() -> ShaderEffectRenderer {
         ShaderEffectRenderer(program: program)
     }
@@ -46,6 +49,7 @@ struct ShaderEffectView {
 
     fileprivate func refresh(_ coordinator: ShaderEffectRenderer) {
         coordinator.scheme = scheme
+        coordinator.data = data
         coordinator.reportActivity(activity)
     }
 }
@@ -80,6 +84,7 @@ extension ShaderEffectView: UIViewRepresentable {
 
 final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
     var scheme: Float = 1.0
+    var data: [Float] = []
     private let program: ShaderEffectProgram
     private weak var view: MTKView?
     private var commandQueue: MTLCommandQueue?
@@ -130,17 +135,20 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
         activity *= exp(-Float(now - renderedAt) / activityHalfLife)
         renderedAt = now
 
-        var uniforms = Uniforms(
-            resolution: SIMD2(Float(view.drawableSize.width),
-                              Float(view.drawableSize.height)),
-            time: Float(now - startTime),
-            scheme: scheme,
-            activity: activity,
-            pulse: pulsedAt.map { exp(-Float(now - $0) / pulseHalfLife) } ?? 0
-        )
+        var uniforms = [Float](repeating: 0, count: Self.uniformWordCount)
+        uniforms[0] = Float(view.drawableSize.width)
+        uniforms[1] = Float(view.drawableSize.height)
+        uniforms[2] = Float(now - startTime)
+        uniforms[3] = scheme
+        uniforms[4] = activity
+        uniforms[5] = pulsedAt.map { exp(-Float(now - $0) / pulseHalfLife) } ?? 0
+        uniforms[6] = Float(min(data.count, Self.dataCapacity))
+        for (offset, value) in data.prefix(Self.dataCapacity).enumerated() {
+            uniforms[Self.dataWordOffset + offset] = value
+        }
 
         encoder.setRenderPipelineState(pipeline)
-        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
+        encoder.setFragmentBytes(&uniforms, length: uniforms.count * MemoryLayout<Float>.stride, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()
         buffer.present(drawable)
@@ -203,13 +211,12 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
         displayLink?.invalidate()
     }
 
-    private struct Uniforms {
-        var resolution: SIMD2<Float>
-        var time: Float
-        var scheme: Float
-        var activity: Float
-        var pulse: Float
-    }
+    /// The block std140 lays out: resolution, time, scheme, activity, pulse
+    /// and the value count fill the first six words, a seventh pads the vec4
+    /// array to its sixteen-byte alignment, and the values follow.
+    static let dataCapacity = 64
+    static let dataWordOffset = 8
+    static let uniformWordCount = dataWordOffset + dataCapacity
 }
 
 private final class DisplayLinkProxy: NSObject {

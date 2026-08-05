@@ -18,7 +18,12 @@ struct LumaShaderCompiler {
             float u_scheme;
             float u_activity;
             float u_pulse;
+            float u_data_count;
+            // Values the caller fed the canvas, up to 64 of them, packed four
+            // to a vec4. Read them through dataAt.
+            vec4 u_data[16];
         };
+        float dataAt(int i) { return u_data[i >> 2][i & 3]; }
 
         """
 

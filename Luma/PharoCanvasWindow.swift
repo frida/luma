@@ -17,6 +17,9 @@ final class PharoCanvasWindow {
         PharoCanvasHost.onReport = { activity in
             shared?.feed.activity = activity
         }
+        PharoCanvasHost.onData = { values in
+            shared?.feed.data = values
+        }
         PharoCanvasHost.onClose = {
             shared?.window.close()
             shared = nil
@@ -57,6 +60,7 @@ final class PharoCanvasWindow {
 @Observable
 final class CanvasFeed {
     var activity: Float = 0
+    var data: [Float] = []
 }
 
 private struct PharoCanvasView: View {
@@ -69,7 +73,8 @@ private struct PharoCanvasView: View {
         ShaderEffectView(
             program: .translated(metal: effect.metal, function: effect.function),
             scheme: colorScheme == .light ? 1.0 : 0.0,
-            activity: feed.activity
+            activity: feed.activity,
+            data: feed.data
         )
     }
 }

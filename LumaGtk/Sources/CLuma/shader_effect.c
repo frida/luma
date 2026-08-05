@@ -3,6 +3,7 @@
 #include <gtk/gtk.h>
 #include <epoxy/gl.h>
 #include <math.h>
+#include <string.h>
 
 #define LUMA_SHADER_EFFECT_DATA_KEY "luma-shader-effect"
 
@@ -20,10 +21,14 @@ typedef struct {
     GLint loc_scheme;
     GLint loc_activity;
     GLint loc_pulse;
+    GLint loc_data_count;
+    GLint loc_data;
     gint64 start_us;
     guint tick_id;
     float scheme;
     float activity;
+    float data[64];
+    int data_count;
     gint64 pulsed_at_us;
     gint64 rendered_at_us;
     float clear_color[3];
@@ -75,6 +80,17 @@ luma_shader_effect_report_activity(void *widget, float activity)
 }
 
 void
+luma_shader_effect_set_data(void *widget, const float *values, int count)
+{
+    LumaShaderEffect *self = effect_for(GTK_WIDGET(widget));
+    if (count > 64)
+        count = 64;
+    memcpy(self->data, values, count * sizeof(float));
+    memset(self->data + count, 0, (64 - count) * sizeof(float));
+    self->data_count = count;
+}
+
+void
 luma_shader_effect_set_clear_color(void *widget, float red, float green, float blue)
 {
     LumaShaderEffect *self = effect_for(GTK_WIDGET(widget));
@@ -102,6 +118,8 @@ on_realize(GtkGLArea *area, gpointer user_data)
     self->loc_scheme = glGetUniformLocation(self->program, "u_scheme");
     self->loc_activity = glGetUniformLocation(self->program, "u_activity");
     self->loc_pulse = glGetUniformLocation(self->program, "u_pulse");
+    self->loc_data_count = glGetUniformLocation(self->program, "u_data_count");
+    self->loc_data = glGetUniformLocation(self->program, "u_data");
 
     static const float quad[] = {
         -1.0f, -1.0f,
@@ -166,6 +184,8 @@ on_render(GtkGLArea *area, GdkGLContext *context, gpointer user_data)
     glUniform1f(self->loc_scheme, self->scheme);
     glUniform1f(self->loc_activity, self->activity);
     glUniform1f(self->loc_pulse, pulse);
+    glUniform1f(self->loc_data_count, (float)self->data_count);
+    glUniform4fv(self->loc_data, 16, self->data);
     glBindVertexArray(self->vao);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glBindVertexArray(0);
@@ -211,7 +231,10 @@ static const char *shader_effect_fragment_preamble =
     "uniform float u_time;\n"
     "uniform float u_scheme;\n"
     "uniform float u_activity;\n"
-    "uniform float u_pulse;\n";
+    "uniform float u_pulse;\n"
+    "uniform float u_data_count;\n"
+    "uniform vec4 u_data[16];\n"
+    "float dataAt(int i) { return u_data[i >> 2][i & 3]; }\n";
 
 static GLuint
 link_program(const char *fragment_src, gboolean gles)
