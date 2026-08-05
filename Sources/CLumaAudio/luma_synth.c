@@ -1,6 +1,6 @@
 #include "include/CLumaAudio.h"
 
-#include "miniaudio.h"
+#include "luma_synth.h"
 
 #include <math.h>
 #include <stdatomic.h>
@@ -50,7 +50,6 @@ static _Atomic unsigned int g_command_head;
 static _Atomic unsigned int g_command_tail;
 static Command g_commands[COMMAND_CAPACITY];
 static _Atomic unsigned int g_next_voice;
-static _Atomic bool g_running;
 
 // Touched only by the audio thread once started.
 static Voice g_voices[VOICE_COUNT];
@@ -58,54 +57,9 @@ static LumaSynthPatch g_patch;
 static float g_level = 0.6f;
 static unsigned int g_noise_seed = 22222;
 
-static ma_device g_device;
-static bool g_device_ready;
-
 static void push_command(Command command);
-static void on_audio_frames(ma_device *device, void *output, const void *input, ma_uint32 frame_count);
-static void mix(float *frames, int frame_count, int channels);
 static void drain_commands(void);
 static float render_voice(Voice *voice);
-
-bool
-luma_audio_start(void)
-{
-    if (atomic_load(&g_running))
-        return true;
-
-    ma_device_config config = ma_device_config_init(ma_device_type_playback);
-    config.playback.format = ma_format_f32;
-    config.playback.channels = 2;
-    config.sampleRate = SAMPLE_RATE;
-    config.dataCallback = on_audio_frames;
-
-    if (ma_device_init(NULL, &config, &g_device) != MA_SUCCESS)
-        return false;
-    if (ma_device_start(&g_device) != MA_SUCCESS) {
-        ma_device_uninit(&g_device);
-        return false;
-    }
-
-    g_device_ready = true;
-    atomic_store(&g_running, true);
-    return true;
-}
-
-void
-luma_audio_stop(void)
-{
-    if (!g_device_ready)
-        return;
-    atomic_store(&g_running, false);
-    ma_device_uninit(&g_device);
-    g_device_ready = false;
-}
-
-bool
-luma_audio_is_running(void)
-{
-    return atomic_load(&g_running);
-}
 
 void
 luma_audio_set_level(float level)
@@ -144,7 +98,7 @@ luma_audio_note_off(int voice)
 void
 luma_audio_render_offline(float *frames, int frame_count, int channels)
 {
-    mix(frames, frame_count, channels);
+    luma_synth_mix(frames, frame_count, channels);
 }
 
 // Drops the command when the ring is full rather than blocking the caller;
@@ -161,16 +115,8 @@ push_command(Command command)
     atomic_store_explicit(&g_command_head, head + 1, memory_order_release);
 }
 
-static void
-on_audio_frames(ma_device *device, void *output, const void *input, ma_uint32 frame_count)
-{
-    (void)device;
-    (void)input;
-    mix((float *)output, (int)frame_count, 2);
-}
-
-static void
-mix(float *frames, int frame_count, int channels)
+void
+luma_synth_mix(float *frames, int frame_count, int channels)
 {
     drain_commands();
 
