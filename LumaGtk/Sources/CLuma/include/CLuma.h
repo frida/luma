@@ -99,15 +99,27 @@ bool luma_image_normalize_to_png(const unsigned char *in_bytes,
                                   int *out_width,
                                   int *out_height);
 
-// Welcome window animated GPU backdrop. Returns a new GtkGLArea
-// (as a GtkWidget*) that renders rising coral/plum motes over a
-// frida.re-style cream or plum field. The widget owns its OpenGL
-// resources via realize/unrealize and self-drives redraws.
+// Welcome window animated GPU backdrop: a frida.re-style cream or
+// plum plasma field, as a shader effect widget.
 void *luma_welcome_backdrop_new(void);
 
 // Toggle the backdrop palette between dark plum (true) and light
 // cream (false).
 void luma_welcome_backdrop_set_dark(void *widget, bool dark);
+
+// Fullscreen fragment effect. Returns a new GtkGLArea (as a
+// GtkWidget*) that draws fragment_src over a screen-filling quad and
+// self-drives redraws off the frame clock. The widget owns its OpenGL
+// resources via realize/unrealize. The source is appended to a
+// preamble declaring v_uv, frag_color, u_resolution, u_time and
+// u_scheme, so it carries only its own helpers and main().
+void *luma_shader_effect_new(const char *fragment_src);
+
+// Feed u_scheme, by convention 1 for light and 0 for dark.
+void luma_shader_effect_set_scheme(void *widget, float scheme);
+
+// Colour shown until the effect's program has linked.
+void luma_shader_effect_set_clear_color(void *widget, float red, float green, float blue);
 
 // GdkPaintable backed by librsvg that re-rasterizes the SVG into
 // each snapshot's backing pixels at its logical-size aspect ratio.
