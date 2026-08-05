@@ -23,7 +23,7 @@ final class PharoCanvasWindow {
         }
     }
 
-    private static func show(_ effect: String) {
+    private static func show(_ effect: CanvasEffect) {
         if let existing = shared, existing.effect == effect {
             existing.window.makeKeyAndOrderFront(nil)
             return
@@ -35,10 +35,10 @@ final class PharoCanvasWindow {
 
     let window: NSWindow
 
-    private let effect: String
+    private let effect: CanvasEffect
     private let feed = CanvasFeed()
 
-    private init(effect: String) {
+    private init(effect: CanvasEffect) {
         self.effect = effect
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 720, height: 420),
@@ -46,7 +46,7 @@ final class PharoCanvasWindow {
             backing: .buffered,
             defer: false
         )
-        window.title = "Canvas — \(effect)"
+        window.title = "Canvas — \(effect.function)"
         window.isReleasedWhenClosed = false
         window.center()
         window.contentView = NSHostingView(rootView: PharoCanvasView(effect: effect, feed: feed))
@@ -60,14 +60,14 @@ final class CanvasFeed {
 }
 
 private struct PharoCanvasView: View {
-    let effect: String
+    let effect: CanvasEffect
     let feed: CanvasFeed
 
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ShaderEffectView(
-            fragmentFunction: ShaderEffects.metalFunction(named: effect),
+            program: .translated(metal: effect.metal, function: effect.function),
             scheme: colorScheme == .light ? 1.0 : 0.0,
             activity: feed.activity
         )

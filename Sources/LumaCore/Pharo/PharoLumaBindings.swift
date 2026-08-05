@@ -89,6 +89,16 @@ public enum PharoLumaBindings {
             ^ TFSameThreadRunner uniqueInstance invokeFunction: function withArguments: aCollection'.
         host class compile: 'invoke: aName
             ^ self invoke: aName parameters: #() return: TFBasicType void with: #()'.
+        host class compile: 'cString: aString
+            "The image reads strings out of the host readily but has no way to
+             hand one in, so lay the bytes out in memory and pass the address."
+            | bytes address |
+            bytes := aString utf8Encoded.
+            address := ExternalAddress allocate: bytes size + 1.
+            1 to: bytes size do: [ :index |
+                address unsignedByteAt: index put: (bytes at: index) ].
+            address unsignedByteAt: bytes size + 1 put: 0.
+            ^ address'.
 
         synth := Object << #LumaSynth slots: {}; package: 'Luma'; install.
         synth class compile: 'start
@@ -276,6 +286,20 @@ public enum PharoLumaBindings {
                 parameters: { TFBasicType float }
                 return: TFBasicType void
                 with: { anActivity asFloat }'.
+        canvas class compile: 'source: aString
+            "Draws GLSL written here. Answers false and leaves the shader
+             compiler''s complaint in lastError when it will not compile."
+            | address answer |
+            address := LumaHost cString: aString.
+            answer := 1 = (LumaHost invoke: ''luma_canvas_show_source''
+                parameters: { TFBasicType pointer }
+                return: TFBasicType sint
+                with: { address }).
+            address free.
+            ^ answer'.
+        canvas class compile: 'lastError
+            ^ (LumaHost invoke: ''luma_canvas_last_error''
+                parameters: #() return: TFBasicType pointer with: #()) readString utf8Decoded'.
         canvas class compile: 'close
             ^ LumaHost invoke: ''luma_canvas_close'''.
 

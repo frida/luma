@@ -25,7 +25,7 @@ final class PharoCanvasWindow {
         }
     }
 
-    private static func show(_ effect: String, app: Adw.Application) {
+    private static func show(_ effect: CanvasEffect, app: Adw.Application) {
         if let existing = shared, existing.effect == effect {
             existing.window.present()
             return
@@ -37,20 +37,20 @@ final class PharoCanvasWindow {
 
     let window: Adw.ApplicationWindow
 
-    private let effect: String
+    private let effect: CanvasEffect
     private var area: UnsafeMutableRawPointer?
     private var themeToken: gulong = 0
 
-    private init(effect: String, app: Adw.Application) {
+    private init(effect: CanvasEffect, app: Adw.Application) {
         self.effect = effect
         window = Adw.ApplicationWindow(app: app)
-        window.title = "Canvas — \(effect)"
+        window.title = "Canvas — \(effect.function)"
         window.setDefaultSize(width: 720, height: 420)
 
         let content = Box(orientation: .vertical, spacing: 0)
         content.append(child: Gtk.HeaderBar())
 
-        if let source = ShaderEffects.all[effect], let raw = luma_shader_effect_new(source) {
+        if let raw = luma_shader_effect_new(effect.glsl) {
             area = raw
             applyAppearance(raw)
             themeToken = ThemeWatcher.subscribe(owner: self) { owner in
