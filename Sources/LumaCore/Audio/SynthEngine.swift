@@ -13,6 +13,12 @@ public enum SynthEngine {
 
     static let voiceCount = 16
     static let patternCapacity = 256
+
+    /// Three per channel, so staging can always find a buffer that is neither
+    /// being performed nor waiting to be adopted. Two could not: a second
+    /// commit landing inside one audio block would overwrite the pattern the
+    /// mixer was midway through.
+    static let bufferCount = 3
     static let commandCapacity = 256
 
     public static func prepare() {
@@ -50,6 +56,9 @@ public enum SynthEngine {
     // MARK: Patterns
 
     public static func beginPattern(channel: Int) {
+        let performing = performingSlot(channel)
+        let offered = storage.lastOffered[channel]
+        storage.staging[channel] = (0..<bufferCount).first { $0 != performing && $0 != offered }!
         storage.stagedCount[channel] = 0
     }
 
@@ -76,7 +85,7 @@ public enum SynthEngine {
         command.loops = loops ? 1 : 0
         offer(command)
 
-        storage.staging[channel] ^= 1
+        storage.lastOffered[channel] = storage.staging[channel]
     }
 
     public static func stopPattern(channel: Int) {
@@ -128,6 +137,7 @@ public enum SynthEngine {
             case .patternStop:
                 storage.channels[channel].performing = -1
                 storage.channels[channel].offered = -1
+                publishPerforming(channel, -1)
             }
             tail &+= 1
         }
@@ -154,6 +164,7 @@ public enum SynthEngine {
             storage.channels[channel].stepIndex = 0
             guard pattern.loops else {
                 storage.channels[channel].performing = -1
+                publishPerforming(channel, -1)
                 return
             }
             return
@@ -185,6 +196,23 @@ public enum SynthEngine {
         storage.channels[channel].offered = -1
         storage.channels[channel].performing = offered
         storage.channels[channel].stepIndex = 0
+        publishPerforming(channel, offered)
+    }
+
+    /// Only the audio thread writes this; staging reads it to keep clear of
+    /// whatever is sounding. A byte per channel, holding the slot plus one so
+    /// that zero reads as nothing playing.
+    private static func publishPerforming(_ channel: Int, _ slot: Int) {
+        let shift = UInt32(channel * 8)
+        var bits = storage.performingSlots.load(ordering: .relaxed)
+        bits &= ~(0xFF << shift)
+        bits |= UInt32(slot + 1) << shift
+        storage.performingSlots.store(bits, ordering: .releasing)
+    }
+
+    private static func performingSlot(_ channel: Int) -> Int {
+        let bits = storage.performingSlots.load(ordering: .acquiring)
+        return Int((bits >> UInt32(channel * 8)) & 0xFF) - 1
     }
 
     private static func start(_ voice: inout Voice, _ frequency: Float, _ velocity: Float, _ channel: Int) {
@@ -288,11 +316,11 @@ public enum SynthEngine {
     }
 
     private static func stepSlot(channel: Int, buffer: Int, index: Int) -> Int {
-        ((channel * 2) + buffer) * patternCapacity + index
+        ((channel * bufferCount) + buffer) * patternCapacity + index
     }
 
     private static func patternSlot(channel: Int, buffer: Int) -> Int {
-        (channel * 2) + buffer
+        (channel * bufferCount) + buffer
     }
 
     nonisolated(unsafe) private static let storage = Storage()
@@ -307,20 +335,22 @@ public enum SynthEngine {
         let commandHead = Atomic<UInt32>(0)
         let commandTail = Atomic<UInt32>(0)
         let nextVoice = Atomic<UInt32>(0)
+        let performingSlots = Atomic<UInt32>(0)
 
         var level: Float = 0.6
         var noiseSeed: UInt32 = 22222
         var staging = [Int](repeating: 0, count: SynthEngine.channelCount)
         var stagedCount = [Int](repeating: 0, count: SynthEngine.channelCount)
+        var lastOffered = [Int](repeating: -1, count: SynthEngine.channelCount)
 
         init() {
             voices = .allocate(capacity: SynthEngine.voiceCount)
             voices.initialize(repeating: Voice())
             channels = .allocate(capacity: SynthEngine.channelCount)
             channels.initialize(repeating: ChannelState())
-            steps = .allocate(capacity: SynthEngine.channelCount * 2 * SynthEngine.patternCapacity)
+            steps = .allocate(capacity: SynthEngine.channelCount * SynthEngine.bufferCount * SynthEngine.patternCapacity)
             steps.initialize(repeating: PatternStep())
-            patterns = .allocate(capacity: SynthEngine.channelCount * 2)
+            patterns = .allocate(capacity: SynthEngine.channelCount * SynthEngine.bufferCount)
             patterns.initialize(repeating: Pattern())
             commands = .allocate(capacity: SynthEngine.commandCapacity)
             commands.initialize(repeating: Command(kind: .patch, channel: 0))

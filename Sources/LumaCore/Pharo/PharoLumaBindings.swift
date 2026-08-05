@@ -214,7 +214,11 @@ public enum PharoLumaBindings {
             ^ self channel: aChannel waveform: self triangle detune: 0.08 attack: 0.004
                 decay: 0.18 sustain: 0 release: 0.05 cutoff: 2600 resonance: 0.35 gain: 0.5'.
 
-        tune := Object << #LumaTune slots: { #channel. #tempo. #division. #root. #scale. #notes. #loops. #playing }; package: 'Luma'; install.
+        tune := Object << #LumaTune
+            slots: { #name. #channel. #tempo. #division. #root. #scale. #notes. #loops. #playing };
+            sharedVariables: { #Registry };
+            package: 'Luma';
+            install.
         tune compile: 'initialize
             channel := 0.
             tempo := 120.
@@ -224,6 +228,12 @@ public enum PharoLumaBindings {
             notes := #().
             loops := true.
             playing := false'.
+        tune compile: 'name ^ name'.
+        tune compile: 'setName: aSymbol
+            name := aSymbol'.
+        tune compile: 'printOn: aStream
+            aStream nextPutAll: ''LumaTune''.
+            name ifNotNil: [ aStream nextPut: $(; nextPutAll: name asString; nextPut: $) ]'.
         tune compile: 'channel ^ channel'.
         tune compile: 'channel: aChannel
             channel := aChannel.
@@ -295,9 +305,20 @@ public enum PharoLumaBindings {
             octave := (anInteger / scale size) floor.
             index := anInteger - (octave * scale size).
             ^ root + (scale at: index + 1) + (octave * 12)'.
+        tune class compile: 'registry
+            Registry ifNil: [ Registry := Dictionary new ].
+            ^ Registry'.
+        tune class compile: 'named: aSymbol
+            "A tune keeps its handle, so a later snippet reaches the one already playing."
+            ^ self registry at: aSymbol ifAbsentPut: [ self new setName: aSymbol; yourself ]'.
+        tune class compile: 'named: aSymbol channel: aChannel
+            ^ (self named: aSymbol) channel: aChannel; yourself'.
+        tune class compile: 'forget: aSymbol
+            (self registry removeKey: aSymbol ifAbsent: [ nil ]) ifNotNil: [ :each | each stop ]'.
         tune class compile: 'channel: aChannel
             ^ self new channel: aChannel; yourself'.
         tune class compile: 'hush
+            "Everything, registered or not."
             ^ self allInstances do: [ :each | each stop ]'.
 
         project := Object << #LumaProject slots: {}; package: 'Luma'; install.
