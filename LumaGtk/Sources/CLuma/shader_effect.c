@@ -2,8 +2,13 @@
 
 #include <gtk/gtk.h>
 #include <epoxy/gl.h>
+#include <math.h>
 
 #define LUMA_SHADER_EFFECT_DATA_KEY "luma-shader-effect"
+
+// Seconds for a reported arrival to fall to 1/e.
+#define PULSE_HALF_LIFE_SECONDS 0.4f
+#define ACTIVITY_HALF_LIFE_SECONDS 1.2f
 
 typedef struct {
     char *fragment_src;
@@ -13,9 +18,14 @@ typedef struct {
     GLint loc_resolution;
     GLint loc_time;
     GLint loc_scheme;
+    GLint loc_activity;
+    GLint loc_pulse;
     gint64 start_us;
     guint tick_id;
     float scheme;
+    float activity;
+    gint64 pulsed_at_us;
+    gint64 rendered_at_us;
     float clear_color[3];
 } LumaShaderEffect;
 
@@ -57,6 +67,14 @@ luma_shader_effect_set_scheme(void *widget, float scheme)
 }
 
 void
+luma_shader_effect_report_activity(void *widget, float activity)
+{
+    LumaShaderEffect *self = effect_for(GTK_WIDGET(widget));
+    self->activity = activity;
+    self->pulsed_at_us = g_get_monotonic_time();
+}
+
+void
 luma_shader_effect_set_clear_color(void *widget, float red, float green, float blue)
 {
     LumaShaderEffect *self = effect_for(GTK_WIDGET(widget));
@@ -82,6 +100,8 @@ on_realize(GtkGLArea *area, gpointer user_data)
     self->loc_resolution = glGetUniformLocation(self->program, "u_resolution");
     self->loc_time = glGetUniformLocation(self->program, "u_time");
     self->loc_scheme = glGetUniformLocation(self->program, "u_scheme");
+    self->loc_activity = glGetUniformLocation(self->program, "u_activity");
+    self->loc_pulse = glGetUniformLocation(self->program, "u_pulse");
 
     static const float quad[] = {
         -1.0f, -1.0f,
@@ -100,6 +120,7 @@ on_realize(GtkGLArea *area, gpointer user_data)
     glBindVertexArray(0);
 
     self->start_us = g_get_monotonic_time();
+    self->rendered_at_us = self->start_us;
 }
 
 static void
@@ -128,7 +149,13 @@ on_render(GtkGLArea *area, GdkGLContext *context, gpointer user_data)
     float fb_w = (float)(width * scale);
     float fb_h = (float)(height * scale);
 
-    float elapsed = (float)((g_get_monotonic_time() - self->start_us) / 1000000.0);
+    gint64 now_us = g_get_monotonic_time();
+    float elapsed = (float)((now_us - self->start_us) / 1000000.0);
+    float since_pulse = (float)((now_us - self->pulsed_at_us) / 1000000.0);
+    float pulse = self->pulsed_at_us == 0 ? 0.0f : expf(-since_pulse / PULSE_HALF_LIFE_SECONDS);
+    float since_render = (float)((now_us - self->rendered_at_us) / 1000000.0);
+    self->rendered_at_us = now_us;
+    self->activity *= expf(-since_render / ACTIVITY_HALF_LIFE_SECONDS);
 
     glClearColor(self->clear_color[0], self->clear_color[1], self->clear_color[2], 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -137,6 +164,8 @@ on_render(GtkGLArea *area, GdkGLContext *context, gpointer user_data)
     glUniform2f(self->loc_resolution, fb_w, fb_h);
     glUniform1f(self->loc_time, elapsed);
     glUniform1f(self->loc_scheme, self->scheme);
+    glUniform1f(self->loc_activity, self->activity);
+    glUniform1f(self->loc_pulse, pulse);
     glBindVertexArray(self->vao);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glBindVertexArray(0);
@@ -180,7 +209,9 @@ static const char *shader_effect_fragment_preamble =
     "out vec4 frag_color;\n"
     "uniform vec2 u_resolution;\n"
     "uniform float u_time;\n"
-    "uniform float u_scheme;\n";
+    "uniform float u_scheme;\n"
+    "uniform float u_activity;\n"
+    "uniform float u_pulse;\n";
 
 static GLuint
 link_program(const char *fragment_src, gboolean gles)

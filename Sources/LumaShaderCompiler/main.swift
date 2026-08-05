@@ -16,6 +16,8 @@ struct LumaShaderCompiler {
             vec2 u_resolution;
             float u_time;
             float u_scheme;
+            float u_activity;
+            float u_pulse;
         };
 
         """
