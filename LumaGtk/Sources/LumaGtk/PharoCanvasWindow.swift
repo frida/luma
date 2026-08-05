@@ -4,80 +4,80 @@ import CLuma
 import Gtk
 import LumaCore
 
-/// A window holding one shader effect, opened by the image so a snippet can
-/// picture what it is working on. The image names an effect the build carries
-/// and then feeds it; the drawing itself stays in the host.
+/// A window showing one scene the image built. The image keeps the scene's
+/// handle and changes it; this follows, rebuilding only what actually
+/// differs, so moving a drawable does not recompile its shaders.
 @MainActor
 final class PharoCanvasWindow {
-    private static var shared: PharoCanvasWindow?
+    private static var scenes: [Int: PharoCanvasWindow] = [:]
+    private static var effect: PharoCanvasWindow?
 
     /// Teaches `LumaCanvas` in the image how to reach a window here.
     static func install(app: Adw.Application) {
-        PharoCanvasHost.onShow = { effect in
-            show(effect, app: app)
+        CanvasRegistry.onChange = { handle, scene in
+            show(scene, handle: handle, app: app)
+        }
+
+        PharoCanvasHost.onShow = { shown in
+            showEffect(shown, app: app)
         }
         PharoCanvasHost.onReport = { activity in
-            shared?.report(activity)
+            effect?.report(activity)
         }
         PharoCanvasHost.onData = { values in
-            shared?.feed(values)
+            effect?.feed(values)
         }
         PharoCanvasHost.onTransform = { values in
-            shared?.transform(values)
+            effect?.transform(values)
         }
         PharoCanvasHost.onClose = {
-            shared?.window.close()
-            shared = nil
+            effect?.window.close()
+            effect = nil
         }
     }
 
-    private static func show(_ effect: CanvasEffect, app: Adw.Application) {
-        if let existing = shared, existing.effect == effect {
-            existing.window.present()
-            return
+    private static func show(_ scene: CanvasScene, handle: Int, app: Adw.Application) {
+        let existing = scenes[handle]
+        let window = existing ?? PharoCanvasWindow(title: "Canvas", app: app)
+        if existing == nil {
+            scenes[handle] = window
+            window.window.present()
         }
-        shared?.window.close()
-        shared = PharoCanvasWindow(effect: effect, app: app)
-        shared?.window.present()
+        window.apply(scene)
+    }
+
+    private static func showEffect(_ shown: CanvasEffect, app: Adw.Application) {
+        effect?.window.close()
+        let window = PharoCanvasWindow(title: "Canvas — \(shown.function)", app: app)
+        effect = window
+        window.adopt(shown)
+        window.window.present()
     }
 
     let window: Adw.ApplicationWindow
 
-    private let effect: CanvasEffect
     private var area: UnsafeMutableRawPointer?
-    private var drawables: [Int32] = []
     private var themeToken: gulong = 0
+    /// What each drawable was last given, so an edit only touches what moved.
+    private var built: [Int: Built] = [:]
 
-    private init(effect: CanvasEffect, app: Adw.Application) {
-        self.effect = effect
+    private struct Built {
+        var handle: Int32
+        var vertexGLSL: String
+        var fragmentGLSL: String
+        var vertices: [Float]
+    }
+
+    private init(title: String, app: Adw.Application) {
         window = Adw.ApplicationWindow(app: app)
-        window.title = "Canvas — \(effect.function)"
+        window.title = title
         window.setDefaultSize(width: 720, height: 420)
 
         let content = Box(orientation: .vertical, spacing: 0)
         content.append(child: Gtk.HeaderBar())
 
-        // A scene needs no screen-filling program; asking for one would only
-        // fail to compile, the author's fragment source carrying its own
-        // version directive.
-        let fullscreen = effect.geometry == nil ? effect.glsl : nil
-        if let raw = luma_shader_effect_new(fullscreen) {
+        if let raw = luma_shader_effect_new(nil) {
             area = raw
-            if let geometry = effect.geometry, let vertexGLSL = effect.vertexGLSL {
-                let drawable = luma_shader_effect_add_drawable(raw)
-                luma_shader_effect_drawable_set_program(raw, drawable, vertexGLSL, effect.glsl)
-                for attribute in geometry.attributes {
-                    luma_shader_effect_drawable_add_attribute(
-                        raw, drawable, attribute.name, Int32(attribute.components))
-                }
-                var vertices = geometry.vertices
-                vertices.withUnsafeMutableBufferPointer { buffer in
-                    luma_shader_effect_drawable_set_vertices(
-                        raw, drawable, buffer.baseAddress, Int32(buffer.count),
-                        geometry.primitive.rawValue)
-                }
-                drawables.append(drawable)
-            }
             applyAppearance(raw)
             themeToken = ThemeWatcher.subscribe(owner: self) { owner in
                 if let raw = owner.area {
@@ -97,6 +97,73 @@ final class PharoCanvasWindow {
         ThemeWatcher.unsubscribe(handlerID: themeToken)
     }
 
+    private func apply(_ scene: CanvasScene) {
+        guard let area else { return }
+
+        for handle in scene.order {
+            guard let drawable = scene.drawables[handle], !drawable.vertexGLSL.isEmpty else { continue }
+
+            var record = built[handle] ?? Built(
+                handle: luma_shader_effect_add_drawable(area),
+                vertexGLSL: "", fragmentGLSL: "", vertices: [])
+
+            if record.vertexGLSL != drawable.vertexGLSL || record.fragmentGLSL != drawable.fragmentGLSL {
+                luma_shader_effect_drawable_set_program(
+                    area, record.handle, drawable.vertexGLSL, drawable.fragmentGLSL)
+                for attribute in drawable.geometry.attributes {
+                    luma_shader_effect_drawable_add_attribute(
+                        area, record.handle, attribute.name, Int32(attribute.components))
+                }
+                record.vertexGLSL = drawable.vertexGLSL
+                record.fragmentGLSL = drawable.fragmentGLSL
+                record.vertices = []
+            }
+
+            if record.vertices != drawable.geometry.vertices {
+                var vertices = drawable.geometry.vertices
+                vertices.withUnsafeMutableBufferPointer { buffer in
+                    luma_shader_effect_drawable_set_vertices(
+                        area, record.handle, buffer.baseAddress, Int32(buffer.count),
+                        drawable.geometry.primitive.rawValue)
+                }
+                record.vertices = drawable.geometry.vertices
+            }
+
+            var transform = drawable.transform
+            transform.withUnsafeMutableBufferPointer { buffer in
+                luma_shader_effect_drawable_set_transform(area, record.handle, buffer.baseAddress)
+            }
+            luma_shader_effect_drawable_set_visible(area, record.handle, drawable.isVisible)
+
+            built[handle] = record
+        }
+
+        for (handle, record) in built where scene.drawables[handle] == nil {
+            luma_shader_effect_remove_drawable(area, record.handle)
+            built[handle] = nil
+        }
+    }
+
+    /// The older screen-filling path, where the image names one effect.
+    private func adopt(_ shown: CanvasEffect) {
+        guard let area else { return }
+
+        let drawable = luma_shader_effect_add_drawable(area)
+        if let geometry = shown.geometry, let vertexGLSL = shown.vertexGLSL {
+            luma_shader_effect_drawable_set_program(area, drawable, vertexGLSL, shown.glsl)
+            for attribute in geometry.attributes {
+                luma_shader_effect_drawable_add_attribute(
+                    area, drawable, attribute.name, Int32(attribute.components))
+            }
+            var vertices = geometry.vertices
+            vertices.withUnsafeMutableBufferPointer { buffer in
+                luma_shader_effect_drawable_set_vertices(
+                    area, drawable, buffer.baseAddress, Int32(buffer.count),
+                    geometry.primitive.rawValue)
+            }
+        }
+    }
+
     private func feed(_ values: [Float]) {
         guard let area else { return }
         var storage = values
@@ -110,9 +177,6 @@ final class PharoCanvasWindow {
         var storage = values
         storage.withUnsafeMutableBufferPointer { buffer in
             luma_shader_effect_set_transform(area, buffer.baseAddress)
-            for drawable in drawables {
-                luma_shader_effect_drawable_set_transform(area, drawable, buffer.baseAddress)
-            }
         }
     }
 

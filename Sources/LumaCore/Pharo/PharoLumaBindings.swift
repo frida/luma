@@ -14,7 +14,7 @@ public enum PharoLumaBindings {
     /// fields, so opening one shows what the host knows about it rather than
     /// the line it would have printed.
     private static let source = """
-        | record records sessions entries events project host synth tune canvas |
+        | record records sessions entries events project host synth tune canvas drawable |
         record := Object << #LumaRecord slots: { #fields. #icon }; package: 'Luma'; install.
         record compile: 'setFields: aDictionary icon: anIcon
             fields := aDictionary.
@@ -263,32 +263,51 @@ public enum PharoLumaBindings {
             "Everything, registered or not."
             ^ self allInstances do: [ :each | each stop ]'.
 
-        canvas := Object << #LumaCanvas slots: {}; package: 'Luma'; install.
+        canvas := Object << #LumaCanvas slots: { #handle }; package: 'Luma'; install.
+        canvas class compile: 'new
+            "A scene of its own, which the image keeps and changes."
+            ^ self basicNew
+                setHandle: (LumaHost invoke: ''luma_scene_create''
+                    parameters: #() return: TFBasicType sint with: #());
+                yourself'.
+        canvas compile: 'setHandle: aHandle
+            handle := aHandle'.
+        canvas compile: 'handle ^ handle'.
+        canvas compile: 'printOn: aStream
+            aStream nextPutAll: ''LumaCanvas(''; print: handle; nextPut: $)'.
+        canvas compile: 'addDrawable
+            "One more thing for the scene to draw."
+            ^ LumaDrawable new
+                setScene: handle
+                drawable: (LumaHost invoke: ''luma_scene_add_drawable''
+                    parameters: { TFBasicType sint } return: TFBasicType sint with: { handle })'.
+        canvas compile: 'remove: aDrawable
+            ^ LumaHost invoke: ''luma_scene_remove_drawable''
+                parameters: { TFBasicType sint. TFBasicType sint }
+                return: TFBasicType void
+                with: { handle. aDrawable handle }'.
+        canvas compile: 'show
+            ^ 1 = (LumaHost invoke: ''luma_scene_show''
+                parameters: { TFBasicType sint } return: TFBasicType sint with: { handle })'.
+        canvas compile: 'destroy
+            ^ LumaHost invoke: ''luma_scene_destroy''
+                parameters: { TFBasicType sint } return: TFBasicType void with: { handle }'.
+        canvas class compile: 'primitives
+            ^ #(points lines lineStrip triangles triangleStrip)'.
         canvas class compile: 'effectNames
-            "The effects this build carries, in the order the host indexes them."
+            "The screen-filling effects this build carries."
             | json |
             json := (LumaHost invoke: ''luma_canvas_effect_names''
                 parameters: #() return: TFBasicType pointer with: #()) readString utf8Decoded.
             ^ STONJSON fromString: json'.
         canvas class compile: 'show: aName
-            "Puts one of the built effects on screen. Answers false if this
-             build carries no effect of that name."
             | index |
             index := self effectNames indexOf: aName asString.
             index = 0 ifTrue: [ ^ false ].
             ^ 1 = (LumaHost invoke: ''luma_canvas_show''
-                parameters: { TFBasicType sint }
-                return: TFBasicType sint
-                with: { index - 1 })'.
-        canvas class compile: 'report: anActivity
-            "Feeds u_activity, and spikes u_pulse. The effect decays both."
-            ^ LumaHost invoke: ''luma_canvas_report''
-                parameters: { TFBasicType float }
-                return: TFBasicType void
-                with: { anActivity asFloat }'.
+                parameters: { TFBasicType sint } return: TFBasicType sint with: { index - 1 })'.
         canvas class compile: 'source: aString
-            "Draws GLSL written here. Answers false and leaves the shader
-             compiler''s complaint in lastError when it will not compile."
+            "A screen-filling effect written here."
             | address answer |
             address := LumaHost cString: aString.
             answer := 1 = (LumaHost invoke: ''luma_canvas_show_source''
@@ -300,70 +319,85 @@ public enum PharoLumaBindings {
         canvas class compile: 'lastError
             ^ (LumaHost invoke: ''luma_canvas_last_error''
                 parameters: #() return: TFBasicType pointer with: #()) readString utf8Decoded'.
-        canvas class compile: 'data: aCollection
-            "Values the effect reads through dataAt(), up to 64."
-            aCollection doWithIndex: [ :value :index |
-                LumaHost invoke: ''luma_canvas_set_data''
-                    parameters: { TFBasicType sint. TFBasicType float }
-                    return: TFBasicType void
-                    with: { index - 1. value asFloat } ].
-            ^ LumaHost invoke: ''luma_canvas_commit_data''
-                parameters: { TFBasicType sint }
+        canvas class compile: 'report: anActivity
+            ^ LumaHost invoke: ''luma_canvas_report''
+                parameters: { TFBasicType float }
                 return: TFBasicType void
-                with: { aCollection size }'.
-        canvas class compile: 'clearLayout
-            ^ LumaHost invoke: ''luma_canvas_clear_layout'''.
-        canvas class compile: 'attribute: aName components: aCount
+                with: { anActivity asFloat }'.
+        canvas class compile: 'close
+            ^ LumaHost invoke: ''luma_canvas_close'''.
+
+        drawable := Object << #LumaDrawable slots: { #scene. #handle }; package: 'Luma'; install.
+        drawable compile: 'setScene: aScene drawable: aHandle
+            scene := aScene.
+            handle := aHandle'.
+        drawable compile: 'handle ^ handle'.
+        drawable compile: 'printOn: aStream
+            aStream nextPutAll: ''LumaDrawable(''; print: handle; nextPut: $)'.
+        drawable compile: 'clearLayout
+            ^ LumaHost invoke: ''luma_drawable_clear_layout''
+                parameters: { TFBasicType sint. TFBasicType sint }
+                return: TFBasicType void
+                with: { scene. handle }'.
+        drawable compile: 'attribute: aName components: aCount
             "One value per vertex, in the author''s own layout."
-            ^ LumaHost invoke: ''luma_canvas_add_attribute''
-                parameters: { TFBasicType pointer. TFBasicType sint. TFBasicType sint }
+            ^ LumaHost invoke: ''luma_drawable_add_attribute''
+                parameters: { TFBasicType sint. TFBasicType sint. TFBasicType pointer.
+                              TFBasicType sint. TFBasicType sint }
                 return: TFBasicType void
-                with: { (LumaHost cString: aName). aCount. 0 }'.
-        canvas class compile: 'varying: aName components: aCount
+                with: { scene. handle. (LumaHost cString: aName). aCount. 0 }'.
+        drawable compile: 'varying: aName components: aCount
             "A value the vertex stage hands the fragment stage."
-            ^ LumaHost invoke: ''luma_canvas_add_attribute''
-                parameters: { TFBasicType pointer. TFBasicType sint. TFBasicType sint }
+            ^ LumaHost invoke: ''luma_drawable_add_attribute''
+                parameters: { TFBasicType sint. TFBasicType sint. TFBasicType pointer.
+                              TFBasicType sint. TFBasicType sint }
                 return: TFBasicType void
-                with: { (LumaHost cString: aName). aCount. 1 }'.
-        canvas class compile: 'vertexSource: aVertexSource fragmentSource: aFragmentSource
-            ^ LumaHost invoke: ''luma_canvas_set_geometry_source''
-                parameters: { TFBasicType pointer. TFBasicType pointer }
+                with: { scene. handle. (LumaHost cString: aName). aCount. 1 }'.
+        drawable compile: 'vertexSource: aVertexSource fragmentSource: aFragmentSource
+            ^ LumaHost invoke: ''luma_drawable_set_source''
+                parameters: { TFBasicType sint. TFBasicType sint.
+                              TFBasicType pointer. TFBasicType pointer }
                 return: TFBasicType void
-                with: { (LumaHost cString: aVertexSource). (LumaHost cString: aFragmentSource) }'.
-        canvas class compile: 'primitives
-            ^ #(points lines lineStrip triangles triangleStrip)'.
-        canvas class compile: 'vertices: aCollection primitive: aSymbol
-            "Draws the vertices against the layout declared so far. Answers
-             false and leaves the compiler''s complaint in lastError."
-            aCollection doWithIndex: [ :value :index |
-                LumaHost invoke: ''luma_canvas_set_vertex''
-                    parameters: { TFBasicType sint. TFBasicType float }
-                    return: TFBasicType void
-                    with: { index - 1. value asFloat } ].
-            ^ 1 = (LumaHost invoke: ''luma_canvas_commit_vertices''
+                with: { scene. handle.
+                        (LumaHost cString: aVertexSource). (LumaHost cString: aFragmentSource) }'.
+        drawable compile: 'mesh: aCollection primitive: aSymbol
+            "Hands over a whole buffer at once."
+            | array |
+            array := FFIExternalArray externalNewType: ''float'' size: aCollection size.
+            aCollection doWithIndex: [ :value :index | array at: index put: value asFloat ].
+            LumaHost invoke: ''luma_drawable_set_vertices''
+                parameters: { TFBasicType sint. TFBasicType sint. TFBasicType pointer.
+                              TFBasicType sint. TFBasicType sint }
+                return: TFBasicType void
+                with: { scene. handle. array getHandle. aCollection size.
+                        (LumaCanvas primitives indexOf: aSymbol) - 1 }.
+            array free.
+            ^ self commit'.
+        drawable compile: 'commit
+            "Wraps the stages in declarations matching the layout, and answers
+             false leaving lastError set when either will not compile."
+            ^ 1 = (LumaHost invoke: ''luma_drawable_commit''
                 parameters: { TFBasicType sint. TFBasicType sint }
                 return: TFBasicType sint
-                with: { aCollection size. (self primitives indexOf: aSymbol) - 1 })'.
-        canvas class compile: 'transform: aCollection
-            "Sixteen floats, column-major, saying where the vertices land."
-            aCollection doWithIndex: [ :value :index |
-                LumaHost invoke: ''luma_canvas_set_transform''
-                    parameters: { TFBasicType sint. TFBasicType float }
-                    return: TFBasicType void
-                    with: { index - 1. value asFloat } ].
-            ^ LumaHost invoke: ''luma_canvas_commit_transform'''.
-        canvas class compile: 'identity
-            "Draws vertices in clip space as they stand."
+                with: { scene. handle })'.
+        drawable compile: 'transform: aCollection
+            | array |
+            array := FFIExternalArray externalNewType: ''float'' size: 16.
+            aCollection doWithIndex: [ :value :index | array at: index put: value asFloat ].
+            LumaHost invoke: ''luma_drawable_set_transform''
+                parameters: { TFBasicType sint. TFBasicType sint. TFBasicType pointer }
+                return: TFBasicType void
+                with: { scene. handle. array getHandle }.
+            array free'.
+        drawable compile: 'identity
             ^ self transform: #(1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1)'.
-        canvas class compile: 'orthographicWidth: aWidth height: aHeight
-            "A flat drawing, in units of the caller''s own choosing."
+        drawable compile: 'orthographicWidth: aWidth height: aHeight
             ^ self transform: {
                 2.0 / aWidth. 0. 0. 0.
                 0. 2.0 / aHeight. 0. 0.
                 0. 0. -1.0. 0.
                 0. 0. 0. 1.0 }'.
-        canvas class compile: 'perspective: aFieldOfView aspect: anAspect near: aNear far: aFar
-            "A drawing with depth: things further off draw smaller."
+        drawable compile: 'perspective: aFieldOfView aspect: anAspect near: aNear far: aFar
             | focal range |
             focal := 1.0 / (aFieldOfView / 2.0) degreesToRadians tan.
             range := aNear - aFar.
@@ -372,28 +406,16 @@ public enum PharoLumaBindings {
                 0. focal. 0. 0.
                 0. 0. (aFar + aNear) / range. -1.0.
                 0. 0. 2.0 * aFar * aNear / range. 0 }'.
-        canvas class compile: 'vertexBuffer: aCollection
-            "Lays the floats out in memory the image owns and hands over the
-             address, which is the only way a mesh crosses in decent time."
-            | array |
-            array := FFIExternalArray externalNewType: ''float'' size: aCollection size.
-            aCollection doWithIndex: [ :value :index |
-                array at: index put: value asFloat ].
-            LumaHost invoke: ''luma_canvas_set_vertex_buffer''
-                parameters: { TFBasicType pointer. TFBasicType sint }
+        drawable compile: 'hide
+            ^ LumaHost invoke: ''luma_drawable_set_visible''
+                parameters: { TFBasicType sint. TFBasicType sint. TFBasicType sint }
                 return: TFBasicType void
-                with: { array getHandle. aCollection size }.
-            array free.
-            ^ aCollection size'.
-        canvas class compile: 'mesh: aCollection primitive: aSymbol
-            "Draws a whole buffer of vertices at once."
-            self vertexBuffer: aCollection.
-            ^ 1 = (LumaHost invoke: ''luma_canvas_commit_vertices''
-                parameters: { TFBasicType sint. TFBasicType sint }
-                return: TFBasicType sint
-                with: { aCollection size. (self primitives indexOf: aSymbol) - 1 })'.
-        canvas class compile: 'close
-            ^ LumaHost invoke: ''luma_canvas_close'''.
+                with: { scene. handle. 0 }'.
+        drawable compile: 'show
+            ^ LumaHost invoke: ''luma_drawable_set_visible''
+                parameters: { TFBasicType sint. TFBasicType sint. TFBasicType sint }
+                return: TFBasicType void
+                with: { scene. handle. 1 }'.
 
         project := Object << #LumaProject slots: {}; package: 'Luma'; install.
         project class compile: 'fetch: aName as: aClass
