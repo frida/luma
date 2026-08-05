@@ -17,6 +17,7 @@ final class PharoClassBrowser {
     private let classObject: PharoObject
     private let onSelect: (PharoObject) -> Void
     private let highlight: (GtkSource.Buffer) -> Void
+    private let registerEditor: (GtkSource.View) -> Void
 
     private var methods: [PharoMethodInfo] = []
     private var methodRows: [PharoMethodRow] = []
@@ -31,12 +32,14 @@ final class PharoClassBrowser {
         runtime: PharoRuntime,
         classObject: PharoObject,
         onSelect: @escaping (PharoObject) -> Void,
-        highlight: @escaping (GtkSource.Buffer) -> Void
+        highlight: @escaping (GtkSource.Buffer) -> Void,
+        registerEditor: @escaping (GtkSource.View) -> Void = { _ in }
     ) {
         self.runtime = runtime
         self.classObject = classObject
         self.onSelect = onSelect
         self.highlight = highlight
+        self.registerEditor = registerEditor
 
         widget = Box(orientation: .vertical, spacing: 0)
         Task { @MainActor in
@@ -164,6 +167,7 @@ final class PharoClassBrowser {
             runtime: runtime,
             classObject: classObject,
             highlight: highlight,
+            registerEditor: registerEditor,
             onSaved: { [weak self] in self?.finishAdding() },
             onCancel: { [weak self] in self?.finishAdding() })
         addEditor = editor
@@ -190,7 +194,8 @@ final class PharoClassBrowser {
                 runtime: runtime,
                 classObject: classObject,
                 onSelect: onSelect,
-                highlight: highlight)
+                highlight: highlight,
+                registerEditor: registerEditor)
             methodRows.append(row)
             methodList.append(child: row.widget)
             methodList.append(child: Separator(orientation: .horizontal))
