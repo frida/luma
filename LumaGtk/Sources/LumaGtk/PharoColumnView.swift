@@ -25,17 +25,20 @@ final class PharoColumnView {
     private let object: PharoObject
     private let isMaximized: Bool
     private let highlight: (GtkSource.Buffer) -> Void
+    private let registerEditor: (GtkSource.View) -> Void
 
     init(
         runtime: PharoRuntime,
         object: PharoObject,
         isMaximized: Bool,
-        highlight: @escaping (GtkSource.Buffer) -> Void
+        highlight: @escaping (GtkSource.Buffer) -> Void,
+        registerEditor: @escaping (GtkSource.View) -> Void = { _ in }
     ) {
         self.runtime = runtime
         self.object = object
         self.isMaximized = isMaximized
         self.highlight = highlight
+        self.registerEditor = registerEditor
 
         widget = Frame()
         widget.hexpand = isMaximized
@@ -52,7 +55,8 @@ final class PharoColumnView {
 
     private func classBrowserBody(of classObject: PharoObject) -> Widget {
         let browser = PharoClassBrowser(
-            runtime: runtime, classObject: classObject, onSelect: onDrill, highlight: highlight)
+            runtime: runtime, classObject: classObject, onSelect: onDrill, highlight: highlight,
+            registerEditor: registerEditor)
         classBrowsers.append(browser)
         return browser.widget
     }

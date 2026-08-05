@@ -108,6 +108,21 @@ final class PharoInlineMarks {
 
     private var bodyEditors: [GtkSource.View] = []
 
+    /// Every editable text view a body drops into the snippet -- a method a mark
+    /// expands, a method the class browser opens -- registers so the snippet
+    /// hands it the press and mutes itself while it holds focus.
+    func registerBodyEditor(_ view: GtkSource.View) {
+        bodyEditors.append(view)
+        let focus = EventControllerFocus()
+        focus.onEnter { [weak self] _ in
+            MainActor.assumeIsolated { self?.beginEditingBody() }
+        }
+        focus.onLeave { [weak self] _ in
+            MainActor.assumeIsolated { self?.endEditingBody() }
+        }
+        view.install(controller: focus)
+    }
+
     private func claimBodyPress(_ gesture: GestureClickRef, x: Double, y: Double) {
         guard let picked = gtk_widget_pick(editor.widget_ptr, x, y, GTK_PICK_DEFAULT) else { return }
         guard let view = bodyEditors.first(where: { view in
@@ -451,7 +466,9 @@ final class PharoInlineMarks {
         switch mark.kind {
         case .classReference(let name):
             guard let object = try? await runtime.evaluate(name) else { return nil }
-            let view = PharoColumnView(runtime: runtime, object: object, isMaximized: false, highlight: highlight)
+            let view = PharoColumnView(
+                runtime: runtime, object: object, isMaximized: false, highlight: highlight,
+                registerEditor: { [weak self] editor in self?.registerBodyEditor(editor) })
             view.widget.hexpand = true
             view.widget.vexpand = true
             view.offersLayoutActions = false
@@ -522,20 +539,7 @@ final class PharoInlineMarks {
         methodView.topMargin = 6
         methodView.bottomMargin = 6
 
-        bodyEditors.append(methodView)
-
-        // A GtkTextView nested in another still feeds its keys to the outer
-        // one's input method, so text a reader types into the method lands in
-        // the snippet instead. Muting the outer editor while the method holds
-        // focus hands the keys back; focus returning to the snippet restores it.
-        let focus = EventControllerFocus()
-        focus.onEnter { [weak self] _ in
-            MainActor.assumeIsolated { self?.beginEditingBody() }
-        }
-        focus.onLeave { [weak self] _ in
-            MainActor.assumeIsolated { self?.endEditingBody() }
-        }
-        methodView.install(controller: focus)
+        registerBodyEditor(methodView)
 
         // A one-line method would otherwise shrink to a sliver a click keeps
         // missing, so the editor holds a floor wide and tall enough to land on.
