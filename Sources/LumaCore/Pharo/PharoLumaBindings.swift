@@ -5,6 +5,7 @@ import SwiftyPharo
 /// exposes stays in Luma.
 public enum PharoLumaBindings {
     public static func install(into runtime: PharoRuntime) async throws {
+        PharoSynthBridge.ensureExported()
         _ = try await runtime.evaluate(source)
     }
 
@@ -12,7 +13,7 @@ public enum PharoLumaBindings {
     /// fields, so opening one shows what the host knows about it rather than
     /// the line it would have printed.
     private static let source = """
-        | record records sessions entries events project |
+        | record records sessions entries events project synth |
         record := Object << #LumaRecord slots: { #fields. #icon }; package: 'Luma'; install.
         record compile: 'setFields: aDictionary icon: anIcon
             fields := aDictionary.
@@ -85,6 +86,53 @@ public enum PharoLumaBindings {
             json := (TFSameThreadRunner uniqueInstance invokeFunction: function withArguments: #())
                 readString utf8Decoded.
             ^ (STONJSON fromString: json) collect: [ :each | aClass fromJSON: each ]'.
+        synth := Object << #LumaSynth slots: {}; package: 'Luma'; install.
+        synth class compile: 'invoke: aName parameters: aParameterTypes return: aReturnType with: aCollection
+            | address definition function |
+            address := ExternalAddress loadSymbol: aName module: nil.
+            definition := TFFunctionDefinition parameterTypes: aParameterTypes returnType: aReturnType.
+            function := TFExternalFunction fromAddress: address definition: definition.
+            ^ TFSameThreadRunner uniqueInstance invokeFunction: function withArguments: aCollection'.
+        synth class compile: 'start
+            ^ self invoke: ''luma_synth_start'' parameters: #() return: TFBasicType sint with: #()'.
+        synth class compile: 'stop
+            ^ self invoke: ''luma_synth_stop'' parameters: #() return: TFBasicType void with: #()'.
+        synth class compile: 'level: aLevel
+            ^ self invoke: ''luma_synth_set_level''
+                parameters: { TFBasicType float }
+                return: TFBasicType void
+                with: { aLevel asFloat }'.
+        synth class compile: 'play: aFrequency velocity: aVelocity
+            ^ self invoke: ''luma_synth_play''
+                parameters: { TFBasicType float. TFBasicType float }
+                return: TFBasicType sint
+                with: { aFrequency asFloat. aVelocity asFloat }'.
+        synth class compile: 'release: aVoice
+            ^ self invoke: ''luma_synth_release''
+                parameters: { TFBasicType sint }
+                return: TFBasicType void
+                with: { aVoice }'.
+        synth class compile: 'waveform: aWaveform detune: aDetune attack: anAttack decay: aDecay sustain: aSustain release: aRelease cutoff: aCutoff resonance: aResonance gain: aGain
+            ^ self invoke: ''luma_synth_set_patch''
+                parameters: {
+                    TFBasicType sint. TFBasicType float. TFBasicType float.
+                    TFBasicType float. TFBasicType float. TFBasicType float.
+                    TFBasicType float. TFBasicType float. TFBasicType float }
+                return: TFBasicType void
+                with: {
+                    aWaveform. aDetune asFloat. anAttack asFloat.
+                    aDecay asFloat. aSustain asFloat. aRelease asFloat.
+                    aCutoff asFloat. aResonance asFloat. aGain asFloat }'.
+        synth class compile: 'sine ^ 0'.
+        synth class compile: 'triangle ^ 1'.
+        synth class compile: 'saw ^ 2'.
+        synth class compile: 'square ^ 3'.
+        synth class compile: 'noise ^ 4'.
+        synth class compile: 'blip
+            ^ self
+                waveform: self triangle detune: 0.08 attack: 0.004 decay: 0.18
+                sustain: 0 release: 0.05 cutoff: 2600 resonance: 0.35 gain: 0.5'.
+
         project class compile: 'sessions
             ^ LumaSessions new setItems: (self fetch: ''luma_sessions'' as: LumaSession); yourself'.
         project class compile: 'notebookEntries
