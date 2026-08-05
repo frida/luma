@@ -300,6 +300,17 @@ public enum PharoLumaBindings {
         canvas class compile: 'lastError
             ^ (LumaHost invoke: ''luma_canvas_last_error''
                 parameters: #() return: TFBasicType pointer with: #()) readString utf8Decoded'.
+        canvas class compile: 'data: aCollection
+            "Values the effect reads through dataAt(), up to 64."
+            aCollection doWithIndex: [ :value :index |
+                LumaHost invoke: ''luma_canvas_set_data''
+                    parameters: { TFBasicType sint. TFBasicType float }
+                    return: TFBasicType void
+                    with: { index - 1. value asFloat } ].
+            ^ LumaHost invoke: ''luma_canvas_commit_data''
+                parameters: { TFBasicType sint }
+                return: TFBasicType void
+                with: { aCollection size }'.
         canvas class compile: 'close
             ^ LumaHost invoke: ''luma_canvas_close'''.
 

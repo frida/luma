@@ -19,6 +19,7 @@ public enum PharoCanvasHost {
     /// Set by each frontend to open, feed and close its own canvas.
     public static var onShow: ((CanvasEffect) -> Void)?
     public static var onReport: ((Float) -> Void)?
+    public static var onData: (([Float]) -> Void)?
     public static var onClose: (() -> Void)?
 }
 
@@ -89,6 +90,27 @@ public func luma_canvas_last_error() -> UnsafeMutablePointer<CChar>? {
     canvasErrorBuffer = strdup(canvasError.withLock { $0 })
     return canvasErrorBuffer
 }
+
+/// Values arrive one at a time, then land together: the image has no way to
+/// hand over an array, and a scalar call per value is cheap enough for the
+/// sixty-four an effect can read.
+@_cdecl("luma_canvas_set_data")
+public func luma_canvas_set_data(_ index: Int32, _ value: Float) {
+    staged.withLock { values in
+        guard index >= 0, Int(index) < values.count else { return }
+        values[Int(index)] = value
+    }
+}
+
+@_cdecl("luma_canvas_commit_data")
+public func luma_canvas_commit_data(_ count: Int32) {
+    let values = staged.withLock { Array($0.prefix(Int(max(count, 0)))) }
+    DispatchQueue.main.async {
+        MainActor.assumeIsolated { PharoCanvasHost.onData?(values) }
+    }
+}
+
+private let staged = Mutex([Float](repeating: 0, count: 64))
 
 @_cdecl("luma_canvas_report")
 public func luma_canvas_report(_ activity: Float) {
