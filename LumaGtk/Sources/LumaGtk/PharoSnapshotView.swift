@@ -13,6 +13,7 @@ final class PharoSnapshotView {
 
     private let snapshot: PharoSnapshot
     private var chartAreas: [PharoChartArea] = []
+    private var canvasAreas: [PharoCanvasArea] = []
     private var graphAreas: [PharoGraphArea] = []
 
     init(snapshot: PharoSnapshot) {
@@ -77,6 +78,10 @@ final class PharoSnapshotView {
         case .chart(let chart):
             let area = PharoChartArea(chart: chart)
             chartAreas.append(area)
+            return area.widget
+        case .canvas(let scene):
+            let area = PharoCanvasArea(scene: scene)
+            canvasAreas.append(area)
             return area.widget
         case .empty:
             return textPage("Nothing captured.")

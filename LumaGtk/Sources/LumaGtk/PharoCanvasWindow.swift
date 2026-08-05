@@ -15,7 +15,9 @@ final class PharoCanvasWindow {
     /// Teaches `LumaCanvas` in the image how to reach a window here.
     static func install(app: Adw.Application) {
         CanvasRegistry.onChange = { handle, scene in
-            show(scene, handle: handle, app: app)
+            // A scene shown inside an object's views belongs there; only one
+            // nobody is drawing gets a window of its own.
+            PharoCanvasScenes.apply(scene, to: handle)
         }
 
         PharoCanvasHost.onShow = { shown in
