@@ -63,7 +63,9 @@ final class PharoSnippetCard {
         editor.leftMargin = 10
         editor.rightMargin = 10
         editor.topMargin = 8
-        editor.bottomMargin = 8
+        // Clearance for the overlay scrollbar to rest below the last line rather
+        // than atop it, where it would block the click that edits that line.
+        editor.bottomMargin = 18
         editor.hexpand = true
         buffer.set(text: source, len: Int(source.utf8.count))
         highlight(buffer)
