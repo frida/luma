@@ -1,0 +1,4 @@
+# The image resolves these by name through dlsym. Link-time optimisation
+# internalises anything nothing references, and nothing in Swift calls them,
+# so name them here or they vanish from a release build.
+_luma_*
