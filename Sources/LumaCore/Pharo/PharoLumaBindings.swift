@@ -14,7 +14,7 @@ public enum PharoLumaBindings {
     /// fields, so opening one shows what the host knows about it rather than
     /// the line it would have printed.
     private static let source = """
-        | record records sessions entries events project synth tune canvas |
+        | record records sessions entries events project host synth tune canvas |
         record := Object << #LumaRecord slots: { #fields. #icon }; package: 'Luma'; install.
         record compile: 'setFields: aDictionary icon: anIcon
             fields := aDictionary.
@@ -78,147 +78,40 @@ public enum PharoLumaBindings {
                 column: ''Time'' text: [ :each | each at: #timestamp ];
                 column: ''Event'' text: [ :each | each name ]'.
 
-        tune := Object << #LumaTune slots: { #tempo. #division. #root. #scale. #notes. #loops. #playing }; package: 'Luma'; install.
-        tune compile: 'initialize
-            tempo := 120.
-            division := 4.
-            root := 60.
-            scale := #(0 3 5 7 10).
-            notes := #().
-            loops := true.
-            playing := false'.
-        tune compile: 'tempo ^ tempo'.
-        tune compile: 'tempo: aTempo
-            tempo := aTempo.
-            self refresh'.
-        tune compile: 'division: aDivision
-            division := aDivision.
-            self refresh'.
-        tune compile: 'root: aMidiNote
-            root := aMidiNote.
-            self refresh'.
-        tune compile: 'scale: aCollection
-            scale := aCollection.
-            self refresh'.
-        tune compile: 'notes ^ notes'.
-        tune compile: 'notes: aCollection
-            notes := aCollection.
-            self refresh'.
-        tune compile: 'loops: aBoolean
-            loops := aBoolean.
-            self refresh'.
-        tune compile: 'refresh
-            playing ifTrue: [ self upload ]'.
-        tune compile: 'play
-            playing := true.
-            LumaSynth start.
-            self upload'.
-        tune compile: 'stop
-            playing := false.
-            ^ LumaSynth invoke: ''luma_synth_pattern_stop'' parameters: #() return: TFBasicType void with: #()'.
-        tune compile: 'upload
-            | stepSeconds |
-            LumaSynth invoke: ''luma_synth_pattern_begin'' parameters: #() return: TFBasicType void with: #().
-            notes do: [ :each |
-                LumaSynth invoke: ''luma_synth_pattern_add''
-                    parameters: { TFBasicType float. TFBasicType float. TFBasicType sint }
-                    return: TFBasicType void
-                    with: { (self frequencyFor: each). 0.9. 1 } ].
-            stepSeconds := 60.0 / tempo / division.
-            ^ LumaSynth invoke: ''luma_synth_pattern_commit''
-                parameters: { TFBasicType float. TFBasicType sint }
-                return: TFBasicType void
-                with: { stepSeconds asFloat. loops ifTrue: [ 1 ] ifFalse: [ 0 ] }'.
-        tune compile: 'frequencyFor: aNote
-            | midi |
-            (aNote isNil or: [ aNote = #- ]) ifTrue: [ ^ 0.0 ].
-            midi := aNote isInteger
-                ifTrue: [ self midiForDegree: aNote ]
-                ifFalse: [ self midiForName: aNote ].
-            ^ (440.0 * (2 raisedTo: (midi - 69) / 12.0)) asFloat'.
-        tune compile: 'midiForName: aSymbol
-            | text octave step |
-            text := aSymbol asString asLowercase.
-            octave := (text select: [ :each | each isDigit ]) asNumber.
-            step := #(c cs d ds e f fs g gs a as b)
-                indexOf: (text select: [ :each | each isLetter ]) asSymbol.
-            ^ ((octave + 1) * 12) + step - 1'.
-        tune compile: 'midiForDegree: anInteger
-            | octave index |
-            octave := (anInteger / scale size) floor.
-            index := anInteger - (octave * scale size).
-            ^ root + (scale at: index + 1) + (octave * 12)'.
-        tune class compile: 'tempo: aTempo
-            ^ self new tempo: aTempo; yourself'.
-
-        canvas := Object << #LumaCanvas slots: {}; package: 'Luma'; install.
-        canvas class compile: 'effectNames
-            "The effects this build carries, in the order the host indexes them."
-            | address json |
-            address := ExternalAddress loadSymbol: ''luma_canvas_effect_names'' module: nil.
-            json := (TFSameThreadRunner uniqueInstance
-                invokeFunction: (TFExternalFunction
-                    fromAddress: address
-                    definition: (TFFunctionDefinition parameterTypes: #() returnType: TFBasicType pointer))
-                withArguments: #()) readString utf8Decoded.
-            ^ STONJSON fromString: json'.
-        canvas class compile: 'show: aName
-            "Puts one of the built effects on screen. Answers false if this
-             build carries no effect of that name."
-            | index |
-            index := self effectNames indexOf: aName asString.
-            index = 0 ifTrue: [ ^ false ].
-            ^ 1 = (LumaSynth invoke: ''luma_canvas_show''
-                parameters: { TFBasicType sint }
-                return: TFBasicType sint
-                with: { index - 1 })'.
-        canvas class compile: 'report: anActivity
-            "Feeds u_activity, and spikes u_pulse. The effect decays both."
-            ^ LumaSynth invoke: ''luma_canvas_report''
-                parameters: { TFBasicType float }
-                return: TFBasicType void
-                with: { anActivity asFloat }'.
-        canvas class compile: 'close
-            ^ LumaSynth invoke: ''luma_canvas_close''
-                parameters: #() return: TFBasicType void with: #()'.
-
-        project := Object << #LumaProject slots: {}; package: 'Luma'; install.
-        project class compile: 'fetch: aName as: aClass
-            | address definition function json |
-            address := ExternalAddress loadSymbol: aName module: nil.
-            definition := TFFunctionDefinition parameterTypes: #() returnType: TFBasicType pointer.
-            function := TFExternalFunction fromAddress: address definition: definition.
-            json := (TFSameThreadRunner uniqueInstance invokeFunction: function withArguments: #())
-                readString utf8Decoded.
-            ^ (STONJSON fromString: json) collect: [ :each | aClass fromJSON: each ]'.
-        synth := Object << #LumaSynth slots: {}; package: 'Luma'; install.
-        synth class compile: 'invoke: aName parameters: aParameterTypes return: aReturnType with: aCollection
+        host := Object << #LumaHost slots: {}; package: 'Luma'; install.
+        host class compile: 'invoke: aName parameters: aParameterTypes return: aReturnType with: aCollection
+            "Calls one of the host''s luma_* entry points, which it resolves by
+             name through dlsym."
             | address definition function |
             address := ExternalAddress loadSymbol: aName module: nil.
             definition := TFFunctionDefinition parameterTypes: aParameterTypes returnType: aReturnType.
             function := TFExternalFunction fromAddress: address definition: definition.
             ^ TFSameThreadRunner uniqueInstance invokeFunction: function withArguments: aCollection'.
+        host class compile: 'invoke: aName
+            ^ self invoke: aName parameters: #() return: TFBasicType void with: #()'.
+
+        synth := Object << #LumaSynth slots: {}; package: 'Luma'; install.
         synth class compile: 'start
-            ^ self invoke: ''luma_synth_start'' parameters: #() return: TFBasicType sint with: #()'.
+            ^ LumaHost invoke: ''luma_synth_start'' parameters: #() return: TFBasicType sint with: #()'.
         synth class compile: 'stop
-            ^ self invoke: ''luma_synth_stop'' parameters: #() return: TFBasicType void with: #()'.
+            ^ LumaHost invoke: ''luma_synth_stop'''.
         synth class compile: 'level: aLevel
-            ^ self invoke: ''luma_synth_set_level''
+            ^ LumaHost invoke: ''luma_synth_set_level''
                 parameters: { TFBasicType float }
                 return: TFBasicType void
                 with: { aLevel asFloat }'.
         synth class compile: 'play: aFrequency velocity: aVelocity channel: aChannel
-            ^ self invoke: ''luma_synth_play''
+            ^ LumaHost invoke: ''luma_synth_play''
                 parameters: { TFBasicType sint. TFBasicType float. TFBasicType float }
                 return: TFBasicType sint
                 with: { aChannel. aFrequency asFloat. aVelocity asFloat }'.
         synth class compile: 'release: aVoice
-            ^ self invoke: ''luma_synth_release''
+            ^ LumaHost invoke: ''luma_synth_release''
                 parameters: { TFBasicType sint }
                 return: TFBasicType void
                 with: { aVoice }'.
         synth class compile: 'channel: aChannel waveform: aWaveform detune: aDetune attack: anAttack decay: aDecay sustain: aSustain release: aRelease cutoff: aCutoff resonance: aResonance gain: aGain
-            ^ self invoke: ''luma_synth_set_patch''
+            ^ LumaHost invoke: ''luma_synth_set_patch''
                 parameters: {
                     TFBasicType sint. TFBasicType sint. TFBasicType float.
                     TFBasicType float. TFBasicType float. TFBasicType float.
@@ -300,28 +193,28 @@ public enum PharoLumaBindings {
             self upload'.
         tune compile: 'stop
             playing := false.
-            ^ LumaSynth invoke: ''luma_synth_pattern_stop''
+            ^ LumaHost invoke: ''luma_synth_pattern_stop''
                 parameters: { TFBasicType sint }
                 return: TFBasicType void
                 with: { channel }'.
         tune compile: 'upload
             | stepSeconds |
-            LumaSynth invoke: ''luma_synth_pattern_begin''
+            LumaHost invoke: ''luma_synth_pattern_begin''
                 parameters: { TFBasicType sint } return: TFBasicType void with: { channel }.
             notes do: [ :each |
                 | tones |
                 tones := each isArray ifTrue: [ each ] ifFalse: [ Array with: each ].
-                LumaSynth invoke: ''luma_synth_pattern_add''
+                LumaHost invoke: ''luma_synth_pattern_add''
                     parameters: { TFBasicType sint. TFBasicType float. TFBasicType float. TFBasicType sint }
                     return: TFBasicType void
                     with: { channel. (self frequencyFor: tones first). 0.9. 1 }.
                 tones allButFirst do: [ :extra |
-                    LumaSynth invoke: ''luma_synth_pattern_add_tone''
+                    LumaHost invoke: ''luma_synth_pattern_add_tone''
                         parameters: { TFBasicType sint. TFBasicType float }
                         return: TFBasicType void
                         with: { channel. (self frequencyFor: extra) } ] ].
             stepSeconds := 60.0 / tempo / division.
-            ^ LumaSynth invoke: ''luma_synth_pattern_commit''
+            ^ LumaHost invoke: ''luma_synth_pattern_commit''
                 parameters: { TFBasicType sint. TFBasicType float. TFBasicType sint }
                 return: TFBasicType void
                 with: { channel. stepSeconds asFloat. loops ifTrue: [ 1 ] ifFalse: [ 0 ] }'.
@@ -363,13 +256,9 @@ public enum PharoLumaBindings {
         canvas := Object << #LumaCanvas slots: {}; package: 'Luma'; install.
         canvas class compile: 'effectNames
             "The effects this build carries, in the order the host indexes them."
-            | address json |
-            address := ExternalAddress loadSymbol: ''luma_canvas_effect_names'' module: nil.
-            json := (TFSameThreadRunner uniqueInstance
-                invokeFunction: (TFExternalFunction
-                    fromAddress: address
-                    definition: (TFFunctionDefinition parameterTypes: #() returnType: TFBasicType pointer))
-                withArguments: #()) readString utf8Decoded.
+            | json |
+            json := (LumaHost invoke: ''luma_canvas_effect_names''
+                parameters: #() return: TFBasicType pointer with: #()) readString utf8Decoded.
             ^ STONJSON fromString: json'.
         canvas class compile: 'show: aName
             "Puts one of the built effects on screen. Answers false if this
@@ -377,88 +266,25 @@ public enum PharoLumaBindings {
             | index |
             index := self effectNames indexOf: aName asString.
             index = 0 ifTrue: [ ^ false ].
-            ^ 1 = (LumaSynth invoke: ''luma_canvas_show''
+            ^ 1 = (LumaHost invoke: ''luma_canvas_show''
                 parameters: { TFBasicType sint }
                 return: TFBasicType sint
                 with: { index - 1 })'.
         canvas class compile: 'report: anActivity
             "Feeds u_activity, and spikes u_pulse. The effect decays both."
-            ^ LumaSynth invoke: ''luma_canvas_report''
+            ^ LumaHost invoke: ''luma_canvas_report''
                 parameters: { TFBasicType float }
                 return: TFBasicType void
                 with: { anActivity asFloat }'.
         canvas class compile: 'close
-            ^ LumaSynth invoke: ''luma_canvas_close''
-                parameters: #() return: TFBasicType void with: #()'.
+            ^ LumaHost invoke: ''luma_canvas_close'''.
 
         project := Object << #LumaProject slots: {}; package: 'Luma'; install.
         project class compile: 'fetch: aName as: aClass
-            | address definition function json |
-            address := ExternalAddress loadSymbol: aName module: nil.
-            definition := TFFunctionDefinition parameterTypes: #() returnType: TFBasicType pointer.
-            function := TFExternalFunction fromAddress: address definition: definition.
-            json := (TFSameThreadRunner uniqueInstance invokeFunction: function withArguments: #())
-                readString utf8Decoded.
+            | json |
+            json := (LumaHost invoke: aName
+                parameters: #() return: TFBasicType pointer with: #()) readString utf8Decoded.
             ^ (STONJSON fromString: json) collect: [ :each | aClass fromJSON: each ]'.
-        synth := Object << #LumaSynth slots: {}; package: 'Luma'; install.
-        synth class compile: 'invoke: aName parameters: aParameterTypes return: aReturnType with: aCollection
-            | address definition function |
-            address := ExternalAddress loadSymbol: aName module: nil.
-            definition := TFFunctionDefinition parameterTypes: aParameterTypes returnType: aReturnType.
-            function := TFExternalFunction fromAddress: address definition: definition.
-            ^ TFSameThreadRunner uniqueInstance invokeFunction: function withArguments: aCollection'.
-        synth class compile: 'start
-            ^ self invoke: ''luma_synth_start'' parameters: #() return: TFBasicType sint with: #()'.
-        synth class compile: 'stop
-            ^ self invoke: ''luma_synth_stop'' parameters: #() return: TFBasicType void with: #()'.
-        synth class compile: 'level: aLevel
-            ^ self invoke: ''luma_synth_set_level''
-                parameters: { TFBasicType float }
-                return: TFBasicType void
-                with: { aLevel asFloat }'.
-        synth class compile: 'play: aFrequency velocity: aVelocity
-            ^ self invoke: ''luma_synth_play''
-                parameters: { TFBasicType float. TFBasicType float }
-                return: TFBasicType sint
-                with: { aFrequency asFloat. aVelocity asFloat }'.
-        synth class compile: 'release: aVoice
-            ^ self invoke: ''luma_synth_release''
-                parameters: { TFBasicType sint }
-                return: TFBasicType void
-                with: { aVoice }'.
-        synth class compile: 'waveform: aWaveform detune: aDetune attack: anAttack decay: aDecay sustain: aSustain release: aRelease cutoff: aCutoff resonance: aResonance gain: aGain
-            ^ self invoke: ''luma_synth_set_patch''
-                parameters: {
-                    TFBasicType sint. TFBasicType float. TFBasicType float.
-                    TFBasicType float. TFBasicType float. TFBasicType float.
-                    TFBasicType float. TFBasicType float. TFBasicType float }
-                return: TFBasicType void
-                with: {
-                    aWaveform. aDetune asFloat. anAttack asFloat.
-                    aDecay asFloat. aSustain asFloat. aRelease asFloat.
-                    aCutoff asFloat. aResonance asFloat. aGain asFloat }'.
-        synth class compile: 'sine ^ 0'.
-        synth class compile: 'triangle ^ 1'.
-        synth class compile: 'saw ^ 2'.
-        synth class compile: 'square ^ 3'.
-        synth class compile: 'noise ^ 4'.
-        synth class compile: 'pulse
-            ^ self
-                waveform: self square detune: 0 attack: 0.001 decay: 0.09
-                sustain: 0 release: 0.01 cutoff: 0 resonance: 0 gain: 0.5'.
-        synth class compile: 'bass
-            ^ self
-                waveform: self saw detune: 0.06 attack: 0.002 decay: 0.22
-                sustain: 0 release: 0.03 cutoff: 900 resonance: 0.5 gain: 0.7'.
-        synth class compile: 'noiseHit
-            ^ self
-                waveform: self noise detune: 0 attack: 0.001 decay: 0.07
-                sustain: 0 release: 0.01 cutoff: 4200 resonance: 0.2 gain: 0.4'.
-        synth class compile: 'blip
-            ^ self
-                waveform: self triangle detune: 0.08 attack: 0.004 decay: 0.18
-                sustain: 0 release: 0.05 cutoff: 2600 resonance: 0.35 gain: 0.5'.
-
         project class compile: 'sessions
             ^ LumaSessions new setItems: (self fetch: ''luma_sessions'' as: LumaSession); yourself'.
         project class compile: 'notebookEntries
