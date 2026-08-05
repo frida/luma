@@ -38,6 +38,21 @@ let lumaBundlePluginTargets: [Target] = usesXcodePackageResolution ? [] : [
     ),
 ]
 
+#if canImport(Darwin)
+let cLumaAudioLinkerSettings: [LinkerSetting] = [
+    .linkedFramework("CoreAudio"),
+    .linkedFramework("AudioToolbox"),
+    .linkedFramework("CoreFoundation"),
+]
+#else
+// miniaudio dlopens ALSA and PulseAudio, so neither is a link-time dependency.
+let cLumaAudioLinkerSettings: [LinkerSetting] = [
+    .linkedLibrary("pthread"),
+    .linkedLibrary("m"),
+    .linkedLibrary("dl"),
+]
+#endif
+
 #if !canImport(Darwin)
 let cSoupTargets: [Target] = [
     .systemLibrary(
@@ -84,6 +99,7 @@ let package = Package(
                 .product(name: "GRDB", package: "GRDB.swift"),
                 .product(name: "SwiftyR2", package: "SwiftyR2"),
                 .product(name: "SwiftyPharo", package: "SwiftyPharo"),
+                "CLumaAudio",
             ] + lumaCoreSoupDeps,
             path: "Sources/LumaCore",
             exclude: lumaCoreExcludes,
@@ -104,6 +120,12 @@ let package = Package(
             swiftSettings: [
                 .swiftLanguageMode(.v5),
             ]
+        ),
+        .target(
+            name: "CLumaAudio",
+            path: "Sources/CLumaAudio",
+            publicHeadersPath: "include",
+            linkerSettings: cLumaAudioLinkerSettings
         ),
         .executableTarget(
             name: "LumaShaderCompiler",

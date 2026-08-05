@@ -49,7 +49,11 @@ struct EventStreamView: View {
             )
             .frame(height: 3)
             .onChange(of: engine.eventLog.totalReceived) { _, total in
-                activity = eventRate.observe(totalReceived: total, at: Date.timeIntervalSinceReferenceDate) ?? 0
+                let rate = eventRate.observe(totalReceived: total, at: Date.timeIntervalSinceReferenceDate)
+                activity = rate ?? 0
+                if let rate {
+                    engine.eventChime.report(activity: rate)
+                }
             }
 
             ScrollViewReader { proxy in
