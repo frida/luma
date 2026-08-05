@@ -128,6 +128,35 @@ public enum PharoExampleCatalog {
                 (LumaTune named: #lead channel: 0) tempo: 96; notes: #(0 - 5 - 7 - 12 -); play
                 """),
             PharoExample(
+                title: "F\u{00FC}r Elise \u{2014} melody over chords",
+                code: """
+                "Beethoven, 1810, long out of copyright. The right hand runs in
+                 sixteenths on one channel; the left hand's chords land on
+                 another, three pitches to a step."
+                LumaSynth start.
+                (LumaTune named: #elise channel: 0)
+                    patch: #blip; tempo: 120;
+                    notes: #(e5 ds5 e5 ds5 e5 b4 d5 c5 a4 - - -
+                             c4 e4 a4 b4 - - - e4 gs4 b4 c5 - - -);
+                    play.
+                (LumaTune named: #eliseChords channel: 1)
+                    patch: #blip; tempo: 120;
+                    notes: #(- - - - - - - - #(a2 e3 a3) - - -
+                             - - - - #(e2 e3 gs3) - - - #(a2 e3 a3) - - -);
+                    play
+                """),
+            PharoExample(
+                title: "A chord every step",
+                code: """
+                "Up to four pitches share a step. Nest them and they sound
+                 together."
+                LumaSynth start.
+                (LumaTune named: #pad channel: 3)
+                    patch: #blip; tempo: 76;
+                    notes: #(#(c3 e3 g3) - #(a2 c3 e3) - #(f2 a2 c3) - #(g2 b2 d3) -);
+                    play
+                """),
+            PharoExample(
                 title: "Silence everything",
                 code: "LumaTune hush."),
         ]),

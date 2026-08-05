@@ -19,6 +19,9 @@ public enum SynthEngine {
     /// commit landing inside one audio block would overwrite the pattern the
     /// mixer was midway through.
     static let bufferCount = 3
+
+    /// Pitches one step may sound together.
+    static let maxTones = 4
     static let commandCapacity = 256
 
     public static func prepare() {
@@ -68,11 +71,27 @@ public enum SynthEngine {
 
         let buffer = storage.staging[channel]
         storage.steps[stepSlot(channel: channel, buffer: buffer, index: count)] = PatternStep(
-            frequency: frequency,
             velocity: velocity,
-            steps: max(steps, 1)
+            steps: max(steps, 1),
+            toneCount: 1
         )
+        storage.tones[toneSlot(channel: channel, buffer: buffer, index: count, tone: 0)] = frequency
         storage.stagedCount[channel] = count + 1
+    }
+
+    /// Sounds another pitch alongside the step just added, making it a chord.
+    public static func addTone(frequency: Float, channel: Int) {
+        let count = storage.stagedCount[channel]
+        guard count > 0 else { return }
+
+        let buffer = storage.staging[channel]
+        let index = count - 1
+        let slot = stepSlot(channel: channel, buffer: buffer, index: index)
+        let tone = Int(storage.steps[slot].toneCount)
+        guard tone < maxTones else { return }
+
+        storage.tones[toneSlot(channel: channel, buffer: buffer, index: index, tone: tone)] = frequency
+        storage.steps[slot].toneCount = Int32(tone + 1)
     }
 
     /// Offers the staged pattern. The mixer adopts it at the cycle boundary,
@@ -137,6 +156,10 @@ public enum SynthEngine {
             case .patternStop:
                 storage.channels[channel].performing = -1
                 storage.channels[channel].offered = -1
+                // Clear the step clock too, or the channel sits out the rest
+                // of the note it was holding before it can take anything new.
+                storage.channels[channel].stepIndex = 0
+                storage.channels[channel].framesUntilStep = 0
                 publishPerforming(channel, -1)
             }
             tail &+= 1
@@ -174,10 +197,13 @@ public enum SynthEngine {
         storage.channels[channel].stepIndex = index + 1
 
         let step = storage.steps[stepSlot(channel: channel, buffer: performing, index: index)]
-        if step.frequency > 0 {
+        for tone in 0..<Int(step.toneCount) {
+            let frequency = storage.tones[toneSlot(channel: channel, buffer: performing, index: index, tone: tone)]
+            guard frequency > 0 else { continue }
+
             let voice = Int(storage.channels[channel].sequencedVoice) % voiceCount
             storage.channels[channel].sequencedVoice &+= 1
-            start(&storage.voices[voice], step.frequency, step.velocity, channel)
+            start(&storage.voices[voice], frequency, step.velocity, channel)
         }
         storage.channels[channel].framesUntilStep = Int(step.steps * Int32(pattern.stepSeconds * sampleRate))
     }
@@ -323,12 +349,17 @@ public enum SynthEngine {
         (channel * bufferCount) + buffer
     }
 
+    private static func toneSlot(channel: Int, buffer: Int, index: Int, tone: Int) -> Int {
+        stepSlot(channel: channel, buffer: buffer, index: index) * maxTones + tone
+    }
+
     nonisolated(unsafe) private static let storage = Storage()
 
     private final class Storage {
         let voices: UnsafeMutableBufferPointer<Voice>
         let channels: UnsafeMutableBufferPointer<ChannelState>
         let steps: UnsafeMutableBufferPointer<PatternStep>
+        let tones: UnsafeMutableBufferPointer<Float>
         let patterns: UnsafeMutableBufferPointer<Pattern>
         let commands: UnsafeMutableBufferPointer<Command>
 
@@ -350,6 +381,10 @@ public enum SynthEngine {
             channels.initialize(repeating: ChannelState())
             steps = .allocate(capacity: SynthEngine.channelCount * SynthEngine.bufferCount * SynthEngine.patternCapacity)
             steps.initialize(repeating: PatternStep())
+            tones = .allocate(
+                capacity: SynthEngine.channelCount * SynthEngine.bufferCount
+                    * SynthEngine.patternCapacity * SynthEngine.maxTones)
+            tones.initialize(repeating: 0)
             patterns = .allocate(capacity: SynthEngine.channelCount * SynthEngine.bufferCount)
             patterns.initialize(repeating: Pattern())
             commands = .allocate(capacity: SynthEngine.commandCapacity)
@@ -400,9 +435,9 @@ public enum SynthEngine {
     }
 
     private struct PatternStep {
-        var frequency: Float = 0
         var velocity: Float = 0
         var steps: Int32 = 1
+        var toneCount: Int32 = 0
     }
 
     private struct Pattern {
