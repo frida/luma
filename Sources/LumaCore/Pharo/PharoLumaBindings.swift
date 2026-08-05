@@ -13,7 +13,7 @@ public enum PharoLumaBindings {
     /// fields, so opening one shows what the host knows about it rather than
     /// the line it would have printed.
     private static let source = """
-        | record records sessions entries events project synth |
+        | record records sessions entries events project synth tune |
         record := Object << #LumaRecord slots: { #fields. #icon }; package: 'Luma'; install.
         record compile: 'setFields: aDictionary icon: anIcon
             fields := aDictionary.
@@ -77,6 +77,79 @@ public enum PharoLumaBindings {
                 column: ''Time'' text: [ :each | each at: #timestamp ];
                 column: ''Event'' text: [ :each | each name ]'.
 
+        tune := Object << #LumaTune slots: { #tempo. #division. #root. #scale. #notes. #loops. #playing }; package: 'Luma'; install.
+        tune compile: 'initialize
+            tempo := 120.
+            division := 4.
+            root := 60.
+            scale := #(0 3 5 7 10).
+            notes := #().
+            loops := true.
+            playing := false'.
+        tune compile: 'tempo ^ tempo'.
+        tune compile: 'tempo: aTempo
+            tempo := aTempo.
+            self refresh'.
+        tune compile: 'division: aDivision
+            division := aDivision.
+            self refresh'.
+        tune compile: 'root: aMidiNote
+            root := aMidiNote.
+            self refresh'.
+        tune compile: 'scale: aCollection
+            scale := aCollection.
+            self refresh'.
+        tune compile: 'notes ^ notes'.
+        tune compile: 'notes: aCollection
+            notes := aCollection.
+            self refresh'.
+        tune compile: 'loops: aBoolean
+            loops := aBoolean.
+            self refresh'.
+        tune compile: 'refresh
+            playing ifTrue: [ self upload ]'.
+        tune compile: 'play
+            playing := true.
+            LumaSynth start.
+            self upload'.
+        tune compile: 'stop
+            playing := false.
+            ^ LumaSynth invoke: ''luma_synth_pattern_stop'' parameters: #() return: TFBasicType void with: #()'.
+        tune compile: 'upload
+            | stepSeconds |
+            LumaSynth invoke: ''luma_synth_pattern_begin'' parameters: #() return: TFBasicType void with: #().
+            notes do: [ :each |
+                LumaSynth invoke: ''luma_synth_pattern_add''
+                    parameters: { TFBasicType float. TFBasicType float. TFBasicType sint }
+                    return: TFBasicType void
+                    with: { (self frequencyFor: each). 0.9. 1 } ].
+            stepSeconds := 60.0 / tempo / division.
+            ^ LumaSynth invoke: ''luma_synth_pattern_commit''
+                parameters: { TFBasicType float. TFBasicType sint }
+                return: TFBasicType void
+                with: { stepSeconds asFloat. loops ifTrue: [ 1 ] ifFalse: [ 0 ] }'.
+        tune compile: 'frequencyFor: aNote
+            | midi |
+            (aNote isNil or: [ aNote = #- ]) ifTrue: [ ^ 0.0 ].
+            midi := aNote isInteger
+                ifTrue: [ self midiForDegree: aNote ]
+                ifFalse: [ self midiForName: aNote ].
+            ^ (440.0 * (2 raisedTo: (midi - 69) / 12.0)) asFloat'.
+        tune compile: 'midiForName: aSymbol
+            | text octave step |
+            text := aSymbol asString asLowercase.
+            octave := (text select: [ :each | each isDigit ]) asNumber.
+            step := #(c cs d ds e f fs g gs a as b)
+                indexOf: (text select: [ :each | each isLetter ]) asSymbol.
+            ^ ((octave + 1) * 12) + step - 1'.
+        tune compile: 'midiForDegree: anInteger
+            | octave index |
+            octave := (anInteger / scale size) floor.
+            index := anInteger - (octave * scale size).
+            ^ root + (scale at: index + 1) + (octave * 12)'.
+        tune class compile: 'tempo: aTempo
+            ^ self new tempo: aTempo; yourself'.
+
         project := Object << #LumaProject slots: {}; package: 'Luma'; install.
         project class compile: 'fetch: aName as: aClass
             | address definition function json |
@@ -128,6 +201,18 @@ public enum PharoLumaBindings {
         synth class compile: 'saw ^ 2'.
         synth class compile: 'square ^ 3'.
         synth class compile: 'noise ^ 4'.
+        synth class compile: 'pulse
+            ^ self
+                waveform: self square detune: 0 attack: 0.001 decay: 0.09
+                sustain: 0 release: 0.01 cutoff: 0 resonance: 0 gain: 0.5'.
+        synth class compile: 'bass
+            ^ self
+                waveform: self saw detune: 0.06 attack: 0.002 decay: 0.22
+                sustain: 0 release: 0.03 cutoff: 900 resonance: 0.5 gain: 0.7'.
+        synth class compile: 'noiseHit
+            ^ self
+                waveform: self noise detune: 0 attack: 0.001 decay: 0.07
+                sustain: 0 release: 0.01 cutoff: 4200 resonance: 0.2 gain: 0.4'.
         synth class compile: 'blip
             ^ self
                 waveform: self triangle detune: 0.08 attack: 0.004 decay: 0.18

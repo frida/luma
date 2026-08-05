@@ -63,3 +63,23 @@ public func luma_synth_play(_ frequency: Float, _ velocity: Float) -> Int32 {
 public func luma_synth_release(_ voice: Int32) {
     luma_audio_note_off(voice)
 }
+
+@_cdecl("luma_synth_pattern_begin")
+public func luma_synth_pattern_begin() {
+    luma_audio_pattern_begin()
+}
+
+@_cdecl("luma_synth_pattern_add")
+public func luma_synth_pattern_add(_ frequency: Float, _ velocity: Float, _ steps: Int32) {
+    luma_audio_pattern_add(frequency, velocity, steps)
+}
+
+@_cdecl("luma_synth_pattern_commit")
+public func luma_synth_pattern_commit(_ stepSeconds: Float, _ loops: Int32) {
+    luma_audio_pattern_commit(stepSeconds, loops)
+}
+
+@_cdecl("luma_synth_pattern_stop")
+public func luma_synth_pattern_stop() {
+    luma_audio_pattern_stop()
+}
