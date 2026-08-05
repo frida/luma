@@ -75,7 +75,7 @@ public func luma_canvas_show_source(_ glsl: UnsafePointer<CChar>) -> Int32 {
 private let stagedAttributes = Mutex([ShaderAttribute]())
 private let stagedVaryings = Mutex([ShaderAttribute]())
 private let stagedSource = Mutex(["", ""])
-private let stagedVertices = Mutex([Float](repeating: 0, count: 4096))
+private let stagedVertices = Mutex([Float]())
 
 @_cdecl("luma_canvas_add_attribute")
 public func luma_canvas_add_attribute(_ name: UnsafePointer<CChar>, _ components: Int32, _ isVarying: Int32) {
@@ -98,12 +98,24 @@ public func luma_canvas_set_geometry_source(_ vertex: UnsafePointer<CChar>, _ fr
     stagedSource.withLock { $0 = [String(cString: vertex), String(cString: fragment)] }
 }
 
+/// One value at a time, which suits a handful of vertices written by hand.
 @_cdecl("luma_canvas_set_vertex")
 public func luma_canvas_set_vertex(_ index: Int32, _ value: Float) {
+    guard index >= 0 else { return }
     stagedVertices.withLock { values in
-        guard index >= 0, Int(index) < values.count else { return }
+        if values.count <= Int(index) {
+            values.append(contentsOf: repeatElement(0, count: Int(index) + 1 - values.count))
+        }
         values[Int(index)] = value
     }
+}
+
+/// A whole buffer at once, which is the only way a mesh arrives in reasonable
+/// time: the image lays the floats out itself and hands over the address.
+@_cdecl("luma_canvas_set_vertex_buffer")
+public func luma_canvas_set_vertex_buffer(_ values: UnsafePointer<Float>, _ count: Int32) {
+    let incoming = UnsafeBufferPointer(start: values, count: Int(max(count, 0)))
+    stagedVertices.withLock { $0 = Array(incoming) }
 }
 
 /// Builds the author's program against the layout they declared, and draws it.
