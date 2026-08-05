@@ -6,6 +6,7 @@ import SwiftyPharo
 public enum PharoLumaBindings {
     public static func install(into runtime: PharoRuntime) async throws {
         PharoSynthBridge.ensureExported()
+        PharoCanvasBridge.ensureExported()
         _ = try await runtime.evaluate(source)
     }
 
@@ -13,7 +14,7 @@ public enum PharoLumaBindings {
     /// fields, so opening one shows what the host knows about it rather than
     /// the line it would have printed.
     private static let source = """
-        | record records sessions entries events project synth tune |
+        | record records sessions entries events project synth tune canvas |
         record := Object << #LumaRecord slots: { #fields. #icon }; package: 'Luma'; install.
         record compile: 'setFields: aDictionary icon: anIcon
             fields := aDictionary.
@@ -149,6 +150,37 @@ public enum PharoLumaBindings {
             ^ root + (scale at: index + 1) + (octave * 12)'.
         tune class compile: 'tempo: aTempo
             ^ self new tempo: aTempo; yourself'.
+
+        canvas := Object << #LumaCanvas slots: {}; package: 'Luma'; install.
+        canvas class compile: 'effectNames
+            "The effects this build carries, in the order the host indexes them."
+            | address json |
+            address := ExternalAddress loadSymbol: ''luma_canvas_effect_names'' module: nil.
+            json := (TFSameThreadRunner uniqueInstance
+                invokeFunction: (TFExternalFunction
+                    fromAddress: address
+                    definition: (TFFunctionDefinition parameterTypes: #() returnType: TFBasicType pointer))
+                withArguments: #()) readString utf8Decoded.
+            ^ STONJSON fromString: json'.
+        canvas class compile: 'show: aName
+            "Puts one of the built effects on screen. Answers false if this
+             build carries no effect of that name."
+            | index |
+            index := self effectNames indexOf: aName asString.
+            index = 0 ifTrue: [ ^ false ].
+            ^ 1 = (LumaSynth invoke: ''luma_canvas_show''
+                parameters: { TFBasicType sint }
+                return: TFBasicType sint
+                with: { index - 1 })'.
+        canvas class compile: 'report: anActivity
+            "Feeds u_activity, and spikes u_pulse. The effect decays both."
+            ^ LumaSynth invoke: ''luma_canvas_report''
+                parameters: { TFBasicType float }
+                return: TFBasicType void
+                with: { anActivity asFloat }'.
+        canvas class compile: 'close
+            ^ LumaSynth invoke: ''luma_canvas_close''
+                parameters: #() return: TFBasicType void with: #()'.
 
         project := Object << #LumaProject slots: {}; package: 'Luma'; install.
         project class compile: 'fetch: aName as: aClass
@@ -327,6 +359,37 @@ public enum PharoLumaBindings {
         tune class compile: 'hush
             "Everything, registered or not."
             ^ self allInstances do: [ :each | each stop ]'.
+
+        canvas := Object << #LumaCanvas slots: {}; package: 'Luma'; install.
+        canvas class compile: 'effectNames
+            "The effects this build carries, in the order the host indexes them."
+            | address json |
+            address := ExternalAddress loadSymbol: ''luma_canvas_effect_names'' module: nil.
+            json := (TFSameThreadRunner uniqueInstance
+                invokeFunction: (TFExternalFunction
+                    fromAddress: address
+                    definition: (TFFunctionDefinition parameterTypes: #() returnType: TFBasicType pointer))
+                withArguments: #()) readString utf8Decoded.
+            ^ STONJSON fromString: json'.
+        canvas class compile: 'show: aName
+            "Puts one of the built effects on screen. Answers false if this
+             build carries no effect of that name."
+            | index |
+            index := self effectNames indexOf: aName asString.
+            index = 0 ifTrue: [ ^ false ].
+            ^ 1 = (LumaSynth invoke: ''luma_canvas_show''
+                parameters: { TFBasicType sint }
+                return: TFBasicType sint
+                with: { index - 1 })'.
+        canvas class compile: 'report: anActivity
+            "Feeds u_activity, and spikes u_pulse. The effect decays both."
+            ^ LumaSynth invoke: ''luma_canvas_report''
+                parameters: { TFBasicType float }
+                return: TFBasicType void
+                with: { anActivity asFloat }'.
+        canvas class compile: 'close
+            ^ LumaSynth invoke: ''luma_canvas_close''
+                parameters: #() return: TFBasicType void with: #()'.
 
         project := Object << #LumaProject slots: {}; package: 'Luma'; install.
         project class compile: 'fetch: aName as: aClass

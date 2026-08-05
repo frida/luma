@@ -23,6 +23,7 @@ func sharedGitHubAuth() -> GitHubAuth { sharedWelcomeModel.gitHubAuth }
             SwiftyMonaco.prewarmPool(profile: MonacoEditorProfile(from: EditorProfile.fridaTracerHook(packages: [])), count: 2)
             MainActor.assumeIsolated {
                 InstrumentUIRegistry.shared.registerGlobalDefaults()
+                PharoCanvasWindow.install()
             }
         }
 
@@ -182,6 +183,7 @@ func sharedGitHubAuth() -> GitHubAuth { sharedWelcomeModel.gitHubAuth }
         init() {
             MainActor.assumeIsolated {
                 InstrumentUIRegistry.shared.registerGlobalDefaults()
+                PharoCanvasWindow.install()
             }
         }
 
