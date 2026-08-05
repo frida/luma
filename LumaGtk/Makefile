@@ -1,4 +1,4 @@
-.PHONY: build run clean bundle shaders screenshots install uninstall
+.PHONY: build run clean bundle screenshots install uninstall
 
 # SwiftPM's bundled .pc finder only consults the directories listed in
 # PKG_CONFIG_PATH and the toolchain's primary compiled-in path; it
@@ -28,31 +28,26 @@ AGENT_SOURCES := \
 	$(shell find $(PROJECT_ROOT)/Agent -type f \( -name '*.ts' -o -name '*.json' \) 2>/dev/null) \
 	$(PROJECT_ROOT)/Sources/LumaBundleCompiler/main.swift
 
+SHADER_BUNDLE := $(PROJECT_ROOT)/Sources/LumaCore/Generated/ShaderEffects.swift
 SHADER_SOURCES := $(wildcard $(PROJECT_ROOT)/Shaders/*.frag.glsl)
-SHADER_HEADER_DIR := Sources/CLuma/generated
-SHADER_NAMES := $(subst -,_,$(basename $(basename $(notdir $(SHADER_SOURCES)))))
-SHADER_HEADERS := $(addprefix $(SHADER_HEADER_DIR)/,$(addsuffix _fragment.h,$(SHADER_NAMES)))
 
-bundle: $(AGENT_BUNDLE) $(TYPINGS_BUNDLE)
+bundle: $(AGENT_BUNDLE) $(TYPINGS_BUNDLE) $(SHADER_BUNDLE)
 
 $(AGENT_BUNDLE): $(AGENT_SOURCES) $(PROJECT_ROOT)/Agent/bundle.json
-	swift run --package-path $(PROJECT_ROOT) luma-bundle-compiler \
+	swift run --package-path $(PROJECT_ROOT) LumaBundleCompiler \
 	    --config       "$(PROJECT_ROOT)/Agent/bundle.json" \
 	    --project-root "$(PROJECT_ROOT)" \
 	    --staging-dir  "$(AGENT_STAGING)"
 
 $(TYPINGS_BUNDLE): $(AGENT_BUNDLE)
 
-build: bundle shaders $(PHARO_IMAGE)
-	swift build $(SWIFT_BUILD_FLAGS)
-
-shaders: $(SHADER_HEADERS)
-
-$(SHADER_HEADERS): $(SHADER_SOURCES) $(PROJECT_ROOT)/Sources/LumaShaderCompiler/main.swift
-	swift run --package-path $(PROJECT_ROOT) luma-shader-compiler \
+$(SHADER_BUNDLE): $(SHADER_SOURCES) $(PROJECT_ROOT)/Sources/LumaShaderCompiler/main.swift
+	swift run --package-path $(PROJECT_ROOT) LumaShaderCompiler \
 	    --shader-dir "$(PROJECT_ROOT)/Shaders" \
-	    --metal-dir  "$(PROJECT_ROOT)/Luma/Shaders/Generated" \
-	    --header-dir "$(SHADER_HEADER_DIR)"
+	    --swift-out  "$@"
+
+build: bundle $(PHARO_IMAGE)
+	swift build $(SWIFT_BUILD_FLAGS)
 
 $(PHARO_IMAGE):
 	@mkdir -p $(PHARO_IMAGE_DIR)

@@ -342,6 +342,9 @@ jobs:
               f.write(text)
           PY
 
+      - name: Install shader toolchain
+        run: brew install glslang spirv-cross
+
       - name: Generate agent bundle
         run: |
           xcodebuild \
@@ -640,6 +643,9 @@ jobs:
           with open(luma_pkg, "w") as f:
               f.write(text)
           PY
+
+      - name: Install shader toolchain
+        run: brew install glslang spirv-cross
 
       - name: Generate agent bundle
         run: |
