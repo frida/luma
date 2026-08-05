@@ -355,6 +355,20 @@ enum StyleSheet {
         padding: 6px 18px;
     }
 
+    button.luma-pharo-inline-save {
+        min-height: 0;
+        min-width: 0;
+        padding: 0 4px;
+        border: none;
+        border-spacing: 0;
+        outline: none;
+        font-size: 0.8em;
+    }
+    button.luma-pharo-inline-save label {
+        margin: 0;
+        padding: 0;
+    }
+
     avatar.luma-editor-avatar {
         box-shadow: 0 0 0 2px @theme_base_color;
     }

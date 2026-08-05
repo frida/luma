@@ -14,6 +14,15 @@ import SwiftyPharo
 /// line of its own, with the rest of the code carried below it. The marks and
 /// bodies live in the buffer as child anchors, so the source the reader edits is
 /// the text with those anchor characters and body lines taken back out.
+// A plain press on an already-focused body editor still lets the snippet grab
+// focus back; re-asserting it once the press has unwound keeps the editor in
+// hand without claiming the press, which would have suppressed its selection.
+private let pharoReassertBodyFocus: @convention(c) (gpointer?) -> gboolean = { data in
+    guard let data else { return 0 }
+    gtk_widget_grab_focus(UnsafeMutablePointer<GtkWidget>(OpaquePointer(data)))
+    return 0
+}
+
 @MainActor
 final class PharoInlineMarks {
     /// The object replacement character a child anchor occupies.
@@ -83,6 +92,56 @@ final class PharoInlineMarks {
         buffer.onNotifyCursorPosition { [weak self] _, _ in
             MainActor.assumeIsolated { self?.hideCaretOnBodyLines() }
         }
+
+        // The snippet editor claims a press that lands on one of its embedded
+        // body editors before its own text handling can seize focus, then hands
+        // the caret and focus to that editor. Nothing else reliably wins the
+        // press: a gesture on the embedded editor competes with its own native
+        // one and loses.
+        let bodyPress = GestureClick()
+        bodyPress.propagationPhase = .capture
+        bodyPress.onPressed { [weak self] gesture, _, x, y in
+            MainActor.assumeIsolated { self?.claimBodyPress(gesture, x: x, y: y) }
+        }
+        editor.install(controller: bodyPress)
+    }
+
+    private var bodyEditors: [GtkSource.View] = []
+
+    private func claimBodyPress(_ gesture: GestureClickRef, x: Double, y: Double) {
+        guard let picked = gtk_widget_pick(editor.widget_ptr, x, y, GTK_PICK_DEFAULT) else { return }
+        guard let view = bodyEditors.first(where: { view in
+            picked == view.widget_ptr || gtk_widget_is_ancestor(picked, view.widget_ptr) != 0
+        }) else { return }
+
+        // Once the editor holds focus its own press handling owns the caret and
+        // selection, so the press is left alone -- only re-asserted afterwards
+        // in case a plain click let the snippet steal focus back.
+        if gtk_widget_has_focus(view.widget_ptr) != 0 {
+            g_idle_add(pharoReassertBodyFocus, UnsafeMutableRawPointer(view.widget_ptr))
+            return
+        }
+
+        _ = gesture.set(state: .claimed)
+
+        var source = graphene_point_t()
+        source.x = Float(x)
+        source.y = Float(y)
+        var local = graphene_point_t()
+        if gtk_widget_compute_point(editor.widget_ptr, view.widget_ptr, &source, &local) != 0 {
+            placeCaret(in: view, widgetX: Double(local.x), widgetY: Double(local.y))
+        }
+        _ = view.grabFocus()
+    }
+
+    private func placeCaret(in view: GtkSource.View, widgetX: Double, widgetY: Double) {
+        let textView = UnsafeMutablePointer<GtkTextView>(OpaquePointer(view.widget_ptr))
+        var bufferX: gint = 0
+        var bufferY: gint = 0
+        gtk_text_view_window_to_buffer_coords(textView, GTK_TEXT_WINDOW_WIDGET, gint(widgetX), gint(widgetY), &bufferX, &bufferY)
+        var iter = GtkTextIter()
+        gtk_text_view_get_iter_at_location(textView, &iter, bufferX, bufferY)
+        gtk_text_buffer_place_cursor(gtk_text_view_get_buffer(textView), &iter)
     }
 
     private func beginEditingBody() {
@@ -414,8 +473,7 @@ final class PharoInlineMarks {
     private var classColumns: [ObjectIdentifier: PharoColumnView] = [:]
 
     private func methodEditor(for reference: PharoMethodReference) -> Box {
-        let container = Box(orientation: .vertical, spacing: 6)
-        container.marginTop = 4
+        let container = Box(orientation: .vertical, spacing: 0)
         container.marginBottom = 4
 
         let title = Label(str: "\(reference.className) \u{203A} \(reference.selector)")
@@ -433,14 +491,23 @@ final class PharoInlineMarks {
 
         // The save stands only once the text drifts from what the image holds,
         // a checkmark at the heading's trailing edge the way the SwiftUI editor
-        // shows it rather than a button that waits below.
-        let save = Button(iconName: "emblem-ok-symbolic")
+        // shows it rather than a button that waits below. A drawn glyph rather
+        // than a themed icon, which the macOS icon theme does not carry, and
+        // held to the line height so its arrival does not push the editor down.
+        let save = Button(label: "\u{2713}")
         save.add(cssClass: "flat")
+        save.add(cssClass: "luma-pharo-inline-save")
         save.tooltipText = "Save"
         save.halign = .end
+        save.valign = .center
         save.visible = false
 
         let heading = Box(orientation: .horizontal, spacing: 6)
+        heading.baselinePosition = .center
+        heading.marginStart = 4
+        heading.marginEnd = 4
+        heading.marginTop = 7
+        heading.marginBottom = 7
         heading.append(child: title)
         heading.append(child: failure)
         heading.append(child: save)
@@ -455,13 +522,7 @@ final class PharoInlineMarks {
         methodView.topMargin = 6
         methodView.bottomMargin = 6
 
-        // The enclosing editor otherwise keeps the click for its own caret, so
-        // the embedded editor is handed focus explicitly when it is pressed.
-        let focusClick = GestureClick()
-        focusClick.onReleased { [weak methodView] _, _, _, _ in
-            MainActor.assumeIsolated { _ = methodView?.grabFocus() }
-        }
-        methodView.install(controller: focusClick)
+        bodyEditors.append(methodView)
 
         // A GtkTextView nested in another still feeds its keys to the outer
         // one's input method, so text a reader types into the method lands in
@@ -486,11 +547,14 @@ final class PharoInlineMarks {
         scroll.maxContentHeight = 220
         scroll.set(child: methodView)
 
+        // save and failure are locals whose GTK widgets outlive this scope under
+        // their parent, but their Swift wrappers would not; the closures hold
+        // them so a weak grab does not find them already gone.
         var savedSource = reference.source
-        methodBuffer.onChanged { [weak save] _ in
-            MainActor.assumeIsolated { save?.visible = methodBuffer.text != savedSource }
+        methodBuffer.onChanged { [save] _ in
+            MainActor.assumeIsolated { save.visible = methodBuffer.text != savedSource }
         }
-        save.onClicked { [weak self, weak save, weak failure] _ in
+        save.onClicked { [weak self, save, failure] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 let edited = methodBuffer.text
@@ -498,11 +562,11 @@ final class PharoInlineMarks {
                     do {
                         try await self.saveMethod(reference, source: edited)
                         savedSource = edited
-                        save?.visible = false
-                        failure?.visible = false
+                        save.visible = false
+                        failure.visible = false
                     } catch {
-                        failure?.setText(str: error.localizedDescription)
-                        failure?.visible = true
+                        failure.setText(str: error.localizedDescription)
+                        failure.visible = true
                     }
                 }
             }
@@ -510,6 +574,12 @@ final class PharoInlineMarks {
 
         container.append(child: heading)
         container.append(child: scroll)
+
+        // The body sits inside the snippet's text view, so without this the
+        // heading and its button wear the editor's I-beam; the source area keeps
+        // its own, and the button gets a pointer.
+        gtk_widget_set_cursor_from_name(container.widget_ptr, "default")
+        gtk_widget_set_cursor_from_name(save.widget_ptr, "pointer")
         return container
     }
 
@@ -605,6 +675,8 @@ final class PharoInlineMarks {
             buffer.getIterAtOffset(iter: end, charOffset: Int(anchorOffset) + 2)
             buffer.delete(start: start, end: end)
         }
+
+        bodyEditors.removeAll { gtk_widget_get_root($0.widget_ptr) == nil }
     }
 
     // MARK: - Offsets
