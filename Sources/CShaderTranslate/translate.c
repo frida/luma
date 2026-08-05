@@ -12,13 +12,20 @@ static char *duplicate(const char *text);
 static char *fail(char **error_message, const char *stage, const char *detail);
 
 char *
-luma_shader_translate_to_msl(const char *glsl, const char *entry_point, char **error_message)
+luma_shader_translate_to_msl(const char *glsl, int stage, const char *entry_point, char **error_message)
 {
     glslang_initialize_process();
 
+    glslang_stage_t glslang_stage = stage == LUMA_SHADER_STAGE_VERTEX
+        ? GLSLANG_STAGE_VERTEX
+        : GLSLANG_STAGE_FRAGMENT;
+    SpvExecutionModel execution_model = stage == LUMA_SHADER_STAGE_VERTEX
+        ? SpvExecutionModelVertex
+        : SpvExecutionModelFragment;
+
     glslang_input_t input = {
         .language = GLSLANG_SOURCE_GLSL,
-        .stage = GLSLANG_STAGE_FRAGMENT,
+        .stage = glslang_stage,
         .client = GLSLANG_CLIENT_VULKAN,
         .client_version = GLSLANG_TARGET_VULKAN_1_0,
         .target_language = GLSLANG_TARGET_SPV,
@@ -53,7 +60,7 @@ luma_shader_translate_to_msl(const char *glsl, const char *entry_point, char **e
         return message;
     }
 
-    glslang_program_SPIRV_generate(program, GLSLANG_STAGE_FRAGMENT);
+    glslang_program_SPIRV_generate(program, glslang_stage);
     size_t word_count = glslang_program_SPIRV_get_size(program);
     unsigned int *words = malloc(word_count * sizeof(unsigned int));
     glslang_program_SPIRV_get(program, words);
@@ -73,7 +80,7 @@ luma_shader_translate_to_msl(const char *glsl, const char *entry_point, char **e
 
     spvc_compiler compiler = NULL;
     spvc_context_create_compiler(context, SPVC_BACKEND_MSL, ir, SPVC_CAPTURE_MODE_TAKE_OWNERSHIP, &compiler);
-    spvc_compiler_rename_entry_point(compiler, "main", entry_point, SpvExecutionModelFragment);
+    spvc_compiler_rename_entry_point(compiler, "main", entry_point, execution_model);
 
     spvc_compiler_options options = NULL;
     spvc_compiler_create_compiler_options(compiler, &options);
