@@ -75,6 +75,11 @@ public func luma_synth_pattern_add(_ channel: Int32, _ frequency: Float, _ veloc
     SynthEngine.addStep(frequency: frequency, velocity: velocity, steps: steps, channel: Int(channel))
 }
 
+@_cdecl("luma_synth_pattern_add_tone")
+public func luma_synth_pattern_add_tone(_ channel: Int32, _ frequency: Float) {
+    SynthEngine.addTone(frequency: frequency, channel: Int(channel))
+}
+
 @_cdecl("luma_synth_pattern_commit")
 public func luma_synth_pattern_commit(_ channel: Int32, _ stepSeconds: Float, _ loops: Int32) {
     SynthEngine.commitPattern(stepSeconds: stepSeconds, loops: loops == 1, channel: Int(channel))

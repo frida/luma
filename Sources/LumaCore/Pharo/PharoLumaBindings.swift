@@ -277,10 +277,17 @@ public enum PharoLumaBindings {
             LumaSynth invoke: ''luma_synth_pattern_begin''
                 parameters: { TFBasicType sint } return: TFBasicType void with: { channel }.
             notes do: [ :each |
+                | tones |
+                tones := each isArray ifTrue: [ each ] ifFalse: [ Array with: each ].
                 LumaSynth invoke: ''luma_synth_pattern_add''
                     parameters: { TFBasicType sint. TFBasicType float. TFBasicType float. TFBasicType sint }
                     return: TFBasicType void
-                    with: { channel. (self frequencyFor: each). 0.9. 1 } ].
+                    with: { channel. (self frequencyFor: tones first). 0.9. 1 }.
+                tones allButFirst do: [ :extra |
+                    LumaSynth invoke: ''luma_synth_pattern_add_tone''
+                        parameters: { TFBasicType sint. TFBasicType float }
+                        return: TFBasicType void
+                        with: { channel. (self frequencyFor: extra) } ] ].
             stepSeconds := 60.0 / tempo / division.
             ^ LumaSynth invoke: ''luma_synth_pattern_commit''
                 parameters: { TFBasicType sint. TFBasicType float. TFBasicType sint }
