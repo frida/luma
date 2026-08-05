@@ -8,10 +8,10 @@ import Synchronization
 /// lock-free ring: no allocation, no reference counting and no locking
 /// happens under the callback, which is what keeps a phrase from stuttering.
 public enum SynthEngine {
-    public static let channelCount = 4
+    public static let channelCount = 8
     public static let sampleRate: Float = 48000
 
-    static let voiceCount = 16
+    static let voiceCount = 24
     static let patternCapacity = 256
 
     /// Three per channel, so staging can always find a buffer that is neither
