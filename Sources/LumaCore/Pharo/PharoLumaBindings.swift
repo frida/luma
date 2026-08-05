@@ -311,6 +311,39 @@ public enum PharoLumaBindings {
                 parameters: { TFBasicType sint }
                 return: TFBasicType void
                 with: { aCollection size }'.
+        canvas class compile: 'clearLayout
+            ^ LumaHost invoke: ''luma_canvas_clear_layout'''.
+        canvas class compile: 'attribute: aName components: aCount
+            "One value per vertex, in the author''s own layout."
+            ^ LumaHost invoke: ''luma_canvas_add_attribute''
+                parameters: { TFBasicType pointer. TFBasicType sint. TFBasicType sint }
+                return: TFBasicType void
+                with: { (LumaHost cString: aName). aCount. 0 }'.
+        canvas class compile: 'varying: aName components: aCount
+            "A value the vertex stage hands the fragment stage."
+            ^ LumaHost invoke: ''luma_canvas_add_attribute''
+                parameters: { TFBasicType pointer. TFBasicType sint. TFBasicType sint }
+                return: TFBasicType void
+                with: { (LumaHost cString: aName). aCount. 1 }'.
+        canvas class compile: 'vertexSource: aVertexSource fragmentSource: aFragmentSource
+            ^ LumaHost invoke: ''luma_canvas_set_geometry_source''
+                parameters: { TFBasicType pointer. TFBasicType pointer }
+                return: TFBasicType void
+                with: { (LumaHost cString: aVertexSource). (LumaHost cString: aFragmentSource) }'.
+        canvas class compile: 'primitives
+            ^ #(points lines lineStrip triangles triangleStrip)'.
+        canvas class compile: 'vertices: aCollection primitive: aSymbol
+            "Draws the vertices against the layout declared so far. Answers
+             false and leaves the compiler''s complaint in lastError."
+            aCollection doWithIndex: [ :value :index |
+                LumaHost invoke: ''luma_canvas_set_vertex''
+                    parameters: { TFBasicType sint. TFBasicType float }
+                    return: TFBasicType void
+                    with: { index - 1. value asFloat } ].
+            ^ 1 = (LumaHost invoke: ''luma_canvas_commit_vertices''
+                parameters: { TFBasicType sint. TFBasicType sint }
+                return: TFBasicType sint
+                with: { aCollection size. (self primitives indexOf: aSymbol) - 1 })'.
         canvas class compile: 'close
             ^ LumaHost invoke: ''luma_canvas_close'''.
 

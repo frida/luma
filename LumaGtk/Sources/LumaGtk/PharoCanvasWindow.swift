@@ -55,6 +55,17 @@ final class PharoCanvasWindow {
 
         if let raw = luma_shader_effect_new(effect.glsl) {
             area = raw
+            if let geometry = effect.geometry, let vertexGLSL = effect.vertexGLSL {
+                luma_shader_effect_set_program(raw, vertexGLSL, effect.glsl)
+                for attribute in geometry.attributes {
+                    luma_shader_effect_add_attribute(raw, attribute.name, Int32(attribute.components))
+                }
+                var vertices = geometry.vertices
+                vertices.withUnsafeMutableBufferPointer { buffer in
+                    luma_shader_effect_set_vertices(
+                        raw, buffer.baseAddress, Int32(buffer.count), geometry.primitive.rawValue)
+                }
+            }
             applyAppearance(raw)
             themeToken = ThemeWatcher.subscribe(owner: self) { owner in
                 if let raw = owner.area {
