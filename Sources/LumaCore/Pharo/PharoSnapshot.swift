@@ -20,6 +20,8 @@ public struct PharoSnapshot: Codable, Sendable, Equatable {
             case text(String)
             case graph(PharoGraph)
             case chart(PharoChart)
+            /// Drawn by the host from a scene it holds, named by handle.
+            case canvas(scene: Int)
             case empty
         }
 
@@ -72,6 +74,9 @@ extension PharoSnapshot {
         }
         if let chart = declaration.chart {
             return .chart(chart)
+        }
+        if let canvas = declaration.canvas {
+            return .canvas(scene: canvas.scene)
         }
 
         let page = try await runtime.items(
