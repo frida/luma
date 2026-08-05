@@ -372,6 +372,26 @@ public enum PharoLumaBindings {
                 0. focal. 0. 0.
                 0. 0. (aFar + aNear) / range. -1.0.
                 0. 0. 2.0 * aFar * aNear / range. 0 }'.
+        canvas class compile: 'vertexBuffer: aCollection
+            "Lays the floats out in memory the image owns and hands over the
+             address, which is the only way a mesh crosses in decent time."
+            | array |
+            array := FFIExternalArray externalNewType: ''float'' size: aCollection size.
+            aCollection doWithIndex: [ :value :index |
+                array at: index put: value asFloat ].
+            LumaHost invoke: ''luma_canvas_set_vertex_buffer''
+                parameters: { TFBasicType pointer. TFBasicType sint }
+                return: TFBasicType void
+                with: { array getHandle. aCollection size }.
+            array free.
+            ^ aCollection size'.
+        canvas class compile: 'mesh: aCollection primitive: aSymbol
+            "Draws a whole buffer of vertices at once."
+            self vertexBuffer: aCollection.
+            ^ 1 = (LumaHost invoke: ''luma_canvas_commit_vertices''
+                parameters: { TFBasicType sint. TFBasicType sint }
+                return: TFBasicType sint
+                with: { aCollection size. (self primitives indexOf: aSymbol) - 1 })'.
         canvas class compile: 'close
             ^ LumaHost invoke: ''luma_canvas_close'''.
 
