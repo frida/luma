@@ -43,7 +43,7 @@ struct EventStreamView: View {
             Divider()
 
             ShaderEffectView(
-                fragmentFunction: "eventFieldFragment",
+                program: .builtIn(function: "eventFieldFragment"),
                 scheme: colorScheme == .light ? 1.0 : 0.0,
                 activity: activity
             )

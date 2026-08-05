@@ -13,8 +13,15 @@ import UIKit
 /// resolution/time/scheme/activity/pulse uniforms the GTK frontend's widget
 /// feeds its GLSL. Both sides are generated from one authored effect
 /// in `Shaders/` by `LumaShaderCompiler`.
+/// Either a function the build already carries, or Metal source translated
+/// from GLSL on the spot, for an effect written in a snippet.
+enum ShaderEffectProgram: Equatable {
+    case builtIn(function: String)
+    case translated(metal: String, function: String)
+}
+
 struct ShaderEffectView {
-    let fragmentFunction: String
+    let program: ShaderEffectProgram
     let scheme: Float
 
     /// Bumped by the caller whenever events arrive; the renderer decays what it
@@ -22,7 +29,7 @@ struct ShaderEffectView {
     var activity: Float = 0
 
     func makeCoordinator() -> ShaderEffectRenderer {
-        ShaderEffectRenderer(fragmentFunction: fragmentFunction)
+        ShaderEffectRenderer(program: program)
     }
 
     fileprivate func install(into view: MTKView, coordinator: ShaderEffectRenderer) {
@@ -73,7 +80,7 @@ extension ShaderEffectView: UIViewRepresentable {
 
 final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
     var scheme: Float = 1.0
-    private let fragmentFunction: String
+    private let program: ShaderEffectProgram
     private weak var view: MTKView?
     private var commandQueue: MTLCommandQueue?
     private var pipeline: MTLRenderPipelineState?
@@ -89,8 +96,8 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
     private let pulseHalfLife: Float = 0.4
     private let activityHalfLife: Float = 1.2
 
-    init(fragmentFunction: String) {
-        self.fragmentFunction = fragmentFunction
+    init(program: ShaderEffectProgram) {
+        self.program = program
         renderedAt = CACurrentMediaTime()
     }
 
@@ -146,9 +153,9 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
 
     private func buildPipeline(for view: MTKView) -> Bool {
         guard let device = view.device,
-              let library = try? device.makeDefaultLibrary(bundle: Bundle.main),
-              let vertex = library.makeFunction(name: "shaderEffectVertex"),
-              let fragment = library.makeFunction(name: fragmentFunction),
+              let bundled = try? device.makeDefaultLibrary(bundle: Bundle.main),
+              let vertex = bundled.makeFunction(name: "shaderEffectVertex"),
+              let fragment = fragmentFunction(from: device, bundled: bundled),
               let queue = device.makeCommandQueue()
         else { return false }
 
@@ -161,6 +168,18 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
         commandQueue = queue
         pipeline = state
         return true
+    }
+
+    /// A built-in effect is already in the default library; a translated one
+    /// is compiled here, which is what lets a snippet author its own.
+    private func fragmentFunction(from device: MTLDevice, bundled: MTLLibrary) -> MTLFunction? {
+        switch program {
+        case let .builtIn(function):
+            return bundled.makeFunction(name: function)
+        case let .translated(metal, function):
+            guard let library = try? device.makeLibrary(source: metal, options: nil) else { return nil }
+            return library.makeFunction(name: function)
+        }
     }
 
     private func startDisplayLink() {
