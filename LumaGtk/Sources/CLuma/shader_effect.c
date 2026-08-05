@@ -39,12 +39,14 @@ typedef struct {
     GLint loc_pulse;
     GLint loc_data_count;
     GLint loc_data;
+    GLint loc_mvp;
     gint64 start_us;
     guint tick_id;
     float scheme;
     float activity;
     float data[64];
     int data_count;
+    float mvp[16];
     gint64 pulsed_at_us;
     gint64 rendered_at_us;
     float clear_color[3];
@@ -68,9 +70,13 @@ luma_shader_effect_new(const char *fragment_src)
     LumaShaderEffect *self = g_new0(LumaShaderEffect, 1);
     self->fragment_src = g_strdup(fragment_src);
     self->scheme = 1.0f;
+    for (int index = 0; index != 4; index++)
+        self->mvp[index * 5] = 1.0f;
 
     GtkWidget *area = gtk_gl_area_new();
-    gtk_gl_area_set_has_depth_buffer(GTK_GL_AREA(area), FALSE);
+    // Geometry with any depth to it needs this, and a screen-filling effect
+    // is no worse off for having it.
+    gtk_gl_area_set_has_depth_buffer(GTK_GL_AREA(area), TRUE);
     gtk_gl_area_set_has_stencil_buffer(GTK_GL_AREA(area), FALSE);
     gtk_gl_area_set_auto_render(GTK_GL_AREA(area), TRUE);
 
@@ -145,6 +151,13 @@ luma_shader_effect_set_data(void *widget, const float *values, int count)
 }
 
 void
+luma_shader_effect_set_transform(void *widget, const float *values)
+{
+    LumaShaderEffect *self = effect_for(GTK_WIDGET(widget));
+    memcpy(self->mvp, values, 16 * sizeof(float));
+}
+
+void
 luma_shader_effect_set_clear_color(void *widget, float red, float green, float blue)
 {
     LumaShaderEffect *self = effect_for(GTK_WIDGET(widget));
@@ -177,6 +190,7 @@ on_realize(GtkGLArea *area, gpointer user_data)
     self->loc_pulse = glGetUniformLocation(self->program, "u_pulse");
     self->loc_data_count = glGetUniformLocation(self->program, "u_data_count");
     self->loc_data = glGetUniformLocation(self->program, "u_data");
+    self->loc_mvp = glGetUniformLocation(self->program, "u_mvp");
 
     static const float quad[] = {
         -1.0f, -1.0f,
@@ -237,7 +251,13 @@ on_render(GtkGLArea *area, GdkGLContext *context, gpointer user_data)
     self->activity *= expf(-since_render / ACTIVITY_HALF_LIFE_SECONDS);
 
     glClearColor(self->clear_color[0], self->clear_color[1], self->clear_color[2], 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+    if (self->vertex_src != NULL) {
+        glEnable(GL_DEPTH_TEST);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    } else {
+        glDisable(GL_DEPTH_TEST);
+        glClear(GL_COLOR_BUFFER_BIT);
+    }
 
     glUseProgram(self->program);
     glUniform2f(self->loc_resolution, fb_w, fb_h);
@@ -247,6 +267,7 @@ on_render(GtkGLArea *area, GdkGLContext *context, gpointer user_data)
     glUniform1f(self->loc_pulse, pulse);
     glUniform1f(self->loc_data_count, (float)self->data_count);
     glUniform4fv(self->loc_data, 16, self->data);
+    glUniformMatrix4fv(self->loc_mvp, 1, GL_FALSE, self->mvp);
     glBindVertexArray(self->vao);
     if (self->vertex_src != NULL) {
         int stride = 0;
@@ -285,6 +306,7 @@ rebuild_geometry(LumaShaderEffect *self)
     self->loc_pulse = glGetUniformLocation(self->program, "u_pulse");
     self->loc_data_count = glGetUniformLocation(self->program, "u_data_count");
     self->loc_data = glGetUniformLocation(self->program, "u_data");
+    self->loc_mvp = glGetUniformLocation(self->program, "u_mvp");
 
     glBindVertexArray(self->vao);
     glBindBuffer(GL_ARRAY_BUFFER, self->vbo);

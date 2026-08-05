@@ -344,6 +344,34 @@ public enum PharoLumaBindings {
                 parameters: { TFBasicType sint. TFBasicType sint }
                 return: TFBasicType sint
                 with: { aCollection size. (self primitives indexOf: aSymbol) - 1 })'.
+        canvas class compile: 'transform: aCollection
+            "Sixteen floats, column-major, saying where the vertices land."
+            aCollection doWithIndex: [ :value :index |
+                LumaHost invoke: ''luma_canvas_set_transform''
+                    parameters: { TFBasicType sint. TFBasicType float }
+                    return: TFBasicType void
+                    with: { index - 1. value asFloat } ].
+            ^ LumaHost invoke: ''luma_canvas_commit_transform'''.
+        canvas class compile: 'identity
+            "Draws vertices in clip space as they stand."
+            ^ self transform: #(1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1)'.
+        canvas class compile: 'orthographicWidth: aWidth height: aHeight
+            "A flat drawing, in units of the caller''s own choosing."
+            ^ self transform: {
+                2.0 / aWidth. 0. 0. 0.
+                0. 2.0 / aHeight. 0. 0.
+                0. 0. -1.0. 0.
+                0. 0. 0. 1.0 }'.
+        canvas class compile: 'perspective: aFieldOfView aspect: anAspect near: aNear far: aFar
+            "A drawing with depth: things further off draw smaller."
+            | focal range |
+            focal := 1.0 / (aFieldOfView / 2.0) degreesToRadians tan.
+            range := aNear - aFar.
+            ^ self transform: {
+                focal / anAspect. 0. 0. 0.
+                0. focal. 0. 0.
+                0. 0. (aFar + aNear) / range. -1.0.
+                0. 0. 2.0 * aFar * aNear / range. 0 }'.
         canvas class compile: 'close
             ^ LumaHost invoke: ''luma_canvas_close'''.
 

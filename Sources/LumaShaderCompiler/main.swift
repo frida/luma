@@ -22,6 +22,9 @@ struct LumaShaderCompiler {
             // Values the caller fed the canvas, up to 64 of them, packed four
             // to a vec4. Read them through dataAt.
             vec4 u_data[16];
+            // Where the author's vertices land: orthographic for a flat
+            // drawing, perspective for one with depth. Identity until set.
+            mat4 u_mvp;
         };
         float dataAt(int i) { return u_data[i >> 2][i & 3]; }
 
