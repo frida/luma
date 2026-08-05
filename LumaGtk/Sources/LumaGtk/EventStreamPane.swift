@@ -1,5 +1,6 @@
 import Adw
 import CGraphene
+import CLuma
 import CPango
 import Foundation
 import struct Graphene.PointRef
@@ -62,6 +63,9 @@ final class EventStreamPane {
     private var isPaused: Bool = false
     private var pendingNewEvents: Int = 0
     private var lastSeenTotal: Int = 0
+    private let eventRate = EventRate()
+    private var activityStrip: UnsafeMutableRawPointer?
+    private var activityThemeToken: gulong = 0
     private let collapsedHeightRequest: Int = 36
     private let expandedHeightRequest: Int = 320
 
@@ -207,6 +211,14 @@ final class EventStreamPane {
         headerSeparator.visible = false
         widget.append(child: headerSeparator)
 
+        if let strip = luma_shader_effect_new(ShaderEffects.eventField) {
+            activityStrip = strip
+            let stripWidget = WidgetRef(raw: strip)
+            stripWidget.hexpand = true
+            stripWidget.setSizeRequest(width: -1, height: 3)
+            widget.append(child: stripWidget)
+        }
+
         listOverlay = Overlay()
         listOverlay.hexpand = true
         listOverlay.vexpand = true
@@ -259,6 +271,36 @@ final class EventStreamPane {
 
         rebuildSourceFilterMenu()
         rebuildProcessFilterMenu()
+
+        if let strip = activityStrip {
+            applyStripAppearance(strip)
+            activityThemeToken = ThemeWatcher.subscribe(owner: self) { owner in
+                if let strip = owner.activityStrip {
+                    owner.applyStripAppearance(strip)
+                }
+            }
+        }
+    }
+
+    deinit {
+        ThemeWatcher.unsubscribe(handlerID: activityThemeToken)
+    }
+
+    private func applyStripAppearance(_ strip: UnsafeMutableRawPointer) {
+        let dark = ThemeWatcher.currentAppearance() == .dark
+        luma_shader_effect_set_scheme(strip, dark ? 0.0 : 1.0)
+        if dark {
+            luma_shader_effect_set_clear_color(strip, 0.105, 0.082, 0.098)
+        } else {
+            luma_shader_effect_set_clear_color(strip, 0.980, 0.968, 0.958)
+        }
+    }
+
+    private func reportActivity(totalReceived: Int) {
+        guard let strip = activityStrip,
+              let rate = eventRate.observe(totalReceived: totalReceived, at: Date.timeIntervalSinceReferenceDate)
+        else { return }
+        luma_shader_effect_report_activity(strip, rate)
     }
 
     func attach(engine: Engine) {
@@ -328,6 +370,7 @@ final class EventStreamPane {
     private func handleEventsAppended(_ newEvents: ArraySlice<RuntimeEvent>) {
         guard let engine else { return }
         let delta = newEvents.count
+        reportActivity(totalReceived: engine.eventLog.totalReceived)
 
         if isCollapsed || isPaused {
             pendingNewEvents += delta

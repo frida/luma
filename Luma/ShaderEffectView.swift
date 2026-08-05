@@ -10,12 +10,16 @@ import UIKit
 #endif
 
 /// A fullscreen fragment effect from the default Metal library, fed the same
-/// resolution/time/scheme uniforms the GTK frontend's `luma_shader_effect_*`
-/// widget feeds its GLSL. Both sides are generated from one authored effect
+/// resolution/time/scheme/activity/pulse uniforms the GTK frontend's widget
+/// feeds its GLSL. Both sides are generated from one authored effect
 /// in `Shaders/` by `LumaShaderCompiler`.
 struct ShaderEffectView {
     let fragmentFunction: String
     let scheme: Float
+
+    /// Bumped by the caller whenever events arrive; the renderer decays what it
+    /// was last handed, so a caller only sets this when there is news.
+    var activity: Float = 0
 
     func makeCoordinator() -> ShaderEffectRenderer {
         ShaderEffectRenderer(fragmentFunction: fragmentFunction)
@@ -32,6 +36,11 @@ struct ShaderEffectView {
         coordinator.attach(to: view)
         coordinator.scheme = scheme
     }
+
+    fileprivate func refresh(_ coordinator: ShaderEffectRenderer) {
+        coordinator.scheme = scheme
+        coordinator.reportActivity(activity)
+    }
 }
 
 #if os(macOS)
@@ -44,7 +53,7 @@ extension ShaderEffectView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: MTKView, context: Context) {
-        context.coordinator.scheme = scheme
+        refresh(context.coordinator)
     }
 }
 #else
@@ -57,7 +66,7 @@ extension ShaderEffectView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: MTKView, context: Context) {
-        context.coordinator.scheme = scheme
+        refresh(context.coordinator)
     }
 }
 #endif
@@ -72,8 +81,23 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
     private let proxy = DisplayLinkProxy()
     private let startTime = CACurrentMediaTime()
 
+    private var activity: Float = 0
+    private var pulsedAt: TimeInterval?
+    private var renderedAt: TimeInterval
+
+    /// Seconds for a reported arrival to fall to 1/e.
+    private let pulseHalfLife: Float = 0.4
+    private let activityHalfLife: Float = 1.2
+
     init(fragmentFunction: String) {
         self.fragmentFunction = fragmentFunction
+        renderedAt = CACurrentMediaTime()
+    }
+
+    func reportActivity(_ reported: Float) {
+        guard reported > 0 else { return }
+        activity = reported
+        pulsedAt = CACurrentMediaTime()
     }
 
     func attach(to view: MTKView) {
@@ -95,11 +119,17 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
               let encoder = buffer.makeRenderCommandEncoder(descriptor: descriptor)
         else { return }
 
+        let now = CACurrentMediaTime()
+        activity *= exp(-Float(now - renderedAt) / activityHalfLife)
+        renderedAt = now
+
         var uniforms = Uniforms(
             resolution: SIMD2(Float(view.drawableSize.width),
                               Float(view.drawableSize.height)),
-            time: Float(CACurrentMediaTime() - startTime),
-            scheme: scheme
+            time: Float(now - startTime),
+            scheme: scheme,
+            activity: activity,
+            pulse: pulsedAt.map { exp(-Float(now - $0) / pulseHalfLife) } ?? 0
         )
 
         encoder.setRenderPipelineState(pipeline)
@@ -158,6 +188,8 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
         var resolution: SIMD2<Float>
         var time: Float
         var scheme: Float
+        var activity: Float
+        var pulse: Float
     }
 }
 
