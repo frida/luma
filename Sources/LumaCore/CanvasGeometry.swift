@@ -56,25 +56,61 @@ public struct CanvasGeometry: Sendable, Equatable {
         stride == 0 ? 0 : vertices.count / stride
     }
 
-    /// Declares the author's attributes and varyings so their own shader body
-    /// compiles against locations the host binds to.
-    public func vertexPreamble() -> String {
-        let inputs = attributes.enumerated().map { index, attribute in
-            "layout(location = \(index)) in \(attribute.glslType) \(attribute.name);"
-        }
-        let outputs = varyings.enumerated().map { index, varying in
-            "layout(location = \(index)) out \(varying.glslType) \(varying.name);"
-        }
-        return ([ShaderTranslator.header] + inputs + outputs + [ShaderTranslator.uniformBlock, ""])
-            .joined(separator: "\n")
+    /// Where the shader is headed. OpenGL takes the source as it stands, at a
+    /// version with no explicit locations, and binds attributes by name.
+    /// Metal's comes through glslang, which wants both.
+    public enum Flavour: Sendable {
+        case openGL
+        case metal
     }
 
-    public func fragmentPreamble() -> String {
-        let inputs = varyings.enumerated().map { index, varying in
-            "layout(location = \(index)) in \(varying.glslType) \(varying.name);"
+    /// Declares the author's attributes and varyings so their own shader body
+    /// compiles against what the renderer binds.
+    public func vertexPreamble(_ flavour: Flavour) -> String {
+        let inputs = attributes.enumerated().map { index, attribute in
+            declaration("in", attribute, at: index, flavour)
         }
-        let outputs = ["layout(location = 0) out vec4 frag_color;"]
-        return ([ShaderTranslator.header] + inputs + outputs + [ShaderTranslator.uniformBlock, ""])
-            .joined(separator: "\n")
+        let outputs = varyings.enumerated().map { index, varying in
+            declaration("out", varying, at: index, flavour)
+        }
+        return (["#version \(flavour == .metal ? "450" : "150 core")"]
+            + inputs + outputs + [uniforms(flavour), ""]).joined(separator: "\n")
+    }
+
+    public func fragmentPreamble(_ flavour: Flavour) -> String {
+        let inputs = varyings.enumerated().map { index, varying in
+            declaration("in", varying, at: index, flavour)
+        }
+        let output = flavour == .metal
+            ? "layout(location = 0) out vec4 frag_color;"
+            : "out vec4 frag_color;"
+        return (["#version \(flavour == .metal ? "450" : "150 core")"]
+            + inputs + [output, uniforms(flavour), ""]).joined(separator: "\n")
+    }
+
+    private func declaration(
+        _ direction: String,
+        _ attribute: ShaderAttribute,
+        at index: Int,
+        _ flavour: Flavour
+    ) -> String {
+        let qualifier = flavour == .metal ? "layout(location = \(index)) " : ""
+        return "\(qualifier)\(direction) \(attribute.glslType) \(attribute.name);"
+    }
+
+    private func uniforms(_ flavour: Flavour) -> String {
+        guard flavour == .metal else {
+            return """
+                uniform vec2 u_resolution;
+                uniform float u_time;
+                uniform float u_scheme;
+                uniform float u_activity;
+                uniform float u_pulse;
+                uniform float u_data_count;
+                uniform vec4 u_data[16];
+                float dataAt(int i) { return u_data[i / 4][i - (i / 4) * 4]; }
+                """
+        }
+        return ShaderTranslator.uniformBlock
     }
 }

@@ -116,6 +116,14 @@ void luma_shader_effect_set_scheme(void *widget, float scheme);
 // when there is news.
 void luma_shader_effect_report_activity(void *widget, float activity);
 
+// Draw the author's own vertices rather than a screen-filling quad. Both
+// sources are complete GLSL: the host writes the declarations that match
+// the attributes named here. Primitive is points, lines, line strip,
+// triangles or triangle strip, 0 through 4.
+void luma_shader_effect_set_program(void *widget, const char *vertex_src, const char *fragment_src);
+void luma_shader_effect_add_attribute(void *widget, const char *name, int components);
+void luma_shader_effect_set_vertices(void *widget, const float *values, int count, int primitive);
+
 // Feed u_data and u_data_count: up to 64 values the effect reads through
 // dataAt(), which is how a caller pictures something it has measured.
 void luma_shader_effect_set_data(void *widget, const float *values, int count);

@@ -12,6 +12,14 @@ public struct CanvasEffect: Sendable, Equatable {
     public let glsl: String
     public let metal: String
     public let function: String
+
+    /// Set when the author supplied a vertex stage of their own, which is
+    /// what turns the canvas from a screen-filling effect into a drawing of
+    /// whatever they handed over.
+    public var vertexGLSL: String?
+    public var vertexMetal: String?
+    public var vertexFunction: String?
+    public var geometry: CanvasGeometry?
 }
 
 @MainActor
@@ -60,6 +68,81 @@ public func luma_canvas_show(_ index: Int32) -> Int32 {
 @_cdecl("luma_canvas_show_source")
 public func luma_canvas_show_source(_ glsl: UnsafePointer<CChar>) -> Int32 {
     present(glsl: String(cString: glsl), named: "userEffect")
+}
+
+/// The layout the author is describing, until they commit vertices to it.
+private let stagedAttributes = Mutex([ShaderAttribute]())
+private let stagedVaryings = Mutex([ShaderAttribute]())
+private let stagedSource = Mutex(["", ""])
+private let stagedVertices = Mutex([Float](repeating: 0, count: 4096))
+
+@_cdecl("luma_canvas_add_attribute")
+public func luma_canvas_add_attribute(_ name: UnsafePointer<CChar>, _ components: Int32, _ isVarying: Int32) {
+    let attribute = ShaderAttribute(name: String(cString: name), components: Int(components))
+    if isVarying == 1 {
+        stagedVaryings.withLock { $0.append(attribute) }
+    } else {
+        stagedAttributes.withLock { $0.append(attribute) }
+    }
+}
+
+@_cdecl("luma_canvas_clear_layout")
+public func luma_canvas_clear_layout() {
+    stagedAttributes.withLock { $0.removeAll() }
+    stagedVaryings.withLock { $0.removeAll() }
+}
+
+@_cdecl("luma_canvas_set_geometry_source")
+public func luma_canvas_set_geometry_source(_ vertex: UnsafePointer<CChar>, _ fragment: UnsafePointer<CChar>) {
+    stagedSource.withLock { $0 = [String(cString: vertex), String(cString: fragment)] }
+}
+
+@_cdecl("luma_canvas_set_vertex")
+public func luma_canvas_set_vertex(_ index: Int32, _ value: Float) {
+    stagedVertices.withLock { values in
+        guard index >= 0, Int(index) < values.count else { return }
+        values[Int(index)] = value
+    }
+}
+
+/// Builds the author's program against the layout they declared, and draws it.
+@_cdecl("luma_canvas_commit_vertices")
+public func luma_canvas_commit_vertices(_ count: Int32, _ primitive: Int32) -> Int32 {
+    let geometry = CanvasGeometry(
+        attributes: stagedAttributes.withLock { $0 },
+        varyings: stagedVaryings.withLock { $0 },
+        primitive: CanvasGeometry.Primitive(rawValue: primitive) ?? .triangles,
+        vertices: stagedVertices.withLock { Array($0.prefix(Int(max(count, 0)))) }
+    )
+    let source = stagedSource.withLock { $0 }
+
+    let vertexGLSL = geometry.vertexPreamble(.openGL) + source[0]
+    let fragmentGLSL = geometry.fragmentPreamble(.openGL) + source[1]
+    let vertexMetal: String
+    let fragmentMetal: String
+    do {
+        vertexMetal = try ShaderTranslator.metalSource(
+            forComplete: geometry.vertexPreamble(.metal) + source[0],
+            stage: .vertex, entryPoint: "canvasVertex")
+        fragmentMetal = try ShaderTranslator.metalSource(
+            forComplete: geometry.fragmentPreamble(.metal) + source[1],
+            stage: .fragment, entryPoint: "canvasFragment")
+    } catch {
+        canvasError.withLock { $0 = "\(error)" }
+        return 0
+    }
+    canvasError.withLock { $0 = "" }
+
+    var effect = CanvasEffect(glsl: fragmentGLSL, metal: fragmentMetal, function: "canvasFragment")
+    effect.vertexGLSL = vertexGLSL
+    effect.vertexMetal = vertexMetal
+    effect.vertexFunction = "canvasVertex"
+    effect.geometry = geometry
+
+    DispatchQueue.main.async {
+        MainActor.assumeIsolated { PharoCanvasHost.onShow?(effect) }
+    }
+    return 1
 }
 
 private func present(glsl: String, named name: String) -> Int32 {

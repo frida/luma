@@ -10,9 +10,25 @@
 // Seconds for a reported arrival to fall to 1/e.
 #define PULSE_HALF_LIFE_SECONDS 0.4f
 #define ACTIVITY_HALF_LIFE_SECONDS 1.2f
+#define MAX_ATTRIBUTES 8
+
+typedef struct {
+    char *name;
+    int components;
+} LumaAttribute;
 
 typedef struct {
     char *fragment_src;
+    // Set when the author supplied their own vertex stage, which is what
+    // turns the widget from a screen-filling effect into a drawing of
+    // whatever they handed over.
+    char *vertex_src;
+    LumaAttribute attributes[MAX_ATTRIBUTES];
+    int attribute_count;
+    float *vertices;
+    int vertex_count;
+    int primitive;
+    gboolean geometry_changed;
     GLuint program;
     GLuint vao;
     GLuint vbo;
@@ -41,6 +57,9 @@ static gboolean on_tick(GtkWidget *widget, GdkFrameClock *clock, gpointer user_d
 static void effect_free(gpointer data);
 static LumaShaderEffect *effect_for(GtkWidget *widget);
 static GLuint link_program(const char *fragment_src, gboolean gles);
+static void rebuild_geometry(LumaShaderEffect *self);
+static GLuint link_authored_program(LumaShaderEffect *self);
+static GLenum gl_primitive(int primitive);
 static GLuint compile_shader(GLenum kind, const char **sources, int source_count);
 
 void *
@@ -63,6 +82,41 @@ luma_shader_effect_new(const char *fragment_src)
 
     self->tick_id = gtk_widget_add_tick_callback(area, on_tick, NULL, NULL);
     return area;
+}
+
+void
+luma_shader_effect_set_program(void *widget, const char *vertex_src, const char *fragment_src)
+{
+    LumaShaderEffect *self = effect_for(GTK_WIDGET(widget));
+    g_clear_pointer(&self->vertex_src, g_free);
+    g_clear_pointer(&self->fragment_src, g_free);
+    self->vertex_src = g_strdup(vertex_src);
+    self->fragment_src = g_strdup(fragment_src);
+    self->attribute_count = 0;
+    self->geometry_changed = TRUE;
+}
+
+void
+luma_shader_effect_add_attribute(void *widget, const char *name, int components)
+{
+    LumaShaderEffect *self = effect_for(GTK_WIDGET(widget));
+    if (self->attribute_count == MAX_ATTRIBUTES)
+        return;
+
+    LumaAttribute *attribute = &self->attributes[self->attribute_count++];
+    attribute->name = g_strdup(name);
+    attribute->components = components;
+}
+
+void
+luma_shader_effect_set_vertices(void *widget, const float *values, int count, int primitive)
+{
+    LumaShaderEffect *self = effect_for(GTK_WIDGET(widget));
+    g_clear_pointer(&self->vertices, g_free);
+    self->vertices = g_memdup2(values, count * sizeof(float));
+    self->vertex_count = count;
+    self->primitive = primitive;
+    self->geometry_changed = TRUE;
 }
 
 void
@@ -108,11 +162,14 @@ on_realize(GtkGLArea *area, gpointer user_data)
     if (gtk_gl_area_get_error(area) != NULL)
         return;
 
+    // The buffers are wanted either way, so they are made before any program
+    // is: a widget the author has already handed geometry to has no
+    // screen-filling program to link, and one whose shader will not compile
+    // still needs somewhere to put vertices when a later one does.
     GdkGLContext *context = gtk_gl_area_get_context(area);
     gboolean gles = gdk_gl_context_get_api(context) == GDK_GL_API_GLES;
-    self->program = link_program(self->fragment_src, gles);
-    if (self->program == 0)
-        return;
+    if (self->vertex_src == NULL)
+        self->program = link_program(self->fragment_src, gles);
     self->loc_resolution = glGetUniformLocation(self->program, "u_resolution");
     self->loc_time = glGetUniformLocation(self->program, "u_time");
     self->loc_scheme = glGetUniformLocation(self->program, "u_scheme");
@@ -132,9 +189,11 @@ on_realize(GtkGLArea *area, gpointer user_data)
     glBindVertexArray(self->vao);
     glGenBuffers(1, &self->vbo);
     glBindBuffer(GL_ARRAY_BUFFER, self->vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof quad, quad, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, NULL);
+    if (self->vertex_src == NULL) {
+        glBufferData(GL_ARRAY_BUFFER, sizeof quad, quad, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, NULL);
+    }
     glBindVertexArray(0);
 
     self->start_us = g_get_monotonic_time();
@@ -158,6 +217,8 @@ on_render(GtkGLArea *area, GdkGLContext *context, gpointer user_data)
     (void)context;
     (void)user_data;
     LumaShaderEffect *self = effect_for(GTK_WIDGET(area));
+    if (self->geometry_changed)
+        rebuild_geometry(self);
     if (self->program == 0)
         return FALSE;
 
@@ -187,10 +248,110 @@ on_render(GtkGLArea *area, GdkGLContext *context, gpointer user_data)
     glUniform1f(self->loc_data_count, (float)self->data_count);
     glUniform4fv(self->loc_data, 16, self->data);
     glBindVertexArray(self->vao);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    if (self->vertex_src != NULL) {
+        int stride = 0;
+        for (int index = 0; index != self->attribute_count; index++)
+            stride += self->attributes[index].components;
+        if (stride > 0)
+            glDrawArrays(gl_primitive(self->primitive), 0, self->vertex_count / stride);
+    } else {
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    }
     glBindVertexArray(0);
     glUseProgram(0);
     return TRUE;
+}
+
+// Lays the author's own attributes out over their vertices, binding each by
+// the name they gave it, so their shader needs no layout qualifier that the
+// GLSL version here would refuse.
+static void
+rebuild_geometry(LumaShaderEffect *self)
+{
+    self->geometry_changed = FALSE;
+    if (self->vertex_src == NULL || self->vertices == NULL)
+        return;
+
+    if (self->program != 0)
+        glDeleteProgram(self->program);
+    self->program = link_authored_program(self);
+    if (self->program == 0)
+        return;
+
+    self->loc_resolution = glGetUniformLocation(self->program, "u_resolution");
+    self->loc_time = glGetUniformLocation(self->program, "u_time");
+    self->loc_scheme = glGetUniformLocation(self->program, "u_scheme");
+    self->loc_activity = glGetUniformLocation(self->program, "u_activity");
+    self->loc_pulse = glGetUniformLocation(self->program, "u_pulse");
+    self->loc_data_count = glGetUniformLocation(self->program, "u_data_count");
+    self->loc_data = glGetUniformLocation(self->program, "u_data");
+
+    glBindVertexArray(self->vao);
+    glBindBuffer(GL_ARRAY_BUFFER, self->vbo);
+    glBufferData(GL_ARRAY_BUFFER, self->vertex_count * sizeof(float), self->vertices, GL_STATIC_DRAW);
+
+    int stride = 0;
+    for (int index = 0; index != self->attribute_count; index++)
+        stride += self->attributes[index].components;
+
+    size_t offset = 0;
+    for (int index = 0; index != self->attribute_count; index++) {
+        const LumaAttribute *attribute = &self->attributes[index];
+        glEnableVertexAttribArray(index);
+        glVertexAttribPointer(index, attribute->components, GL_FLOAT, GL_FALSE,
+                              stride * sizeof(float), (const void *)(offset * sizeof(float)));
+        offset += attribute->components;
+    }
+    glBindVertexArray(0);
+}
+
+static GLuint
+link_authored_program(LumaShaderEffect *self)
+{
+    const char *vertex_sources[] = { self->vertex_src };
+    const char *fragment_sources[] = { self->fragment_src };
+
+    GLuint vs = compile_shader(GL_VERTEX_SHADER, vertex_sources, 1);
+    GLuint fs = compile_shader(GL_FRAGMENT_SHADER, fragment_sources, 1);
+    if (vs == 0 || fs == 0) {
+        if (vs != 0) glDeleteShader(vs);
+        if (fs != 0) glDeleteShader(fs);
+        return 0;
+    }
+
+    GLuint program = glCreateProgram();
+    glAttachShader(program, vs);
+    glAttachShader(program, fs);
+    for (int index = 0; index != self->attribute_count; index++)
+        glBindAttribLocation(program, index, self->attributes[index].name);
+    glLinkProgram(program);
+    glDetachShader(program, vs);
+    glDetachShader(program, fs);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+
+    GLint ok = 0;
+    glGetProgramiv(program, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        char log[1024];
+        glGetProgramInfoLog(program, sizeof log, NULL, log);
+        g_warning("luma shader effect: program link failed: %s", log);
+        glDeleteProgram(program);
+        return 0;
+    }
+    return program;
+}
+
+static GLenum
+gl_primitive(int primitive)
+{
+    switch (primitive) {
+        case 0: return GL_POINTS;
+        case 1: return GL_LINES;
+        case 2: return GL_LINE_STRIP;
+        case 4: return GL_TRIANGLE_STRIP;
+        default: return GL_TRIANGLES;
+    }
 }
 
 static gboolean
@@ -206,6 +367,10 @@ static void
 effect_free(gpointer data)
 {
     LumaShaderEffect *self = data;
+    for (int index = 0; index != self->attribute_count; index++)
+        g_free(self->attributes[index].name);
+    g_free(self->vertices);
+    g_free(self->vertex_src);
     g_free(self->fragment_src);
     g_free(self);
 }
