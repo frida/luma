@@ -17,6 +17,7 @@ let usesXcodePackageResolution = false
 let lumaCoreExcludes = usesXcodePackageResolution ? [] : ["Generated"]
 let lumaCorePlugins: [Target.PluginUsage] = usesXcodePackageResolution ? [] : [
     .plugin(name: "LumaBundlePlugin"),
+    .plugin(name: "LumaShaderPlugin"),
 ]
 let lumaBundlePluginTargets: [Target] = usesXcodePackageResolution ? [] : [
     .plugin(
@@ -26,6 +27,14 @@ let lumaBundlePluginTargets: [Target] = usesXcodePackageResolution ? [] : [
             .target(name: "LumaBundleCompiler"),
         ],
         path: "Plugins/LumaBundlePlugin"
+    ),
+    .plugin(
+        name: "LumaShaderPlugin",
+        capability: .buildTool(),
+        dependencies: [
+            .target(name: "LumaShaderCompiler"),
+        ],
+        path: "Plugins/LumaShaderPlugin"
     ),
 ]
 
@@ -56,9 +65,8 @@ let package = Package(
     ],
     products: [
         .library(name: "LumaCore", targets: ["LumaCore"]),
-        .executable(name: "luma-bundle-compiler", targets: ["LumaBundleCompiler"]),
         .executable(name: "LumaBundleCompiler", targets: ["LumaBundleCompiler"]),
-        .executable(name: "luma-shader-compiler", targets: ["LumaShaderCompiler"]),
+        .executable(name: "LumaShaderCompiler", targets: ["LumaShaderCompiler"]),
     ],
     dependencies: [
         .package(url: "https://github.com/frida/frida-swift", branch: "main"),

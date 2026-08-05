@@ -12,9 +12,11 @@
 			buildConfigurationList = 0CAB00010000000000000002 /* Build configuration list for PBXAggregateTarget "AgentBundle" */;
 			buildPhases = (
 				0CE0E3DD2ECA3CBE000B1E01 /* ShellScript */,
+				0CAB0002000000000000000C /* ShellScript */,
 			);
 			dependencies = (
 				0CAB00010000000000000005 /* PBXTargetDependency */,
+				0CAB0002000000000000000B /* PBXTargetDependency */,
 			);
 			name = AgentBundle;
 			productName = AgentBundle;
@@ -38,6 +40,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 0C6420C02EE8672900E4F780;
 			remoteInfo = LumaBundleCompiler;
+		};
+		0CAB0002000000000000000A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0CD2092C2EB511C400D027FC /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0CAB00020000000000000006;
+			remoteInfo = LumaShaderCompiler;
 		};
 		0CAB00010000000000000008 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -79,6 +88,7 @@
 
 /* Begin PBXFileReference section */
 		0C6420C12EE8672900E4F780 /* LumaBundleCompiler */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = LumaBundleCompiler; sourceTree = BUILT_PRODUCTS_DIR; };
+		0CAB00020000000000000001 /* LumaShaderCompiler */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = LumaShaderCompiler; sourceTree = BUILT_PRODUCTS_DIR; };
 		0CB2C6702FA5411700426A24 /* LumaUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LumaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0CB2CA3B2FA54E6800426A24 /* Luma.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = Luma.xctestplan; sourceTree = "<group>"; };
 		0CD209342EB511C400D027FC /* Luma.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Luma.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -110,6 +120,11 @@
 			path = Sources/LumaBundleCompiler;
 			sourceTree = "<group>";
 		};
+		0CAB00020000000000000002 /* Sources/LumaShaderCompiler */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Sources/LumaShaderCompiler;
+			sourceTree = "<group>";
+		};
 		0CAAF5F12ED4D41D00B8FD05 /* Luma */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -134,6 +149,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				0C8A0A752EF0B51C00F0D7B2 /* Frida in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0CAB00020000000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -173,6 +195,7 @@
 				0CB2CA3B2FA54E6800426A24 /* Luma.xctestplan */,
 				0CAAF5F12ED4D41D00B8FD05 /* Luma */,
 				0C6420C22EE8672900E4F780 /* Sources/LumaBundleCompiler */,
+				0CAB00020000000000000002 /* Sources/LumaShaderCompiler */,
 				0CB2C6712FA5411700426A24 /* LumaUITests */,
 				0C6420C82EE8675100E4F780 /* Frameworks */,
 				0CD209352EB511C400D027FC /* Products */,
@@ -184,6 +207,7 @@
 			children = (
 				0CD209342EB511C400D027FC /* Luma.app */,
 				0C6420C12EE8672900E4F780 /* LumaBundleCompiler */,
+				0CAB00020000000000000001 /* LumaShaderCompiler */,
 				0CB2C6702FA5411700426A24 /* LumaUITests.xctest */,
 			);
 			name = Products;
@@ -213,6 +237,25 @@
 			);
 			productName = LumaBundleCompiler;
 			productReference = 0C6420C12EE8672900E4F780 /* LumaBundleCompiler */;
+			productType = "com.apple.product-type.tool";
+		};
+		0CAB00020000000000000006 /* LumaShaderCompiler */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0CAB00020000000000000007 /* Build configuration list for PBXNativeTarget "LumaShaderCompiler" */;
+			buildPhases = (
+				0CAB00020000000000000003 /* Sources */,
+				0CAB00020000000000000004 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				0CAB00020000000000000002 /* Sources/LumaShaderCompiler */,
+			);
+			name = LumaShaderCompiler;
+			productName = LumaShaderCompiler;
+			productReference = 0CAB00020000000000000001 /* LumaShaderCompiler */;
 			productType = "com.apple.product-type.tool";
 		};
 		0CB2C66F2FA5411700426A24 /* LumaUITests */ = {
@@ -316,6 +359,7 @@
 			targets = (
 				0CD209332EB511C400D027FC /* Luma */,
 				0CAB00010000000000000001 /* AgentBundle */,
+				0CAB00020000000000000006 /* LumaShaderCompiler */,
 				0C6420C02EE8672900E4F780 /* LumaBundleCompiler */,
 				0CB2C66F2FA5411700426A24 /* LumaUITests */,
 			);
@@ -432,10 +476,37 @@
 			shellPath = /bin/zsh;
 			shellScript = "set -euo pipefail\n\n\"${BUILT_PRODUCTS_DIR}/LumaBundleCompiler\" \\\n    --config       \"${SRCROOT}/Agent/bundle.json\" \\\n    --project-root \"${SRCROOT}\" \\\n    --staging-dir  \"${BUILD_DIR}/AgentStaging\"\n";
 		};
+		0CAB0002000000000000000C /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/Shaders/welcome-backdrop.frag.glsl",
+			);
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Sources/LumaCore/Generated/ShaderEffects.swift",
+				"$(SRCROOT)/Luma/Shaders/Generated/WelcomeBackdropFragment.metal",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/zsh;
+			shellScript = "set -euo pipefail\n\nexport PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\"\n\n\"${BUILT_PRODUCTS_DIR}/LumaShaderCompiler\" \\\n    --shader-dir \"${SRCROOT}/Shaders\" \\\n    --swift-out  \"${SRCROOT}/Sources/LumaCore/Generated/ShaderEffects.swift\" \\\n    --metal-dir  \"${SRCROOT}/Luma/Shaders/Generated\"\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		0C6420BD2EE8672900E4F780 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0CAB00020000000000000003 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -464,6 +535,11 @@
 			target = 0C6420C02EE8672900E4F780 /* LumaBundleCompiler */;
 			targetProxy = 0CAB00010000000000000006 /* PBXContainerItemProxy */;
 		};
+		0CAB0002000000000000000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0CAB00020000000000000006 /* LumaShaderCompiler */;
+			targetProxy = 0CAB0002000000000000000A /* PBXContainerItemProxy */;
+		};
 		0CAB00010000000000000007 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 0CAB00010000000000000001 /* AgentBundle */;
@@ -477,6 +553,42 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		0CAB00020000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 753PE4AG6F;
+				ENABLE_HARDENED_RUNTIME = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				PRODUCT_BUNDLE_IDENTIFIER = re.frida.LumaShaderCompiler;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		0CAB00020000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 753PE4AG6F;
+				ENABLE_HARDENED_RUNTIME = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				PRODUCT_BUNDLE_IDENTIFIER = re.frida.LumaShaderCompiler;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 		0C6420C62EE8672900E4F780 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -875,6 +987,15 @@
 			buildConfigurations = (
 				0C6420C62EE8672900E4F780 /* Debug */,
 				0C6420C72EE8672900E4F780 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0CAB00020000000000000007 /* Build configuration list for PBXNativeTarget "LumaShaderCompiler" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0CAB00020000000000000008 /* Debug */,
+				0CAB00020000000000000009 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

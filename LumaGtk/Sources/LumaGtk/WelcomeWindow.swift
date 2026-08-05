@@ -121,12 +121,12 @@ final class WelcomeWindow {
         let overlay = Overlay()
         overlay.hexpand = true
         overlay.vexpand = true
-        if let raw = luma_welcome_backdrop_new() {
+        if let raw = luma_shader_effect_new(ShaderEffects.welcomeBackdrop) {
             backdropWidget = raw
-            luma_welcome_backdrop_set_dark(raw, (ThemeWatcher.currentAppearance() == .dark))
+            applyBackdropAppearance(raw)
             themeToken = ThemeWatcher.subscribe(owner: self) { owner in
                 if let raw = owner.backdropWidget {
-                    luma_welcome_backdrop_set_dark(raw, (ThemeWatcher.currentAppearance() == .dark))
+                    owner.applyBackdropAppearance(raw)
                 }
                 if let wordmark = owner.wordmarkLabel {
                     owner.applyDarkClass(wordmark)
@@ -142,6 +142,16 @@ final class WelcomeWindow {
         overlay.addOverlay(widget: content)
         overlay.setMeasureOverlay(widget: content, measure: true)
         return overlay
+    }
+
+    private func applyBackdropAppearance(_ widget: UnsafeMutableRawPointer) {
+        let dark = ThemeWatcher.currentAppearance() == .dark
+        luma_shader_effect_set_scheme(widget, dark ? 0.0 : 1.0)
+        if dark {
+            luma_shader_effect_set_clear_color(widget, 0.075, 0.050, 0.065)
+        } else {
+            luma_shader_effect_set_clear_color(widget, 0.994, 0.991, 0.986)
+        }
     }
 
     private func applyDarkClass(_ label: Label) {

@@ -99,14 +99,6 @@ bool luma_image_normalize_to_png(const unsigned char *in_bytes,
                                   int *out_width,
                                   int *out_height);
 
-// Welcome window animated GPU backdrop: a frida.re-style cream or
-// plum plasma field, as a shader effect widget.
-void *luma_welcome_backdrop_new(void);
-
-// Toggle the backdrop palette between dark plum (true) and light
-// cream (false).
-void luma_welcome_backdrop_set_dark(void *widget, bool dark);
-
 // Fullscreen fragment effect. Returns a new GtkGLArea (as a
 // GtkWidget*) that draws fragment_src over a screen-filling quad and
 // self-drives redraws off the frame clock. The widget owns its OpenGL

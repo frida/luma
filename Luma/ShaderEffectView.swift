@@ -12,7 +12,7 @@ import UIKit
 /// A fullscreen fragment effect from the default Metal library, fed the same
 /// resolution/time/scheme uniforms the GTK frontend's `luma_shader_effect_*`
 /// widget feeds its GLSL. Both sides are generated from one authored effect
-/// in `Shaders/` by `luma-shader-compiler`.
+/// in `Shaders/` by `LumaShaderCompiler`.
 struct ShaderEffectView {
     let fragmentFunction: String
     let scheme: Float

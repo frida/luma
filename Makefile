@@ -11,16 +11,17 @@ SOURCES := $(shell find Luma Sources Agent -type f \( \
 \) 2>/dev/null)
 
 SHADER_SOURCES := $(wildcard Shaders/*.frag.glsl)
-GENERATED_METAL_DIR := $(PWD)/Luma/Shaders/Generated
 
 all: $(APP)
 
 $(APP): $(SOURCES) $(SHADER_SOURCES) Luma.xcodeproj Package.swift
 	mkdir -p "$(BUILD_DIR)"
-	swift run luma-shader-compiler \
-		--shader-dir "$(PWD)/Shaders" \
-		--metal-dir  "$(GENERATED_METAL_DIR)" \
-		--header-dir "$(PWD)/LumaGtk/Sources/CLuma/generated"
+	xcodebuild \
+		-project Luma.xcodeproj \
+		-scheme AgentBundle \
+		-configuration Release \
+		-derivedDataPath "$(DERIVED_DIR)" \
+		build
 	xcodebuild \
 		-project Luma.xcodeproj \
 		-scheme Luma \
