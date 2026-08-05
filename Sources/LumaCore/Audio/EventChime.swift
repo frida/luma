@@ -10,6 +10,7 @@ public final class EventChime {
             guard isEnabled != oldValue else { return }
             if isEnabled {
                 synth.start()
+                synth.use(.blip, channel: chimeChannel)
             } else {
                 synth.stop()
             }
@@ -25,6 +26,9 @@ public final class EventChime {
 
     private var lastSoundedAt: TimeInterval = 0
 
+    /// Its own channel, so sounding events never restyles a tune's voices.
+    private let chimeChannel = SynthEngine.channelCount - 1
+
     public init(synth: Synth = Synth()) {
         self.synth = synth
     }
@@ -34,6 +38,9 @@ public final class EventChime {
         lastSoundedAt = now
 
         let degree = degrees[min(Int(activity * Float(degrees.count)), degrees.count - 1)]
-        synth.play(frequency: rootHz * pow(2, degree / 12), velocity: 0.35 + activity * 0.5)
+        synth.play(
+            frequency: rootHz * pow(2, degree / 12),
+            velocity: 0.35 + activity * 0.5,
+            channel: chimeChannel)
     }
 }

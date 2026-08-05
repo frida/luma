@@ -42,14 +42,14 @@ let lumaBundlePluginTargets: [Target] = usesXcodePackageResolution ? [] : [
 // Apple's mobile SDKs reach the audio session through AVFoundation, so the
 // device unit has to be Objective-C there. Desktop follows suit rather than
 // carry two behaviours.
-let cLumaAudioSources = ["luma_synth.c", "luma_audio_device.m"]
+let cLumaAudioSources = ["luma_audio_device.m"]
 let cLumaAudioLinkerSettings: [LinkerSetting] = [
     .linkedFramework("CoreAudio"),
     .linkedFramework("AudioToolbox"),
     .linkedFramework("CoreFoundation"),
 ]
 #else
-let cLumaAudioSources = ["luma_synth.c", "luma_audio_device.c"]
+let cLumaAudioSources = ["luma_audio_device.c"]
 // miniaudio dlopens ALSA and PulseAudio, so neither is a link-time dependency.
 let cLumaAudioLinkerSettings: [LinkerSetting] = [
     .linkedLibrary("pthread"),
