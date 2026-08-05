@@ -40,6 +40,9 @@ struct ShaderEffectView {
     /// Values the effect reads through `dataAt()`, up to 64.
     var data: [Float] = []
 
+    /// Where vertices land. Identity draws them in clip space as they stand.
+    var transform: [Float] = ShaderEffectRenderer.identity
+
     func makeCoordinator() -> ShaderEffectRenderer {
         ShaderEffectRenderer(program: program)
     }
@@ -48,6 +51,9 @@ struct ShaderEffectView {
         guard let device = MTLCreateSystemDefaultDevice() else { return }
         view.device = device
         view.colorPixelFormat = .bgra8Unorm
+        // Geometry with any depth to it needs this, and a screen-filling
+        // effect is no worse off for having it.
+        view.depthStencilPixelFormat = .depth32Float
         view.framebufferOnly = true
         view.isPaused = true
         view.enableSetNeedsDisplay = false
@@ -59,6 +65,7 @@ struct ShaderEffectView {
     fileprivate func refresh(_ coordinator: ShaderEffectRenderer) {
         coordinator.scheme = scheme
         coordinator.data = data
+        coordinator.transform = transform
         coordinator.reportActivity(activity)
     }
 }
@@ -94,11 +101,13 @@ extension ShaderEffectView: UIViewRepresentable {
 final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
     var scheme: Float = 1.0
     var data: [Float] = []
+    var transform: [Float] = ShaderEffectRenderer.identity
     private let program: ShaderEffectProgram
     private weak var view: MTKView?
     private var commandQueue: MTLCommandQueue?
     private var pipeline: MTLRenderPipelineState?
     private var vertexBuffer: MTLBuffer?
+    private var depthState: MTLDepthStencilState?
     private nonisolated(unsafe) var displayLink: CADisplayLink?
     private let proxy = DisplayLinkProxy()
     private let startTime = CACurrentMediaTime()
@@ -156,6 +165,9 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
         for (offset, value) in data.prefix(Self.dataCapacity).enumerated() {
             uniforms[Self.dataWordOffset + offset] = value
         }
+        for (offset, value) in transform.prefix(16).enumerated() {
+            uniforms[Self.transformWordOffset + offset] = value
+        }
 
         encoder.setRenderPipelineState(pipeline)
         let uniformLength = uniforms.count * MemoryLayout<Float>.stride
@@ -163,6 +175,9 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
         encoder.setVertexBytes(&uniforms, length: uniformLength, index: 0)
 
         if case let .geometry(_, _, _, _, geometry) = program, let vertexBuffer {
+            if let depthState {
+                encoder.setDepthStencilState(depthState)
+            }
             encoder.setVertexBuffer(vertexBuffer, offset: 0, index: Self.vertexBufferIndex)
             encoder.drawPrimitives(
                 type: Self.metalPrimitive(geometry.primitive),
@@ -185,6 +200,7 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
 
         let desc = MTLRenderPipelineDescriptor()
         desc.colorAttachments[0].pixelFormat = view.colorPixelFormat
+        desc.depthAttachmentPixelFormat = view.depthStencilPixelFormat
 
         if case let .geometry(vertexMetal, vertexName, fragmentMetal, fragmentName, geometry) = program {
             guard let vertexLibrary = try? device.makeLibrary(source: vertexMetal, options: nil),
@@ -200,6 +216,11 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
                 bytes: geometry.vertices,
                 length: max(geometry.vertices.count, 1) * MemoryLayout<Float>.stride,
                 options: [])
+
+            let depth = MTLDepthStencilDescriptor()
+            depth.depthCompareFunction = .less
+            depth.isDepthWriteEnabled = true
+            depthState = device.makeDepthStencilState(descriptor: depth)
         } else {
             guard let bundled = try? device.makeDefaultLibrary(bundle: Bundle.main),
                   let vertex = bundled.makeFunction(name: "shaderEffectVertex"),
@@ -231,6 +252,8 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
         descriptor.layouts[vertexBufferIndex].stride = offset
         return descriptor
     }
+
+    static let identity: [Float] = [1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1]
 
     private static func format(components: Int) -> MTLVertexFormat {
         switch components {
@@ -292,7 +315,9 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
     /// array to its sixteen-byte alignment, and the values follow.
     static let dataCapacity = 64
     static let dataWordOffset = 8
-    static let uniformWordCount = dataWordOffset + dataCapacity
+    /// A mat4 aligns to sixteen bytes, so it follows the value array.
+    static let transformWordOffset = dataWordOffset + dataCapacity
+    static let uniformWordCount = transformWordOffset + 16
 }
 
 private final class DisplayLinkProxy: NSObject {

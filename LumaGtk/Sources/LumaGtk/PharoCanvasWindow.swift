@@ -22,6 +22,9 @@ final class PharoCanvasWindow {
         PharoCanvasHost.onData = { values in
             shared?.feed(values)
         }
+        PharoCanvasHost.onTransform = { values in
+            shared?.transform(values)
+        }
         PharoCanvasHost.onClose = {
             shared?.window.close()
             shared = nil
@@ -90,6 +93,14 @@ final class PharoCanvasWindow {
         var storage = values
         storage.withUnsafeMutableBufferPointer { buffer in
             luma_shader_effect_set_data(area, buffer.baseAddress, Int32(buffer.count))
+        }
+    }
+
+    private func transform(_ values: [Float]) {
+        guard let area else { return }
+        var storage = values
+        storage.withUnsafeMutableBufferPointer { buffer in
+            luma_shader_effect_set_transform(area, buffer.baseAddress)
         }
     }
 

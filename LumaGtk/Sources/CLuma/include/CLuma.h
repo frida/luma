@@ -124,6 +124,10 @@ void luma_shader_effect_set_program(void *widget, const char *vertex_src, const 
 void luma_shader_effect_add_attribute(void *widget, const char *name, int components);
 void luma_shader_effect_set_vertices(void *widget, const float *values, int count, int primitive);
 
+// Feed u_mvp: sixteen floats, column-major, where the author's vertices
+// land. Orthographic for a flat drawing, perspective for one with depth.
+void luma_shader_effect_set_transform(void *widget, const float *values);
+
 // Feed u_data and u_data_count: up to 64 values the effect reads through
 // dataAt(), which is how a caller pictures something it has measured.
 void luma_shader_effect_set_data(void *widget, const float *values, int count);

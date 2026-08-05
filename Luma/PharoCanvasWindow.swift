@@ -20,6 +20,9 @@ final class PharoCanvasWindow {
         PharoCanvasHost.onData = { values in
             shared?.feed.data = values
         }
+        PharoCanvasHost.onTransform = { values in
+            shared?.feed.transform = values
+        }
         PharoCanvasHost.onClose = {
             shared?.window.close()
             shared = nil
@@ -61,6 +64,7 @@ final class PharoCanvasWindow {
 final class CanvasFeed {
     var activity: Float = 0
     var data: [Float] = []
+    var transform: [Float] = ShaderEffectRenderer.identity
 }
 
 extension PharoCanvasWindow {
@@ -90,7 +94,8 @@ private struct PharoCanvasView: View {
             program: PharoCanvasWindow.program(for: effect),
             scheme: colorScheme == .light ? 1.0 : 0.0,
             activity: feed.activity,
-            data: feed.data
+            data: feed.data,
+            transform: feed.transform
         )
     }
 }

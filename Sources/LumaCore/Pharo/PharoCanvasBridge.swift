@@ -28,6 +28,7 @@ public enum PharoCanvasHost {
     public static var onShow: ((CanvasEffect) -> Void)?
     public static var onReport: ((Float) -> Void)?
     public static var onData: (([Float]) -> Void)?
+    public static var onTransform: (([Float]) -> Void)?
     public static var onClose: (() -> Void)?
 }
 
@@ -194,6 +195,24 @@ public func luma_canvas_commit_data(_ count: Int32) {
 }
 
 private let staged = Mutex([Float](repeating: 0, count: 64))
+
+@_cdecl("luma_canvas_set_transform")
+public func luma_canvas_set_transform(_ index: Int32, _ value: Float) {
+    stagedTransform.withLock { values in
+        guard index >= 0, Int(index) < values.count else { return }
+        values[Int(index)] = value
+    }
+}
+
+@_cdecl("luma_canvas_commit_transform")
+public func luma_canvas_commit_transform() {
+    let values = stagedTransform.withLock { $0 }
+    DispatchQueue.main.async {
+        MainActor.assumeIsolated { PharoCanvasHost.onTransform?(values) }
+    }
+}
+
+private let stagedTransform = Mutex([Float](repeating: 0, count: 16))
 
 @_cdecl("luma_canvas_report")
 public func luma_canvas_report(_ activity: Float) {
