@@ -106,6 +106,8 @@ bool luma_image_normalize_to_png(const unsigned char *in_bytes,
 // preamble declaring v_uv, frag_color, u_resolution, u_time,
 // u_scheme, u_activity, u_pulse and the u_data channel, so it carries
 // only its own helpers and main().
+// Pass NULL for fragment_src to make a widget that draws a scene rather
+// than a screen-filling effect.
 void *luma_shader_effect_new(const char *fragment_src);
 
 // Feed u_scheme, by convention 1 for light and 0 for dark.
@@ -116,13 +118,21 @@ void luma_shader_effect_set_scheme(void *widget, float scheme);
 // when there is news.
 void luma_shader_effect_report_activity(void *widget, float activity);
 
-// Draw the author's own vertices rather than a screen-filling quad. Both
-// sources are complete GLSL: the host writes the declarations that match
-// the attributes named here. Primitive is points, lines, line strip,
-// triangles or triangle strip, 0 through 4.
-void luma_shader_effect_set_program(void *widget, const char *vertex_src, const char *fragment_src);
-void luma_shader_effect_add_attribute(void *widget, const char *name, int components);
-void luma_shader_effect_set_vertices(void *widget, const float *values, int count, int primitive);
+// A widget draws as many of these as the author made, in the order they
+// were added, instead of a screen-filling quad. Both sources are complete
+// GLSL: the host writes the declarations matching the attributes named
+// here. Primitive is points, lines, line strip, triangles or triangle
+// strip, 0 through 4.
+int luma_shader_effect_add_drawable(void *widget);
+void luma_shader_effect_drawable_set_program(void *widget, int handle,
+                                             const char *vertex_src, const char *fragment_src);
+void luma_shader_effect_drawable_add_attribute(void *widget, int handle,
+                                               const char *name, int components);
+void luma_shader_effect_drawable_set_vertices(void *widget, int handle,
+                                              const float *values, int count, int primitive);
+void luma_shader_effect_drawable_set_transform(void *widget, int handle, const float *values);
+void luma_shader_effect_drawable_set_visible(void *widget, int handle, bool visible);
+void luma_shader_effect_remove_drawable(void *widget, int handle);
 
 // Feed u_mvp: sixteen floats, column-major, where the author's vertices
 // land. Orthographic for a flat drawing, perspective for one with depth.

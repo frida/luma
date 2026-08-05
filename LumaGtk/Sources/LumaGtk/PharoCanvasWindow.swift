@@ -45,6 +45,7 @@ final class PharoCanvasWindow {
 
     private let effect: CanvasEffect
     private var area: UnsafeMutableRawPointer?
+    private var drawables: [Int32] = []
     private var themeToken: gulong = 0
 
     private init(effect: CanvasEffect, app: Adw.Application) {
@@ -56,18 +57,26 @@ final class PharoCanvasWindow {
         let content = Box(orientation: .vertical, spacing: 0)
         content.append(child: Gtk.HeaderBar())
 
-        if let raw = luma_shader_effect_new(effect.glsl) {
+        // A scene needs no screen-filling program; asking for one would only
+        // fail to compile, the author's fragment source carrying its own
+        // version directive.
+        let fullscreen = effect.geometry == nil ? effect.glsl : nil
+        if let raw = luma_shader_effect_new(fullscreen) {
             area = raw
             if let geometry = effect.geometry, let vertexGLSL = effect.vertexGLSL {
-                luma_shader_effect_set_program(raw, vertexGLSL, effect.glsl)
+                let drawable = luma_shader_effect_add_drawable(raw)
+                luma_shader_effect_drawable_set_program(raw, drawable, vertexGLSL, effect.glsl)
                 for attribute in geometry.attributes {
-                    luma_shader_effect_add_attribute(raw, attribute.name, Int32(attribute.components))
+                    luma_shader_effect_drawable_add_attribute(
+                        raw, drawable, attribute.name, Int32(attribute.components))
                 }
                 var vertices = geometry.vertices
                 vertices.withUnsafeMutableBufferPointer { buffer in
-                    luma_shader_effect_set_vertices(
-                        raw, buffer.baseAddress, Int32(buffer.count), geometry.primitive.rawValue)
+                    luma_shader_effect_drawable_set_vertices(
+                        raw, drawable, buffer.baseAddress, Int32(buffer.count),
+                        geometry.primitive.rawValue)
                 }
+                drawables.append(drawable)
             }
             applyAppearance(raw)
             themeToken = ThemeWatcher.subscribe(owner: self) { owner in
@@ -101,6 +110,9 @@ final class PharoCanvasWindow {
         var storage = values
         storage.withUnsafeMutableBufferPointer { buffer in
             luma_shader_effect_set_transform(area, buffer.baseAddress)
+            for drawable in drawables {
+                luma_shader_effect_drawable_set_transform(area, drawable, buffer.baseAddress)
+            }
         }
     }
 
