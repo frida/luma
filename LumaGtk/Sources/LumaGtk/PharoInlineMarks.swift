@@ -21,6 +21,10 @@ final class PharoInlineMarks {
 
     var isApplying: Bool { applying }
 
+    /// A method a reader expanded is holding keyboard focus, so the snippet's
+    /// own key shortcuts step aside and let the method's editor keep its keys.
+    private(set) var isEditingBody = false
+
     private let editor: GtkSource.View
     private let buffer: GtkSource.Buffer
     private let runtime: PharoRuntime
@@ -79,6 +83,16 @@ final class PharoInlineMarks {
         buffer.onNotifyCursorPosition { [weak self] _, _ in
             MainActor.assumeIsolated { self?.hideCaretOnBodyLines() }
         }
+    }
+
+    private func beginEditingBody() {
+        isEditingBody = true
+        setOuterEditable(false)
+    }
+
+    private func endEditingBody() {
+        isEditingBody = false
+        setOuterEditable(true)
     }
 
     private func setOuterEditable(_ editable: Bool) {
@@ -455,16 +469,20 @@ final class PharoInlineMarks {
         // focus hands the keys back; focus returning to the snippet restores it.
         let focus = EventControllerFocus()
         focus.onEnter { [weak self] _ in
-            MainActor.assumeIsolated { self?.setOuterEditable(false) }
+            MainActor.assumeIsolated { self?.beginEditingBody() }
         }
         focus.onLeave { [weak self] _ in
-            MainActor.assumeIsolated { self?.setOuterEditable(true) }
+            MainActor.assumeIsolated { self?.endEditingBody() }
         }
         methodView.install(controller: focus)
 
+        // A one-line method would otherwise shrink to a sliver a click keeps
+        // missing, so the editor holds a floor wide and tall enough to land on.
         let scroll = ScrolledWindow()
         scroll.setPolicy(hscrollbarPolicy: .automatic, vscrollbarPolicy: .automatic)
         scroll.propagateNaturalHeight = true
+        scroll.minContentWidth = 360
+        scroll.minContentHeight = 64
         scroll.maxContentHeight = 220
         scroll.set(child: methodView)
 
