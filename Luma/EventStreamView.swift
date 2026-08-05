@@ -262,6 +262,15 @@ struct EventStreamView: View {
 
     private var overflowMenu: some View {
         Menu {
+            Toggle(isOn: Binding(
+                get: { engine.eventChime.isEnabled },
+                set: { engine.eventChime.isEnabled = $0 }
+            )) {
+                Label("Sound Events", systemImage: "speaker.wave.2")
+            }
+
+            Divider()
+
             Button(role: .destructive) {
                 engine.clearEventLog()
                 resetAllEventState()
