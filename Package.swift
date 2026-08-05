@@ -58,6 +58,7 @@ let package = Package(
         .library(name: "LumaCore", targets: ["LumaCore"]),
         .executable(name: "luma-bundle-compiler", targets: ["LumaBundleCompiler"]),
         .executable(name: "LumaBundleCompiler", targets: ["LumaBundleCompiler"]),
+        .executable(name: "luma-shader-compiler", targets: ["LumaShaderCompiler"]),
     ],
     dependencies: [
         .package(url: "https://github.com/frida/frida-swift", branch: "main"),
@@ -92,6 +93,13 @@ let package = Package(
                 .product(name: "Frida", package: "frida-swift"),
             ],
             path: "Sources/LumaBundleCompiler",
+            swiftSettings: [
+                .swiftLanguageMode(.v5),
+            ]
+        ),
+        .executableTarget(
+            name: "LumaShaderCompiler",
+            path: "Sources/LumaShaderCompiler",
             swiftSettings: [
                 .swiftLanguageMode(.v5),
             ]

@@ -5,7 +5,6 @@ struct WelcomeBackdrop: View {
 
     var body: some View {
         ShaderEffectView(
-            vertexFunction: "welcomeBackdropVertex",
             fragmentFunction: "welcomeBackdropFragment",
             scheme: colorScheme == .light ? 1.0 : 0.0
         )

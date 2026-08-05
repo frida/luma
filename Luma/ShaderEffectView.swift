@@ -9,16 +9,16 @@ import AppKit
 import UIKit
 #endif
 
-/// A fullscreen fragment effect drawn by a pair of functions in the default
-/// Metal library, fed the same resolution/time/scheme uniforms the GTK
-/// frontend's `luma_shader_effect_*` widget feeds its GLSL.
+/// A fullscreen fragment effect from the default Metal library, fed the same
+/// resolution/time/scheme uniforms the GTK frontend's `luma_shader_effect_*`
+/// widget feeds its GLSL. Both sides are generated from one authored effect
+/// in `Shaders/` by `luma-shader-compiler`.
 struct ShaderEffectView {
-    let vertexFunction: String
     let fragmentFunction: String
     let scheme: Float
 
     func makeCoordinator() -> ShaderEffectRenderer {
-        ShaderEffectRenderer(vertexFunction: vertexFunction, fragmentFunction: fragmentFunction)
+        ShaderEffectRenderer(fragmentFunction: fragmentFunction)
     }
 
     fileprivate func install(into view: MTKView, coordinator: ShaderEffectRenderer) {
@@ -64,7 +64,6 @@ extension ShaderEffectView: UIViewRepresentable {
 
 final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
     var scheme: Float = 1.0
-    private let vertexFunction: String
     private let fragmentFunction: String
     private weak var view: MTKView?
     private var commandQueue: MTLCommandQueue?
@@ -73,8 +72,7 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
     private let proxy = DisplayLinkProxy()
     private let startTime = CACurrentMediaTime()
 
-    init(vertexFunction: String, fragmentFunction: String) {
-        self.vertexFunction = vertexFunction
+    init(fragmentFunction: String) {
         self.fragmentFunction = fragmentFunction
     }
 
@@ -119,7 +117,7 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
     private func buildPipeline(for view: MTKView) -> Bool {
         guard let device = view.device,
               let library = try? device.makeDefaultLibrary(bundle: Bundle.main),
-              let vertex = library.makeFunction(name: vertexFunction),
+              let vertex = library.makeFunction(name: "shaderEffectVertex"),
               let fragment = library.makeFunction(name: fragmentFunction),
               let queue = device.makeCommandQueue()
         else { return false }
