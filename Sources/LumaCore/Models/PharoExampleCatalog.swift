@@ -59,6 +59,77 @@ public enum PharoExampleCatalog {
                 	yourself.
                 """),
         ]),
+        ("Sound", [
+            PharoExample(
+                title: "Lead over bass \u{2014} two channels at once",
+                code: """
+                | lead bass |
+                LumaSynth start.
+                lead := (LumaTune channel: 0) patch: #pulse; tempo: 132; yourself.
+                bass := (LumaTune channel: 1) patch: #bass; tempo: 132; division: 2; yourself.
+                lead notes: #(0 4 7 4 0 4 7 11 7 4 0 - 0 4 7 -).
+                bass notes: #(c2 - c2 - as1 - g1 -).
+                lead play. bass play.
+                lead
+                """),
+            PharoExample(
+                title: "Retune the lead while it loops",
+                code: """
+                "Run the two-channel example first, then run this. The loop
+                 keeps time; the new notes land on the next bar."
+                LumaTune allInstances first
+                    scale: #(0 2 4 7 9);
+                    notes: #(0 2 4 7 9 7 4 2 0 - 4 - 7 - 9 -);
+                    tempo: 168
+                """),
+            PharoExample(
+                title: "Noise percussion on its own channel",
+                code: """
+                LumaSynth start.
+                (LumaTune channel: 2)
+                    patch: #noiseHit;
+                    tempo: 132;
+                    notes: #(c5 - - - c5 - c5 -);
+                    play
+                """),
+            PharoExample(
+                title: "Pickup blip \u{2014} a one-shot rising pair",
+                code: """
+                LumaSynth start.
+                (LumaTune channel: 0)
+                    patch: #pulse;
+                    tempo: 300;
+                    loops: false;
+                    notes: #(b5 e6);
+                    play
+                """),
+            PharoExample(
+                title: "Jump \u{2014} a fast run reads as a sweep",
+                code: """
+                LumaSynth start.
+                (LumaTune channel: 0)
+                    patch: #pulse;
+                    tempo: 420;
+                    loops: false;
+                    notes: #(c4 e4 g4 c5 e5 g5 c6);
+                    play
+                """),
+            PharoExample(
+                title: "Shape your own patch",
+                code: """
+                "Every field of a voice, as plain data. Channel 0, a hollow
+                 detuned saw with a long resonant sweep."
+                LumaSynth start.
+                LumaSynth
+                    channel: 0 waveform: LumaSynth saw detune: 0.12
+                    attack: 0.01 decay: 0.5 sustain: 0 release: 0.1
+                    cutoff: 1400 resonance: 0.7 gain: 0.6.
+                (LumaTune channel: 0) tempo: 96; notes: #(0 - 5 - 7 - 12 -); play
+                """),
+            PharoExample(
+                title: "Silence everything",
+                code: "LumaTune hush."),
+        ]),
         ("Explore", [
             PharoExample(
                 title: "Filter a big list (type in the field)",
