@@ -81,6 +81,11 @@ final class PharoInlineMarks {
         }
     }
 
+    private func setOuterEditable(_ editable: Bool) {
+        let textView = UnsafeMutablePointer<GtkTextView>(OpaquePointer(editor.widget_ptr))
+        gtk_text_view_set_editable(textView, editable ? 1 : 0)
+    }
+
     /// A body sits on a line as tall as the widget it holds, so the editor's
     /// caret drawn there stands the same absurd height. Blank it while the caret
     /// rests on such a line; it returns the moment the caret steps back onto the
@@ -443,6 +448,19 @@ final class PharoInlineMarks {
             MainActor.assumeIsolated { _ = methodView?.grabFocus() }
         }
         methodView.install(controller: focusClick)
+
+        // A GtkTextView nested in another still feeds its keys to the outer
+        // one's input method, so text a reader types into the method lands in
+        // the snippet instead. Muting the outer editor while the method holds
+        // focus hands the keys back; focus returning to the snippet restores it.
+        let focus = EventControllerFocus()
+        focus.onEnter { [weak self] _ in
+            MainActor.assumeIsolated { self?.setOuterEditable(false) }
+        }
+        focus.onLeave { [weak self] _ in
+            MainActor.assumeIsolated { self?.setOuterEditable(true) }
+        }
+        methodView.install(controller: focus)
 
         let scroll = ScrolledWindow()
         scroll.setPolicy(hscrollbarPolicy: .automatic, vscrollbarPolicy: .automatic)
