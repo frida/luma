@@ -1063,6 +1063,31 @@ jobs:
           name: luma-${{ env.LUMA_VERSION }}-ubuntu-${{ matrix.release }}-x86_64.deb
           path: luma-${{ env.LUMA_VERSION }}-ubuntu-${{ matrix.release }}-x86_64.deb
 
+  appimage:
+    runs-on: ubuntu-latest
+    container: ghcr.io/pkgforge-dev/archlinux:latest
+    needs: [version, ubuntu]
+    env:
+      LUMA_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: luma-${{ env.LUMA_VERSION }}-ubuntu-26.04-x86_64.deb
+
+      - name: Preparing Container
+        uses: pkgforge-dev/anylinux-setup-action@v2
+      
+      - name: Make AppImage
+        run: /bin/sh ./LumaGtk/build-aux/appimage/make-appimage.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: luma-${{ env.LUMA_VERSION }}-x86_64.AppImage
+          path: Luma-${{ env.LUMA_VERSION }}-anylinux-x86_64.AppImage*
+
   flatpak:
     runs-on: ubuntu-latest
     needs: version
@@ -1490,8 +1515,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: github.ref_type == 'tag'
-    needs: [macos, ios, fedora, ubuntu, flatpak, snap, windows]
+    needs: [macos, ios, fedora, ubuntu, appimage, flatpak, snap, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -1514,6 +1538,8 @@ jobs:
             artifacts/luma-*.rpm
             artifacts/luma-*.snap
             artifacts/luma-*.flatpak
+            artifacts/Luma-*.AppImage
+            artifacts/Luma-*.AppImage.zsync
           fail_on_unmatched_files: true
 
       - name: Check out main for package.nix bump
