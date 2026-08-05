@@ -51,6 +51,15 @@ void luma_audio_set_patch(const LumaSynthPatch *patch);
 int luma_audio_note_on(float frequency_hz, float velocity);
 void luma_audio_note_off(int voice);
 
+// Shapes the next pattern, then offers it. The performing pattern is only
+// swapped at a cycle boundary, so an edit lands musically instead of jumping
+// mid-bar. A frequency of zero is a rest; `steps` is the note's length on the
+// grid. Committing while nothing plays starts at once.
+void luma_audio_pattern_begin(void);
+void luma_audio_pattern_add(float frequency_hz, float velocity, int steps);
+void luma_audio_pattern_commit(float step_seconds, int loops);
+void luma_audio_pattern_stop(void);
+
 // Mixes without a device, for tests and for the previews a notebook keeps.
 // Interleaves `channels` channels into `frames`.
 void luma_audio_render_offline(float *frames, int frame_count, int channels);

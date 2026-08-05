@@ -8,6 +8,7 @@
 
 #define VOICE_COUNT 16
 #define COMMAND_CAPACITY 256
+#define PATTERN_CAPACITY 256
 #define SAMPLE_RATE 48000
 #define TWO_PI 6.283185307179586f
 
@@ -51,14 +52,41 @@ static _Atomic unsigned int g_command_tail;
 static Command g_commands[COMMAND_CAPACITY];
 static _Atomic unsigned int g_next_voice;
 
+typedef struct {
+    float frequency;
+    float velocity;
+    int steps;
+} PatternStep;
+
+typedef struct {
+    PatternStep steps[PATTERN_CAPACITY];
+    int count;
+    float step_seconds;
+    int loops;
+} Pattern;
+
+// Two patterns, so the control thread can shape the next one while the audio
+// thread performs the current. A commit offers an index the audio thread
+// adopts at the cycle boundary, which keeps an edit musical rather than
+// jumping mid-bar.
+static Pattern g_patterns[2];
+static int g_staging;
+static _Atomic int g_offered_pattern = -1;
+
 // Touched only by the audio thread once started.
 static Voice g_voices[VOICE_COUNT];
+static int g_performing = -1;
+static int g_step_index;
+static int g_frames_until_step;
+static unsigned int g_sequenced_voice;
 static LumaSynthPatch g_patch;
 static float g_level = 0.6f;
 static unsigned int g_noise_seed = 22222;
 
 static void push_command(Command command);
 static void drain_commands(void);
+static void advance_sequencer(void);
+static void start_voice(Voice *voice, float frequency, float velocity);
 static float render_voice(Voice *voice);
 
 void
@@ -96,6 +124,43 @@ luma_audio_note_off(int voice)
 }
 
 void
+luma_audio_pattern_begin(void)
+{
+    g_patterns[g_staging].count = 0;
+}
+
+void
+luma_audio_pattern_add(float frequency_hz, float velocity, int steps)
+{
+    Pattern *pattern = &g_patterns[g_staging];
+    if (pattern->count == PATTERN_CAPACITY)
+        return;
+
+    pattern->steps[pattern->count++] = (PatternStep){
+        .frequency = frequency_hz,
+        .velocity = velocity,
+        .steps = steps < 1 ? 1 : steps,
+    };
+}
+
+void
+luma_audio_pattern_commit(float step_seconds, int loops)
+{
+    Pattern *pattern = &g_patterns[g_staging];
+    pattern->step_seconds = step_seconds;
+    pattern->loops = loops;
+
+    atomic_store(&g_offered_pattern, g_staging);
+    g_staging ^= 1;
+}
+
+void
+luma_audio_pattern_stop(void)
+{
+    atomic_store(&g_offered_pattern, -2);
+}
+
+void
 luma_audio_render_offline(float *frames, int frame_count, int channels)
 {
     luma_synth_mix(frames, frame_count, channels);
@@ -121,6 +186,8 @@ luma_synth_mix(float *frames, int frame_count, int channels)
     drain_commands();
 
     for (int frame = 0; frame != frame_count; frame++) {
+        advance_sequencer();
+
         float sample = 0.0f;
         for (int index = 0; index != VOICE_COUNT; index++) {
             Voice *voice = &g_voices[index];
@@ -138,6 +205,48 @@ luma_synth_mix(float *frames, int frame_count, int channels)
     }
 }
 
+// Steps the pattern one frame on, triggering whatever the grid lands on. The
+// clock is the audio device's own, so a phrase keeps time whatever the host
+// is doing.
+static void
+advance_sequencer(void)
+{
+    if (g_frames_until_step > 0) {
+        g_frames_until_step--;
+        return;
+    }
+
+    int offered = atomic_load(&g_offered_pattern);
+    if (offered == -2) {
+        atomic_store(&g_offered_pattern, -1);
+        g_performing = -1;
+    } else if (offered >= 0 && (g_performing < 0 || g_step_index == 0)) {
+        atomic_store(&g_offered_pattern, -1);
+        g_performing = offered;
+        g_step_index = 0;
+    }
+
+    if (g_performing < 0)
+        return;
+
+    const Pattern *pattern = &g_patterns[g_performing];
+    if (g_step_index >= pattern->count) {
+        g_step_index = 0;
+        if (!pattern->loops) {
+            g_performing = -1;
+            return;
+        }
+        return;
+    }
+
+    const PatternStep *step = &pattern->steps[g_step_index++];
+    if (step->frequency > 0.0f) {
+        Voice *voice = &g_voices[g_sequenced_voice++ % VOICE_COUNT];
+        start_voice(voice, step->frequency, step->velocity);
+    }
+    g_frames_until_step = (int)(step->steps * pattern->step_seconds * SAMPLE_RATE);
+}
+
 static void
 drain_commands(void)
 {
@@ -150,19 +259,9 @@ drain_commands(void)
             case COMMAND_PATCH:
                 g_patch = command->patch;
                 break;
-            case COMMAND_NOTE_ON: {
-                Voice *voice = &g_voices[command->voice];
-                voice->stage = STAGE_ATTACK;
-                voice->frequency = command->frequency;
-                voice->velocity = command->velocity;
-                voice->phase = 0.0f;
-                voice->detuned_phase = 0.0f;
-                voice->envelope = 0.0f;
-                voice->lowpass = 0.0f;
-                voice->bandpass = 0.0f;
-                voice->patch = g_patch;
+            case COMMAND_NOTE_ON:
+                start_voice(&g_voices[command->voice], command->frequency, command->velocity);
                 break;
-            }
             case COMMAND_NOTE_OFF:
                 g_voices[command->voice].stage = STAGE_RELEASE;
                 break;
@@ -170,6 +269,20 @@ drain_commands(void)
     }
 
     atomic_store_explicit(&g_command_tail, tail, memory_order_release);
+}
+
+static void
+start_voice(Voice *voice, float frequency, float velocity)
+{
+    voice->stage = STAGE_ATTACK;
+    voice->frequency = frequency;
+    voice->velocity = velocity;
+    voice->phase = 0.0f;
+    voice->detuned_phase = 0.0f;
+    voice->envelope = 0.0f;
+    voice->lowpass = 0.0f;
+    voice->bandpass = 0.0f;
+    voice->patch = g_patch;
 }
 
 static float oscillator(int waveform, float phase);
