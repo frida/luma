@@ -76,6 +76,26 @@ let cSoupTargets: [Target] = []
 let lumaCoreSoupDeps: [Target.Dependency] = []
 #endif
 
+// Runtime GLSL->MSL translation, so a shader written in a snippet reaches a
+// Metal host with no build step. Found wherever the toolchain happens to live
+// for now; shipping wants prebuilt libraries beside the Pharo VM's, since
+// neither project builds under SwiftPM.
+let shaderToolchainRoot = ["/opt/homebrew/opt", "/usr/local/opt", "/usr"].first {
+    FileManager.default.fileExists(atPath: $0 + "/glslang/include/glslang/Include/glslang_c_interface.h")
+}
+let cShaderTranslateCSettings: [CSetting] = shaderToolchainRoot.map { root in
+    [.unsafeFlags(["-I\(root)/glslang/include", "-I\(root)/spirv-cross/include"])]
+} ?? []
+let cShaderTranslateLinkerSettings: [LinkerSetting] = shaderToolchainRoot.map { root in
+    [.unsafeFlags([
+        "-L\(root)/glslang/lib", "-lglslang", "-lglslang-default-resource-limits", "-lSPIRV",
+        "-L\(root)/spirv-cross/lib",
+        "-lspirv-cross-c", "-lspirv-cross-msl", "-lspirv-cross-hlsl", "-lspirv-cross-cpp",
+        "-lspirv-cross-reflect", "-lspirv-cross-util", "-lspirv-cross-glsl", "-lspirv-cross-core",
+        "-lc++",
+    ])]
+} ?? []
+
 let package = Package(
     name: "luma",
     platforms: [
@@ -105,6 +125,7 @@ let package = Package(
                 .product(name: "SwiftyR2", package: "SwiftyR2"),
                 .product(name: "SwiftyPharo", package: "SwiftyPharo"),
                 "CLumaAudio",
+                "CShaderTranslate",
             ] + lumaCoreSoupDeps,
             path: "Sources/LumaCore",
             exclude: lumaCoreExcludes,
@@ -125,6 +146,13 @@ let package = Package(
             swiftSettings: [
                 .swiftLanguageMode(.v5),
             ]
+        ),
+        .target(
+            name: "CShaderTranslate",
+            path: "Sources/CShaderTranslate",
+            publicHeadersPath: "include",
+            cSettings: cShaderTranslateCSettings,
+            linkerSettings: cShaderTranslateLinkerSettings
         ),
         .target(
             name: "CLumaAudio",
