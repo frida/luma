@@ -490,7 +490,7 @@ public enum PharoLumaBindings {
                 return: TFBasicType void
                 with: { scene. handle. 1 }'.
 
-        label := Object << #LumaText slots: { #drawable. #font. #cell. #columns. #ink }; package: 'Luma'; install.
+        label := Object << #LumaText slots: { #drawable. #font. #points. #cell. #columns. #ink }; package: 'Luma'; install.
         label class compile: 'on: aDrawable
             ^ self on: aDrawable pointSize: 22'.
         label class compile: 'on: aDrawable pointSize: aSize
@@ -508,11 +508,17 @@ public enum PharoLumaBindings {
                 buildStages;
                 yourself'.
         label compile: 'setDrawable: aDrawable pointSize: aSize
-            drawable := aDrawable.
             "Rasterised at twice the asked-for size, so a display with two
-             physical pixels to a logical one draws it texel for texel and
-             an ordinary one halves it, which is kinder than magnifying."
-            font := LogicalFont familyName: ''Source Code Pro'' pointSize: aSize * 2.
+             physical pixels to a logical one draws it texel for texel and an
+             ordinary one halves it, which is kinder than magnifying. The
+             family is the one the image is already lettering with, since
+             asking for one it lacks gets a substitute at a size of its own
+             choosing -- and then nothing the caller asks for lands."
+            drawable := aDrawable.
+            points := aSize.
+            font := LogicalFont
+                familyName: TextStyle defaultFont familyName
+                pointSize: aSize * 2.
             columns := 16'.
         label compile: 'first ^ 32'.
         label compile: 'last ^ 126'.
@@ -562,7 +568,7 @@ public enum PharoLumaBindings {
                 attribute: ''glyph'' components: 2;
                 varying: ''uv'' components: 2;
                 uniform: ''pad'' value: #(16 16);
-                uniform: ''size'' value: font height / 2;
+                uniform: ''size'' value: points;
                 uniform: ''tint'' value: #(1 1 1);
                 vertexSource: ''void main() {
                     uv = glyph;
