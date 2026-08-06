@@ -238,6 +238,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         uniforms[1] = Float(view.drawableSize.height)
         uniforms[2] = Float(CACurrentMediaTime() - startTime)
         uniforms[3] = 1
+        uniforms[7] = Float(view.window?.backingScaleFactor ?? 1)
 
         for handle in scene.order {
             guard let subject = scene.drawables[handle], subject.isVisible,

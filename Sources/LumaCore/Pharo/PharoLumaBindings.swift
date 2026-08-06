@@ -498,9 +498,10 @@ public enum PharoLumaBindings {
              shader samples, so saying something else costs a buffer of
              corners rather than a rasterisation.
 
-             What is drawn is the size it was drawn at: a letter covers the
-             pixels its cell covers, texel for texel, which is what keeps it
-             sharp. Ask for a larger point size to get larger lettering."
+             The point size is in the same units as the rest of the interface,
+             whatever a display packs into one of them, and the atlas is
+             rasterised to match rather than the quads being scaled -- which
+             is what would make the lettering soft."
             ^ self basicNew
                 setDrawable: aDrawable pointSize: aSize;
                 buildAtlas;
@@ -508,7 +509,10 @@ public enum PharoLumaBindings {
                 yourself'.
         label compile: 'setDrawable: aDrawable pointSize: aSize
             drawable := aDrawable.
-            font := LogicalFont familyName: ''Source Code Pro'' pointSize: aSize.
+            "Rasterised at twice the asked-for size, so a display with two
+             physical pixels to a logical one draws it texel for texel and
+             an ordinary one halves it, which is kinder than magnifying."
+            font := LogicalFont familyName: ''Source Code Pro'' pointSize: aSize * 2.
             columns := 16'.
         label compile: 'first ^ 32'.
         label compile: 'last ^ 126'.
@@ -540,11 +544,11 @@ public enum PharoLumaBindings {
                 attribute: ''glyph'' components: 2;
                 varying: ''uv'' components: 2;
                 uniform: ''pad'' value: #(16 16);
-                uniform: ''size'' value: font height;
+                uniform: ''size'' value: font height / 2;
                 uniform: ''tint'' value: #(1 1 1);
                 vertexSource: ''void main() {
                     uv = glyph;
-                    vec2 pixel = 2.0 / u_resolution;
+                    vec2 pixel = 2.0 * u_scale / u_resolution;
                     vec2 origin = vec2(-1.0, 1.0) + vec2(pad.x, -pad.y) * pixel;
                     gl_Position = vec4(origin + p * size * pixel, 0.15, 1.0); }''
                 fragmentSource: ''void main() {

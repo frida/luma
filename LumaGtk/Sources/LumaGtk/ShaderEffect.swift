@@ -313,6 +313,7 @@ final class ShaderEffect {
         elapsed: Float,
         pulse: Float
     ) {
+        epoxy_glUniform1f(locations.scale, Float(widget.scaleFactor))
         epoxy_glUniform2f(locations.resolution, width, height)
         epoxy_glUniform1f(locations.time, elapsed)
         epoxy_glUniform1f(locations.scheme, scheme)
@@ -336,6 +337,7 @@ struct Locations {
     var activity: GLint = -1
     var pulse: GLint = -1
     var dataCount: GLint = -1
+    var scale: GLint = -1
     var data: GLint = -1
     var mvp: GLint = -1
 
@@ -348,6 +350,7 @@ struct Locations {
         activity = program.location("u_activity")
         pulse = program.location("u_pulse")
         dataCount = program.location("u_data_count")
+        scale = program.location("u_scale")
         data = program.location("u_data")
         mvp = program.location("u_mvp")
     }
@@ -641,6 +644,7 @@ private final class ScreenFilling {
         uniform float u_activity;
         uniform float u_pulse;
         uniform float u_data_count;
+        uniform float u_scale;
         uniform vec4 u_data[16];
         uniform mat4 u_mvp;
         float dataAt(int i) { return u_data[i >> 2][i & 3]; }
