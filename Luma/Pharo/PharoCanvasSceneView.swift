@@ -213,6 +213,13 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         descriptor.fragmentFunction = fragmentFunction
         descriptor.vertexDescriptor = Self.vertexDescriptor(for: subject.geometry)
         descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+        // Premultiplied: what a drawable leaves transparent shows what it was
+        // drawn over, rather than coming out black.
+        descriptor.colorAttachments[0].isBlendingEnabled = true
+        descriptor.colorAttachments[0].sourceRGBBlendFactor = .one
+        descriptor.colorAttachments[0].sourceAlphaBlendFactor = .one
+        descriptor.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+        descriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
         descriptor.depthAttachmentPixelFormat = .depth32Float
 
         guard let pipeline = try? device.makeRenderPipelineState(descriptor: descriptor) else {

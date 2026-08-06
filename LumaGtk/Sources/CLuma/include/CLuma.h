@@ -1,6 +1,7 @@
 #ifndef LUMA_CLUMA_H
 #define LUMA_CLUMA_H
 
+#include <epoxy/gl.h>
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -98,68 +99,6 @@ bool luma_image_normalize_to_png(const unsigned char *in_bytes,
                                   size_t *out_size,
                                   int *out_width,
                                   int *out_height);
-
-// Fullscreen fragment effect. Returns a new GtkGLArea (as a
-// GtkWidget*) that draws fragment_src over a screen-filling quad and
-// self-drives redraws off the frame clock. The widget owns its OpenGL
-// resources via realize/unrealize. The source is appended to a
-// preamble declaring v_uv, frag_color, u_resolution, u_time,
-// u_scheme, u_activity, u_pulse and the u_data channel, so it carries
-// only its own helpers and main().
-// Pass NULL for fragment_src to make a widget that draws a scene rather
-// than a screen-filling effect.
-void *luma_shader_effect_new(const char *fragment_src);
-
-// Feed u_scheme, by convention 1 for light and 0 for dark.
-void luma_shader_effect_set_scheme(void *widget, float scheme);
-
-// Report that events arrived at the given 0..1 rate. Feeds u_activity,
-// and spikes u_pulse. The widget decays both, so a caller only calls
-// when there is news.
-void luma_shader_effect_report_activity(void *widget, float activity);
-
-// A widget draws as many of these as the author made, in the order they
-// were added, instead of a screen-filling quad. Both sources are complete
-// GLSL: the host writes the declarations matching the attributes named
-// here. Primitive is points, lines, line strip, triangles or triangle
-// strip, 0 through 4.
-int luma_shader_effect_add_drawable(void *widget);
-void luma_shader_effect_drawable_set_program(void *widget, int handle,
-                                             const char *vertex_src, const char *fragment_src);
-void luma_shader_effect_drawable_add_attribute(void *widget, int handle,
-                                               const char *name, int components);
-void luma_shader_effect_drawable_set_vertices(void *widget, int handle,
-                                              const float *values, int count, int primitive);
-void luma_shader_effect_drawable_set_transform(void *widget, int handle, const float *values);
-// A uniform the author named, of whatever width they asked for.
-void luma_shader_effect_drawable_set_uniform(void *widget, int handle,
-                                             const char *name, const float *values, int count);
-// A run of values the shader reads by index, held as a texture of the given
-// side so it can be far larger than a uniform allows.
-void luma_shader_effect_drawable_set_buffer(void *widget, int handle, const char *name,
-                                            const float *values, int count,
-                                            int width, int height);
-// A picture the shader samples across, one word per pixel.
-void luma_shader_effect_drawable_set_image(void *widget, int handle, const char *name,
-                                           const unsigned int *pixels, int width, int height);
-// What a named value should do over time: ramp (0) or oscillate (1). Worked
-// out on the frame clock, so the caller says it once.
-void luma_shader_effect_drawable_drive_uniform(void *widget, int handle, const char *name,
-                                               int kind, const float *from, const float *to,
-                                               int count, float seconds);
-void luma_shader_effect_drawable_set_visible(void *widget, int handle, bool visible);
-void luma_shader_effect_remove_drawable(void *widget, int handle);
-
-// Feed u_mvp: sixteen floats, column-major, where the author's vertices
-// land. Orthographic for a flat drawing, perspective for one with depth.
-void luma_shader_effect_set_transform(void *widget, const float *values);
-
-// Feed u_data and u_data_count: up to 64 values the effect reads through
-// dataAt(), which is how a caller pictures something it has measured.
-void luma_shader_effect_set_data(void *widget, const float *values, int count);
-
-// Colour shown until the effect's program has linked.
-void luma_shader_effect_set_clear_color(void *widget, float red, float green, float blue);
 
 // GdkPaintable backed by librsvg that re-rasterizes the SVG into
 // each snapshot's backing pixels at its logical-size aspect ratio.
