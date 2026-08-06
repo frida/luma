@@ -349,16 +349,21 @@ public func luma_drawable_commit(_ scene: Int32, _ drawable: Int32) -> Int32 {
 
     let geometry = subject.geometry
     let declared = subject.uniforms
-    let vertexGLSL = geometry.vertexPreamble(.openGL, uniforms: declared) + subject.authorVertex
-    let fragmentGLSL = geometry.fragmentPreamble(.openGL, uniforms: declared) + subject.authorFragment
+    let sheets = subject.buffers
+    let vertexGLSL = geometry.vertexPreamble(.openGL, uniforms: declared, buffers: sheets)
+        + subject.authorVertex
+    let fragmentGLSL = geometry.fragmentPreamble(.openGL, uniforms: declared, buffers: sheets)
+        + subject.authorFragment
     let vertexMetal: String
     let fragmentMetal: String
     do {
         vertexMetal = try ShaderTranslator.metalSource(
-            forComplete: geometry.vertexPreamble(.metal, uniforms: declared) + subject.authorVertex,
+            forComplete: geometry.vertexPreamble(.metal, uniforms: declared, buffers: sheets)
+                + subject.authorVertex,
             stage: .vertex, entryPoint: "canvasVertex")
         fragmentMetal = try ShaderTranslator.metalSource(
-            forComplete: geometry.fragmentPreamble(.metal, uniforms: declared) + subject.authorFragment,
+            forComplete: geometry.fragmentPreamble(.metal, uniforms: declared, buffers: sheets)
+                + subject.authorFragment,
             stage: .fragment, entryPoint: "canvasFragment")
     } catch {
         canvasError.withLock { $0 = "\(error)" }
@@ -436,6 +441,40 @@ public func luma_drawable_drive_uniform(
         // A driven value still needs declaring, so the shader has it.
         if !subject.uniforms.contains(where: { $0.name == driver.name }) {
             subject.uniforms.append(CanvasUniform(name: driver.name, values: driver.from))
+        }
+    }) else { return }
+
+    CanvasRegistry.shared.publish(Int(scene), updated)
+}
+
+/// A run of values the shader reads by index. Handing over a fresh window is
+/// what scrubbing costs: the scene itself is untouched.
+@_cdecl("luma_drawable_set_buffer")
+public func luma_drawable_set_buffer(
+    _ scene: Int32,
+    _ drawable: Int32,
+    _ name: UnsafePointer<CChar>,
+    _ values: UnsafePointer<Float>,
+    _ count: Int32
+) {
+    let buffer = CanvasBuffer(
+        name: String(cString: name),
+        values: Array(UnsafeBufferPointer(start: values, count: Int(max(count, 0)))))
+
+    guard let updated = CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
+        if let existing = subject.buffers.firstIndex(where: { $0.name == buffer.name }) {
+            subject.buffers[existing] = buffer
+        } else {
+            subject.buffers.append(buffer)
+        }
+        // The reader needs to know the row length to divide an index by.
+        let size = CanvasUniform(
+            name: buffer.name + "_size",
+            values: [Float(buffer.width), Float(buffer.height)])
+        if let existing = subject.uniforms.firstIndex(where: { $0.name == size.name }) {
+            subject.uniforms[existing] = size
+        } else {
+            subject.uniforms.append(size)
         }
     }) else { return }
 

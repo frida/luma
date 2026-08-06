@@ -405,6 +405,20 @@ public enum PharoLumaBindings {
                         source getHandle. target getHandle. from size. aSeconds asFloat }.
             source free.
             target free'.
+        drawable compile: 'buffer: aName values: aCollection
+            "A run of values the shader reads by index through <name>At(i).
+             Held as a texture, so it can be far larger than a uniform, and
+             handing over a fresh window is all a scrub costs."
+            | array |
+            array := FFIExternalArray externalNewType: ''float'' size: aCollection size.
+            aCollection doWithIndex: [ :each :index | array at: index put: each asFloat ].
+            LumaHost invoke: ''luma_drawable_set_buffer''
+                parameters: { TFBasicType sint. TFBasicType sint. TFBasicType pointer.
+                              TFBasicType pointer. TFBasicType sint }
+                return: TFBasicType void
+                with: { scene. handle. (LumaHost cString: aName).
+                        array getHandle. aCollection size }.
+            array free'.
         drawable compile: 'ramp: aName from: aFrom to: aTo over: aSeconds
             "Moves once, and stays where it lands."
             ^ self drive: aName kind: 0 from: aFrom to: aTo seconds: aSeconds'.
