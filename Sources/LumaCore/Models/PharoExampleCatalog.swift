@@ -199,8 +199,8 @@ public enum PharoExampleCatalog {
                 title: "Catch \u{2014} a game of pointer, keys and blips",
                 code: """
                 "Inspect the answer, click the Scene tab to give it the keys,
-                 then move the paddle with the pointer or the arrow keys.
-                 Escape ends it, as does: playing terminate"
+                 then steer with the pointer or the arrow keys. Escape ends
+                 it, as does: playing terminate"
                 LumaSynth start.
                 game := LumaCanvas new.
                 icons := (LumaProject sessions items
@@ -209,66 +209,146 @@ public enum PharoExampleCatalog {
                         ifEmpty: [ { (Form extent: 64 @ 64 depth: 32)
                             fillColor: Color magenta; yourself } ].
 
-                square := 'vec2 square = vec2(min(u_resolution.y / u_resolution.x, 1.0),
-                                              min(u_resolution.x / u_resolution.y, 1.0));'.
-                paddle := game addDrawable.
-                paddle
-                    attribute: 'p' components: 2;
-                    uniform: 'at' value: #(0 -0.8);
-                    uniform: 'warmth' value: 0;
-                    vertexSource: 'void main() { ', square, '
-                        gl_Position = vec4((p * vec2(0.22, 0.04) + at) * square, 0.0, 1.0); }'
-                    fragmentSource: 'void main() {
-                        frag_color = vec4(0.15 + warmth, 0.85 - warmth * 0.5, 0.55, 1.0); }';
-                    mesh: #(-1 -1  1 -1  -1 1   1 -1  1 1  -1 1) primitive: #triangles.
+                "Sizes are fitted to the pane, positions are not, so what the
+                 pointer reads is where things are."
+                fit := 'vec2 fit = vec2(min(u_resolution.y / u_resolution.x, 1.0),
+                                        min(u_resolution.x / u_resolution.y, 1.0));'.
+                quad := #(-1 -1  1 -1  -1 1   1 -1  1 1  -1 1).
+                lamp := 'const vec3 lamp = vec3(0.40, 0.58, 0.71);
+                    float shine(vec3 n, float tightness) {
+                        return pow(max(dot(reflect(-lamp, n), vec3(0.0, 0.0, 1.0)), 0.0), tightness); }'.
 
+                "Behind everything: a grid running to a horizon, which is
+                 where the depth in the picture comes from. Depth runs 0 near
+                 to 1 far -- Metal clips anything behind zero."
+                (game addDrawable)
+                    attribute: 'p' components: 2;
+                    varying: 'uv' components: 2;
+                    vertexSource: 'void main() {
+                        uv = p; gl_Position = vec4(p, 0.9, 1.0); }'
+                    fragmentSource: 'void main() {
+                        float horizon = 0.35;
+                        vec3 sky = mix(vec3(0.32, 0.06, 0.36), vec3(0.04, 0.02, 0.12),
+                                       smoothstep(horizon, 1.0, uv.y));
+                        sky += vec3(1.0, 0.4, 0.25)
+                             * smoothstep(0.42, 0.0, length(vec2(uv.x, (uv.y - 0.5) * 1.7)));
+                        vec3 col = sky;
+                        if (uv.y < horizon) {
+                            float below = horizon - uv.y;
+                            float run = 0.09 / max(below, 0.004);
+                            vec2 cell = abs(fract(vec2(uv.x * run, u_time * 1.2 + run)) - 0.5);
+                            float line = smoothstep(0.07, 0.0, min(cell.x, cell.y));
+                            col = mix(vec3(0.05, 0.02, 0.09), vec3(0.95, 0.3, 0.8), line);
+                            col = mix(col, sky, exp(-below * 7.0));
+                        }
+                        frag_color = vec4(col, 1.0); }';
+                    mesh: quad primitive: #triangles.
+
+                "What the faller throws on the floor: the lower it is, the
+                 tighter and darker."
+                shadow := game addDrawable.
+                shadow
+                    attribute: 'p' components: 2;
+                    varying: 'uv' components: 2;
+                    uniform: 'at' value: #(0 -0.88);
+                    uniform: 'spread' value: 1;
+                    vertexSource: 'void main() { uv = p; ', fit, '
+                        gl_Position = vec4(p * vec2(0.16, 0.05) * spread * fit + at,
+                                           0.5, 1.0); }'
+                    fragmentSource: 'void main() {
+                        float a = smoothstep(1.0, 0.15, length(uv)) * 0.55 / spread;
+                        frag_color = vec4(0.0, 0.0, 0.0, a); }';
+                    mesh: quad primitive: #triangles.
+
+                "The faller turns on its own axis, and is lit as though it had
+                 a face to catch the light."
                 faller := game addDrawable.
                 faller
                     attribute: 'p' components: 2;
                     varying: 'uv' components: 2;
+                    varying: 'facing' components: 1;
                     uniform: 'at' value: #(0 1);
                     image: 'icon' form: icons first;
                     vertexSource: 'void main() {
-                        uv = vec2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5); ', square, '
-                        gl_Position = vec4((p * 0.12 + at) * square, 0.0, 1.0); }'
-                    fragmentSource: 'void main() {
-                        vec4 c = texture(icon, uv);
-                        if (c.a < 0.01) discard;
-                        frag_color = vec4(c.rgb * c.a, c.a); }';
-                    mesh: #(-1 -1  1 -1  -1 1   1 -1  1 1  -1 1) primitive: #triangles.
+                        uv = vec2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5); ', fit, '
+                        float turn = u_time * 2.1;
+                        vec3 local = vec3(p.x * cos(turn), p.y, p.x * sin(turn));
+                        facing = cos(turn);
+                        float near = 1.0 / (1.0 - local.z * 0.3);
+                        gl_Position = vec4(local.xy * 0.14 * near * fit + at, 0.3, 1.0); }'
+                    fragmentSource: ', lamp, '
+                        void main() {
+                            vec2 face = vec2(facing < 0.0 ? 1.0 - uv.x : uv.x, uv.y);
+                            vec4 c = texture(icon, face);
+                            if (c.a < 0.02) discard;
+                            vec2 q = uv * 2.0 - 1.0;
+                            vec3 n = normalize(vec3(q * 0.6, 1.0));
+                            vec3 lit = c.rgb * (0.35 + 0.8 * max(dot(n, lamp), 0.0))
+                                     + vec3(1.0, 0.95, 0.85) * shine(n, 26.0) * 0.6;
+                            frag_color = vec4(lit * c.a, c.a); }';
+                    mesh: quad primitive: #triangles.
 
-                at := { 0. 1 }. speed := 0.02. held := 0. score := 0.
+                paddle := game addDrawable.
+                paddle
+                    attribute: 'p' components: 2;
+                    varying: 'uv' components: 2;
+                    uniform: 'at' value: #(0 -0.8);
+                    uniform: 'warmth' value: 0;
+                    vertexSource: 'void main() { uv = p; ', fit, '
+                        gl_Position = vec4(p * vec2(0.22, 0.045) * fit + at, 0.2, 1.0); }'
+                    fragmentSource: ', lamp, '
+                        void main() {
+                            vec3 n = normalize(vec3(uv.x * 0.2, uv.y * 0.9, 1.0));
+                            vec3 base = mix(vec3(0.15, 0.85, 0.55), vec3(1.0, 0.7, 0.2), warmth);
+                            float edge = smoothstep(1.0, 0.72, abs(uv.y));
+                            vec3 lit = base * (0.4 + 0.7 * max(dot(n, lamp), 0.0))
+                                     + vec3(1.0) * shine(n, 40.0) * (0.4 + warmth);
+                            frag_color = vec4(lit * edge, edge); }';
+                    mesh: quad primitive: #triangles.
+
+                "Half sizes, so a catch is judged on the edges rather than
+                 the centres, and on the step the faller crosses the paddle."
+                fallerHalf := 0.14. paddleHalf := 0.22. paddleTop := -0.755.
+                at := { 0. 1 }. speed := 0.024. held := 0. score := 0.
+                respawn := [
+                    faller image: 'icon' form: icons atRandom.
+                    at := { (-85 to: 85) atRandom / 100.0. 1.15 } ].
                 playing := [ [ game isDown: #escape ] whileFalse: [
-                    | wanted |
-                    wanted := (game pointer first max: -0.9) min: 0.9.
-                    (game isDown: #left) ifTrue: [ wanted := held - 0.06 ].
-                    (game isDown: #right) ifTrue: [ wanted := held + 0.06 ].
-                    held := ((held * 0.6) + (wanted * 0.4) max: -0.9) min: 0.9.
+                    | wanted below landed |
+                    wanted := (game pointer first max: -0.95) min: 0.95.
+                    (game isDown: #left) ifTrue: [ wanted := held - 0.07 ].
+                    (game isDown: #right) ifTrue: [ wanted := held + 0.07 ].
+                    held := ((held * 0.55) + (wanted * 0.45) max: -0.95) min: 0.95.
                     paddle uniform: 'at' value: { held. -0.8 }.
 
+                    below := at second - fallerHalf.
                     at := { at first. at second - speed }.
+                    landed := below > paddleTop and: [ at second - fallerHalf <= paddleTop ].
                     faller uniform: 'at' value: at.
+                    shadow
+                        uniform: 'at' value: { at first. -0.9 };
+                        uniform: 'spread' value: (1.0 + (at second + 0.9) * 0.8 max: 0.35).
 
-                    at second < -0.74 ifTrue: [
-                        | caught |
-                        caught := (at first - held) abs < 0.28.
-                        caught
-                            ifTrue: [
-                                score := score + 1.
-                                speed := speed + 0.002.
-                                paddle uniform: 'warmth' value: (score / 20.0 min: 0.8).
-                                (LumaTune named: #blip channel: 3)
-                                    patch: #pulse; tempo: 320; loops: false;
-                                    notes: { #b5. #e6 }; play ]
-                            ifFalse: [
+                    landed
+                        ifTrue: [
+                            (at first - held) abs < (paddleHalf + fallerHalf * 0.75)
+                                ifTrue: [
+                                    score := score + 1.
+                                    speed := speed + 0.0022.
+                                    paddle uniform: 'warmth' value: (score / 20.0 min: 0.85).
+                                    (LumaTune named: #blip channel: 3)
+                                        patch: #pulse; tempo: 320; loops: false;
+                                        notes: { #b5. #e6 }; play.
+                                    respawn value ] ]
+                        ifFalse: [
+                            at second < -1.2 ifTrue: [
                                 score := 0.
-                                speed := 0.02.
+                                speed := 0.024.
                                 paddle uniform: 'warmth' value: 0.
                                 (LumaTune named: #blip channel: 3)
                                     patch: #bass; tempo: 260; loops: false;
-                                    notes: { #e2. #c2 }; play ].
-                        faller image: 'icon' form: icons atRandom.
-                        at := { (-8 to: 8) atRandom / 10.0. 1.0 } ].
+                                    notes: { #e2. #c2 }; play.
+                                respawn value ] ].
 
                     (Delay forMilliseconds: 33) wait ].
                     LumaTune hush ] fork.

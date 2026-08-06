@@ -190,6 +190,10 @@ host supplies (`v_uv`, `frag_color`, `u_resolution`, `u_time`,
   of the range. Getting this wrong binds each buffer where another was
   expected, which no compiler will catch.
 
+Keep `gl_Position.z` within 0..1. OpenGL's clip space runs -1..1 and
+Metal's runs 0..1, so a negative depth draws on GTK and is clipped
+away on macOS -- which no compiler will catch either.
+
 The preambles are generated text, and generated text is worth
 compiling. `ShaderVocabulary`, `CanvasGeometry` and `CanvasScene`
 depend on nothing but Foundation, so they can be built on their own
