@@ -149,8 +149,19 @@ enum PharoCanvasScenes {
         weak var area: PharoCanvasArea?
     }
 
+    private static var listening = false
+
     static func register(_ area: PharoCanvasArea, for scene: Int) {
+        listenOnce()
         areas[scene, default: []].append(WeakArea(area: area))
+    }
+
+    private static func listenOnce() {
+        guard !listening else { return }
+        listening = true
+        CanvasRegistry.onChange = { handle, scene in
+            apply(scene, to: handle)
+        }
     }
 
     static func apply(_ scene: CanvasScene, to handle: Int) {

@@ -294,38 +294,9 @@ public enum PharoLumaBindings {
                 parameters: { TFBasicType sint } return: TFBasicType void with: { handle }'.
         canvas class compile: 'primitives
             ^ #(points lines lineStrip triangles triangleStrip)'.
-        canvas class compile: 'effectNames
-            "The screen-filling effects this build carries."
-            | json |
-            json := (LumaHost invoke: ''luma_canvas_effect_names''
-                parameters: #() return: TFBasicType pointer with: #()) readString utf8Decoded.
-            ^ STONJSON fromString: json'.
-        canvas class compile: 'show: aName
-            | index |
-            index := self effectNames indexOf: aName asString.
-            index = 0 ifTrue: [ ^ false ].
-            ^ 1 = (LumaHost invoke: ''luma_canvas_show''
-                parameters: { TFBasicType sint } return: TFBasicType sint with: { index - 1 })'.
-        canvas class compile: 'source: aString
-            "A screen-filling effect written here."
-            | address answer |
-            address := LumaHost cString: aString.
-            answer := 1 = (LumaHost invoke: ''luma_canvas_show_source''
-                parameters: { TFBasicType pointer }
-                return: TFBasicType sint
-                with: { address }).
-            address free.
-            ^ answer'.
         canvas class compile: 'lastError
             ^ (LumaHost invoke: ''luma_canvas_last_error''
                 parameters: #() return: TFBasicType pointer with: #()) readString utf8Decoded'.
-        canvas class compile: 'report: anActivity
-            ^ LumaHost invoke: ''luma_canvas_report''
-                parameters: { TFBasicType float }
-                return: TFBasicType void
-                with: { anActivity asFloat }'.
-        canvas class compile: 'close
-            ^ LumaHost invoke: ''luma_canvas_close'''.
 
         drawable := Object << #LumaDrawable slots: { #scene. #handle }; package: 'Luma'; install.
         drawable compile: 'setScene: aScene drawable: aHandle

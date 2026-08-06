@@ -81,7 +81,6 @@ final class LumaApplication {
     }
 
     private func activate() {
-        PharoCanvasWindow.install(app: app)
         ensureDocumentWindow()
     }
 
