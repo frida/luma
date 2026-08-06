@@ -1,5 +1,5 @@
 import CGtk
-import CLuma
+@preconcurrency import CLuma
 import Foundation
 import GLib
 import Gtk
@@ -8,12 +8,12 @@ import LumaCore
 /// A GL widget that draws either a screen-filling fragment effect or a scene
 /// of the author's own drawables, redrawing off the frame clock.
 ///
-/// The GL entry points come from epoxy, which resolves them at run time; the
-/// plain `gl*` spellings are macros, so what is written here is what Swift
-/// can see.
+/// The GL entry points come from epoxy, which resolves them at run time: the
+/// plain `gl*` spellings are macros, so what is written here is what Swift can
+/// see, and they are mutable globals, which is what the import concedes.
 @MainActor
-public final class ShaderEffect {
-    public let widget: GLArea
+final class ShaderEffect {
+    let widget: GLArea
 
     /// Seconds for a reported arrival to fall to 1/e.
     private static let pulseHalfLife: Float = 0.4
@@ -37,7 +37,7 @@ public final class ShaderEffect {
 
     /// Pass no source to make a widget that draws a scene rather than a
     /// screen-filling effect.
-    public init(fragmentSource: String? = nil) {
+    init(fragmentSource: String? = nil) {
         self.fragmentSource = fragmentSource
 
         widget = GLArea()
@@ -68,7 +68,7 @@ public final class ShaderEffect {
 
     /// A widget draws as many of these as the author made, in the order they
     /// were added, instead of a screen-filling quad.
-    public func addDrawable() -> Int32 {
+    func addDrawable() -> Int32 {
         let drawable = Drawable(handle: nextHandle)
         nextHandle += 1
         drawables.append(drawable)
@@ -77,7 +77,7 @@ public final class ShaderEffect {
 
     /// Both sources are complete GLSL: the caller writes the declarations
     /// matching the attributes named here.
-    public func setProgram(_ handle: Int32, vertex: String, fragment: String) {
+    func setProgram(_ handle: Int32, vertex: String, fragment: String) {
         guard let drawable = drawable(handle) else { return }
 
         drawable.vertexSource = vertex
@@ -86,14 +86,14 @@ public final class ShaderEffect {
         drawable.changed = true
     }
 
-    public func addAttribute(_ handle: Int32, name: String, components: Int) {
+    func addAttribute(_ handle: Int32, name: String, components: Int) {
         guard let drawable = drawable(handle) else { return }
 
         drawable.attributes.append(Attribute(name: name, components: components))
         drawable.changed = true
     }
 
-    public func setVertices(_ handle: Int32, _ values: [Float], primitive: CanvasGeometry.Primitive) {
+    func setVertices(_ handle: Int32, _ values: [Float], primitive: CanvasGeometry.Primitive) {
         guard let drawable = drawable(handle) else { return }
 
         drawable.vertices = values
@@ -102,7 +102,7 @@ public final class ShaderEffect {
     }
 
     /// A uniform the author named, of whatever width they asked for.
-    public func setUniform(_ handle: Int32, name: String, values: [Float]) {
+    func setUniform(_ handle: Int32, name: String, values: [Float]) {
         guard let drawable = drawable(handle) else { return }
 
         if let existing = drawable.params.firstIndex(where: { $0.name == name }) {
@@ -117,7 +117,7 @@ public final class ShaderEffect {
 
     /// A run of values the shader reads by index, held as a texture of the
     /// given side so it can be far larger than a uniform allows.
-    public func setBuffer(_ handle: Int32, name: String, values: [Float], width: Int, height: Int) {
+    func setBuffer(_ handle: Int32, name: String, values: [Float], width: Int, height: Int) {
         guard let drawable = drawable(handle) else { return }
 
         if let existing = drawable.sheets.firstIndex(where: { $0.name == name }) {
@@ -131,7 +131,7 @@ public final class ShaderEffect {
     }
 
     /// A picture the shader samples across, one word per pixel.
-    public func setImage(_ handle: Int32, name: String, pixels: [UInt32], width: Int, height: Int) {
+    func setImage(_ handle: Int32, name: String, pixels: [UInt32], width: Int, height: Int) {
         guard let drawable = drawable(handle) else { return }
 
         if let existing = drawable.pictures.firstIndex(where: { $0.name == name }) {
@@ -146,7 +146,7 @@ public final class ShaderEffect {
 
     /// What a named value should do over time. Worked out on the frame clock,
     /// so the caller says it once.
-    public func drive(
+    func drive(
         _ handle: Int32,
         name: String,
         kind: CanvasDriver.Kind,
@@ -165,34 +165,34 @@ public final class ShaderEffect {
     }
 
     /// Where the author's vertices land: sixteen floats, column-major.
-    public func setTransform(_ handle: Int32, _ values: [Float]) {
+    func setTransform(_ handle: Int32, _ values: [Float]) {
         drawable(handle)?.transform = values
     }
 
-    public func setVisible(_ handle: Int32, _ visible: Bool) {
+    func setVisible(_ handle: Int32, _ visible: Bool) {
         drawable(handle)?.isVisible = visible
     }
 
-    public func removeDrawable(_ handle: Int32) {
+    func removeDrawable(_ handle: Int32) {
         drawables.removeAll { $0.handle == handle }
     }
 
     /// Feed u_scheme, by convention 1 for light and 0 for dark.
-    public func setScheme(_ value: Float) {
+    func setScheme(_ value: Float) {
         scheme = value
     }
 
     /// Report that events arrived at the given 0..1 rate. Feeds u_activity and
     /// spikes u_pulse; both decay here, so a caller only calls when there is
     /// news.
-    public func reportActivity(_ rate: Float) {
+    func reportActivity(_ rate: Float) {
         activity = rate
         pulsedAt = g_get_monotonic_time()
     }
 
     /// Feed u_data and u_data_count, which is how a caller pictures something
     /// it has measured.
-    public func setData(_ values: [Float]) {
+    func setData(_ values: [Float]) {
         data = Array(values.prefix(64))
         data.append(contentsOf: repeatElement(0, count: 64 - data.count))
         dataCount = min(values.count, 64)
@@ -200,12 +200,12 @@ public final class ShaderEffect {
 
     /// Feed u_mvp: orthographic for a flat drawing, perspective for one with
     /// depth.
-    public func setTransform(_ values: [Float]) {
+    func setTransform(_ values: [Float]) {
         transform = values
     }
 
     /// Colour shown until the effect's program has linked.
-    public func setClearColor(red: Float, green: Float, blue: Float) {
+    func setClearColor(red: Float, green: Float, blue: Float) {
         clearColor = (red, green, blue)
     }
 

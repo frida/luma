@@ -2,7 +2,6 @@ import CGtk
 import CLuma
 import Gtk
 import LumaCore
-import LumaGL
 
 /// A scene drawn inside an object's views, rather than off in a window. The
 /// image holds the scene and changes it; this follows, rebuilding only what

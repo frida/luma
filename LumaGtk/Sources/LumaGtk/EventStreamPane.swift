@@ -6,7 +6,6 @@ import Foundation
 import struct Graphene.PointRef
 import Gtk
 import LumaCore
-import LumaGL
 import Observation
 
 private func computePoint<Src: WidgetProtocol, Dst: WidgetProtocol>(

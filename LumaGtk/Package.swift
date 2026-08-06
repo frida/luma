@@ -113,25 +113,9 @@ let package = Package(
             cxxSettings: cLumaCxxSettings,
             linkerSettings: cLumaLinkerSettings
         ),
-        .target(
-            name: "LumaGL",
-            dependencies: [
-                .product(name: "LumaCore", package: "luma"),
-                .product(name: "Gtk", package: "SwiftGtk"),
-                "CLuma",
-            ],
-            path: "Sources/LumaGL",
-            swiftSettings: [
-                // epoxy resolves GL through mutable function pointers, which
-                // Swift 6 rejects as shared mutable state on every call.
-                .swiftLanguageMode(.v5),
-                .unsafeFlags(pkgConfigFlags(["epoxy"]).flatMap { ["-Xcc", $0] }),
-            ]
-        ),
         .executableTarget(
             name: "LumaGtk",
             dependencies: [
-                "LumaGL",
                 .product(name: "LumaCore", package: "luma"),
                 .product(name: "Gtk", package: "SwiftGtk"),
                 .product(name: "Adw", package: "SwiftAdw"),
