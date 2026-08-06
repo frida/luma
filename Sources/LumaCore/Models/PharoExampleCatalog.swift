@@ -65,7 +65,7 @@ public enum PharoExampleCatalog {
                 code: """
                 "The scene is the host's; the image keeps its handle and says
                  which one to draw. Inspect the answer to find the Scene tab.
-                 scene and shape stay put for the snippets below."
+                 shape stays put for the two snippets that change it."
                 scene := LumaCanvas new.
                 shape := scene addDrawable.
                 shape
@@ -78,15 +78,7 @@ public enum PharoExampleCatalog {
                     fragmentSource: 'void main() { frag_color = vec4(vc * tint, 1.0); }';
                     identity;
                     mesh: #(-0.8 -0.6 0   0.8 -0.6 0   0 0.8 0) primitive: #triangles.
-
-                "A method cannot see the variables here, but the handle is
-                 only a number, so it can be written straight in."
-                thing := Object << #DemoThing slots: {}; package: 'Luma'; install.
-                thing compile: 'gtSceneFor: aView
-                    <gtView>
-                    ^ aView canvas title: ''Scene''; scene: [ ',
-                    scene handle printString, ' ]'.
-                thing new
+                scene
                 """),
             PharoExample(
                 title: "Say what a value should do, and leave it to draw",
@@ -101,7 +93,8 @@ public enum PharoExampleCatalog {
                 code: """
                 "A buffer is read by index through <name>At, held as a texture,
                  so handing over a fresh window is all a scrub costs."
-                profile := scene addDrawable.
+                profileScene := LumaCanvas new.
+                profile := profileScene addDrawable.
                 profile
                     attribute: 'p' components: 2;
                     varying: 'uv' components: 2;
@@ -112,7 +105,8 @@ public enum PharoExampleCatalog {
                     fragmentSource: 'void main() {
                         float v = samplesAt(int(uv.x * 255.0));
                         frag_color = vec4(uv.y < v ? vec3(0.2, 0.9, 0.5) : vec3(0.09), 1.0); }';
-                    mesh: #(-1 -1  1 -1  -1 1   1 -1  1 1  -1 1) primitive: #triangles
+                    mesh: #(-1 -1  1 -1  -1 1   1 -1  1 1  -1 1) primitive: #triangles.
+                profileScene
                 """),
             PharoExample(
                 title: "Hide a drawable, and bring it back",
@@ -128,7 +122,8 @@ public enum PharoExampleCatalog {
                 "Nothing special: a drawable whose two triangles cover the
                  view, so an effect sits among an object's views like the
                  rest of a scene."
-                backdrop := scene addDrawable.
+                backdropScene := LumaCanvas new.
+                backdrop := backdropScene addDrawable.
                 backdrop
                     attribute: 'p' components: 2;
                     varying: 'uv' components: 2;
@@ -138,7 +133,8 @@ public enum PharoExampleCatalog {
                     fragmentSource: 'void main() {
                         float d = length(uv - 0.5);
                         frag_color = vec4(0.5 + 0.5 * sin(u_time + d * 24.0), uv.x, uv.y, 1.0); }';
-                    mesh: #(-1 -1  1 -1  -1 1   1 -1  1 1  -1 1) primitive: #triangles
+                    mesh: #(-1 -1  1 -1  -1 1   1 -1  1 1  -1 1) primitive: #triangles.
+                backdropScene
                 """),
         ]),
         ("Sound", [

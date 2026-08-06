@@ -163,13 +163,6 @@ public func luma_drawable_commit(_ scene: Int32, _ drawable: Int32) -> Int32 {
     return 1
 }
 
-@_cdecl("luma_scene_show")
-public func luma_scene_show(_ scene: Int32) -> Int32 {
-    guard let subject = CanvasRegistry.shared.scene(Int(scene)) else { return 0 }
-    CanvasRegistry.shared.publish(Int(scene), subject)
-    return 1
-}
-
 /// A uniform the author named, of whatever width they gave it. Declaring it
 /// is what lets the host write the declaration and pack the buffer to match.
 @_cdecl("luma_drawable_set_uniform")

@@ -275,6 +275,9 @@ public enum PharoLumaBindings {
         canvas compile: 'handle ^ handle'.
         canvas compile: 'printOn: aStream
             aStream nextPutAll: ''LumaCanvas(''; print: handle; nextPut: $)'.
+        canvas compile: 'gtSceneFor: aView
+            <gtView>
+            ^ aView canvas title: ''Scene''; scene: [ handle ]'.
         canvas compile: 'addDrawable
             "One more thing for the scene to draw."
             ^ LumaDrawable new
@@ -286,9 +289,6 @@ public enum PharoLumaBindings {
                 parameters: { TFBasicType sint. TFBasicType sint }
                 return: TFBasicType void
                 with: { handle. aDrawable handle }'.
-        canvas compile: 'show
-            ^ 1 = (LumaHost invoke: ''luma_scene_show''
-                parameters: { TFBasicType sint } return: TFBasicType sint with: { handle })'.
         canvas compile: 'destroy
             ^ LumaHost invoke: ''luma_scene_destroy''
                 parameters: { TFBasicType sint } return: TFBasicType void with: { handle }'.
