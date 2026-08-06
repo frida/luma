@@ -20,6 +20,10 @@ final class PharoCanvasArea {
         var vertexGLSL: String
         var fragmentGLSL: String
         var vertices: [Float]
+        /// What the runs of values and pictures were stamped when they were
+        /// last handed over, so a change to a uniform does not re-upload a
+        /// texture that has not moved.
+        var stamps: [UInt64] = []
     }
 
     init(scene: Int) {
@@ -81,15 +85,19 @@ final class PharoCanvasArea {
             for uniform in drawable.uniforms {
                 area.setUniform(record.handle, name: uniform.name, values: uniform.values)
             }
-            for sheet in drawable.buffers {
-                area.setBuffer(
-                    record.handle, name: sheet.name, values: sheet.padded(),
-                    width: sheet.width, height: sheet.height)
-            }
-            for picture in drawable.images {
-                area.setImage(
-                    record.handle, name: picture.name, pixels: picture.pixels,
-                    width: picture.width, height: picture.height)
+            let stamps = drawable.buffers.map(\.stamp) + drawable.images.map(\.stamp)
+            if record.stamps != stamps {
+                for sheet in drawable.buffers {
+                    area.setBuffer(
+                        record.handle, name: sheet.name, values: sheet.padded(),
+                        width: sheet.width, height: sheet.height)
+                }
+                for picture in drawable.images {
+                    area.setImage(
+                        record.handle, name: picture.name, pixels: picture.pixels,
+                        width: picture.width, height: picture.height)
+                }
+                record.stamps = stamps
             }
             for driver in drawable.drivers {
                 area.drive(

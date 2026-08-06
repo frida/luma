@@ -72,12 +72,17 @@ public struct CanvasImage: Sendable, Equatable {
     public var pixels: [UInt32]
     public let width: Int
     public let height: Int
+    /// Bumped whenever the pixels are handed over, so a renderer can tell a
+    /// fresh picture from the one it holds without reading a megabyte to
+    /// find out they match.
+    public let stamp: UInt64
 
-    public init(name: String, pixels: [UInt32], width: Int, height: Int) {
+    public init(name: String, pixels: [UInt32], width: Int, height: Int, stamp: UInt64) {
         self.name = name
         self.pixels = pixels
         self.width = width
         self.height = height
+        self.stamp = stamp
     }
 }
 
@@ -87,10 +92,13 @@ public struct CanvasImage: Sendable, Equatable {
 public struct CanvasBuffer: Sendable, Equatable {
     public let name: String
     public var values: [Float]
+    /// As a picture's, and for the same reason.
+    public let stamp: UInt64
 
-    public init(name: String, values: [Float]) {
+    public init(name: String, values: [Float], stamp: UInt64) {
         self.name = name
         self.values = values
+        self.stamp = stamp
     }
 
     /// Texture side, chosen so the run fits a square-ish sheet the driver
@@ -210,7 +218,9 @@ public final class CanvasRegistry: Sendable {
     private struct State {
         var scenes: [Int: CanvasScene] = [:]
         var inputs: [Int: CanvasInput] = [:]
+        var pending: Set<Int> = []
         var nextHandle = 1
+        var nextStamp: UInt64 = 1
     }
 
     /// Told when a scene changes, so whatever shows it can follow. Called on
@@ -223,6 +233,14 @@ public final class CanvasRegistry: Sendable {
             state.nextHandle += 1
             state.scenes[handle] = CanvasScene()
             return handle
+        }
+    }
+
+    /// Marks a run of values or a picture as freshly handed over.
+    public func nextStamp() -> UInt64 {
+        state.withLock { state in
+            state.nextStamp += 1
+            return state.nextStamp
         }
     }
 
@@ -288,10 +306,20 @@ public final class CanvasRegistry: Sendable {
         state.withLock { change(&$0.inputs[handle, default: CanvasInput()]) }
     }
 
-    /// Hands the scene to whoever shows it, on the thread they expect.
-    public func publish(_ handle: Int, _ scene: CanvasScene) {
+    /// Hands the scene to whoever shows it, on the thread they expect. A
+    /// snippet setting four uniforms in a row is one change to draw, so only
+    /// the first schedules and what arrives is the scene as it ends up.
+    public func publish(_ handle: Int) {
+        let waiting = state.withLock { !$0.pending.insert(handle).inserted }
+        guard !waiting else { return }
+
         DispatchQueue.main.async {
-            MainActor.assumeIsolated { CanvasRegistry.onChange?(handle, scene) }
+            let latest = self.state.withLock { state -> CanvasScene? in
+                state.pending.remove(handle)
+                return state.scenes[handle]
+            }
+            guard let latest else { return }
+            MainActor.assumeIsolated { CanvasRegistry.onChange?(handle, latest) }
         }
     }
 }
