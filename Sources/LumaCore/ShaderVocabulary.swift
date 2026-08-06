@@ -14,6 +14,9 @@ public enum ShaderVocabulary {
             float u_activity;
             float u_pulse;
             float u_data_count;
+            // Physical pixels to a logical one, so a shader that wants to
+            // land on whole pixels can. One on an ordinary display.
+            float u_scale;
             // Values the caller fed the canvas, up to 64 of them, packed four
             // to a vec4. Read them through dataAt.
             vec4 u_data[16];

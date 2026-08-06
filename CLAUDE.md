@@ -195,10 +195,11 @@ the printable range once into a Form, hands it over as a picture, and
 each string becomes two triangles a letter. Saying something else goes
 through `remesh:primitive:`, which sets vertices without a commit, so
 text that changes every frame costs a buffer rather than a rasterise
-and a shader compile. A letter covers the pixels its atlas cell
-covers, texel for texel -- ask for a larger point size to get larger
-lettering, because scaling the quads instead resamples the glyphs and
-they go soft.
+and a shader compile. Its point size is in the units the rest of
+the interface uses, and the atlas is rasterised to match: `u_scale`
+carries how many physical pixels a logical one is worth, so the quads
+land on whole pixels instead of being scaled, which is what would
+make the lettering soft.
 
 Keep `gl_Position.z` within 0..1. OpenGL's clip space runs -1..1 and
 Metal's runs 0..1, so a negative depth draws on GTK and is clipped

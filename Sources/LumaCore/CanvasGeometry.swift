@@ -164,6 +164,7 @@ public struct CanvasGeometry: Sendable, Equatable {
                 uniform float u_activity;
                 uniform float u_pulse;
                 uniform float u_data_count;
+                uniform float u_scale;
                 uniform vec4 u_data[16];
                 uniform mat4 u_mvp;
                 float dataAt(int i) { return u_data[i / 4][i - (i / 4) * 4]; }

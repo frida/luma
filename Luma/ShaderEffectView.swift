@@ -162,6 +162,7 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
         uniforms[4] = activity
         uniforms[5] = pulsedAt.map { exp(-Float(now - $0) / pulseHalfLife) } ?? 0
         uniforms[6] = Float(min(data.count, Self.dataCapacity))
+        uniforms[7] = Float(view.window?.backingScaleFactor ?? 1)
         for (offset, value) in data.prefix(Self.dataCapacity).enumerated() {
             uniforms[Self.dataWordOffset + offset] = value
         }
@@ -312,9 +313,10 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
         displayLink?.invalidate()
     }
 
-    /// The block std140 lays out: resolution, time, scheme, activity, pulse
-    /// and the value count fill the first six words, a seventh pads the vec4
-    /// array to its sixteen-byte alignment, and the values follow.
+    /// The block std140 lays out: resolution, time, scheme, activity, pulse,
+    /// the value count and the scale fill the first eight words, which is
+    /// what the vec4 array's sixteen-byte alignment leaves, and the values
+    /// follow.
     public static let dataCapacity = 64
     static let dataWordOffset = 8
     /// A mat4 aligns to sixteen bytes, so it follows the value array.
