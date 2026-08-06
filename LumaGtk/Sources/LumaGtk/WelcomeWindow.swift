@@ -5,6 +5,7 @@ import Foundation
 import Gdk
 import Gtk
 import LumaCore
+import LumaGL
 import Observation
 
 @MainActor
@@ -36,7 +37,7 @@ final class WelcomeWindow {
     private var quickActionHandlers: [UInt: () -> Void] = [:]
     private var labRowsByIdentifier: [UInt: WelcomeModel.LabSummary] = [:]
     private var openSignInDialog: Adw.Dialog?
-    private var backdropWidget: UnsafeMutableRawPointer?
+    private var backdropWidget: ShaderEffect?
     private var wordmarkLabel: Label?
     private var themeToken: gulong = 0
 
@@ -121,22 +122,21 @@ final class WelcomeWindow {
         let overlay = Overlay()
         overlay.hexpand = true
         overlay.vexpand = true
-        if let raw = luma_shader_effect_new(ShaderEffects.welcomeBackdrop) {
-            backdropWidget = raw
-            applyBackdropAppearance(raw)
-            themeToken = ThemeWatcher.subscribe(owner: self) { owner in
-                if let raw = owner.backdropWidget {
-                    owner.applyBackdropAppearance(raw)
-                }
-                if let wordmark = owner.wordmarkLabel {
-                    owner.applyDarkClass(wordmark)
-                }
+        let backdropEffect = ShaderEffect(fragmentSource: ShaderEffects.welcomeBackdrop)
+        backdropWidget = backdropEffect
+        applyBackdropAppearance(backdropEffect)
+        themeToken = ThemeWatcher.subscribe(owner: self) { owner in
+            if let effect = owner.backdropWidget {
+                owner.applyBackdropAppearance(effect)
             }
-            let backdrop = WidgetRef(raw: raw)
-            backdrop.hexpand = true
-            backdrop.vexpand = true
-            overlay.set(child: backdrop)
+            if let wordmark = owner.wordmarkLabel {
+                owner.applyDarkClass(wordmark)
+            }
         }
+        backdropEffect.widget.hexpand = true
+        backdropEffect.widget.vexpand = true
+        overlay.set(child: backdropEffect.widget)
+
         content.hexpand = true
         content.vexpand = true
         overlay.addOverlay(widget: content)
@@ -144,13 +144,13 @@ final class WelcomeWindow {
         return overlay
     }
 
-    private func applyBackdropAppearance(_ widget: UnsafeMutableRawPointer) {
+    private func applyBackdropAppearance(_ effect: ShaderEffect) {
         let dark = ThemeWatcher.currentAppearance() == .dark
-        luma_shader_effect_set_scheme(widget, dark ? 0.0 : 1.0)
+        effect.setScheme(dark ? 0 : 1)
         if dark {
-            luma_shader_effect_set_clear_color(widget, 0.075, 0.050, 0.065)
+            effect.setClearColor(red: 0.075, green: 0.050, blue: 0.065)
         } else {
-            luma_shader_effect_set_clear_color(widget, 0.994, 0.991, 0.986)
+            effect.setClearColor(red: 0.994, green: 0.991, blue: 0.986)
         }
     }
 

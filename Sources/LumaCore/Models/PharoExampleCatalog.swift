@@ -134,11 +134,13 @@ public enum PharoExampleCatalog {
                         image: 'icon' form: session icon;
                         vertexSource: 'void main() {
                             uv = vec2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
-                            gl_Position = u_mvp * vec4(p * 0.2 + centre, 0.0, 1.0); }'
+                            vec2 square = vec2(min(u_resolution.y / u_resolution.x, 1.0),
+                                               min(u_resolution.x / u_resolution.y, 1.0));
+                            gl_Position = u_mvp * vec4((p * 0.2 + centre) * square, 0.0, 1.0); }'
                         fragmentSource: 'void main() {
                             vec4 c = texture(icon, uv);
-                            if (c.a < 0.1) discard;
-                            frag_color = c; }';
+                            if (c.a < 0.01) discard;
+                            frag_color = vec4(c.rgb * c.a, c.a); }';
                         mesh: #(-1 -1  1 -1  -1 1   1 -1  1 1  -1 1) primitive: #triangles;
                         oscillate: 'centre'
                             between: { angle sin * 0.55. angle cos * 0.55 }

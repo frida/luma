@@ -2,6 +2,7 @@ import CGtk
 import CLuma
 import Gtk
 import LumaCore
+import LumaGL
 
 /// A scene drawn inside an object's views, rather than off in a window. The
 /// image holds the scene and changes it; this follows, rebuilding only what
@@ -11,7 +12,7 @@ final class PharoCanvasArea {
     let widget: Widget
 
     private let scene: Int
-    private var area: UnsafeMutableRawPointer?
+    private let area: ShaderEffect
     private var themeToken: gulong = 0
     private var built: [Int: Built] = [:]
 
@@ -24,25 +25,21 @@ final class PharoCanvasArea {
 
     init(scene: Int) {
         self.scene = scene
+        area = ShaderEffect()
 
         let box = Box(orientation: .vertical, spacing: 0)
         box.hexpand = true
         box.vexpand = true
         widget = box
 
-        guard let raw = luma_shader_effect_new(nil) else { return }
-        area = raw
-        applyAppearance(raw)
+        applyAppearance()
         themeToken = ThemeWatcher.subscribe(owner: self) { owner in
-            if let raw = owner.area {
-                owner.applyAppearance(raw)
-            }
+            owner.applyAppearance()
         }
 
-        let surface = WidgetRef(raw: raw)
-        surface.hexpand = true
-        surface.vexpand = true
-        box.append(child: surface)
+        area.widget.hexpand = true
+        area.widget.vexpand = true
+        box.append(child: area.widget)
 
         PharoCanvasScenes.register(self, for: scene)
         if let current = CanvasRegistry.shared.scene(scene) {
@@ -55,21 +52,18 @@ final class PharoCanvasArea {
     }
 
     func apply(_ scene: CanvasScene) {
-        guard let area else { return }
-
         for handle in scene.order {
             guard let drawable = scene.drawables[handle], !drawable.vertexGLSL.isEmpty else { continue }
 
             var record = built[handle] ?? Built(
-                handle: luma_shader_effect_add_drawable(area),
-                vertexGLSL: "", fragmentGLSL: "", vertices: [])
+                handle: area.addDrawable(), vertexGLSL: "", fragmentGLSL: "", vertices: [])
 
             if record.vertexGLSL != drawable.vertexGLSL || record.fragmentGLSL != drawable.fragmentGLSL {
-                luma_shader_effect_drawable_set_program(
-                    area, record.handle, drawable.vertexGLSL, drawable.fragmentGLSL)
+                area.setProgram(
+                    record.handle, vertex: drawable.vertexGLSL, fragment: drawable.fragmentGLSL)
                 for attribute in drawable.geometry.attributes {
-                    luma_shader_effect_drawable_add_attribute(
-                        area, record.handle, attribute.name, Int32(attribute.components))
+                    area.addAttribute(
+                        record.handle, name: attribute.name, components: attribute.components)
                 }
                 record.vertexGLSL = drawable.vertexGLSL
                 record.fragmentGLSL = drawable.fragmentGLSL
@@ -77,72 +71,49 @@ final class PharoCanvasArea {
             }
 
             if record.vertices != drawable.geometry.vertices {
-                var vertices = drawable.geometry.vertices
-                vertices.withUnsafeMutableBufferPointer { buffer in
-                    luma_shader_effect_drawable_set_vertices(
-                        area, record.handle, buffer.baseAddress, Int32(buffer.count),
-                        drawable.geometry.primitive.rawValue)
-                }
+                area.setVertices(
+                    record.handle, drawable.geometry.vertices,
+                    primitive: drawable.geometry.primitive)
                 record.vertices = drawable.geometry.vertices
             }
 
-            var transform = drawable.transform
-            transform.withUnsafeMutableBufferPointer { buffer in
-                luma_shader_effect_drawable_set_transform(area, record.handle, buffer.baseAddress)
-            }
+            area.setTransform(record.handle, drawable.transform)
             for uniform in drawable.uniforms {
-                var values = uniform.values
-                values.withUnsafeMutableBufferPointer { buffer in
-                    luma_shader_effect_drawable_set_uniform(
-                        area, record.handle, uniform.name, buffer.baseAddress, Int32(buffer.count))
-                }
+                area.setUniform(record.handle, name: uniform.name, values: uniform.values)
             }
             for sheet in drawable.buffers {
-                var padded = sheet.padded()
-                padded.withUnsafeMutableBufferPointer { buffer in
-                    luma_shader_effect_drawable_set_buffer(
-                        area, record.handle, sheet.name, buffer.baseAddress, Int32(buffer.count),
-                        Int32(sheet.width), Int32(sheet.height))
-                }
+                area.setBuffer(
+                    record.handle, name: sheet.name, values: sheet.padded(),
+                    width: sheet.width, height: sheet.height)
             }
             for picture in drawable.images {
-                var pixels = picture.pixels
-                pixels.withUnsafeMutableBufferPointer { buffer in
-                    luma_shader_effect_drawable_set_image(
-                        area, record.handle, picture.name, buffer.baseAddress,
-                        Int32(picture.width), Int32(picture.height))
-                }
+                area.setImage(
+                    record.handle, name: picture.name, pixels: picture.pixels,
+                    width: picture.width, height: picture.height)
             }
             for driver in drawable.drivers {
-                var from = driver.from
-                var to = driver.to
-                from.withUnsafeMutableBufferPointer { source in
-                    to.withUnsafeMutableBufferPointer { target in
-                        luma_shader_effect_drawable_drive_uniform(
-                            area, record.handle, driver.name, driver.kind.rawValue,
-                            source.baseAddress, target.baseAddress,
-                            Int32(source.count), driver.seconds)
-                    }
-                }
+                area.drive(
+                    record.handle, name: driver.name, kind: driver.kind,
+                    from: driver.from, to: driver.to, seconds: driver.seconds)
             }
-            luma_shader_effect_drawable_set_visible(area, record.handle, drawable.isVisible)
+            area.setVisible(record.handle, drawable.isVisible)
 
             built[handle] = record
         }
 
         for (handle, record) in built where scene.drawables[handle] == nil {
-            luma_shader_effect_remove_drawable(area, record.handle)
+            area.removeDrawable(record.handle)
             built[handle] = nil
         }
     }
 
-    private func applyAppearance(_ raw: UnsafeMutableRawPointer) {
+    private func applyAppearance() {
         let dark = ThemeWatcher.currentAppearance() == .dark
-        luma_shader_effect_set_scheme(raw, dark ? 0.0 : 1.0)
+        area.setScheme(dark ? 0 : 1)
         if dark {
-            luma_shader_effect_set_clear_color(raw, 0.075, 0.050, 0.065)
+            area.setClearColor(red: 0.075, green: 0.050, blue: 0.065)
         } else {
-            luma_shader_effect_set_clear_color(raw, 0.994, 0.991, 0.986)
+            area.setClearColor(red: 0.994, green: 0.991, blue: 0.986)
         }
     }
 }

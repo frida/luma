@@ -6,6 +6,7 @@ import Foundation
 import struct Graphene.PointRef
 import Gtk
 import LumaCore
+import LumaGL
 import Observation
 
 private func computePoint<Src: WidgetProtocol, Dst: WidgetProtocol>(
@@ -65,7 +66,7 @@ final class EventStreamPane {
     private var pendingNewEvents: Int = 0
     private var lastSeenTotal: Int = 0
     private let eventRate = EventRate()
-    private var activityStrip: UnsafeMutableRawPointer?
+    private var activityStrip: ShaderEffect?
     private var activityThemeToken: gulong = 0
     private let collapsedHeightRequest: Int = 36
     private let expandedHeightRequest: Int = 320
@@ -217,13 +218,11 @@ final class EventStreamPane {
         headerSeparator.visible = false
         widget.append(child: headerSeparator)
 
-        if let strip = luma_shader_effect_new(ShaderEffects.eventField) {
-            activityStrip = strip
-            let stripWidget = WidgetRef(raw: strip)
-            stripWidget.hexpand = true
-            stripWidget.setSizeRequest(width: -1, height: 3)
-            widget.append(child: stripWidget)
-        }
+        let strip = ShaderEffect(fragmentSource: ShaderEffects.eventField)
+        activityStrip = strip
+        strip.widget.hexpand = true
+        strip.widget.setSizeRequest(width: -1, height: 3)
+        widget.append(child: strip.widget)
 
         listOverlay = Overlay()
         listOverlay.hexpand = true
@@ -298,13 +297,13 @@ final class EventStreamPane {
         ThemeWatcher.unsubscribe(handlerID: activityThemeToken)
     }
 
-    private func applyStripAppearance(_ strip: UnsafeMutableRawPointer) {
+    private func applyStripAppearance(_ strip: ShaderEffect) {
         let dark = ThemeWatcher.currentAppearance() == .dark
-        luma_shader_effect_set_scheme(strip, dark ? 0.0 : 1.0)
+        strip.setScheme(dark ? 0 : 1)
         if dark {
-            luma_shader_effect_set_clear_color(strip, 0.105, 0.082, 0.098)
+            strip.setClearColor(red: 0.105, green: 0.082, blue: 0.098)
         } else {
-            luma_shader_effect_set_clear_color(strip, 0.980, 0.968, 0.958)
+            strip.setClearColor(red: 0.980, green: 0.968, blue: 0.958)
         }
     }
 
@@ -312,7 +311,7 @@ final class EventStreamPane {
         guard let rate = eventRate.observe(totalReceived: totalReceived, at: Date.timeIntervalSinceReferenceDate)
         else { return }
         if let strip = activityStrip {
-            luma_shader_effect_report_activity(strip, rate)
+            strip.reportActivity(rate)
         }
         engine?.eventChime.report(activity: rate)
     }
