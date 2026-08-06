@@ -249,7 +249,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
             : Float(view.window?.backingScaleFactor ?? 1)
         uniforms[7] = scale
         CanvasRegistry.shared.reportScale(sceneHandle, scale)
-        trace(view, scale: scale)
+        trace(view, scale: scale, uniformWidth: uniforms[0], uniformHeight: uniforms[1])
 
         for handle in scene.order {
             guard let subject = scene.drawables[handle], subject.isVisible,
@@ -294,7 +294,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
 
     /// What a scene is actually being drawn with, for when what it looks like
     /// and what it was asked for disagree. Set LUMA_CANVAS_TRACE to see it.
-    private func trace(_ view: MTKView, scale: Float) {
+    private func trace(_ view: MTKView, scale: Float, uniformWidth: Float, uniformHeight: Float) {
         guard ProcessInfo.processInfo.environment["LUMA_CANVAS_TRACE"] != nil else { return }
         let now = CACurrentMediaTime()
         guard now - tracedAt > 1 else { return }
@@ -303,8 +303,10 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         let sizes = scene.order.compactMap { scene.drawables[$0] }.map { subject in
             subject.uniforms.map { "\($0.name)=\($0.values)" }.joined(separator: " ")
         }
+        let uniformResolution = "\(uniformWidth) x \(uniformHeight)"
         FileHandle.standardError.write(Data("""
-            canvas: drawable \(view.drawableSize) bounds \(view.bounds.size) scale \(scale)
+            canvas: drawable \(view.drawableSize) bounds \(view.bounds.size) \
+            scale \(scale) u_resolution \(uniformResolution)
             canvas: \(sizes.joined(separator: " | "))
 
             """.utf8))
