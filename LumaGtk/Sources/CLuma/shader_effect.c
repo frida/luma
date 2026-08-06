@@ -26,6 +26,14 @@ typedef struct {
     float values[16];
     int components;
     GLint location;
+    // Set when the value is moving on its own: worked out here each frame
+    // rather than pushed from the image.
+    gboolean driven;
+    int driver_kind;
+    float from[16];
+    float to[16];
+    float seconds;
+    gint64 started_at;
 } LumaParam;
 
 // One thing the widget draws, with its own stages, vertices and place. A
@@ -225,6 +233,44 @@ luma_shader_effect_drawable_set_uniform(void *widget, int handle,
 }
 
 void
+luma_shader_effect_drawable_drive_uniform(void *widget, int handle, const char *name,
+                                          int kind, const float *from, const float *to,
+                                          int count, float seconds)
+{
+    LumaShaderEffect *self = effect_for(GTK_WIDGET(widget));
+    LumaDrawable *drawable = drawable_for(self, handle);
+    if (drawable == NULL)
+        return;
+    if (count > 16)
+        count = 16;
+
+    LumaParam *param = NULL;
+    for (int index = 0; index != drawable->param_count; index++) {
+        if (strcmp(drawable->params[index].name, name) == 0) {
+            param = &drawable->params[index];
+            break;
+        }
+    }
+    if (param == NULL) {
+        if (drawable->param_count == MAX_PARAMS)
+            return;
+        param = &drawable->params[drawable->param_count++];
+        param->name = g_strdup(name);
+        param->location = -1;
+        drawable->changed = TRUE;
+    }
+
+    param->components = count;
+    param->driven = TRUE;
+    param->driver_kind = kind;
+    param->seconds = seconds;
+    param->started_at = g_get_monotonic_time();
+    memcpy(param->from, from, count * sizeof(float));
+    memcpy(param->to, to, count * sizeof(float));
+    memcpy(param->values, from, count * sizeof(float));
+}
+
+void
 luma_shader_effect_drawable_set_transform(void *widget, int handle, const float *values)
 {
     LumaDrawable *drawable = drawable_for(effect_for(GTK_WIDGET(widget)), handle);
@@ -414,9 +460,23 @@ on_render(GtkGLArea *area, GdkGLContext *context, gpointer user_data)
 
             glUseProgram(drawable->program);
             for (int at = 0; at != drawable->param_count; at++) {
-                const LumaParam *param = &drawable->params[at];
+                LumaParam *param = &drawable->params[at];
                 if (param->location < 0)
                     continue;
+                if (param->driven) {
+                    float since = (float)((now_us - param->started_at) / 1000000.0);
+                    float fraction;
+                    if (param->driver_kind == 1) {
+                        float period = param->seconds <= 0.0f ? 1.0f : param->seconds;
+                        fraction = 0.5f - 0.5f * cosf(2.0f * (float)M_PI * since / period);
+                    } else {
+                        fraction = param->seconds <= 0.0f
+                            ? 1.0f
+                            : fminf(fmaxf(since / param->seconds, 0.0f), 1.0f);
+                    }
+                    for (int c = 0; c != param->components; c++)
+                        param->values[c] = param->from[c] + (param->to[c] - param->from[c]) * fraction;
+                }
                 switch (param->components) {
                     case 1: glUniform1fv(param->location, 1, param->values); break;
                     case 2: glUniform2fv(param->location, 1, param->values); break;
