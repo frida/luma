@@ -308,14 +308,17 @@ public enum PharoExampleCatalog {
 
                 "Half sizes, so a catch is judged on the edges rather than
                  the centres, and on the step the faller crosses the paddle."
-                tally := LumaText on: game addDrawable.
-                tally at: #(-0.94 0.82) size: 0.09 tint: #(1 0.95 0.8); show: 'SCORE 0'.
+                tally := LumaText on: game addDrawable pointSize: 20.
+                tally pad: #(18 18) tint: #(1 0.95 0.8); show: 'SCORE 0'.
 
                 fallerHalf := 0.14. paddleHalf := 0.22. paddleTop := -0.755.
                 at := { 0. 1 }. speed := 0.024. held := 0. score := 0.
                 respawn := [
-                    faller image: 'icon' form: icons atRandom.
-                    at := { (-85 to: 85) atRandom / 100.0. 1.15 } ].
+                    "Move it to the top before showing the next icon, or the
+                     one just caught is seen changing face at the paddle."
+                    at := { (-85 to: 85) atRandom / 100.0. 1.15 }.
+                    faller ramp: 'at' from: at to: at over: 0.
+                    faller image: 'icon' form: icons atRandom ].
                 playing := [ [ game isDown: #escape ] whileFalse: [
                     | wanted below landed was fell |
                     wanted := (game pointer first max: -0.95) min: 0.95.
@@ -373,9 +376,9 @@ public enum PharoExampleCatalog {
                  no rasterising, no recompiling -- so it stands up to text
                  that changes every frame."
                 words := LumaCanvas new.
-                sign := LumaText on: words addDrawable.
+                sign := LumaText on: words addDrawable pointSize: 34.
                 sign
-                    at: #(-0.85 0) size: 0.14 tint: #(0.2 0.95 0.75);
+                    pad: #(24 24) tint: #(0.2 0.95 0.75);
                     show: 'HELLO FROM THE GPU'.
                 words
                 """),

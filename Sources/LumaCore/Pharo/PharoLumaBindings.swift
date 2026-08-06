@@ -492,13 +492,23 @@ public enum PharoLumaBindings {
 
         label := Object << #LumaText slots: { #drawable. #font. #cell. #columns }; package: 'Luma'; install.
         label class compile: 'on: aDrawable
+            ^ self on: aDrawable pointSize: 22'.
+        label class compile: 'on: aDrawable pointSize: aSize
             "Lettering for a scene. The glyphs are drawn once into an atlas the
              shader samples, so saying something else costs a buffer of
-             corners rather than a rasterisation."
-            ^ self basicNew setDrawable: aDrawable; buildAtlas; buildStages; yourself'.
-        label compile: 'setDrawable: aDrawable
+             corners rather than a rasterisation.
+
+             What is drawn is the size it was drawn at: a letter covers the
+             pixels its cell covers, texel for texel, which is what keeps it
+             sharp. Ask for a larger point size to get larger lettering."
+            ^ self basicNew
+                setDrawable: aDrawable pointSize: aSize;
+                buildAtlas;
+                buildStages;
+                yourself'.
+        label compile: 'setDrawable: aDrawable pointSize: aSize
             drawable := aDrawable.
-            font := LogicalFont familyName: ''Source Code Pro'' pointSize: 40.
+            font := LogicalFont familyName: ''Source Code Pro'' pointSize: aSize.
             columns := 16'.
         label compile: 'first ^ 32'.
         label compile: 'last ^ 126'.
@@ -529,23 +539,25 @@ public enum PharoLumaBindings {
                 attribute: ''p'' components: 2;
                 attribute: ''glyph'' components: 2;
                 varying: ''uv'' components: 2;
-                uniform: ''at'' value: #(0 0);
-                uniform: ''size'' value: 0.1;
+                uniform: ''pad'' value: #(16 16);
+                uniform: ''size'' value: font height;
                 uniform: ''tint'' value: #(1 1 1);
                 vertexSource: ''void main() {
                     uv = glyph;
-                    vec2 fit = vec2(min(u_resolution.y / u_resolution.x, 1.0),
-                                    min(u_resolution.x / u_resolution.y, 1.0));
-                    gl_Position = vec4(p * size * fit + at, 0.15, 1.0); }''
+                    vec2 pixel = 2.0 / u_resolution;
+                    vec2 origin = vec2(-1.0, 1.0) + vec2(pad.x, -pad.y) * pixel;
+                    gl_Position = vec4(origin + p * size * pixel, 0.15, 1.0); }''
                 fragmentSource: ''void main() {
                     float ink = texture(glyphs, uv).a;
                     if (ink < 0.02) discard;
                     frag_color = vec4(tint * ink, ink); }'';
                 mesh: #() primitive: #triangles'.
-        label compile: 'at: aPoint size: aSize tint: aColour
+        label compile: 'pad: aPoint tint: aColour
+            "Pixels from the top-left corner, both axes alike, so the gap
+             above the lettering is the gap beside it whatever shape the
+             view happens to be."
             ^ drawable
-                uniform: ''at'' value: aPoint;
-                uniform: ''size'' value: aSize;
+                uniform: ''pad'' value: aPoint;
                 uniform: ''tint'' value: aColour'.
         label compile: 'show: aString
             "Two triangles a letter, laid out along the baseline in ems."
@@ -566,7 +578,7 @@ public enum PharoLumaBindings {
                             | cx cy |
                             cx := (corner at: 1). cy := (corner at: 2).
                             corners
-                                add: pen + (cx * wide); add: cy * high;
+                                add: pen + (cx * wide); add: (cy - 1) * high;
                                 add: (origin x + (cx * cell x)) / atlas x;
                                 add: (origin y + ((1 - cy) * cell y)) / atlas y ].
                         pen := pen + advance ]
