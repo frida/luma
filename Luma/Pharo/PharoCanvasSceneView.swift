@@ -177,8 +177,10 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         var fragmentMetal: String
         var vertices: [Float]
         var drivers: [CanvasDriver] = []
-        var sheets: [CanvasBuffer] = []
-        var pictures: [CanvasImage] = []
+        /// What the runs of values and pictures were stamped when their
+        /// textures were made, so a frame tells them apart by the stamp
+        /// rather than by reading every pixel back.
+        var stamps: [UInt64] = []
         var textures: [MTLTexture] = []
         /// Stamped here rather than carried from the image, so a value moves
         /// on the clock that draws it.
@@ -262,7 +264,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
             for (index, texture) in record.textures.enumerated() {
                 encoder.setFragmentTexture(texture, index: index)
                 encoder.setVertexTexture(texture, index: index)
-                let sampler = index < record.sheets.count ? byIndex : acrossPicture
+                let sampler = index < subject.buffers.count ? byIndex : acrossPicture
                 encoder.setFragmentSamplerState(sampler, index: index)
                 encoder.setVertexSamplerState(sampler, index: index)
             }
@@ -294,9 +296,8 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
                 existing.vertices = subject.geometry.vertices
                 built[handle] = existing
             }
-            if existing.sheets != subject.buffers || existing.pictures != subject.images {
-                existing.sheets = subject.buffers
-                existing.pictures = subject.images
+            if existing.stamps != Self.stamps(of: subject) {
+                existing.stamps = Self.stamps(of: subject)
                 existing.textures = Self.textures(for: subject, device: device)
                 built[handle] = existing
             }
@@ -335,11 +336,14 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
             fragmentMetal: subject.fragmentMetal,
             vertices: subject.geometry.vertices,
             drivers: subject.drivers,
-            sheets: subject.buffers,
-            pictures: subject.images,
+            stamps: Self.stamps(of: subject),
             textures: Self.textures(for: subject, device: device))
         built[handle] = record
         return record
+    }
+
+    private static func stamps(of subject: CanvasDrawable) -> [UInt64] {
+        subject.buffers.map(\.stamp) + subject.images.map(\.stamp)
     }
 
     /// The drawable's samplers in the order the preamble declares them: its

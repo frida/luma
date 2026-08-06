@@ -314,19 +314,25 @@ public enum PharoExampleCatalog {
                     faller image: 'icon' form: icons atRandom.
                     at := { (-85 to: 85) atRandom / 100.0. 1.15 } ].
                 playing := [ [ game isDown: #escape ] whileFalse: [
-                    | wanted below landed |
+                    | wanted below landed was fell |
                     wanted := (game pointer first max: -0.95) min: 0.95.
                     (game isDown: #left) ifTrue: [ wanted := held - 0.07 ].
                     (game isDown: #right) ifTrue: [ wanted := held + 0.07 ].
+                    was := held.
                     held := ((held * 0.55) + (wanted * 0.45) max: -0.95) min: 0.95.
-                    paddle uniform: 'at' value: { held. -0.8 }.
 
                     below := at second - fallerHalf.
+                    fell := at.
                     at := { at first. at second - speed }.
                     landed := below > paddleTop and: [ at second - fallerHalf <= paddleTop ].
-                    faller uniform: 'at' value: at.
+
+                    "Ramps rather than steps: the loop runs at 30 a second and
+                     the view draws at 60, so the renderer carries each move
+                     the rest of the way on its own clock."
+                    paddle ramp: 'at' from: { was. -0.8 } to: { held. -0.8 } over: 0.04.
+                    faller ramp: 'at' from: fell to: at over: 0.04.
                     shadow
-                        uniform: 'at' value: { at first. -0.9 };
+                        ramp: 'at' from: { fell first. -0.9 } to: { at first. -0.9 } over: 0.04;
                         uniform: 'spread' value: (1.0 + (at second + 0.9) * 0.8 max: 0.35).
 
                     landed

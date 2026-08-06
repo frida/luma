@@ -41,7 +41,7 @@ public func luma_scene_add_drawable(_ scene: Int32) -> Int32 {
 @_cdecl("luma_scene_remove_drawable")
 public func luma_scene_remove_drawable(_ scene: Int32, _ drawable: Int32) {
     guard let updated = CanvasRegistry.shared.remove(Int(drawable), from: Int(scene)) else { return }
-    CanvasRegistry.shared.publish(Int(scene), updated)
+    CanvasRegistry.shared.publish(Int(scene))
 }
 
 @_cdecl("luma_drawable_add_attribute")
@@ -113,10 +113,10 @@ public func luma_drawable_set_transform(
 
 @_cdecl("luma_drawable_set_visible")
 public func luma_drawable_set_visible(_ scene: Int32, _ drawable: Int32, _ visible: Int32) {
-    guard let updated = CanvasRegistry.shared.update(Int(drawable), in: Int(scene), {
+    guard CanvasRegistry.shared.update(Int(drawable), in: Int(scene), {
         $0.isVisible = visible == 1
-    }) else { return }
-    CanvasRegistry.shared.publish(Int(scene), updated)
+    }) != nil else { return }
+    CanvasRegistry.shared.publish(Int(scene))
 }
 
 /// Wraps the author's stages in declarations matching the layout they gave,
@@ -155,14 +155,14 @@ public func luma_drawable_commit(_ scene: Int32, _ drawable: Int32) -> Int32 {
     }
     canvasError.withLock { $0 = "" }
 
-    guard let updated = CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
+    guard CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
         subject.vertexGLSL = vertexGLSL
         subject.fragmentGLSL = fragmentGLSL
         subject.vertexMetal = vertexMetal
         subject.fragmentMetal = fragmentMetal
-    }) else { return 0 }
+    }) != nil else { return 0 }
 
-    CanvasRegistry.shared.publish(Int(scene), updated)
+    CanvasRegistry.shared.publish(Int(scene))
     return 1
 }
 
@@ -180,15 +180,15 @@ public func luma_drawable_set_uniform(
         name: String(cString: name),
         values: Array(UnsafeBufferPointer(start: values, count: Int(max(count, 0)))))
 
-    guard let updated = CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
+    guard CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
         if let existing = subject.uniforms.firstIndex(where: { $0.name == uniform.name }) {
             subject.uniforms[existing] = uniform
         } else {
             subject.uniforms.append(uniform)
         }
-    }) else { return }
+    }) != nil else { return }
 
-    CanvasRegistry.shared.publish(Int(scene), updated)
+    CanvasRegistry.shared.publish(Int(scene))
 }
 
 /// What a named value should do over time. Said once: the renderers work it
@@ -212,16 +212,16 @@ public func luma_drawable_drive_uniform(
         to: Array(UnsafeBufferPointer(start: to, count: width)),
         seconds: seconds)
 
-    guard let updated = CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
+    guard CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
         subject.drivers.removeAll { $0.name == driver.name }
         subject.drivers.append(driver)
         // A driven value still needs declaring, so the shader has it.
         if !subject.uniforms.contains(where: { $0.name == driver.name }) {
             subject.uniforms.append(CanvasUniform(name: driver.name, values: driver.from))
         }
-    }) else { return }
+    }) != nil else { return }
 
-    CanvasRegistry.shared.publish(Int(scene), updated)
+    CanvasRegistry.shared.publish(Int(scene))
 }
 
 /// A run of values the shader reads by index. Handing over a fresh window is
@@ -236,9 +236,10 @@ public func luma_drawable_set_buffer(
 ) {
     let buffer = CanvasBuffer(
         name: String(cString: name),
-        values: Array(UnsafeBufferPointer(start: values, count: Int(max(count, 0)))))
+        values: Array(UnsafeBufferPointer(start: values, count: Int(max(count, 0)))),
+        stamp: CanvasRegistry.shared.nextStamp())
 
-    guard let updated = CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
+    guard CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
         if let existing = subject.buffers.firstIndex(where: { $0.name == buffer.name }) {
             subject.buffers[existing] = buffer
         } else {
@@ -253,9 +254,9 @@ public func luma_drawable_set_buffer(
         } else {
             subject.uniforms.append(size)
         }
-    }) else { return }
+    }) != nil else { return }
 
-    CanvasRegistry.shared.publish(Int(scene), updated)
+    CanvasRegistry.shared.publish(Int(scene))
 }
 
 /// A picture the shader samples. Pixels come as the image holds them, one
@@ -273,17 +274,18 @@ public func luma_drawable_set_image(
         name: String(cString: name),
         pixels: Array(UnsafeBufferPointer(start: pixels, count: Int(width) * Int(height))),
         width: Int(width),
-        height: Int(height))
+        height: Int(height),
+        stamp: CanvasRegistry.shared.nextStamp())
 
-    guard let updated = CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
+    guard CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
         if let existing = subject.images.firstIndex(where: { $0.name == image.name }) {
             subject.images[existing] = image
         } else {
             subject.images.append(image)
         }
-    }) else { return }
+    }) != nil else { return }
 
-    CanvasRegistry.shared.publish(Int(scene), updated)
+    CanvasRegistry.shared.publish(Int(scene))
 }
 
 /// Where the pointer sits over the scene, in the clip space the vertices were
