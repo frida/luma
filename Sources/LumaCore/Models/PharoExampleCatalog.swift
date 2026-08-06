@@ -308,6 +308,9 @@ public enum PharoExampleCatalog {
 
                 "Half sizes, so a catch is judged on the edges rather than
                  the centres, and on the step the faller crosses the paddle."
+                tally := LumaText on: game addDrawable.
+                tally at: #(-0.94 0.82) size: 0.09 tint: #(1 0.95 0.8); show: 'SCORE 0'.
+
                 fallerHalf := 0.14. paddleHalf := 0.22. paddleTop := -0.755.
                 at := { 0. 1 }. speed := 0.024. held := 0. score := 0.
                 respawn := [
@@ -342,6 +345,7 @@ public enum PharoExampleCatalog {
                                     score := score + 1.
                                     speed := speed + 0.0022.
                                     paddle uniform: 'warmth' value: (score / 20.0 min: 0.85).
+                                    tally show: 'SCORE ', score printString.
                                     (LumaTune named: #blip channel: 3)
                                         patch: #pulse; tempo: 320; loops: false;
                                         notes: { #b5. #e6 }; play.
@@ -351,6 +355,7 @@ public enum PharoExampleCatalog {
                                 score := 0.
                                 speed := 0.024.
                                 paddle uniform: 'warmth' value: 0.
+                                tally show: 'SCORE 0'.
                                 (LumaTune named: #blip channel: 3)
                                     patch: #bass; tempo: 260; loops: false;
                                     notes: { #e2. #c2 }; play.
@@ -359,6 +364,29 @@ public enum PharoExampleCatalog {
                     (Delay forMilliseconds: 33) wait ].
                     LumaTune hush ] fork.
                 game
+                """),
+            PharoExample(
+                title: "Lettering, drawn from an atlas",
+                code: """
+                "The glyphs are rasterised once into an atlas the shader
+                 samples. Saying something else costs a buffer of corners --
+                 no rasterising, no recompiling -- so it stands up to text
+                 that changes every frame."
+                words := LumaCanvas new.
+                sign := LumaText on: words addDrawable.
+                sign
+                    at: #(-0.85 0) size: 0.14 tint: #(0.2 0.95 0.75);
+                    show: 'HELLO FROM THE GPU'.
+                words
+                """),
+            PharoExample(
+                title: "Counting up, a fresh string every frame",
+                code: """
+                "Run the lettering example first. Nothing is rasterised here:
+                 each new string is corners and nothing else."
+                ticking := [ 1 to: 600 do: [ :each |
+                    sign show: 'FRAME ', each printString.
+                    (Delay forMilliseconds: 16) wait ] ] fork
                 """),
             PharoExample(
                 title: "An effect over the whole view",
