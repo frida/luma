@@ -149,6 +149,132 @@ public enum PharoExampleCatalog {
                 iconScene
                 """),
             PharoExample(
+                title: "Icons on parade, with a tune under them",
+                code: """
+                "Three channels and a ring of cards, started together. Hush
+                 with: LumaTune hush"
+                LumaSynth start.
+                (LumaTune named: #lead channel: 0)
+                    patch: #pulse; tempo: 150;
+                    notes: #(c5 e5 g5 e5 a5 g5 e5 c5 d5 f5 a5 f5 g5 e5 c5 -);
+                    play.
+                (LumaTune named: #bass channel: 1)
+                    patch: #bass; tempo: 150; division: 2;
+                    notes: #(c2 - g2 - a2 - f2 -);
+                    play.
+                (LumaTune named: #drums channel: 2)
+                    patch: #noiseHit; tempo: 150;
+                    notes: #(c5 - c5 c5 - c5 c5 -);
+                    play.
+
+                parade := LumaCanvas new.
+                shown := LumaProject sessions items select: [ :each | each icon notNil ].
+                shown doWithIndex: [ :session :index |
+                    | angle card |
+                    angle := 2 * Float pi * (index - 1) / shown size.
+                    card := parade addDrawable.
+                    card
+                        attribute: 'p' components: 2;
+                        varying: 'uv' components: 2;
+                        uniform: 'centre' value: { angle sin * 0.55. angle cos * 0.55 };
+                        image: 'icon' form: session icon;
+                        vertexSource: 'void main() {
+                            uv = vec2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
+                            vec2 square = vec2(min(u_resolution.y / u_resolution.x, 1.0),
+                                               min(u_resolution.x / u_resolution.y, 1.0));
+                            float beat = 1.0 + 0.12 * sin(u_time * 5.0);
+                            gl_Position = vec4((p * 0.2 * beat + centre) * square, 0.0, 1.0); }'
+                        fragmentSource: 'void main() {
+                            vec4 c = texture(icon, uv);
+                            if (c.a < 0.01) discard;
+                            frag_color = vec4(c.rgb * c.a, c.a); }';
+                        mesh: #(-1 -1  1 -1  -1 1   1 -1  1 1  -1 1) primitive: #triangles;
+                        oscillate: 'centre'
+                            between: { angle sin * 0.5. angle cos * 0.5 }
+                            and: { angle sin * 0.72. angle cos * 0.72 }
+                            period: 3.2 ].
+                parade
+                """),
+            PharoExample(
+                title: "Catch \u{2014} a game of pointer, keys and blips",
+                code: """
+                "Inspect the answer, click the Scene tab to give it the keys,
+                 then move the paddle with the pointer or the arrow keys.
+                 Escape ends it, as does: playing terminate"
+                LumaSynth start.
+                game := LumaCanvas new.
+                icons := (LumaProject sessions items
+                    select: [ :each | each icon notNil ]
+                    thenCollect: [ :each | each icon ])
+                        ifEmpty: [ { (Form extent: 64 @ 64 depth: 32)
+                            fillColor: Color magenta; yourself } ].
+
+                square := 'vec2 square = vec2(min(u_resolution.y / u_resolution.x, 1.0),
+                                              min(u_resolution.x / u_resolution.y, 1.0));'.
+                paddle := game addDrawable.
+                paddle
+                    attribute: 'p' components: 2;
+                    uniform: 'at' value: #(0 -0.8);
+                    uniform: 'warmth' value: 0;
+                    vertexSource: 'void main() { ', square, '
+                        gl_Position = vec4((p * vec2(0.22, 0.04) + at) * square, 0.0, 1.0); }'
+                    fragmentSource: 'void main() {
+                        frag_color = vec4(0.15 + warmth, 0.85 - warmth * 0.5, 0.55, 1.0); }';
+                    mesh: #(-1 -1  1 -1  -1 1   1 -1  1 1  -1 1) primitive: #triangles.
+
+                faller := game addDrawable.
+                faller
+                    attribute: 'p' components: 2;
+                    varying: 'uv' components: 2;
+                    uniform: 'at' value: #(0 1);
+                    image: 'icon' form: icons first;
+                    vertexSource: 'void main() {
+                        uv = vec2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5); ', square, '
+                        gl_Position = vec4((p * 0.12 + at) * square, 0.0, 1.0); }'
+                    fragmentSource: 'void main() {
+                        vec4 c = texture(icon, uv);
+                        if (c.a < 0.01) discard;
+                        frag_color = vec4(c.rgb * c.a, c.a); }';
+                    mesh: #(-1 -1  1 -1  -1 1   1 -1  1 1  -1 1) primitive: #triangles.
+
+                at := { 0. 1 }. speed := 0.02. held := 0. score := 0.
+                playing := [ [ game isDown: #escape ] whileFalse: [
+                    | wanted |
+                    wanted := (game pointer first max: -0.9) min: 0.9.
+                    (game isDown: #left) ifTrue: [ wanted := held - 0.06 ].
+                    (game isDown: #right) ifTrue: [ wanted := held + 0.06 ].
+                    held := ((held * 0.6) + (wanted * 0.4) max: -0.9) min: 0.9.
+                    paddle uniform: 'at' value: { held. -0.8 }.
+
+                    at := { at first. at second - speed }.
+                    faller uniform: 'at' value: at.
+
+                    at second < -0.74 ifTrue: [
+                        | caught |
+                        caught := (at first - held) abs < 0.28.
+                        caught
+                            ifTrue: [
+                                score := score + 1.
+                                speed := speed + 0.002.
+                                paddle uniform: 'warmth' value: (score / 20.0 min: 0.8).
+                                (LumaTune named: #blip channel: 3)
+                                    patch: #pulse; tempo: 320; loops: false;
+                                    notes: { #b5. #e6 }; play ]
+                            ifFalse: [
+                                score := 0.
+                                speed := 0.02.
+                                paddle uniform: 'warmth' value: 0.
+                                (LumaTune named: #blip channel: 3)
+                                    patch: #bass; tempo: 260; loops: false;
+                                    notes: { #e2. #c2 }; play ].
+                        faller image: 'icon' form: icons atRandom.
+                        at := { (-8 to: 8) atRandom / 10.0. 1.0 } ].
+
+                    (Delay forMilliseconds: 33) wait ].
+                    LumaTune hush ] fork.
+                game
+                """),
+            PharoExample(
                 title: "An effect over the whole view",
                 code: """
                 "Nothing special: a drawable whose two triangles cover the

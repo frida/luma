@@ -209,6 +209,7 @@ public final class CanvasRegistry: Sendable {
 
     private struct State {
         var scenes: [Int: CanvasScene] = [:]
+        var inputs: [Int: CanvasInput] = [:]
         var nextHandle = 1
     }
 
@@ -275,6 +276,16 @@ public final class CanvasRegistry: Sendable {
             state.scenes[handle] = scene
             return scene
         }
+    }
+
+    /// What the pointer and keyboard are doing over the scene, as the view
+    /// showing it last reported.
+    public func input(_ handle: Int) -> CanvasInput {
+        state.withLock { $0.inputs[handle] ?? CanvasInput() }
+    }
+
+    public func reportInput(_ handle: Int, _ change: (inout CanvasInput) -> Void) {
+        state.withLock { change(&$0.inputs[handle, default: CanvasInput()]) }
     }
 
     /// Hands the scene to whoever shows it, on the thread they expect.

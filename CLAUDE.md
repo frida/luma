@@ -197,7 +197,7 @@ and their output handed to `glslang` — which catches what a Swift
 build cannot, a shader that compiles nowhere:
 
 ```sh
-swiftc -o gencheck Sources/LumaCore/{ShaderVocabulary,CanvasGeometry,CanvasScene}.swift main.swift
+swiftc -o gencheck Sources/LumaCore/{ShaderVocabulary,CanvasGeometry,CanvasScene,CanvasInput}.swift main.swift
 glslang -S frag generated.frag          # OpenGL flavour
 glslang -S frag -V generated.frag       # Metal flavour, as translated
 ```

@@ -39,6 +39,7 @@ final class PharoCanvasArea {
         area.widget.hexpand = true
         area.widget.vexpand = true
         box.append(child: area.widget)
+        watchInput()
 
         PharoCanvasScenes.register(self, for: scene)
         if let current = CanvasRegistry.shared.scene(scene) {
@@ -103,6 +104,98 @@ final class PharoCanvasArea {
         for (handle, record) in built where scene.drawables[handle] == nil {
             area.removeDrawable(record.handle)
             built[handle] = nil
+        }
+    }
+
+    /// Reports what the pointer and keyboard are doing, for whoever drives the
+    /// scene to read. Nothing is delivered into the image: a snippet asks.
+    private func watchInput() {
+        area.widget.canFocus = true
+        area.widget.focusable = true
+
+        let motion = EventControllerMotion()
+        motion.onMotion { [weak self] _, x, y in
+            MainActor.assumeIsolated { self?.reportPointer(x: x, y: y, isInside: true) }
+        }
+        motion.onLeave { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.report { $0.isPointerInside = false }
+            }
+        }
+        area.widget.install(controller: motion)
+
+        let click = GestureClick()
+        click.set(button: 0)
+        click.onPressed { [weak self] gesture, _, x, y in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.area.widget.grabFocus()
+                self.reportPointer(x: x, y: y, isInside: true)
+                self.report { $0.buttons |= Self.mask(for: UInt32(gesture.currentButton)) }
+            }
+        }
+        click.onReleased { [weak self] gesture, _, _, _ in
+            MainActor.assumeIsolated {
+                self?.report { $0.buttons &= ~Self.mask(for: UInt32(gesture.currentButton)) }
+            }
+        }
+        area.widget.install(controller: click)
+
+        let keys = EventControllerKey()
+        keys.onKeyPressed { [weak self] _, keyval, _, _ in
+            MainActor.assumeIsolated {
+                self?.report { $0.keysDown.insert(Self.code(for: UInt32(keyval))) }
+            }
+            return false
+        }
+        keys.onKeyReleased { [weak self] _, keyval, _, _ in
+            MainActor.assumeIsolated {
+                self?.report { $0.keysDown.remove(Self.code(for: UInt32(keyval))) }
+            }
+        }
+        area.widget.install(controller: keys)
+    }
+
+    /// Clip space, so what a snippet reads is in the coordinates it gave its
+    /// vertices in.
+    private func reportPointer(x: Double, y: Double, isInside: Bool) {
+        let width = Double(area.widget.width)
+        let height = Double(area.widget.height)
+        guard width > 0, height > 0 else { return }
+
+        report {
+            $0.pointerX = Float(x / width * 2 - 1)
+            $0.pointerY = Float(1 - y / height * 2)
+            $0.isPointerInside = isInside
+        }
+    }
+
+    private func report(_ change: (inout CanvasInput) -> Void) {
+        CanvasRegistry.shared.reportInput(scene, change)
+    }
+
+    private static func mask(for button: UInt32) -> Int32 {
+        switch button {
+        case 3: return 1 << 1
+        case 2: return 1 << 2
+        default: return 1 << 0
+        }
+    }
+
+    /// GDK's own keyvals, mapped onto what a scene is asked about: the named
+    /// keys, and otherwise whatever character was typed.
+    private static func code(for keyval: UInt32) -> Int32 {
+        switch keyval {
+        case 0xff51: return CanvasKey.left.rawValue
+        case 0xff52: return CanvasKey.up.rawValue
+        case 0xff53: return CanvasKey.right.rawValue
+        case 0xff54: return CanvasKey.down.rawValue
+        case 0xff0d, 0xff8d: return CanvasKey.enter.rawValue
+        case 0xff1b: return CanvasKey.escape.rawValue
+        default:
+            let unicode = gdk_keyval_to_unicode(keyval)
+            guard unicode != 0, let scalar = Unicode.Scalar(unicode) else { return 0 }
+            return CanvasKey.code(for: Character(scalar))
         }
     }
 
