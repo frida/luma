@@ -155,6 +155,6 @@ public struct CanvasGeometry: Sendable, Equatable {
                 float dataAt(int i) { return u_data[i / 4][i - (i / 4) * 4]; }
                 """
         }
-        return ShaderTranslator.uniformBlock
+        return ShaderVocabulary.uniformBlock
     }
 }
