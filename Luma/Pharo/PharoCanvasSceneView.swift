@@ -15,7 +15,7 @@ struct PharoCanvasSceneView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> MTKView {
-        let view = MTKView()
+        let view = CanvasSceneInputView(scene: scene)
         view.device = MTLCreateSystemDefaultDevice()
         view.colorPixelFormat = .bgra8Unorm
         view.depthStencilPixelFormat = .depth32Float
@@ -26,6 +26,108 @@ struct PharoCanvasSceneView: NSViewRepresentable {
     }
 
     func updateNSView(_ view: MTKView, context: Context) {}
+}
+
+/// Reports what the pointer and keyboard are doing, for whoever drives the
+/// scene to read. Nothing is delivered into the image: a snippet asks.
+final class CanvasSceneInputView: MTKView {
+    private let scene: Int
+    private var tracking: NSTrackingArea?
+
+    init(scene: Int) {
+        self.scene = scene
+        super.init(frame: .zero, device: nil)
+    }
+
+    required init(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking {
+            removeTrackingArea(tracking)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self)
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        reportPointer(event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        reportPointer(event)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        report { $0.isPointerInside = false }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        reportPointer(event)
+        report { $0.buttons |= 1 << 0 }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        report { $0.buttons &= ~(1 << 0) }
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        report { $0.buttons |= 1 << 1 }
+    }
+
+    override func rightMouseUp(with event: NSEvent) {
+        report { $0.buttons &= ~(1 << 1) }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        report { $0.keysDown.insert(Self.code(for: event)) }
+    }
+
+    override func keyUp(with event: NSEvent) {
+        report { $0.keysDown.remove(Self.code(for: event)) }
+    }
+
+    /// Clip space, so what a snippet reads is in the coordinates it gave its
+    /// vertices in.
+    private func reportPointer(_ event: NSEvent) {
+        let at = convert(event.locationInWindow, from: nil)
+        guard bounds.width > 0, bounds.height > 0 else { return }
+
+        report {
+            $0.pointerX = Float(at.x / bounds.width * 2 - 1)
+            $0.pointerY = Float(at.y / bounds.height * 2 - 1)
+            $0.isPointerInside = true
+        }
+    }
+
+    private func report(_ change: (inout CanvasInput) -> Void) {
+        CanvasRegistry.shared.reportInput(scene, change)
+    }
+
+    /// AppKit's own codes, mapped onto what a scene is asked about: the named
+    /// keys, and otherwise whatever character was typed.
+    private static func code(for event: NSEvent) -> Int32 {
+        switch Int(event.keyCode) {
+        case 123: return CanvasKey.left.rawValue
+        case 124: return CanvasKey.right.rawValue
+        case 125: return CanvasKey.down.rawValue
+        case 126: return CanvasKey.up.rawValue
+        case 36, 76: return CanvasKey.enter.rawValue
+        case 53: return CanvasKey.escape.rawValue
+        default:
+            guard let character = event.charactersIgnoringModifiers?.first else { return 0 }
+            return CanvasKey.code(for: character)
+        }
+    }
 }
 
 /// Which renderers are showing which scene, so a change reaches whichever

@@ -292,6 +292,28 @@ public enum PharoLumaBindings {
         canvas compile: 'destroy
             ^ LumaHost invoke: ''luma_scene_destroy''
                 parameters: { TFBasicType sint } return: TFBasicType void with: { handle }'.
+        canvas compile: 'pointer
+            "Where the pointer sits, in the clip space the vertices were
+             given in: -1 to 1, y upwards."
+            ^ Array
+                with: (LumaHost invoke: ''luma_scene_pointer_x''
+                    parameters: { TFBasicType sint } return: TFBasicType float with: { handle })
+                with: (LumaHost invoke: ''luma_scene_pointer_y''
+                    parameters: { TFBasicType sint } return: TFBasicType float with: { handle })'.
+        canvas compile: 'buttons
+            "Bit 0 primary, bit 1 secondary, bit 2 middle."
+            ^ LumaHost invoke: ''luma_scene_buttons''
+                parameters: { TFBasicType sint } return: TFBasicType sint with: { handle }'.
+        canvas compile: 'isDown: aKey
+            "A Character answers for itself; #left #right #up #down #space
+             #enter and #escape are named."
+            ^ 1 = (LumaHost invoke: ''luma_scene_key_down''
+                parameters: { TFBasicType sint. TFBasicType sint }
+                return: TFBasicType sint
+                with: { handle. LumaCanvas keyCodes at: aKey ifAbsent: [ aKey asLowercase asInteger ] })'.
+        canvas class compile: 'keyCodes
+            ^ Dictionary newFrom: { #left -> 1. #right -> 2. #up -> 3. #down -> 4.
+                                    #enter -> 13. #escape -> 27. #space -> 32 }'.
         canvas class compile: 'primitives
             ^ #(points lines lineStrip triangles triangleStrip)'.
         canvas class compile: 'lastError

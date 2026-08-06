@@ -285,3 +285,29 @@ public func luma_drawable_set_image(
 
     CanvasRegistry.shared.publish(Int(scene), updated)
 }
+
+/// Where the pointer sits over the scene, in the clip space the vertices were
+/// given in. Asked for rather than delivered, so a snippet reads it when it
+/// suits: the image is never called from a frame.
+@_cdecl("luma_scene_pointer_x")
+public func luma_scene_pointer_x(_ scene: Int32) -> Float {
+    CanvasRegistry.shared.input(Int(scene)).pointerX
+}
+
+@_cdecl("luma_scene_pointer_y")
+public func luma_scene_pointer_y(_ scene: Int32) -> Float {
+    CanvasRegistry.shared.input(Int(scene)).pointerY
+}
+
+/// Bit 0 primary, bit 1 secondary, bit 2 middle.
+@_cdecl("luma_scene_buttons")
+public func luma_scene_buttons(_ scene: Int32) -> Int32 {
+    CanvasRegistry.shared.input(Int(scene)).buttons
+}
+
+/// A printable key answers to its own lowercase character; the rest are named
+/// by `CanvasKey`.
+@_cdecl("luma_scene_key_down")
+public func luma_scene_key_down(_ scene: Int32, _ key: Int32) -> Int32 {
+    CanvasRegistry.shared.input(Int(scene)).keysDown.contains(key) ? 1 : 0
+}
