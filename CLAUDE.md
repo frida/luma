@@ -190,6 +190,18 @@ host supplies (`v_uv`, `frag_color`, `u_resolution`, `u_time`,
   of the range. Getting this wrong binds each buffer where another was
   expected, which no compiler will catch.
 
+The preambles are generated text, and generated text is worth
+compiling. `ShaderVocabulary`, `CanvasGeometry` and `CanvasScene`
+depend on nothing but Foundation, so they can be built on their own
+and their output handed to `glslang` — which catches what a Swift
+build cannot, a shader that compiles nowhere:
+
+```sh
+swiftc -o gencheck Sources/LumaCore/{ShaderVocabulary,CanvasGeometry,CanvasScene}.swift main.swift
+glslang -S frag generated.frag          # OpenGL flavour
+glslang -S frag -V generated.frag       # Metal flavour, as translated
+```
+
 ### Symbol visibility (macOS)
 
 The image resolves the host's `luma_*` entry points by name through
