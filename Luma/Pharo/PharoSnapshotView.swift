@@ -72,13 +72,8 @@ struct PharoSnapshotView: View {
             PharoGraphView(graph: graph)
         case .chart(let chart):
             PharoChartView(chart: chart)
-        case .canvas:
-            // Drawn from a scene the host holds; the Metal side of that is
-            // not built yet, so say so rather than show nothing.
-            ContentUnavailableView(
-                "Canvas",
-                systemImage: "cube.transparent",
-                description: Text("Canvas views draw on the GTK frontend only for now."))
+        case .canvas(let scene):
+            PharoCanvasSceneView(scene: scene)
         case .empty, .none:
             ContentUnavailableView("Nothing captured", systemImage: "square.dashed")
         }

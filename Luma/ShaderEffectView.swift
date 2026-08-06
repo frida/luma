@@ -313,7 +313,7 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
     /// The block std140 lays out: resolution, time, scheme, activity, pulse
     /// and the value count fill the first six words, a seventh pads the vec4
     /// array to its sixteen-byte alignment, and the values follow.
-    static let dataCapacity = 64
+    public static let dataCapacity = 64
     static let dataWordOffset = 8
     /// A mat4 aligns to sixteen bytes, so it follows the value array.
     static let transformWordOffset = dataWordOffset + dataCapacity
