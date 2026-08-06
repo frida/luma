@@ -13,6 +13,7 @@
 #define MAX_ATTRIBUTES 8
 #define MAX_DRAWABLES 64
 #define MAX_PARAMS 16
+#define MAX_SHEETS 4
 
 typedef struct {
     char *name;
@@ -36,6 +37,18 @@ typedef struct {
     gint64 started_at;
 } LumaParam;
 
+// A run of values the shader reads by index, held as a texture so it can be
+// far larger than a uniform allows.
+typedef struct {
+    char *name;
+    float *values;
+    int width;
+    int height;
+    GLuint texture;
+    GLint location;
+    gboolean dirty;
+} LumaSheet;
+
 // One thing the widget draws, with its own stages, vertices and place. A
 // scene is however many of these the author made.
 typedef struct {
@@ -52,6 +65,8 @@ typedef struct {
     float mvp[16];
     LumaParam params[MAX_PARAMS];
     int param_count;
+    LumaSheet sheets[MAX_SHEETS];
+    int sheet_count;
     GLuint program;
     GLuint vao;
     GLuint vbo;
@@ -230,6 +245,37 @@ luma_shader_effect_drawable_set_uniform(void *widget, int handle,
     param->components = count;
     param->location = -1;
     drawable->changed = TRUE;
+}
+
+void
+luma_shader_effect_drawable_set_buffer(void *widget, int handle, const char *name,
+                                       const float *values, int count, int width, int height)
+{
+    LumaDrawable *drawable = drawable_for(effect_for(GTK_WIDGET(widget)), handle);
+    if (drawable == NULL)
+        return;
+
+    LumaSheet *sheet = NULL;
+    for (int index = 0; index != drawable->sheet_count; index++) {
+        if (strcmp(drawable->sheets[index].name, name) == 0) {
+            sheet = &drawable->sheets[index];
+            break;
+        }
+    }
+    if (sheet == NULL) {
+        if (drawable->sheet_count == MAX_SHEETS)
+            return;
+        sheet = &drawable->sheets[drawable->sheet_count++];
+        sheet->name = g_strdup(name);
+        sheet->location = -1;
+        drawable->changed = TRUE;
+    }
+
+    g_clear_pointer(&sheet->values, g_free);
+    sheet->values = g_memdup2(values, count * sizeof(float));
+    sheet->width = width;
+    sheet->height = height;
+    sheet->dirty = TRUE;
 }
 
 void
@@ -459,6 +505,26 @@ on_render(GtkGLArea *area, GdkGLContext *context, gpointer user_data)
                 continue;
 
             glUseProgram(drawable->program);
+            for (int at = 0; at != drawable->sheet_count; at++) {
+                LumaSheet *sheet = &drawable->sheets[at];
+                if (sheet->location < 0 || sheet->values == NULL)
+                    continue;
+                if (sheet->texture == 0)
+                    glGenTextures(1, &sheet->texture);
+                glActiveTexture(GL_TEXTURE0 + at);
+                glBindTexture(GL_TEXTURE_2D, sheet->texture);
+                if (sheet->dirty) {
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, sheet->width, sheet->height, 0,
+                                 GL_RED, GL_FLOAT, sheet->values);
+                    sheet->dirty = FALSE;
+                }
+                glUniform1i(sheet->location, at);
+            }
+            glActiveTexture(GL_TEXTURE0);
             for (int at = 0; at != drawable->param_count; at++) {
                 LumaParam *param = &drawable->params[at];
                 if (param->location < 0)
@@ -555,6 +621,11 @@ rebuild_drawable(LumaDrawable *drawable)
         LumaParam *param = &drawable->params[index];
         param->location = glGetUniformLocation(drawable->program, param->name);
     }
+    for (int index = 0; index != drawable->sheet_count; index++) {
+        LumaSheet *sheet = &drawable->sheets[index];
+        sheet->location = glGetUniformLocation(drawable->program, sheet->name);
+        sheet->dirty = TRUE;
+    }
 
     if (drawable->vao == 0)
         glGenVertexArrays(1, &drawable->vao);
@@ -637,6 +708,10 @@ effect_free(gpointer data)
             g_free(drawable->attributes[at].name);
         for (int at = 0; at != drawable->param_count; at++)
             g_free(drawable->params[at].name);
+        for (int at = 0; at != drawable->sheet_count; at++) {
+            g_free(drawable->sheets[at].name);
+            g_free(drawable->sheets[at].values);
+        }
         g_free(drawable->vertices);
         g_free(drawable->vertex_src);
         g_free(drawable->fragment_src);

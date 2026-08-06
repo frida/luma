@@ -19,6 +19,8 @@ public struct CanvasDrawable: Sendable, Equatable {
     public var uniforms: [CanvasUniform] = []
     /// Those of them that are moving.
     public var drivers: [CanvasDriver] = []
+    /// Runs of values the shader reads by index.
+    public var buffers: [CanvasBuffer] = []
     public var isVisible = true
 
     public static let identity: [Float] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
@@ -57,6 +59,36 @@ public struct CanvasDrawable: Sendable, Equatable {
         let tail = (4 - packed.count % 4) % 4
         packed.append(contentsOf: repeatElement(0, count: tail))
         return packed
+    }
+}
+
+/// A run of values too large for a uniform: a memory window, a waveform, a
+/// point cloud's worth of samples. Carried as a texture the shader reads by
+/// index, so scrubbing is a fresh window rather than a rebuilt scene.
+public struct CanvasBuffer: Sendable, Equatable {
+    public let name: String
+    public var values: [Float]
+
+    public init(name: String, values: [Float]) {
+        self.name = name
+        self.values = values
+    }
+
+    /// Texture side, chosen so the run fits a square-ish sheet the driver
+    /// will accept. A row is the unit an index divides by.
+    public var width: Int {
+        max(1, min(4096, Int(Double(values.count).squareRoot().rounded(.up))))
+    }
+
+    public var height: Int {
+        max(1, (values.count + width - 1) / width)
+    }
+
+    /// The values padded out to fill the sheet.
+    public func padded() -> [Float] {
+        var sheet = values
+        sheet.append(contentsOf: repeatElement(0, count: width * height - values.count))
+        return sheet
     }
 }
 

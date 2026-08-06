@@ -86,13 +86,19 @@ luma_shader_translate_to_msl(const char *glsl, int stage, const char *entry_poin
     // not by the binding written in the shader, so say which is which. The
     // standard block is buffer 0 and the author's params buffer 1, matching
     // what the renderers bind; vertices sit clear at the top of the range.
-    for (unsigned binding = 0; binding != 2; binding++) {
+    // Bindings 0 and 1 are the two uniform blocks; 2 upwards are the data
+    // buffers, each a texture and its sampler.
+    for (unsigned binding = 0; binding != 8; binding++) {
         spvc_msl_resource_binding pin;
         spvc_msl_resource_binding_init(&pin);
         pin.stage = execution_model;
         pin.desc_set = 0;
         pin.binding = binding;
         pin.msl_buffer = binding;
+        if (binding >= 2) {
+            pin.msl_texture = binding - 2;
+            pin.msl_sampler = binding - 2;
+        }
         spvc_compiler_msl_add_resource_binding(compiler, &pin);
     }
 

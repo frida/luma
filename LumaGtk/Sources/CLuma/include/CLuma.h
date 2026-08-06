@@ -136,6 +136,11 @@ void luma_shader_effect_drawable_set_uniform(void *widget, int handle,
                                              const char *name, const float *values, int count);
 // What a named value should do over time: ramp (0) or oscillate (1). Worked
 // out on the frame clock, so the caller says it once.
+// A run of values the shader reads by index, held as a texture of the given
+// side so it can be far larger than a uniform allows.
+void luma_shader_effect_drawable_set_buffer(void *widget, int handle, const char *name,
+                                            const float *values, int count,
+                                            int width, int height);
 void luma_shader_effect_drawable_drive_uniform(void *widget, int handle, const char *name,
                                                int kind, const float *from, const float *to,
                                                int count, float seconds);

@@ -66,7 +66,11 @@ public struct CanvasGeometry: Sendable, Equatable {
 
     /// Declares the author's attributes and varyings so their own shader body
     /// compiles against what the renderer binds.
-    public func vertexPreamble(_ flavour: Flavour, uniforms extra: [CanvasUniform] = []) -> String {
+    public func vertexPreamble(
+        _ flavour: Flavour,
+        uniforms extra: [CanvasUniform] = [],
+        buffers: [CanvasBuffer] = []
+    ) -> String {
         let inputs = attributes.enumerated().map { index, attribute in
             declaration("in", attribute, at: index, flavour)
         }
@@ -74,11 +78,16 @@ public struct CanvasGeometry: Sendable, Equatable {
             declaration("out", varying, at: index, flavour)
         }
         return (["#version \(flavour == .metal ? "450" : "150 core")"]
-            + inputs + outputs + [uniforms(flavour), declared(extra, flavour), ""])
+            + inputs + outputs
+            + [uniforms(flavour), declared(extra, flavour), sampled(buffers, flavour), ""])
             .joined(separator: "\n")
     }
 
-    public func fragmentPreamble(_ flavour: Flavour, uniforms extra: [CanvasUniform] = []) -> String {
+    public func fragmentPreamble(
+        _ flavour: Flavour,
+        uniforms extra: [CanvasUniform] = [],
+        buffers: [CanvasBuffer] = []
+    ) -> String {
         let inputs = varyings.enumerated().map { index, varying in
             declaration("in", varying, at: index, flavour)
         }
@@ -86,7 +95,8 @@ public struct CanvasGeometry: Sendable, Equatable {
             ? "layout(location = 0) out vec4 frag_color;"
             : "out vec4 frag_color;"
         return (["#version \(flavour == .metal ? "450" : "150 core")"]
-            + inputs + [output, uniforms(flavour), declared(extra, flavour), ""])
+            + inputs
+            + [output, uniforms(flavour), declared(extra, flavour), sampled(buffers, flavour), ""])
             .joined(separator: "\n")
     }
 
@@ -111,6 +121,22 @@ public struct CanvasGeometry: Sendable, Equatable {
         }
         return (["layout(binding = 1) uniform CanvasParams {"] + members + ["};"])
             .joined(separator: "\n")
+    }
+
+    /// Each run gets a sampler and a reader, so the author says `dataAt` of
+    /// their own buffer rather than working out where a texel sits.
+    private func sampled(_ buffers: [CanvasBuffer], _ flavour: Flavour) -> String {
+        buffers.enumerated().map { index, buffer in
+            let binding = flavour == .metal ? "layout(binding = \(2 + index)) " : ""
+            return """
+                \(binding)uniform sampler2D \(buffer.name);
+                uniform vec2 \(buffer.name)_size;
+                float \(buffer.name)At(int i) {
+                    int w = int(\(buffer.name)_size.x);
+                    return texelFetch(\(buffer.name), ivec2(i - i / w * w, i / w), 0).r;
+                }
+                """
+        }.joined(separator: "\n")
     }
 
     private func uniforms(_ flavour: Flavour) -> String {

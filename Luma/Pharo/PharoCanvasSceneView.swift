@@ -63,6 +63,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
     private weak var view: MTKView?
     private var commandQueue: MTLCommandQueue?
     private var depthState: MTLDepthStencilState?
+    private var sampler: MTLSamplerState?
     private var built: [Int: Built] = [:]
     private let startTime = CACurrentMediaTime()
 
@@ -73,6 +74,8 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         var fragmentMetal: String
         var vertices: [Float]
         var drivers: [CanvasDriver] = []
+        var sheets: [CanvasBuffer] = []
+        var textures: [MTLTexture] = []
         /// Stamped here rather than carried from the image, so a value moves
         /// on the clock that draws it.
         var driversStartedAt = CACurrentMediaTime()
@@ -86,6 +89,15 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         depth.depthCompareFunction = .less
         depth.isDepthWriteEnabled = true
         depthState = view.device?.makeDepthStencilState(descriptor: depth)
+
+        // Nearest, clamped: a value is read at its own index, never blended
+        // with a neighbour's.
+        let sampling = MTLSamplerDescriptor()
+        sampling.minFilter = .nearest
+        sampling.magFilter = .nearest
+        sampling.sAddressMode = .clampToEdge
+        sampling.tAddressMode = .clampToEdge
+        sampler = view.device?.makeSamplerState(descriptor: sampling)
 
         PharoCanvasScenes.register(self, for: handle)
         if let current = CanvasRegistry.shared.scene(handle) {
@@ -136,6 +148,14 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
                 encoder.setFragmentBytes(&params, length: paramsLength,
                                          index: ShaderEffectRenderer.paramsBufferIndex)
             }
+            for (index, texture) in record.textures.enumerated() {
+                encoder.setFragmentTexture(texture, index: index)
+                encoder.setVertexTexture(texture, index: index)
+                if let sampler {
+                    encoder.setFragmentSamplerState(sampler, index: index)
+                    encoder.setVertexSamplerState(sampler, index: index)
+                }
+            }
             encoder.setVertexBuffer(vertexBuffer, offset: 0, index: ShaderEffectRenderer.vertexBufferIndex)
             encoder.drawPrimitives(
                 type: Self.primitive(subject.geometry.primitive),
@@ -162,6 +182,11 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
             if existing.vertices != subject.geometry.vertices {
                 existing.vertexBuffer = Self.buffer(for: subject, device: device)
                 existing.vertices = subject.geometry.vertices
+                built[handle] = existing
+            }
+            if existing.sheets != subject.buffers {
+                existing.sheets = subject.buffers
+                existing.textures = Self.textures(for: subject.buffers, device: device)
                 built[handle] = existing
             }
             return existing
@@ -191,9 +216,30 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
             vertexMetal: subject.vertexMetal,
             fragmentMetal: subject.fragmentMetal,
             vertices: subject.geometry.vertices,
-            drivers: subject.drivers)
+            drivers: subject.drivers,
+            sheets: subject.buffers,
+            textures: Self.textures(for: subject.buffers, device: device))
         built[handle] = record
         return record
+    }
+
+    /// One sheet per run of values, read by index rather than sampled across.
+    private static func textures(for sheets: [CanvasBuffer], device: MTLDevice) -> [MTLTexture] {
+        sheets.compactMap { sheet in
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: .r32Float, width: sheet.width, height: sheet.height, mipmapped: false)
+            descriptor.usage = [.shaderRead]
+            guard let texture = device.makeTexture(descriptor: descriptor) else { return nil }
+
+            sheet.padded().withUnsafeBytes { bytes in
+                texture.replace(
+                    region: MTLRegionMake2D(0, 0, sheet.width, sheet.height),
+                    mipmapLevel: 0,
+                    withBytes: bytes.baseAddress!,
+                    bytesPerRow: sheet.width * MemoryLayout<Float>.stride)
+            }
+            return texture
+        }
     }
 
     private static func buffer(for subject: CanvasDrawable, device: MTLDevice) -> MTLBuffer? {
