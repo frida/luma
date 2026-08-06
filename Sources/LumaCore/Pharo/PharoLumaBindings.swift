@@ -508,23 +508,28 @@ public enum PharoLumaBindings {
                 buildStages;
                 yourself'.
         label compile: 'setDrawable: aDrawable pointSize: aSize
-            "Rasterised at twice the asked-for size, so a display with two
-             physical pixels to a logical one draws it texel for texel and an
-             ordinary one halves it, which is kinder than magnifying. The
-             family is the one the image is already lettering with, since
-             asking for one it lacks gets a substitute at a size of its own
-             choosing -- and then nothing the caller asks for lands."
+            "Rasterised so that an em comes out twice the size it is drawn at,
+             which lands texel for texel on a display with two physical pixels
+             to a logical one and halves cleanly on one without. A point size
+             is not a pixel height -- how many pixels it makes is the font''s
+             business -- so ask one at the asked-for size and scale from what
+             it answers."
+            | family measured |
             drawable := aDrawable.
             points := aSize.
+            family := TextStyle defaultFont familyName.
+            measured := (LogicalFont familyName: family pointSize: aSize) height.
             font := LogicalFont
-                familyName: TextStyle defaultFont familyName
-                pointSize: aSize * 2.
+                familyName: family
+                pointSize: ((aSize * aSize * 2 / measured) rounded max: 6).
             columns := 16'.
         label compile: 'first ^ 32'.
         label compile: 'last ^ 126'.
         label compile: 'buildAtlas
             | rows atlas canvas |
-            cell := (self widest + 2) @ (font height + 2).
+            "Whole texels: a cell that starts on a fraction is sampled off
+             its own grid, and the lettering comes out soft."
+            cell := (self widest + 2) @ (font height ceiling + 2).
             rows := (self last - self first + 1 + columns - 1) // columns.
             atlas := Form extent: (cell x * columns) @ (cell y * rows) depth: 32.
             canvas := atlas getCanvas.
@@ -557,7 +562,9 @@ public enum PharoLumaBindings {
             ink := top @ (bottom + 1)'.
         label compile: 'widest
             ^ (self first to: self last) inject: 1 into: [ :widest :code |
-                widest max: (font widthOf: (Character value: code)) ]'.
+                widest max: (self advanceOf: (Character value: code)) ]'.
+        label compile: 'advanceOf: aCharacter
+            ^ (font widthOf: aCharacter) ceiling'.
         label compile: 'cellOrigin: aCode
             | index |
             index := aCode - self first.
@@ -598,7 +605,7 @@ public enum PharoLumaBindings {
                 code := each asInteger.
                 (code between: self first and: self last)
                     ifTrue: [
-                        advance := (font widthOf: each) / font height.
+                        advance := (self advanceOf: each) / font height.
                         origin := self cellOrigin: code.
                         wide := cell x / font height.
                         high := (ink y - ink x) / font height.
