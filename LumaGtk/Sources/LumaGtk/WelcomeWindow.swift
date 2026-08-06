@@ -5,7 +5,6 @@ import Foundation
 import Gdk
 import Gtk
 import LumaCore
-import LumaGL
 import Observation
 
 @MainActor
