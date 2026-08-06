@@ -59,6 +59,76 @@ public enum PharoExampleCatalog {
                 	yourself.
                 """),
         ]),
+        ("Draw", [
+            PharoExample(
+                title: "A scene of your own, among an object's views",
+                code: """
+                "The scene is the host's; the image keeps its handle and says
+                 which one to draw. Inspect the answer to find the Scene tab."
+                | scene shape |
+                scene := LumaCanvas new.
+                shape := scene addDrawable.
+                shape
+                    attribute: 'p' components: 3;
+                    varying: 'vc' components: 3;
+                    uniform: 'tint' value: #(1 0.4 0.2);
+                    vertexSource: 'void main() {
+                        vc = vec3(0.5) + p * 0.5;
+                        gl_Position = u_mvp * vec4(p, 1.0); }'
+                    fragmentSource: 'void main() { frag_color = vec4(vc * tint, 1.0); }';
+                    identity;
+                    mesh: #(-0.8 -0.6 0   0.8 -0.6 0   0 0.8 0) primitive: #triangles.
+                Smalltalk at: #DemoScene put: scene.
+                Smalltalk at: #DemoShape put: shape.
+                (Object << #DemoThing slots: {}; package: 'Luma'; install)
+                    compile: 'gtSceneFor: aView
+                        <gtView>
+                        ^ aView canvas title: ''Scene''; scene: [ DemoScene handle ]'.
+                DemoThing new
+                """),
+            PharoExample(
+                title: "Say what a value should do, and leave it to draw",
+                code: """
+                "Run the scene example first. Nothing here runs per frame: the
+                 shape is told the shape of the change, and whichever renderer
+                 draws it works the value out on its own clock."
+                DemoShape oscillate: 'tint' between: #(1 0.4 0.2) and: #(0.2 0.4 1) period: 3
+                """),
+            PharoExample(
+                title: "Picture a run of values too large for a uniform",
+                code: """
+                "A buffer is read by index through <name>At, held as a texture,
+                 so handing over a fresh window is all a scrub costs."
+                | profile |
+                profile := DemoScene addDrawable.
+                profile
+                    attribute: 'p' components: 2;
+                    varying: 'uv' components: 2;
+                    buffer: 'samples' values: ((0 to: 255) collect: [ :i | (i / 40.0) sin abs ]);
+                    vertexSource: 'void main() {
+                        uv = p * 0.5 + 0.5;
+                        gl_Position = vec4(p, 0.0, 1.0); }'
+                    fragmentSource: 'void main() {
+                        float v = samplesAt(int(uv.x * 255.0));
+                        frag_color = vec4(uv.y < v ? vec3(0.2, 0.9, 0.5) : vec3(0.09), 1.0); }';
+                    mesh: #(-1 -1  1 -1  -1 1   1 -1  1 1  -1 1) primitive: #triangles
+                """),
+            PharoExample(
+                title: "Hide a drawable, and bring it back",
+                code: """
+                "A scene is kept, not rebuilt: changing one part leaves the
+                 rest, and its shaders, alone."
+                DemoShape hide.
+                "then, separately:  DemoShape show"
+                """),
+            PharoExample(
+                title: "A screen-filling effect, with no geometry at all",
+                code: """
+                LumaCanvas source: 'void main() {
+                    float d = length(v_uv - 0.5);
+                    frag_color = vec4(0.5 + 0.5 * sin(u_time + d * 24.0), v_uv.x, v_uv.y, 1.0); }'
+                """),
+        ]),
         ("Sound", [
             PharoExample(
                 title: "Lead over bass \u{2014} two channels at once",
