@@ -14,7 +14,7 @@ public enum PharoLumaBindings {
     /// fields, so opening one shows what the host knows about it rather than
     /// the line it would have printed.
     private static let source = """
-        | record records sessions entries events project host synth tune canvas drawable |
+        | record records sessions entries events project host synth tune canvas drawable label |
         record := Object << #LumaRecord slots: { #fields. #icon }; package: 'Luma'; install.
         record compile: 'setFields: aDictionary icon: anIcon
             fields := aDictionary.
@@ -366,6 +366,19 @@ public enum PharoLumaBindings {
                         (LumaCanvas primitives indexOf: aSymbol) - 1 }.
             array free.
             ^ self commit'.
+        drawable compile: 'remesh: aCollection primitive: aSymbol
+            "Fresh vertices for stages that are already built, which is what
+             makes changing text cost a buffer rather than a compile."
+            | array |
+            array := FFIExternalArray externalNewType: ''float'' size: aCollection size.
+            aCollection doWithIndex: [ :value :index | array at: index put: value asFloat ].
+            LumaHost invoke: ''luma_drawable_set_vertices''
+                parameters: { TFBasicType sint. TFBasicType sint. TFBasicType pointer.
+                              TFBasicType sint. TFBasicType sint }
+                return: TFBasicType void
+                with: { scene. handle. array getHandle. aCollection size.
+                        (LumaCanvas primitives indexOf: aSymbol) - 1 }.
+            array free'.
         drawable compile: 'uniform: aName value: aValue
             "A uniform of the author''s own naming. A number or a collection
              of up to sixteen; the host declares it and packs it to match."
@@ -476,6 +489,90 @@ public enum PharoLumaBindings {
                 parameters: { TFBasicType sint. TFBasicType sint. TFBasicType sint }
                 return: TFBasicType void
                 with: { scene. handle. 1 }'.
+
+        label := Object << #LumaText slots: { #drawable. #font. #cell. #columns }; package: 'Luma'; install.
+        label class compile: 'on: aDrawable
+            "Lettering for a scene. The glyphs are drawn once into an atlas the
+             shader samples, so saying something else costs a buffer of
+             corners rather than a rasterisation."
+            ^ self basicNew setDrawable: aDrawable; buildAtlas; buildStages; yourself'.
+        label compile: 'setDrawable: aDrawable
+            drawable := aDrawable.
+            font := LogicalFont familyName: ''Source Code Pro'' pointSize: 40.
+            columns := 16'.
+        label compile: 'first ^ 32'.
+        label compile: 'last ^ 126'.
+        label compile: 'buildAtlas
+            | rows atlas canvas |
+            cell := (self widest + 2) @ (font height + 2).
+            rows := (self last - self first + 1 + columns - 1) // columns.
+            atlas := Form extent: (cell x * columns) @ (cell y * rows) depth: 32.
+            canvas := atlas getCanvas.
+            self first to: self last do: [ :code |
+                | at |
+                at := self cellOrigin: code.
+                canvas
+                    drawString: (String with: (Character value: code))
+                    at: at + (1 @ 1)
+                    font: font
+                    color: Color white ].
+            drawable image: ''glyphs'' form: atlas'.
+        label compile: 'widest
+            ^ (self first to: self last) inject: 1 into: [ :widest :code |
+                widest max: (font widthOf: (Character value: code)) ]'.
+        label compile: 'cellOrigin: aCode
+            | index |
+            index := aCode - self first.
+            ^ (index \\\\ columns * cell x) @ (index // columns * cell y)'.
+        label compile: 'buildStages
+            drawable
+                attribute: ''p'' components: 2;
+                attribute: ''glyph'' components: 2;
+                varying: ''uv'' components: 2;
+                uniform: ''at'' value: #(0 0);
+                uniform: ''size'' value: 0.1;
+                uniform: ''tint'' value: #(1 1 1);
+                vertexSource: ''void main() {
+                    uv = glyph;
+                    vec2 fit = vec2(min(u_resolution.y / u_resolution.x, 1.0),
+                                    min(u_resolution.x / u_resolution.y, 1.0));
+                    gl_Position = vec4(p * size * fit + at, 0.15, 1.0); }''
+                fragmentSource: ''void main() {
+                    float ink = texture(glyphs, uv).a;
+                    if (ink < 0.02) discard;
+                    frag_color = vec4(tint * ink, ink); }'';
+                mesh: #() primitive: #triangles'.
+        label compile: 'at: aPoint size: aSize tint: aColour
+            ^ drawable
+                uniform: ''at'' value: aPoint;
+                uniform: ''size'' value: aSize;
+                uniform: ''tint'' value: aColour'.
+        label compile: 'show: aString
+            "Two triangles a letter, laid out along the baseline in ems."
+            | corners pen atlas |
+            corners := OrderedCollection new.
+            pen := 0.0.
+            atlas := cell x * columns @ (cell y * ((self last - self first + 1 + columns - 1) // columns)).
+            aString do: [ :each |
+                | code advance origin wide high |
+                code := each asInteger.
+                (code between: self first and: self last)
+                    ifTrue: [
+                        advance := (font widthOf: each) / font height.
+                        origin := self cellOrigin: code.
+                        wide := cell x / font height.
+                        high := cell y / font height.
+                        #(#(0 0) #(1 0) #(0 1) #(1 0) #(1 1) #(0 1)) do: [ :corner |
+                            | cx cy |
+                            cx := (corner at: 1). cy := (corner at: 2).
+                            corners
+                                add: pen + (cx * wide); add: cy * high;
+                                add: (origin x + (cx * cell x)) / atlas x;
+                                add: (origin y + ((1 - cy) * cell y)) / atlas y ].
+                        pen := pen + advance ]
+                    ifFalse: [ pen := pen + 0.5 ] ].
+            ^ drawable remesh: corners primitive: #triangles'.
+        label compile: 'drawable ^ drawable'.
 
         project := Object << #LumaProject slots: {}; package: 'Luma'; install.
         project class compile: 'fetch: aName as: aClass

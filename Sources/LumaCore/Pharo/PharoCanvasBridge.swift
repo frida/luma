@@ -94,11 +94,15 @@ public func luma_drawable_set_vertices(
     _ primitive: Int32
 ) {
     let vertices = Array(UnsafeBufferPointer(start: values, count: Int(max(count, 0))))
-    CanvasRegistry.shared.update(Int(drawable), in: Int(scene)) { subject in
+    guard CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
         subject.geometry.vertices = vertices
         subject.geometry.primitive = CanvasGeometry.Primitive(rawValue: primitive) ?? .triangles
         subject.primitive = subject.geometry.primitive
-    }
+    }) != nil else { return }
+
+    // Fresh vertices for stages that are already built need no commit, so
+    // this is what carries them to whoever is drawing.
+    CanvasRegistry.shared.publish(Int(scene))
 }
 
 @_cdecl("luma_drawable_set_transform")

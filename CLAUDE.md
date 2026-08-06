@@ -190,6 +190,13 @@ host supplies (`v_uv`, `frag_color`, `u_resolution`, `u_time`,
   of the range. Getting this wrong binds each buffer where another was
   expected, which no compiler will catch.
 
+`LumaText` letters a scene from a glyph atlas: the image rasterises
+the printable range once into a Form, hands it over as a picture, and
+each string becomes two triangles a letter. Saying something else goes
+through `remesh:primitive:`, which sets vertices without a commit, so
+text that changes every frame costs a buffer rather than a rasterise
+and a shader compile.
+
 Keep `gl_Position.z` within 0..1. OpenGL's clip space runs -1..1 and
 Metal's runs 0..1, so a negative depth draws on GTK and is clipped
 away on macOS -- which no compiler will catch either.
