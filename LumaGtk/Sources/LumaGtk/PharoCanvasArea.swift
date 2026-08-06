@@ -44,6 +44,7 @@ final class PharoCanvasArea {
         area.widget.vexpand = true
         box.append(child: area.widget)
         watchInput()
+        reportScale()
 
         PharoCanvasScenes.register(self, for: scene)
         if let current = CanvasRegistry.shared.scene(scene) {
@@ -176,6 +177,10 @@ final class PharoCanvasArea {
             $0.pointerY = Float(1 - y / height * 2)
             $0.isPointerInside = isInside
         }
+    }
+
+    private func reportScale() {
+        CanvasRegistry.shared.reportScale(scene, Float(area.widget.scaleFactor))
     }
 
     private func report(_ change: (inout CanvasInput) -> Void) {
