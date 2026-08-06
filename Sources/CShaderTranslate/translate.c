@@ -82,6 +82,20 @@ luma_shader_translate_to_msl(const char *glsl, int stage, const char *entry_poin
     spvc_context_create_compiler(context, SPVC_BACKEND_MSL, ir, SPVC_CAPTURE_MODE_TAKE_OWNERSHIP, &compiler);
     spvc_compiler_rename_entry_point(compiler, "main", entry_point, execution_model);
 
+    // spirv-cross numbers MSL buffers in the order it meets the resources,
+    // not by the binding written in the shader, so say which is which. The
+    // standard block is buffer 0 and the author's params buffer 1, matching
+    // what the renderers bind; vertices sit clear at the top of the range.
+    for (unsigned binding = 0; binding != 2; binding++) {
+        spvc_msl_resource_binding pin;
+        spvc_msl_resource_binding_init(&pin);
+        pin.stage = execution_model;
+        pin.desc_set = 0;
+        pin.binding = binding;
+        pin.msl_buffer = binding;
+        spvc_compiler_msl_add_resource_binding(compiler, &pin);
+    }
+
     spvc_compiler_options options = NULL;
     spvc_compiler_create_compiler_options(compiler, &options);
     spvc_compiler_install_compiler_options(compiler, options);

@@ -90,6 +90,13 @@ final class PharoCanvasArea {
             transform.withUnsafeMutableBufferPointer { buffer in
                 luma_shader_effect_drawable_set_transform(area, record.handle, buffer.baseAddress)
             }
+            for uniform in drawable.uniforms {
+                var values = uniform.values
+                values.withUnsafeMutableBufferPointer { buffer in
+                    luma_shader_effect_drawable_set_uniform(
+                        area, record.handle, uniform.name, buffer.baseAddress, Int32(buffer.count))
+                }
+            }
             luma_shader_effect_drawable_set_visible(area, record.handle, drawable.isVisible)
 
             built[handle] = record

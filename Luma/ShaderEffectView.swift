@@ -237,8 +237,10 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
         return true
     }
 
-    /// The uniform block takes buffer 0, so the author's vertices follow it.
-    static let vertexBufferIndex = 1
+    /// Buffers 0 and 1 go to the two uniform blocks, as spirv-cross assigns
+    /// them by binding, so the vertices sit clear at the top of the range.
+    static let vertexBufferIndex = 30
+    static let paramsBufferIndex = 1
 
     private static func vertexDescriptor(for geometry: CanvasGeometry) -> MTLVertexDescriptor {
         let descriptor = MTLVertexDescriptor()

@@ -12,11 +12,21 @@
 #define ACTIVITY_HALF_LIFE_SECONDS 1.2f
 #define MAX_ATTRIBUTES 8
 #define MAX_DRAWABLES 64
+#define MAX_PARAMS 16
 
 typedef struct {
     char *name;
     int components;
 } LumaAttribute;
+
+// A uniform the author named. OpenGL takes them loose, so each is set by
+// the name it was given.
+typedef struct {
+    char *name;
+    float values[16];
+    int components;
+    GLint location;
+} LumaParam;
 
 // One thing the widget draws, with its own stages, vertices and place. A
 // scene is however many of these the author made.
@@ -32,6 +42,8 @@ typedef struct {
     int vertex_count;
     int primitive;
     float mvp[16];
+    LumaParam params[MAX_PARAMS];
+    int param_count;
     GLuint program;
     GLuint vao;
     GLuint vbo;
@@ -179,6 +191,36 @@ luma_shader_effect_drawable_set_vertices(void *widget, int handle,
     drawable->vertices = g_memdup2(values, count * sizeof(float));
     drawable->vertex_count = count;
     drawable->primitive = primitive;
+    drawable->changed = TRUE;
+}
+
+void
+luma_shader_effect_drawable_set_uniform(void *widget, int handle,
+                                        const char *name, const float *values, int count)
+{
+    LumaDrawable *drawable = drawable_for(effect_for(GTK_WIDGET(widget)), handle);
+    if (drawable == NULL)
+        return;
+    if (count > 16)
+        count = 16;
+
+    for (int index = 0; index != drawable->param_count; index++) {
+        LumaParam *param = &drawable->params[index];
+        if (strcmp(param->name, name) != 0)
+            continue;
+        memcpy(param->values, values, count * sizeof(float));
+        param->components = count;
+        return;
+    }
+
+    if (drawable->param_count == MAX_PARAMS)
+        return;
+
+    LumaParam *param = &drawable->params[drawable->param_count++];
+    param->name = g_strdup(name);
+    memcpy(param->values, values, count * sizeof(float));
+    param->components = count;
+    param->location = -1;
     drawable->changed = TRUE;
 }
 
@@ -371,6 +413,18 @@ on_render(GtkGLArea *area, GdkGLContext *context, gpointer user_data)
                 continue;
 
             glUseProgram(drawable->program);
+            for (int at = 0; at != drawable->param_count; at++) {
+                const LumaParam *param = &drawable->params[at];
+                if (param->location < 0)
+                    continue;
+                switch (param->components) {
+                    case 1: glUniform1fv(param->location, 1, param->values); break;
+                    case 2: glUniform2fv(param->location, 1, param->values); break;
+                    case 3: glUniform3fv(param->location, 1, param->values); break;
+                    case 16: glUniformMatrix4fv(param->location, 1, GL_FALSE, param->values); break;
+                    default: glUniform4fv(param->location, 1, param->values); break;
+                }
+            }
             feed_uniforms(self, drawable->loc_resolution, drawable->loc_time, drawable->loc_scheme,
                           drawable->loc_activity, drawable->loc_pulse, drawable->loc_data_count,
                           drawable->loc_data, drawable->loc_mvp, drawable->mvp,
@@ -437,6 +491,10 @@ rebuild_drawable(LumaDrawable *drawable)
     drawable->loc_data_count = glGetUniformLocation(drawable->program, "u_data_count");
     drawable->loc_data = glGetUniformLocation(drawable->program, "u_data");
     drawable->loc_mvp = glGetUniformLocation(drawable->program, "u_mvp");
+    for (int index = 0; index != drawable->param_count; index++) {
+        LumaParam *param = &drawable->params[index];
+        param->location = glGetUniformLocation(drawable->program, param->name);
+    }
 
     if (drawable->vao == 0)
         glGenVertexArrays(1, &drawable->vao);
@@ -517,6 +575,8 @@ effect_free(gpointer data)
         LumaDrawable *drawable = &self->drawables[index];
         for (int at = 0; at != drawable->attribute_count; at++)
             g_free(drawable->attributes[at].name);
+        for (int at = 0; at != drawable->param_count; at++)
+            g_free(drawable->params[at].name);
         g_free(drawable->vertices);
         g_free(drawable->vertex_src);
         g_free(drawable->fragment_src);

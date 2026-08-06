@@ -124,6 +124,14 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
             let length = uniforms.count * MemoryLayout<Float>.stride
             encoder.setVertexBytes(&uniforms, length: length, index: 0)
             encoder.setFragmentBytes(&uniforms, length: length, index: 0)
+            var params = subject.packedParams()
+            if !params.isEmpty {
+                let paramsLength = params.count * MemoryLayout<Float>.stride
+                encoder.setVertexBytes(&params, length: paramsLength,
+                                       index: ShaderEffectRenderer.paramsBufferIndex)
+                encoder.setFragmentBytes(&params, length: paramsLength,
+                                         index: ShaderEffectRenderer.paramsBufferIndex)
+            }
             encoder.setVertexBuffer(vertexBuffer, offset: 0, index: ShaderEffectRenderer.vertexBufferIndex)
             encoder.drawPrimitives(
                 type: Self.primitive(subject.geometry.primitive),

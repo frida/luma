@@ -373,6 +373,19 @@ public enum PharoLumaBindings {
                         (LumaCanvas primitives indexOf: aSymbol) - 1 }.
             array free.
             ^ self commit'.
+        drawable compile: 'uniform: aName value: aValue
+            "A uniform of the author''s own naming. A number or a collection
+             of up to sixteen; the host declares it and packs it to match."
+            | values array |
+            values := aValue isCollection ifTrue: [ aValue ] ifFalse: [ Array with: aValue ].
+            array := FFIExternalArray externalNewType: ''float'' size: values size.
+            values doWithIndex: [ :each :index | array at: index put: each asFloat ].
+            LumaHost invoke: ''luma_drawable_set_uniform''
+                parameters: { TFBasicType sint. TFBasicType sint. TFBasicType pointer.
+                              TFBasicType pointer. TFBasicType sint }
+                return: TFBasicType void
+                with: { scene. handle. (LumaHost cString: aName). array getHandle. values size }.
+            array free'.
         drawable compile: 'commit
             "Wraps the stages in declarations matching the layout, and answers
              false leaving lastError set when either will not compile."
