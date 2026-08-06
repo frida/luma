@@ -325,6 +325,7 @@ public enum PharoLumaBindings {
             scene := aScene.
             handle := aHandle'.
         drawable compile: 'handle ^ handle'.
+        drawable compile: 'scene ^ scene'.
         drawable compile: 'printOn: aStream
             aStream nextPutAll: ''LumaDrawable(''; print: handle; nextPut: $)'.
         drawable compile: 'clearLayout
@@ -495,112 +496,64 @@ public enum PharoLumaBindings {
                 return: TFBasicType void
                 with: { scene. handle. 1 }'.
 
-        label := Object << #LumaText slots: { #drawable. #font. #points. #padding. #cell. #columns. #ink. #rasterisedFor }; package: 'Luma'; install.
+        label := Object << #LumaText slots: { #drawable. #points. #padding. #atlas }; package: 'Luma'; install.
         label class compile: 'on: aDrawable
             ^ self on: aDrawable pointSize: 22'.
         label class compile: 'on: aDrawable pointSize: aSize
-            "Lettering for a scene. The glyphs are drawn once into an atlas the
-             shader samples, so saying something else costs a buffer of
-             corners rather than a rasterisation.
-
-             The point size is in the same units as the rest of the interface,
-             whatever a display packs into one of them, and the atlas is
-             rasterised to match rather than the quads being scaled -- which
-             is what would make the lettering soft."
+            "Lettering for a scene. The host draws the printable range into an
+             atlas the shader samples, so saying something else costs a buffer
+             of corners rather than a rasterisation -- and what fonts this
+             image can reach never comes into it."
             ^ self basicNew
                 setDrawable: aDrawable pointSize: aSize;
                 buildAtlas;
                 buildStages;
                 yourself'.
         label compile: 'setDrawable: aDrawable pointSize: aSize
-            "Rasterised so that an em comes out twice the size it is drawn at,
-             which lands texel for texel on a display with two physical pixels
-             to a logical one and halves cleanly on one without. A point size
-             is not a pixel height -- how many pixels it makes is the font''s
-             business -- so ask one at the asked-for size and scale from what
-             it answers."
             drawable := aDrawable.
             points := aSize.
-            padding := 16 @ 16.
-            columns := 16'.
-        label compile: 'chooseFont
-            "A point size is not a pixel height -- how many pixels it makes is
-             the font''s business -- so ask one at the asked-for size and scale
-             from what it answers. What is wanted is an em of as many texels as
-             the pixels it will be drawn on, which is what keeps a letter from
-             being resampled."
-            | family wanted measured |
-            rasterisedFor := self drawnScale.
-            wanted := points * rasterisedFor.
-            family := TextStyle defaultFont familyName.
-            measured := (LogicalFont familyName: family pointSize: points) height.
-            font := LogicalFont
-                familyName: family
-                pointSize: ((points * wanted / measured) rounded max: 6)'.
-        label compile: 'emSize
-            "The em as the atlas came out, in texels -- which is what it is
-             drawn as, one texel to one physical pixel. Everything else about
-             the size is settled when the atlas is rasterised, so nothing here
-             asks a shader to scale a glyph."
-            ^ font height'.
-        label compile: 'drawnScale
-            "Two until a view says otherwise, that being what the displays
-             this is written for do."
-            ^ drawable scale > 0 ifTrue: [ drawable scale ] ifFalse: [ 2 ]'.
+            padding := 16 @ 16'.
+        label compile: 'buildAtlas
+            "Drawn at as many pixels as it will cover, so a texel lands on a
+             pixel. Two until a view says what one is worth."
+            | scale |
+            scale := drawable scale > 0 ifTrue: [ drawable scale ] ifFalse: [ 2 ].
+            atlas ifNotNil: [ LumaHost invoke: ''luma_glyphs_discard''
+                parameters: { TFBasicType sint } return: TFBasicType void with: { atlas } ].
+            atlas := LumaHost invoke: ''luma_glyphs_make''
+                parameters: { TFBasicType sint }
+                return: TFBasicType sint
+                with: { (points * scale) rounded }.
+            LumaHost invoke: ''luma_glyphs_apply''
+                parameters: { TFBasicType sint. TFBasicType sint. TFBasicType sint. TFBasicType pointer }
+                return: TFBasicType void
+                with: { atlas. drawable scene. drawable handle. LumaHost cString: ''glyphs'' }'.
+        label compile: 'metric: anIndex
+            ^ LumaHost invoke: ''luma_glyphs_metric''
+                parameters: { TFBasicType sint. TFBasicType sint }
+                return: TFBasicType float
+                with: { atlas. anIndex }'.
+        label compile: 'sheetWidth ^ self metric: 0'.
+        label compile: 'sheetHeight ^ self metric: 1'.
+        label compile: 'cellWidth ^ self metric: 2'.
+        label compile: 'cellHeight ^ self metric: 3'.
+        label compile: 'columns ^ (self metric: 4) rounded'.
+        label compile: 'inkTop ^ self metric: 5'.
+        label compile: 'inkBottom ^ self metric: 6'.
+        label compile: 'advanceOf: aCharacter
+            ^ LumaHost invoke: ''luma_glyphs_advance''
+                parameters: { TFBasicType sint. TFBasicType sint }
+                return: TFBasicType float
+                with: { atlas. aCharacter asInteger }'.
         label compile: 'first ^ 32'.
         label compile: 'last ^ 126'.
-        label compile: 'buildAtlas
-            | rows atlas canvas |
-            self chooseFont.
-            "Whole texels: a cell that starts on a fraction is sampled off
-             its own grid, and the lettering comes out soft."
-            cell := (self widest + 2) @ (font height ceiling + 2).
-            rows := (self last - self first + 1 + columns - 1) // columns.
-            atlas := Form extent: (cell x * columns) @ (cell y * rows) depth: 32.
-            canvas := atlas getCanvas.
-            self first to: self last do: [ :code |
-                | at |
-                at := self cellOrigin: code.
-                canvas
-                    drawString: (String with: (Character value: code))
-                    at: at + (1 @ 1)
-                    font: font
-                    color: Color white ].
-            self measureInk: atlas.
-            drawable image: ''glyphs'' form: atlas'.
-        label compile: 'measureInk: anAtlas
-            "Which rows of a cell the lettering actually touches. Every cell
-             shares a baseline, so one pass over the atlas answers for all of
-             them -- and mapping the quads to this band rather than the whole
-             cell is what makes the gap above the lettering the gap that was
-             asked for."
-            | bits top bottom |
-            bits := anAtlas bits.
-            top := cell y.
-            bottom := 0.
-            1 to: bits size do: [ :index |
-                (bits at: index) = 0 ifFalse: [
-                    | row |
-                    row := (index - 1) // anAtlas width \\\\ cell y.
-                    row < top ifTrue: [ top := row ].
-                    row > bottom ifTrue: [ bottom := row ] ] ].
-            ink := top @ (bottom + 1)'.
-        label compile: 'widest
-            ^ (self first to: self last) inject: 1 into: [ :widest :code |
-                widest max: (self advanceOf: (Character value: code)) ]'.
-        label compile: 'advanceOf: aCharacter
-            ^ (font widthOf: aCharacter) ceiling'.
-        label compile: 'cellOrigin: aCode
-            | index |
-            index := aCode - self first.
-            ^ (index \\\\ columns * cell x) @ (index // columns * cell y)'.
         label compile: 'buildStages
             drawable
                 attribute: ''p'' components: 2;
                 attribute: ''glyph'' components: 2;
                 varying: ''uv'' components: 2;
                 uniform: ''pad'' value: self padInPixels;
-                uniform: ''size'' value: self emSize;
+                uniform: ''size'' value: self cellHeight;
                 uniform: ''tint'' value: #(1 1 1);
                 vertexSource: ''void main() {
                     uv = glyph;
@@ -616,44 +569,44 @@ public enum PharoLumaBindings {
             "Pixels from the top-left corner, both axes alike, so the gap
              above the lettering is the gap beside it whatever shape the
              view happens to be."
-            padding := aPoint first @ (aPoint last).
+            padding := aPoint first @ aPoint last.
             ^ drawable
                 uniform: ''pad'' value: self padInPixels;
                 uniform: ''tint'' value: aColour'.
         label compile: 'padInPixels
             "What was asked for is in the units the interface uses; what the
-             shader wants is physical pixels."
-            ^ { padding x * rasterisedFor. padding y * rasterisedFor }'.
+             shader wants is the pixels a texel lands on."
+            | scale |
+            scale := drawable scale > 0 ifTrue: [ drawable scale ] ifFalse: [ 2 ].
+            ^ { padding x * scale. padding y * scale }'.
+        label compile: 'cellOrigin: aCode
+            | index |
+            index := aCode - self first.
+            ^ (index \\\\ self columns * self cellWidth) @ (index // self columns * self cellHeight)'.
         label compile: 'show: aString
-            "Two triangles a letter, laid out along the baseline in ems. A
-             view that has since said what a pixel is worth gets the atlas
-             rasterised again to match, once."
-            | corners pen atlas |
-            rasterisedFor = self drawnScale ifFalse: [
-                self buildAtlas.
-                drawable
-                    uniform: ''size'' value: self emSize;
-                    uniform: ''pad'' value: self padInPixels ].
+            "Two triangles a letter, over the cell it was drawn in, laid out
+             along the baseline in cells."
+            | corners pen band cell |
             corners := OrderedCollection new.
             pen := 0.0.
-            atlas := cell x * columns @ (cell y * ((self last - self first + 1 + columns - 1) // columns)).
+            cell := self cellHeight.
+            band := self inkBottom - self inkTop.
             aString do: [ :each |
-                | code advance origin wide high |
+                | code origin wide high |
                 code := each asInteger.
                 (code between: self first and: self last)
                     ifTrue: [
-                        advance := (self advanceOf: each) / font height.
                         origin := self cellOrigin: code.
-                        wide := cell x / font height.
-                        high := (ink y - ink x) / font height.
+                        wide := self cellWidth / cell.
+                        high := band / cell.
                         #(#(0 0) #(1 0) #(0 1) #(1 0) #(1 1) #(0 1)) do: [ :corner |
                             | cx cy |
-                            cx := (corner at: 1). cy := (corner at: 2).
+                            cx := corner at: 1. cy := corner at: 2.
                             corners
                                 add: pen + (cx * wide); add: (cy - 1) * high;
-                                add: (origin x + (cx * cell x)) / atlas x;
-                                add: (origin y + ink x + ((1 - cy) * (ink y - ink x))) / atlas y ].
-                        pen := pen + advance ]
+                                add: (origin x + (cx * self cellWidth)) / self sheetWidth;
+                                add: (origin y + self inkTop + ((1 - cy) * band)) / self sheetHeight ].
+                        pen := pen + ((self advanceOf: each) / cell) ]
                     ifFalse: [ pen := pen + 0.5 ] ].
             ^ drawable remesh: corners primitive: #triangles'.
         label compile: 'drawable ^ drawable'.
