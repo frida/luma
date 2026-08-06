@@ -276,7 +276,7 @@ public enum PharoExampleCatalog {
                         facing = cos(turn);
                         float near = 1.0 / (1.0 - local.z * 0.3);
                         gl_Position = vec4(local.xy * 0.14 * near * fit + at, 0.3, 1.0); }'
-                    fragmentSource: ', lamp, '
+                    fragmentSource: lamp, '
                         void main() {
                             vec2 face = vec2(facing < 0.0 ? 1.0 - uv.x : uv.x, uv.y);
                             vec4 c = texture(icon, face);
@@ -296,7 +296,7 @@ public enum PharoExampleCatalog {
                     uniform: 'warmth' value: 0;
                     vertexSource: 'void main() { uv = p; ', fit, '
                         gl_Position = vec4(p * vec2(0.22, 0.045) * fit + at, 0.2, 1.0); }'
-                    fragmentSource: ', lamp, '
+                    fragmentSource: lamp, '
                         void main() {
                             vec3 n = normalize(vec3(uv.x * 0.2, uv.y * 0.9, 1.0));
                             vec3 base = mix(vec3(0.15, 0.85, 0.55), vec3(1.0, 0.7, 0.2), warmth);
