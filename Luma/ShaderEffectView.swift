@@ -162,7 +162,9 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
         uniforms[4] = activity
         uniforms[5] = pulsedAt.map { exp(-Float(now - $0) / pulseHalfLife) } ?? 0
         uniforms[6] = Float(min(data.count, Self.dataCapacity))
-        uniforms[7] = Float(view.window?.backingScaleFactor ?? 1)
+        uniforms[7] = view.bounds.width > 0
+            ? Float(view.drawableSize.width / view.bounds.width)
+            : Float(view.window?.backingScaleFactor ?? 1)
         for (offset, value) in data.prefix(Self.dataCapacity).enumerated() {
             uniforms[Self.dataWordOffset + offset] = value
         }

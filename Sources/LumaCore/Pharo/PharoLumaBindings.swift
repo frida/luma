@@ -495,7 +495,7 @@ public enum PharoLumaBindings {
                 return: TFBasicType void
                 with: { scene. handle. 1 }'.
 
-        label := Object << #LumaText slots: { #drawable. #font. #points. #cell. #columns. #ink. #rasterisedFor }; package: 'Luma'; install.
+        label := Object << #LumaText slots: { #drawable. #font. #points. #padding. #cell. #columns. #ink. #rasterisedFor }; package: 'Luma'; install.
         label class compile: 'on: aDrawable
             ^ self on: aDrawable pointSize: 22'.
         label class compile: 'on: aDrawable pointSize: aSize
@@ -521,6 +521,7 @@ public enum PharoLumaBindings {
              it answers."
             drawable := aDrawable.
             points := aSize.
+            padding := 16 @ 16.
             columns := 16'.
         label compile: 'chooseFont
             "A point size is not a pixel height -- how many pixels it makes is
@@ -537,12 +538,11 @@ public enum PharoLumaBindings {
                 familyName: family
                 pointSize: ((points * wanted / measured) rounded max: 6)'.
         label compile: 'emSize
-            "The em as the atlas actually came out, in logical pixels. Taking
-             it from the atlas rather than from the point size asked for is
-             what makes a texel land on a pixel: a font answers a point size
-             with whatever pixel height suits it, and the last few per cent
-             of that is the difference between sharp and soft."
-            ^ font height / rasterisedFor'.
+            "The em as the atlas came out, in texels -- which is what it is
+             drawn as, one texel to one physical pixel. Everything else about
+             the size is settled when the atlas is rasterised, so nothing here
+             asks a shader to scale a glyph."
+            ^ font height'.
         label compile: 'drawnScale
             "Two until a view says otherwise, that being what the displays
              this is written for do."
@@ -599,12 +599,12 @@ public enum PharoLumaBindings {
                 attribute: ''p'' components: 2;
                 attribute: ''glyph'' components: 2;
                 varying: ''uv'' components: 2;
-                uniform: ''pad'' value: #(16 16);
+                uniform: ''pad'' value: self padInPixels;
                 uniform: ''size'' value: self emSize;
                 uniform: ''tint'' value: #(1 1 1);
                 vertexSource: ''void main() {
                     uv = glyph;
-                    vec2 pixel = 2.0 * u_scale / u_resolution;
+                    vec2 pixel = 2.0 / u_resolution;
                     vec2 origin = vec2(-1.0, 1.0) + vec2(pad.x, -pad.y) * pixel;
                     gl_Position = vec4(origin + p * size * pixel, 0.15, 1.0); }''
                 fragmentSource: ''void main() {
@@ -616,9 +616,14 @@ public enum PharoLumaBindings {
             "Pixels from the top-left corner, both axes alike, so the gap
              above the lettering is the gap beside it whatever shape the
              view happens to be."
+            padding := aPoint first @ (aPoint last).
             ^ drawable
-                uniform: ''pad'' value: aPoint;
+                uniform: ''pad'' value: self padInPixels;
                 uniform: ''tint'' value: aColour'.
+        label compile: 'padInPixels
+            "What was asked for is in the units the interface uses; what the
+             shader wants is physical pixels."
+            ^ { padding x * rasterisedFor. padding y * rasterisedFor }'.
         label compile: 'show: aString
             "Two triangles a letter, laid out along the baseline in ems. A
              view that has since said what a pixel is worth gets the atlas
@@ -626,7 +631,9 @@ public enum PharoLumaBindings {
             | corners pen atlas |
             rasterisedFor = self drawnScale ifFalse: [
                 self buildAtlas.
-                drawable uniform: ''size'' value: self emSize ].
+                drawable
+                    uniform: ''size'' value: self emSize;
+                    uniform: ''pad'' value: self padInPixels ].
             corners := OrderedCollection new.
             pen := 0.0.
             atlas := cell x * columns @ (cell y * ((self last - self first + 1 + columns - 1) // columns)).
