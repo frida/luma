@@ -2,3 +2,6 @@
 # internalises anything nothing references, and nothing in Swift calls them,
 # so name them here or they vanish from a release build.
 _luma_*
+# The bridge the image calls back through as it boots. Missing it, the image
+# comes up without SwiftyPharo and nothing Pharo answers.
+_swifty_pharo_*
