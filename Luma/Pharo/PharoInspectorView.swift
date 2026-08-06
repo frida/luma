@@ -557,6 +557,10 @@ struct PharoObjectColumn: View {
                     onDrill: { try? await runtime.drillInto(object, view: declaration.methodSelector, index: $0 + 1) },
                     onSelect: onSelect)
             }
+        case "canvas":
+            if let canvas = declaration.canvas {
+                PharoCanvasSceneView(scene: canvas.scene)
+            }
         default:
             ContentUnavailableView(
                 "\(declaration.viewName) views are not rendered yet", systemImage: "square.dashed")
