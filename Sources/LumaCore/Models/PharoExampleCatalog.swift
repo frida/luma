@@ -64,8 +64,8 @@ public enum PharoExampleCatalog {
                 title: "A scene of your own, among an object's views",
                 code: """
                 "The scene is the host's; the image keeps its handle and says
-                 which one to draw. Inspect the answer to find the Scene tab."
-                | scene shape |
+                 which one to draw. Inspect the answer to find the Scene tab.
+                 scene and shape stay put for the snippets below."
                 scene := LumaCanvas new.
                 shape := scene addDrawable.
                 shape
@@ -78,13 +78,15 @@ public enum PharoExampleCatalog {
                     fragmentSource: 'void main() { frag_color = vec4(vc * tint, 1.0); }';
                     identity;
                     mesh: #(-0.8 -0.6 0   0.8 -0.6 0   0 0.8 0) primitive: #triangles.
-                Smalltalk at: #DemoScene put: scene.
-                Smalltalk at: #DemoShape put: shape.
-                (Object << #DemoThing slots: {}; package: 'Luma'; install)
-                    compile: 'gtSceneFor: aView
-                        <gtView>
-                        ^ aView canvas title: ''Scene''; scene: [ DemoScene handle ]'.
-                DemoThing new
+
+                "A method cannot see the variables here, but the handle is
+                 only a number, so it can be written straight in."
+                thing := Object << #DemoThing slots: {}; package: 'Luma'; install.
+                thing compile: 'gtSceneFor: aView
+                    <gtView>
+                    ^ aView canvas title: ''Scene''; scene: [ ',
+                    scene handle printString, ' ]'.
+                thing new
                 """),
             PharoExample(
                 title: "Say what a value should do, and leave it to draw",
@@ -92,15 +94,14 @@ public enum PharoExampleCatalog {
                 "Run the scene example first. Nothing here runs per frame: the
                  shape is told the shape of the change, and whichever renderer
                  draws it works the value out on its own clock."
-                DemoShape oscillate: 'tint' between: #(1 0.4 0.2) and: #(0.2 0.4 1) period: 3
+                shape oscillate: 'tint' between: #(1 0.4 0.2) and: #(0.2 0.4 1) period: 3
                 """),
             PharoExample(
                 title: "Picture a run of values too large for a uniform",
                 code: """
                 "A buffer is read by index through <name>At, held as a texture,
                  so handing over a fresh window is all a scrub costs."
-                | profile |
-                profile := DemoScene addDrawable.
+                profile := scene addDrawable.
                 profile
                     attribute: 'p' components: 2;
                     varying: 'uv' components: 2;
@@ -118,8 +119,8 @@ public enum PharoExampleCatalog {
                 code: """
                 "A scene is kept, not rebuilt: changing one part leaves the
                  rest, and its shaders, alone."
-                DemoShape hide.
-                "then, separately:  DemoShape show"
+                shape hide.
+                "then, separately:  shape show"
                 """),
             PharoExample(
                 title: "A screen-filling effect, with no geometry at all",
