@@ -134,6 +134,11 @@ void luma_shader_effect_drawable_set_transform(void *widget, int handle, const f
 // A uniform the author named, of whatever width they asked for.
 void luma_shader_effect_drawable_set_uniform(void *widget, int handle,
                                              const char *name, const float *values, int count);
+// What a named value should do over time: ramp (0) or oscillate (1). Worked
+// out on the frame clock, so the caller says it once.
+void luma_shader_effect_drawable_drive_uniform(void *widget, int handle, const char *name,
+                                               int kind, const float *from, const float *to,
+                                               int count, float seconds);
 void luma_shader_effect_drawable_set_visible(void *widget, int handle, bool visible);
 void luma_shader_effect_remove_drawable(void *widget, int handle);
 

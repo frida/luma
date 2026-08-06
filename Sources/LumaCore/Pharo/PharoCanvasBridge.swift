@@ -408,3 +408,36 @@ public func luma_drawable_set_uniform(
 
     CanvasRegistry.shared.publish(Int(scene), updated)
 }
+
+/// What a named value should do over time. Said once: the renderers work it
+/// out on their own clock, so the image never drives a frame.
+@_cdecl("luma_drawable_drive_uniform")
+public func luma_drawable_drive_uniform(
+    _ scene: Int32,
+    _ drawable: Int32,
+    _ name: UnsafePointer<CChar>,
+    _ kind: Int32,
+    _ from: UnsafePointer<Float>,
+    _ to: UnsafePointer<Float>,
+    _ count: Int32,
+    _ seconds: Float
+) {
+    let width = Int(max(count, 0))
+    let driver = CanvasDriver(
+        name: String(cString: name),
+        kind: CanvasDriver.Kind(rawValue: kind) ?? .ramp,
+        from: Array(UnsafeBufferPointer(start: from, count: width)),
+        to: Array(UnsafeBufferPointer(start: to, count: width)),
+        seconds: seconds)
+
+    guard let updated = CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
+        subject.drivers.removeAll { $0.name == driver.name }
+        subject.drivers.append(driver)
+        // A driven value still needs declaring, so the shader has it.
+        if !subject.uniforms.contains(where: { $0.name == driver.name }) {
+            subject.uniforms.append(CanvasUniform(name: driver.name, values: driver.from))
+        }
+    }) else { return }
+
+    CanvasRegistry.shared.publish(Int(scene), updated)
+}

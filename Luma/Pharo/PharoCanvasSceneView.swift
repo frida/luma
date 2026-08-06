@@ -72,6 +72,10 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         var vertexMetal: String
         var fragmentMetal: String
         var vertices: [Float]
+        var drivers: [CanvasDriver] = []
+        /// Stamped here rather than carried from the image, so a value moves
+        /// on the clock that draws it.
+        var driversStartedAt = CACurrentMediaTime()
     }
 
     func attach(to view: MTKView, scene handle: Int) {
@@ -124,7 +128,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
             let length = uniforms.count * MemoryLayout<Float>.stride
             encoder.setVertexBytes(&uniforms, length: length, index: 0)
             encoder.setFragmentBytes(&uniforms, length: length, index: 0)
-            var params = subject.packedParams()
+            var params = subject.packedParams(after: Float(CACurrentMediaTime() - record.driversStartedAt))
             if !params.isEmpty {
                 let paramsLength = params.count * MemoryLayout<Float>.stride
                 encoder.setVertexBytes(&params, length: paramsLength,
@@ -150,6 +154,11 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         if var existing = built[handle],
            existing.vertexMetal == subject.vertexMetal,
            existing.fragmentMetal == subject.fragmentMetal {
+            if existing.drivers != subject.drivers {
+                existing.drivers = subject.drivers
+                existing.driversStartedAt = CACurrentMediaTime()
+                built[handle] = existing
+            }
             if existing.vertices != subject.geometry.vertices {
                 existing.vertexBuffer = Self.buffer(for: subject, device: device)
                 existing.vertices = subject.geometry.vertices
@@ -181,7 +190,8 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
             vertexBuffer: Self.buffer(for: subject, device: device),
             vertexMetal: subject.vertexMetal,
             fragmentMetal: subject.fragmentMetal,
-            vertices: subject.geometry.vertices)
+            vertices: subject.geometry.vertices,
+            drivers: subject.drivers)
         built[handle] = record
         return record
     }

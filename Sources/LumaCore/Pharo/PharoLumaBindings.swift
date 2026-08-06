@@ -386,6 +386,31 @@ public enum PharoLumaBindings {
                 return: TFBasicType void
                 with: { scene. handle. (LumaHost cString: aName). array getHandle. values size }.
             array free'.
+        drawable compile: 'drive: aName kind: aKind from: aFrom to: aTo seconds: aSeconds
+            "Says what a value should do; the renderers work it out on their
+             own clock, so nothing here runs per frame."
+            | from to source target |
+            from := aFrom isCollection ifTrue: [ aFrom ] ifFalse: [ Array with: aFrom ].
+            to := aTo isCollection ifTrue: [ aTo ] ifFalse: [ Array with: aTo ].
+            source := FFIExternalArray externalNewType: ''float'' size: from size.
+            target := FFIExternalArray externalNewType: ''float'' size: to size.
+            from doWithIndex: [ :each :index | source at: index put: each asFloat ].
+            to doWithIndex: [ :each :index | target at: index put: each asFloat ].
+            LumaHost invoke: ''luma_drawable_drive_uniform''
+                parameters: { TFBasicType sint. TFBasicType sint. TFBasicType pointer.
+                              TFBasicType sint. TFBasicType pointer. TFBasicType pointer.
+                              TFBasicType sint. TFBasicType float }
+                return: TFBasicType void
+                with: { scene. handle. (LumaHost cString: aName). aKind.
+                        source getHandle. target getHandle. from size. aSeconds asFloat }.
+            source free.
+            target free'.
+        drawable compile: 'ramp: aName from: aFrom to: aTo over: aSeconds
+            "Moves once, and stays where it lands."
+            ^ self drive: aName kind: 0 from: aFrom to: aTo seconds: aSeconds'.
+        drawable compile: 'oscillate: aName between: aLow and: aHigh period: aPeriod
+            "Swings back and forth, for as long as it is drawn."
+            ^ self drive: aName kind: 1 from: aLow to: aHigh seconds: aPeriod'.
         drawable compile: 'commit
             "Wraps the stages in declarations matching the layout, and answers
              false leaving lastError set when either will not compile."

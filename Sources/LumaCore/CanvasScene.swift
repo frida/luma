@@ -17,6 +17,8 @@ public struct CanvasDrawable: Sendable, Equatable {
     public var primitive: CanvasGeometry.Primitive = .triangles
     /// Named by the author, in the order they declared them.
     public var uniforms: [CanvasUniform] = []
+    /// Those of them that are moving.
+    public var drivers: [CanvasDriver] = []
     public var isVisible = true
 
     public static let identity: [Float] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
@@ -25,11 +27,24 @@ public struct CanvasDrawable: Sendable, Equatable {
         self.geometry = geometry
     }
 
+    /// The uniforms as they stand `elapsed` seconds after the drivers began,
+    /// so a moving value needs no word from the image to keep moving.
+    public func uniforms(after elapsed: Float) -> [CanvasUniform] {
+        guard !drivers.isEmpty else { return uniforms }
+
+        return uniforms.map { uniform in
+            guard let driver = drivers.first(where: { $0.name == uniform.name }) else {
+                return uniform
+            }
+            return CanvasUniform(name: uniform.name, values: driver.value(after: elapsed))
+        }
+    }
+
     /// The author's uniforms laid out as the generated block declares them,
     /// so Metal reads each where it expects to.
-    public func packedParams() -> [Float] {
+    public func packedParams(after elapsed: Float = 0) -> [Float] {
         var packed: [Float] = []
-        for uniform in uniforms {
+        for uniform in uniforms(after: elapsed) {
             let padding = (uniform.alignment - packed.count % uniform.alignment) % uniform.alignment
             packed.append(contentsOf: repeatElement(0, count: padding))
             packed.append(contentsOf: uniform.values.prefix(uniform.components))
@@ -42,6 +57,44 @@ public struct CanvasDrawable: Sendable, Equatable {
         let tail = (4 - packed.count % 4) % 4
         packed.append(contentsOf: repeatElement(0, count: tail))
         return packed
+    }
+}
+
+/// What a value should do over time, said once rather than driven frame by
+/// frame. The renderers work it out on their own clock, so the image is
+/// never in the frame path.
+public struct CanvasDriver: Sendable, Equatable {
+    public enum Kind: Int32, Sendable, Equatable {
+        case ramp = 0
+        case oscillate = 1
+    }
+
+    public let name: String
+    public let kind: Kind
+    public let from: [Float]
+    public let to: [Float]
+    /// Seconds a ramp takes, or a full swing of an oscillation.
+    public let seconds: Float
+
+    public init(name: String, kind: Kind, from: [Float], to: [Float], seconds: Float) {
+        self.name = name
+        self.kind = kind
+        self.from = from
+        self.to = to
+        self.seconds = seconds
+    }
+
+    /// Where the value sits `elapsed` seconds in.
+    public func value(after elapsed: Float) -> [Float] {
+        let fraction: Float
+        switch kind {
+        case .ramp:
+            fraction = seconds <= 0 ? 1 : min(max(elapsed / seconds, 0), 1)
+        case .oscillate:
+            let period = seconds <= 0 ? 1 : seconds
+            fraction = 0.5 - 0.5 * cos(2 * .pi * elapsed / period)
+        }
+        return zip(from, to).map { $0 + ($1 - $0) * fraction }
     }
 }
 

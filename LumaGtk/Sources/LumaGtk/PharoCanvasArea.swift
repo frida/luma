@@ -97,6 +97,18 @@ final class PharoCanvasArea {
                         area, record.handle, uniform.name, buffer.baseAddress, Int32(buffer.count))
                 }
             }
+            for driver in drawable.drivers {
+                var from = driver.from
+                var to = driver.to
+                from.withUnsafeMutableBufferPointer { source in
+                    to.withUnsafeMutableBufferPointer { target in
+                        luma_shader_effect_drawable_drive_uniform(
+                            area, record.handle, driver.name, driver.kind.rawValue,
+                            source.baseAddress, target.baseAddress,
+                            Int32(source.count), driver.seconds)
+                    }
+                }
+            }
             luma_shader_effect_drawable_set_visible(area, record.handle, drawable.isVisible)
 
             built[handle] = record
