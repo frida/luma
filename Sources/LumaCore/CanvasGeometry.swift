@@ -128,9 +128,11 @@ public struct CanvasGeometry: Sendable, Equatable {
     private func sampled(_ buffers: [CanvasBuffer], _ flavour: Flavour) -> String {
         buffers.enumerated().map { index, buffer in
             let binding = flavour == .metal ? "layout(binding = \(2 + index)) " : ""
+            // The row length is declared with the author's own uniforms, so
+            // naming it here as well would redefine it -- and, for Metal,
+            // put a non-opaque uniform outside a block.
             return """
                 \(binding)uniform sampler2D \(buffer.name);
-                uniform vec2 \(buffer.name)_size;
                 float \(buffer.name)At(int i) {
                     int w = int(\(buffer.name)_size.x);
                     return texelFetch(\(buffer.name), ivec2(i - i / w * w, i / w), 0).r;
