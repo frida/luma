@@ -105,6 +105,14 @@ final class PharoCanvasArea {
                         Int32(sheet.width), Int32(sheet.height))
                 }
             }
+            for picture in drawable.images {
+                var pixels = picture.pixels
+                pixels.withUnsafeMutableBufferPointer { buffer in
+                    luma_shader_effect_drawable_set_image(
+                        area, record.handle, picture.name, buffer.baseAddress,
+                        Int32(picture.width), Int32(picture.height))
+                }
+            }
             for driver in drawable.drivers {
                 var from = driver.from
                 var to = driver.to

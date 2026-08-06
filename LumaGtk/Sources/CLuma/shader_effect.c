@@ -10,10 +10,6 @@
 // Seconds for a reported arrival to fall to 1/e.
 #define PULSE_HALF_LIFE_SECONDS 0.4f
 #define ACTIVITY_HALF_LIFE_SECONDS 1.2f
-#define MAX_ATTRIBUTES 8
-#define MAX_DRAWABLES 64
-#define MAX_PARAMS 16
-#define MAX_SHEETS 4
 
 typedef struct {
     char *name;
@@ -49,6 +45,18 @@ typedef struct {
     gboolean dirty;
 } LumaSheet;
 
+// A picture the shader samples across, one word per pixel, in the order the
+// image holds them.
+typedef struct {
+    char *name;
+    guint32 *pixels;
+    int width;
+    int height;
+    GLuint texture;
+    GLint location;
+    gboolean dirty;
+} LumaPicture;
+
 // One thing the widget draws, with its own stages, vertices and place. A
 // scene is however many of these the author made.
 typedef struct {
@@ -57,16 +65,14 @@ typedef struct {
     gboolean changed;
     char *vertex_src;
     char *fragment_src;
-    LumaAttribute attributes[MAX_ATTRIBUTES];
-    int attribute_count;
+    GArray *attributes;
     float *vertices;
     int vertex_count;
     int primitive;
     float mvp[16];
-    LumaParam params[MAX_PARAMS];
-    int param_count;
-    LumaSheet sheets[MAX_SHEETS];
-    int sheet_count;
+    GArray *params;
+    GArray *sheets;
+    GArray *pictures;
     GLuint program;
     GLuint vao;
     GLuint vbo;
@@ -95,7 +101,7 @@ typedef struct {
     GLint loc_data;
     GLint loc_mvp;
 
-    LumaDrawable drawables[MAX_DRAWABLES];
+    GPtrArray *drawables;
     int next_handle;
 
     gint64 start_us;
@@ -115,6 +121,7 @@ static void on_unrealize(GtkGLArea *area, gpointer user_data);
 static gboolean on_render(GtkGLArea *area, GdkGLContext *context, gpointer user_data);
 static gboolean on_tick(GtkWidget *widget, GdkFrameClock *clock, gpointer user_data);
 static void effect_free(gpointer data);
+static void drawable_free(gpointer data);
 static LumaShaderEffect *effect_for(GtkWidget *widget);
 static LumaDrawable *drawable_for(LumaShaderEffect *self, int handle);
 static void feed_uniforms(LumaShaderEffect *self, GLint resolution, GLint time, GLint scheme,
@@ -134,6 +141,7 @@ luma_shader_effect_new(const char *fragment_src)
     LumaShaderEffect *self = g_new0(LumaShaderEffect, 1);
     self->fragment_src = fragment_src != NULL ? g_strdup(fragment_src) : NULL;
     self->scheme = 1.0f;
+    self->drawables = g_ptr_array_new_with_free_func(drawable_free);
     self->next_handle = 1;
     identity(self->mvp);
 
@@ -158,17 +166,17 @@ int
 luma_shader_effect_add_drawable(void *widget)
 {
     LumaShaderEffect *self = effect_for(GTK_WIDGET(widget));
-    for (int index = 0; index != MAX_DRAWABLES; index++) {
-        LumaDrawable *drawable = &self->drawables[index];
-        if (drawable->handle != 0)
-            continue;
 
-        drawable->handle = self->next_handle++;
-        drawable->visible = TRUE;
-        identity(drawable->mvp);
-        return drawable->handle;
-    }
-    return 0;
+    LumaDrawable *drawable = g_new0(LumaDrawable, 1);
+    drawable->handle = self->next_handle++;
+    drawable->visible = TRUE;
+    drawable->attributes = g_array_new(FALSE, TRUE, sizeof(LumaAttribute));
+    drawable->params = g_array_new(FALSE, TRUE, sizeof(LumaParam));
+    drawable->sheets = g_array_new(FALSE, TRUE, sizeof(LumaSheet));
+    drawable->pictures = g_array_new(FALSE, TRUE, sizeof(LumaPicture));
+    identity(drawable->mvp);
+    g_ptr_array_add(self->drawables, drawable);
+    return drawable->handle;
 }
 
 void
@@ -183,9 +191,9 @@ luma_shader_effect_drawable_set_program(void *widget, int handle,
     g_clear_pointer(&drawable->fragment_src, g_free);
     drawable->vertex_src = g_strdup(vertex_src);
     drawable->fragment_src = g_strdup(fragment_src);
-    for (int index = 0; index != drawable->attribute_count; index++)
-        g_clear_pointer(&drawable->attributes[index].name, g_free);
-    drawable->attribute_count = 0;
+    for (guint index = 0; index != drawable->attributes->len; index++)
+        g_free(g_array_index(drawable->attributes, LumaAttribute, index).name);
+    g_array_set_size(drawable->attributes, 0);
     drawable->changed = TRUE;
 }
 
@@ -193,12 +201,11 @@ void
 luma_shader_effect_drawable_add_attribute(void *widget, int handle, const char *name, int components)
 {
     LumaDrawable *drawable = drawable_for(effect_for(GTK_WIDGET(widget)), handle);
-    if (drawable == NULL || drawable->attribute_count == MAX_ATTRIBUTES)
+    if (drawable == NULL)
         return;
 
-    LumaAttribute *attribute = &drawable->attributes[drawable->attribute_count++];
-    attribute->name = g_strdup(name);
-    attribute->components = components;
+    LumaAttribute attribute = { g_strdup(name), components };
+    g_array_append_val(drawable->attributes, attribute);
     drawable->changed = TRUE;
 }
 
@@ -227,8 +234,8 @@ luma_shader_effect_drawable_set_uniform(void *widget, int handle,
     if (count > 16)
         count = 16;
 
-    for (int index = 0; index != drawable->param_count; index++) {
-        LumaParam *param = &drawable->params[index];
+    for (guint index = 0; index != drawable->params->len; index++) {
+        LumaParam *param = &g_array_index(drawable->params, LumaParam, index);
         if (strcmp(param->name, name) != 0)
             continue;
         memcpy(param->values, values, count * sizeof(float));
@@ -236,14 +243,9 @@ luma_shader_effect_drawable_set_uniform(void *widget, int handle,
         return;
     }
 
-    if (drawable->param_count == MAX_PARAMS)
-        return;
-
-    LumaParam *param = &drawable->params[drawable->param_count++];
-    param->name = g_strdup(name);
-    memcpy(param->values, values, count * sizeof(float));
-    param->components = count;
-    param->location = -1;
+    LumaParam param = { .name = g_strdup(name), .components = count, .location = -1 };
+    memcpy(param.values, values, count * sizeof(float));
+    g_array_append_val(drawable->params, param);
     drawable->changed = TRUE;
 }
 
@@ -256,18 +258,16 @@ luma_shader_effect_drawable_set_buffer(void *widget, int handle, const char *nam
         return;
 
     LumaSheet *sheet = NULL;
-    for (int index = 0; index != drawable->sheet_count; index++) {
-        if (strcmp(drawable->sheets[index].name, name) == 0) {
-            sheet = &drawable->sheets[index];
+    for (guint index = 0; index != drawable->sheets->len; index++) {
+        if (strcmp(g_array_index(drawable->sheets, LumaSheet, index).name, name) == 0) {
+            sheet = &g_array_index(drawable->sheets, LumaSheet, index);
             break;
         }
     }
     if (sheet == NULL) {
-        if (drawable->sheet_count == MAX_SHEETS)
-            return;
-        sheet = &drawable->sheets[drawable->sheet_count++];
-        sheet->name = g_strdup(name);
-        sheet->location = -1;
+        LumaSheet fresh = { .name = g_strdup(name), .location = -1 };
+        g_array_append_val(drawable->sheets, fresh);
+        sheet = &g_array_index(drawable->sheets, LumaSheet, drawable->sheets->len - 1);
         drawable->changed = TRUE;
     }
 
@@ -276,6 +276,35 @@ luma_shader_effect_drawable_set_buffer(void *widget, int handle, const char *nam
     sheet->width = width;
     sheet->height = height;
     sheet->dirty = TRUE;
+}
+
+void
+luma_shader_effect_drawable_set_image(void *widget, int handle, const char *name,
+                                      const guint32 *pixels, int width, int height)
+{
+    LumaDrawable *drawable = drawable_for(effect_for(GTK_WIDGET(widget)), handle);
+    if (drawable == NULL)
+        return;
+
+    LumaPicture *picture = NULL;
+    for (guint index = 0; index != drawable->pictures->len; index++) {
+        if (strcmp(g_array_index(drawable->pictures, LumaPicture, index).name, name) == 0) {
+            picture = &g_array_index(drawable->pictures, LumaPicture, index);
+            break;
+        }
+    }
+    if (picture == NULL) {
+        LumaPicture fresh = { .name = g_strdup(name), .location = -1 };
+        g_array_append_val(drawable->pictures, fresh);
+        picture = &g_array_index(drawable->pictures, LumaPicture, drawable->pictures->len - 1);
+        drawable->changed = TRUE;
+    }
+
+    g_clear_pointer(&picture->pixels, g_free);
+    picture->pixels = g_memdup2(pixels, (gsize) width * height * sizeof(guint32));
+    picture->width = width;
+    picture->height = height;
+    picture->dirty = TRUE;
 }
 
 void
@@ -291,18 +320,16 @@ luma_shader_effect_drawable_drive_uniform(void *widget, int handle, const char *
         count = 16;
 
     LumaParam *param = NULL;
-    for (int index = 0; index != drawable->param_count; index++) {
-        if (strcmp(drawable->params[index].name, name) == 0) {
-            param = &drawable->params[index];
+    for (guint index = 0; index != drawable->params->len; index++) {
+        if (strcmp(g_array_index(drawable->params, LumaParam, index).name, name) == 0) {
+            param = &g_array_index(drawable->params, LumaParam, index);
             break;
         }
     }
     if (param == NULL) {
-        if (drawable->param_count == MAX_PARAMS)
-            return;
-        param = &drawable->params[drawable->param_count++];
-        param->name = g_strdup(name);
-        param->location = -1;
+        LumaParam fresh = { .name = g_strdup(name), .location = -1 };
+        g_array_append_val(drawable->params, fresh);
+        param = &g_array_index(drawable->params, LumaParam, drawable->params->len - 1);
         drawable->changed = TRUE;
     }
 
@@ -335,22 +362,10 @@ luma_shader_effect_drawable_set_visible(void *widget, int handle, bool visible)
 void
 luma_shader_effect_remove_drawable(void *widget, int handle)
 {
-    LumaDrawable *drawable = drawable_for(effect_for(GTK_WIDGET(widget)), handle);
-    if (drawable == NULL)
-        return;
-
-    for (int index = 0; index != drawable->attribute_count; index++)
-        g_free(drawable->attributes[index].name);
-    g_free(drawable->vertices);
-    g_free(drawable->vertex_src);
-    g_free(drawable->fragment_src);
-    if (drawable->program != 0)
-        glDeleteProgram(drawable->program);
-    if (drawable->vbo != 0)
-        glDeleteBuffers(1, &drawable->vbo);
-    if (drawable->vao != 0)
-        glDeleteVertexArrays(1, &drawable->vao);
-    memset(drawable, 0, sizeof *drawable);
+    LumaShaderEffect *self = effect_for(GTK_WIDGET(widget));
+    LumaDrawable *drawable = drawable_for(self, handle);
+    if (drawable != NULL)
+        g_ptr_array_remove(self->drawables, drawable);
 }
 
 void
@@ -474,8 +489,8 @@ on_render(GtkGLArea *area, GdkGLContext *context, gpointer user_data)
     self->activity *= expf(-since_render / ACTIVITY_HALF_LIFE_SECONDS);
 
     int drawn = 0;
-    for (int index = 0; index != MAX_DRAWABLES; index++) {
-        if (self->drawables[index].handle != 0 && self->drawables[index].visible)
+    for (guint index = 0; index != self->drawables->len; index++) {
+        if (((LumaDrawable *) self->drawables->pdata[index])->visible)
             drawn++;
     }
 
@@ -489,9 +504,9 @@ on_render(GtkGLArea *area, GdkGLContext *context, gpointer user_data)
     }
 
     if (drawn > 0) {
-        for (int index = 0; index != MAX_DRAWABLES; index++) {
-            LumaDrawable *drawable = &self->drawables[index];
-            if (drawable->handle == 0 || !drawable->visible)
+        for (guint index = 0; index != self->drawables->len; index++) {
+            LumaDrawable *drawable = self->drawables->pdata[index];
+            if (!drawable->visible)
                 continue;
             if (drawable->changed)
                 rebuild_drawable(drawable);
@@ -499,14 +514,14 @@ on_render(GtkGLArea *area, GdkGLContext *context, gpointer user_data)
                 continue;
 
             int stride = 0;
-            for (int at = 0; at != drawable->attribute_count; at++)
-                stride += drawable->attributes[at].components;
+            for (guint at = 0; at != drawable->attributes->len; at++)
+                stride += g_array_index(drawable->attributes, LumaAttribute, at).components;
             if (stride == 0)
                 continue;
 
             glUseProgram(drawable->program);
-            for (int at = 0; at != drawable->sheet_count; at++) {
-                LumaSheet *sheet = &drawable->sheets[at];
+            for (guint at = 0; at != drawable->sheets->len; at++) {
+                LumaSheet *sheet = &g_array_index(drawable->sheets, LumaSheet, at);
                 if (sheet->location < 0 || sheet->values == NULL)
                     continue;
                 if (sheet->texture == 0)
@@ -524,9 +539,29 @@ on_render(GtkGLArea *area, GdkGLContext *context, gpointer user_data)
                 }
                 glUniform1i(sheet->location, at);
             }
+            for (guint at = 0; at != drawable->pictures->len; at++) {
+                LumaPicture *picture = &g_array_index(drawable->pictures, LumaPicture, at);
+                if (picture->location < 0 || picture->pixels == NULL)
+                    continue;
+                guint unit = drawable->sheets->len + at;
+                if (picture->texture == 0)
+                    glGenTextures(1, &picture->texture);
+                glActiveTexture(GL_TEXTURE0 + unit);
+                glBindTexture(GL_TEXTURE_2D, picture->texture);
+                if (picture->dirty) {
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, picture->width, picture->height, 0,
+                                 GL_BGRA, GL_UNSIGNED_BYTE, picture->pixels);
+                    picture->dirty = FALSE;
+                }
+                glUniform1i(picture->location, unit);
+            }
             glActiveTexture(GL_TEXTURE0);
-            for (int at = 0; at != drawable->param_count; at++) {
-                LumaParam *param = &drawable->params[at];
+            for (guint at = 0; at != drawable->params->len; at++) {
+                LumaParam *param = &g_array_index(drawable->params, LumaParam, at);
                 if (param->location < 0)
                     continue;
                 if (param->driven) {
@@ -617,14 +652,19 @@ rebuild_drawable(LumaDrawable *drawable)
     drawable->loc_data_count = glGetUniformLocation(drawable->program, "u_data_count");
     drawable->loc_data = glGetUniformLocation(drawable->program, "u_data");
     drawable->loc_mvp = glGetUniformLocation(drawable->program, "u_mvp");
-    for (int index = 0; index != drawable->param_count; index++) {
-        LumaParam *param = &drawable->params[index];
+    for (guint index = 0; index != drawable->params->len; index++) {
+        LumaParam *param = &g_array_index(drawable->params, LumaParam, index);
         param->location = glGetUniformLocation(drawable->program, param->name);
     }
-    for (int index = 0; index != drawable->sheet_count; index++) {
-        LumaSheet *sheet = &drawable->sheets[index];
+    for (guint index = 0; index != drawable->sheets->len; index++) {
+        LumaSheet *sheet = &g_array_index(drawable->sheets, LumaSheet, index);
         sheet->location = glGetUniformLocation(drawable->program, sheet->name);
         sheet->dirty = TRUE;
+    }
+    for (guint index = 0; index != drawable->pictures->len; index++) {
+        LumaPicture *picture = &g_array_index(drawable->pictures, LumaPicture, index);
+        picture->location = glGetUniformLocation(drawable->program, picture->name);
+        picture->dirty = TRUE;
     }
 
     if (drawable->vao == 0)
@@ -638,12 +678,12 @@ rebuild_drawable(LumaDrawable *drawable)
                  drawable->vertices, GL_STATIC_DRAW);
 
     int stride = 0;
-    for (int index = 0; index != drawable->attribute_count; index++)
-        stride += drawable->attributes[index].components;
+    for (guint index = 0; index != drawable->attributes->len; index++)
+        stride += g_array_index(drawable->attributes, LumaAttribute, index).components;
 
     size_t offset = 0;
-    for (int index = 0; index != drawable->attribute_count; index++) {
-        const LumaAttribute *attribute = &drawable->attributes[index];
+    for (guint index = 0; index != drawable->attributes->len; index++) {
+        const LumaAttribute *attribute = &g_array_index(drawable->attributes, LumaAttribute, index);
         glEnableVertexAttribArray(index);
         glVertexAttribPointer(index, attribute->components, GL_FLOAT, GL_FALSE,
                               stride * sizeof(float), (const void *)(offset * sizeof(float)));
@@ -669,8 +709,9 @@ link_authored_program(LumaDrawable *drawable)
     GLuint program = glCreateProgram();
     glAttachShader(program, vs);
     glAttachShader(program, fs);
-    for (int index = 0; index != drawable->attribute_count; index++)
-        glBindAttribLocation(program, index, drawable->attributes[index].name);
+    for (guint index = 0; index != drawable->attributes->len; index++)
+        glBindAttribLocation(program, index,
+                             g_array_index(drawable->attributes, LumaAttribute, index).name);
     glLinkProgram(program);
     glDetachShader(program, vs);
     glDetachShader(program, fs);
@@ -702,22 +743,46 @@ static void
 effect_free(gpointer data)
 {
     LumaShaderEffect *self = data;
-    for (int index = 0; index != MAX_DRAWABLES; index++) {
-        LumaDrawable *drawable = &self->drawables[index];
-        for (int at = 0; at != drawable->attribute_count; at++)
-            g_free(drawable->attributes[at].name);
-        for (int at = 0; at != drawable->param_count; at++)
-            g_free(drawable->params[at].name);
-        for (int at = 0; at != drawable->sheet_count; at++) {
-            g_free(drawable->sheets[at].name);
-            g_free(drawable->sheets[at].values);
-        }
-        g_free(drawable->vertices);
-        g_free(drawable->vertex_src);
-        g_free(drawable->fragment_src);
-    }
+    g_ptr_array_unref(self->drawables);
     g_free(self->fragment_src);
     g_free(self);
+}
+
+static void
+drawable_free(gpointer data)
+{
+    LumaDrawable *drawable = data;
+
+    for (guint at = 0; at != drawable->attributes->len; at++)
+        g_free(g_array_index(drawable->attributes, LumaAttribute, at).name);
+    g_array_unref(drawable->attributes);
+    for (guint at = 0; at != drawable->params->len; at++)
+        g_free(g_array_index(drawable->params, LumaParam, at).name);
+    g_array_unref(drawable->params);
+    for (guint at = 0; at != drawable->sheets->len; at++) {
+        LumaSheet *sheet = &g_array_index(drawable->sheets, LumaSheet, at);
+        g_free(sheet->name);
+        g_free(sheet->values);
+    }
+    g_array_unref(drawable->sheets);
+    for (guint at = 0; at != drawable->pictures->len; at++) {
+        LumaPicture *picture = &g_array_index(drawable->pictures, LumaPicture, at);
+        g_free(picture->name);
+        g_free(picture->pixels);
+    }
+    g_array_unref(drawable->pictures);
+
+    if (drawable->program != 0)
+        glDeleteProgram(drawable->program);
+    if (drawable->vbo != 0)
+        glDeleteBuffers(1, &drawable->vbo);
+    if (drawable->vao != 0)
+        glDeleteVertexArrays(1, &drawable->vao);
+
+    g_free(drawable->vertices);
+    g_free(drawable->vertex_src);
+    g_free(drawable->fragment_src);
+    g_free(drawable);
 }
 
 static LumaShaderEffect *
@@ -729,9 +794,10 @@ effect_for(GtkWidget *widget)
 static LumaDrawable *
 drawable_for(LumaShaderEffect *self, int handle)
 {
-    for (int index = 0; index != MAX_DRAWABLES; index++) {
-        if (self->drawables[index].handle == handle)
-            return &self->drawables[index];
+    for (guint index = 0; index != self->drawables->len; index++) {
+        LumaDrawable *drawable = self->drawables->pdata[index];
+        if (drawable->handle == handle)
+            return drawable;
     }
     return NULL;
 }

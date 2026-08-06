@@ -69,7 +69,8 @@ public struct CanvasGeometry: Sendable, Equatable {
     public func vertexPreamble(
         _ flavour: Flavour,
         uniforms extra: [CanvasUniform] = [],
-        buffers: [CanvasBuffer] = []
+        buffers: [CanvasBuffer] = [],
+        images: [CanvasImage] = []
     ) -> String {
         let inputs = attributes.enumerated().map { index, attribute in
             declaration("in", attribute, at: index, flavour)
@@ -79,14 +80,16 @@ public struct CanvasGeometry: Sendable, Equatable {
         }
         return (["#version \(flavour == .metal ? "450" : "150 core")"]
             + inputs + outputs
-            + [uniforms(flavour), declared(extra, flavour), sampled(buffers, flavour), ""])
+            + [uniforms(flavour), declared(extra, flavour),
+               sampled(buffers, flavour), pictured(images, after: buffers.count, flavour), ""])
             .joined(separator: "\n")
     }
 
     public func fragmentPreamble(
         _ flavour: Flavour,
         uniforms extra: [CanvasUniform] = [],
-        buffers: [CanvasBuffer] = []
+        buffers: [CanvasBuffer] = [],
+        images: [CanvasImage] = []
     ) -> String {
         let inputs = varyings.enumerated().map { index, varying in
             declaration("in", varying, at: index, flavour)
@@ -96,7 +99,8 @@ public struct CanvasGeometry: Sendable, Equatable {
             : "out vec4 frag_color;"
         return (["#version \(flavour == .metal ? "450" : "150 core")"]
             + inputs
-            + [output, uniforms(flavour), declared(extra, flavour), sampled(buffers, flavour), ""])
+            + [output, uniforms(flavour), declared(extra, flavour),
+               sampled(buffers, flavour), pictured(images, after: buffers.count, flavour), ""])
             .joined(separator: "\n")
     }
 
@@ -138,6 +142,16 @@ public struct CanvasGeometry: Sendable, Equatable {
                     return texelFetch(\(buffer.name), ivec2(i - i / w * w, i / w), 0).r;
                 }
                 """
+        }.joined(separator: "\n")
+    }
+
+    /// A picture is sampled across rather than read by index, so it needs no
+    /// reader of its own: the author says `texture` of it. Its bindings carry
+    /// on from where the buffers left off, since both are samplers.
+    private func pictured(_ images: [CanvasImage], after buffers: Int, _ flavour: Flavour) -> String {
+        images.enumerated().map { index, image in
+            let binding = flavour == .metal ? "layout(binding = \(2 + buffers + index)) " : ""
+            return "\(binding)uniform sampler2D \(image.name);"
         }.joined(separator: "\n")
     }
 

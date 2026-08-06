@@ -131,19 +131,22 @@ public func luma_drawable_commit(_ scene: Int32, _ drawable: Int32) -> Int32 {
     let geometry = subject.geometry
     let declared = subject.uniforms
     let sheets = subject.buffers
-    let vertexGLSL = geometry.vertexPreamble(.openGL, uniforms: declared, buffers: sheets)
-        + subject.authorVertex
-    let fragmentGLSL = geometry.fragmentPreamble(.openGL, uniforms: declared, buffers: sheets)
-        + subject.authorFragment
+    let pictures = subject.images
+    let vertexGLSL = geometry.vertexPreamble(
+        .openGL, uniforms: declared, buffers: sheets, images: pictures) + subject.authorVertex
+    let fragmentGLSL = geometry.fragmentPreamble(
+        .openGL, uniforms: declared, buffers: sheets, images: pictures) + subject.authorFragment
     let vertexMetal: String
     let fragmentMetal: String
     do {
         vertexMetal = try ShaderTranslator.metalSource(
-            forComplete: geometry.vertexPreamble(.metal, uniforms: declared, buffers: sheets)
+            forComplete: geometry.vertexPreamble(
+                .metal, uniforms: declared, buffers: sheets, images: pictures)
                 + subject.authorVertex,
             stage: .vertex, entryPoint: "canvasVertex")
         fragmentMetal = try ShaderTranslator.metalSource(
-            forComplete: geometry.fragmentPreamble(.metal, uniforms: declared, buffers: sheets)
+            forComplete: geometry.fragmentPreamble(
+                .metal, uniforms: declared, buffers: sheets, images: pictures)
                 + subject.authorFragment,
             stage: .fragment, entryPoint: "canvasFragment")
     } catch {
@@ -249,6 +252,34 @@ public func luma_drawable_set_buffer(
             subject.uniforms[existing] = size
         } else {
             subject.uniforms.append(size)
+        }
+    }) else { return }
+
+    CanvasRegistry.shared.publish(Int(scene), updated)
+}
+
+/// A picture the shader samples. Pixels come as the image holds them, one
+/// word per pixel, which is what both renderers upload.
+@_cdecl("luma_drawable_set_image")
+public func luma_drawable_set_image(
+    _ scene: Int32,
+    _ drawable: Int32,
+    _ name: UnsafePointer<CChar>,
+    _ pixels: UnsafePointer<UInt32>,
+    _ width: Int32,
+    _ height: Int32
+) {
+    let image = CanvasImage(
+        name: String(cString: name),
+        pixels: Array(UnsafeBufferPointer(start: pixels, count: Int(width) * Int(height))),
+        width: Int(width),
+        height: Int(height))
+
+    guard let updated = CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
+        if let existing = subject.images.firstIndex(where: { $0.name == image.name }) {
+            subject.images[existing] = image
+        } else {
+            subject.images.append(image)
         }
     }) else { return }
 
