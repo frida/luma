@@ -390,6 +390,21 @@ public enum PharoLumaBindings {
                 with: { scene. handle. (LumaHost cString: aName).
                         array getHandle. aCollection size }.
             array free'.
+        drawable compile: 'image: aName form: aForm
+            "A picture the shader samples across, said as texture(<name>, uv).
+             Any Form will do -- a session icon, something the image drew."
+            | picture bits array |
+            picture := aForm asFormOfDepth: 32.
+            bits := picture bits.
+            array := FFIExternalArray externalNewType: ''uint'' size: bits size.
+            1 to: bits size do: [ :index | array at: index put: (bits at: index) ].
+            LumaHost invoke: ''luma_drawable_set_image''
+                parameters: { TFBasicType sint. TFBasicType sint. TFBasicType pointer.
+                              TFBasicType pointer. TFBasicType sint. TFBasicType sint }
+                return: TFBasicType void
+                with: { scene. handle. (LumaHost cString: aName).
+                        array getHandle. picture width. picture height }.
+            array free'.
         drawable compile: 'ramp: aName from: aFrom to: aTo over: aSeconds
             "Moves once, and stays where it lands."
             ^ self drive: aName kind: 0 from: aFrom to: aTo seconds: aSeconds'.

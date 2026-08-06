@@ -21,6 +21,8 @@ public struct CanvasDrawable: Sendable, Equatable {
     public var drivers: [CanvasDriver] = []
     /// Runs of values the shader reads by index.
     public var buffers: [CanvasBuffer] = []
+    /// Pictures the shader samples.
+    public var images: [CanvasImage] = []
     public var isVisible = true
 
     public static let identity: [Float] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
@@ -59,6 +61,23 @@ public struct CanvasDrawable: Sendable, Equatable {
         let tail = (4 - packed.count % 4) % 4
         packed.append(contentsOf: repeatElement(0, count: tail))
         return packed
+    }
+}
+
+/// A picture the shader samples across, rather than reads by index: an icon,
+/// a screenshot, whatever the image drew. Pixels arrive as the image holds
+/// them, one word each, which is the byte order both renderers upload.
+public struct CanvasImage: Sendable, Equatable {
+    public let name: String
+    public var pixels: [UInt32]
+    public let width: Int
+    public let height: Int
+
+    public init(name: String, pixels: [UInt32], width: Int, height: Int) {
+        self.name = name
+        self.pixels = pixels
+        self.width = width
+        self.height = height
     }
 }
 

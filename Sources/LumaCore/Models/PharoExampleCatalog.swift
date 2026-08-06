@@ -117,6 +117,36 @@ public enum PharoExampleCatalog {
                 "then, separately:  shape show"
                 """),
             PharoExample(
+                title: "Your sessions, as icons on turning cards",
+                code: """
+                "A picture is any Form, so what the host already carries -- a
+                 session's icon -- goes straight onto a card of its own."
+                iconScene := LumaCanvas new.
+                shown := LumaProject sessions items select: [ :each | each icon notNil ].
+                shown doWithIndex: [ :session :index |
+                    | angle card |
+                    angle := 2 * Float pi * (index - 1) / shown size.
+                    card := iconScene addDrawable.
+                    card
+                        attribute: 'p' components: 2;
+                        varying: 'uv' components: 2;
+                        uniform: 'centre' value: { angle sin * 0.55. angle cos * 0.55 };
+                        image: 'icon' form: session icon;
+                        vertexSource: 'void main() {
+                            uv = vec2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
+                            gl_Position = u_mvp * vec4(p * 0.2 + centre, 0.0, 1.0); }'
+                        fragmentSource: 'void main() {
+                            vec4 c = texture(icon, uv);
+                            if (c.a < 0.1) discard;
+                            frag_color = c; }';
+                        mesh: #(-1 -1  1 -1  -1 1   1 -1  1 1  -1 1) primitive: #triangles;
+                        oscillate: 'centre'
+                            between: { angle sin * 0.55. angle cos * 0.55 }
+                            and: { angle sin * 0.7. angle cos * 0.7 }
+                            period: 4 ].
+                iconScene
+                """),
+            PharoExample(
                 title: "An effect over the whole view",
                 code: """
                 "Nothing special: a drawable whose two triangles cover the
