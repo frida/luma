@@ -162,6 +162,7 @@ enum PharoCanvasScenes {
 final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
     var scene = CanvasScene()
 
+    private var sceneHandle = 0
     private weak var view: MTKView?
     private var commandQueue: MTLCommandQueue?
     private var depthState: MTLDepthStencilState?
@@ -189,6 +190,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
 
     func attach(to view: MTKView, scene handle: Int) {
         self.view = view
+        sceneHandle = handle
         commandQueue = view.device?.makeCommandQueue()
 
         let depth = MTLDepthStencilDescriptor()
@@ -238,7 +240,9 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         uniforms[1] = Float(view.drawableSize.height)
         uniforms[2] = Float(CACurrentMediaTime() - startTime)
         uniforms[3] = 1
-        uniforms[7] = Float(view.window?.backingScaleFactor ?? 1)
+        let scale = Float(view.window?.backingScaleFactor ?? 1)
+        uniforms[7] = scale
+        CanvasRegistry.shared.reportScale(sceneHandle, scale)
 
         for handle in scene.order {
             guard let subject = scene.drawables[handle], subject.isVisible,

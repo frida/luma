@@ -218,6 +218,7 @@ public final class CanvasRegistry: Sendable {
     private struct State {
         var scenes: [Int: CanvasScene] = [:]
         var inputs: [Int: CanvasInput] = [:]
+        var scales: [Int: Float] = [:]
         var pending: Set<Int> = []
         var nextHandle = 1
         var nextStamp: UInt64 = 1
@@ -304,6 +305,16 @@ public final class CanvasRegistry: Sendable {
 
     public func reportInput(_ handle: Int, _ change: (inout CanvasInput) -> Void) {
         state.withLock { change(&$0.inputs[handle, default: CanvasInput()]) }
+    }
+
+    /// Physical pixels to a logical one, as the view showing the scene last
+    /// reported. Nothing has drawn it yet until one does.
+    public func scale(_ handle: Int) -> Float {
+        state.withLock { $0.scales[handle] ?? 0 }
+    }
+
+    public func reportScale(_ handle: Int, _ scale: Float) {
+        state.withLock { $0.scales[handle] = scale }
     }
 
     /// Hands the scene to whoever shows it, on the thread they expect. A

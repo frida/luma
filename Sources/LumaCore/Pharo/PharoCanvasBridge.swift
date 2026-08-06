@@ -317,3 +317,10 @@ public func luma_scene_buttons(_ scene: Int32) -> Int32 {
 public func luma_scene_key_down(_ scene: Int32, _ key: Int32) -> Int32 {
     CanvasRegistry.shared.input(Int(scene)).keysDown.contains(key) ? 1 : 0
 }
+
+/// Physical pixels to a logical one, for whoever is rasterising something the
+/// scene will draw. Zero until a view has drawn it.
+@_cdecl("luma_scene_scale")
+public func luma_scene_scale(_ scene: Int32) -> Float {
+    CanvasRegistry.shared.scale(Int(scene))
+}

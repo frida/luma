@@ -484,13 +484,18 @@ public enum PharoLumaBindings {
                 parameters: { TFBasicType sint. TFBasicType sint. TFBasicType sint }
                 return: TFBasicType void
                 with: { scene. handle. 0 }'.
+        drawable compile: 'scale
+            "Physical pixels to a logical one where this is drawn. Zero until
+             a view has drawn it."
+            ^ LumaHost invoke: ''luma_scene_scale''
+                parameters: { TFBasicType sint } return: TFBasicType float with: { scene }'.
         drawable compile: 'show
             ^ LumaHost invoke: ''luma_drawable_set_visible''
                 parameters: { TFBasicType sint. TFBasicType sint. TFBasicType sint }
                 return: TFBasicType void
                 with: { scene. handle. 1 }'.
 
-        label := Object << #LumaText slots: { #drawable. #font. #points. #cell. #columns. #ink }; package: 'Luma'; install.
+        label := Object << #LumaText slots: { #drawable. #font. #points. #cell. #columns. #ink. #rasterisedFor }; package: 'Luma'; install.
         label class compile: 'on: aDrawable
             ^ self on: aDrawable pointSize: 22'.
         label class compile: 'on: aDrawable pointSize: aSize
@@ -514,19 +519,39 @@ public enum PharoLumaBindings {
              is not a pixel height -- how many pixels it makes is the font''s
              business -- so ask one at the asked-for size and scale from what
              it answers."
-            | family measured |
             drawable := aDrawable.
             points := aSize.
+            columns := 16'.
+        label compile: 'chooseFont
+            "A point size is not a pixel height -- how many pixels it makes is
+             the font''s business -- so ask one at the asked-for size and scale
+             from what it answers. What is wanted is an em of as many texels as
+             the pixels it will be drawn on, which is what keeps a letter from
+             being resampled."
+            | family wanted measured |
+            rasterisedFor := self drawnScale.
+            wanted := points * rasterisedFor.
             family := TextStyle defaultFont familyName.
-            measured := (LogicalFont familyName: family pointSize: aSize) height.
+            measured := (LogicalFont familyName: family pointSize: points) height.
             font := LogicalFont
                 familyName: family
-                pointSize: ((aSize * aSize * 2 / measured) rounded max: 6).
-            columns := 16'.
+                pointSize: ((points * wanted / measured) rounded max: 6)'.
+        label compile: 'emSize
+            "The em as the atlas actually came out, in logical pixels. Taking
+             it from the atlas rather than from the point size asked for is
+             what makes a texel land on a pixel: a font answers a point size
+             with whatever pixel height suits it, and the last few per cent
+             of that is the difference between sharp and soft."
+            ^ font height / rasterisedFor'.
+        label compile: 'drawnScale
+            "Two until a view says otherwise, that being what the displays
+             this is written for do."
+            ^ drawable scale > 0 ifTrue: [ drawable scale ] ifFalse: [ 2 ]'.
         label compile: 'first ^ 32'.
         label compile: 'last ^ 126'.
         label compile: 'buildAtlas
             | rows atlas canvas |
+            self chooseFont.
             "Whole texels: a cell that starts on a fraction is sampled off
              its own grid, and the lettering comes out soft."
             cell := (self widest + 2) @ (font height ceiling + 2).
@@ -575,7 +600,7 @@ public enum PharoLumaBindings {
                 attribute: ''glyph'' components: 2;
                 varying: ''uv'' components: 2;
                 uniform: ''pad'' value: #(16 16);
-                uniform: ''size'' value: points;
+                uniform: ''size'' value: self emSize;
                 uniform: ''tint'' value: #(1 1 1);
                 vertexSource: ''void main() {
                     uv = glyph;
@@ -595,8 +620,13 @@ public enum PharoLumaBindings {
                 uniform: ''pad'' value: aPoint;
                 uniform: ''tint'' value: aColour'.
         label compile: 'show: aString
-            "Two triangles a letter, laid out along the baseline in ems."
+            "Two triangles a letter, laid out along the baseline in ems. A
+             view that has since said what a pixel is worth gets the atlas
+             rasterised again to match, once."
             | corners pen atlas |
+            rasterisedFor = self drawnScale ifFalse: [
+                self buildAtlas.
+                drawable uniform: ''size'' value: self emSize ].
             corners := OrderedCollection new.
             pen := 0.0.
             atlas := cell x * columns @ (cell y * ((self last - self first + 1 + columns - 1) // columns)).
