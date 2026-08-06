@@ -69,7 +69,10 @@ enum CoreTextGlyphAtlas {
         guard let pixels = context.data else { return nil }
         let words = UnsafeBufferPointer(
             start: pixels.assumingMemoryBound(to: UInt32.self), count: width * height)
-        let sheet = flipped(Array(words), width: width, height: height)
+        // The rows are already the way they are read: a bitmap context
+        // stores its first row at the top even though it draws from the
+        // bottom, so what is drawn into the top band is what is sampled there.
+        let sheet = Array(words)
         let band = ink(of: sheet, width: width, cellHeight: cellHeight)
 
         return GlyphAtlas(
@@ -94,17 +97,6 @@ enum CoreTextGlyphAtlas {
         var size = CGSize.zero
         CTFontGetAdvancesForGlyphs(font, .horizontal, &glyph, &size, 1)
         return size
-    }
-
-    /// Core Graphics draws bottom-up and the renderers read top-down.
-    private nonisolated static func flipped(_ pixels: [UInt32], width: Int, height: Int) -> [UInt32] {
-        var sheet = [UInt32](repeating: 0, count: pixels.count)
-        for row in 0..<height {
-            let source = (height - 1 - row) * width
-            let target = row * width
-            sheet[target..<(target + width)] = pixels[source..<(source + width)]
-        }
-        return sheet
     }
 
     /// Which rows of a cell the lettering touches. Every cell shares a
