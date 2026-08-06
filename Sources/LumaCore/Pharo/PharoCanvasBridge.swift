@@ -348,16 +348,17 @@ public func luma_drawable_commit(_ scene: Int32, _ drawable: Int32) -> Int32 {
     }
 
     let geometry = subject.geometry
-    let vertexGLSL = geometry.vertexPreamble(.openGL) + subject.authorVertex
-    let fragmentGLSL = geometry.fragmentPreamble(.openGL) + subject.authorFragment
+    let declared = subject.uniforms
+    let vertexGLSL = geometry.vertexPreamble(.openGL, uniforms: declared) + subject.authorVertex
+    let fragmentGLSL = geometry.fragmentPreamble(.openGL, uniforms: declared) + subject.authorFragment
     let vertexMetal: String
     let fragmentMetal: String
     do {
         vertexMetal = try ShaderTranslator.metalSource(
-            forComplete: geometry.vertexPreamble(.metal) + subject.authorVertex,
+            forComplete: geometry.vertexPreamble(.metal, uniforms: declared) + subject.authorVertex,
             stage: .vertex, entryPoint: "canvasVertex")
         fragmentMetal = try ShaderTranslator.metalSource(
-            forComplete: geometry.fragmentPreamble(.metal) + subject.authorFragment,
+            forComplete: geometry.fragmentPreamble(.metal, uniforms: declared) + subject.authorFragment,
             stage: .fragment, entryPoint: "canvasFragment")
     } catch {
         canvasError.withLock { $0 = "\(error)" }
@@ -381,4 +382,29 @@ public func luma_scene_show(_ scene: Int32) -> Int32 {
     guard let subject = CanvasRegistry.shared.scene(Int(scene)) else { return 0 }
     CanvasRegistry.shared.publish(Int(scene), subject)
     return 1
+}
+
+/// A uniform the author named, of whatever width they gave it. Declaring it
+/// is what lets the host write the declaration and pack the buffer to match.
+@_cdecl("luma_drawable_set_uniform")
+public func luma_drawable_set_uniform(
+    _ scene: Int32,
+    _ drawable: Int32,
+    _ name: UnsafePointer<CChar>,
+    _ values: UnsafePointer<Float>,
+    _ count: Int32
+) {
+    let uniform = CanvasUniform(
+        name: String(cString: name),
+        values: Array(UnsafeBufferPointer(start: values, count: Int(max(count, 0)))))
+
+    guard let updated = CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
+        if let existing = subject.uniforms.firstIndex(where: { $0.name == uniform.name }) {
+            subject.uniforms[existing] = uniform
+        } else {
+            subject.uniforms.append(uniform)
+        }
+    }) else { return }
+
+    CanvasRegistry.shared.publish(Int(scene), updated)
 }

@@ -131,6 +131,9 @@ void luma_shader_effect_drawable_add_attribute(void *widget, int handle,
 void luma_shader_effect_drawable_set_vertices(void *widget, int handle,
                                               const float *values, int count, int primitive);
 void luma_shader_effect_drawable_set_transform(void *widget, int handle, const float *values);
+// A uniform the author named, of whatever width they asked for.
+void luma_shader_effect_drawable_set_uniform(void *widget, int handle,
+                                             const char *name, const float *values, int count);
 void luma_shader_effect_drawable_set_visible(void *widget, int handle, bool visible);
 void luma_shader_effect_remove_drawable(void *widget, int handle);
 

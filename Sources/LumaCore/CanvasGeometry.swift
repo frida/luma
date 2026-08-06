@@ -66,7 +66,7 @@ public struct CanvasGeometry: Sendable, Equatable {
 
     /// Declares the author's attributes and varyings so their own shader body
     /// compiles against what the renderer binds.
-    public func vertexPreamble(_ flavour: Flavour) -> String {
+    public func vertexPreamble(_ flavour: Flavour, uniforms extra: [CanvasUniform] = []) -> String {
         let inputs = attributes.enumerated().map { index, attribute in
             declaration("in", attribute, at: index, flavour)
         }
@@ -74,10 +74,11 @@ public struct CanvasGeometry: Sendable, Equatable {
             declaration("out", varying, at: index, flavour)
         }
         return (["#version \(flavour == .metal ? "450" : "150 core")"]
-            + inputs + outputs + [uniforms(flavour), ""]).joined(separator: "\n")
+            + inputs + outputs + [uniforms(flavour), declared(extra, flavour), ""])
+            .joined(separator: "\n")
     }
 
-    public func fragmentPreamble(_ flavour: Flavour) -> String {
+    public func fragmentPreamble(_ flavour: Flavour, uniforms extra: [CanvasUniform] = []) -> String {
         let inputs = varyings.enumerated().map { index, varying in
             declaration("in", varying, at: index, flavour)
         }
@@ -85,7 +86,8 @@ public struct CanvasGeometry: Sendable, Equatable {
             ? "layout(location = 0) out vec4 frag_color;"
             : "out vec4 frag_color;"
         return (["#version \(flavour == .metal ? "450" : "150 core")"]
-            + inputs + [output, uniforms(flavour), ""]).joined(separator: "\n")
+            + inputs + [output, uniforms(flavour), declared(extra, flavour), ""])
+            .joined(separator: "\n")
     }
 
     private func declaration(
@@ -96,6 +98,19 @@ public struct CanvasGeometry: Sendable, Equatable {
     ) -> String {
         let qualifier = flavour == .metal ? "layout(location = \(index)) " : ""
         return "\(qualifier)\(direction) \(attribute.glslType) \(attribute.name);"
+    }
+
+    /// The author's own uniforms. OpenGL takes them loose and sets each by
+    /// name; Metal wants a block, which the host packs to match.
+    private func declared(_ extra: [CanvasUniform], _ flavour: Flavour) -> String {
+        guard !extra.isEmpty else { return "" }
+
+        let members = extra.map { "    \($0.glslType) \($0.name);" }
+        guard flavour == .metal else {
+            return extra.map { "uniform \($0.glslType) \($0.name);" }.joined(separator: "\n")
+        }
+        return (["layout(binding = 1) uniform CanvasParams {"] + members + ["};"])
+            .joined(separator: "\n")
     }
 
     private func uniforms(_ flavour: Flavour) -> String {

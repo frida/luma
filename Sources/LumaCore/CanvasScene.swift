@@ -24,6 +24,25 @@ public struct CanvasDrawable: Sendable, Equatable {
     public init(geometry: CanvasGeometry = CanvasGeometry(attributes: [])) {
         self.geometry = geometry
     }
+
+    /// The author's uniforms laid out as the generated block declares them,
+    /// so Metal reads each where it expects to.
+    public func packedParams() -> [Float] {
+        var packed: [Float] = []
+        for uniform in uniforms {
+            let padding = (uniform.alignment - packed.count % uniform.alignment) % uniform.alignment
+            packed.append(contentsOf: repeatElement(0, count: padding))
+            packed.append(contentsOf: uniform.values.prefix(uniform.components))
+            if uniform.values.count < uniform.components {
+                packed.append(contentsOf: repeatElement(
+                    0, count: uniform.components - uniform.values.count))
+            }
+        }
+        // A block is rounded up to a whole vec4.
+        let tail = (4 - packed.count % 4) % 4
+        packed.append(contentsOf: repeatElement(0, count: tail))
+        return packed
+    }
 }
 
 /// A value the author named, of whatever width they asked for. Declaring it
@@ -39,6 +58,15 @@ public struct CanvasUniform: Sendable, Equatable {
     }
 
     var components: Int { min(max(values.count, 1), 16) }
+
+    /// Floats it occupies, and what it must start on, by std140's rules.
+    var alignment: Int {
+        switch components {
+        case 1: return 1
+        case 2: return 2
+        default: return 4
+        }
+    }
 
     var glslType: String {
         switch components {
