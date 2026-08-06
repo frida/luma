@@ -324,3 +324,68 @@ public func luma_scene_key_down(_ scene: Int32, _ key: Int32) -> Int32 {
 public func luma_scene_scale(_ scene: Int32) -> Float {
     CanvasRegistry.shared.scale(Int(scene))
 }
+
+// MARK: Lettering the host rasterises
+
+/// Draws the printable range at the given pixel size and keeps it. Answers 0
+/// where the host has nothing to draw with.
+@_cdecl("luma_glyphs_make")
+public func luma_glyphs_make(_ pixelSize: Int32) -> Int32 {
+    Int32(GlyphAtlasRasteriser.make(pixelSize: Int(pixelSize)))
+}
+
+@_cdecl("luma_glyphs_discard")
+public func luma_glyphs_discard(_ atlas: Int32) {
+    GlyphAtlasRasteriser.discard(Int(atlas))
+}
+
+/// What a caller needs to lay a string out: the cell it is drawn on, the grid
+/// it sits in, and the rows the ink touches.
+@_cdecl("luma_glyphs_metric")
+public func luma_glyphs_metric(_ atlas: Int32, _ which: Int32) -> Float {
+    guard let atlas = GlyphAtlasRasteriser.atlas(Int(atlas)) else { return 0 }
+
+    switch which {
+    case 0: return Float(atlas.width)
+    case 1: return Float(atlas.height)
+    case 2: return Float(atlas.cellWidth)
+    case 3: return Float(atlas.cellHeight)
+    case 4: return Float(atlas.columns)
+    case 5: return Float(atlas.inkTop)
+    case 6: return Float(atlas.inkBottom)
+    default: return 0
+    }
+}
+
+@_cdecl("luma_glyphs_advance")
+public func luma_glyphs_advance(_ atlas: Int32, _ code: Int32) -> Float {
+    GlyphAtlasRasteriser.atlas(Int(atlas))?.advance(for: Int(code)) ?? 0
+}
+
+/// Hands the picture to a drawable, so the image never carries the pixels.
+@_cdecl("luma_glyphs_apply")
+public func luma_glyphs_apply(
+    _ atlas: Int32,
+    _ scene: Int32,
+    _ drawable: Int32,
+    _ name: UnsafePointer<CChar>
+) {
+    guard let held = GlyphAtlasRasteriser.atlas(Int(atlas)) else { return }
+
+    let image = CanvasImage(
+        name: String(cString: name),
+        pixels: held.pixels,
+        width: held.width,
+        height: held.height,
+        stamp: CanvasRegistry.shared.nextStamp())
+
+    guard CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
+        if let existing = subject.images.firstIndex(where: { $0.name == image.name }) {
+            subject.images[existing] = image
+        } else {
+            subject.images.append(image)
+        }
+    }) != nil else { return }
+
+    CanvasRegistry.shared.publish(Int(scene))
+}

@@ -190,9 +190,12 @@ host supplies (`v_uv`, `frag_color`, `u_resolution`, `u_time`,
   of the range. Getting this wrong binds each buffer where another was
   expected, which no compiler will catch.
 
-`LumaText` letters a scene from a glyph atlas: the image rasterises
-the printable range once into a Form, hands it over as a picture, and
-each string becomes two triangles a letter. Saying something else goes
+`LumaText` letters a scene from a glyph atlas the **host** rasterises
+-- Core Text on macOS, Pango on GTK -- because what fonts an image can
+reach is its own business, and the bundled one finds no scalable
+family at all: every point size comes back as the same 14-pixel bitmap.
+The frontends register a `GlyphAtlasRasteriser` on the way up; each
+string becomes two triangles a letter. Saying something else goes
 through `remesh:primitive:`, which sets vertices without a commit, so
 text that changes every frame costs a buffer rather than a rasterise
 and a shader compile. Its point size is in the units the rest of
