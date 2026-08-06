@@ -308,8 +308,8 @@ public enum PharoExampleCatalog {
 
                 "Half sizes, so a catch is judged on the edges rather than
                  the centres, and on the step the faller crosses the paddle."
-                tally := LumaText on: game addDrawable pointSize: 20.
-                tally pad: #(18 18) tint: #(1 0.95 0.8); show: 'SCORE 0'.
+                tally := LumaText on: game addDrawable pointSize: 34.
+                tally pad: #(20 18) tint: #(1 0.95 0.8); show: 'SCORE 0'.
 
                 fallerHalf := 0.14. paddleHalf := 0.22. paddleTop := -0.755.
                 at := { 0. 1 }. speed := 0.024. held := 0. score := 0.
@@ -376,9 +376,9 @@ public enum PharoExampleCatalog {
                  no rasterising, no recompiling -- so it stands up to text
                  that changes every frame."
                 words := LumaCanvas new.
-                sign := LumaText on: words addDrawable pointSize: 34.
+                sign := LumaText on: words addDrawable pointSize: 56.
                 sign
-                    pad: #(24 24) tint: #(0.2 0.95 0.75);
+                    pad: #(28 24) tint: #(0.2 0.95 0.75);
                     show: 'HELLO FROM THE GPU'.
                 words
                 """),

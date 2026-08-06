@@ -490,7 +490,7 @@ public enum PharoLumaBindings {
                 return: TFBasicType void
                 with: { scene. handle. 1 }'.
 
-        label := Object << #LumaText slots: { #drawable. #font. #cell. #columns }; package: 'Luma'; install.
+        label := Object << #LumaText slots: { #drawable. #font. #cell. #columns. #ink }; package: 'Luma'; install.
         label class compile: 'on: aDrawable
             ^ self on: aDrawable pointSize: 22'.
         label class compile: 'on: aDrawable pointSize: aSize
@@ -530,7 +530,25 @@ public enum PharoLumaBindings {
                     at: at + (1 @ 1)
                     font: font
                     color: Color white ].
+            self measureInk: atlas.
             drawable image: ''glyphs'' form: atlas'.
+        label compile: 'measureInk: anAtlas
+            "Which rows of a cell the lettering actually touches. Every cell
+             shares a baseline, so one pass over the atlas answers for all of
+             them -- and mapping the quads to this band rather than the whole
+             cell is what makes the gap above the lettering the gap that was
+             asked for."
+            | bits top bottom |
+            bits := anAtlas bits.
+            top := cell y.
+            bottom := 0.
+            1 to: bits size do: [ :index |
+                (bits at: index) = 0 ifFalse: [
+                    | row |
+                    row := (index - 1) // anAtlas width \\\\ cell y.
+                    row < top ifTrue: [ top := row ].
+                    row > bottom ifTrue: [ bottom := row ] ] ].
+            ink := top @ (bottom + 1)'.
         label compile: 'widest
             ^ (self first to: self last) inject: 1 into: [ :widest :code |
                 widest max: (font widthOf: (Character value: code)) ]'.
@@ -577,14 +595,14 @@ public enum PharoLumaBindings {
                         advance := (font widthOf: each) / font height.
                         origin := self cellOrigin: code.
                         wide := cell x / font height.
-                        high := cell y / font height.
+                        high := (ink y - ink x) / font height.
                         #(#(0 0) #(1 0) #(0 1) #(1 0) #(1 1) #(0 1)) do: [ :corner |
                             | cx cy |
                             cx := (corner at: 1). cy := (corner at: 2).
                             corners
                                 add: pen + (cx * wide); add: (cy - 1) * high;
                                 add: (origin x + (cx * cell x)) / atlas x;
-                                add: (origin y + ((1 - cy) * cell y)) / atlas y ].
+                                add: (origin y + ink x + ((1 - cy) * (ink y - ink x))) / atlas y ].
                         pen := pen + advance ]
                     ifFalse: [ pen := pen + 0.5 ] ].
             ^ drawable remesh: corners primitive: #triangles'.
