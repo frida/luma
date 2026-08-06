@@ -219,6 +219,11 @@ glslang -S frag -V generated.frag       # Metal flavour, as translated
 
 ### Symbol visibility (macOS)
 
+An exported-symbols list is a whitelist: everything the image resolves
+by name has to be in it, not just Luma's own entry points. SwiftyPharo's
+`swifty_pharo_*` bridge is resolved the same way, and leaving it out
+takes Pharo down entirely -- in release builds only.
+
 The image resolves the host's `luma_*` entry points by name through
 dlsym, and nothing in Swift calls them. Two consequences, both of
 which have already caused bugs:
