@@ -123,11 +123,22 @@ public enum PharoExampleCatalog {
                 "then, separately:  shape show"
                 """),
             PharoExample(
-                title: "A screen-filling effect, with no geometry at all",
+                title: "An effect over the whole view",
                 code: """
-                LumaCanvas source: 'void main() {
-                    float d = length(v_uv - 0.5);
-                    frag_color = vec4(0.5 + 0.5 * sin(u_time + d * 24.0), v_uv.x, v_uv.y, 1.0); }'
+                "Nothing special: a drawable whose two triangles cover the
+                 view, so an effect sits among an object's views like the
+                 rest of a scene."
+                backdrop := scene addDrawable.
+                backdrop
+                    attribute: 'p' components: 2;
+                    varying: 'uv' components: 2;
+                    vertexSource: 'void main() {
+                        uv = p * 0.5 + 0.5;
+                        gl_Position = vec4(p, 0.0, 1.0); }'
+                    fragmentSource: 'void main() {
+                        float d = length(uv - 0.5);
+                        frag_color = vec4(0.5 + 0.5 * sin(u_time + d * 24.0), uv.x, uv.y, 1.0); }';
+                    mesh: #(-1 -1  1 -1  -1 1   1 -1  1 1  -1 1) primitive: #triangles
                 """),
         ]),
         ("Sound", [
