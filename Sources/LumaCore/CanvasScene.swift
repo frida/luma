@@ -245,6 +245,11 @@ public final class CanvasRegistry: Sendable {
         }
     }
 
+    /// How many the image is holding, which is how a leak shows.
+    public var sceneCount: Int {
+        state.withLock { $0.scenes.count }
+    }
+
     public func scene(_ handle: Int) -> CanvasScene? {
         state.withLock { $0.scenes[handle] }
     }

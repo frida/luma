@@ -75,6 +75,11 @@ public enum GlyphAtlasRasteriser {
         return handle
     }
 
+    /// How many the host is holding, which is how a leak shows.
+    public static var count: Int {
+        held.withLock { $0.count }
+    }
+
     public static func atlas(_ handle: Int) -> GlyphAtlas? {
         held.withLock { $0[handle] }
     }

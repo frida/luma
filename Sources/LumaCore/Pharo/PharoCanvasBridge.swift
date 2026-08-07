@@ -28,6 +28,12 @@ public func luma_scene_create() -> Int32 {
     Int32(CanvasRegistry.shared.makeScene())
 }
 
+/// How many scenes the image is holding, so it can be seen letting go.
+@_cdecl("luma_scene_count")
+public func luma_scene_count() -> Int32 {
+    Int32(CanvasRegistry.shared.sceneCount)
+}
+
 @_cdecl("luma_scene_destroy")
 public func luma_scene_destroy(_ scene: Int32) {
     CanvasRegistry.shared.discard(Int(scene))
@@ -336,6 +342,12 @@ public func luma_scene_scale(_ scene: Int32) -> Float {
 @_cdecl("luma_glyphs_make")
 public func luma_glyphs_make(_ pixelSize: Int32) -> Int32 {
     Int32(GlyphAtlasRasteriser.make(pixelSize: Int(pixelSize)))
+}
+
+/// How many atlases the host is holding, so it can be seen letting go.
+@_cdecl("luma_glyphs_count")
+public func luma_glyphs_count() -> Int32 {
+    Int32(GlyphAtlasRasteriser.count)
 }
 
 @_cdecl("luma_glyphs_discard")

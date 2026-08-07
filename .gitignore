@@ -4,6 +4,7 @@
 /Sources/LumaCore/Generated/
 /build/
 /Vendor/
+/LumaGtk/Sources/LumaGtk/Resources/pharo-image/pharo-local/
 /artifacts/
 /.build/
 /.swiftpm/

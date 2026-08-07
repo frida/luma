@@ -1,12 +1,12 @@
+#if canImport(CoreText)
 import CoreGraphics
 import CoreText
 import Foundation
-import LumaCore
 
 /// Draws the printable range on a grid, with Core Text. What an image can
 /// reach for fonts is its own business; this is the host's, and it has one.
-enum CoreTextGlyphAtlas {
-    static func install() {
+public enum CoreTextGlyphAtlas {
+    public static func install() {
         GlyphAtlasRasteriser.rasterise = { pixelSize in
             make(pixelSize: pixelSize)
         }
@@ -113,3 +113,4 @@ enum CoreTextGlyphAtlas {
         return top...(bottom + 1)
     }
 }
+#endif

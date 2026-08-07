@@ -14,6 +14,7 @@ guard arguments.count == 2 else {
 }
 
 let image = URL(fileURLWithPath: arguments[1])
+CoreTextGlyphAtlas.install()
 PharoRuntime.shared.boot(image: image)
 try await PharoRuntime.shared.runningState()
 try await PharoLumaBindings.install(into: PharoRuntime.shared)
