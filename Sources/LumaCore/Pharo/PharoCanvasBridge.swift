@@ -140,8 +140,11 @@ public func luma_drawable_commit(_ scene: Int32, _ drawable: Int32) -> Int32 {
         .openGL, uniforms: declared, buffers: sheets, images: pictures) + subject.authorVertex
     let fragmentGLSL = geometry.fragmentPreamble(
         .openGL, uniforms: declared, buffers: sheets, images: pictures) + subject.authorFragment
-    let vertexMetal: String
-    let fragmentMetal: String
+    var vertexMetal = ""
+    var fragmentMetal = ""
+    #if canImport(Metal)
+    // Only a Metal host reads these, and only there is there a toolchain to
+    // write them with. OpenGL takes the GLSL as it stands.
     do {
         vertexMetal = try ShaderTranslator.metalSource(
             forComplete: geometry.vertexPreamble(
@@ -157,6 +160,7 @@ public func luma_drawable_commit(_ scene: Int32, _ drawable: Int32) -> Int32 {
         canvasError.withLock { $0 = "\(error)" }
         return 0
     }
+    #endif
     canvasError.withLock { $0 = "" }
 
     guard CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in

@@ -39,8 +39,10 @@ struct LumaShaderCompiler {
             write(swiftCatalog(of: effects, bodies: bodies), to: swiftOut)
         }
         if let metalDir = options.metalDir {
+            let toolchain = Toolchain(besideShadersIn: options.shaderDir)
             for (effect, body) in zip(effects, bodies) {
-                let fragment = metalFragment(named: effect.metalFunction, body: body)
+                let fragment = metalFragment(
+                    named: effect.metalFunction, body: body, with: toolchain)
                 write(fragment, to: metalDir.appendingPathComponent("\(effect.metalFileName).metal"))
             }
         }
@@ -91,7 +93,28 @@ struct LumaShaderCompiler {
             """
     }
 
-    private static func metalFragment(named name: String, body: String) -> String {
+    /// Where the translators are. The build under Vendor if there is one, so
+    /// a machine needs nothing installed to build what it ships; otherwise
+    /// whatever the path turns up.
+    private struct Toolchain {
+        private let vendor: URL
+
+        init(besideShadersIn shaderDir: URL) {
+            vendor = shaderDir
+                .deletingLastPathComponent()
+                .appendingPathComponent("Vendor/shader-toolchain", isDirectory: true)
+        }
+
+        func glslang() -> String { at("glslang", in: "glslang") }
+        func spirvCross() -> String { at("spirv-cross", in: "spirv-cross") }
+
+        private func at(_ name: String, in project: String) -> String {
+            let built = vendor.appendingPathComponent("\(project)/bin/\(name)").path
+            return FileManager.default.isExecutableFile(atPath: built) ? built : name
+        }
+    }
+
+    private static func metalFragment(named name: String, body: String, with toolchain: Toolchain) -> String {
         let workDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("LumaShaderCompiler-\(name)", isDirectory: true)
         try! FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
@@ -101,8 +124,8 @@ struct LumaShaderCompiler {
         let spirv = workDir.appendingPathComponent("effect.spv")
         try! (preamble + body).write(to: glsl, atomically: true, encoding: .utf8)
 
-        run("glslang", ["-V", glsl.path, "-o", spirv.path])
-        return run("spirv-cross", [
+        run(toolchain.glslang(), ["-V", glsl.path, "-o", spirv.path])
+        return run(toolchain.spirvCross(), [
             "--msl",
             "--rename-entry-point", "main", name, "frag",
             spirv.path,

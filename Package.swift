@@ -77,24 +77,73 @@ let lumaCoreSoupDeps: [Target.Dependency] = []
 #endif
 
 // Runtime GLSL->MSL translation, so a shader written in a snippet reaches a
-// Metal host with no build step. Found wherever the toolchain happens to live
-// for now; shipping wants prebuilt libraries beside the Pharo VM's, since
-// neither project builds under SwiftPM.
-let shaderToolchainRoot = ["/opt/homebrew/opt", "/usr/local/opt", "/usr"].first {
-    FileManager.default.fileExists(atPath: $0 + "/glslang/include/glslang/Include/glslang_c_interface.h")
-}
+// Metal host with no build step. Only Apple platforms have one to reach:
+// elsewhere OpenGL takes the GLSL as it stands, and neither the target nor
+// the toolchain it needs is built at all.
+//
+// `make shader-toolchain` puts a build of glslang and SPIRV-Cross under
+// Vendor, which is preferred over whatever a machine happens to have
+// installed, since neither project builds under SwiftPM.
+let vendoredShaderToolchain = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()
+    .appendingPathComponent("Vendor/shader-toolchain").path
+let shaderToolchainRoot = [vendoredShaderToolchain, "/opt/homebrew/opt", "/usr/local/opt", "/usr"]
+    .first {
+        FileManager.default.fileExists(
+            atPath: $0 + "/glslang/include/glslang/Include/glslang_c_interface.h")
+    }
 let cShaderTranslateCSettings: [CSetting] = shaderToolchainRoot.map { root in
     [.unsafeFlags(["-I\(root)/glslang/include", "-I\(root)/spirv-cross/include"])]
 } ?? []
+// Named by path rather than by -l: a GTK build carries library directories
+// of its own, and whichever came first would otherwise decide which glslang
+// this links against.
+let shaderToolchainLibraries = [
+    "glslang/lib/libglslang.a",
+    "glslang/lib/libMachineIndependent.a",
+    "glslang/lib/libGenericCodeGen.a",
+    "glslang/lib/libOSDependent.a",
+    "glslang/lib/libglslang-default-resource-limits.a",
+    "glslang/lib/libSPIRV.a",
+    "spirv-cross/lib/libspirv-cross-c.a",
+    "spirv-cross/lib/libspirv-cross-msl.a",
+    "spirv-cross/lib/libspirv-cross-hlsl.a",
+    "spirv-cross/lib/libspirv-cross-cpp.a",
+    "spirv-cross/lib/libspirv-cross-reflect.a",
+    "spirv-cross/lib/libspirv-cross-util.a",
+    "spirv-cross/lib/libspirv-cross-glsl.a",
+    "spirv-cross/lib/libspirv-cross-core.a",
+]
 let cShaderTranslateLinkerSettings: [LinkerSetting] = shaderToolchainRoot.map { root in
-    [.unsafeFlags([
-        "-L\(root)/glslang/lib", "-lglslang", "-lglslang-default-resource-limits", "-lSPIRV",
-        "-L\(root)/spirv-cross/lib",
-        "-lspirv-cross-c", "-lspirv-cross-msl", "-lspirv-cross-hlsl", "-lspirv-cross-cpp",
-        "-lspirv-cross-reflect", "-lspirv-cross-util", "-lspirv-cross-glsl", "-lspirv-cross-core",
-        "-lc++",
-    ])]
+    let archives = shaderToolchainLibraries.map { "\(root)/\($0)" }
+    guard archives.allSatisfy({ FileManager.default.fileExists(atPath: $0) }) else {
+        return [.unsafeFlags([
+            "-L\(root)/glslang/lib", "-lglslang", "-lglslang-default-resource-limits", "-lSPIRV",
+            "-L\(root)/spirv-cross/lib",
+            "-lspirv-cross-c", "-lspirv-cross-msl", "-lspirv-cross-hlsl", "-lspirv-cross-cpp",
+            "-lspirv-cross-reflect", "-lspirv-cross-util", "-lspirv-cross-glsl",
+            "-lspirv-cross-core", "-lc++",
+        ])]
+    }
+    return [.unsafeFlags(archives + ["-lc++"])]
 } ?? []
+
+#if canImport(Darwin)
+let shaderTranslateTargets: [Target] = [
+    .target(
+        name: "CShaderTranslate",
+        path: "Sources/CShaderTranslate",
+        publicHeadersPath: "include",
+        cSettings: cShaderTranslateCSettings,
+        linkerSettings: cShaderTranslateLinkerSettings
+    )
+]
+let shaderTranslateDeps: [Target.Dependency] = ["CShaderTranslate"]
+#else
+let shaderTranslateTargets: [Target] = []
+let shaderTranslateDeps: [Target.Dependency] = []
+#endif
+
 
 let package = Package(
     name: "luma",
@@ -115,7 +164,7 @@ let package = Package(
         .package(url: "https://github.com/radareorg/SwiftyR2", branch: "main"),
         .package(url: "https://github.com/frida/SwiftyPharo", branch: "main"),
     ],
-    targets: cSoupTargets + [
+    targets: cSoupTargets + shaderTranslateTargets + [
         .target(
             name: "LumaCore",
             dependencies: [
@@ -125,8 +174,7 @@ let package = Package(
                 .product(name: "SwiftyR2", package: "SwiftyR2"),
                 .product(name: "SwiftyPharo", package: "SwiftyPharo"),
                 "CLumaAudio",
-                "CShaderTranslate",
-            ] + lumaCoreSoupDeps,
+            ] + lumaCoreSoupDeps + shaderTranslateDeps,
             path: "Sources/LumaCore",
             exclude: lumaCoreExcludes,
             resources: [
@@ -147,13 +195,7 @@ let package = Package(
                 .swiftLanguageMode(.v5),
             ]
         ),
-        .target(
-            name: "CShaderTranslate",
-            path: "Sources/CShaderTranslate",
-            publicHeadersPath: "include",
-            cSettings: cShaderTranslateCSettings,
-            linkerSettings: cShaderTranslateLinkerSettings
-        ),
+
         .target(
             name: "CLumaAudio",
             path: "Sources/CLumaAudio",

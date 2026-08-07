@@ -12,9 +12,18 @@ SOURCES := $(shell find Luma Sources Agent -type f \( \
 
 SHADER_SOURCES := $(wildcard Shaders/*.frag.glsl)
 
+SHADER_TOOLCHAIN := $(PWD)/Vendor/shader-toolchain/spirv-cross/lib/libspirv-cross-c.a
+
 all: $(APP)
 
-$(APP): $(SOURCES) $(SHADER_SOURCES) Luma.xcodeproj Package.swift
+# glslang and SPIRV-Cross do the runtime GLSL->MSL translation and build
+# under neither SwiftPM nor Xcode, so they are made once, here.
+$(SHADER_TOOLCHAIN):
+	./scripts/build-shader-toolchain.sh
+
+shader-toolchain: $(SHADER_TOOLCHAIN)
+
+$(APP): $(SHADER_TOOLCHAIN) $(SOURCES) $(SHADER_SOURCES) Luma.xcodeproj Package.swift
 	mkdir -p "$(BUILD_DIR)"
 	xcodebuild \
 		-project Luma.xcodeproj \
@@ -41,4 +50,4 @@ clean:
 	rm -rf "$(BUILD_DIR)"
 	rm -rf .build LumaGtk/.build
 
-.PHONY: all gtk gtk-release clean
+.PHONY: shader-toolchain all gtk gtk-release clean
