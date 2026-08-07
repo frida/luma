@@ -14,6 +14,12 @@ export USE_SYSTEM_FRIDA := 1
 
 PROJECT_ROOT := $(abspath ..)
 
+# A locally made shader toolchain short-circuits the published artifact.
+LOCAL_SHADER_TOOLCHAIN := $(PROJECT_ROOT)/artifacts/ShaderToolchain.xcframework
+ifneq ($(wildcard $(LOCAL_SHADER_TOOLCHAIN)),)
+export SHADER_TOOLCHAIN_ROOT := artifacts/ShaderToolchain.xcframework
+endif
+
 PHARO_RELEASE := vm-20260802.8
 PHARO_IMAGE_DIR := Sources/LumaGtk/Resources/pharo-image
 PHARO_IMAGE := $(PHARO_IMAGE_DIR)/SwiftyPharo.image
@@ -46,21 +52,7 @@ $(SHADER_BUNDLE): $(SHADER_SOURCES) $(PROJECT_ROOT)/Sources/LumaShaderCompiler/m
 	    --shader-dir "$(PROJECT_ROOT)/Shaders" \
 	    --swift-out  "$@"
 
-# On Apple platforms LumaCore carries the runtime GLSL->MSL translation, so
-# the toolchain that does it has to be there to link against. Elsewhere it is
-# not built at all.
-SHADER_TOOLCHAIN := $(PROJECT_ROOT)/Vendor/shader-toolchain/spirv-cross/lib/libspirv-cross-c.a
-
-$(SHADER_TOOLCHAIN):
-	$(PROJECT_ROOT)/scripts/build-shader-toolchain.sh
-
-ifeq ($(shell uname -s),Darwin)
-SHADER_TOOLCHAIN_DEP := $(SHADER_TOOLCHAIN)
-else
-SHADER_TOOLCHAIN_DEP :=
-endif
-
-build: bundle $(SHADER_TOOLCHAIN_DEP) $(PHARO_IMAGE)
+build: bundle $(PHARO_IMAGE)
 	swift build $(SWIFT_BUILD_FLAGS)
 
 $(PHARO_IMAGE):

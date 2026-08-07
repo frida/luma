@@ -77,58 +77,40 @@ let lumaCoreSoupDeps: [Target.Dependency] = []
 #endif
 
 // Runtime GLSL->MSL translation, so a shader written in a snippet reaches a
-// Metal host with no build step. Only Apple platforms have one to reach:
-// elsewhere OpenGL takes the GLSL as it stands, and neither the target nor
-// the toolchain it needs is built at all.
+// Metal host with no build step, and the same libraries do it at build time.
+// Only Apple platforms have one to reach: elsewhere OpenGL takes the GLSL as
+// it stands, and neither the target nor the toolchain it needs is built.
 //
-// `make shader-toolchain` puts a build of glslang and SPIRV-Cross under
-// Vendor, which is preferred over whatever a machine happens to have
-// installed, since neither project builds under SwiftPM.
-let vendoredShaderToolchain = URL(fileURLWithPath: #filePath)
-    .deletingLastPathComponent()
-    .appendingPathComponent("Vendor/shader-toolchain").path
-// Always the vendored build: `make`, and the Luma scheme's pre-action, make
-// it before anything compiles. Looking around for one instead would mean the
-// flags depended on what happened to be installed when the manifest was read.
-let shaderToolchainRoot = vendoredShaderToolchain
-let cShaderTranslateCSettings: [CSetting] = [
-    .unsafeFlags([
-        "-I\(shaderToolchainRoot)/glslang/include",
-        "-I\(shaderToolchainRoot)/spirv-cross/include",
-    ])
-]
-// Named by path rather than by -l: a GTK build carries library directories
-// of its own, and whichever came first would otherwise decide which glslang
-// this links against.
-let shaderToolchainLibraries = [
-    "glslang/lib/libglslang.a",
-    "glslang/lib/libMachineIndependent.a",
-    "glslang/lib/libGenericCodeGen.a",
-    "glslang/lib/libOSDependent.a",
-    "glslang/lib/libglslang-default-resource-limits.a",
-    "glslang/lib/libSPIRV.a",
-    "spirv-cross/lib/libspirv-cross-c.a",
-    "spirv-cross/lib/libspirv-cross-msl.a",
-    "spirv-cross/lib/libspirv-cross-hlsl.a",
-    "spirv-cross/lib/libspirv-cross-cpp.a",
-    "spirv-cross/lib/libspirv-cross-reflect.a",
-    "spirv-cross/lib/libspirv-cross-util.a",
-    "spirv-cross/lib/libspirv-cross-glsl.a",
-    "spirv-cross/lib/libspirv-cross-core.a",
-]
-let cShaderTranslateLinkerSettings: [LinkerSetting] = [
-    .unsafeFlags(shaderToolchainLibraries.map { "\(shaderToolchainRoot)/\($0)" } + ["-lc++"])
-]
+// Neither project builds under SwiftPM, so CI makes them into an xcframework
+// (see scripts/make-shader-toolchain-xcframework.sh) and this names it.
+//
+// A locally made one short-circuits the published artifact, the way
+// SwiftyPharo honours PHARO_VM_ROOT: run that script and set
+// SHADER_TOOLCHAIN_ROOT=artifacts/ShaderToolchain.xcframework, which SwiftPM
+// wants relative to the package. Asking the filesystem rather than being told
+// would not do -- a manifest is cached, so whichever answer it gave first
+// would stick.
+let shaderToolchainVersion = "1"
+let shaderToolchainRoot = ProcessInfo.processInfo.environment["SHADER_TOOLCHAIN_ROOT"]
 
 #if canImport(Darwin)
+let shaderToolchainTarget: Target = shaderToolchainRoot.map {
+    .binaryTarget(name: "ShaderToolchain", path: $0)
+} ?? .binaryTarget(
+    name: "ShaderToolchain",
+    url: "https://github.com/frida/luma/releases/download/"
+        + "shader-toolchain-\(shaderToolchainVersion)/ShaderToolchain.xcframework.zip",
+    checksum: "f42b4fbfbe4ed34214f405d5705a5a8dff973242595c6c55de06be7f16c91204"
+)
 let shaderTranslateTargets: [Target] = [
+    shaderToolchainTarget,
     .target(
         name: "CShaderTranslate",
+        dependencies: ["ShaderToolchain"],
         path: "Sources/CShaderTranslate",
         publicHeadersPath: "include",
-        cSettings: cShaderTranslateCSettings,
-        linkerSettings: cShaderTranslateLinkerSettings
-    )
+        linkerSettings: [.unsafeFlags(["-lc++"])]
+    ),
 ]
 let shaderTranslateDeps: [Target.Dependency] = ["CShaderTranslate"]
 #else
@@ -197,6 +179,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "LumaShaderCompiler",
+            dependencies: shaderTranslateDeps,
             path: "Sources/LumaShaderCompiler",
             swiftSettings: [
                 .swiftLanguageMode(.v5),
