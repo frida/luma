@@ -6,17 +6,26 @@ working with code in this repository.
 ## Build Commands
 
 ```sh
-make                   # Incremental release build via xcodebuild → build/Luma.app
-make shader-toolchain  # Build glslang + SPIRV-Cross into Vendor/ (once)
-make clean             # Remove build artifacts
+make          # Incremental release build via xcodebuild → build/Luma.app
+make clean    # Remove build artifacts
 ```
 
-`make` builds the shader toolchain first if it is missing, so nothing
-need be installed to build. It is only built on Apple platforms:
-translating GLSL to Metal is the only thing it does, and OpenGL takes
-the GLSL as it stands, so `CShaderTranslate` is not a target at all
-elsewhere. Building through Xcode directly rather than through `make`
-needs `make shader-toolchain` run once first.
+glslang and SPIRV-Cross do the GLSL→Metal translation, at build time
+and at run time, and build under neither SwiftPM nor Xcode. CI makes
+them into `ShaderToolchain.xcframework` and publishes it against a
+`shader-toolchain-<version>` tag; the manifest names that artifact, so
+a build downloads it and nothing local is needed.
+
+To work on the toolchain itself, make one and say so:
+
+```sh
+scripts/make-shader-toolchain-xcframework.sh
+export SHADER_TOOLCHAIN_ROOT=artifacts/ShaderToolchain.xcframework
+```
+
+Both Makefiles set that themselves when the artifact is there. Only
+Apple platforms have any of this: OpenGL takes the GLSL as it stands,
+so `CShaderTranslate` is not a target at all elsewhere.
 
 Or open `Luma.xcodeproj` in Xcode and build with Cmd+B (set
 destination to **My Mac**).
