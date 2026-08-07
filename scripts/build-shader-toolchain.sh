@@ -9,6 +9,19 @@
 
 set -eu
 
+# Xcode exports its whole build environment into a scheme's pre-action, and
+# cmake takes it literally: an SDK named "auto", and a deployment target for
+# every platform at once. Start again with nothing but a path.
+if [ -z "${LUMA_TOOLCHAIN_ENV:-}" ]; then
+    LUMA_TOOLCHAIN_ENV=1
+    export LUMA_TOOLCHAIN_ENV
+    exec /usr/bin/env -i \
+        LUMA_TOOLCHAIN_ENV=1 \
+        PATH="$PATH" \
+        HOME="$HOME" \
+        "$0" "$@"
+fi
+
 GLSLANG_TAG=15.4.0
 SPIRV_CROSS_TAG=vulkan-sdk-1.4.313.0
 

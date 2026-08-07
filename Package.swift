@@ -87,14 +87,16 @@ let lumaCoreSoupDeps: [Target.Dependency] = []
 let vendoredShaderToolchain = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()
     .appendingPathComponent("Vendor/shader-toolchain").path
-let shaderToolchainRoot = [vendoredShaderToolchain, "/opt/homebrew/opt", "/usr/local/opt", "/usr"]
-    .first {
-        FileManager.default.fileExists(
-            atPath: $0 + "/glslang/include/glslang/Include/glslang_c_interface.h")
-    }
-let cShaderTranslateCSettings: [CSetting] = shaderToolchainRoot.map { root in
-    [.unsafeFlags(["-I\(root)/glslang/include", "-I\(root)/spirv-cross/include"])]
-} ?? []
+// Always the vendored build: `make`, and the Luma scheme's pre-action, make
+// it before anything compiles. Looking around for one instead would mean the
+// flags depended on what happened to be installed when the manifest was read.
+let shaderToolchainRoot = vendoredShaderToolchain
+let cShaderTranslateCSettings: [CSetting] = [
+    .unsafeFlags([
+        "-I\(shaderToolchainRoot)/glslang/include",
+        "-I\(shaderToolchainRoot)/spirv-cross/include",
+    ])
+]
 // Named by path rather than by -l: a GTK build carries library directories
 // of its own, and whichever came first would otherwise decide which glslang
 // this links against.
@@ -114,19 +116,9 @@ let shaderToolchainLibraries = [
     "spirv-cross/lib/libspirv-cross-glsl.a",
     "spirv-cross/lib/libspirv-cross-core.a",
 ]
-let cShaderTranslateLinkerSettings: [LinkerSetting] = shaderToolchainRoot.map { root in
-    let archives = shaderToolchainLibraries.map { "\(root)/\($0)" }
-    guard archives.allSatisfy({ FileManager.default.fileExists(atPath: $0) }) else {
-        return [.unsafeFlags([
-            "-L\(root)/glslang/lib", "-lglslang", "-lglslang-default-resource-limits", "-lSPIRV",
-            "-L\(root)/spirv-cross/lib",
-            "-lspirv-cross-c", "-lspirv-cross-msl", "-lspirv-cross-hlsl", "-lspirv-cross-cpp",
-            "-lspirv-cross-reflect", "-lspirv-cross-util", "-lspirv-cross-glsl",
-            "-lspirv-cross-core", "-lc++",
-        ])]
-    }
-    return [.unsafeFlags(archives + ["-lc++"])]
-} ?? []
+let cShaderTranslateLinkerSettings: [LinkerSetting] = [
+    .unsafeFlags(shaderToolchainLibraries.map { "\(shaderToolchainRoot)/\($0)" } + ["-lc++"])
+]
 
 #if canImport(Darwin)
 let shaderTranslateTargets: [Target] = [
