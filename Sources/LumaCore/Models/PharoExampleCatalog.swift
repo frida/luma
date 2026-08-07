@@ -483,19 +483,22 @@ public enum PharoExampleCatalog {
             PharoExample(
                 title: "Reedy lead, ringing bell, breathing pad",
                 code: """
-                "Three of the host's own patches, sounding together. Hush
-                 with: LumaTune hush"
+                "Three of the host's own patches, sounding together, and each
+                 put somewhere of its own. Hush with: LumaTune hush"
                 LumaSynth start.
                 LumaSynth echo: 0.3 feedback: 0.4 mix: 0.35.
                 (LumaTune named: #lead channel: 0)
+                    pan: -0.35;
                     patch: #pwmLead; tempo: 132;
                     notes: #(c5 - e5 - g5 e5 c5 - d5 - f5 - a5 g5 e5 -);
                     play.
                 (LumaTune named: #chime channel: 1)
+                    pan: 0.55;
                     patch: #bell; tempo: 132; division: 4;
                     notes: #(c6 - - g5);
                     play.
                 (LumaTune named: #wash channel: 2)
+                    pan: 0;
                     patch: #pad; tempo: 132; division: 8;
                     notes: #(c3 a2);
                     play

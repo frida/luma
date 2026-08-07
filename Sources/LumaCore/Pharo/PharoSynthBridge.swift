@@ -82,6 +82,12 @@ public func luma_synth_set_colour(
     SynthEngine.setPatch(patch, channel: Int(channel))
 }
 
+/// Where a channel sits between the speakers.
+@_cdecl("luma_synth_set_pan")
+public func luma_synth_set_pan(_ channel: Int32, _ pan: Float) {
+    SynthEngine.setPan(pan, channel: Int(channel))
+}
+
 /// One tap of delay across everything.
 @_cdecl("luma_synth_set_echo")
 public func luma_synth_set_echo(_ seconds: Float, _ feedback: Float, _ mix: Float) {

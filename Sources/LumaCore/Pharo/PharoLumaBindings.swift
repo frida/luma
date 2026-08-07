@@ -167,6 +167,12 @@ public enum PharoLumaBindings {
                         ((aDictionary at: #sync ifAbsent: [ false ]) ifTrue: [ 1 ] ifFalse: [ 0 ]).
                         at value: #ring value: 0.
                         at value: #drive value: 0 }'.
+        synth class compile: 'channel: aChannel pan: aPan
+            "-1 hard left, 1 hard right."
+            ^ LumaHost invoke: ''luma_synth_set_pan''
+                parameters: { TFBasicType sint. TFBasicType float }
+                return: TFBasicType void
+                with: { aChannel. aPan asFloat }'.
         synth class compile: 'echo: aSeconds feedback: aFeedback mix: aMix
             "One tap of delay across everything: how far back it reaches, how
              much comes round again, and how much of it is heard."
@@ -231,6 +237,8 @@ public enum PharoLumaBindings {
         tune compile: 'loops: aBoolean
             loops := aBoolean.
             self refresh'.
+        tune compile: 'pan: aPan
+            ^ LumaSynth channel: channel pan: aPan'.
         tune compile: 'patch: aName
             "A patch the host has a name for, or one of this class''s own."
             (LumaSynth channel: channel preset: aName) ifFalse: [

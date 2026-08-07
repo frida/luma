@@ -124,29 +124,56 @@ public enum SynthEngine {
                 advanceSequencer(channel)
             }
 
-            var sample: Float = 0
+            var left: Float = 0
+            var right: Float = 0
             for index in 0..<voiceCount where storage.voices[index].stage != .idle {
-                sample += render(&storage.voices[index])
+                let sample = render(&storage.voices[index])
+                // Equal power, so a voice does not get louder as it crosses.
+                let pan = storage.channels[storage.voices[index].channel].pan
+                let angle = (min(max(pan, -1), 1) + 1) * (.pi / 4)
+                left += sample * cos(angle)
+                right += sample * sin(angle)
             }
-            sample = echoed(sample)
-            sample = min(max(sample * storage.level, -1), 1)
+            echoed(&left, &right)
+            left = min(max(left * storage.level, -1), 1)
+            right = min(max(right * storage.level, -1), 1)
 
-            for channel in 0..<channels {
-                frames[frame * channels + channel] = sample
+            if channels == 1 {
+                // Both sides into one, at the level a centred voice had.
+                frames[frame] = min(max((left + right) * 0.70710677, -1), 1)
+            } else {
+                for channel in 0..<channels {
+                    frames[frame * channels + channel] = channel % 2 == 0 ? left : right
+                }
             }
         }
     }
 
-    /// One tap of delay across everything, fed back on itself. A line that
-    /// sounds thin dry is what a demo tune sounds like without one.
-    private static func echoed(_ sample: Float) -> Float {
-        guard storage.echoMix > 0, storage.echoFrames > 0 else { return sample }
+    /// One tap of delay, crossing sides as it comes round: what went out
+    /// left comes back right, which is what makes a tune sound wide rather
+    /// than merely wet.
+    private static func echoed(_ left: inout Float, _ right: inout Float) {
+        guard storage.echoMix > 0, storage.echoFrames > 0 else { return }
 
-        let read = storage.echoWrite &+ echoCapacity &- storage.echoFrames
-        let delayed = storage.echo[read % echoCapacity]
-        storage.echo[storage.echoWrite % echoCapacity] = sample + delayed * storage.echoFeedback
+        let read = (storage.echoWrite &+ echoCapacity &- storage.echoFrames) % echoCapacity
+        let delayedLeft = storage.echo[read]
+        let delayedRight = storage.echoRight[read]
+
+        // What goes in enters one side only: fed to both, a centred voice
+        // would come back centred and the tap would never bounce.
+        storage.echo[storage.echoWrite] = (left + right) * 0.5 + delayedRight * storage.echoFeedback
+        storage.echoRight[storage.echoWrite] = delayedLeft * storage.echoFeedback
         storage.echoWrite = (storage.echoWrite &+ 1) % echoCapacity
-        return sample + delayed * storage.echoMix
+
+        left += delayedLeft * storage.echoMix
+        right += delayedRight * storage.echoMix
+    }
+
+    /// Where a channel sits between the speakers, -1 to 1.
+    public static func setPan(_ pan: Float, channel: Int) {
+        var command = Command(kind: .pan, channel: Int32(channel))
+        command.frequency = pan
+        offer(command)
     }
 
     /// How far back the tap reaches, how much of it comes round again, and
@@ -181,6 +208,8 @@ public enum SynthEngine {
                 storage.channels[channel].offeredLoops = command.loops == 1
             case .echo:
                 applyEcho(command)
+            case .pan:
+                storage.channels[channel].pan = min(max(command.frequency, -1), 1)
             case .patternStop:
                 storage.channels[channel].performing = -1
                 storage.channels[channel].offered = -1
@@ -206,6 +235,7 @@ public enum SynthEngine {
         if storage.echoMix <= 0 {
             for index in 0..<echoCapacity {
                 storage.echo[index] = 0
+                storage.echoRight[index] = 0
             }
         }
     }
@@ -291,6 +321,7 @@ public enum SynthEngine {
         voice.bandpass = 0
         voice.lfoPhase = 0
         voice.cutoffEnvelope = 1
+        voice.channel = channel
         voice.patch = storage.channels[channel].patch
     }
 
@@ -448,6 +479,7 @@ public enum SynthEngine {
 
         var level: Float = 0.6
         var echo = [Float](repeating: 0, count: SynthEngine.echoCapacity)
+        var echoRight = [Float](repeating: 0, count: SynthEngine.echoCapacity)
         var echoWrite = 0
         var echoFrames = 0
         var echoFeedback: Float = 0
@@ -523,11 +555,14 @@ public enum SynthEngine {
         var bandpass: Float = 0
         var lfoPhase: Float = 0
         var cutoffEnvelope: Float = 0
+        var channel = 0
         var patch = PatchValues()
     }
 
     private struct ChannelState {
         var patch = PatchValues()
+        /// -1 hard left, 1 hard right.
+        var pan: Float = 0
         var performing = -1
         var offered = -1
         var offeredCount = 0
@@ -551,7 +586,7 @@ public enum SynthEngine {
     }
 
     private enum CommandKind: Int32 {
-        case patch, noteOn, noteOff, patternOffer, patternStop, echo
+        case patch, noteOn, noteOff, patternOffer, patternStop, echo, pan
     }
 
     private struct Command {

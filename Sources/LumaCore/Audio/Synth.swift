@@ -58,8 +58,14 @@ public final class Synth {
         SynthEngine.release(voice: voice)
     }
 
-    /// One tap of delay across everything: how far back it reaches, how much
-    /// comes round again, and how much of it is heard.
+    /// Where a channel sits between the speakers: -1 hard left, 1 hard right.
+    public func pan(_ pan: Float, channel: Int = 0) {
+        SynthEngine.setPan(pan, channel: channel)
+    }
+
+    /// One tap of delay across everything, crossing sides as it comes round:
+    /// how far back it reaches, how much comes round again, and how much of
+    /// it is heard.
     public func echo(seconds: Float, feedback: Float, mix: Float) {
         SynthEngine.setEcho(seconds: seconds, feedback: feedback, mix: mix)
     }
