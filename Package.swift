@@ -100,7 +100,7 @@ let shaderToolchainTarget: Target = shaderToolchainRoot.map {
     name: "ShaderToolchain",
     url: "https://github.com/frida/luma/releases/download/"
         + "shader-toolchain-\(shaderToolchainVersion)/ShaderToolchain.xcframework.zip",
-    checksum: "f42b4fbfbe4ed34214f405d5705a5a8dff973242595c6c55de06be7f16c91204"
+    checksum: "70d83676ec8cbb37db3f59885c1dd8df8c4566ad3e54b7f2faf56bfa006022f8"
 )
 let shaderTranslateTargets: [Target] = [
     shaderToolchainTarget,
