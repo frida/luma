@@ -6,9 +6,15 @@ working with code in this repository.
 ## Build Commands
 
 ```sh
-make          # Incremental release build via xcodebuild → build/Luma.app
-make clean    # Remove build artifacts
+make                 # Incremental release build via xcodebuild → build/Luma.app
+make check-examples  # Read the Pharo example catalogue in the image
+make clean           # Remove build artifacts
 ```
+
+`PharoExampleCatalog` is Smalltalk inside Swift string literals, which
+no compiler reads. `make check-examples` parses each one in the image
+and reports syntax errors, names nothing defines, and selectors
+nothing implements -- the three ways examples have shipped broken.
 
 glslang and SPIRV-Cross do the GLSL→Metal translation, at build time
 and at run time, and build under neither SwiftPM nor Xcode. CI makes

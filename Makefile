@@ -18,7 +18,17 @@ ifneq ($(wildcard $(LOCAL_SHADER_TOOLCHAIN)),)
 export SHADER_TOOLCHAIN_ROOT := $(LOCAL_SHADER_TOOLCHAIN)
 endif
 
+PHARO_IMAGE := LumaGtk/Sources/LumaGtk/Resources/pharo-image/SwiftyPharo.image
+
 all: $(APP)
+
+# The examples are Smalltalk in Swift string literals, which nothing else
+# reads. This reads them the way the image would.
+check-examples: $(PHARO_IMAGE)
+	swift run LumaExampleCheck "$(PWD)/$(PHARO_IMAGE)"
+
+$(PHARO_IMAGE):
+	$(MAKE) -C LumaGtk $(PHARO_IMAGE:LumaGtk/%=%)
 
 $(APP): $(SOURCES) $(SHADER_SOURCES) Luma.xcodeproj Package.swift
 	mkdir -p "$(BUILD_DIR)"
@@ -47,4 +57,4 @@ clean:
 	rm -rf "$(BUILD_DIR)"
 	rm -rf .build LumaGtk/.build
 
-.PHONY: all gtk gtk-release clean
+.PHONY: all check-examples gtk gtk-release clean
