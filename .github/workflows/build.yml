@@ -63,6 +63,19 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "build=${{ github.run_number }}" >> $GITHUB_OUTPUT
 
+  checks:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v6
+
+      # The examples are Smalltalk inside Swift string literals, and a patch
+      # that has gone silent sounds fine to a compiler.
+      - name: Read the example catalogue
+        run: make check-examples
+
+      - name: Play every patch
+        run: make check-patches
+
   frida-core:
     runs-on: macos-26
     strategy:
