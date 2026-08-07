@@ -58,6 +58,24 @@ public final class Synth {
         SynthEngine.release(voice: voice)
     }
 
+    /// Stops every pattern and takes every voice with it, leaving what each
+    /// channel is set to alone.
+    public func hush() {
+        SynthEngine.hush()
+    }
+
+    /// Back to how it started: every channel's patch, colour and place, the
+    /// echo, and the level.
+    public func reset() {
+        SynthEngine.reset(channel: nil)
+        level = 0.6
+    }
+
+    /// The same for one channel.
+    public func reset(channel: Int) {
+        SynthEngine.reset(channel: channel)
+    }
+
     /// Where a channel sits between the speakers: -1 hard left, 1 hard right.
     public func pan(_ pan: Float, channel: Int = 0) {
         SynthEngine.setPan(pan, channel: channel)

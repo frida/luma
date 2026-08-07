@@ -82,6 +82,30 @@ public func luma_synth_set_colour(
     SynthEngine.setPatch(patch, channel: Int(channel))
 }
 
+/// Stops every pattern and takes every voice with it.
+@_cdecl("luma_synth_hush")
+public func luma_synth_hush() {
+    SynthEngine.hush()
+}
+
+/// Back to how it started. A channel below zero asks for all of them, and
+/// the rest of the synth with them.
+@_cdecl("luma_synth_reset")
+public func luma_synth_reset(_ channel: Int32) {
+    if channel < 0 {
+        SynthEngine.reset(channel: nil)
+        SynthEngine.level = 0.6
+        for index in 0..<SynthEngine.channelCount {
+            channelPatches[index] = SynthEngine.PatchValues()
+        }
+    } else {
+        SynthEngine.reset(channel: Int(channel))
+        // The colour it was given is remembered here, so it has to go too or
+        // the next patch would take it back.
+        channelPatches[Int(channel)] = SynthEngine.PatchValues()
+    }
+}
+
 /// Where a channel sits between the speakers.
 @_cdecl("luma_synth_set_pan")
 public func luma_synth_set_pan(_ channel: Int32, _ pan: Float) {

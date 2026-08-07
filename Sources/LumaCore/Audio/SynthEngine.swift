@@ -169,6 +169,49 @@ public enum SynthEngine {
         right += delayedRight * storage.echoMix
     }
 
+    /// Stops every pattern and takes every voice with it. What each channel
+    /// is set to is left alone: this is for silence, not for forgetting.
+    public static func hush() {
+        offer(Command(kind: .hush, channel: 0))
+    }
+
+    /// Puts a channel back to how it started, or every channel and the rest
+    /// of the synth when asked for all of them.
+    public static func reset(channel: Int?) {
+        offer(Command(kind: .reset, channel: Int32(channel ?? -1)))
+    }
+
+    private static func hushEverything() {
+        for index in 0..<voiceCount {
+            storage.voices[index].stage = .idle
+            storage.voices[index].envelope = 0
+        }
+        for index in 0..<channelCount {
+            storage.channels[index].performing = -1
+            storage.channels[index].offered = -1
+            storage.channels[index].stepIndex = 0
+            storage.channels[index].framesUntilStep = 0
+            storage.channels[index].sequencedVoice = 0
+            publishPerforming(index, -1)
+        }
+    }
+
+    /// What it sounds like, where it sits, and whatever it was playing.
+    private static func resetChannel(_ channel: Int) {
+        storage.channels[channel].patch = PatchValues()
+        storage.channels[channel].pan = 0
+        storage.channels[channel].performing = -1
+        storage.channels[channel].offered = -1
+        storage.channels[channel].stepIndex = 0
+        storage.channels[channel].framesUntilStep = 0
+        storage.channels[channel].sequencedVoice = 0
+        publishPerforming(channel, -1)
+        for index in 0..<voiceCount where storage.voices[index].channel == channel {
+            storage.voices[index].stage = .idle
+            storage.voices[index].envelope = 0
+        }
+    }
+
     /// Where a channel sits between the speakers, -1 to 1.
     public static func setPan(_ pan: Float, channel: Int) {
         var command = Command(kind: .pan, channel: Int32(channel))
@@ -210,6 +253,22 @@ public enum SynthEngine {
                 applyEcho(command)
             case .pan:
                 storage.channels[channel].pan = min(max(command.frequency, -1), 1)
+            case .hush:
+                hushEverything()
+            case .reset:
+                // Channel -1 asks for all of them.
+                if channel < 0 {
+                    hushEverything()
+                    storage.echoFrames = 0
+                    storage.echoFeedback = 0
+                    storage.echoMix = 0
+                    storage.level = 0.6
+                    for index in 0..<channelCount {
+                        resetChannel(index)
+                    }
+                } else {
+                    resetChannel(channel)
+                }
             case .patternStop:
                 storage.channels[channel].performing = -1
                 storage.channels[channel].offered = -1
@@ -586,7 +645,7 @@ public enum SynthEngine {
     }
 
     private enum CommandKind: Int32 {
-        case patch, noteOn, noteOff, patternOffer, patternStop, echo, pan
+        case patch, noteOn, noteOff, patternOffer, patternStop, echo, pan, hush, reset
     }
 
     private struct Command {

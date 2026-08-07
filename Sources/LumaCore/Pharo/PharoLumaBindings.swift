@@ -167,6 +167,22 @@ public enum PharoLumaBindings {
                         ((aDictionary at: #sync ifAbsent: [ false ]) ifTrue: [ 1 ] ifFalse: [ 0 ]).
                         at value: #ring value: 0.
                         at value: #drive value: 0 }'.
+        synth class compile: 'hush
+            "Stops every tune and takes every sounding voice with it. What
+             the channels are set to is left alone."
+            LumaTune hush.
+            ^ LumaHost invoke: ''luma_synth_hush'''.
+        synth class compile: 'reset
+            "Back to how it started: every channel''s patch, colour and place,
+             the echo, and the level."
+            LumaTune hush.
+            ^ LumaHost invoke: ''luma_synth_reset''
+                parameters: { TFBasicType sint } return: TFBasicType void with: { -1 }'.
+        synth class compile: 'resetChannel: aChannel
+            "That channel''s patch, colour and place, and whatever it was
+             playing."
+            ^ LumaHost invoke: ''luma_synth_reset''
+                parameters: { TFBasicType sint } return: TFBasicType void with: { aChannel }'.
         synth class compile: 'channel: aChannel pan: aPan
             "-1 hard left, 1 hard right."
             ^ LumaHost invoke: ''luma_synth_set_pan''

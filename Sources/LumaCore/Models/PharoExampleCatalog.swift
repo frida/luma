@@ -522,6 +522,19 @@ public enum PharoExampleCatalog {
                     play
                 """),
             PharoExample(
+                title: "Getting back",
+                code: """
+                "Stuck droning? This stops every tune and every voice with
+                 it, and leaves what the channels are set to alone:
+                    LumaSynth hush
+                 Back to how the synth started -- patches, colours, places,
+                 the echo and the level:
+                    LumaSynth reset
+                 Or just the channel that got away:
+                    LumaSynth resetChannel: 0"
+                LumaSynth hush
+                """),
+            PharoExample(
                 title: "Shape your own patch",
                 code: """
                 "Every field of a voice, as plain data. Channel 0, a hollow

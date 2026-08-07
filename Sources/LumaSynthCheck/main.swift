@@ -43,6 +43,7 @@ func check() -> Int32 {
     }
 
     complaints += checkStereo(synth)
+    complaints += checkGettingBack(synth)
 
     guard complaints.isEmpty else {
         FileHandle.standardError.write(Data((complaints.joined(separator: "\n") + "\n").utf8))
@@ -88,6 +89,51 @@ func checkStereo(_ synth: Synth) -> [String] {
     }
     print("echo crosses sides: \(crossed)")
     synth.echo(seconds: 0, feedback: 0, mix: 0)
+    return complaints
+}
+
+/// Getting back to the start has to be audible too: a hush has to silence
+/// what is sounding, and a reset has to sound like the beginning.
+@MainActor
+func checkGettingBack(_ synth: Synth) -> [String] {
+    var complaints: [String] = []
+
+    // A patch that sustains keeps sounding until something stops it.
+    let held = SynthPatch(
+        waveform: .saw, attack: 0.001, decay: 0.05, sustain: 0.9, release: 0.4,
+        cutoff: 0, resonance: 0, gain: 0.8)
+    synth.use(held, channel: 0)
+    _ = synth.play(frequency: 220, velocity: 1, channel: 0)
+    _ = synth.renderOffline(frameCount: 4800)
+    synth.hush()
+    let afterHush = synth.renderOffline(frameCount: 4800).map(abs).max() ?? 0
+    print(String(format: "after hush: peak %.4f", afterHush))
+    if afterHush > 0.001 {
+        complaints.append("hush: still sounding, peak \(afterHush)")
+    }
+
+    // What the beginning sounds like, against what it sounds like once a
+    // channel has been dressed up and then reset.
+    synth.reset()
+    synth.use(.pulse, channel: 0)
+    _ = synth.play(frequency: 220, velocity: 1, channel: 0)
+    let plain = synth.renderOffline(frameCount: 12000)
+
+    synth.use(.acid, channel: 0)
+    synth.pan(-1, channel: 0)
+    synth.echo(seconds: 0.2, feedback: 0.5, mix: 0.6)
+    _ = synth.play(frequency: 220, velocity: 1, channel: 0)
+    _ = synth.renderOffline(frameCount: 12000)
+
+    synth.reset()
+    synth.use(.pulse, channel: 0)
+    _ = synth.play(frequency: 220, velocity: 1, channel: 0)
+    let again = synth.renderOffline(frameCount: 12000)
+
+    print("reset sounds like the beginning: \(plain == again)")
+    if plain != again {
+        complaints.append("reset: does not sound like the beginning")
+    }
     return complaints
 }
 
