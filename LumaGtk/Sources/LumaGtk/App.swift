@@ -82,6 +82,9 @@ final class LumaApplication {
 
     private func activate() {
         PangoGlyphAtlas.install()
+        if let directory = RenderTests.asked {
+            exit(RenderTests.run(writingTo: directory))
+        }
         ensureDocumentWindow()
     }
 

@@ -1,4 +1,4 @@
-.PHONY: build run clean bundle screenshots install uninstall
+.PHONY: build run clean bundle screenshots install uninstall render-tests
 
 # SwiftPM's bundled .pc finder only consults the directories listed in
 # PKG_CONFIG_PATH and the toolchain's primary compiled-in path; it
@@ -51,6 +51,11 @@ $(SHADER_BUNDLE): $(SHADER_SOURCES) $(PROJECT_ROOT)/Sources/LumaShaderCompiler/m
 	swift run --package-path $(PROJECT_ROOT) LumaShaderCompiler \
 	    --shader-dir "$(PROJECT_ROOT)/Shaders" \
 	    --swift-out  "$@"
+
+# Draws each case offscreen and writes a PNG to look at, which is how the
+# drawing is checked without a pointer or a person.
+render-tests: build
+	LUMA_RENDER_TESTS=$(CURDIR)/build/render-tests .build/debug/LumaGtk
 
 build: bundle $(PHARO_IMAGE)
 	swift build $(SWIFT_BUILD_FLAGS)

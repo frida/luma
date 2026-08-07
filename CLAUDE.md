@@ -11,6 +11,12 @@ make check-examples  # Read the Pharo example catalogue in the image
 make clean           # Remove build artifacts
 ```
 
+`make -C LumaGtk render-tests` draws the shader effects and a lettered
+scene offscreen, writes a PNG of each, and fails on a case that drew
+nothing -- what has gone wrong in this drawing has been blank frames
+and mirrored glyphs, which a compiler cannot see and a PNG shows at a
+glance.
+
 `PharoExampleCatalog` is Smalltalk inside Swift string literals, which
 no compiler reads. `make check-examples` parses each one in the image
 and reports syntax errors, names nothing defines, and selectors
