@@ -3,6 +3,7 @@
 /Luma/Generated/
 /Sources/LumaCore/Generated/
 /build/
+/Vendor/
 /.build/
 /.swiftpm/
 /LumaGtk/.build/
