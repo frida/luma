@@ -8,6 +8,7 @@ working with code in this repository.
 ```sh
 make                 # Incremental release build via xcodebuild → build/Luma.app
 make check-examples  # Read the Pharo example catalogue in the image
+make check-patches   # Play every synth patch offline and measure it
 make clean           # Remove build artifacts
 ```
 

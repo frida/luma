@@ -29,6 +29,65 @@ public func luma_synth_set_level(_ level: Float) {
     SynthEngine.level = level
 }
 
+/// What each channel is set to, so the colour of a voice can be changed
+/// without restating the rest of it.
+private nonisolated(unsafe) var channelPatches = [SynthEngine.PatchValues](
+    repeating: SynthEngine.PatchValues(), count: SynthEngine.channelCount)
+
+/// The patches worth having a name for. A snippet asks for a sound rather
+/// than for eleven numbers.
+@_cdecl("luma_synth_use_preset")
+public func luma_synth_use_preset(_ channel: Int32, _ name: UnsafePointer<CChar>) -> Int32 {
+    let named: [String: SynthPatch] = [
+        "pulse": .pulse, "bass": .bass, "blip": .blip, "noiseHit": .noiseHit,
+        "pwmLead": .pwmLead, "acid": .acid, "syncLead": .syncLead,
+        "bell": .bell, "pad": .pad,
+    ]
+    guard let patch = named[String(cString: name)] else { return 0 }
+
+    channelPatches[Int(channel)] = patch.values
+    SynthEngine.setPatch(patch.values, channel: Int(channel))
+    return 1
+}
+
+/// What a voice does beyond its envelope and filter: the pulse it draws, the
+/// slow wave moving it, what the filter does when struck, and how driven it
+/// comes out.
+@_cdecl("luma_synth_set_colour")
+public func luma_synth_set_colour(
+    _ channel: Int32,
+    _ pulseWidth: Float,
+    _ lfoRate: Float,
+    _ lfoToPitch: Float,
+    _ lfoToWidth: Float,
+    _ lfoToCutoff: Float,
+    _ cutoffEnvelope: Float,
+    _ cutoffDecay: Float,
+    _ syncsDetuned: Int32,
+    _ ringMix: Float,
+    _ drive: Float
+) {
+    var patch = channelPatches[Int(channel)]
+    patch.pulseWidth = pulseWidth
+    patch.lfoRate = lfoRate
+    patch.lfoToPitch = lfoToPitch
+    patch.lfoToWidth = lfoToWidth
+    patch.lfoToCutoff = lfoToCutoff
+    patch.cutoffEnvelope = cutoffEnvelope
+    patch.cutoffDecay = cutoffDecay
+    patch.syncsDetuned = syncsDetuned == 1
+    patch.ringMix = ringMix
+    patch.drive = drive
+    channelPatches[Int(channel)] = patch
+    SynthEngine.setPatch(patch, channel: Int(channel))
+}
+
+/// One tap of delay across everything.
+@_cdecl("luma_synth_set_echo")
+public func luma_synth_set_echo(_ seconds: Float, _ feedback: Float, _ mix: Float) {
+    SynthEngine.setEcho(seconds: seconds, feedback: feedback, mix: mix)
+}
+
 @_cdecl("luma_synth_set_patch")
 public func luma_synth_set_patch(
     _ channel: Int32,
@@ -52,6 +111,19 @@ public func luma_synth_set_patch(
     patch.cutoff = cutoff
     patch.resonance = resonance
     patch.gain = gain
+    // The colour it was last given stays put: only what was named changes.
+    let held = channelPatches[Int(channel)]
+    patch.pulseWidth = held.pulseWidth
+    patch.lfoRate = held.lfoRate
+    patch.lfoToPitch = held.lfoToPitch
+    patch.lfoToWidth = held.lfoToWidth
+    patch.lfoToCutoff = held.lfoToCutoff
+    patch.cutoffEnvelope = held.cutoffEnvelope
+    patch.cutoffDecay = held.cutoffDecay
+    patch.syncsDetuned = held.syncsDetuned
+    patch.ringMix = held.ringMix
+    patch.drive = held.drive
+    channelPatches[Int(channel)] = patch
     SynthEngine.setPatch(patch, channel: Int(channel))
 }
 

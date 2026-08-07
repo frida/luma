@@ -24,6 +24,10 @@ all: $(APP)
 
 # The examples are Smalltalk in Swift string literals, which nothing else
 # reads. This reads them the way the image would.
+# A patch that has gone silent sounds fine to a compiler.
+check-patches:
+	swift run LumaSynthCheck
+
 check-examples: $(PHARO_IMAGE)
 	swift run LumaExampleCheck "$(PWD)/$(PHARO_IMAGE)"
 
@@ -57,4 +61,4 @@ clean:
 	rm -rf "$(BUILD_DIR)"
 	rm -rf .build LumaGtk/.build
 
-.PHONY: all check-examples gtk gtk-release clean
+.PHONY: all check-examples check-patches gtk gtk-release clean

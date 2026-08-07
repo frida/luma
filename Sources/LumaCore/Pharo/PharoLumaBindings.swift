@@ -136,6 +136,44 @@ public enum PharoLumaBindings {
         synth class compile: 'saw ^ 2'.
         synth class compile: 'square ^ 3'.
         synth class compile: 'noise ^ 4'.
+        synth class compile: 'channel: aChannel preset: aName
+            "The patches the host has a name for: pulse, bass, blip, noiseHit,
+             pwmLead, acid, syncLead, bell, pad."
+            ^ 1 = (LumaHost invoke: ''luma_synth_use_preset''
+                parameters: { TFBasicType sint. TFBasicType pointer }
+                return: TFBasicType sint
+                with: { aChannel. LumaHost cString: aName asString })'.
+        synth class compile: 'channel: aChannel colour: aDictionary
+            "What a voice does beyond its envelope: #pulseWidth #lfoRate
+             #lfoToPitch #lfoToWidth #lfoToCutoff #cutoffEnvelope
+             #cutoffDecay #sync #ring #drive. What is left out is left off."
+            | at |
+            at := [ :key :default | (aDictionary at: key ifAbsent: [ default ]) asFloat ].
+            ^ LumaHost invoke: ''luma_synth_set_colour''
+                parameters: { TFBasicType sint.
+                              TFBasicType float. TFBasicType float. TFBasicType float.
+                              TFBasicType float. TFBasicType float. TFBasicType float.
+                              TFBasicType float. TFBasicType sint.
+                              TFBasicType float. TFBasicType float }
+                return: TFBasicType void
+                with: { aChannel.
+                        at value: #pulseWidth value: 0.5.
+                        at value: #lfoRate value: 0.
+                        at value: #lfoToPitch value: 0.
+                        at value: #lfoToWidth value: 0.
+                        at value: #lfoToCutoff value: 0.
+                        at value: #cutoffEnvelope value: 0.
+                        at value: #cutoffDecay value: 0.2.
+                        ((aDictionary at: #sync ifAbsent: [ false ]) ifTrue: [ 1 ] ifFalse: [ 0 ]).
+                        at value: #ring value: 0.
+                        at value: #drive value: 0 }'.
+        synth class compile: 'echo: aSeconds feedback: aFeedback mix: aMix
+            "One tap of delay across everything: how far back it reaches, how
+             much comes round again, and how much of it is heard."
+            ^ LumaHost invoke: ''luma_synth_set_echo''
+                parameters: { TFBasicType float. TFBasicType float. TFBasicType float }
+                return: TFBasicType void
+                with: { aSeconds asFloat. aFeedback asFloat. aMix asFloat }'.
         synth class compile: 'pulse: aChannel
             ^ self channel: aChannel waveform: self square detune: 0 attack: 0.001
                 decay: 0.09 sustain: 0 release: 0.01 cutoff: 0 resonance: 0 gain: 0.5'.
@@ -193,8 +231,10 @@ public enum PharoLumaBindings {
         tune compile: 'loops: aBoolean
             loops := aBoolean.
             self refresh'.
-        tune compile: 'patch: aSelector
-            LumaSynth perform: (aSelector , '':'') asSymbol with: channel'.
+        tune compile: 'patch: aName
+            "A patch the host has a name for, or one of this class''s own."
+            (LumaSynth channel: channel preset: aName) ifFalse: [
+                LumaSynth perform: (aName , '':'') asSymbol with: channel ]'.
         tune compile: 'refresh
             playing ifTrue: [ self upload ]'.
         tune compile: 'play

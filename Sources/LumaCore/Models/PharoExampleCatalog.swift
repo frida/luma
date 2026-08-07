@@ -469,6 +469,56 @@ public enum PharoExampleCatalog {
                     play
                 """),
             PharoExample(
+                title: "Acid line \u{2014} the filter is the instrument",
+                code: """
+                "Every note strikes the filter open and it shuts again on its
+                 own. Resonance and a little drive do the rest."
+                LumaSynth start.
+                LumaSynth echo: 0.24 feedback: 0.35 mix: 0.3.
+                (LumaTune named: #acidline channel: 0)
+                    patch: #acid; tempo: 300;
+                    notes: #(a1 a1 c2 a1 d2 a1 g2 f2 a1 a1 c2 e2 a1 g1 f1 -);
+                    play
+                """),
+            PharoExample(
+                title: "Reedy lead, ringing bell, breathing pad",
+                code: """
+                "Three of the host's own patches, sounding together. Hush
+                 with: LumaTune hush"
+                LumaSynth start.
+                LumaSynth echo: 0.3 feedback: 0.4 mix: 0.35.
+                (LumaTune named: #lead channel: 0)
+                    patch: #pwmLead; tempo: 132;
+                    notes: #(c5 - e5 - g5 e5 c5 - d5 - f5 - a5 g5 e5 -);
+                    play.
+                (LumaTune named: #chime channel: 1)
+                    patch: #bell; tempo: 132; division: 4;
+                    notes: #(c6 - - g5);
+                    play.
+                (LumaTune named: #wash channel: 2)
+                    patch: #pad; tempo: 132; division: 8;
+                    notes: #(c3 a2);
+                    play
+                """),
+            PharoExample(
+                title: "Colour a voice yourself",
+                code: """
+                "What a voice does beyond its envelope: the pulse it draws,
+                 the slow wave moving it, what the filter does when struck,
+                 and how driven it comes out. What is left out is left off."
+                LumaSynth start.
+                LumaSynth channel: 0 preset: #pwmLead.
+                LumaSynth channel: 0 colour: {
+                    #pulseWidth -> 0.2.
+                    #lfoRate -> 6.
+                    #lfoToWidth -> 0.28.
+                    #lfoToPitch -> 0.15.
+                    #drive -> 0.25 } asDictionary.
+                (LumaTune named: #lead channel: 0)
+                    tempo: 150; notes: #(c5 e5 g5 c6 g5 e5 c5 -);
+                    play
+                """),
+            PharoExample(
                 title: "Shape your own patch",
                 code: """
                 "Every field of a voice, as plain data. Channel 0, a hollow
