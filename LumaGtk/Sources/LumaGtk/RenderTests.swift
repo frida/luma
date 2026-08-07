@@ -3,6 +3,7 @@ import CGtk
 import Foundation
 import Gtk
 import LumaCore
+import SwiftyPharo
 
 /// Draws widgets offscreen and says what came out, the way GTK's own tests
 /// do: a paintable over the widget, a renderer over that, and a texture to
@@ -33,8 +34,9 @@ enum RenderTests {
         try? FileManager.default.createDirectory(
             atPath: directory, withIntermediateDirectories: true)
 
+        var failures = fromTheImage(writingTo: directory)
+
         setvbuf(stdout, nil, _IONBF, 0)
-        var failures: Int32 = 0
         for probe in cases {
             let coverage = draw(
                 probe.effect, width: probe.size.width, height: probe.size.height,
@@ -48,6 +50,57 @@ enum RenderTests {
             print("\(probe.name): \(coverage > 0 ? "drew" : "DREW NOTHING"), \(marked) marked")
         }
         return failures
+    }
+
+    /// The same again, but built by the image rather than here: what the
+    /// examples actually do, through the bindings, the bridge and the
+    /// canvas view.
+    private static func fromTheImage(writingTo directory: String) -> Int32 {
+        guard let scene = sceneFromTheImage() else {
+            print("pharo-lettering: NO SCENE, the image did not answer one")
+            return 1
+        }
+
+        let canvas = PharoCanvasArea(scene: scene)
+        let coverage = draw(
+            canvas.area, showing: canvas.widget, width: 480, height: 160,
+            to: "\(directory)/pharo-lettering.png")
+        let marked = String(format: "%.2f%%", coverage * 100)
+        print("pharo-lettering: \(coverage > 0 ? "drew" : "DREW NOTHING"), \(marked) marked")
+        return coverage > 0 ? 0 : 1
+    }
+
+    /// Asks the image for a lettered scene and answers which one, letting the
+    /// loop run while it boots -- it answers on the same thread the drawing
+    /// happens on.
+    private static func sceneFromTheImage() -> Int? {
+        final class Answer {
+            var scene: Int?
+            var settled = false
+        }
+
+        let answer = Answer()
+        Task { @MainActor in
+            defer { answer.settled = true }
+            PharoRuntime.bootBundledImage()
+            try? await PharoRuntime.shared.runningState()
+            try? await PharoLumaBindings.install(into: PharoRuntime.shared)
+            let handle = try? await PharoRuntime.shared.evaluate("""
+                | canvas sign |
+                canvas := LumaCanvas new.
+                sign := LumaText on: canvas addDrawable pointSize: 34.
+                sign pad: #(20 18) tint: #(0.2 0.95 0.75); show: 'GTK'.
+                canvas handle
+                """)
+            answer.scene = handle.flatMap { Int($0.printString.trimmingCharacters(in: .whitespaces)) }
+        }
+
+        // Booting an image takes a while, and none of it happens unless the
+        // loop is running.
+        for _ in 0..<60 where !answer.settled {
+            settle(for: 500)
+        }
+        return answer.scene
     }
 
     /// A scene of the kind the image builds: lettering over the atlas the
@@ -151,13 +204,16 @@ enum RenderTests {
     /// nothing is told apart from one that drew.
     private static func draw(
         _ effect: ShaderEffect,
+        showing: Widget? = nil,
         width: Int,
         height: Int,
         to path: String
     ) -> Double {
         let window = Window()
         window.setDefaultSize(width: width, height: height)
-        window.set(child: effect.widget)
+        // What goes in the window is not always the area itself: a canvas
+        // keeps its own inside a box, and a widget has one parent.
+        window.set(child: showing ?? effect.widget)
         window.present()
 
         // A frame only comes round while the loop is running, and the widget
