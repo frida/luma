@@ -113,8 +113,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-crypto", .upToNextMajor(from: "3.0.0")),
         .package(url: "https://github.com/groue/GRDB.swift", .upToNextMajor(from: "7.0.0")),
         .package(url: "https://github.com/radareorg/SwiftyR2", branch: "main"),
-        // Local while the canvas view is being added; restore the remote before landing.
-        .package(name: "SwiftyPharo", path: "../SwiftyPharo"),
+        .package(url: "https://github.com/frida/SwiftyPharo", branch: "main"),
     ],
     targets: cSoupTargets + [
         .target(
