@@ -1,5 +1,5 @@
 {
-  "originHash" : "b52a9a44b38280714a16db951b11f17af09183aa68e55f1aaaeecbe26abb902e",
+  "originHash" : "fe55bf4c328c29ca0091789d4064ae31ce071252770cf392d9f669ece6b3d6b4",
   "pins" : [
     {
       "identity" : "frida-swift",
@@ -35,6 +35,15 @@
       "state" : {
         "revision" : "95ba0316a9b733e92bb6b071255ff46263bbe7dc",
         "version" : "3.15.1"
+      }
+    },
+    {
+      "identity" : "swiftypharo",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/frida/SwiftyPharo",
+      "state" : {
+        "branch" : "main",
+        "revision" : "28409ca78c8372d5d1f05d23e10a4cf3d2438ab5"
       }
     },
     {
