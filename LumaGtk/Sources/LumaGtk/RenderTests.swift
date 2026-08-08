@@ -23,6 +23,51 @@ enum RenderTests {
         ProcessInfo.processInfo.environment["LUMA_RENDER_TESTS"]
     }
 
+    /// Plays a snippet in a canvas for a while and says what the process is
+    /// holding as it goes, so a leak shows as a line that keeps climbing.
+    static func soak(_ snippetPath: String, seconds: Int) -> Int32 {
+        setvbuf(stdout, nil, _IONBF, 0)
+        guard let snippet = try? String(contentsOfFile: snippetPath, encoding: .utf8),
+              let scene = sceneFromTheImage(evaluating: snippet)
+        else {
+            print("soak: the image did not answer a scene")
+            return 1
+        }
+
+        let canvas = PharoCanvasArea(scene: scene)
+        let window = Window()
+        window.setDefaultSize(width: 480, height: 640)
+        window.set(child: canvas.widget)
+        window.present()
+
+        for tick in 0...(seconds / 10) {
+            settle(for: 10_000)
+            // What the snippet is doing, so a flat line is not mistaken for
+            // a loop that died.
+            // What the snippet moves, it moves with drivers: the declared
+            // value stays where it started by design.
+            let moving = CanvasRegistry.shared.scene(scene)?.ordered
+                .compactMap { $0.drivers.first { $0.name == "at" }?.to.last }
+                .map { String(format: "%.2f", $0) }
+                .joined(separator: " ") ?? ""
+            print("t+\(tick * 10)s  rss \(resident()) MB  scenes \(CanvasRegistry.shared.sceneCount)"
+                + "  atlases \(GlyphAtlasRasteriser.count)  at \(moving)")
+        }
+        window.close()
+        return 0
+    }
+
+    private static func resident() -> Int {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / 4)
+        let answer = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        return answer == KERN_SUCCESS ? Int(info.resident_size) / 1_048_576 : 0
+    }
+
     static func run(writingTo directory: String) -> Int32 {
         let cases: [(name: String, effect: ShaderEffect, size: (width: Int, height: Int))] = [
             ("welcome-backdrop", ShaderEffect(fragmentSource: ShaderEffects.welcomeBackdrop),
@@ -73,7 +118,7 @@ enum RenderTests {
     /// Asks the image for a lettered scene and answers which one, letting the
     /// loop run while it boots -- it answers on the same thread the drawing
     /// happens on.
-    private static func sceneFromTheImage() -> Int? {
+    private static func sceneFromTheImage(evaluating snippet: String = letteringSnippet) -> Int? {
         final class Answer {
             var scene: Int?
             var settled = false
@@ -85,13 +130,12 @@ enum RenderTests {
             PharoRuntime.bootBundledImage()
             try? await PharoRuntime.shared.runningState()
             try? await PharoLumaBindings.install(into: PharoRuntime.shared)
-            let handle = try? await PharoRuntime.shared.evaluate("""
-                | canvas sign |
-                canvas := LumaCanvas new.
-                sign := LumaText on: canvas addDrawable pointSize: 34.
-                sign pad: #(20 18) tint: #(0.2 0.95 0.75); show: 'GTK'.
-                canvas handle
-                """)
+            // A snippet may ask the host what it knows; nothing has published
+            // any of it here.
+            for feed in PharoHostFeed.allCases {
+                PharoHostBridge.shared.publish([], as: feed)
+            }
+            let handle = try? await PharoRuntime.shared.evaluate(snippet)
             answer.scene = handle.flatMap { Int($0.printString.trimmingCharacters(in: .whitespaces)) }
         }
 
@@ -102,6 +146,14 @@ enum RenderTests {
         }
         return answer.scene
     }
+
+    private static let letteringSnippet = """
+        | canvas sign |
+        canvas := LumaCanvas new.
+        sign := LumaText on: canvas addDrawable pointSize: 34.
+        sign pad: #(20 18) tint: #(0.2 0.95 0.75); show: 'GTK'.
+        canvas handle
+        """
 
     /// A scene of the kind the image builds: lettering over the atlas the
     /// host rasterised, which is what the examples lean on.

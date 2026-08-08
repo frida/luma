@@ -18,6 +18,11 @@ nothing -- what has gone wrong in this drawing has been blank frames
 and mirrored glyphs, which a compiler cannot see and a PNG shows at a
 glance.
 
+`LUMA_SOAK=<snippet> make -C LumaGtk soak` plays a snippet in a canvas
+and reports what the process is holding as it goes -- the game leaks
+nothing, but it took three fixes to get there, and a flat line is only
+worth reading once the snippet is seen moving.
+
 `PharoExampleCatalog` is Smalltalk inside Swift string literals, which
 no compiler reads. `make check-examples` parses each one in the image
 and reports syntax errors, names nothing defines, and selectors

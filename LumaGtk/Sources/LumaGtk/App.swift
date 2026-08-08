@@ -85,6 +85,10 @@ final class LumaApplication {
         if let directory = RenderTests.asked {
             exit(RenderTests.run(writingTo: directory))
         }
+        if let snippet = ProcessInfo.processInfo.environment["LUMA_SOAK"] {
+            let seconds = ProcessInfo.processInfo.environment["LUMA_SOAK_SECONDS"].flatMap(Int.init)
+            exit(RenderTests.soak(snippet, seconds: seconds ?? 180))
+        }
         ensureDocumentWindow()
     }
 
