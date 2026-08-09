@@ -45,6 +45,14 @@ final class CanvasSceneInputView: MTKView {
 
     override var acceptsFirstResponder: Bool { true }
 
+    /// Closing the pane a scene is drawn in says what Escape says, and whoever
+    /// drives the scene is already watching for that.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window == nil else { return }
+        report { $0.keysDown.insert(CanvasKey.escape.rawValue) }
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking {
