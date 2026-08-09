@@ -242,24 +242,23 @@ extension PharoRuntime {
         (try? await whenRunning { try await browse(kind, source: source, at: position) })?.result
     }
 
-    /// Nor does a page that cannot reach the image name any classes.
-    func namedClasses(in source: String) async -> [PharoClassReference] {
-        (try? await whenRunning { try await classReferences(in: source) }) ?? []
+    /// What the image reads in the source, or nothing at all when it could not
+    /// be reached -- which is not the same answer as an empty one, and the
+    /// editor keeps what it has rather than taking a silence for a reading.
+    func namedClasses(in source: String) async -> [PharoClassReference]? {
+        try? await whenRunning { try await classReferences(in: source) }
     }
 
-    /// Nor the methods it sends.
-    func methods(in source: String, selfClass: String?) async -> [PharoMethodReference] {
-        (try? await whenRunning { try await methodReferences(in: source, selfClass: selfClass) }) ?? []
+    func methods(in source: String, selfClass: String?) async -> [PharoMethodReference]? {
+        try? await whenRunning { try await methodReferences(in: source, selfClass: selfClass) }
     }
 
-    /// Nor the names it leaves undeclared.
-    func undeclared(in source: String) async -> [PharoUndeclaredVariable] {
-        (try? await whenRunning { try await undeclaredVariables(in: source) }) ?? []
+    func undeclared(in source: String) async -> [PharoUndeclaredVariable]? {
+        try? await whenRunning { try await undeclaredVariables(in: source) }
     }
 
-    /// Nor colours any of it.
-    func styles(in source: String, isMethod: Bool) async -> [PharoStyleSpan] {
-        (try? await whenRunning { try await styleSpans(in: source, isMethod: isMethod) }) ?? []
+    func styles(in source: String, isMethod: Bool) async -> [PharoStyleSpan]? {
+        try? await whenRunning { try await styleSpans(in: source, isMethod: isMethod) }
     }
 
     private func whenRunning<Answer>(_ request: () async throws -> Answer) async throws -> Answer {
@@ -273,10 +272,10 @@ extension PharoRuntime {
 /// the line separators that set a body on its own line -- taken back out.
 final class PharoTextView: NSTextView, NSTextStorageDelegate {
     var completions: ((String, Int) async -> PharoCompletionList)?
-    var classReferences: ((String) async -> [PharoClassReference])?
-    var methodReferences: ((String) async -> [PharoMethodReference])?
-    var undeclaredVariables: ((String) async -> [PharoUndeclaredVariable])?
-    var styleSpans: ((String) async -> [PharoStyleSpan])?
+    var classReferences: (String) async -> [PharoClassReference]? = { _ in [] }
+    var methodReferences: (String) async -> [PharoMethodReference]? = { _ in [] }
+    var undeclaredVariables: (String) async -> [PharoUndeclaredVariable]? = { _ in [] }
+    var styleSpans: (String) async -> [PharoStyleSpan]? = { _ in [] }
     var onFocused: (() -> Void)?
     var onEdit: ((String) -> Void)?
     var metrics: PharoBodyMetrics?
@@ -329,10 +328,10 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) {
             value, range, _ in
             guard value is NSTextAttachment else { return }
-            carried.insert(range.location)
+            carried.formUnion(range.location..<NSMaxRange(range))
             if value is PharoBodyAttachment {
                 carried.insert(range.location - 1)
-                carried.insert(range.location + 1)
+                carried.insert(NSMaxRange(range))
             }
         }
         return carried
@@ -489,19 +488,22 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         // Each fetch is four image round trips, served one at a time, so asking
         // on every keystroke queues a backlog that shows stale marks for seconds.
         // Waiting for a pause coalesces a burst of edits into a single ask.
-        pendingMarkUp?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.fetchMarks(for: source) }
-        pendingMarkUp = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+        scheduleFetch(of: source, after: 0.12)
     }
 
     private func fetchMarks(for source: String) {
         Task { @MainActor in
-            let classes = await classReferences?(source) ?? []
-            let methods = await methodReferences?(source) ?? []
-            let undeclaredNames = await undeclaredVariables?(source) ?? []
-            let spans = await styleSpans?(source) ?? []
+            let classes = await classReferences(source)
+            let methods = await methodReferences(source)
+            let undeclaredNames = await undeclaredVariables(source)
+            let spans = await styleSpans(source)
             guard self.source == source else { return }
+            // Reading a silence as an empty answer tears every mark out of the
+            // text, and a mark put back where it was blanks the view it had.
+            guard let classes, let methods, let undeclaredNames, let spans else {
+                scheduleFetch(of: source, after: 0.5)
+                return
+            }
             references = classes
             methodRefs = methods
             undeclared = undeclaredNames
@@ -511,6 +513,13 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
             reconcileBodies()
             applyStyle()
         }
+    }
+
+    private func scheduleFetch(of source: String, after delay: TimeInterval) {
+        pendingMarkUp?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.fetchMarks(for: source) }
+        pendingMarkUp = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     /// Paint the coloured runs GT would over the source, mapped past the mark
@@ -582,23 +591,25 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         positionMarkOverlays()
     }
 
-    private func wantedMarks() -> [PharoPlacedMark] {
-        var wanted: [PharoPlacedMark] = []
+    /// One mark to a place: the image names a keyword send once per part of its
+    /// selector, and laying a triangle down for each would stack them.
+    private func wantedMarks() -> Set<PharoPlacedMark> {
+        var wanted: Set<PharoPlacedMark> = []
 
         for reference in references {
-            wanted.append(PharoPlacedMark(sourceOffset: reference.stop, content: .classTriangle(reference.name)))
+            wanted.insert(PharoPlacedMark(sourceOffset: reference.stop, content: .classTriangle(reference.name)))
         }
         for reference in methodRefs {
-            wanted.append(PharoPlacedMark(sourceOffset: reference.stop, content: .methodTriangle(reference.id)))
+            wanted.insert(PharoPlacedMark(sourceOffset: reference.stop, content: .methodTriangle(reference.id)))
         }
         for variable in undeclared {
-            wanted.append(PharoPlacedMark(sourceOffset: variable.stop, content: .undeclaredWrench(variable.id)))
+            wanted.insert(PharoPlacedMark(sourceOffset: variable.stop, content: .undeclaredWrench(variable.id)))
         }
         if let error = marks.error {
             let offset = min(max((error.position ?? 1) - 1, 0), source.utf16.count)
-            wanted.append(PharoPlacedMark(sourceOffset: offset, content: .errorDot(error.message)))
+            wanted.insert(PharoPlacedMark(sourceOffset: offset, content: .errorDot(error.message)))
         }
-        wanted.append(PharoPlacedMark(sourceOffset: source.utf16.count, content: .result))
+        wanted.insert(PharoPlacedMark(sourceOffset: source.utf16.count, content: .result))
 
         return wanted
     }
@@ -1823,7 +1834,7 @@ extension NSColor {
 }
 
 /// A mark and where in the source it belongs.
-struct PharoPlacedMark: Equatable {
+struct PharoPlacedMark: Hashable {
     let sourceOffset: Int
     let content: PharoMarkContent
 }
