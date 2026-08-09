@@ -138,34 +138,6 @@ final class CanvasSceneInputView: MTKView {
     }
 }
 
-/// Which renderers are showing which scene, so a change reaches whichever
-/// view happens to be drawing it.
-@MainActor
-enum PharoCanvasScenes {
-    private static var renderers: [Int: [WeakRenderer]] = [:]
-    private static var listening = false
-
-    private struct WeakRenderer {
-        weak var renderer: CanvasSceneRenderer?
-    }
-
-    static func register(_ renderer: CanvasSceneRenderer, for scene: Int) {
-        listenOnce()
-        renderers[scene, default: []].append(WeakRenderer(renderer: renderer))
-    }
-
-    private static func listenOnce() {
-        guard !listening else { return }
-        listening = true
-        CanvasRegistry.onChange = { handle, scene in
-            renderers[handle] = renderers[handle]?.filter { $0.renderer != nil }
-            for entry in renderers[handle] ?? [] {
-                entry.renderer?.scene = scene
-            }
-        }
-    }
-}
-
 @MainActor
 final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
     var scene = CanvasScene()
@@ -186,15 +158,11 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         var vertexMetal: String
         var fragmentMetal: String
         var vertices: [Float]
-        var drivers: [CanvasDriver] = []
         /// What the runs of values and pictures were stamped when their
         /// textures were made, so a frame tells them apart by the stamp
         /// rather than by reading every pixel back.
         var stamps: [UInt64] = []
         var textures: [MTLTexture] = []
-        /// Stamped here rather than carried from the image, so a value moves
-        /// on the clock that draws it.
-        var driversStartedAt = CACurrentMediaTime()
     }
 
     func attach(to view: MTKView, scene handle: Int) {
@@ -223,7 +191,6 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         smooth.tAddressMode = .clampToEdge
         acrossPicture = view.device?.makeSamplerState(descriptor: smooth)
 
-        PharoCanvasScenes.register(self, for: handle)
         if let current = CanvasRegistry.shared.scene(handle) {
             scene = current
         }
@@ -232,6 +199,9 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
     nonisolated func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     func draw(in view: MTKView) {
+        if let latest = CanvasRegistry.shared.scene(sceneHandle) {
+            scene = latest
+        }
         guard let device = view.device,
               let commandQueue,
               let descriptor = view.currentRenderPassDescriptor,
@@ -273,7 +243,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
             let length = uniforms.count * MemoryLayout<Float>.stride
             encoder.setVertexBytes(&uniforms, length: length, index: 0)
             encoder.setFragmentBytes(&uniforms, length: length, index: 0)
-            var params = subject.packedParams(after: Float(CACurrentMediaTime() - record.driversStartedAt))
+            var params = subject.packedParams(at: CanvasDriver.now)
             if !params.isEmpty {
                 let paramsLength = params.count * MemoryLayout<Float>.stride
                 encoder.setVertexBytes(&params, length: paramsLength,
@@ -326,11 +296,6 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         if var existing = built[handle],
            existing.vertexMetal == subject.vertexMetal,
            existing.fragmentMetal == subject.fragmentMetal {
-            if existing.drivers != subject.drivers {
-                existing.drivers = subject.drivers
-                existing.driversStartedAt = CACurrentMediaTime()
-                built[handle] = existing
-            }
             if existing.vertices != subject.geometry.vertices {
                 existing.vertexBuffer = Self.buffer(for: subject, device: device)
                 existing.vertices = subject.geometry.vertices
@@ -375,7 +340,6 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
             vertexMetal: subject.vertexMetal,
             fragmentMetal: subject.fragmentMetal,
             vertices: subject.geometry.vertices,
-            drivers: subject.drivers,
             stamps: Self.stamps(of: subject),
             textures: Self.textures(for: subject, device: device))
         built[handle] = record

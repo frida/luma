@@ -224,7 +224,8 @@ public func luma_drawable_drive_uniform(
         kind: CanvasDriver.Kind(rawValue: kind) ?? .ramp,
         from: Array(UnsafeBufferPointer(start: from, count: width)),
         to: Array(UnsafeBufferPointer(start: to, count: width)),
-        seconds: seconds)
+        seconds: seconds,
+        startedAt: CanvasDriver.now)
 
     guard CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
         subject.drivers.removeAll { $0.name == driver.name }

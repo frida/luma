@@ -265,7 +265,7 @@ final class ShaderEffect {
 
         guard showing.isEmpty else {
             for drawable in showing {
-                draw(drawable, now: now, width: width, height: height, elapsed: elapsed, pulse: pulse)
+                draw(drawable, width: width, height: height, elapsed: elapsed, pulse: pulse)
             }
             epoxy_glUseProgram(0)
             capture(width: width, height: height)
@@ -308,7 +308,6 @@ final class ShaderEffect {
 
     private func draw(
         _ drawable: Drawable,
-        now: gint64,
         width: Float,
         height: Float,
         elapsed: Float,
@@ -321,7 +320,7 @@ final class ShaderEffect {
 
         epoxy_glUseProgram(drawable.program)
         drawable.bindTextures()
-        drawable.feedParams(now: now)
+        drawable.feedParams()
         feedUniforms(
             drawable.locations, transform: drawable.transform,
             width: width, height: height, elapsed: elapsed, pulse: pulse)
@@ -397,7 +396,6 @@ private struct Param {
     /// Set when the value is moving on its own: worked out on the frame clock
     /// rather than pushed from whoever owns the scene.
     var driver: CanvasDriver?
-    var startedAt: gint64 = 0
 
     init(name: String) {
         self.name = name
@@ -405,15 +403,14 @@ private struct Param {
 
     mutating func drive(kind: CanvasDriver.Kind, from: [Float], to: [Float], seconds: Float) {
         driver = CanvasDriver(name: name, kind: kind, from: from, to: to, seconds: seconds)
-        startedAt = g_get_monotonic_time()
         values = from
     }
 
-    mutating func feed(now: gint64) {
+    mutating func feed() {
         guard location >= 0 else { return }
 
         if let driver {
-            values = driver.value(after: Float(now - startedAt) / 1_000_000)
+            values = driver.value(at: CanvasDriver.now)
         }
         switch values.count {
         case 1: epoxy_glUniform1fv(location, 1, values)
@@ -601,9 +598,9 @@ private final class Drawable {
         epoxy_glActiveTexture(GLenum(GL_TEXTURE0))
     }
 
-    func feedParams(now: gint64) {
+    func feedParams() {
         for at in params.indices {
-            params[at].feed(now: now)
+            params[at].feed()
         }
     }
 
