@@ -316,6 +316,14 @@ public func luma_scene_pointer_y(_ scene: Int32) -> Float {
     CanvasRegistry.shared.input(Int(scene)).pointerY
 }
 
+/// Whether the pointer is over the scene at all. Where it last sat is
+/// answered either way, so a snippet steered by the pointer has to ask this
+/// to tell a pointer resting off the scene from one held still on it.
+@_cdecl("luma_scene_pointer_inside")
+public func luma_scene_pointer_inside(_ scene: Int32) -> Int32 {
+    CanvasRegistry.shared.input(Int(scene)).isPointerInside ? 1 : 0
+}
+
 /// Bit 0 primary, bit 1 secondary, bit 2 middle.
 @_cdecl("luma_scene_buttons")
 public func luma_scene_buttons(_ scene: Int32) -> Int32 {

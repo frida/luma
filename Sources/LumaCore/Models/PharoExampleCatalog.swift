@@ -316,7 +316,7 @@ public enum PharoExampleCatalog {
                  that runs late has to cover more ground, or the fall is seen
                  to slow down whenever the image is busy."
                 at := { 0. 1 }. speed := 0.73. held := 0. score := 0.
-                tick := Time millisecondClockValue. step := 0.033.
+                tick := Time millisecondClockValue. step := 0.033. eyed := 0. steer := #pointer.
                 respawn := [
                     "Move it to the top before showing the next icon, or the
                      one just caught is seen changing face at the paddle."
@@ -324,7 +324,7 @@ public enum PharoExampleCatalog {
                     faller ramp: 'at' from: at to: at over: 0.
                     faller image: 'icon' form: icons atRandom ].
                 playing := [ [ game isDown: #escape ] whileFalse: [
-                    | wanted below landed was fell beat |
+                    | wanted below landed was fell beat aimed chase nudge |
                     "How long the last turn round the loop actually took, which
                      is what the next move has to be spread over: a ramp given
                      less is cut off partway and the rest of the move arrives as
@@ -333,11 +333,26 @@ public enum PharoExampleCatalog {
                     step := ((beat - tick max: 1) min: 200) / 1000.0.
                     tick := beat.
 
-                    wanted := (game pointer first max: -0.95) min: 0.95.
-                    (game isDown: #left) ifTrue: [ wanted := held - 0.07 ].
-                    (game isDown: #right) ifTrue: [ wanted := held + 0.07 ].
+                    "Whichever was used last steers, and goes on steering. The
+                     pointer answers where it last sat even when it is off the
+                     scene or standing still, so following it unasked takes the
+                     paddle out of the keys' hands the moment a key comes up."
+                    aimed := game pointer first.
+                    (game hasPointer and: [ (aimed - eyed) abs > 0.002 ])
+                        ifTrue: [ steer := #pointer ].
+                    eyed := aimed.
+                    nudge := 0.
+                    (game isDown: #left) ifTrue: [ nudge := nudge - (2.1 * step) ].
+                    (game isDown: #right) ifTrue: [ nudge := nudge + (2.1 * step) ].
+                    nudge = 0 ifFalse: [ steer := #keys ].
+                    wanted := steer = #pointer
+                        ifTrue: [ aimed ]
+                        ifFalse: [ held + nudge ].
                     was := held.
-                    held := ((held * 0.55) + (wanted * 0.45) max: -0.95) min: 0.95.
+                    "Catching up on a clock rather than per turn, so how closely
+                     the paddle follows does not ride on how long a turn took."
+                    chase := 1 - (0.08 raisedTo: step / 0.06).
+                    held := ((held + ((wanted - held) * chase)) max: -0.95) min: 0.95.
 
                     below := at second - fallerHalf.
                     fell := at.

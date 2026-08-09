@@ -386,6 +386,11 @@ public enum PharoLumaBindings {
                     parameters: { TFBasicType sint } return: TFBasicType float with: { handle })
                 with: (LumaHost invoke: ''luma_scene_pointer_y''
                     parameters: { TFBasicType sint } return: TFBasicType float with: { handle })'.
+        canvas compile: 'hasPointer
+            "Whether the pointer is over the scene. It answers where it last
+             sat either way, so steering by it means asking this first."
+            ^ 1 = (LumaHost invoke: ''luma_scene_pointer_inside''
+                parameters: { TFBasicType sint } return: TFBasicType sint with: { handle })'.
         canvas compile: 'buttons
             "Bit 0 primary, bit 1 secondary, bit 2 middle."
             ^ LumaHost invoke: ''luma_scene_buttons''
