@@ -167,6 +167,10 @@ struct PharoScrollTarget: Equatable {
 
 let pharoColumnWidth: CGFloat = 400
 
+/// The gap a column is scrolled to rest at, kept out of the height a column is
+/// given so a row of them fits the scroller rather than overflowing it.
+let pharoColumnMargin: CGFloat = 8
+
 #if os(macOS)
 extension View {
     /// Lays a maximized pane over the whole inspector -- page and carousel both
