@@ -90,7 +90,7 @@ let lumaCoreSoupDeps: [Target.Dependency] = []
 // wants relative to the package. Asking the filesystem rather than being told
 // would not do -- a manifest is cached, so whichever answer it gave first
 // would stick.
-let shaderToolchainVersion = "1"
+let shaderToolchainVersion = "2"
 let shaderToolchainRoot = ProcessInfo.processInfo.environment["SHADER_TOOLCHAIN_ROOT"]
 
 #if canImport(Darwin)
@@ -100,7 +100,7 @@ let shaderToolchainTarget: Target = shaderToolchainRoot.map {
     name: "ShaderToolchain",
     url: "https://github.com/frida/luma/releases/download/"
         + "shader-toolchain-\(shaderToolchainVersion)/ShaderToolchain.xcframework.zip",
-    checksum: "70d83676ec8cbb37db3f59885c1dd8df8c4566ad3e54b7f2faf56bfa006022f8"
+    checksum: "a310c394b0b462c0e19cc66a75b7a957ed87d7971fe289d53d497d0f556aa2c7"
 )
 let shaderTranslateTargets: [Target] = [
     shaderToolchainTarget,
