@@ -22,3 +22,6 @@ LumaUITests/Resources/frida-gadget.dylib
 # Pharo VM crash dump written on a fatal VM error
 LumaGtk/crash.dmp
 /Luma/Shaders/Generated/
+
+# Pharo VM runtime debug log
+PharoDebug.log
