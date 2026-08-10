@@ -33,3 +33,4 @@ jobs:
         with:
           body_path: artifacts.txt
           files: artifacts/ShaderToolchain.xcframework.zip
+          make_latest: false
