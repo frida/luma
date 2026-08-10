@@ -51,7 +51,27 @@ enum Platform {
     }
 }
 
+/// What the pointer becomes over a view, where there is a pointer at all.
+enum PointerShape {
+    case link
+    case columnResize
+    case grab
+}
+
 extension View {
+    @ViewBuilder
+    func platformPointer(_ shape: PointerShape) -> some View {
+        #if os(macOS)
+            switch shape {
+            case .link: pointerStyle(.link)
+            case .columnResize: pointerStyle(.columnResize)
+            case .grab: pointerStyle(.grabIdle)
+            }
+        #else
+            self
+        #endif
+    }
+
     @ViewBuilder
     func platformLinkButtonStyle() -> some View {
         #if os(macOS)

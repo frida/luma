@@ -164,7 +164,7 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
         uniforms[6] = Float(min(data.count, Self.dataCapacity))
         uniforms[7] = view.bounds.width > 0
             ? Float(view.drawableSize.width / view.bounds.width)
-            : Float(view.window?.backingScaleFactor ?? 1)
+            : Float(view.pixelsPerPoint)
         for (offset, value) in data.prefix(Self.dataCapacity).enumerated() {
             uniforms[Self.dataWordOffset + offset] = value
         }

@@ -82,7 +82,7 @@ struct WelcomeView: View {
         }
         .buttonStyle(.plain)
         #if os(macOS)
-        .pointerStyle(.link)
+        .platformPointer(.link)
         #endif
         .help("nowsecure.com")
     }
