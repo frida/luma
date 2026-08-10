@@ -768,7 +768,7 @@ jobs:
 
   fedora:
     runs-on: ubuntu-latest
-    container: fedora:43
+    container: fedora:44
     needs: version
     env:
       LUMA_VERSION: ${{ needs.version.outputs.version }}
@@ -832,7 +832,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: /tmp/frida-destdir
-          key: ${{ runner.os }}-fedora43-frida-core-${{ env.FRIDA_CORE_REF }}-v3
+          key: ${{ runner.os }}-fedora44-frida-core-${{ env.FRIDA_CORE_REF }}-v3
 
       - name: Build frida-core (shared)
         if: steps.frida-cache.outputs.cache-hit != 'true'
@@ -852,7 +852,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: /tmp/frida-destdir
-          key: ${{ runner.os }}-fedora43-frida-core-${{ env.FRIDA_CORE_REF }}-v3
+          key: ${{ runner.os }}-fedora44-frida-core-${{ env.FRIDA_CORE_REF }}-v3
 
       - name: Install frida-core
         run: |
@@ -864,7 +864,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: /tmp/r2-destdir
-          key: ${{ runner.os }}-fedora43-radare2-${{ env.RADARE2_REF }}-v2
+          key: ${{ runner.os }}-fedora44-radare2-${{ env.RADARE2_REF }}-v2
 
       - name: Build radare2 (static)
         if: steps.r2-cache.outputs.cache-hit != 'true'
@@ -883,7 +883,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: /tmp/r2-destdir
-          key: ${{ runner.os }}-fedora43-radare2-${{ env.RADARE2_REF }}-v2
+          key: ${{ runner.os }}-fedora44-radare2-${{ env.RADARE2_REF }}-v2
 
       - name: Install radare2
         run: |
@@ -908,12 +908,12 @@ jobs:
           rpmbuild --define "_topdir $TOP" \
                    --define "version $NATIVE_VERSION" \
                    -bb $TOP/SPECS/luma.spec
-          cp $TOP/RPMS/x86_64/luma-${NATIVE_VERSION}-*.x86_64.rpm luma-${LUMA_VERSION}-fedora-43-x86_64.rpm
+          cp $TOP/RPMS/x86_64/luma-${NATIVE_VERSION}-*.x86_64.rpm luma-${LUMA_VERSION}-fedora-44-x86_64.rpm
 
       - uses: actions/upload-artifact@v7
         with:
-          name: luma-${{ env.LUMA_VERSION }}-fedora-43-x86_64.rpm
-          path: luma-${{ env.LUMA_VERSION }}-fedora-43-x86_64.rpm
+          name: luma-${{ env.LUMA_VERSION }}-fedora-44-x86_64.rpm
+          path: luma-${{ env.LUMA_VERSION }}-fedora-44-x86_64.rpm
 
   ubuntu:
     runs-on: ubuntu-latest
