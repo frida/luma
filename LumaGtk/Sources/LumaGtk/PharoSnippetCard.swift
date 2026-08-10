@@ -35,6 +35,7 @@ final class PharoSnippetCard {
     private let resultLabel: Label
     private var completion: PharoCompletionController!
     private var marks: PharoInlineMarks!
+    private let find: PharoFindBar
     private let highlight: (GtkSource.Buffer) -> Void
 
     private var suppressChange = false
@@ -111,8 +112,11 @@ final class PharoSnippetCard {
         resultRow.append(child: resultLabel)
         resultRow.visible = false
 
+        find = PharoFindBar(editor: editor, buffer: buffer)
+
         let content = Box(orientation: .vertical, spacing: 0)
         content.hexpand = true
+        content.append(child: find.widget)
         content.append(child: editorScroll)
         content.append(child: resultRow)
         content.append(child: actions)

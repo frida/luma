@@ -14,4 +14,5 @@
   <style name="def:identifier" foreground="#c85a4f"/>
 
   <style name="bracket-match"  foreground="#ef6456" bold="true"/>
+  <style name="search-match"   background="#f5c26b" foreground="#1c1c1c"/>
 </style-scheme>

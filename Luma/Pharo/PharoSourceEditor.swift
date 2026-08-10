@@ -125,7 +125,7 @@ struct PharoTextEditor: NSViewRepresentable {
         Coordinator(self)
     }
 
-    func makeNSView(context: Context) -> NSScrollView {
+    func makeNSView(context: Context) -> PharoEditorScrollView {
         let view = PharoTextView()
         view.delegate = context.coordinator
         view.metrics = metrics
@@ -140,6 +140,8 @@ struct PharoTextEditor: NSViewRepresentable {
         view.onEdit = { source = $0 }
         view.font = PharoTextView.sourceFont
         view.allowsUndo = true
+        view.usesFindBar = true
+        view.isIncrementalSearchingEnabled = true
         view.isRichText = false
         view.isAutomaticQuoteSubstitutionEnabled = false
         view.isAutomaticTextReplacementEnabled = false
@@ -155,17 +157,18 @@ struct PharoTextEditor: NSViewRepresentable {
         view.apply(runtime: runtime, marks: marks, onToggleClass: onToggleClass, onOpen: onOpen, onOpenResult: onOpenResult)
         view.setSource(source)
 
-        let scroll = NSScrollView()
+        let scroll = PharoEditorScrollView()
         scroll.documentView = view
         scroll.drawsBackground = false
         scroll.hasHorizontalScroller = true
         scroll.hasVerticalScroller = false
         scroll.verticalScrollElasticity = .none
         scroll.autohidesScrollers = true
+        scroll.onFindBarVisibilityChanged = { metrics.revision += 1 }
         return scroll
     }
 
-    func updateNSView(_ scroll: NSScrollView, context: Context) {
+    func updateNSView(_ scroll: PharoEditorScrollView, context: Context) {
         let view = scroll.documentView as! PharoTextView
         context.coordinator.parent = self
         view.onFocused = { if focused != id { focused = id } }
@@ -177,9 +180,9 @@ struct PharoTextEditor: NSViewRepresentable {
         context.coordinator.reconcileFocus(id: id, focused: focused, view: view)
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView scroll: NSScrollView, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView scroll: PharoEditorScrollView, context: Context) -> CGSize? {
         guard let width = proposal.width, let view = scroll.documentView as? PharoTextView else { return nil }
-        return CGSize(width: width, height: view.height())
+        return CGSize(width: width, height: view.height() + scroll.findBarHeight)
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
@@ -1033,18 +1036,36 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         }
     }
 
-    // The browse keys are the system's Minimize and New; catching them here, while
-    // this editor holds focus, keeps them from the Window and File menus.
+    // The find and browse keys are also the system's Find, Minimize and New;
+    // catching them here, while this editor holds focus, keeps them from the
+    // Edit, Window and File menus, and keeps each snippet finding within itself.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if window?.firstResponder === self,
-            event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
-            switch event.charactersIgnoringModifiers {
-            case "m": browse(.implementors); return true
-            case "n": browse(.senders); return true
-            default: break
-            }
+        guard window?.firstResponder === self else { return super.performKeyEquivalent(with: event) }
+
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        switch (modifiers, event.charactersIgnoringModifiers?.lowercased()) {
+        case (.command, "f"): find(.showFindInterface); return true
+        case (.command, "e"): find(.setSearchString); return true
+        // Command-G evaluates a snippet, so it steps through matches only while
+        // the find bar is up, where that is the reading it has everywhere else.
+        case (.command, "g") where isFindBarVisible: find(.nextMatch); return true
+        case ([.command, .shift], "g") where isFindBarVisible: find(.previousMatch); return true
+        case (.command, "m"): browse(.implementors); return true
+        case (.command, "n"): browse(.senders); return true
+        default: return super.performKeyEquivalent(with: event)
         }
-        return super.performKeyEquivalent(with: event)
+    }
+
+    private var isFindBarVisible: Bool {
+        enclosingScrollView?.isFindBarVisible == true
+    }
+
+    /// The text finder takes its action from the sender's tag, the way the Find
+    /// menu items carry theirs.
+    private func find(_ action: NSTextFinder.Action) {
+        let request = NSMenuItem()
+        request.tag = action.rawValue
+        performTextFinderAction(request)
     }
 
     private func browse(_ kind: PharoBrowseKind) {
@@ -1431,6 +1452,26 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         guard let layout = textLayoutManager else { return 0 }
         layout.ensureLayout(for: layout.documentRange)
         return layout.usageBoundsForTextContainer.height + 2 * textContainerInset.height
+    }
+}
+
+/// The find bar rides at the top of the scroll view, taking its height out of
+/// what the text is given. A snippet is sized to its text rather than the other
+/// way about, so the bar's height is added to the snippet instead: showing one
+/// grows the card rather than clipping the last line of code.
+final class PharoEditorScrollView: NSScrollView {
+    var onFindBarVisibilityChanged: (() -> Void)?
+
+    override var isFindBarVisible: Bool {
+        didSet {
+            guard isFindBarVisible != oldValue else { return }
+            onFindBarVisibilityChanged?()
+        }
+    }
+
+    var findBarHeight: CGFloat {
+        guard isFindBarVisible, let bar = findBarView else { return 0 }
+        return bar.fittingSize.height
     }
 }
 

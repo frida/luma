@@ -120,6 +120,7 @@ final class PharoInlineMethodEditor {
     let widget: Box
 
     private let buffer: GtkSource.Buffer
+    private let find: PharoFindBar
     private let save = Button(label: "Save")
     private let failure = Label(str: "")
     private let onSave: (String) async -> Void
@@ -146,6 +147,7 @@ final class PharoInlineMethodEditor {
         view.topMargin = 6
         view.bottomMargin = 6
         registerEditor(view)
+        find = PharoFindBar(editor: view, buffer: buffer)
 
         let scroll = ScrolledWindow()
         scroll.hexpand = true
@@ -172,6 +174,7 @@ final class PharoInlineMethodEditor {
         actions.append(child: save)
 
         widget = Box(orientation: .vertical, spacing: 4)
+        widget.append(child: find.widget)
         widget.append(child: scroll)
         widget.append(child: actions)
 
