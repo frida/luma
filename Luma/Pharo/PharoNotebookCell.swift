@@ -1,4 +1,3 @@
-#if os(macOS)
 import LumaCore
 import SwiftUI
 import SwiftyPharo
@@ -256,4 +255,3 @@ struct PharoResultPreview: View {
         .frame(height: 160)
     }
 }
-#endif

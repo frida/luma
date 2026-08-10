@@ -205,6 +205,24 @@ struct PhoneNotebookSheet: View {
     }
 }
 
+struct PhonePlaygroundSheet: View {
+    let engine: Engine
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            PharoPlaygroundView(engine: engine)
+                .navigationTitle("Playground")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { dismiss() }
+                    }
+                }
+        }
+    }
+}
+
 struct PhoneMissionsSheet: View {
     let engine: Engine
     @Environment(\.dismiss) private var dismiss

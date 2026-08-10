@@ -1,4 +1,3 @@
-#if os(macOS)
 import LumaCore
 import SwiftUI
 import SwiftyPharo
@@ -74,7 +73,7 @@ struct PharoPlaygroundView: View {
                                 page
                             }
                         }
-                        .frame(width: pageWidth)
+                        .frame(width: min(pageWidth, scroller.size.width - 2 * pharoColumnMargin))
                         .pharoPane()
                         .overlay(alignment: .trailing) { pageResizeHandle }
                         .overlay(alignment: .topTrailing) { if !isPageMaximized { pageMenuButton } }
@@ -142,7 +141,7 @@ struct PharoPlaygroundView: View {
             PharoRoundIcon(systemName: "arrow.down.right.and.arrow.up.left")
         }
         .buttonStyle(.plain)
-        .pointerStyle(.link)
+        .platformPointer(.link)
         .help("Restore pane")
         .padding(6)
     }
@@ -164,7 +163,7 @@ struct PharoPlaygroundView: View {
             .fill(.clear)
             .frame(width: 8)
             .contentShape(Rectangle())
-            .pointerStyle(.columnResize)
+            .platformPointer(.columnResize)
             .gesture(
                 // Measured globally: the handle rides the page's edge, so a
                 // local translation would shrink as the page grows under it.
@@ -369,7 +368,7 @@ struct PharoPlaygroundView: View {
             .foregroundStyle(.secondary)
             .padding(6)
             .contentShape(Rectangle())
-            .pointerStyle(.grabIdle)
+            .platformPointer(.grab)
             .gesture(
                 DragGesture(coordinateSpace: .named(pharoPageSpace))
                     .onChanged { dragToReorder(id, to: $0.location.y) }
@@ -485,4 +484,3 @@ private struct PharoPlaygroundEmptyState: View {
         }
     }
 }
-#endif

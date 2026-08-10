@@ -30,22 +30,22 @@ struct NotebookView: View {
     private let runtime = PharoRuntime.shared
 
     var body: some View {
-        #if os(macOS)
-        HStack(spacing: 0) {
-            page
-                .frame(maxWidth: .infinity)
+        GeometryReader { page in
+            HStack(spacing: 0) {
+                self.page
+                    .frame(maxWidth: .infinity)
 
-            if !drillPath.objects.isEmpty {
-                Divider()
-                drillSide
+                if !drillPath.objects.isEmpty {
+                    let widestDrillLeavingAPageToRead = page.size.width / 2
+
+                    Divider()
+                    drillSide.frame(width: min(drillWidth, widestDrillLeavingAPageToRead))
+                }
             }
         }
         .coordinateSpace(name: pharoPageSpace)
         .background(.pharoGutter)
         .pharoMaximizedPane(runtime: runtime, path: drillPath, onCloseAll: closeDrill)
-        #else
-        page
-        #endif
     }
 
     private var page: some View {
@@ -165,7 +165,6 @@ struct NotebookView: View {
         lastInsertedID = added.id
     }
 
-    #if os(macOS)
     /// A cell drills into the pane beside the page, its columns riding a scroller
     /// of their own with the arrow that points across from the cell they came
     /// from. It is here only while a drill is open, so the page is the whole
@@ -187,7 +186,6 @@ struct NotebookView: View {
             .contentMargins(8, for: .scrollContent)
             .pharoColumnScrolling(drillPath)
         }
-        .frame(width: drillWidth)
         .overlay(alignment: .leading) { drillResizeHandle }
     }
 
@@ -201,7 +199,7 @@ struct NotebookView: View {
             .fill(.clear)
             .frame(width: 8)
             .contentShape(Rectangle())
-            .pointerStyle(.columnResize)
+            .platformPointer(.columnResize)
             .gesture(
                 // Global, since the handle rides the pane's edge as it resizes.
                 DragGesture(coordinateSpace: .global)
@@ -212,7 +210,6 @@ struct NotebookView: View {
                     }
                     .onEnded { _ in resizingFrom = nil })
     }
-    #endif
 }
 
 /// Thin drop strip above the first entry so drags can actually land at
@@ -296,7 +293,6 @@ struct NotebookEntryRow: View {
                     readOnlyUserNoteBody
                 }
             } else if isPharo {
-                #if os(macOS)
                 PharoNotebookCell(
                     entry: entry,
                     engine: engine,
@@ -304,9 +300,6 @@ struct NotebookEntryRow: View {
                     drillPath: drillPath,
                     inspected: $inspected,
                     centers: $centers)
-                #else
-                systemEntryBody
-                #endif
             } else {
                 systemEntryBody
             }

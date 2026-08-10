@@ -1,4 +1,3 @@
-#if os(macOS)
 import LumaCore
 import SwiftUI
 import SwiftyPharo
@@ -33,8 +32,8 @@ struct PharoRowView: View {
 
     @ViewBuilder
     private func content(of cell: any PharoCellContent) -> some View {
-        if let png = cell.png, let image = NSImage(data: png) {
-            Image(nsImage: image)
+        if let png = cell.png, let image = Image(platformImageData: png) {
+            image
                 .resizable()
                 .frame(width: 16, height: 16)
         } else {
@@ -46,11 +45,6 @@ struct PharoRowView: View {
 
     func leadingWidth(_ cellCount: Int) -> CGFloat? {
         guard cellCount > 1, leadingCharacters > 0 else { return nil }
-        return CGFloat(leadingCharacters) * PharoRowView.characterWidth
+        return CGFloat(leadingCharacters) * PharoSourceFont.characterWidth
     }
-
-    static let characterWidth = NSFont
-        .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
-        .maximumAdvancement.width
 }
-#endif
