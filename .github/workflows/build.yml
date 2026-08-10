@@ -5,6 +5,7 @@ on:
     branches: [main]
     tags: ['[0-9]+.[0-9]+.[0-9]+']
   pull_request:
+  workflow_dispatch:
 
 env:
   FRIDA_CORE_REF: "f31061e8462c787dea5af5e19b05db41bc75e92c"
