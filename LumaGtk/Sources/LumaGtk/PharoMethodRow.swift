@@ -121,7 +121,7 @@ final class PharoInlineMethodEditor {
 
     private let buffer: GtkSource.Buffer
     private let find: PharoFindBar
-    private let save = Button(label: "Save")
+    private let save = Button(label: "\u{2713}")
     private let failure = Label(str: "")
     private let onSave: (String) async -> Void
     private var savedSource: String
@@ -162,8 +162,11 @@ final class PharoInlineMethodEditor {
         failure.add(cssClass: "caption")
         failure.visible = false
 
-        save.add(cssClass: "suggested-action")
+        save.add(cssClass: "flat")
+        save.add(cssClass: "luma-pharo-inline-save")
+        save.tooltipText = "Save"
         save.halign = .end
+        save.valign = .center
         save.visible = false
 
         let actions = Box(orientation: .horizontal, spacing: 8)
@@ -253,22 +256,27 @@ final class PharoNewMethodEditor {
         scroll.set(child: view)
 
         category.placeholderText = "category"
-        category.hexpand = true
+        category.setSizeRequest(width: 150, height: -1)
 
         failure.add(cssClass: "error")
         failure.add(cssClass: "caption")
         failure.visible = false
 
-        let compile = Button(iconName: "emblem-ok-symbolic")
-        compile.add(cssClass: "suggested-action")
+        // A drawn glyph rather than a themed icon, which the macOS icon theme
+        // does not carry, matching the checkmark the SwiftUI form compiles with.
+        let compile = Button(label: "\u{2713}")
         compile.tooltipText = "Compile"
         let discard = Button(iconName: "user-trash-symbolic")
         discard.tooltipText = "Discard"
+
+        let spacer = Box(orientation: .horizontal, spacing: 0)
+        spacer.hexpand = true
 
         let actions = Box(orientation: .horizontal, spacing: 6)
         actions.append(child: compile)
         actions.append(child: discard)
         actions.append(child: failure)
+        actions.append(child: spacer)
         actions.append(child: category)
         actions.append(child: side)
 
