@@ -334,33 +334,6 @@ extension Array {
     }
 }
 
-/// Walks an object through the views it declares, opening each selection in a
-/// column to its right so the path taken to reach a value stays on screen.
-struct PharoInspectorView: View {
-    let runtime: PharoRuntime
-    let root: PharoObject
-    let onClose: () -> Void
-
-    @State private var path = PharoColumnPath()
-
-    var body: some View {
-        GeometryReader { scroller in
-            ScrollView(.horizontal) {
-                HStack(spacing: 0) {
-                    pharoColumns(
-                        runtime: runtime,
-                        path: path,
-                        width: pharoColumnWidth(fitting: scroller.size.width),
-                        onCloseAll: onClose)
-                }
-                .scrollTargetLayout()
-            }
-            .pharoColumnScrolling(path)
-        }
-        .onChange(of: root.handle, initial: true) { path.startOver(at: root) }
-    }
-}
-
 extension View {
     /// Drives a horizontal scroller from a column path: it scrolls where the
     /// path asks, and the path learns which columns are on screen.
