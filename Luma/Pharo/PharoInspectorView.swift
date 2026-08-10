@@ -165,7 +165,13 @@ struct PharoScrollTarget: Equatable {
     let stamp = UUID()
 }
 
-let pharoColumnWidth: CGFloat = 400
+let pharoPreferredColumnWidth: CGFloat = 400
+
+/// A column keeps to its preferred width until the scroller is narrower than
+/// that, where it takes what it is given so both its edges stay on screen.
+func pharoColumnWidth(fitting available: CGFloat) -> CGFloat {
+    min(pharoPreferredColumnWidth, available - 2 * pharoColumnMargin)
+}
 
 /// The gap a column is scrolled to rest at, kept out of the height a column is
 /// given so a row of them fits the scroller rather than overflowing it.
@@ -234,6 +240,7 @@ struct PharoMaximizedPane: View {
 func pharoColumns(
     runtime: PharoRuntime,
     path: PharoColumnPath,
+    width: CGFloat,
     onCloseAll: @escaping () -> Void
 ) -> some View {
     let runs = pharoColumnRuns(path)
@@ -270,7 +277,7 @@ func pharoColumns(
                             onMaximize: { path.toggleMaximized(handle) }),
                         onSelect: { path.open($0, from: depth) },
                         onClose: close)
-                    .frame(width: pharoColumnWidth)
+                    .frame(width: width)
                     .pharoPane()
                     .id(handle)
                 }
@@ -337,13 +344,19 @@ struct PharoInspectorView: View {
     @State private var path = PharoColumnPath()
 
     var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 0) {
-                pharoColumns(runtime: runtime, path: path, onCloseAll: onClose)
+        GeometryReader { scroller in
+            ScrollView(.horizontal) {
+                HStack(spacing: 0) {
+                    pharoColumns(
+                        runtime: runtime,
+                        path: path,
+                        width: pharoColumnWidth(fitting: scroller.size.width),
+                        onCloseAll: onClose)
+                }
+                .scrollTargetLayout()
             }
-            .scrollTargetLayout()
+            .pharoColumnScrolling(path)
         }
-        .pharoColumnScrolling(path)
         .onChange(of: root.handle, initial: true) { path.startOver(at: root) }
     }
 }

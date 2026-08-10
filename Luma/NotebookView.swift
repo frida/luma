@@ -37,9 +37,10 @@ struct NotebookView: View {
 
                 if !drillPath.objects.isEmpty {
                     let widestDrillLeavingAPageToRead = page.size.width / 2
+                    let width = min(drillWidth, widestDrillLeavingAPageToRead)
 
                     Divider()
-                    drillSide.frame(width: min(drillWidth, widestDrillLeavingAPageToRead))
+                    drillSide(width: width).frame(width: width)
                 }
             }
         }
@@ -169,7 +170,7 @@ struct NotebookView: View {
     /// of their own with the arrow that points across from the cell they came
     /// from. It is here only while a drill is open, so the page is the whole
     /// width the rest of the time.
-    private var drillSide: some View {
+    private func drillSide(width: CGFloat) -> some View {
         VStack(spacing: 0) {
             PharoOverviewStrip(path: drillPath)
             Divider()
@@ -179,7 +180,11 @@ struct NotebookView: View {
                     if !drillPath.isFirstColumnCollapsed {
                         PharoPointingArrow(pointsFrom: inspected.flatMap { centers[$0] })
                     }
-                    pharoColumns(runtime: runtime, path: drillPath, onCloseAll: closeDrill)
+                    pharoColumns(
+                        runtime: runtime,
+                        path: drillPath,
+                        width: pharoColumnWidth(fitting: width),
+                        onCloseAll: closeDrill)
                 }
                 .scrollTargetLayout()
             }

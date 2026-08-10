@@ -80,7 +80,7 @@ struct PharoPlaygroundView: View {
                         .onHover { isPagePointedAt = $0 }
                         .id(PharoColumnPath.pageID)
 
-                        inspectionSide
+                        inspectionSide(fitting: scroller.size.width)
                     }
                     .frame(height: scroller.size.height - 2 * pharoColumnMargin)
                     .scrollTargetLayout()
@@ -98,16 +98,18 @@ struct PharoPlaygroundView: View {
     /// the arrow into them and the columns themselves rather than handing both
     /// to a pane that would scroll on its own.
     @ViewBuilder
-    private var inspectionSide: some View {
+    private func inspectionSide(fitting available: CGFloat) -> some View {
+        let columnWidth = pharoColumnWidth(fitting: available)
+
         if !columnPath.objects.isEmpty {
             if !columnPath.isFirstColumnCollapsed {
                 PharoPointingArrow(pointsFrom: inspected.flatMap { centers[$0] })
             }
-            pharoColumns(runtime: runtime, path: columnPath, onCloseAll: columnPath.clear)
+            pharoColumns(runtime: runtime, path: columnPath, width: columnWidth, onCloseAll: columnPath.clear)
         } else if let captured {
             PharoPointingArrow(pointsFrom: inspected.flatMap { centers[$0] })
             PharoSnapshotView(snapshot: captured)
-                .frame(width: pharoColumnWidth)
+                .frame(width: columnWidth)
                 .pharoPane()
         }
     }
