@@ -10,6 +10,7 @@ public struct ProjectUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
     public var eventStreamBottomHeight: Double
     public var isCollaborationPanelVisible: Bool
     public var pharoSnippetsJSON: String?
+    public var pharoPageWidth: Double?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -18,6 +19,7 @@ public struct ProjectUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
         case eventStreamBottomHeight = "event_stream_bottom_height"
         case isCollaborationPanelVisible = "collaboration_panel_visible"
         case pharoSnippetsJSON = "pharo_snippets_json"
+        case pharoPageWidth = "pharo_page_width"
     }
 
     public init(
@@ -26,7 +28,8 @@ public struct ProjectUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
         isEventStreamCollapsed: Bool = true,
         eventStreamBottomHeight: Double = 0,
         isCollaborationPanelVisible: Bool = false,
-        pharoSnippetsJSON: String? = nil
+        pharoSnippetsJSON: String? = nil,
+        pharoPageWidth: Double? = nil
     ) {
         self.id = id
         self.selectedItemJSON = selectedItemJSON
@@ -34,5 +37,6 @@ public struct ProjectUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
         self.eventStreamBottomHeight = eventStreamBottomHeight
         self.isCollaborationPanelVisible = isCollaborationPanelVisible
         self.pharoSnippetsJSON = pharoSnippetsJSON
+        self.pharoPageWidth = pharoPageWidth
     }
 }
