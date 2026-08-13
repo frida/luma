@@ -571,7 +571,7 @@ private final class Drawable {
         epoxy_glBindVertexArray(vao)
         epoxy_glBindBuffer(GLenum(GL_ARRAY_BUFFER), vbo)
         epoxy_glBufferData(
-            GLenum(GL_ARRAY_BUFFER), vertices.count * MemoryLayout<Float>.stride,
+            GLenum(GL_ARRAY_BUFFER), GLsizeiptr(vertices.count * MemoryLayout<Float>.stride),
             vertices, GLenum(GL_STATIC_DRAW))
 
         var offset = 0
@@ -694,7 +694,7 @@ private final class ScreenFilling {
         epoxy_glGenBuffers(1, &vbo)
         epoxy_glBindBuffer(GLenum(GL_ARRAY_BUFFER), vbo)
         epoxy_glBufferData(
-            GLenum(GL_ARRAY_BUFFER), Self.quad.count * MemoryLayout<Float>.stride,
+            GLenum(GL_ARRAY_BUFFER), GLsizeiptr(Self.quad.count * MemoryLayout<Float>.stride),
             Self.quad, GLenum(GL_STATIC_DRAW))
         epoxy_glEnableVertexAttribArray(0)
         epoxy_glVertexAttribPointer(0, 2, GLenum(GL_FLOAT), GLboolean(GL_FALSE), 0, nil)

@@ -5,6 +5,10 @@ import Gtk
 import LumaCore
 import SwiftyPharo
 
+#if os(Windows)
+    import WinSDK
+#endif
+
 /// Draws widgets offscreen and says what came out, the way GTK's own tests
 /// do: a paintable over the widget, a renderer over that, and a texture to
 /// look at. Nothing here needs a pointer or a person.
@@ -66,6 +70,13 @@ enum RenderTests {
                 }
             }
             return answer == KERN_SUCCESS ? Int(info.resident_size) / 1_048_576 : 0
+        #elseif os(Windows)
+            var counters = PROCESS_MEMORY_COUNTERS()
+            counters.cb = DWORD(MemoryLayout<PROCESS_MEMORY_COUNTERS>.size)
+            guard K32GetProcessMemoryInfo(GetCurrentProcess(), &counters, counters.cb) else {
+                return 0
+            }
+            return Int(counters.WorkingSetSize) / 1_048_576
         #else
             // statm counts pages, and the resident set is its second field.
             let fields = (try? String(contentsOfFile: "/proc/self/statm", encoding: .utf8))?
