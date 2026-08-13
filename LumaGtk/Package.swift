@@ -93,6 +93,7 @@ let package = Package(
         .package(name: "luma", path: ".."),
         .package(url: "https://github.com/frida/SwiftGtk.git", branch: "gtk4-development"),
         .package(url: "https://github.com/frida/SwiftAdw.git", branch: "development"),
+        .package(url: "https://github.com/frida/SwiftGtkSourceView.git", branch: "development"),
         .package(url: "https://github.com/frida/SwiftyMonaco.git", branch: "main"),
     ],
     targets: [
@@ -111,6 +112,7 @@ let package = Package(
                 .product(name: "LumaCore", package: "luma"),
                 .product(name: "Gtk", package: "SwiftGtk"),
                 .product(name: "Adw", package: "SwiftAdw"),
+                .product(name: "GtkSource", package: "SwiftGtkSourceView"),
                 .product(name: "MonacoWebBundle", package: "SwiftyMonaco"),
                 "CLuma",
             ],
@@ -118,6 +120,8 @@ let package = Package(
             exclude: lumaGtkExcludes,
             resources: [
                 .copy("Resources/nowsecure-logo.svg"),
+                .copy("Resources/pharo"),
+                .copy("Resources/pharo-image"),
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),

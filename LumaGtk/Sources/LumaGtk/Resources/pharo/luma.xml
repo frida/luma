@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<style-scheme id="luma" _name="Luma" version="1.0">
+  <author>Luma</author>
+  <_description>Luma's syntax colours, tuned to read on the theme's own ground.</_description>
+
+  <style name="def:comment"    foreground="#7d8a99" italic="true"/>
+  <style name="def:string"     foreground="#4f9d54"/>
+  <style name="def:character"  foreground="#b0552f"/>
+  <style name="def:number"     foreground="#b06a1f"/>
+  <style name="def:constant"   foreground="#b06a1f"/>
+  <style name="def:keyword"    foreground="#a24fa2" bold="true"/>
+  <style name="def:builtin"    foreground="#2f7fb0"/>
+  <style name="def:type"       foreground="#2f8f8f"/>
+  <style name="def:identifier" foreground="#c85a4f"/>
+
+  <style name="bracket-match"  foreground="#ef6456" bold="true"/>
+</style-scheme>

@@ -474,6 +474,45 @@ enum StyleSheet {
     button.luma-itrace-pill.luma-itrace-pill-on:hover {
         background-color: alpha(@accent_bg_color, 0.28);
     }
+    button.luma-pharo-strip {
+        min-width: 22px;
+        min-height: 12px;
+        padding: 0;
+        margin: 0;
+        border: none;
+        border-radius: 2px;
+        background-color: alpha(@window_fg_color, 0.22);
+        box-shadow: none;
+    }
+    button.luma-pharo-strip:hover {
+        background-color: rgba(239, 100, 86, 0.4);
+    }
+    button.luma-pharo-strip.current {
+        background-color: rgba(239, 100, 86, 0.75);
+    }
+    button.luma-pharo-miniature {
+        min-width: 22px;
+        min-height: 26px;
+        padding: 0;
+        margin: 0;
+        border: none;
+        border-radius: 3px;
+        background-color: alpha(@window_fg_color, 0.28);
+        box-shadow: none;
+    }
+    button.luma-pharo-miniature:hover {
+        background-color: rgb(239, 100, 86);
+    }
+    box.luma-pharo-connector {
+        background-color: alpha(@window_fg_color, 0.4);
+    }
+    list.luma-pharo-table {
+        padding: 0;
+    }
+    list.luma-pharo-table > row {
+        padding: 0;
+        min-height: 0;
+    }
     """
 
     static func install() {

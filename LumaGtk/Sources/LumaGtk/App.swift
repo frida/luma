@@ -6,6 +6,7 @@ import Foundation
 import Gdk
 import Gtk
 import LumaCore
+import SwiftyPharo
 
 @MainActor
 final class LumaApplication {
@@ -806,6 +807,7 @@ private let FRIDA_RUNTIME_GLIB: Int32 = 0
 @main
 struct LumaGtkMain {
     static func main() {
+        PharoRuntime.bootBundledImage()
         "luma".withCString { g_set_prgname($0) }
         frida_init_with_runtime(FRIDA_RUNTIME_GLIB)
         GLibMainExecutor.install()
