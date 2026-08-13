@@ -39,6 +39,12 @@ public struct PharoSnapshot: Codable, Sendable, Equatable {
     }
 }
 
+extension PharoViewDeclaration {
+    var carriesInlineData: Bool {
+        graph != nil || chart != nil
+    }
+}
+
 extension PharoSnapshot {
     public static func capture(of object: PharoObject, using runtime: PharoRuntime) async throws -> PharoSnapshot {
         var views: [View] = []
@@ -64,6 +70,9 @@ extension PharoSnapshot {
     ) async throws -> View.Content {
         if let text = declaration.text {
             return .text(text)
+        }
+        if declaration.carriesInlineData {
+            return .empty
         }
 
         let page = try await runtime.items(

@@ -137,6 +137,8 @@ struct PharoSnippetView: View {
 
             Spacer()
 
+            examplesMenu
+
             if let remove {
                 action("trash", "Remove", remove)
             }
@@ -172,6 +174,31 @@ struct PharoSnippetView: View {
         .buttonStyle(.bordered)
         .controlSize(.small)
         .help(loading ? "Evaluating\u{2026}" : name)
+    }
+
+    private var examplesMenu: some View {
+        Menu {
+            ForEach(PharoExampleCatalog.sections, id: \.heading) { section in
+                Section(section.heading) {
+                    ForEach(section.examples) { example in
+                        Button(example.title) { insert(example.code) }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "sparkles").font(.caption).frame(width: 16, height: 12)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Insert an example")
+    }
+
+    private func insert(_ code: String) {
+        source = code
+        focused = id
     }
 
     private func shortcut(_ key: KeyEquivalent, modifiers: EventModifiers = .command, when active: Bool) -> KeyboardShortcut? {

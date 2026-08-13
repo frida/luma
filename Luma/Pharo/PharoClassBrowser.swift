@@ -12,13 +12,11 @@ struct PharoClassBrowser: View {
     @State private var info: PharoClassBrowserInfo?
     @State private var shown: String? = "Methods"
 
-    private let tabs = ["Methods", "Definition", "Comment"]
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let info {
                 PharoClassHeader(info: info)
-                PharoTabBar(tabs: tabs.map { ($0, $0) }, selection: $shown)
+                PharoTabBar(tabs: tabs(of: info).map { ($0, $0) }, selection: $shown)
                 Divider()
                 content(of: info)
             } else {
@@ -28,6 +26,14 @@ struct PharoClassBrowser: View {
         .task { info = try? await runtime.classBrowser(of: classObject) }
     }
 
+    private func tabs(of info: PharoClassBrowserInfo) -> [String] {
+        var tabs = ["Methods", "Definition", "Comment"]
+        if !info.examples.isEmpty {
+            tabs.append("Examples")
+        }
+        return tabs
+    }
+
     @ViewBuilder
     private func content(of info: PharoClassBrowserInfo) -> some View {
         switch shown {
@@ -35,6 +41,8 @@ struct PharoClassBrowser: View {
             source(info.definition)
         case "Comment":
             source(info.comment)
+        case "Examples":
+            PharoExampleList(examples: info.examples, runtime: runtime, classObject: classObject, onSelect: onSelect)
         default:
             PharoMethodList(methods: info.methods, runtime: runtime, classObject: classObject, onSelect: onSelect)
         }
@@ -47,6 +55,63 @@ struct PharoClassBrowser: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(8)
+        }
+    }
+}
+
+struct PharoExampleList: View {
+    let examples: [PharoExampleMethod]
+    let runtime: PharoRuntime
+    let classObject: PharoObject
+    let onSelect: (PharoObject) -> Void
+
+    @State private var running: String?
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(examples) { example in
+                    row(example)
+                    Divider()
+                }
+            }
+        }
+    }
+
+    private func row(_ example: PharoExampleMethod) -> some View {
+        Button {
+            run(example)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "play.circle")
+                    .foregroundStyle(.tint)
+                Text(example.selector)
+                    .font(.system(.body, design: .monospaced))
+                if example.side == "class" {
+                    Text("class")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if running == example.id {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            .contentShape(Rectangle())
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
+        .disabled(running != nil)
+    }
+
+    private func run(_ example: PharoExampleMethod) {
+        running = example.id
+        Task {
+            defer { running = nil }
+            if let produced = try? await runtime.runExample(example, of: classObject) {
+                onSelect(produced)
+            }
         }
     }
 }

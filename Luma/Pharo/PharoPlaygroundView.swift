@@ -174,6 +174,7 @@ struct PharoPlaygroundView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach($snippets) { $snippet in
+                    let snippetID = snippet.id
                     PharoSnippetView(
                         id: snippet.id,
                         source: $snippet.source,
@@ -190,11 +191,11 @@ struct PharoPlaygroundView: View {
                         printString: printStrings[snippet.id],
                         isEvaluating: evaluating.contains(snippet.id)
                     )
-                    .onChange(of: snippet.source) { forget(snippet.id) }
+                    .onChange(of: snippet.source) { forget(snippetID) }
                     .onGeometryChange(for: CGFloat.self) { proxy in
                         proxy.frame(in: .named(pharoPageSpace)).midY
                     } action: { center in
-                        centers[snippet.id] = center
+                        centers[snippetID] = center
                     }
                 }
 
@@ -392,6 +393,7 @@ private struct PharoPlaygroundEmptyState: View {
             "Press \u{2318}G to evaluate and open the result beside the page; double-click a row to drill in.",
             "Press \u{2318}\u{21E7}F to reformat the snippet the way the image lays out code.",
             "Put the cursor on a message and press \u{2318}M for its implementors, \u{2318}N for its senders.",
+            "Paint a graph: Mondrian new nodes with: myThings; edges connectTo: #next; layout circle.",
             "Script your own views, or export what you find to a file.",
             "Try LumaProject events, or LumaProject sessions.",
         ]
