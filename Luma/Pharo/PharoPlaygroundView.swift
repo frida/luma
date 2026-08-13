@@ -13,7 +13,8 @@ struct PharoPlaygroundView: View {
     @State private var centers: [UUID: CGFloat] = [:]
     @State private var failure: String?
     @State private var isReady = false
-    @FocusState private var focused: UUID?
+    @State private var focused: UUID?
+    @State private var results: [UUID: PharoObject] = [:]
 
     private let runtime = PharoRuntime.shared
 
@@ -60,10 +61,14 @@ struct PharoPlaygroundView: View {
                         id: snippet.id,
                         source: $snippet.source,
                         focused: $focused,
+                        runtime: runtime,
+                        result: results[snippet.id],
+                        open: { show($0, from: snippet.id) },
                         evaluate: { Task { await evaluate(snippet) } },
                         inspect: nil,
                         remove: snippets.count > 1 ? { remove(snippet) } : nil
                     )
+                    .onChange(of: snippet.source) { results[snippet.id] = nil }
                     .onGeometryChange(for: CGFloat.self) { proxy in
                         proxy.frame(in: .named(pharoPageSpace)).midY
                     } action: { center in
@@ -109,13 +114,19 @@ struct PharoPlaygroundView: View {
     }
 
     private func evaluate(_ snippet: PharoPlaygroundSnippet) async {
-        inspected = snippet.id
         do {
-            inspection = .live(try await runtime.evaluate(snippet.source))
+            let produced = try await runtime.evaluate(snippet.source)
+            results[snippet.id] = produced
+            show(produced, from: snippet.id)
             failure = nil
         } catch {
             failure = error.localizedDescription
         }
+    }
+
+    private func show(_ object: PharoObject, from snippet: UUID) {
+        inspected = snippet
+        inspection = .live(object)
     }
 
     private func remove(_ snippet: PharoPlaygroundSnippet) {

@@ -4,7 +4,7 @@ import SwiftyPharo
 
 /// The space a page and its pane share, so a page can say where in it the
 /// thing being inspected sits.
-let pharoPageSpace = "pharo.page"
+nonisolated let pharoPageSpace = "pharo.page"
 
 /// What a page is showing to its right: the object a cell just produced, or
 /// what its last run captured when there is no VM to ask again.
@@ -114,5 +114,11 @@ extension ShapeStyle where Self == Color {
         #else
         Color(uiColor: .systemGroupedBackground)
         #endif
+    }
+
+    /// Frida's brand colour, which the marks and the pager wear in place of the
+    /// system accent so they read as part of the same tool.
+    static var fridaBrand: Color {
+        Color(red: 239 / 255, green: 100 / 255, blue: 86 / 255)
     }
 }

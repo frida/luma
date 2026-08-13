@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftyPharo
 
 /// A piece of Smalltalk on a page, sized to what it holds. Its actions stay in
 /// place whether or not they are showing, so a page does not shift under the
@@ -6,12 +7,16 @@ import SwiftUI
 struct PharoSnippetView: View {
     let id: UUID
     @Binding var source: String
-    @FocusState.Binding var focused: UUID?
+    @Binding var focused: UUID?
+    let runtime: PharoRuntime
+    let result: PharoObject?
+    let open: (PharoObject) -> Void
     let evaluate: () -> Void
     let inspect: (() -> Void)?
     let remove: (() -> Void)?
 
     @State private var isPointedAt = false
+    @State private var openedClasses: [String: PharoObject] = [:]
 
     var body: some View {
         HStack(spacing: 0) {
@@ -32,18 +37,34 @@ struct PharoSnippetView: View {
 
     private var focusBar: some View {
         Rectangle()
-            .fill(isFocused ? Color.accentColor : .clear)
+            .fill(isFocused ? Color.fridaBrand : .clear)
             .frame(width: 3)
     }
 
     private var editor: some View {
-        TextField("", text: $source, axis: .vertical)
-            .textFieldStyle(.plain)
-            .font(.system(.body, design: .monospaced))
-            .lineLimit(1...)
-            .padding(8)
-            .focused($focused, equals: id)
-            .accessibilityIdentifier("notebook.pharo.source")
+        PharoSourceEditor(
+            id: id,
+            source: $source,
+            focused: $focused,
+            runtime: runtime,
+            marks: marks,
+            onToggleClass: toggle,
+            onOpen: open)
+        .padding(4)
+        .accessibilityIdentifier("notebook.pharo.source")
+    }
+
+    private var marks: PharoSnippetMarks {
+        PharoSnippetMarks(openedClasses: openedClasses, result: result)
+    }
+
+    private func toggle(_ name: String) {
+        guard openedClasses[name] == nil else {
+            openedClasses[name] = nil
+            return
+        }
+
+        Task { openedClasses[name] = try? await runtime.evaluate(name) }
     }
 
     private var actions: some View {
