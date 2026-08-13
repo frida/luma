@@ -14,9 +14,30 @@ struct PharoSnippetMarks: Equatable {
     }
 }
 
-/// A multi-line Smalltalk editor. Its marks are text attachments, so they take
-/// up room in the line rather than sitting over the words after them.
-struct PharoSourceEditor: NSViewRepresentable {
+/// The bodies a snippet's marks have opened, in source order, rendered below the
+/// text rather than inside it: an attachment cannot both size to its content and
+/// let long lines scroll instead of wrap, so the bodies leave the text flow.
+final class PharoOpenBodies: ObservableObject {
+    @Published var items: [PharoBodyItem] = []
+}
+
+enum PharoBodyItem: Identifiable {
+    case classBody(PharoClassMarkModel)
+    case methodBody(PharoMethodMarkModel)
+    case newClass(PharoUndeclaredMarkModel)
+
+    var id: String {
+        switch self {
+        case .classBody(let model): "class:\(model.name)"
+        case .methodBody(let model): "method:\(model.reference.id)"
+        case .newClass(let model): "newclass:\(model.variable.id)"
+        }
+    }
+}
+
+/// A multi-line Smalltalk editor: the source scrolls rather than wraps, its
+/// marks sit inline as triangles, and the bodies they open stack below it.
+struct PharoSourceEditor: View {
     let id: UUID
     @Binding var source: String
     @Binding var focused: UUID?
@@ -26,20 +47,111 @@ struct PharoSourceEditor: NSViewRepresentable {
     let onOpen: (PharoObject) -> Void
     let onOpenResult: () -> Void
     var selfClass: String? = nil
-    /// Marks are attachment views, which NSTextView only builds at the level it
-    /// first lays them out; an editor already sitting inside a mark cannot host
-    /// marks of its own, so a nested one stays plain text.
     var resolvesReferences: Bool = true
+    var isMethod: Bool = false
+
+    @StateObject private var bodies = PharoOpenBodies()
+
+    init(
+        id: UUID,
+        source: Binding<String>,
+        focused: Binding<UUID?>,
+        runtime: PharoRuntime,
+        marks: PharoSnippetMarks,
+        onToggleClass: @escaping (String) -> Void,
+        onOpen: @escaping (PharoObject) -> Void,
+        onOpenResult: @escaping () -> Void,
+        selfClass: String? = nil,
+        resolvesReferences: Bool = true,
+        isMethod: Bool = false
+    ) {
+        self.id = id
+        _source = source
+        _focused = focused
+        self.runtime = runtime
+        self.marks = marks
+        self.onToggleClass = onToggleClass
+        self.onOpen = onOpen
+        self.onOpenResult = onOpenResult
+        self.selfClass = selfClass
+        self.resolvesReferences = resolvesReferences
+        self.isMethod = isMethod
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            PharoTextEditor(
+                id: id,
+                source: $source,
+                focused: $focused,
+                runtime: runtime,
+                marks: marks,
+                onToggleClass: onToggleClass,
+                onOpen: onOpen,
+                onOpenResult: onOpenResult,
+                selfClass: selfClass,
+                resolvesReferences: resolvesReferences,
+                isMethod: isMethod,
+                bodies: bodies)
+            PharoOpenBodiesView(bodies: bodies)
+        }
+    }
+}
+
+private struct PharoOpenBodiesView: View {
+    @ObservedObject var bodies: PharoOpenBodies
+
+    var body: some View {
+        if !bodies.items.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(bodies.items) { item in
+                    body(of: item)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private func body(of item: PharoBodyItem) -> some View {
+        switch item {
+        case .classBody(let model):
+            PharoClassBody(model: model)
+        case .methodBody(let model):
+            PharoMethodBody(model: model)
+        case .newClass(let model):
+            PharoNewClassBody(model: model)
+        }
+    }
+}
+
+/// The text itself: an NSTextView whose container never wraps, in a scroll view
+/// so long lines run off the side, with the inline mark triangles as attachments.
+struct PharoTextEditor: NSViewRepresentable {
+    let id: UUID
+    @Binding var source: String
+    @Binding var focused: UUID?
+    let runtime: PharoRuntime
+    let marks: PharoSnippetMarks
+    let onToggleClass: (String) -> Void
+    let onOpen: (PharoObject) -> Void
+    let onOpenResult: () -> Void
+    var selfClass: String?
+    var resolvesReferences: Bool
+    var isMethod: Bool
+    let bodies: PharoOpenBodies
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
 
-    func makeNSView(context: Context) -> PharoTextView {
+    func makeNSView(context: Context) -> NSScrollView {
         let view = PharoTextView()
         view.delegate = context.coordinator
+        view.bodies = bodies
         view.onFocused = { if focused != id { focused = id } }
         view.completions = runtime.completionList
+        view.styleSpans = { source in await runtime.styles(in: source, isMethod: isMethod) }
         if resolvesReferences {
             view.classReferences = runtime.namedClasses(in:)
             view.methodReferences = { source in await runtime.methods(in: source, selfClass: selfClass) }
@@ -52,12 +164,27 @@ struct PharoSourceEditor: NSViewRepresentable {
         view.isAutomaticTextReplacementEnabled = false
         view.drawsBackground = false
         view.textContainerInset = NSSize(width: 4, height: 6)
+        view.isHorizontallyResizable = true
+        view.isVerticallyResizable = true
+        view.minSize = .zero
+        view.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        view.textContainer?.widthTracksTextView = false
+        view.textContainer?.size = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         view.apply(runtime: runtime, marks: marks, onToggleClass: onToggleClass, onOpen: onOpen, onOpenResult: onOpenResult)
         view.setSource(source)
-        return view
+
+        let scroll = NSScrollView()
+        scroll.documentView = view
+        scroll.drawsBackground = false
+        scroll.hasHorizontalScroller = true
+        scroll.hasVerticalScroller = false
+        scroll.verticalScrollElasticity = .none
+        scroll.autohidesScrollers = true
+        return scroll
     }
 
-    func updateNSView(_ view: PharoTextView, context: Context) {
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        let view = scroll.documentView as! PharoTextView
         context.coordinator.parent = self
         view.onFocused = { if focused != id { focused = id } }
         view.onEdit = { source = $0 }
@@ -65,32 +192,39 @@ struct PharoSourceEditor: NSViewRepresentable {
         if view.source != source {
             view.setSource(source)
         }
-        if focused == id, view.window?.firstResponder !== view {
-            // Taking focus makes the view first responder, which resigns the old
-            // one and publishes focus changes: doing that mid-update is what
-            // SwiftUI warns against, so it waits for the pass to finish.
-            DispatchQueue.main.async {
-                guard view.window?.firstResponder !== view else { return }
-                view.window?.makeFirstResponder(view)
-            }
-        }
+        context.coordinator.reconcileFocus(id: id, focused: focused, view: view)
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: PharoTextView, context: Context) -> CGSize? {
-        guard let width = proposal.width else { return nil }
-        return CGSize(width: width, height: nsView.height(fitting: width))
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView scroll: NSScrollView, context: Context) -> CGSize? {
+        guard let width = proposal.width, let view = scroll.documentView as? PharoTextView else { return nil }
+        return CGSize(width: width, height: view.height())
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
-        var parent: PharoSourceEditor
+        var parent: PharoTextEditor
+        private var appliedFocused: UUID?
 
-        init(_ parent: PharoSourceEditor) {
+        init(_ parent: PharoTextEditor) {
             self.parent = parent
         }
 
         func textDidChange(_ notification: Notification) {
             guard let view = notification.object as? PharoTextView else { return }
             parent.source = view.source
+        }
+
+        /// Takes first responder only as focus arrives, not on every update: a
+        /// body opened below the editor is a separate responder, and reclaiming
+        /// focus each pass would snatch it back from there mid-edit.
+        func reconcileFocus(id: UUID, focused: UUID?, view: PharoTextView) {
+            guard focused == id else { appliedFocused = nil; return }
+            guard appliedFocused != id else { return }
+            appliedFocused = id
+            guard view.window?.firstResponder !== view else { return }
+            DispatchQueue.main.async {
+                guard view.window?.firstResponder !== view else { return }
+                view.window?.makeFirstResponder(view)
+            }
         }
     }
 }
@@ -128,6 +262,11 @@ extension PharoRuntime {
         (try? await whenRunning { try await undeclaredVariables(in: source) }) ?? []
     }
 
+    /// Nor colours any of it.
+    func styles(in source: String, isMethod: Bool) async -> [PharoStyleSpan] {
+        (try? await whenRunning { try await styleSpans(in: source, isMethod: isMethod) }) ?? []
+    }
+
     private func whenRunning<Answer>(_ request: () async throws -> Answer) async throws -> Answer {
         try await runningState()
         return try await request()
@@ -135,14 +274,17 @@ extension PharoRuntime {
 }
 
 /// Marks live in the text as attachments, so the source the reader edits is the
-/// text with those attachment characters taken back out.
+/// text with those attachment characters taken back out. The bodies they open
+/// are published to the editor below rather than kept in the text.
 final class PharoTextView: NSTextView {
     var completions: ((String, Int) async -> PharoCompletionList)?
     var classReferences: ((String) async -> [PharoClassReference])?
     var methodReferences: ((String) async -> [PharoMethodReference])?
     var undeclaredVariables: ((String) async -> [PharoUndeclaredVariable])?
+    var styleSpans: ((String) async -> [PharoStyleSpan])?
     var onFocused: (() -> Void)?
     var onEdit: ((String) -> Void)?
+    var bodies: PharoOpenBodies?
 
     private var runtime: PharoRuntime?
     private var marks = PharoSnippetMarks()
@@ -153,14 +295,14 @@ final class PharoTextView: NSTextView {
     private var references: [PharoClassReference] = []
     private var methodRefs: [PharoMethodReference] = []
     private var undeclared: [PharoUndeclaredVariable] = []
-    private var undeclaredModels: [String: PharoUndeclaredMarkModel] = [:]
-    private var newClassHeights: [String: CGFloat] = [:]
+    private var spans: [PharoStyleSpan] = []
     private var referencedSource: String?
+    private var pendingMarkUp: DispatchWorkItem?
     private var isApplyingMarks = false
     private var attachments: [PharoMarkContent: PharoMarkAttachment] = [:]
     private var classModels: [String: PharoClassMarkModel] = [:]
     private var methodModels: [String: PharoMethodMarkModel] = [:]
-    private var methodBodyHeights: [String: CGFloat] = [:]
+    private var undeclaredModels: [String: PharoUndeclaredMarkModel] = [:]
     private let resultModel = PharoResultMarkModel()
 
     var source: String {
@@ -190,20 +332,17 @@ final class PharoTextView: NSTextView {
         markUp()
     }
 
-    /// A class opening or closing is a change to the mark already in the text,
-    /// not a new one: the same view swaps between the toggle alone and the
-    /// toggle above the class, and the attachment grows or shrinks to match.
-    /// Reinserting it would leave a fresh attachment blank, because NSTextView
-    /// only builds an attachment's view where it first laid the attachment out.
+    /// The host owns which classes are open, so a change there opens or closes a
+    /// class body below the editor.
     private func expandOpenedClasses() {
         for (name, model) in classModels {
             let opened = marks.openedClasses[name]
             guard model.opened?.handle != opened?.handle else { continue }
-            // apply() runs while SwiftUI is updating, and a mark's state is
+            // apply() runs while SwiftUI is updating, and a body's state is
             // published, so it changes once that pass has finished.
             DispatchQueue.main.async {
                 model.opened = opened
-                self.resizeClassBody(name)
+                self.refreshOpenBodies()
             }
         }
     }
@@ -222,28 +361,50 @@ final class PharoTextView: NSTextView {
             guard attachment.bounds != wanted else { return }
             attachment.resize(to: wanted)
             self.textLayoutManager.map { $0.invalidateLayout(for: $0.documentRange) }
+            self.positionMarkOverlays()
         }
     }
 
-    private func resizeClassBody(_ name: String) {
-        guard let attachment = attachments[.classBody(name)] else { return }
-        let wanted = bounds(for: .classBody(name))
-        guard attachment.bounds != wanted else { return }
-        attachment.resize(to: wanted)
-        textLayoutManager.map { $0.invalidateLayout(for: $0.documentRange) }
-    }
-
+    /// Each mark's view is a real subview, laid over the space its attachment
+    /// holds open, so it shows the moment its line is laid out rather than
+    /// waiting for the text view to be first responder.
     override func layout() {
         super.layout()
-        for name in classModels.keys where classModels[name]?.opened != nil {
-            resizeClassBody(name)
+        positionMarkOverlays()
+    }
+
+    private func positionMarkOverlays() {
+        guard let storage = textStorage, let layout = textLayoutManager else { return }
+        let origin = textContainerOrigin
+        var present: Set<PharoMarkContent> = []
+        storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) {
+            value, range, _ in
+            guard let attachment = value as? PharoMarkAttachment else { return }
+            present.insert(attachment.content)
+            guard let frame = markFrame(forStorage: range, in: layout) else { return }
+            let view = attachment.markView
+            if view.superview !== self { addSubview(view) }
+            view.frame = frame.offsetBy(dx: origin.x, dy: origin.y)
         }
-        for key in methodModels.keys where methodModels[key]?.opened == true {
-            resizeMethodBody(key)
+        for (content, attachment) in attachments where !present.contains(content) {
+            attachment.markView.removeFromSuperview()
         }
-        for key in undeclaredModels.keys where undeclaredModels[key]?.isDefining == true {
-            resizeNewClassBody(key)
+    }
+
+    private func markFrame(forStorage range: NSRange, in layout: NSTextLayoutManager) -> CGRect? {
+        guard let content = layout.textContentManager,
+            let start = content.location(content.documentRange.location, offsetBy: range.location),
+            let end = content.location(start, offsetBy: range.length),
+            let textRange = NSTextRange(location: start, end: end)
+        else { return nil }
+
+        var frame: CGRect?
+        layout.ensureLayout(for: textRange)
+        layout.enumerateTextSegments(in: textRange, type: .standard, options: []) { _, segment, _, _ in
+            frame = segment
+            return false
         }
+        return frame
     }
 
     override func didChangeText() {
@@ -257,19 +418,64 @@ final class PharoTextView: NSTextView {
     /// whenever the source has moved on.
     private func markUp() {
         let source = self.source
-        guard referencedSource != source else { return reconcileMarks() }
+        guard referencedSource != source else {
+            reconcileMarks()
+            refreshOpenBodies()
+            return
+        }
 
-        referencedSource = source
+        // Each fetch is four image round trips, served one at a time, so asking
+        // on every keystroke queues a backlog that shows stale marks for seconds.
+        // Waiting for a pause coalesces a burst of edits into a single ask.
+        pendingMarkUp?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.fetchMarks(for: source) }
+        pendingMarkUp = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+    }
+
+    private func fetchMarks(for source: String) {
         Task { @MainActor in
             let classes = await classReferences?(source) ?? []
             let methods = await methodReferences?(source) ?? []
             let undeclaredNames = await undeclaredVariables?(source) ?? []
+            let spans = await styleSpans?(source) ?? []
             guard self.source == source else { return }
             references = classes
             methodRefs = methods
             undeclared = undeclaredNames
+            self.spans = spans
+            referencedSource = source
             reconcileMarks()
+            refreshOpenBodies()
+            applyStyle()
         }
+    }
+
+    /// Paint the coloured runs GT would over the source, mapped past the mark
+    /// characters, on a plain label-coloured ground. Each run's colour resolves
+    /// the light or dark shade itself, so a theme flip redraws without another
+    /// attribute pass -- which would relayout and unsettle the marks.
+    private func applyStyle() {
+        guard let storage = textStorage else { return }
+        let plain = font ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        let bold = NSFont.monospacedSystemFont(ofSize: plain.pointSize, weight: .bold)
+        let whole = NSRange(location: 0, length: storage.length)
+        storage.beginEditing()
+        storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: whole)
+        storage.addAttribute(.font, value: plain, range: whole)
+        for span in spans {
+            let start = storageOffset(forSource: span.start - 1)
+            let end = storageOffset(forSource: span.stop)
+            guard end > start, end <= storage.length else { continue }
+            let range = NSRange(location: start, length: end - start)
+            if let color = NSColor(lightHex: span.light, darkHex: span.dark) {
+                storage.addAttribute(.foregroundColor, value: color, range: range)
+            }
+            if span.bold {
+                storage.addAttribute(.font, value: bold, range: range)
+            }
+        }
+        storage.endEditing()
     }
 
     /// Bring the marks in the text into line with the ones the snippet wants,
@@ -301,6 +507,7 @@ final class PharoTextView: NSTextView {
         storage.endEditing()
         setSelectedRange(NSRange(location: storageOffset(forSource: cursor), length: 0))
         isApplyingMarks = false
+        positionMarkOverlays()
     }
 
     private func wantedMarks() -> [PharoPlacedMark] {
@@ -308,19 +515,13 @@ final class PharoTextView: NSTextView {
 
         for reference in references {
             wanted.append(PharoPlacedMark(sourceOffset: reference.stop, content: .classTriangle(reference.name)))
-            wanted.append(PharoPlacedMark(sourceOffset: reference.stop, content: .classBody(reference.name)))
         }
-
         for reference in methodRefs {
             wanted.append(PharoPlacedMark(sourceOffset: reference.stop, content: .methodTriangle(reference.id)))
-            wanted.append(PharoPlacedMark(sourceOffset: reference.stop, content: .methodBody(reference.id)))
         }
-
         for variable in undeclared {
             wanted.append(PharoPlacedMark(sourceOffset: variable.stop, content: .undeclaredWrench(variable.id)))
-            wanted.append(PharoPlacedMark(sourceOffset: variable.stop, content: .newClassBody(variable.id)))
         }
-
         wanted.append(PharoPlacedMark(sourceOffset: source.utf16.count, content: .result))
 
         return wanted
@@ -340,8 +541,8 @@ final class PharoTextView: NSTextView {
         return present
     }
 
-    /// Marks keep their attachment across a move, so an opened class does not
-    /// lose which of its views the reader was looking at.
+    /// Marks keep their attachment across a move, so a triangle does not lose the
+    /// model whose body the reader has open.
     private func attachment(for content: PharoMarkContent) -> PharoMarkAttachment {
         if let known = attachments[content] {
             return known
@@ -353,27 +554,10 @@ final class PharoTextView: NSTextView {
         return made
     }
 
-    /// A triangle or dot is as tall as a capital letter, which keeps it inside
-    /// the ascent so showing one never makes the line taller. A class's body
-    /// takes the full width when open, so it lands on a line of its own, and
-    /// takes no room at all when closed.
+    /// A triangle, wrench or dot is as tall as a capital letter, which keeps it
+    /// inside the ascent so showing one never makes the line taller.
     private func bounds(for content: PharoMarkContent) -> CGRect {
         switch content {
-        case .classBody(let name):
-            // A truly empty rect reads as "unset" and the line grows to the
-            // hosting view instead; a hair of size keeps the closed body from
-            // taking any the reader can see.
-            return classModels[name]?.opened != nil
-                ? CGRect(x: 0, y: 0, width: openedWidth, height: openedHeight)
-                : CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
-        case .methodBody(let key):
-            return methodModels[key]?.opened == true
-                ? CGRect(x: 0, y: 0, width: openedWidth, height: methodBodyHeights[key] ?? openedHeight)
-                : CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
-        case .newClassBody(let key):
-            return undeclaredModels[key]?.isDefining == true
-                ? CGRect(x: 0, y: 0, width: openedWidth, height: newClassHeights[key] ?? openedHeight)
-                : CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
         case .result where !resultModel.hasResult:
             return CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
         case .classTriangle, .methodTriangle, .undeclaredWrench, .result:
@@ -383,29 +567,45 @@ final class PharoTextView: NSTextView {
         }
     }
 
-    private var openedWidth: CGFloat {
-        (textContainer?.size.width ?? bounds.width) - 2 * textContainerInset.width
-    }
-
-    private let openedHeight: CGFloat = 260
-    private let newClassMaxHeight: CGFloat = 460
-
     private func markView(for content: PharoMarkContent) -> NSView {
         switch content {
         case .classTriangle(let name):
             PharoMarkHostingView(content: PharoClassTriangle(model: classModel(name)))
-        case .classBody(let name):
-            NSHostingView(rootView: PharoClassBody(model: classModel(name)))
         case .methodTriangle(let key):
             PharoMarkHostingView(content: PharoMethodTriangle(model: methodModel(key)))
-        case .methodBody(let key):
-            NSHostingView(rootView: PharoMethodBody(model: methodModel(key)))
         case .undeclaredWrench(let key):
             PharoMarkHostingView(content: PharoUndeclaredWrench(model: undeclaredModel(key)))
-        case .newClassBody(let key):
-            NSHostingView(rootView: PharoNewClassBody(model: undeclaredModel(key)))
         case .result:
             PharoMarkHostingView(content: PharoResultDot(model: resultModel))
+        }
+    }
+
+    /// The bodies the marks have open, in the order their marks fall in the
+    /// source, handed to the editor below to draw.
+    private func refreshOpenBodies() {
+        var ordered: [(offset: Int, item: PharoBodyItem)] = []
+        for reference in references {
+            if let model = classModels[reference.name], model.opened != nil {
+                ordered.append((reference.stop, .classBody(model)))
+            }
+        }
+        for reference in methodRefs {
+            if let model = methodModels[reference.id], model.opened {
+                ordered.append((reference.stop, .methodBody(model)))
+            }
+        }
+        for variable in undeclared {
+            if let model = undeclaredModels[variable.id], model.isDefining {
+                ordered.append((variable.stop, .newClass(model)))
+            }
+        }
+
+        let items = ordered.sorted { $0.offset < $1.offset }.map(\.item)
+        guard items.map(\.id) != (bodies?.items.map(\.id) ?? []) else { return }
+        // markUp() reaches here from apply() during a SwiftUI update, so the
+        // published change waits for the pass to finish.
+        DispatchQueue.main.async { [weak self] in
+            self?.bodies?.items = items
         }
     }
 
@@ -416,6 +616,7 @@ final class PharoTextView: NSTextView {
 
         let model = PharoClassMarkModel(
             runtime: runtime!,
+            name: name,
             opened: marks.openedClasses[name],
             onToggle: { [weak self] in self?.onToggleClass?(name) },
             onOpen: { [weak self] in self?.onOpen?($0) })
@@ -434,7 +635,6 @@ final class PharoTextView: NSTextView {
             reference: reference,
             onToggle: { [weak self] in self?.toggleMethod(key) },
             onOpen: { [weak self] in self?.onOpen?($0) })
-        model.onHeight = { [weak self] in self?.noteMethodBodyHeight(key, $0) }
         methodModels[key] = model
         return model
     }
@@ -442,22 +642,44 @@ final class PharoTextView: NSTextView {
     private func toggleMethod(_ key: String) {
         guard let model = methodModels[key] else { return }
         model.opened.toggle()
-        resizeMethodBody(key)
+        refreshOpenBodies()
     }
 
-    private func noteMethodBodyHeight(_ key: String, _ height: CGFloat) {
-        let bounded = min(height, openedHeight)
-        guard methodBodyHeights[key] != bounded else { return }
-        methodBodyHeights[key] = bounded
-        resizeMethodBody(key)
+    private func undeclaredModel(_ key: String) -> PharoUndeclaredMarkModel {
+        if let existing = undeclaredModels[key] {
+            return existing
+        }
+
+        let variable = undeclared.first { $0.id == key }!
+        let model = PharoUndeclaredMarkModel(variable: variable)
+        model.onReplace = { [weak self] name in self?.replace(variable, with: name) }
+        model.onConfirm = { [weak self, weak model] in model.map { self?.defineClass($0) } }
+        model.onChanged = { [weak self] in self?.refreshOpenBodies() }
+        undeclaredModels[key] = model
+        return model
     }
 
-    private func resizeMethodBody(_ key: String) {
-        guard let attachment = attachments[.methodBody(key)] else { return }
-        let wanted = bounds(for: .methodBody(key))
-        guard attachment.bounds != wanted else { return }
-        attachment.resize(to: wanted)
-        textLayoutManager.map { $0.invalidateLayout(for: $0.documentRange) }
+    private func defineClass(_ model: PharoUndeclaredMarkModel) {
+        guard let runtime else { return }
+        Task { @MainActor in
+            _ = try? await runtime.defineClass(
+                name: model.name,
+                superclass: model.superclassName,
+                package: model.package,
+                tag: model.tag,
+                instanceVariables: model.instanceVariables,
+                classVariables: model.classVariables,
+                classInstanceVariables: model.classInstanceVariables)
+            model.isDefining = false
+            referencedSource = nil
+            markUp()
+        }
+    }
+
+    private func replace(_ variable: PharoUndeclaredVariable, with name: String) {
+        var characters = Array(source)
+        characters.replaceSubrange((variable.start - 1)..<variable.stop, with: name)
+        onEdit?(String(characters))
     }
 
     /// A source the reader did not type, so the text is replaced outright.
@@ -469,7 +691,6 @@ final class PharoTextView: NSTextView {
         storage.setAttributedString(attributed)
         isApplyingMarks = false
     }
-
 
     private var sourceCursor: Int {
         string.utf16.prefix(selectedRange().location).count { $0 != markCharacter }
@@ -507,8 +728,8 @@ final class PharoTextView: NSTextView {
         return became
     }
 
-    /// The marks are invisible to the caret: crossing a class name's marks, and
-    /// the space they push ahead of the next word, takes one press, not one per
+    /// The marks are invisible to the caret: crossing a class name's mark, and
+    /// the space it pushes ahead of the next word, takes one press, not one per
     /// hidden character.
     override func moveRight(_ sender: Any?) {
         super.moveRight(sender)
@@ -531,59 +752,6 @@ final class PharoTextView: NSTextView {
             guard caret >= 0, caret <= units.count else { break }
         }
         setSelectedRange(NSRange(location: max(0, min(caret, units.count)), length: 0))
-    }
-
-    private func undeclaredModel(_ key: String) -> PharoUndeclaredMarkModel {
-        if let existing = undeclaredModels[key] {
-            return existing
-        }
-
-        let variable = undeclared.first { $0.id == key }!
-        let model = PharoUndeclaredMarkModel(variable: variable)
-        model.onReplace = { [weak self] name in self?.replace(variable, with: name) }
-        model.onConfirm = { [weak self, weak model] in model.map { self?.defineClass($0) } }
-        model.onNeedsResize = { [weak self] in self?.resizeNewClassBody(key) }
-        model.onHeight = { [weak self] in self?.noteNewClassHeight(key, $0) }
-        undeclaredModels[key] = model
-        return model
-    }
-
-    private func defineClass(_ model: PharoUndeclaredMarkModel) {
-        guard let runtime else { return }
-        Task { @MainActor in
-            _ = try? await runtime.defineClass(
-                name: model.name,
-                superclass: model.superclassName,
-                package: model.package,
-                tag: model.tag,
-                instanceVariables: model.instanceVariables,
-                classVariables: model.classVariables,
-                classInstanceVariables: model.classInstanceVariables)
-            model.isDefining = false
-            referencedSource = nil
-            markUp()
-        }
-    }
-
-    private func replace(_ variable: PharoUndeclaredVariable, with name: String) {
-        var characters = Array(source)
-        characters.replaceSubrange((variable.start - 1)..<variable.stop, with: name)
-        onEdit?(String(characters))
-    }
-
-    private func noteNewClassHeight(_ key: String, _ height: CGFloat) {
-        let bounded = min(height, newClassMaxHeight)
-        guard newClassHeights[key] != bounded else { return }
-        newClassHeights[key] = bounded
-        resizeNewClassBody(key)
-    }
-
-    private func resizeNewClassBody(_ key: String) {
-        guard let attachment = attachments[.newClassBody(key)] else { return }
-        let wanted = bounds(for: .newClassBody(key))
-        guard attachment.bounds != wanted else { return }
-        attachment.resize(to: wanted)
-        textLayoutManager.map { $0.invalidateLayout(for: $0.documentRange) }
     }
 
     /// The text view reasserts the I-beam as the pointer travels, so anything
@@ -644,41 +812,251 @@ final class PharoTextView: NSTextView {
 
     override func insertText(_ string: Any, replacementRange: NSRange) {
         super.insertText(string, replacementRange: replacementRange)
-        guard let typed = string as? String, typed.allSatisfy(\.isLetter) else { return }
-        complete(nil)
+        guard let typed = string as? String else { return }
+        if typed.count == 1, let unit = typed.utf16.first, unit == 41 || unit == 93 || unit == 125 {
+            // Editing the storage now, mid-insert, does not take; it lands once
+            // this input has finished.
+            DispatchQueue.main.async { [weak self] in self?.dedentCloserLine() }
+        } else if typed.allSatisfy(\.isLetter) {
+            complete(nil)
+        }
     }
 
-    func height(fitting width: CGFloat) -> CGFloat {
-        guard let layout = textLayoutManager, let container = textContainer else { return 0 }
-        container.size = NSSize(width: width - 2 * textContainerInset.width, height: .greatestFiniteMagnitude)
+    /// A closer typed as the first thing on its line drops back to line up under
+    /// the line that opened it.
+    private func dedentCloserLine() {
+        guard let storage = textStorage else { return }
+        let text = string as NSString
+        let closer = selectedRange().location - 1
+        guard closer >= 0 else { return }
+
+        let line = text.lineRange(for: NSRange(location: closer, length: 0))
+        let leading = NSRange(location: line.location, length: closer - line.location)
+        let indent = text.substring(with: leading)
+        guard indent.allSatisfy({ $0 == " " || $0 == "\t" }) else { return }
+        guard let opener = matchingOpenerOffset(before: closer) else { return }
+
+        let openerLine = text.lineRange(for: NSRange(location: opener, length: 0))
+        let openerIndent = String(text.substring(with: openerLine).prefix { $0 == " " || $0 == "\t" })
+        guard openerIndent != indent else { return }
+        guard shouldChangeText(in: leading, replacementString: openerIndent) else { return }
+
+        storage.replaceCharacters(in: leading, with: NSAttributedString(string: openerIndent, attributes: sourceAttributes))
+        didChangeText()
+        setSelectedRange(NSRange(location: line.location + (openerIndent as NSString).length + 1, length: 0))
+    }
+
+    /// The offset of the bracket that a closer at `closerOffset` matches, found
+    /// by lexing forward with the same blindness to strings, comments and
+    /// character literals as the indenter.
+    private func matchingOpenerOffset(before closerOffset: Int) -> Int? {
+        let units = Array(string.utf16)
+        let end = min(closerOffset, units.count)
+        var openers: [Int] = []
+        var index = 0
+        while index < end {
+            switch units[index] {
+            case 39:
+                index = endOfQuotedUnit(units, after: index, terminator: 39)
+            case 34:
+                index = endOfQuotedUnit(units, after: index, terminator: 34)
+            case 36:
+                index += 1
+            case 40, 91, 123:
+                openers.append(index)
+            case 41, 93, 125:
+                if !openers.isEmpty { openers.removeLast() }
+            default:
+                break
+            }
+            index += 1
+        }
+        return openers.last
+    }
+
+    private func endOfQuotedUnit(_ units: [UTF16.CodeUnit], after open: Int, terminator: UTF16.CodeUnit) -> Int {
+        var index = open + 1
+        while index < units.count {
+            if units[index] == terminator {
+                guard index + 1 < units.count, units[index + 1] == terminator else { return index }
+                index += 2
+                continue
+            }
+            index += 1
+        }
+        return units.count
+    }
+
+    /// A new line follows the nesting: it keeps the indentation of the one it
+    /// left and steps in once for every bracket that line opened and had not
+    /// closed by the caret. Opening a bracket and pressing Enter with its closer
+    /// still ahead drops the closer to its own line at the outer indent.
+    override func insertNewline(_ sender: Any?) {
+        let text = string as NSString
+        let caret = selectedRange().location
+        let line = text.lineRange(for: NSRange(location: caret, length: 0))
+        let toCaret = text.substring(with: NSRange(location: line.location, length: caret - line.location))
+        let base = String(toCaret.prefix { $0 == " " || $0 == "\t" })
+        let depth = openDepth(in: toCaret)
+        let inner = depth > 0 ? base + String(repeating: "\t", count: depth) : base
+        let splitsCloser = depth > 0 && nextNonSpaceIsCloser(text, from: caret)
+
+        super.insertNewline(sender)
+        if !inner.isEmpty {
+            super.insertText(inner, replacementRange: selectedRange())
+        }
+        guard splitsCloser else { return }
+        let caretAfterInner = selectedRange()
+        super.insertText("\n" + base, replacementRange: caretAfterInner)
+        setSelectedRange(caretAfterInner)
+    }
+
+    /// The brackets a stretch of source leaves open, blind to those inside a
+    /// string, a comment or a character literal, where they are not grammar.
+    private func openDepth(in source: String) -> Int {
+        let characters = Array(source)
+        var depth = 0
+        var index = 0
+        while index < characters.count {
+            switch characters[index] {
+            case "'":
+                index = endOfQuoted(characters, after: index, terminator: "'")
+            case "\"":
+                index = endOfQuoted(characters, after: index, terminator: "\"")
+            case "$":
+                index += 1
+            case "(", "[", "{":
+                depth += 1
+            case ")", "]", "}":
+                if depth > 0 { depth -= 1 }
+            default:
+                break
+            }
+            index += 1
+        }
+        return depth
+    }
+
+    /// The index of a quote's or comment's closing mark, treating a doubled mark
+    /// as an escaped one that stays inside.
+    private func endOfQuoted(_ characters: [Character], after open: Int, terminator: Character) -> Int {
+        var index = open + 1
+        while index < characters.count {
+            if characters[index] == terminator {
+                guard index + 1 < characters.count, characters[index + 1] == terminator else { return index }
+                index += 2
+                continue
+            }
+            index += 1
+        }
+        return characters.count
+    }
+
+    private func nextNonSpaceIsCloser(_ text: NSString, from caret: Int) -> Bool {
+        var index = caret
+        while index < text.length {
+            let unit = text.character(at: index)
+            if unit == 32 || unit == 9 { index += 1; continue }
+            return unit == 41 || unit == 93 || unit == 125
+        }
+        return false
+    }
+
+    /// Tab indents: it steps in every line a selection touches, and is a plain
+    /// tab when nothing is selected. Shift-tab always steps a line back out.
+    override func insertTab(_ sender: Any?) {
+        guard selectedRange().length > 0 else { return super.insertText("\t", replacementRange: selectedRange()) }
+        shiftSelectedLines(indenting: true)
+    }
+
+    override func insertBacktab(_ sender: Any?) {
+        shiftSelectedLines(indenting: false)
+    }
+
+    /// Backspace in space indentation clears a whole level back to the previous
+    /// tab stop, not one space; a real tab already deletes as one.
+    override func deleteBackward(_ sender: Any?) {
+        let caret = selectedRange()
+        guard caret.length == 0, caret.location > 0 else { return super.deleteBackward(sender) }
+
+        let text = string as NSString
+        let line = text.lineRange(for: NSRange(location: caret.location, length: 0))
+        let lead = text.substring(with: NSRange(location: line.location, length: caret.location - line.location))
+        guard !lead.isEmpty, lead.allSatisfy({ $0 == " " }) else { return super.deleteBackward(sender) }
+
+        let width = 4
+        let column = caret.location - line.location
+        let count = column - (column - 1) / width * width
+        let range = NSRange(location: caret.location - count, length: count)
+        guard shouldChangeText(in: range, replacementString: "") else { return }
+        textStorage?.deleteCharacters(in: range)
+        didChangeText()
+    }
+
+    /// Steps every line the selection touches, adding or dropping one level at
+    /// its start. Editing the starts rather than rewriting the lines leaves any
+    /// marks they carry in place.
+    private func shiftSelectedLines(indenting: Bool) {
+        guard let storage = textStorage else { return }
+        let text = string as NSString
+        let block = text.lineRange(for: selectedRange())
+        var starts: [Int] = []
+        var location = block.location
+        while location < NSMaxRange(block) {
+            starts.append(location)
+            location = NSMaxRange(text.lineRange(for: NSRange(location: location, length: 0)))
+        }
+
+        storage.beginEditing()
+        var delta = 0
+        for start in starts.reversed() {
+            if indenting {
+                storage.insert(NSAttributedString(string: "\t", attributes: sourceAttributes), at: start)
+                delta += 1
+            } else {
+                let width = leadingIndentWidth(in: text, at: start)
+                guard width > 0 else { continue }
+                storage.deleteCharacters(in: NSRange(location: start, length: width))
+                delta -= width
+            }
+        }
+        storage.endEditing()
+        didChangeText()
+        setSelectedRange(NSRange(location: block.location, length: max(0, block.length + delta)))
+    }
+
+    private func leadingIndentWidth(in text: NSString, at start: Int) -> Int {
+        guard start < text.length else { return 0 }
+        if text.character(at: start) == 9 { return 1 }
+        var spaces = 0
+        while spaces < 4, start + spaces < text.length, text.character(at: start + spaces) == 32 {
+            spaces += 1
+        }
+        return spaces
+    }
+
+    /// The height the text needs, which is the whole of it: the container never
+    /// wraps, so width does not enter into it.
+    func height() -> CGFloat {
+        guard let layout = textLayoutManager else { return 0 }
         layout.ensureLayout(for: layout.documentRange)
         return layout.usageBoundsForTextContainer.height + 2 * textContainerInset.height
     }
 }
 
-/// What a snippet marks. A class's triangle and its opened body are separate
-/// marks, so the triangle keeps its place in the line while the body lands on
-/// the next.
+/// What a snippet marks inline. The body each one opens lives below the editor,
+/// not in the text, so only these fixed-size triggers are attachments.
 enum PharoMarkContent {
     case classTriangle(String)
-    case classBody(String)
     case methodTriangle(String)
-    case methodBody(String)
     case undeclaredWrench(String)
-    case newClassBody(String)
     case result
 
-    /// Where two marks share a source position, the lower order comes first in
-    /// the text, so a triangle sits ahead of its body.
+    /// The result dot sits at the very end, after any mark sharing its spot.
     var insertionOrder: Int {
         switch self {
-        case .classTriangle: 0
-        case .classBody: 1
-        case .methodTriangle: 0
-        case .methodBody: 1
-        case .undeclaredWrench: 0
-        case .newClassBody: 1
         case .result: 2
+        default: 0
         }
     }
 }
@@ -704,35 +1082,26 @@ final class PharoMarkHostingView: NSView {
     }
 }
 
+/// The attachment only holds the line open for its mark: it draws nothing, and
+/// the mark's view is placed over it as a real subview. NSTextView builds an
+/// attachment's own view lazily, and only once it is first responder, so a
+/// loaded snippet's marks would otherwise stay placeholders until a click.
 nonisolated final class PharoMarkAttachment: NSTextAttachment, @unchecked Sendable {
     let content: PharoMarkContent
     let markView: NSView
 
-    /// The view is given the size too, not just the attachment: left at zero it
-    /// draws nothing until something else forces it to lay out.
     func resize(to size: CGRect) {
         bounds = size
-        let view = markView
-        MainActor.assumeIsolated { view.frame = size }
+        // An empty image of the wanted size holds the space and draws nothing; an
+        // attachment with no contents would draw the placeholder document icon.
+        image = NSImage(size: size.size)
     }
 
     init(content: PharoMarkContent, markView: NSView) {
         self.content = content
         self.markView = markView
         super.init(data: nil, ofType: nil)
-        allowsTextAttachmentView = true
-    }
-
-    override func viewProvider(
-        for parentView: NSView?,
-        location: any NSTextLocation,
-        textContainer: NSTextContainer?
-    ) -> NSTextAttachmentViewProvider? {
-        PharoMarkViewProvider(
-            textAttachment: self,
-            parentView: parentView,
-            textLayoutManager: textContainer?.textLayoutManager,
-            location: location)
+        image = NSImage(size: .zero)
     }
 
     @available(*, unavailable)
@@ -741,26 +1110,6 @@ nonisolated final class PharoMarkAttachment: NSTextAttachment, @unchecked Sendab
     }
 }
 
-nonisolated final class PharoMarkViewProvider: NSTextAttachmentViewProvider, @unchecked Sendable {
-    override func loadView() {
-        view = (textAttachment as? PharoMarkAttachment)?.markView
-    }
-
-    /// Left to itself the provider measures the hosting view, which pads a mark
-    /// out and, when its size is zero, makes the line as tall as an empty view
-    /// rather than nothing. The attachment's own bounds are the truth.
-    override func attachmentBounds(
-        for attributes: [NSAttributedString.Key: Any],
-        location: any NSTextLocation,
-        textContainer: NSTextContainer?,
-        proposedLineFragment: CGRect,
-        position: CGPoint
-    ) -> CGRect {
-        (textAttachment as? PharoMarkAttachment)?.bounds ?? .zero
-    }
-}
-
-/// A class mark's state, which the view in the text observes.
 /// What the snippet last produced, which the dot in the text watches.
 final class PharoResultMarkModel: ObservableObject {
     @Published var hasResult = false
@@ -769,31 +1118,33 @@ final class PharoResultMarkModel: ObservableObject {
 
 final class PharoClassMarkModel: ObservableObject {
     let runtime: PharoRuntime
+    let name: String
     let onToggle: () -> Void
     let onOpen: (PharoObject) -> Void
     @Published var opened: PharoObject?
 
     init(
         runtime: PharoRuntime,
+        name: String,
         opened: PharoObject?,
         onToggle: @escaping () -> Void,
         onOpen: @escaping (PharoObject) -> Void
     ) {
         self.runtime = runtime
+        self.name = name
         self.opened = opened
         self.onToggle = onToggle
         self.onOpen = onOpen
     }
 }
 
-/// A method a send resolves to, opened in place below the send. Its source
-/// comes with the reference, so opening one asks the image for nothing.
+/// A method a send resolves to, opened below the editor. Its source comes with
+/// the reference, so opening one asks the image for nothing.
 final class PharoMethodMarkModel: ObservableObject {
     let runtime: PharoRuntime
     let reference: PharoMethodReference
     let onToggle: () -> Void
     let onOpen: (PharoObject) -> Void
-    var onHeight: (CGFloat) -> Void = { _ in }
     @Published var opened = false
 
     init(
@@ -823,8 +1174,7 @@ final class PharoUndeclaredMarkModel: ObservableObject {
     @Published var classInstanceVariables = ""
     var onReplace: (String) -> Void = { _ in }
     var onConfirm: () -> Void = {}
-    var onNeedsResize: () -> Void = {}
-    var onHeight: (CGFloat) -> Void = { _ in }
+    var onChanged: () -> Void = {}
 
     init(variable: PharoUndeclaredVariable) {
         self.variable = variable
@@ -833,12 +1183,12 @@ final class PharoUndeclaredMarkModel: ObservableObject {
 
     func startDefining() {
         isDefining = true
-        onNeedsResize()
+        onChanged()
     }
 
     func cancel() {
         isDefining = false
-        onNeedsResize()
+        onChanged()
     }
 }
 
@@ -876,11 +1226,7 @@ private struct PharoNewClassBody: View {
 
     var body: some View {
         if model.isDefining {
-            PharoNewClassForm(model: model)
-                .pharoPane()
-                .fixedSize(horizontal: false, vertical: true)
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { model.onHeight($0) }
-                .frame(maxHeight: .infinity, alignment: .top)
+            PharoNewClassForm(model: model).pharoPane()
         }
     }
 }
@@ -950,8 +1296,7 @@ private struct PharoMethodTriangle: View {
     }
 }
 
-/// The sent method's source, editable and saved back to its class, opened below
-/// the send the way the class body opens below a class name.
+/// The sent method's source, editable and saved back to its class.
 private struct PharoMethodBody: View {
     @ObservedObject var model: PharoMethodMarkModel
 
@@ -962,9 +1307,6 @@ private struct PharoMethodBody: View {
                 runtime: model.runtime,
                 onSelect: model.onOpen)
             .pharoPane()
-            .fixedSize(horizontal: false, vertical: true)
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { model.onHeight($0) }
-            .frame(maxHeight: .infinity, alignment: .top)
         }
     }
 }
@@ -989,8 +1331,8 @@ private struct PharoClassTriangle: View {
     }
 }
 
-/// The class itself, opened on the line below its triangle: a browser of its
-/// place and methods rather than the generic inspector.
+/// The class itself: a browser of its place and methods rather than the generic
+/// inspector.
 private struct PharoClassBody: View {
     @ObservedObject var model: PharoClassMarkModel
 
@@ -1027,6 +1369,27 @@ private struct PharoResultDot: View {
     }
 }
 
+extension NSColor {
+    /// An RRGGBB run colour from the image, read in the sRGB space it named it in.
+    convenience init(pharoHex hex: String) {
+        let value = UInt32(hex, radix: 16) ?? 0
+        self.init(
+            srgbRed: CGFloat((value >> 16) & 0xFF) / 255,
+            green: CGFloat((value >> 8) & 0xFF) / 255,
+            blue: CGFloat(value & 0xFF) / 255,
+            alpha: 1)
+    }
+
+    /// A run colour that resolves its own light or dark shade as the appearance
+    /// changes, so a theme flip never has to rewrite the text's attributes.
+    convenience init?(lightHex: String?, darkHex: String?) {
+        guard let lightHex, let darkHex else { return nil }
+        self.init(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            return NSColor(pharoHex: isDark ? darkHex : lightHex)
+        }
+    }
+}
 
 /// A mark and where in the source it belongs.
 struct PharoPlacedMark: Equatable {
@@ -1039,15 +1402,9 @@ extension PharoMarkContent: Hashable {
         switch (lhs, rhs) {
         case (.classTriangle(let a), .classTriangle(let b)):
             a == b
-        case (.classBody(let a), .classBody(let b)):
-            a == b
         case (.methodTriangle(let a), .methodTriangle(let b)):
             a == b
-        case (.methodBody(let a), .methodBody(let b)):
-            a == b
         case (.undeclaredWrench(let a), .undeclaredWrench(let b)):
-            a == b
-        case (.newClassBody(let a), .newClassBody(let b)):
             a == b
         case (.result, .result):
             true
@@ -1061,20 +1418,11 @@ extension PharoMarkContent: Hashable {
         case .classTriangle(let name):
             hasher.combine(0)
             hasher.combine(name)
-        case .classBody(let name):
-            hasher.combine(1)
-            hasher.combine(name)
         case .methodTriangle(let key):
             hasher.combine(3)
             hasher.combine(key)
-        case .methodBody(let key):
-            hasher.combine(4)
-            hasher.combine(key)
         case .undeclaredWrench(let key):
             hasher.combine(5)
-            hasher.combine(key)
-        case .newClassBody(let key):
-            hasher.combine(6)
             hasher.combine(key)
         case .result:
             hasher.combine(2)
