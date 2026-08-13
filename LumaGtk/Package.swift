@@ -62,7 +62,11 @@ let cLumaLinkerSettings: [LinkerSetting] = [
 // Windows CI job).
 let windowsGuiLinkerFlags = ["-Xlinker", "/SUBSYSTEM:WINDOWS", "-Xlinker", "/ENTRY:mainCRTStartup"]
 let lumaGtkLinkerSettings: [LinkerSetting] = [
-    .unsafeFlags(windowsGuiLinkerFlags + (lumaExecutableIconResource.map { [$0] } ?? []))
+    .unsafeFlags(
+        windowsGuiLinkerFlags
+            + pharoBridgeExports().flatMap { ["-Xlinker", "/EXPORT:\($0)"] }
+            + (lumaExecutableIconResource.map { [$0] } ?? [])
+    )
 ]
 #else
 let cLumaSources: [String] = ["shim_gtk.c", "svg_paintable.c", "shim_webkitgtk.c"]
@@ -187,6 +191,24 @@ func adwaitaFeatureDefines() -> [SwiftSetting] {
         defines.append(.define("HAS_GDK_MEMORY_TEXTURE_BUILDER"))
     }
     return defines
+}
+
+// The image looks these up by name and nothing in Swift calls them, so on
+// Windows they reach the export table only by being named here.
+func pharoBridgeExports() -> [String] {
+    let bridgeDir = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("Sources/LumaCore/Pharo", isDirectory: true)
+    let sources = (try? FileManager.default.contentsOfDirectory(at: bridgeDir, includingPropertiesForKeys: nil)) ?? []
+    return sources.filter { $0.pathExtension == "swift" }
+        .flatMap { source -> [String] in
+            let text = (try? String(contentsOf: source, encoding: .utf8)) ?? ""
+            return text.components(separatedBy: "@_cdecl(\"").dropFirst().map {
+                String($0.prefix(while: { $0 != "\"" }))
+            }
+        }
+        .sorted()
 }
 
 func pkgConfigFlags(_ packages: [String], libs: Bool = false) -> [String] {
