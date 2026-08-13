@@ -60,6 +60,13 @@ cp -P "$frida_libdir"/libfrida-core-1.0.so* "$luma_lib/"
 rsync -aL --exclude='frida-gadget*' "$frida_libdir/frida-1.0/" "$luma_lib/frida-1.0/"
 
 cp -P "$pharo_libdir"/*.so* "$luma_lib/"
+pharo_libs=()
+for so in "$pharo_libdir"/*.so*; do
+    staged="$luma_lib/$(basename "$so")"
+    if [ -f "$staged" ] && [ ! -L "$staged" ]; then
+        pharo_libs+=("$staged")
+    fi
+done
 
 if [ -n "$swift_libdir" ]; then
     for so in "$swift_libdir"/*.so; do
@@ -81,8 +88,11 @@ if [ -n "$swift_libdir" ]; then
 else
     patchelf --set-rpath '$ORIGIN' "$luma_lib/luma"
 fi
-find "$luma_lib" -maxdepth 1 -name '*.so*' -type f \
-     -exec patchelf --set-rpath '$ORIGIN' {} +
+# The VM's libraries alone: a plugin that links another resolves it by
+# soname along its own path, while frida-core finds its assets by locating
+# itself among the mapped modules, and no longer recognises the mapping
+# once patchelf has moved its segments about.
+patchelf --set-rpath '$ORIGIN' "${pharo_libs[@]}"
 for so in "$luma_lib/frida-1.0"/*/*.so; do
     patchelf --set-rpath '$ORIGIN/../..' "$so"
 done
