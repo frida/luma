@@ -232,5 +232,6 @@ parts:
       - libadwaita-1-0
       - libwebkitgtk-6.0-4
       - libepoxy0
+      - libgtksourceview-5-0
       - librsvg2-2
       - libsoup-3.0-0
