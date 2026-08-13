@@ -8,6 +8,10 @@ final class PharoColumnPath {
     var objects: [PharoObject] = []
     /// Which column is the current one, or nothing when the page itself is.
     var shown: Int?
+    /// Column handles the reader has shrunk to a strip, and the one blown up to
+    /// fill, so a drill remembers how each pane was left.
+    private(set) var collapsed: Set<Int> = []
+    private(set) var maximized: Int?
     private(set) var scrollTarget: PharoScrollTarget?
 
     let includesPage: Bool
@@ -52,12 +56,14 @@ final class PharoColumnPath {
     func startOver(at object: PharoObject) {
         objects = [object]
         shown = 0
+        forgetPaneStates()
         revealNewest()
     }
 
     func open(_ object: PharoObject, from depth: Int) {
         objects = objects.prefix(depth + 1) + [object]
         shown = objects.count - 1
+        keepPaneStatesOfCurrentObjects()
         revealNewest()
     }
 
@@ -67,13 +73,56 @@ final class PharoColumnPath {
         guard depth > 0 else { return true }
         objects = Array(objects.prefix(depth))
         shown = min(shown ?? 0, objects.count - 1)
+        keepPaneStatesOfCurrentObjects()
         return false
     }
 
     func clear() {
         objects = []
         shown = nil
-        bring(slot: 0, to: .leading)
+        forgetPaneStates()
+        if slotCount > 0 {
+            bring(slot: 0, to: .leading)
+        }
+    }
+
+    func isCollapsed(_ handle: Int) -> Bool {
+        collapsed.contains(handle)
+    }
+
+    func toggleCollapsed(_ handle: Int) {
+        if collapsed.contains(handle) {
+            collapsed.remove(handle)
+        } else {
+            collapsed.insert(handle)
+        }
+    }
+
+    func isMaximized(_ handle: Int) -> Bool {
+        maximized == handle
+    }
+
+    /// When the leading column is folded away, its stack's own downward triangle
+    /// stands in for the arrow that would otherwise point into it.
+    var isFirstColumnCollapsed: Bool {
+        objects.first.map { collapsed.contains($0.handle) } ?? false
+    }
+
+    func toggleMaximized(_ handle: Int) {
+        maximized = maximized == handle ? nil : handle
+    }
+
+    private func forgetPaneStates() {
+        collapsed = []
+        maximized = nil
+    }
+
+    private func keepPaneStatesOfCurrentObjects() {
+        let present = Set(objects.map(\.handle))
+        collapsed.formIntersection(present)
+        if let handle = maximized, !present.contains(handle) {
+            maximized = nil
+        }
     }
 
     func markVisible(_ ids: [Int]) {
@@ -116,6 +165,64 @@ struct PharoScrollTarget: Equatable {
     let stamp = UUID()
 }
 
+let pharoColumnWidth: CGFloat = 400
+
+extension View {
+    /// Lays a maximized pane over the whole inspector -- page and carousel both
+    /// -- the way Glamorous Toolkit fills its host when a pane is maximized.
+    func pharoMaximizedPane(runtime: PharoRuntime, path: PharoColumnPath, onCloseAll: @escaping () -> Void) -> some View {
+        overlay {
+            if let object = path.objects.first(where: { path.isMaximized($0.handle) }) {
+                PharoMaximizedPane(runtime: runtime, object: object, path: path, onCloseAll: onCloseAll)
+            }
+        }
+    }
+}
+
+/// A pane blown up to cover the inspector, its buttons standing rather than
+/// waiting for a hover: the corner menu at the right, and at the left the button
+/// that drops it back to its column.
+struct PharoMaximizedPane: View {
+    let runtime: PharoRuntime
+    let object: PharoObject
+    let path: PharoColumnPath
+    let onCloseAll: () -> Void
+
+    var body: some View {
+        PharoObjectColumn(
+            runtime: runtime,
+            object: object,
+            actions: PharoPaneActions(onMaximize: restore),
+            isMaximized: true,
+            onSelect: open,
+            onClose: close)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .pharoPane()
+            .padding(8)
+            .background(.pharoGutter)
+    }
+
+    private var depth: Int {
+        path.objects.firstIndex { $0.handle == object.handle } ?? 0
+    }
+
+    private func restore() {
+        path.toggleMaximized(object.handle)
+    }
+
+    private func open(_ selected: PharoObject) {
+        let from = depth
+        restore()
+        path.open(selected, from: from)
+    }
+
+    private func close() {
+        let from = depth
+        restore()
+        if path.close(from: from) { onCloseAll() }
+    }
+}
+
 /// The columns side by side, as loose content for the page's own scroller to
 /// hold. Each is a direct child there, which is what has the scroller report it
 /// as it comes and goes on screen; wrapped in a view of their own they would
@@ -126,24 +233,95 @@ func pharoColumns(
     path: PharoColumnPath,
     onCloseAll: @escaping () -> Void
 ) -> some View {
-    ForEach(Array(path.objects.enumerated()), id: \.element.handle) { depth, object in
-        if depth > 0 {
-            PharoDrillArrow()
+    let runs = pharoColumnRuns(path)
+
+    return Group {
+        ForEach(Array(runs.enumerated()), id: \.element.id) { index, run in
+            switch run {
+            case .collapsed(let objects):
+                PharoCollapsedStack(
+                    objects: objects,
+                    hasFollowingExpanded: runs[safe: index + 1]?.isExpanded ?? false,
+                    onExpand: { path.toggleCollapsed($0.handle) })
+                    .id(run.id)
+            case .expanded(let object, let depth):
+                if runs[safe: index - 1]?.isExpanded ?? false {
+                    PharoDrillArrow()
+                }
+
+                let handle = object.handle
+                let close = { if path.close(from: depth) { onCloseAll() } }
+
+                if path.isMaximized(handle) {
+                    // The maximized overlay shows this pane; a second copy here
+                    // would drill twice from one click through its own catcher.
+                    Color.clear.frame(width: 0).id(handle)
+                } else {
+                    PharoObjectColumn(
+                        runtime: runtime,
+                        object: object,
+                        actions: PharoPaneActions(
+                            canCollapse: true,
+                            canMaximize: true,
+                            onCollapse: { path.toggleCollapsed(handle) },
+                            onMaximize: { path.toggleMaximized(handle) }),
+                        onSelect: { path.open($0, from: depth) },
+                        onClose: close)
+                    .frame(width: pharoColumnWidth)
+                    .pharoPane()
+                    .id(handle)
+                }
+            }
         }
 
-        PharoObjectColumn(
-            runtime: runtime,
-            object: object,
-            onSelect: { path.open($0, from: depth) },
-            onClose: { if path.close(from: depth) { onCloseAll() } })
-        .frame(width: 320)
-        .pharoPane()
-        .id(object.handle)
+        Color.clear
+            .frame(width: 1)
+            .id(PharoColumnPath.trailingID)
+    }
+}
+
+/// A stretch of columns that render as one: consecutive collapsed panes fold
+/// into a single stack, while an expanded pane stands on its own.
+private enum PharoColumnRun: Identifiable {
+    case collapsed([PharoObject])
+    case expanded(PharoObject, depth: Int)
+
+    var id: Int {
+        switch self {
+        case .collapsed(let objects): objects.first?.handle ?? 0
+        case .expanded(let object, _): object.handle
+        }
     }
 
-    Color.clear
-        .frame(width: 1)
-        .id(PharoColumnPath.trailingID)
+    var isExpanded: Bool {
+        if case .expanded = self { return true }
+        return false
+    }
+}
+
+private func pharoColumnRuns(_ path: PharoColumnPath) -> [PharoColumnRun] {
+    var runs: [PharoColumnRun] = []
+    var depth = 0
+    while depth < path.objects.count {
+        if path.isCollapsed(path.objects[depth].handle) {
+            var group: [PharoObject] = []
+            while depth < path.objects.count, path.isCollapsed(path.objects[depth].handle) {
+                group.append(path.objects[depth])
+                depth += 1
+            }
+            runs.append(.collapsed(group))
+        } else {
+            runs.append(.expanded(path.objects[depth], depth: depth))
+            depth += 1
+        }
+    }
+    return runs
+}
+
+extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
+    }
 }
 
 /// Walks an object through the views it declares, opening each selection in a
@@ -218,12 +396,16 @@ struct PharoTabBar: View {
 struct PharoObjectColumn: View {
     let runtime: PharoRuntime
     let object: PharoObject
+    var actions = PharoPaneActions()
+    var isMaximized = false
     let onSelect: (PharoObject) -> Void
     let onClose: () -> Void
 
     @State private var declared: Declared = .pending
     @State private var shown: String?
     @State private var receiverClass: PharoObject?
+    @State private var reloadToken = 0
+    @State private var isPointedAt = false
 
     private static let metaView = "swpMeta"
 
@@ -241,8 +423,21 @@ struct PharoObjectColumn: View {
                 objectInspector
             }
         }
-        .overlay(alignment: .topTrailing) { closeButton }
-        .task { await load() }
+        .overlay(alignment: .topLeading) { if isMaximized { restoreButton } }
+        .overlay(alignment: .topTrailing) { menuButton }
+        .onHover { isPointedAt = $0 }
+        .task(id: reloadToken) { await load() }
+    }
+
+    private var restoreButton: some View {
+        Button(action: actions.onMaximize) {
+            PharoRoundIcon(systemName: "arrow.down.right.and.arrow.up.left")
+        }
+        .buttonStyle(.plain)
+        .pointerStyle(.link)
+        .help("Restore pane")
+        .padding(6)
+        .accessibilityIdentifier("pharo.inspection.restore")
     }
 
     private var objectInspector: some View {
@@ -255,7 +450,7 @@ struct PharoObjectColumn: View {
     }
 
     private var printStringHeader: some View {
-        Text("\(article(for: object.className)) \(object.className) (\(object.printString))")
+        Text("\(article(for: object.className)) \(object.className) \(object.display)")
             .font(.headline)
             .lineLimit(2)
             .accessibilityIdentifier("pharo.inspector.printString")
@@ -267,10 +462,14 @@ struct PharoObjectColumn: View {
         "aeiouAEIOU".contains(className.first ?? "x") ? "an" : "a"
     }
 
-    private var closeButton: some View {
-        PharoCloseButton(close: onClose)
+    private var menuButton: some View {
+        PharoPaneMenuButton(
+            isRevealed: isPointedAt || isMaximized,
+            actions: isMaximized ? PharoPaneActions() : actions,
+            onClose: onClose,
+            onUpdate: { reloadToken &+= 1 })
             .padding(6)
-            .accessibilityIdentifier("pharo.inspection.close")
+            .accessibilityIdentifier("pharo.inspection.menu")
     }
 
     @ViewBuilder
@@ -333,6 +532,8 @@ struct PharoObjectColumn: View {
                 runtime: runtime,
                 object: object,
                 view: declaration.methodSelector,
+                columns: declaration.columns ?? [],
+                reloadToken: reloadToken,
                 onSelect: onSelect)
         case "text":
             ScrollView {
@@ -386,47 +587,36 @@ private struct PharoItemsList: View {
     let runtime: PharoRuntime
     let object: PharoObject
     let view: String
+    let columns: [String]
+    let reloadToken: Int
     let onSelect: (PharoObject) -> Void
 
-    @State private var rows: [[PharoCell]] = []
-    @State private var total = 0
+    @State private var loaded = Loaded()
     @State private var selection: Int?
     @State private var failure: String?
 
     private let pageSize = 50
 
-    private var leadingCharacters: Int {
-        rows.compactMap { $0.first?.text?.count }.max() ?? 0
+    /// The rows and the columns that head them, held together so the table never
+    /// renders one against the other's shape while a view switch is in flight.
+    private struct Loaded {
+        var columns: [String] = []
+        var rows: [Row] = []
+        var total = 0
+    }
+
+    private struct Row: Identifiable {
+        let id: Int
+        let cells: [PharoCell]
     }
 
     var body: some View {
-        List(selection: $selection) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                PharoRowView(cells: row, leadingCharacters: leadingCharacters)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .listRowInsets(EdgeInsets(top: 1, leading: 8, bottom: 1, trailing: 8))
-                    .tag(index)
-            }
-
-            if rows.count < total {
-                Button("Show more (\(total - rows.count) left)") {
-                    Task { await loadNextPage() }
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-            }
-
-            if let failure {
-                Text(failure)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-            }
+        VStack(spacing: 0) {
+            table
+            footer
         }
-        .listStyle(.plain)
-        .environment(\.defaultMinListRowHeight, 18)
         // GT drills on activation rather than on merely selecting a row. Watching
-        // for the second click leaves the list's own handling of the first alone,
+        // for the second click leaves the table's own handling of the first alone,
         // so selection stays quick and the arrow keys still walk the rows.
         .background(PharoDoubleClickCatcher { row in
             selection = row
@@ -437,12 +627,73 @@ private struct PharoItemsList: View {
             Task { await drill(into: row) }
             return .handled
         }
-        .task(id: view) { await reload() }
+        .task(id: "\(view)\u{1}\(reloadToken)") { await reload() }
+    }
+
+    private var table: some View {
+        Table(loaded.rows, selection: $selection) {
+            TableColumnForEach(Array(loaded.columns.enumerated()), id: \.offset) { column, title in
+                TableColumn(title) { row in
+                    cell(row.cells[column], isIndex: column == 0)
+                }
+                .width(column == 0 ? indexColumnWidth : nil)
+            }
+        }
+        // A column-count change rebuilds the table rather than diffing a new
+        // column onto rows still shaped for the old one, which AppKit traps on.
+        .id(loaded.columns)
+    }
+
+    @ViewBuilder
+    private func cell(_ cell: PharoCell, isIndex: Bool) -> some View {
+        if let png = cell.png, let image = NSImage(data: png) {
+            Image(nsImage: image)
+                .resizable()
+                .frame(width: 16, height: 16)
+        } else {
+            Text(cell.text ?? "")
+                .foregroundStyle(isIndex ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                .lineLimit(1)
+        }
+    }
+
+    private var indexColumnWidth: CGFloat {
+        let digits = max(String(loaded.total).count, 3)
+        return CGFloat(digits) * PharoRowView.characterWidth + 24
+    }
+
+    @ViewBuilder
+    private var footer: some View {
+        if loaded.rows.count < loaded.total {
+            Button("Show more (\(loaded.total - loaded.rows.count) left)") {
+                Task { await loadNextPage() }
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+        }
+
+        if let failure {
+            Text(failure)
+                .font(.footnote)
+                .foregroundStyle(.red)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+        }
+    }
+
+    private func drill(into index: Int) async {
+        do {
+            onSelect(try await runtime.drillInto(object, view: view, index: index + 1))
+        } catch {
+            failure = error.localizedDescription
+        }
     }
 
     private func reload() async {
-        rows = []
-        total = 0
+        loaded = Loaded(columns: columns)
         selection = nil
         failure = nil
         await loadNextPage()
@@ -451,17 +702,12 @@ private struct PharoItemsList: View {
     private func loadNextPage() async {
         do {
             let page = try await runtime.items(
-                of: object, view: view, from: rows.count + 1, count: pageSize)
-            total = page.total
-            rows += page.items
-        } catch {
-            failure = error.localizedDescription
-        }
-    }
-
-    private func drill(into index: Int) async {
-        do {
-            onSelect(try await runtime.drillInto(object, view: view, index: index + 1))
+                of: object, view: view, from: loaded.rows.count + 1, count: pageSize)
+            let rows = page.items.enumerated().map { offset, cells in
+                Row(id: loaded.rows.count + offset, cells: cells)
+            }
+            loaded.total = page.total
+            loaded.rows += rows
         } catch {
             failure = error.localizedDescription
         }
@@ -532,25 +778,197 @@ private struct PharoOverviewSquare: View {
 }
 
 /// Closing a pane.
-struct PharoCloseButton: View {
-    let close: () -> Void
+/// How a pane can be arranged, beyond the close and update its corner button
+/// always offers. A pane that stands on its own -- a class opened in the text --
+/// neither collapses nor maximizes; the first column of a drill cannot collapse.
+struct PharoPaneActions {
+    var canCollapse = false
+    var canMaximize = false
+    var onCollapse: () -> Void = {}
+    var onMaximize: () -> Void = {}
+}
+
+/// The round button Glamorous Toolkit puts in a pane's corner. It opens a menu
+/// of pane actions, unless a modifier is held: Command collapses the pane and
+/// Command-Shift closes it, the icon changing to say which as the reader holds
+/// the keys.
+struct PharoPaneMenuButton: View {
+    let isRevealed: Bool
+    var canClose = true
+    let actions: PharoPaneActions
+    let onClose: () -> Void
+    let onUpdate: () -> Void
+
+    @State private var modifiers: NSEvent.ModifierFlags = []
+    @State private var flagsMonitor: Any?
+
+    private enum Mode { case menu, collapse, close }
+
+    private var mode: Mode {
+        let held = modifiers.intersection([.command, .shift])
+        if canClose, held == [.command, .shift] { return .close }
+        if actions.canCollapse, held == [.command] { return .collapse }
+        return .menu
+    }
+
+    var body: some View {
+        Button(action: activate) {
+            PharoRoundIcon(systemName: icon)
+        }
+        .buttonStyle(.plain)
+        .pointerStyle(.link)
+        .help(help)
+        .opacity(isRevealed ? 1 : 0)
+        .allowsHitTesting(isRevealed)
+        .onChange(of: isRevealed, initial: true) { _, revealed in
+            revealed ? watchModifiers() : forgetModifiers()
+        }
+        .onDisappear(perform: forgetModifiers)
+    }
+
+    private func activate() {
+        switch mode {
+        case .menu: showMenu()
+        case .collapse: actions.onCollapse()
+        case .close: onClose()
+        }
+    }
+
+    private var icon: String {
+        switch mode {
+        case .menu: "chevron.down"
+        case .collapse: "poweron"
+        case .close: "xmark"
+        }
+    }
+
+    private var help: String {
+        switch mode {
+        case .menu: "Display menu"
+        case .collapse: "Collapse pane"
+        case .close: "Close pane"
+        }
+    }
+
+    private func showMenu() {
+        let menu = NSMenu()
+        var runners: [PharoMenuRunner] = []
+
+        func add(_ title: String, _ symbol: String, _ run: @escaping () -> Void) {
+            let item = NSMenuItem(title: title, action: #selector(PharoMenuRunner.fire), keyEquivalent: "")
+            let runner = PharoMenuRunner(run)
+            runners.append(runner)
+            item.target = runner
+            item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+            menu.addItem(item)
+        }
+
+        if actions.canCollapse { add("Collapse pane", "poweron", actions.onCollapse) }
+        if canClose { add("Close pane", "xmark", onClose) }
+        if actions.canMaximize { add("Maximize pane", "arrow.up.left.and.arrow.down.right", actions.onMaximize) }
+        add("Update pane tool", "arrow.clockwise", onUpdate)
+
+        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+
+    private func watchModifiers() {
+        modifiers = NSEvent.modifierFlags
+        guard flagsMonitor == nil else { return }
+        flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
+            modifiers = event.modifierFlags
+            return event
+        }
+    }
+
+    private func forgetModifiers() {
+        flagsMonitor.map(NSEvent.removeMonitor)
+        flagsMonitor = nil
+        modifiers = []
+    }
+}
+
+/// Carries a menu item's action, since an NSMenuItem calls a selector rather
+/// than a closure.
+final class PharoMenuRunner: NSObject {
+    private let run: () -> Void
+
+    init(_ run: @escaping () -> Void) {
+        self.run = run
+    }
+
+    @objc func fire() {
+        run()
+    }
+}
+
+/// The round white disc a pane's corner buttons wear.
+struct PharoRoundIcon: View {
+    let systemName: String
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(.secondary)
+            .frame(width: 22, height: 22)
+            .background(Circle().fill(.pharoPane))
+            .overlay(Circle().strokeBorder(.quaternary))
+            .shadow(color: .black.opacity(0.12), radius: 1, y: 0.5)
+    }
+}
+
+/// A run of collapsed panes, the way Glamorous Toolkit stacks them beside their
+/// neighbours: a triangle pointing down into the stack, the panes as miniatures
+/// below it, and an edge off the last one when an open pane follows.
+struct PharoCollapsedStack: View {
+    let objects: [PharoObject]
+    let hasFollowingExpanded: Bool
+    let onExpand: (PharoObject) -> Void
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "arrowtriangle.down.fill")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+
+            ForEach(Array(objects.enumerated()), id: \.element.handle) { index, object in
+                PharoCollapsedMiniature(
+                    object: object,
+                    showsConnector: hasFollowingExpanded && index == objects.count - 1,
+                    onExpand: { onExpand(object) })
+            }
+        }
+        .frame(maxHeight: .infinity, alignment: .center)
+        .padding(.horizontal, 8)
+    }
+}
+
+/// One collapsed pane in a stack: a small badge that wears the accent on hover,
+/// opens the pane on a click, and trails an edge to the open pane that follows.
+struct PharoCollapsedMiniature: View {
+    let object: PharoObject
+    let showsConnector: Bool
+    let onExpand: () -> Void
 
     @State private var isPointedAt = false
 
     var body: some View {
-        Button(action: close) {
-            Image(systemName: "xmark")
-                .font(.caption2)
-                .foregroundStyle(isPointedAt ? Color.fridaBrand : .secondary)
-                .frame(width: 16, height: 16)
-                .background(isPointedAt ? Color.secondary.opacity(0.15) : .clear)
-                .clipShape(RoundedRectangle(cornerRadius: 3))
+        Button(action: onExpand) {
+            RoundedRectangle(cornerRadius: 3)
+                .fill(isPointedAt ? Color.fridaBrand : Color.secondary.opacity(0.3))
+                .frame(width: 22, height: 26)
         }
         .buttonStyle(.plain)
-        .contentShape(Rectangle())
-        .onHover { isPointedAt = $0 }
         .pointerStyle(.link)
-        .help("Close")
+        .onHover { isPointedAt = $0 }
+        .help("Expand \(object.className)")
+        .overlay(alignment: .trailing) { if showsConnector { connector } }
+    }
+
+    private var connector: some View {
+        Rectangle()
+            .fill(Color.secondary.opacity(0.4))
+            .frame(width: 10, height: 1.5)
+            .offset(x: 10)
     }
 }
 

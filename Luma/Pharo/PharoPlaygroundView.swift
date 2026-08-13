@@ -18,10 +18,32 @@ struct PharoPlaygroundView: View {
     @State private var columnPath = PharoColumnPath(includesPage: true)
     @State private var pageWidth: CGFloat = 420
     @State private var resizingFrom: CGFloat?
+    @State private var isPageMaximized = false
+    @State private var isPagePointedAt = false
 
     private let runtime = PharoRuntime.shared
 
     var body: some View {
+        Group {
+            if snippets.isEmpty {
+                PharoPlaygroundEmptyState(onAddSnippet: addSnippet)
+            } else {
+                workspace
+            }
+        }
+        .coordinateSpace(name: pharoPageSpace)
+        .background(.pharoGutter)
+        .pharoMaximizedPane(runtime: runtime, path: columnPath, onCloseAll: columnPath.clear)
+        .overlay { if isPageMaximized { maximizedPage } }
+        .task { await start() }
+        .onAppear {
+            snippets = engine.pharoSnippets
+            pageWidth = engine.pharoPageWidth.map { CGFloat($0) } ?? 420
+        }
+        .onChange(of: snippets) { engine.setPharoSnippets(snippets) }
+    }
+
+    private var workspace: some View {
         VStack(spacing: 0) {
             // The strip stands over the whole page, snippets included, rather
             // than over the columns alone.
@@ -30,11 +52,21 @@ struct PharoPlaygroundView: View {
 
             ScrollView(.horizontal) {
                 HStack(spacing: 0) {
-                    page
-                        .frame(width: pageWidth)
-                        .pharoPane()
-                        .overlay(alignment: .trailing) { pageResizeHandle }
-                        .id(PharoColumnPath.pageID)
+                    Group {
+                        // The maximized overlay holds the live page; a second copy
+                        // here would run the snippet editors twice over.
+                        if isPageMaximized {
+                            Color.clear
+                        } else {
+                            page
+                        }
+                    }
+                    .frame(width: pageWidth)
+                    .pharoPane()
+                    .overlay(alignment: .trailing) { pageResizeHandle }
+                    .overlay(alignment: .topTrailing) { if !isPageMaximized { pageMenuButton } }
+                    .onHover { isPagePointedAt = $0 }
+                    .id(PharoColumnPath.pageID)
 
                     inspectionSide
                 }
@@ -45,14 +77,6 @@ struct PharoPlaygroundView: View {
             .contentMargins(8, for: .scrollContent)
             .pharoColumnScrolling(columnPath)
         }
-        .coordinateSpace(name: pharoPageSpace)
-        .background(.pharoGutter)
-        .task { await start() }
-        .onAppear {
-            snippets = engine.pharoSnippets.isEmpty ? [PharoPlaygroundSnippet(source: "1 to: 20")] : engine.pharoSnippets
-            pageWidth = engine.pharoPageWidth.map { CGFloat($0) } ?? 420
-        }
-        .onChange(of: snippets) { engine.setPharoSnippets(snippets) }
     }
 
 
@@ -62,16 +86,61 @@ struct PharoPlaygroundView: View {
     @ViewBuilder
     private var inspectionSide: some View {
         if !columnPath.objects.isEmpty {
-            PharoPointingArrow(pointsFrom: inspected.flatMap { centers[$0] })
+            if !columnPath.isFirstColumnCollapsed {
+                PharoPointingArrow(pointsFrom: inspected.flatMap { centers[$0] })
+            }
             pharoColumns(runtime: runtime, path: columnPath, onCloseAll: columnPath.clear)
         } else if let captured {
             PharoPointingArrow(pointsFrom: inspected.flatMap { centers[$0] })
             PharoSnapshotView(snapshot: captured)
-                .frame(width: 320)
+                .frame(width: pharoColumnWidth)
                 .pharoPane()
         }
     }
 
+
+    /// The page is a pane too: it maximizes over the whole playground, though
+    /// unlike a column it cannot be collapsed or closed, the way GT holds its
+    /// first pane in place.
+    private var pageMenuButton: some View {
+        PharoPaneMenuButton(
+            isRevealed: isPagePointedAt,
+            canClose: false,
+            actions: PharoPaneActions(canMaximize: true, onMaximize: { isPageMaximized = true }),
+            onClose: {},
+            onUpdate: {})
+            .padding(6)
+    }
+
+    private var maximizedPage: some View {
+        page
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .pharoPane()
+            .overlay(alignment: .topLeading) { pageRestoreButton }
+            .overlay(alignment: .topTrailing) { pageMaximizedMenuButton }
+            .padding(8)
+            .background(.pharoGutter)
+    }
+
+    private var pageRestoreButton: some View {
+        Button(action: { isPageMaximized = false }) {
+            PharoRoundIcon(systemName: "arrow.down.right.and.arrow.up.left")
+        }
+        .buttonStyle(.plain)
+        .pointerStyle(.link)
+        .help("Restore pane")
+        .padding(6)
+    }
+
+    private var pageMaximizedMenuButton: some View {
+        PharoPaneMenuButton(
+            isRevealed: true,
+            canClose: false,
+            actions: PharoPaneActions(),
+            onClose: {},
+            onUpdate: {})
+            .padding(6)
+    }
 
     /// The page keeps a width the reader sets by dragging its edge, the way a
     /// split's divider used to move it before the columns shared its scroller.
@@ -106,7 +175,7 @@ struct PharoPlaygroundView: View {
                         open: { show($0, from: snippet.id) },
                         openResult: openResult(for: snippet),
                         evaluate: { Task { await evaluate(snippet) } },
-                        remove: snippets.count > 1 ? { remove(snippet) } : nil
+                        remove: { remove(snippet) }
                     )
                     .onChange(of: snippet.source) { forget(snippet.id) }
                     .onGeometryChange(for: CGFloat.self) { proxy in
@@ -128,11 +197,7 @@ struct PharoPlaygroundView: View {
     }
 
     private var addSnippetButton: some View {
-        Button {
-            let added = PharoPlaygroundSnippet(source: "")
-            snippets.append(added)
-            focused = added.id
-        } label: {
+        Button(action: addSnippet) {
             Label("Add Snippet", systemImage: "plus")
                 .font(.callout)
         }
@@ -140,6 +205,12 @@ struct PharoPlaygroundView: View {
         .foregroundStyle(.secondary)
         .disabled(!isReady)
         .accessibilityIdentifier("pharo.playground.addSnippet")
+    }
+
+    private func addSnippet() {
+        let added = PharoPlaygroundSnippet(source: "")
+        snippets.append(added)
+        focused = added.id
     }
 
     private func start() async {
@@ -192,11 +263,13 @@ struct PharoPlaygroundView: View {
     private func show(_ object: PharoObject, from snippet: UUID) {
         inspected = snippet
         captured = nil
+        isPageMaximized = false
         columnPath.startOver(at: object)
     }
 
     private func showCaptured(_ snapshot: PharoSnapshot, from snippet: UUID) {
         inspected = snippet
+        isPageMaximized = false
         columnPath.clear()
         captured = snapshot
     }
@@ -216,5 +289,87 @@ struct PharoPlaygroundView: View {
 
     private func remove(_ snippet: PharoPlaygroundSnippet) {
         snippets.removeAll { $0.id == snippet.id }
+    }
+}
+
+/// Greets an empty playground the way the notebook and the REPL greet their
+/// own empty pages: what it is for, and a way to begin.
+private struct PharoPlaygroundEmptyState: View {
+    let onAddSnippet: () -> Void
+
+    #if canImport(UIKit)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    private var isCompact: Bool { horizontalSizeClass == .compact }
+    #else
+    private var isCompact: Bool { false }
+    #endif
+
+    var body: some View {
+        GeometryReader { geo in
+            VStack {
+                Spacer(minLength: 0)
+
+                VStack(spacing: 24) {
+                    VStack(spacing: 8) {
+                        Image(systemName: "chevron.left.forwardslash.chevron.right")
+                            .font(.system(size: 40))
+                            .foregroundStyle(.secondary)
+
+                        Text("Playground")
+                            .font(.title2.weight(.semibold))
+
+                        Text("Slice, dice, and visualize your project's data with Pharo.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
+
+                    if !isCompact {
+                        tips
+                    }
+
+                    Button(action: onAddSnippet) {
+                        Label("New Snippet", systemImage: "plus")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .accessibilityIdentifier("pharo.playground.empty.addSnippet")
+                }
+                .padding(.horizontal, 24)
+
+                Spacer(minLength: 0)
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+        }
+    }
+
+    private var tips: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(tipLines.enumerated()), id: \.offset) { index, text in
+                tip(number: index + 1, text: text)
+            }
+        }
+        .font(.callout)
+    }
+
+    private var tipLines: [String] {
+        [
+            "Type an expression and press \u{2318}Return to evaluate it.",
+            "Its result opens in the inspector beside the page; double-click a row to drill in.",
+            "Script your own views, or export what you find to a file.",
+            "Try LumaProject events, or LumaProject sessions.",
+        ]
+    }
+
+    private func tip(number: Int, text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("\(number).")
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 18, alignment: .trailing)
+            Text(text)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

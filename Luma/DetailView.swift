@@ -12,18 +12,8 @@ struct DetailView: View {
             case .none:
                 NotebookEmptyStateView(
                     engine: engine,
-                    onAddNote: {
-                        let note = LumaCore.NotebookEntry(
-                            kind: .note,
-                            title: "",
-                            details: "",
-                            binaryData: nil,
-                            processName: nil
-                        )
-                        engine.addNotebookEntry(note, after: nil)
-                        selection = .notebook
-                    }
-                )
+                    onAddNote: { addEntry(kind: .note) },
+                    onAddPharoCell: { addEntry(kind: .pharo) })
 
             case .some(.notebook):
                 NotebookView(engine: engine, selection: $selection)
@@ -128,5 +118,17 @@ struct DetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.background)
+    }
+
+    private func addEntry(kind: LumaCore.NotebookEntry.Kind) {
+        let entry = LumaCore.NotebookEntry(
+            kind: kind,
+            title: "",
+            details: "",
+            binaryData: nil,
+            processName: nil
+        )
+        engine.addNotebookEntry(entry, after: nil)
+        selection = .notebook
     }
 }
