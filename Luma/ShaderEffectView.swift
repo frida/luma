@@ -1,0 +1,202 @@
+import Metal
+import MetalKit
+import QuartzCore
+import SwiftUI
+
+#if canImport(AppKit)
+import AppKit
+#elseif canImport(UIKit)
+import UIKit
+#endif
+
+/// A fullscreen fragment effect from the default Metal library, fed the same
+/// resolution/time/scheme/activity/pulse uniforms the GTK frontend's widget
+/// feeds its GLSL. Both sides are generated from one authored effect
+/// in `Shaders/` by `LumaShaderCompiler`.
+struct ShaderEffectView {
+    let fragmentFunction: String
+    let scheme: Float
+
+    /// Bumped by the caller whenever events arrive; the renderer decays what it
+    /// was last handed, so a caller only sets this when there is news.
+    var activity: Float = 0
+
+    func makeCoordinator() -> ShaderEffectRenderer {
+        ShaderEffectRenderer(fragmentFunction: fragmentFunction)
+    }
+
+    fileprivate func install(into view: MTKView, coordinator: ShaderEffectRenderer) {
+        guard let device = MTLCreateSystemDefaultDevice() else { return }
+        view.device = device
+        view.colorPixelFormat = .bgra8Unorm
+        view.framebufferOnly = true
+        view.isPaused = true
+        view.enableSetNeedsDisplay = false
+        view.delegate = coordinator
+        coordinator.attach(to: view)
+        coordinator.scheme = scheme
+    }
+
+    fileprivate func refresh(_ coordinator: ShaderEffectRenderer) {
+        coordinator.scheme = scheme
+        coordinator.reportActivity(activity)
+    }
+}
+
+#if os(macOS)
+extension ShaderEffectView: NSViewRepresentable {
+    func makeNSView(context: Context) -> MTKView {
+        let view = MTKView()
+        view.layer?.isOpaque = true
+        install(into: view, coordinator: context.coordinator)
+        return view
+    }
+
+    func updateNSView(_ nsView: MTKView, context: Context) {
+        refresh(context.coordinator)
+    }
+}
+#else
+extension ShaderEffectView: UIViewRepresentable {
+    func makeUIView(context: Context) -> MTKView {
+        let view = MTKView()
+        view.isOpaque = true
+        install(into: view, coordinator: context.coordinator)
+        return view
+    }
+
+    func updateUIView(_ uiView: MTKView, context: Context) {
+        refresh(context.coordinator)
+    }
+}
+#endif
+
+final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
+    var scheme: Float = 1.0
+    private let fragmentFunction: String
+    private weak var view: MTKView?
+    private var commandQueue: MTLCommandQueue?
+    private var pipeline: MTLRenderPipelineState?
+    private nonisolated(unsafe) var displayLink: CADisplayLink?
+    private let proxy = DisplayLinkProxy()
+    private let startTime = CACurrentMediaTime()
+
+    private var activity: Float = 0
+    private var pulsedAt: TimeInterval?
+    private var renderedAt: TimeInterval
+
+    /// Seconds for a reported arrival to fall to 1/e.
+    private let pulseHalfLife: Float = 0.4
+    private let activityHalfLife: Float = 1.2
+
+    init(fragmentFunction: String) {
+        self.fragmentFunction = fragmentFunction
+        renderedAt = CACurrentMediaTime()
+    }
+
+    func reportActivity(_ reported: Float) {
+        guard reported > 0 else { return }
+        activity = reported
+        pulsedAt = CACurrentMediaTime()
+    }
+
+    func attach(to view: MTKView) {
+        self.view = view
+        guard buildPipeline(for: view) else { return }
+        startDisplayLink()
+    }
+
+    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
+
+    func draw(in view: MTKView) {
+        guard let drawable = view.currentDrawable,
+              let descriptor = view.currentRenderPassDescriptor
+        else { return }
+
+        guard let commandQueue,
+              let pipeline,
+              let buffer = commandQueue.makeCommandBuffer(),
+              let encoder = buffer.makeRenderCommandEncoder(descriptor: descriptor)
+        else { return }
+
+        let now = CACurrentMediaTime()
+        activity *= exp(-Float(now - renderedAt) / activityHalfLife)
+        renderedAt = now
+
+        var uniforms = Uniforms(
+            resolution: SIMD2(Float(view.drawableSize.width),
+                              Float(view.drawableSize.height)),
+            time: Float(now - startTime),
+            scheme: scheme,
+            activity: activity,
+            pulse: pulsedAt.map { exp(-Float(now - $0) / pulseHalfLife) } ?? 0
+        )
+
+        encoder.setRenderPipelineState(pipeline)
+        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
+        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        encoder.endEncoding()
+        buffer.present(drawable)
+        buffer.commit()
+    }
+
+    fileprivate func tick() {
+        view?.draw()
+    }
+
+    private func buildPipeline(for view: MTKView) -> Bool {
+        guard let device = view.device,
+              let library = try? device.makeDefaultLibrary(bundle: Bundle.main),
+              let vertex = library.makeFunction(name: "shaderEffectVertex"),
+              let fragment = library.makeFunction(name: fragmentFunction),
+              let queue = device.makeCommandQueue()
+        else { return false }
+
+        let desc = MTLRenderPipelineDescriptor()
+        desc.vertexFunction = vertex
+        desc.fragmentFunction = fragment
+        desc.colorAttachments[0].pixelFormat = view.colorPixelFormat
+        guard let state = try? device.makeRenderPipelineState(descriptor: desc) else { return false }
+
+        commandQueue = queue
+        pipeline = state
+        return true
+    }
+
+    private func startDisplayLink() {
+        displayLink?.invalidate()
+        proxy.renderer = self
+        guard let link = makeScreenDisplayLink() else { return }
+        link.add(to: .main, forMode: .common)
+        displayLink = link
+    }
+
+    private func makeScreenDisplayLink() -> CADisplayLink? {
+        let selector = #selector(DisplayLinkProxy.fire(_:))
+        #if os(macOS)
+        return (view?.window?.screen ?? NSScreen.main)?.displayLink(target: proxy, selector: selector)
+        #else
+        return CADisplayLink(target: proxy, selector: selector)
+        #endif
+    }
+
+    deinit {
+        displayLink?.invalidate()
+    }
+
+    private struct Uniforms {
+        var resolution: SIMD2<Float>
+        var time: Float
+        var scheme: Float
+        var activity: Float
+        var pulse: Float
+    }
+}
+
+private final class DisplayLinkProxy: NSObject {
+    weak var renderer: ShaderEffectRenderer?
+
+    @objc func fire(_ link: CADisplayLink) {
+        renderer?.tick()
+    }
+}

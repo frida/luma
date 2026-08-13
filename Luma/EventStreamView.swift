@@ -32,11 +32,25 @@ struct EventStreamView: View {
 
     @FocusState private var isSearchFocused: Bool
 
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var eventRate = EventRate()
+    @State private var activity: Float = 0
+
     var body: some View {
         VStack(spacing: 0) {
             header
 
             Divider()
+
+            ShaderEffectView(
+                fragmentFunction: "eventFieldFragment",
+                scheme: colorScheme == .light ? 1.0 : 0.0,
+                activity: activity
+            )
+            .frame(height: 3)
+            .onChange(of: engine.eventLog.totalReceived) { _, total in
+                activity = eventRate.observe(totalReceived: total, at: Date.timeIntervalSinceReferenceDate) ?? 0
+            }
 
             ScrollViewReader { proxy in
                 GeometryReader { geo in

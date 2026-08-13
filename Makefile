@@ -10,10 +10,18 @@ SOURCES := $(shell find Luma Sources Agent -type f \( \
     -name '*.pem' \
 \) 2>/dev/null)
 
+SHADER_SOURCES := $(wildcard Shaders/*.frag.glsl)
+
 all: $(APP)
 
-$(APP): $(SOURCES) Luma.xcodeproj Package.swift
+$(APP): $(SOURCES) $(SHADER_SOURCES) Luma.xcodeproj Package.swift
 	mkdir -p "$(BUILD_DIR)"
+	xcodebuild \
+		-project Luma.xcodeproj \
+		-scheme AgentBundle \
+		-configuration Release \
+		-derivedDataPath "$(DERIVED_DIR)" \
+		build
 	xcodebuild \
 		-project Luma.xcodeproj \
 		-scheme Luma \

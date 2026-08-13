@@ -28,15 +28,23 @@ AGENT_SOURCES := \
 	$(shell find $(PROJECT_ROOT)/Agent -type f \( -name '*.ts' -o -name '*.json' \) 2>/dev/null) \
 	$(PROJECT_ROOT)/Sources/LumaBundleCompiler/main.swift
 
-bundle: $(AGENT_BUNDLE) $(TYPINGS_BUNDLE)
+SHADER_BUNDLE := $(PROJECT_ROOT)/Sources/LumaCore/Generated/ShaderEffects.swift
+SHADER_SOURCES := $(wildcard $(PROJECT_ROOT)/Shaders/*.frag.glsl)
+
+bundle: $(AGENT_BUNDLE) $(TYPINGS_BUNDLE) $(SHADER_BUNDLE)
 
 $(AGENT_BUNDLE): $(AGENT_SOURCES) $(PROJECT_ROOT)/Agent/bundle.json
-	swift run --package-path $(PROJECT_ROOT) luma-bundle-compiler \
+	swift run --package-path $(PROJECT_ROOT) LumaBundleCompiler \
 	    --config       "$(PROJECT_ROOT)/Agent/bundle.json" \
 	    --project-root "$(PROJECT_ROOT)" \
 	    --staging-dir  "$(AGENT_STAGING)"
 
 $(TYPINGS_BUNDLE): $(AGENT_BUNDLE)
+
+$(SHADER_BUNDLE): $(SHADER_SOURCES) $(PROJECT_ROOT)/Sources/LumaShaderCompiler/main.swift
+	swift run --package-path $(PROJECT_ROOT) LumaShaderCompiler \
+	    --shader-dir "$(PROJECT_ROOT)/Shaders" \
+	    --swift-out  "$@"
 
 build: bundle $(PHARO_IMAGE)
 	swift build $(SWIFT_BUILD_FLAGS)
