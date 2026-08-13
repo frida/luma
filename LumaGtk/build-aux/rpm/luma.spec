@@ -15,6 +15,8 @@ Requires:       webkitgtk6.0
 Requires:       libepoxy
 Requires:       libzip
 Requires:       libnice
+Requires:       gtksourceview5
+Requires:       librsvg2
 Requires:       swift-lang
 
 %description
