@@ -227,7 +227,6 @@ struct PharoMaximizedPane: View {
 /// hold. Each is a direct child there, which is what has the scroller report it
 /// as it comes and goes on screen; wrapped in a view of their own they would
 /// not be seen. Whoever shows them does the scrolling.
-@ViewBuilder
 func pharoColumns(
     runtime: PharoRuntime,
     path: PharoColumnPath,
@@ -581,6 +580,46 @@ struct PharoObjectColumn: View {
     }
 }
 
+/// The system search field, so filtering a list wears the magnifier, the clear
+/// button, and the look every other macOS search does.
+struct PharoSearchField: NSViewRepresentable {
+    @Binding var text: String
+    let prompt: String
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let field = NSSearchField()
+        field.placeholderString = prompt
+        field.delegate = context.coordinator
+        field.sendsSearchStringImmediately = false
+        field.sendsWholeSearchString = false
+        (field.cell as? NSSearchFieldCell)?.searchButtonCell?.setAccessibilityLabel(prompt)
+        return field
+    }
+
+    func updateNSView(_ field: NSSearchField, context: Context) {
+        if field.stringValue != text {
+            field.stringValue = text
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    final class Coordinator: NSObject, NSSearchFieldDelegate {
+        private let text: Binding<String>
+
+        init(text: Binding<String>) {
+            self.text = text
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSSearchField else { return }
+            text.wrappedValue = field.stringValue
+        }
+    }
+}
+
 /// Pages its rows in as they are needed, so a large collection costs only the
 /// rows that have been looked at.
 private struct PharoItemsList: View {
@@ -594,8 +633,11 @@ private struct PharoItemsList: View {
     @State private var loaded = Loaded()
     @State private var selection: Int?
     @State private var failure: String?
+    @State private var query = ""
+    @State private var fullCount = 0
 
     private let pageSize = 50
+    private let searchThreshold = 12
 
     /// The rows and the columns that head them, held together so the table never
     /// renders one against the other's shape while a view switch is in flight.
@@ -612,6 +654,12 @@ private struct PharoItemsList: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if fullCount > searchThreshold {
+                PharoSearchField(text: $query, prompt: "Filter")
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                Divider()
+            }
             table
             footer
         }
@@ -627,7 +675,16 @@ private struct PharoItemsList: View {
             Task { await drill(into: row) }
             return .handled
         }
-        .task(id: "\(view)\u{1}\(reloadToken)") { await reload() }
+        .onChange(of: view) { query = "" }
+        // A view switch or refresh reloads at once; typing waits a beat first, so
+        // a burst of keystrokes coalesces into one request against the image.
+        .task(id: "\(view)\u{1}\(reloadToken)\u{1}\(query)") {
+            if !query.isEmpty {
+                try? await Task.sleep(for: .milliseconds(200))
+                if Task.isCancelled { return }
+            }
+            await reload()
+        }
     }
 
     private var table: some View {
@@ -684,9 +741,13 @@ private struct PharoItemsList: View {
         }
     }
 
+    private var filter: String? {
+        query.isEmpty ? nil : query
+    }
+
     private func drill(into index: Int) async {
         do {
-            onSelect(try await runtime.drillInto(object, view: view, index: index + 1))
+            onSelect(try await runtime.drillInto(object, view: view, index: index + 1, filter: filter))
         } catch {
             failure = error.localizedDescription
         }
@@ -702,12 +763,13 @@ private struct PharoItemsList: View {
     private func loadNextPage() async {
         do {
             let page = try await runtime.items(
-                of: object, view: view, from: loaded.rows.count + 1, count: pageSize)
+                of: object, view: view, from: loaded.rows.count + 1, count: pageSize, filter: filter)
             let rows = page.items.enumerated().map { offset, cells in
                 Row(id: loaded.rows.count + offset, cells: cells)
             }
             loaded.total = page.total
             loaded.rows += rows
+            if filter == nil { fullCount = page.total }
         } catch {
             failure = error.localizedDescription
         }

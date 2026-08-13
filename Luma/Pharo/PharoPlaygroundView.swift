@@ -20,6 +20,9 @@ struct PharoPlaygroundView: View {
     @State private var resizingFrom: CGFloat?
     @State private var isPageMaximized = false
     @State private var isPagePointedAt = false
+    @State private var errors: [UUID: PharoEvaluationError] = [:]
+    @State private var printStrings: [UUID: String] = [:]
+    @State private var evaluating: Set<UUID> = []
 
     private let runtime = PharoRuntime.shared
 
@@ -39,8 +42,10 @@ struct PharoPlaygroundView: View {
         .onAppear {
             snippets = engine.pharoSnippets
             pageWidth = engine.pharoPageWidth.map { CGFloat($0) } ?? 420
+            isPageMaximized = engine.pharoPageMaximized
         }
         .onChange(of: snippets) { engine.setPharoSnippets(snippets) }
+        .onChange(of: isPageMaximized) { engine.setPharoPageMaximized(isPageMaximized) }
     }
 
     private var workspace: some View {
@@ -151,7 +156,9 @@ struct PharoPlaygroundView: View {
             .contentShape(Rectangle())
             .pointerStyle(.columnResize)
             .gesture(
-                DragGesture()
+                // Measured globally: the handle rides the page's edge, so a
+                // local translation would shrink as the page grows under it.
+                DragGesture(coordinateSpace: .global)
                     .onChanged { drag in
                         let base = resizingFrom ?? pageWidth
                         resizingFrom = base
@@ -174,8 +181,14 @@ struct PharoPlaygroundView: View {
                         runtime: runtime,
                         open: { show($0, from: snippet.id) },
                         openResult: openResult(for: snippet),
-                        evaluate: { Task { await evaluate(snippet) } },
-                        remove: { remove(snippet) }
+                        evaluate: { Task { await run(snippet, .evaluate) } },
+                        printIt: { Task { await run(snippet, .print) } },
+                        evaluateAndInspect: { Task { await run(snippet, .inspect) } },
+                        format: { Task { await format(snippet) } },
+                        remove: { remove(snippet) },
+                        error: errors[snippet.id],
+                        printString: printStrings[snippet.id],
+                        isEvaluating: evaluating.contains(snippet.id)
                     )
                     .onChange(of: snippet.source) { forget(snippet.id) }
                     .onGeometryChange(for: CGFloat.self) { proxy in
@@ -224,17 +237,35 @@ struct PharoPlaygroundView: View {
         }
     }
 
-    private func evaluate(_ snippet: PharoPlaygroundSnippet) async {
+    private func run(_ snippet: PharoPlaygroundSnippet, _ mode: PharoRunMode) async {
+        guard evaluating.insert(snippet.id).inserted else { return }
+        defer { evaluating.remove(snippet.id) }
         do {
             let produced = try await runtime.evaluate(snippet.source)
             results[snippet.id] = produced
             let snapshot = try await PharoSnapshot.capture(of: produced, using: runtime)
             keep(snapshot: snapshot, fuel: try? await runtime.serialize(produced), for: snippet.id)
-            show(produced, from: snippet.id)
-            failure = nil
+            printStrings[snippet.id] = mode == .print ? produced.printString : nil
+            if mode == .inspect { show(produced, from: snippet.id) }
+            errors[snippet.id] = nil
         } catch {
-            failure = error.localizedDescription
+            errors[snippet.id] = evaluationError(from: error)
+            printStrings[snippet.id] = nil
         }
+    }
+
+    private func format(_ snippet: PharoPlaygroundSnippet) async {
+        guard let formatted = try? await runtime.format(source: snippet.source),
+              let index = snippets.firstIndex(where: { $0.id == snippet.id }),
+              formatted != snippets[index].source
+        else { return }
+        snippets[index].source = formatted
+    }
+
+    private func evaluationError(from error: Error) -> PharoEvaluationError {
+        PharoEvaluationError(
+            message: error.localizedDescription,
+            position: (error as? PharoRequestError)?.sourcePosition)
     }
 
     /// The dot leads to the result: the live object while the image holds it,
@@ -282,6 +313,8 @@ struct PharoPlaygroundView: View {
 
     private func forget(_ snippet: UUID) {
         results[snippet] = nil
+        errors[snippet] = nil
+        printStrings[snippet] = nil
         guard let index = snippets.firstIndex(where: { $0.id == snippet }) else { return }
         snippets[index].snapshot = nil
         snippets[index].resultFuel = nil
@@ -355,8 +388,10 @@ private struct PharoPlaygroundEmptyState: View {
 
     private var tipLines: [String] {
         [
-            "Type an expression and press \u{2318}Return to evaluate it.",
-            "Its result opens in the inspector beside the page; double-click a row to drill in.",
+            "Type an expression and press \u{2318}D to evaluate it, or \u{2318}P to print the result beside it.",
+            "Press \u{2318}G to evaluate and open the result beside the page; double-click a row to drill in.",
+            "Press \u{2318}\u{21E7}F to reformat the snippet the way the image lays out code.",
+            "Put the cursor on a message and press \u{2318}M for its implementors, \u{2318}N for its senders.",
             "Script your own views, or export what you find to a file.",
             "Try LumaProject events, or LumaProject sessions.",
         ]

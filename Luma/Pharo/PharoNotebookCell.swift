@@ -17,10 +17,12 @@ struct PharoNotebookCell: View {
     @State private var source: String
     @State private var snapshot: PharoSnapshot?
     @State private var fuel: Data?
-    @State private var failure: String?
+    @State private var failure: PharoEvaluationError?
 
     @State private var focused: UUID?
     @State private var evaluated: PharoObject?
+    @State private var printString: String?
+    @State private var isEvaluating = false
 
     private let runtime = PharoRuntime.shared
 
@@ -48,13 +50,8 @@ struct PharoNotebookCell: View {
             snippet
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            if let snapshot {
+            if failure == nil, let snapshot {
                 resultBelow(snapshot)
-            }
-
-            if let failure {
-                PharoFailureView(message: failure)
-                    .frame(height: 60)
             }
         }
         .onAppear { if autoFocus { focused = entry.id } }
@@ -68,8 +65,14 @@ struct PharoNotebookCell: View {
             runtime: runtime,
             open: showInInspector,
             openResult: nil,
-            evaluate: { Task { await evaluate() } },
-            remove: nil
+            evaluate: { Task { await run(.evaluate) } },
+            printIt: { Task { await run(.print) } },
+            evaluateAndInspect: { Task { await run(.inspect) } },
+            format: { Task { await format() } },
+            remove: nil,
+            error: failure,
+            printString: printString,
+            isEvaluating: isEvaluating
         )
         .onChange(of: source) {
             forget()
@@ -132,28 +135,53 @@ struct PharoNotebookCell: View {
             try await runtime.startBundledImage(for: engine)
             evaluated = try await runtime.materialize(fuel)
         } catch {
-            failure = error.localizedDescription
+            failure = evaluationError(from: error)
         }
     }
 
-    private func evaluate() async {
+    private func evaluationError(from error: Error) -> PharoEvaluationError {
+        PharoEvaluationError(
+            message: error.localizedDescription,
+            position: (error as? PharoRequestError)?.sourcePosition)
+    }
+
+    private func run(_ mode: PharoRunMode) async {
+        guard !isEvaluating else { return }
+        isEvaluating = true
+        defer { isEvaluating = false }
         do {
             try await runtime.startBundledImage(for: engine)
             let produced = try await runtime.evaluate(source)
             evaluated = produced
-            snapshot = try await PharoSnapshot.capture(of: produced, using: runtime)
             fuel = try? await runtime.serialize(produced)
             failure = nil
+            if mode == .print {
+                printString = produced.printString
+                snapshot = nil
+            } else {
+                printString = nil
+                snapshot = try await PharoSnapshot.capture(of: produced, using: runtime)
+                if mode == .inspect { showInInspector(produced) }
+            }
         } catch {
-            failure = error.localizedDescription
+            failure = evaluationError(from: error)
+            printString = nil
         }
         save()
+    }
+
+    private func format() async {
+        try? await runtime.startBundledImage(for: engine)
+        guard let formatted = try? await runtime.format(source: source), formatted != source else { return }
+        source = formatted
     }
 
     private func forget() {
         evaluated = nil
         snapshot = nil
         fuel = nil
+        failure = nil
+        printString = nil
         if inspected == entry.id {
             drillPath.clear()
             inspected = nil

@@ -1716,6 +1716,7 @@ public final class ProjectStore: Sendable {
             t.column("collaboration_panel_visible", .boolean).notNull().defaults(to: false)
             t.column("pharo_snippets_json", .text)
             t.column("pharo_page_width", .double)
+            t.column("pharo_page_maximized", .boolean).notNull().defaults(to: false)
         }
 
         try db.create(table: "target_picker_state", ifNotExists: true) { t in
@@ -1841,6 +1842,7 @@ public final class ProjectStore: Sendable {
         try addColumnIfMissing(db, table: "notebook_entry", column: "pharo_result_fuel", definition: "BLOB")
         try addColumnIfMissing(db, table: "project_ui_state", column: "pharo_snippets_json", definition: "TEXT")
         try addColumnIfMissing(db, table: "project_ui_state", column: "pharo_page_width", definition: "DOUBLE")
+        try addColumnIfMissing(db, table: "project_ui_state", column: "pharo_page_maximized", definition: "BOOLEAN NOT NULL DEFAULT 0")
         let collapsed = SidebarExpansion.collapsed.rawValue
         try addColumnIfMissing(db, table: "session_ui_state", column: "modules_expansion", definition: "TEXT NOT NULL DEFAULT '\(collapsed)'")
         try addColumnIfMissing(db, table: "session_ui_state", column: "threads_expansion", definition: "TEXT NOT NULL DEFAULT '\(collapsed)'")

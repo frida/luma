@@ -3,13 +3,22 @@ import SwiftUI
 import Combine
 import SwiftyPharo
 
+/// An error a snippet raised, with where in its source the image placed it --
+/// 1-based, or nothing for a runtime error -- so the dot marks the spot.
+struct PharoEvaluationError: Equatable {
+    let message: String
+    let position: Int?
+}
+
 /// What the snippet shows alongside its text.
 struct PharoSnippetMarks: Equatable {
     var openedClasses: [String: PharoObject] = [:]
     var hasResult: Bool = false
+    var error: PharoEvaluationError?
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.hasResult == rhs.hasResult
+            && lhs.error == rhs.error
             && lhs.openedClasses.mapValues(\.handle) == rhs.openedClasses.mapValues(\.handle)
     }
 }
@@ -159,6 +168,7 @@ struct PharoTextEditor: NSViewRepresentable {
         }
         view.onEdit = { source = $0 }
         view.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        view.allowsUndo = true
         view.isRichText = false
         view.isAutomaticQuoteSubstitutionEnabled = false
         view.isAutomaticTextReplacementEnabled = false
@@ -204,9 +214,16 @@ struct PharoTextEditor: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: PharoTextEditor
         private var appliedFocused: UUID?
+        private let textUndoManager = UndoManager()
 
         init(_ parent: PharoTextEditor) {
             self.parent = parent
+        }
+
+        // Each editor undoes its own edits rather than sharing the window's
+        // manager, where a snippet's undo could reach into another's.
+        func undoManager(for view: NSTextView) -> UndoManager? {
+            textUndoManager
         }
 
         func textDidChange(_ notification: Notification) {
@@ -246,6 +263,12 @@ extension PharoRuntime {
         guard let answer = try? await whenRunning({ try await completions(for: source, at: position) })
         else { return .none }
         return PharoCompletionList(tokenStart: answer.tokenStart, candidates: answer.completions)
+    }
+
+    /// The methods a browse turns up, or nothing when the image is down or the
+    /// cursor is on no selector.
+    func browsing(_ kind: PharoBrowseKind, in source: String, at position: Int) async -> PharoObject? {
+        (try? await whenRunning { try await browse(kind, source: source, at: position) })?.result
     }
 
     /// Nor does a page that cannot reach the image name any classes.
@@ -314,6 +337,19 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
     func setSource(_ newSource: String) {
         replaceText(with: NSAttributedString(string: newSource, attributes: sourceAttributes))
         markUp()
+    }
+
+    /// Copy and cut hand over the source alone, with the mark characters that
+    /// hold the triangles and dots taken back out, so a paste elsewhere is the
+    /// text the reader sees rather than that text peppered with placeholders.
+    override var writablePasteboardTypes: [NSPasteboard.PasteboardType] {
+        [.string]
+    }
+
+    override func writeSelection(to pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
+        let selected = (string as NSString).substring(with: selectedRange())
+        pboard.setString(selected.replacingOccurrences(of: "\u{FFFC}", with: ""), forType: .string)
+        return true
     }
 
     func apply(
@@ -527,6 +563,10 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         for variable in undeclared {
             wanted.append(PharoPlacedMark(sourceOffset: variable.stop, content: .undeclaredWrench(variable.id)))
         }
+        if let error = marks.error {
+            let offset = min(max((error.position ?? 1) - 1, 0), source.utf16.count)
+            wanted.append(PharoPlacedMark(sourceOffset: offset, content: .errorDot(error.message)))
+        }
         wanted.append(PharoPlacedMark(sourceOffset: source.utf16.count, content: .result))
 
         return wanted
@@ -562,13 +602,15 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
     /// A triangle, wrench or dot is as tall as a capital letter, which keeps it
     /// inside the ascent so showing one never makes the line taller.
     private func bounds(for content: PharoMarkContent) -> CGRect {
+        let capHeight = (font ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)).capHeight.rounded()
         switch content {
         case .result where !resultModel.hasResult:
             return CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
+        case .errorDot:
+            let side = (capHeight * 1.4).rounded()
+            return CGRect(x: 0, y: 0, width: side + 4, height: side)
         case .classTriangle, .methodTriangle, .undeclaredWrench, .result:
-            let side = (font ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular))
-                .capHeight.rounded()
-            return CGRect(x: 0, y: 0, width: side + 3, height: side)
+            return CGRect(x: 0, y: 0, width: capHeight + 3, height: capHeight)
         }
     }
 
@@ -582,6 +624,8 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
             PharoMarkHostingView(content: PharoUndeclaredWrench(model: undeclaredModel(key)))
         case .result:
             PharoMarkHostingView(content: PharoResultDot(model: resultModel))
+        case .errorDot(let message):
+            PharoMarkHostingView(content: PharoErrorDot(message: message))
         }
     }
 
@@ -791,6 +835,31 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
             fetched = list
             guard !list.candidates.isEmpty else { return }
             super.complete(sender)
+        }
+    }
+
+    // The browse keys are the system's Minimize and New; catching them here, while
+    // this editor holds focus, keeps them from the Window and File menus.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if window?.firstResponder === self,
+            event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
+            switch event.charactersIgnoringModifiers {
+            case "m": browse(.implementors); return true
+            case "n": browse(.senders); return true
+            default: break
+            }
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    private func browse(_ kind: PharoBrowseKind) {
+        guard let runtime, let onOpen else { return }
+        let source = self.source
+        let cursor = sourceCursor
+        Task { @MainActor in
+            if let methods = await runtime.browsing(kind, in: source, at: cursor) {
+                onOpen(methods)
+            }
         }
     }
 
@@ -1139,6 +1208,7 @@ enum PharoMarkContent {
     case methodTriangle(String)
     case undeclaredWrench(String)
     case result
+    case errorDot(String)
 
     /// The result dot sits at the very end, after any mark sharing its spot.
     var insertionOrder: Int {
@@ -1436,6 +1506,35 @@ private struct PharoClassBody: View {
     }
 }
 
+/// The larger red dot GT sets at the head of an expression that failed to run.
+/// Its message opens on a click.
+private struct PharoErrorDot: View {
+    let message: String
+
+    @State private var isPointedAt = false
+    @State private var isShowingMessage = false
+
+    var body: some View {
+        Button(action: { isShowingMessage = true }) {
+            Circle()
+                .fill(isPointedAt ? Color.red.opacity(0.8) : Color.red)
+                .frame(width: 11, height: 11)
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onHover { isPointedAt = $0 }
+        .help(message)
+        .popover(isPresented: $isShowingMessage) {
+            Text(message)
+                .font(.callout)
+                .textSelection(.enabled)
+                .padding(10)
+                .frame(maxWidth: 320)
+        }
+    }
+}
+
 /// The dot GT appends once a snippet has produced something.
 private struct PharoResultDot: View {
     @ObservedObject var model: PharoResultMarkModel
@@ -1496,6 +1595,8 @@ extension PharoMarkContent: Hashable {
             a == b
         case (.result, .result):
             true
+        case (.errorDot(let a), .errorDot(let b)):
+            a == b
         default:
             false
         }
@@ -1514,6 +1615,9 @@ extension PharoMarkContent: Hashable {
             hasher.combine(key)
         case .result:
             hasher.combine(2)
+        case .errorDot(let message):
+            hasher.combine(7)
+            hasher.combine(message)
         }
     }
 }

@@ -32,6 +32,19 @@ extension Engine {
         }
     }
 
+    public var pharoPageMaximized: Bool {
+        projectUIState.pharoPageMaximized
+    }
+
+    public func setPharoPageMaximized(_ maximized: Bool) {
+        guard projectUIState.pharoPageMaximized != maximized else { return }
+        Task { @MainActor [weak self] in
+            guard let self, self.projectUIState.pharoPageMaximized != maximized else { return }
+            self.projectUIState.pharoPageMaximized = maximized
+            try? self.store.save(self.projectUIState)
+        }
+    }
+
     public func setEventStreamCollapsed(_ collapsed: Bool) {
         guard projectUIState.isEventStreamCollapsed != collapsed else { return }
         Task { @MainActor [weak self] in
