@@ -41,6 +41,7 @@ final class EventStreamPane {
     private let pauseButton: ToggleButton
     private let overflowMenuButton: MenuButton
     private let clearEventsButton: Button
+    private let soundEventsToggle: CheckButton
     private let liveIndicatorBox: Box
     private let liveDot: Label
     private let liveLabel: Label
@@ -148,11 +149,16 @@ final class EventStreamPane {
         clearEventsButton.add(cssClass: "flat")
         clearEventsButton.add(cssClass: "luma-menu-destructive")
 
+        soundEventsToggle = CheckButton(label: "Sound Events")
+        soundEventsToggle.add(cssClass: "flat")
+        soundEventsToggle.tooltipText = "Sound a note as events arrive"
+
         let overflowBox = Box(orientation: .vertical, spacing: 2)
         overflowBox.marginStart = 6
         overflowBox.marginEnd = 6
         overflowBox.marginTop = 6
         overflowBox.marginBottom = 6
+        overflowBox.append(child: soundEventsToggle)
         overflowBox.append(child: clearEventsButton)
 
         let overflowPopover = Popover()
@@ -262,6 +268,12 @@ final class EventStreamPane {
             MainActor.assumeIsolated { self?.setPaused(!pinned) }
         }
 
+        soundEventsToggle.onToggled { [weak self] button in
+            MainActor.assumeIsolated {
+                self?.engine?.eventChime.isEnabled = button.active
+            }
+        }
+
         clearEventsButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.overflowMenuButton.popdown()
@@ -297,14 +309,17 @@ final class EventStreamPane {
     }
 
     private func reportActivity(totalReceived: Int) {
-        guard let strip = activityStrip,
-              let rate = eventRate.observe(totalReceived: totalReceived, at: Date.timeIntervalSinceReferenceDate)
+        guard let rate = eventRate.observe(totalReceived: totalReceived, at: Date.timeIntervalSinceReferenceDate)
         else { return }
-        luma_shader_effect_report_activity(strip, rate)
+        if let strip = activityStrip {
+            luma_shader_effect_report_activity(strip, rate)
+        }
+        engine?.eventChime.report(activity: rate)
     }
 
     func attach(engine: Engine) {
         self.engine = engine
+        soundEventsToggle.active = engine.eventChime.isEnabled
         lastSeenTotal = engine.eventLog.totalReceived
 
         engine.eventLog.onEventsAppended = { [weak self] newEvents in

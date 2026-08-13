@@ -49,7 +49,11 @@ struct EventStreamView: View {
             )
             .frame(height: 3)
             .onChange(of: engine.eventLog.totalReceived) { _, total in
-                activity = eventRate.observe(totalReceived: total, at: Date.timeIntervalSinceReferenceDate) ?? 0
+                let rate = eventRate.observe(totalReceived: total, at: Date.timeIntervalSinceReferenceDate)
+                activity = rate ?? 0
+                if let rate {
+                    engine.eventChime.report(activity: rate)
+                }
             }
 
             ScrollViewReader { proxy in
@@ -258,6 +262,15 @@ struct EventStreamView: View {
 
     private var overflowMenu: some View {
         Menu {
+            Toggle(isOn: Binding(
+                get: { engine.eventChime.isEnabled },
+                set: { engine.eventChime.isEnabled = $0 }
+            )) {
+                Label("Sound Events", systemImage: "speaker.wave.2")
+            }
+
+            Divider()
+
             Button(role: .destructive) {
                 engine.clearEventLog()
                 resetAllEventState()
