@@ -20,7 +20,7 @@ ifneq ($(wildcard $(LOCAL_SHADER_TOOLCHAIN)),)
 export SHADER_TOOLCHAIN_ROOT := artifacts/ShaderToolchain.xcframework
 endif
 
-PHARO_RELEASE := vm-20260802.8
+PHARO_RELEASE := vm-20260811.3
 PHARO_IMAGE_DIR := ../Sources/LumaCore/Resources/pharo-image
 PHARO_IMAGE := $(PHARO_IMAGE_DIR)/SwiftyPharo.image
 PHARO_LOCAL := $(PROJECT_ROOT)/../SwiftyPharo/artifacts/SwiftyPharo.image
