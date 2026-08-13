@@ -48,6 +48,9 @@ let cLumaAudioLinkerSettings: [LinkerSetting] = [
     .linkedFramework("AudioToolbox"),
     .linkedFramework("CoreFoundation"),
 ]
+#elseif os(Windows)
+let cLumaAudioSources = ["luma_audio_device.c"]
+let cLumaAudioLinkerSettings: [LinkerSetting] = []
 #else
 let cLumaAudioSources = ["luma_audio_device.c"]
 // miniaudio dlopens ALSA and PulseAudio, so neither is a link-time dependency.
