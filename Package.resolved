@@ -1,5 +1,5 @@
 {
-  "originHash" : "c8e0a912df0659f077facee8e1fe002b1697ec44e1e75dad83a9d20856e76624",
+  "originHash" : "d7ecad81f66be3ab2ef934700442a6affd114a411e80ea90738771db76c8a30e",
   "pins" : [
     {
       "identity" : "frida-swift",

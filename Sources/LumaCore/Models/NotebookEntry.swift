@@ -9,6 +9,8 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
         case note
         /// Captured from an instrumented process via a hook / script.
         case capture
+        /// Smalltalk the reader can edit and run, its source held in `details`.
+        case pharo
     }
 
     public var id: UUID
@@ -26,6 +28,7 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
     public var details: String
     public var styledDetails: StyledText?
     public var jsValue: JSInspectValue?
+    public var pharoSnapshot: PharoSnapshot?
     public var binaryData: Data?
     public var sessionID: UUID?
     public var processName: String?
@@ -42,6 +45,7 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
         case details
         case styledDetails = "styled_details"
         case jsValue = "js_value"
+        case pharoSnapshot = "pharo_snapshot"
         case binaryData = "binary_data"
         case sessionID = "session_id"
         case processName = "process_name"
@@ -57,6 +61,7 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
         details: String,
         styledDetails: StyledText? = nil,
         jsValue: JSInspectValue? = nil,
+        pharoSnapshot: PharoSnapshot? = nil,
         binaryData: Data? = nil,
         sessionID: UUID? = nil,
         processName: String? = nil
@@ -70,6 +75,7 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
         self.details = details
         self.styledDetails = styledDetails
         self.jsValue = jsValue
+        self.pharoSnapshot = pharoSnapshot
         self.binaryData = binaryData
         self.sessionID = sessionID
         self.processName = processName
@@ -108,6 +114,13 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
             let jsonObject = try? JSONSerialization.jsonObject(with: data)
         {
             obj["js_value"] = jsonObject
+        }
+
+        if let snapshot = pharoSnapshot,
+            let data = try? JSONEncoder().encode(snapshot),
+            let jsonObject = try? JSONSerialization.jsonObject(with: data)
+        {
+            obj["pharo_snapshot"] = jsonObject
         }
 
         if let processName {
@@ -165,6 +178,14 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
             }
         }
 
+        var pharoSnapshot: PharoSnapshot? = nil
+        if let raw = obj["pharo_snapshot"],
+            let data = try? JSONSerialization.data(withJSONObject: raw),
+            let decoded = try? JSONDecoder().decode(PharoSnapshot.self, from: data)
+        {
+            pharoSnapshot = decoded
+        }
+
         let processName = obj["process_name"] as? String
 
         return NotebookEntry(
@@ -177,6 +198,7 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
             details: details,
             styledDetails: styledDetails,
             jsValue: jsValue,
+            pharoSnapshot: pharoSnapshot,
             binaryData: data.map { Data($0) },
             processName: processName
         )

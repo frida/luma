@@ -3,6 +3,7 @@ import LumaCore
 
 enum SidebarItemID: Codable, Hashable {
     case notebook
+    case pharo
     case missions
     case mission(UUID)
     case session(UUID)
