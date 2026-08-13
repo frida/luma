@@ -55,18 +55,22 @@ public enum NotebookOp: Sendable {
         public var details: String?
         public var processName: String?
 
+        public var pharoSnapshot: PharoSnapshot?
+
         public init(
             opID: UUID = UUID(),
             entryID: UUID,
             title: String? = nil,
             details: String? = nil,
-            processName: String? = nil
+            processName: String? = nil,
+            pharoSnapshot: PharoSnapshot? = nil
         ) {
             self.opID = opID
             self.entryID = entryID
             self.title = title
             self.details = details
             self.processName = processName
+            self.pharoSnapshot = pharoSnapshot
         }
 
         public var changes: [String: String] {
@@ -112,7 +116,14 @@ public enum NotebookOp: Sendable {
             obj["entry"] = a.entry.toJSON()
         case .update(let u):
             obj["entry_id"] = u.entryID.uuidString
-            obj["changes"] = u.changes
+            var changes: [String: Any] = u.changes
+            if let snapshot = u.pharoSnapshot,
+                let data = try? JSONEncoder().encode(snapshot),
+                let jsonObject = try? JSONSerialization.jsonObject(with: data)
+            {
+                changes["pharo_snapshot"] = jsonObject
+            }
+            obj["changes"] = changes
         case .remove(let r):
             obj["entry_id"] = r.entryID.uuidString
         case .reorder(let r):
@@ -142,12 +153,20 @@ public enum NotebookOp: Sendable {
                 let entryID = UUID(uuidString: entryIDStr),
                 let changes = obj["changes"] as? [String: Any]
             else { return nil }
+            var snapshot: PharoSnapshot? = nil
+            if let raw = changes["pharo_snapshot"],
+                let data = try? JSONSerialization.data(withJSONObject: raw),
+                let decoded = try? JSONDecoder().decode(PharoSnapshot.self, from: data)
+            {
+                snapshot = decoded
+            }
             return .update(Update(
                 opID: opID,
                 entryID: entryID,
                 title: changes["title"] as? String,
                 details: changes["details"] as? String,
-                processName: changes["process_name"] as? String
+                processName: changes["process_name"] as? String,
+                pharoSnapshot: snapshot
             ))
 
         case "remove":

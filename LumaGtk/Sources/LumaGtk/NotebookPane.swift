@@ -23,6 +23,7 @@ final class NotebookPane {
     private var autoEditedEntries: Set<UUID> = []
     private var draftEntries: Set<UUID> = []
     private var jsValueKeepers: [JSInspectValueWidget] = []
+    private var pharoCells: [UUID: PharoNotebookCell] = [:]
     private var entryRows: [UUID: Widget] = [:]
     private var timestampLabels: [UUID: Label] = [:]
     private var timestampDates: [UUID: Date] = [:]
@@ -147,7 +148,12 @@ final class NotebookPane {
             insertEntryRow(row, for: entry)
         case .snapshot:
             rebuildEntries()
-        case .updated(let entry):
+        case .updated(let entry, let changed):
+            if entry.kind == .pharo, let cell = pharoCells[entry.id],
+                changed.isSubset(of: [.details, .pharoSnapshot]) {
+                cell.apply(entry, changed: changed)
+                break
+            }
             if let existing = entryRows[entry.id] {
                 let parent = entriesBox
                 // Anchor on the widget *before* the one we're replacing.
@@ -167,6 +173,7 @@ final class NotebookPane {
             if let row = entryRows.removeValue(forKey: id) {
                 entriesBox.remove(child: row)
             }
+            pharoCells.removeValue(forKey: id)
             timestampLabels.removeValue(forKey: id)
             timestampDates.removeValue(forKey: id)
             editingEntries.remove(id)
@@ -200,6 +207,7 @@ final class NotebookPane {
         clearWindowFocus()
         clearChildren(of: entriesBox)
         jsValueKeepers.removeAll()
+        pharoCells.removeAll()
         entryRows.removeAll()
         timestampLabels.removeAll()
         timestampDates.removeAll()
@@ -392,6 +400,10 @@ final class NotebookPane {
                 body.selectable = true
                 inner.append(child: body)
             }
+        } else if entry.kind == .pharo, let engine {
+            let cell = PharoNotebookCell(entry: entry, engine: engine)
+            pharoCells[entry.id] = cell
+            inner.append(child: cell.widget)
         } else {
             if let jsValue = entry.jsValue, let engine {
                 let wrapper = JSInspectValueWidget.make(
@@ -493,7 +505,8 @@ final class NotebookPane {
             header.append(child: chip)
         }
 
-        let title = Label(str: entry.title.isEmpty ? "Note" : entry.title)
+        let fallbackTitle = entry.kind == .pharo ? "Pharo" : "Note"
+        let title = Label(str: entry.title.isEmpty ? fallbackTitle : entry.title)
         title.add(cssClass: "heading")
         title.halign = .start
         title.hexpand = true
@@ -791,7 +804,7 @@ final class NotebookPane {
         let button = Button(label: "New Note")
         button.add(cssClass: "suggested-action")
         button.add(cssClass: "pill")
-        button.add(cssClass: "luma-notebook-fab")
+        button.add(cssClass: "luma-fab")
         button.halign = .center
         button.marginTop = 6
         button.onClicked { _ in

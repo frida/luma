@@ -25,6 +25,7 @@ final class PharoSnippetCard {
     var onMoveDown: (() -> Void)?
     var onDuplicate: (() -> Void)?
     var onRemove: (() -> Void)?
+    var onAddToNotebook: (() -> Void)?
 
     private let editor: GtkSource.View
     private let buffer: GtkSource.Buffer
@@ -62,7 +63,9 @@ final class PharoSnippetCard {
         editor.leftMargin = 10
         editor.rightMargin = 10
         editor.topMargin = 8
-        editor.bottomMargin = 8
+        // Clearance for the overlay scrollbar to rest below the last line rather
+        // than atop it, where it would block the click that edits that line.
+        editor.bottomMargin = 18
         editor.hexpand = true
         buffer.set(text: source, len: Int(source.utf8.count))
         highlight(buffer)
@@ -196,6 +199,7 @@ final class PharoSnippetCard {
         actions.append(child: spacer)
 
         actions.append(child: examplesButton())
+        actions.append(child: iconButton("bookmark-new-symbolic", "Add to notebook") { [weak self] in self?.onAddToNotebook?() })
         actions.append(child: iconButton("user-trash-symbolic", "Remove") { [weak self] in self?.onRemove?() })
     }
 
@@ -346,6 +350,7 @@ final class PharoSnippetCard {
         keys.onKeyPressed { [weak self] _, keyval, _, state in
             MainActor.assumeIsolated {
                 guard let self else { return false }
+                if self.marks.isEditingBody { return false }
                 if self.completion.handleKey(keyval) { return true }
                 if self.marks.handleCursorKey(keyval, shift: state.contains(.shiftMask)) { return true }
                 guard state.contains(.controlMask) else { return false }

@@ -25,11 +25,11 @@ public final class EngineRegistry {
         try fm.createDirectory(at: key, withIntermediateDirectories: true)
         try fm.createDirectory(at: tracesURL, withIntermediateDirectories: true)
         let store = try ProjectStore(path: dbURL.path)
-        let traces = try TraceStore(directory: tracesURL)
+        let blobs = try BlobStore(directory: tracesURL)
         let eventStore = EventStore(fileURL: eventsURL)
         let engine = Engine(
             store: store,
-            traces: traces,
+            blobs: blobs,
             eventStore: eventStore,
             dataDirectory: dataDirectory,
             gitHubAuth: gitHubAuth

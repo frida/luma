@@ -350,9 +350,23 @@ enum StyleSheet {
         background-color: alpha(@theme_fg_color, 0.12);
     }
 
-    button.luma-notebook-fab {
+    button.luma-fab {
         min-height: 0;
         padding: 6px 18px;
+    }
+
+    button.luma-pharo-inline-save {
+        min-height: 0;
+        min-width: 0;
+        padding: 0 4px;
+        border: none;
+        border-spacing: 0;
+        outline: none;
+        font-size: 0.8em;
+    }
+    button.luma-pharo-inline-save label {
+        margin: 0;
+        padding: 0;
     }
 
     avatar.luma-editor-avatar {
@@ -528,8 +542,8 @@ enum StyleSheet {
         border-radius: 6px;
         background-color: alpha(@window_fg_color, 0.03);
     }
-    box.luma-pharo-method-body {
-        margin: 4px 8px;
+    box.luma-pharo-class-body {
+        margin: 2px 0;
     }
     """
 

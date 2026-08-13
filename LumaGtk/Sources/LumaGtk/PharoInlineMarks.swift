@@ -14,12 +14,25 @@ import SwiftyPharo
 /// line of its own, with the rest of the code carried below it. The marks and
 /// bodies live in the buffer as child anchors, so the source the reader edits is
 /// the text with those anchor characters and body lines taken back out.
+// A plain press on an already-focused body editor still lets the snippet grab
+// focus back; re-asserting it once the press has unwound keeps the editor in
+// hand without claiming the press, which would have suppressed its selection.
+private let pharoReassertBodyFocus: @convention(c) (gpointer?) -> gboolean = { data in
+    guard let data else { return 0 }
+    gtk_widget_grab_focus(UnsafeMutablePointer<GtkWidget>(OpaquePointer(data)))
+    return 0
+}
+
 @MainActor
 final class PharoInlineMarks {
     /// The object replacement character a child anchor occupies.
     private static let anchorScalar: Character = "\u{FFFC}"
 
     var isApplying: Bool { applying }
+
+    /// A method a reader expanded is holding keyboard focus, so the snippet's
+    /// own key shortcuts step aside and let the method's editor keep its keys.
+    private(set) var isEditingBody = false
 
     private let editor: GtkSource.View
     private let buffer: GtkSource.Buffer
@@ -75,6 +88,110 @@ final class PharoInlineMarks {
         self.runtime = runtime
         self.selfClass = selfClass
         self.highlight = highlight
+
+        buffer.onNotifyCursorPosition { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.hideCaretOnBodyLines() }
+        }
+
+        // The snippet editor claims a press that lands on one of its embedded
+        // body editors before its own text handling can seize focus, then hands
+        // the caret and focus to that editor. Nothing else reliably wins the
+        // press: a gesture on the embedded editor competes with its own native
+        // one and loses.
+        let bodyPress = GestureClick()
+        bodyPress.propagationPhase = .capture
+        bodyPress.onPressed { [weak self] gesture, _, x, y in
+            MainActor.assumeIsolated { self?.claimBodyPress(gesture, x: x, y: y) }
+        }
+        editor.install(controller: bodyPress)
+    }
+
+    private var bodyEditors: [GtkSource.View] = []
+
+    /// Every editable text view a body drops into the snippet -- a method a mark
+    /// expands, a method the class browser opens -- registers so the snippet
+    /// hands it the press and mutes itself while it holds focus.
+    func registerBodyEditor(_ view: GtkSource.View) {
+        bodyEditors.append(view)
+        let focus = EventControllerFocus()
+        focus.onEnter { [weak self] _ in
+            MainActor.assumeIsolated { self?.beginEditingBody() }
+        }
+        focus.onLeave { [weak self] _ in
+            MainActor.assumeIsolated { self?.endEditingBody() }
+        }
+        view.install(controller: focus)
+    }
+
+    private func claimBodyPress(_ gesture: GestureClickRef, x: Double, y: Double) {
+        guard let picked = gtk_widget_pick(editor.widget_ptr, x, y, GTK_PICK_DEFAULT) else { return }
+        guard let view = bodyEditors.first(where: { view in
+            picked == view.widget_ptr || gtk_widget_is_ancestor(picked, view.widget_ptr) != 0
+        }) else { return }
+
+        // Once the editor holds focus its own press handling owns the caret and
+        // selection, so the press is left alone -- only re-asserted afterwards
+        // in case a plain click let the snippet steal focus back.
+        if gtk_widget_has_focus(view.widget_ptr) != 0 {
+            g_idle_add(pharoReassertBodyFocus, UnsafeMutableRawPointer(view.widget_ptr))
+            return
+        }
+
+        _ = gesture.set(state: .claimed)
+
+        var source = graphene_point_t()
+        source.x = Float(x)
+        source.y = Float(y)
+        var local = graphene_point_t()
+        if gtk_widget_compute_point(editor.widget_ptr, view.widget_ptr, &source, &local) != 0 {
+            placeCaret(in: view, widgetX: Double(local.x), widgetY: Double(local.y))
+        }
+        _ = view.grabFocus()
+    }
+
+    private func placeCaret(in view: GtkSource.View, widgetX: Double, widgetY: Double) {
+        let textView = UnsafeMutablePointer<GtkTextView>(OpaquePointer(view.widget_ptr))
+        var bufferX: gint = 0
+        var bufferY: gint = 0
+        gtk_text_view_window_to_buffer_coords(textView, GTK_TEXT_WINDOW_WIDGET, gint(widgetX), gint(widgetY), &bufferX, &bufferY)
+        var iter = GtkTextIter()
+        gtk_text_view_get_iter_at_location(textView, &iter, bufferX, bufferY)
+        gtk_text_buffer_place_cursor(gtk_text_view_get_buffer(textView), &iter)
+    }
+
+    private func beginEditingBody() {
+        isEditingBody = true
+        setOuterEditable(false)
+    }
+
+    private func endEditingBody() {
+        isEditingBody = false
+        setOuterEditable(true)
+    }
+
+    private func setOuterEditable(_ editable: Bool) {
+        let textView = UnsafeMutablePointer<GtkTextView>(OpaquePointer(editor.widget_ptr))
+        gtk_text_view_set_editable(textView, editable ? 1 : 0)
+    }
+
+    /// A body sits on a line as tall as the widget it holds, so the editor's
+    /// caret drawn there stands the same absurd height. Blank it while the caret
+    /// rests on such a line; it returns the moment the caret steps back onto the
+    /// code.
+    private func hideCaretOnBodyLines() {
+        let caretLine = withIter { iter -> Int in
+            buffer.getIterAtMark(iter: iter, mark: buffer.getInsert())
+            return iter.line
+        }
+        let onBodyLine = marks.values.contains { mark in
+            guard let body = mark.body, let offset = offset(of: body.anchor) else { return false }
+            let bodyLine = withIter { iter -> Int in
+                buffer.getIterAtOffset(iter: iter, charOffset: Int(offset))
+                return iter.line
+            }
+            return bodyLine == caretLine
+        }
+        editor.cursorVisible = !onBodyLine
     }
 
     // MARK: - Source the reader sees, without the carried characters
@@ -193,41 +310,32 @@ final class PharoInlineMarks {
     /// Slide over a mark's anchor so it is not an extra cursor stop, and a space
     /// typed at a token's end lands past its mark to carry the send on. Returns
     /// whether the key is spent; a space is not, so it still types once moved.
+    /// A mark and its open body are one carried block the code caret steps over
+    /// whole rather than into, so arrowing across never strands the caret on a
+    /// body's tall line or between the anchors that carry it.
     func handleCursorKey(_ keyval: UInt, shift: Bool) -> Bool {
+        guard !shift else { return false }
         let cursor = cursorOffset()
+        let carried = carriedOffsets()
         switch keyval {
-        case 0xFF53 where !shift && anchorAt(cursor + 1):  // Right
-            moveCursor(to: skipForward(from: cursor + 1))
+        case 0xFF53 where carried.contains(cursor):  // Right
+            var at = cursor
+            while carried.contains(at) { at += 1 }
+            moveCursor(to: at)
             return true
-        case 0xFF51 where !shift && anchorAt(cursor - 1):  // Left
-            moveCursor(to: skipBackward(from: cursor - 1))
+        case 0xFF51 where cursor > 0 && carried.contains(cursor - 1):  // Left
+            var at = cursor - 1
+            while at > 0, carried.contains(at - 1) { at -= 1 }
+            moveCursor(to: at)
             return true
-        case 0x0020 where anchorAt(cursor):  // space
-            moveCursor(to: skipForward(from: cursor))
+        case 0x0020 where carried.contains(cursor):  // space
+            var at = cursor
+            while carried.contains(at) { at += 1 }
+            moveCursor(to: at)
             return false
         default:
             return false
         }
-    }
-
-    private func anchorAt(_ offset: Int) -> Bool {
-        guard offset >= 0, offset < Int(buffer.getCharCount()) else { return false }
-        return withIter { iter in
-            buffer.getIterAtOffset(iter: iter, charOffset: offset)
-            return iter.childAnchor != nil
-        }
-    }
-
-    private func skipForward(from offset: Int) -> Int {
-        var at = offset
-        while anchorAt(at) { at += 1 }
-        return at
-    }
-
-    private func skipBackward(from offset: Int) -> Int {
-        var at = offset
-        while at > 0, anchorAt(at) { at -= 1 }
-        return at
     }
 
     private func moveCursor(to offset: Int) {
@@ -349,18 +457,27 @@ final class PharoInlineMarks {
     }
 
     private func open(_ mark: Mark) async {
-        guard let content = await bodyContent(for: mark.kind) else { return }
+        guard let content = await bodyContent(for: mark) else { return }
         guard mark.body == nil, !mark.anchor.deleted else { return }
         insertBody(content, after: mark)
     }
 
-    private func bodyContent(for kind: Kind) async -> Box? {
-        switch kind {
+    private func bodyContent(for mark: Mark) async -> Box? {
+        switch mark.kind {
         case .classReference(let name):
             guard let object = try? await runtime.evaluate(name) else { return nil }
-            let view = PharoColumnView(runtime: runtime, object: object, isMaximized: false, highlight: highlight)
+            let view = PharoColumnView(
+                runtime: runtime, object: object, isMaximized: false, highlight: highlight,
+                registerEditor: { [weak self] editor in self?.registerBodyEditor(editor) })
             view.widget.hexpand = true
             view.widget.vexpand = true
+            view.offersLayoutActions = false
+            view.onClose = { [weak self, weak mark] in
+                MainActor.assumeIsolated {
+                    guard let self, let mark else { return }
+                    self.close(mark)
+                }
+            }
             let frame = Box(orientation: .vertical, spacing: 0)
             frame.append(child: view.widget)
             classColumns[ObjectIdentifier(frame)] = view
@@ -373,15 +490,44 @@ final class PharoInlineMarks {
     private var classColumns: [ObjectIdentifier: PharoColumnView] = [:]
 
     private func methodEditor(for reference: PharoMethodReference) -> Box {
-        let container = Box(orientation: .vertical, spacing: 6)
-        container.add(cssClass: "luma-pharo-method-body")
-        container.marginTop = 4
+        let container = Box(orientation: .vertical, spacing: 0)
         container.marginBottom = 4
 
-        let heading = Label(str: "\(reference.className) \u{203A} \(reference.selector)")
-        heading.xalign = 0
-        heading.add(cssClass: "caption-heading")
-        heading.add(cssClass: "dim-label")
+        let title = Label(str: "\(reference.className) \u{203A} \(reference.selector)")
+        title.xalign = 0
+        title.hexpand = true
+        title.ellipsize = .end
+        title.add(cssClass: "caption")
+        title.add(cssClass: "dim-label")
+
+        let failure = Label(str: "")
+        failure.ellipsize = .end
+        failure.add(cssClass: "caption")
+        failure.add(cssClass: "error")
+        failure.visible = false
+
+        // The save stands only once the text drifts from what the image holds,
+        // a checkmark at the heading's trailing edge the way the SwiftUI editor
+        // shows it rather than a button that waits below. A drawn glyph rather
+        // than a themed icon, which the macOS icon theme does not carry, and
+        // held to the line height so its arrival does not push the editor down.
+        let save = Button(label: "\u{2713}")
+        save.add(cssClass: "flat")
+        save.add(cssClass: "luma-pharo-inline-save")
+        save.tooltipText = "Save"
+        save.halign = .end
+        save.valign = .center
+        save.visible = false
+
+        let heading = Box(orientation: .horizontal, spacing: 6)
+        heading.baselinePosition = .center
+        heading.marginStart = 4
+        heading.marginEnd = 4
+        heading.marginTop = 7
+        heading.marginBottom = 7
+        heading.append(child: title)
+        heading.append(child: failure)
+        heading.append(child: save)
 
         let methodBuffer = GtkSource.Buffer(table: Gtk.TextTagTable?.none)
         methodBuffer.set(text: reference.source, len: Int(reference.source.utf8.count))
@@ -393,32 +539,57 @@ final class PharoInlineMarks {
         methodView.topMargin = 6
         methodView.bottomMargin = 6
 
+        registerBodyEditor(methodView)
+
+        // A one-line method would otherwise shrink to a sliver a click keeps
+        // missing, so the editor holds a floor wide and tall enough to land on.
         let scroll = ScrolledWindow()
-        scroll.setPolicy(hscrollbarPolicy: .automatic, vscrollbarPolicy: .never)
+        scroll.setPolicy(hscrollbarPolicy: .automatic, vscrollbarPolicy: .automatic)
         scroll.propagateNaturalHeight = true
+        scroll.minContentWidth = 360
+        scroll.minContentHeight = 64
         scroll.maxContentHeight = 220
         scroll.set(child: methodView)
 
-        let save = Button(label: "Save")
-        save.add(cssClass: "suggested-action")
-        save.halign = .start
-        save.onClicked { [weak self] _ in
+        // save and failure are locals whose GTK widgets outlive this scope under
+        // their parent, but their Swift wrappers would not; the closures hold
+        // them so a weak grab does not find them already gone.
+        var savedSource = reference.source
+        methodBuffer.onChanged { [save] _ in
+            MainActor.assumeIsolated { save.visible = methodBuffer.text != savedSource }
+        }
+        save.onClicked { [weak self, save, failure] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 let edited = methodBuffer.text
-                Task { @MainActor in await self.saveMethod(reference, source: edited) }
+                Task { @MainActor in
+                    do {
+                        try await self.saveMethod(reference, source: edited)
+                        savedSource = edited
+                        save.visible = false
+                        failure.visible = false
+                    } catch {
+                        failure.setText(str: error.localizedDescription)
+                        failure.visible = true
+                    }
+                }
             }
         }
 
         container.append(child: heading)
         container.append(child: scroll)
-        container.append(child: save)
+
+        // The body sits inside the snippet's text view, so without this the
+        // heading and its button wear the editor's I-beam; the source area keeps
+        // its own, and the button gets a pointer.
+        gtk_widget_set_cursor_from_name(container.widget_ptr, "default")
+        gtk_widget_set_cursor_from_name(save.widget_ptr, "pointer")
         return container
     }
 
-    private func saveMethod(_ reference: PharoMethodReference, source: String) async {
-        guard let classObject = try? await runtime.evaluate(reference.className) else { return }
-        _ = try? await runtime.compileMethod(
+    private func saveMethod(_ reference: PharoMethodReference, source: String) async throws {
+        let classObject = try await runtime.evaluate(reference.className)
+        _ = try await runtime.compileMethod(
             in: classObject,
             side: reference.side,
             category: reference.category,
@@ -427,13 +598,16 @@ final class PharoInlineMarks {
 
     /// A body sits on a line of its own right after its mark: a newline closes the
     /// code line, the anchor holds the body, and a newline carries the rest of the
-    /// send down below it.
+    /// send down below it. Any space that followed the mark stays on the code line
+    /// rather than indenting what comes back below, the way the SwiftUI editor
+    /// keeps it.
     private func insertBody(_ widget: Box, after mark: Mark) {
         applying = true
         defer { applying = false }
 
         guard let markOffset = offset(of: mark.anchor) else { return }
-        let at = Int(markOffset) + 1
+        let afterMark = Int(markOffset) + 1
+        let at = afterMark + leadingSpaces(from: afterMark)
 
         let anchor: TextChildAnchor? = withIter { iter in
             buffer.getIterAtOffset(iter: iter, charOffset: at)
@@ -447,24 +621,45 @@ final class PharoInlineMarks {
         guard let anchor else { return }
 
         widget.hexpand = true
-        widget.add(cssClass: "luma-pharo-body")
-        sizeBody(widget)
+        // The class coder brings its own frame, so it only wants a margin; a
+        // method editor draws the body's own border around itself.
+        switch mark.kind {
+        case .classReference: widget.add(cssClass: "luma-pharo-class-body")
+        case .methodReference: widget.add(cssClass: "luma-pharo-body")
+        }
+        sizeBody(widget, kind: mark.kind)
         editor.addChildAtAnchor(child: widget, anchor: anchor)
         mark.body = Body(widget: widget, anchor: anchor)
         mark.area.queueDraw()
     }
 
+    private func leadingSpaces(from offset: Int) -> Int {
+        withIters { cursor, end in
+            buffer.getIterAtOffset(iter: cursor, charOffset: offset)
+            buffer.getIterAtOffset(iter: end, charOffset: Int(buffer.getCharCount()))
+            let rest = buffer.getSlice(start: cursor, end: end, includeHiddenChars: true) ?? ""
+            return rest.prefix { $0 == " " || $0 == "\t" }.count
+        }
+    }
+
     /// An anchored widget keeps to its own size rather than the text's, so a body
-    /// is given the editor's width and stood tall, the way it fills the page on
-    /// the SwiftUI side. Reapplied as bodies open so a widened window carries.
-    private func sizeBody(_ widget: Box) {
+    /// is given the editor's width. A class coder is stood tall the way it fills
+    /// the page on the SwiftUI side; a method body keeps to its own height so a
+    /// short method is not padded, growing with its lines until its scroller caps
+    /// it. Reapplied as bodies open so a widened window carries.
+    private func sizeBody(_ widget: Box, kind: Kind) {
         let width = max(editor.getWidth() - 20, 260)
-        widget.setSizeRequest(width: width, height: 380)
+        switch kind {
+        case .classReference:
+            widget.setSizeRequest(width: width, height: 380)
+        case .methodReference:
+            widget.setSizeRequest(width: width, height: -1)
+        }
     }
 
     private func resizeBodies() {
         for mark in marks.values {
-            if let body = mark.body { sizeBody(body.widget) }
+            if let body = mark.body { sizeBody(body.widget, kind: mark.kind) }
         }
     }
 
@@ -484,6 +679,8 @@ final class PharoInlineMarks {
             buffer.getIterAtOffset(iter: end, charOffset: Int(anchorOffset) + 2)
             buffer.delete(start: start, end: end)
         }
+
+        bodyEditors.removeAll { gtk_widget_get_root($0.widget_ptr) == nil }
     }
 
     // MARK: - Offsets

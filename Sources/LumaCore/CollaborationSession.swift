@@ -549,14 +549,16 @@ public final class CollaborationSession {
         entryID: UUID,
         title: String? = nil,
         details: String? = nil,
-        processName: String? = nil
+        processName: String? = nil,
+        pharoSnapshot: PharoSnapshot? = nil
     ) {
         guard isCollaborative else { return }
         let op = NotebookOp.update(.init(
             entryID: entryID,
             title: title,
             details: details,
-            processName: processName
+            processName: processName,
+            pharoSnapshot: pharoSnapshot
         ))
         try? store.saveOutboxOp(op)
         sendOpIfJoined(op)

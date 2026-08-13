@@ -20,7 +20,7 @@ public final class Engine {
     public let deviceManager: DeviceManager
     public let systemParameters = SystemParametersCache()
     public let store: ProjectStore
-    public let traces: TraceStore
+    public let blobs: BlobStore
     public let eventStore: EventStore?
     public let compilerWorkspace: CompilerWorkspace
 
@@ -129,7 +129,7 @@ public final class Engine {
 
     public init(
         store: ProjectStore,
-        traces: TraceStore,
+        blobs: BlobStore,
         eventStore: EventStore? = nil,
         dataDirectory: URL,
         tokenStore: TokenStore? = nil,
@@ -138,7 +138,7 @@ public final class Engine {
     ) {
         self.deviceManager = deviceManager
         self.store = store
-        self.traces = traces
+        self.blobs = blobs
         self.eventStore = eventStore
         self.dataDirectory = dataDirectory
         self.compilerWorkspace = CompilerWorkspace(store: store)
@@ -320,17 +320,27 @@ public final class Engine {
     }
 
     public func updateNotebookEntry(_ entry: NotebookEntry) {
+        updateNotebookEntry(entry, changed: .all)
+    }
+
+    /// The caller names the fields it moved so views apply just those; the model
+    /// does not diff the entry to find out. Only the fields the collaboration
+    /// protocol carries are enqueued, and only when one of them actually moved.
+    public func updateNotebookEntry(_ entry: NotebookEntry, changed: NotebookEntryFields) {
         try? store.save(entry)
         if let i = notebookEntries.firstIndex(where: { $0.id == entry.id }) {
             notebookEntries[i] = entry
         }
-        onNotebookChanged?(.updated(entry))
-        collaboration.enqueueUpdate(
-            entryID: entry.id,
-            title: entry.title,
-            details: entry.details,
-            processName: entry.processName
-        )
+        onNotebookChanged?(.updated(entry, changed: changed))
+        if !changed.isDisjoint(with: [.title, .details, .processName, .pharoSnapshot]) {
+            collaboration.enqueueUpdate(
+                entryID: entry.id,
+                title: entry.title,
+                details: entry.details,
+                processName: entry.processName,
+                pharoSnapshot: changed.contains(.pharoSnapshot) ? entry.pharoSnapshot : nil
+            )
+        }
     }
 
     public func deleteNotebookEntry(_ entry: NotebookEntry) {
@@ -976,7 +986,7 @@ public final class Engine {
             } else {
                 self.notebookEntries.append(entry)
             }
-            self.onNotebookChanged?(existed ? .updated(entry) : .added(entry))
+            self.onNotebookChanged?(existed ? .updated(entry, changed: .all) : .added(entry))
         }
 
         collaboration.onEntryRemoved = { [weak self] id in
@@ -1166,12 +1176,12 @@ public final class Engine {
 
     private func applyRemoteSessionTraceRemoved(sessionID: UUID, traceID: UUID) {
         try? store.deleteITrace(id: traceID)
-        traces.delete(traceID: traceID)
+        blobs.delete(id: traceID, kind: .trace)
         onSessionListChanged?(.traceRemoved(id: traceID, sessionID: sessionID))
     }
 
     private func applyRemoteTraceDataProgressed(sessionID: UUID, traceID: UUID, totalSize: Int) {
-        let cachedSize = traces.size(traceID: traceID) ?? 0
+        let cachedSize = blobs.size(id: traceID, kind: .trace) ?? 0
         guard cachedSize < totalSize else { return }
         _traceCacheInvalidations.yield(TraceCacheInvalidation(traceID: traceID, knownTotalSize: totalSize))
     }
@@ -2131,7 +2141,7 @@ public final class Engine {
                 script: script,
                 instruments: instrumentRefs,
                 drainService: drainService(for: device),
-                traceStore: traces
+                blobStore: blobs
             )
             node.onResolveBlockNames = { [weak self] addresses in
                 guard let self else { return Array(repeating: "", count: addresses.count) }
@@ -3081,7 +3091,7 @@ public final class Engine {
     public func deleteITrace(id: UUID, sessionID: UUID) {
         if localUserHosts(sessionID) {
             try? store.deleteITrace(id: id)
-            traces.delete(traceID: id)
+            blobs.delete(id: id, kind: .trace)
             lastUploadedTraceSize.removeValue(forKey: id)
             onSessionListChanged?(.traceRemoved(id: id, sessionID: sessionID))
         }
@@ -3100,8 +3110,8 @@ public final class Engine {
         {
             return live.prefix(length)
         }
-        if traces.exists(traceID: traceID) {
-            let cached = try traces.load(traceID: traceID)
+        if blobs.exists(id: traceID, kind: .trace) {
+            let cached = try blobs.load(id: traceID, kind: .trace)
             if cached.count >= length {
                 return cached.prefix(length)
             }
@@ -3124,18 +3134,35 @@ public final class Engine {
         expectedSize: Int? = nil,
         onProgress: (@MainActor (Int, Int) -> Void)? = nil
     ) async throws -> Data {
-        if let node = node(forSessionID: sessionID),
-            let live = node.livePendingTraceData(traceID: traceID)
+        try await loadBlob(
+            id: traceID, sessionID: sessionID, kind: .trace, expectedSize: expectedSize, onProgress: onProgress)
+    }
+
+    /// The three tiers a blob is read through: the live capture still in the
+    /// node, this session's on-disk store, then a paginated fetch from the lab.
+    /// The live tier and the fetch are the trace's to give -- other kinds live
+    /// only in the store until the blob transport is generalized -- so they are
+    /// skipped for everything else.
+    public func loadBlob(
+        id: UUID,
+        sessionID: UUID,
+        kind: BlobKind,
+        expectedSize: Int? = nil,
+        onProgress: (@MainActor (Int, Int) -> Void)? = nil
+    ) async throws -> Data {
+        if kind == .trace,
+            let node = node(forSessionID: sessionID),
+            let live = node.livePendingTraceData(traceID: id)
         {
             return live
         }
 
-        let collabID = collabSessionID(forSessionID: sessionID)
+        let collabID = kind == .trace ? collabSessionID(forSessionID: sessionID) : nil
         var data: Data
         var cursor: Int
 
-        if traces.exists(traceID: traceID) {
-            let cached = try traces.load(traceID: traceID)
+        if blobs.exists(id: id, kind: kind) {
+            let cached = try blobs.load(id: id, kind: kind)
             if expectedSize == nil || cached.count == expectedSize {
                 return cached
             }
@@ -3152,7 +3179,7 @@ public final class Engine {
         }
 
         guard let sid = collabID else {
-            return try traces.load(traceID: traceID)
+            return try blobs.load(id: id, kind: kind)
         }
 
         while expectedSize.map({ cursor < $0 }) ?? true {
@@ -3160,7 +3187,7 @@ public final class Engine {
             let length = remaining.map { min($0, Self.traceDataPageSize) } ?? Self.traceDataPageSize
             let (chunk, totalSize) = try await collaboration.fetchTraceData(
                 sessionID: sid,
-                traceID: traceID,
+                traceID: id,
                 offset: cursor,
                 length: length
             )
@@ -3171,7 +3198,7 @@ public final class Engine {
             if expectedSize == nil, cursor >= totalSize { break }
         }
 
-        try? traces.write(data, for: traceID)
+        try? blobs.write(data, id: id, kind: kind)
         return data
     }
 

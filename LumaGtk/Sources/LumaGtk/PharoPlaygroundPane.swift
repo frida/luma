@@ -224,6 +224,7 @@ final class PharoPlaygroundPane {
         card.onMoveDown = { [weak self] in self?.moveDown(id) }
         card.onDuplicate = { [weak self] in self?.duplicate(id) }
         card.onRemove = { [weak self] in self?.removeSnippet(id) }
+        card.onAddToNotebook = { [weak self] in self?.addToNotebook(id) }
         return card
     }
 
@@ -275,6 +276,7 @@ final class PharoPlaygroundPane {
         let button = Button()
         button.add(cssClass: "suggested-action")
         button.add(cssClass: "pill")
+        button.add(cssClass: "luma-fab")
         button.halign = .center
         let buttonContent = Box(orientation: .horizontal, spacing: 6)
         buttonContent.append(child: Image(iconName: "list-add-symbolic"))
@@ -396,6 +398,28 @@ final class PharoPlaygroundPane {
             } catch {
                 cards[id]?.flashOutcome(success: false)
                 cards[id]?.showResult(error.localizedDescription, isError: true)
+            }
+        }
+    }
+
+    /// Keeps a snippet's code and what its last run made in the notebook, the
+    /// eager snapshot standing in for the result so it reads back with no VM.
+    private func addToNotebook(_ id: UUID) {
+        guard let engine, let card = cards[id] else { return }
+        let source = card.source
+        guard !source.isEmpty else { return }
+
+        Task { @MainActor in
+            do {
+                try await PharoRuntime.shared.startPlayground(for: engine)
+                let produced = try await PharoRuntime.shared.evaluate(source)
+                let snapshot = try await PharoSnapshot.capture(of: produced, using: PharoRuntime.shared)
+                let entry = NotebookEntry(kind: .pharo, title: "", details: source, pharoSnapshot: snapshot)
+                engine.addNotebookEntry(entry)
+                card.flashOutcome(success: true)
+            } catch {
+                card.flashOutcome(success: false)
+                card.showResult(error.localizedDescription, isError: true)
             }
         }
     }

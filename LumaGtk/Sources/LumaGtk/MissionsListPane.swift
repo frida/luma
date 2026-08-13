@@ -60,6 +60,7 @@ final class MissionsListPane {
         header.append(child: title)
 
         newButton.add(cssClass: "suggested-action")
+        newButton.add(cssClass: "luma-fab")
         let newButtonContent = Box(orientation: .horizontal, spacing: 6)
         let newButtonIcon = Gtk.Image(iconName: "list-add-symbolic")
         newButtonIcon.pixelSize = 14

@@ -18,6 +18,7 @@ final class PharoMethodRow {
     private let classObject: PharoObject
     private let onSelect: (PharoObject) -> Void
     private let highlight: (GtkSource.Buffer) -> Void
+    private let registerEditor: (GtkSource.View) -> Void
 
     private let body = Box(orientation: .vertical, spacing: 4)
     private var editor: PharoInlineMethodEditor?
@@ -27,13 +28,15 @@ final class PharoMethodRow {
         runtime: PharoRuntime,
         classObject: PharoObject,
         onSelect: @escaping (PharoObject) -> Void,
-        highlight: @escaping (GtkSource.Buffer) -> Void
+        highlight: @escaping (GtkSource.Buffer) -> Void,
+        registerEditor: @escaping (GtkSource.View) -> Void = { _ in }
     ) {
         self.method = method
         self.runtime = runtime
         self.classObject = classObject
         self.onSelect = onSelect
         self.highlight = highlight
+        self.registerEditor = registerEditor
 
         widget = Box(orientation: .vertical, spacing: 0)
         widget.append(child: heading())
@@ -84,6 +87,7 @@ final class PharoMethodRow {
                 source: method.source,
                 runtime: runtime,
                 highlight: highlight,
+                registerEditor: registerEditor,
                 onSelect: onSelect,
                 onSave: { [weak self] source in await self?.save(source) })
             self.editor = editor
@@ -125,6 +129,7 @@ final class PharoInlineMethodEditor {
         source: String,
         runtime: PharoRuntime,
         highlight: @escaping (GtkSource.Buffer) -> Void,
+        registerEditor: @escaping (GtkSource.View) -> Void = { _ in },
         onSelect: @escaping (PharoObject) -> Void,
         onSave: @escaping (String) async -> Void
     ) {
@@ -140,6 +145,7 @@ final class PharoInlineMethodEditor {
         view.leftMargin = 8
         view.topMargin = 6
         view.bottomMargin = 6
+        registerEditor(view)
 
         let scroll = ScrolledWindow()
         scroll.hexpand = true
@@ -216,6 +222,7 @@ final class PharoNewMethodEditor {
         runtime: PharoRuntime,
         classObject: PharoObject,
         highlight: @escaping (GtkSource.Buffer) -> Void,
+        registerEditor: @escaping (GtkSource.View) -> Void = { _ in },
         onSaved: @escaping () -> Void,
         onCancel: @escaping () -> Void
     ) {
@@ -233,6 +240,7 @@ final class PharoNewMethodEditor {
         view.leftMargin = 8
         view.topMargin = 6
         view.bottomMargin = 6
+        registerEditor(view)
 
         let scroll = ScrolledWindow()
         scroll.hexpand = true
