@@ -43,7 +43,8 @@ struct NotebookView: View {
 
     /// Always the same view, whether or not it is showing anything: swapping
     /// one out for another has HSplitView lay the divider out afresh, undoing
-    /// wherever the reader had put it.
+    /// wherever the reader had put it, and leaves the page a box of its own
+    /// width rather than the whole width.
     private var inspectionSide: some View {
         ZStack {
             Color.clear

@@ -1,6 +1,151 @@
 import SwiftUI
 import SwiftyPharo
 
+/// The columns opened from a page. A playground scrolls its page along with
+/// them and counts it as the first slot; a notebook keeps its page aside.
+@Observable
+final class PharoColumnPath {
+    var objects: [PharoObject] = []
+    /// Which column is the current one, or nothing when the page itself is.
+    var shown: Int?
+    private(set) var scrollTarget: PharoScrollTarget?
+
+    let includesPage: Bool
+
+    init(includesPage: Bool = false) {
+        self.includesPage = includesPage
+    }
+
+    static let pageID = 0
+
+    /// A marker sits past the last column. Revealing the newest scrolls to it
+    /// rather than to the column, whose own list is a scroller that throws off
+    /// how far a scroll to the column reaches.
+    static let trailingID = -1
+
+    var slotCount: Int {
+        pageSlots + objects.count
+    }
+
+    func slot(ofColumn depth: Int) -> Int {
+        depth + pageSlots
+    }
+
+    var leadingSlot: Int {
+        onScreenSlots.min() ?? 0
+    }
+
+    var visibleSlots: Int {
+        max(onScreenSlots.count, 1)
+    }
+
+    func isOnScreen(_ slot: Int) -> Bool {
+        onScreenSlots.contains(slot)
+    }
+
+    func show(slot: Int) {
+        let clamped = min(max(slot, 0), slotCount - 1)
+        shown = clamped < pageSlots ? nil : clamped - pageSlots
+        bring(slot: clamped, to: .leading)
+    }
+
+    func startOver(at object: PharoObject) {
+        objects = [object]
+        shown = 0
+        revealNewest()
+    }
+
+    func open(_ object: PharoObject, from depth: Int) {
+        objects = objects.prefix(depth + 1) + [object]
+        shown = objects.count - 1
+        revealNewest()
+    }
+
+    /// Answers whether the page's own first column was the one closed, which is
+    /// the whole inspection going away rather than a column of it.
+    func close(from depth: Int) -> Bool {
+        guard depth > 0 else { return true }
+        objects = Array(objects.prefix(depth))
+        shown = min(shown ?? 0, objects.count - 1)
+        return false
+    }
+
+    func clear() {
+        objects = []
+        shown = nil
+        bring(slot: 0, to: .leading)
+    }
+
+    func markVisible(_ ids: [Int]) {
+        visibleIDs = Set(ids)
+    }
+
+    private func revealNewest() {
+        scrollTarget = PharoScrollTarget(id: Self.trailingID, anchor: .trailing)
+    }
+
+    private func bring(slot: Int, to anchor: UnitPoint) {
+        scrollTarget = PharoScrollTarget(id: id(atSlot: slot), anchor: anchor)
+    }
+
+    private var onScreenSlots: Set<Int> {
+        Set(visibleIDs.compactMap(slot(ofID:)))
+    }
+
+    private func slot(ofID id: Int) -> Int? {
+        guard id != Self.pageID else { return pageSlots > 0 ? 0 : nil }
+        return objects.firstIndex { $0.handle == id }.map { $0 + pageSlots }
+    }
+
+    private func id(atSlot slot: Int) -> Int {
+        slot < pageSlots ? Self.pageID : objects[slot - pageSlots].handle
+    }
+
+    private var pageSlots: Int {
+        includesPage ? 1 : 0
+    }
+
+    private var visibleIDs: Set<Int> = []
+}
+
+/// A scroll the path is asking its scroller to make. The stamp sets each one
+/// apart, so asking twice for the same place scrolls both times.
+struct PharoScrollTarget: Equatable {
+    let id: Int
+    let anchor: UnitPoint
+    let stamp = UUID()
+}
+
+/// The columns side by side, as loose content for the page's own scroller to
+/// hold. Each is a direct child there, which is what has the scroller report it
+/// as it comes and goes on screen; wrapped in a view of their own they would
+/// not be seen. Whoever shows them does the scrolling.
+@ViewBuilder
+func pharoColumns(
+    runtime: PharoRuntime,
+    path: PharoColumnPath,
+    onCloseAll: @escaping () -> Void
+) -> some View {
+    ForEach(Array(path.objects.enumerated()), id: \.element.handle) { depth, object in
+        if depth > 0 {
+            PharoDrillArrow()
+        }
+
+        PharoObjectColumn(
+            runtime: runtime,
+            object: object,
+            onSelect: { path.open($0, from: depth) },
+            onClose: { if path.close(from: depth) { onCloseAll() } })
+        .frame(width: 320)
+        .pharoPane()
+        .id(object.handle)
+    }
+
+    Color.clear
+        .frame(width: 1)
+        .id(PharoColumnPath.trailingID)
+}
+
 /// Walks an object through the views it declares, opening each selection in a
 /// column to its right so the path taken to reach a value stays on screen.
 struct PharoInspectorView: View {
@@ -8,128 +153,40 @@ struct PharoInspectorView: View {
     let root: PharoObject
     let onClose: () -> Void
 
-    @State private var path: [PharoObject] = []
-    @State private var shown: Int?
-    @State private var leading: Int?
-    @State private var visibleWidth: CGFloat = 0
+    @State private var path = PharoColumnPath()
 
     var body: some View {
-        VStack(spacing: 0) {
-            VStack(spacing: 2) {
-                overview
-                thumb
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
-            Divider()
-            columns
-        }
-        // SwiftUI hands a new root to the view it already has, so seeding the
-        // path from an initializer would only ever run once.
-        .onChange(of: root.handle, initial: true) { startOver(at: root) }
-    }
-
-    /// The panes as small squares, the way Glamorous Toolkit previews them: no
-    /// words, just where in the path each one sits, gathered in the middle
-    /// rather than stretched across the width. Clicking one brings its column
-    /// to the front.
-    private var overview: some View {
-        HStack(spacing: previewSpacing) {
-            ForEach(Array(path.enumerated()), id: \.element.handle) { depth, object in
-                PharoOverviewSquare(
-                    isCurrent: depth == shown,
-                    isOnScreen: isOnScreen(depth),
-                    printString: object.printString,
-                    width: previewWidth,
-                    height: previewHeight) {
-                    shown = depth
-                    leading = object.handle
-                }
-            }
-        }
-    }
-
-    private let previewWidth: CGFloat = 22
-    private let previewHeight: CGFloat = 12
-    private let previewSpacing: CGFloat = 3
-
-    /// Under the squares and no wider than them, the way Glamorous Toolkit does
-    /// it: a scrollbar thumb as wide a fraction of the row as the columns it can
-    /// see are of all of them, sitting over the squares they belong to.
-    private var thumb: some View {
-        let span = min(visibleColumns / CGFloat(max(path.count, 1)), 1)
-        return PharoOverviewThumb(
-            trackWidth: overviewWidth,
-            fractionVisible: span,
-            fractionLeading: min(CGFloat(leadingPane) / CGFloat(max(path.count, 1)), 1 - span))
-    }
-
-    private var overviewWidth: CGFloat {
-        CGFloat(path.count) * previewWidth + CGFloat(max(path.count - 1, 0)) * previewSpacing
-    }
-
-    /// One column is a pane plus the arrow before it, save the first with none.
-    private var visibleColumns: CGFloat {
-        max(visibleWidth / columnStride, 1)
-    }
-
-    private let columnStride: CGFloat = 320 + 24
-
-    private func isOnScreen(_ depth: Int) -> Bool {
-        depth >= leadingPane && CGFloat(depth) < CGFloat(leadingPane) + visibleColumns
-    }
-
-    private var leadingPane: Int {
-        path.firstIndex { $0.handle == leading } ?? 0
-    }
-
-    private var columns: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 0) {
-                ForEach(Array(path.enumerated()), id: \.element.handle) { depth, object in
-                    if depth > 0 {
-                        PharoDrillArrow()
-                    }
-
-                    PharoObjectColumn(
-                        runtime: runtime,
-                        object: object,
-                        onSelect: { open($0, from: depth) },
-                        onClose: { close(from: depth) })
-                    .frame(width: 320)
-                    .pharoPane()
-                    .id(object.handle)
-                }
+                pharoColumns(runtime: runtime, path: path, onCloseAll: onClose)
             }
             .scrollTargetLayout()
         }
-        .scrollPosition(id: $leading, anchor: .leading)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { visibleWidth = $0 }
+        .pharoColumnScrolling(path)
+        .onChange(of: root.handle, initial: true) { path.startOver(at: root) }
     }
+}
 
-    private func open(_ object: PharoObject, from depth: Int) {
-        path = path.prefix(depth + 1) + [object]
-        shown = path.count - 1
-        revealLast()
+extension View {
+    /// Drives a horizontal scroller from a column path: it scrolls where the
+    /// path asks, and the path learns which columns are on screen.
+    func pharoColumnScrolling(_ path: PharoColumnPath) -> some View {
+        modifier(PharoColumnScrolling(path: path))
     }
+}
 
-    private func startOver(at object: PharoObject) {
-        path = [object]
-        shown = 0
-        leading = object.handle
-    }
+private struct PharoColumnScrolling: ViewModifier {
+    let path: PharoColumnPath
 
-    /// Bring the newest column to the right edge, keeping as many of the ones
-    /// before it on screen as fit.
-    private func revealLast() {
-        let onScreen = max(Int(visibleColumns), 1)
-        leading = path[max(0, path.count - onScreen)].handle
-    }
-
-    private func close(from depth: Int) {
-        guard depth > 0 else { return onClose() }
-        path = Array(path.prefix(depth))
-        shown = min(shown ?? 0, path.count - 1)
+    func body(content: Content) -> some View {
+        ScrollViewReader { proxy in
+            content
+                .onChange(of: path.scrollTarget) { _, target in
+                    guard let target else { return }
+                    proxy.scrollTo(target.id, anchor: target.anchor)
+                }
+                .onScrollTargetVisibilityChange(idType: Int.self) { path.markVisible($0) }
+        }
     }
 }
 
@@ -306,8 +363,8 @@ private struct PharoItemsList: View {
         // GT drills on activation rather than on merely selecting a row. Watching
         // for the second click leaves the list's own handling of the first alone,
         // so selection stays quick and the arrow keys still walk the rows.
-        .background(PharoDoubleClickCatcher {
-            guard let row = selection else { return }
+        .background(PharoDoubleClickCatcher { row in
+            selection = row
             Task { await drill(into: row) }
         })
         .onKeyPress(.return) {
@@ -315,7 +372,6 @@ private struct PharoItemsList: View {
             Task { await drill(into: row) }
             return .handled
         }
-        // Switching tabs hands the same list a different view to page through.
         .task(id: view) { await reload() }
     }
 
@@ -347,28 +403,40 @@ private struct PharoItemsList: View {
     }
 }
 
-/// The pager's scroll thumb: a thin bar the width of the columns on screen,
-/// resting over the squares for those columns, and blue while pointed at.
+/// The pager's scroll thumb, resting over the squares it stands for.
 private struct PharoOverviewThumb: View {
     let trackWidth: CGFloat
     let fractionVisible: CGFloat
     let fractionLeading: CGFloat
+    let scrollTo: (CGFloat) -> Void
 
     @State private var isPointedAt = false
+    @State private var draggedFrom: CGFloat?
 
     var body: some View {
         Capsule()
-            .fill(isPointedAt ? Color.fridaBrand : Color.secondary.opacity(0.5))
+            .fill(isPointedAt || draggedFrom != nil ? Color.fridaBrand : Color.secondary.opacity(0.5))
             .frame(width: max(trackWidth * fractionVisible, 10), height: 3)
             .padding(.leading, trackWidth * fractionLeading)
             .frame(width: trackWidth, height: 8, alignment: .leading)
             .contentShape(Rectangle())
             .onHover { isPointedAt = $0 }
+            .pointerStyle(.link)
+            .gesture(drag)
+    }
+
+    private var drag: some Gesture {
+        DragGesture(minimumDistance: 1)
+            .onChanged { movement in
+                let start = draggedFrom ?? fractionLeading
+                draggedFrom = start
+                scrollTo(start + movement.translation.width / max(trackWidth, 1))
+            }
+            .onEnded { _ in draggedFrom = nil }
     }
 }
 
-/// One pane's square in the overview strip. It lights up on hover the way the
-/// thumb does, and stands out while it is the pane on top.
+/// One pane's square in the overview strip.
 private struct PharoOverviewSquare: View {
     let isCurrent: Bool
     let isOnScreen: Bool
@@ -398,8 +466,7 @@ private struct PharoOverviewSquare: View {
     }
 }
 
-/// Closing a pane is a button, and says so: it fills in and takes the hand when
-/// the pointer is over it.
+/// Closing a pane.
 private struct PharoCloseButton: View {
     let close: () -> Void
 
@@ -424,8 +491,11 @@ private struct PharoCloseButton: View {
 
 /// Notices a double-click over the list without taking the click, so the list
 /// keeps handling selection and keyboard travel itself.
+/// Reports which row a double-click landed on, read from the table under the
+/// pointer rather than from the selection, which the first click of the two has
+/// not always finished settling by the time the second arrives.
 private struct PharoDoubleClickCatcher: NSViewRepresentable {
-    let activate: () -> Void
+    let activate: (Int) -> Void
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
@@ -446,11 +516,11 @@ private struct PharoDoubleClickCatcher: NSViewRepresentable {
     }
 
     final class Coordinator {
-        var activate: () -> Void = {}
+        var activate: (Int) -> Void = { _ in }
         private var monitor: Any?
         private weak var view: NSView?
 
-        func watch(_ view: NSView, activate: @escaping () -> Void) {
+        func watch(_ view: NSView, activate: @escaping (Int) -> Void) {
             self.view = view
             self.activate = activate
             monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
@@ -460,10 +530,25 @@ private struct PharoDoubleClickCatcher: NSViewRepresentable {
         }
 
         private func noticed(_ event: NSEvent) {
-            guard event.clickCount == 2, let view, let window = view.window, event.window === window else { return }
-            let inView = view.convert(event.locationInWindow, from: nil)
-            guard view.bounds.contains(inView) else { return }
-            activate()
+            guard event.clickCount == 2, let view, let window = view.window, event.window === window,
+                view.bounds.contains(view.convert(event.locationInWindow, from: nil)),
+                let table = table(under: event.locationInWindow, in: window)
+            else { return }
+
+            let row = table.row(at: table.convert(event.locationInWindow, from: nil))
+            guard row >= 0 else { return }
+            activate(row)
+        }
+
+        private func table(under point: NSPoint, in window: NSWindow) -> NSTableView? {
+            var hit = window.contentView?.hitTest(point)
+            while let view = hit {
+                if let table = view as? NSTableView {
+                    return table
+                }
+                hit = view.superview
+            }
+            return nil
         }
 
         func stop() {
@@ -471,4 +556,68 @@ private struct PharoDoubleClickCatcher: NSViewRepresentable {
             monitor = nil
         }
     }
+}
+
+/// The pager's strip: a square for the page and one for each column, with a
+/// scrollbar under them.
+struct PharoOverviewStrip: View {
+    let path: PharoColumnPath
+
+    var body: some View {
+        VStack(spacing: 2) {
+            squares
+            thumb
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 4)
+    }
+
+    private var squares: some View {
+        HStack(spacing: previewSpacing) {
+            PharoOverviewSquare(
+                isCurrent: path.shown == nil,
+                isOnScreen: path.isOnScreen(0),
+                printString: "Snippets",
+                width: previewWidth,
+                height: previewHeight) {
+                path.show(slot: 0)
+            }
+
+            ForEach(Array(path.objects.enumerated()), id: \.element.handle) { depth, object in
+                PharoOverviewSquare(
+                    isCurrent: path.shown == depth,
+                    isOnScreen: path.isOnScreen(path.slot(ofColumn: depth)),
+                    printString: object.printString,
+                    width: previewWidth,
+                    height: previewHeight) {
+                    path.show(slot: path.slot(ofColumn: depth))
+                }
+            }
+        }
+    }
+
+    private var thumb: some View {
+        let span = min(onScreen / total, 1)
+        return PharoOverviewThumb(
+            trackWidth: overviewWidth,
+            fractionVisible: span,
+            fractionLeading: min(CGFloat(path.leadingSlot) / total, 1 - span),
+            scrollTo: { path.show(slot: Int(($0 * total).rounded())) })
+    }
+
+    private var total: CGFloat {
+        CGFloat(path.slotCount)
+    }
+
+    private var onScreen: CGFloat {
+        min(CGFloat(path.visibleSlots), total)
+    }
+
+    private var overviewWidth: CGFloat {
+        total * previewWidth + (total - 1) * previewSpacing
+    }
+
+    private let previewWidth: CGFloat = 22
+    private let previewHeight: CGFloat = 12
+    private let previewSpacing: CGFloat = 3
 }

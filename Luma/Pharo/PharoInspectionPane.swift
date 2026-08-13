@@ -22,32 +22,12 @@ struct PharoInspectionPane: View {
     let pointsFrom: CGFloat?
     let onClose: () -> Void
 
-    @State private var top: CGFloat = 0
-
     private let runtime = PharoRuntime.shared
 
     var body: some View {
         HStack(spacing: 0) {
-            arrow
+            PharoPointingArrow(pointsFrom: pointsFrom)
             inspected
-        }
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.frame(in: .named(pharoPageSpace)).minY
-        } action: { top = $0 }
-    }
-
-    @ViewBuilder
-    private var arrow: some View {
-        if let pointsFrom {
-            VStack(spacing: 0) {
-                // Measured against the page, so the pane's own offset and the
-                // arrow's height both come off before it lines up.
-                Spacer().frame(height: max(0, pointsFrom - top - arrowHeight / 2))
-                PharoDrillArrow().fixedSize()
-                Spacer(minLength: 0)
-            }
-        } else {
-            PharoDrillArrow()
         }
     }
 
@@ -62,8 +42,6 @@ struct PharoInspectionPane: View {
                 .pharoPane()
         }
     }
-
-    private let arrowHeight: CGFloat = 12
 
     private var closeButton: some View {
         Button(action: onClose) {
@@ -121,4 +99,36 @@ extension ShapeStyle where Self == Color {
     static var fridaBrand: Color {
         Color(red: 239 / 255, green: 100 / 255, blue: 86 / 255)
     }
+}
+
+/// The arrow into what a page opened, lined up with the cell it came from
+/// rather than with the middle of the window.
+struct PharoPointingArrow: View {
+    let pointsFrom: CGFloat?
+
+    @State private var top: CGFloat = 0
+
+    var body: some View {
+        content
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.frame(in: .named(pharoPageSpace)).minY
+            } action: { top = $0 }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if let pointsFrom {
+            VStack(spacing: 0) {
+                // Measured against the page, so the arrow's own offset and its
+                // height both come off before it lines up.
+                Spacer().frame(height: max(0, pointsFrom - top - arrowHeight / 2))
+                PharoDrillArrow().fixedSize()
+                Spacer(minLength: 0)
+            }
+        } else {
+            PharoDrillArrow()
+        }
+    }
+
+    private let arrowHeight: CGFloat = 12
 }

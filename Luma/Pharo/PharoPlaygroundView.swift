@@ -8,27 +8,38 @@ struct PharoPlaygroundView: View {
     let engine: Engine
 
     @State private var snippets: [PharoPlaygroundSnippet] = []
-    @State private var inspection: PharoInspection?
     @State private var inspected: UUID?
     @State private var centers: [UUID: CGFloat] = [:]
     @State private var failure: String?
     @State private var isReady = false
     @State private var focused: UUID?
     @State private var results: [UUID: PharoObject] = [:]
+    @State private var columnPath = PharoColumnPath(includesPage: true)
 
     private let runtime = PharoRuntime.shared
 
     var body: some View {
-        HSplitView {
-            page
-                .pharoPane()
-                .padding(8)
-                .frame(minWidth: 280, idealWidth: 420)
+        VStack(spacing: 0) {
+            // The strip stands over the whole page, snippets included, rather
+            // than over the columns alone.
+            PharoOverviewStrip(path: columnPath)
+            Divider()
 
-            inspectionSide
-                .padding(.vertical, 8)
-                .padding(.trailing, 8)
-                .frame(minWidth: 320)
+            ScrollView(.horizontal) {
+                HStack(spacing: 0) {
+                    page
+                        .frame(width: pageWidth)
+                        .pharoPane()
+                        .id(PharoColumnPath.pageID)
+
+                    inspectionSide
+                }
+                .scrollTargetLayout()
+            }
+            // A margin rather than padding, so that scrolling something to the
+            // leading edge leaves the same gap before it that it had at rest.
+            .contentMargins(8, for: .scrollContent)
+            .pharoColumnScrolling(columnPath)
         }
         .coordinateSpace(name: pharoPageSpace)
         .background(.pharoGutter)
@@ -38,20 +49,18 @@ struct PharoPlaygroundView: View {
     }
 
 
-    /// Always the same view, whether or not it is showing anything: swapping
-    /// one out for another has HSplitView lay the divider out afresh, undoing
-    /// wherever the reader had put it.
+    /// The columns ride in the page's own scroller, so the playground lays out
+    /// the arrow into them and the columns themselves rather than handing both
+    /// to a pane that would scroll on its own.
+    @ViewBuilder
     private var inspectionSide: some View {
-        ZStack {
-            Color.clear
-
-            if let inspection {
-                PharoInspectionPane(inspection: inspection, pointsFrom: inspected.flatMap { centers[$0] }) {
-                    self.inspection = nil
-                }
-            }
+        if !columnPath.objects.isEmpty {
+            PharoPointingArrow(pointsFrom: inspected.flatMap { centers[$0] })
+            pharoColumns(runtime: runtime, path: columnPath, onCloseAll: columnPath.clear)
         }
     }
+
+    private let pageWidth: CGFloat = 420
 
     private var page: some View {
         ScrollView {
@@ -126,7 +135,7 @@ struct PharoPlaygroundView: View {
 
     private func show(_ object: PharoObject, from snippet: UUID) {
         inspected = snippet
-        inspection = .live(object)
+        columnPath.startOver(at: object)
     }
 
     private func remove(_ snippet: PharoPlaygroundSnippet) {
