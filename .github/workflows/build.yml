@@ -913,8 +913,6 @@ jobs:
           path: /tmp/pharo-destdir
           key: ${{ runner.os }}-fedora44-pharo-vm-${{ env.SWIFTY_PHARO_REF }}-v9
 
-      # Into a prefix of its own: it carries the OpenSSL pharo-vm downloads,
-      # and ldconfig over /usr leaves the system without a working TLS.
       - name: Install Pharo VM
         run: |
           cp -a /tmp/pharo-destdir/. /
@@ -1119,8 +1117,6 @@ jobs:
           path: /tmp/pharo-destdir
           key: ${{ runner.os }}-ubuntu${{ matrix.release }}-pharo-vm-${{ env.SWIFTY_PHARO_REF }}-v9
 
-      # Into a prefix of its own: it carries the OpenSSL pharo-vm downloads,
-      # and ldconfig over /usr leaves the system without a working TLS.
       - name: Install Pharo VM
         run: |
           cp -a /tmp/pharo-destdir/. /
