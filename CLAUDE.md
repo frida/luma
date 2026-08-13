@@ -190,6 +190,20 @@ host supplies (`v_uv`, `frag_color`, `u_resolution`, `u_time`,
   of the range. Getting this wrong binds each buffer where another was
   expected, which no compiler will catch.
 
+`LumaText` letters a scene from a glyph atlas the **host** rasterises
+-- Core Text on macOS, Pango on GTK -- because what fonts an image can
+reach is its own business, and the bundled one finds no scalable
+family at all: every point size comes back as the same 14-pixel bitmap.
+The frontends register a `GlyphAtlasRasteriser` on the way up; each
+string becomes two triangles a letter. Saying something else goes
+through `remesh:primitive:`, which sets vertices without a commit, so
+text that changes every frame costs a buffer rather than a rasterise
+and a shader compile. Its point size is in the units the rest of
+the interface uses, and the atlas is rasterised to match: `u_scale`
+carries how many physical pixels a logical one is worth, so the quads
+land on whole pixels instead of being scaled, which is what would
+make the lettering soft.
+
 Keep `gl_Position.z` within 0..1. OpenGL's clip space runs -1..1 and
 Metal's runs 0..1, so a negative depth draws on GTK and is clipped
 away on macOS -- which no compiler will catch either.
@@ -207,6 +221,11 @@ glslang -S frag -V generated.frag       # Metal flavour, as translated
 ```
 
 ### Symbol visibility (macOS)
+
+An exported-symbols list is a whitelist: everything the image resolves
+by name has to be in it, not just Luma's own entry points. SwiftyPharo's
+`swifty_pharo_*` bridge is resolved the same way, and leaving it out
+takes Pharo down entirely -- in release builds only.
 
 The image resolves the host's `luma_*` entry points by name through
 dlsym, and nothing in Swift calls them. Two consequences, both of

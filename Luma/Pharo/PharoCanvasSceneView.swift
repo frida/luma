@@ -162,6 +162,7 @@ enum PharoCanvasScenes {
 final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
     var scene = CanvasScene()
 
+    private var sceneHandle = 0
     private weak var view: MTKView?
     private var commandQueue: MTLCommandQueue?
     private var depthState: MTLDepthStencilState?
@@ -169,6 +170,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
     private var acrossPicture: MTLSamplerState?
     private var built: [Int: Built] = [:]
     private let startTime = CACurrentMediaTime()
+    private var tracedAt: CFTimeInterval = 0
 
     private struct Built {
         var pipeline: MTLRenderPipelineState
@@ -189,6 +191,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
 
     func attach(to view: MTKView, scene handle: Int) {
         self.view = view
+        sceneHandle = handle
         commandQueue = view.device?.makeCommandQueue()
 
         let depth = MTLDepthStencilDescriptor()
@@ -238,6 +241,15 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         uniforms[1] = Float(view.drawableSize.height)
         uniforms[2] = Float(CACurrentMediaTime() - startTime)
         uniforms[3] = 1
+        // What the view is actually drawing into against what it covers:
+        // the window is not always there to be asked, and this is the ratio
+        // that matters either way.
+        let scale = view.bounds.width > 0
+            ? Float(view.drawableSize.width / view.bounds.width)
+            : Float(view.window?.backingScaleFactor ?? 1)
+        uniforms[7] = scale
+        CanvasRegistry.shared.reportScale(sceneHandle, scale)
+        trace(view, scale: scale, uniformWidth: uniforms[0], uniformHeight: uniforms[1])
 
         for handle in scene.order {
             guard let subject = scene.drawables[handle], subject.isVisible,
@@ -278,6 +290,26 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         encoder.endEncoding()
         buffer.present(drawable)
         buffer.commit()
+    }
+
+    /// What a scene is actually being drawn with, for when what it looks like
+    /// and what it was asked for disagree. Set LUMA_CANVAS_TRACE to see it.
+    private func trace(_ view: MTKView, scale: Float, uniformWidth: Float, uniformHeight: Float) {
+        guard ProcessInfo.processInfo.environment["LUMA_CANVAS_TRACE"] != nil else { return }
+        let now = CACurrentMediaTime()
+        guard now - tracedAt > 1 else { return }
+        tracedAt = now
+
+        let sizes = scene.order.compactMap { scene.drawables[$0] }.map { subject in
+            subject.uniforms.map { "\($0.name)=\($0.values)" }.joined(separator: " ")
+        }
+        let uniformResolution = "\(uniformWidth) x \(uniformHeight)"
+        FileHandle.standardError.write(Data("""
+            canvas: drawable \(view.drawableSize) bounds \(view.bounds.size) \
+            scale \(scale) u_resolution \(uniformResolution)
+            canvas: \(sizes.joined(separator: " | "))
+
+            """.utf8))
     }
 
     /// Compiles a drawable's stages only when they actually differ, and

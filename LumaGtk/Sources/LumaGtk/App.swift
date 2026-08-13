@@ -81,6 +81,7 @@ final class LumaApplication {
     }
 
     private func activate() {
+        PangoGlyphAtlas.install()
         ensureDocumentWindow()
     }
 

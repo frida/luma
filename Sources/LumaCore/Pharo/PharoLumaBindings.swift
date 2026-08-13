@@ -14,7 +14,7 @@ public enum PharoLumaBindings {
     /// fields, so opening one shows what the host knows about it rather than
     /// the line it would have printed.
     private static let source = """
-        | record records sessions entries events project host synth tune canvas drawable |
+        | record records sessions entries events project host synth tune canvas drawable label |
         record := Object << #LumaRecord slots: { #fields. #icon }; package: 'Luma'; install.
         record compile: 'setFields: aDictionary icon: anIcon
             fields := aDictionary.
@@ -325,6 +325,7 @@ public enum PharoLumaBindings {
             scene := aScene.
             handle := aHandle'.
         drawable compile: 'handle ^ handle'.
+        drawable compile: 'scene ^ scene'.
         drawable compile: 'printOn: aStream
             aStream nextPutAll: ''LumaDrawable(''; print: handle; nextPut: $)'.
         drawable compile: 'clearLayout
@@ -366,6 +367,19 @@ public enum PharoLumaBindings {
                         (LumaCanvas primitives indexOf: aSymbol) - 1 }.
             array free.
             ^ self commit'.
+        drawable compile: 'remesh: aCollection primitive: aSymbol
+            "Fresh vertices for stages that are already built, which is what
+             makes changing text cost a buffer rather than a compile."
+            | array |
+            array := FFIExternalArray externalNewType: ''float'' size: aCollection size.
+            aCollection doWithIndex: [ :value :index | array at: index put: value asFloat ].
+            LumaHost invoke: ''luma_drawable_set_vertices''
+                parameters: { TFBasicType sint. TFBasicType sint. TFBasicType pointer.
+                              TFBasicType sint. TFBasicType sint }
+                return: TFBasicType void
+                with: { scene. handle. array getHandle. aCollection size.
+                        (LumaCanvas primitives indexOf: aSymbol) - 1 }.
+            array free'.
         drawable compile: 'uniform: aName value: aValue
             "A uniform of the author''s own naming. A number or a collection
              of up to sixteen; the host declares it and packs it to match."
@@ -471,11 +485,131 @@ public enum PharoLumaBindings {
                 parameters: { TFBasicType sint. TFBasicType sint. TFBasicType sint }
                 return: TFBasicType void
                 with: { scene. handle. 0 }'.
+        drawable compile: 'scale
+            "Physical pixels to a logical one where this is drawn. Zero until
+             a view has drawn it."
+            ^ LumaHost invoke: ''luma_scene_scale''
+                parameters: { TFBasicType sint } return: TFBasicType float with: { scene }'.
         drawable compile: 'show
             ^ LumaHost invoke: ''luma_drawable_set_visible''
                 parameters: { TFBasicType sint. TFBasicType sint. TFBasicType sint }
                 return: TFBasicType void
                 with: { scene. handle. 1 }'.
+
+        label := Object << #LumaText slots: { #drawable. #points. #padding. #atlas }; package: 'Luma'; install.
+        label class compile: 'on: aDrawable
+            ^ self on: aDrawable pointSize: 22'.
+        label class compile: 'on: aDrawable pointSize: aSize
+            "Lettering for a scene. The host draws the printable range into an
+             atlas the shader samples, so saying something else costs a buffer
+             of corners rather than a rasterisation -- and what fonts this
+             image can reach never comes into it."
+            ^ self basicNew
+                setDrawable: aDrawable pointSize: aSize;
+                buildAtlas;
+                buildStages;
+                yourself'.
+        label compile: 'setDrawable: aDrawable pointSize: aSize
+            drawable := aDrawable.
+            points := aSize.
+            padding := 16 @ 16'.
+        label compile: 'buildAtlas
+            "Drawn at as many pixels as it will cover, so a texel lands on a
+             pixel. Two until a view says what one is worth."
+            | scale |
+            scale := drawable scale > 0 ifTrue: [ drawable scale ] ifFalse: [ 2 ].
+            atlas ifNotNil: [ LumaHost invoke: ''luma_glyphs_discard''
+                parameters: { TFBasicType sint } return: TFBasicType void with: { atlas } ].
+            atlas := LumaHost invoke: ''luma_glyphs_make''
+                parameters: { TFBasicType sint }
+                return: TFBasicType sint
+                with: { (points * scale) rounded }.
+            LumaHost invoke: ''luma_glyphs_apply''
+                parameters: { TFBasicType sint. TFBasicType sint. TFBasicType sint. TFBasicType pointer }
+                return: TFBasicType void
+                with: { atlas. drawable scene. drawable handle. LumaHost cString: ''glyphs'' }'.
+        label compile: 'metric: anIndex
+            ^ LumaHost invoke: ''luma_glyphs_metric''
+                parameters: { TFBasicType sint. TFBasicType sint }
+                return: TFBasicType float
+                with: { atlas. anIndex }'.
+        label compile: 'sheetWidth ^ self metric: 0'.
+        label compile: 'sheetHeight ^ self metric: 1'.
+        label compile: 'cellWidth ^ self metric: 2'.
+        label compile: 'cellHeight ^ self metric: 3'.
+        label compile: 'columns ^ (self metric: 4) rounded'.
+        label compile: 'inkTop ^ self metric: 5'.
+        label compile: 'inkBottom ^ self metric: 6'.
+        label compile: 'advanceOf: aCharacter
+            ^ LumaHost invoke: ''luma_glyphs_advance''
+                parameters: { TFBasicType sint. TFBasicType sint }
+                return: TFBasicType float
+                with: { atlas. aCharacter asInteger }'.
+        label compile: 'first ^ 32'.
+        label compile: 'last ^ 126'.
+        label compile: 'buildStages
+            drawable
+                attribute: ''p'' components: 2;
+                attribute: ''glyph'' components: 2;
+                varying: ''uv'' components: 2;
+                uniform: ''pad'' value: self padInPixels;
+                uniform: ''size'' value: self cellHeight;
+                uniform: ''tint'' value: #(1 1 1);
+                vertexSource: ''void main() {
+                    uv = glyph;
+                    vec2 pixel = 2.0 / u_resolution;
+                    vec2 origin = vec2(-1.0, 1.0) + vec2(pad.x, -pad.y) * pixel;
+                    gl_Position = vec4(origin + p * size * pixel, 0.15, 1.0); }''
+                fragmentSource: ''void main() {
+                    float ink = texture(glyphs, uv).a;
+                    if (ink < 0.02) discard;
+                    frag_color = vec4(tint * ink, ink); }'';
+                mesh: #() primitive: #triangles'.
+        label compile: 'pad: aPoint tint: aColour
+            "Pixels from the top-left corner, both axes alike, so the gap
+             above the lettering is the gap beside it whatever shape the
+             view happens to be."
+            padding := aPoint first @ aPoint last.
+            ^ drawable
+                uniform: ''pad'' value: self padInPixels;
+                uniform: ''tint'' value: aColour'.
+        label compile: 'padInPixels
+            "What was asked for is in the units the interface uses; what the
+             shader wants is the pixels a texel lands on."
+            | scale |
+            scale := drawable scale > 0 ifTrue: [ drawable scale ] ifFalse: [ 2 ].
+            ^ { padding x * scale. padding y * scale }'.
+        label compile: 'cellOrigin: aCode
+            | index |
+            index := aCode - self first.
+            ^ (index \\\\ self columns * self cellWidth) @ (index // self columns * self cellHeight)'.
+        label compile: 'show: aString
+            "Two triangles a letter, over the cell it was drawn in, laid out
+             along the baseline in cells."
+            | corners pen band cell |
+            corners := OrderedCollection new.
+            pen := 0.0.
+            cell := self cellHeight.
+            band := self inkBottom - self inkTop.
+            aString do: [ :each |
+                | code origin wide high |
+                code := each asInteger.
+                (code between: self first and: self last)
+                    ifTrue: [
+                        origin := self cellOrigin: code.
+                        wide := self cellWidth / cell.
+                        high := band / cell.
+                        #(#(0 0) #(1 0) #(0 1) #(1 0) #(1 1) #(0 1)) do: [ :corner |
+                            | cx cy |
+                            cx := corner at: 1. cy := corner at: 2.
+                            corners
+                                add: pen + (cx * wide); add: (cy - 1) * high;
+                                add: (origin x + (cx * self cellWidth)) / self sheetWidth;
+                                add: (origin y + self inkTop + ((1 - cy) * band)) / self sheetHeight ].
+                        pen := pen + ((self advanceOf: each) / cell) ]
+                    ifFalse: [ pen := pen + 0.5 ] ].
+            ^ drawable remesh: corners primitive: #triangles'.
+        label compile: 'drawable ^ drawable'.
 
         project := Object << #LumaProject slots: {}; package: 'Luma'; install.
         project class compile: 'fetch: aName as: aClass
