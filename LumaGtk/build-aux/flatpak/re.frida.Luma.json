@@ -183,6 +183,20 @@
             ]
         },
         {
+            "name": "pharo-vm",
+            "buildsystem": "simple",
+            "build-commands": [
+                "DESTDIR= PREFIX=/app LIBDIR=/app/lib INCLUDEDIR=/app/include PLATFORM=linux tools/build-vm.sh"
+            ],
+            "sources": [
+                {
+                    "type": "git",
+                    "url": "https://github.com/frida/SwiftyPharo.git",
+                    "commit": "809f08769913666af2a58e2aa49195a88d5a30e2"
+                }
+            ]
+        },
+        {
             "name": "luma",
             "buildsystem": "simple",
             "build-options": {

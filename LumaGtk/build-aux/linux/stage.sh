@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # Stage a /usr tree ready for rpmbuild/dpkg-deb.
 #
-# usage: stage.sh STAGE_DIR BINARY FRIDA_LIBDIR [SWIFT_LIBDIR LIBXML2]
+# usage: stage.sh STAGE_DIR BINARY FRIDA_LIBDIR PHARO_LIBDIR [SWIFT_LIBDIR LIBXML2]
 #
 #   STAGE_DIR     - directory to populate with the installable /usr tree
 #   BINARY        - path to the freshly built LumaGtk executable. The
 #                   SwiftPM *.resources bundles are picked up from the
 #                   same build directory.
 #   FRIDA_LIBDIR  - directory holding libfrida-core-1.0.so.* and frida-1.0/
+#   PHARO_LIBDIR  - directory holding libPharoVMCore.so and the plugins the
+#                   VM dlopens beside it. No distribution packages a Pharo
+#                   VM, so the whole of it ships with the app.
 #   SWIFT_LIBDIR  - optional; directory holding the Swift runtime .so files
 #                   (usually .../lib/swift/linux). Pass when the host
 #                   distro doesn't ship a compatible Swift runtime and we
@@ -23,8 +26,9 @@ set -euo pipefail
 stage="$1"
 exe="$2"
 frida_libdir="$3"
-swift_libdir="${4:-}"
-libxml2="${5:-}"
+pharo_libdir="$4"
+swift_libdir="${5:-}"
+libxml2="${6:-}"
 
 here="$(dirname "$(readlink -f "$0")")"
 lumagtk_root="$(readlink -f "$here/../..")"
@@ -55,6 +59,8 @@ done
 cp -P "$frida_libdir"/libfrida-core-1.0.so* "$luma_lib/"
 rsync -aL --exclude='frida-gadget*' "$frida_libdir/frida-1.0/" "$luma_lib/frida-1.0/"
 
+cp -P "$pharo_libdir"/*.so* "$luma_lib/"
+
 if [ -n "$swift_libdir" ]; then
     for so in "$swift_libdir"/*.so; do
         case "$(basename "$so")" in
@@ -75,6 +81,8 @@ if [ -n "$swift_libdir" ]; then
 else
     patchelf --set-rpath '$ORIGIN' "$luma_lib/luma"
 fi
+find "$luma_lib" -maxdepth 1 -name '*.so*' -type f \
+     -exec patchelf --set-rpath '$ORIGIN' {} +
 for so in "$luma_lib/frida-1.0"/*/*.so; do
     patchelf --set-rpath '$ORIGIN/../..' "$so"
 done

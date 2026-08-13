@@ -17,6 +17,8 @@
   atk,
   sqlite,
   glib-networking,
+  libffi,
+  openssl,
 }:
 stdenv.mkDerivation (finalAttrs: {
   pname = "luma";
@@ -46,6 +48,8 @@ stdenv.mkDerivation (finalAttrs: {
     atk
     sqlite
     glib-networking
+    libffi
+    openssl
   ];
 
   unpackPhase = "dpkg-deb -x $src .";

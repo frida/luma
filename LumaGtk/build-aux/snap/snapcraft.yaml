@@ -124,8 +124,29 @@ parts:
     prime:
       - -*
 
+  pharo-vm:
+    plugin: nil
+    source: https://github.com/frida/SwiftyPharo.git
+    source-commit: 809f08769913666af2a58e2aa49195a88d5a30e2
+    override-build: |
+      DESTDIR="$CRAFT_PART_INSTALL" PREFIX=/usr/local LIBDIR=/usr/local/lib \
+        PLATFORM=linux tools/build-vm.sh
+      sed -i 's|^prefix=.*|prefix=${pcfiledir}/../..|' \
+        "$CRAFT_PART_INSTALL"/usr/local/lib/pkgconfig/*.pc
+    build-packages:
+      - git
+      - curl
+      - unzip
+      - meson
+      - ninja-build
+      - pkg-config
+      - libffi-dev
+      - libssl-dev
+    prime:
+      - usr/local/lib/*.so*
+
   luma:
-    after: [swift, frida-core, radare2]
+    after: [swift, frida-core, radare2, pharo-vm]
     plugin: nil
     source: https://github.com/frida/luma.git
     source-branch: main

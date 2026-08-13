@@ -1,6 +1,6 @@
 # Package LumaGtk as a Windows installer (.msi) using WiX 3.x.
 #
-#     .\scripts\windows\package-msi.ps1                       # debug
+#     .\scripts\windows\package-msi.ps1 -PharoPrefix C:\src\pharo
 #     .\scripts\windows\package-msi.ps1 -Configuration release
 #
 # By default builds release if no existing build is found. Produces
@@ -19,6 +19,7 @@ param(
     [string] $VcpkgPrefix,
     [string] $FridaPrefix,
     [string] $R2Prefix,
+    [string] $PharoPrefix,
 
     [switch] $SkipBuild,
     [switch] $StageOnly
@@ -97,10 +98,20 @@ if (-not $swiftRuntimeDir) {
 }
 Write-Host "Swift runtime: $swiftRuntimeDir"
 
+if (-not $PharoPrefix) { $PharoPrefix = $env:PHARO_PREFIX }
+if (-not $PharoPrefix) {
+    throw "Pass -PharoPrefix or set `$env:PHARO_PREFIX. No distribution packages a Pharo VM, so the MSI has to carry the one this was built against."
+}
+$pharoBin = Join-Path $PharoPrefix 'bin'
+if (-not (Get-ChildItem -Path $pharoBin -Filter '*PharoVMCore.dll' -File -ErrorAction SilentlyContinue)) {
+    throw "PharoVMCore.dll not found under $pharoBin. Without it, and the plugin DLLs beside it, the image never boots."
+}
+
 $dllSearchPath = @(
     (Join-Path $env:VCPKG_PREFIX 'bin'),
     (Join-Path $env:FRIDA_PREFIX 'bin'),
     (Join-Path $env:R2_PREFIX    'bin'),
+    $pharoBin,
     $swiftRuntimeDir
 ) | Where-Object { Test-Path $_ }
 
