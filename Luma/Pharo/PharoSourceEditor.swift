@@ -170,6 +170,7 @@ struct PharoTextEditor: NSViewRepresentable {
         view.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         view.textContainer?.widthTracksTextView = false
         view.textContainer?.size = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        view.textStorage?.delegate = view
         view.apply(runtime: runtime, marks: marks, onToggleClass: onToggleClass, onOpen: onOpen, onOpenResult: onOpenResult)
         view.setSource(source)
 
@@ -276,7 +277,7 @@ extension PharoRuntime {
 /// Marks live in the text as attachments, so the source the reader edits is the
 /// text with those attachment characters taken back out. The bodies they open
 /// are published to the editor below rather than kept in the text.
-final class PharoTextView: NSTextView {
+final class PharoTextView: NSTextView, NSTextStorageDelegate {
     var completions: ((String, Int) async -> PharoCompletionList)?
     var classReferences: ((String) async -> [PharoClassReference])?
     var methodReferences: ((String) async -> [PharoMethodReference])?
@@ -298,6 +299,7 @@ final class PharoTextView: NSTextView {
     private var spans: [PharoStyleSpan] = []
     private var referencedSource: String?
     private var pendingMarkUp: DispatchWorkItem?
+    private var argumentPlaceholders: [NSRange] = []
     private var isApplyingMarks = false
     private var attachments: [PharoMarkContent: PharoMarkAttachment] = [:]
     private var classModels: [String: PharoClassMarkModel] = [:]
@@ -491,7 +493,9 @@ final class PharoTextView: NSTextView {
         guard !stale.isEmpty || !missing.isEmpty else { return }
 
         isApplyingMarks = true
-        let cursor = sourceCursor
+        let selection = selectedRange()
+        let selectionStart = sourceOffset(ofStorage: selection.location)
+        let selectionEnd = sourceOffset(ofStorage: NSMaxRange(selection))
         storage.beginEditing()
         for placed in stale.sorted(by: { $0.storageOffset > $1.storageOffset }) {
             storage.deleteCharacters(in: NSRange(location: placed.storageOffset, length: 1))
@@ -505,7 +509,8 @@ final class PharoTextView: NSTextView {
                 at: storageOffset(forSource: mark.sourceOffset))
         }
         storage.endEditing()
-        setSelectedRange(NSRange(location: storageOffset(forSource: cursor), length: 0))
+        let restoredStart = storageOffset(forSource: selectionStart)
+        setSelectedRange(NSRange(location: restoredStart, length: storageOffset(forSource: selectionEnd) - restoredStart))
         isApplyingMarks = false
         positionMarkOverlays()
     }
@@ -779,17 +784,12 @@ final class PharoTextView: NSTextView {
     }
 
     override func complete(_ sender: Any?) {
-        if let fetched {
-            self.fetched = nil
-            guard !fetched.candidates.isEmpty else { return }
-            return super.complete(sender)
-        }
-
         let source = self.source
         let cursor = sourceCursor
         Task { @MainActor in
             guard let list = await completions?(source, cursor), self.source == source else { return }
             fetched = list
+            guard !list.candidates.isEmpty else { return }
             super.complete(sender)
         }
     }
@@ -801,13 +801,97 @@ final class PharoTextView: NSTextView {
         fetched?.candidates
     }
 
-    /// The image counts the token from one, and in the source it was given,
-    /// which the marks in the text have since shifted along.
+    /// The token the caret sits at the end of, computed afresh so it tracks each
+    /// keystroke: once it is empty -- right after a colon -- there is nothing to
+    /// complete, and the panel dismisses rather than offering a stale selector.
     override var rangeForUserCompletion: NSRange {
-        guard let fetched else { return super.rangeForUserCompletion }
-        let cursor = selectedRange().location
-        let start = min(storageOffset(forSource: fetched.tokenStart - 1), cursor)
+        let units = Array(string.utf16)
+        let cursor = min(selectedRange().location, units.count)
+        var start = cursor
+        while start > 0, isTokenUnit(units[start - 1]) { start -= 1 }
         return NSRange(location: start, length: cursor - start)
+    }
+
+    private func isTokenUnit(_ unit: UTF16.CodeUnit) -> Bool {
+        (unit >= 48 && unit <= 57) || (unit >= 65 && unit <= 90) || (unit >= 97 && unit <= 122) || unit == 95
+    }
+
+    /// A keyword selector completes to its keywords spaced for arguments, each a
+    /// placeholder the reader tabs through and types over. The completed word is
+    /// the whole selector at its first keyword and the next keyword after that,
+    /// so laying it over the token adds only what has not been typed.
+    override func insertCompletion(_ word: String, forPartialWordRange charRange: NSRange, movement: Int, isFinal: Bool) {
+        guard isFinal, word.contains(":"), let storage = textStorage else {
+            return super.insertCompletion(word, forPartialWordRange: charRange, movement: movement, isFinal: isFinal)
+        }
+        // By the time the choice is final the panel has already previewed the
+        // word into the text over the token; the template replaces that preview,
+        // not the token, which would leave the preview's tail behind.
+        let previewed = NSRange(location: charRange.location, length: (word as NSString).length)
+        let replacing = NSMaxRange(previewed) <= (string as NSString).length
+            && (string as NSString).substring(with: previewed) == word ? previewed : charRange
+        let (text, placeholders) = keywordTemplate(word)
+        guard shouldChangeText(in: replacing, replacementString: text.string) else { return }
+        storage.replaceCharacters(in: replacing, with: text)
+        didChangeText()
+        argumentPlaceholders = placeholders.map { NSRange(location: replacing.location + $0.location, length: $0.length) }
+        guard let first = argumentPlaceholders.first else { return }
+        // The completion sets its own insertion point once this returns, so the
+        // first placeholder is selected after that, not before.
+        DispatchQueue.main.async { [weak self] in self?.setSelectedRange(first) }
+    }
+
+    private func keywordTemplate(_ selector: String) -> (text: NSAttributedString, placeholders: [NSRange]) {
+        let keywords = selector.split(separator: ":").map(String.init)
+        let text = NSMutableAttributedString()
+        var placeholders: [NSRange] = []
+        for (index, keyword) in keywords.enumerated() {
+            text.append(NSAttributedString(string: "\(keyword): ", attributes: sourceAttributes))
+            placeholders.append(NSRange(location: text.length, length: keyword.utf16.count))
+            text.append(NSAttributedString(string: keyword, attributes: placeholderAttributes))
+            if index < keywords.count - 1 {
+                text.append(NSAttributedString(string: " ", attributes: sourceAttributes))
+            }
+        }
+        return (text, placeholders)
+    }
+
+    private var placeholderAttributes: [NSAttributedString.Key: Any] {
+        var attributes = sourceAttributes
+        attributes[.backgroundColor] = NSColor.textColor.withAlphaComponent(0.1)
+        return attributes
+    }
+
+    /// Steps to the next or previous argument placeholder, selecting it so a keypress
+    /// types over it. The placeholders shift and clear with edits through the
+    /// storage delegate, so only unfilled ones remain to visit.
+    private func selectArgumentPlaceholder(forward: Bool) -> Bool {
+        let selection = selectedRange()
+        let ordered = argumentPlaceholders.sorted { $0.location < $1.location }
+        let target = forward
+            ? ordered.first { $0.location >= NSMaxRange(selection) }
+            : ordered.last { $0.location < selection.location }
+        guard let range = target else { return false }
+        setSelectedRange(range)
+        scrollRangeToVisible(range)
+        return true
+    }
+
+    func textStorage(
+        _ textStorage: NSTextStorage,
+        didProcessEditing editedMask: NSTextStorageEditActions,
+        range editedRange: NSRange,
+        changeInLength delta: Int
+    ) {
+        guard editedMask.contains(.editedCharacters), !argumentPlaceholders.isEmpty else { return }
+        let editStart = editedRange.location
+        let editEnd = NSMaxRange(editedRange) - delta
+        let userEdit = !isApplyingMarks
+        argumentPlaceholders = argumentPlaceholders.compactMap { placeholder in
+            if NSMaxRange(placeholder) <= editStart { return placeholder }
+            if placeholder.location >= editEnd { return NSRange(location: placeholder.location + delta, length: placeholder.length) }
+            return userEdit ? nil : NSRange(location: placeholder.location + delta, length: placeholder.length)
+        }
     }
 
     override func insertText(_ string: Any, replacementRange: NSRange) {
@@ -965,11 +1049,13 @@ final class PharoTextView: NSTextView {
     /// Tab indents: it steps in every line a selection touches, and is a plain
     /// tab when nothing is selected. Shift-tab always steps a line back out.
     override func insertTab(_ sender: Any?) {
+        if selectArgumentPlaceholder(forward: true) { return }
         guard selectedRange().length > 0 else { return super.insertText("\t", replacementRange: selectedRange()) }
         shiftSelectedLines(indenting: true)
     }
 
     override func insertBacktab(_ sender: Any?) {
+        if selectArgumentPlaceholder(forward: false) { return }
         shiftSelectedLines(indenting: false)
     }
 

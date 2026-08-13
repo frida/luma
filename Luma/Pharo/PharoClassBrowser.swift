@@ -1,6 +1,56 @@
 import SwiftUI
 import SwiftyPharo
 
+/// Glamorous Toolkit's class coder: the class's heading above its methods,
+/// definition and comment. It is a class inspected on its own, and an
+/// instance's Meta view is its class shown here.
+struct PharoClassBrowser: View {
+    let runtime: PharoRuntime
+    let classObject: PharoObject
+    let onSelect: (PharoObject) -> Void
+
+    @State private var info: PharoClassBrowserInfo?
+    @State private var shown: String? = "Methods"
+
+    private let tabs = ["Methods", "Definition", "Comment"]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let info {
+                PharoClassHeader(info: info)
+                PharoTabBar(tabs: tabs.map { ($0, $0) }, selection: $shown)
+                Divider()
+                content(of: info)
+            } else {
+                Color.clear
+            }
+        }
+        .task { info = try? await runtime.classBrowser(of: classObject) }
+    }
+
+    @ViewBuilder
+    private func content(of info: PharoClassBrowserInfo) -> some View {
+        switch shown {
+        case "Definition":
+            source(info.definition)
+        case "Comment":
+            source(info.comment)
+        default:
+            PharoMethodList(methods: info.methods, runtime: runtime, classObject: classObject, onSelect: onSelect)
+        }
+    }
+
+    private func source(_ text: String) -> some View {
+        ScrollView {
+            Text(text)
+                .font(.system(.body, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+        }
+    }
+}
+
 /// The class heading Glamorous Toolkit's coder shows: where the class sits,
 /// above its views.
 struct PharoClassHeader: View {

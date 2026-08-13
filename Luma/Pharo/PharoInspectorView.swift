@@ -190,7 +190,31 @@ private struct PharoColumnScrolling: ViewModifier {
     }
 }
 
-/// One object's declared views, as a tab per view.
+/// One inspector's views as a tab per view, scrolling when there are more than
+/// fit across the card.
+struct PharoTabBar: View {
+    let tabs: [(id: String, title: String)]
+    @Binding var selection: String?
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            Picker("", selection: $selection) {
+                ForEach(tabs, id: \.id) { tab in
+                    Text(tab.title).tag(Optional(tab.id))
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+        }
+        .scrollIndicators(.hidden)
+        .padding(6)
+    }
+}
+
+/// A class shows as Glamorous Toolkit's class coder; any other object shows its
+/// declared views as tabs -- Preview, Print and a Meta that is that same coder
+/// for its class among them.
 struct PharoObjectColumn: View {
     let runtime: PharoRuntime
     let object: PharoObject
@@ -199,14 +223,10 @@ struct PharoObjectColumn: View {
 
     @State private var declared: Declared = .pending
     @State private var shown: String?
-    @State private var classInfo: PharoClassBrowserInfo?
+    @State private var receiverClass: PharoObject?
 
-    /// The image names its Methods view this, which the browser draws richly
-    /// while the rest of the object's views draw as they always do.
-    private static let methodsView = "swpMethodsFor:"
+    private static let metaView = "swpMeta"
 
-    /// Nothing declared and not asked yet are different things: rendering them
-    /// alike flashes "No views" over every object on its way in.
     private enum Declared {
         case pending
         case ready([PharoViewDeclaration])
@@ -214,50 +234,37 @@ struct PharoObjectColumn: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-                .overlay(alignment: .topTrailing) { closeButton }
-
-            if declarations.count > 1 {
-                // More tabs than the card is wide should scroll rather than
-                // squeeze every title down to an ellipsis.
-                ScrollView(.horizontal) {
-                    Picker("", selection: $shown) {
-                        ForEach(declarations, id: \.methodSelector) { declaration in
-                            Text(declaration.title).tag(Optional(declaration.methodSelector))
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                }
-                .scrollIndicators(.hidden)
-                .padding(6)
+        Group {
+            if object.isClass {
+                PharoClassBrowser(runtime: runtime, classObject: object, onSelect: onSelect)
+            } else {
+                objectInspector
             }
+        }
+        .overlay(alignment: .topTrailing) { closeButton }
+        .task { await load() }
+    }
 
+    private var objectInspector: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            printStringHeader
+            PharoTabBar(tabs: declarations.map { ($0.methodSelector, $0.title) }, selection: $shown)
             Divider()
             content
         }
-        .task { await loadDeclarations() }
     }
 
-    @ViewBuilder
-    private var header: some View {
-        if let classInfo {
-            PharoClassHeader(info: classInfo)
-        } else {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(object.printString)
-                    .font(.headline)
-                    .lineLimit(2)
-                    .accessibilityIdentifier("pharo.inspector.printString")
-                Text(object.className)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+    private var printStringHeader: some View {
+        Text("\(article(for: object.className)) \(object.className) (\(object.printString))")
+            .font(.headline)
+            .lineLimit(2)
+            .accessibilityIdentifier("pharo.inspector.printString")
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(8)
-        }
+    }
+
+    private func article(for className: String) -> String {
+        "aeiouAEIOU".contains(className.first ?? "x") ? "an" : "a"
     }
 
     private var closeButton: some View {
@@ -284,14 +291,37 @@ struct PharoObjectColumn: View {
 
     @ViewBuilder
     private func body(of declaration: PharoViewDeclaration) -> some View {
-        if declaration.methodSelector == Self.methodsView, let classInfo {
-            PharoMethodList(
-                methods: classInfo.methods,
-                runtime: runtime,
-                classObject: object,
-                onSelect: onSelect)
-        } else {
+        switch declaration.title {
+        case "Preview":
+            preview(declaration.text ?? object.printString)
+        case "Print":
+            source(object.printString)
+        case "Meta":
+            if let receiverClass {
+                PharoClassBrowser(runtime: runtime, classObject: receiverClass, onSelect: onSelect)
+            }
+        default:
             declaredBody(of: declaration)
+        }
+    }
+
+    private func preview(_ text: String) -> some View {
+        ScrollView {
+            Text(text)
+                .font(.largeTitle)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+        }
+    }
+
+    private func source(_ text: String) -> some View {
+        ScrollView {
+            Text(text)
+                .font(.system(.body, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
         }
     }
 
@@ -322,29 +352,28 @@ struct PharoObjectColumn: View {
         declarations.first { $0.methodSelector == shown } ?? declarations.first
     }
 
-    /// A class with no methods has its (empty) Methods view dropped by the image,
-    /// but the browser still owns that tab -- and its way to add the first
-    /// method -- so it stands one in when the image left it out.
     private var declarations: [PharoViewDeclaration] {
         guard case .ready(let loaded) = declared else { return [] }
-        guard classInfo != nil, !loaded.contains(where: { $0.methodSelector == Self.methodsView }) else {
-            return loaded
-        }
-        return [methodsDeclaration] + loaded
+        let declared = loaded.filter { $0.title != "Meta" }
+        return declared + [printDeclaration, metaDeclaration]
     }
 
-    private var methodsDeclaration: PharoViewDeclaration {
-        PharoViewDeclaration(viewName: "columnedList", title: "Methods", priority: 1, methodSelector: Self.methodsView)
+    private var printDeclaration: PharoViewDeclaration {
+        PharoViewDeclaration(viewName: "print", title: "Print", priority: .max - 1, methodSelector: "swpPrint")
     }
 
-    private func loadDeclarations() async {
-        if object.isClass {
-            classInfo = try? await runtime.classBrowser(of: object)
+    private var metaDeclaration: PharoViewDeclaration {
+        PharoViewDeclaration(viewName: "meta", title: "Meta", priority: .max, methodSelector: Self.metaView)
+    }
+
+    private func load() async {
+        if !object.isClass {
+            receiverClass = try? await runtime.classObject(of: object)
         }
         do {
             let loaded = try await runtime.views(of: object)
             declared = .ready(loaded)
-            shown = object.isClass ? Self.methodsView : loaded.first?.methodSelector
+            shown = declarations.first?.methodSelector
         } catch {
             declared = .failed(error.localizedDescription)
         }
