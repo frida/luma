@@ -86,6 +86,7 @@ public enum MissionTools {
         registerInvokeWidgetAction(in: catalog, engine: engine)
         registerSubmitConsoleInput(in: catalog, engine: engine)
         registerRequestUserInput(in: catalog)
+        registerPharo(in: catalog, engine: engine)
     }
 
     // MARK: - list_devices
@@ -4101,7 +4102,7 @@ public enum MissionTools {
         return result
     }
 
-    private static func makeResult(
+    static func makeResult(
         jsonObject: Any,
         attachments: [LLMAttachment] = [],
         summary: String
@@ -4157,12 +4158,12 @@ public enum MissionTools {
         return value
     }
 
-    private static func errorResult(_ message: String, code: ToolErrorCode = .failed) -> ActionResult {
+    static func errorResult(_ message: String, code: ToolErrorCode = .failed) -> ActionResult {
         let json = "{\"error\":\"\(escapeJSON(message))\",\"code\":\"\(code.rawValue)\"}"
         return ActionResult(summary: message, resultJSON: json, isError: true)
     }
 
-    private enum ToolErrorCode: String {
+    enum ToolErrorCode: String {
         case invalidInput = "invalid_input"
         case notFound = "not_found"
         case unavailable = "unavailable"

@@ -21,7 +21,7 @@ export SHADER_TOOLCHAIN_ROOT := artifacts/ShaderToolchain.xcframework
 endif
 
 PHARO_RELEASE := vm-20260802.8
-PHARO_IMAGE_DIR := Sources/LumaGtk/Resources/pharo-image
+PHARO_IMAGE_DIR := ../Sources/LumaCore/Resources/pharo-image
 PHARO_IMAGE := $(PHARO_IMAGE_DIR)/SwiftyPharo.image
 PHARO_LOCAL := $(PROJECT_ROOT)/../SwiftyPharo/artifacts/SwiftyPharo.image
 PHARO_CACHE := .build/.pharo/$(PHARO_RELEASE)

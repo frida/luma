@@ -19,11 +19,7 @@ struct DetailView: View {
                 NotebookView(engine: engine, selection: $selection)
 
             case .some(.pharo):
-                #if os(macOS)
                 PharoPlaygroundView(engine: engine)
-                #else
-                ContentUnavailableView("Pharo runs on macOS", systemImage: "desktopcomputer")
-                #endif
 
             case .some(.missions):
                 MissionsListView(engine: engine, selection: $selection)

@@ -165,13 +165,18 @@ struct PharoScrollTarget: Equatable {
     let stamp = UUID()
 }
 
-let pharoColumnWidth: CGFloat = 400
+let pharoPreferredColumnWidth: CGFloat = 400
+
+/// A column keeps to its preferred width until the scroller is narrower than
+/// that, where it takes what it is given so both its edges stay on screen.
+func pharoColumnWidth(fitting available: CGFloat) -> CGFloat {
+    min(pharoPreferredColumnWidth, available - 2 * pharoColumnMargin)
+}
 
 /// The gap a column is scrolled to rest at, kept out of the height a column is
 /// given so a row of them fits the scroller rather than overflowing it.
 let pharoColumnMargin: CGFloat = 8
 
-#if os(macOS)
 extension View {
     /// Lays a maximized pane over the whole inspector -- page and carousel both
     /// -- the way Glamorous Toolkit fills its host when a pane is maximized.
@@ -235,6 +240,7 @@ struct PharoMaximizedPane: View {
 func pharoColumns(
     runtime: PharoRuntime,
     path: PharoColumnPath,
+    width: CGFloat,
     onCloseAll: @escaping () -> Void
 ) -> some View {
     let runs = pharoColumnRuns(path)
@@ -271,7 +277,7 @@ func pharoColumns(
                             onMaximize: { path.toggleMaximized(handle) }),
                         onSelect: { path.open($0, from: depth) },
                         onClose: close)
-                    .frame(width: pharoColumnWidth)
+                    .frame(width: width)
                     .pharoPane()
                     .id(handle)
                 }
@@ -325,27 +331,6 @@ private func pharoColumnRuns(_ path: PharoColumnPath) -> [PharoColumnRun] {
 extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
-    }
-}
-
-/// Walks an object through the views it declares, opening each selection in a
-/// column to its right so the path taken to reach a value stays on screen.
-struct PharoInspectorView: View {
-    let runtime: PharoRuntime
-    let root: PharoObject
-    let onClose: () -> Void
-
-    @State private var path = PharoColumnPath()
-
-    var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 0) {
-                pharoColumns(runtime: runtime, path: path, onCloseAll: onClose)
-            }
-            .scrollTargetLayout()
-        }
-        .pharoColumnScrolling(path)
-        .onChange(of: root.handle, initial: true) { path.startOver(at: root) }
     }
 }
 
@@ -438,7 +423,7 @@ struct PharoObjectColumn: View {
             PharoRoundIcon(systemName: "arrow.down.right.and.arrow.up.left")
         }
         .buttonStyle(.plain)
-        .pointerStyle(.link)
+        .platformPointer(.link)
         .help("Restore pane")
         .padding(6)
         .accessibilityIdentifier("pharo.inspection.restore")
@@ -604,11 +589,12 @@ struct PharoObjectColumn: View {
 }
 
 /// The system search field, so filtering a list wears the magnifier, the clear
-/// button, and the look every other macOS search does.
-struct PharoSearchField: NSViewRepresentable {
+/// button, and the look every other search on the platform does.
+struct PharoSearchField: PlatformViewRepresentable {
     @Binding var text: String
     let prompt: String
 
+    #if canImport(AppKit)
     func makeNSView(context: Context) -> NSSearchField {
         let field = NSSearchField()
         field.placeholderString = prompt
@@ -624,24 +610,53 @@ struct PharoSearchField: NSViewRepresentable {
             field.stringValue = text
         }
     }
+    #else
+    func makeUIView(context: Context) -> UISearchTextField {
+        let field = UISearchTextField()
+        field.placeholder = prompt
+        field.returnKeyType = .search
+        field.addTarget(context.coordinator, action: #selector(Coordinator.edited), for: .editingChanged)
+        return field
+    }
+
+    func updateUIView(_ field: UISearchTextField, context: Context) {
+        if field.text != text {
+            field.text = text
+        }
+    }
+    #endif
 
     func makeCoordinator() -> Coordinator {
         Coordinator(text: $text)
     }
 
-    final class Coordinator: NSObject, NSSearchFieldDelegate {
+    final class Coordinator: NSObject {
         private let text: Binding<String>
 
         init(text: Binding<String>) {
             self.text = text
         }
 
-        func controlTextDidChange(_ notification: Notification) {
-            guard let field = notification.object as? NSSearchField else { return }
+        #if canImport(AppKit)
+        @objc func edited(_ field: NSSearchField) {
             text.wrappedValue = field.stringValue
         }
+        #else
+        @objc func edited(_ field: UISearchTextField) {
+            text.wrappedValue = field.text ?? ""
+        }
+        #endif
     }
 }
+
+#if canImport(AppKit)
+extension PharoSearchField.Coordinator: NSSearchFieldDelegate {
+    func controlTextDidChange(_ notification: Notification) {
+        guard let field = notification.object as? NSSearchField else { return }
+        edited(field)
+    }
+}
+#endif
 
 /// Pages its rows in as they are needed, so a large collection costs only the
 /// rows that have been looked at.
@@ -686,13 +701,9 @@ private struct PharoItemsList: View {
             table
             footer
         }
-        // GT drills on activation rather than on merely selecting a row. Watching
-        // for the second click leaves the table's own handling of the first alone,
-        // so selection stays quick and the arrow keys still walk the rows.
-        .background(PharoDoubleClickCatcher { row in
-            selection = row
+        .pharoRowActivation(selection: $selection) { row in
             Task { await drill(into: row) }
-        })
+        }
         .onKeyPress(.return) {
             guard let row = selection else { return .ignored }
             Task { await drill(into: row) }
@@ -730,15 +741,13 @@ private struct PharoItemsList: View {
     }
 
     private func copyRow(_ row: Row) {
-        let text = row.cells.dropFirst().compactMap { $0.text }.joined(separator: "\t")
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        Platform.copyToClipboard(row.cells.dropFirst().compactMap { $0.text }.joined(separator: "\t"))
     }
 
     @ViewBuilder
     private func cell(_ cell: PharoCell, isIndex: Bool) -> some View {
-        if let png = cell.png, let image = NSImage(data: png) {
-            Image(nsImage: image)
+        if let png = cell.png, let image = Image(platformImageData: png) {
+            image
                 .resizable()
                 .frame(width: 16, height: 16)
         } else {
@@ -750,7 +759,7 @@ private struct PharoItemsList: View {
 
     private var indexColumnWidth: CGFloat {
         let digits = max(String(loaded.total).count, 3)
-        return CGFloat(digits) * PharoRowView.characterWidth + 24
+        return CGFloat(digits) * PharoSourceFont.characterWidth + 24
     }
 
     @ViewBuilder
@@ -828,7 +837,7 @@ private struct PharoOverviewThumb: View {
             .frame(width: trackWidth, height: 8, alignment: .leading)
             .contentShape(Rectangle())
             .onHover { isPointedAt = $0 }
-            .pointerStyle(.link)
+            .platformPointer(.link)
             .gesture(drag)
     }
 
@@ -885,9 +894,9 @@ struct PharoPaneActions {
 }
 
 /// The round button Glamorous Toolkit puts in a pane's corner. It opens a menu
-/// of pane actions, unless a modifier is held: Command collapses the pane and
-/// Command-Shift closes it, the icon changing to say which as the reader holds
-/// the keys.
+/// of pane actions; where there are modifier keys to hold, Command collapses the
+/// pane and Command-Shift closes it, the icon changing to say which as the
+/// reader holds the keys.
 struct PharoPaneMenuButton: View {
     let isRevealed: Bool
     var canClose = true
@@ -895,39 +904,47 @@ struct PharoPaneMenuButton: View {
     let onClose: () -> Void
     let onUpdate: () -> Void
 
-    @State private var modifiers: NSEvent.ModifierFlags = []
-    @State private var flagsMonitor: Any?
+    @State private var modifiers = PharoPaneModifiers()
 
     private enum Mode { case menu, collapse, close }
 
     private var mode: Mode {
-        let held = modifiers.intersection([.command, .shift])
-        if canClose, held == [.command, .shift] { return .close }
-        if actions.canCollapse, held == [.command] { return .collapse }
+        if canClose, modifiers.held == [.command, .shift] { return .close }
+        if actions.canCollapse, modifiers.held == [.command] { return .collapse }
         return .menu
     }
 
     var body: some View {
-        Button(action: activate) {
-            PharoRoundIcon(systemName: icon)
-        }
-        .buttonStyle(.plain)
-        .pointerStyle(.link)
-        .help(help)
-        .opacity(isRevealed ? 1 : 0)
-        .allowsHitTesting(isRevealed)
-        .onChange(of: isRevealed, initial: true) { _, revealed in
-            revealed ? watchModifiers() : forgetModifiers()
-        }
-        .onDisappear(perform: forgetModifiers)
+        button
+            .buttonStyle(.plain)
+            .platformPointer(.link)
+            .help(help)
+            .opacity(isRevealed ? 1 : 0)
+            .allowsHitTesting(isRevealed)
+            .onChange(of: isRevealed, initial: true) { _, revealed in
+                revealed ? modifiers.watch() : modifiers.forget()
+            }
+            .onDisappear(perform: modifiers.forget)
     }
 
-    private func activate() {
-        switch mode {
-        case .menu: showMenu()
-        case .collapse: actions.onCollapse()
-        case .close: onClose()
-        }
+    /// A pane's menu is a click away where a pointer can hold modifiers, and the
+    /// platform's own menu button where the finger is all there is.
+    @ViewBuilder
+    private var button: some View {
+        #if canImport(AppKit)
+            Button(action: activate) {
+                PharoRoundIcon(systemName: icon)
+            }
+        #else
+            Menu {
+                ForEach(items) { item in
+                    Button(item.title, systemImage: item.symbol, action: item.run)
+                }
+            } label: {
+                PharoRoundIcon(systemName: icon)
+            }
+            .menuIndicator(.hidden)
+        #endif
     }
 
     private var icon: String {
@@ -946,40 +963,101 @@ struct PharoPaneMenuButton: View {
         }
     }
 
+    private var items: [PharoPaneMenuItem] {
+        var items: [PharoPaneMenuItem] = []
+        if actions.canCollapse {
+            items.append(PharoPaneMenuItem(title: "Collapse pane", symbol: "poweron", run: actions.onCollapse))
+        }
+        if canClose {
+            items.append(PharoPaneMenuItem(title: "Close pane", symbol: "xmark", run: onClose))
+        }
+        if actions.canMaximize {
+            items.append(PharoPaneMenuItem(
+                title: "Maximize pane",
+                symbol: "arrow.up.left.and.arrow.down.right",
+                run: actions.onMaximize))
+        }
+        items.append(PharoPaneMenuItem(title: "Update pane tool", symbol: "arrow.clockwise", run: onUpdate))
+        return items
+    }
+
+    #if canImport(AppKit)
+    private func activate() {
+        switch mode {
+        case .menu: showMenu()
+        case .collapse: actions.onCollapse()
+        case .close: onClose()
+        }
+    }
+
     private func showMenu() {
         let menu = NSMenu()
         var runners: [PharoMenuRunner] = []
-
-        func add(_ title: String, _ symbol: String, _ run: @escaping () -> Void) {
-            let item = NSMenuItem(title: title, action: #selector(PharoMenuRunner.fire), keyEquivalent: "")
-            let runner = PharoMenuRunner(run)
+        for item in items {
+            let entry = NSMenuItem(title: item.title, action: #selector(PharoMenuRunner.fire), keyEquivalent: "")
+            let runner = PharoMenuRunner(item.run)
             runners.append(runner)
-            item.target = runner
-            item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-            menu.addItem(item)
+            entry.target = runner
+            entry.image = NSImage(systemSymbolName: item.symbol, accessibilityDescription: nil)
+            menu.addItem(entry)
         }
-
-        if actions.canCollapse { add("Collapse pane", "poweron", actions.onCollapse) }
-        if canClose { add("Close pane", "xmark", onClose) }
-        if actions.canMaximize { add("Maximize pane", "arrow.up.left.and.arrow.down.right", actions.onMaximize) }
-        add("Update pane tool", "arrow.clockwise", onUpdate)
-
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
+    #endif
+}
 
-    private func watchModifiers() {
-        modifiers = NSEvent.modifierFlags
-        guard flagsMonitor == nil else { return }
-        flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
-            modifiers = event.modifierFlags
+struct PharoPaneMenuItem: Identifiable {
+    let title: String
+    let symbol: String
+    let run: () -> Void
+
+    var id: String { title }
+}
+
+/// Which of Command and Shift are down, where holding them is a thing the
+/// platform lets a view ask about.
+@Observable
+final class PharoPaneModifiers {
+    private(set) var held: PharoPaneModifierKeys = []
+
+    #if canImport(AppKit)
+    @ObservationIgnored private var monitor: Any?
+
+    func watch() {
+        held = NSEvent.modifierFlags.paneModifiers
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            self?.held = event.modifierFlags.paneModifiers
             return event
         }
     }
 
-    private func forgetModifiers() {
-        flagsMonitor.map(NSEvent.removeMonitor)
-        flagsMonitor = nil
-        modifiers = []
+    func forget() {
+        monitor.map(NSEvent.removeMonitor)
+        monitor = nil
+        held = []
+    }
+    #else
+    func watch() {}
+
+    func forget() {}
+    #endif
+}
+
+struct PharoPaneModifierKeys: OptionSet {
+    let rawValue: Int
+
+    static let command = PharoPaneModifierKeys(rawValue: 1 << 0)
+    static let shift = PharoPaneModifierKeys(rawValue: 1 << 1)
+}
+
+#if canImport(AppKit)
+extension NSEvent.ModifierFlags {
+    var paneModifiers: PharoPaneModifierKeys {
+        var keys: PharoPaneModifierKeys = []
+        if contains(.command) { keys.insert(.command) }
+        if contains(.shift) { keys.insert(.shift) }
+        return keys
     }
 }
 
@@ -996,6 +1074,7 @@ final class PharoMenuRunner: NSObject {
         run()
     }
 }
+#endif
 
 /// The round white disc a pane's corner buttons wear.
 struct PharoRoundIcon: View {
@@ -1054,7 +1133,7 @@ struct PharoCollapsedMiniature: View {
                 .frame(width: 22, height: 26)
         }
         .buttonStyle(.plain)
-        .pointerStyle(.link)
+        .platformPointer(.link)
         .onHover { isPointedAt = $0 }
         .help("Expand \(object.className)")
         .overlay(alignment: .trailing) { if showsConnector { connector } }
@@ -1068,6 +1147,28 @@ struct PharoCollapsedMiniature: View {
     }
 }
 
+extension View {
+    /// GT drills on activation rather than on merely selecting a row. Where
+    /// there is a pointer that is the second click, which leaves the table's own
+    /// handling of the first alone, so selection stays quick and the arrow keys
+    /// still walk the rows; where there is only a finger, a tap is the whole of
+    /// it, and selecting a row is activating it.
+    @ViewBuilder
+    func pharoRowActivation(selection: Binding<Int?>, activate: @escaping (Int) -> Void) -> some View {
+        #if canImport(AppKit)
+            background(PharoDoubleClickCatcher { row in
+                selection.wrappedValue = row
+                activate(row)
+            })
+        #else
+            onChange(of: selection.wrappedValue) { _, row in
+                if let row { activate(row) }
+            }
+        #endif
+    }
+}
+
+#if canImport(AppKit)
 /// Notices a double-click over the list without taking the click, so the list
 /// keeps handling selection and keyboard travel itself.
 /// Reports which row a double-click landed on, read from the table under the
@@ -1136,6 +1237,7 @@ private struct PharoDoubleClickCatcher: NSViewRepresentable {
         }
     }
 }
+#endif
 
 /// The pager's strip: a square for the page and one for each column, with a
 /// scrollbar under them.
@@ -1200,4 +1302,3 @@ struct PharoOverviewStrip: View {
     private let previewHeight: CGFloat = 12
     private let previewSpacing: CGFloat = 3
 }
-#endif

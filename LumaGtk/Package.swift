@@ -128,7 +128,6 @@ let package = Package(
             resources: [
                 .copy("Resources/nowsecure-logo.svg"),
                 .copy("Resources/pharo"),
-                .copy("Resources/pharo-image"),
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),

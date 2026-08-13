@@ -1,20 +1,39 @@
-import AppKit
 import LumaCore
 import Metal
 import MetalKit
 import SwiftUI
 
+#if canImport(AppKit)
+    import AppKit
+#else
+    import UIKit
+#endif
+
 /// A scene drawn inside an object's views. The image holds the scene and
 /// changes it; this follows, rebuilding only what differs so moving a
 /// drawable does not recompile its shaders.
-struct PharoCanvasSceneView: NSViewRepresentable {
+struct PharoCanvasSceneView: PlatformViewRepresentable {
     let scene: Int
 
     func makeCoordinator() -> CanvasSceneRenderer {
         CanvasSceneRenderer()
     }
 
-    func makeNSView(context: Context) -> MTKView {
+    #if canImport(AppKit)
+        func makeNSView(context: Context) -> MTKView {
+            makeSceneView(context: context)
+        }
+
+        func updateNSView(_ view: MTKView, context: Context) {}
+    #else
+        func makeUIView(context: Context) -> MTKView {
+            makeSceneView(context: context)
+        }
+
+        func updateUIView(_ view: MTKView, context: Context) {}
+    #endif
+
+    private func makeSceneView(context: Context) -> MTKView {
         let view = CanvasSceneInputView(scene: scene)
         view.device = MTLCreateSystemDefaultDevice()
         view.colorPixelFormat = .bgra8Unorm
@@ -24,117 +43,192 @@ struct PharoCanvasSceneView: NSViewRepresentable {
         context.coordinator.attach(to: view, scene: scene)
         return view
     }
-
-    func updateNSView(_ view: MTKView, context: Context) {}
 }
 
 /// Reports what the pointer and keyboard are doing, for whoever drives the
 /// scene to read. Nothing is delivered into the image: a snippet asks.
 final class CanvasSceneInputView: MTKView {
     private let scene: Int
-    private var tracking: NSTrackingArea?
+
+    #if canImport(AppKit)
+        private var tracking: NSTrackingArea?
+    #endif
 
     init(scene: Int) {
         self.scene = scene
         super.init(frame: .zero, device: nil)
+        #if canImport(UIKit)
+            isMultipleTouchEnabled = false
+        #endif
     }
 
     required init(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override var acceptsFirstResponder: Bool { true }
+    #if canImport(AppKit)
+        override var acceptsFirstResponder: Bool { true }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard window == nil else { return }
+            reportPaneClosed()
+        }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            if let tracking {
+                removeTrackingArea(tracking)
+            }
+            let area = NSTrackingArea(
+                rect: bounds,
+                options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                owner: self)
+            addTrackingArea(area)
+            tracking = area
+        }
+
+        override func mouseMoved(with event: NSEvent) {
+            reportPointer(at: location(of: event))
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            reportPointer(at: location(of: event))
+        }
+
+        override func mouseExited(with event: NSEvent) {
+            report { $0.isPointerInside = false }
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            window?.makeFirstResponder(self)
+            reportPointer(at: location(of: event))
+            report { $0.buttons |= 1 << 0 }
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            report { $0.buttons &= ~(1 << 0) }
+        }
+
+        override func rightMouseDown(with event: NSEvent) {
+            report { $0.buttons |= 1 << 1 }
+        }
+
+        override func rightMouseUp(with event: NSEvent) {
+            report { $0.buttons &= ~(1 << 1) }
+        }
+
+        override func keyDown(with event: NSEvent) {
+            report { $0.keysDown.insert(Self.code(for: event)) }
+        }
+
+        override func keyUp(with event: NSEvent) {
+            report { $0.keysDown.remove(Self.code(for: event)) }
+        }
+
+        private func location(of event: NSEvent) -> CGPoint {
+            let at = convert(event.locationInWindow, from: nil)
+            return CGPoint(x: at.x, y: bounds.height - at.y)
+        }
+
+        private static func code(for event: NSEvent) -> Int32 {
+            switch Int(event.keyCode) {
+            case 123: return CanvasKey.left.rawValue
+            case 124: return CanvasKey.right.rawValue
+            case 125: return CanvasKey.down.rawValue
+            case 126: return CanvasKey.up.rawValue
+            case 36, 76: return CanvasKey.enter.rawValue
+            case 53: return CanvasKey.escape.rawValue
+            default:
+                guard let character = event.charactersIgnoringModifiers?.first else { return 0 }
+                return CanvasKey.code(for: character)
+            }
+        }
+    #else
+        override var canBecomeFirstResponder: Bool { true }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard window == nil else { return }
+            reportPaneClosed()
+        }
+
+        /// A finger is the pointer and its only button, so touching down is both
+        /// moving there and pressing.
+        override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+            becomeFirstResponder()
+            reportTouch(touches)
+            report { $0.buttons |= 1 << 0 }
+        }
+
+        override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+            reportTouch(touches)
+        }
+
+        override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+            report {
+                $0.buttons &= ~(1 << 0)
+                $0.isPointerInside = false
+            }
+        }
+
+        override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+            touchesEnded(touches, with: event)
+        }
+
+        override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+            let codes = presses.compactMap(Self.code)
+            guard !codes.isEmpty else { return super.pressesBegan(presses, with: event) }
+            report { input in codes.forEach { input.keysDown.insert($0) } }
+        }
+
+        override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+            let codes = presses.compactMap(Self.code)
+            guard !codes.isEmpty else { return super.pressesEnded(presses, with: event) }
+            report { input in codes.forEach { input.keysDown.remove($0) } }
+        }
+
+        private func reportTouch(_ touches: Set<UITouch>) {
+            guard let touch = touches.first else { return }
+            reportPointer(at: touch.location(in: self))
+        }
+
+        private static func code(for press: UIPress) -> Int32? {
+            guard let key = press.key else { return nil }
+            switch key.keyCode {
+            case .keyboardLeftArrow: return CanvasKey.left.rawValue
+            case .keyboardRightArrow: return CanvasKey.right.rawValue
+            case .keyboardDownArrow: return CanvasKey.down.rawValue
+            case .keyboardUpArrow: return CanvasKey.up.rawValue
+            case .keyboardReturnOrEnter, .keypadEnter: return CanvasKey.enter.rawValue
+            case .keyboardEscape: return CanvasKey.escape.rawValue
+            default:
+                guard let character = key.charactersIgnoringModifiers.first else { return nil }
+                return CanvasKey.code(for: character)
+            }
+        }
+    #endif
 
     /// Closing the pane a scene is drawn in says what Escape says, and whoever
     /// drives the scene is already watching for that.
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        guard window == nil else { return }
+    private func reportPaneClosed() {
         report { $0.keysDown.insert(CanvasKey.escape.rawValue) }
     }
 
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let tracking {
-            removeTrackingArea(tracking)
-        }
-        let area = NSTrackingArea(
-            rect: bounds,
-            options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-            owner: self)
-        addTrackingArea(area)
-        tracking = area
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        reportPointer(event)
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        reportPointer(event)
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        report { $0.isPointerInside = false }
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        window?.makeFirstResponder(self)
-        reportPointer(event)
-        report { $0.buttons |= 1 << 0 }
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        report { $0.buttons &= ~(1 << 0) }
-    }
-
-    override func rightMouseDown(with event: NSEvent) {
-        report { $0.buttons |= 1 << 1 }
-    }
-
-    override func rightMouseUp(with event: NSEvent) {
-        report { $0.buttons &= ~(1 << 1) }
-    }
-
-    override func keyDown(with event: NSEvent) {
-        report { $0.keysDown.insert(Self.code(for: event)) }
-    }
-
-    override func keyUp(with event: NSEvent) {
-        report { $0.keysDown.remove(Self.code(for: event)) }
-    }
-
     /// Clip space, so what a snippet reads is in the coordinates it gave its
-    /// vertices in.
-    private func reportPointer(_ event: NSEvent) {
-        let at = convert(event.locationInWindow, from: nil)
+    /// vertices in, taken from a point measured down from the view's top.
+    private func reportPointer(at point: CGPoint) {
         guard bounds.width > 0, bounds.height > 0 else { return }
 
         report {
-            $0.pointerX = Float(at.x / bounds.width * 2 - 1)
-            $0.pointerY = Float(at.y / bounds.height * 2 - 1)
+            $0.pointerX = Float(point.x / bounds.width * 2 - 1)
+            $0.pointerY = Float(1 - point.y / bounds.height * 2)
             $0.isPointerInside = true
         }
     }
 
     private func report(_ change: (inout CanvasInput) -> Void) {
         CanvasRegistry.shared.reportInput(scene, change)
-    }
-
-    /// AppKit's own codes, mapped onto what a scene is asked about: the named
-    /// keys, and otherwise whatever character was typed.
-    private static func code(for event: NSEvent) -> Int32 {
-        switch Int(event.keyCode) {
-        case 123: return CanvasKey.left.rawValue
-        case 124: return CanvasKey.right.rawValue
-        case 125: return CanvasKey.down.rawValue
-        case 126: return CanvasKey.up.rawValue
-        case 36, 76: return CanvasKey.enter.rawValue
-        case 53: return CanvasKey.escape.rawValue
-        default:
-            guard let character = event.charactersIgnoringModifiers?.first else { return 0 }
-            return CanvasKey.code(for: character)
-        }
     }
 }
 
@@ -224,7 +318,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         // that matters either way.
         let scale = view.bounds.width > 0
             ? Float(view.drawableSize.width / view.bounds.width)
-            : Float(view.window?.backingScaleFactor ?? 1)
+            : Float(view.pixelsPerPoint)
         uniforms[7] = scale
         CanvasRegistry.shared.reportScale(sceneHandle, scale)
         trace(view, scale: scale, uniformWidth: uniforms[0], uniformHeight: uniforms[1])

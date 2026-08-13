@@ -1,11 +1,6 @@
-#if os(macOS)
 import Charts
 import SwiftUI
 import SwiftyPharo
-
-#if canImport(AppKit)
-import AppKit
-#endif
 
 struct PharoChartView: View {
     let chart: PharoChart
@@ -123,7 +118,7 @@ struct PharoChartView: View {
                 Rectangle()
                     .fill(.clear)
                     .contentShape(Rectangle())
-                    .pointerStyle(.link)
+                    .platformPointer(.link)
                     .onTapGesture { location in activate(at: location, proxy: proxy, in: geometry) }
                     .onContinuousHover { phase in
                         switch phase {
@@ -133,7 +128,7 @@ struct PharoChartView: View {
                     }
                     .contextMenu {
                         if let selected {
-                            Button { copyToPasteboard(readout(selected)) } label: {
+                            Button { Platform.copyToClipboard(readout(selected)) } label: {
                                 Label("Copy Value", systemImage: "doc.on.doc")
                             }
                         }
@@ -261,13 +256,6 @@ struct PharoChartView: View {
         if let selected { drill(into: selected) }
     }
 
-    private func copyToPasteboard(_ text: String) {
-        #if canImport(AppKit)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        #endif
-    }
-
     private func drill(into index: Int) {
         guard let onDrill, !drilling else { return }
         drilling = true
@@ -279,4 +267,3 @@ struct PharoChartView: View {
         }
     }
 }
-#endif

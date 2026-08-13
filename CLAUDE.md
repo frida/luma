@@ -32,7 +32,9 @@ glslang and SPIRV-Cross do the GLSL→Metal translation, at build time
 and at run time, and build under neither SwiftPM nor Xcode. CI makes
 them into `ShaderToolchain.xcframework` and publishes it against a
 `shader-toolchain-<version>` tag; the manifest names that artifact, so
-a build downloads it and nothing local is needed.
+a build downloads it and nothing local is needed. It carries a slice
+per platform the app ships to -- macOS, the device and the simulator --
+since the runtime translation goes wherever the app does.
 
 To work on the toolchain itself, make one and say so:
 
@@ -46,7 +48,7 @@ Apple platforms have any of this: OpenGL takes the GLSL as it stands,
 so `CShaderTranslate` is not a target at all elsewhere.
 
 Or open `Luma.xcodeproj` in Xcode and build with Cmd+B (set
-destination to **My Mac**).
+destination to **My Mac**, or to a simulator for the iOS frontend).
 
 `LumaCore` (the cross-platform Swift package) can be built and
 type-checked on Linux without Xcode:
@@ -67,13 +69,24 @@ non-obvious *why* (hidden constraints, workarounds).
 
 Luma is an interactive dynamic instrumentation app built on
 [Frida](https://frida.re). All business logic lives in **LumaCore**,
-a portable Swift package. The current shipping frontend is a macOS
-SwiftUI app; a GTK/Adwaita frontend for Linux can be added against
-the same `LumaCore`.
+a portable Swift package. The current shipping frontend is a SwiftUI
+app for macOS and iOS; a GTK/Adwaita frontend for Linux can be added
+against the same `LumaCore`.
+
+The Pharo surface -- the playground, the notebook cells, the source
+editor with its inline marks, the inspector columns and the canvas --
+is written once for both Apple platforms. `Luma/Platform*.swift` holds
+what the two frameworks name differently: a view, a representable, a
+hosting view, a font, a colour, and what the pointer becomes where
+there is one. The source editor is the one place the two really part
+company: a text view is inside a scroll view on AppKit and is one on
+UIKit, the find bar is the app's on one and the system's on the other,
+and completions are a panel where there is a pointer and a strip above
+the keyboard where there is not.
 
 ```
 +-----------------------------+      +---------------------------+
-|  SwiftUI frontend (macOS)   |      |  GTK frontend (Linux)     |
+| SwiftUI frontend (macOS/iOS)|      |  GTK frontend (Linux)     |
 |  Luma/                      |      |  (planned)                |
 +--------------+--------------+      +-------------+-------------+
                |                                   |

@@ -90,7 +90,7 @@ let lumaCoreSoupDeps: [Target.Dependency] = []
 // wants relative to the package. Asking the filesystem rather than being told
 // would not do -- a manifest is cached, so whichever answer it gave first
 // would stick.
-let shaderToolchainVersion = "1"
+let shaderToolchainVersion = "2"
 let shaderToolchainRoot = ProcessInfo.processInfo.environment["SHADER_TOOLCHAIN_ROOT"]
 
 #if canImport(Darwin)
@@ -100,7 +100,7 @@ let shaderToolchainTarget: Target = shaderToolchainRoot.map {
     name: "ShaderToolchain",
     url: "https://github.com/frida/luma/releases/download/"
         + "shader-toolchain-\(shaderToolchainVersion)/ShaderToolchain.xcframework.zip",
-    checksum: "70d83676ec8cbb37db3f59885c1dd8df8c4566ad3e54b7f2faf56bfa006022f8"
+    checksum: "721feadac2243501ac04141ee6bd579955fce573f78c78d220c970eac0b97211"
 )
 let shaderTranslateTargets: [Target] = [
     shaderToolchainTarget,
@@ -118,6 +118,74 @@ let shaderTranslateTargets: [Target] = []
 let shaderTranslateDeps: [Target.Dependency] = []
 #endif
 
+
+// Typed up front: left inline, the whole array and its four concatenations
+// are one expression, and the type-checker gives up on it.
+let lumaTargets: [Target] = [
+    .target(
+        name: "LumaCore",
+        dependencies: [
+            .product(name: "Frida", package: "frida-swift"),
+            .product(name: "Crypto", package: "swift-crypto"),
+            .product(name: "GRDB", package: "GRDB.swift"),
+            .product(name: "SwiftyR2", package: "SwiftyR2"),
+            .product(name: "SwiftyPharo", package: "SwiftyPharo"),
+            "CLumaAudio",
+        ] + lumaCoreSoupDeps + shaderTranslateDeps,
+        path: "Sources/LumaCore",
+        exclude: lumaCoreExcludes,
+        resources: [
+            .process("Resources/LumaPortal.pem"),
+            // Staged by the build, and copied rather than processed so it
+            // keeps the directory the runtime looks in.
+            .copy("Resources/pharo-image"),
+        ],
+        swiftSettings: [
+            .swiftLanguageMode(.v6),
+        ],
+        plugins: lumaCorePlugins
+    ),
+    .executableTarget(
+        name: "LumaBundleCompiler",
+        dependencies: [
+            .product(name: "Frida", package: "frida-swift"),
+        ],
+        path: "Sources/LumaBundleCompiler",
+        swiftSettings: [
+            .swiftLanguageMode(.v5),
+        ]
+    ),
+
+    .target(
+        name: "CLumaAudio",
+        path: "Sources/CLumaAudio",
+        sources: cLumaAudioSources,
+        publicHeadersPath: "include",
+        linkerSettings: cLumaAudioLinkerSettings
+    ),
+    .executableTarget(
+        name: "LumaSynthCheck",
+        dependencies: ["LumaCore"],
+        path: "Sources/LumaSynthCheck",
+        swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .executableTarget(
+        name: "LumaExampleCheck",
+        dependencies: ["LumaCore"],
+        path: "Sources/LumaExampleCheck",
+        swiftSettings: [
+            .swiftLanguageMode(.v6),
+        ]
+    ),
+    .executableTarget(
+        name: "LumaShaderCompiler",
+        dependencies: shaderTranslateDeps,
+        path: "Sources/LumaShaderCompiler",
+        swiftSettings: [
+            .swiftLanguageMode(.v5),
+        ]
+    ),
+]
 
 let package = Package(
     name: "luma",
@@ -140,66 +208,5 @@ let package = Package(
         .package(url: "https://github.com/radareorg/SwiftyR2", branch: "main"),
         .package(url: "https://github.com/frida/SwiftyPharo", branch: "main"),
     ],
-    targets: cSoupTargets + shaderTranslateTargets + [
-        .target(
-            name: "LumaCore",
-            dependencies: [
-                .product(name: "Frida", package: "frida-swift"),
-                .product(name: "Crypto", package: "swift-crypto"),
-                .product(name: "GRDB", package: "GRDB.swift"),
-                .product(name: "SwiftyR2", package: "SwiftyR2"),
-                .product(name: "SwiftyPharo", package: "SwiftyPharo"),
-                "CLumaAudio",
-            ] + lumaCoreSoupDeps + shaderTranslateDeps,
-            path: "Sources/LumaCore",
-            exclude: lumaCoreExcludes,
-            resources: [
-                .process("Resources"),
-            ],
-            swiftSettings: [
-                .swiftLanguageMode(.v6),
-            ],
-            plugins: lumaCorePlugins
-        ),
-        .executableTarget(
-            name: "LumaBundleCompiler",
-            dependencies: [
-                .product(name: "Frida", package: "frida-swift"),
-            ],
-            path: "Sources/LumaBundleCompiler",
-            swiftSettings: [
-                .swiftLanguageMode(.v5),
-            ]
-        ),
-
-        .target(
-            name: "CLumaAudio",
-            path: "Sources/CLumaAudio",
-            sources: cLumaAudioSources,
-            publicHeadersPath: "include",
-            linkerSettings: cLumaAudioLinkerSettings
-        ),
-        .executableTarget(
-            name: "LumaSynthCheck",
-            dependencies: ["LumaCore"],
-            path: "Sources/LumaSynthCheck",
-            swiftSettings: [.swiftLanguageMode(.v6)]
-        ),
-        .executableTarget(
-            name: "LumaExampleCheck",
-            dependencies: ["LumaCore"],
-            path: "Sources/LumaExampleCheck",
-            swiftSettings: [
-                .swiftLanguageMode(.v6),
-            ]
-        ),
-        .executableTarget(
-            name: "LumaShaderCompiler",
-            dependencies: shaderTranslateDeps,
-            path: "Sources/LumaShaderCompiler",
-            swiftSettings: [
-                .swiftLanguageMode(.v5),
-            ]
-        ),
-    ] + lumaBundlePluginTargets
+    targets: cSoupTargets + shaderTranslateTargets + lumaTargets + lumaBundlePluginTargets
 )

@@ -3,19 +3,10 @@ import LumaCore
 import SwiftyPharo
 
 /// Reads the example catalogue in the image, so what nothing else looks at is
-/// looked at somewhere. Takes the image to read it with:
-///
-///     LumaExampleCheck <path to SwiftyPharo.image>
+/// looked at somewhere.
 
-let arguments = CommandLine.arguments
-guard arguments.count == 2 else {
-    FileHandle.standardError.write(Data("usage: LumaExampleCheck <image>\n".utf8))
-    exit(2)
-}
-
-let image = URL(fileURLWithPath: arguments[1])
 CoreTextGlyphAtlas.install()
-PharoRuntime.shared.boot(image: image)
+PharoWorkspace.boot()
 try await PharoRuntime.shared.runningState()
 try await PharoLumaBindings.install(into: PharoRuntime.shared)
 

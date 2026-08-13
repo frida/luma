@@ -21,19 +21,27 @@ mkdir -p "$staging/headers" "$artifacts"
 
 # One library per slice is all an xcframework carries, and the two projects
 # make fifteen between them.
-libtool -static -o "$staging/libShaderToolchain.a" \
-    "$vendor"/glslang/lib/*.a \
-    "$vendor"/spirv-cross/lib/*.a 2>/dev/null
+for slice in macos ios ios-simulator; do
+    libtool -static -o "$staging/libShaderToolchain-$slice.a" \
+        "$vendor/$slice"/glslang/lib/*.a \
+        "$vendor/$slice"/spirv-cross/lib/*.a 2>/dev/null
+done
 
-cp -R "$vendor/glslang/include/glslang" "$staging/headers/"
-cp -R "$vendor/spirv-cross/include/spirv_cross" "$staging/headers/"
+# The headers are the same wherever the library came from, so the host slice's
+# stand for every slice.
+cp -R "$vendor/macos/glslang/include/glslang" "$staging/headers/"
+cp -R "$vendor/macos/spirv-cross/include/spirv_cross" "$staging/headers/"
 # spirv_cross_c.h is what the translation actually includes, and it expects
 # to be found without a directory in front of it.
-cp "$vendor/spirv-cross/include/spirv_cross/spirv_cross_c.h" "$staging/headers/"
-cp "$vendor/spirv-cross/include/spirv_cross/spirv.h" "$staging/headers/"
+cp "$vendor/macos/spirv-cross/include/spirv_cross/spirv_cross_c.h" "$staging/headers/"
+cp "$vendor/macos/spirv-cross/include/spirv_cross/spirv.h" "$staging/headers/"
 
 xcodebuild -create-xcframework \
-    -library "$staging/libShaderToolchain.a" \
+    -library "$staging/libShaderToolchain-macos.a" \
+    -headers "$staging/headers" \
+    -library "$staging/libShaderToolchain-ios.a" \
+    -headers "$staging/headers" \
+    -library "$staging/libShaderToolchain-ios-simulator.a" \
     -headers "$staging/headers" \
     -output "$artifacts/ShaderToolchain.xcframework"
 

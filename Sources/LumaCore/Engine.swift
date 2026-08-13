@@ -68,6 +68,10 @@ public final class Engine {
     public let hookPacks: HookPackLibrary
     public let customInstruments: CustomInstrumentLibrary
 
+    /// The image the playground, the notebook cells and the mission tools all
+    /// talk to. The frontend says where it lives; see `PharoWorkspace`.
+    @ObservationIgnored public private(set) lazy var pharo = PharoWorkspace(engine: self)
+
     @ObservationIgnored private var disassemblers: [UUID: Disassembler] = [:]
     @ObservationIgnored private var seekRestoredSessions: Set<UUID> = []
     @ObservationIgnored private var memoryReaders: [UUID: CachingMemoryReader] = [:]

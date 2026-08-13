@@ -1,11 +1,6 @@
-#if os(macOS)
 import LumaCore
 import SwiftUI
 import SwiftyPharo
-
-#if canImport(AppKit)
-import AppKit
-#endif
 
 struct PharoGraphView: View {
     let graph: PharoGraph
@@ -215,20 +210,13 @@ struct PharoGraphView: View {
                     .strokeBorder(border, lineWidth: isSelected ? 2 : 1)
             }
             .contentShape(RoundedRectangle(cornerRadius: 6))
-            .pointerStyle(.link)
+            .platformPointer(.link)
             .onHover { hovered = $0 ? index : (hovered == index ? nil : hovered) }
             .onTapGesture { activate(index) }
             .contextMenu {
-                Button { copyToPasteboard(label) } label: { Label("Copy Label", systemImage: "doc.on.doc") }
+                Button { Platform.copyToClipboard(label) } label: { Label("Copy Label", systemImage: "doc.on.doc") }
             }
             .help(label)
-    }
-
-    private func copyToPasteboard(_ text: String) {
-        #if canImport(AppKit)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        #endif
     }
 
     private func activate(_ index: Int) {
@@ -321,4 +309,3 @@ struct PharoGraphLayout {
             size: CGSize(width: solved.width, height: solved.height))
     }
 }
-#endif

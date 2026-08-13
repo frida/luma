@@ -1,4 +1,3 @@
-#if os(macOS)
 import LumaCore
 import SwiftUI
 import SwiftyPharo
@@ -85,4 +84,3 @@ struct PharoPointingArrow: View {
 
     private let arrowHeight: CGFloat = 12
 }
-#endif
