@@ -57,11 +57,11 @@ $repo = Split-Path -Parent $pkg
 # Produce it before building anything that depends on LumaCore.
 Push-Location $repo
 try {
-    & swift run --package-path . luma-bundle-compiler `
+    & swift run --package-path . LumaBundleCompiler `
         --config       (Join-Path $repo 'Agent\bundle.json') `
         --project-root $repo `
         --staging-dir  (Join-Path $repo '.build\AgentStaging')
-    if ($LASTEXITCODE -ne 0) { throw "luma-bundle-compiler failed ($LASTEXITCODE)" }
+    if ($LASTEXITCODE -ne 0) { throw "LumaBundleCompiler failed ($LASTEXITCODE)" }
 } finally {
     Pop-Location
 }

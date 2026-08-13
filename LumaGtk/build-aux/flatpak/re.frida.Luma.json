@@ -124,7 +124,7 @@
             "name": "frida-core",
             "buildsystem": "simple",
             "build-commands": [
-                "./configure --enable-shared --enable-compiler-backend --without-prebuilds=sdk --prefix=/app -- --libdir=lib --force-fallback-for=openssl,libbpf",
+                "./configure --enable-shared --enable-compiler-backend --without-prebuilds=sdk --prefix=/app -- --libdir=lib --force-fallback-for=openssl,libbpf -Dfrida-gum:v8=disabled",
                 "make -j$(nproc)",
                 "DESTDIR=$PWD/_destdir python3 releng/meson/meson.py install -C build --skip-subprojects --no-rebuild",
                 "cp -a _destdir/app/. /app/"

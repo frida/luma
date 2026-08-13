@@ -75,7 +75,8 @@ parts:
         -- --force-fallback-for=openssl,libelf \
            --libdir=lib \
            -Dcompat=disabled -Dserver=disabled -Dportal=disabled \
-           -Dinject=disabled -Dgadget=disabled -Dtests=disabled
+           -Dinject=disabled -Dgadget=disabled -Dtests=disabled \
+           -Dfrida-gum:v8=disabled
       make -j$(nproc)
       DESTDIR="$CRAFT_PART_INSTALL" python3 releng/meson/meson.py install -C build --skip-subprojects --no-rebuild
       # Rewrite .pc prefix to a pcfiledir-relative path so pkg-config

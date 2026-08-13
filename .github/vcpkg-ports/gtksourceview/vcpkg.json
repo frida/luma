@@ -1,0 +1,38 @@
+{
+  "name": "gtksourceview",
+  "version": "5.20.0",
+  "description": "Source code editing widget for GTK",
+  "homepage": "https://gitlab.gnome.org/GNOME/gtksourceview",
+  "license": "LGPL-2.1-or-later",
+  "supports": "!xbox",
+  "dependencies": [
+    {
+      "name": "glib",
+      "host": true
+    },
+    "fribidi",
+    "gtk",
+    "libxml2",
+    "pcre2",
+    {
+      "name": "vcpkg-tool-meson",
+      "host": true
+    }
+  ],
+  "features": {
+    "introspection": {
+      "description": "Build with introspection",
+      "supports": "!static",
+      "dependencies": [
+        {
+          "name": "gtk",
+          "default-features": false,
+          "features": [
+            "introspection"
+          ]
+        },
+        "gobject-introspection"
+      ]
+    }
+  }
+}

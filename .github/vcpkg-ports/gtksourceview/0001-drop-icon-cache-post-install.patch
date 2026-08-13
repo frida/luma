@@ -1,0 +1,9 @@
+diff --git a/meson.build b/meson.build
+index 3212226..372fd47 100644
+--- a/meson.build
++++ b/meson.build
+@@ -351,4 +351,3 @@ summary({
+   }, bool_yn: true,
+ )
+ 
+-gnome.post_install(gtk_update_icon_cache: true)
