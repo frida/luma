@@ -20,7 +20,6 @@ final class PharoCompletionController {
     private var list: ListBox?
     private var scroll: ScrolledWindow?
     private var candidates: [String] = []
-    private var tokenStart = 0
     private var generation: UInt = 0
     private var pending: Task<Void, Never>?
 
@@ -28,6 +27,34 @@ final class PharoCompletionController {
         self.editor = editor
         self.buffer = buffer
         self.suggest = suggest
+        installAutoTrigger()
+    }
+
+    /// Completions surface as the reader types, no key needed -- the way the
+    /// SwiftUI editor calls `complete:` on every letter. A single-character edit
+    /// asks afresh: a letter opens or narrows the list, a delimiter empties the
+    /// token and closes it. Deleting re-asks only while the list already stands,
+    /// so backspacing filters without conjuring a list from nothing. Longer
+    /// inserts -- setting the source, accepting a candidate -- are left alone.
+    private func installAutoTrigger() {
+        buffer.onInsertText { [weak self] _, _, text, _ in
+            MainActor.assumeIsolated {
+                guard let self, text.count == 1, let character = text.first else { return }
+                if character.isLetter || self.isActive { self.scheduleRequest() }
+            }
+        }
+        buffer.onDeleteRange { [weak self] _, _, _ in
+            MainActor.assumeIsolated {
+                guard let self, self.isActive else { return }
+                self.scheduleRequest()
+            }
+        }
+    }
+
+    /// Ask once the edit that prompted it has landed, so the token and caret read
+    /// their settled positions rather than the ones from mid-signal.
+    private func scheduleRequest() {
+        Task { @MainActor in self.request() }
     }
 
     var isActive: Bool { popover != nil }
@@ -45,7 +72,7 @@ final class PharoCompletionController {
                 dismiss()
                 return
             }
-            show(tokenStart: answer.tokenStart, candidates: answer.completions)
+            show(candidates: answer.completions)
         }
     }
 
@@ -65,14 +92,14 @@ final class PharoCompletionController {
             accept()
             return true
         default:
-            dismiss()
+            // Let the keystroke through and let the edit it makes decide whether
+            // the list refreshes or closes; dismissing here would fight typing.
             return false
         }
     }
 
-    private func show(tokenStart: Int, candidates: [String]) {
+    private func show(candidates: [String]) {
         teardown()
-        self.tokenStart = tokenStart
         self.candidates = candidates
 
         let popover = Popover()
@@ -177,9 +204,23 @@ final class PharoCompletionController {
             return
         }
         let replacement = candidates[index]
-        let start = tokenStart
+        let start = currentTokenStart()
         dismiss()
         replaceToken(from: start, with: replacement)
+    }
+
+    /// Where the token under the caret begins, walked back over its own letters
+    /// here rather than trusted from the image, whose offset is one-based and
+    /// would leave the first character behind.
+    private func currentTokenStart() -> Int {
+        let characters = Array(buffer.text)
+        var start = min(cursorOffset(), characters.count)
+        while start > 0, isTokenCharacter(characters[start - 1]) { start -= 1 }
+        return start
+    }
+
+    private func isTokenCharacter(_ character: Character) -> Bool {
+        character == "_" || (character.isASCII && (character.isLetter || character.isNumber))
     }
 
     private func replaceToken(from start: Int, with text: String) {

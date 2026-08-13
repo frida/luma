@@ -41,6 +41,8 @@ final class PharoColumnView {
         title.xalign = 0
         title.hexpand = true
         title.wrap = true
+        title.lines = 2
+        title.ellipsize = .end
         title.marginStart = 8
         title.marginTop = 6
         title.marginBottom = 6
@@ -52,20 +54,83 @@ final class PharoColumnView {
         return bar
     }
 
+    private enum PaneMode {
+        case menu
+        case collapse
+        case close
+    }
+
+    private lazy var paneButton = makePaneButton()
+    private var modifierToken: UInt?
+
     private func menuButton() -> Button {
+        let button = paneButton
+        button.onMap { [weak self] _ in
+            MainActor.assumeIsolated { self?.watchModifiers() }
+        }
+        button.onUnmap { [weak self] _ in
+            MainActor.assumeIsolated { self?.forgetModifiers() }
+        }
+        return button
+    }
+
+    private func makePaneButton() -> Button {
         let button = Button(iconName: "view-more-symbolic")
         button.add(cssClass: "flat")
         button.tooltipText = "Pane actions"
         button.marginTop = 4
         button.marginBottom = 4
         button.marginEnd = 4
-        button.onClicked { [weak self, weak button] _ in
-            MainActor.assumeIsolated {
-                guard let self, let button else { return }
-                self.presentMenu(from: button)
-            }
+        button.onClicked { [weak self] _ in
+            MainActor.assumeIsolated { self?.activatePane() }
         }
         return button
+    }
+
+    private func watchModifiers() {
+        refreshPaneButton()
+        guard modifierToken == nil else { return }
+        modifierToken = PharoModifierWatcher.subscribe { [weak self] in self?.refreshPaneButton() }
+    }
+
+    private func forgetModifiers() {
+        modifierToken.map(PharoModifierWatcher.unsubscribe)
+        modifierToken = nil
+    }
+
+    /// Holding the primary key over the pane says it will collapse; adding Shift
+    /// says it will close. With nothing held the button just opens the menu.
+    private var paneMode: PaneMode {
+        if PharoModifierWatcher.primaryHeld, PharoModifierWatcher.shiftHeld { return .close }
+        if PharoModifierWatcher.primaryHeld, !isMaximized { return .collapse }
+        return .menu
+    }
+
+    private func refreshPaneButton() {
+        switch paneMode {
+        case .menu:
+            paneButton.iconName = "view-more-symbolic"
+            paneButton.tooltipText = "Pane actions"
+        case .collapse:
+            paneButton.iconName = "window-minimize-symbolic"
+            paneButton.tooltipText = "Collapse pane"
+        case .close:
+            paneButton.iconName = "window-close-symbolic"
+            paneButton.tooltipText = "Close pane"
+        }
+    }
+
+    private func activatePane() {
+        switch paneMode {
+        case .menu:
+            presentMenu(from: paneButton)
+        case .collapse:
+            onCollapse()
+            PharoModifierWatcher.reset()
+        case .close:
+            onClose()
+            PharoModifierWatcher.reset()
+        }
     }
 
     private func presentMenu(from anchor: Button) {
@@ -119,7 +184,10 @@ final class PharoColumnView {
             guard let graph = view.graph else { return textPage("Empty graph.") }
             return graphPage(graph, selector: view.methodSelector)
         case "chart":
-            return view.chart.map(PharoVisualArea.chart) ?? textPage("Empty chart.")
+            guard let chart = view.chart else { return textPage("Empty chart.") }
+            let area = PharoChartArea(chart: chart)
+            chartAreas.append(area)
+            return area.widget
         default:
             return textPage("\(view.viewName) views are not drawn yet.")
         }
@@ -208,6 +276,7 @@ final class PharoColumnView {
     }
 
     private var graphAreas: [PharoGraphArea] = []
+    private var chartAreas: [PharoChartArea] = []
 
     private func graphPage(_ graph: PharoGraph, selector: String) -> Box {
         let area = PharoGraphArea(graph: graph)
