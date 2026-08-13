@@ -554,6 +554,10 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
 
         isApplyingMarks = true
         let selection = selectedRange()
+        // A selected placeholder is a token attachment, which the source does not
+        // count, so mapping it through source offsets would collapse it; note it
+        // and re-select it once its range has shifted with the marks instead.
+        let selectedPlaceholder = argumentPlaceholders.firstIndex(of: selection)
         let selectionStart = sourceOffset(ofStorage: selection.location)
         let selectionEnd = sourceOffset(ofStorage: NSMaxRange(selection))
         storage.beginEditing()
@@ -571,6 +575,9 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         storage.endEditing()
         let restoredStart = storageOffset(forSource: selectionStart)
         setSelectedRange(NSRange(location: restoredStart, length: storageOffset(forSource: selectionEnd) - restoredStart))
+        if let index = selectedPlaceholder, index < argumentPlaceholders.count {
+            setSelectedRange(argumentPlaceholders[index])
+        }
         isApplyingMarks = false
         positionMarkOverlays()
     }
@@ -1095,8 +1102,8 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         var placeholders: [NSRange] = []
         for (index, keyword) in keywords.enumerated() {
             text.append(NSAttributedString(string: "\(keyword): ", attributes: sourceAttributes))
-            placeholders.append(NSRange(location: text.length, length: keyword.utf16.count))
-            text.append(NSAttributedString(string: keyword, attributes: placeholderAttributes))
+            placeholders.append(NSRange(location: text.length, length: 1))
+            text.append(NSAttributedString(attachment: placeholderAttachment()))
             if index < keywords.count - 1 {
                 text.append(NSAttributedString(string: " ", attributes: sourceAttributes))
             }
@@ -1104,11 +1111,49 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         return (text, placeholders)
     }
 
-    private var placeholderAttributes: [NSAttributedString.Key: Any] {
-        var attributes = sourceAttributes
-        attributes[.backgroundColor] = NSColor.textColor.withAlphaComponent(0.1)
-        return attributes
+    /// Each argument slot rides a token the way Xcode draws a placeholder: a
+    /// rounded capsule the reader tabs onto and types over. The keyword already
+    /// names it, so the capsule is a plain marker rather than the keyword echoed.
+    private func placeholderAttachment() -> NSTextAttachment {
+        let attachment = NSTextAttachment()
+        let pill = Self.placeholderPill
+        attachment.image = pill
+        attachment.bounds = CGRect(
+            x: 0,
+            y: (Self.sourceFont.descender - 1).rounded(),
+            width: pill.size.width,
+            height: pill.size.height)
+        return attachment
     }
+
+    private static let placeholderPill: NSImage = {
+        let height = (sourceFont.capHeight + 7).rounded()
+        let dotDiameter: CGFloat = 2.6
+        let dotSpacing: CGFloat = 4
+        let contentWidth = 2 * dotSpacing + dotDiameter
+        let width = (contentWidth + 12).rounded()
+        let image = NSImage(size: NSSize(width: width, height: height))
+        image.lockFocus()
+        let capsule = NSBezierPath(
+            roundedRect: NSRect(x: 0.5, y: 0.5, width: width - 1, height: height - 1),
+            xRadius: 4,
+            yRadius: 4)
+        NSColor(white: 0.5, alpha: 0.20).setFill()
+        capsule.fill()
+        NSColor(white: 0.42, alpha: 0.9).setFill()
+        let centerY = height / 2
+        let firstX = (width - contentWidth) / 2
+        for index in 0..<3 {
+            let centerX = firstX + CGFloat(index) * dotSpacing + dotDiameter / 2
+            NSBezierPath(ovalIn: NSRect(
+                x: centerX - dotDiameter / 2,
+                y: centerY - dotDiameter / 2,
+                width: dotDiameter,
+                height: dotDiameter)).fill()
+        }
+        image.unlockFocus()
+        return image
+    }()
 
     /// Steps to the next or previous argument placeholder, selecting it so a keypress
     /// types over it. The placeholders shift and clear with edits through the

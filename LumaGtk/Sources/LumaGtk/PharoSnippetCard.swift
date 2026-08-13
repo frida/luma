@@ -33,6 +33,8 @@ final class PharoSnippetCard {
     private let resultRow: Box
     private let resultLabel: Label
     private var completion: PharoCompletionController!
+    private var marks: PharoInlineMarks!
+    private let highlight: (GtkSource.Buffer) -> Void
 
     private var suppressChange = false
     private var pointedAt = false
@@ -40,19 +42,21 @@ final class PharoSnippetCard {
     private var outcome: Bool?
     private var outcomeGeneration = 0
 
-    var source: String { buffer.text }
+    var source: String { marks.source }
 
     init(
         id: UUID,
         source: String,
-        highlight: (GtkSource.Buffer) -> Void,
+        highlight: @escaping (GtkSource.Buffer) -> Void,
         completion suggest: @escaping (String, Int) async -> PharoCompletions?
     ) {
         self.id = id
+        self.highlight = highlight
 
         buffer = GtkSource.Buffer(table: Gtk.TextTagTable?.none)
         editor = GtkSource.View(buffer: buffer)
         editor.monospace = true
+        editor.enableSnippets = true
         editor.showLineNumbers = false
         editor.highlightCurrentLine = false
         editor.leftMargin = 10
@@ -66,7 +70,11 @@ final class PharoSnippetCard {
         let editorScroll = ScrolledWindow()
         editorScroll.setPolicy(hscrollbarPolicy: .automatic, vscrollbarPolicy: .automatic)
         editorScroll.hexpand = true
-        editorScroll.setSizeRequest(width: -1, height: 108)
+        // Grow with the content so an opened body shows in the card rather than
+        // being clipped, down to the height a bare snippet keeps.
+        editorScroll.propagateNaturalHeight = true
+        editorScroll.minContentHeight = 108
+        editorScroll.maxContentHeight = 4000
         editorScroll.set(child: editor)
 
         accent = DrawingArea()
@@ -119,16 +127,20 @@ final class PharoSnippetCard {
         }
 
         populateActions()
+        marks = PharoInlineMarks(editor: editor, buffer: buffer, runtime: PharoRuntime.shared, selfClass: nil, highlight: highlight)
         completion = PharoCompletionController(editor: editor, buffer: buffer, suggest: suggest)
+        completion.cleanSource = { [weak self] in self?.marks.source }
+        completion.cleanCursor = { [weak self] in self?.marks.sourceCursor() }
         installShortcuts()
         installReveal()
         installContextMenu()
 
         buffer.onChanged { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, !self.suppressChange else { return }
+                guard let self, !self.suppressChange, !self.marks.isApplying else { return }
                 self.resultRow.visible = false
-                self.onSourceChanged?(self.buffer.text)
+                self.onSourceChanged?(self.source)
+                self.marks.refresh()
             }
         }
     }
@@ -153,6 +165,7 @@ final class PharoSnippetCard {
         suppressChange = true
         buffer.set(text: text, len: Int(text.utf8.count))
         suppressChange = false
+        marks.refresh()
     }
 
     func flashOutcome(success: Bool) {
@@ -169,11 +182,7 @@ final class PharoSnippetCard {
     }
 
     func cursorOffset() -> Int {
-        let storage = UnsafeMutablePointer<GtkTextIter>.allocate(capacity: 1)
-        defer { storage.deallocate() }
-        let iter = TextIter(storage)
-        buffer.getIterAtMark(iter: iter, mark: buffer.getInsert())
-        return Int(iter.offset)
+        marks.sourceCursor()
     }
 
     private func populateActions() {
@@ -338,6 +347,7 @@ final class PharoSnippetCard {
             MainActor.assumeIsolated {
                 guard let self else { return false }
                 if self.completion.handleKey(keyval) { return true }
+                if self.marks.handleCursorKey(keyval, shift: state.contains(.shiftMask)) { return true }
                 guard state.contains(.controlMask) else { return false }
                 switch keyval {
                 case 0xFF0D, 0xFF8D:

@@ -174,7 +174,7 @@ final class PharoColumnView {
         }
     }
 
-    private func page(for view: PharoViewDeclaration) -> Box {
+    private func page(for view: PharoViewDeclaration) -> Widget {
         switch view.viewName {
         case "list", "columnedList", "tree":
             return listPage(for: view)
@@ -193,88 +193,15 @@ final class PharoColumnView {
         }
     }
 
-    private func listPage(for view: PharoViewDeclaration) -> Box {
-        let titles = view.columns ?? []
-        let columnGroups = ColumnGroups(headers: titles)
-
-        let rows = ListBox()
-        rows.selectionMode = .single
-        rows.activateOnSingleClick = false
-        rows.vexpand = true
-        rows.add(cssClass: "navigation-sidebar")
-        rows.add(cssClass: "luma-pharo-table")
-
-        // Header and rows ride in one scroller so a wide table scrolls as a
-        // whole and never widens the column past its set width.
-        let inner = Box(orientation: .vertical, spacing: 0)
-        if titles.count > 1 {
-            inner.append(child: headerRow(titles, groups: columnGroups))
-            inner.append(child: Separator(orientation: .horizontal))
+    private func listPage(for view: PharoViewDeclaration) -> Widget {
+        let list = PharoListView(runtime: runtime, object: object, view: view) { [weak self] element in
+            self?.onDrill(element)
         }
-        inner.append(child: rows)
-
-        let scroll = ScrolledWindow()
-        scroll.hexpand = true
-        scroll.vexpand = true
-        scroll.propagateNaturalWidth = false
-        scroll.set(child: inner)
-
-        let page = Box(orientation: .vertical, spacing: 0)
-        page.append(child: scroll)
-
-        let object = object
-        rows.onRowActivated { [weak self] _, row in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                let index = row.getIndex()
-                Task { @MainActor in
-                    if let element = try? await self.runtime.drillInto(object, view: view.methodSelector, index: index + 1) {
-                        self.onDrill(element)
-                    }
-                }
-            }
-        }
-
-        Task { @MainActor in
-            guard let items = try? await runtime.items(of: object, view: view.methodSelector, from: 1, count: 100) else { return }
-            for cells in items.items {
-                rows.append(child: itemRow(cells, groups: columnGroups))
-            }
-        }
-        return page
+        listViews.append(list)
+        return list.widget
     }
 
-    /// Aligns a table's cells by keeping a size group per column, headers and
-    /// rows both joining, so the columns line up even as rows stream in.
-    private final class ColumnGroups {
-        private var groups: [SizeGroup]
-
-        init(headers: [String]) {
-            groups = headers.map { _ in SizeGroup(mode: .horizontal) }
-        }
-
-        func join(_ label: Label, at index: Int) {
-            while groups.count <= index { groups.append(SizeGroup(mode: .horizontal)) }
-            groups[index].add(widget: label)
-        }
-    }
-
-    private func headerRow(_ titles: [String], groups: ColumnGroups) -> Box {
-        let row = Box(orientation: .horizontal, spacing: 0)
-        row.marginStart = 8
-        row.marginEnd = 8
-        row.marginTop = 4
-        row.marginBottom = 4
-        for (index, title) in titles.enumerated() {
-            let label = cellLabel(title, expands: index == titles.count - 1)
-            label.add(cssClass: "dim-label")
-            label.add(cssClass: "caption-heading")
-            groups.join(label, at: index)
-            row.append(child: label)
-        }
-        return row
-    }
-
+    private var listViews: [PharoListView] = []
     private var graphAreas: [PharoGraphArea] = []
     private var chartAreas: [PharoChartArea] = []
 
@@ -290,37 +217,6 @@ final class PharoColumnView {
         }
         graphAreas.append(area)
         return area.widget
-    }
-
-    private func itemRow(_ cells: [PharoCell], groups: ColumnGroups) -> ListBoxRow {
-        let line = Box(orientation: .horizontal, spacing: 0)
-        line.marginStart = 8
-        line.marginEnd = 8
-        line.marginTop = 4
-        line.marginBottom = 4
-        if cells.count > 1 {
-            for (index, cell) in cells.enumerated() {
-                let label = cellLabel(cell.text ?? "", expands: index == cells.count - 1)
-                label.add(cssClass: "monospace")
-                groups.join(label, at: index)
-                line.append(child: label)
-            }
-        } else {
-            let label = cellLabel(cells.compactMap(\.text).joined(separator: " "), expands: true)
-            label.add(cssClass: "monospace")
-            line.append(child: label)
-        }
-        let row = ListBoxRow()
-        row.set(child: line)
-        return row
-    }
-
-    private func cellLabel(_ text: String, expands: Bool) -> Label {
-        let label = Label(str: text)
-        label.xalign = 0
-        label.hexpand = expands
-        label.marginEnd = expands ? 0 : 16
-        return label
     }
 
     private func textPage(_ text: String) -> Box {

@@ -16,12 +16,19 @@ final class PharoCompletionController {
     private let buffer: GtkSource.Buffer
     private let suggest: (String, Int) async -> PharoCompletions?
 
+    /// The source and caret the marks leave once their anchor characters are
+    /// taken out, so the image sees the code and not the placeholders.
+    var cleanSource: (() -> String?)?
+    var cleanCursor: (() -> Int?)?
+
     private var popover: Popover?
     private var list: ListBox?
     private var scroll: ScrolledWindow?
     private var candidates: [String] = []
     private var generation: UInt = 0
     private var pending: Task<Void, Never>?
+
+
 
     init(editor: GtkSource.View, buffer: GtkSource.Buffer, suggest: @escaping (String, Int) async -> PharoCompletions?) {
         self.editor = editor
@@ -60,9 +67,9 @@ final class PharoCompletionController {
     var isActive: Bool { popover != nil }
 
     func request() {
-        let source = buffer.text
+        let source = cleanSource?() ?? buffer.text
         guard !source.isEmpty else { return }
-        let cursor = cursorOffset()
+        let cursor = cleanCursor?() ?? cursorOffset()
         generation &+= 1
         let generationAtRequest = generation
         pending?.cancel()
@@ -206,7 +213,42 @@ final class PharoCompletionController {
         let replacement = candidates[index]
         let start = currentTokenStart()
         dismiss()
-        replaceToken(from: start, with: replacement)
+        if replacement.contains(":") {
+            insertKeywordTemplate(replacement, from: start)
+        } else {
+            replaceToken(from: start, with: replacement)
+        }
+    }
+
+    /// A keyword selector lays down as a source snippet -- "to:by:" becomes
+    /// "to: ⟨⟩ by: ⟨⟩" -- so the editor renders each argument as its own token,
+    /// selects the first, and tabs through them the way Xcode does. The keyword
+    /// already names the slot, so it is left blank rather than echoed.
+    private func insertKeywordTemplate(_ selector: String, from start: Int) {
+        let keywords = selector.split(separator: ":").map(String.init)
+        guard !keywords.isEmpty else { return }
+
+        var spec = ""
+        for (index, keyword) in keywords.enumerated() {
+            spec += "\(keyword): ${\(index + 1):\u{2026}}"
+            if index < keywords.count - 1 { spec += " " }
+        }
+        spec += "$0"
+
+        guard let snippet = try? GtkSource.Snippet.new(parsed: spec) else {
+            replaceToken(from: start, with: selector)
+            return
+        }
+
+        withIters { first, second in
+            buffer.getIterAtOffset(iter: first, charOffset: start)
+            buffer.getIterAtMark(iter: second, mark: buffer.getInsert())
+            buffer.delete(start: first, end: second)
+        }
+        withIter { iter in
+            buffer.getIterAtOffset(iter: iter, charOffset: start)
+            editor.push(snippet: snippet, location: iter)
+        }
     }
 
     /// Where the token under the caret begins, walked back over its own letters
@@ -260,5 +302,18 @@ final class PharoCompletionController {
         let iter = TextIter(storage)
         buffer.getIterAtMark(iter: iter, mark: buffer.getInsert())
         return Int(iter.offset)
+    }
+
+    private func withIter<R>(_ body: (TextIter) -> R) -> R {
+        let storage = UnsafeMutablePointer<GtkTextIter>.allocate(capacity: 1)
+        defer { storage.deallocate() }
+        return body(TextIter(storage))
+    }
+
+    private func withIters<R>(_ body: (TextIter, TextIter) -> R) -> R {
+        let first = UnsafeMutablePointer<GtkTextIter>.allocate(capacity: 1)
+        let second = UnsafeMutablePointer<GtkTextIter>.allocate(capacity: 1)
+        defer { first.deallocate(); second.deallocate() }
+        return body(TextIter(first), TextIter(second))
     }
 }

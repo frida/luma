@@ -513,6 +513,15 @@ enum StyleSheet {
         padding: 0;
         min-height: 0;
     }
+    box.luma-pharo-body {
+        margin: 2px 0;
+        border: 1px solid alpha(@window_fg_color, 0.15);
+        border-radius: 6px;
+        background-color: alpha(@window_fg_color, 0.03);
+    }
+    box.luma-pharo-method-body {
+        margin: 4px 8px;
+    }
     """
 
     static func install() {
