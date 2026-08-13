@@ -1,10 +1,50 @@
 import CCairo
 import Cairo
+import Foundation
 import Gtk
 import LumaCore
 
+private final class PNGSink {
+    var data = Data()
+}
+
 @MainActor
 enum IconPlaceholderView {
+    /// The same gradient-and-initials placeholder rendered off-screen to a
+    /// base64 PNG, so the image can show the icon the sidebar draws for a
+    /// session the process gave none.
+    static func base64PNG(seed: String, displayName: String, pixelSize: Int) -> String? {
+        let scale = 2.0
+        let dimension = Int32(Double(pixelSize) * scale)
+        guard let surface = cairo_image_surface_create(cairo_format_t(rawValue: 0), dimension, dimension),
+            let raw = cairo_create(surface)
+        else { return nil }
+        defer { cairo_surface_destroy(surface) }
+
+        cairo_scale(raw, scale, scale)
+        paint(
+            ctx: ContextRef(raw),
+            width: Double(pixelSize),
+            height: Double(pixelSize),
+            palette: IconPlaceholder.palette(for: seed),
+            initials: IconPlaceholder.initials(for: displayName))
+        cairo_destroy(raw)
+        cairo_surface_flush(surface)
+
+        let sink = PNGSink()
+        let status = cairo_surface_write_to_png_stream(
+            surface,
+            { closure, bytes, length in
+                guard let closure, let bytes else { return cairo_status_t(rawValue: 11) }
+                let sink = Unmanaged<PNGSink>.fromOpaque(closure).takeUnretainedValue()
+                sink.data.append(bytes, count: Int(length))
+                return cairo_status_t(rawValue: 0)
+            },
+            Unmanaged.passUnretained(sink).toOpaque())
+        guard status.rawValue == 0 else { return nil }
+        return sink.data.base64EncodedString()
+    }
+
     static func make(seed: String, displayName: String, pixelSize: Int) -> Widget {
         let initials = IconPlaceholder.initials(for: displayName)
         let palette = IconPlaceholder.palette(for: seed)

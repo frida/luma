@@ -15,9 +15,13 @@ import SwiftyPharo
 @MainActor
 final class PharoChartArea {
     let widget: Box
+    var onDrill: ((Int) -> Void)?
 
     private let chart: PharoChart
     private let area: DrawingArea
+    private var selected: Int?
+    private var hovered: Int?
+    private var centers: [(x: Double, y: Double)?] = []
     private var zoom = 1.0
     private var panX = 0.0
     private var panY = 0.0
@@ -40,6 +44,8 @@ final class PharoChartArea {
         area = DrawingArea()
         area.hexpand = true
         area.vexpand = true
+        area.focusable = true
+        area.canFocus = true
 
         let controls = Box(orientation: .horizontal, spacing: 0)
         controls.add(cssClass: "linked")
@@ -67,6 +73,7 @@ final class PharoChartArea {
         area.setDrawFunc { [weak self] _, ctx, width, height in
             MainActor.assumeIsolated { self?.draw(ctx, Double(width), Double(height)) }
         }
+        gtk_widget_set_cursor_from_name(area.widget_ptr, "pointer")
         installGestures()
         themeToken = ThemeWatcher.subscribe(owner: self) { $0.area.queueDraw() }
     }
@@ -79,6 +86,29 @@ final class PharoChartArea {
     }
 
     private func installGestures() {
+        let click = GestureClick()
+        click.onPressed { [weak self] _, count, x, y in
+            MainActor.assumeIsolated { self?.press(x, y, count: count) }
+        }
+        area.install(controller: click)
+
+        let secondary = GestureClick()
+        secondary.button = Int(GDK_BUTTON_SECONDARY)
+        secondary.propagationPhase = .capture
+        secondary.onPressed { [weak self] gesture, _, x, y in
+            MainActor.assumeIsolated {
+                _ = gesture.set(state: .claimed)
+                self?.presentCopyMenu(x, y)
+            }
+        }
+        area.install(controller: secondary)
+
+        let keys = EventControllerKey()
+        keys.onKeyPressed { [weak self] _, keyval, _, _ in
+            MainActor.assumeIsolated { self?.handleKey(keyval) ?? false }
+        }
+        area.install(controller: keys)
+
         let drag = GestureDrag()
         drag.onDragBegin { [weak self] _, _, _ in
             MainActor.assumeIsolated { self?.dragged = (0, 0) }
@@ -96,7 +126,14 @@ final class PharoChartArea {
 
         let motion = EventControllerMotion()
         motion.onMotion { [weak self] _, x, y in
-            MainActor.assumeIsolated { self?.mouse = (x, y) }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.mouse = (x, y)
+                self.setHovered(self.point(atScreen: x, y))
+            }
+        }
+        motion.onLeave { [weak self] _ in
+            MainActor.assumeIsolated { self?.setHovered(nil) }
         }
         area.install(controller: motion)
 
@@ -129,6 +166,111 @@ final class PharoChartArea {
             }
         }
         area.install(controller: pinch)
+    }
+
+    private func press(_ x: Double, _ y: Double, count: Int) {
+        _ = area.grabFocus()
+        guard let index = point(atScreen: x, y) else { return }
+        if count >= 2 {
+            onDrill?(index)
+        } else if selected != index {
+            selected = index
+            area.queueDraw()
+        }
+    }
+
+    private func setHovered(_ index: Int?) {
+        guard hovered != index else { return }
+        hovered = index
+        area.queueDraw()
+    }
+
+    private func handleKey(_ keyval: UInt) -> Bool {
+        switch Int32(keyval) {
+        case Gdk.keyLeft, Gdk.keyUp:
+            move(-1)
+            return true
+        case Gdk.keyRight, Gdk.keyDown:
+            move(1)
+            return true
+        case Gdk.keyReturn, Gdk.keyKPEnter, Gdk.keyISOEnter:
+            if let selected { onDrill?(selected) }
+            return true
+        case Gdk.keyEscape:
+            selected = nil
+            area.queueDraw()
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func move(_ delta: Int) {
+        let count = flatCount
+        guard count > 0 else { return }
+        if let selected {
+            self.selected = min(max(selected + delta, 0), count - 1)
+        } else {
+            selected = delta > 0 ? 0 : count - 1
+        }
+        area.queueDraw()
+    }
+
+    private func presentCopyMenu(_ x: Double, _ y: Double) {
+        guard let index = selected ?? point(atScreen: x, y) else { return }
+        selected = index
+        area.queueDraw()
+        let value = readout(index)
+        ContextMenu.present(
+            [[ContextMenu.Item("Copy Value") { Self.copyToClipboard(value) }]], at: area, x: x, y: y)
+    }
+
+    private static func copyToClipboard(_ value: String) {
+        guard let display = Display.getDefault() else { return }
+        display.clipboard.set(text: value)
+    }
+
+    private func point(atScreen x: Double, _ y: Double) -> Int? {
+        let worldX = (x - panX) / zoom
+        let worldY = (y - panY) / zoom
+        var best: Int?
+        var bestDistance = Double.greatestFiniteMagnitude
+        for (index, center) in centers.enumerated() {
+            guard let center else { continue }
+            let distance = hypot(center.x - worldX, center.y - worldY)
+            if distance < bestDistance {
+                bestDistance = distance
+                best = index
+            }
+        }
+        return best
+    }
+
+    private func readout(_ flat: Int) -> String {
+        guard let at = locate(flat) else { return "" }
+        let point = chart.series[at.series].points[at.point]
+        return chart.series[at.series].kind == "bar"
+            ? "\(point.label): \(formatted(point.y))"
+            : "\(formatted(point.x)), \(formatted(point.y))"
+    }
+
+    private func locate(_ flat: Int) -> (series: Int, point: Int)? {
+        var base = 0
+        for (series, points) in chart.series.enumerated() {
+            if flat < base + points.points.count {
+                return (series, flat - base)
+            }
+            base += points.points.count
+        }
+        return nil
+    }
+
+    private func flatIndex(series: Int, point: Int) -> Int {
+        chart.series.prefix(series).reduce(0) { $0 + $1.points.count } + point
+    }
+
+    private var flatCount: Int {
+        chart.series.reduce(0) { $0 + $1.points.count }
     }
 
     private func zoomAroundCenter(_ factor: Double) {
@@ -164,6 +306,51 @@ final class PharoChartArea {
         cairo_scale(ctx.context_ptr, zoom, zoom)
         drawChart(ctx)
         cairo_restore(ctx.context_ptr)
+
+        drawSelection(ctx)
+        drawReadout(ctx)
+    }
+
+    private func screenPosition(of flat: Int) -> (x: Double, y: Double)? {
+        guard flat >= 0, flat < centers.count, let center = centers[flat] else { return nil }
+        return (panX + center.x * zoom, panY + center.y * zoom)
+    }
+
+    private func drawSelection(_ ctx: Cairo.ContextRef) {
+        guard let selected, let at = screenPosition(of: selected) else { return }
+        let palette = PharoVizColors.current
+        setSource(ctx, palette.nodeFill)
+        cairo_new_sub_path(ctx.context_ptr)
+        cairo_arc(ctx.context_ptr, at.x, at.y, 7, 0, 2 * .pi)
+        ctx.fill()
+        setSource(ctx, PharoVizColors.brand)
+        cairo_new_sub_path(ctx.context_ptr)
+        cairo_arc(ctx.context_ptr, at.x, at.y, 5, 0, 2 * .pi)
+        ctx.fill()
+    }
+
+    private func drawReadout(_ ctx: Cairo.ContextRef) {
+        guard let hovered, let at = screenPosition(of: hovered) else { return }
+        let palette = PharoVizColors.current
+        PharoVisualArea.setFont(ctx, size: 11)
+        readout(hovered).withCString { cString in
+            let extents = ctx.textExtents(cString)
+            let padding = 5.0
+            let boxWidth = extents.width + padding * 2
+            let boxHeight = extents.height + padding * 2
+            let boxX = at.x - boxWidth / 2
+            let boxY = at.y - 16 - boxHeight
+            setSource(ctx, palette.nodeFill)
+            ctx.rectangle(x: boxX, y: boxY, width: boxWidth, height: boxHeight)
+            ctx.fill()
+            setSource(ctx, palette.border)
+            ctx.lineWidth = 1
+            ctx.rectangle(x: boxX, y: boxY, width: boxWidth, height: boxHeight)
+            ctx.stroke()
+            setSource(ctx, palette.label)
+            ctx.moveTo(boxX + padding, boxY + padding + extents.height)
+            ctx.showText(cString)
+        }
     }
 
     private func setSource(_ ctx: Cairo.ContextRef, _ c: PharoVizColors.RGBA) {
@@ -174,6 +361,7 @@ final class PharoChartArea {
         let palette = PharoVizColors.current
         PharoVisualArea.setFont(ctx, size: 11)
 
+        centers = Array(repeating: nil, count: flatCount)
         let points = chart.series.flatMap(\.points)
         guard !points.isEmpty else { return }
 
@@ -225,6 +413,7 @@ final class PharoChartArea {
                 let barX = left + Double(category) * groupWidth + padding / 2 + Double(index) * barWidth
                 let barH = point.y / highest * plotH
                 let barY = bottom - barH
+                centers[flatIndex(series: index, point: category)] = (barX + barWidth / 2, barY)
                 setSource(ctx, color)
                 ctx.rectangle(x: barX + 1, y: barY, width: barWidth - 2, height: barH)
                 ctx.fill()
@@ -263,6 +452,9 @@ final class PharoChartArea {
             let placed = series.points.map { point -> (x: Double, y: Double) in
                 (left + xs.fraction(point.x, log: logX) * plotW,
                  bottom - ys.fraction(point.y, log: logY) * plotH)
+            }
+            for (pointIndex, at) in placed.enumerated() {
+                centers[flatIndex(series: index, point: pointIndex)] = at
             }
             setSource(ctx, color)
             if series.kind == "line" {

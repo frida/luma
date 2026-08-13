@@ -1,6 +1,7 @@
 import CGtk
 import Foundation
 import Gtk
+import GtkSource
 import LumaCore
 import SwiftyPharo
 
@@ -19,11 +20,18 @@ final class PharoColumnView {
     private let runtime: PharoRuntime
     private let object: PharoObject
     private let isMaximized: Bool
+    private let highlight: (GtkSource.Buffer) -> Void
 
-    init(runtime: PharoRuntime, object: PharoObject, isMaximized: Bool) {
+    init(
+        runtime: PharoRuntime,
+        object: PharoObject,
+        isMaximized: Bool,
+        highlight: @escaping (GtkSource.Buffer) -> Void
+    ) {
         self.runtime = runtime
         self.object = object
         self.isMaximized = isMaximized
+        self.highlight = highlight
 
         widget = Frame()
         widget.hexpand = isMaximized
@@ -32,8 +40,17 @@ final class PharoColumnView {
         let column = Box(orientation: .vertical, spacing: 0)
         column.append(child: header())
         column.append(child: Separator(orientation: .horizontal))
-        column.append(child: tabs())
+        column.append(child: object.isClass ? classBrowserBody(of: object) : tabs())
         widget.set(child: column)
+    }
+
+    private var classBrowsers: [PharoClassBrowser] = []
+
+    private func classBrowserBody(of classObject: PharoObject) -> Widget {
+        let browser = PharoClassBrowser(
+            runtime: runtime, classObject: classObject, onSelect: onDrill, highlight: highlight)
+        classBrowsers.append(browser)
+        return browser.widget
     }
 
     private func header() -> Box {
@@ -163,13 +180,21 @@ final class PharoColumnView {
             notebook.removePage(pageNum: notebook.getNPages() - 1)
         }
         Task { @MainActor in
-            let views = (try? await runtime.views(of: object))?.sorted(by: { $0.priority < $1.priority }) ?? []
+            let views: [PharoViewDeclaration]
+            do {
+                views = try await runtime.views(of: object).sorted(by: { $0.priority < $1.priority })
+            } catch {
+                _ = notebook.appendPage(child: failurePage(error.localizedDescription), tabLabel: tabLabel("Error"))
+                return
+            }
             for view in views where view.title != "Meta" {
                 _ = notebook.appendPage(child: page(for: view), tabLabel: tabLabel(view.title))
             }
             _ = notebook.appendPage(child: textPage(object.printString), tabLabel: tabLabel("Print"))
-            for view in views where view.title == "Meta" {
-                _ = notebook.appendPage(child: page(for: view), tabLabel: tabLabel(view.title))
+            // The image's own Meta view is dropped for the coder shown on the
+            // object's class, the way the SwiftUI inspector synthesises it.
+            if let receiverClass = try? await runtime.classObject(of: object) {
+                _ = notebook.appendPage(child: classBrowserBody(of: receiverClass), tabLabel: tabLabel("Meta"))
             }
         }
     }
@@ -185,9 +210,7 @@ final class PharoColumnView {
             return graphPage(graph, selector: view.methodSelector)
         case "chart":
             guard let chart = view.chart else { return textPage("Empty chart.") }
-            let area = PharoChartArea(chart: chart)
-            chartAreas.append(area)
-            return area.widget
+            return chartPage(chart, selector: view.methodSelector)
         default:
             return textPage("\(view.viewName) views are not drawn yet.")
         }
@@ -217,6 +240,45 @@ final class PharoColumnView {
         }
         graphAreas.append(area)
         return area.widget
+    }
+
+    private func chartPage(_ chart: PharoChart, selector: String) -> Box {
+        let area = PharoChartArea(chart: chart)
+        area.onDrill = { [weak self] index in
+            guard let self else { return }
+            Task { @MainActor in
+                if let element = try? await self.runtime.drillInto(self.object, view: selector, index: index + 1) {
+                    self.onDrill(element)
+                }
+            }
+        }
+        chartAreas.append(area)
+        return area.widget
+    }
+
+    /// What the image said went wrong, laid out like the content it stands in
+    /// for so the pane keeps its shape rather than swallowing the complaint.
+    private func failurePage(_ message: String) -> Box {
+        let label = Label(str: message)
+        label.selectable = true
+        label.wrap = true
+        label.xalign = 0
+        label.yalign = 0
+        label.marginStart = 12
+        label.marginEnd = 12
+        label.marginTop = 8
+        label.marginBottom = 8
+        label.add(cssClass: "monospace")
+        label.add(cssClass: "error")
+
+        let scroll = ScrolledWindow()
+        scroll.hexpand = true
+        scroll.vexpand = true
+        scroll.set(child: label)
+
+        let page = Box(orientation: .vertical, spacing: 0)
+        page.append(child: scroll)
+        return page
     }
 
     private func textPage(_ text: String) -> Box {

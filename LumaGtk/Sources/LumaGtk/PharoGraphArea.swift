@@ -99,6 +99,17 @@ final class PharoGraphArea {
         }
         area.install(controller: click)
 
+        let secondary = GestureClick()
+        secondary.button = Int(GDK_BUTTON_SECONDARY)
+        secondary.propagationPhase = .capture
+        secondary.onPressed { [weak self] gesture, _, x, y in
+            MainActor.assumeIsolated {
+                _ = gesture.set(state: .claimed)
+                self?.presentCopyMenu(x, y)
+            }
+        }
+        area.install(controller: secondary)
+
         let motion = EventControllerMotion()
         motion.onMotion { [weak self] _, x, y in
             MainActor.assumeIsolated {
@@ -179,6 +190,20 @@ final class PharoGraphArea {
         guard hovered != index else { return }
         hovered = index
         area.queueDraw()
+    }
+
+    private func presentCopyMenu(_ x: Double, _ y: Double) {
+        guard let index = node(atScreen: x, y) ?? selected, index < graph.nodes.count else { return }
+        selected = index
+        area.queueDraw()
+        let label = graph.nodes[index].label
+        ContextMenu.present(
+            [[ContextMenu.Item("Copy Label") { Self.copyToClipboard(label) }]], at: area, x: x, y: y)
+    }
+
+    private static func copyToClipboard(_ value: String) {
+        guard let display = Display.getDefault() else { return }
+        display.clipboard.set(text: value)
     }
 
     private func handleKey(_ keyval: UInt) -> Bool {
