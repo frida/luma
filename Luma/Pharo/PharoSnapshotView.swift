@@ -1,5 +1,7 @@
+#if os(macOS)
 import LumaCore
 import SwiftUI
+import SwiftyPharo
 
 /// What a cell's last run produced, rendered without a VM. Same shape as the
 /// live inspector, minus the drilling: a snapshot has no objects to open.
@@ -66,6 +68,10 @@ struct PharoSnapshotView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
             }
+        case .graph(let graph):
+            PharoGraphView(graph: graph)
+        case .chart(let chart):
+            PharoChartView(chart: chart)
         case .empty, .none:
             ContentUnavailableView("Nothing captured", systemImage: "square.dashed")
         }
@@ -75,3 +81,4 @@ struct PharoSnapshotView: View {
         snapshot.views.first { $0.methodSelector == shown } ?? snapshot.views.first
     }
 }
+#endif

@@ -49,6 +49,9 @@ final class MainWindow: InstrumentUIHost {
     private let detailContainer: Box
     private let eventStreamPane: EventStreamPane
     private var notebookPane: NotebookPane?
+    private var pharoPane: PharoPlaygroundPane?
+    private let pharoListBox = ListBox()
+    private let pharoRow = ListBoxRow()
     private let desktopNotifier: DesktopNotifier
     private var currentInstrumentDetail: InstrumentDetailPane?
     private var currentCustomInstrumentDefPane: CustomInstrumentDefPane?
@@ -114,6 +117,7 @@ final class MainWindow: InstrumentUIHost {
 
     private enum SidebarSelection: Equatable {
         case notebook
+        case pharo
         case session(UUID)
         case module(sessionID: UUID, moduleID: String)
         case thread(sessionID: UUID, threadID: UInt)
@@ -600,6 +604,7 @@ final class MainWindow: InstrumentUIHost {
         outerPaned.endChild = WidgetRef(panel.widget)
         panel.widget.visible = isCollaborationPanelVisible
         notebookPane = NotebookPane(engine: engine)
+        pharoPane = PharoPlaygroundPane(engine: engine)
         if case .notebook = selection {
             renderDetail()
         }
@@ -718,6 +723,7 @@ final class MainWindow: InstrumentUIHost {
         column.vexpand = true
 
         column.append(child: buildNotebookSection())
+        column.append(child: buildPharoSection())
         column.append(child: buildMissionsSection())
         column.append(child: buildSessionsSection())
         column.append(child: buildCustomInstrumentsSection())
@@ -757,6 +763,35 @@ final class MainWindow: InstrumentUIHost {
 
         let wrapper = Box(orientation: .vertical, spacing: 0)
         wrapper.append(child: notebookListBox)
+        return wrapper
+    }
+
+    private func buildPharoSection() -> Box {
+        pharoListBox.selectionMode = .single
+        pharoListBox.add(cssClass: "navigation-sidebar")
+        pharoListBox.add(cssClass: "luma-flush-sidebar-list")
+        pharoListBox.onRowActivated { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.select(.pharo) }
+        }
+        pharoListBox.onRowSelected { [weak self] _, row in
+            MainActor.assumeIsolated {
+                guard let self, row != nil else { return }
+                if case .pharo = self.selection { return }
+                self.pharoListBox.unselectAll()
+            }
+        }
+
+        let label = Label(str: "🧪  Playground")
+        label.halign = .start
+        label.marginStart = 12
+        label.marginEnd = 12
+        label.marginTop = 6
+        label.marginBottom = 6
+        pharoRow.set(child: label)
+        pharoListBox.append(child: pharoRow)
+
+        let wrapper = Box(orientation: .vertical, spacing: 0)
+        wrapper.append(child: pharoListBox)
         return wrapper
     }
 
@@ -1790,6 +1825,15 @@ final class MainWindow: InstrumentUIHost {
                     subtitle: "Pinned events and notes will appear here."
                 )
             }
+        case .pharo:
+            if let pane = pharoPane {
+                widget = pane.widget
+            } else {
+                widget = makePlaceholder(
+                    title: "Pharo",
+                    subtitle: "A Smalltalk playground will appear here."
+                )
+            }
         case .session(let id):
             if let session = sessions.first(where: { $0.id == id }) {
                 widget = makeSessionDetail(session: session)
@@ -2292,7 +2336,15 @@ final class MainWindow: InstrumentUIHost {
             packagesList.unselectAll()
             customInstrumentsList.unselectAll()
             missionsListBox.unselectAll()
+            pharoListBox.unselectAll()
             notebookListBox.select(row: notebookRow)
+        case .pharo:
+            sessionsList.unselectAll()
+            packagesList.unselectAll()
+            customInstrumentsList.unselectAll()
+            missionsListBox.unselectAll()
+            notebookListBox.unselectAll()
+            pharoListBox.select(row: pharoRow)
         case .session, .module, .thread, .repl, .instrument, .instrumentComponent, .insight, .itrace:
             notebookListBox.unselectAll()
             packagesList.unselectAll()

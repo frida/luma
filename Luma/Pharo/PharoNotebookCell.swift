@@ -1,3 +1,4 @@
+#if os(macOS)
 import LumaCore
 import SwiftUI
 import SwiftyPharo
@@ -208,6 +209,14 @@ struct PharoResultPreview: View {
             previewText(text)
         case .items(let rows, let total):
             previewTable(rows, total: total)
+        case .graph:
+            Label("Graph", systemImage: "point.3.connected.trianglepath.dotted")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        case .chart:
+            Label("Chart", systemImage: "chart.bar")
+                .font(.callout)
+                .foregroundStyle(.secondary)
         case .empty, .none:
             previewText(snapshot.printString)
         }
@@ -243,3 +252,4 @@ struct PharoResultPreview: View {
         .frame(height: 160)
     }
 }
+#endif

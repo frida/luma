@@ -167,6 +167,7 @@ struct PharoScrollTarget: Equatable {
 
 let pharoColumnWidth: CGFloat = 400
 
+#if os(macOS)
 extension View {
     /// Lays a maximized pane over the whole inspector -- page and carousel both
     /// -- the way Glamorous Toolkit fills its host when a pane is maximized.
@@ -545,19 +546,15 @@ struct PharoObjectColumn: View {
         case "graph":
             if let graph = declaration.graph {
                 PharoGraphView(
-                    runtime: runtime,
-                    object: object,
-                    view: declaration.methodSelector,
                     graph: graph,
+                    onDrill: { try? await runtime.drillInto(object, view: declaration.methodSelector, index: $0 + 1) },
                     onSelect: onSelect)
             }
         case "chart":
             if let chart = declaration.chart {
                 PharoChartView(
-                    runtime: runtime,
-                    object: object,
-                    view: declaration.methodSelector,
                     chart: chart,
+                    onDrill: { try? await runtime.drillInto(object, view: declaration.methodSelector, index: $0 + 1) },
                     onSelect: onSelect)
             }
         default:
@@ -714,9 +711,20 @@ private struct PharoItemsList: View {
                 .width(column == 0 ? indexColumnWidth : nil)
             }
         }
+        .contextMenu(forSelectionType: Int.self) { ids in
+            if let id = ids.first, let row = loaded.rows.first(where: { $0.id == id }) {
+                Button { copyRow(row) } label: { Label("Copy", systemImage: "doc.on.doc") }
+            }
+        }
         // A column-count change rebuilds the table rather than diffing a new
         // column onto rows still shaped for the old one, which AppKit traps on.
         .id(loaded.columns)
+    }
+
+    private func copyRow(_ row: Row) {
+        let text = row.cells.dropFirst().compactMap { $0.text }.joined(separator: "\t")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     @ViewBuilder
@@ -1184,3 +1192,4 @@ struct PharoOverviewStrip: View {
     private let previewHeight: CGFloat = 12
     private let previewSpacing: CGFloat = 3
 }
+#endif

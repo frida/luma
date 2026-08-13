@@ -1,13 +1,16 @@
+#if os(macOS)
 import Charts
 import SwiftUI
 import SwiftyPharo
 
+#if canImport(AppKit)
+import AppKit
+#endif
+
 struct PharoChartView: View {
-    let runtime: PharoRuntime
-    let object: PharoObject
-    let view: String
     let chart: PharoChart
-    let onSelect: (PharoObject) -> Void
+    var onDrill: ((Int) async -> PharoObject?)?
+    var onSelect: (PharoObject) -> Void = { _ in }
 
     @State private var drilling = false
     @State private var selected: Int?
@@ -35,6 +38,7 @@ struct PharoChartView: View {
             .onKeyPress(.return) { drillSelected(); return .handled }
             .onKeyPress(.escape) { selected = nil; return .handled }
             .padding()
+            .task { isFocused = true }
     }
 
     private var isNumeric: Bool {
@@ -125,6 +129,13 @@ struct PharoChartView: View {
                         switch phase {
                         case .active(let location): hovered = point(at: location, proxy: proxy, in: geometry)
                         case .ended: hovered = nil
+                        }
+                    }
+                    .contextMenu {
+                        if let selected {
+                            Button { copyToPasteboard(readout(selected)) } label: {
+                                Label("Copy Value", systemImage: "doc.on.doc")
+                            }
                         }
                     }
 
@@ -250,14 +261,22 @@ struct PharoChartView: View {
         if let selected { drill(into: selected) }
     }
 
+    private func copyToPasteboard(_ text: String) {
+        #if canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #endif
+    }
+
     private func drill(into index: Int) {
-        guard !drilling else { return }
+        guard let onDrill, !drilling else { return }
         drilling = true
         Task {
             defer { drilling = false }
-            if let drilled = try? await runtime.drillInto(object, view: view, index: index + 1) {
+            if let drilled = await onDrill(index) {
                 onSelect(drilled)
             }
         }
     }
 }
+#endif

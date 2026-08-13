@@ -1,3 +1,4 @@
+#if os(macOS)
 import SwiftUI
 import SwiftyPharo
 
@@ -166,6 +167,7 @@ struct PharoMethodList: View {
     @State private var focused: UUID?
     @State private var reveal: String?
     @State private var isAdding = false
+    @State private var query = ""
 
     init(
         methods: [PharoMethodInfo],
@@ -197,7 +199,10 @@ struct PharoMethodList: View {
     }
 
     private var toolbar: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 6) {
+            if methods.count > 12 {
+                PharoSearchField(text: $query, prompt: "Filter methods")
+            }
             Spacer(minLength: 0)
             Button { isAdding.toggle() } label: {
                 Image(systemName: "plus")
@@ -210,11 +215,19 @@ struct PharoMethodList: View {
         .padding(.vertical, 4)
     }
 
+    private var shownMethods: [PharoMethodInfo] {
+        guard !query.isEmpty else { return methods }
+        let needle = query.lowercased()
+        return methods.filter {
+            $0.selector.lowercased().contains(needle) || $0.category.lowercased().contains(needle)
+        }
+    }
+
     private var methodRows: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(methods) { method in
+                    ForEach(shownMethods) { method in
                         PharoMethodRow(
                             method: method,
                             runtime: runtime,
@@ -600,3 +613,4 @@ struct PharoMethodEditor: View {
         Task { openedClasses[name] = try? await runtime.evaluate(name) }
     }
 }
+#endif

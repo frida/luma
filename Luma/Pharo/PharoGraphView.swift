@@ -1,12 +1,15 @@
+#if os(macOS)
 import SwiftUI
 import SwiftyPharo
 
+#if canImport(AppKit)
+import AppKit
+#endif
+
 struct PharoGraphView: View {
-    let runtime: PharoRuntime
-    let object: PharoObject
-    let view: String
     let graph: PharoGraph
-    let onSelect: (PharoObject) -> Void
+    var onDrill: ((Int) async -> PharoObject?)?
+    var onSelect: (PharoObject) -> Void = { _ in }
 
     @State private var drilling = false
     @State private var placed: PharoGraphLayout.Solution?
@@ -32,6 +35,7 @@ struct PharoGraphView: View {
             didFit = false
             placed = PharoGraphLayout(nodeCount: graph.nodes.count, edges: graph.edges, kind: .init(graph.layout)).solve()
             attemptInitialFit()
+            isFocused = true
         }
     }
 
@@ -42,33 +46,35 @@ struct PharoGraphView: View {
     }
 
     private func graphBody(_ placed: PharoGraphLayout.Solution) -> some View {
-        ZStack(alignment: .topLeading) {
-            Color.clear
+        GeometryReader { geo in
             canvas(placed)
                 .scaleEffect(scale, anchor: .topLeading)
                 .offset(offset)
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+                .clipped()
+                .contentShape(Rectangle())
+                .gesture(panGesture)
+                .gesture(
+                    MagnifyGesture()
+                        .onChanged { zoom(to: zoomBase * $0.magnification) }
+                        .onEnded { _ in zoomBase = scale })
+                .onChange(of: selected) { _, now in
+                    if let now { reveal(now) }
+                }
+                .overlay(alignment: .bottomTrailing) { zoomControls }
+                .focusable()
+                .focusEffectDisabled()
+                .focused($isFocused)
+                .onKeyPress(.upArrow) { move(0, -1); return .handled }
+                .onKeyPress(.downArrow) { move(0, 1); return .handled }
+                .onKeyPress(.leftArrow) { move(-1, 0); return .handled }
+                .onKeyPress(.rightArrow) { move(1, 0); return .handled }
+                .onKeyPress(.return) { drillSelected(); return .handled }
+                .onKeyPress(.escape) { selected = nil; return .handled }
+                .onAppear { viewport = geo.size; attemptInitialFit() }
+                .onChange(of: geo.size) { viewport = $1; attemptInitialFit() }
         }
-        .clipped()
-        .contentShape(Rectangle())
-        .onGeometryChange(for: CGSize.self) { $0.size } action: { viewport = $0; attemptInitialFit() }
-        .gesture(panGesture)
-        .gesture(
-            MagnifyGesture()
-                .onChanged { zoom(to: zoomBase * $0.magnification) }
-                .onEnded { _ in zoomBase = scale })
-        .onChange(of: selected) { _, now in
-            if let now { reveal(now) }
-        }
-        .overlay(alignment: .bottomTrailing) { zoomControls }
-        .focusable()
-        .focusEffectDisabled()
-        .focused($isFocused)
-        .onKeyPress(.upArrow) { move(0, -1); return .handled }
-        .onKeyPress(.downArrow) { move(0, 1); return .handled }
-        .onKeyPress(.leftArrow) { move(-1, 0); return .handled }
-        .onKeyPress(.rightArrow) { move(1, 0); return .handled }
-        .onKeyPress(.return) { drillSelected(); return .handled }
-        .onKeyPress(.escape) { selected = nil; return .handled }
+        .frame(minHeight: 240)
     }
 
     private func canvas(_ placed: PharoGraphLayout.Solution) -> some View {
@@ -80,10 +86,12 @@ struct PharoGraphView: View {
                 }
             }
             .frame(width: placed.size.width, height: placed.size.height)
+            .allowsHitTesting(false)
 
             ForEach(graph.nodes.indices, id: \.self) { index in
                 node(graph.nodes[index].label, at: index)
                     .position(placed[index])
+                    .allowsHitTesting(isOnScreen(placed[index]))
             }
         }
         .frame(width: placed.size.width, height: placed.size.height, alignment: .topLeading)
@@ -95,6 +103,14 @@ struct PharoGraphView: View {
                 offset = CGSize(width: panBase.width + $0.translation.width, height: panBase.height + $0.translation.height)
             }
             .onEnded { _ in panBase = offset }
+    }
+
+    private func isOnScreen(_ point: CGPoint) -> Bool {
+        guard viewport != .zero else { return true }
+        let onScreen = CGPoint(x: point.x * scale + offset.width, y: point.y * scale + offset.height)
+        let margin = PharoGraphLayout.nodeSize.width * scale
+        return onScreen.x > -margin && onScreen.x < viewport.width + margin
+            && onScreen.y > -margin && onScreen.y < viewport.height + margin
     }
 
     private func reveal(_ index: Int) {
@@ -201,7 +217,17 @@ struct PharoGraphView: View {
             .pointerStyle(.link)
             .onHover { hovered = $0 ? index : (hovered == index ? nil : hovered) }
             .onTapGesture { activate(index) }
+            .contextMenu {
+                Button { copyToPasteboard(label) } label: { Label("Copy Label", systemImage: "doc.on.doc") }
+            }
             .help(label)
+    }
+
+    private func copyToPasteboard(_ text: String) {
+        #if canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #endif
     }
 
     private func activate(_ index: Int) {
@@ -253,11 +279,11 @@ struct PharoGraphView: View {
     }
 
     private func drill(into index: Int) {
-        guard !drilling else { return }
+        guard let onDrill, !drilling else { return }
         drilling = true
         Task {
             defer { drilling = false }
-            if let drilled = try? await runtime.drillInto(object, view: view, index: index + 1) {
+            if let drilled = await onDrill(index) {
                 onSelect(drilled)
             }
         }
@@ -441,3 +467,4 @@ struct PharoGraphLayout {
         return Solution(points: points, size: size)
     }
 }
+#endif

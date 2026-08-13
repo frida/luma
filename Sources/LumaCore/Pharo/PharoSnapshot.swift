@@ -18,6 +18,8 @@ public struct PharoSnapshot: Codable, Sendable, Equatable {
         public enum Content: Codable, Sendable, Equatable {
             case items(kept: [[Cell]], total: Int)
             case text(String)
+            case graph(PharoGraph)
+            case chart(PharoChart)
             case empty
         }
 
@@ -36,12 +38,6 @@ public struct PharoSnapshot: Codable, Sendable, Equatable {
         self.printString = printString
         self.className = className
         self.views = views
-    }
-}
-
-extension PharoViewDeclaration {
-    var carriesInlineData: Bool {
-        graph != nil || chart != nil
     }
 }
 
@@ -71,8 +67,11 @@ extension PharoSnapshot {
         if let text = declaration.text {
             return .text(text)
         }
-        if declaration.carriesInlineData {
-            return .empty
+        if let graph = declaration.graph {
+            return .graph(graph)
+        }
+        if let chart = declaration.chart {
+            return .chart(chart)
         }
 
         let page = try await runtime.items(

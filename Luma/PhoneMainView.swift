@@ -232,7 +232,7 @@ extension Binding where Value == [PhoneRoute] {
                     self.wrappedValue.append(.customInstrument(defID, nil))
                 case .customInstrumentFile(let defID, let path):
                     self.wrappedValue.append(.customInstrument(defID, path))
-                case .session, .repl, .module, .thread, .notebook, .missions, .mission, .package:
+                case .session, .repl, .module, .thread, .notebook, .missions, .mission, .package, .pharo:
                     break
                 }
             }

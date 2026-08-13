@@ -1,3 +1,4 @@
+#if os(macOS)
 import LumaCore
 import SwiftUI
 import SwiftyPharo
@@ -23,6 +24,8 @@ struct PharoPlaygroundView: View {
     @State private var errors: [UUID: PharoEvaluationError] = [:]
     @State private var printStrings: [UUID: String] = [:]
     @State private var evaluating: Set<UUID> = []
+    @State private var hoveredSnippet: UUID?
+    @State private var draggingSnippet: UUID?
 
     private let runtime = PharoRuntime.shared
 
@@ -197,6 +200,21 @@ struct PharoPlaygroundView: View {
                     } action: { center in
                         centers[snippetID] = center
                     }
+                    .contextMenu {
+                        Button { moveUp(snippet) } label: { Label("Move Up", systemImage: "arrow.up") }
+                        Button { moveDown(snippet) } label: { Label("Move Down", systemImage: "arrow.down") }
+                        Button { duplicate(snippet) } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
+                        Divider()
+                        Button(role: .destructive) { remove(snippet) } label: { Label("Remove", systemImage: "trash") }
+                    }
+                    .background { moveShortcuts(for: snippet, id: snippetID) }
+                    .overlay(alignment: .topTrailing) {
+                        if hoveredSnippet == snippetID || draggingSnippet == snippetID {
+                            dragHandle(snippetID)
+                        }
+                    }
+                    .opacity(draggingSnippet == snippetID ? 0.75 : 1)
+                    .onHover { hoveredSnippet = $0 ? snippetID : (hoveredSnippet == snippetID ? nil : hoveredSnippet) }
                 }
 
                 addSnippetButton
@@ -217,8 +235,21 @@ struct PharoPlaygroundView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
+        .keyboardShortcut(.init("n"), modifiers: [.command, .option])
         .disabled(!isReady)
         .accessibilityIdentifier("pharo.playground.addSnippet")
+    }
+
+    private func moveShortcuts(for snippet: PharoPlaygroundSnippet, id: UUID) -> some View {
+        Group {
+            Button("Move Up") { moveUp(snippet) }
+                .keyboardShortcut(focused == id ? KeyboardShortcut(.upArrow, modifiers: [.command, .option]) : nil)
+            Button("Move Down") { moveDown(snippet) }
+                .keyboardShortcut(focused == id ? KeyboardShortcut(.downArrow, modifiers: [.command, .option]) : nil)
+        }
+        .opacity(0)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     private func addSnippet() {
@@ -324,6 +355,47 @@ struct PharoPlaygroundView: View {
     private func remove(_ snippet: PharoPlaygroundSnippet) {
         snippets.removeAll { $0.id == snippet.id }
     }
+
+    private func dragHandle(_ id: UUID) -> some View {
+        Image(systemName: "line.3.horizontal")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(6)
+            .contentShape(Rectangle())
+            .pointerStyle(.grabIdle)
+            .gesture(
+                DragGesture(coordinateSpace: .named(pharoPageSpace))
+                    .onChanged { dragToReorder(id, to: $0.location.y) }
+                    .onEnded { _ in draggingSnippet = nil })
+            .help("Drag to reorder")
+    }
+
+    private func dragToReorder(_ id: UUID, to y: CGFloat) {
+        draggingSnippet = id
+        guard let index = snippets.firstIndex(where: { $0.id == id }) else { return }
+        if index > 0, let above = centers[snippets[index - 1].id], y < above {
+            withAnimation(.snappy) { snippets.swapAt(index, index - 1) }
+        } else if index < snippets.count - 1, let below = centers[snippets[index + 1].id], y > below {
+            withAnimation(.snappy) { snippets.swapAt(index, index + 1) }
+        }
+    }
+
+    private func moveUp(_ snippet: PharoPlaygroundSnippet) {
+        guard let index = snippets.firstIndex(where: { $0.id == snippet.id }), index > 0 else { return }
+        snippets.swapAt(index, index - 1)
+    }
+
+    private func moveDown(_ snippet: PharoPlaygroundSnippet) {
+        guard let index = snippets.firstIndex(where: { $0.id == snippet.id }), index < snippets.count - 1 else { return }
+        snippets.swapAt(index, index + 1)
+    }
+
+    private func duplicate(_ snippet: PharoPlaygroundSnippet) {
+        guard let index = snippets.firstIndex(where: { $0.id == snippet.id }) else { return }
+        let copy = PharoPlaygroundSnippet(source: snippet.source)
+        snippets.insert(copy, at: index + 1)
+        focused = copy.id
+    }
 }
 
 /// Greets an empty playground the way the notebook and the REPL greet their
@@ -410,3 +482,4 @@ private struct PharoPlaygroundEmptyState: View {
         }
     }
 }
+#endif
