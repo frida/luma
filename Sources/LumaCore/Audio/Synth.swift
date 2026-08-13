@@ -58,6 +58,36 @@ public final class Synth {
         SynthEngine.release(voice: voice)
     }
 
+    /// Stops every pattern and takes every voice with it, leaving what each
+    /// channel is set to alone.
+    public func hush() {
+        SynthEngine.hush()
+    }
+
+    /// Back to how it started: every channel's patch, colour and place, the
+    /// echo, and the level.
+    public func reset() {
+        SynthEngine.reset(channel: nil)
+        level = 0.6
+    }
+
+    /// The same for one channel.
+    public func reset(channel: Int) {
+        SynthEngine.reset(channel: channel)
+    }
+
+    /// Where a channel sits between the speakers: -1 hard left, 1 hard right.
+    public func pan(_ pan: Float, channel: Int = 0) {
+        SynthEngine.setPan(pan, channel: channel)
+    }
+
+    /// One tap of delay across everything, crossing sides as it comes round:
+    /// how far back it reaches, how much comes round again, and how much of
+    /// it is heard.
+    public func echo(seconds: Float, feedback: Float, mix: Float) {
+        SynthEngine.setEcho(seconds: seconds, feedback: feedback, mix: mix)
+    }
+
     /// Mixes without a device, for previews and for checking a patch makes
     /// the sound it claims to.
     public func renderOffline(frameCount: Int, channels: Int = 1) -> [Float] {
@@ -87,6 +117,19 @@ public struct SynthPatch: Sendable, Equatable {
     public var resonance: Float
     public var detuneSemitones: Float
     public var gain: Float
+    /// Where a pulse sits between its edges; a half is a square.
+    public var pulseWidth: Float = 0.5
+    public var lfoRate: Float = 0
+    public var lfoToPitch: Float = 0
+    public var lfoToWidth: Float = 0
+    public var lfoToCutoff: Float = 0
+    /// Octaves the filter opens by when a note is struck, and how long it
+    /// takes to shut again.
+    public var cutoffEnvelope: Float = 0
+    public var cutoffDecay: Float = 0.2
+    public var syncsDetuned: Bool = false
+    public var ringMix: Float = 0
+    public var drive: Float = 0
 
     public init(
         waveform: Waveform,
@@ -97,8 +140,28 @@ public struct SynthPatch: Sendable, Equatable {
         cutoff: Float,
         resonance: Float,
         detuneSemitones: Float = 0,
-        gain: Float = 1
+        gain: Float = 1,
+        pulseWidth: Float = 0.5,
+        lfoRate: Float = 0,
+        lfoToPitch: Float = 0,
+        lfoToWidth: Float = 0,
+        lfoToCutoff: Float = 0,
+        cutoffEnvelope: Float = 0,
+        cutoffDecay: Float = 0.2,
+        syncsDetuned: Bool = false,
+        ringMix: Float = 0,
+        drive: Float = 0
     ) {
+        self.pulseWidth = pulseWidth
+        self.lfoRate = lfoRate
+        self.lfoToPitch = lfoToPitch
+        self.lfoToWidth = lfoToWidth
+        self.lfoToCutoff = lfoToCutoff
+        self.cutoffEnvelope = cutoffEnvelope
+        self.cutoffDecay = cutoffDecay
+        self.syncsDetuned = syncsDetuned
+        self.ringMix = ringMix
+        self.drive = drive
         self.waveform = waveform
         self.attack = attack
         self.decay = decay
@@ -109,6 +172,38 @@ public struct SynthPatch: Sendable, Equatable {
         self.detuneSemitones = detuneSemitones
         self.gain = gain
     }
+
+    /// Reedy and moving, the way a chip lead is: the pulse breathes rather
+    /// than sitting still.
+    public static let pwmLead = SynthPatch(
+        waveform: .square, attack: 0.004, decay: 0.5, sustain: 0.7, release: 0.12,
+        cutoff: 4200, resonance: 0.2, gain: 0.4,
+        pulseWidth: 0.35, lfoRate: 4.5, lfoToWidth: 0.3)
+
+    /// Filter struck open and shut on every note, which is the whole of an
+    /// acid line.
+    public static let acid = SynthPatch(
+        waveform: .saw, attack: 0.002, decay: 0.28, sustain: 0, release: 0.04,
+        cutoff: 320, resonance: 0.92, gain: 0.5,
+        cutoffEnvelope: 3.6, cutoffDecay: 0.22, drive: 0.35)
+
+    /// One pitch dragging another behind it.
+    public static let syncLead = SynthPatch(
+        waveform: .saw, attack: 0.003, decay: 0.4, sustain: 0.5, release: 0.08,
+        cutoff: 5200, resonance: 0.25, detuneSemitones: 7.02, gain: 0.35,
+        syncsDetuned: true, drive: 0.2)
+
+    /// Two pitches multiplied rather than added: bells, and everything metal.
+    public static let bell = SynthPatch(
+        waveform: .sine, attack: 0.001, decay: 0.9, sustain: 0, release: 0.3,
+        cutoff: 0, resonance: 0, detuneSemitones: 15.4, gain: 0.4,
+        ringMix: 0.9)
+
+    /// A soft swell rather than a strike, with the pitch alive underneath.
+    public static let pad = SynthPatch(
+        waveform: .saw, attack: 0.35, decay: 0.6, sustain: 0.65, release: 0.6,
+        cutoff: 900, resonance: 0.3, detuneSemitones: 0.11, gain: 0.3,
+        lfoRate: 0.25, lfoToPitch: 0.08, lfoToCutoff: 1.2)
 
     /// A short plucked blip: no sustain, so a voice frees itself.
     public static let blip = SynthPatch(
@@ -139,6 +234,16 @@ public struct SynthPatch: Sendable, Equatable {
         raw.cutoff = cutoff
         raw.resonance = resonance
         raw.gain = gain
+        raw.pulseWidth = pulseWidth
+        raw.lfoRate = lfoRate
+        raw.lfoToPitch = lfoToPitch
+        raw.lfoToWidth = lfoToWidth
+        raw.lfoToCutoff = lfoToCutoff
+        raw.cutoffEnvelope = cutoffEnvelope
+        raw.cutoffDecay = cutoffDecay
+        raw.syncsDetuned = syncsDetuned
+        raw.ringMix = ringMix
+        raw.drive = drive
         return raw
     }
 }

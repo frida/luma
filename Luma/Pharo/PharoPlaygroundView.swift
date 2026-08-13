@@ -58,32 +58,39 @@ struct PharoPlaygroundView: View {
             PharoOverviewStrip(path: columnPath)
             Divider()
 
-            ScrollView(.horizontal) {
-                HStack(spacing: 0) {
-                    Group {
-                        // The maximized overlay holds the live page; a second copy
-                        // here would run the snippet editors twice over.
-                        if isPageMaximized {
-                            Color.clear
-                        } else {
-                            page
+            // The columns are given the height they are scrolled in rather than
+            // taking the height they would like: a page taller than the window
+            // scrolls within its own column, where left to grow it lifts the row
+            // -- and with it the whole window's content -- off the top.
+            GeometryReader { scroller in
+                ScrollView(.horizontal) {
+                    HStack(spacing: 0) {
+                        Group {
+                            // The maximized overlay holds the live page; a second copy
+                            // here would run the snippet editors twice over.
+                            if isPageMaximized {
+                                Color.clear
+                            } else {
+                                page
+                            }
                         }
-                    }
-                    .frame(width: pageWidth)
-                    .pharoPane()
-                    .overlay(alignment: .trailing) { pageResizeHandle }
-                    .overlay(alignment: .topTrailing) { if !isPageMaximized { pageMenuButton } }
-                    .onHover { isPagePointedAt = $0 }
-                    .id(PharoColumnPath.pageID)
+                        .frame(width: pageWidth)
+                        .pharoPane()
+                        .overlay(alignment: .trailing) { pageResizeHandle }
+                        .overlay(alignment: .topTrailing) { if !isPageMaximized { pageMenuButton } }
+                        .onHover { isPagePointedAt = $0 }
+                        .id(PharoColumnPath.pageID)
 
-                    inspectionSide
+                        inspectionSide
+                    }
+                    .frame(height: scroller.size.height - 2 * pharoColumnMargin)
+                    .scrollTargetLayout()
                 }
-                .scrollTargetLayout()
+                // A margin rather than padding, so that scrolling something to the
+                // leading edge leaves the same gap before it that it had at rest.
+                .contentMargins(pharoColumnMargin, for: .scrollContent)
+                .pharoColumnScrolling(columnPath)
             }
-            // A margin rather than padding, so that scrolling something to the
-            // leading edge leaves the same gap before it that it had at rest.
-            .contentMargins(8, for: .scrollContent)
-            .pharoColumnScrolling(columnPath)
         }
     }
 

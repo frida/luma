@@ -312,7 +312,11 @@ public enum PharoExampleCatalog {
                 tally pad: #(20 18) tint: #(1 0.95 0.8); show: 'SCORE 0'.
 
                 fallerHalf := 0.14. paddleHalf := 0.22. paddleTop := -0.755.
-                at := { 0. 1 }. speed := 0.024. held := 0. score := 0.
+                "Speeds are per second, not per turn round the loop: a turn
+                 that runs late has to cover more ground, or the fall is seen
+                 to slow down whenever the image is busy."
+                at := { 0. 1 }. speed := 0.73. held := 0. score := 0.
+                tick := Time millisecondClockValue. step := 0.033. eyed := 0. steer := #pointer.
                 respawn := [
                     "Move it to the top before showing the next icon, or the
                      one just caught is seen changing face at the paddle."
@@ -320,25 +324,48 @@ public enum PharoExampleCatalog {
                     faller ramp: 'at' from: at to: at over: 0.
                     faller image: 'icon' form: icons atRandom ].
                 playing := [ [ game isDown: #escape ] whileFalse: [
-                    | wanted below landed was fell |
-                    wanted := (game pointer first max: -0.95) min: 0.95.
-                    (game isDown: #left) ifTrue: [ wanted := held - 0.07 ].
-                    (game isDown: #right) ifTrue: [ wanted := held + 0.07 ].
+                    | wanted below landed was fell beat aimed chase nudge |
+                    "How long the last turn round the loop actually took, which
+                     is what the next move has to be spread over: a ramp given
+                     less is cut off partway and the rest of the move arrives as
+                     a jump, which is seen as a stutter."
+                    beat := Time millisecondClockValue.
+                    step := ((beat - tick max: 1) min: 200) / 1000.0.
+                    tick := beat.
+
+                    "Whichever was used last steers, and goes on steering. The
+                     pointer answers where it last sat even when it is off the
+                     scene or standing still, so following it unasked takes the
+                     paddle out of the keys' hands the moment a key comes up."
+                    aimed := game pointer first.
+                    (game hasPointer and: [ (aimed - eyed) abs > 0.002 ])
+                        ifTrue: [ steer := #pointer ].
+                    eyed := aimed.
+                    nudge := 0.
+                    (game isDown: #left) ifTrue: [ nudge := nudge - (2.1 * step) ].
+                    (game isDown: #right) ifTrue: [ nudge := nudge + (2.1 * step) ].
+                    nudge = 0 ifFalse: [ steer := #keys ].
+                    wanted := steer = #pointer
+                        ifTrue: [ aimed ]
+                        ifFalse: [ held + nudge ].
                     was := held.
-                    held := ((held * 0.55) + (wanted * 0.45) max: -0.95) min: 0.95.
+                    "Catching up on a clock rather than per turn, so how closely
+                     the paddle follows does not ride on how long a turn took."
+                    chase := 1 - (0.08 raisedTo: step / 0.06).
+                    held := ((held + ((wanted - held) * chase)) max: -0.95) min: 0.95.
 
                     below := at second - fallerHalf.
                     fell := at.
-                    at := { at first. at second - speed }.
+                    at := { at first. at second - (speed * step) }.
                     landed := below > paddleTop and: [ at second - fallerHalf <= paddleTop ].
 
                     "Ramps rather than steps: the loop runs at 30 a second and
                      the view draws at 60, so the renderer carries each move
                      the rest of the way on its own clock."
-                    paddle ramp: 'at' from: { was. -0.8 } to: { held. -0.8 } over: 0.04.
-                    faller ramp: 'at' from: fell to: at over: 0.04.
+                    paddle ramp: 'at' from: { was. -0.8 } to: { held. -0.8 } over: step.
+                    faller ramp: 'at' from: fell to: at over: step.
                     shadow
-                        ramp: 'at' from: { fell first. -0.9 } to: { at first. -0.9 } over: 0.04;
+                        ramp: 'at' from: { fell first. -0.9 } to: { at first. -0.9 } over: step;
                         uniform: 'spread' value: (1.0 + (at second + 0.9) * 0.8 max: 0.35).
 
                     landed
@@ -346,7 +373,7 @@ public enum PharoExampleCatalog {
                             (at first - held) abs < (paddleHalf + fallerHalf * 0.75)
                                 ifTrue: [
                                     score := score + 1.
-                                    speed := speed + 0.0022.
+                                    speed := speed + 0.067.
                                     paddle uniform: 'warmth' value: (score / 20.0 min: 0.85).
                                     tally show: 'SCORE ', score printString.
                                     (LumaTune named: #blip channel: 3)
@@ -356,7 +383,7 @@ public enum PharoExampleCatalog {
                         ifFalse: [
                             at second < -1.2 ifTrue: [
                                 score := 0.
-                                speed := 0.024.
+                                speed := 0.73.
                                 paddle uniform: 'warmth' value: 0.
                                 tally show: 'SCORE 0'.
                                 (LumaTune named: #blip channel: 3)
@@ -467,6 +494,72 @@ public enum PharoExampleCatalog {
                     loops: false;
                     notes: #(c4 e4 g4 c5 e5 g5 c6);
                     play
+                """),
+            PharoExample(
+                title: "Acid line \u{2014} the filter is the instrument",
+                code: """
+                "Every note strikes the filter open and it shuts again on its
+                 own. Resonance and a little drive do the rest."
+                LumaSynth start.
+                LumaSynth echo: 0.24 feedback: 0.35 mix: 0.3.
+                (LumaTune named: #acidline channel: 0)
+                    patch: #acid; tempo: 300;
+                    notes: #(a1 a1 c2 a1 d2 a1 g2 f2 a1 a1 c2 e2 a1 g1 f1 -);
+                    play
+                """),
+            PharoExample(
+                title: "Reedy lead, ringing bell, breathing pad",
+                code: """
+                "Three of the host's own patches, sounding together, and each
+                 put somewhere of its own. Hush with: LumaTune hush"
+                LumaSynth start.
+                LumaSynth echo: 0.3 feedback: 0.4 mix: 0.35.
+                (LumaTune named: #lead channel: 0)
+                    pan: -0.35;
+                    patch: #pwmLead; tempo: 132;
+                    notes: #(c5 - e5 - g5 e5 c5 - d5 - f5 - a5 g5 e5 -);
+                    play.
+                (LumaTune named: #chime channel: 1)
+                    pan: 0.55;
+                    patch: #bell; tempo: 132; division: 4;
+                    notes: #(c6 - - g5);
+                    play.
+                (LumaTune named: #wash channel: 2)
+                    pan: 0;
+                    patch: #pad; tempo: 132; division: 8;
+                    notes: #(c3 a2);
+                    play
+                """),
+            PharoExample(
+                title: "Colour a voice yourself",
+                code: """
+                "What a voice does beyond its envelope: the pulse it draws,
+                 the slow wave moving it, what the filter does when struck,
+                 and how driven it comes out. What is left out is left off."
+                LumaSynth start.
+                LumaSynth channel: 0 preset: #pwmLead.
+                LumaSynth channel: 0 colour: {
+                    #pulseWidth -> 0.2.
+                    #lfoRate -> 6.
+                    #lfoToWidth -> 0.28.
+                    #lfoToPitch -> 0.15.
+                    #drive -> 0.25 } asDictionary.
+                (LumaTune named: #lead channel: 0)
+                    tempo: 150; notes: #(c5 e5 g5 c6 g5 e5 c5 -);
+                    play
+                """),
+            PharoExample(
+                title: "Getting back",
+                code: """
+                "Stuck droning? This stops every tune and every voice with
+                 it, and leaves what the channels are set to alone:
+                    LumaSynth hush
+                 Back to how the synth started -- patches, colours, places,
+                 the echo and the level:
+                    LumaSynth reset
+                 Or just the channel that got away:
+                    LumaSynth resetChannel: 0"
+                LumaSynth hush
                 """),
             PharoExample(
                 title: "Shape your own patch",

@@ -81,12 +81,22 @@ public enum PharoLumaBindings {
         host := Object << #LumaHost slots: {}; package: 'Luma'; install.
         host class compile: 'invoke: aName parameters: aParameterTypes return: aReturnType with: aCollection
             "Calls one of the host''s luma_* entry points, which it resolves by
-             name through dlsym."
-            | address definition function |
+             name through dlsym. A string argument is laid out in memory for
+             the call and freed after it: the image has no other moment to do
+             it, and a uniform set every frame would otherwise leak one a
+             frame."
+            | address definition function lent arguments answer |
             address := ExternalAddress loadSymbol: aName module: nil.
             definition := TFFunctionDefinition parameterTypes: aParameterTypes returnType: aReturnType.
             function := TFExternalFunction fromAddress: address definition: definition.
-            ^ TFSameThreadRunner uniqueInstance invokeFunction: function withArguments: aCollection'.
+            lent := OrderedCollection new.
+            arguments := aCollection collect: [ :each |
+                each isString
+                    ifTrue: [ lent add: (self cString: each); last ]
+                    ifFalse: [ each ] ].
+            answer := TFSameThreadRunner uniqueInstance invokeFunction: function withArguments: arguments.
+            lent do: [ :each | each free ].
+            ^ answer'.
         host class compile: 'invoke: aName
             ^ self invoke: aName parameters: #() return: TFBasicType void with: #()'.
         host class compile: 'cString: aString
@@ -136,6 +146,66 @@ public enum PharoLumaBindings {
         synth class compile: 'saw ^ 2'.
         synth class compile: 'square ^ 3'.
         synth class compile: 'noise ^ 4'.
+        synth class compile: 'channel: aChannel preset: aName
+            "The patches the host has a name for: pulse, bass, blip, noiseHit,
+             pwmLead, acid, syncLead, bell, pad."
+            ^ 1 = (LumaHost invoke: ''luma_synth_use_preset''
+                parameters: { TFBasicType sint. TFBasicType pointer }
+                return: TFBasicType sint
+                with: { aChannel. aName asString })'.
+        synth class compile: 'channel: aChannel colour: aDictionary
+            "What a voice does beyond its envelope: #pulseWidth #lfoRate
+             #lfoToPitch #lfoToWidth #lfoToCutoff #cutoffEnvelope
+             #cutoffDecay #sync #ring #drive. What is left out is left off."
+            | at |
+            at := [ :key :default | (aDictionary at: key ifAbsent: [ default ]) asFloat ].
+            ^ LumaHost invoke: ''luma_synth_set_colour''
+                parameters: { TFBasicType sint.
+                              TFBasicType float. TFBasicType float. TFBasicType float.
+                              TFBasicType float. TFBasicType float. TFBasicType float.
+                              TFBasicType float. TFBasicType sint.
+                              TFBasicType float. TFBasicType float }
+                return: TFBasicType void
+                with: { aChannel.
+                        at value: #pulseWidth value: 0.5.
+                        at value: #lfoRate value: 0.
+                        at value: #lfoToPitch value: 0.
+                        at value: #lfoToWidth value: 0.
+                        at value: #lfoToCutoff value: 0.
+                        at value: #cutoffEnvelope value: 0.
+                        at value: #cutoffDecay value: 0.2.
+                        ((aDictionary at: #sync ifAbsent: [ false ]) ifTrue: [ 1 ] ifFalse: [ 0 ]).
+                        at value: #ring value: 0.
+                        at value: #drive value: 0 }'.
+        synth class compile: 'hush
+            "Stops every tune and takes every sounding voice with it. What
+             the channels are set to is left alone."
+            LumaTune hush.
+            ^ LumaHost invoke: ''luma_synth_hush'''.
+        synth class compile: 'reset
+            "Back to how it started: every channel''s patch, colour and place,
+             the echo, and the level."
+            LumaTune hush.
+            ^ LumaHost invoke: ''luma_synth_reset''
+                parameters: { TFBasicType sint } return: TFBasicType void with: { -1 }'.
+        synth class compile: 'resetChannel: aChannel
+            "That channel''s patch, colour and place, and whatever it was
+             playing."
+            ^ LumaHost invoke: ''luma_synth_reset''
+                parameters: { TFBasicType sint } return: TFBasicType void with: { aChannel }'.
+        synth class compile: 'channel: aChannel pan: aPan
+            "-1 hard left, 1 hard right."
+            ^ LumaHost invoke: ''luma_synth_set_pan''
+                parameters: { TFBasicType sint. TFBasicType float }
+                return: TFBasicType void
+                with: { aChannel. aPan asFloat }'.
+        synth class compile: 'echo: aSeconds feedback: aFeedback mix: aMix
+            "One tap of delay across everything: how far back it reaches, how
+             much comes round again, and how much of it is heard."
+            ^ LumaHost invoke: ''luma_synth_set_echo''
+                parameters: { TFBasicType float. TFBasicType float. TFBasicType float }
+                return: TFBasicType void
+                with: { aSeconds asFloat. aFeedback asFloat. aMix asFloat }'.
         synth class compile: 'pulse: aChannel
             ^ self channel: aChannel waveform: self square detune: 0 attack: 0.001
                 decay: 0.09 sustain: 0 release: 0.01 cutoff: 0 resonance: 0 gain: 0.5'.
@@ -193,8 +263,12 @@ public enum PharoLumaBindings {
         tune compile: 'loops: aBoolean
             loops := aBoolean.
             self refresh'.
-        tune compile: 'patch: aSelector
-            LumaSynth perform: (aSelector , '':'') asSymbol with: channel'.
+        tune compile: 'pan: aPan
+            ^ LumaSynth channel: channel pan: aPan'.
+        tune compile: 'patch: aName
+            "A patch the host has a name for, or one of this class''s own."
+            (LumaSynth channel: channel preset: aName) ifFalse: [
+                LumaSynth perform: (aName , '':'') asSymbol with: channel ]'.
         tune compile: 'refresh
             playing ifTrue: [ self upload ]'.
         tune compile: 'play
@@ -265,11 +339,23 @@ public enum PharoLumaBindings {
 
         canvas := Object << #LumaCanvas slots: { #handle }; package: 'Luma'; install.
         canvas class compile: 'new
-            "A scene of its own, which the image keeps and changes."
-            ^ self basicNew
+            "A scene of its own, which the image keeps and changes. The host
+             lets go of it when this is collected: nothing else would, and a
+             snippet run twice would leave the first behind."
+            | canvas |
+            canvas := self basicNew
                 setHandle: (LumaHost invoke: ''luma_scene_create''
                     parameters: #() return: TFBasicType sint with: #());
-                yourself'.
+                yourself.
+            canvas toFinalizeSend: #discardScene: to: self with: canvas handle.
+            ^ canvas'.
+        canvas class compile: 'discardScene: aHandle
+            ^ LumaHost invoke: ''luma_scene_destroy''
+                parameters: { TFBasicType sint } return: TFBasicType void with: { aHandle }'.
+        canvas class compile: 'count
+            "How many scenes the host is holding."
+            ^ LumaHost invoke: ''luma_scene_count''
+                parameters: #() return: TFBasicType sint with: #()'.
         canvas compile: 'setHandle: aHandle
             handle := aHandle'.
         canvas compile: 'handle ^ handle'.
@@ -300,6 +386,11 @@ public enum PharoLumaBindings {
                     parameters: { TFBasicType sint } return: TFBasicType float with: { handle })
                 with: (LumaHost invoke: ''luma_scene_pointer_y''
                     parameters: { TFBasicType sint } return: TFBasicType float with: { handle })'.
+        canvas compile: 'hasPointer
+            "Whether the pointer is over the scene. It answers where it last
+             sat either way, so steering by it means asking this first."
+            ^ 1 = (LumaHost invoke: ''luma_scene_pointer_inside''
+                parameters: { TFBasicType sint } return: TFBasicType sint with: { handle })'.
         canvas compile: 'buttons
             "Bit 0 primary, bit 1 secondary, bit 2 middle."
             ^ LumaHost invoke: ''luma_scene_buttons''
@@ -339,21 +430,21 @@ public enum PharoLumaBindings {
                 parameters: { TFBasicType sint. TFBasicType sint. TFBasicType pointer.
                               TFBasicType sint. TFBasicType sint }
                 return: TFBasicType void
-                with: { scene. handle. (LumaHost cString: aName). aCount. 0 }'.
+                with: { scene. handle. aName. aCount. 0 }'.
         drawable compile: 'varying: aName components: aCount
             "A value the vertex stage hands the fragment stage."
             ^ LumaHost invoke: ''luma_drawable_add_attribute''
                 parameters: { TFBasicType sint. TFBasicType sint. TFBasicType pointer.
                               TFBasicType sint. TFBasicType sint }
                 return: TFBasicType void
-                with: { scene. handle. (LumaHost cString: aName). aCount. 1 }'.
+                with: { scene. handle. aName. aCount. 1 }'.
         drawable compile: 'vertexSource: aVertexSource fragmentSource: aFragmentSource
             ^ LumaHost invoke: ''luma_drawable_set_source''
                 parameters: { TFBasicType sint. TFBasicType sint.
                               TFBasicType pointer. TFBasicType pointer }
                 return: TFBasicType void
                 with: { scene. handle.
-                        (LumaHost cString: aVertexSource). (LumaHost cString: aFragmentSource) }'.
+                        aVertexSource. aFragmentSource }'.
         drawable compile: 'mesh: aCollection primitive: aSymbol
             "Hands over a whole buffer at once."
             | array |
@@ -391,7 +482,7 @@ public enum PharoLumaBindings {
                 parameters: { TFBasicType sint. TFBasicType sint. TFBasicType pointer.
                               TFBasicType pointer. TFBasicType sint }
                 return: TFBasicType void
-                with: { scene. handle. (LumaHost cString: aName). array getHandle. values size }.
+                with: { scene. handle. aName. array getHandle. values size }.
             array free'.
         drawable compile: 'drive: aName kind: aKind from: aFrom to: aTo seconds: aSeconds
             "Says what a value should do; the renderers work it out on their
@@ -408,7 +499,7 @@ public enum PharoLumaBindings {
                               TFBasicType sint. TFBasicType pointer. TFBasicType pointer.
                               TFBasicType sint. TFBasicType float }
                 return: TFBasicType void
-                with: { scene. handle. (LumaHost cString: aName). aKind.
+                with: { scene. handle. aName. aKind.
                         source getHandle. target getHandle. from size. aSeconds asFloat }.
             source free.
             target free'.
@@ -423,8 +514,7 @@ public enum PharoLumaBindings {
                 parameters: { TFBasicType sint. TFBasicType sint. TFBasicType pointer.
                               TFBasicType pointer. TFBasicType sint }
                 return: TFBasicType void
-                with: { scene. handle. (LumaHost cString: aName).
-                        array getHandle. aCollection size }.
+                with: { scene. handle. aName. array getHandle. aCollection size }.
             array free'.
         drawable compile: 'image: aName form: aForm
             "A picture the shader samples across, said as texture(<name>, uv).
@@ -438,7 +528,7 @@ public enum PharoLumaBindings {
                 parameters: { TFBasicType sint. TFBasicType sint. TFBasicType pointer.
                               TFBasicType pointer. TFBasicType sint. TFBasicType sint }
                 return: TFBasicType void
-                with: { scene. handle. (LumaHost cString: aName).
+                with: { scene. handle. aName.
                         array getHandle. picture width. picture height }.
             array free'.
         drawable compile: 'ramp: aName from: aFrom to: aTo over: aSeconds
@@ -524,10 +614,18 @@ public enum PharoLumaBindings {
                 parameters: { TFBasicType sint }
                 return: TFBasicType sint
                 with: { (points * scale) rounded }.
+            self toFinalizeSend: #discardAtlas: to: LumaText with: atlas.
             LumaHost invoke: ''luma_glyphs_apply''
                 parameters: { TFBasicType sint. TFBasicType sint. TFBasicType sint. TFBasicType pointer }
                 return: TFBasicType void
-                with: { atlas. drawable scene. drawable handle. LumaHost cString: ''glyphs'' }'.
+                with: { atlas. drawable scene. drawable handle. ''glyphs'' }'.
+        label class compile: 'count
+            "How many atlases the host is holding."
+            ^ LumaHost invoke: ''luma_glyphs_count''
+                parameters: #() return: TFBasicType sint with: #()'.
+        label class compile: 'discardAtlas: anAtlas
+            ^ LumaHost invoke: ''luma_glyphs_discard''
+                parameters: { TFBasicType sint } return: TFBasicType void with: { anAtlas }'.
         label compile: 'metric: anIndex
             ^ LumaHost invoke: ''luma_glyphs_metric''
                 parameters: { TFBasicType sint. TFBasicType sint }

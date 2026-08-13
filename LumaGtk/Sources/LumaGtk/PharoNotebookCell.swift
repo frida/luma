@@ -23,6 +23,7 @@ final class PharoNotebookCell {
     private let failure = Label(str: "")
     private var completion: PharoCompletionController!
     private var marks: PharoInlineMarks!
+    private let find: PharoFindBar
     private var snapshotView: PharoSnapshotView?
     private var running = false
 
@@ -73,8 +74,11 @@ final class PharoNotebookCell {
         bar.append(child: run)
         bar.append(child: failure)
 
+        find = PharoFindBar(editor: editor, buffer: buffer)
+
         widget = Box(orientation: .vertical, spacing: 6)
         widget.hexpand = true
+        widget.append(child: find.widget)
         widget.append(child: frame)
         widget.append(child: bar)
         widget.append(child: resultSlot)

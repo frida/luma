@@ -1,4 +1,4 @@
-.PHONY: build run clean bundle screenshots install uninstall
+.PHONY: build run clean bundle screenshots install uninstall render-tests soak
 
 # SwiftPM's bundled .pc finder only consults the directories listed in
 # PKG_CONFIG_PATH and the toolchain's primary compiled-in path; it
@@ -51,6 +51,17 @@ $(SHADER_BUNDLE): $(SHADER_SOURCES) $(PROJECT_ROOT)/Sources/LumaShaderCompiler/m
 	swift run --package-path $(PROJECT_ROOT) LumaShaderCompiler \
 	    --shader-dir "$(PROJECT_ROOT)/Shaders" \
 	    --swift-out  "$@"
+
+# Draws each case offscreen and writes a PNG to look at, which is how the
+# drawing is checked without a pointer or a person.
+# Plays a snippet in a canvas for a while, reporting what the process holds
+# as it goes: LUMA_SOAK=<snippet> make -C LumaGtk soak
+soak: build
+	LUMA_SOAK=$(LUMA_SOAK) LUMA_SOAK_SECONDS=$(or $(SECONDS),180) \
+	    .build/debug/LumaGtk
+
+render-tests: build
+	LUMA_RENDER_TESTS=$(CURDIR)/build/render-tests .build/debug/LumaGtk
 
 build: bundle $(PHARO_IMAGE)
 	swift build $(SWIFT_BUILD_FLAGS)

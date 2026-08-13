@@ -130,6 +130,8 @@ let package = Package(
         .library(name: "LumaCore", targets: ["LumaCore"]),
         .executable(name: "LumaBundleCompiler", targets: ["LumaBundleCompiler"]),
         .executable(name: "LumaShaderCompiler", targets: ["LumaShaderCompiler"]),
+        .executable(name: "LumaExampleCheck", targets: ["LumaExampleCheck"]),
+        .executable(name: "LumaSynthCheck", targets: ["LumaSynthCheck"]),
     ],
     dependencies: [
         .package(url: "https://github.com/frida/frida-swift", branch: "main"),
@@ -176,6 +178,20 @@ let package = Package(
             sources: cLumaAudioSources,
             publicHeadersPath: "include",
             linkerSettings: cLumaAudioLinkerSettings
+        ),
+        .executableTarget(
+            name: "LumaSynthCheck",
+            dependencies: ["LumaCore"],
+            path: "Sources/LumaSynthCheck",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .executableTarget(
+            name: "LumaExampleCheck",
+            dependencies: ["LumaCore"],
+            path: "Sources/LumaExampleCheck",
+            swiftSettings: [
+                .swiftLanguageMode(.v6),
+            ]
         ),
         .executableTarget(
             name: "LumaShaderCompiler",

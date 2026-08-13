@@ -125,7 +125,7 @@ struct PharoTextEditor: NSViewRepresentable {
         Coordinator(self)
     }
 
-    func makeNSView(context: Context) -> NSScrollView {
+    func makeNSView(context: Context) -> PharoEditorScrollView {
         let view = PharoTextView()
         view.delegate = context.coordinator
         view.metrics = metrics
@@ -140,6 +140,8 @@ struct PharoTextEditor: NSViewRepresentable {
         view.onEdit = { source = $0 }
         view.font = PharoTextView.sourceFont
         view.allowsUndo = true
+        view.usesFindBar = true
+        view.isIncrementalSearchingEnabled = true
         view.isRichText = false
         view.isAutomaticQuoteSubstitutionEnabled = false
         view.isAutomaticTextReplacementEnabled = false
@@ -155,17 +157,18 @@ struct PharoTextEditor: NSViewRepresentable {
         view.apply(runtime: runtime, marks: marks, onToggleClass: onToggleClass, onOpen: onOpen, onOpenResult: onOpenResult)
         view.setSource(source)
 
-        let scroll = NSScrollView()
+        let scroll = PharoEditorScrollView()
         scroll.documentView = view
         scroll.drawsBackground = false
         scroll.hasHorizontalScroller = true
         scroll.hasVerticalScroller = false
         scroll.verticalScrollElasticity = .none
         scroll.autohidesScrollers = true
+        scroll.onFindBarVisibilityChanged = { metrics.revision += 1 }
         return scroll
     }
 
-    func updateNSView(_ scroll: NSScrollView, context: Context) {
+    func updateNSView(_ scroll: PharoEditorScrollView, context: Context) {
         let view = scroll.documentView as! PharoTextView
         context.coordinator.parent = self
         view.onFocused = { if focused != id { focused = id } }
@@ -177,9 +180,9 @@ struct PharoTextEditor: NSViewRepresentable {
         context.coordinator.reconcileFocus(id: id, focused: focused, view: view)
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView scroll: NSScrollView, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView scroll: PharoEditorScrollView, context: Context) -> CGSize? {
         guard let width = proposal.width, let view = scroll.documentView as? PharoTextView else { return nil }
-        return CGSize(width: width, height: view.height())
+        return CGSize(width: width, height: view.height() + scroll.findBarHeight)
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
@@ -242,24 +245,23 @@ extension PharoRuntime {
         (try? await whenRunning { try await browse(kind, source: source, at: position) })?.result
     }
 
-    /// Nor does a page that cannot reach the image name any classes.
-    func namedClasses(in source: String) async -> [PharoClassReference] {
-        (try? await whenRunning { try await classReferences(in: source) }) ?? []
+    /// What the image reads in the source, or nothing at all when it could not
+    /// be reached -- which is not the same answer as an empty one, and the
+    /// editor keeps what it has rather than taking a silence for a reading.
+    func namedClasses(in source: String) async -> [PharoClassReference]? {
+        try? await whenRunning { try await classReferences(in: source) }
     }
 
-    /// Nor the methods it sends.
-    func methods(in source: String, selfClass: String?) async -> [PharoMethodReference] {
-        (try? await whenRunning { try await methodReferences(in: source, selfClass: selfClass) }) ?? []
+    func methods(in source: String, selfClass: String?) async -> [PharoMethodReference]? {
+        try? await whenRunning { try await methodReferences(in: source, selfClass: selfClass) }
     }
 
-    /// Nor the names it leaves undeclared.
-    func undeclared(in source: String) async -> [PharoUndeclaredVariable] {
-        (try? await whenRunning { try await undeclaredVariables(in: source) }) ?? []
+    func undeclared(in source: String) async -> [PharoUndeclaredVariable]? {
+        try? await whenRunning { try await undeclaredVariables(in: source) }
     }
 
-    /// Nor colours any of it.
-    func styles(in source: String, isMethod: Bool) async -> [PharoStyleSpan] {
-        (try? await whenRunning { try await styleSpans(in: source, isMethod: isMethod) }) ?? []
+    func styles(in source: String, isMethod: Bool) async -> [PharoStyleSpan]? {
+        try? await whenRunning { try await styleSpans(in: source, isMethod: isMethod) }
     }
 
     private func whenRunning<Answer>(_ request: () async throws -> Answer) async throws -> Answer {
@@ -273,10 +275,10 @@ extension PharoRuntime {
 /// the line separators that set a body on its own line -- taken back out.
 final class PharoTextView: NSTextView, NSTextStorageDelegate {
     var completions: ((String, Int) async -> PharoCompletionList)?
-    var classReferences: ((String) async -> [PharoClassReference])?
-    var methodReferences: ((String) async -> [PharoMethodReference])?
-    var undeclaredVariables: ((String) async -> [PharoUndeclaredVariable])?
-    var styleSpans: ((String) async -> [PharoStyleSpan])?
+    var classReferences: (String) async -> [PharoClassReference]? = { _ in [] }
+    var methodReferences: (String) async -> [PharoMethodReference]? = { _ in [] }
+    var undeclaredVariables: (String) async -> [PharoUndeclaredVariable]? = { _ in [] }
+    var styleSpans: (String) async -> [PharoStyleSpan]? = { _ in [] }
     var onFocused: (() -> Void)?
     var onEdit: ((String) -> Void)?
     var metrics: PharoBodyMetrics?
@@ -329,10 +331,10 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) {
             value, range, _ in
             guard value is NSTextAttachment else { return }
-            carried.insert(range.location)
+            carried.formUnion(range.location..<NSMaxRange(range))
             if value is PharoBodyAttachment {
                 carried.insert(range.location - 1)
-                carried.insert(range.location + 1)
+                carried.insert(NSMaxRange(range))
             }
         }
         return carried
@@ -489,19 +491,22 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         // Each fetch is four image round trips, served one at a time, so asking
         // on every keystroke queues a backlog that shows stale marks for seconds.
         // Waiting for a pause coalesces a burst of edits into a single ask.
-        pendingMarkUp?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.fetchMarks(for: source) }
-        pendingMarkUp = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+        scheduleFetch(of: source, after: 0.12)
     }
 
     private func fetchMarks(for source: String) {
         Task { @MainActor in
-            let classes = await classReferences?(source) ?? []
-            let methods = await methodReferences?(source) ?? []
-            let undeclaredNames = await undeclaredVariables?(source) ?? []
-            let spans = await styleSpans?(source) ?? []
+            let classes = await classReferences(source)
+            let methods = await methodReferences(source)
+            let undeclaredNames = await undeclaredVariables(source)
+            let spans = await styleSpans(source)
             guard self.source == source else { return }
+            // Reading a silence as an empty answer tears every mark out of the
+            // text, and a mark put back where it was blanks the view it had.
+            guard let classes, let methods, let undeclaredNames, let spans else {
+                scheduleFetch(of: source, after: 0.5)
+                return
+            }
             references = classes
             methodRefs = methods
             undeclared = undeclaredNames
@@ -511,6 +516,13 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
             reconcileBodies()
             applyStyle()
         }
+    }
+
+    private func scheduleFetch(of source: String, after delay: TimeInterval) {
+        pendingMarkUp?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.fetchMarks(for: source) }
+        pendingMarkUp = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     /// Paint the coloured runs GT would over the source, mapped past the mark
@@ -582,23 +594,25 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         positionMarkOverlays()
     }
 
-    private func wantedMarks() -> [PharoPlacedMark] {
-        var wanted: [PharoPlacedMark] = []
+    /// One mark to a place: the image names a keyword send once per part of its
+    /// selector, and laying a triangle down for each would stack them.
+    private func wantedMarks() -> Set<PharoPlacedMark> {
+        var wanted: Set<PharoPlacedMark> = []
 
         for reference in references {
-            wanted.append(PharoPlacedMark(sourceOffset: reference.stop, content: .classTriangle(reference.name)))
+            wanted.insert(PharoPlacedMark(sourceOffset: reference.stop, content: .classTriangle(reference.name)))
         }
         for reference in methodRefs {
-            wanted.append(PharoPlacedMark(sourceOffset: reference.stop, content: .methodTriangle(reference.id)))
+            wanted.insert(PharoPlacedMark(sourceOffset: reference.stop, content: .methodTriangle(reference.id)))
         }
         for variable in undeclared {
-            wanted.append(PharoPlacedMark(sourceOffset: variable.stop, content: .undeclaredWrench(variable.id)))
+            wanted.insert(PharoPlacedMark(sourceOffset: variable.stop, content: .undeclaredWrench(variable.id)))
         }
         if let error = marks.error {
             let offset = min(max((error.position ?? 1) - 1, 0), source.utf16.count)
-            wanted.append(PharoPlacedMark(sourceOffset: offset, content: .errorDot(error.message)))
+            wanted.insert(PharoPlacedMark(sourceOffset: offset, content: .errorDot(error.message)))
         }
-        wanted.append(PharoPlacedMark(sourceOffset: source.utf16.count, content: .result))
+        wanted.insert(PharoPlacedMark(sourceOffset: source.utf16.count, content: .result))
 
         return wanted
     }
@@ -1022,18 +1036,36 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         }
     }
 
-    // The browse keys are the system's Minimize and New; catching them here, while
-    // this editor holds focus, keeps them from the Window and File menus.
+    // The find and browse keys are also the system's Find, Minimize and New;
+    // catching them here, while this editor holds focus, keeps them from the
+    // Edit, Window and File menus, and keeps each snippet finding within itself.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if window?.firstResponder === self,
-            event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
-            switch event.charactersIgnoringModifiers {
-            case "m": browse(.implementors); return true
-            case "n": browse(.senders); return true
-            default: break
-            }
+        guard window?.firstResponder === self else { return super.performKeyEquivalent(with: event) }
+
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        switch (modifiers, event.charactersIgnoringModifiers?.lowercased()) {
+        case (.command, "f"): find(.showFindInterface); return true
+        case (.command, "e"): find(.setSearchString); return true
+        // Command-G evaluates a snippet, so it steps through matches only while
+        // the find bar is up, where that is the reading it has everywhere else.
+        case (.command, "g") where isFindBarVisible: find(.nextMatch); return true
+        case ([.command, .shift], "g") where isFindBarVisible: find(.previousMatch); return true
+        case (.command, "m"): browse(.implementors); return true
+        case (.command, "n"): browse(.senders); return true
+        default: return super.performKeyEquivalent(with: event)
         }
-        return super.performKeyEquivalent(with: event)
+    }
+
+    private var isFindBarVisible: Bool {
+        enclosingScrollView?.isFindBarVisible == true
+    }
+
+    /// The text finder takes its action from the sender's tag, the way the Find
+    /// menu items carry theirs.
+    private func find(_ action: NSTextFinder.Action) {
+        let request = NSMenuItem()
+        request.tag = action.rawValue
+        performTextFinderAction(request)
     }
 
     private func browse(_ kind: PharoBrowseKind) {
@@ -1420,6 +1452,26 @@ final class PharoTextView: NSTextView, NSTextStorageDelegate {
         guard let layout = textLayoutManager else { return 0 }
         layout.ensureLayout(for: layout.documentRange)
         return layout.usageBoundsForTextContainer.height + 2 * textContainerInset.height
+    }
+}
+
+/// The find bar rides at the top of the scroll view, taking its height out of
+/// what the text is given. A snippet is sized to its text rather than the other
+/// way about, so the bar's height is added to the snippet instead: showing one
+/// grows the card rather than clipping the last line of code.
+final class PharoEditorScrollView: NSScrollView {
+    var onFindBarVisibilityChanged: (() -> Void)?
+
+    override var isFindBarVisible: Bool {
+        didSet {
+            guard isFindBarVisible != oldValue else { return }
+            onFindBarVisibilityChanged?()
+        }
+    }
+
+    var findBarHeight: CGFloat {
+        guard isFindBarVisible, let bar = findBarView else { return 0 }
+        return bar.fittingSize.height
     }
 }
 
@@ -1823,7 +1875,7 @@ extension NSColor {
 }
 
 /// A mark and where in the source it belongs.
-struct PharoPlacedMark: Equatable {
+struct PharoPlacedMark: Hashable {
     let sourceOffset: Int
     let content: PharoMarkContent
 }

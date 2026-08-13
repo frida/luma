@@ -23,6 +23,9 @@ public enum SynthEngine {
     /// Pitches one step may sound together.
     static let maxTones = 4
     static let commandCapacity = 256
+    /// Two seconds at the rate the device runs at, which is as far back as
+    /// the echo is allowed to reach.
+    static let echoCapacity = 96000
 
     public static func prepare() {
         _ = storage
@@ -121,16 +124,109 @@ public enum SynthEngine {
                 advanceSequencer(channel)
             }
 
-            var sample: Float = 0
+            var left: Float = 0
+            var right: Float = 0
             for index in 0..<voiceCount where storage.voices[index].stage != .idle {
-                sample += render(&storage.voices[index])
+                let sample = render(&storage.voices[index])
+                // Equal power, so a voice does not get louder as it crosses.
+                let pan = storage.channels[storage.voices[index].channel].pan
+                let angle = (min(max(pan, -1), 1) + 1) * (.pi / 4)
+                left += sample * cos(angle)
+                right += sample * sin(angle)
             }
-            sample = min(max(sample * storage.level, -1), 1)
+            echoed(&left, &right)
+            left = min(max(left * storage.level, -1), 1)
+            right = min(max(right * storage.level, -1), 1)
 
-            for channel in 0..<channels {
-                frames[frame * channels + channel] = sample
+            if channels == 1 {
+                // Both sides into one, at the level a centred voice had.
+                frames[frame] = min(max((left + right) * 0.70710677, -1), 1)
+            } else {
+                for channel in 0..<channels {
+                    frames[frame * channels + channel] = channel % 2 == 0 ? left : right
+                }
             }
         }
+    }
+
+    /// One tap of delay, crossing sides as it comes round: what went out
+    /// left comes back right, which is what makes a tune sound wide rather
+    /// than merely wet.
+    private static func echoed(_ left: inout Float, _ right: inout Float) {
+        guard storage.echoMix > 0, storage.echoFrames > 0 else { return }
+
+        let read = (storage.echoWrite &+ echoCapacity &- storage.echoFrames) % echoCapacity
+        let delayedLeft = storage.echo[read]
+        let delayedRight = storage.echoRight[read]
+
+        // What goes in enters one side only: fed to both, a centred voice
+        // would come back centred and the tap would never bounce.
+        storage.echo[storage.echoWrite] = (left + right) * 0.5 + delayedRight * storage.echoFeedback
+        storage.echoRight[storage.echoWrite] = delayedLeft * storage.echoFeedback
+        storage.echoWrite = (storage.echoWrite &+ 1) % echoCapacity
+
+        left += delayedLeft * storage.echoMix
+        right += delayedRight * storage.echoMix
+    }
+
+    /// Stops every pattern and takes every voice with it. What each channel
+    /// is set to is left alone: this is for silence, not for forgetting.
+    public static func hush() {
+        offer(Command(kind: .hush, channel: 0))
+    }
+
+    /// Puts a channel back to how it started, or every channel and the rest
+    /// of the synth when asked for all of them.
+    public static func reset(channel: Int?) {
+        offer(Command(kind: .reset, channel: Int32(channel ?? -1)))
+    }
+
+    private static func hushEverything() {
+        for index in 0..<voiceCount {
+            storage.voices[index].stage = .idle
+            storage.voices[index].envelope = 0
+        }
+        for index in 0..<channelCount {
+            storage.channels[index].performing = -1
+            storage.channels[index].offered = -1
+            storage.channels[index].stepIndex = 0
+            storage.channels[index].framesUntilStep = 0
+            storage.channels[index].sequencedVoice = 0
+            publishPerforming(index, -1)
+        }
+    }
+
+    /// What it sounds like, where it sits, and whatever it was playing.
+    private static func resetChannel(_ channel: Int) {
+        storage.channels[channel].patch = PatchValues()
+        storage.channels[channel].pan = 0
+        storage.channels[channel].performing = -1
+        storage.channels[channel].offered = -1
+        storage.channels[channel].stepIndex = 0
+        storage.channels[channel].framesUntilStep = 0
+        storage.channels[channel].sequencedVoice = 0
+        publishPerforming(channel, -1)
+        for index in 0..<voiceCount where storage.voices[index].channel == channel {
+            storage.voices[index].stage = .idle
+            storage.voices[index].envelope = 0
+        }
+    }
+
+    /// Where a channel sits between the speakers, -1 to 1.
+    public static func setPan(_ pan: Float, channel: Int) {
+        var command = Command(kind: .pan, channel: Int32(channel))
+        command.frequency = pan
+        offer(command)
+    }
+
+    /// How far back the tap reaches, how much of it comes round again, and
+    /// how much of it is heard.
+    public static func setEcho(seconds: Float, feedback: Float, mix: Float) {
+        var command = Command(kind: .echo, channel: 0)
+        command.frequency = seconds
+        command.velocity = feedback
+        command.stepSeconds = min(max(mix, 0), 1)
+        offer(command)
     }
 
     private static func drainCommands() {
@@ -153,6 +249,26 @@ public enum SynthEngine {
                 storage.channels[channel].offeredCount = Int(command.count)
                 storage.channels[channel].offeredStepSeconds = command.stepSeconds
                 storage.channels[channel].offeredLoops = command.loops == 1
+            case .echo:
+                applyEcho(command)
+            case .pan:
+                storage.channels[channel].pan = min(max(command.frequency, -1), 1)
+            case .hush:
+                hushEverything()
+            case .reset:
+                // Channel -1 asks for all of them.
+                if channel < 0 {
+                    hushEverything()
+                    storage.echoFrames = 0
+                    storage.echoFeedback = 0
+                    storage.echoMix = 0
+                    storage.level = 0.6
+                    for index in 0..<channelCount {
+                        resetChannel(index)
+                    }
+                } else {
+                    resetChannel(channel)
+                }
             case .patternStop:
                 storage.channels[channel].performing = -1
                 storage.channels[channel].offered = -1
@@ -171,6 +287,18 @@ public enum SynthEngine {
     /// Steps one channel a single frame on, sounding whatever the grid lands
     /// on. The clock is the device's, so a phrase keeps time whatever the host
     /// is doing.
+    private static func applyEcho(_ command: Command) {
+        storage.echoFrames = Int(min(max(command.frequency, 0), 2) * sampleRate)
+        storage.echoFeedback = min(max(command.velocity, 0), 0.95)
+        storage.echoMix = command.stepSeconds
+        if storage.echoMix <= 0 {
+            for index in 0..<echoCapacity {
+                storage.echo[index] = 0
+                storage.echoRight[index] = 0
+            }
+        }
+    }
+
     private static func advanceSequencer(_ channel: Int) {
         if storage.channels[channel].framesUntilStep > 0 {
             storage.channels[channel].framesUntilStep -= 1
@@ -250,41 +378,78 @@ public enum SynthEngine {
         voice.envelope = 0
         voice.lowpass = 0
         voice.bandpass = 0
+        voice.lfoPhase = 0
+        voice.cutoffEnvelope = 1
+        voice.channel = channel
         voice.patch = storage.channels[channel].patch
     }
 
     private static func render(_ voice: inout Voice) -> Float {
         let patch = voice.patch
 
-        var sample = oscillator(patch.waveform, voice.phase)
-        voice.phase += voice.frequency / sampleRate
-        voice.phase -= Float(Int(voice.phase))
+        let swing = lfo(&voice)
+        let width = min(max(patch.pulseWidth + swing * patch.lfoToWidth, 0.03), 0.97)
+        let bend = exp2(swing * patch.lfoToPitch / 12)
 
-        if patch.detuneSemitones != 0 {
-            let detuned = voice.frequency * exp2(patch.detuneSemitones / 12)
-            sample = (sample + oscillator(patch.waveform, voice.detunedPhase)) * 0.5
+        var sample = oscillator(patch.waveform, voice.phase, width)
+        let wrapped = voice.phase + voice.frequency * bend / sampleRate
+        voice.phase = wrapped - Float(Int(wrapped))
+
+        if patch.detuneSemitones != 0 || patch.ringMix > 0 {
+            let detuned = voice.frequency * bend * exp2(patch.detuneSemitones / 12)
+            let second = oscillator(patch.waveform, voice.detunedPhase, width)
+            sample = patch.ringMix > 0
+                ? sample * (1 - patch.ringMix) + sample * second * patch.ringMix * 2
+                : (sample + second) * 0.5
             voice.detunedPhase += detuned / sampleRate
             voice.detunedPhase -= Float(Int(voice.detunedPhase))
+            // Restarting the second on the first's edge is the sync sound.
+            if patch.syncsDetuned && wrapped >= 1 {
+                voice.detunedPhase = 0
+            }
         }
 
         advanceEnvelope(&voice)
-        return filtered(&voice, sample) * voice.envelope * voice.velocity * patch.gain
+        advanceCutoffEnvelope(&voice)
+        sample = filtered(&voice, sample, swing: swing)
+        if patch.drive > 0 {
+            sample = tanh(sample * (1 + patch.drive * 8)) * (1 / (1 + patch.drive))
+        }
+        return sample * voice.envelope * voice.velocity * patch.gain
     }
 
-    private static func oscillator(_ waveform: Int32, _ phase: Float) -> Float {
+    private static func oscillator(_ waveform: Int32, _ phase: Float, _ width: Float) -> Float {
         switch waveform {
         case 1:
             return 4 * abs(phase - 0.5) - 1
         case 2:
             return 2 * phase - 1
         case 3:
-            return phase < 0.5 ? 1 : -1
+            return phase < width ? 1 : -1
         case 4:
             storage.noiseSeed = storage.noiseSeed &* 1664525 &+ 1013904223
             return Float(storage.noiseSeed >> 8) / 8388608 - 1
         default:
             return sin(2 * .pi * phase)
         }
+    }
+
+    /// One cycle of the voice's own slow wave, -1 to 1.
+    private static func lfo(_ voice: inout Voice) -> Float {
+        let rate = voice.patch.lfoRate
+        guard rate > 0 else { return 0 }
+
+        voice.lfoPhase += rate / sampleRate
+        voice.lfoPhase -= Float(Int(voice.lfoPhase))
+        return sin(2 * .pi * voice.lfoPhase)
+    }
+
+    /// Falls from struck to closed on its own clock, so a note can open the
+    /// filter and let it shut again while it holds.
+    private static func advanceCutoffEnvelope(_ voice: inout Voice) {
+        guard voice.patch.cutoffEnvelope != 0 else { return }
+        voice.cutoffEnvelope -= 1 / max(voice.patch.cutoffDecay * sampleRate, 1)
+        voice.cutoffEnvelope = max(voice.cutoffEnvelope, 0)
     }
 
     private static func advanceEnvelope(_ voice: inout Voice) {
@@ -315,11 +480,14 @@ public enum SynthEngine {
     }
 
     /// Chamberlin state variable, taking the lowpass tap.
-    private static func filtered(_ voice: inout Voice, _ sample: Float) -> Float {
+    private static func filtered(_ voice: inout Voice, _ sample: Float, swing: Float) -> Float {
         let patch = voice.patch
         guard patch.cutoff > 0 else { return sample }
 
-        let f = 2 * sin(.pi * min(patch.cutoff, sampleRate * 0.45) / sampleRate)
+        let opened = patch.cutoff
+            * exp2(voice.cutoffEnvelope * patch.cutoffEnvelope)
+            * exp2(swing * patch.lfoToCutoff)
+        let f = 2 * sin(.pi * min(opened, sampleRate * 0.45) / sampleRate)
         let q = 1 - min(patch.resonance, 0.98)
 
         let highpass = sample - voice.lowpass - q * voice.bandpass
@@ -369,6 +537,12 @@ public enum SynthEngine {
         let performingSlots = Atomic<UInt32>(0)
 
         var level: Float = 0.6
+        var echo = [Float](repeating: 0, count: SynthEngine.echoCapacity)
+        var echoRight = [Float](repeating: 0, count: SynthEngine.echoCapacity)
+        var echoWrite = 0
+        var echoFrames = 0
+        var echoFeedback: Float = 0
+        var echoMix: Float = 0
         var noiseSeed: UInt32 = 22222
         var staging = [Int](repeating: 0, count: SynthEngine.channelCount)
         var stagedCount = [Int](repeating: 0, count: SynthEngine.channelCount)
@@ -402,6 +576,25 @@ public enum SynthEngine {
         public var cutoff: Float = 0
         public var resonance: Float = 0
         public var gain: Float = 0.5
+        /// Where a pulse sits between its edges. Half is a square; away from
+        /// half is what gives a chip lead its reedy voice.
+        public var pulseWidth: Float = 0.5
+        public var lfoRate: Float = 0
+        public var lfoToPitch: Float = 0
+        public var lfoToWidth: Float = 0
+        public var lfoToCutoff: Float = 0
+        /// The filter's own envelope: how far the cutoff opens, and how long
+        /// it takes to fall back. This is what a pluck or an acid line is.
+        public var cutoffEnvelope: Float = 0
+        public var cutoffDecay: Float = 0.2
+        /// The second oscillator restarted by the first, which is the sound
+        /// of one pitch dragging another behind it.
+        public var syncsDetuned: Bool = false
+        /// The two multiplied rather than added: bells, and everything metal.
+        public var ringMix: Float = 0
+        /// Soft clipping, for when a voice should sound driven rather than
+        /// loud.
+        public var drive: Float = 0
 
         public init() {}
     }
@@ -419,11 +612,16 @@ public enum SynthEngine {
         var envelope: Float = 0
         var lowpass: Float = 0
         var bandpass: Float = 0
+        var lfoPhase: Float = 0
+        var cutoffEnvelope: Float = 0
+        var channel = 0
         var patch = PatchValues()
     }
 
     private struct ChannelState {
         var patch = PatchValues()
+        /// -1 hard left, 1 hard right.
+        var pan: Float = 0
         var performing = -1
         var offered = -1
         var offeredCount = 0
@@ -447,7 +645,7 @@ public enum SynthEngine {
     }
 
     private enum CommandKind: Int32 {
-        case patch, noteOn, noteOff, patternOffer, patternStop
+        case patch, noteOn, noteOff, patternOffer, patternStop, echo, pan, hush, reset
     }
 
     private struct Command {

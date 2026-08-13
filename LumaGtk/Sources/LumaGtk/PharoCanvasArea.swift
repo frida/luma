@@ -11,7 +11,8 @@ final class PharoCanvasArea {
     let widget: Widget
 
     private let scene: Int
-    private let area: ShaderEffect
+    /// What draws it, which the render tests read the frame back from.
+    let area: ShaderEffect
     private var themeToken: gulong = 0
     private var built: [Int: Built] = [:]
 

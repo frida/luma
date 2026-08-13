@@ -28,6 +28,12 @@ public func luma_scene_create() -> Int32 {
     Int32(CanvasRegistry.shared.makeScene())
 }
 
+/// How many scenes the image is holding, so it can be seen letting go.
+@_cdecl("luma_scene_count")
+public func luma_scene_count() -> Int32 {
+    Int32(CanvasRegistry.shared.sceneCount)
+}
+
 @_cdecl("luma_scene_destroy")
 public func luma_scene_destroy(_ scene: Int32) {
     CanvasRegistry.shared.discard(Int(scene))
@@ -218,7 +224,8 @@ public func luma_drawable_drive_uniform(
         kind: CanvasDriver.Kind(rawValue: kind) ?? .ramp,
         from: Array(UnsafeBufferPointer(start: from, count: width)),
         to: Array(UnsafeBufferPointer(start: to, count: width)),
-        seconds: seconds)
+        seconds: seconds,
+        startedAt: CanvasDriver.now)
 
     guard CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
         subject.drivers.removeAll { $0.name == driver.name }
@@ -309,6 +316,14 @@ public func luma_scene_pointer_y(_ scene: Int32) -> Float {
     CanvasRegistry.shared.input(Int(scene)).pointerY
 }
 
+/// Whether the pointer is over the scene at all. Where it last sat is
+/// answered either way, so a snippet steered by the pointer has to ask this
+/// to tell a pointer resting off the scene from one held still on it.
+@_cdecl("luma_scene_pointer_inside")
+public func luma_scene_pointer_inside(_ scene: Int32) -> Int32 {
+    CanvasRegistry.shared.input(Int(scene)).isPointerInside ? 1 : 0
+}
+
 /// Bit 0 primary, bit 1 secondary, bit 2 middle.
 @_cdecl("luma_scene_buttons")
 public func luma_scene_buttons(_ scene: Int32) -> Int32 {
@@ -336,6 +351,12 @@ public func luma_scene_scale(_ scene: Int32) -> Float {
 @_cdecl("luma_glyphs_make")
 public func luma_glyphs_make(_ pixelSize: Int32) -> Int32 {
     Int32(GlyphAtlasRasteriser.make(pixelSize: Int(pixelSize)))
+}
+
+/// How many atlases the host is holding, so it can be seen letting go.
+@_cdecl("luma_glyphs_count")
+public func luma_glyphs_count() -> Int32 {
+    Int32(GlyphAtlasRasteriser.count)
 }
 
 @_cdecl("luma_glyphs_discard")

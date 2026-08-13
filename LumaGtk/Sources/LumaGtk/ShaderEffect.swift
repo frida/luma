@@ -34,6 +34,10 @@ final class ShaderEffect {
     private var dataCount = 0
     private var transform = CanvasDrawable.identity
     private var clearColor: (red: Float, green: Float, blue: Float) = (0, 0, 0)
+    /// Set to have the next frame kept, which is how the render tests see
+    /// what was drawn: a widget's own framebuffer, read where it is bound.
+    var wantsCapture = false
+    private(set) var captured: (pixels: [UInt8], width: Int, height: Int)?
 
     /// Pass no source to make a widget that draws a scene rather than a
     /// screen-filling effect.
@@ -261,13 +265,17 @@ final class ShaderEffect {
 
         guard showing.isEmpty else {
             for drawable in showing {
-                draw(drawable, now: now, width: width, height: height, elapsed: elapsed, pulse: pulse)
+                draw(drawable, width: width, height: height, elapsed: elapsed, pulse: pulse)
             }
             epoxy_glUseProgram(0)
+            capture(width: width, height: height)
             return true
         }
 
-        guard let screen else { return false }
+        guard let screen else {
+            capture(width: width, height: height)
+            return false
+        }
 
         epoxy_glUseProgram(screen.program)
         feedUniforms(
@@ -277,12 +285,29 @@ final class ShaderEffect {
         epoxy_glDrawArrays(GLenum(GL_TRIANGLE_STRIP), 0, 4)
         epoxy_glBindVertexArray(0)
         epoxy_glUseProgram(0)
+        capture(width: width, height: height)
         return true
+    }
+
+    /// Reads the frame back out of whatever is bound, which inside a render
+    /// is the area's own buffer.
+    private func capture(width: Float, height: Float) {
+        guard wantsCapture else { return }
+        wantsCapture = false
+
+        let wide = Int(width)
+        let high = Int(height)
+        var pixels = [UInt8](repeating: 0, count: wide * high * 4)
+        pixels.withUnsafeMutableBytes { raw in
+            epoxy_glReadPixels(
+                0, 0, GLsizei(wide), GLsizei(high),
+                GLenum(GL_BGRA), GLenum(GL_UNSIGNED_BYTE), raw.baseAddress)
+        }
+        captured = (pixels, wide, high)
     }
 
     private func draw(
         _ drawable: Drawable,
-        now: gint64,
         width: Float,
         height: Float,
         elapsed: Float,
@@ -295,7 +320,7 @@ final class ShaderEffect {
 
         epoxy_glUseProgram(drawable.program)
         drawable.bindTextures()
-        drawable.feedParams(now: now)
+        drawable.feedParams()
         feedUniforms(
             drawable.locations, transform: drawable.transform,
             width: width, height: height, elapsed: elapsed, pulse: pulse)
@@ -371,7 +396,6 @@ private struct Param {
     /// Set when the value is moving on its own: worked out on the frame clock
     /// rather than pushed from whoever owns the scene.
     var driver: CanvasDriver?
-    var startedAt: gint64 = 0
 
     init(name: String) {
         self.name = name
@@ -379,15 +403,14 @@ private struct Param {
 
     mutating func drive(kind: CanvasDriver.Kind, from: [Float], to: [Float], seconds: Float) {
         driver = CanvasDriver(name: name, kind: kind, from: from, to: to, seconds: seconds)
-        startedAt = g_get_monotonic_time()
         values = from
     }
 
-    mutating func feed(now: gint64) {
+    mutating func feed() {
         guard location >= 0 else { return }
 
         if let driver {
-            values = driver.value(after: Float(now - startedAt) / 1_000_000)
+            values = driver.value(at: CanvasDriver.now)
         }
         switch values.count {
         case 1: epoxy_glUniform1fv(location, 1, values)
@@ -575,9 +598,9 @@ private final class Drawable {
         epoxy_glActiveTexture(GLenum(GL_TEXTURE0))
     }
 
-    func feedParams(now: gint64) {
+    func feedParams() {
         for at in params.indices {
-            params[at].feed(now: now)
+            params[at].feed()
         }
     }
 

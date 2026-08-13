@@ -31,24 +31,24 @@ public struct CanvasDrawable: Sendable, Equatable {
         self.geometry = geometry
     }
 
-    /// The uniforms as they stand `elapsed` seconds after the drivers began,
-    /// so a moving value needs no word from the image to keep moving.
-    public func uniforms(after elapsed: Float) -> [CanvasUniform] {
+    /// The uniforms as they stand at a reading of the clock, so a moving value
+    /// needs no word from the image to keep moving.
+    public func uniforms(at now: Double) -> [CanvasUniform] {
         guard !drivers.isEmpty else { return uniforms }
 
         return uniforms.map { uniform in
             guard let driver = drivers.first(where: { $0.name == uniform.name }) else {
                 return uniform
             }
-            return CanvasUniform(name: uniform.name, values: driver.value(after: elapsed))
+            return CanvasUniform(name: uniform.name, values: driver.value(at: now))
         }
     }
 
     /// The author's uniforms laid out as the generated block declares them,
     /// so Metal reads each where it expects to.
-    public func packedParams(after elapsed: Float = 0) -> [Float] {
+    public func packedParams(at now: Double) -> [Float] {
         var packed: [Float] = []
-        for uniform in uniforms(after: elapsed) {
+        for uniform in uniforms(at: now) {
             let padding = (uniform.alignment - packed.count % uniform.alignment) % uniform.alignment
             packed.append(contentsOf: repeatElement(0, count: padding))
             packed.append(contentsOf: uniform.values.prefix(uniform.components))
@@ -134,17 +134,29 @@ public struct CanvasDriver: Sendable, Equatable {
     public let to: [Float]
     /// Seconds a ramp takes, or a full swing of an oscillation.
     public let seconds: Float
+    /// When it set off, read off `now`. Stamped where the movement is asked
+    /// for rather than where it is first drawn: a frame that arrives late has
+    /// to draw where the value is by then, not start it over.
+    public let startedAt: Double
 
-    public init(name: String, kind: Kind, from: [Float], to: [Float], seconds: Float) {
+    /// Monotonic seconds. Whoever sets a driver and whoever draws it both read
+    /// the clock here, so the two agree without either carrying a timestamp.
+    public static var now: Double {
+        ProcessInfo.processInfo.systemUptime
+    }
+
+    public init(name: String, kind: Kind, from: [Float], to: [Float], seconds: Float, startedAt: Double = CanvasDriver.now) {
         self.name = name
         self.kind = kind
         self.from = from
         self.to = to
         self.seconds = seconds
+        self.startedAt = startedAt
     }
 
-    /// Where the value sits `elapsed` seconds in.
-    public func value(after elapsed: Float) -> [Float] {
+    /// Where the value sits at a given reading of the clock.
+    public func value(at now: Double) -> [Float] {
+        let elapsed = Float(now - startedAt)
         let fraction: Float
         switch kind {
         case .ramp:
@@ -243,6 +255,11 @@ public final class CanvasRegistry: Sendable {
             state.nextStamp += 1
             return state.nextStamp
         }
+    }
+
+    /// How many the image is holding, which is how a leak shows.
+    public var sceneCount: Int {
+        state.withLock { $0.scenes.count }
     }
 
     public func scene(_ handle: Int) -> CanvasScene? {
