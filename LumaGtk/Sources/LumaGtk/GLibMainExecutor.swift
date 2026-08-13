@@ -1,6 +1,7 @@
 import CGLib
 import Dispatch
 import Foundation
+import GLib
 #if canImport(Glibc)
 import Glibc
 #endif
@@ -73,7 +74,7 @@ private let windowsDispatchSourcePrepare: @convention(c) (
 private let windowsDispatchSourceCheck: @convention(c) (
     UnsafeMutablePointer<GSource>?
 ) -> gboolean = { _ in
-    (windowsDispatchPollFd.revents & UInt16(G_IO_IN.rawValue)) != 0 ? 1 : 0
+    (windowsDispatchPollFd.revents & UInt16(IOCondition.in.rawValue)) != 0 ? 1 : 0
 }
 
 private let windowsDispatchSourceDispatch: @convention(c) (
@@ -109,7 +110,7 @@ enum GLibMainExecutor {
         g_io_add_watch_full(
             channel,
             Int32(G_PRIORITY_LOW),
-            G_IO_IN,
+            IOCondition.in.value,
             drainCallback,
             nil,
             nil
@@ -120,7 +121,7 @@ enum GLibMainExecutor {
 
         let handle = dispatchGetMainQueueHandle()
         windowsDispatchPollFd.fd = Int64(Int(bitPattern: handle))
-        windowsDispatchPollFd.events = UInt16(G_IO_IN.rawValue)
+        windowsDispatchPollFd.events = UInt16(IOCondition.in.rawValue)
         windowsDispatchPollFd.revents = 0
 
         let source = g_source_new(

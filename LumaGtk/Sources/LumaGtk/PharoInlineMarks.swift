@@ -124,7 +124,7 @@ final class PharoInlineMarks {
     }
 
     private func claimBodyPress(_ gesture: GestureClickRef, x: Double, y: Double) {
-        guard let picked = gtk_widget_pick(editor.widget_ptr, x, y, GTK_PICK_DEFAULT) else { return }
+        guard let picked = gtk_widget_pick(editor.widget_ptr, x, y, PickFlags.default.value) else { return }
         guard let view = bodyEditors.first(where: { view in
             picked == view.widget_ptr || gtk_widget_is_ancestor(picked, view.widget_ptr) != 0
         }) else { return }
@@ -153,7 +153,7 @@ final class PharoInlineMarks {
         let textView = UnsafeMutablePointer<GtkTextView>(OpaquePointer(view.widget_ptr))
         var bufferX: gint = 0
         var bufferY: gint = 0
-        gtk_text_view_window_to_buffer_coords(textView, GTK_TEXT_WINDOW_WIDGET, gint(widgetX), gint(widgetY), &bufferX, &bufferY)
+        gtk_text_view_window_to_buffer_coords(textView, TextWindowType.widget.value, gint(widgetX), gint(widgetY), &bufferX, &bufferY)
         var iter = GtkTextIter()
         gtk_text_view_get_iter_at_location(textView, &iter, bufferX, bufferY)
         gtk_text_buffer_place_cursor(gtk_text_view_get_buffer(textView), &iter)

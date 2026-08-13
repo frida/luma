@@ -57,6 +57,15 @@ type-checked on Linux without Xcode:
 swift build --target LumaCore
 ```
 
+Only Apple platforms have a published Pharo VM to link against.
+Elsewhere SwiftyPharo asks pkg-config for `pharo-vm`, which no
+distribution packages, so `make -C LumaGtk build` builds one into
+`.build/pharo-vm` on the first run and leaves an installed one alone.
+It prefers a sibling `../SwiftyPharo` checkout over the resolved one,
+the way the image does, so work on the VM is picked up without
+pushing. That first build is long; `PLATFORM=linux tools/build-vm.sh`
+in SwiftyPharo is the same thing by hand.
+
 There are no tests or linting commands. Code formatting follows
 `.swift-format` (4-space indent, 140-char line length).
 

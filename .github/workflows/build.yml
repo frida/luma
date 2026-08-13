@@ -10,6 +10,7 @@ on:
 env:
   FRIDA_CORE_REF: "c812943c457376c906802f7bb79d13c67a6e4d22"
   RADARE2_REF: "7ed1e8c6fd000b99c8aa6835e12bef1657d92746"
+  SWIFTY_PHARO_REF: "79b97f4b7101db93c05aac7e312e5b6553f668cb"
   SPARKLE_VERSION: "2.9.1"
   SWIFT_VERSION: "6.2"
   # ilammy/msvc-dev-cmd hasn't cut a Node-24-compatible release yet
@@ -803,6 +804,11 @@ jobs:
             ngtcp2-devel \
             ngtcp2-crypto-ossl-devel \
             openssl-devel \
+            libuuid-devel \
+            libffi-devel \
+            cmake \
+            unzip \
+            wget \
             vala \
             meson \
             ninja-build \
@@ -891,9 +897,42 @@ jobs:
           cp -a /tmp/r2-destdir/usr/. /usr/
           ldconfig
 
+      - name: Restore Pharo VM cache
+        id: pharo-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: /tmp/pharo-destdir
+          key: ${{ runner.os }}-fedora44-pharo-vm-${{ env.SWIFTY_PHARO_REF }}-v9
+
+      - name: Build Pharo VM
+        if: steps.pharo-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/frida/SwiftyPharo.git /tmp/SwiftyPharo
+          cd /tmp/SwiftyPharo
+          git checkout $SWIFTY_PHARO_REF
+          PLATFORM=linux PREFIX=/opt/pharo-vm tools/build-vm.sh
+          mv artifacts/destdir/linux-* /tmp/pharo-destdir
+
+      - name: Save Pharo VM cache
+        if: steps.pharo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: /tmp/pharo-destdir
+          key: ${{ runner.os }}-fedora44-pharo-vm-${{ env.SWIFTY_PHARO_REF }}-v9
+
+      # Into a prefix of its own: it carries the OpenSSL pharo-vm downloads,
+      # and ldconfig over /usr leaves the system without a working TLS.
+      - name: Install Pharo VM
+        run: |
+          cp -a /tmp/pharo-destdir/. /
+          echo /opt/pharo-vm/lib > /etc/ld.so.conf.d/pharo-vm.conf
+          ldconfig
+
       - uses: actions/checkout@v6
 
       - name: Build
+        env:
+          PKG_CONFIG_PATH: /opt/pharo-vm/lib/pkgconfig
         run: cd LumaGtk && make build SWIFT_BUILD_FLAGS="-c release"
 
       - name: Package as .rpm
@@ -947,6 +986,7 @@ jobs:
             libgtk-4-dev \
             libadwaita-1-dev \
             libwebkitgtk-6.0-dev \
+            libgtksourceview-5-dev \
             libglib2.0-dev \
             libpango1.0-dev \
             libcairo2-dev \
@@ -966,6 +1006,12 @@ jobs:
             libjson-glib-dev \
             libunwind-dev \
             libnice-dev \
+            libssl-dev \
+            uuid-dev \
+            libffi-dev \
+            cmake \
+            unzip \
+            wget \
             valac \
             meson \
             ninja-build \
@@ -1056,9 +1102,42 @@ jobs:
           cp -a /tmp/r2-destdir/usr/. /usr/
           ldconfig
 
+      - name: Restore Pharo VM cache
+        id: pharo-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: /tmp/pharo-destdir
+          key: ${{ runner.os }}-ubuntu${{ matrix.release }}-pharo-vm-${{ env.SWIFTY_PHARO_REF }}-v9
+
+      - name: Build Pharo VM
+        if: steps.pharo-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/frida/SwiftyPharo.git /tmp/SwiftyPharo
+          cd /tmp/SwiftyPharo
+          git checkout $SWIFTY_PHARO_REF
+          PLATFORM=linux PREFIX=/opt/pharo-vm tools/build-vm.sh
+          mv artifacts/destdir/linux-* /tmp/pharo-destdir
+
+      - name: Save Pharo VM cache
+        if: steps.pharo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: /tmp/pharo-destdir
+          key: ${{ runner.os }}-ubuntu${{ matrix.release }}-pharo-vm-${{ env.SWIFTY_PHARO_REF }}-v9
+
+      # Into a prefix of its own: it carries the OpenSSL pharo-vm downloads,
+      # and ldconfig over /usr leaves the system without a working TLS.
+      - name: Install Pharo VM
+        run: |
+          cp -a /tmp/pharo-destdir/. /
+          echo /opt/pharo-vm/lib > /etc/ld.so.conf.d/pharo-vm.conf
+          ldconfig
+
       - uses: actions/checkout@v6
 
       - name: Build
+        env:
+          PKG_CONFIG_PATH: /opt/pharo-vm/lib/pkgconfig
         run: cd LumaGtk && make build SWIFT_BUILD_FLAGS="-c release"
 
       - name: Package as .deb

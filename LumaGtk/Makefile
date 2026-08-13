@@ -25,6 +25,19 @@ PHARO_IMAGE_DIR := ../Sources/LumaCore/Resources/pharo-image
 PHARO_IMAGE := $(PHARO_IMAGE_DIR)/SwiftyPharo.image
 PHARO_LOCAL := $(PROJECT_ROOT)/../SwiftyPharo/artifacts/SwiftyPharo.image
 PHARO_CACHE := .build/.pharo/$(PHARO_RELEASE)
+PHARO_SOURCE := $(PROJECT_ROOT)/../SwiftyPharo
+
+# Only Apple platforms have a published VM to link against; everywhere else
+# SwiftyPharo asks pkg-config for one, and no distribution packages it. Build it
+# into .build unless the system already has it, so a fresh clone needs nothing
+# but the usual toolchain.
+ifneq ($(shell uname -s),Darwin)
+PHARO_VM_PLATFORM := $(if $(findstring MINGW,$(shell uname -s)),windows,linux)
+PHARO_VM_PREFIX := $(PROJECT_ROOT)/.build/pharo-vm
+PHARO_VM_PC := $(PHARO_VM_PREFIX)/lib/pkgconfig/pharo-vm.pc
+PHARO_VM := $(if $(shell pkg-config --exists pharo-vm && echo installed),,$(PHARO_VM_PC))
+export PKG_CONFIG_PATH := $(PKG_CONFIG_PATH):$(PHARO_VM_PREFIX)/lib/pkgconfig
+endif
 
 AGENT_BUNDLE := $(PROJECT_ROOT)/Sources/LumaCore/Generated/LumaAgent.swift
 TYPINGS_BUNDLE := $(PROJECT_ROOT)/Sources/LumaCore/Generated/LumaTypings.swift
@@ -63,8 +76,26 @@ soak: build
 render-tests: build
 	LUMA_RENDER_TESTS=$(CURDIR)/build/render-tests .build/debug/LumaGtk
 
-build: bundle $(PHARO_IMAGE)
-	swift build $(SWIFT_BUILD_FLAGS)
+# A .pc carries no rpath -- SwiftPM rejects one -- so a VM built here has to be
+# named on the link line to be found again at run time.
+PHARO_VM_RPATH := $(if $(PHARO_VM),-Xlinker -rpath -Xlinker $(PHARO_VM_PREFIX)/lib)
+
+build: bundle $(PHARO_IMAGE) $(PHARO_VM)
+	swift build $(SWIFT_BUILD_FLAGS) $(PHARO_VM_RPATH)
+
+ifneq ($(PHARO_VM_PC),)
+# Resolving first is what puts the script on disk, and resolving does not need
+# the VM that the script goes on to build.
+$(PHARO_VM_PC):
+	@if [ -d "$(PHARO_SOURCE)/tools" ]; then \
+	    tools="$(PHARO_SOURCE)"; \
+	else \
+	    swift package resolve; \
+	    tools="$(CURDIR)/.build/checkouts/SwiftyPharo"; \
+	fi; \
+	echo "Building the Pharo VM into $(PHARO_VM_PREFIX)"; \
+	DESTDIR= PREFIX="$(PHARO_VM_PREFIX)" PLATFORM=$(PHARO_VM_PLATFORM) "$$tools/tools/build-vm.sh"
+endif
 
 $(PHARO_IMAGE):
 	@mkdir -p $(PHARO_IMAGE_DIR)

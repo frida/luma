@@ -26,11 +26,10 @@ enum RenderTests {
     /// Plays a snippet in a canvas for a while and says what the process is
     /// holding as it goes, so a leak shows as a line that keeps climbing.
     static func soak(_ snippetPath: String, seconds: Int) -> Int32 {
-        setvbuf(stdout, nil, _IONBF, 0)
         guard let snippet = try? String(contentsOfFile: snippetPath, encoding: .utf8),
               let scene = sceneFromTheImage(evaluating: snippet)
         else {
-            print("soak: the image did not answer a scene")
+            say("soak: the image did not answer a scene")
             return 1
         }
 
@@ -50,7 +49,7 @@ enum RenderTests {
                 .compactMap { $0.drivers.first { $0.name == "at" }?.to.last }
                 .map { String(format: "%.2f", $0) }
                 .joined(separator: " ") ?? ""
-            print("t+\(tick * 10)s  rss \(resident()) MB  scenes \(CanvasRegistry.shared.sceneCount)"
+            say("t+\(tick * 10)s  rss \(resident()) MB  scenes \(CanvasRegistry.shared.sceneCount)"
                 + "  atlases \(GlyphAtlasRasteriser.count)  at \(moving)")
         }
         window.close()
@@ -58,14 +57,22 @@ enum RenderTests {
     }
 
     private static func resident() -> Int {
-        var info = mach_task_basic_info()
-        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / 4)
-        let answer = withUnsafeMutablePointer(to: &info) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+        #if canImport(Darwin)
+            var info = mach_task_basic_info()
+            var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / 4)
+            let answer = withUnsafeMutablePointer(to: &info) {
+                $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                    task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+                }
             }
-        }
-        return answer == KERN_SUCCESS ? Int(info.resident_size) / 1_048_576 : 0
+            return answer == KERN_SUCCESS ? Int(info.resident_size) / 1_048_576 : 0
+        #else
+            // statm counts pages, and the resident set is its second field.
+            let fields = (try? String(contentsOfFile: "/proc/self/statm", encoding: .utf8))?
+                .split(separator: " ") ?? []
+            let pages = fields.count > 1 ? Int(fields[1]) ?? 0 : 0
+            return pages * Int(getpagesize()) / 1_048_576
+        #endif
     }
 
     static func run(writingTo directory: String) -> Int32 {
@@ -81,7 +88,6 @@ enum RenderTests {
 
         var failures = fromTheImage(writingTo: directory)
 
-        setvbuf(stdout, nil, _IONBF, 0)
         for probe in cases {
             let coverage = draw(
                 probe.effect, width: probe.size.width, height: probe.size.height,
@@ -92,7 +98,7 @@ enum RenderTests {
                 failures += 1
             }
             let marked = String(format: "%.2f%%", coverage * 100)
-            print("\(probe.name): \(coverage > 0 ? "drew" : "DREW NOTHING"), \(marked) marked")
+            say("\(probe.name): \(coverage > 0 ? "drew" : "DREW NOTHING"), \(marked) marked")
         }
         return failures
     }
@@ -102,7 +108,7 @@ enum RenderTests {
     /// canvas view.
     private static func fromTheImage(writingTo directory: String) -> Int32 {
         guard let scene = sceneFromTheImage() else {
-            print("pharo-lettering: NO SCENE, the image did not answer one")
+            say("pharo-lettering: NO SCENE, the image did not answer one")
             return 1
         }
 
@@ -111,7 +117,7 @@ enum RenderTests {
             canvas.area, showing: canvas.widget, width: 480, height: 160,
             to: "\(directory)/pharo-lettering.png")
         let marked = String(format: "%.2f%%", coverage * 100)
-        print("pharo-lettering: \(coverage > 0 ? "drew" : "DREW NOTHING"), \(marked) marked")
+        say("pharo-lettering: \(coverage > 0 ? "drew" : "DREW NOTHING"), \(marked) marked")
         return coverage > 0 ? 0 : 1
     }
 
@@ -306,7 +312,7 @@ enum RenderTests {
         upright.withUnsafeMutableBytes { raw in
             let surface = cairo_image_surface_create_for_data(
                 raw.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                CAIRO_FORMAT_ARGB32,
+                Cairo.Format.argb32.value,
                 Int32(frame.width), Int32(frame.height), Int32(stride))
             cairo_surface_write_to_png(surface, path)
             cairo_surface_destroy(surface)
@@ -323,4 +329,10 @@ enum RenderTests {
         }
         return Double(marked) / Double(frame.width * frame.height)
     }
+}
+
+/// Says a line straight down the descriptor, so what a run found arrives as
+/// it happens rather than whenever a buffer fills.
+private func say(_ line: String) {
+    FileHandle.standardOutput.write(Data((line + "\n").utf8))
 }

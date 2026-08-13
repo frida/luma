@@ -17,7 +17,7 @@ enum PangoGlyphAtlas {
         pango_font_description_set_absolute_size(font, Double(pixelSize) * Double(PANGO_SCALE))
         defer { pango_font_description_free(font) }
 
-        let measuring = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1, 1)
+        let measuring = cairo_image_surface_create(Cairo.Format.argb32.value, 1, 1)
         let measure = cairo_create(measuring)
         let layout = pango_cairo_create_layout(measure)
         pango_layout_set_font_description(layout, font)
@@ -37,7 +37,7 @@ enum PangoGlyphAtlas {
         let width = cellWidth * columns
         let height = cellHeight * rows
 
-        let sheet = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, Int32(width), Int32(height))
+        let sheet = cairo_image_surface_create(Cairo.Format.argb32.value, Int32(width), Int32(height))
         let context = cairo_create(sheet)
         let drawing = pango_cairo_create_layout(context)
         pango_layout_set_font_description(drawing, font)

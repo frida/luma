@@ -7,7 +7,7 @@
       "location" : "https://github.com/frida/frida-swift",
       "state" : {
         "branch" : "main",
-        "revision" : "0323d02a628f7d091a91feae7efbdb30d773bb25"
+        "revision" : "243681ef14cf290b61bb7950bd46482731d69b48"
       }
     },
     {
@@ -43,7 +43,7 @@
       "location" : "https://github.com/frida/SwiftyPharo",
       "state" : {
         "branch" : "main",
-        "revision" : "6d6b17797e85d86c6d5c6789e2b032cf3a70f42f"
+        "revision" : "79b97f4b7101db93c05aac7e312e5b6553f668cb"
       }
     },
     {
