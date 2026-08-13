@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(CShaderTranslate)
+import CShaderTranslate
+#endif
+
 LumaShaderCompiler.main()
 
 /// Translates each authored effect in `Shaders/` into the forms the frontends
@@ -91,22 +95,25 @@ struct LumaShaderCompiler {
             """
     }
 
+    /// The same libraries that translate a shader written at run time, rather
+    /// than the command-line tools built beside them: one way of doing it, and
+    /// nothing to install.
     private static func metalFragment(named name: String, body: String) -> String {
-        let workDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("LumaShaderCompiler-\(name)", isDirectory: true)
-        try! FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: workDir) }
-
-        let glsl = workDir.appendingPathComponent("effect.frag")
-        let spirv = workDir.appendingPathComponent("effect.spv")
-        try! (preamble + body).write(to: glsl, atomically: true, encoding: .utf8)
-
-        run("glslang", ["-V", glsl.path, "-o", spirv.path])
-        return run("spirv-cross", [
-            "--msl",
-            "--rename-entry-point", "main", name, "frag",
-            spirv.path,
-        ])
+        #if canImport(CShaderTranslate)
+        var message: UnsafeMutablePointer<CChar>?
+        let translated = luma_shader_translate_to_msl(preamble + body, 1, name, &message)
+        guard let translated else {
+            let detail = message.map { String(cString: $0) } ?? "no detail"
+            FileHandle.standardError.write(Data("LumaShaderCompiler: \(name): \(detail)\n".utf8))
+            exit(1)
+        }
+        defer { free(translated) }
+        return String(cString: translated)
+        #else
+        FileHandle.standardError.write(
+            Data("LumaShaderCompiler: --metal-dir needs the shader toolchain\n".utf8))
+        exit(1)
+        #endif
     }
 
     private static func write(_ contents: String, to destination: URL) {
@@ -116,24 +123,6 @@ struct LumaShaderCompiler {
         )
         guard (try? String(contentsOf: destination, encoding: .utf8)) != contents else { return }
         try! contents.write(to: destination, atomically: true, encoding: .utf8)
-    }
-
-    @discardableResult
-    private static func run(_ tool: String, _ arguments: [String]) -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = [tool] + arguments
-        let output = Pipe()
-        process.standardOutput = output
-        try! process.run()
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-
-        guard process.terminationStatus == 0 else {
-            FileHandle.standardError.write("LumaShaderCompiler: \(tool) failed\n".data(using: .utf8)!)
-            exit(1)
-        }
-        return String(data: data, encoding: .utf8)!
     }
 
     struct Effect {
@@ -155,6 +144,7 @@ struct LumaShaderCompiler {
 
     /// `--metal-dir` is what pulls in glslang and spirv-cross, so hosts with no
     /// Metal to feed leave it off and need neither tool installed.
+
     private struct Options {
         let shaderDir: URL
         let swiftOut: URL?

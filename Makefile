@@ -12,6 +12,12 @@ SOURCES := $(shell find Luma Sources Agent -type f \( \
 
 SHADER_SOURCES := $(wildcard Shaders/*.frag.glsl)
 
+# A locally made toolchain short-circuits the published artifact.
+LOCAL_SHADER_TOOLCHAIN := artifacts/ShaderToolchain.xcframework
+ifneq ($(wildcard $(LOCAL_SHADER_TOOLCHAIN)),)
+export SHADER_TOOLCHAIN_ROOT := $(LOCAL_SHADER_TOOLCHAIN)
+endif
+
 all: $(APP)
 
 $(APP): $(SOURCES) $(SHADER_SOURCES) Luma.xcodeproj Package.swift

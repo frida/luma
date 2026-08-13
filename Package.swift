@@ -77,24 +77,47 @@ let lumaCoreSoupDeps: [Target.Dependency] = []
 #endif
 
 // Runtime GLSL->MSL translation, so a shader written in a snippet reaches a
-// Metal host with no build step. Found wherever the toolchain happens to live
-// for now; shipping wants prebuilt libraries beside the Pharo VM's, since
-// neither project builds under SwiftPM.
-let shaderToolchainRoot = ["/opt/homebrew/opt", "/usr/local/opt", "/usr"].first {
-    FileManager.default.fileExists(atPath: $0 + "/glslang/include/glslang/Include/glslang_c_interface.h")
-}
-let cShaderTranslateCSettings: [CSetting] = shaderToolchainRoot.map { root in
-    [.unsafeFlags(["-I\(root)/glslang/include", "-I\(root)/spirv-cross/include"])]
-} ?? []
-let cShaderTranslateLinkerSettings: [LinkerSetting] = shaderToolchainRoot.map { root in
-    [.unsafeFlags([
-        "-L\(root)/glslang/lib", "-lglslang", "-lglslang-default-resource-limits", "-lSPIRV",
-        "-L\(root)/spirv-cross/lib",
-        "-lspirv-cross-c", "-lspirv-cross-msl", "-lspirv-cross-hlsl", "-lspirv-cross-cpp",
-        "-lspirv-cross-reflect", "-lspirv-cross-util", "-lspirv-cross-glsl", "-lspirv-cross-core",
-        "-lc++",
-    ])]
-} ?? []
+// Metal host with no build step, and the same libraries do it at build time.
+// Only Apple platforms have one to reach: elsewhere OpenGL takes the GLSL as
+// it stands, and neither the target nor the toolchain it needs is built.
+//
+// Neither project builds under SwiftPM, so CI makes them into an xcframework
+// (see scripts/make-shader-toolchain-xcframework.sh) and this names it.
+//
+// A locally made one short-circuits the published artifact, the way
+// SwiftyPharo honours PHARO_VM_ROOT: run that script and set
+// SHADER_TOOLCHAIN_ROOT=artifacts/ShaderToolchain.xcframework, which SwiftPM
+// wants relative to the package. Asking the filesystem rather than being told
+// would not do -- a manifest is cached, so whichever answer it gave first
+// would stick.
+let shaderToolchainVersion = "1"
+let shaderToolchainRoot = ProcessInfo.processInfo.environment["SHADER_TOOLCHAIN_ROOT"]
+
+#if canImport(Darwin)
+let shaderToolchainTarget: Target = shaderToolchainRoot.map {
+    .binaryTarget(name: "ShaderToolchain", path: $0)
+} ?? .binaryTarget(
+    name: "ShaderToolchain",
+    url: "https://github.com/frida/luma/releases/download/"
+        + "shader-toolchain-\(shaderToolchainVersion)/ShaderToolchain.xcframework.zip",
+    checksum: "70d83676ec8cbb37db3f59885c1dd8df8c4566ad3e54b7f2faf56bfa006022f8"
+)
+let shaderTranslateTargets: [Target] = [
+    shaderToolchainTarget,
+    .target(
+        name: "CShaderTranslate",
+        dependencies: ["ShaderToolchain"],
+        path: "Sources/CShaderTranslate",
+        publicHeadersPath: "include",
+        linkerSettings: [.unsafeFlags(["-lc++"])]
+    ),
+]
+let shaderTranslateDeps: [Target.Dependency] = ["CShaderTranslate"]
+#else
+let shaderTranslateTargets: [Target] = []
+let shaderTranslateDeps: [Target.Dependency] = []
+#endif
+
 
 let package = Package(
     name: "luma",
@@ -113,10 +136,9 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-crypto", .upToNextMajor(from: "3.0.0")),
         .package(url: "https://github.com/groue/GRDB.swift", .upToNextMajor(from: "7.0.0")),
         .package(url: "https://github.com/radareorg/SwiftyR2", branch: "main"),
-        // Local while the canvas view is being added; restore the remote before landing.
-        .package(name: "SwiftyPharo", path: "../SwiftyPharo"),
+        .package(url: "https://github.com/frida/SwiftyPharo", branch: "main"),
     ],
-    targets: cSoupTargets + [
+    targets: cSoupTargets + shaderTranslateTargets + [
         .target(
             name: "LumaCore",
             dependencies: [
@@ -126,8 +148,7 @@ let package = Package(
                 .product(name: "SwiftyR2", package: "SwiftyR2"),
                 .product(name: "SwiftyPharo", package: "SwiftyPharo"),
                 "CLumaAudio",
-                "CShaderTranslate",
-            ] + lumaCoreSoupDeps,
+            ] + lumaCoreSoupDeps + shaderTranslateDeps,
             path: "Sources/LumaCore",
             exclude: lumaCoreExcludes,
             resources: [
@@ -148,13 +169,7 @@ let package = Package(
                 .swiftLanguageMode(.v5),
             ]
         ),
-        .target(
-            name: "CShaderTranslate",
-            path: "Sources/CShaderTranslate",
-            publicHeadersPath: "include",
-            cSettings: cShaderTranslateCSettings,
-            linkerSettings: cShaderTranslateLinkerSettings
-        ),
+
         .target(
             name: "CLumaAudio",
             path: "Sources/CLumaAudio",
@@ -164,6 +179,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "LumaShaderCompiler",
+            dependencies: shaderTranslateDeps,
             path: "Sources/LumaShaderCompiler",
             swiftSettings: [
                 .swiftLanguageMode(.v5),

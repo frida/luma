@@ -1,0 +1,35 @@
+name: Shader toolchain
+
+on:
+  push:
+    tags:
+      - shader-toolchain-*
+  pull_request:
+    paths:
+      - scripts/build-shader-toolchain.sh
+      - scripts/make-shader-toolchain-xcframework.sh
+      - .github/workflows/shader-toolchain.yml
+  workflow_dispatch:
+
+jobs:
+  xcframework:
+    runs-on: macos-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v7
+
+      - name: Create xcframework
+        run: scripts/make-shader-toolchain-xcframework.sh | tee artifacts.txt
+
+      - name: Upload xcframework
+        uses: actions/upload-artifact@v7
+        with:
+          name: ShaderToolchain.xcframework
+          path: artifacts/ShaderToolchain.xcframework.zip
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/shader-toolchain-')
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: artifacts.txt
+          files: artifacts/ShaderToolchain.xcframework.zip

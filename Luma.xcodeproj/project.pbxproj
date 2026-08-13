@@ -402,7 +402,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/zsh;
-			shellScript = "set -euo pipefail\n\nexport PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\"\n\n\"${BUILT_PRODUCTS_DIR}/LumaShaderCompiler\" \\\n    --shader-dir \"${SRCROOT}/Shaders\" \\\n    --swift-out  \"${SRCROOT}/Sources/LumaCore/Generated/ShaderEffects.swift\" \\\n    --metal-dir  \"${SRCROOT}/Luma/Shaders/Generated\"\n";
+			shellScript = "set -euo pipefail\n\n# Built through SwiftPM rather than as a target here, so it links the same\n# shader toolchain the runtime translation does.\nswift run --package-path \"${SRCROOT}\" LumaShaderCompiler \\\n    --shader-dir \"${SRCROOT}/Shaders\" \\\n    --swift-out  \"${SRCROOT}/Sources/LumaCore/Generated/ShaderEffects.swift\" \\\n    --metal-dir  \"${SRCROOT}/Luma/Shaders/Generated\"\n";
 		};
 		0CB2C6832FA5411A00426A24 /* Build observed.c fixture */ = {
 			isa = PBXShellScriptBuildPhase;

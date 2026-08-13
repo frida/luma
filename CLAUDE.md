@@ -10,6 +10,23 @@ make          # Incremental release build via xcodebuild → build/Luma.app
 make clean    # Remove build artifacts
 ```
 
+glslang and SPIRV-Cross do the GLSL→Metal translation, at build time
+and at run time, and build under neither SwiftPM nor Xcode. CI makes
+them into `ShaderToolchain.xcframework` and publishes it against a
+`shader-toolchain-<version>` tag; the manifest names that artifact, so
+a build downloads it and nothing local is needed.
+
+To work on the toolchain itself, make one and say so:
+
+```sh
+scripts/make-shader-toolchain-xcframework.sh
+export SHADER_TOOLCHAIN_ROOT=artifacts/ShaderToolchain.xcframework
+```
+
+Both Makefiles set that themselves when the artifact is there. Only
+Apple platforms have any of this: OpenGL takes the GLSL as it stands,
+so `CShaderTranslate` is not a target at all elsewhere.
+
 Or open `Luma.xcodeproj` in Xcode and build with Cmd+B (set
 destination to **My Mac**).
 

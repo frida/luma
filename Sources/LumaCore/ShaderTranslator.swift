@@ -1,3 +1,4 @@
+#if canImport(Metal)
 import CShaderTranslate
 import Foundation
 
@@ -57,3 +58,4 @@ public struct ShaderTranslationError: Error, CustomStringConvertible {
 
     public var description: String { message }
 }
+#endif

@@ -14,6 +14,12 @@ export USE_SYSTEM_FRIDA := 1
 
 PROJECT_ROOT := $(abspath ..)
 
+# A locally made shader toolchain short-circuits the published artifact.
+LOCAL_SHADER_TOOLCHAIN := $(PROJECT_ROOT)/artifacts/ShaderToolchain.xcframework
+ifneq ($(wildcard $(LOCAL_SHADER_TOOLCHAIN)),)
+export SHADER_TOOLCHAIN_ROOT := artifacts/ShaderToolchain.xcframework
+endif
+
 PHARO_RELEASE := vm-20260802.8
 PHARO_IMAGE_DIR := Sources/LumaGtk/Resources/pharo-image
 PHARO_IMAGE := $(PHARO_IMAGE_DIR)/SwiftyPharo.image
