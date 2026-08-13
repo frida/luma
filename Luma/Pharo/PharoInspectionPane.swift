@@ -6,8 +6,6 @@ import SwiftyPharo
 /// thing being inspected sits.
 nonisolated let pharoPageSpace = "pharo.page"
 
-/// Marks a step from what was inspected to what came out of it, the way
-/// Glamorous Toolkit points from a page into its inspector and on down.
 struct PharoDrillArrow: View {
     var body: some View {
         Image(systemName: "arrowtriangle.right.fill")

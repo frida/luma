@@ -174,8 +174,6 @@ public final class ProcessNode: Identifiable {
         try await script.exports.loadPackages(JSValue(bundles))
     }
 
-    // MARK: - Session & Script Observation
-
     private func startObservingSessionState() {
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -234,8 +232,6 @@ public final class ProcessNode: Identifiable {
             }
         }
     }
-
-    // MARK: - Message Dispatch
 
     public func tryHandleMessage(_ message: Any, data: [UInt8]?) -> Bool {
         guard let envelope = message as? [String: Any],
@@ -480,8 +476,6 @@ public final class ProcessNode: Identifiable {
         }
     }
 
-    // MARK: - Widget Updates
-
     private func decodeCounterSetUpdate(_ dict: [String: Any]) -> WidgetUpdate? {
         guard let context = decodeWidgetContext(dict),
             let counterObj = dict["counter"] as? [String: Any],
@@ -657,8 +651,6 @@ public final class ProcessNode: Identifiable {
         return nil
     }
 
-    // MARK: - Module Snapshots
-
     private func markInitialModulesReadyIfNeeded() {
         guard moduleSnapshotState == .pending else { return }
         moduleSnapshotState = .ready
@@ -700,8 +692,6 @@ public final class ProcessNode: Identifiable {
             }
         }
     }
-
-    // MARK: - REPL
 
     public var evaluateRadare2: ((String) async -> REPLResult.Value)!
 
@@ -933,8 +923,6 @@ public final class ProcessNode: Identifiable {
         if aUnderscored != bUnderscored { return bUnderscored }
         return a.name.lowercased() < b.name.lowercased()
     }
-
-    // MARK: - Memory & Symbolication
 
     public func readRemoteMemory(at address: UInt64, count: Int) async throws -> [UInt8] {
         let addr = String(format: "0x%llx", address)
@@ -1183,8 +1171,6 @@ public final class ProcessNode: Identifiable {
         }
     }
 
-    // MARK: - Instruments
-
     public func addInstrument(_ ref: InstrumentRef) {
         instruments.append(ref)
     }
@@ -1276,8 +1262,6 @@ public final class ProcessNode: Identifiable {
             "text": text,
         ]))
     }
-
-    // MARK: - ITrace Orchestration
 
     func handleITraceStart(
         token: Int,

@@ -3,7 +3,6 @@ import Foundation
 /// What the host hands the image, one record per thing rather than a line of
 /// text, so the image can open one up and ask it questions.
 public struct PharoHostRecord: Codable, Sendable {
-    /// What the image shows when it prints the record.
     public let headline: String
     /// Base64 PNG, which is how a picture reaches the image.
     public var icon: String?

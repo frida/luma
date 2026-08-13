@@ -626,8 +626,6 @@ final class MainWindow: InstrumentUIHost {
         replaceDetail(with: Label(str: message))
     }
 
-    // MARK: - Target picker
-
     func newSession() {
         requestNewSession()
     }
@@ -713,8 +711,6 @@ final class MainWindow: InstrumentUIHost {
             pane.focusInput()
         }
     }
-
-    // MARK: - Sidebar build
 
     private func buildSidebar() -> ScrolledWindow {
         let column = Box(orientation: .vertical, spacing: 0)
@@ -1727,8 +1723,6 @@ final class MainWindow: InstrumentUIHost {
         return packagesSection
     }
 
-    // MARK: - Detail
-
     private func buildDetailPane() -> ScrolledWindow {
         detailContainer.hexpand = true
         detailContainer.vexpand = true
@@ -1811,7 +1805,6 @@ final class MainWindow: InstrumentUIHost {
             currentMissionDetailPane = nil
         }
         if case .missionsList = selection {
-            // keep current
         } else {
             currentMissionsListPane = nil
         }
@@ -2134,8 +2127,6 @@ final class MainWindow: InstrumentUIHost {
         return column
     }
 
-    // MARK: - Instruments
-
     func addInstrument() {
         openAddInstrumentDialog()
     }
@@ -2259,8 +2250,6 @@ final class MainWindow: InstrumentUIHost {
         }
         detailContainer.append(child: widget)
     }
-
-    // MARK: - Selection
 
     private func registerInstrumentUIs() {
         let registry = InstrumentUIRegistry.shared
@@ -2477,8 +2466,6 @@ final class MainWindow: InstrumentUIHost {
             break
         }
     }
-
-    // MARK: - Engine bindings
 
     private func handleSessionListChange(_ change: LumaCore.SessionListChange) {
         switch change {
@@ -3450,8 +3437,6 @@ final class MainWindow: InstrumentUIHost {
         return avatar
     }
 
-    // MARK: - Sidebar context menus
-
     private func attachSessionContextMenu(
         row: ListBoxRow,
         anchor: Widget,
@@ -3765,8 +3750,6 @@ final class MainWindow: InstrumentUIHost {
             [.init("Delete Trace", destructive: true) { [weak self] in self?.confirmDeleteTrace(trace) }],
         ], at: anchor, x: x, y: y)
     }
-
-    // MARK: - Destructive confirmation helpers
 
     private func confirmKillProcess(session: LumaCore.ProcessSession) {
         confirmDestructive(

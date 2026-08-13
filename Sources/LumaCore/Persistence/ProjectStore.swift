@@ -56,8 +56,6 @@ public final class ProjectStore: Sendable {
         try store.exportSnapshot(to: destination)
     }
 
-    // MARK: - Observation
-
     public func observeSessions(
         onChange: @escaping @Sendable ([ProcessSession]) -> Void
     ) -> StoreObservation {
@@ -158,8 +156,6 @@ public final class ProjectStore: Sendable {
         )
     }
 
-    // MARK: - Process Sessions
-
     public func fetchSessions() throws -> [ProcessSession] {
         try db.read { db in
             try ProcessSession
@@ -186,8 +182,6 @@ public final class ProjectStore: Sendable {
         }
     }
 
-    // MARK: - Instruments
-
     public func fetchInstrument(id: UUID) throws -> InstrumentInstance? {
         try db.read { db in
             try InstrumentInstance.fetchOne(db, key: id)
@@ -213,8 +207,6 @@ public final class ProjectStore: Sendable {
             _ = try InstrumentInstance.deleteOne(db, key: id)
         }
     }
-
-    // MARK: - REPL Cells
 
     public func fetchREPLCells(sessionID: UUID) throws -> [REPLCell] {
         try db.read { db in
@@ -244,8 +236,6 @@ public final class ProjectStore: Sendable {
                 .deleteAll(db)
         }
     }
-
-    // MARK: - Notebook
 
     public func fetchNotebookEntries() throws -> [NotebookEntry] {
         try db.read { db in
@@ -281,8 +271,6 @@ public final class ProjectStore: Sendable {
             _ = try NotebookEntry.deleteOne(db, key: id)
         }
     }
-
-    // MARK: - Notebook Outbox
 
     public func saveOutboxOp(_ op: NotebookOp) throws {
         try db.write { db in
@@ -341,8 +329,6 @@ public final class ProjectStore: Sendable {
         try record.save(db)
     }
 
-    // MARK: - Session Outbox
-
     public func saveSessionOutboxOp(_ op: SessionOp) throws {
         try db.write { db in
             try saveSessionOutboxOp(op, in: db)
@@ -395,8 +381,6 @@ public final class ProjectStore: Sendable {
         try record.save(db)
     }
 
-    // MARK: - Session UI State
-
     public func fetchAllSessionUIStates() throws -> [UUID: SessionUIState] {
         try db.read { db in
             let rows = try SessionUIState.fetchAll(db)
@@ -410,8 +394,6 @@ public final class ProjectStore: Sendable {
         }
     }
 
-    // MARK: - Custom Instrument Def UI State
-
     public func fetchAllCustomInstrumentDefUIStates() throws -> [UUID: CustomInstrumentDefUIState] {
         try db.read { db in
             let rows = try CustomInstrumentDefUIState.fetchAll(db)
@@ -424,8 +406,6 @@ public final class ProjectStore: Sendable {
             try state.save(db)
         }
     }
-
-    // MARK: - ITraces
 
     public func fetchITraces(sessionID: UUID) throws -> [ITrace] {
         try db.read { db in
@@ -448,8 +428,6 @@ public final class ProjectStore: Sendable {
         }
     }
 
-    // MARK: - Address Insights
-
     public func fetchInsights(sessionID: UUID) throws -> [AddressInsight] {
         try db.read { db in
             try AddressInsight
@@ -469,8 +447,6 @@ public final class ProjectStore: Sendable {
             _ = try AddressInsight.deleteOne(db, key: id)
         }
     }
-
-    // MARK: - Address notes
 
     public func fetchAddressNote(id: UUID) throws -> AddressNote? {
         try db.read { db in
@@ -785,8 +761,6 @@ public final class ProjectStore: Sendable {
         }
     }
 
-    // MARK: - Missions
-
     public func observeMissions(
         onChange: @escaping @Sendable ([Mission]) -> Void
     ) -> StoreObservation {
@@ -1022,8 +996,6 @@ public final class ProjectStore: Sendable {
         }
     }
 
-    // MARK: - Mission Outbox
-
     public func saveMissionOutboxOp(_ op: MissionOp) throws {
         try db.write { db in
             try saveMissionOutboxOp(op, in: db)
@@ -1068,8 +1040,6 @@ public final class ProjectStore: Sendable {
         try record.save(db)
     }
 
-    // MARK: - Remote Devices
-
     public func fetchRemoteDevices() throws -> [RemoteDeviceConfig] {
         try db.read { db in
             try RemoteDeviceConfig.fetchAll(db)
@@ -1087,8 +1057,6 @@ public final class ProjectStore: Sendable {
             _ = try RemoteDeviceConfig.deleteOne(db, key: id)
         }
     }
-
-    // MARK: - Packages State
 
     public func fetchPackagesState() throws -> ProjectPackagesState {
         try db.write { db in
@@ -1121,8 +1089,6 @@ public final class ProjectStore: Sendable {
         }
     }
 
-    // MARK: - Collaboration State
-
     public func fetchCollaborationState() throws -> ProjectCollaborationState {
         try db.read { db in
             try ProjectCollaborationState.fetchOne(db) ?? ProjectCollaborationState()
@@ -1134,8 +1100,6 @@ public final class ProjectStore: Sendable {
             try state.save(db)
         }
     }
-
-    // MARK: - Custom Instrument Definitions
 
     public func observeCustomInstrumentDefs(
         onChange: @escaping @Sendable ([CustomInstrumentDef]) -> Void
@@ -1180,8 +1144,6 @@ public final class ProjectStore: Sendable {
                 .deleteAll(db)
         }
     }
-
-    // MARK: - Custom Instrument Files
 
     public func observeCustomInstrumentFiles(
         onChange: @escaping @Sendable ([UUID: [CustomInstrumentFile]]) -> Void
@@ -1260,8 +1222,6 @@ public final class ProjectStore: Sendable {
         }
     }
 
-    // MARK: - Custom Instrument Outbox
-
     public func saveCustomInstrumentOutboxOp(_ op: CustomInstrumentOp) throws {
         try db.write { db in
             try saveCustomInstrumentOutboxOp(op, in: db)
@@ -1288,8 +1248,6 @@ public final class ProjectStore: Sendable {
             _ = try CustomInstrumentOutboxRecord.deleteAll(db)
         }
     }
-
-    // MARK: - Widget State
 
     public func fetchWidgetStates(instanceID: UUID) throws -> [String: WidgetState] {
         try db.read { db in
@@ -1365,8 +1323,6 @@ public final class ProjectStore: Sendable {
         try record.save(db)
     }
 
-    // MARK: - Project UI State
-
     public func fetchProjectUIState() throws -> ProjectUIState {
         try db.read { db in
             try ProjectUIState.fetchOne(db) ?? ProjectUIState()
@@ -1379,8 +1335,6 @@ public final class ProjectStore: Sendable {
         }
     }
 
-    // MARK: - Target Picker State
-
     public func fetchTargetPickerState() throws -> TargetPickerState {
         try db.read { db in
             try TargetPickerState.fetchOne(db) ?? TargetPickerState()
@@ -1392,8 +1346,6 @@ public final class ProjectStore: Sendable {
             try state.save(db)
         }
     }
-
-    // MARK: - Schema
 
     private static func openSchema(_ db: Database) throws {
         let storedVersion = try Int.fetchOne(db, sql: "PRAGMA user_version") ?? 0

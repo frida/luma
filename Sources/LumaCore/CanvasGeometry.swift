@@ -29,7 +29,6 @@ public struct CanvasGeometry: Sendable, Equatable {
     }
 
     public var attributes: [ShaderAttribute]
-    /// Values the vertex stage hands the fragment stage.
     public var varyings: [ShaderAttribute]
     public var primitive: Primitive
     /// Interleaved, one run of components per attribute per vertex.
@@ -47,7 +46,6 @@ public struct CanvasGeometry: Sendable, Equatable {
         self.vertices = vertices
     }
 
-    /// Floats per vertex.
     public var stride: Int {
         attributes.reduce(0) { $0 + $1.components }
     }

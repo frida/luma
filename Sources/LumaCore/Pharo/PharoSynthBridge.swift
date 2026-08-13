@@ -82,7 +82,6 @@ public func luma_synth_set_colour(
     SynthEngine.setPatch(patch, channel: Int(channel))
 }
 
-/// Stops every pattern and takes every voice with it.
 @_cdecl("luma_synth_hush")
 public func luma_synth_hush() {
     SynthEngine.hush()
@@ -106,7 +105,6 @@ public func luma_synth_reset(_ channel: Int32) {
     }
 }
 
-/// Where a channel sits between the speakers.
 @_cdecl("luma_synth_set_pan")
 public func luma_synth_set_pan(_ channel: Int32, _ pan: Float) {
     SynthEngine.setPan(pan, channel: Int(channel))

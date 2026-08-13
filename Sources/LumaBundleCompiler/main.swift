@@ -283,7 +283,6 @@ struct LumaBundleCompiler {
                 try fm.copyItem(at: srcURL.standardizedFileURL, to: dstURL)
             }
 
-            // Also copy any files that the entries import via relative paths.
             try copyAgentSources(from: sourceRoot, to: stagingDir)
 
             effectiveProjectRoot = stagingDir

@@ -17,11 +17,8 @@ public struct CanvasDrawable: Sendable, Equatable {
     public var primitive: CanvasGeometry.Primitive = .triangles
     /// Named by the author, in the order they declared them.
     public var uniforms: [CanvasUniform] = []
-    /// Those of them that are moving.
     public var drivers: [CanvasDriver] = []
-    /// Runs of values the shader reads by index.
     public var buffers: [CanvasBuffer] = []
-    /// Pictures the shader samples.
     public var images: [CanvasImage] = []
     public var isVisible = true
 
@@ -111,7 +108,6 @@ public struct CanvasBuffer: Sendable, Equatable {
         max(1, (values.count + width - 1) / width)
     }
 
-    /// The values padded out to fill the sheet.
     public func padded() -> [Float] {
         var sheet = values
         sheet.append(contentsOf: repeatElement(0, count: width * height - values.count))
@@ -154,7 +150,6 @@ public struct CanvasDriver: Sendable, Equatable {
         self.startedAt = startedAt
     }
 
-    /// Where the value sits at a given reading of the clock.
     public func value(at now: Double) -> [Float] {
         let elapsed = Float(now - startedAt)
         let fraction: Float
@@ -207,7 +202,6 @@ public struct CanvasUniform: Sendable, Equatable {
 /// one, change it, and have the drawing follow.
 public struct CanvasScene: Sendable, Equatable {
     public var drawables: [Int: CanvasDrawable] = [:]
-    /// The order they draw in.
     public var order: [Int] = []
 
     public init() {}
@@ -249,7 +243,6 @@ public final class CanvasRegistry: Sendable {
         }
     }
 
-    /// Marks a run of values or a picture as freshly handed over.
     public func nextStamp() -> UInt64 {
         state.withLock { state in
             state.nextStamp += 1

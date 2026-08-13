@@ -233,10 +233,6 @@ struct PharoMaximizedPane: View {
     }
 }
 
-/// The columns side by side, as loose content for the page's own scroller to
-/// hold. Each is a direct child there, which is what has the scroller report it
-/// as it comes and goes on screen; wrapped in a view of their own they would
-/// not be seen. Whoever shows them does the scrolling.
 func pharoColumns(
     runtime: PharoRuntime,
     path: PharoColumnPath,
@@ -819,7 +815,6 @@ private struct PharoItemsList: View {
     }
 }
 
-/// The pager's scroll thumb, resting over the squares it stands for.
 private struct PharoOverviewThumb: View {
     let trackWidth: CGFloat
     let fractionVisible: CGFloat
@@ -852,7 +847,6 @@ private struct PharoOverviewThumb: View {
     }
 }
 
-/// One pane's square in the overview strip.
 private struct PharoOverviewSquare: View {
     let isCurrent: Bool
     let isOnScreen: Bool
@@ -1014,8 +1008,6 @@ struct PharoPaneMenuItem: Identifiable {
     var id: String { title }
 }
 
-/// Which of Command and Shift are down, where holding them is a thing the
-/// platform lets a view ask about.
 @Observable
 final class PharoPaneModifiers {
     private(set) var held: PharoPaneModifierKeys = []
@@ -1061,8 +1053,6 @@ extension NSEvent.ModifierFlags {
     }
 }
 
-/// Carries a menu item's action, since an NSMenuItem calls a selector rather
-/// than a closure.
 final class PharoMenuRunner: NSObject {
     private let run: () -> Void
 
@@ -1076,7 +1066,6 @@ final class PharoMenuRunner: NSObject {
 }
 #endif
 
-/// The round white disc a pane's corner buttons wear.
 struct PharoRoundIcon: View {
     let systemName: String
 
@@ -1091,9 +1080,6 @@ struct PharoRoundIcon: View {
     }
 }
 
-/// A run of collapsed panes, the way Glamorous Toolkit stacks them beside their
-/// neighbours: a triangle pointing down into the stack, the panes as miniatures
-/// below it, and an edge off the last one when an open pane follows.
 struct PharoCollapsedStack: View {
     let objects: [PharoObject]
     let hasFollowingExpanded: Bool

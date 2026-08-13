@@ -19,7 +19,6 @@ final class ShaderEffect {
     private static let pulseHalfLife: Float = 0.4
     private static let activityHalfLife: Float = 1.2
 
-    /// The screen-filling effect, when the widget is showing one of those.
     private let fragmentSource: String?
     private var screen: ScreenFilling?
     private var drawables: [Drawable] = []
@@ -105,7 +104,6 @@ final class ShaderEffect {
         drawable.changed = true
     }
 
-    /// A uniform the author named, of whatever width they asked for.
     func setUniform(_ handle: Int32, name: String, values: [Float]) {
         guard let drawable = drawable(handle) else { return }
 
@@ -354,7 +352,6 @@ final class ShaderEffect {
     }
 }
 
-/// Where a linked program keeps the values every effect is fed.
 struct Locations {
     var resolution: GLint = -1
     var time: GLint = -1
@@ -381,7 +378,6 @@ struct Locations {
     }
 }
 
-/// One value per vertex, named by whoever wrote the shader.
 private struct Attribute {
     let name: String
     let components: Int
@@ -531,7 +527,6 @@ private final class Drawable {
         self.handle = handle
     }
 
-    /// Floats per vertex.
     var stride: Int {
         attributes.reduce(0) { $0 + $1.components }
     }
@@ -758,7 +753,6 @@ extension GLuint {
         return shader
     }
 
-    /// What the driver said went wrong, as it words it.
     func log(_ read: (GLuint, GLsizei, UnsafeMutablePointer<GLsizei>?, UnsafeMutablePointer<GLchar>?) -> Void) -> String {
         var text = [GLchar](repeating: 0, count: 1024)
         read(self, GLsizei(text.count), nil, &text)

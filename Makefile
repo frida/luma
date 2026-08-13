@@ -19,7 +19,6 @@ PHARO_IMAGE := $(PHARO_IMAGE_DIR)/SwiftyPharo.image
 PHARO_LOCAL := $(PWD)/../SwiftyPharo/artifacts/SwiftyPharo.image
 PHARO_CACHE := build/.pharo/$(PHARO_RELEASE)
 
-# A locally made toolchain short-circuits the published artifact.
 LOCAL_SHADER_TOOLCHAIN := artifacts/ShaderToolchain.xcframework
 ifneq ($(wildcard $(LOCAL_SHADER_TOOLCHAIN)),)
 export SHADER_TOOLCHAIN_ROOT := $(LOCAL_SHADER_TOOLCHAIN)

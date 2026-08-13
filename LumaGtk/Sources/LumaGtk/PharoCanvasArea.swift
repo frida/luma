@@ -11,7 +11,6 @@ final class PharoCanvasArea {
     let widget: Widget
 
     private let scene: Int
-    /// What draws it, which the render tests read the frame back from.
     let area: ShaderEffect
     private var themeToken: gulong = 0
     private var built: [Int: Built] = [:]
@@ -21,9 +20,6 @@ final class PharoCanvasArea {
         var vertexGLSL: String
         var fragmentGLSL: String
         var vertices: [Float]
-        /// What the runs of values and pictures were stamped when they were
-        /// last handed over, so a change to a uniform does not re-upload a
-        /// texture that has not moved.
         var stamps: [UInt64] = []
     }
 

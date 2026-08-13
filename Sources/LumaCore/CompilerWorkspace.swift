@@ -195,8 +195,6 @@ public final class CompilerWorkspace {
         return items
     }
 
-    // MARK: - Bundle Building
-
     private func buildAllPackageBundles(packagesState: ProjectPackagesState, paths: CompilerWorkspacePaths) async throws {
         packageBundles.removeAll()
 
@@ -283,8 +281,6 @@ public final class CompilerWorkspace {
             throw CompileFailure(label: label, underlying: error, diagnostics: collector.diagnostics)
         }
     }
-
-    // MARK: - Disk Operations
 
     private func writeManifestsToDisk(from state: ProjectPackagesState, paths: CompilerWorkspacePaths) throws {
         let fm = FileManager.default

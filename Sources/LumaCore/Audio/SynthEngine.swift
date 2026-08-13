@@ -20,7 +20,6 @@ public enum SynthEngine {
     /// mixer was midway through.
     static let bufferCount = 3
 
-    /// Pitches one step may sound together.
     static let maxTones = 4
     static let commandCapacity = 256
     /// Two seconds at the rate the device runs at, which is as far back as
@@ -59,8 +58,6 @@ public enum SynthEngine {
         set { storage.level = newValue }
     }
 
-    // MARK: Patterns
-
     public static func beginPattern(channel: Int) {
         let performing = performingSlot(channel)
         let offered = storage.lastOffered[channel]
@@ -82,7 +79,6 @@ public enum SynthEngine {
         storage.stagedCount[channel] = count + 1
     }
 
-    /// Sounds another pitch alongside the step just added, making it a chord.
     public static func addTone(frequency: Float, channel: Int) {
         let count = storage.stagedCount[channel]
         guard count > 0 else { return }
@@ -113,8 +109,6 @@ public enum SynthEngine {
     public static func stopPattern(channel: Int) {
         offer(Command(kind: .patternStop, channel: Int32(channel)))
     }
-
-    // MARK: The audio thread
 
     static func mix(into frames: UnsafeMutablePointer<Float>, frameCount: Int, channels: Int) {
         drainCommands()
@@ -196,7 +190,6 @@ public enum SynthEngine {
         }
     }
 
-    /// What it sounds like, where it sits, and whatever it was playing.
     private static func resetChannel(_ channel: Int) {
         storage.channels[channel].patch = PatchValues()
         storage.channels[channel].pan = 0
@@ -496,8 +489,6 @@ public enum SynthEngine {
         return voice.lowpass
     }
 
-    // MARK: Storage
-
     /// Drops the command when the ring is full rather than blocking the
     /// caller; a lost blip is cheaper than a stalled UI thread.
     private static func offer(_ command: Command) {
@@ -590,7 +581,6 @@ public enum SynthEngine {
         /// The second oscillator restarted by the first, which is the sound
         /// of one pitch dragging another behind it.
         public var syncsDetuned: Bool = false
-        /// The two multiplied rather than added: bells, and everything metal.
         public var ringMix: Float = 0
         /// Soft clipping, for when a voice should sound driven rather than
         /// loud.

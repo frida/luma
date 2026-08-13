@@ -19,7 +19,6 @@ import UIKit
 enum ShaderEffectProgram: Equatable {
     case builtIn(function: String)
     case translated(metal: String, function: String)
-    /// The author's own stages, drawing their own vertices.
     case geometry(
         vertexMetal: String,
         vertexFunction: String,

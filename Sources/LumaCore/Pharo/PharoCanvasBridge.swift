@@ -13,15 +13,12 @@ public enum PharoCanvasBridge {
 private let canvasError = Mutex("")
 private nonisolated(unsafe) var canvasErrorBuffer: UnsafeMutablePointer<CChar>?
 
-/// What the shader compiler said about the last stages that would not build.
 @_cdecl("luma_canvas_last_error")
 public func luma_canvas_last_error() -> UnsafeMutablePointer<CChar>? {
     canvasErrorBuffer.map { free($0) }
     canvasErrorBuffer = strdup(canvasError.withLock { $0 })
     return canvasErrorBuffer
 }
-
-// MARK: Scenes the image holds by handle
 
 @_cdecl("luma_scene_create")
 public func luma_scene_create() -> Int32 {
@@ -343,8 +340,6 @@ public func luma_scene_key_down(_ scene: Int32, _ key: Int32) -> Int32 {
 public func luma_scene_scale(_ scene: Int32) -> Float {
     CanvasRegistry.shared.scale(Int(scene))
 }
-
-// MARK: Lettering the host rasterises
 
 /// Draws the printable range at the given pixel size and keeps it. Answers 0
 /// where the host has nothing to draw with.

@@ -5,10 +5,6 @@ import GLibObject
 import Gtk
 import GtkSource
 
-/// The bar Ctrl+F drops over a Smalltalk editor: GNOME's search bar, with every
-/// match lit by GtkSourceView's own search context and the place of the one the
-/// cursor sits on beside the entry. Enter and the arrows step through the
-/// matches, Escape puts the bar away and hands the keyboard back to the code.
 @MainActor
 final class PharoFindBar {
     let widget: SearchBar

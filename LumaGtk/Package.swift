@@ -7,10 +7,6 @@ let lumaGtkTargetDir = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()
     .appendingPathComponent("Sources/LumaGtk", isDirectory: true).path
 
-// SwiftPM rejects exclude entries that don't exist on disk. luma.rc is
-// only meaningful to the Windows build, and luma.res is the rc.exe
-// output produced at manifest-evaluation time — both are absent on
-// Linux/macOS. Only exclude what's actually there.
 let lumaGtkExcludes: [String] = ["luma.rc", "luma.res"].filter { name in
     FileManager.default.fileExists(atPath: lumaGtkTargetDir + "/" + name)
 }
@@ -29,8 +25,6 @@ let cLumaLinkerSettings: [LinkerSetting] = [
     .linkedFramework("WebKit"),
     .unsafeFlags(pkgConfigFlags(["libadwaita-1", "epoxy", "librsvg-2.0"], libs: true)),
 ]
-// The embedded Pharo image resolves the host's luma_* exports through
-// dlsym, so keep them in the dynamic symbol table.
 let lumaGtkLinkerSettings: [LinkerSetting] = [
     .unsafeFlags(["-Xlinker", "-export_dynamic"]),
 ]
@@ -89,8 +83,6 @@ let lumaGtkLinkerSettings: [LinkerSetting] = [
     // linker to defer the symbol — it's only ever called on a fatal
     // assertion path inside Observation.
     .unsafeFlags(["-Xlinker", "--allow-shlib-undefined"]),
-    // The embedded Pharo image resolves the host's luma_* exports through
-    // dlsym, so keep them in the dynamic symbol table.
     .unsafeFlags(["-Xlinker", "--export-dynamic"]),
 ]
 #endif

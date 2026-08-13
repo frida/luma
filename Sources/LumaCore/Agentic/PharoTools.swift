@@ -26,8 +26,6 @@ extension MissionTools {
         registerPharoAddSnippet(in: catalog, engine: engine)
     }
 
-    // MARK: - pharo_eval
-
     private static func registerPharoEval(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "pharo_eval",
@@ -56,8 +54,6 @@ extension MissionTools {
             }
         }
     }
-
-    // MARK: - pharo_inspect
 
     private static func registerPharoInspect(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
@@ -101,8 +97,6 @@ extension MissionTools {
         }
     }
 
-    // MARK: - pharo_list_items
-
     private static func registerPharoListItems(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "pharo_list_items",
@@ -140,8 +134,6 @@ extension MissionTools {
         }
     }
 
-    // MARK: - pharo_drill
-
     private static func registerPharoDrill(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "pharo_drill",
@@ -174,8 +166,6 @@ extension MissionTools {
         }
     }
 
-    // MARK: - pharo_release
-
     private static func registerPharoRelease(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "pharo_release",
@@ -200,8 +190,6 @@ extension MissionTools {
             }
         }
     }
-
-    // MARK: - pharo_browse_class
 
     private static func registerPharoBrowseClass(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
@@ -247,8 +235,6 @@ extension MissionTools {
         }
     }
 
-    // MARK: - pharo_read_method
-
     private static func registerPharoReadMethod(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "pharo_read_method",
@@ -285,8 +271,6 @@ extension MissionTools {
         }
     }
 
-    // MARK: - pharo_compile_method
-
     private static func registerPharoCompileMethod(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "pharo_compile_method",
@@ -322,8 +306,6 @@ extension MissionTools {
         }
     }
 
-    // MARK: - pharo_define_class
-
     private static func registerPharoDefineClass(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "pharo_define_class",
@@ -353,8 +335,6 @@ extension MissionTools {
             }
         }
     }
-
-    // MARK: - pharo_find_references
 
     private static func registerPharoFindReferences(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
@@ -393,8 +373,6 @@ extension MissionTools {
         }
     }
 
-    // MARK: - pharo_format_source
-
     private static func registerPharoFormatSource(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "pharo_format_source",
@@ -416,8 +394,6 @@ extension MissionTools {
             }
         }
     }
-
-    // MARK: - pharo_run_example
 
     private static func registerPharoRunExample(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
@@ -454,8 +430,6 @@ extension MissionTools {
         }
     }
 
-    // MARK: - pharo_list_snippets
-
     private static func registerPharoListSnippets(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "pharo_list_snippets",
@@ -477,8 +451,6 @@ extension MissionTools {
                 summary: "\(snippets.count) snippet\(snippets.count == 1 ? "" : "s")")
         }
     }
-
-    // MARK: - pharo_add_snippet
 
     private static func registerPharoAddSnippet(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
@@ -506,8 +478,6 @@ extension MissionTools {
                 summary: "Added a snippet to the playground")
         }
     }
-
-    // MARK: - Reaching the image
 
     /// The image starts on first use and answers on its own thread, so every
     /// tool goes through here and reports what went wrong in the same shape.

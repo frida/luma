@@ -53,12 +53,6 @@ private let drainCallback: GIOFunc = { channel, _, _ in
 
 #if os(Windows)
 
-// On Windows, libdispatch's main-queue handle is a win32 HANDLE that becomes
-// signaled when work is pending. GLib supports waiting on win32 HANDLEs by
-// storing them (cast to gint) in a GPollFD; g_poll feeds them straight into
-// WaitForMultipleObjects. Wrap it in a custom GSource so the drain is
-// event-driven rather than polled.
-
 @_silgen_name("_dispatch_get_main_queue_handle_4CF")
 private func dispatchGetMainQueueHandle() -> UnsafeMutableRawPointer
 

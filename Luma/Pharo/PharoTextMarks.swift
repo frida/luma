@@ -39,7 +39,6 @@ enum PharoBodyItem: Identifiable {
     }
 }
 
-/// Holds a mark's view, and marks it as one for the text view's sake.
 final class PharoMarkHostingView: PlatformView {
     private let hosting: PlatformHostingView
 

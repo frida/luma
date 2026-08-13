@@ -273,8 +273,6 @@ public final class Engine {
         ]])
     }
 
-    // MARK: - Collaboration
-
     public func startCollaboration(joiningLab labID: String? = nil) {
         let existing = labID ?? (try? store.fetchCollaborationState())?.labID
         Task { @MainActor in
@@ -301,8 +299,6 @@ public final class Engine {
         guard let url = components.url else { throw URLError(.badURL) }
         return url
     }
-
-    // MARK: - Notebook Operations
 
     /// Spacing between consecutive `position` values assigned locally. The
     /// server stamps definitive values on echo; this is just enough slack
@@ -354,8 +350,6 @@ public final class Engine {
         onNotebookChanged?(.removed(entry.id))
         collaboration.enqueueRemove(entryID: entry.id)
     }
-
-    // MARK: - Address Notes
 
     public func createAddressNote(
         sessionID: UUID,
@@ -1735,8 +1729,6 @@ public final class Engine {
         }
     }
 
-    // MARK: - Package Management
-
     public func installPackage(
         name: String,
         versionSpec: String? = nil,
@@ -1903,8 +1895,6 @@ public final class Engine {
         }
     }
 
-    // MARK: - Descriptor Registry
-
     public func descriptor(withID id: String) -> InstrumentDescriptor? {
         descriptorsByID[id]
     }
@@ -1996,8 +1986,6 @@ public final class Engine {
             String(describing: event.payload)
         }
     )
-
-    // MARK: - Session Orchestration
 
     public func prepareSpawnSession(
         device: Device,
@@ -2287,8 +2275,6 @@ public final class Engine {
         guard let service = drainServices.removeValue(forKey: deviceID) else { return }
         Task { await service.shutdown() }
     }
-
-    // MARK: - Spawn Gating
 
     public func armSession(id: UUID, matchPattern: String) async {
         guard var session = try? store.fetchSession(id: id) else { return }
@@ -3285,8 +3271,6 @@ public final class Engine {
         node.sessionID
     }
 
-    // MARK: - Reestablish Session
-
     public enum ReestablishResult {
         case attached
         case needsUserInput(reason: String, session: ProcessSession)
@@ -3461,8 +3445,6 @@ public final class Engine {
             )
         }
     }
-
-    // MARK: - Instrument Lifecycle
 
     @discardableResult
     public func addInstrument(
@@ -3741,8 +3723,6 @@ public final class Engine {
         return true
     }
 
-    // MARK: - Tracer Hook
-
     public func addTracerHook(
         sessionID: UUID,
         address: UInt64,
@@ -3809,8 +3789,6 @@ public final class Engine {
         }
         return nil
     }
-
-    // MARK: - Address Actions
 
     public func registerAddressActionProvider(_ provider: @escaping AddressActionProvider) {
         addressActionProviders.append(provider)
@@ -3892,8 +3870,6 @@ public final class Engine {
             }
         )
     }
-
-    // MARK: - Address Facts
 
     private struct ProtectionRegion {
         let range: Range<UInt64>
@@ -4082,8 +4058,6 @@ public final class Engine {
         }
     }
 
-    // MARK: - Address Annotations
-
     public func rebuildAddressAnnotations(sessionID: UUID) {
         let node = node(forSessionID: sessionID)
         let resolve = anchorResolver(sessionID: sessionID, node: node)
@@ -4177,8 +4151,6 @@ public final class Engine {
         await applyInstrumentConfig(instance, configJSON: config.encode())
         return true
     }
-
-    // MARK: - Tracer Compilation
 
     public func compileTracerConfig(
         _ config: TracerConfig,
@@ -4308,8 +4280,6 @@ public final class Engine {
         let modules = try ESMBundleParser.parse(bundle)
         return modules.modules[modules.order[0]]!
     }
-
-    // MARK: - Instrument Loading
 
     public func loadTracerInstrument(
         instanceID: UUID,
@@ -4627,8 +4597,6 @@ public final class Engine {
         else { return nil }
         return CustomInstrumentBundle(def: def, files: files)
     }
-
-    // MARK: - Custom Instrument Library API
 
     @discardableResult
     public func createCustomInstrument(
@@ -5160,8 +5128,6 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         )
     }
 
-    // MARK: - Insight Management
-
     public func getOrCreateInsight(
         sessionID: UUID,
         pointer: UInt64,
@@ -5225,8 +5191,6 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         }
     }
 
-    // MARK: - Tracer Event Parsing
-
     public static func parseTracerEvent(from value: JSInspectValue) -> (
         id: UUID,
         timestamp: Double,
@@ -5281,8 +5245,6 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         )
     }
 
-    // MARK: - Compiler Workspace Paths
-
     public func compilerWorkspacePaths() throws -> CompilerWorkspacePaths {
         let packagesState = try store.fetchPackagesState()
         let fm = FileManager.default
@@ -5298,8 +5260,6 @@ public func deleteCustomInstrument(_ defID: UUID) async {
 
         return CompilerWorkspacePaths(root: root)
     }
-
-    // MARK: - Private Helpers
 
     private func collabSessionID(forNode node: ProcessNode) -> UUID? {
         guard let session = sessions.first(where: { $0.id == node.sessionID }),
@@ -5645,8 +5605,6 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         if case .spawn(let config) = session.kind { return config.autoResume }
         return true
     }
-
-    // MARK: - Missions
 
     public func setMissionLiveDeltaSink(
         _ sink: (@MainActor (UUID, LLMTurnEvent) -> Void)?

@@ -289,7 +289,6 @@ final class PharoClassBrowser {
     }
 }
 
-/// A tag pill for a method's side or category, the way the coder marks them.
 @MainActor
 func tagLabel(_ text: String) -> Label {
     let label = Label(str: text)

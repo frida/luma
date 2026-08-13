@@ -30,7 +30,6 @@ enum PharoVizColors {
     /// chart -- the same in either theme.
     static let brand = RGBA(0.937, 0.392, 0.337)
 
-    /// Distinct hues for a chart's series, brand first.
     static let series: [RGBA] = [
         RGBA(0.937, 0.392, 0.337),
         RGBA(0.298, 0.651, 0.898),

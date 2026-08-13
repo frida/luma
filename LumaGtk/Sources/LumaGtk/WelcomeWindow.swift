@@ -109,8 +109,6 @@ final class WelcomeWindow {
         }
     }
 
-    // MARK: - Content
-
     private func buildContent() {
         contentBox.append(child: makeHero())
         contentBox.append(child: makeQuickActions())
@@ -374,8 +372,6 @@ final class WelcomeWindow {
         return labsSection
     }
 
-    // MARK: - Signals
-
     private func connectSignals() {
         labsRefreshButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
@@ -405,8 +401,6 @@ final class WelcomeWindow {
         )
     }
 
-    // MARK: - Actions
-
     private func createBlank() {
         guard let application else { return }
         application.openNewUntitledWindow()
@@ -432,8 +426,6 @@ final class WelcomeWindow {
         application?.openWindow(forFile: URL(fileURLWithPath: path))
         window.close()
     }
-
-    // MARK: - Observation
 
     private func observe() {
         withObservationTracking {
@@ -548,8 +540,6 @@ final class WelcomeWindow {
         row.addSuffix(widget: chevron)
         return row
     }
-
-    // MARK: - Helpers
 
     private static func untitledURL(in dir: URL, named rawTitle: String) -> URL {
         let illegal = CharacterSet(charactersIn: "/\\:*?\"<>|")

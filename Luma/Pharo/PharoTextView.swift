@@ -864,8 +864,6 @@ final class PharoTextView: PharoTextViewBase, NSTextStorageDelegate {
         }
     }
 
-    // MARK: - Platform Overrides
-
     #if canImport(AppKit)
         /// Copy and cut hand over the source alone, with the mark characters that
         /// hold the triangles and dots taken back out, so a paste elsewhere is the
@@ -1327,8 +1325,6 @@ final class PharoTextView: PharoTextViewBase, NSTextStorageDelegate {
         layout.ensureLayout(for: layout.documentRange)
         return layout.usageBoundsForTextContainer.height + 2 * sourceInset.height
     }
-
-    // MARK: - Platform Text Access
 
     /// Whether an edit may go ahead, which on a platform that registers undo for
     /// the text view is its to say.

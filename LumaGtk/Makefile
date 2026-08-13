@@ -14,7 +14,6 @@ export USE_SYSTEM_FRIDA := 1
 
 PROJECT_ROOT := $(abspath ..)
 
-# A locally made shader toolchain short-circuits the published artifact.
 LOCAL_SHADER_TOOLCHAIN := $(PROJECT_ROOT)/artifacts/ShaderToolchain.xcframework
 ifneq ($(wildcard $(LOCAL_SHADER_TOOLCHAIN)),)
 export SHADER_TOOLCHAIN_ROOT := artifacts/ShaderToolchain.xcframework
@@ -65,10 +64,6 @@ $(SHADER_BUNDLE): $(SHADER_SOURCES) $(PROJECT_ROOT)/Sources/LumaShaderCompiler/m
 	    --shader-dir "$(PROJECT_ROOT)/Shaders" \
 	    --swift-out  "$@"
 
-# Draws each case offscreen and writes a PNG to look at, which is how the
-# drawing is checked without a pointer or a person.
-# Plays a snippet in a canvas for a while, reporting what the process holds
-# as it goes: LUMA_SOAK=<snippet> make -C LumaGtk soak
 soak: build
 	LUMA_SOAK=$(LUMA_SOAK) LUMA_SOAK_SECONDS=$(or $(SECONDS),180) \
 	    .build/debug/LumaGtk

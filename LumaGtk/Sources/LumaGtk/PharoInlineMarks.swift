@@ -8,15 +8,6 @@ import GtkSource
 import LumaCore
 import SwiftyPharo
 
-/// The expandable marks Glamorous Toolkit puts beside a reference: a triangle
-/// after each class or method a snippet names. Clicking one breaks the line and
-/// drops its body -- an inspector for a class, an editor for a method -- onto a
-/// line of its own, with the rest of the code carried below it. The marks and
-/// bodies live in the buffer as child anchors, so the source the reader edits is
-/// the text with those anchor characters and body lines taken back out.
-// A plain press on an already-focused body editor still lets the snippet grab
-// focus back; re-asserting it once the press has unwound keeps the editor in
-// hand without claiming the press, which would have suppressed its selection.
 private let pharoReassertBodyFocus: @convention(c) (gpointer?) -> gboolean = { data in
     guard let data else { return 0 }
     gtk_widget_grab_focus(UnsafeMutablePointer<GtkWidget>(OpaquePointer(data)))
@@ -25,7 +16,6 @@ private let pharoReassertBodyFocus: @convention(c) (gpointer?) -> gboolean = { d
 
 @MainActor
 final class PharoInlineMarks {
-    /// The object replacement character a child anchor occupies.
     private static let anchorScalar: Character = "\u{FFFC}"
 
     var isApplying: Bool { applying }
@@ -129,9 +119,6 @@ final class PharoInlineMarks {
             picked == view.widget_ptr || gtk_widget_is_ancestor(picked, view.widget_ptr) != 0
         }) else { return }
 
-        // Once the editor holds focus its own press handling owns the caret and
-        // selection, so the press is left alone -- only re-asserted afterwards
-        // in case a plain click let the snippet steal focus back.
         if gtk_widget_has_focus(view.widget_ptr) != 0 {
             g_idle_add(pharoReassertBodyFocus, UnsafeMutableRawPointer(view.widget_ptr))
             return
@@ -194,8 +181,6 @@ final class PharoInlineMarks {
         editor.cursorVisible = !onBodyLine
     }
 
-    // MARK: - Source the reader sees, without the carried characters
-
     var source: String {
         let carried = carriedOffsets()
         let characters = Array(bufferText())
@@ -237,8 +222,6 @@ final class PharoInlineMarks {
         }
         return carried
     }
-
-    // MARK: - Reconciling marks with the references the snippet names
 
     func refresh() {
         let source = self.source
@@ -445,8 +428,6 @@ final class PharoInlineMarks {
             ctx.stroke()
         }
     }
-
-    // MARK: - Opening and closing a body
 
     private func toggle(_ mark: Mark) {
         if mark.body != nil {
@@ -673,7 +654,6 @@ final class PharoInlineMarks {
         defer { applying = false }
 
         guard let anchorOffset = offset(of: body.anchor) else { return }
-        // Delete the newline before, the anchor, and the newline after.
         withIters { start, end in
             buffer.getIterAtOffset(iter: start, charOffset: Int(anchorOffset) - 1)
             buffer.getIterAtOffset(iter: end, charOffset: Int(anchorOffset) + 2)
@@ -682,8 +662,6 @@ final class PharoInlineMarks {
 
         bodyEditors.removeAll { gtk_widget_get_root($0.widget_ptr) == nil }
     }
-
-    // MARK: - Offsets
 
     private func bufferOffset(forSource sourceOffset: Int) -> Int {
         let carried = carriedOffsets()

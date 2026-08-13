@@ -138,8 +138,6 @@ final class NotebookPane {
         }
     }
 
-    // MARK: - Change handling
-
     func handleNotebookChange(_ change: LumaCore.NotebookChange) {
         switch change {
         case .added(let entry):
@@ -251,8 +249,6 @@ final class NotebookPane {
         newNoteButton.visible = hasEntries && !anyEditing
     }
 
-    // MARK: - Actions
-
     private func addUserNote(after other: LumaCore.NotebookEntry? = nil) {
         guard let engine else { return }
         let note = LumaCore.NotebookEntry(
@@ -342,8 +338,6 @@ final class NotebookPane {
         draftEntries.remove(original.id)
         engine?.updateNotebookEntry(updated)
     }
-
-    // MARK: - Row construction
 
     private func makeRow(for entry: LumaCore.NotebookEntry) -> Widget {
         let card = Box(orientation: .vertical, spacing: 6)
@@ -680,8 +674,6 @@ final class NotebookPane {
         buffer.getEnd(iter: end)
         return buffer.getText(start: start, end: end, includeHiddenChars: true) ?? ""
     }
-
-    // MARK: - Helpers
 
     private func clearWindowFocus() {
         guard let rootPtr = widget.root?.ptr else { return }

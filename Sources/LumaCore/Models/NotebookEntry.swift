@@ -5,9 +5,7 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
     public static let databaseTableName = "notebook_entry"
 
     public enum Kind: String, Codable, Sendable {
-        /// User-authored freeform note.
         case note
-        /// Captured from an instrumented process via a hook / script.
         case capture
         /// Smalltalk the reader can edit and run, its source held in `details`.
         case pharo

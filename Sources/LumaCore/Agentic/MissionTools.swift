@@ -89,8 +89,6 @@ public enum MissionTools {
         registerPharo(in: catalog, engine: engine)
     }
 
-    // MARK: - list_devices
-
     private static func registerListDevices(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "list_devices",
@@ -115,8 +113,6 @@ public enum MissionTools {
             return makeResult(jsonObject: array, summary: "Listed \(devices.count) device\(devices.count == 1 ? "" : "s")")
         }
     }
-
-    // MARK: - list_processes
 
     private static func registerListProcesses(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
@@ -186,8 +182,6 @@ public enum MissionTools {
         return "Found \(totalScanned) \(processWord) on \(deviceName)"
     }
 
-    // MARK: - list_sessions
-
     private static func registerListSessions(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "list_sessions",
@@ -218,8 +212,6 @@ public enum MissionTools {
             return makeResult(jsonObject: array, summary: "Found \(sessions.count) session\(sessions.count == 1 ? "" : "s")")
         }
     }
-
-    // MARK: - attach_to_process (act)
 
     private static func registerAttachToProcess(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
@@ -264,8 +256,6 @@ public enum MissionTools {
             }
         }
     }
-
-    // MARK: - spawn_process (act)
 
     private static func registerSpawnProcess(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
@@ -414,8 +404,6 @@ public enum MissionTools {
         }
     }
 
-    // MARK: - list_modules
-
     private static func registerListModules(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "list_modules",
@@ -476,8 +464,6 @@ public enum MissionTools {
         }
     }
 
-    // MARK: - list_threads
-
     private static func registerListThreads(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "list_threads",
@@ -530,8 +516,6 @@ public enum MissionTools {
         return obj
     }
 
-    // MARK: - list_session_instruments
-
     private static func registerListSessionInstruments(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "list_session_instruments",
@@ -575,8 +559,6 @@ public enum MissionTools {
         }
         return entry
     }
-
-    // MARK: - arm_session / disarm_session
 
     private static func registerArmSession(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
@@ -650,8 +632,6 @@ public enum MissionTools {
         }
     }
 
-    // MARK: - summarize_recent_events
-
     private static func registerSummarizeRecentEvents(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "summarize_recent_events",
@@ -717,8 +697,6 @@ public enum MissionTools {
             }
         }
     }
-
-    // MARK: - read_event
 
     private static func registerReadEvent(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
@@ -1014,8 +992,6 @@ public enum MissionTools {
         return dict
     }
 
-    // MARK: - resolve_symbol
-
     private static func registerResolveSymbol(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "resolve_symbol",
@@ -1046,8 +1022,6 @@ public enum MissionTools {
             }
         }
     }
-
-    // MARK: - disassemble
 
     private static func registerDisassemble(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
@@ -1097,8 +1071,6 @@ public enum MissionTools {
             return makeResult(jsonObject: payload, summary: "Disassembled \(page.lines.count) instruction\(page.lines.count == 1 ? "" : "s") at \(addrString)")
         }
     }
-
-    // MARK: - read_memory
 
     private static func registerReadMemory(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
@@ -1193,8 +1165,6 @@ public enum MissionTools {
             }
         }
     }
-
-    // MARK: - notebook
 
     private static func registerListNotebookEntries(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
@@ -1342,8 +1312,6 @@ public enum MissionTools {
         return payload
     }
 
-    // MARK: - eval_repl (act)
-
     private static func registerEvalREPL(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "eval_repl",
@@ -1403,8 +1371,6 @@ public enum MissionTools {
         }
         return makeResult(jsonObject: payload, summary: summary)
     }
-
-    // MARK: - install_tracer_hook (act)
 
     private static func registerInstallTracerHook(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
@@ -1756,8 +1722,6 @@ public enum MissionTools {
             return makeResult(jsonObject: payload, summary: "Removed hook \(hookID)")
         }
     }
-
-    // MARK: - custom instruments
 
     private static func registerListInstruments(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
@@ -3013,8 +2977,6 @@ public enum MissionTools {
         return obj
     }
 
-    // MARK: - record_finding (observe — auto-runs, validates evidence)
-
     private static func registerRecordFinding(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "record_finding",
@@ -3175,8 +3137,6 @@ public enum MissionTools {
         return obj
     }
 
-    // MARK: - r2_cmd
-
     private static func registerR2Cmd(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "r2_cmd",
@@ -3246,8 +3206,6 @@ public enum MissionTools {
         return (head + "\n[truncated]", true)
     }
 
-    // MARK: - decompile
-
     private static func registerDecompile(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "decompile",
@@ -3275,8 +3233,6 @@ public enum MissionTools {
             return makeResult(jsonObject: payload, summary: "Decompiled function at \(addrString) (\(text.split(separator: "\n").count) lines)")
         }
     }
-
-    // MARK: - explain_function
 
     private static func registerExplainFunction(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
@@ -3332,8 +3288,6 @@ public enum MissionTools {
         }
     }
 
-    // MARK: - suggest_function_name
-
     private static func registerSuggestFunctionName(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "suggest_function_name",
@@ -3381,8 +3335,6 @@ public enum MissionTools {
             }
         }
     }
-
-    // MARK: - suggest_function_signature
 
     private static func registerSuggestFunctionSignature(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
@@ -3432,8 +3384,6 @@ public enum MissionTools {
         }
     }
 
-    // MARK: - suggest_local_names
-
     private static func registerSuggestLocalNames(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "suggest_local_names",
@@ -3481,8 +3431,6 @@ public enum MissionTools {
         }
     }
 
-    // MARK: - find_vulnerabilities
-
     private static func registerFindVulnerabilities(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "find_vulnerabilities",
@@ -3527,8 +3475,6 @@ public enum MissionTools {
             }
         }
     }
-
-    // MARK: - pin_as_insight (act)
 
     private static func registerPinAsInsight(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
@@ -3592,8 +3538,6 @@ public enum MissionTools {
             return makeResult(jsonObject: payload, summary: "Pinned finding \"\(title)\" as \(kindString) insight at \(anchor.displayString)")
         }
     }
-
-    // MARK: - list_address_insights / unpin_insight
 
     private static func registerListAddressInsights(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
@@ -3995,8 +3939,6 @@ public enum MissionTools {
         return obj
     }
 
-    // MARK: - request_user_input (act, answered via Engine.submitUserInputResponse)
-
     private static func registerRequestUserInput(in catalog: ToolCatalog) {
         let spec = ActionSpec(
             name: requestUserInputToolName,
@@ -4011,8 +3953,6 @@ public enum MissionTools {
             errorResult("request_user_input must be answered via the Action Queue, not approved directly", code: .rejected)
         }
     }
-
-    // MARK: - helpers
 
     private static func lineCount(of content: String) -> Int {
         if content.isEmpty { return 0 }

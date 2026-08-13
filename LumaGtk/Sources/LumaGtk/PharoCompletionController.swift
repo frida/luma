@@ -251,11 +251,6 @@ final class PharoCompletionController {
         }
     }
 
-    /// Where the token under the caret begins, walked back over its own letters
-    /// here rather than trusted from the image, whose offset is one-based and
-    /// would leave the first character behind. The text keeps its anchor
-    /// characters so its indices count the way the caret offset does; dropping
-    /// them would misplace the start whenever a mark sits before the token.
     private func currentTokenStart() -> Int {
         let characters = Array(bufferText())
         var start = min(cursorOffset(), characters.count)

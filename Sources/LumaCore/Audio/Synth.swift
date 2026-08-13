@@ -71,7 +71,6 @@ public final class Synth {
         level = 0.6
     }
 
-    /// The same for one channel.
     public func reset(channel: Int) {
         SynthEngine.reset(channel: channel)
     }
@@ -187,30 +186,25 @@ public struct SynthPatch: Sendable, Equatable {
         cutoff: 320, resonance: 0.92, gain: 0.5,
         cutoffEnvelope: 3.6, cutoffDecay: 0.22, drive: 0.35)
 
-    /// One pitch dragging another behind it.
     public static let syncLead = SynthPatch(
         waveform: .saw, attack: 0.003, decay: 0.4, sustain: 0.5, release: 0.08,
         cutoff: 5200, resonance: 0.25, detuneSemitones: 7.02, gain: 0.35,
         syncsDetuned: true, drive: 0.2)
 
-    /// Two pitches multiplied rather than added: bells, and everything metal.
     public static let bell = SynthPatch(
         waveform: .sine, attack: 0.001, decay: 0.9, sustain: 0, release: 0.3,
         cutoff: 0, resonance: 0, detuneSemitones: 15.4, gain: 0.4,
         ringMix: 0.9)
 
-    /// A soft swell rather than a strike, with the pitch alive underneath.
     public static let pad = SynthPatch(
         waveform: .saw, attack: 0.35, decay: 0.6, sustain: 0.65, release: 0.6,
         cutoff: 900, resonance: 0.3, detuneSemitones: 0.11, gain: 0.3,
         lfoRate: 0.25, lfoToPitch: 0.08, lfoToCutoff: 1.2)
 
-    /// A short plucked blip: no sustain, so a voice frees itself.
     public static let blip = SynthPatch(
         waveform: .triangle, attack: 0.004, decay: 0.18, sustain: 0, release: 0.05,
         cutoff: 2600, resonance: 0.35, detuneSemitones: 0.08, gain: 0.5)
 
-    /// Unfiltered square, the way a PSG lead sounds.
     public static let pulse = SynthPatch(
         waveform: .square, attack: 0.001, decay: 0.09, sustain: 0, release: 0.01,
         cutoff: 0, resonance: 0, gain: 0.5)

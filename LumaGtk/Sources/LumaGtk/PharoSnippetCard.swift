@@ -74,8 +74,6 @@ final class PharoSnippetCard {
         let editorScroll = ScrolledWindow()
         editorScroll.setPolicy(hscrollbarPolicy: .automatic, vscrollbarPolicy: .automatic)
         editorScroll.hexpand = true
-        // Grow with the content so an opened body shows in the card rather than
-        // being clipped, down to the height a bare snippet keeps.
         editorScroll.propagateNaturalHeight = true
         editorScroll.minContentHeight = 108
         editorScroll.maxContentHeight = 4000

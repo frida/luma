@@ -451,7 +451,6 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
             + subject.images.compactMap { picture(for: $0, device: device) }
     }
 
-    /// A run of values, read by index rather than sampled across.
     private static func sheet(for buffer: CanvasBuffer, device: MTLDevice) -> MTLTexture? {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .r32Float, width: buffer.width, height: buffer.height, mipmapped: false)

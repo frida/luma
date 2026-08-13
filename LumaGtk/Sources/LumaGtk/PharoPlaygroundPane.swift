@@ -12,9 +12,6 @@ enum PharoRunMode {
     case inspect
 }
 
-/// The Smalltalk playground: a resizable page of snippet cards on the left and
-/// the moldable inspector's columns on the right, drilling into what a snippet
-/// produces. The page and its snippets are kept with the project.
 @MainActor
 final class PharoPlaygroundPane {
     let widget: Box
@@ -158,10 +155,6 @@ final class PharoPlaygroundPane {
         overviewBar.adjustment = { [weak self] in self?.inspector.contentAdjustment }
     }
 
-    /// The page keeps its own resizable width whether or not anything is being
-    /// inspected; the inspectors just sit empty beside it, no frame. The strip
-    /// stands over the page while there are snippets, and an empty page clears
-    /// any inspection so nothing lingers with nothing to open it.
     private func refreshChrome() {
         let hasSnippets = !snippets.isEmpty
         overviewBar.widget.visible = hasSnippets

@@ -453,7 +453,6 @@ struct NotebookEntryRow: View {
             neighborA = ordered[targetIndex]
             neighborB = targetIndex < ordered.count - 1 ? ordered[targetIndex + 1] : nil
         }
-        // Ignore no-op drags that would land back where the entry already is.
         if neighborA?.id == source.id || neighborB?.id == source.id { return false }
 
         engine.reorderNotebookEntry(source, between: neighborA, and: neighborB)

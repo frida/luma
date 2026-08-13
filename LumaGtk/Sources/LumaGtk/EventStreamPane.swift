@@ -555,8 +555,6 @@ final class EventStreamPane {
     }
 
 
-    // MARK: - Filter menus
-
     private func rebuildSourceFilterMenu() {
         let popover = Popover()
         popover.autohide = true
@@ -648,8 +646,6 @@ final class EventStreamPane {
             processFilterButton.label = "All Processes"
         }
     }
-
-    // MARK: - Row formatting
 
     private func makeRow(for event: RuntimeEvent, previousTimestamp: Date?) -> Widget {
         let row = Box(orientation: .horizontal, spacing: 8)

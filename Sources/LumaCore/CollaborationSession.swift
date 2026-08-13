@@ -298,7 +298,6 @@ public final class CollaborationSession {
         return members.contains { $0.user.id == localUser.id && $0.role == .owner }
     }
 
-    /// True when the given user id belongs to the currently signed-in user.
     public func isSelf(_ userID: String) -> Bool {
         userID == localUser?.id
     }
@@ -445,8 +444,6 @@ public final class CollaborationSession {
         registeredPushPlatforms = []
         pendingRequests.removeAll()
     }
-
-    // MARK: - Sending
 
     private func sendRequest(
         to path: String,
@@ -1382,8 +1379,6 @@ public final class CollaborationSession {
         try? store.removeSessionOutboxOp(opID: op.opID)
     }
 
-    // MARK: - Lab Operations
-
     private func triggerJoinOrCreateIfReady() {
         guard !pendingCreateOrJoinDispatched else { return }
         guard localUser != nil else { return }
@@ -1599,8 +1594,6 @@ public final class CollaborationSession {
         return Array(data[start..<start + length])
     }
 
-    // MARK: - Bus Event Handling
-
     private func handleBusEvent(_ event: Bus.Event) async {
         switch event {
         case .detached:
@@ -1741,7 +1734,6 @@ public final class CollaborationSession {
             default:
                 return
             }
-            // Successful echo — remove any matching outbox entry.
             if let opID {
                 try? store.removeOutboxOp(opID: opID)
             }

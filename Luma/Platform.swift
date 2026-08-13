@@ -51,7 +51,6 @@ enum Platform {
     }
 }
 
-/// What the pointer becomes over a view, where there is a pointer at all.
 enum PointerShape {
     case link
     case columnResize

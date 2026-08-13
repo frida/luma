@@ -1,9 +1,6 @@
 import SwiftUI
 import SwiftyPharo
 
-/// Glamorous Toolkit's class coder: the class's heading above its methods,
-/// definition and comment. It is a class inspected on its own, and an
-/// instance's Meta view is its class shown here.
 struct PharoClassBrowser: View {
     let runtime: PharoRuntime
     let classObject: PharoObject
@@ -116,8 +113,6 @@ struct PharoExampleList: View {
     }
 }
 
-/// The class heading Glamorous Toolkit's coder shows: where the class sits,
-/// above its views.
 struct PharoClassHeader: View {
     let info: PharoClassBrowserInfo
 
@@ -265,8 +260,6 @@ struct PharoMethodList: View {
     }
 }
 
-/// The coder GT opens from the Methods view's "+": a template method whose
-/// source, side and category the reader sets before it is compiled in.
 private struct PharoNewMethodEditor: View {
     let runtime: PharoRuntime
     let classObject: PharoObject
@@ -342,8 +335,6 @@ private struct PharoNewMethodEditor: View {
     }
 }
 
-/// One method: its name and tags, opening to its source in the same editor the
-/// snippets use, so a class it names can be drilled from here too.
 private struct PharoMethodRow: View {
     let method: PharoMethodInfo
     let runtime: PharoRuntime

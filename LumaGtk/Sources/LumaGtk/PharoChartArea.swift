@@ -7,11 +7,6 @@ import Gtk
 import LumaCore
 import SwiftyPharo
 
-/// A `GtPlotter` chart drawn to read like the SwiftUI one: bars per category
-/// with their values above and labels below, or a line or scatter with axes and
-/// gridlines, each series its own colour, all following the theme. Drag to pan,
-/// Ctrl+scroll or pinch to zoom, the buttons to zoom or fit -- the same controls
-/// the graph has, so every visualisation roams the same way.
 @MainActor
 final class PharoChartArea {
     let widget: Box

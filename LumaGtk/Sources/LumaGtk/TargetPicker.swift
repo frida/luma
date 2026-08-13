@@ -473,8 +473,6 @@ final class TargetPicker {
         try? engine.store.save(pickerState)
     }
 
-    // MARK: - Build
-
     private func buildDevicePane() -> Box {
         let column = Box(orientation: .vertical, spacing: 0)
         column.hexpand = true
@@ -624,7 +622,6 @@ final class TargetPicker {
         column.append(child: buildSpawnHeader())
         column.append(child: Separator(orientation: .horizontal))
 
-        // App form (list at top + shared sections below)
         appStatus.halign = .start
         appStatus.marginStart = 12
         appStatus.marginEnd = 12
@@ -976,8 +973,6 @@ final class TargetPicker {
         return section
     }
 
-    // MARK: - Mode
-
     private func setMode(_ newMode: Mode) {
         guard mode != newMode else { return }
         mode = newMode
@@ -1040,8 +1035,6 @@ final class TargetPicker {
         armButton.sensitive = (mode == .armForLaunch) && hasArmRegex && hasArmName
     }
 
-
-    // MARK: - Devices
 
     private func currentDevice() -> Frida.Device? {
         guard let id = selectedDeviceID else { return nil }
@@ -1120,8 +1113,6 @@ final class TargetPicker {
         }
         refreshSpawnButtonSensitivity()
     }
-
-    // MARK: - Processes
 
     private func loadProcesses(for device: Frida.Device) {
         processList.removeAll()
@@ -1251,8 +1242,6 @@ final class TargetPicker {
         selectedProcessIndex = index
         attachButton.sensitive = true
     }
-
-    // MARK: - Applications
 
     private func loadApplications(for device: Frida.Device) {
         appList.removeAll()
@@ -1438,8 +1427,6 @@ final class TargetPicker {
         refreshSpawnButtonSensitivity()
     }
 
-    // MARK: - Commit
-
     private func commitAttach() {
         guard let device = currentDevice(),
             let processIndex = selectedProcessIndex,
@@ -1531,8 +1518,6 @@ final class TargetPicker {
         processFetchTask?.cancel()
         appFetchTask?.cancel()
     }
-
-    // MARK: - Add Remote sheet
 
     private func presentAddRemoteSheet() {
         let sheet = Adw.Dialog()

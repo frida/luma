@@ -231,8 +231,6 @@ final class PharoColumnsView {
         autoScrolling = true
         adjustment.value = target
         autoScrolling = false
-        // Newest keeps following as later columns stream in; a jump to a fixed
-        // column or the origin is done the moment it lands.
         if case .newest = scrollGoal {} else { scrollGoal = .none }
     }
 
@@ -375,24 +373,16 @@ final class PharoColumnsView {
         return view
     }
 
-    /// Consecutive collapsed columns fold into one stack of miniatures under a
-    /// downward triangle; the last one draws an edge to the expanded column that
-    /// follows. Clicking a miniature expands it.
     private func collapsedStack(from start: Int, to end: Int, hasFollowingExpanded: Bool) -> Box {
         let gap = 8
         let connectorWidth = 8
         let miniatureWidth = 22
 
-        // The stack keeps a gap to the column on its left; the connector edge
-        // reaches from the square to touch the column on its right, so both
-        // seams around it read the same width.
         let stack = Box(orientation: .vertical, spacing: 6)
         stack.valign = .center
         stack.halign = .start
         stack.marginStart = gap
 
-        // The triangle takes a square's width and centres its glyph in it, so it
-        // sits over the squares rather than over the square-plus-edge.
         let triangle = triangleGlyph("\u{25BC}")
         triangle.setSizeRequest(width: miniatureWidth, height: -1)
         triangle.xalign = 0.5

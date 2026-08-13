@@ -2,7 +2,6 @@ import LumaCore
 import SwiftUI
 import SwiftyPharo
 
-/// What one row of a view holds: a cell per column, each words or a picture.
 protocol PharoCellContent {
     var text: String? { get }
     var png: Data? { get }
