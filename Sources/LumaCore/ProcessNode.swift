@@ -163,11 +163,11 @@ public final class ProcessNode: Identifiable {
     }
 
     public func kill() async throws {
-        try await device.kill(pid)
+        try await device.kill(pid: pid)
     }
 
     public func resume() async throws {
-        try await device.resume(pid)
+        try await device.resume(pid: pid)
     }
 
     public func loadPackages(_ bundles: [Any]) async throws {

@@ -158,9 +158,7 @@ struct PackageSearchView: View {
         defer { isSearching = false }
 
         do {
-            let options = PackageSearchOptions()
-            options.limit = 25
-            let result = try await manager.search(query: trimmed, options: options)
+            let result = try await manager.search(query: trimmed, limit: 25)
             results = result.packages
 
             if result.packages.isEmpty {

@@ -1057,7 +1057,7 @@ final class TargetPicker {
         let preferredID =
             selectedDeviceID
             ?? pickerState.lastSelectedDeviceID
-            ?? snapshot.first(where: { $0.kind == .local })?.id
+            ?? snapshot.first(where: { $0.type == .local })?.id
             ?? snapshot.first?.id
         if let target = preferredID,
             let index = snapshot.firstIndex(where: { $0.id == target }),
@@ -1079,7 +1079,7 @@ final class TargetPicker {
             icon = img
         } else {
             let kindIcon: String
-            switch device.kind {
+            switch device.type {
             case .local: kindIcon = "computer-symbolic"
             case .usb: kindIcon = "drive-harddisk-usb-symbolic"
             case .remote: kindIcon = "network-wired-symbolic"
@@ -1190,7 +1190,8 @@ final class TargetPicker {
         } else {
             filteredProcesses = processes.filter {
                 $0.name.localizedCaseInsensitiveContains(trimmed)
-                    || ($0.argv?.contains { $0.localizedCaseInsensitiveContains(trimmed) } ?? false)
+                    || (($0.parameters["argv"] as? [String])?
+                        .contains { $0.localizedCaseInsensitiveContains(trimmed) } ?? false)
             }
         }
         processList.removeAll()
@@ -1233,7 +1234,7 @@ final class TargetPicker {
     }
 
     private func processSubtitle(for proc: ProcessDetails) -> String {
-        guard let argv = proc.argv, !argv.isEmpty else {
+        guard let argv = proc.parameters["argv"] as? [String], !argv.isEmpty else {
             return "PID \(proc.pid)"
         }
         return "PID \(proc.pid) · \(argv.joined(separator: " "))"
@@ -1398,8 +1399,8 @@ final class TargetPicker {
             textBox.append(child: nameLabel)
             textBox.append(child: idLabel)
             hbox.append(child: textBox)
-            if let pid = app.pid {
-                let badge = Label(str: "Running (PID \(pid))")
+            if app.pid != 0 {
+                let badge = Label(str: "Running (PID \(app.pid))")
                 badge.add(cssClass: "caption")
                 badge.add(cssClass: "luma-pid-badge")
                 badge.valign = .center

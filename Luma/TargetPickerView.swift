@@ -183,33 +183,7 @@ struct TargetPickerView: View {
                         }
                     }
             } detail: {
-                VStack(alignment: .leading, spacing: 0) {
-                    modeSelector()
-
-                    Divider()
-
-                    if let device = selectedDevice {
-                        switch mode {
-                        case .spawn:
-                            spawnDetailPane(for: device)
-                        case .armForLaunch:
-                            armDetailPane(for: device)
-                        case .attach:
-                            processDetailPane(for: device)
-                        }
-                    } else {
-                        ZStack {
-                            Color.clear
-                            ContentUnavailableView(
-                                "Select a Device",
-                                systemImage: "ipad.and.iphone",
-                                description: Text("Choose a device on the left to start a new session.")
-                            )
-                        }
-                    }
-                }
-                .navigationTitle("New Session")
-                .toolbar { sharedToolbar }
+                detailPane
             }
             .frame(minWidth: isCompactWidth ? 0 : 904, minHeight: isCompactWidth ? 0 : 560)
             .sheet(isPresented: $showingAddRemoteSheet) {
@@ -225,7 +199,7 @@ struct TargetPickerView: View {
                 {
                     selectedDeviceID = lastID
                 } else if !isCompactWidth {
-                    if let local = store.devices.first(where: { $0.kind == .local }) {
+                    if let local = store.devices.first(where: { $0.type == .local }) {
                         selectedDeviceID = local.id
                     } else {
                         selectedDeviceID = store.devices.first?.id
@@ -271,7 +245,7 @@ struct TargetPickerView: View {
                 }
 
                 if !isCompactWidth {
-                    if let local = newDevices.first(where: { $0.kind == .local }) {
+                    if let local = newDevices.first(where: { $0.type == .local }) {
                         selectedDeviceID = local.id
                     } else {
                         selectedDeviceID = newDevices.first?.id
@@ -301,6 +275,38 @@ struct TargetPickerView: View {
     }
 
     @ViewBuilder
+    /// Typed on its own: inline in the split view's detail closure, this is one
+    /// expression the type-checker gives up on.
+    private var detailPane: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            modeSelector()
+
+            Divider()
+
+            if let device = selectedDevice {
+                switch mode {
+                case .spawn:
+                    spawnDetailPane(for: device)
+                case .armForLaunch:
+                    armDetailPane(for: device)
+                case .attach:
+                    processDetailPane(for: device)
+                }
+            } else {
+                ZStack {
+                    Color.clear
+                    ContentUnavailableView(
+                        "Select a Device",
+                        systemImage: "ipad.and.iphone",
+                        description: Text("Choose a device on the left to start a new session.")
+                    )
+                }
+            }
+        }
+        .navigationTitle("New Session")
+        .toolbar { sharedToolbar }
+    }
+
     private func modeSelector() -> some View {
         HStack {
             Picker("Mode", selection: $mode) {
@@ -459,8 +465,8 @@ struct TargetPickerView: View {
 
                                 Spacer()
 
-                                if let pid = app.pid {
-                                    Text("Running (PID \(pid))")
+                                if app.pid != 0 {
+                                    Text("Running (PID \(app.pid))")
                                         .font(.caption2)
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 2)
@@ -568,7 +574,7 @@ struct TargetPickerView: View {
                             #endif
                             .disableAutocorrection(true)
                         #if os(macOS)
-                            if device.kind == .local {
+                            if device.type == .local {
                                 Button("Browse…") { isShowingProgramBrowser = true }
                             }
                         #endif
@@ -948,7 +954,7 @@ struct TargetPickerView: View {
     }
 
     private func processSubtitle(for proc: ProcessDetails) -> String {
-        guard let argv = proc.argv, !argv.isEmpty else {
+        guard let argv = proc.parameters["argv"] as? [String], !argv.isEmpty else {
             return "PID \(proc.pid)"
         }
         return "PID \(proc.pid) · \(argv.joined(separator: " "))"
@@ -960,7 +966,8 @@ struct TargetPickerView: View {
         } else {
             return processes.filter {
                 $0.name.localizedCaseInsensitiveContains(processSearchText)
-                    || ($0.argv?.contains { $0.localizedCaseInsensitiveContains(processSearchText) } ?? false)
+                    || (($0.parameters["argv"] as? [String])?
+                        .contains { $0.localizedCaseInsensitiveContains(processSearchText) } ?? false)
             }
         }
     }

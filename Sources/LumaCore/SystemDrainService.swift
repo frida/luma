@@ -64,9 +64,9 @@ public final class SystemDrainService {
                 return nil
             }
 
-            let sysSession = try await device.attach(to: 0)
+            let sysSession = try await device.attach(pid: 0)
             let sysScript = try await sysSession.createScript(
-                agentSource,
+                source: agentSource,
                 name: "itrace-drain",
                 runtime: .qjs
             )

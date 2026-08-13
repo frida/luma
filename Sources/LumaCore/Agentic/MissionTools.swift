@@ -108,7 +108,7 @@ public enum MissionTools {
                 [
                     "id": d.id,
                     "name": d.name,
-                    "kind": String(describing: d.kind),
+                    "kind": String(describing: d.type),
                     "is_lost": d.isLost,
                 ]
             }

@@ -213,9 +213,7 @@ final class PackageSearchDialog {
         searchTask = Task { @MainActor [weak self] in
             let outcome: Result<[Package], Swift.Error>
             do {
-                let options = PackageSearchOptions()
-                options.limit = 25
-                let result = try await manager.search(query: query, options: options)
+                let result = try await manager.search(query: query, limit: 25)
                 outcome = .success(result.packages)
             } catch {
                 outcome = .failure(error)
