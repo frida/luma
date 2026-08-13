@@ -2,8 +2,8 @@ import LumaCore
 import SwiftUI
 import SwiftyPharo
 
-/// A scratch page of Smalltalk snippets, opening what they produce in the pane
-/// beside it. Nothing here is kept; the notebook is where work is saved.
+/// A page of Smalltalk snippets, opening what they produce in the pane beside
+/// them. The snippets and their last results are kept with the project.
 struct PharoPlaygroundView: View {
     let engine: Engine
 
@@ -14,6 +14,7 @@ struct PharoPlaygroundView: View {
     @State private var isReady = false
     @State private var focused: UUID?
     @State private var results: [UUID: PharoObject] = [:]
+    @State private var captured: PharoSnapshot?
     @State private var columnPath = PharoColumnPath(includesPage: true)
 
     private let runtime = PharoRuntime.shared
@@ -57,6 +58,11 @@ struct PharoPlaygroundView: View {
         if !columnPath.objects.isEmpty {
             PharoPointingArrow(pointsFrom: inspected.flatMap { centers[$0] })
             pharoColumns(runtime: runtime, path: columnPath, onCloseAll: columnPath.clear)
+        } else if let captured {
+            PharoPointingArrow(pointsFrom: inspected.flatMap { centers[$0] })
+            PharoSnapshotView(snapshot: captured)
+                .frame(width: 320)
+                .pharoPane()
         }
     }
 
@@ -71,13 +77,12 @@ struct PharoPlaygroundView: View {
                         source: $snippet.source,
                         focused: $focused,
                         runtime: runtime,
-                        result: results[snippet.id],
                         open: { show($0, from: snippet.id) },
+                        openResult: openResult(for: snippet),
                         evaluate: { Task { await evaluate(snippet) } },
-                        inspect: nil,
                         remove: snippets.count > 1 ? { remove(snippet) } : nil
                     )
-                    .onChange(of: snippet.source) { results[snippet.id] = nil }
+                    .onChange(of: snippet.source) { forget(snippet.id) }
                     .onGeometryChange(for: CGFloat.self) { proxy in
                         proxy.frame(in: .named(pharoPageSpace)).midY
                     } action: { center in
@@ -126,6 +131,8 @@ struct PharoPlaygroundView: View {
         do {
             let produced = try await runtime.evaluate(snippet.source)
             results[snippet.id] = produced
+            let snapshot = try await PharoSnapshot.capture(of: produced, using: runtime)
+            keep(snapshot: snapshot, fuel: try? await runtime.serialize(produced), for: snippet.id)
             show(produced, from: snippet.id)
             failure = nil
         } catch {
@@ -133,9 +140,52 @@ struct PharoPlaygroundView: View {
         }
     }
 
+    /// The dot leads to the result: the live object while the image holds it,
+    /// the Fuel bytes brought back to a live one once a later session opens it,
+    /// and the static capture when there is nothing to revive it from.
+    private func openResult(for snippet: PharoPlaygroundSnippet) -> (() -> Void)? {
+        guard results[snippet.id] != nil || snippet.resultFuel != nil || snippet.snapshot != nil else {
+            return nil
+        }
+        return { Task { await reopen(snippet) } }
+    }
+
+    private func reopen(_ snippet: PharoPlaygroundSnippet) async {
+        if let object = results[snippet.id] {
+            return show(object, from: snippet.id)
+        }
+        if let fuel = snippet.resultFuel, isReady, let revived = try? await runtime.materialize(fuel) {
+            results[snippet.id] = revived
+            return show(revived, from: snippet.id)
+        }
+        if let snapshot = snippet.snapshot {
+            showCaptured(snapshot, from: snippet.id)
+        }
+    }
+
     private func show(_ object: PharoObject, from snippet: UUID) {
         inspected = snippet
+        captured = nil
         columnPath.startOver(at: object)
+    }
+
+    private func showCaptured(_ snapshot: PharoSnapshot, from snippet: UUID) {
+        inspected = snippet
+        columnPath.clear()
+        captured = snapshot
+    }
+
+    private func keep(snapshot: PharoSnapshot, fuel: Data?, for snippet: UUID) {
+        guard let index = snippets.firstIndex(where: { $0.id == snippet }) else { return }
+        snippets[index].snapshot = snapshot
+        snippets[index].resultFuel = fuel
+    }
+
+    private func forget(_ snippet: UUID) {
+        results[snippet] = nil
+        guard let index = snippets.firstIndex(where: { $0.id == snippet }) else { return }
+        snippets[index].snapshot = nil
+        snippets[index].resultFuel = nil
     }
 
     private func remove(_ snippet: PharoPlaygroundSnippet) {

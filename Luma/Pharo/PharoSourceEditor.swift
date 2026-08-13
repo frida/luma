@@ -6,10 +6,10 @@ import SwiftyPharo
 /// What the snippet shows alongside its text.
 struct PharoSnippetMarks: Equatable {
     var openedClasses: [String: PharoObject] = [:]
-    var result: PharoObject?
+    var hasResult: Bool = false
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.result?.handle == rhs.result?.handle
+        lhs.hasResult == rhs.hasResult
             && lhs.openedClasses.mapValues(\.handle) == rhs.openedClasses.mapValues(\.handle)
     }
 }
@@ -24,6 +24,7 @@ struct PharoSourceEditor: NSViewRepresentable {
     let marks: PharoSnippetMarks
     let onToggleClass: (String) -> Void
     let onOpen: (PharoObject) -> Void
+    let onOpenResult: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -32,7 +33,7 @@ struct PharoSourceEditor: NSViewRepresentable {
     func makeNSView(context: Context) -> PharoTextView {
         let view = PharoTextView()
         view.delegate = context.coordinator
-        view.onFocused = { focused = id }
+        view.onFocused = { if focused != id { focused = id } }
         view.completions = runtime.completionList
         view.classReferences = runtime.namedClasses(in:)
         view.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
@@ -41,15 +42,15 @@ struct PharoSourceEditor: NSViewRepresentable {
         view.isAutomaticTextReplacementEnabled = false
         view.drawsBackground = false
         view.textContainerInset = NSSize(width: 4, height: 6)
-        view.apply(runtime: runtime, marks: marks, onToggleClass: onToggleClass, onOpen: onOpen)
+        view.apply(runtime: runtime, marks: marks, onToggleClass: onToggleClass, onOpen: onOpen, onOpenResult: onOpenResult)
         view.setSource(source)
         return view
     }
 
     func updateNSView(_ view: PharoTextView, context: Context) {
         context.coordinator.parent = self
-        view.onFocused = { focused = id }
-        view.apply(runtime: runtime, marks: marks, onToggleClass: onToggleClass, onOpen: onOpen)
+        view.onFocused = { if focused != id { focused = id } }
+        view.apply(runtime: runtime, marks: marks, onToggleClass: onToggleClass, onOpen: onOpen, onOpenResult: onOpenResult)
         if view.source != source {
             view.setSource(source)
         }
@@ -113,62 +114,6 @@ final class PharoTextView: NSTextView {
     var classReferences: ((String) async -> [PharoClassReference])?
     var onFocused: (() -> Void)?
 
-    override func becomeFirstResponder() -> Bool {
-        let became = super.becomeFirstResponder()
-        if became { onFocused?() }
-        return became
-    }
-
-    /// The text view reasserts the I-beam as the pointer travels, so anything
-    /// else asking for the hand only wins between moves and the two flicker.
-    /// It has to be the one to decide, for the marks as well as for the text.
-    override func cursorUpdate(with event: NSEvent) {
-        guard isOverMark(event) else { return super.cursorUpdate(with: event) }
-        NSCursor.pointingHand.set()
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        guard isOverMark(event) else { return super.mouseMoved(with: event) }
-        NSCursor.pointingHand.set()
-    }
-
-    private func isOverMark(_ event: NSEvent) -> Bool {
-        let point = convert(event.locationInWindow, from: nil)
-        return marksIn(self).contains { $0.convert($0.bounds, to: self).contains(point) }
-    }
-
-    private func marksIn(_ view: NSView) -> [NSView] {
-        view.subviews.flatMap { subview -> [NSView] in
-            subview is PharoMarkHostingView ? [subview] : marksIn(subview)
-        }
-    }
-
-    /// The marks are invisible to the caret: crossing a class name's marks, and
-    /// the space they push ahead of the next word, takes one press, not one per
-    /// hidden character.
-    override func moveRight(_ sender: Any?) {
-        super.moveRight(sender)
-        skipMarksFromCaret(forward: true)
-    }
-
-    override func moveLeft(_ sender: Any?) {
-        super.moveLeft(sender)
-        skipMarksFromCaret(forward: false)
-    }
-
-    private func skipMarksFromCaret(forward: Bool) {
-        let selection = selectedRange()
-        guard selection.length == 0 else { return }
-
-        let units = Array(string.utf16)
-        var caret = selection.location
-        while caret > 0, caret <= units.count, units[caret - 1] == markCharacter {
-            caret += forward ? 1 : -1
-            guard caret >= 0, caret <= units.count else { break }
-        }
-        setSelectedRange(NSRange(location: max(0, min(caret, units.count)), length: 0))
-    }
-
     private var runtime: PharoRuntime?
     private var marks = PharoSnippetMarks()
     private var onToggleClass: ((String) -> Void)?
@@ -195,11 +140,13 @@ final class PharoTextView: NSTextView {
         runtime: PharoRuntime,
         marks: PharoSnippetMarks,
         onToggleClass: @escaping (String) -> Void,
-        onOpen: @escaping (PharoObject) -> Void
+        onOpen: @escaping (PharoObject) -> Void,
+        onOpenResult: @escaping () -> Void
     ) {
         self.runtime = runtime
         self.onToggleClass = onToggleClass
         self.onOpen = onOpen
+        resultModel.open = onOpenResult
         guard self.marks != marks else { return }
         self.marks = marks
         expandOpenedClasses()
@@ -229,12 +176,11 @@ final class PharoTextView: NSTextView {
     /// in: inserting it now would leave a mark NSTextView never builds a view
     /// for, and it would show as a placeholder until something forced a pass.
     private func showResult() {
-        guard resultModel.object?.handle != marks.result?.handle else { return }
+        guard resultModel.hasResult != marks.hasResult else { return }
 
-        let result = marks.result
+        let hasResult = marks.hasResult
         DispatchQueue.main.async {
-            self.resultModel.object = result
-            self.resultModel.onOpen = { [weak self] object in self?.onOpen?(object) }
+            self.resultModel.hasResult = hasResult
             guard let attachment = self.attachments[.result] else { return }
             let wanted = self.bounds(for: .result)
             guard attachment.bounds != wanted else { return }
@@ -363,7 +309,7 @@ final class PharoTextView: NSTextView {
             return classModels[name]?.opened != nil
                 ? CGRect(x: 0, y: 0, width: openedWidth, height: openedHeight)
                 : CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
-        case .result where resultModel.object == nil:
+        case .result where !resultModel.hasResult:
             return CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
         case .classTriangle, .result:
             let side = (font ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular))
@@ -445,6 +391,61 @@ final class PharoTextView: NSTextView {
         ]
     }
 
+    override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became { onFocused?() }
+        return became
+    }
+
+    /// The marks are invisible to the caret: crossing a class name's marks, and
+    /// the space they push ahead of the next word, takes one press, not one per
+    /// hidden character.
+    override func moveRight(_ sender: Any?) {
+        super.moveRight(sender)
+        skipMarksFromCaret(forward: true)
+    }
+
+    override func moveLeft(_ sender: Any?) {
+        super.moveLeft(sender)
+        skipMarksFromCaret(forward: false)
+    }
+
+    private func skipMarksFromCaret(forward: Bool) {
+        let selection = selectedRange()
+        guard selection.length == 0 else { return }
+
+        let units = Array(string.utf16)
+        var caret = selection.location
+        while caret > 0, caret <= units.count, units[caret - 1] == markCharacter {
+            caret += forward ? 1 : -1
+            guard caret >= 0, caret <= units.count else { break }
+        }
+        setSelectedRange(NSRange(location: max(0, min(caret, units.count)), length: 0))
+    }
+
+    /// The text view reasserts the I-beam as the pointer travels, so anything
+    /// else asking for the hand only wins between moves and the two flicker.
+    /// It has to be the one to decide, for the marks as well as for the text.
+    override func cursorUpdate(with event: NSEvent) {
+        guard isOverMark(event) else { return super.cursorUpdate(with: event) }
+        NSCursor.pointingHand.set()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard isOverMark(event) else { return super.mouseMoved(with: event) }
+        NSCursor.pointingHand.set()
+    }
+
+    private func isOverMark(_ event: NSEvent) -> Bool {
+        let point = convert(event.locationInWindow, from: nil)
+        return marksIn(self).contains { $0.convert($0.bounds, to: self).contains(point) }
+    }
+
+    private func marksIn(_ view: NSView) -> [NSView] {
+        view.subviews.flatMap { subview -> [NSView] in
+            subview is PharoMarkHostingView ? [subview] : marksIn(subview)
+        }
+    }
 
     override func complete(_ sender: Any?) {
         if let fetched {
@@ -506,7 +507,7 @@ enum PharoMarkContent {
         switch self {
         case .classTriangle: 0
         case .classBody: 1
-        case .result: 0
+        case .result: 2
         }
     }
 }
@@ -591,8 +592,8 @@ nonisolated final class PharoMarkViewProvider: NSTextAttachmentViewProvider, @un
 /// A class mark's state, which the view in the text observes.
 /// What the snippet last produced, which the dot in the text watches.
 final class PharoResultMarkModel: ObservableObject {
-    @Published var object: PharoObject?
-    var onOpen: (PharoObject) -> Void = { _ in }
+    @Published var hasResult = false
+    var open: () -> Void = {}
 }
 
 final class PharoClassMarkModel: ObservableObject {
@@ -657,11 +658,11 @@ private struct PharoResultDot: View {
     @State private var isPointedAt = false
 
     var body: some View {
-        Button { model.object.map { model.onOpen($0) } } label: {
+        Button(action: model.open) {
             Circle()
                 .fill(isPointedAt ? Color.fridaBrand : Color.secondary)
                 .frame(width: 8, height: 8)
-                .opacity(model.object == nil ? 0 : 1)
+                .opacity(model.hasResult ? 1 : 0)
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

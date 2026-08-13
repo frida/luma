@@ -25,9 +25,7 @@ enum PharoLumaBindings {
         record compile: 'printOn: aStream
             aStream nextPutAll: self name'.
         record compile: 'icon
-            icon isString ifFalse: [ ^ icon ].
-            icon := PNGReadWriter formFromStream: icon base64Decoded readStream.
-            ^ icon'.
+            ^ icon ifNotNil: [ PNGReadWriter formFromStream: icon base64Decoded readStream ]'.
         record compile: 'inspectionFields: aBuilder
             <inspectorPresentationOrder: 0 title: ''Fields''>
             ^ aBuilder newTable

@@ -29,6 +29,7 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
     public var styledDetails: StyledText?
     public var jsValue: JSInspectValue?
     public var pharoSnapshot: PharoSnapshot?
+    public var pharoResultFuel: Data?
     public var binaryData: Data?
     public var sessionID: UUID?
     public var processName: String?
@@ -46,6 +47,7 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
         case styledDetails = "styled_details"
         case jsValue = "js_value"
         case pharoSnapshot = "pharo_snapshot"
+        case pharoResultFuel = "pharo_result_fuel"
         case binaryData = "binary_data"
         case sessionID = "session_id"
         case processName = "process_name"
@@ -62,6 +64,7 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
         styledDetails: StyledText? = nil,
         jsValue: JSInspectValue? = nil,
         pharoSnapshot: PharoSnapshot? = nil,
+        pharoResultFuel: Data? = nil,
         binaryData: Data? = nil,
         sessionID: UUID? = nil,
         processName: String? = nil
@@ -76,6 +79,7 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
         self.styledDetails = styledDetails
         self.jsValue = jsValue
         self.pharoSnapshot = pharoSnapshot
+        self.pharoResultFuel = pharoResultFuel
         self.binaryData = binaryData
         self.sessionID = sessionID
         self.processName = processName
@@ -121,6 +125,10 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
             let jsonObject = try? JSONSerialization.jsonObject(with: data)
         {
             obj["pharo_snapshot"] = jsonObject
+        }
+
+        if let pharoResultFuel {
+            obj["pharo_result_fuel"] = pharoResultFuel.base64EncodedString()
         }
 
         if let processName {
@@ -186,6 +194,8 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
             pharoSnapshot = decoded
         }
 
+        let pharoResultFuel = (obj["pharo_result_fuel"] as? String).flatMap { Data(base64Encoded: $0) }
+
         let processName = obj["process_name"] as? String
 
         return NotebookEntry(
@@ -199,6 +209,7 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
             styledDetails: styledDetails,
             jsValue: jsValue,
             pharoSnapshot: pharoSnapshot,
+            pharoResultFuel: pharoResultFuel,
             binaryData: data.map { Data($0) },
             processName: processName
         )

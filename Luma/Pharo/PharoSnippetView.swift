@@ -9,10 +9,9 @@ struct PharoSnippetView: View {
     @Binding var source: String
     @Binding var focused: UUID?
     let runtime: PharoRuntime
-    let result: PharoObject?
     let open: (PharoObject) -> Void
+    let openResult: (() -> Void)?
     let evaluate: () -> Void
-    let inspect: (() -> Void)?
     let remove: (() -> Void)?
 
     @State private var isPointedAt = false
@@ -49,13 +48,14 @@ struct PharoSnippetView: View {
             runtime: runtime,
             marks: marks,
             onToggleClass: toggle,
-            onOpen: open)
+            onOpen: open,
+            onOpenResult: { openResult?() })
         .padding(4)
         .accessibilityIdentifier("notebook.pharo.source")
     }
 
     private var marks: PharoSnippetMarks {
-        PharoSnippetMarks(openedClasses: openedClasses, result: result)
+        PharoSnippetMarks(openedClasses: openedClasses, hasResult: openResult != nil)
     }
 
     private func toggle(_ name: String) {
@@ -72,11 +72,6 @@ struct PharoSnippetView: View {
             action("play.fill", "Evaluate", evaluate)
                 .keyboardShortcut(.return, modifiers: .command)
                 .accessibilityIdentifier("notebook.pharo.evaluate")
-
-            if let inspect {
-                action("arrow.right", "Inspect", inspect)
-                    .accessibilityIdentifier("notebook.pharo.inspect")
-            }
 
             Spacer()
 
