@@ -21,14 +21,37 @@ struct NotebookView: View {
     }
 
     @State private var inspection: PharoInspection?
+    @State private var inspected: UUID?
+    @State private var centers: [UUID: CGFloat] = [:]
 
     var body: some View {
-        HStack(spacing: 0) {
+        HSplitView {
             page
+                .pharoPane()
+                .padding(8)
+                .frame(minWidth: 320, idealWidth: 520)
+
+            inspectionSide
+                .padding(.vertical, 8)
+                .padding(.trailing, 8)
+                .frame(minWidth: 320)
+        }
+        .coordinateSpace(name: pharoPageSpace)
+        .background(.pharoGutter)
+    }
+
+
+    /// Always the same view, whether or not it is showing anything: swapping
+    /// one out for another has HSplitView lay the divider out afresh, undoing
+    /// wherever the reader had put it.
+    private var inspectionSide: some View {
+        ZStack {
+            Color.clear
 
             if let inspection {
-                PharoInspectionPane(inspection: inspection) { self.inspection = nil }
-                    .frame(minWidth: 320)
+                PharoInspectionPane(inspection: inspection, pointsFrom: inspected.flatMap { centers[$0] }) {
+                    self.inspection = nil
+                }
             }
         }
     }
@@ -60,6 +83,8 @@ struct NotebookView: View {
                                 selection: $selection,
                                 autoBeginEditing: entry.id == lastInsertedID,
                                 inspection: $inspection,
+                                inspected: $inspected,
+                                centers: $centers,
                                 onEditingChanged: { editing in
                                     if editing {
                                         editingEntryIDs.insert(entry.id)
@@ -188,6 +213,8 @@ struct NotebookEntryRow: View {
     @Binding var selection: SidebarItemID?
     let autoBeginEditing: Bool
     @Binding var inspection: PharoInspection?
+    @Binding var inspected: UUID?
+    @Binding var centers: [UUID: CGFloat]
 
     let onEditingChanged: (Bool) -> Void
     let addNoteBelow: () -> Void
@@ -225,7 +252,12 @@ struct NotebookEntryRow: View {
                     readOnlyUserNoteBody
                 }
             } else if isPharo {
-                PharoNotebookCell(entry: entry, engine: engine, inspection: $inspection)
+                PharoNotebookCell(
+                    entry: entry,
+                    engine: engine,
+                    inspection: $inspection,
+                    inspected: $inspected,
+                    centers: $centers)
             } else {
                 systemEntryBody
             }

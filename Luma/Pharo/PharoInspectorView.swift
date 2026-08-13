@@ -6,6 +6,7 @@ import SwiftyPharo
 struct PharoInspectorView: View {
     let runtime: PharoRuntime
     let root: PharoObject
+    let onClose: () -> Void
 
     @State private var path: [PharoObject] = []
 
@@ -14,17 +15,22 @@ struct PharoInspectorView: View {
             ScrollView(.horizontal) {
                 HStack(spacing: 0) {
                     ForEach(Array(path.enumerated()), id: \.element.handle) { depth, object in
-                        PharoObjectColumn(runtime: runtime, object: object) { selected in
-                            open(selected, from: depth)
+                        if depth > 0 {
+                            PharoDrillArrow()
                         }
-                        .frame(width: 280)
-                        .id(object.handle)
 
-                        Divider()
+                        PharoObjectColumn(
+                            runtime: runtime,
+                            object: object,
+                            onSelect: { open($0, from: depth) },
+                            onClose: { close(from: depth) })
+                        .frame(width: 320)
+                        .pharoPane()
+                        .id(object.handle)
                     }
                 }
             }
-            .onChange(of: path.count) {
+            .onChange(of: path.last?.handle) {
                 withAnimation { scroller.scrollTo(path.last?.handle, anchor: .trailing) }
             }
             // SwiftUI hands a new root to the view it already has, so seeding
@@ -40,6 +46,11 @@ struct PharoInspectorView: View {
     private func startOver(at object: PharoObject) {
         path = [object]
     }
+
+    private func close(from depth: Int) {
+        guard depth > 0 else { return onClose() }
+        path = Array(path.prefix(depth))
+    }
 }
 
 /// One object's declared views, as a tab per view.
@@ -47,23 +58,38 @@ private struct PharoObjectColumn: View {
     let runtime: PharoRuntime
     let object: PharoObject
     let onSelect: (PharoObject) -> Void
+    let onClose: () -> Void
 
-    @State private var declarations: [PharoViewDeclaration] = []
+    @State private var declared: Declared = .pending
     @State private var shown: String?
-    @State private var failure: String?
+
+    /// Nothing declared and not asked yet are different things: rendering them
+    /// alike flashes "No views" over every object on its way in.
+    private enum Declared {
+        case pending
+        case ready([PharoViewDeclaration])
+        case failed(String)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
+                .overlay(alignment: .topTrailing) { closeButton }
 
             if declarations.count > 1 {
-                Picker("", selection: $shown) {
-                    ForEach(declarations, id: \.methodSelector) { declaration in
-                        Text(declaration.title).tag(Optional(declaration.methodSelector))
+                // More tabs than the card is wide should scroll rather than
+                // squeeze every title down to an ellipsis.
+                ScrollView(.horizontal) {
+                    Picker("", selection: $shown) {
+                        ForEach(declarations, id: \.methodSelector) { declaration in
+                            Text(declaration.title).tag(Optional(declaration.methodSelector))
+                        }
                     }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                .scrollIndicators(.hidden)
                 .padding(6)
             }
 
@@ -83,17 +109,34 @@ private struct PharoObjectColumn: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)
+    }
+
+    private var closeButton: some View {
+        Button(action: onClose) {
+            Image(systemName: "xmark")
+                .font(.caption2)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .padding(6)
+        .accessibilityIdentifier("pharo.inspection.close")
     }
 
     @ViewBuilder
     private var content: some View {
-        if let failure {
-            PharoFailureView(message: failure)
-        } else if let shownDeclaration {
-            body(of: shownDeclaration)
-        } else {
-            ContentUnavailableView("No views", systemImage: "square.dashed")
+        switch declared {
+        case .pending:
+            Color.clear
+        case .failed(let message):
+            PharoFailureView(message: message)
+        case .ready:
+            if let shownDeclaration {
+                body(of: shownDeclaration)
+            } else {
+                ContentUnavailableView("No views", systemImage: "square.dashed")
+            }
         }
     }
 
@@ -124,12 +167,18 @@ private struct PharoObjectColumn: View {
         declarations.first { $0.methodSelector == shown } ?? declarations.first
     }
 
+    private var declarations: [PharoViewDeclaration] {
+        guard case .ready(let declarations) = declared else { return [] }
+        return declarations
+    }
+
     private func loadDeclarations() async {
         do {
-            declarations = try await runtime.views(of: object)
-            shown = declarations.first?.methodSelector
+            let loaded = try await runtime.views(of: object)
+            declared = .ready(loaded)
+            shown = loaded.first?.methodSelector
         } catch {
-            failure = error.localizedDescription
+            declared = .failed(error.localizedDescription)
         }
     }
 }
@@ -144,21 +193,15 @@ private struct PharoItemsList: View {
 
     @State private var rows: [String] = []
     @State private var total = 0
+    @State private var selection: Int?
     @State private var failure: String?
 
     private let pageSize = 50
 
     var body: some View {
-        List {
+        List(selection: $selection) {
             ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                Button {
-                    Task { await drill(into: index) }
-                } label: {
-                    Text(row)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+                Text(row).tag(index)
             }
 
             if rows.count < total {
@@ -176,7 +219,20 @@ private struct PharoItemsList: View {
             }
         }
         .listStyle(.plain)
-        .task { await loadNextPage() }
+        // Switching tabs hands the same list a different view to page through.
+        .task(id: view) { await reload() }
+        .onChange(of: selection) { _, row in
+            guard let row else { return }
+            Task { await drill(into: row) }
+        }
+    }
+
+    private func reload() async {
+        rows = []
+        total = 0
+        selection = nil
+        failure = nil
+        await loadNextPage()
     }
 
     private func loadNextPage() async {

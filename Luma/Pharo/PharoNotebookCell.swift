@@ -9,44 +9,53 @@ struct PharoNotebookCell: View {
     let entry: NotebookEntry
     let engine: Engine
     @Binding var inspection: PharoInspection?
+    @Binding var inspected: UUID?
+    @Binding var centers: [UUID: CGFloat]
 
     @State private var source: String
     @State private var snapshot: PharoSnapshot?
     @State private var failure: String?
 
+    @FocusState private var focused: UUID?
+
     private let runtime = PharoRuntime.shared
 
-    init(entry: NotebookEntry, engine: Engine, inspection: Binding<PharoInspection?>) {
+    init(
+        entry: NotebookEntry,
+        engine: Engine,
+        inspection: Binding<PharoInspection?>,
+        inspected: Binding<UUID?>,
+        centers: Binding<[UUID: CGFloat]>
+    ) {
         self.entry = entry
         self.engine = engine
         _inspection = inspection
+        _inspected = inspected
+        _centers = centers
         _source = State(initialValue: entry.details)
         _snapshot = State(initialValue: entry.pharoSnapshot)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            TextEditor(text: $source)
-                .font(.system(.body, design: .monospaced))
-                .frame(minHeight: 44)
-                .onChange(of: source) { save() }
-                .accessibilityIdentifier("notebook.pharo.source")
-
-            HStack {
-                Button("Evaluate") { Task { await evaluate() } }
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .accessibilityIdentifier("notebook.pharo.evaluate")
-
-                Spacer()
-
-                if let snapshot {
-                    Button { inspection = .captured(snapshot) } label: {
-                        Image(systemName: "arrow.right")
+            PharoSnippetView(
+                id: entry.id,
+                source: $source,
+                focused: $focused,
+                evaluate: { Task { await evaluate() } },
+                inspect: snapshot.map { captured in
+                    {
+                        inspected = entry.id
+                        inspection = .captured(captured)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("notebook.pharo.inspect")
-                }
+                },
+                remove: nil
+            )
+            .onChange(of: source) { save() }
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.frame(in: .named(pharoPageSpace)).midY
+            } action: { center in
+                centers[entry.id] = center
             }
 
             if let failure {
@@ -57,6 +66,7 @@ struct PharoNotebookCell: View {
     }
 
     private func evaluate() async {
+        inspected = entry.id
         do {
             try await runtime.startBundledImage()
             let evaluated = try await runtime.evaluate(source)
