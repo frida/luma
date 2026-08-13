@@ -10,7 +10,7 @@ on:
 env:
   FRIDA_CORE_REF: "c812943c457376c906802f7bb79d13c67a6e4d22"
   RADARE2_REF: "7ed1e8c6fd000b99c8aa6835e12bef1657d92746"
-  SWIFTY_PHARO_REF: "79b97f4b7101db93c05aac7e312e5b6553f668cb"
+  SWIFTY_PHARO_REF: "809f08769913666af2a58e2aa49195a88d5a30e2"
   SPARKLE_VERSION: "2.9.1"
   SWIFT_VERSION: "6.2"
   # ilammy/msvc-dev-cmd hasn't cut a Node-24-compatible release yet
@@ -69,6 +69,10 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
 
       # The examples are Smalltalk inside Swift string literals, and a patch
       # that has gone silent sounds fine to a compiler.
@@ -1345,7 +1349,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-${{ matrix.vcpkg_triplet }}-v11
+          key: vcpkg-${{ matrix.vcpkg_triplet }}-v12
 
       - name: Install dependencies via vcpkg
         run: >-
@@ -1353,14 +1357,14 @@ jobs:
           --overlay-triplets=${{ github.workspace }}/.github/vcpkg-triplets
           --overlay-ports=${{ github.workspace }}/.github/vcpkg-ports
           --triplet ${{ matrix.vcpkg_triplet }}
-          glib glib-networking json-glib libsoup gtk[introspection] atk[introspection] libadwaita[introspection] gtksourceview[introspection] libepoxy librsvg libxml2 graphite2 sqlite3[snapshot] webview2
+          glib glib-networking json-glib libsoup libffi openssl gtk[introspection] atk[introspection] libadwaita[introspection] gtksourceview[introspection] libepoxy librsvg libxml2 graphite2 sqlite3[snapshot] webview2
 
       - name: Save vcpkg cache
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-${{ matrix.vcpkg_triplet }}-v11
+          key: vcpkg-${{ matrix.vcpkg_triplet }}-v12
 
       - name: Set up vcpkg environment
         shell: bash
@@ -1369,7 +1373,9 @@ jobs:
           echo "$VCPKG_PREFIX/tools/pkgconf" >> $GITHUB_PATH
           echo "$VCPKG_PREFIX/bin" >> $GITHUB_PATH
           echo "$VCPKG_PREFIX/tools" >> $GITHUB_PATH
-          echo "PKG_CONFIG_PATH=$VCPKG_PREFIX/lib/pkgconfig" >> $GITHUB_ENV
+          # A drive letter carries a colon, so pkgconf reads this list the way
+          # Windows writes one.
+          echo "PKG_CONFIG_PATH=$VCPKG_PREFIX/lib/pkgconfig;$(cygpath -m "$RUNNER_TEMP")/pharo-prefix/lib/pkgconfig" >> $GITHUB_ENV
           # pkgconf on this runner classifies $VCPKG_PREFIX/include as a
           # system path (via the INCLUDE env var MSVC sets) and strips
           # -I fragments that live under it, which breaks glib's
@@ -1396,13 +1402,56 @@ jobs:
               *) cp "$hdr" "$STAGE/" ;;
             esac
           done
-          echo "CPATH=$STAGE" >> $GITHUB_ENV
-          echo "CPLUS_INCLUDE_PATH=$STAGE" >> $GITHUB_ENV
+          # SwiftPM's pkg-config reads its search path the way a unix shell
+          # writes one, which no path with a drive letter in it survives. What
+          # the compiler is told directly is what a Windows build goes on.
+          # The VM's headers reach for each other unqualified, so every place
+          # they sit has to be named -- the same four the .pc lists.
+          PHARO="$(cygpath -m "$RUNNER_TEMP")/pharo-prefix"
+          PHARO_INCLUDES="$PHARO/include;$PHARO/include/pharovm"
+          PHARO_INCLUDES="$PHARO_INCLUDES;$PHARO/include/pharovm/common"
+          PHARO_INCLUDES="$PHARO_INCLUDES;$PHARO/include/pharovm/win"
+          echo "CPATH=$STAGE;$PHARO_INCLUDES" >> $GITHUB_ENV
+          echo "CPLUS_INCLUDE_PATH=$STAGE;$PHARO_INCLUDES" >> $GITHUB_ENV
+          # A clang driving MSVC reads INCLUDE, whatever else it also reads.
+          echo "INCLUDE=$INCLUDE;$PHARO_INCLUDES" >> $GITHUB_ENV
+          echo "LIB=$LIB;$PHARO/lib" >> $GITHUB_ENV
+
+      # Chocolatey answers 0 when its feed is down and nothing was
+      # installed, so the toolset itself is what says whether this worked.
+      - name: Restore WiX cache
+        id: wix-cache
+        if: matrix.win_arch == 'arm64'
+        uses: actions/cache/restore@v5
+        with:
+          path: C:\Program Files (x86)\WiX Toolset v3.14
+          key: ${{ runner.os }}-arm64-wix-v1
 
       - name: Install WiX Toolset
         if: matrix.win_arch == 'arm64'
         shell: pwsh
-        run: choco install -y --no-progress wixtoolset
+        run: |
+          $roots = @(
+            'C:\Program Files (x86)\WiX Toolset v3.14',
+            'C:\Program Files (x86)\WiX Toolset v3.11'
+          )
+          foreach ($attempt in 1..4) {
+            if ($env:WIX -or ($roots | Where-Object { Test-Path $_ })) { exit 0 }
+            if ($attempt -gt 1) {
+              $pause = 20 * ($attempt - 1)
+              Write-Host "WiX is still missing; waiting ${pause}s before attempt $attempt"
+              Start-Sleep -Seconds $pause
+            }
+            choco install -y --no-progress wixtoolset
+          }
+          throw "WiX Toolset still missing after 4 attempts"
+
+      - name: Save WiX cache
+        if: matrix.win_arch == 'arm64' && steps.wix-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: C:\Program Files (x86)\WiX Toolset v3.14
+          key: ${{ runner.os }}-arm64-wix-v1
 
       - name: Pre-fetch Adwaita icon theme
         shell: pwsh
@@ -1524,6 +1573,48 @@ jobs:
           path: ${{ runner.temp }}\r2-prefix
           key: ${{ runner.os }}-${{ matrix.win_arch }}-radare2-${{ env.RADARE2_REF }}-v4
 
+      - name: Restore Pharo VM cache
+        id: pharo-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/pharo-prefix
+          key: ${{ runner.os }}-${{ matrix.win_arch }}-pharo-vm-${{ env.SWIFTY_PHARO_REF }}-v2
+
+      - name: Build Pharo VM
+        if: steps.pharo-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          git clone https://github.com/frida/SwiftyPharo.git /tmp/swifty-pharo
+          cd /tmp/swifty-pharo
+          git checkout $SWIFTY_PHARO_REF
+          # Git bash ships a link.exe of its own, and meson takes the first it
+          # finds over the one that goes with cl.
+          export PATH="$(dirname "$(command -v cl)"):$PATH"
+          # An MSVC-flavoured linker looks for libraries along LIB, which knows
+          # about the toolchain's own and nothing about vcpkg's.
+          export LIB="C:\\vcpkg\\installed\\${{ matrix.vcpkg_triplet }}\\lib;$LIB"
+          # The interpreter and the JIT are written in GNU C -- computed gotos,
+          # arithmetic on void pointers -- which cl rejects and clang takes.
+          # An empty DESTDIR is what says install, rather than stage for someone
+          # else to copy.
+          CC=clang-cl CXX=clang-cl PLATFORM=windows DESTDIR= \
+              PREFIX="$(cygpath -m "$RUNNER_TEMP")/pharo-prefix" \
+              tools/build-vm.sh
+
+      - name: Save Pharo VM cache
+        if: steps.pharo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/pharo-prefix
+          key: ${{ runner.os }}-${{ matrix.win_arch }}-pharo-vm-${{ env.SWIFTY_PHARO_REF }}-v2
+
+      - name: Restore GnuWin32 cache
+        id: gnuwin32-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: C:\Program Files (x86)\GnuWin32
+          key: ${{ runner.os }}-${{ matrix.win_arch }}-gnuwin32-v1
+
       - name: Install native sed/awk/cat for gir2swift post-processing
         shell: pwsh
         run: |
@@ -1543,12 +1634,31 @@ jobs:
           # MSVC's link.exe, breaking meson's linker autodetect for any
           # subsequent meson build. Swift's link goes through SDKROOT
           # rather than PATH, so the LumaGtk build below is unaffected.
-          choco install -y --no-progress sed gawk gnuwin32-coreutils.install
+          # Chocolatey answers 0 when its feed is down and nothing was
+          # installed, and a missing sed only shows up as gir2swift output
+          # with types left out of it.
           $gnuBin = 'C:\Program Files (x86)\GnuWin32\bin'
+          $attempts = if ('${{ steps.gnuwin32-cache.outputs.cache-hit }}' -eq 'true') { @() } else { 1..4 }
+          foreach ($attempt in $attempts) {
+              $log = choco install -y --no-progress sed gawk gnuwin32-coreutils.install 2>&1
+              $log | ForEach-Object { Write-Host $_ }
+              if ($LASTEXITCODE -eq 0 -and ($log -notmatch 'Unable to find package')) { break }
+              if ($attempt -eq 4) { throw "chocolatey never served the packages" }
+              $pause = 20 * $attempt
+              Write-Host "chocolatey came up short; waiting ${pause}s before attempt $($attempt + 1)"
+              Start-Sleep -Seconds $pause
+          }
           if (Test-Path (Join-Path $gnuBin 'gawk.exe')) {
               Copy-Item (Join-Path $gnuBin 'gawk.exe') (Join-Path $gnuBin 'awk.exe') -Force
           }
           Add-Content -Path $env:GITHUB_PATH -Value $gnuBin
+
+      - name: Save GnuWin32 cache
+        if: steps.gnuwin32-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: C:\Program Files (x86)\GnuWin32
+          key: ${{ runner.os }}-${{ matrix.win_arch }}-gnuwin32-v1
 
       - name: Build LumaGtk
         shell: pwsh
