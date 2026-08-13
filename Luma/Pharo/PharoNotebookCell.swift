@@ -217,6 +217,10 @@ struct PharoResultPreview: View {
             Label("Chart", systemImage: "chart.bar")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+        case .canvas:
+            Label("Canvas", systemImage: "cube.transparent")
+                .font(.callout)
+                .foregroundStyle(.secondary)
         case .empty, .none:
             previewText(snapshot.printString)
         }

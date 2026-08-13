@@ -1,3 +1,4 @@
+import LumaCore
 import Metal
 import MetalKit
 import QuartzCore
@@ -13,22 +14,46 @@ import UIKit
 /// resolution/time/scheme/activity/pulse uniforms the GTK frontend's widget
 /// feeds its GLSL. Both sides are generated from one authored effect
 /// in `Shaders/` by `LumaShaderCompiler`.
+/// Either a function the build already carries, or Metal source translated
+/// from GLSL on the spot, for an effect written in a snippet.
+enum ShaderEffectProgram: Equatable {
+    case builtIn(function: String)
+    case translated(metal: String, function: String)
+    /// The author's own stages, drawing their own vertices.
+    case geometry(
+        vertexMetal: String,
+        vertexFunction: String,
+        fragmentMetal: String,
+        fragmentFunction: String,
+        geometry: CanvasGeometry
+    )
+}
+
 struct ShaderEffectView {
-    let fragmentFunction: String
+    let program: ShaderEffectProgram
     let scheme: Float
 
     /// Bumped by the caller whenever events arrive; the renderer decays what it
     /// was last handed, so a caller only sets this when there is news.
     var activity: Float = 0
 
+    /// Values the effect reads through `dataAt()`, up to 64.
+    var data: [Float] = []
+
+    /// Where vertices land. Identity draws them in clip space as they stand.
+    var transform: [Float] = ShaderEffectRenderer.identity
+
     func makeCoordinator() -> ShaderEffectRenderer {
-        ShaderEffectRenderer(fragmentFunction: fragmentFunction)
+        ShaderEffectRenderer(program: program)
     }
 
     fileprivate func install(into view: MTKView, coordinator: ShaderEffectRenderer) {
         guard let device = MTLCreateSystemDefaultDevice() else { return }
         view.device = device
         view.colorPixelFormat = .bgra8Unorm
+        // Geometry with any depth to it needs this, and a screen-filling
+        // effect is no worse off for having it.
+        view.depthStencilPixelFormat = .depth32Float
         view.framebufferOnly = true
         view.isPaused = true
         view.enableSetNeedsDisplay = false
@@ -39,6 +64,8 @@ struct ShaderEffectView {
 
     fileprivate func refresh(_ coordinator: ShaderEffectRenderer) {
         coordinator.scheme = scheme
+        coordinator.data = data
+        coordinator.transform = transform
         coordinator.reportActivity(activity)
     }
 }
@@ -73,10 +100,14 @@ extension ShaderEffectView: UIViewRepresentable {
 
 final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
     var scheme: Float = 1.0
-    private let fragmentFunction: String
+    var data: [Float] = []
+    var transform: [Float] = ShaderEffectRenderer.identity
+    private let program: ShaderEffectProgram
     private weak var view: MTKView?
     private var commandQueue: MTLCommandQueue?
     private var pipeline: MTLRenderPipelineState?
+    private var vertexBuffer: MTLBuffer?
+    private var depthState: MTLDepthStencilState?
     private nonisolated(unsafe) var displayLink: CADisplayLink?
     private let proxy = DisplayLinkProxy()
     private let startTime = CACurrentMediaTime()
@@ -89,8 +120,8 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
     private let pulseHalfLife: Float = 0.4
     private let activityHalfLife: Float = 1.2
 
-    init(fragmentFunction: String) {
-        self.fragmentFunction = fragmentFunction
+    init(program: ShaderEffectProgram) {
+        self.program = program
         renderedAt = CACurrentMediaTime()
     }
 
@@ -123,18 +154,38 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
         activity *= exp(-Float(now - renderedAt) / activityHalfLife)
         renderedAt = now
 
-        var uniforms = Uniforms(
-            resolution: SIMD2(Float(view.drawableSize.width),
-                              Float(view.drawableSize.height)),
-            time: Float(now - startTime),
-            scheme: scheme,
-            activity: activity,
-            pulse: pulsedAt.map { exp(-Float(now - $0) / pulseHalfLife) } ?? 0
-        )
+        var uniforms = [Float](repeating: 0, count: Self.uniformWordCount)
+        uniforms[0] = Float(view.drawableSize.width)
+        uniforms[1] = Float(view.drawableSize.height)
+        uniforms[2] = Float(now - startTime)
+        uniforms[3] = scheme
+        uniforms[4] = activity
+        uniforms[5] = pulsedAt.map { exp(-Float(now - $0) / pulseHalfLife) } ?? 0
+        uniforms[6] = Float(min(data.count, Self.dataCapacity))
+        for (offset, value) in data.prefix(Self.dataCapacity).enumerated() {
+            uniforms[Self.dataWordOffset + offset] = value
+        }
+        for (offset, value) in transform.prefix(16).enumerated() {
+            uniforms[Self.transformWordOffset + offset] = value
+        }
 
         encoder.setRenderPipelineState(pipeline)
-        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
-        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        let uniformLength = uniforms.count * MemoryLayout<Float>.stride
+        encoder.setFragmentBytes(&uniforms, length: uniformLength, index: 0)
+        encoder.setVertexBytes(&uniforms, length: uniformLength, index: 0)
+
+        if case let .geometry(_, _, _, _, geometry) = program, let vertexBuffer {
+            if let depthState {
+                encoder.setDepthStencilState(depthState)
+            }
+            encoder.setVertexBuffer(vertexBuffer, offset: 0, index: Self.vertexBufferIndex)
+            encoder.drawPrimitives(
+                type: Self.metalPrimitive(geometry.primitive),
+                vertexStart: 0,
+                vertexCount: geometry.vertexCount)
+        } else {
+            encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        }
         encoder.endEncoding()
         buffer.present(drawable)
         buffer.commit()
@@ -145,22 +196,99 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
     }
 
     private func buildPipeline(for view: MTKView) -> Bool {
-        guard let device = view.device,
-              let library = try? device.makeDefaultLibrary(bundle: Bundle.main),
-              let vertex = library.makeFunction(name: "shaderEffectVertex"),
-              let fragment = library.makeFunction(name: fragmentFunction),
-              let queue = device.makeCommandQueue()
-        else { return false }
+        guard let device = view.device, let queue = device.makeCommandQueue() else { return false }
 
         let desc = MTLRenderPipelineDescriptor()
-        desc.vertexFunction = vertex
-        desc.fragmentFunction = fragment
         desc.colorAttachments[0].pixelFormat = view.colorPixelFormat
+        desc.depthAttachmentPixelFormat = view.depthStencilPixelFormat
+
+        if case let .geometry(vertexMetal, vertexName, fragmentMetal, fragmentName, geometry) = program {
+            guard let vertexLibrary = try? device.makeLibrary(source: vertexMetal, options: nil),
+                  let fragmentLibrary = try? device.makeLibrary(source: fragmentMetal, options: nil),
+                  let vertex = vertexLibrary.makeFunction(name: vertexName),
+                  let fragment = fragmentLibrary.makeFunction(name: fragmentName)
+            else { return false }
+
+            desc.vertexFunction = vertex
+            desc.fragmentFunction = fragment
+            desc.vertexDescriptor = Self.vertexDescriptor(for: geometry)
+            vertexBuffer = device.makeBuffer(
+                bytes: geometry.vertices,
+                length: max(geometry.vertices.count, 1) * MemoryLayout<Float>.stride,
+                options: [])
+
+            let depth = MTLDepthStencilDescriptor()
+            depth.depthCompareFunction = .less
+            depth.isDepthWriteEnabled = true
+            depthState = device.makeDepthStencilState(descriptor: depth)
+        } else {
+            guard let bundled = try? device.makeDefaultLibrary(bundle: Bundle.main),
+                  let vertex = bundled.makeFunction(name: "shaderEffectVertex"),
+                  let fragment = fragmentFunction(from: device, bundled: bundled)
+            else { return false }
+            desc.vertexFunction = vertex
+            desc.fragmentFunction = fragment
+        }
+
         guard let state = try? device.makeRenderPipelineState(descriptor: desc) else { return false }
 
         commandQueue = queue
         pipeline = state
         return true
+    }
+
+    /// Buffers 0 and 1 go to the two uniform blocks, as spirv-cross assigns
+    /// them by binding, so the vertices sit clear at the top of the range.
+    static let vertexBufferIndex = 30
+    static let paramsBufferIndex = 1
+
+    private static func vertexDescriptor(for geometry: CanvasGeometry) -> MTLVertexDescriptor {
+        let descriptor = MTLVertexDescriptor()
+        var offset = 0
+        for (index, attribute) in geometry.attributes.enumerated() {
+            descriptor.attributes[index].format = format(components: attribute.components)
+            descriptor.attributes[index].offset = offset
+            descriptor.attributes[index].bufferIndex = vertexBufferIndex
+            offset += attribute.components * MemoryLayout<Float>.stride
+        }
+        descriptor.layouts[vertexBufferIndex].stride = offset
+        return descriptor
+    }
+
+    static let identity: [Float] = [1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1]
+
+    private static func format(components: Int) -> MTLVertexFormat {
+        switch components {
+        case 1: return .float
+        case 2: return .float2
+        case 3: return .float3
+        default: return .float4
+        }
+    }
+
+    private static func metalPrimitive(_ primitive: CanvasGeometry.Primitive) -> MTLPrimitiveType {
+        switch primitive {
+        case .points: return .point
+        case .lines: return .line
+        case .lineStrip: return .lineStrip
+        case .triangles: return .triangle
+        case .triangleStrip: return .triangleStrip
+        }
+    }
+
+    /// A built-in effect is already in the default library; a translated one
+    /// is compiled here, which is what lets a snippet author its own.
+    private func fragmentFunction(from device: MTLDevice, bundled: MTLLibrary) -> MTLFunction? {
+        switch program {
+        case let .builtIn(function):
+            return bundled.makeFunction(name: function)
+        case let .translated(metal, function):
+            guard let library = try? device.makeLibrary(source: metal, options: nil) else { return nil }
+            return library.makeFunction(name: function)
+        case .geometry:
+            // Built alongside its own vertex stage, in buildPipeline.
+            return nil
+        }
     }
 
     private func startDisplayLink() {
@@ -184,13 +312,14 @@ final class ShaderEffectRenderer: NSObject, MTKViewDelegate {
         displayLink?.invalidate()
     }
 
-    private struct Uniforms {
-        var resolution: SIMD2<Float>
-        var time: Float
-        var scheme: Float
-        var activity: Float
-        var pulse: Float
-    }
+    /// The block std140 lays out: resolution, time, scheme, activity, pulse
+    /// and the value count fill the first six words, a seventh pads the vec4
+    /// array to its sixteen-byte alignment, and the values follow.
+    public static let dataCapacity = 64
+    static let dataWordOffset = 8
+    /// A mat4 aligns to sixteen bytes, so it follows the value array.
+    static let transformWordOffset = dataWordOffset + dataCapacity
+    static let uniformWordCount = transformWordOffset + 16
 }
 
 private final class DisplayLinkProxy: NSObject {

@@ -221,6 +221,9 @@ final class PharoColumnView {
         case "chart":
             guard let chart = view.chart else { return textPage("Empty chart.") }
             return chartPage(chart, selector: view.methodSelector)
+        case "canvas":
+            guard let canvas = view.canvas else { return textPage("Empty canvas.") }
+            return canvasPage(scene: canvas.scene)
         default:
             return textPage("\(view.viewName) views are not drawn yet.")
         }
@@ -234,6 +237,15 @@ final class PharoColumnView {
         return list.widget
     }
 
+    /// The scene is the host's already; the view only says which one, and the
+    /// widget follows it as the image changes it.
+    private func canvasPage(scene: Int) -> Widget {
+        let canvas = PharoCanvasArea(scene: scene)
+        canvasAreas.append(canvas)
+        return canvas.widget
+    }
+
+    private var canvasAreas: [PharoCanvasArea] = []
     private var listViews: [PharoListView] = []
     private var graphAreas: [PharoGraphArea] = []
     private var chartAreas: [PharoChartArea] = []

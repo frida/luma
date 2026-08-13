@@ -20,7 +20,7 @@ let lumaExecutableIconResource = compileWindowsExecutableIcon()
 #endif
 
 #if os(macOS)
-let cLumaSources: [String] = ["shim_gtk.c", "shader_effect.c", "svg_paintable.c", "shim_webkit.m"]
+let cLumaSources: [String] = ["shim_gtk.c", "svg_paintable.c", "shim_webkit.m"]
 let cLumaCSettings: [CSetting] = [
     .unsafeFlags(pkgConfigFlags(["gtk4", "libadwaita-1", "epoxy", "librsvg-2.0"])),
 ]
@@ -35,7 +35,7 @@ let lumaGtkLinkerSettings: [LinkerSetting] = [
     .unsafeFlags(["-Xlinker", "-export_dynamic"]),
 ]
 #elseif os(Windows)
-let cLumaSources: [String] = ["shim_gtk.c", "shader_effect.c", "svg_paintable.c", "shim_webview2.cpp", "webview2_capture.cpp"]
+let cLumaSources: [String] = ["shim_gtk.c", "svg_paintable.c", "shim_webview2.cpp", "webview2_capture.cpp"]
 let cLumaCSettings: [CSetting] = [
     .unsafeFlags(pkgConfigFlags(["gtk4", "epoxy", "librsvg-2.0"])),
 ]
@@ -65,7 +65,7 @@ let lumaGtkLinkerSettings: [LinkerSetting] = [
     .unsafeFlags(windowsGuiLinkerFlags + (lumaExecutableIconResource.map { [$0] } ?? []))
 ]
 #else
-let cLumaSources: [String] = ["shim_gtk.c", "shader_effect.c", "svg_paintable.c", "shim_webkitgtk.c"]
+let cLumaSources: [String] = ["shim_gtk.c", "svg_paintable.c", "shim_webkitgtk.c"]
 let cLumaCSettings: [CSetting] = [
     .unsafeFlags(
         pkgConfigFlags(["webkitgtk-6.0", "gtk4", "libsoup-3.0", "epoxy", "librsvg-2.0"])
@@ -132,6 +132,8 @@ let package = Package(
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
+                // The GL widget is Swift, so CLuma's headers reach epoxy.
+                .unsafeFlags(pkgConfigFlags(["epoxy"]).flatMap { ["-Xcc", $0] }),
             ] + adwaitaFeatureDefines(),
             linkerSettings: lumaGtkLinkerSettings,
             plugins: [

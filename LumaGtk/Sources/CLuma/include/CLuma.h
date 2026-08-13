@@ -1,6 +1,7 @@
 #ifndef LUMA_CLUMA_H
 #define LUMA_CLUMA_H
 
+#include <epoxy/gl.h>
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -98,26 +99,6 @@ bool luma_image_normalize_to_png(const unsigned char *in_bytes,
                                   size_t *out_size,
                                   int *out_width,
                                   int *out_height);
-
-// Fullscreen fragment effect. Returns a new GtkGLArea (as a
-// GtkWidget*) that draws fragment_src over a screen-filling quad and
-// self-drives redraws off the frame clock. The widget owns its OpenGL
-// resources via realize/unrealize. The source is appended to a
-// preamble declaring v_uv, frag_color, u_resolution, u_time,
-// u_scheme, u_activity and u_pulse, so it carries only its own
-// helpers and main().
-void *luma_shader_effect_new(const char *fragment_src);
-
-// Feed u_scheme, by convention 1 for light and 0 for dark.
-void luma_shader_effect_set_scheme(void *widget, float scheme);
-
-// Report that events arrived at the given 0..1 rate. Feeds u_activity,
-// and spikes u_pulse. The widget decays both, so a caller only calls
-// when there is news.
-void luma_shader_effect_report_activity(void *widget, float activity);
-
-// Colour shown until the effect's program has linked.
-void luma_shader_effect_set_clear_color(void *widget, float red, float green, float blue);
 
 // GdkPaintable backed by librsvg that re-rasterizes the SVG into
 // each snapshot's backing pixels at its logical-size aspect ratio.

@@ -72,6 +72,8 @@ struct PharoSnapshotView: View {
             PharoGraphView(graph: graph)
         case .chart(let chart):
             PharoChartView(chart: chart)
+        case .canvas(let scene):
+            PharoCanvasSceneView(scene: scene)
         case .empty, .none:
             ContentUnavailableView("Nothing captured", systemImage: "square.dashed")
         }

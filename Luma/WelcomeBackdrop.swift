@@ -5,7 +5,7 @@ struct WelcomeBackdrop: View {
 
     var body: some View {
         ShaderEffectView(
-            fragmentFunction: "welcomeBackdropFragment",
+            program: .builtIn(function: "welcomeBackdropFragment"),
             scheme: colorScheme == .light ? 1.0 : 0.0
         )
     }

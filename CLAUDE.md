@@ -123,6 +123,28 @@ is gitignored — it is produced at build time.
   awaits `gitHubAuth.requestToken()`, which suspends until the host
   finishes presenting the sign-in sheet.
 
+- **Canvas (`CanvasScene`, `CanvasDrawable`, `CanvasRegistry`)** — a
+  scene the image holds by handle and changes; the host draws it.
+  A drawable carries the author's own vertex and fragment stages,
+  their own attribute layout, named uniforms, data buffers, a
+  transform and a visibility flag. `CanvasRegistry` is lock-guarded
+  rather than main-actor, because the image's thread needs a handle
+  back at once; changes reach the frontends through
+  `CanvasRegistry.onChange` on the main thread.
+- **Audio (`Synth`, `SynthEngine`, `EventChime`)** — `SynthEngine` is
+  the mixer, running on the audio device's thread. Its storage is
+  allocated once and reached through unsafe pointers, and the control
+  side speaks to it only through a lock-free ring, so nothing under
+  the callback allocates, retains or locks. Eight channels, each with
+  its own patch and pattern on its own step clock. `CLumaAudio` holds
+  only the device layer (miniaudio); the voices are Swift.
+- **Pharo bridges (`Sources/LumaCore/Pharo/`)** — `PharoHostBridge`
+  publishes record feeds; `PharoSynthBridge` and `PharoCanvasBridge`
+  are the image's entry points into the synthesiser and the canvas.
+  `PharoLumaBindings` compiles the `Luma*` classes into the image on
+  the way up. See the symbol-visibility note below: nothing in Swift
+  calls these `@_cdecl` exports, and that has bitten twice.
+
 ### Host (`Luma/`)
 
 - **`Workspace`** — thin host adapter. Owns `Engine`, exposes a few
@@ -142,6 +164,65 @@ is gitignored — it is produced at build time.
   `LumaCore.StyledText` to `AttributedString` (SwiftUI) and
   `NSAttributedString` (AppKit / Metal CFG renderer).
 
+### Shaders (`Shaders/`)
+
+Effects are authored once, body-only, in GLSL, against a preamble the
+host supplies (`v_uv`, `frag_color`, `u_resolution`, `u_time`,
+`u_scheme`, `u_activity`, `u_pulse`, `dataAt()`, `u_mvp`).
+
+- **`LumaShaderCompiler`** translates each `Shaders/*.frag.glsl` at
+  build time: a Swift catalog of the GLSL for OpenGL hosts, and a
+  Metal fragment function via glslang and spirv-cross. Driven by
+  `LumaShaderPlugin` for SwiftPM, by an Xcode target feeding a script
+  phase on `AgentBundle`, and by a Makefile rule for LumaGtk, whose
+  plugins do not run when the package is resolved as a dependency.
+- **`CShaderTranslate`** does the same translation at *runtime*, for
+  shaders written in a snippet, and answers what the compiler said
+  when they will not compile.
+- **Two flavours, deliberately.** OpenGL takes the source as it
+  stands, at a version with no explicit locations, binding attributes
+  by name; Metal's goes through glslang, which wants both. The
+  generated preambles differ accordingly.
+- **spirv-cross numbers MSL resources in the order it meets them**,
+  not by the binding written in the shader. `translate.c` pins every
+  binding explicitly — buffers 0 and 1 for the two uniform blocks,
+  textures and samplers above — and vertices bind at index 30, clear
+  of the range. Getting this wrong binds each buffer where another was
+  expected, which no compiler will catch.
+
+Keep `gl_Position.z` within 0..1. OpenGL's clip space runs -1..1 and
+Metal's runs 0..1, so a negative depth draws on GTK and is clipped
+away on macOS -- which no compiler will catch either.
+
+The preambles are generated text, and generated text is worth
+compiling. `ShaderVocabulary`, `CanvasGeometry` and `CanvasScene`
+depend on nothing but Foundation, so they can be built on their own
+and their output handed to `glslang` — which catches what a Swift
+build cannot, a shader that compiles nowhere:
+
+```sh
+swiftc -o gencheck Sources/LumaCore/{ShaderVocabulary,CanvasGeometry,CanvasScene,CanvasInput}.swift main.swift
+glslang -S frag generated.frag          # OpenGL flavour
+glslang -S frag -V generated.frag       # Metal flavour, as translated
+```
+
+### Symbol visibility (macOS)
+
+The image resolves the host's `luma_*` entry points by name through
+dlsym, and nothing in Swift calls them. Two consequences, both of
+which have already caused bugs:
+
+- **Release** builds with link-time optimisation, which internalises
+  anything unreferenced. `Luma/PharoBridgeExports.exp` names them so
+  it cannot. That list is a *whitelist*, so it is set on the Release
+  configuration only — on Debug it would hide the entry point the stub
+  executable looks for in `Luma.debug.dylib`, and the app aborts on
+  launch.
+- **LumaGtk** passes `-export_dynamic` for the same reason.
+
+A change to symbol visibility on the app target must be checked in
+both configurations; a passing Release build says nothing about Debug.
+
 ### Dependencies (Swift Package Manager)
 
 - `frida-swift` — Frida bindings
@@ -150,6 +231,12 @@ is gitignored — it is produced at build time.
 - `GRDB.swift` — SQLite persistence
 - `swift-crypto` — collaboration crypto
 - `SwiftyMonaco` — Monaco code editor component (host only)
+- `SwiftyPharo` — Pharo VM, image and the `<gtView>` builder shim
+- `miniaudio` — vendored in `Sources/CLumaAudio`, device layer only
+- `glslang` + `spirv-cross` — GLSL to Metal, at build time and at
+  runtime. Found wherever they happen to be installed; shipping wants
+  prebuilt libraries beside the Pharo VM's, neither project building
+  under SwiftPM.
 
 ### Agent modules (`Agent/`)
 
