@@ -37,7 +37,12 @@ struct LumaShaderCompiler {
     static func main() {
         let options = Options(arguments: CommandLine.arguments)
         let effects = effects(in: options.shaderDir)
-        let bodies = effects.map { try! String(contentsOf: $0.source, encoding: .utf8) }
+        // A checkout on Windows carries the shaders with carriage returns, and
+        // one inside a multi-line literal is a line the compiler cannot indent.
+        let bodies = effects.map {
+            try! String(contentsOf: $0.source, encoding: .utf8)
+                .replacingOccurrences(of: "\r\n", with: "\n")
+        }
 
         if let swiftOut = options.swiftOut {
             write(swiftCatalog(of: effects, bodies: bodies), to: swiftOut)

@@ -1,0 +1,2 @@
+Shaders/*.glsl text eol=lf
+Agent/**/*.ts text eol=lf
