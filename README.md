@@ -154,8 +154,22 @@ make install PREFIX=/usr/local
 ## Building the GTK frontend (Windows)
 
 Requires Swift for Windows, Visual Studio 2022 (for `cl.exe`),
-vcpkg with gtk4, and prebuilt `frida-core` / `radare2` prefixes.
-Launch a **Developer PowerShell for VS** and run from `LumaGtk/`:
+vcpkg with gtk4, and prebuilt `frida-core` / `radare2` / `pharo-vm`
+prefixes.
+
+No distribution packages a Pharo VM, so build one from our fork, which
+carries the Meson build and the tweaks that make it compile with MSVC.
+It generates its own interpreter sources, so Meson, Ninja and Python
+are all it needs beyond the compiler:
+
+```powershell
+git clone -b pharo-12 https://github.com/frida/pharo-vm.git C:\src\pharo-vm
+cd C:\src\pharo-vm
+meson setup build --prefix C:/src/pharo
+meson install -C build
+```
+
+Then launch a **Developer PowerShell for VS** and run from `LumaGtk/`:
 
 ```powershell
 .\scripts\windows\build.ps1                            # debug
@@ -164,6 +178,7 @@ Launch a **Developer PowerShell for VS** and run from `LumaGtk/`:
 .\scripts\windows\run.ps1                              # launch with DLL PATH set
 ```
 
-Prefix locations default to `C:\vcpkg\installed\x64-windows-release`
-and `C:\src\dist`; override with `-VcpkgPrefix`, `-FridaPrefix`,
-`-R2Prefix` (or `$env:VCPKG_PREFIX` etc.).
+Prefix locations default to `C:\vcpkg\installed\x64-windows-release`,
+`C:\src\dist` and `C:\src\pharo`; override with `-VcpkgPrefix`,
+`-FridaPrefix`, `-R2Prefix`, `-PharoPrefix` (or `$env:VCPKG_PREFIX`
+etc.).

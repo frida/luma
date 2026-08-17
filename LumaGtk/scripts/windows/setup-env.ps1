@@ -6,14 +6,15 @@
 #     . .\scripts\windows\setup-env.ps1
 #
 # Prefix locations can be overridden via -VcpkgPrefix / -FridaPrefix /
-# -R2Prefix, or via the VCPKG_PREFIX / FRIDA_PREFIX / R2_PREFIX env
-# vars.
+# -R2Prefix / -PharoPrefix, or via the VCPKG_PREFIX / FRIDA_PREFIX /
+# R2_PREFIX / PHARO_PREFIX env vars.
 
 [CmdletBinding()]
 param(
     [string] $VcpkgPrefix,
     [string] $FridaPrefix,
-    [string] $R2Prefix
+    [string] $R2Prefix,
+    [string] $PharoPrefix
 )
 
 $ErrorActionPreference = 'Stop'
@@ -35,8 +36,9 @@ $vcpkg = Resolve-Prefix $VcpkgPrefix 'VCPKG_PREFIX' @(
 )
 $frida = Resolve-Prefix $FridaPrefix 'FRIDA_PREFIX' @('C:\src\dist')
 $r2    = Resolve-Prefix $R2Prefix    'R2_PREFIX'    @('C:\src\dist')
+$pharo = Resolve-Prefix $PharoPrefix 'PHARO_PREFIX' @('C:\src\pharo')
 
-# frida-core and radare2 install .pc files with an absolute prefix
+# frida-core, radare2 and pharo-vm install .pc files with an absolute prefix
 # like `prefix=C:/src/dist`. vcpkg's pkgconf trips over the colon in
 # the drive letter and emits "Expected a value for variable 'prefix'",
 # leaving every ${prefix}-derived variable unresolved — which in turn
@@ -55,6 +57,7 @@ function Repair-PkgConfigPrefix {
 }
 Repair-PkgConfigPrefix (Join-Path $frida 'lib\pkgconfig')
 Repair-PkgConfigPrefix (Join-Path $r2    'lib\pkgconfig')
+Repair-PkgConfigPrefix (Join-Path $pharo 'lib\pkgconfig')
 
 # SwiftPM emits a `-L<dir> -l<lib>` pair for every library, repeating the same
 # few lib dirs hundreds of times. On the GTK/frida/r2 stack the final link
@@ -106,7 +109,7 @@ Get-ChildItem (Join-Path $vcpkg 'include\*.h') -File | Where-Object {
     }
 }
 
-$pkgConfigDirs = @($frida, $r2, $vcpkg) |
+$pkgConfigDirs = @($frida, $r2, $pharo, $vcpkg) |
     ForEach-Object { New-PkgConfigMirrorWithoutLibPath (Join-Path $_ 'lib\pkgconfig') } |
     Where-Object { $_ } |
     ForEach-Object { $_ -replace '\\','/' } |
@@ -123,6 +126,7 @@ $shimDir = (Join-Path $vcpkg 'include\vcpkg-shim') -replace '\\','/'
 $env:VCPKG_PREFIX          = $vcpkg
 $env:FRIDA_PREFIX          = $frida
 $env:R2_PREFIX             = $r2
+$env:PHARO_PREFIX          = $pharo
 $env:PKG_CONFIG_PATH       = $pkgConfigDirs -join ';'
 $env:GIR_EXTRA_SEARCH_PATH = (Join-Path $vcpkg 'share\gir-1.0') -replace '\\','/'
 $env:CPATH                 = $shimDir
@@ -131,7 +135,7 @@ $env:CPLUS_INCLUDE_PATH    = $shimDir
 # The pkgconfig-nolibpath mirror above drops the per-library -L; put the real
 # lib dirs on the linker's LIB search path so lld-link still finds the import
 # libs.
-$libDirs = @($vcpkg, $frida, $r2) |
+$libDirs = @($vcpkg, $frida, $r2, $pharo) |
     ForEach-Object { Join-Path $_ 'lib' } |
     Where-Object { Test-Path $_ } |
     Select-Object -Unique
@@ -181,7 +185,8 @@ $prefixBins = @(
     (Join-Path $vcpkg 'bin'),
     (Join-Path $vcpkg 'tools'),
     (Join-Path $frida 'bin'),
-    (Join-Path $r2    'bin')
+    (Join-Path $r2    'bin'),
+    (Join-Path $pharo 'bin')
 ) | Where-Object { Test-Path $_ }
 foreach ($p in $prefixBins) {
     if (-not (($env:PATH -split ';') -contains $p)) {
@@ -209,3 +214,4 @@ Write-Host "LumaGtk build env configured:"
 Write-Host "  VCPKG_PREFIX  = $vcpkg"
 Write-Host "  FRIDA_PREFIX  = $frida"
 Write-Host "  R2_PREFIX     = $r2"
+Write-Host "  PHARO_PREFIX  = $pharo"

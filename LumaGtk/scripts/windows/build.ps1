@@ -14,6 +14,7 @@ param(
     [string] $VcpkgPrefix,
     [string] $FridaPrefix,
     [string] $R2Prefix,
+    [string] $PharoPrefix,
 
     # SwiftPM build directory; defaults to LumaGtk\.build.
     [string] $BuildPath,
@@ -49,22 +50,8 @@ if (-not (Get-Command cl -ErrorAction SilentlyContinue)) {
 & (Join-Path $script 'setup-env.ps1') `
     -VcpkgPrefix $VcpkgPrefix `
     -FridaPrefix $FridaPrefix `
-    -R2Prefix    $R2Prefix
-
-$repo = Split-Path -Parent $pkg
-
-# LumaCore embeds a compiled agent bundle that is generated, not checked in.
-# Produce it before building anything that depends on LumaCore.
-Push-Location $repo
-try {
-    & swift run --package-path . LumaBundleCompiler `
-        --config       (Join-Path $repo 'Agent\bundle.json') `
-        --project-root $repo `
-        --staging-dir  (Join-Path $repo '.build\AgentStaging')
-    if ($LASTEXITCODE -ne 0) { throw "LumaBundleCompiler failed ($LASTEXITCODE)" }
-} finally {
-    Pop-Location
-}
+    -R2Prefix    $R2Prefix `
+    -PharoPrefix $PharoPrefix
 
 Push-Location $pkg
 try {

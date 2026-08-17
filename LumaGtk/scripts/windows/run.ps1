@@ -15,6 +15,7 @@ param(
     [string] $VcpkgPrefix,
     [string] $FridaPrefix,
     [string] $R2Prefix,
+    [string] $PharoPrefix,
 
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]] $ExtraArgs
@@ -41,6 +42,7 @@ $VcpkgPrefix = Resolve-PrefixDir $VcpkgPrefix 'VCPKG_PREFIX' @(
 )
 $FridaPrefix = Resolve-PrefixDir $FridaPrefix 'FRIDA_PREFIX' @('C:\src\dist')
 $R2Prefix    = Resolve-PrefixDir $R2Prefix    'R2_PREFIX'    @('C:\src\dist')
+$PharoPrefix = Resolve-PrefixDir $PharoPrefix 'PHARO_PREFIX' @('C:\src\pharo')
 
 $exe = Join-Path $pkg ".build\$Configuration\LumaGtk.exe"
 if (-not (Test-Path $exe)) {
@@ -58,7 +60,7 @@ if (-not (Test-Path (Join-Path $schemaDir 'gschemas.compiled'))) {
 $adwaitaShare = Join-Path $pkg 'build\share'
 & (Join-Path $script 'fetch-adwaita.ps1') -ShareDir $adwaitaShare -CacheDir (Join-Path $pkg 'build')
 
-$env:PATH = "$VcpkgPrefix\bin;$VcpkgPrefix\tools;$FridaPrefix\bin;$R2Prefix\bin;$env:PATH"
+$env:PATH = "$VcpkgPrefix\bin;$VcpkgPrefix\tools;$FridaPrefix\bin;$R2Prefix\bin;$PharoPrefix\bin;$env:PATH"
 $env:GDK_PIXBUF_MODULE_FILE = "$VcpkgPrefix\lib\gdk-pixbuf-2.0\2.10.0\loaders.cache"
 $env:GIO_EXTRA_MODULES = "$VcpkgPrefix\plugins\glib-networking"
 $dataDirs = @("$VcpkgPrefix\share", $adwaitaShare)
