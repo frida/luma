@@ -6,23 +6,6 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXAggregateTarget section */
-		0CAB00010000000000000001 /* AgentBundle */ = {
-			isa = PBXAggregateTarget;
-			buildConfigurationList = 0CAB00010000000000000002 /* Build configuration list for PBXAggregateTarget "AgentBundle" */;
-			buildPhases = (
-				0CE0E3DD2ECA3CBE000B1E01 /* ShellScript */,
-				0CAB0002000000000000000C /* ShellScript */,
-			);
-			dependencies = (
-				0CAB00010000000000000005 /* PBXTargetDependency */,
-				0CAB0002000000000000000B /* PBXTargetDependency */,
-			);
-			name = AgentBundle;
-			productName = AgentBundle;
-		};
-/* End PBXAggregateTarget section */
-
 /* Begin PBXBuildFile section */
 		0C8A0A6F2EF0B51000F0D7B2 /* Frida in Frameworks */ = {isa = PBXBuildFile; productRef = 0C8A0A6E2EF0B51000F0D7B2 /* Frida */; };
 		0C8A0A712EF0B51400F0D7B2 /* SwiftyR2 in Frameworks */ = {isa = PBXBuildFile; productRef = 0C8A0A702EF0B51400F0D7B2 /* SwiftyR2 */; };
@@ -34,27 +17,6 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		0CAB00010000000000000006 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 0CD2092C2EB511C400D027FC /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 0C6420C02EE8672900E4F780;
-			remoteInfo = LumaBundleCompiler;
-		};
-		0CAB00010000000000000008 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 0CD2092C2EB511C400D027FC /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 0CAB00010000000000000001;
-			remoteInfo = AgentBundle;
-		};
-		0CAB0002000000000000000A /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 0CD2092C2EB511C400D027FC /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 0CAB00020000000000000006;
-			remoteInfo = LumaShaderCompiler;
-		};
 		0CB2C6762FA5411700426A24 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 0CD2092C2EB511C400D027FC /* Project object */;
@@ -297,7 +259,6 @@
 			buildRules = (
 			);
 			dependencies = (
-				0CAB00010000000000000007 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				0CAAF5F12ED4D41D00B8FD05 /* Luma */,
@@ -358,7 +319,6 @@
 			projectRoot = "";
 			targets = (
 				0CD209332EB511C400D027FC /* Luma */,
-				0CAB00010000000000000001 /* AgentBundle */,
 				0CAB00020000000000000006 /* LumaShaderCompiler */,
 				0C6420C02EE8672900E4F780 /* LumaBundleCompiler */,
 				0CB2C66F2FA5411700426A24 /* LumaUITests */,
@@ -384,26 +344,6 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		0CAB0002000000000000000C /* ShellScript */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/Shaders/welcome-backdrop.frag.glsl",
-			);
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(SRCROOT)/Sources/LumaCore/Generated/ShaderEffects.swift",
-				"$(SRCROOT)/Luma/Shaders/Generated/WelcomeBackdropFragment.metal",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/zsh;
-			shellScript = "set -euo pipefail\n\n# Built through SwiftPM rather than as a target here, so it links the same\n# shader toolchain the runtime translation does.\nswift run --package-path \"${SRCROOT}\" LumaShaderCompiler \\\n    --shader-dir \"${SRCROOT}/Shaders\" \\\n    --swift-out  \"${SRCROOT}/Sources/LumaCore/Generated/ShaderEffects.swift\" \\\n    --metal-dir  \"${SRCROOT}/Luma/Shaders/Generated\"\n";
-		};
 		0CB2C6832FA5411A00426A24 /* Build observed.c fixture */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -461,41 +401,6 @@
 			shellPath = /bin/zsh;
 			shellScript = "set -euo pipefail\nrelease=\"vm-20260811.3\"\nlocal=\"${SRCROOT}/../SwiftyPharo/artifacts/SwiftyPharo.image\"\ncache=\"${SRCROOT}/build/.pharo/${release}\"\nimage=\"${cache}/SwiftyPharo.image\"\nif [ -f \"${local}\" ]; then\n  image=\"${local}\"\nelif [ ! -f \"${image}\" ]; then\n  mkdir -p \"${cache}\"\n  curl -sSL \"https://github.com/frida/SwiftyPharo/releases/download/${release}/SwiftyPharo.image.zip\" -o \"${cache}/image.zip\"\n  unzip -qo \"${cache}/image.zip\" -d \"${cache}\"\nfi\nstaged=\"${SRCROOT}/Sources/LumaCore/Resources/pharo-image\"\nmkdir -p \"${staged}\"\ncp \"${image}\" \"${image%.image}.changes\" \"${staged}/\"\n";
 		};
-		0CE0E3DD2ECA3CBE000B1E01 /* ShellScript */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/Agent/core/console.ts",
-				"$(SRCROOT)/Agent/core/env.ts",
-				"$(SRCROOT)/Agent/core/instrument.ts",
-				"$(SRCROOT)/Agent/core/itrace.ts",
-				"$(SRCROOT)/Agent/core/luma.ts",
-				"$(SRCROOT)/Agent/core/memory.ts",
-				"$(SRCROOT)/Agent/core/modules.ts",
-				"$(SRCROOT)/Agent/core/pkg.ts",
-				"$(SRCROOT)/Agent/core/repl.ts",
-				"$(SRCROOT)/Agent/core/resolver.ts",
-				"$(SRCROOT)/Agent/core/symbolicate.ts",
-				"$(SRCROOT)/Agent/core/threads.ts",
-				"$(SRCROOT)/Agent/core/value.ts",
-				"$(SRCROOT)/Agent/instruments/codeshare.ts",
-				"$(SRCROOT)/Agent/instruments/drain-agent.ts",
-				"$(SRCROOT)/Agent/instruments/tracer.ts",
-			);
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(SRCROOT)/Sources/LumaCore/Generated/LumaAgent.swift",
-				"$(SRCROOT)/Sources/LumaCore/Generated/LumaTypings.swift",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/zsh;
-			shellScript = "set -euo pipefail\n\n\"${BUILT_PRODUCTS_DIR}/LumaBundleCompiler\" \\\n    --config       \"${SRCROOT}/Agent/bundle.json\" \\\n    --project-root \"${SRCROOT}\" \\\n    --staging-dir  \"${BUILD_DIR}/AgentStaging\"\n";
-		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -530,21 +435,6 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		0CAB00010000000000000005 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 0C6420C02EE8672900E4F780 /* LumaBundleCompiler */;
-			targetProxy = 0CAB00010000000000000006 /* PBXContainerItemProxy */;
-		};
-		0CAB00010000000000000007 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 0CAB00010000000000000001 /* AgentBundle */;
-			targetProxy = 0CAB00010000000000000008 /* PBXContainerItemProxy */;
-		};
-		0CAB0002000000000000000B /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 0CAB00020000000000000006 /* LumaShaderCompiler */;
-			targetProxy = 0CAB0002000000000000000A /* PBXContainerItemProxy */;
-		};
 		0CB2C6772FA5411700426A24 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 0CD209332EB511C400D027FC /* Luma */;
@@ -586,22 +476,6 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-			};
-			name = Release;
-		};
-		0CAB00010000000000000003 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-			};
-			name = Debug;
-		};
-		0CAB00010000000000000004 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Release;
 		};
@@ -987,15 +861,6 @@
 			buildConfigurations = (
 				0C6420C62EE8672900E4F780 /* Debug */,
 				0C6420C72EE8672900E4F780 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		0CAB00010000000000000002 /* Build configuration list for PBXAggregateTarget "AgentBundle" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				0CAB00010000000000000003 /* Debug */,
-				0CAB00010000000000000004 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

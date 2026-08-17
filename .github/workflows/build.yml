@@ -310,14 +310,8 @@ jobs:
       - name: Install shader toolchain
         run: brew install glslang spirv-cross
 
-      - name: Generate agent bundle
-        run: |
-          xcodebuild \
-            -project Luma.xcodeproj \
-            -scheme AgentBundle \
-            -configuration Release \
-            -derivedDataPath build/.derived \
-            build
+      - name: Generate sources
+        run: scripts/generate-sources.sh
 
       - name: Build
         run: |
@@ -654,14 +648,8 @@ jobs:
       - name: Install shader toolchain
         run: brew install glslang spirv-cross
 
-      - name: Generate agent bundle
-        run: |
-          xcodebuild \
-            -project Luma.xcodeproj \
-            -scheme AgentBundle \
-            -configuration Release \
-            -derivedDataPath build/.derived-ios \
-            build
+      - name: Generate sources
+        run: scripts/generate-sources.sh
 
       - name: Build (unsigned, iOS Simulator)
         if: env.CAN_SIGN != 'true'

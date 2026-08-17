@@ -55,12 +55,7 @@ $(PHARO_IMAGE):
 
 $(APP): $(SOURCES) $(SHADER_SOURCES) Luma.xcodeproj Package.swift
 	mkdir -p "$(BUILD_DIR)"
-	xcodebuild \
-		-project Luma.xcodeproj \
-		-scheme AgentBundle \
-		-configuration Release \
-		-derivedDataPath "$(DERIVED_DIR)" \
-		build
+	scripts/generate-sources.sh
 	xcodebuild \
 		-project Luma.xcodeproj \
 		-scheme Luma \
