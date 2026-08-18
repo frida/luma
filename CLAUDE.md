@@ -51,15 +51,17 @@ Or open `Luma.xcodeproj` in Xcode and build with Cmd+B (set
 destination to **My Mac**, or to a simulator for the iOS frontend).
 
 The agent bundles, the TypeScript typings and the shader catalogue are
-generated Swift inside `LumaCore`, and Xcode enumerates a package
-target's sources when it loads the package graph -- before any build
-phase or scheme pre-action runs. Anything generated during a build is
-therefore missing from that build, so `scripts/generate-sources.sh`
-writes them before `xcodebuild` is invoked: `make` and CI run it, and
-the Luma scheme's pre-action refreshes them, saying what to run when
-they are not there yet. A fresh checkout built from Xcode wants it
-once by hand. SwiftPM generates them through `LumaBundlePlugin` and
-`LumaShaderPlugin` instead.
+generated Swift inside `LumaCore`, and the Pharo image is a resource
+staged into it. Xcode enumerates a package target's sources and
+resources when it loads the package graph -- before any build phase or
+scheme pre-action runs. Anything produced during a build is therefore
+missing from that build, so `scripts/generate-sources.sh` writes them
+before `xcodebuild` is invoked: `make` and CI run it, and the Luma
+scheme's pre-action refreshes them, saying what to run when they are
+not there yet. A fresh checkout built from Xcode wants it once by
+hand. SwiftPM generates the sources through `LumaBundlePlugin` and
+`LumaShaderPlugin` instead, and both Makefiles stage the image through
+`scripts/stage-pharo-image.sh`.
 
 `LumaCore` (the cross-platform Swift package) can be built and
 type-checked on Linux without Xcode:

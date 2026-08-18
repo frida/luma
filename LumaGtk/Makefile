@@ -19,11 +19,7 @@ ifneq ($(wildcard $(LOCAL_SHADER_TOOLCHAIN)),)
 export SHADER_TOOLCHAIN_ROOT := artifacts/ShaderToolchain.xcframework
 endif
 
-PHARO_RELEASE := vm-20260811.3
-PHARO_IMAGE_DIR := ../Sources/LumaCore/Resources/pharo-image
-PHARO_IMAGE := $(PHARO_IMAGE_DIR)/SwiftyPharo.image
-PHARO_LOCAL := $(PROJECT_ROOT)/../SwiftyPharo/artifacts/SwiftyPharo.image
-PHARO_CACHE := .build/.pharo/$(PHARO_RELEASE)
+PHARO_IMAGE := ../Sources/LumaCore/Resources/pharo-image/SwiftyPharo.image
 PHARO_SOURCE := $(PROJECT_ROOT)/../SwiftyPharo
 
 # Only Apple platforms have a published VM to link against; everywhere else
@@ -93,20 +89,7 @@ $(PHARO_VM_PC):
 endif
 
 $(PHARO_IMAGE):
-	@mkdir -p $(PHARO_IMAGE_DIR)
-	@if [ -f "$(PHARO_LOCAL)" ]; then \
-	    src="$(PHARO_LOCAL)"; \
-	elif [ -f "$(PHARO_CACHE)/SwiftyPharo.image" ]; then \
-	    src="$(PHARO_CACHE)/SwiftyPharo.image"; \
-	else \
-	    echo "Fetching Pharo image $(PHARO_RELEASE)"; \
-	    mkdir -p "$(PHARO_CACHE)"; \
-	    curl -sSL "https://github.com/frida/SwiftyPharo/releases/download/$(PHARO_RELEASE)/SwiftyPharo.image.zip" -o "$(PHARO_CACHE)/image.zip"; \
-	    unzip -qo "$(PHARO_CACHE)/image.zip" -d "$(PHARO_CACHE)"; \
-	    src="$(PHARO_CACHE)/SwiftyPharo.image"; \
-	fi; \
-	cp "$$src" "$(PHARO_IMAGE)"; \
-	cp "$${src%.image}.changes" "$(PHARO_IMAGE_DIR)/SwiftyPharo.changes"
+	$(PROJECT_ROOT)/scripts/stage-pharo-image.sh
 
 run: build
 	./.build/debug/LumaGtk

@@ -1,12 +1,13 @@
 #!/bin/sh
 set -eu
 
-# Xcode enumerates a package target's sources when it loads the package graph,
-# which is before any build phase or scheme pre-action runs. Generated sources
-# that appear during a build are therefore missing from that build's LumaCore,
-# so they have to be written before xcodebuild is invoked at all. Pass
-# --require-existing where the build has already started, to say so plainly
-# rather than let the compiler fail on the missing declarations.
+# Xcode enumerates a package target's sources and resources when it loads the
+# package graph, which is before any build phase or scheme pre-action runs.
+# Generated sources and the staged image that appear during a build are
+# therefore missing from that build's LumaCore, so they have to be written
+# before xcodebuild is invoked at all. Pass --require-existing where the build
+# has already started, to say so plainly rather than let the compiler fail on
+# the missing declarations or the app on the missing image.
 require_existing=false
 if [ "${1:-}" = "--require-existing" ]; then
     require_existing=true
@@ -14,11 +15,14 @@ fi
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 agent_out="$root/Sources/LumaCore/Generated/LumaAgent.swift"
+pharo_image="$root/Sources/LumaCore/Resources/pharo-image/SwiftyPharo.image"
 
-if $require_existing && [ ! -f "$agent_out" ]; then
+if $require_existing && { [ ! -f "$agent_out" ] || [ ! -f "$pharo_image" ]; }; then
     echo "error: generated sources are missing; run scripts/generate-sources.sh and build again" >&2
     exit 1
 fi
+
+"$root/scripts/stage-pharo-image.sh"
 
 # Xcode hands a scheme pre-action SDKROOT=auto, which swift cannot resolve.
 unset SDKROOT
