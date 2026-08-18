@@ -16,6 +16,7 @@ struct TargetPickerView: View {
     }
 
     @StateObject private var store: DeviceListModel
+    private let engine: Engine
     private let deviceManager: DeviceManager
 
     #if canImport(UIKit)
@@ -78,6 +79,7 @@ struct TargetPickerView: View {
     @State private var selectedProcessPID: UInt?
 
     @State private var showingAddRemoteSheet = false
+    @State private var showingBootMachineSheet = false
     @State private var remoteAddress = ""
     @State private var remoteCertificate = ""
     @State private var remoteOrigin = ""
@@ -92,12 +94,14 @@ struct TargetPickerView: View {
     }
 
     init(
+        engine: Engine,
         deviceManager: DeviceManager,
         reason: String? = nil,
         onSpawn: @escaping (Device, SpawnConfig) -> Void,
         onAttach: @escaping (Device, ProcessDetails) -> Void,
         onArm: @escaping (Device, SpawnConfig, String) -> Void
     ) {
+        self.engine = engine
         self.deviceManager = deviceManager
         self.reason = reason
         self.onSpawn = onSpawn
@@ -186,6 +190,9 @@ struct TargetPickerView: View {
                 detailPane
             }
             .frame(minWidth: isCompactWidth ? 0 : 904, minHeight: isCompactWidth ? 0 : 560)
+            .sheet(isPresented: $showingBootMachineSheet) {
+                BootVirtualMachineSheet(engine: engine) { selectedDeviceID = $0.id }
+            }
             .sheet(isPresented: $showingAddRemoteSheet) {
                 addRemoteSheet()
             }
@@ -1217,16 +1224,25 @@ struct TargetPickerView: View {
 
             Spacer()
 
-            Button {
-                showingAddRemoteSheet = true
+            Menu {
+                Button("Add Remote Device…") {
+                    showingAddRemoteSheet = true
+                }
+
+                Button("Boot Virtual Machine…") {
+                    showingBootMachineSheet = true
+                }
+                .disabled(bootableTemplate == nil)
+                .help(virtualMachineHelp)
             } label: {
                 Image(systemName: "plus.circle.fill")
                     .foregroundStyle(.tint)
                     .imageScale(.large)
             }
-            .buttonStyle(.borderless)
-            .accessibilityLabel("Add Remote…")
-            .help("Add a remote frida-server or portal")
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(width: 24)
+            .accessibilityLabel("Add Device…")
         }
         .padding(.horizontal, deviceListHeaderHorizontalPadding)
         .padding(.top, isCompactWidth ? 0 : 12)
@@ -1245,6 +1261,17 @@ struct TargetPickerView: View {
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
         }
+    }
+
+    private var bootableTemplate: VirtualMachineTemplate? {
+        engine.virtualMachines.templates.first { engine.virtualMachines.availability(for: $0).isAvailable }
+    }
+
+    private var virtualMachineHelp: String {
+        bootableTemplate != nil
+            ? "Boot a guest and instrument its kernel"
+            : engine.virtualMachines.templates.compactMap { engine.virtualMachines.availability(for: $0).reason }.first
+                ?? "No virtual machine backend is available"
     }
 
     private var discoveryHelpText: String {

@@ -117,7 +117,7 @@ private struct ProjectContentView: View {
                 engine.attachLocalNotifier()
             #endif
             if engine.collaboration.isCollaborative {
-                engine.setCollaborationPanelVisible(true)
+                engine.setSidePanel(.collaboration)
             }
             if engine.selectedSidebarItem == nil {
                 engine.selectedSidebarItem = .notebook
@@ -183,10 +183,10 @@ private struct ProjectContentView: View {
                 navigationAndDetail
                     .frame(minWidth: 560)
 
-                if engine.projectUIState.isCollaborationPanelVisible {
+                if let panel = engine.projectUIState.sidePanel {
                     HStack(spacing: 0) {
                         Divider()
-                        CollaborationPanel(engine: engine)
+                        sidePanel(panel)
                     }
                     .frame(minWidth: 260, idealWidth: 300, maxWidth: 520)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -196,14 +196,24 @@ private struct ProjectContentView: View {
             HStack(spacing: 0) {
                 navigationAndDetail
 
-                if engine.projectUIState.isCollaborationPanelVisible {
+                if let panel = engine.projectUIState.sidePanel {
                     Divider()
-                    CollaborationPanel(engine: engine)
+                    sidePanel(panel)
                         .frame(minWidth: 260, idealWidth: 300, maxWidth: 520)
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
         #endif
+    }
+
+    @ViewBuilder
+    private func sidePanel(_ panel: SidePanel) -> some View {
+        switch panel {
+        case .collaboration:
+            CollaborationPanel(engine: engine)
+        case .virtualMachines:
+            VirtualMachinePanel(engine: engine)
+        }
     }
 
     private var navigationAndDetail: some View {
@@ -239,6 +249,7 @@ private struct ProjectContentView: View {
 
     private func targetPickerSheet(context: TargetPickerContext) -> some View {
         TargetPickerView(
+            engine: engine,
             deviceManager: engine.deviceManager,
             reason: {
                 if case .reestablish(_, let reason) = context {
@@ -443,11 +454,23 @@ struct ProjectToolbar: ToolbarContent {
             GlobalActionQueueToolbarItem(engine: engine)
 
             Button {
-                engine.setCollaborationPanelVisible(!engine.projectUIState.isCollaborationPanelVisible)
+                engine.toggleSidePanel(.virtualMachines)
+            } label: {
+                Label(
+                    "Machines",
+                    systemImage: engine.projectUIState.sidePanel == .virtualMachines
+                        ? "desktopcomputer.and.arrow.down"
+                        : "desktopcomputer"
+                )
+            }
+            .help("Show or hide the virtual machines panel")
+
+            Button {
+                engine.toggleSidePanel(.collaboration)
             } label: {
                 Label(
                     "Collaboration",
-                    systemImage: engine.projectUIState.isCollaborationPanelVisible
+                    systemImage: engine.projectUIState.sidePanel == .collaboration
                         ? "person.2.wave.2.fill"
                         : "person.2.wave.2"
                 )

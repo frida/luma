@@ -8,6 +8,8 @@
 	<array>
 		<string>applinks:luma.frida.re</string>
 	</array>
+	<key>com.apple.security.virtualization</key>
+	<true/>
 	<key>com.apple.security.cs.allow-jit</key>
 	<true/>
 	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>

@@ -162,7 +162,7 @@ private struct PhoneContentView: View {
             await EngineRegistry.shared.startIfNeeded(for: projectURL)
             engine.attachInstrumentUIs()
             if engine.collaboration.isCollaborative {
-                engine.setCollaborationPanelVisible(true)
+                engine.setSidePanel(.collaboration)
             }
             eventsBaseline = engine.eventLog.totalReceived
             collabChatBaseline = engine.collaboration.chatMessages.count

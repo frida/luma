@@ -148,6 +148,7 @@ struct PhoneSessionsListView: View {
                 onDismiss: { picker.context = nil }
             ) { ctx in
                 TargetPickerView(
+                    engine: engine,
                     deviceManager: engine.deviceManager,
                     reason: {
                         if case .reestablish(_, let reason) = ctx { return reason }
