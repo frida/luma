@@ -112,7 +112,7 @@ final class MainWindow: InstrumentUIHost {
     private var seenPendingActionIDs: Set<UUID> = []
 
     private var isCollaborationPanelVisible: Bool {
-        engine?.projectUIState.isCollaborationPanelVisible ?? false
+        engine?.projectUIState.sidePanel == .collaboration
     }
 
     private enum SidebarSelection: Equatable {
@@ -375,7 +375,7 @@ final class MainWindow: InstrumentUIHost {
     }
 
     private func setCollaborationVisible(_ visible: Bool) {
-        engine?.setCollaborationPanelVisible(visible)
+        engine?.setSidePanel(visible ? .collaboration : nil)
         collaborationPanel?.widget.visible = visible
     }
 

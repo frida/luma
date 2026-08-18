@@ -1058,6 +1058,24 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    public func fetchVirtualMachines() throws -> [VirtualMachineRecord] {
+        try db.read { db in
+            try VirtualMachineRecord.fetchAll(db)
+        }
+    }
+
+    public func save(_ machine: VirtualMachineRecord) throws {
+        try db.write { db in
+            try machine.save(db)
+        }
+    }
+
+    public func deleteVirtualMachine(id: UUID) throws {
+        try db.write { db in
+            _ = try VirtualMachineRecord.deleteOne(db, key: id)
+        }
+    }
+
     public func fetchPackagesState() throws -> ProjectPackagesState {
         try db.write { db in
             var state: ProjectPackagesState
@@ -1596,6 +1614,15 @@ public final class ProjectStore: Sendable {
             t.column("keepalive_interval", .integer)
         }
 
+        try db.create(table: "virtual_machine", ifNotExists: true) { t in
+            t.primaryKey("id", .text).notNull()
+            t.column("name", .text).notNull()
+            t.column("template_id", .text).notNull()
+            t.column("parameters_json", .text).notNull()
+            t.column("agent_path", .text)
+            t.column("has_ready_snapshot", .boolean).notNull().defaults(to: false)
+        }
+
         try db.create(table: "project_packages_state", ifNotExists: true) { t in
             t.primaryKey("id", .text).notNull()
             t.column("package_json", .blob)
@@ -1665,7 +1692,7 @@ public final class ProjectStore: Sendable {
             t.column("selected_item_json", .text)
             t.column("event_stream_collapsed", .boolean).notNull().defaults(to: true)
             t.column("event_stream_bottom_height", .double).notNull().defaults(to: 0)
-            t.column("collaboration_panel_visible", .boolean).notNull().defaults(to: false)
+            t.column("side_panel", .text)
             t.column("pharo_snippets_json", .text)
             t.column("pharo_page_width", .double)
             t.column("pharo_page_maximized", .boolean).notNull().defaults(to: false)

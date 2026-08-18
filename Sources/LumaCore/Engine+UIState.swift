@@ -63,13 +63,17 @@ extension Engine {
         }
     }
 
-    public func setCollaborationPanelVisible(_ visible: Bool) {
-        guard projectUIState.isCollaborationPanelVisible != visible else { return }
+    public func setSidePanel(_ panel: SidePanel?) {
+        guard projectUIState.sidePanel != panel else { return }
         Task { @MainActor [weak self] in
-            guard let self, self.projectUIState.isCollaborationPanelVisible != visible else { return }
-            self.projectUIState.isCollaborationPanelVisible = visible
+            guard let self, self.projectUIState.sidePanel != panel else { return }
+            self.projectUIState.sidePanel = panel
             try? self.store.save(self.projectUIState)
         }
+    }
+
+    public func toggleSidePanel(_ panel: SidePanel) {
+        setSidePanel((projectUIState.sidePanel == panel) ? nil : panel)
     }
 
     public func setSelectedItemJSON(_ json: String?) {

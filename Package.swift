@@ -134,11 +134,13 @@ let lumaTargets: [Target] = [
             .product(name: "SwiftyR2", package: "SwiftyR2"),
             .product(name: "SwiftyPharo", package: "SwiftyPharo"),
             "CLumaAudio",
+            "CZstd",
         ] + lumaCoreSoupDeps + shaderTranslateDeps,
         path: "Sources/LumaCore",
         exclude: lumaCoreExcludes,
         resources: [
             .process("Resources/LumaPortal.pem"),
+            .copy("Resources/MachineIcons"),
             // Staged by the build, and copied rather than processed so it
             // keeps the directory the runtime looks in.
             .copy("Resources/pharo-image"),
@@ -157,6 +159,12 @@ let lumaTargets: [Target] = [
         swiftSettings: [
             .swiftLanguageMode(.v5),
         ]
+    ),
+
+    .target(
+        name: "CZstd",
+        path: "Sources/CZstd",
+        publicHeadersPath: "include"
     ),
 
     .target(

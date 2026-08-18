@@ -110,7 +110,7 @@ struct CollaborationPanel: View {
             }
 
             Button {
-                engine.setCollaborationPanelVisible(false)
+                engine.setSidePanel(nil)
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 14))

@@ -67,6 +67,7 @@ public final class Engine {
 
     public let hookPacks: HookPackLibrary
     public let customInstruments: CustomInstrumentLibrary
+    public let virtualMachines: VirtualMachineManager
 
     /// The image the playground, the notebook cells and the mission tools all
     /// talk to. The frontend says where it lives; see `PharoWorkspace`.
@@ -151,6 +152,7 @@ public final class Engine {
         try? FileManager.default.createDirectory(at: hookPacksDir, withIntermediateDirectories: true)
         self.hookPacks = HookPackLibrary(directory: hookPacksDir)
         self.customInstruments = CustomInstrumentLibrary()
+        self.virtualMachines = VirtualMachineManager(deviceManager: deviceManager, store: store, dataDirectory: dataDirectory)
         self.collaboration = CollaborationSession(
             deviceManager: deviceManager,
             store: store,
@@ -182,6 +184,14 @@ public final class Engine {
                 MissionSystemPrompt.build(for: mission)
             }
         )
+
+        #if !os(Windows)
+        virtualMachines.register(QemuBackend())
+        #endif
+        #if os(macOS)
+        virtualMachines.register(VirtualizationBackend())
+        virtualMachines.register(VPhoneBackend())
+        #endif
 
         registerDescriptor(Self.tracerDescriptor)
         for desc in hookPacks.descriptors() {
@@ -1606,6 +1616,7 @@ public final class Engine {
                 try? store.save(session)
             }
         }
+        virtualMachines.load()
         #if canImport(Network) || canImport(CSoup)
         purgeExternalMCPMissions()
         #endif
@@ -1684,6 +1695,8 @@ public final class Engine {
 
         for node in processNodes { node.stop() }
         processNodes.removeAll()
+
+        await virtualMachines.stopAll()
 
         for service in drainServices.values { await service.shutdown() }
         drainServices.removeAll()

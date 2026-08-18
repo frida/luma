@@ -119,6 +119,14 @@ func sharedGitHubAuth() -> GitHubAuth { sharedWelcomeModel.gitHubAuth }
         }
 
 
+        func applicationShouldTerminate(_ application: NSApplication) -> NSApplication.TerminateReply {
+            Task { @MainActor in
+                await EngineRegistry.shared.shutdownAll()
+                application.reply(toApplicationShouldTerminate: true)
+            }
+            return .terminateLater
+        }
+
         func application(_ application: NSApplication, open urls: [URL]) {
             for url in urls {
                 handle(url: url)
