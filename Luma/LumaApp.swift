@@ -3,6 +3,7 @@ import Frida
 import LumaCore
 import SwiftUI
 import SwiftyMonaco
+import SwiftyPharo
 import UniformTypeIdentifiers
 
 @MainActor
@@ -19,6 +20,7 @@ func sharedGitHubAuth() -> GitHubAuth { sharedWelcomeModel.gitHubAuth }
         @StateObject private var updater = LumaUpdater()
 
         init() {
+            PharoRuntime.bootBundledImage()
             SwiftyMonaco.prewarmPool(profile: MonacoEditorProfile(from: EditorProfile.fridaCodeShare()), count: 2)
             SwiftyMonaco.prewarmPool(profile: MonacoEditorProfile(from: EditorProfile.fridaTracerHook(packages: [])), count: 2)
             MainActor.assumeIsolated {
@@ -189,6 +191,7 @@ func sharedGitHubAuth() -> GitHubAuth { sharedWelcomeModel.gitHubAuth }
         @UIApplicationDelegateAdaptor(LumaAppDelegate.self) var appDelegate
 
         init() {
+            PharoRuntime.bootBundledImage()
             MainActor.assumeIsolated {
                 InstrumentUIRegistry.shared.registerGlobalDefaults()
             }
