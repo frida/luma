@@ -145,6 +145,8 @@ struct VirtualMachineControls: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .lineLimit(1)
+                .truncationMode(.tail)
             }
             .contentShape(Rectangle())
             .onTapGesture { isMiniature.toggle() }
@@ -163,7 +165,8 @@ struct VirtualMachineControls: View {
                 Text(passingState)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
 
             primaryAction

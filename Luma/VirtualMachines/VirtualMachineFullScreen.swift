@@ -18,7 +18,7 @@ enum VirtualMachineFullScreen {
         window.title = name
         window.backgroundColor = .black
         window.collectionBehavior = [.fullScreenPrimary]
-        window.contentView = NSHostingView(rootView: VirtualMachineFullScreenView(display: display, name: name))
+        window.contentView = NSHostingView(rootView: VirtualMachineFullScreenView(display: display))
         window.isReleasedWhenClosed = false
         window.makeKeyAndOrderFront(nil)
         window.toggleFullScreen(nil)
@@ -66,43 +66,14 @@ enum VirtualMachineFullScreen {
 
 private struct VirtualMachineFullScreenView: View {
     let display: VirtualMachineDisplay
-    let name: String
-
-    @State private var isPointerCaptured = false
-    @State private var showsHint = true
 
     var body: some View {
         ZStack {
             Color.black
                 .ignoresSafeArea()
 
-            VirtualMachineDisplayView(display: display, capturing: .onAppear, isPointerCaptured: $isPointerCaptured)
-        }
-        .overlay(alignment: .top) { hint }
-        .animation(.easeInOut(duration: 0.3), value: showsHint)
-        .task(id: isPointerCaptured) {
-            showsHint = true
-            try? await Task.sleep(for: .seconds(6))
-            guard !Task.isCancelled else { return }
-            showsHint = false
+            VirtualMachineDisplayView(display: display, capturing: .onAppear, dismissal: "Escape leaves full screen")
         }
     }
-
-    @ViewBuilder
-    private var hint: some View {
-        if showsHint {
-            Text(isPointerCaptured ? capturedHint : releasedHint)
-                .font(.callout)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(.black.opacity(0.65), in: Capsule())
-                .foregroundStyle(.white)
-                .padding(.top, 24)
-                .transition(.opacity)
-        }
-    }
-
-    private let capturedHint = "Hold Control-Option to release the pointer · Escape leaves full screen"
-    private let releasedHint = "Escape leaves full screen"
 }
 #endif

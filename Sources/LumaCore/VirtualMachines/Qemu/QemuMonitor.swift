@@ -159,6 +159,11 @@ enum QmpError: Swift.Error, LocalizedError {
     case malformedReply
     case commandFailed(reason: String)
 
+    var isBusy: Bool {
+        guard case .commandFailed(let reason) = self else { return false }
+        return reason.contains("busy")
+    }
+
     var errorDescription: String? {
         switch self {
         case .monitorUnavailable:

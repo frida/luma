@@ -164,15 +164,21 @@ final class QemuMachine: VirtualMachine {
     private func removeHostlinkPort(using monitor: QemuMonitor) async throws {
         let deadline = Date().addingTimeInterval(Self.hostlinkRemovalSeconds)
 
-        guard try await monitor.peripherals().contains(QemuIdentifier.hostlinkPort) else { return }
-        _ = try await monitor.execute("device_del", arguments: ["id": .string(QemuIdentifier.hostlinkPort)])
+        if try await monitor.peripherals().contains(QemuIdentifier.hostlinkPort) {
+            _ = try await monitor.execute("device_del", arguments: ["id": .string(QemuIdentifier.hostlinkPort)])
 
-        while try await monitor.peripherals().contains(QemuIdentifier.hostlinkPort) {
-            try await settle(before: deadline, orGiveUpWith: "the hostlink port would not go away")
+            while try await monitor.peripherals().contains(QemuIdentifier.hostlinkPort) {
+                try await settle(before: deadline, orGiveUpWith: "the hostlink port would not go away")
+            }
         }
 
+        // QEMU lets go of the chardev a moment after the port it fed is gone,
+        // and calls it busy until it does.
         while try await monitor.chardevs().contains(QemuIdentifier.hostlinkChardev) {
-            _ = try await monitor.execute("chardev-remove", arguments: ["id": .string(QemuIdentifier.hostlinkChardev)])
+            do {
+                _ = try await monitor.execute("chardev-remove", arguments: ["id": .string(QemuIdentifier.hostlinkChardev)])
+            } catch let error as QmpError where error.isBusy {
+            }
             try await settle(before: deadline, orGiveUpWith: "the hostlink chardev would not go away")
         }
     }

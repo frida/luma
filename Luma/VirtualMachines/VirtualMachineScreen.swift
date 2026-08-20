@@ -4,12 +4,13 @@ import SwiftUI
 struct VirtualMachineScreen: View {
     let source: any VirtualMachineFrameSource
     let capturing: PointerCapturePolicy
-
-    @Binding var isPointerCaptured: Bool
+    let dismissal: String?
 
     @FocusState private var isFocused: Bool
     @State private var isPointerInside = false
+    @State private var isPointerCaptured = false
     @State private var showsReleaseHint = false
+    @State private var showsDismissal = true
 
     var body: some View {
         GeometryReader { geometry in
@@ -30,8 +31,8 @@ struct VirtualMachineScreen: View {
             .clipShape(Self.border)
             .overlay(Self.border.strokeBorder(isFocused ? Color.accentColor : .clear, lineWidth: 2))
             .overlay(pointer(frame: frame, placement: placement))
-            .overlay(alignment: .bottom) { captureHint }
-            .animation(.easeInOut(duration: 0.2), value: pointerHint)
+            .overlay(alignment: .bottom) { hintLabel }
+            .animation(.easeInOut(duration: 0.2), value: hint)
             .contentShape(Rectangle())
             .focusable()
             .focusEffectDisabled()
@@ -41,14 +42,20 @@ struct VirtualMachineScreen: View {
                 return .handled
             }
             .onAppear { isFocused = true }
+            .task(id: isPointerCaptured) {
+                showsDismissal = true
+                try? await Task.sleep(for: .seconds(Self.dismissalSeconds))
+                guard !Task.isCancelled else { return }
+                showsDismissal = false
+            }
         }
     }
 
     private static let border = RoundedRectangle(cornerRadius: 6)
 
     @ViewBuilder
-    private var captureHint: some View {
-        if let hint = pointerHint {
+    private var hintLabel: some View {
+        if let hint {
             Text(hint)
                 .font(.caption2)
                 .padding(.horizontal, 6)
@@ -60,13 +67,21 @@ struct VirtualMachineScreen: View {
         }
     }
 
-    private var pointerHint: String? {
+    private var hint: String? {
+        let notes = [pointerNote, showsDismissal ? dismissal : nil].compactMap { $0 }
+        guard !notes.isEmpty else { return nil }
+        return notes.joined(separator: " · ")
+    }
+
+    private var pointerNote: String? {
         guard !source.pointerIsAbsolute else { return nil }
         if showsReleaseHint {
             return "Hold Control-Option to release the pointer"
         }
         return (isPointerInside && !isPointerCaptured) ? "Click to drive the pointer" : nil
     }
+
+    private static let dismissalSeconds = 6
 
     @ViewBuilder
     private func pointer(frame: VirtualMachineFrame?, placement: CGRect) -> some View {

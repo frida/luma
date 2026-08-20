@@ -10,14 +10,7 @@ import Virtualization
 struct VirtualMachineDisplayView: View {
     let display: VirtualMachineDisplay
     var capturing: PointerCapturePolicy = .onClick
-
-    @Binding var isPointerCaptured: Bool
-
-    init(display: VirtualMachineDisplay, capturing: PointerCapturePolicy = .onClick, isPointerCaptured: Binding<Bool> = .constant(false)) {
-        self.display = display
-        self.capturing = capturing
-        self._isPointerCaptured = isPointerCaptured
-    }
+    var dismissal: String? = nil
 
     var body: some View {
         screen
@@ -27,16 +20,8 @@ struct VirtualMachineDisplayView: View {
     private var screen: some View {
         switch display {
         case .frames(let source):
-            VStack(spacing: 4) {
-                VirtualMachineScreen(source: source, capturing: capturing, isPointerCaptured: $isPointerCaptured)
-                    .aspectRatio(source.aspectRatio, contentMode: .fit)
-
-                if isPointerCaptured {
-                    Label("Pointer captured — hold Control-Option to release it", systemImage: "cursorarrow.rays")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
+            VirtualMachineScreen(source: source, capturing: capturing, dismissal: dismissal)
+                .aspectRatio(source.aspectRatio, contentMode: .fit)
 
         case .hostedWindow(let source):
             hosted(source)
