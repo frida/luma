@@ -146,6 +146,9 @@ struct QemuGuest {
         arguments += pointer.arguments
         arguments += [
             "-serial", "file:\(request.storageDirectory.appendingPathComponent("serial.log").path)",
+            "-chardev",
+            "file,id=\(QemuIdentifier.agentLogChardev),path=\(request.storageDirectory.appendingPathComponent("agent.log").path)",
+            "-device", "isa-debugcon,iobase=0xe9,chardev=\(QemuIdentifier.agentLogChardev)",
             "-device", "virtio-serial-pci,id=\(QemuIdentifier.hostlinkController)",
             "-vga", vga,
             "-nic", "none",
@@ -271,6 +274,7 @@ enum QemuParameter {
 
 enum QemuIdentifier {
     static let gdbChardev = "luma-gdb"
+    static let agentLogChardev = "luma-agent-log"
     static let hostlinkController = "frida-vserial"
     /// QEMU names a controller's bus after the controller, and takes only the
     /// bus when a port is plugged into it.
