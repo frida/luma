@@ -24,7 +24,12 @@ final class QemuMachine: VirtualMachine {
     }
 
     var agentTransport: BareboneAgentTransport? {
-        .hostlink(qmpSocket: agentQmpSocketPath, bus: QemuIdentifier.hostlinkBus)
+        .hostlink(qmpSocket: agentQmpSocketPath, bus: QemuIdentifier.hostlinkBus, ecam: guest.ecam)
+    }
+
+    /// What the guest booted, which for a kernel the host has the map of is that map.
+    var kernelImage: URL? {
+        request.text(QemuParameter.symbols).map { URL(fileURLWithPath: $0) }
     }
 
     private let guest: QemuGuest

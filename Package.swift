@@ -198,6 +198,17 @@ let lumaTargets: [Target] = [
     ),
 ]
 
+// Frida comes from the published bindings and the artifact they name. Work on
+// frida-core itself is picked up by pointing FRIDA_SWIFT_ROOT at a checkout of
+// the bindings beside it, with USE_SYSTEM_FRIDA set so they link what
+// pkg-config finds. Being told rather than asking the filesystem is what the
+// toolchain artifact does above, and for the same reason.
+let fridaSwift: Package.Dependency = ProcessInfo.processInfo.environment["FRIDA_SWIFT_ROOT"]
+    .map { Package.Dependency.package(path: $0) } ?? .package(
+        url: "https://github.com/frida/frida-swift",
+        branch: "main"
+    )
+
 let package = Package(
     name: "luma",
     platforms: [
@@ -213,7 +224,7 @@ let package = Package(
         .executable(name: "LumaSynthCheck", targets: ["LumaSynthCheck"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/frida/frida-swift", branch: "main"),
+        fridaSwift,
         .package(url: "https://github.com/apple/swift-crypto", .upToNextMajor(from: "3.0.0")),
         .package(url: "https://github.com/groue/GRDB.swift", .upToNextMajor(from: "7.0.0")),
         .package(url: "https://github.com/radareorg/SwiftyR2", branch: "main"),

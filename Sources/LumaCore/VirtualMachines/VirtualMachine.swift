@@ -48,7 +48,7 @@ public struct VirtualMachineCapabilities: OptionSet, Sendable {
 }
 
 public enum BareboneAgentTransport: Sendable, Equatable {
-    case hostlink(qmpSocket: URL, bus: String?)
+    case hostlink(qmpSocket: URL, bus: String?, ecam: UInt64?)
     case vsock(socketPath: URL, port: UInt)
 }
 
