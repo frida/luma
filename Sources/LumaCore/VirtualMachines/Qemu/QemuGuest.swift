@@ -14,6 +14,9 @@ struct QemuGuest {
     let vga: String
     let architecture: VirtualMachineArchitecture
     let agentFlavor: BareboneAgentFlavor?
+    /// Where the machine maps PCI configuration space, which is how the agent finds the
+    /// hostlink on a machine whose devices are not at addresses everyone agrees on.
+    let ecam: UInt64?
     let boot: QemuBoot
     let pointer: QemuPointer
     let defaultMemory: Int
@@ -31,6 +34,7 @@ struct QemuGuest {
             vga: "cirrus",
             architecture: .x86,
             agentFlavor: .win9xX86,
+            ecam: nil,
             boot: .diskImage(defaultInterface: .ide),
             pointer: .ps2,
             defaultMemory: 128
@@ -47,6 +51,7 @@ struct QemuGuest {
             vga: "std",
             architecture: .x86,
             agentFlavor: .winntX86,
+            ecam: nil,
             boot: .diskImage(defaultInterface: .ide),
             pointer: .usbTablet,
             defaultMemory: 512
@@ -63,9 +68,30 @@ struct QemuGuest {
             vga: "std",
             architecture: .x86_64,
             agentFlavor: .winntX86_64,
+            ecam: nil,
             boot: .diskImage(defaultInterface: .ide),
             pointer: .usbTablet,
             defaultMemory: 1024
+        ),
+        QemuGuest(
+            id: "qemu.linux-arm64",
+            name: "Alpine Linux (arm64)",
+            summary: """
+                A kernel and its ramdisk, booted on QEMU's virt machine. Frida injects the linux \
+                agent into the kernel, and from there into the processes it is asked to attach to.
+                """,
+            iconName: "linux",
+            operatingSystem: .linux,
+            emulator: "qemu-system-aarch64",
+            machine: "virt",
+            cpu: "max",
+            vga: "",
+            architecture: .arm64,
+            agentFlavor: .linuxArm64,
+            ecam: 0x40_1000_0000,
+            boot: .linuxKernel,
+            pointer: .usbTablet,
+            defaultMemory: 2048
         ),
         QemuGuest(
             id: "qemu.linux-x86_64",
@@ -79,6 +105,7 @@ struct QemuGuest {
             vga: "std",
             architecture: .x86_64,
             agentFlavor: nil,
+            ecam: nil,
             boot: .kernelImage,
             pointer: .usbTablet,
             defaultMemory: 256
@@ -95,6 +122,7 @@ struct QemuGuest {
             vga: "std",
             architecture: .x86,
             agentFlavor: nil,
+            ecam: nil,
             boot: .kernelImage,
             pointer: .usbTablet,
             defaultMemory: 256
@@ -144,13 +172,13 @@ struct QemuGuest {
         }
         arguments += ["-drive", "file=\(snapshotDisk.path),format=qcow2,if=none,id=\(QemuIdentifier.snapshotDisk)"]
         arguments += pointer.arguments
+        arguments += vga.isEmpty ? ["-device", "virtio-gpu-pci"] : ["-vga", vga]
         arguments += [
             "-serial", "file:\(request.storageDirectory.appendingPathComponent("serial.log").path)",
             "-chardev",
             "file,id=\(QemuIdentifier.agentLogChardev),path=\(request.storageDirectory.appendingPathComponent("agent.log").path)",
             "-device", "isa-debugcon,iobase=0xe9,chardev=\(QemuIdentifier.agentLogChardev)",
             "-device", "virtio-serial-pci,id=\(QemuIdentifier.hostlinkController)",
-            "-vga", vga,
             "-nic", "none",
             "-display", "dbus,p2p=yes",
             "-monitor", "none",
@@ -185,6 +213,9 @@ enum QemuPointer {
 enum QemuBoot {
     case diskImage(defaultInterface: QemuDiskInterface)
     case kernelImage
+    /// A kernel that boots into a userland of its own, and the map of its symbols, which is
+    /// what the agent is given in place of the image itself.
+    case linuxKernel
 
     var parameters: [VirtualMachineParameter] {
         switch self {
@@ -227,6 +258,24 @@ enum QemuBoot {
                     kind: .filePath(extensions: [])
                 )
             ]
+        case .linuxKernel:
+            return [
+                VirtualMachineParameter(
+                    id: QemuParameter.kernelImage,
+                    name: "Kernel image",
+                    kind: .filePath(extensions: [])
+                ),
+                VirtualMachineParameter(
+                    id: QemuParameter.ramdisk,
+                    name: "Ramdisk",
+                    kind: .filePath(extensions: ["img", "gz", "cpio"])
+                ),
+                VirtualMachineParameter(
+                    id: QemuParameter.symbols,
+                    name: "Symbols",
+                    kind: .filePath(extensions: ["map"])
+                ),
+            ]
         }
     }
 
@@ -255,6 +304,22 @@ enum QemuBoot {
                 throw VirtualMachineError.launchFailed(reason: "No kernel image was chosen")
             }
             return ["-kernel", kernel, "-append", "console=ttyS0 console=tty0 panic=0", "-no-reboot"]
+        case .linuxKernel:
+            guard let kernel = request.text(QemuParameter.kernelImage), !kernel.isEmpty else {
+                throw VirtualMachineError.launchFailed(reason: "No kernel image was chosen")
+            }
+            guard let ramdisk = request.text(QemuParameter.ramdisk), !ramdisk.isEmpty else {
+                throw VirtualMachineError.launchFailed(reason: "No ramdisk was chosen")
+            }
+
+            // The hostlink is a port of the same virtio device the kernel's own console driver
+            // takes, and it takes it first.
+            return [
+                "-kernel", kernel,
+                "-initrd", ramdisk,
+                "-append", "console=ttyAMA0 initcall_blacklist=virtio_console_init",
+                "-no-reboot",
+            ]
         }
     }
 }
@@ -269,6 +334,8 @@ enum QemuParameter {
     static let diskFormat = "disk-format"
     static let diskInterface = "disk-interface"
     static let kernelImage = "kernel-image"
+    static let ramdisk = "ramdisk"
+    static let symbols = "symbols"
     static let memory = "memory"
 }
 
