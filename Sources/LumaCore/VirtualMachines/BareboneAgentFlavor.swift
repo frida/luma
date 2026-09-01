@@ -7,6 +7,8 @@ public struct BareboneAgentFlavor: Sendable, Equatable, Hashable, Codable {
 
     public static let xnuArm64 = BareboneAgentFlavor(kernel: .xnu, architecture: .arm64)
     public static let linuxArm64 = BareboneAgentFlavor(kernel: .linux, architecture: .arm64)
+    public static let linuxX86_64 = BareboneAgentFlavor(kernel: .linux, architecture: .x86_64)
+    public static let linuxX86 = BareboneAgentFlavor(kernel: .linux, architecture: .x86)
     public static let win9xX86 = BareboneAgentFlavor(kernel: .win9x, architecture: .x86)
     public static let winntX86 = BareboneAgentFlavor(kernel: .winnt, architecture: .x86)
     public static let winntX86_64 = BareboneAgentFlavor(kernel: .winnt, architecture: .x86_64)
