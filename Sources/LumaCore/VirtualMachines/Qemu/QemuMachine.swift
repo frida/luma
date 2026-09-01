@@ -3,7 +3,7 @@ import Observation
 
 #if canImport(Darwin)
 import Darwin
-#else
+#elseif canImport(Glibc)
 import Glibc
 #endif
 
