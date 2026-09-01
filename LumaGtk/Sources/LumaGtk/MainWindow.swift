@@ -100,8 +100,11 @@ final class MainWindow: InstrumentUIHost {
     private var resumeProcessButton: Button!
     private var installPackageButton: Button!
     private var collaborationButton: Button!
+    private var machinesButton: Button!
     private var actionQueuePopover: GlobalActionQueuePopover!
     private var collaborationPanel: CollaborationPanel?
+    private var virtualMachinePanel: VirtualMachinePanel?
+    private var sidePanelHost: Box?
     private let outerPaned: Paned
     private var splitView: Adw.NavigationSplitView!
     private var eventStreamPaned: Paned!
@@ -113,6 +116,10 @@ final class MainWindow: InstrumentUIHost {
 
     private var isCollaborationPanelVisible: Bool {
         engine?.projectUIState.sidePanel == .collaboration
+    }
+
+    private var isVirtualMachinePanelVisible: Bool {
+        engine?.projectUIState.sidePanel == .virtualMachines
     }
 
     private enum SidebarSelection: Equatable {
@@ -225,6 +232,12 @@ final class MainWindow: InstrumentUIHost {
         header.packEnd(child: collaborationButton)
         self.collaborationButton = collaborationButton
 
+        let machinesButton = Button()
+        machinesButton.set(iconName: "computer-symbolic")
+        machinesButton.tooltipText = "Machines"
+        header.packEnd(child: machinesButton)
+        self.machinesButton = machinesButton
+
         let actionQueuePopover = GlobalActionQueuePopover(parentWindow: window)
         header.packEnd(child: actionQueuePopover.button)
         self.actionQueuePopover = actionQueuePopover
@@ -334,6 +347,11 @@ final class MainWindow: InstrumentUIHost {
                 self.setCollaborationVisible(!self.isCollaborationPanelVisible)
             }
         }
+        machinesButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.toggleVirtualMachines()
+            }
+        }
 
         let closeHandler: (Gtk.WindowRef) -> Bool = { [weak self] _ in
             MainActor.assumeIsolated {
@@ -376,7 +394,19 @@ final class MainWindow: InstrumentUIHost {
 
     private func setCollaborationVisible(_ visible: Bool) {
         engine?.setSidePanel(visible ? .collaboration : nil)
-        collaborationPanel?.widget.visible = visible
+        syncSidePanel()
+    }
+
+    func toggleVirtualMachines() {
+        engine?.setSidePanel(isVirtualMachinePanelVisible ? nil : .virtualMachines)
+        syncSidePanel()
+    }
+
+    private func syncSidePanel() {
+        let panel = engine?.projectUIState.sidePanel
+        collaborationPanel?.widget.visible = (panel == .collaboration)
+        virtualMachinePanel?.widget.visible = (panel == .virtualMachines)
+        sidePanelHost?.visible = (panel != nil)
     }
 
     func present() {
@@ -519,7 +549,6 @@ final class MainWindow: InstrumentUIHost {
         }
     }
 
-
     func attach(engine: Engine) {
         self.engine = engine
         actionQueuePopover.attach(engine: engine)
@@ -602,8 +631,22 @@ final class MainWindow: InstrumentUIHost {
             }
         )
         collaborationPanel = panel
-        outerPaned.endChild = WidgetRef(panel.widget)
-        panel.widget.visible = isCollaborationPanelVisible
+
+        let machines = VirtualMachinePanel(
+            engine: engine,
+            onClose: { [weak self] in
+                self?.engine?.setSidePanel(nil)
+                self?.syncSidePanel()
+            }
+        )
+        virtualMachinePanel = machines
+
+        let host = Box(orientation: .vertical, spacing: 0)
+        host.append(child: panel.widget)
+        host.append(child: machines.widget)
+        sidePanelHost = host
+        outerPaned.endChild = WidgetRef(host)
+        syncSidePanel()
         notebookPane = NotebookPane(engine: engine)
         pharoPane = PharoPlaygroundPane(engine: engine)
         if case .notebook = selection {
@@ -2731,7 +2774,6 @@ final class MainWindow: InstrumentUIHost {
             sessionsRowKinds.remove(at: idx)
         }
     }
-
 
     private func insertChildRow(_ row: ListBoxRow, kind: SessionsRow, sessionID: UUID) {
         let pos = insertPosition(for: kind, sessionID: sessionID)
