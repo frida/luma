@@ -18,6 +18,7 @@ struct QemuGuest {
     let boot: QemuBoot
     let pointer: QemuPointer
     let defaultMemory: Int
+    let starterImages: StarterImages?
 
     static let all: [QemuGuest] = [
         QemuGuest(
@@ -35,7 +36,8 @@ struct QemuGuest {
             ecam: nil,
             boot: .diskImage(defaultInterface: .ide),
             pointer: .ps2,
-            defaultMemory: 128
+            defaultMemory: 128,
+            starterImages: nil
         ),
         QemuGuest(
             id: "qemu.winxp",
@@ -52,7 +54,8 @@ struct QemuGuest {
             ecam: nil,
             boot: .diskImage(defaultInterface: .ide),
             pointer: .usbTablet,
-            defaultMemory: 512
+            defaultMemory: 512,
+            starterImages: nil
         ),
         QemuGuest(
             id: "qemu.winxp64",
@@ -69,14 +72,15 @@ struct QemuGuest {
             ecam: nil,
             boot: .diskImage(defaultInterface: .ide),
             pointer: .usbTablet,
-            defaultMemory: 1024
+            defaultMemory: 1024,
+            starterImages: nil
         ),
         QemuGuest(
             id: "qemu.linux-arm64",
             name: "Alpine Linux (arm64)",
             summary: """
-                A kernel and its ramdisk, booted on QEMU's virt machine. Frida injects the linux \
-                agent into the kernel, and from there into the processes it is asked to attach to.
+                A kernel and its ramdisk, booted on QEMU. Frida injects the linux agent \
+                into the kernel, and from there into the processes it is asked to attach to.
                 """,
             iconName: "linux",
             operatingSystem: .linux,
@@ -89,12 +93,16 @@ struct QemuGuest {
             ecam: 0x40_1000_0000,
             boot: .linuxKernel,
             pointer: .usbTablet,
-            defaultMemory: 2048
+            defaultMemory: 2048,
+            starterImages: Self.alpineArm64
         ),
         QemuGuest(
             id: "qemu.linux-x86_64",
-            name: "Linux kernel (x86-64)",
-            summary: "A stock kernel with no root filesystem, for looking at bare memory.",
+            name: "Alpine Linux (x86-64)",
+            summary: """
+                A kernel and its ramdisk, booted on QEMU. Frida injects the linux agent \
+                into the kernel, and from there into the processes it is asked to attach to.
+                """,
             iconName: "linux",
             operatingSystem: .linux,
             emulator: "qemu-system-x86_64",
@@ -102,16 +110,20 @@ struct QemuGuest {
             cpu: nil,
             vga: "std",
             architecture: .x86_64,
-            agentFlavor: nil,
+            agentFlavor: .linuxX86_64,
             ecam: nil,
-            boot: .kernelImage,
+            boot: .linuxKernel,
             pointer: .usbTablet,
-            defaultMemory: 256
+            defaultMemory: 1024,
+            starterImages: Self.alpineX86_64
         ),
         QemuGuest(
             id: "qemu.linux-x86",
-            name: "Linux kernel (x86)",
-            summary: "A stock kernel with no root filesystem, for looking at bare memory.",
+            name: "Alpine Linux (x86)",
+            summary: """
+                A kernel and its ramdisk, booted on QEMU. Frida injects the linux agent \
+                into the kernel, and from there into the processes it is asked to attach to.
+                """,
             iconName: "linux",
             operatingSystem: .linux,
             emulator: "qemu-system-i386",
@@ -119,13 +131,49 @@ struct QemuGuest {
             cpu: nil,
             vga: "std",
             architecture: .x86,
-            agentFlavor: nil,
+            agentFlavor: .linuxX86,
             ecam: nil,
-            boot: .kernelImage,
+            boot: .linuxKernel,
             pointer: .usbTablet,
-            defaultMemory: 256
+            defaultMemory: 1024,
+            starterImages: Self.alpineX86
         ),
     ]
+
+    private static let alpineArm64 = alpine(architecture: "aarch64", flavor: "virt", packaging: .linuxKernel)
+    private static let alpineX86_64 = alpine(architecture: "x86_64", flavor: "virt", packaging: .plain)
+    private static let alpineX86 = alpine(architecture: "x86", flavor: "lts", packaging: .plain)
+
+    private static func alpine(
+        architecture: String,
+        flavor: String,
+        packaging: StarterImagePackaging
+    ) -> StarterImages {
+        let netboot = URL(string: "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/\(architecture)/netboot")!
+        return StarterImages(
+            name: "Alpine Linux kernel and ramdisk (\(architecture))",
+            files: [
+                StarterImageFile(
+                    parameterID: QemuParameter.kernelImage,
+                    url: netboot.appendingPathComponent("vmlinuz-\(flavor)"),
+                    storedAs: "alpine-\(architecture)-kernel",
+                    packaging: packaging
+                ),
+                StarterImageFile(
+                    parameterID: QemuParameter.ramdisk,
+                    url: netboot.appendingPathComponent("initramfs-\(flavor)"),
+                    storedAs: "alpine-\(architecture)-initramfs"
+                ),
+            ],
+            symbols: StarterImageSymbols(
+                parameterID: QemuParameter.symbols,
+                describing: QemuParameter.kernelImage,
+                directory: netboot,
+                namePrefix: "System.map-",
+                storedAs: "alpine-\(architecture)-System.map"
+            )
+        )
+    }
 
     static func named(_ id: String) -> QemuGuest? {
         all.first { $0.id == id }
@@ -147,8 +195,16 @@ struct QemuGuest {
                     name: "Memory",
                     kind: .number(default: defaultMemory, min: 32, max: 16384, unit: "MB")
                 )
-            ]
+            ],
+            starterImages: starterImages
         )
+    }
+
+    private var serialConsole: String {
+        switch architecture {
+        case .arm64, .arm: return "ttyAMA0"
+        default: return "ttyS0"
+        }
     }
 
     func arguments(
@@ -164,7 +220,7 @@ struct QemuGuest {
             arguments += ["-cpu", cpu]
         }
 
-        arguments += try boot.arguments(for: request)
+        arguments += try boot.arguments(for: request, console: serialConsole)
         if request.resumesFromReadySnapshot {
             arguments += ["-loadvm", QemuIdentifier.readySnapshot]
         }
@@ -277,7 +333,7 @@ enum QemuBoot {
         }
     }
 
-    func arguments(for request: VirtualMachineLaunchRequest) throws -> [String] {
+    func arguments(for request: VirtualMachineLaunchRequest, console: String) throws -> [String] {
         switch self {
         case .diskImage:
             guard let image = request.text(QemuParameter.diskImage), !image.isEmpty else {
@@ -301,7 +357,7 @@ enum QemuBoot {
             guard let kernel = request.text(QemuParameter.kernelImage), !kernel.isEmpty else {
                 throw VirtualMachineError.launchFailed(reason: "No kernel image was chosen")
             }
-            return ["-kernel", kernel, "-append", "console=ttyS0 console=tty0 panic=0", "-no-reboot"]
+            return ["-kernel", kernel, "-append", "console=\(console) panic=0", "-no-reboot"]
         case .linuxKernel:
             guard let kernel = request.text(QemuParameter.kernelImage), !kernel.isEmpty else {
                 throw VirtualMachineError.launchFailed(reason: "No kernel image was chosen")
@@ -315,7 +371,7 @@ enum QemuBoot {
             return [
                 "-kernel", kernel,
                 "-initrd", ramdisk,
-                "-append", "console=ttyAMA0 initcall_blacklist=virtio_console_init",
+                "-append", "console=\(console) initcall_blacklist=virtio_console_init",
                 "-no-reboot",
             ]
         }
