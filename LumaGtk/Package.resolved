@@ -1,5 +1,5 @@
 {
-  "originHash" : "f3c650616678056d67e5f6030c0b14d43b25e134e2b421863706e33eef064ece",
+  "originHash" : "4ce405cbd1426b6283c4f5cbeb817481a2c454efe779f57cd8b0d56fded389a8",
   "pins" : [
     {
       "identity" : "frida-swift",
@@ -7,7 +7,7 @@
       "location" : "https://github.com/frida/frida-swift",
       "state" : {
         "branch" : "main",
-        "revision" : "243681ef14cf290b61bb7950bd46482731d69b48"
+        "revision" : "33575998fc99da46310745c079bfd293a79aa5b6"
       }
     },
     {
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/groue/GRDB.swift",
       "state" : {
-        "revision" : "36e30a6f1ef10e4194f6af0cff90888526f0c115",
-        "version" : "7.10.0"
+        "revision" : "b83108d10f42680d78f23fe4d4d80fc88dab3212",
+        "version" : "7.11.1"
       }
     },
     {
@@ -33,8 +33,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-argument-parser",
       "state" : {
-        "revision" : "626b5b7b2f45e1b0b1c6f4a309296d1d21d7311b",
-        "version" : "1.7.1"
+        "revision" : "6a52f3251125d74daf04fcbd5e6f08a75d074382",
+        "version" : "1.8.2"
       }
     },
     {
@@ -42,8 +42,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-asn1.git",
       "state" : {
-        "revision" : "eb50cbd14606a9161cbc5d452f18797c90ef0bab",
-        "version" : "1.7.0"
+        "revision" : "a9a5efd40eaf558a2bcd48d64b1d1646be686008",
+        "version" : "1.7.1"
       }
     },
     {
@@ -214,7 +214,7 @@
       "location" : "https://github.com/frida/SwiftyMonaco.git",
       "state" : {
         "branch" : "main",
-        "revision" : "01543b94abaa5dacd40e8685992e22c96f4ec145"
+        "revision" : "25fd808c0aec5a395bd87e4673d3b66e58b6d7d9"
       }
     },
     {
