@@ -488,12 +488,7 @@ final class TargetPicker {
         title.hexpand = true
         title.add(cssClass: "dim-label")
         header.append(child: title)
-        let addRemoteButton = Button(label: "Add Remote\u{2026}")
-        addRemoteButton.add(cssClass: "flat")
-        addRemoteButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.presentAddRemoteSheet() }
-        }
-        header.append(child: addRemoteButton)
+        header.append(child: makeAddMenuButton())
         column.append(child: header)
 
         let scroll = ScrolledWindow()
@@ -1517,6 +1512,36 @@ final class TargetPicker {
         snapshotTask?.cancel()
         processFetchTask?.cancel()
         appFetchTask?.cancel()
+    }
+
+    private func makeAddMenuButton() -> MenuButton {
+        let bootable = engine.virtualMachines.templates.first {
+            engine.virtualMachines.availability(for: $0).isAvailable
+        }
+        let tooltip =
+            bootable != nil
+            ? "Add a device or boot a guest"
+            : engine.virtualMachines.templates
+                .compactMap { engine.virtualMachines.availability(for: $0).reason }.first
+                ?? "Add a remote device"
+        return makeAddDeviceMenuButton(
+            bootEnabled: bootable != nil,
+            tooltip: tooltip,
+            onAddRemote: { [weak self] in self?.presentAddRemoteSheet() },
+            onBootMachine: { [weak self] in self?.presentBootVirtualMachineDialog() })
+    }
+
+    private func presentBootVirtualMachineDialog() {
+        let dialog = BootVirtualMachineDialog(parent: parent, engine: engine) { [weak self] (device: Frida.Device) in
+            MainActor.assumeIsolated {
+                guard let self,
+                    let index = self.devices.firstIndex(where: { $0.id == device.id }),
+                    let row = self.deviceList.getRowAt(index: index)
+                else { return }
+                self.deviceList.select(row: row)
+            }
+        }
+        dialog.present()
     }
 
     private func presentAddRemoteSheet() {
