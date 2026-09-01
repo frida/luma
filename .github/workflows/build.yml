@@ -25,6 +25,7 @@ jobs:
       frida_core_ref: ${{ steps.refs.outputs.FRIDA_CORE_REF }}
       radare2_ref: ${{ steps.refs.outputs.RADARE2_REF }}
       swifty_pharo_ref: ${{ steps.refs.outputs.SWIFTY_PHARO_REF }}
+      qemu_windows_build: ${{ steps.refs.outputs.QEMU_WINDOWS_BUILD }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -1333,6 +1334,7 @@ jobs:
       FRIDA_CORE_REF: ${{ needs.version.outputs.frida_core_ref }}
       RADARE2_REF: ${{ needs.version.outputs.radare2_ref }}
       SWIFTY_PHARO_REF: ${{ needs.version.outputs.swifty_pharo_ref }}
+      QEMU_WINDOWS_BUILD: ${{ needs.version.outputs.qemu_windows_build }}
     strategy:
       fail-fast: false
       matrix:
@@ -1667,6 +1669,22 @@ jobs:
           -R2Prefix "$env:RUNNER_TEMP\r2-prefix"
           -BuildPath "$env:RUNNER_TEMP\b"
 
+      - name: Cache QEMU
+        if: matrix.win_arch == 'x86_64'
+        id: qemu-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/qemu
+          key: ${{ runner.os }}-x86_64-qemu-${{ env.QEMU_WINDOWS_BUILD }}
+
+      - name: Install QEMU
+        if: matrix.win_arch == 'x86_64' && steps.qemu-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: >
+          ./LumaGtk/scripts/windows/bootstrap.ps1
+          -Only qemu
+          -QemuPrefix $env:RUNNER_TEMP\qemu
+
       - name: Package MSI
         shell: pwsh
         run: |
@@ -1678,7 +1696,8 @@ jobs:
               -VcpkgPrefix "C:/vcpkg/installed/${{ matrix.vcpkg_triplet }}" `
               -FridaPrefix "$env:RUNNER_TEMP/frida-prefix" `
               -R2Prefix    "$env:RUNNER_TEMP/r2-prefix" `
-              -PharoPrefix "$env:RUNNER_TEMP/pharo-prefix"
+              -PharoPrefix "$env:RUNNER_TEMP/pharo-prefix" `
+              -QemuPrefix  "$env:RUNNER_TEMP/qemu"
 
       - uses: actions/upload-artifact@v7
         with:
