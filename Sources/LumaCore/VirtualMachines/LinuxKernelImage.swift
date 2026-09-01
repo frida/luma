@@ -22,11 +22,25 @@ public enum LinuxKernelImage {
     /// A kernel carries its own version, and a distribution names the map of
     /// its symbols after it.
     public static func version(of image: Data) -> String? {
-        guard let marker = image.firstRange(of: Data("Linux version ".utf8)) else { return nil }
+        if let marker = image.firstRange(of: Data("Linux version ".utf8)) {
+            return word(in: image[marker.upperBound...].prefix(128))
+        }
+        return setupHeaderVersion(of: image)
+    }
 
-        let tail = image[marker.upperBound...].prefix(128)
-        let text = String(decoding: tail.prefix { $0 > 0x20 }, as: UTF8.self)
-        return text.isEmpty ? nil : text
+    private static func setupHeaderVersion(of image: Data) -> String? {
+        let base = image.startIndex
+        guard image.count > 0x210 else { return nil }
+        guard image[base.advanced(by: 0x202)..<base.advanced(by: 0x206)] == Data("HdrS".utf8) else { return nil }
+
+        let start = base.advanced(by: 0x200 + Int(read16(image, at: 0x20e)))
+        guard start < image.endIndex else { return nil }
+        return word(in: image[start...].prefix(128))
+    }
+
+    private static func word(in text: Data) -> String? {
+        let word = String(decoding: text.prefix { $0 > 0x20 }, as: UTF8.self)
+        return word.isEmpty ? nil : word
     }
 
     private static func unwrap(_ image: Data) throws -> Data {
