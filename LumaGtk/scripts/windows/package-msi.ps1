@@ -20,6 +20,7 @@ param(
     [string] $FridaPrefix,
     [string] $R2Prefix,
     [string] $PharoPrefix,
+    [string] $QemuPrefix,
 
     [switch] $SkipBuild,
     [switch] $StageOnly
@@ -148,16 +149,66 @@ if (Test-Path $fridaLib) {
     robocopy $fridaLib $fridaStage /E /NFL /NDL /NJH /NJS /NP /XF 'frida-gadget.dll' | Out-Null
 }
 
-# GTK data: icons, glib schemas. vcpkg's gdk-pixbuf is built with
-# -Dbuiltin_loaders=all, so PNG/JPEG/TIFF/etc. live inside
-# gdk_pixbuf-2.0-0.dll itself — there is no lib\gdk-pixbuf-2.0\
-# subtree to stage. glib-networking's TLS module is handled
-# separately below.
 function Copy-Tree {
     param([string] $From, [string] $To)
     if (-not (Test-Path $From)) { return }
     robocopy $From $To /E /NFL /NDL /NJH /NJS /NP /XO | Out-Null
 }
+
+if ($Arch -ne 'x86_64') {
+    Write-Host "[stage] qemu skipped: QEMU publishes no Windows/$Arch build"
+} else {
+    if (-not $QemuPrefix) { $QemuPrefix = Join-Path $env:LOCALAPPDATA 'Luma\windows-deps\qemu' }
+    if (-not (Test-Path $QemuPrefix)) {
+        throw "QEMU not found at $QemuPrefix. Run bootstrap.ps1 -Only qemu, or pass -QemuPrefix."
+    }
+    Write-Host "[stage] qemu"
+    $qemuStage = Join-Path $stage 'qemu'
+    New-Item -ItemType Directory -Force -Path $qemuStage | Out-Null
+
+    $barebonEmulators = @('qemu-system-i386', 'qemu-system-x86_64', 'qemu-system-arm', 'qemu-system-aarch64')
+
+    $guests = Join-Path $pkg '..\Sources\LumaCore\VirtualMachines\Qemu\QemuGuest.swift'
+    $declared = Select-String -Path $guests -Pattern 'emulator: "([a-z0-9_-]+)"' -AllMatches |
+        ForEach-Object { $_.Matches } | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+    $unbundled = $declared | Where-Object { $barebonEmulators -notcontains $_ }
+    if ($unbundled) { throw "Templates want $($unbundled -join ', '), which this installer does not carry." }
+
+    foreach ($emulator in $barebonEmulators + 'qemu-img') {
+        $binary = Join-Path $QemuPrefix "$emulator.exe"
+        if (-not (Test-Path $binary)) { throw "$emulator.exe missing from $QemuPrefix." }
+        Copy-Item $binary $qemuStage
+    }
+
+    $softwareGraphicsLibraries = @(
+        'libEGL.dll', 'libEGL_vulkan_secondaries.dll', 'libGLESv1_CM.dll', 'libGLESv2.dll',
+        'libGLESv2_vulkan_secondaries.dll', 'libGLESv2_with_capture.dll', 'libVkICD_mock_icd.dll',
+        'libfeature_support.dll', 'libjsoncpp-26.dll', 'libvk_swiftshader.dll'
+    )
+    Get-ChildItem -Path $QemuPrefix -Filter '*.dll' |
+        Where-Object { $softwareGraphicsLibraries -notcontains $_.Name } |
+        ForEach-Object { Copy-Item $_.FullName $qemuStage }
+
+    Copy-Item (Join-Path $QemuPrefix 'COPYING')     $qemuStage
+    Copy-Item (Join-Path $QemuPrefix 'COPYING.LIB') $qemuStage
+    Copy-Item (Join-Path $pkg 'data\qemu-source-offer.txt') $qemuStage
+
+    $firmwareStage = Join-Path $qemuStage 'share'
+    New-Item -ItemType Directory -Force -Path $firmwareStage | Out-Null
+    $firmware = @('bios.bin', 'bios-256k.bin', 'kvmvapic.bin', 'linuxboot_dma.bin',
+                  'multiboot_dma.bin', 'pvh.bin', 'qboot.rom', 'vgabios*.bin', 'efi-*.rom', 'pxe-*.rom')
+    foreach ($pattern in $firmware) {
+        Get-ChildItem -Path (Join-Path $QemuPrefix 'share') -Filter $pattern -File |
+            ForEach-Object { Copy-Item $_.FullName $firmwareStage }
+    }
+    Copy-Tree (Join-Path $QemuPrefix 'share\keymaps') (Join-Path $firmwareStage 'keymaps')
+}
+
+# GTK data: icons, glib schemas. vcpkg's gdk-pixbuf is built with
+# -Dbuiltin_loaders=all, so PNG/JPEG/TIFF/etc. live inside
+# gdk_pixbuf-2.0-0.dll itself — there is no lib\gdk-pixbuf-2.0\
+# subtree to stage. glib-networking's TLS module is handled
+# separately below.
 Write-Host "[stage] GTK data (schemas/icons)"
 Copy-Tree (Join-Path $env:VCPKG_PREFIX 'share\glib-2.0\schemas') (Join-Path $stage 'share\glib-2.0\schemas')
 Copy-Tree (Join-Path $env:VCPKG_PREFIX 'share\icons')            (Join-Path $stage 'share\icons')
