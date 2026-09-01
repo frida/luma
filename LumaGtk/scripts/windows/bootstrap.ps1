@@ -14,7 +14,7 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet('vcpkg', 'gnu-tools', 'frida-core', 'radare2', 'pharo-vm')]
+    [ValidateSet('vcpkg', 'gnu-tools', 'frida-core', 'radare2', 'pharo-vm', 'qemu')]
     [string[]] $Only,
 
     [string] $DepsRoot = (Join-Path $env:LOCALAPPDATA 'Luma\windows-deps'),
@@ -24,6 +24,7 @@ param(
     [string] $FridaPrefix,
     [string] $R2Prefix,
     [string] $PharoPrefix,
+    [string] $QemuPrefix,
 
     [ValidateSet('x64', 'arm64')]
     [string] $Arch = $(if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }),
@@ -43,6 +44,7 @@ if (-not $VcpkgPrefix) { $VcpkgPrefix = Join-Path $VcpkgRoot "installed\$triplet
 if (-not $FridaPrefix) { $FridaPrefix = Join-Path $DepsRoot 'frida-prefix' }
 if (-not $R2Prefix) { $R2Prefix = Join-Path $DepsRoot 'r2-prefix' }
 if (-not $PharoPrefix) { $PharoPrefix = Join-Path $DepsRoot 'pharo-prefix' }
+if (-not $QemuPrefix) { $QemuPrefix = Join-Path $DepsRoot 'qemu' }
 
 $sourceRoot = Join-Path $DepsRoot 'src'
 
@@ -359,11 +361,62 @@ if (Test-Wanted 'pharo-vm') {
     }
 }
 
+if (Test-Wanted 'qemu') {
+    $qemuExecutable = Join-Path $QemuPrefix 'qemu-system-x86_64.exe'
+    if ((Test-Path $qemuExecutable) -and -not $Force) {
+        Write-Step "QEMU already at $QemuPrefix"
+    } else {
+        Write-Step "Installing QEMU -> $QemuPrefix"
+
+        $extractor = @(
+            (Join-Path $env:ProgramFiles '7-Zip\7z.exe'),
+            (Join-Path ${env:ProgramFiles(x86)} '7-Zip\7z.exe'),
+            (Join-Path $env:ProgramData 'chocolatey\bin\7z.exe')
+        ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+        if (-not $extractor) {
+            throw @"
+7-Zip is needed to unpack the QEMU installer without running it, and
+running it needs administrator rights this script does not ask for.
+
+  winget install 7zip.7zip
+"@
+        }
+
+        $build = $refs['QEMU_WINDOWS_BUILD']
+        $expected = $refs['QEMU_WINDOWS_SHA256']
+        $cache = Join-Path $sourceRoot 'qemu'
+        New-Item -ItemType Directory -Force -Path $cache | Out-Null
+        $installer = Join-Path $cache "qemu-w64-setup-$build.exe"
+
+        if (-not (Test-Path $installer)) {
+            Write-Host "Fetching QEMU $build"
+            Invoke-WebRequest -UseBasicParsing `
+                -Uri "https://qemu.weilnetz.de/w64/qemu-w64-setup-$build.exe" `
+                -OutFile $installer
+        }
+
+        $actual = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLower()
+        if ($actual -ne $expected) {
+            Remove-Item $installer -Force
+            throw "QEMU $build hashed $actual, expected $expected."
+        }
+
+        Remove-Item -Recurse -Force $QemuPrefix -ErrorAction SilentlyContinue
+        Invoke-Checked '7z extract' { & $extractor x -y "-o$QemuPrefix" $installer | Out-Null }
+
+        $backends = & $qemuExecutable -display help
+        if ($backends -notcontains 'dbus') {
+            throw "This QEMU has no dbus display, which the virtual machines draw through."
+        }
+    }
+}
+
 Write-Host ""
 Write-Host "Dependencies ready:" -ForegroundColor Green
 Write-Host "  VCPKG_PREFIX = $VcpkgPrefix"
 Write-Host "  FRIDA_PREFIX = $FridaPrefix"
 Write-Host "  R2_PREFIX    = $R2Prefix"
 Write-Host "  PHARO_PREFIX = $PharoPrefix"
+Write-Host "  QEMU_PREFIX  = $QemuPrefix"
 Write-Host ""
 Write-Host "Next: .\scripts\windows\build.ps1"
