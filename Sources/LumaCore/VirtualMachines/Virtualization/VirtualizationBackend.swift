@@ -122,6 +122,7 @@ public final class VirtualizationBackend: VirtualMachineBackend {
         ],
         symbols: StarterImageSymbols(
             parameterID: VirtualizationParameter.symbols,
+            describing: VirtualizationParameter.kernel,
             directory: alpineNetboot,
             namePrefix: "System.map-",
             storedAs: "alpine-arm64-System.map"

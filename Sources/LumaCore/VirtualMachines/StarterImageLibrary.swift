@@ -24,12 +24,14 @@ public struct StarterImages: Sendable, Equatable {
 /// named after the version the kernel itself reports.
 public struct StarterImageSymbols: Sendable, Equatable {
     public let parameterID: String
+    public let describing: String
     public let directory: URL
     public let namePrefix: String
     public let storedAs: String
 
-    public init(parameterID: String, directory: URL, namePrefix: String, storedAs: String) {
+    public init(parameterID: String, describing: String, directory: URL, namePrefix: String, storedAs: String) {
         self.parameterID = parameterID
+        self.describing = describing
         self.directory = directory
         self.namePrefix = namePrefix
         self.storedAs = storedAs
@@ -104,7 +106,7 @@ public final class StarterImageLibrary {
                 paths[file.parameterID] = try await fetch(file)
             }
 
-            if let symbols = images.symbols, let kernel = paths[kernelParameter(of: images)] {
+            if let symbols = images.symbols, let kernel = paths[symbols.describing] {
                 paths[symbols.parameterID] = try await fetchSymbols(symbols, describing: kernel)
             }
 
@@ -114,10 +116,6 @@ public final class StarterImageLibrary {
             states[images.name] = .failed(reason: error.localizedDescription)
             throw error
         }
-    }
-
-    private func kernelParameter(of images: StarterImages) -> String {
-        images.files.first { $0.packaging == .linuxKernel }?.parameterID ?? ""
     }
 
     private func fetchSymbols(_ symbols: StarterImageSymbols, describing kernel: URL) async throws -> URL {
