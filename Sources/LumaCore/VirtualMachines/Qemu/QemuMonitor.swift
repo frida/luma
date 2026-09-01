@@ -1,8 +1,6 @@
 import Foundation
 import Frida
 
-#if !os(Windows)
-
 final class QemuMonitor: @unchecked Sendable {
     private let socket: GLib.Socket
     private let queue = DispatchQueue(label: "re.frida.luma.qemu-monitor")
@@ -178,4 +176,3 @@ enum QmpError: Swift.Error, LocalizedError {
     }
 }
 
-#endif

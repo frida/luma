@@ -1,7 +1,5 @@
 import Foundation
 
-#if !os(Windows)
-
 @MainActor
 public final class QemuBackend: VirtualMachineBackend {
     public let id = "qemu"
@@ -41,7 +39,7 @@ public final class QemuBackend: VirtualMachineBackend {
 enum QemuExecutable {
     static func path(for emulator: String) -> URL? {
         for directory in searchPaths {
-            let candidate = directory.appendingPathComponent(emulator)
+            let candidate = directory.appendingPathComponent(emulator + executableSuffix)
             if FileManager.default.isExecutableFile(atPath: candidate.path) {
                 return candidate
             }
@@ -51,11 +49,18 @@ enum QemuExecutable {
 
     private static var searchPaths: [URL] {
         let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
-        return (path.split(separator: ":").map(String.init) + packageManagerPaths)
+        return (path.split(separator: pathSeparator).map(String.init) + packageManagerPaths)
             .map { URL(fileURLWithPath: $0, isDirectory: true) }
     }
 
+    #if os(Windows)
+    private static let executableSuffix = ".exe"
+    private static let pathSeparator: Character = ";"
+    private static let packageManagerPaths: [String] = []
+    #else
+    private static let executableSuffix = ""
+    private static let pathSeparator: Character = ":"
     private static let packageManagerPaths = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"]
+    #endif
 }
 
-#endif

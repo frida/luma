@@ -185,9 +185,7 @@ public final class Engine {
             }
         )
 
-        #if !os(Windows)
         virtualMachines.register(QemuBackend())
-        #endif
         #if os(macOS)
         virtualMachines.register(VirtualizationBackend())
         virtualMachines.register(VPhoneBackend())
