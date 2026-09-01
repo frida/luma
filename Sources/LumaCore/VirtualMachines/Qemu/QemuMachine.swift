@@ -5,14 +5,14 @@ import Observation
 import Darwin
 #elseif canImport(Glibc)
 import Glibc
+#elseif canImport(WinSDK)
+import WinSDK
 #endif
-
-#if !os(Windows)
 
 @Observable
 @MainActor
 final class QemuMachine: VirtualMachine {
-    let id: UUID
+    let id: Foundation.UUID
     let name: String
     let template: VirtualMachineTemplate
     private(set) var state: VirtualMachineState = .starting
@@ -82,7 +82,9 @@ final class QemuMachine: VirtualMachine {
         do {
             let monitor = try await QemuMonitor(socketPath: qmpSocketPath, deadline: Date().addingTimeInterval(10))
             self.monitor = monitor
-            displayConnection = try await QemuDisplayConnection(monitor: monitor, pointerIsAbsolute: guest.pointer.isAbsolute)
+            displayConnection = try await QemuDisplayConnection(
+                monitor: monitor, pointerIsAbsolute: guest.pointer.isAbsolute,
+                processID: process.processIdentifier)
             display = displayConnection.map { .frames($0) }
         } catch {
             await shutDown()
@@ -235,6 +237,34 @@ final class QemuMachine: VirtualMachine {
     private static let snapshotDiskSize = "8G"
     private static let hostlinkRemovalSeconds: TimeInterval = 5
 
+    #if os(Windows)
+    private static func reserveGdbPort() throws -> UInt16 {
+        let handle = socket(AF_INET, SOCK_STREAM, 0)
+        defer { closesocket(handle) }
+
+        var address = sockaddr_in()
+        address.sin_family = ADDRESS_FAMILY(AF_INET)
+        address.sin_port = 0
+
+        let bound = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { address in
+                bind(handle, address, Int32(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard bound == 0 else {
+            throw VirtualMachineError.launchFailed(reason: "No port was free for the debugger")
+        }
+
+        var assigned = sockaddr_in()
+        var length = Int32(MemoryLayout<sockaddr_in>.size)
+        _ = withUnsafeMutablePointer(to: &assigned) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { address in
+                getsockname(handle, address, &length)
+            }
+        }
+        return UInt16(bigEndian: assigned.sin_port)
+    }
+    #else
     private static func reserveGdbPort() throws -> UInt16 {
         let handle = socket(AF_INET, SOCK_STREAM, 0)
         defer { close(handle) }
@@ -262,6 +292,6 @@ final class QemuMachine: VirtualMachine {
         }
         return UInt16(bigEndian: assigned.sin_port)
     }
+    #endif
 }
 
-#endif

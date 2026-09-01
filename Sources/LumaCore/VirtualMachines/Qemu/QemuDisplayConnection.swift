@@ -1,8 +1,6 @@
 import Foundation
 import Observation
 
-#if !os(Windows)
-
 @Observable
 @MainActor
 final class QemuDisplayConnection: VirtualMachineFrameSource {
@@ -12,7 +10,7 @@ final class QemuDisplayConnection: VirtualMachineFrameSource {
 
     private let listener: QemuDisplayListener
 
-    init(monitor: QemuMonitor, pointerIsAbsolute: Bool) async throws {
+    init(monitor: QemuMonitor, pointerIsAbsolute: Bool, processID: Int32) async throws {
         self.pointerIsAbsolute = pointerIsAbsolute
         listener = QemuDisplayListener()
         listener.onScanout = { [weak self] frame in
@@ -25,7 +23,7 @@ final class QemuDisplayConnection: VirtualMachineFrameSource {
                 self?.invalidate()
             }
         }
-        try await listener.attach(to: monitor)
+        try await listener.attach(to: monitor, processID: processID)
     }
 
     func send(_ event: VirtualMachineInputEvent) {
@@ -46,4 +44,3 @@ final class QemuDisplayConnection: VirtualMachineFrameSource {
     }
 }
 
-#endif

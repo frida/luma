@@ -5,9 +5,9 @@ import Frida
 import Darwin
 #elseif canImport(Glibc)
 import Glibc
+#elseif canImport(WinSDK)
+import WinSDK
 #endif
-
-#if !os(Windows)
 
 final class QemuDisplayListener: GLib.DBusObjectHandler, @unchecked Sendable {
     var onScanout: (@Sendable (VirtualMachineFrame) -> Void)?
@@ -25,14 +25,25 @@ final class QemuDisplayListener: GLib.DBusObjectHandler, @unchecked Sendable {
         Task { await deliverPending() }
     }
 
-    func attach(to monitor: QemuMonitor) async throws {
+    func attach(to monitor: QemuMonitor, processID: Int32) async throws {
         let (hostEnd, guestEnd) = try GLib.Socket.pair()
 
+        #if os(Windows)
+        let guestInfo = try guestEnd.protocolInfo(forProcessID: UInt32(processID))
+        _ = try await monitor.execute(
+            "get-win32-socket",
+            arguments: [
+                "info": .string(Data(guestInfo).base64EncodedString()),
+                "fdname": .string(QemuIdentifier.displayFD),
+            ]
+        )
+        #else
         _ = try await monitor.execute(
             "getfd",
             arguments: ["fdname": .string(QemuIdentifier.displayFD)],
             passing: guestEnd.fileDescriptor
         )
+        #endif
         guestEnd.close()
         _ = try await monitor.execute(
             "add_client",
@@ -45,6 +56,16 @@ final class QemuDisplayListener: GLib.DBusObjectHandler, @unchecked Sendable {
         let (listenerEnd, qemuEnd) = try GLib.Socket.pair()
 
         async let listener = GLib.DBusConnection.connect(to: listenerEnd, as: .client, startingMessageProcessing: false)
+        #if os(Windows)
+        _ = try await console.call(
+            at: Self.consolePath,
+            interface: "org.qemu.Display1.Console",
+            method: "RegisterListener",
+            parameters: GLib.Variant(tuple: [
+                GLib.Variant(bytes: try qemuEnd.protocolInfo(forProcessID: UInt32(processID)))
+            ])
+        )
+        #else
         _ = try await console.call(
             at: Self.consolePath,
             interface: "org.qemu.Display1.Console",
@@ -52,6 +73,7 @@ final class QemuDisplayListener: GLib.DBusObjectHandler, @unchecked Sendable {
             parameters: GLib.Variant(tuple: [.fileDescriptor(at: 0)]),
             fileDescriptors: [qemuEnd.fileDescriptor]
         )
+        #endif
         qemuEnd.close()
 
         let connection = try await listener
@@ -119,11 +141,15 @@ final class QemuDisplayListener: GLib.DBusObjectHandler, @unchecked Sendable {
 
     private func adoptScanout(_ call: GLib.DBusMethodCall) {
         let arguments = call.parameters.children
+        #if os(Windows)
+        guard let section = arguments[0].uint64 else { return }
+        #else
         guard let index = arguments[0].fileDescriptorIndex,
             let fileDescriptor = try? call.fileDescriptor(at: index)
         else {
             return
         }
+        #endif
 
         let offset = Int(arguments[1].uint32 ?? 0)
         let width = Int(arguments[2].uint32 ?? 0)
@@ -131,9 +157,15 @@ final class QemuDisplayListener: GLib.DBusObjectHandler, @unchecked Sendable {
         let stride = Int(arguments[4].uint32 ?? 0)
         let format = arguments[5].uint32 ?? 0
 
+        #if os(Windows)
+        guard let mapping = QemuFrameMapping(section: section, offset: offset, length: stride * height) else {
+            return
+        }
+        #else
         guard let mapping = QemuFrameMapping(fileDescriptor: fileDescriptor, offset: offset, length: stride * height) else {
             return
         }
+        #endif
         self.mapping = mapping
 
         onScanout?(
@@ -188,7 +220,53 @@ final class QemuDisplayListener: GLib.DBusObjectHandler, @unchecked Sendable {
     private static let listenerPath = "/org/qemu/Display1/Listener"
     private static let keyboardInterface = "org.qemu.Display1.Keyboard"
     private static let mouseInterface = "org.qemu.Display1.Mouse"
+    #if os(Windows)
+    private static let mapInterfaceDefinition = """
+              <interface name='org.qemu.Display1.Listener.Win32.Map'>
+                <method name='ScanoutMap'>
+                  <arg type='t' name='handle' direction='in'/>
+                  <arg type='u' name='offset' direction='in'/>
+                  <arg type='u' name='width' direction='in'/>
+                  <arg type='u' name='height' direction='in'/>
+                  <arg type='u' name='stride' direction='in'/>
+                  <arg type='u' name='pixman_format' direction='in'/>
+                </method>
+                <method name='UpdateMap'>
+                  <arg type='i' name='x' direction='in'/>
+                  <arg type='i' name='y' direction='in'/>
+                  <arg type='i' name='width' direction='in'/>
+                  <arg type='i' name='height' direction='in'/>
+                </method>
+                <property name='InterfaceVersion' type='u' access='read'/>
+              </interface>
+        """
+    #else
+    private static let mapInterfaceDefinition = """
+              <interface name='org.qemu.Display1.Listener.Unix.Map'>
+                <method name='ScanoutMap'>
+                  <arg type='h' name='handle' direction='in'/>
+                  <arg type='u' name='offset' direction='in'/>
+                  <arg type='u' name='width' direction='in'/>
+                  <arg type='u' name='height' direction='in'/>
+                  <arg type='u' name='stride' direction='in'/>
+                  <arg type='u' name='pixman_format' direction='in'/>
+                </method>
+                <method name='UpdateMap'>
+                  <arg type='i' name='x' direction='in'/>
+                  <arg type='i' name='y' direction='in'/>
+                  <arg type='i' name='width' direction='in'/>
+                  <arg type='i' name='height' direction='in'/>
+                </method>
+                <property name='InterfaceVersion' type='u' access='read'/>
+              </interface>
+        """
+    #endif
+
+    #if os(Windows)
+    private static let mapInterface = "org.qemu.Display1.Listener.Win32.Map"
+    #else
     private static let mapInterface = "org.qemu.Display1.Listener.Unix.Map"
+    #endif
 
     private static let interfaces = """
         <node>
@@ -218,23 +296,7 @@ final class QemuDisplayListener: GLib.DBusObjectHandler, @unchecked Sendable {
             <property name='Interfaces' type='as' access='read'/>
             <property name='InterfaceVersion' type='u' access='read'/>
           </interface>
-          <interface name='org.qemu.Display1.Listener.Unix.Map'>
-            <method name='ScanoutMap'>
-              <arg type='h' name='handle' direction='in'/>
-              <arg type='u' name='offset' direction='in'/>
-              <arg type='u' name='width' direction='in'/>
-              <arg type='u' name='height' direction='in'/>
-              <arg type='u' name='stride' direction='in'/>
-              <arg type='u' name='pixman_format' direction='in'/>
-            </method>
-            <method name='UpdateMap'>
-              <arg type='i' name='x' direction='in'/>
-              <arg type='i' name='y' direction='in'/>
-              <arg type='i' name='width' direction='in'/>
-              <arg type='i' name='height' direction='in'/>
-            </method>
-            <property name='InterfaceVersion' type='u' access='read'/>
-          </interface>
+        \(mapInterfaceDefinition)
         </node>
         """
 }
@@ -270,6 +332,28 @@ private final class QemuFrameMapping: VirtualMachineFrameStorage, @unchecked Sen
     let length: Int
 
     private let base: UnsafeMutableRawPointer
+
+#if os(Windows)
+    private let section: HANDLE
+
+    init?(section value: UInt64, offset: Int, length: Int) {
+        let section = HANDLE(bitPattern: UInt(value))
+        guard let base = MapViewOfFile(section, DWORD(FILE_MAP_READ), 0, 0, SIZE_T(offset + length)) else {
+            CloseHandle(section)
+            return nil
+        }
+
+        self.base = base
+        self.section = section!
+        self.pixels = UnsafeRawPointer(base.advanced(by: offset))
+        self.length = length
+    }
+
+    deinit {
+        UnmapViewOfFile(base)
+        CloseHandle(section)
+    }
+#else
     private let mappedLength: Int
     private let fileDescriptor: Int32
 
@@ -293,6 +377,7 @@ private final class QemuFrameMapping: VirtualMachineFrameStorage, @unchecked Sen
         munmap(base, mappedLength)
         close(fileDescriptor)
     }
+#endif
 }
 
 extension VirtualMachinePointerButton {
@@ -305,4 +390,3 @@ extension VirtualMachinePointerButton {
     }
 }
 
-#endif
