@@ -202,7 +202,7 @@ final class QemuMachine: VirtualMachine {
         guard !FileManager.default.fileExists(atPath: disk.path) else { return disk }
 
         guard let qemuImage = QemuExecutable.path(for: "qemu-img") else {
-            throw VirtualMachineError.launchFailed(reason: "qemu-img is not on your PATH")
+            throw VirtualMachineError.launchFailed(reason: "qemu-img is not installed")
         }
 
         let creation = Process()

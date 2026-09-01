@@ -17,7 +17,7 @@ public final class QemuBackend: VirtualMachineBackend {
             return .unavailable(reason: "Unknown guest \(template.id)")
         }
         guard QemuExecutable.path(for: guest.emulator) != nil else {
-            return .unavailable(reason: "\(guest.emulator) is not on your PATH")
+            return .unavailable(reason: "\(guest.emulator) is not installed")
         }
         return .available
     }
@@ -27,7 +27,7 @@ public final class QemuBackend: VirtualMachineBackend {
             throw VirtualMachineError.launchFailed(reason: "Unknown guest \(request.template.id)")
         }
         guard let executable = QemuExecutable.path(for: guest.emulator) else {
-            throw VirtualMachineError.launchFailed(reason: "\(guest.emulator) is not on your PATH")
+            throw VirtualMachineError.launchFailed(reason: "\(guest.emulator) is not installed")
         }
 
         let machine = QemuMachine(guest: guest, executable: executable, request: request)
@@ -48,6 +48,16 @@ enum QemuExecutable {
     }
 
     private static var searchPaths: [URL] {
+        [bundledDirectory] + installedDirectories
+    }
+
+    private static var bundledDirectory: URL {
+        Bundle.module.bundleURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("qemu", isDirectory: true)
+    }
+
+    private static var installedDirectories: [URL] {
         let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
         return (path.split(separator: pathSeparator).map(String.init) + packageManagerPaths)
             .map { URL(fileURLWithPath: $0, isDirectory: true) }
