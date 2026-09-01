@@ -104,7 +104,6 @@ final class MainWindow: InstrumentUIHost {
     private var actionQueuePopover: GlobalActionQueuePopover!
     private var collaborationPanel: CollaborationPanel?
     private var virtualMachinePanel: VirtualMachinePanel?
-    private var sidePanelHost: Box?
     private let outerPaned: Paned
     private var splitView: Adw.NavigationSplitView!
     private var eventStreamPaned: Paned!
@@ -114,12 +113,10 @@ final class MainWindow: InstrumentUIHost {
     private var pendingActionsObservation: LumaCore.StoreObservation?
     private var seenPendingActionIDs: Set<UUID> = []
 
-    private var isCollaborationPanelVisible: Bool {
-        engine?.projectUIState.sidePanel == .collaboration
-    }
+    private var displayedSidePanel: SidePanel?
 
-    private var isVirtualMachinePanelVisible: Bool {
-        engine?.projectUIState.sidePanel == .virtualMachines
+    private var isCollaborationPanelVisible: Bool {
+        displayedSidePanel == .collaboration
     }
 
     private enum SidebarSelection: Equatable {
@@ -393,20 +390,25 @@ final class MainWindow: InstrumentUIHost {
     }
 
     private func setCollaborationVisible(_ visible: Bool) {
-        engine?.setSidePanel(visible ? .collaboration : nil)
-        syncSidePanel()
+        showSidePanel(visible ? .collaboration : nil)
     }
 
     func toggleVirtualMachines() {
-        engine?.setSidePanel(isVirtualMachinePanelVisible ? nil : .virtualMachines)
-        syncSidePanel()
+        showSidePanel((displayedSidePanel == .virtualMachines) ? nil : .virtualMachines)
     }
 
-    private func syncSidePanel() {
-        let panel = engine?.projectUIState.sidePanel
-        collaborationPanel?.widget.visible = (panel == .collaboration)
-        virtualMachinePanel?.widget.visible = (panel == .virtualMachines)
-        sidePanelHost?.visible = (panel != nil)
+    private func showSidePanel(_ panel: SidePanel?) {
+        engine?.setSidePanel(panel)
+        displayedSidePanel = panel
+
+        let active: Widget?
+        switch panel {
+        case .collaboration: active = collaborationPanel?.widget
+        case .virtualMachines: active = virtualMachinePanel?.widget
+        case nil: active = nil
+        }
+        active?.visible = true
+        outerPaned.endChild = active.map { WidgetRef($0) }
     }
 
     func present() {
@@ -635,18 +637,12 @@ final class MainWindow: InstrumentUIHost {
         let machines = VirtualMachinePanel(
             engine: engine,
             onClose: { [weak self] in
-                self?.engine?.setSidePanel(nil)
-                self?.syncSidePanel()
+                self?.showSidePanel(nil)
             }
         )
         virtualMachinePanel = machines
 
-        let host = Box(orientation: .vertical, spacing: 0)
-        host.append(child: panel.widget)
-        host.append(child: machines.widget)
-        sidePanelHost = host
-        outerPaned.endChild = WidgetRef(host)
-        syncSidePanel()
+        showSidePanel(engine.projectUIState.sidePanel)
         notebookPane = NotebookPane(engine: engine)
         pharoPane = PharoPlaygroundPane(engine: engine)
         if case .notebook = selection {
