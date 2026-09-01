@@ -14,7 +14,9 @@ extension Process {
 
         guard isRunning else { return }
 
+        #if !os(Windows)
         kill(processIdentifier, SIGKILL)
+        #endif
         while isRunning {
             try? await Task.sleep(for: .milliseconds(50))
         }

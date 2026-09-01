@@ -1,6 +1,10 @@
 import Foundation
 import Observation
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 /// What a template needs to boot before anybody has anything of their own: a
 /// known-good set of files, fetched once and remembered, filling the
 /// parameters the user would otherwise have to go and find.
