@@ -84,10 +84,14 @@ function Sync-Checkout {
         if ($LASTEXITCODE -ne 0) {
             Invoke-Checked 'git fetch' { git fetch --tags origin }
         }
+        $previous = & git rev-parse HEAD
         Invoke-Checked 'git checkout' { git checkout --quiet --detach $Ref }
         Invoke-Checked 'git reset' { git reset --quiet --hard $Ref }
         if ($Submodules) {
             Invoke-Checked 'git submodule update' { git submodule update --init --recursive --depth 1 }
+        }
+        if ($previous -ne (& git rev-parse HEAD)) {
+            Remove-Item -Recurse -Force 'build' -ErrorAction SilentlyContinue
         }
     } finally {
         Pop-Location
@@ -261,15 +265,24 @@ if (Test-Wanted 'frida-core') {
             -Ref $refs['FRIDA_CORE_REF'] -Path $src -Submodules
         Push-Location $src
         try {
-            Invoke-Checked 'frida-core configure' {
-                python -c "import sys; sys.path.insert(0, '.'); from releng.meson_configure import main; main()" `
-                    . `
-                    --enable-shared `
-                    --enable-compiler-backend `
-                    --without-prebuilds=sdk `
-                    "--prefix=$FridaPrefix" `
-                    -- --force-fallback-for=openssl,libnghttp2 -Dtests=disabled '-Dfrida-gum:v8=disabled' `
-                    '-Dbarebone_backend=enabled'
+            Invoke-Checked 'frida-core subprojects' {
+                python releng/meson/meson.py subprojects update --reset
+            }
+            $build = Join-Path $src 'build'
+            if ($Force) {
+                Remove-Item -Recurse -Force $build -ErrorAction SilentlyContinue
+            }
+            if (-not (Test-Path $build)) {
+                Invoke-Checked 'frida-core configure' {
+                    python -c "import sys; sys.path.insert(0, '.'); from releng.meson_configure import main; main()" `
+                        . `
+                        --enable-shared `
+                        --enable-compiler-backend `
+                        --without-prebuilds=sdk `
+                        "--prefix=$FridaPrefix" `
+                        -- --force-fallback-for=openssl,libnghttp2 -Dtests=disabled '-Dfrida-gum:v8=disabled' `
+                        '-Dbarebone_backend=enabled'
+                }
             }
             Invoke-Checked 'frida-core compile' { python releng/meson/meson.py compile -C build }
             Invoke-Checked 'frida-core install' {
