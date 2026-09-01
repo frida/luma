@@ -74,9 +74,14 @@ final class VirtualMachineScreen {
             guard let base = pixels.baseAddress else { return }
             let mutable = UnsafeMutableRawPointer(mutating: base)
                 .assumingMemoryBound(to: UInt8.self)
+            let surfaceFormat: Cairo.Format
+            switch frame.format {
+            case .bgra8888: surfaceFormat = .argb32
+            case .bgrx8888: surfaceFormat = .rgb24
+            }
             guard let surface = cairo_image_surface_create_for_data(
                 mutable,
-                Cairo.Format.argb32.value,
+                surfaceFormat.value,
                 Int32(frame.width), Int32(frame.height), Int32(frame.stride))
             else { return }
             defer { cairo_surface_destroy(surface) }
