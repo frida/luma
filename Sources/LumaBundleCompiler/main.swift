@@ -230,6 +230,15 @@ struct LumaBundleCompiler {
                 let summary = packageSpecs.isEmpty ? "from manifest" : packageSpecs.joined(separator: ", ")
                 fputs("[packages] installing: \(summary)\n", stderr)
 
+                func installWithNPM() throws {
+                    let stagingLockfile = URL(fileURLWithPath: stagingDir)
+                        .appendingPathComponent("package-lock.json").path
+                    try runNPMInstall(
+                        in: stagingDir,
+                        specs: packageSpecs,
+                        preferCleanInstall: packageSpecs.isEmpty && fm.fileExists(atPath: stagingLockfile))
+                }
+
                 let pm = PackageManager()
                 do {
                     _ = try await pm.install(
@@ -237,12 +246,7 @@ struct LumaBundleCompiler {
                 } catch {
                     fputs("[packages] frida install failed: \(error.localizedDescription)\n", stderr)
                     fputs("[packages] falling back to npm\n", stderr)
-                    let stagingLockfile = URL(fileURLWithPath: stagingDir)
-                        .appendingPathComponent("package-lock.json").path
-                    try runNPMInstall(
-                        in: stagingDir,
-                        specs: packageSpecs,
-                        preferCleanInstall: packageSpecs.isEmpty && fm.fileExists(atPath: stagingLockfile))
+                    try installWithNPM()
                 }
 
                 fputs("[packages] done\n", stderr)
@@ -473,29 +477,39 @@ struct LumaBundleCompiler {
 
         guard fm.fileExists(atPath: srcDir.path) else { return }
 
-        let enumerator = fm.enumerator(
-            at: srcDir,
-            includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        )
+        var pending: [(source: URL, relative: [String])] = [(srcDir, [])]
+        while let directory = pending.popLast() {
+            let entries = try fm.contentsOfDirectory(
+                at: directory.source,
+                includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            )
 
-        while let url = enumerator?.nextObject() as? URL {
-            let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
-            if values.isDirectory == true, url.lastPathComponent == "node_modules" {
-                enumerator?.skipDescendants()
-                continue
+            for url in entries {
+                let name = url.lastPathComponent
+                if name == "node_modules" { continue }
+
+                let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
+                let relative = directory.relative + [name]
+
+                if values.isDirectory == true {
+                    pending.append((url, relative))
+                    continue
+                }
+                guard values.isRegularFile == true else { continue }
+                guard relative != ["package.json"], relative != ["package-lock.json"] else { continue }
+
+                var dst = dstDir
+                for component in relative {
+                    dst.appendPathComponent(component)
+                }
+
+                if fm.fileExists(atPath: dst.path) {
+                    try fm.removeItem(at: dst)
+                }
+                try fm.createDirectory(at: dst.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try fm.copyItem(at: url, to: dst)
             }
-            guard values.isRegularFile == true else { continue }
-
-            let relPath = url.path.replacingOccurrences(of: srcDir.path + "/", with: "")
-            guard relPath != "package.json", relPath != "package-lock.json" else { continue }
-            let dst = dstDir.appendingPathComponent(relPath)
-
-            if fm.fileExists(atPath: dst.path) {
-                try fm.removeItem(at: dst)
-            }
-            try fm.createDirectory(at: dst.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try fm.copyItem(at: url, to: dst)
         }
     }
 
@@ -508,8 +522,14 @@ struct LumaBundleCompiler {
         }
 
         let process = Process()
+        #if os(Windows)
+        let comSpec = ProcessInfo.processInfo.environment["ComSpec"] ?? #"C:\Windows\System32\cmd.exe"#
+        process.executableURL = URL(fileURLWithPath: comSpec)
+        process.arguments = ["/c"] + args
+        #else
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = args
+        #endif
         process.currentDirectoryURL = URL(fileURLWithPath: directory, isDirectory: true)
         process.standardOutput = FileHandle.standardError
         process.standardError = FileHandle.standardError
@@ -607,10 +627,8 @@ private func generatedFileHeader() -> String {
 
     import Foundation
 
-
     """
 }
-
 
 private func indentMultiline(_ string: String, by spaces: Int) -> String {
     let prefix = String(repeating: " ", count: spaces)
