@@ -186,22 +186,25 @@ struct BootVirtualMachineSheet: View {
                     }
                 }
                 .help("Download \(images.name) and fill these in")
-                .disabled(engine.virtualMachines.starterImages.state(for: images) == .downloading)
+                .disabled(engine.virtualMachines.starterImages.state(for: images).isDownloading)
             }
         }
     }
 
     private func starterDescription(_ images: StarterImages) -> String {
         switch engine.virtualMachines.starterImages.state(for: images) {
-        case .ready:
+        case .ready, .missing:
             return images.name
-        case .downloading:
-            return "Downloading…"
-        case .missing:
-            return images.name
+        case .downloading(let fraction):
+            return downloadingLabel(fraction)
         case .failed(let reason):
             return reason
         }
+    }
+
+    private func downloadingLabel(_ fraction: Double?) -> String {
+        guard let fraction else { return "Downloading…" }
+        return "Downloading… \(Int(fraction * 100))%"
     }
 
     @ViewBuilder
@@ -226,7 +229,7 @@ struct BootVirtualMachineSheet: View {
                             perform { _ = try await engine.virtualMachines.agents.download(flavor) }
                         }
                         .help("Download the \(flavor.name) agent published with Frida \(BareboneAgentLibrary.version)")
-                        .disabled(engine.virtualMachines.agents.state(for: flavor) == .downloading)
+                        .disabled(engine.virtualMachines.agents.state(for: flavor).isDownloading)
                     }
                 }
             }
@@ -241,8 +244,8 @@ struct BootVirtualMachineSheet: View {
         switch engine.virtualMachines.agents.state(for: flavor) {
         case .ready:
             return "Downloaded \(flavor.name)"
-        case .downloading:
-            return "Downloading…"
+        case .downloading(let fraction):
+            return downloadingLabel(fraction)
         case .missing:
             return "Not downloaded yet"
         case .failed(let reason):

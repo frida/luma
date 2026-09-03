@@ -120,6 +120,20 @@ final class BootVirtualMachineDialog {
         }
 
         adoptTemplate()
+        observeDownloads()
+    }
+
+    private func observeDownloads() {
+        withObservationTracking {
+            _ = engine.virtualMachines.starterImages.states
+            _ = engine.virtualMachines.agents.states
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.refreshVariantSections()
+                self.observeDownloads()
+            }
+        }
     }
 
     func present() {
@@ -191,7 +205,7 @@ final class BootVirtualMachineDialog {
         let download = Button(label: "Download")
         download.valign = .center
         download.tooltipText = "Download \(images.name) and fill these in"
-        download.sensitive = engine.virtualMachines.starterImages.state(for: images) != .downloading
+        download.sensitive = !engine.virtualMachines.starterImages.state(for: images).isDownloading
         download.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.downloadStarterImages(images) }
         }
@@ -206,11 +220,16 @@ final class BootVirtualMachineDialog {
         switch engine.virtualMachines.starterImages.state(for: images) {
         case .ready, .missing:
             return images.name
-        case .downloading:
-            return "Downloading\u{2026}"
+        case .downloading(let fraction):
+            return downloadingLabel(fraction)
         case .failed(let reason):
             return reason
         }
+    }
+
+    private func downloadingLabel(_ fraction: Double?) -> String {
+        guard let fraction else { return "Downloading\u{2026}" }
+        return "Downloading\u{2026} \(Int(fraction * 100))%"
     }
 
     private func downloadStarterImages(_ images: StarterImages) {
@@ -248,7 +267,7 @@ final class BootVirtualMachineDialog {
             download.valign = .center
             download.tooltipText =
                 "Download the \(flavor.name) agent published with Frida \(BareboneAgentLibrary.version)"
-            download.sensitive = (state != .downloading)
+            download.sensitive = !state.isDownloading
             download.onClicked { [weak self] _ in
                 MainActor.assumeIsolated { self?.downloadAgent(flavor) }
             }
@@ -274,8 +293,8 @@ final class BootVirtualMachineDialog {
         switch engine.virtualMachines.agents.state(for: flavor) {
         case .ready:
             return "Downloaded \(flavor.name)"
-        case .downloading:
-            return "Downloading\u{2026}"
+        case .downloading(let fraction):
+            return downloadingLabel(fraction)
         case .missing:
             return "Not downloaded yet"
         case .failed(let reason):
