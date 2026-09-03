@@ -61,14 +61,13 @@ final class CustomInstrumentRenameDialog {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 if responseID == "save" { self.commit() }
-                Self.retained.removeValue(forKey: ObjectIdentifier(self.dialog))
             }
         }
         applyDraftToVisuals()
     }
 
     func present() {
-        Self.retained[ObjectIdentifier(dialog)] = self
+        dialog.own(self)
         dialog.present(parent: parentWindow)
         Task { @MainActor in _ = nameEntry.grabFocus() }
     }
@@ -164,7 +163,6 @@ final class CustomInstrumentRenameDialog {
         }
     }
 
-    private static var retained: [ObjectIdentifier: CustomInstrumentRenameDialog] = [:]
 }
 
 private func normalizeIconImage(_ data: Data) -> Data? {

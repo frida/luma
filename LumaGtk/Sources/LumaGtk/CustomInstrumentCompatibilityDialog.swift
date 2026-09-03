@@ -32,7 +32,7 @@ final class CustomInstrumentCompatibilityDialog {
     }
 
     func present(parent: Gtk.Window) {
-        Self.retain(self, dialog: dialog)
+        dialog.own(self)
         dialog.present(parent: parent)
     }
 
@@ -148,15 +148,4 @@ final class CustomInstrumentCompatibilityDialog {
         }
     }
 
-    private static func retain(_ owner: CustomInstrumentCompatibilityDialog, dialog: Adw.Dialog) {
-        let key = ObjectIdentifier(dialog)
-        retained[key] = owner
-        dialog.onClosed { _ in
-            MainActor.assumeIsolated {
-                _ = retained.removeValue(forKey: key)
-            }
-        }
-    }
-
-    private static var retained: [ObjectIdentifier: CustomInstrumentCompatibilityDialog] = [:]
 }

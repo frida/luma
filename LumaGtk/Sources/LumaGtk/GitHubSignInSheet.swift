@@ -232,26 +232,7 @@ extension GitHubSignInSheet {
         dialog.set(child: toolbarView)
 
         sheet.dialog = dialog
-        Self.retain(sheet: sheet, dialog: dialog, gitHubAuth: gitHubAuth, onClosed: onClosed)
-
-        sheet.refresh()
-        sheet.observe()
-
-        dialog.present(parent: anchor)
-
-        return dialog
-    }
-
-    private static var retained: [ObjectIdentifier: GitHubSignInSheet] = [:]
-
-    private static func retain(
-        sheet: GitHubSignInSheet,
-        dialog: Adw.Dialog,
-        gitHubAuth: GitHubAuth,
-        onClosed: (() -> Void)?
-    ) {
-        let key = ObjectIdentifier(dialog)
-        retained[key] = sheet
+        dialog.own(sheet)
         dialog.onClosed { _ in
             MainActor.assumeIsolated {
                 switch gitHubAuth.state {
@@ -263,9 +244,15 @@ extension GitHubSignInSheet {
                     gitHubAuth.cancelSignIn()
                 }
                 gitHubAuth.dismissSignIn()
-                _ = retained.removeValue(forKey: key)
                 onClosed?()
             }
         }
+
+        sheet.refresh()
+        sheet.observe()
+
+        dialog.present(parent: anchor)
+
+        return dialog
     }
 }

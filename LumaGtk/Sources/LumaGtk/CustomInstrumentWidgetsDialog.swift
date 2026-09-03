@@ -51,7 +51,7 @@ final class CustomInstrumentWidgetsDialog {
     }
 
     func present(parent: Gtk.Window) {
-        Self.retain(self, dialog: dialog)
+        dialog.own(self)
         dialog.present(parent: parent)
     }
 
@@ -993,17 +993,6 @@ final class CustomInstrumentWidgetsDialog {
         }
     }
 
-    private static func retain(_ owner: CustomInstrumentWidgetsDialog, dialog: Adw.Dialog) {
-        let key = ObjectIdentifier(dialog)
-        retained[key] = owner
-        dialog.onClosed { _ in
-            MainActor.assumeIsolated {
-                _ = retained.removeValue(forKey: key)
-            }
-        }
-    }
-
-    private static var retained: [ObjectIdentifier: CustomInstrumentWidgetsDialog] = [:]
 }
 
 enum WidgetKindChoice: CaseIterable {

@@ -8,8 +8,6 @@ import Pango
 
 @MainActor
 final class TargetPicker {
-    private static var retained: [ObjectIdentifier: TargetPicker] = [:]
-
     typealias OnAttach = (_ device: Frida.Device, _ process: ProcessDetails) -> Void
     typealias OnSpawn = (_ device: Frida.Device, _ config: SpawnConfig) -> Void
     typealias OnArm = (_ device: Frida.Device, _ config: SpawnConfig, _ regex: String) -> Void
@@ -391,13 +389,11 @@ final class TargetPicker {
             }
         }
 
-        let key = ObjectIdentifier(dialog)
-        TargetPicker.retained[key] = self
+        dialog.own(self)
         dialog.onClosed { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.persistState()
                 self?.armSuggestionsPopover.unparent()
-                TargetPicker.retained[key] = nil
             }
         }
 

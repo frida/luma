@@ -363,20 +363,8 @@ final class PackageSearchDialog {
         adwDialog.set(child: toolbarView)
 
         dialog.hostDialog = adwDialog
-        Self.retain(dialog: dialog, adwDialog: adwDialog)
+        adwDialog.own(dialog)
 
         adwDialog.present(parent: anchor)
-    }
-
-    private static var retained: [ObjectIdentifier: PackageSearchDialog] = [:]
-
-    private static func retain(dialog: PackageSearchDialog, adwDialog: Adw.Dialog) {
-        let key = ObjectIdentifier(adwDialog)
-        retained[key] = dialog
-        adwDialog.onClosed { _ in
-            MainActor.assumeIsolated {
-                _ = retained.removeValue(forKey: key)
-            }
-        }
     }
 }

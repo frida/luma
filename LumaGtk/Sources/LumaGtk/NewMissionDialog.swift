@@ -217,22 +217,10 @@ final class NewMissionDialog {
     }
 
     func present() {
-        Self.retain(self, dialog: dialog)
+        dialog.own(self)
         dialog.present(parent: parentWindow)
         Task { @MainActor in
             _ = self.goalView.grabFocus()
-        }
-    }
-
-    private static var retained: [ObjectIdentifier: NewMissionDialog] = [:]
-
-    private static func retain(_ owner: NewMissionDialog, dialog: Adw.Dialog) {
-        let key = ObjectIdentifier(dialog)
-        retained[key] = owner
-        dialog.onClosed { _ in
-            MainActor.assumeIsolated {
-                _ = retained.removeValue(forKey: key)
-            }
         }
     }
 

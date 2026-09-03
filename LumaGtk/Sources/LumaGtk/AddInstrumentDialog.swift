@@ -181,7 +181,7 @@ final class AddInstrumentDialog {
     }
 
     func present() {
-        Self.retain(self, dialog: dialog)
+        dialog.own(self)
         dialog.present(parent: parentWindow)
     }
 
@@ -283,18 +283,6 @@ final class AddInstrumentDialog {
         inner.append(child: label)
         bar.append(child: inner)
         detailContainer.append(child: bar)
-    }
-
-    private static var retained: [ObjectIdentifier: AddInstrumentDialog] = [:]
-
-    private static func retain(_ owner: AddInstrumentDialog, dialog: Adw.Dialog) {
-        let key = ObjectIdentifier(dialog)
-        retained[key] = owner
-        dialog.onClosed { _ in
-            MainActor.assumeIsolated {
-                _ = retained.removeValue(forKey: key)
-            }
-        }
     }
 
     private func close() {

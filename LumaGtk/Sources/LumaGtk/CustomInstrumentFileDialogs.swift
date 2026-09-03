@@ -130,13 +130,12 @@ private final class CustomInstrumentPathDialog {
                 if responseID == self.actionID {
                     self.onCommit(self.normalizedInput)
                 }
-                Self.retained.removeValue(forKey: ObjectIdentifier(self.dialog))
             }
         }
     }
 
     func present(parent: Gtk.Window) {
-        Self.retained[ObjectIdentifier(dialog)] = self
+        dialog.own(self)
         dialog.present(parent: parent)
         Task { @MainActor in _ = pathEntry.grabFocus() }
     }
@@ -149,5 +148,4 @@ private final class CustomInstrumentPathDialog {
         (pathEntry.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static var retained: [ObjectIdentifier: CustomInstrumentPathDialog] = [:]
 }
