@@ -7,6 +7,7 @@ on:
   pull_request:
     paths:
       - LumaGtk/scripts/windows/build-qemu.sh
+      - scripts/build-qemu-macos.sh
       - .github/workflows/qemu.yml
   workflow_dispatch:
 
@@ -66,4 +67,46 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           body_path: artifacts.txt
+          append_body: true
           files: artifacts/qemu-${{ env.QEMU_BUILD }}-windows-x86_64.zip
+
+  macos-arm64:
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: brew install glib pixman pkgconf ninja
+
+      - name: Resolve build name
+        run: |
+          case "$GITHUB_REF" in
+          refs/tags/qemu-*)
+            echo "QEMU_BUILD=${GITHUB_REF#refs/tags/qemu-}" >> "$GITHUB_ENV"
+            ;;
+          *)
+            echo "QEMU_BUILD=$QEMU_VERSION-dev" >> "$GITHUB_ENV"
+            ;;
+          esac
+
+      - name: Build QEMU
+        run: |
+          mkdir artifacts
+          scripts/build-qemu-macos.sh "$QEMU_VERSION" "$QEMU_BUILD" artifacts | tee artifacts.txt
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: qemu-${{ env.QEMU_BUILD }}-macos-arm64.zip
+          path: artifacts/qemu-${{ env.QEMU_BUILD }}-macos-arm64.zip
+          if-no-files-found: error
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/qemu-')
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: artifacts.txt
+          append_body: true
+          files: artifacts/qemu-${{ env.QEMU_BUILD }}-macos-arm64.zip
