@@ -62,9 +62,14 @@ public enum StarterImagePackaging: Sendable, Equatable {
 
 public enum StarterImageState: Sendable, Equatable {
     case missing
-    case downloading
+    case downloading(fraction: Double?)
     case ready
     case failed(reason: String)
+
+    public var isDownloading: Bool {
+        if case .downloading = self { return true }
+        return false
+    }
 }
 
 @Observable
@@ -96,18 +101,30 @@ public final class StarterImageLibrary {
     }
 
     public func download(_ images: StarterImages) async throws -> [String: URL] {
-        states[images.name] = .downloading
+        states[images.name] = .downloading(fraction: nil)
 
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
+            let fileCount = images.files.count + (images.symbols == nil ? 0 : 1)
+            var completed = 0
+            let noteProgress = { [weak self] (name: String, fraction: Double?) in
+                self?.states[name] = .downloading(
+                    fraction: fraction.map { (Double(completed) + $0) / Double(fileCount) })
+            }
+
             var paths: [String: URL] = [:]
             for file in images.files {
-                paths[file.parameterID] = try await fetch(file)
+                paths[file.parameterID] = try await fetch(file) { fraction in
+                    noteProgress(images.name, fraction)
+                }
+                completed += 1
             }
 
             if let symbols = images.symbols, let kernel = paths[symbols.describing] {
-                paths[symbols.parameterID] = try await fetchSymbols(symbols, describing: kernel)
+                paths[symbols.parameterID] = try await fetchSymbols(symbols, describing: kernel) { fraction in
+                    noteProgress(images.name, fraction)
+                }
             }
 
             states[images.name] = .ready
@@ -118,7 +135,11 @@ public final class StarterImageLibrary {
         }
     }
 
-    private func fetchSymbols(_ symbols: StarterImageSymbols, describing kernel: URL) async throws -> URL {
+    private func fetchSymbols(
+        _ symbols: StarterImageSymbols,
+        describing kernel: URL,
+        reporting report: @escaping @MainActor (Double?) -> Void
+    ) async throws -> URL {
         let destination = directory.appendingPathComponent(symbols.storedAs, isDirectory: false)
         guard !FileManager.default.fileExists(atPath: destination.path) else { return destination }
 
@@ -128,23 +149,20 @@ public final class StarterImageLibrary {
         }
 
         let url = symbols.directory.appendingPathComponent(symbols.namePrefix + version)
-        let (downloaded, response) = try await URLSession.shared.download(from: url)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw StarterImageError.downloadFailed(url: url)
-        }
+        let downloaded = try await download(from: url, reporting: report)
 
         try FileManager.default.moveItem(at: downloaded, to: destination)
         return destination
     }
 
-    private func fetch(_ file: StarterImageFile) async throws -> URL {
+    private func fetch(
+        _ file: StarterImageFile,
+        reporting report: @escaping @MainActor (Double?) -> Void
+    ) async throws -> URL {
         let destination = path(for: file)
         guard !FileManager.default.fileExists(atPath: destination.path) else { return destination }
 
-        let (downloaded, response) = try await URLSession.shared.download(from: file.url)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw StarterImageError.downloadFailed(url: file.url)
-        }
+        let downloaded = try await download(from: file.url, reporting: report)
 
         switch file.packaging {
         case .plain:
@@ -158,6 +176,19 @@ public final class StarterImageLibrary {
             try? FileManager.default.removeItem(at: downloaded)
         }
         return destination
+    }
+
+    private func download(
+        from url: URL,
+        reporting report: @escaping @MainActor (Double?) -> Void
+    ) async throws -> URL {
+        do {
+            return try await ProgressiveDownload.fetch(url) { fraction in
+                Task { @MainActor in report(fraction) }
+            }
+        } catch {
+            throw StarterImageError.downloadFailed(url: url)
+        }
     }
 
     private func path(for file: StarterImageFile) -> URL {

@@ -35,7 +35,7 @@ public final class BareboneAgentLibrary {
     }
 
     public func download(_ flavor: BareboneAgentFlavor, version: String = BareboneAgentLibrary.version) async throws -> URL {
-        states[flavor] = .downloading
+        states[flavor] = .downloading(fraction: nil)
 
         do {
             let destination = path(for: flavor)
@@ -52,11 +52,17 @@ public final class BareboneAgentLibrary {
 
     private func fetch(_ flavor: BareboneAgentFlavor, version: String) async throws -> Data {
         let url = URL(string: "https://github.com/frida/frida/releases/download/\(version)/\(flavor.assetName)")!
-        let (data, response) = try await URLSession.shared.data(from: url)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+        do {
+            let downloaded = try await ProgressiveDownload.fetch(url) { [weak self] fraction in
+                Task { @MainActor in
+                    self?.states[flavor] = .downloading(fraction: fraction)
+                }
+            }
+            defer { try? FileManager.default.removeItem(at: downloaded) }
+            return try Data(contentsOf: downloaded)
+        } catch {
             throw BareboneAgentError.downloadFailed(flavor: flavor, version: version)
         }
-        return data
     }
 
     private func path(for flavor: BareboneAgentFlavor) -> URL {
@@ -66,9 +72,14 @@ public final class BareboneAgentLibrary {
 
 public enum BareboneAgentState: Sendable, Equatable {
     case missing
-    case downloading
+    case downloading(fraction: Double?)
     case ready
     case failed(reason: String)
+
+    public var isDownloading: Bool {
+        if case .downloading = self { return true }
+        return false
+    }
 }
 
 public enum BareboneAgentError: Swift.Error, LocalizedError {
