@@ -74,6 +74,11 @@ public struct VirtualMachineTemplate: Identifiable, Sendable, Equatable {
         return match
     }
 
+    public func detailLabel(for parameters: [String: VirtualMachineParameterValue]) -> String {
+        guard variants.count > 1 else { return name }
+        return "\(name) \u{00b7} \(variant(for: parameters).architecture.displayName)"
+    }
+
     public var icon: Icon? {
         MachineIcon.named(iconName)
     }

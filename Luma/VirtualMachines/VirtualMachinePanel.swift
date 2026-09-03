@@ -139,8 +139,11 @@ struct VirtualMachineControls: View {
                     Text(record.name)
                         .font(.subheadline.weight(.medium))
 
-                    if let template = engine.virtualMachines.template(for: record), template.name != record.name {
-                        Text(template.name)
+                    if let template = engine.virtualMachines.template(for: record),
+                        case let detail = template.detailLabel(for: record.parameters),
+                        detail != record.name
+                    {
+                        Text(detail)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
