@@ -755,8 +755,9 @@ extension GLuint {
 
     func log(_ read: (GLuint, GLsizei, UnsafeMutablePointer<GLsizei>?, UnsafeMutablePointer<GLchar>?) -> Void) -> String {
         var text = [GLchar](repeating: 0, count: 1024)
-        read(self, GLsizei(text.count), nil, &text)
-        return String(cString: text)
+        var length: GLsizei = 0
+        read(self, GLsizei(text.count), &length, &text)
+        return String(decoding: text.prefix(Int(length)).map(UInt8.init(bitPattern:)), as: UTF8.self)
     }
 
     func location(_ name: String) -> GLint {

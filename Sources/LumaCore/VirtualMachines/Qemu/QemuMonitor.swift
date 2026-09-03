@@ -11,6 +11,7 @@ final class QemuMonitor: @unchecked Sendable {
         try await handshake()
     }
 
+    @discardableResult
     func execute(_ command: String, arguments: [String: QmpArgument] = [:], passing fileDescriptor: Int32? = nil) async throws -> QmpReply {
         let request = Self.encode(command: command, arguments: arguments)
         return try await withCheckedThrowingContinuation { continuation in
