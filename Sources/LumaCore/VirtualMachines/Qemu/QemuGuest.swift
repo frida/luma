@@ -350,18 +350,6 @@ enum QemuBoot {
                     kind: .filePath(extensions: ["qcow2", "img", "vmdk", "vhd", "raw"])
                 ),
                 VirtualMachineParameter(
-                    id: QemuParameter.diskFormat,
-                    name: "Format",
-                    kind: .choice(
-                        options: [
-                            VirtualMachineParameterOption(id: "qcow2", name: "qcow2"),
-                            VirtualMachineParameterOption(id: "raw", name: "raw"),
-                            VirtualMachineParameterOption(id: "vmdk", name: "VMDK"),
-                        ],
-                        default: "qcow2"
-                    )
-                ),
-                VirtualMachineParameter(
                     id: QemuParameter.diskInterface,
                     name: "Disk interface",
                     kind: .choice(
@@ -408,8 +396,7 @@ enum QemuBoot {
             guard let image = request.text(QemuParameter.diskImage), !image.isEmpty else {
                 throw VirtualMachineError.launchFailed(reason: "No disk image was chosen")
             }
-            let format = request.text(QemuParameter.diskFormat) ?? "qcow2"
-            let drive = "file=\(image),format=\(format)"
+            let drive = "file=\(image),format=\(QemuDiskImageFormat.of(image).rawValue)"
 
             let interface = QemuDiskInterface(rawValue: request.text(QemuParameter.diskInterface) ?? "") ?? .ide
             switch interface {
@@ -454,7 +441,6 @@ enum QemuDiskInterface: String {
 
 enum QemuParameter {
     static let diskImage = "disk-image"
-    static let diskFormat = "disk-format"
     static let diskInterface = "disk-interface"
     static let kernelImage = "kernel-image"
     static let ramdisk = "ramdisk"
