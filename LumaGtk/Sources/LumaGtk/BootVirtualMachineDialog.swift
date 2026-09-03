@@ -16,12 +16,17 @@ final class BootVirtualMachineDialog {
     private let dialog: Adw.Dialog
     private let templateRow: Adw.ComboRow
     private let nameRow: Adw.EntryRow
+    private let starterGroup: Adw.PreferencesGroup
     private let parameterGroup: Adw.PreferencesGroup
+    private let agentGroup: Adw.PreferencesGroup
     private let failureLabel: Label
     private let bootButton: Button
 
     private let templates: [VirtualMachineTemplate]
     private var parameterRows: [String: ParameterRow] = [:]
+    private var starterRow: Adw.ActionRow?
+    private var agentRow: Adw.ActionRow?
+    private var agentPath: String?
     private var pendingFileParameter: String?
 
     init(parent: Gtk.Window, engine: Engine, onBooted: @escaping (Device) -> Void) {
@@ -57,8 +62,13 @@ final class BootVirtualMachineDialog {
         nameRow.title = "Name"
         machineGroup.add(child: nameRow)
 
+        starterGroup = Adw.PreferencesGroup()
+
         parameterGroup = Adw.PreferencesGroup()
         parameterGroup.title = "Parameters"
+
+        agentGroup = Adw.PreferencesGroup()
+        agentGroup.title = "Barebone Agent"
 
         failureLabel = Label(str: "")
         failureLabel.add(cssClass: "error")
@@ -72,7 +82,9 @@ final class BootVirtualMachineDialog {
         body.marginTop = 12
         body.marginBottom = 18
         body.append(child: machineGroup)
+        body.append(child: starterGroup)
         body.append(child: parameterGroup)
+        body.append(child: agentGroup)
         body.append(child: failureLabel)
 
         let scroll = ScrolledWindow()
@@ -113,9 +125,12 @@ final class BootVirtualMachineDialog {
             parameterGroup.remove(child: row.widget)
         }
         parameterRows.removeAll()
+        agentPath = nil
 
         guard let template = selectedTemplate else {
+            starterGroup.visible = false
             parameterGroup.visible = false
+            agentGroup.visible = false
             return
         }
 
@@ -127,6 +142,160 @@ final class BootVirtualMachineDialog {
             parameterRows[parameter.id] = row
             parameterGroup.add(child: row.widget)
         }
+
+        if let archRow = parameterRows[VirtualMachineTemplate.architectureParameterID]?.widget as? Adw.ComboRow {
+            archRow.onNotifySelected { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.refreshVariantSections() }
+            }
+        }
+        refreshVariantSections()
+    }
+
+    private func refreshVariantSections() {
+        guard let template = selectedTemplate else { return }
+        let variant = template.variant(for: currentParameterValues())
+        rebuildStarterRow(variant.starterImages)
+        rebuildAgentRow(variant.agentFlavor)
+    }
+
+    private func rebuildStarterRow(_ images: StarterImages?) {
+        if let starterRow {
+            starterGroup.remove(child: starterRow)
+            self.starterRow = nil
+        }
+        guard let images else {
+            starterGroup.visible = false
+            return
+        }
+
+        let row = Adw.ActionRow()
+        row.title = "Starter files"
+        row.subtitle = starterDescription(images)
+
+        let download = Button(label: "Download")
+        download.valign = .center
+        download.tooltipText = "Download \(images.name) and fill these in"
+        download.sensitive = engine.virtualMachines.starterImages.state(for: images) != .downloading
+        download.onClicked { [weak self] _ in
+            MainActor.assumeIsolated { self?.downloadStarterImages(images) }
+        }
+        row.addSuffix(widget: download)
+
+        starterGroup.add(child: row)
+        starterGroup.visible = true
+        starterRow = row
+    }
+
+    private func starterDescription(_ images: StarterImages) -> String {
+        switch engine.virtualMachines.starterImages.state(for: images) {
+        case .ready, .missing:
+            return images.name
+        case .downloading:
+            return "Downloading\u{2026}"
+        case .failed(let reason):
+            return reason
+        }
+    }
+
+    private func downloadStarterImages(_ images: StarterImages) {
+        Task { @MainActor in
+            do {
+                let paths = try await engine.virtualMachines.starterImages.download(images)
+                for (parameterID, url) in paths {
+                    (parameterRows[parameterID]?.widget as? Adw.EntryRow)?.text = url.path
+                }
+            } catch {
+                showFailure(error.localizedDescription)
+            }
+            self.refreshVariantSections()
+        }
+        refreshVariantSections()
+    }
+
+    private func rebuildAgentRow(_ flavor: BareboneAgentFlavor?) {
+        if let agentRow {
+            agentGroup.remove(child: agentRow)
+            self.agentRow = nil
+        }
+        guard let flavor else {
+            agentGroup.visible = false
+            return
+        }
+
+        let row = Adw.ActionRow()
+        row.title = flavor.name
+        row.subtitle = agentDescription(flavor)
+
+        let state = engine.virtualMachines.agents.state(for: flavor)
+        if agentPath == nil, state != .ready {
+            let download = Button(label: "Download")
+            download.valign = .center
+            download.tooltipText =
+                "Download the \(flavor.name) agent published with Frida \(BareboneAgentLibrary.version)"
+            download.sensitive = (state != .downloading)
+            download.onClicked { [weak self] _ in
+                MainActor.assumeIsolated { self?.downloadAgent(flavor) }
+            }
+            row.addSuffix(widget: download)
+        }
+
+        let choose = Button(label: "Choose\u{2026}")
+        choose.valign = .center
+        choose.onClicked { [weak self] _ in
+            MainActor.assumeIsolated { self?.browseForAgent() }
+        }
+        row.addSuffix(widget: choose)
+
+        agentGroup.add(child: row)
+        agentGroup.visible = true
+        agentRow = row
+    }
+
+    private func agentDescription(_ flavor: BareboneAgentFlavor) -> String {
+        if let agentPath {
+            return agentPath
+        }
+        switch engine.virtualMachines.agents.state(for: flavor) {
+        case .ready:
+            return "Downloaded \(flavor.name)"
+        case .downloading:
+            return "Downloading\u{2026}"
+        case .missing:
+            return "Not downloaded yet"
+        case .failed(let reason):
+            return reason
+        }
+    }
+
+    private func downloadAgent(_ flavor: BareboneAgentFlavor) {
+        Task { @MainActor in
+            do {
+                _ = try await engine.virtualMachines.agents.download(flavor)
+            } catch {
+                showFailure(error.localizedDescription)
+            }
+            self.refreshVariantSections()
+        }
+        refreshVariantSections()
+    }
+
+    private func browseForAgent() {
+        guard let parentPtr = parent.window_ptr.map(UnsafeMutableRawPointer.init) else { return }
+        pendingFileParameter = Self.agentImport
+        let context = Unmanaged.passRetained(self).toOpaque()
+        "Select Agent".withCString { title in
+            luma_file_dialog_open(parentPtr, title, bootVirtualMachineFileThunk, context)
+        }
+    }
+
+    private static let agentImport = "barebone-agent"
+
+    private func currentParameterValues() -> [String: VirtualMachineParameterValue] {
+        var values: [String: VirtualMachineParameterValue] = [:]
+        for (id, row) in parameterRows {
+            values[id] = row.value()
+        }
+        return values
     }
 
     private func makeRow(for parameter: VirtualMachineParameter) -> ParameterRow {
@@ -187,19 +356,17 @@ final class BootVirtualMachineDialog {
 
     fileprivate func adoptFilePath(_ path: String?) {
         defer { pendingFileParameter = nil }
-        guard let path, let parameterID = pendingFileParameter,
-            let row = parameterRows[parameterID]?.widget as? Adw.EntryRow
-        else { return }
-        row.text = path
+        guard let path, let parameterID = pendingFileParameter else { return }
+        if parameterID == Self.agentImport {
+            agentPath = path
+            refreshVariantSections()
+            return
+        }
+        (parameterRows[parameterID]?.widget as? Adw.EntryRow)?.text = path
     }
 
     private func boot() {
         guard let template = selectedTemplate else { return }
-
-        var parameters: [String: VirtualMachineParameterValue] = [:]
-        for (id, row) in parameterRows {
-            parameters[id] = row.value()
-        }
 
         let typed = nameRow.text ?? ""
         let name = typed.isEmpty ? template.name : typed
@@ -209,17 +376,24 @@ final class BootVirtualMachineDialog {
         Task { @MainActor in
             do {
                 let machine = try await engine.virtualMachines.create(
-                    template: template, name: name, parameters: parameters, agentPath: nil)
+                    template: template,
+                    name: name,
+                    parameters: currentParameterValues(),
+                    agentPath: agentPath.map { URL(fileURLWithPath: $0) })
                 if let device = engine.virtualMachines.device(for: machine) {
                     onBooted(device)
                 }
                 _ = dialog.close()
             } catch {
-                failureLabel.label = error.localizedDescription
-                failureLabel.visible = true
+                showFailure(error.localizedDescription)
                 bootButton.sensitive = true
             }
         }
+    }
+
+    private func showFailure(_ message: String) {
+        failureLabel.label = message
+        failureLabel.visible = true
     }
 }
 
