@@ -92,7 +92,7 @@ struct BootVirtualMachineSheet: View {
                 Form {
                     TextField("Name", text: $machineName)
 
-                    if let starterImages = template.starterImages {
+                    if let starterImages = template.variant(for: parameters).starterImages {
                         starterSection(starterImages)
                     }
 
@@ -100,7 +100,7 @@ struct BootVirtualMachineSheet: View {
                         parameterField(parameter)
                     }
 
-                    if let flavor = template.agentFlavor {
+                    if let flavor = template.variant(for: parameters).agentFlavor {
                         agentSection(flavor)
                     }
                 }

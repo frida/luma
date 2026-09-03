@@ -9,11 +9,11 @@ public final class QemuBackend: VirtualMachineBackend {
     }
 
     public var templates: [VirtualMachineTemplate] {
-        QemuGuest.all.map(\.template)
+        QemuGuest.templates
     }
 
     public func availability(for template: VirtualMachineTemplate) -> VirtualMachineAvailability {
-        guard let guest = QemuGuest.named(template.id) else {
+        guard let guest = QemuGuest.guest(for: template.id, parameters: [:]) else {
             return .unavailable(reason: "Unknown guest \(template.id)")
         }
         guard QemuExecutable.path(for: guest.emulator) != nil else {
@@ -23,7 +23,7 @@ public final class QemuBackend: VirtualMachineBackend {
     }
 
     public func launch(_ request: VirtualMachineLaunchRequest) async throws -> any VirtualMachine {
-        guard let guest = QemuGuest.named(request.template.id) else {
+        guard let guest = QemuGuest.guest(for: request.template.id, parameters: request.parameters) else {
             throw VirtualMachineError.launchFailed(reason: "Unknown guest \(request.template.id)")
         }
         guard let executable = QemuExecutable.path(for: guest.emulator) else {

@@ -175,8 +175,75 @@ struct QemuGuest {
         )
     }
 
-    static func named(_ id: String) -> QemuGuest? {
-        all.first { $0.id == id }
+    static var templates: [VirtualMachineTemplate] {
+        all.filter { $0.operatingSystem != .linux }.map(\.template) + [linuxTemplate]
+    }
+
+    static let linuxTemplateID = "qemu.linux"
+
+    static var linuxTemplate: VirtualMachineTemplate {
+        let guests = linuxGuestsNativeFirst
+        let primary = guests[0]
+        return VirtualMachineTemplate(
+            id: linuxTemplateID,
+            backendID: "qemu",
+            name: "Linux",
+            summary: primary.summary,
+            iconName: primary.iconName,
+            operatingSystem: .linux,
+            variants: guests.map {
+                VirtualMachineTemplateVariant(
+                    architecture: $0.architecture,
+                    agentFlavor: $0.agentFlavor,
+                    starterImages: $0.starterImages
+                )
+            },
+            parameters: [architectureParameter(guests)] + QemuBoot.linuxKernel.parameters + [
+                memoryParameter(default: primary.defaultMemory)
+            ]
+        )
+    }
+
+    private static func architectureParameter(_ guests: [QemuGuest]) -> VirtualMachineParameter {
+        VirtualMachineParameter(
+            id: VirtualMachineTemplate.architectureParameterID,
+            name: "Architecture",
+            kind: .choice(
+                options: guests.map {
+                    VirtualMachineParameterOption(id: $0.architecture.rawValue, name: $0.architecture.displayName)
+                },
+                default: guests[0].architecture.rawValue
+            )
+        )
+    }
+
+    static func guest(for templateID: String, parameters: [String: VirtualMachineParameterValue]) -> QemuGuest? {
+        guard templateID == linuxTemplateID else {
+            return all.first { $0.id == templateID }
+        }
+        let guests = linuxGuestsNativeFirst
+        guard let chosen = parameters[VirtualMachineTemplate.architectureParameterID]?.text else {
+            return guests[0]
+        }
+        return guests.first { $0.architecture.rawValue == chosen }
+    }
+
+    private static var linuxGuestsNativeFirst: [QemuGuest] {
+        let linux = all.filter { $0.operatingSystem == .linux }
+        let native = nativeArchitecture
+        return linux.filter { $0.architecture == native } + linux.filter { $0.architecture != native }
+    }
+
+    private static var nativeArchitecture: VirtualMachineArchitecture {
+        #if arch(arm64)
+        return .arm64
+        #elseif arch(x86_64)
+        return .x86_64
+        #elseif arch(i386)
+        return .x86
+        #else
+        return .arm
+        #endif
     }
 
     var template: VirtualMachineTemplate {
@@ -189,14 +256,16 @@ struct QemuGuest {
             operatingSystem: operatingSystem,
             architecture: architecture,
             agentFlavor: agentFlavor,
-            parameters: boot.parameters + [
-                VirtualMachineParameter(
-                    id: QemuParameter.memory,
-                    name: "Memory",
-                    kind: .number(default: defaultMemory, min: 32, max: 16384, unit: "MB")
-                )
-            ],
+            parameters: boot.parameters + [Self.memoryParameter(default: defaultMemory)],
             starterImages: starterImages
+        )
+    }
+
+    private static func memoryParameter(default value: Int) -> VirtualMachineParameter {
+        VirtualMachineParameter(
+            id: QemuParameter.memory,
+            name: "Memory",
+            kind: .number(default: value, min: 32, max: 16384, unit: "MB")
         )
     }
 
