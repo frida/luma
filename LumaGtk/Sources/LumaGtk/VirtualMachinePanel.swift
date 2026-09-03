@@ -200,8 +200,11 @@ private final class MachineRow {
         name.ellipsize = .end
         names.append(child: name)
 
-        if let template = engine.virtualMachines.template(for: record), template.name != record.name {
-            let subtitle = Label(str: template.name)
+        if let template = engine.virtualMachines.template(for: record),
+            case let detail = template.detailLabel(for: record.parameters),
+            detail != record.name
+        {
+            let subtitle = Label(str: detail)
             subtitle.xalign = 0
             subtitle.add(cssClass: "dim-label")
             subtitle.add(cssClass: "caption")
