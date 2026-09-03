@@ -20,7 +20,9 @@ final class BootVirtualMachineDialog {
     private let parameterGroup: Adw.PreferencesGroup
     private let agentGroup: Adw.PreferencesGroup
     private let failureLabel: Label
+    private let cancelButton: Button
     private let bootButton: Button
+    private let scroll: ScrolledWindow
 
     private let templates: [VirtualMachineTemplate]
     private var parameterRows: [String: ParameterRow] = [:]
@@ -28,6 +30,8 @@ final class BootVirtualMachineDialog {
     private var agentRow: Adw.ActionRow?
     private var agentPath: String?
     private var pendingFileParameter: String?
+    private var machine: (any VirtualMachine)?
+    private var screen: VirtualMachineScreen?
 
     init(parent: Gtk.Window, engine: Engine, onBooted: @escaping (Device) -> Void) {
         self.parent = parent
@@ -44,7 +48,7 @@ final class BootVirtualMachineDialog {
         dialog.set(contentHeight: 640)
 
         let header = Adw.HeaderBar()
-        let cancelButton = Button(label: "Cancel")
+        cancelButton = Button(label: "Cancel")
         header.packStart(child: cancelButton)
         bootButton = Button(label: "Boot")
         bootButton.add(cssClass: "suggested-action")
@@ -87,7 +91,7 @@ final class BootVirtualMachineDialog {
         body.append(child: agentGroup)
         body.append(child: failureLabel)
 
-        let scroll = ScrolledWindow()
+        scroll = ScrolledWindow()
         scroll.hexpand = true
         scroll.vexpand = true
         scroll.child = WidgetRef(body)
@@ -98,10 +102,17 @@ final class BootVirtualMachineDialog {
         dialog.set(child: column)
 
         cancelButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { _ = self?.dialog.close() }
+            MainActor.assumeIsolated { self?.finish() }
         }
         bootButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.boot() }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if let machine = self.machine {
+                    self.markReady(machine)
+                } else {
+                    self.boot()
+                }
+            }
         }
         templateRow.onNotifySelected { [weak self] _, _ in
             MainActor.assumeIsolated { self?.adoptTemplate() }
@@ -380,15 +391,66 @@ final class BootVirtualMachineDialog {
                     name: name,
                     parameters: currentParameterValues(),
                     agentPath: agentPath.map { URL(fileURLWithPath: $0) })
-                if let device = engine.virtualMachines.device(for: machine) {
-                    onBooted(device)
-                }
-                _ = dialog.close()
+                self.machine = machine
+                self.showBootedView(machine)
+                engine.setSidePanel(.virtualMachines)
             } catch {
                 showFailure(error.localizedDescription)
                 bootButton.sensitive = true
             }
         }
+    }
+
+    private func showBootedView(_ machine: any VirtualMachine) {
+        cancelButton.label = "Later"
+        bootButton.label = "Mark Ready"
+        bootButton.sensitive = true
+
+        let content = Box(orientation: .vertical, spacing: 8)
+        content.marginStart = 18
+        content.marginEnd = 18
+        content.marginTop = 12
+        content.marginBottom = 18
+
+        if case .frames(let source)? = machine.display {
+            let screen = VirtualMachineScreen(source: source)
+            screen.widget.vexpand = true
+            content.append(child: screen.widget)
+            self.screen = screen
+        }
+
+        let hint = Label(str: "Drive the machine to the state you want to come back to, then mark it ready.")
+        hint.add(cssClass: "dim-label")
+        hint.wrap = true
+        hint.xalign = 0
+        content.append(child: hint)
+
+        failureLabel.unparent()
+        content.append(child: failureLabel)
+
+        scroll.child = WidgetRef(content)
+    }
+
+    private func markReady(_ machine: any VirtualMachine) {
+        failureLabel.visible = false
+        bootButton.sensitive = false
+
+        Task { @MainActor in
+            do {
+                try await engine.virtualMachines.markReady(machine)
+                self.finish()
+            } catch {
+                showFailure(error.localizedDescription)
+                bootButton.sensitive = true
+            }
+        }
+    }
+
+    private func finish() {
+        if let machine, let device = engine.virtualMachines.device(for: machine) {
+            onBooted(device)
+        }
+        _ = dialog.close()
     }
 
     private func showFailure(_ message: String) {
