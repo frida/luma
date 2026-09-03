@@ -18,7 +18,7 @@ public final class BareboneAgentLibrary {
     }
 
     public static var version: String {
-        "17.17.1-barebone.8"
+        "17.17.1-barebone.9"
     }
 
     public func state(for flavor: BareboneAgentFlavor) -> BareboneAgentState {
