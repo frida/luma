@@ -92,11 +92,17 @@ struct BootVirtualMachineSheet: View {
                 Form {
                     TextField("Name", text: $machineName)
 
+                    if let architecture = template.parameters.first(where: {
+                        $0.id == VirtualMachineTemplate.architectureParameterID
+                    }) {
+                        parameterField(architecture)
+                    }
+
                     if let starterImages = template.variant(for: parameters).starterImages {
                         starterSection(starterImages)
                     }
 
-                    ForEach(template.parameters) { parameter in
+                    ForEach(template.parameters.filter { $0.id != VirtualMachineTemplate.architectureParameterID }) { parameter in
                         parameterField(parameter)
                     }
 

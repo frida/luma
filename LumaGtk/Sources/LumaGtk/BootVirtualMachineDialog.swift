@@ -16,6 +16,7 @@ final class BootVirtualMachineDialog {
     private let dialog: Adw.Dialog
     private let templateRow: Adw.ComboRow
     private let nameRow: Adw.EntryRow
+    private let machineGroup: Adw.PreferencesGroup
     private let starterGroup: Adw.PreferencesGroup
     private let parameterGroup: Adw.PreferencesGroup
     private let agentGroup: Adw.PreferencesGroup
@@ -54,7 +55,7 @@ final class BootVirtualMachineDialog {
         bootButton.add(cssClass: "suggested-action")
         header.packEnd(child: bootButton)
 
-        let machineGroup = Adw.PreferencesGroup()
+        machineGroup = Adw.PreferencesGroup()
         machineGroup.title = "Machine"
 
         templateRow = Adw.ComboRow()
@@ -132,8 +133,8 @@ final class BootVirtualMachineDialog {
     }
 
     private func adoptTemplate() {
-        for row in parameterRows.values {
-            parameterGroup.remove(child: row.widget)
+        for (id, row) in parameterRows {
+            group(for: id).remove(child: row.widget)
         }
         parameterRows.removeAll()
         agentPath = nil
@@ -151,7 +152,7 @@ final class BootVirtualMachineDialog {
         for parameter in template.parameters {
             let row = makeRow(for: parameter)
             parameterRows[parameter.id] = row
-            parameterGroup.add(child: row.widget)
+            group(for: parameter.id).add(child: row.widget)
         }
 
         if let archRow = parameterRows[VirtualMachineTemplate.architectureParameterID]?.widget as? Adw.ComboRow {
@@ -160,6 +161,10 @@ final class BootVirtualMachineDialog {
             }
         }
         refreshVariantSections()
+    }
+
+    private func group(for parameterID: String) -> Adw.PreferencesGroup {
+        parameterID == VirtualMachineTemplate.architectureParameterID ? machineGroup : parameterGroup
     }
 
     private func refreshVariantSections() {
