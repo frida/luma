@@ -94,13 +94,22 @@ final class BootVirtualMachineDialog {
         templateRow.onNotifySelected { [weak self] _, _ in
             MainActor.assumeIsolated { self?.adoptTemplate() }
         }
+        dialog.onClosed { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                Self.retained.removeValue(forKey: ObjectIdentifier(self.dialog))
+            }
+        }
 
         adoptTemplate()
     }
 
     func present() {
+        Self.retained[ObjectIdentifier(dialog)] = self
         dialog.present(parent: parent)
     }
+
+    private static var retained: [ObjectIdentifier: BootVirtualMachineDialog] = [:]
 
     private var selectedTemplate: VirtualMachineTemplate? {
         let index = Int(templateRow.selected)
