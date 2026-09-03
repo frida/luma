@@ -1,4 +1,5 @@
 import CCairo
+import CLuma
 import Cairo
 import Foundation
 import Gdk
@@ -11,19 +12,55 @@ final class VirtualMachineScreen {
 
     private let source: any VirtualMachineFrameSource
     private let area: DrawingArea
+    private let hintLabel: Label
     private var lastRevision: UInt64 = .max
     private var redrawTask: Task<Void, Never>?
 
     private var placement: (x: Double, y: Double, width: Double, height: Double) = (0, 0, 0, 0)
 
+    /// A guest left with the PC's own mouse only hears how far the pointer
+    /// moved, so the host's has to stop moving: it is hidden and put back on
+    /// its anchor after every move while the guest's is being driven, leaving
+    /// one pointer on screen instead of two drifting apart.
+    private enum PointerMode {
+        case free
+        case captured(anchor: Anchor)
+    }
+
+    private struct Anchor {
+        let local: (x: Double, y: Double)
+        let global: (x: Double, y: Double)?
+    }
+
+    private var pointer: PointerMode = .free
+    private var lastPointerPosition: (x: Double, y: Double) = (0, 0)
+    private var isPointerInside = false
+    private var hintDismissal: Task<Void, Never>?
+
     init(source: any VirtualMachineFrameSource, interactive: Bool = true) {
         self.source = source
 
         widget = Box(orientation: .vertical, spacing: 0)
+
         area = DrawingArea()
         area.hexpand = true
         area.vexpand = true
-        widget.append(child: area)
+
+        hintLabel = Label(str: "")
+        hintLabel.add(cssClass: "osd")
+        hintLabel.add(cssClass: "caption")
+        hintLabel.halign = .center
+        hintLabel.valign = .end
+        hintLabel.marginBottom = 8
+        hintLabel.canTarget = false
+        hintLabel.visible = false
+
+        let overlay = Overlay()
+        overlay.set(child: area)
+        overlay.addOverlay(widget: hintLabel)
+        overlay.hexpand = true
+        overlay.vexpand = true
+        widget.append(child: overlay)
 
         area.setDrawFunc { [weak self] _, ctx, width, height in
             MainActor.assumeIsolated {
@@ -49,6 +86,7 @@ final class VirtualMachineScreen {
 
     deinit {
         redrawTask?.cancel()
+        hintDismissal?.cancel()
     }
 
     private func draw(ctx: Cairo.ContextRef, width: Double, height: Double) {
@@ -103,9 +141,13 @@ final class VirtualMachineScreen {
         area.canFocus = true
 
         let keys = EventControllerKey()
-        keys.onKeyPressed { [weak self] _, keyval, _, _ in
+        keys.onKeyPressed { [weak self] _, keyval, _, state in
             MainActor.assumeIsolated {
-                guard let self, let code = Self.code(forKeyval: keyval) else { return false }
+                guard let self else { return false }
+                if Self.isReleaseChord(keyval: keyval, state: state) {
+                    self.releasePointer()
+                }
+                guard let code = Self.code(forKeyval: keyval) else { return false }
                 self.source.send(.keyDown(code: code))
                 return true
             }
@@ -117,13 +159,34 @@ final class VirtualMachineScreen {
             }
         }
         area.install(controller: keys)
+
+        let focus = EventControllerFocus()
+        focus.onLeave { [weak self] _ in
+            MainActor.assumeIsolated { self?.releasePointer() }
+        }
+        area.install(controller: focus)
     }
 
     private func attachPointer() {
         let motion = EventControllerMotion()
+        motion.onEnter { [weak self] _, x, y in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.isPointerInside = true
+                self.refreshHint()
+                self.sendPointer(at: x, y: y)
+            }
+        }
         motion.onMotion { [weak self] _, x, y in
             MainActor.assumeIsolated {
                 self?.sendPointer(at: x, y: y)
+            }
+        }
+        motion.onLeave { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.isPointerInside = false
+                self.refreshHint()
             }
         }
         area.install(controller: motion)
@@ -138,6 +201,12 @@ final class VirtualMachineScreen {
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     _ = self.area.grabFocus()
+                    if guestButton == .left, !self.source.pointerIsAbsolute,
+                        case .free = self.pointer
+                    {
+                        self.capturePointer(at: x, y: y)
+                        return
+                    }
                     self.sendPointer(at: x, y: y)
                     self.source.send(.pointerButtonDown(button: guestButton))
                 }
@@ -160,7 +229,38 @@ final class VirtualMachineScreen {
         area.install(controller: scroll)
     }
 
+    private func capturePointer(at x: Double, y: Double) {
+        var globalX = 0.0
+        var globalY = 0.0
+        let global = luma_pointer_location(&globalX, &globalY) ? (globalX, globalY) : nil
+        pointer = .captured(anchor: Anchor(local: (x, y), global: global))
+        lastPointerPosition = (x, y)
+
+        if let ptr = area.widget_ptr.map(UnsafeMutableRawPointer.init) {
+            luma_widget_set_cursor_name(ptr, "none")
+        }
+        showHint("Ctrl+Alt releases the pointer", briefly: true)
+    }
+
+    private func releasePointer() {
+        guard case .captured = pointer else { return }
+        pointer = .free
+
+        if let ptr = area.widget_ptr.map(UnsafeMutableRawPointer.init) {
+            luma_widget_set_cursor_name(ptr, nil)
+        }
+        refreshHint()
+    }
+
     private func sendPointer(at x: Double, y: Double) {
+        if source.pointerIsAbsolute {
+            sendAbsolutePointer(at: x, y: y)
+        } else {
+            sendRelativePointer(at: x, y: y)
+        }
+    }
+
+    private func sendAbsolutePointer(at x: Double, y: Double) {
         guard placement.width > 0, placement.height > 0, let frame = source.frame else { return }
 
         let guestX = (x - placement.x) / placement.width * Double(frame.width)
@@ -170,6 +270,61 @@ final class VirtualMachineScreen {
         else { return }
 
         source.send(.pointerMoved(x: guestX, y: guestY))
+    }
+
+    /// Deltas are reported in the guest's own pixels rather than the points
+    /// its frame happens to be drawn at.
+    private func sendRelativePointer(at x: Double, y: Double) {
+        guard case .captured(let anchor) = pointer else { return }
+
+        let dx = x - lastPointerPosition.x
+        let dy = y - lastPointerPosition.y
+        guard dx != 0 || dy != 0 else { return }
+
+        if placement.width > 0, placement.height > 0, let frame = source.frame {
+            source.send(
+                .pointerMovedBy(
+                    dx: dx * Double(frame.width) / placement.width,
+                    dy: dy * Double(frame.height) / placement.height))
+        }
+
+        if let global = anchor.global {
+            luma_pointer_place(global.x, global.y)
+            lastPointerPosition = anchor.local
+        } else {
+            lastPointerPosition = (x, y)
+        }
+    }
+
+    private func refreshHint() {
+        if case .captured = pointer { return }
+
+        if !source.pointerIsAbsolute, isPointerInside {
+            showHint("Click to drive the pointer", briefly: false)
+        } else {
+            hintDismissal?.cancel()
+            hintLabel.visible = false
+        }
+    }
+
+    private func showHint(_ text: String, briefly: Bool) {
+        hintDismissal?.cancel()
+        hintLabel.label = text
+        hintLabel.visible = true
+
+        guard briefly else { return }
+        hintDismissal = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.hintLabel.visible = false
+        }
+    }
+
+    private static func isReleaseChord(keyval: UInt, state: Gdk.ModifierType) -> Bool {
+        let controls: Set<UInt> = [0xffe3, 0xffe4]
+        let alts: Set<UInt> = [0xffe9, 0xffea]
+        return (controls.contains(keyval) && state.contains(.altMask))
+            || (alts.contains(keyval) && state.contains(.controlMask))
     }
 
     private static func code(forKeyval keyval: UInt) -> UInt32? {

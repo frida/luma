@@ -23,6 +23,7 @@ let cLumaCSettings: [CSetting] = [
 let cLumaCxxSettings: [CXXSetting] = []
 let cLumaLinkerSettings: [LinkerSetting] = [
     .linkedFramework("WebKit"),
+    .linkedFramework("CoreGraphics"),
     .unsafeFlags(pkgConfigFlags(["libadwaita-1", "epoxy", "librsvg-2.0"], libs: true)),
 ]
 let lumaGtkLinkerSettings: [LinkerSetting] = [
@@ -38,6 +39,7 @@ let cLumaCxxSettings: [CXXSetting] = [
 ]
 let cLumaLinkerSettings: [LinkerSetting] = [
     .linkedLibrary("WebView2Loader.dll"),
+    .linkedLibrary("user32"),
     .linkedLibrary("ole32"),
     .linkedLibrary("oleaut32"),
     .linkedLibrary("runtimeobject"),
@@ -73,6 +75,7 @@ let cLumaCxxSettings: [CXXSetting] = []
 let cLumaLinkerSettings: [LinkerSetting] = [
     .linkedLibrary("webkitgtk-6.0"),
     .linkedLibrary("javascriptcoregtk-6.0"),
+    .linkedLibrary("X11"),
     .linkedLibrary("epoxy"),
     .linkedLibrary("rsvg-2"),
 ]
