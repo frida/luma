@@ -100,6 +100,16 @@ bool luma_image_normalize_to_png(const unsigned char *in_bytes,
                                   int *out_width,
                                   int *out_height);
 
+// --- Pointer capture --------------------------------------------------------
+
+// Where the pointer sits on screen, in the coordinates luma_pointer_place
+// takes back. Returns false where the platform keeps the pointer's
+// whereabouts to itself (Wayland), in which case it cannot be placed either.
+bool luma_pointer_location(double *x, double *y);
+void luma_pointer_place(double x, double y);
+
+void luma_widget_set_cursor_name(void *widget, const char *name);
+
 // GdkPaintable backed by librsvg that re-rasterizes the SVG into
 // each snapshot's backing pixels at its logical-size aspect ratio.
 // Returns NULL on load failure; transfer-full.

@@ -349,3 +349,100 @@ luma_image_normalize_to_png(const unsigned char *in_bytes,
     *out_size = (size_t)buf_len;
     return true;
 }
+
+// --- Pointer capture --------------------------------------------------------
+
+#if defined(_WIN32)
+
+#include <windows.h>
+
+bool
+luma_pointer_location(double *x, double *y)
+{
+    POINT point;
+    if (!GetCursorPos(&point)) return false;
+    *x = point.x;
+    *y = point.y;
+    return true;
+}
+
+void
+luma_pointer_place(double x, double y)
+{
+    SetCursorPos((int)(x + 0.5), (int)(y + 0.5));
+}
+
+#elif defined(__APPLE__)
+
+#include <CoreGraphics/CoreGraphics.h>
+
+bool
+luma_pointer_location(double *x, double *y)
+{
+    CGEventRef event = CGEventCreate(NULL);
+    CGPoint point = CGEventGetLocation(event);
+    CFRelease(event);
+    *x = point.x;
+    *y = point.y;
+    return true;
+}
+
+void
+luma_pointer_place(double x, double y)
+{
+    CGWarpMouseCursorPosition(CGPointMake(x, y));
+    // Warping starts a suppression interval during which local input is
+    // dropped; re-associating the pair ends it at once.
+    CGAssociateMouseAndMouseCursorPosition(true);
+}
+
+#else
+
+#ifdef GDK_WINDOWING_X11
+#include <gdk/x11/gdkx.h>
+#include <X11/Xlib.h>
+#endif
+
+bool
+luma_pointer_location(double *x, double *y)
+{
+#ifdef GDK_WINDOWING_X11
+    GdkDisplay *display = gdk_display_get_default();
+    if (GDK_IS_X11_DISPLAY(display)) {
+        Display *xdisplay = gdk_x11_display_get_xdisplay(display);
+        Window root_return, child_return;
+        int root_x, root_y, win_x, win_y;
+        unsigned int mask;
+        if (XQueryPointer(xdisplay, DefaultRootWindow(xdisplay),
+                          &root_return, &child_return,
+                          &root_x, &root_y, &win_x, &win_y, &mask)) {
+            *x = root_x;
+            *y = root_y;
+            return true;
+        }
+    }
+#endif
+    return false;
+}
+
+void
+luma_pointer_place(double x, double y)
+{
+#ifdef GDK_WINDOWING_X11
+    GdkDisplay *display = gdk_display_get_default();
+    if (GDK_IS_X11_DISPLAY(display)) {
+        Display *xdisplay = gdk_x11_display_get_xdisplay(display);
+        XWarpPointer(xdisplay, None, DefaultRootWindow(xdisplay),
+                     0, 0, 0, 0, (int)(x + 0.5), (int)(y + 0.5));
+        XFlush(xdisplay);
+    }
+#endif
+}
+
+#endif
+
+void
+luma_widget_set_cursor_name(void *widget, const char *name)
+{
+    gtk_widget_set_cursor_from_name(GTK_WIDGET(widget), name);
+}
