@@ -118,6 +118,27 @@ struct QemuGuest {
             starterImages: Self.alpineX86_64
         ),
         QemuGuest(
+            id: "qemu.linux-arm",
+            name: "Alpine Linux (arm)",
+            summary: """
+                A kernel and its ramdisk, booted on QEMU. Frida injects the linux agent \
+                into the kernel, and from there into the processes it is asked to attach to.
+                """,
+            iconName: "linux",
+            operatingSystem: .linux,
+            emulator: "qemu-system-arm",
+            machine: "virt",
+            cpu: "max",
+            vga: "",
+            architecture: .arm,
+            agentFlavor: .linuxArm,
+            ecam: 0x3f00_0000,
+            boot: .linuxKernel,
+            pointer: .usbTablet,
+            defaultMemory: 1024,
+            starterImages: Self.alpineArm
+        ),
+        QemuGuest(
             id: "qemu.linux-x86",
             name: "Alpine Linux (x86)",
             summary: """
@@ -143,6 +164,7 @@ struct QemuGuest {
     private static let alpineArm64 = alpine(architecture: "aarch64", flavor: "virt", packaging: .linuxKernel)
     private static let alpineX86_64 = alpine(architecture: "x86_64", flavor: "virt", packaging: .plain)
     private static let alpineX86 = alpine(architecture: "x86", flavor: "lts", packaging: .plain)
+    private static let alpineArm = alpine(architecture: "armv7", flavor: "lts", packaging: .plain)
 
     private static func alpine(
         architecture: String,
