@@ -18,7 +18,7 @@ public final class BareboneAgentLibrary {
     }
 
     public static var version: String {
-        fridaVersion
+        "17.17.1-barebone.8"
     }
 
     public func state(for flavor: BareboneAgentFlavor) -> BareboneAgentState {
