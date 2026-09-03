@@ -1,15 +1,6 @@
 {
-  "originHash" : "4ce405cbd1426b6283c4f5cbeb817481a2c454efe779f57cd8b0d56fded389a8",
+  "originHash" : "6b05ede71e10699e68a3cb1e2a83feb886d99b0fc6ec66ac2dcfb1858d90e303",
   "pins" : [
-    {
-      "identity" : "frida-swift",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/frida-swift",
-      "state" : {
-        "branch" : "main",
-        "revision" : "3502cf4ebf50e634e5544325fc821cea715c8ff5"
-      }
-    },
     {
       "identity" : "gir2swift",
       "kind" : "remoteSourceControl",
