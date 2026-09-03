@@ -43,7 +43,7 @@ public func luma_scene_add_drawable(_ scene: Int32) -> Int32 {
 
 @_cdecl("luma_scene_remove_drawable")
 public func luma_scene_remove_drawable(_ scene: Int32, _ drawable: Int32) {
-    guard let updated = CanvasRegistry.shared.remove(Int(drawable), from: Int(scene)) else { return }
+    guard CanvasRegistry.shared.remove(Int(drawable), from: Int(scene)) != nil else { return }
     CanvasRegistry.shared.publish(Int(scene))
 }
 

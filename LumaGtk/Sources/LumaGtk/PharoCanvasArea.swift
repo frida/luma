@@ -135,7 +135,7 @@ final class PharoCanvasArea {
         click.onPressed { [weak self] gesture, _, x, y in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.area.widget.grabFocus()
+                _ = self.area.widget.grabFocus()
                 self.reportPointer(x: x, y: y, isInside: true)
                 self.report { $0.buttons |= Self.mask(for: UInt32(gesture.currentButton)) }
             }

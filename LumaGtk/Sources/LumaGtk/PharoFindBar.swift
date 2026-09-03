@@ -152,7 +152,7 @@ final class PharoFindBar {
     private func search(from start: SearchStart) {
         settings.searchText = entry.text
         withIters { selectionStart, selectionEnd, matchStart, matchEnd in
-            buffer.getSelectionBounds(start: selectionStart, end: selectionEnd)
+            _ = buffer.getSelectionBounds(start: selectionStart, end: selectionEnd)
             let from = start == .cursor ? selectionEnd : selectionStart
             guard context.forward(iter: from, matchStart: matchStart, matchEnd: matchEnd) else { return }
             select(matchStart, matchEnd)
@@ -162,7 +162,7 @@ final class PharoFindBar {
 
     private func step(forward: Bool) {
         withIters { selectionStart, selectionEnd, matchStart, matchEnd in
-            buffer.getSelectionBounds(start: selectionStart, end: selectionEnd)
+            _ = buffer.getSelectionBounds(start: selectionStart, end: selectionEnd)
             let found = forward
                 ? context.forward(iter: selectionEnd, matchStart: matchStart, matchEnd: matchEnd)
                 : context.backward(iter: selectionStart, matchStart: matchStart, matchEnd: matchEnd)
@@ -180,7 +180,7 @@ final class PharoFindBar {
         }
 
         let place = withIters { matchStart, matchEnd, _, _ in
-            buffer.getSelectionBounds(start: matchStart, end: matchEnd)
+            _ = buffer.getSelectionBounds(start: matchStart, end: matchEnd)
             return context.getOccurrencePosition(matchStart: matchStart, matchEnd: matchEnd)
         }
         position.text = place > 0 ? "\(place) of \(total)" : "\(total) matches"

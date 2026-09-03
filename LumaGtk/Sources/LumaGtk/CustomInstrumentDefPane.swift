@@ -137,7 +137,7 @@ final class CustomInstrumentDefPane {
         let path = file.path
         let content = draftContent
         Task { @MainActor in
-            try? engine.writeCustomInstrumentFile(defID: defID, path: path, content: content)
+            _ = try? engine.writeCustomInstrumentFile(defID: defID, path: path, content: content)
             self.saveBar.setDirty(false)
         }
     }
