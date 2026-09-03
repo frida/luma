@@ -349,10 +349,7 @@ private final class MachineRow {
 
         let forget = [
             ContextMenu.Item("Forget Machine\u{2026}", destructive: true) { [weak self] in
-                guard let self else { return }
-                Task { @MainActor in
-                    await engine.virtualMachines.forget(self.record)
-                }
+                self?.confirmForget()
             }
         ]
 
@@ -361,6 +358,27 @@ private final class MachineRow {
             at: menuButton,
             x: Double(menuButton.width) / 2,
             y: Double(menuButton.height))
+    }
+
+    private func confirmForget() {
+        guard let engine else { return }
+
+        let alert = Adw.AlertDialog(
+            heading: "Forget Machine?",
+            body: "This will stop \u{201c}\(record.name)\u{201d} and delete its snapshot. Its disk image is left alone.")
+        alert.addResponse(id: "cancel", label: "_Cancel")
+        alert.addResponse(id: "forget", label: "_Forget Machine")
+        alert.setResponseAppearance(response: "forget", appearance: .destructive)
+        alert.setClose(response: "cancel")
+        alert.onResponse { [record] _, responseID in
+            MainActor.assumeIsolated {
+                guard responseID == "forget" else { return }
+                Task { @MainActor in
+                    await engine.virtualMachines.forget(record)
+                }
+            }
+        }
+        alert.present(parent: widget)
     }
 
     private func perform(_ work: @escaping () async throws -> Void) {
