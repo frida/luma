@@ -391,8 +391,6 @@ void
 luma_pointer_place(double x, double y)
 {
     CGWarpMouseCursorPosition(CGPointMake(x, y));
-    // Warping starts a suppression interval during which local input is
-    // dropped; re-associating the pair ends it at once.
     CGAssociateMouseAndMouseCursorPosition(true);
 }
 

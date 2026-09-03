@@ -18,10 +18,6 @@ final class VirtualMachineScreen {
 
     private var placement: (x: Double, y: Double, width: Double, height: Double) = (0, 0, 0, 0)
 
-    /// A guest left with the PC's own mouse only hears how far the pointer
-    /// moved, so the host's has to stop moving: it is hidden and put back on
-    /// its anchor after every move while the guest's is being driven, leaving
-    /// one pointer on screen instead of two drifting apart.
     private enum PointerMode {
         case free
         case captured(anchor: Anchor)
@@ -272,8 +268,6 @@ final class VirtualMachineScreen {
         source.send(.pointerMoved(x: guestX, y: guestY))
     }
 
-    /// Deltas are reported in the guest's own pixels rather than the points
-    /// its frame happens to be drawn at.
     private func sendRelativePointer(at x: Double, y: Double) {
         guard case .captured(let anchor) = pointer else { return }
 
