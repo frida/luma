@@ -10,11 +10,9 @@ the emulators here as separate processes and speaks to them over QMP
 and D-Bus, so the two remain separate works, merely distributed
 together.
 
-The binaries are the unmodified Windows build published at
-
-    https://qemu.weilnetz.de/w64/qemu-w64-setup-20260811.exe
-
-and the corresponding source for QEMU 11.1.0 is available from
+The binaries were compiled by the Luma project from the unmodified
+QEMU 11.1.0 source, with the GTK, SDL, VNC and curses frontends
+disabled. That complete corresponding source is available from
 
     https://download.qemu.org/qemu-11.1.0.tar.xz
     https://gitlab.com/qemu-project/qemu

@@ -180,13 +180,7 @@ if ($Arch -ne 'x86_64') {
         Copy-Item $binary $qemuStage
     }
 
-    $softwareGraphicsLibraries = @(
-        'libEGL.dll', 'libEGL_vulkan_secondaries.dll', 'libGLESv1_CM.dll', 'libGLESv2.dll',
-        'libGLESv2_vulkan_secondaries.dll', 'libGLESv2_with_capture.dll', 'libVkICD_mock_icd.dll',
-        'libfeature_support.dll', 'libjsoncpp-26.dll', 'libvk_swiftshader.dll'
-    )
     Get-ChildItem -Path $QemuPrefix -Filter '*.dll' |
-        Where-Object { $softwareGraphicsLibraries -notcontains $_.Name } |
         ForEach-Object { Copy-Item $_.FullName $qemuStage }
 
     Copy-Item (Join-Path $QemuPrefix 'COPYING')     $qemuStage
