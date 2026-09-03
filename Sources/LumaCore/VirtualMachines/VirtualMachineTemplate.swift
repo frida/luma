@@ -8,10 +8,30 @@ public struct VirtualMachineTemplate: Identifiable, Sendable, Equatable {
     public let summary: String
     public let iconName: String
     public let operatingSystem: VirtualMachineOperatingSystem
-    public let architecture: VirtualMachineArchitecture
-    public let agentFlavor: BareboneAgentFlavor?
+    public let variants: [VirtualMachineTemplateVariant]
     public let parameters: [VirtualMachineParameter]
-    public let starterImages: StarterImages?
+
+    public static let architectureParameterID = "architecture"
+
+    public init(
+        id: String,
+        backendID: String,
+        name: String,
+        summary: String,
+        iconName: String,
+        operatingSystem: VirtualMachineOperatingSystem,
+        variants: [VirtualMachineTemplateVariant],
+        parameters: [VirtualMachineParameter]
+    ) {
+        self.id = id
+        self.backendID = backendID
+        self.name = name
+        self.summary = summary
+        self.iconName = iconName
+        self.operatingSystem = operatingSystem
+        self.variants = variants
+        self.parameters = parameters
+    }
 
     public init(
         id: String,
@@ -25,16 +45,33 @@ public struct VirtualMachineTemplate: Identifiable, Sendable, Equatable {
         parameters: [VirtualMachineParameter],
         starterImages: StarterImages? = nil
     ) {
-        self.id = id
-        self.backendID = backendID
-        self.name = name
-        self.summary = summary
-        self.iconName = iconName
-        self.operatingSystem = operatingSystem
-        self.architecture = architecture
-        self.agentFlavor = agentFlavor
-        self.parameters = parameters
-        self.starterImages = starterImages
+        self.init(
+            id: id,
+            backendID: backendID,
+            name: name,
+            summary: summary,
+            iconName: iconName,
+            operatingSystem: operatingSystem,
+            variants: [
+                VirtualMachineTemplateVariant(
+                    architecture: architecture,
+                    agentFlavor: agentFlavor,
+                    starterImages: starterImages
+                )
+            ],
+            parameters: parameters
+        )
+    }
+
+    public var architecture: VirtualMachineArchitecture {
+        variants[0].architecture
+    }
+
+    public func variant(for parameters: [String: VirtualMachineParameterValue]) -> VirtualMachineTemplateVariant {
+        guard let chosen = parameters[Self.architectureParameterID]?.text,
+            let match = variants.first(where: { $0.architecture.rawValue == chosen })
+        else { return variants[0] }
+        return match
     }
 
     public var icon: Icon? {
@@ -43,6 +80,22 @@ public struct VirtualMachineTemplate: Identifiable, Sendable, Equatable {
 
     public var defaultParameterValues: [String: VirtualMachineParameterValue] {
         Dictionary(uniqueKeysWithValues: parameters.map { ($0.id, $0.kind.defaultValue) })
+    }
+}
+
+public struct VirtualMachineTemplateVariant: Sendable, Equatable {
+    public let architecture: VirtualMachineArchitecture
+    public let agentFlavor: BareboneAgentFlavor?
+    public let starterImages: StarterImages?
+
+    public init(
+        architecture: VirtualMachineArchitecture,
+        agentFlavor: BareboneAgentFlavor?,
+        starterImages: StarterImages? = nil
+    ) {
+        self.architecture = architecture
+        self.agentFlavor = agentFlavor
+        self.starterImages = starterImages
     }
 }
 
@@ -74,6 +127,15 @@ public enum VirtualMachineArchitecture: String, Sendable, Codable, Comparable {
 
     public static func < (lhs: Self, rhs: Self) -> Bool {
         lhs.rank < rhs.rank
+    }
+
+    public var displayName: String {
+        switch self {
+        case .x86: return "x86"
+        case .x86_64: return "x86-64"
+        case .arm: return "arm"
+        case .arm64: return "arm64"
+        }
     }
 
     private var rank: Int {

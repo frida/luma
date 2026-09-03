@@ -127,10 +127,10 @@ public final class VirtualMachineManager {
             throw VirtualMachineError.launchFailed(reason: "The machine has no debugger to connect to")
         }
 
+        let record = records.first { $0.id == machine.id }
+
         var agent: BareboneAgentConfig?
-        if let record = records.first(where: { $0.id == machine.id }),
-            let path = agentPath(for: record, template: machine.template)
-        {
+        if let record, let path = agentPath(for: record, template: machine.template) {
             agent = BareboneAgentConfig(path: path.path, transport: machine.agentTransport?.config)
         }
 
@@ -144,7 +144,7 @@ public final class VirtualMachineManager {
                 connection: stub.connectionConfig,
                 agent: agent,
                 image: image,
-                kernel: machine.template.agentFlavor?.kernel.kind
+                kernel: machine.template.variant(for: record?.parameters ?? [:]).agentFlavor?.kernel.kind
             ),
             name: machine.name,
             icon: machine.template.icon
@@ -179,7 +179,7 @@ public final class VirtualMachineManager {
         if let chosen = record.agentPath {
             return URL(fileURLWithPath: chosen)
         }
-        return template.agentFlavor.flatMap { agents.cachedPath(for: $0) }
+        return template.variant(for: record.parameters).agentFlavor.flatMap { agents.cachedPath(for: $0) }
     }
 
     private func backend(for template: VirtualMachineTemplate) -> (any VirtualMachineBackend)? {
