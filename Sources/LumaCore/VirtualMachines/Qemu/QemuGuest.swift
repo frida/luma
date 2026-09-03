@@ -17,6 +17,7 @@ struct QemuGuest {
     let ecam: UInt64?
     let boot: QemuBoot
     let pointer: QemuPointer
+    let usb: QemuUSBController
     let defaultMemory: Int
     let starterImages: StarterImages?
 
@@ -36,6 +37,7 @@ struct QemuGuest {
             ecam: nil,
             boot: .diskImage(defaultInterface: .ide),
             pointer: .ps2,
+            usb: .onboard,
             defaultMemory: 128,
             starterImages: nil
         ),
@@ -54,6 +56,7 @@ struct QemuGuest {
             ecam: nil,
             boot: .diskImage(defaultInterface: .ide),
             pointer: .usbTablet,
+            usb: .onboard,
             defaultMemory: 512,
             starterImages: nil
         ),
@@ -72,6 +75,7 @@ struct QemuGuest {
             ecam: nil,
             boot: .diskImage(defaultInterface: .ide),
             pointer: .usbTablet,
+            usb: .onboard,
             defaultMemory: 1024,
             starterImages: nil
         ),
@@ -93,6 +97,7 @@ struct QemuGuest {
             ecam: 0x40_1000_0000,
             boot: .linuxKernel,
             pointer: .usbTablet,
+            usb: .xhci,
             defaultMemory: 2048,
             starterImages: Self.alpineArm64
         ),
@@ -114,6 +119,7 @@ struct QemuGuest {
             ecam: nil,
             boot: .linuxKernel,
             pointer: .usbTablet,
+            usb: .onboard,
             defaultMemory: 1024,
             starterImages: Self.alpineX86_64
         ),
@@ -135,6 +141,7 @@ struct QemuGuest {
             ecam: 0x3f00_0000,
             boot: .linuxKernel,
             pointer: .usbTablet,
+            usb: .xhci,
             defaultMemory: 1024,
             starterImages: Self.alpineArm
         ),
@@ -156,6 +163,7 @@ struct QemuGuest {
             ecam: nil,
             boot: .linuxKernel,
             pointer: .usbTablet,
+            usb: .onboard,
             defaultMemory: 1024,
             starterImages: Self.alpineX86
         ),
@@ -316,13 +324,19 @@ struct QemuGuest {
             arguments += ["-loadvm", QemuIdentifier.readySnapshot]
         }
         arguments += ["-drive", "file=\(snapshotDisk.path),format=qcow2,if=none,id=\(QemuIdentifier.snapshotDisk)"]
-        arguments += pointer.arguments
+        arguments += pointer.arguments(plugging: usb)
         arguments += vga.isEmpty ? ["-device", "virtio-gpu-pci"] : ["-vga", vga]
         arguments += [
-            "-serial", "file:\(request.storageDirectory.appendingPathComponent("serial.log").path)",
-            "-chardev",
-            "file,id=\(QemuIdentifier.agentLogChardev),path=\(request.storageDirectory.appendingPathComponent("agent.log").path)",
-            "-device", "isa-debugcon,iobase=0xe9,chardev=\(QemuIdentifier.agentLogChardev)",
+            "-serial", "file:\(request.storageDirectory.appendingPathComponent("serial.log").path)"
+        ]
+        if architecture == .x86 || architecture == .x86_64 {
+            arguments += [
+                "-chardev",
+                "file,id=\(QemuIdentifier.agentLogChardev),path=\(request.storageDirectory.appendingPathComponent("agent.log").path)",
+                "-device", "isa-debugcon,iobase=0xe9,chardev=\(QemuIdentifier.agentLogChardev)",
+            ]
+        }
+        arguments += [
             "-device", "virtio-serial-pci,id=\(QemuIdentifier.hostlinkController)",
             "-nic", "none",
             "-display", "dbus,p2p=yes",
@@ -341,10 +355,10 @@ enum QemuPointer {
     case usbTablet
     case ps2
 
-    var arguments: [String] {
+    func arguments(plugging controller: QemuUSBController) -> [String] {
         switch self {
         case .usbTablet:
-            return ["-usb", "-device", "usb-tablet"]
+            return controller.arguments + ["-device", "usb-tablet"]
         case .ps2:
             return []
         }
@@ -352,6 +366,20 @@ enum QemuPointer {
 
     var isAbsolute: Bool {
         self == .usbTablet
+    }
+}
+
+enum QemuUSBController {
+    case onboard
+    case xhci
+
+    var arguments: [String] {
+        switch self {
+        case .onboard:
+            return ["-usb"]
+        case .xhci:
+            return ["-device", "qemu-xhci"]
+        }
     }
 }
 
