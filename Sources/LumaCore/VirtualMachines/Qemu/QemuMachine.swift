@@ -95,6 +95,21 @@ final class QemuMachine: VirtualMachine {
 
         debugStub = .gdbRemote(host: "127.0.0.1", port: gdbPort)
         state = .running
+
+        process.terminationHandler = { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.noteUnexpectedExit()
+            }
+        }
+    }
+
+    private func noteUnexpectedExit() {
+        switch state {
+        case .running, .capturingSnapshot, .restoringSnapshot:
+            state = .failed(reason: lastComplaint ?? "QEMU exited unexpectedly")
+        default:
+            break
+        }
     }
 
     /// What QEMU itself said about a failed boot -- a locked disk image, an
@@ -155,6 +170,7 @@ final class QemuMachine: VirtualMachine {
     }
 
     func shutDown() async {
+        process.terminationHandler = nil
         displayConnection?.close()
         displayConnection = nil
         display = nil
