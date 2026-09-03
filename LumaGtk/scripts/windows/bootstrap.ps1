@@ -368,41 +368,27 @@ if (Test-Wanted 'qemu') {
     } else {
         Write-Step "Installing QEMU -> $QemuPrefix"
 
-        $extractor = @(
-            (Join-Path $env:ProgramFiles '7-Zip\7z.exe'),
-            (Join-Path ${env:ProgramFiles(x86)} '7-Zip\7z.exe'),
-            (Join-Path $env:ProgramData 'chocolatey\bin\7z.exe')
-        ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-        if (-not $extractor) {
-            throw @"
-7-Zip is needed to unpack the QEMU installer without running it, and
-running it needs administrator rights this script does not ask for.
-
-  winget install 7zip.7zip
-"@
-        }
-
         $build = $refs['QEMU_WINDOWS_BUILD']
         $expected = $refs['QEMU_WINDOWS_SHA256']
         $cache = Join-Path $sourceRoot 'qemu'
         New-Item -ItemType Directory -Force -Path $cache | Out-Null
-        $installer = Join-Path $cache "qemu-w64-setup-$build.exe"
+        $archive = Join-Path $cache "qemu-$build-windows-x86_64.zip"
 
-        if (-not (Test-Path $installer)) {
+        if (-not (Test-Path $archive)) {
             Write-Host "Fetching QEMU $build"
             Invoke-WebRequest -UseBasicParsing `
-                -Uri "https://qemu.weilnetz.de/w64/qemu-w64-setup-$build.exe" `
-                -OutFile $installer
+                -Uri "https://github.com/frida/luma/releases/download/qemu-$build/qemu-$build-windows-x86_64.zip" `
+                -OutFile $archive
         }
 
-        $actual = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLower()
+        $actual = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLower()
         if ($actual -ne $expected) {
-            Remove-Item $installer -Force
+            Remove-Item $archive -Force
             throw "QEMU $build hashed $actual, expected $expected."
         }
 
         Remove-Item -Recurse -Force $QemuPrefix -ErrorAction SilentlyContinue
-        Invoke-Checked '7z extract' { & $extractor x -y "-o$QemuPrefix" $installer | Out-Null }
+        Expand-Archive -Path $archive -DestinationPath $QemuPrefix
 
         $backends = & $qemuExecutable -display help
         if ($backends -notcontains 'dbus') {
