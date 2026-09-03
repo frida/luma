@@ -1,5 +1,9 @@
 .PHONY: build run clean bundle screenshots install uninstall render-tests soak
 
+# Machine-local overrides, such as FRIDA_SWIFT_ROOT pointing at a
+# checkout of the bindings while a fix is being verified.
+-include local.mk
+
 # SwiftPM's bundled .pc finder only consults the directories listed in
 # PKG_CONFIG_PATH and the toolchain's primary compiled-in path; it
 # misses the additional fallbacks that libpkgconf probes (e.g.

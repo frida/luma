@@ -25,3 +25,4 @@ LumaGtk/crash.dmp
 
 # Pharo VM runtime debug log
 PharoDebug.log
+/LumaGtk/local.mk
