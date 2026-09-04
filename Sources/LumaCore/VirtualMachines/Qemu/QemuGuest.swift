@@ -477,7 +477,7 @@ enum QemuBoot {
             return [
                 "-kernel", kernel,
                 "-initrd", ramdisk,
-                "-append", "console=\(console) initcall_blacklist=virtio_console_init",
+                "-append", "console=\(console) console=tty0 initcall_blacklist=virtio_console_init",
                 "-no-reboot",
             ]
         }
