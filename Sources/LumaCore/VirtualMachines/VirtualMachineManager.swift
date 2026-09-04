@@ -152,11 +152,16 @@ public final class VirtualMachineManager {
                 image: image,
                 kernel: machine.template.variant(for: record?.parameters ?? [:]).agentFlavor?.kernel.kind
             ),
+            id: Self.deviceID(for: machine.id),
             name: machine.name,
             icon: machine.template.icon
         )
         devices[machine.id] = device
         return device
+    }
+
+    static func deviceID(for machineID: UUID) -> String {
+        "barebone-vm-\(machineID.uuidString)"
     }
 
     public func stop(_ record: VirtualMachineRecord) async {
