@@ -108,16 +108,22 @@ struct VirtualMachineScreen: View {
     }
 
     private func send(_ press: KeyPress) {
-        guard let code = code(for: press) else { return }
-        source.send(press.phase == .down ? .keyDown(code: code) : .keyUp(code: code))
-    }
-
-    private func code(for press: KeyPress) -> UInt32? {
         if let key = VirtualMachineKey(press.key) {
-            return VirtualMachineKeyboard.code(for: key)
+            let code = VirtualMachineKeyboard.code(for: key)
+            source.send(press.phase == .down ? .keyDown(code: code) : .keyUp(code: code))
+            return
         }
-        guard let character = press.characters.first else { return nil }
-        return VirtualMachineKeyboard.code(for: character)
+
+        guard press.phase == .down,
+            let character = press.characters.first,
+            let stroke = VirtualMachineKeyboard.stroke(for: character)
+        else { return }
+
+        let shift = VirtualMachineKeyboard.code(for: .leftShift)
+        if stroke.shifted { source.send(.keyDown(code: shift)) }
+        source.send(.keyDown(code: stroke.code))
+        source.send(.keyUp(code: stroke.code))
+        if stroke.shifted { source.send(.keyUp(code: shift)) }
     }
 
     private func placement(of frame: VirtualMachineFrame?, in size: CGSize) -> CGRect {

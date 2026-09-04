@@ -143,15 +143,23 @@ final class VirtualMachineScreen {
                 if Self.isReleaseChord(keyval: keyval, state: state) {
                     self.releasePointer()
                 }
-                guard let code = Self.code(forKeyval: keyval) else { return false }
-                self.source.send(.keyDown(code: code))
+                if let key = Self.named(keyval) {
+                    self.source.send(.keyDown(code: VirtualMachineKeyboard.code(for: key)))
+                    return true
+                }
+                guard let stroke = Self.stroke(forKeyval: keyval) else { return false }
+                let shift = VirtualMachineKeyboard.code(for: .leftShift)
+                if stroke.shifted { self.source.send(.keyDown(code: shift)) }
+                self.source.send(.keyDown(code: stroke.code))
+                self.source.send(.keyUp(code: stroke.code))
+                if stroke.shifted { self.source.send(.keyUp(code: shift)) }
                 return true
             }
         }
         keys.onKeyReleased { [weak self] _, keyval, _, _ in
             MainActor.assumeIsolated {
-                guard let self, let code = Self.code(forKeyval: keyval) else { return }
-                self.source.send(.keyUp(code: code))
+                guard let self, let key = Self.named(keyval) else { return }
+                self.source.send(.keyUp(code: VirtualMachineKeyboard.code(for: key)))
             }
         }
         area.install(controller: keys)
@@ -321,14 +329,11 @@ final class VirtualMachineScreen {
             || (alts.contains(keyval) && state.contains(.controlMask))
     }
 
-    private static func code(forKeyval keyval: UInt) -> UInt32? {
-        if let key = named(keyval) {
-            return VirtualMachineKeyboard.code(for: key)
-        }
+    private static func stroke(forKeyval keyval: UInt) -> VirtualMachineKeyStroke? {
         guard keyval >= 0x20, keyval <= 0x7e, let scalar = Unicode.Scalar(UInt32(keyval)) else {
             return nil
         }
-        return VirtualMachineKeyboard.code(for: Character(scalar))
+        return VirtualMachineKeyboard.stroke(for: Character(scalar))
     }
 
     private static func named(_ keyval: UInt) -> VirtualMachineKey? {

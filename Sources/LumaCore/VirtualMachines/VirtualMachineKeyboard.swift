@@ -1,8 +1,8 @@
 import Foundation
 
 public enum VirtualMachineKeyboard {
-    public static func code(for character: Character) -> UInt32? {
-        codesByCharacter[Character(character.lowercased())]
+    public static func stroke(for character: Character) -> VirtualMachineKeyStroke? {
+        strokesByCharacter[character]
     }
 
     public static func code(for key: VirtualMachineKey) -> UInt32 {
@@ -35,22 +35,44 @@ public enum VirtualMachineKeyboard {
         0x3b, 0x3c, 0x3d, 0x3e, 0x3f, 0x40, 0x41, 0x42, 0x43, 0x44, 0x57, 0x58,
     ]
 
-    private static let codesByCharacter: [Character: UInt32] = {
-        let rows: [(String, [UInt32])] = [
+    private static let strokesByCharacter: [Character: VirtualMachineKeyStroke] = {
+        let plain: [(String, [UInt32])] = [
             ("1234567890-=", Array(0x02...0x0d)),
             ("qwertyuiop[]", Array(0x10...0x1b)),
             ("asdfghjkl;'`", Array(0x1e...0x29)),
             ("\\zxcvbnm,./", Array(0x2b...0x35)),
             (" ", [0x39]),
         ]
-        var codes: [Character: UInt32] = [:]
-        for (characters, scancodes) in rows {
+        let shifted: [(String, [UInt32])] = [
+            ("!@#$%^&*()_+", Array(0x02...0x0d)),
+            ("QWERTYUIOP{}", Array(0x10...0x1b)),
+            ("ASDFGHJKL:\"~", Array(0x1e...0x29)),
+            ("|ZXCVBNM<>?", Array(0x2b...0x35)),
+        ]
+
+        var strokes: [Character: VirtualMachineKeyStroke] = [:]
+        for (characters, scancodes) in plain {
             for (character, scancode) in zip(characters, scancodes) {
-                codes[character] = scancode
+                strokes[character] = VirtualMachineKeyStroke(code: scancode, shifted: false)
             }
         }
-        return codes
+        for (characters, scancodes) in shifted {
+            for (character, scancode) in zip(characters, scancodes) {
+                strokes[character] = VirtualMachineKeyStroke(code: scancode, shifted: true)
+            }
+        }
+        return strokes
     }()
+}
+
+public struct VirtualMachineKeyStroke: Sendable, Equatable {
+    public let code: UInt32
+    public let shifted: Bool
+
+    public init(code: UInt32, shifted: Bool) {
+        self.code = code
+        self.shifted = shifted
+    }
 }
 
 public enum VirtualMachineKey: Sendable, Equatable {
