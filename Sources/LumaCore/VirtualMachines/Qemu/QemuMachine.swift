@@ -143,6 +143,8 @@ final class QemuMachine: VirtualMachine {
         state = .capturingSnapshot
         defer { state = .running }
 
+        try await removeHostlinkPort(using: monitor)
+
         try await monitor.execute("stop")
         _ = try await monitor.monitor("delvm \(QemuIdentifier.readySnapshot)")
         let failure = try await monitor.monitor("savevm \(QemuIdentifier.readySnapshot)")

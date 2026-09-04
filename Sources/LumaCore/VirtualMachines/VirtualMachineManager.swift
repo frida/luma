@@ -107,7 +107,13 @@ public final class VirtualMachineManager {
     }
 
     public func markReady(_ machine: any VirtualMachine) async throws {
+        if let device = devices.removeValue(forKey: machine.id) {
+            try? await deviceManager.removeBareboneDevice(device: device)
+        }
+
         try await machine.captureReadySnapshot()
+
+        _ = try? await addBareboneDevice(for: machine)
 
         guard let index = records.firstIndex(where: { $0.id == machine.id }) else { return }
         records[index].hasReadySnapshot = true
