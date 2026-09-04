@@ -30,6 +30,8 @@ final class BootVirtualMachineDialog {
     private var starterRow: Adw.ActionRow?
     private var agentRow: Adw.ActionRow?
     private var agentPath: String?
+    private var versionsRequested = false
+    private var fetchedVersionFlavor: BareboneAgentFlavor?
     private var pendingFileParameter: String?
     private var machine: (any VirtualMachine)?
     private var screen: VirtualMachineScreen?
@@ -127,6 +129,8 @@ final class BootVirtualMachineDialog {
         withObservationTracking {
             _ = engine.virtualMachines.starterImages.states
             _ = engine.virtualMachines.agents.states
+            _ = engine.virtualMachines.agents.fetchedVersions
+            _ = engine.virtualMachines.agents.releases
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
@@ -257,21 +261,21 @@ final class BootVirtualMachineDialog {
             return
         }
 
+        requestAgentVersions(flavor)
+
         let row = Adw.ActionRow()
         row.title = flavor.name
         row.subtitle = agentDescription(flavor)
 
-        let state = engine.virtualMachines.agents.state(for: flavor)
-        if agentPath == nil, state != .ready {
-            let download = Button(label: "Download")
-            download.valign = .center
-            download.tooltipText =
-                "Download the \(flavor.name) agent published with Frida \(BareboneAgentLibrary.version)"
-            download.sensitive = !state.isDownloading
-            download.onClicked { [weak self] _ in
-                MainActor.assumeIsolated { self?.downloadAgent(flavor) }
+        let agents = engine.virtualMachines.agents
+        let state = agents.state(for: flavor)
+        if agentPath == nil {
+            if state != .ready {
+                let label = agents.latestVersion(for: flavor).map { "Download \($0)" } ?? "Download"
+                addDownloadButton(to: row, label: label, sensitive: !state.isDownloading, flavor: flavor)
+            } else if case .available(let version) = agents.update(for: flavor) {
+                addDownloadButton(to: row, label: "Update to \(version)", sensitive: true, flavor: flavor)
             }
-            row.addSuffix(widget: download)
         }
 
         let choose = Button(label: "Choose\u{2026}")
@@ -286,13 +290,39 @@ final class BootVirtualMachineDialog {
         agentRow = row
     }
 
+    private func addDownloadButton(to row: Adw.ActionRow, label: String, sensitive: Bool, flavor: BareboneAgentFlavor) {
+        let download = Button(label: label)
+        download.valign = .center
+        download.sensitive = sensitive
+        download.onClicked { [weak self] _ in
+            MainActor.assumeIsolated { self?.downloadAgent(flavor) }
+        }
+        row.addSuffix(widget: download)
+    }
+
+    private func requestAgentVersions(_ flavor: BareboneAgentFlavor) {
+        let agents = engine.virtualMachines.agents
+        if !versionsRequested {
+            versionsRequested = true
+            Task { @MainActor in await agents.refreshReleases() }
+        }
+        if fetchedVersionFlavor != flavor {
+            fetchedVersionFlavor = flavor
+            Task { @MainActor in await agents.loadFetchedVersion(for: flavor) }
+        }
+    }
+
     private func agentDescription(_ flavor: BareboneAgentFlavor) -> String {
         if let agentPath {
             return agentPath
         }
-        switch engine.virtualMachines.agents.state(for: flavor) {
+        let agents = engine.virtualMachines.agents
+        switch agents.state(for: flavor) {
         case .ready:
-            return "Downloaded \(flavor.name)"
+            guard let version = agents.fetchedVersion(for: flavor) else {
+                return "Downloaded \(flavor.name)"
+            }
+            return "Downloaded \(flavor.name) \u{00b7} \(version)"
         case .downloading(let fraction):
             return downloadingLabel(fraction)
         case .missing:
@@ -305,7 +335,7 @@ final class BootVirtualMachineDialog {
     private func downloadAgent(_ flavor: BareboneAgentFlavor) {
         Task { @MainActor in
             do {
-                _ = try await engine.virtualMachines.agents.download(flavor)
+                _ = try await engine.virtualMachines.agents.downloadLatest(flavor)
             } catch {
                 showFailure(error.localizedDescription)
             }

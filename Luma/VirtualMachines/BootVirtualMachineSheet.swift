@@ -42,6 +42,7 @@ struct BootVirtualMachineSheet: View {
         .padding(20)
         .frame(minWidth: 680, minHeight: 460)
         .onAppear(perform: selectFirstAvailableTemplate)
+        .task { await engine.virtualMachines.agents.refreshReleases() }
         .fileImporter(isPresented: $isImporting, allowedContentTypes: allowedImportTypes) { result in
             if let awaitedImport, case .success(let url) = result {
                 if awaitedImport == Self.agentImport {
@@ -224,14 +225,30 @@ struct BootVirtualMachineSheet: View {
                         isImporting = true
                     }
 
-                    if agentPath == nil, engine.virtualMachines.agents.state(for: flavor) != .ready {
-                        Button("Download") {
-                            perform { _ = try await engine.virtualMachines.agents.download(flavor) }
-                        }
-                        .help("Download the \(flavor.name) agent published with Frida \(BareboneAgentLibrary.version)")
-                        .disabled(engine.virtualMachines.agents.state(for: flavor).isDownloading)
-                    }
+                    agentDownloadButton(flavor)
                 }
+            }
+            .task(id: flavor) {
+                await engine.virtualMachines.agents.loadFetchedVersion(for: flavor)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func agentDownloadButton(_ flavor: BareboneAgentFlavor) -> some View {
+        let agents = engine.virtualMachines.agents
+        let state = agents.state(for: flavor)
+
+        if agentPath != nil {
+            EmptyView()
+        } else if state != .ready {
+            Button(agents.latestVersion(for: flavor).map { "Download \($0)" } ?? "Download") {
+                perform { try await agents.downloadLatest(flavor) }
+            }
+            .disabled(state.isDownloading)
+        } else if case .available(let version) = agents.update(for: flavor) {
+            Button("Update to \(version)") {
+                perform { try await agents.downloadLatest(flavor) }
             }
         }
     }
@@ -241,9 +258,13 @@ struct BootVirtualMachineSheet: View {
             return agentPath.path
         }
 
-        switch engine.virtualMachines.agents.state(for: flavor) {
+        let agents = engine.virtualMachines.agents
+        switch agents.state(for: flavor) {
         case .ready:
-            return "Downloaded \(flavor.name)"
+            guard let version = agents.fetchedVersion(for: flavor) else {
+                return "Downloaded \(flavor.name)"
+            }
+            return "Downloaded \(flavor.name) · \(version)"
         case .downloading(let fraction):
             return downloadingLabel(fraction)
         case .missing:
