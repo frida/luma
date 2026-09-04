@@ -36,6 +36,7 @@ struct TargetPickerView: View {
     @State private var pickerState: TargetPickerState?
 
     @State private var selectedDeviceID: Device.ID?
+    @State private var pendingDeviceSelection: Device.ID?
     @State private var armRegex: String = ""
     @State private var armDisplayName: String = ""
     @State private var armAutoResume: Bool = true
@@ -191,10 +192,19 @@ struct TargetPickerView: View {
             }
             .frame(minWidth: isCompactWidth ? 0 : 904, minHeight: isCompactWidth ? 0 : 560)
             .sheet(isPresented: $showingBootMachineSheet) {
-                BootVirtualMachineSheet(engine: engine) { selectedDeviceID = $0.id }
+                BootVirtualMachineSheet(engine: engine) { device in
+                    pendingDeviceSelection = device.id
+                    selectedDeviceID = device.id
+                }
             }
             .sheet(isPresented: $showingAddRemoteSheet) {
                 addRemoteSheet()
+            }
+            .task(id: pendingDeviceSelection) {
+                guard pendingDeviceSelection != nil else { return }
+                try? await Task.sleep(for: .seconds(6))
+                guard !Task.isCancelled else { return }
+                pendingDeviceSelection = nil
             }
             .task {
                 if pickerState == nil {
@@ -238,6 +248,14 @@ struct TargetPickerView: View {
                 }
             }
             .onChange(of: store.devices) { _, newDevices in
+                if let pending = pendingDeviceSelection {
+                    if newDevices.contains(where: { $0.id == pending }) {
+                        selectedDeviceID = pending
+                        pendingDeviceSelection = nil
+                    }
+                    return
+                }
+
                 if let current = selectedDeviceID,
                     newDevices.contains(where: { $0.id == current })
                 {
@@ -260,11 +278,10 @@ struct TargetPickerView: View {
                 }
             }
             .onChange(of: selectedDeviceID) { _, newID in
-                if let newID {
-                    pickerState?.lastSelectedDeviceID = newID
-                } else {
-                    pickerState?.lastSelectedDeviceID = nil
+                if newID != pendingDeviceSelection {
+                    pendingDeviceSelection = nil
                 }
+                pickerState?.lastSelectedDeviceID = newID
             }
             .onChange(of: mode) { _, newValue in
                 pickerState?.lastModeRaw = newValue.rawValue
