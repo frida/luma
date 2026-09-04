@@ -191,7 +191,7 @@ struct VirtualMachineControls: View {
             action("Stop", systemImage: "stop.fill") {
                 Task { await engine.virtualMachines.stop(record) }
             }
-            .disabled(machine.state == .starting)
+            .disabled(machine.state == .starting || engine.virtualMachines.isStopping(record))
         } else {
             action(record.hasReadySnapshot ? "Resume where it was marked ready" : "Boot", systemImage: "play.fill") {
                 perform { _ = try await engine.virtualMachines.boot(record) }
@@ -253,6 +253,9 @@ struct VirtualMachineControls: View {
     /// Running and stopped are what the button beside this already says; the
     /// states worth a word are the ones on the way to somewhere.
     private var passingState: String? {
+        if engine.virtualMachines.isStopping(record) {
+            return "Stopping…"
+        }
         switch machine?.state {
         case .running, .stopped, nil:
             return nil

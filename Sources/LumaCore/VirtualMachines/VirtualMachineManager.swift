@@ -12,6 +12,7 @@ public final class VirtualMachineManager {
 
     private var running: [UUID: any VirtualMachine] = [:]
     private var devices: [UUID: Device] = [:]
+    private var stopping: Set<UUID> = []
 
     private let deviceManager: DeviceManager
     private let store: ProjectStore
@@ -164,13 +165,21 @@ public final class VirtualMachineManager {
         "barebone-vm-\(machineID.uuidString)"
     }
 
+    public func isStopping(_ record: VirtualMachineRecord) -> Bool {
+        stopping.contains(record.id)
+    }
+
     public func stop(_ record: VirtualMachineRecord) async {
+        guard let machine = running[record.id], !stopping.contains(record.id) else { return }
+        stopping.insert(record.id)
+        defer { stopping.remove(record.id) }
+
         if let device = devices.removeValue(forKey: record.id) {
             try? await deviceManager.removeBareboneDevice(device: device)
         }
 
-        guard let machine = running.removeValue(forKey: record.id) else { return }
         await machine.shutDown()
+        running.removeValue(forKey: record.id)
     }
 
     public func stopAll() async {
