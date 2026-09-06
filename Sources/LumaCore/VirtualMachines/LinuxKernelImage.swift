@@ -22,10 +22,41 @@ public enum LinuxKernelImage {
     /// A kernel carries its own version, and a distribution names the map of
     /// its symbols after it.
     public static func version(of image: Data) -> String? {
+        if let version = versionMarker(in: image) {
+            return version
+        }
+
+        for start in gzipStreams(in: image) {
+            guard let payload = try? GzipArchive.decompress(Data(image[start...])) else {
+                continue
+            }
+            if let version = versionMarker(in: payload) {
+                return version
+            }
+        }
+
+        return nil
+    }
+
+    private static func versionMarker(in image: Data) -> String? {
         if let marker = image.firstRange(of: Data("Linux version ".utf8)) {
             return word(in: image[marker.upperBound...].prefix(128))
         }
         return setupHeaderVersion(of: image)
+    }
+
+    /// A self-extracting kernel keeps its banner inside a compressed payload the
+    /// outer image never spells out, so each embedded gzip stream is inflated
+    /// and searched in turn.
+    private static func gzipStreams(in image: Data) -> [Data.Index] {
+        let magic = Data([0x1f, 0x8b, 0x08])
+        var offsets: [Data.Index] = []
+        var from = image.startIndex
+        while let found = image[from...].firstRange(of: magic) {
+            offsets.append(found.lowerBound)
+            from = image.index(after: found.lowerBound)
+        }
+        return offsets
     }
 
     private static func setupHeaderVersion(of image: Data) -> String? {
