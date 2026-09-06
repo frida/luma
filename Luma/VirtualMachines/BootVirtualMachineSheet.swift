@@ -11,6 +11,7 @@ struct BootVirtualMachineSheet: View {
 
     @State private var selectedTemplateID: String?
     @State private var machineName: String = ""
+    @State private var autoName: String = ""
     @State private var agentPath: URL?
     @State private var parameters: [String: VirtualMachineParameterValue] = [:]
     @State private var machine: (any VirtualMachine)?
@@ -78,6 +79,7 @@ struct BootVirtualMachineSheet: View {
             .contentMargins(.top, 0)
             .frame(width: 220)
             .onChange(of: selectedTemplateID) { _, _ in adoptTemplateDefaults() }
+            .onChange(of: parameters) { _, _ in refreshDefaultName() }
 
             if let template = selectedTemplate {
                 VStack(alignment: .leading, spacing: 0) {
@@ -356,9 +358,21 @@ struct BootVirtualMachineSheet: View {
     }
 
     private func adoptTemplateDefaults() {
-        machineName = selectedTemplate?.name ?? ""
         agentPath = nil
         parameters = selectedTemplate?.defaultParameterValues ?? [:]
+        autoName = defaultMachineName()
+        machineName = autoName
+    }
+
+    private func defaultMachineName() -> String {
+        guard let template = selectedTemplate else { return "" }
+        return "\(template.name) \(template.variant(for: parameters).architecture.displayName)"
+    }
+
+    private func refreshDefaultName() {
+        guard machineName == autoName else { return }
+        autoName = defaultMachineName()
+        machineName = autoName
     }
 
     private func availabilityText(for template: VirtualMachineTemplate) -> String {
