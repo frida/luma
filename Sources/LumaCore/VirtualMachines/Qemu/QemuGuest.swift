@@ -12,9 +12,7 @@ struct QemuGuest {
     let vga: String
     let architecture: VirtualMachineArchitecture
     let agentFlavor: BareboneAgentFlavor?
-    /// Where the machine maps PCI configuration space, which is how the agent finds the
-    /// hostlink on a machine whose devices are not at addresses everyone agrees on.
-    let ecam: UInt64?
+    let fabric: BareboneHostlinkFabric
     let boot: QemuBoot
     let pointer: QemuPointer
     let usb: QemuUSBController
@@ -34,7 +32,7 @@ struct QemuGuest {
             vga: "cirrus",
             architecture: .x86,
             agentFlavor: .win9xX86,
-            ecam: nil,
+            fabric: .ports,
             boot: .diskImage(defaultInterface: .ide),
             pointer: .ps2,
             usb: .onboard,
@@ -53,7 +51,7 @@ struct QemuGuest {
             vga: "std",
             architecture: .x86,
             agentFlavor: .winntX86,
-            ecam: nil,
+            fabric: .ports,
             boot: .diskImage(defaultInterface: .ide),
             pointer: .usbTablet,
             usb: .onboard,
@@ -72,7 +70,7 @@ struct QemuGuest {
             vga: "std",
             architecture: .x86_64,
             agentFlavor: .winntX86_64,
-            ecam: nil,
+            fabric: .ports,
             boot: .diskImage(defaultInterface: .ide),
             pointer: .usbTablet,
             usb: .onboard,
@@ -94,7 +92,7 @@ struct QemuGuest {
             vga: "",
             architecture: .arm64,
             agentFlavor: .linuxArm64,
-            ecam: 0x40_1000_0000,
+            fabric: .ecam(base: 0x40_1000_0000),
             boot: .linuxKernel,
             pointer: .usbTablet,
             usb: .xhci,
@@ -116,7 +114,7 @@ struct QemuGuest {
             vga: "std",
             architecture: .x86_64,
             agentFlavor: .linuxX86_64,
-            ecam: nil,
+            fabric: .ports,
             boot: .linuxKernel,
             pointer: .usbTablet,
             usb: .onboard,
@@ -138,7 +136,7 @@ struct QemuGuest {
             vga: "",
             architecture: .arm,
             agentFlavor: .linuxArm,
-            ecam: 0x3f00_0000,
+            fabric: .mmio,
             boot: .linuxKernel,
             pointer: .usbTablet,
             usb: .xhci,
@@ -160,7 +158,7 @@ struct QemuGuest {
             vga: "std",
             architecture: .x86,
             agentFlavor: .linuxX86,
-            ecam: nil,
+            fabric: .ports,
             boot: .linuxKernel,
             pointer: .usbTablet,
             usb: .onboard,

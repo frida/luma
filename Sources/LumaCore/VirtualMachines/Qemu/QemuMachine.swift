@@ -24,7 +24,7 @@ final class QemuMachine: VirtualMachine {
     }
 
     var agentTransport: BareboneAgentTransport? {
-        .hostlink(qmpSocket: agentQmpSocketPath, bus: QemuIdentifier.hostlinkBus, ecam: guest.ecam)
+        .hostlink(qmpSocket: agentQmpSocketPath, bus: QemuIdentifier.hostlinkBus, fabric: guest.fabric)
     }
 
     /// What the guest booted, which for a kernel the host has the map of is that map.

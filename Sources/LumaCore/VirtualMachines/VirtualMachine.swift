@@ -48,8 +48,14 @@ public struct VirtualMachineCapabilities: OptionSet, Sendable {
 }
 
 public enum BareboneAgentTransport: Sendable, Equatable {
-    case hostlink(qmpSocket: URL, bus: String?, ecam: UInt64?)
+    case hostlink(qmpSocket: URL, bus: String?, fabric: BareboneHostlinkFabric)
     case vsock(socketPath: URL, port: UInt)
+}
+
+public enum BareboneHostlinkFabric: Sendable, Equatable {
+    case ports
+    case ecam(base: UInt64)
+    case mmio
 }
 
 public enum BareboneDebugStub: Sendable, Equatable {

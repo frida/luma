@@ -137,8 +137,9 @@ public final class VirtualMachineManager {
         let record = records.first { $0.id == machine.id }
 
         var agent: BareboneAgentConfig?
-        if let record, let path = agentPath(for: record, template: machine.template) {
-            agent = BareboneAgentConfig(path: path.path, transport: machine.agentTransport?.config)
+        if let record, let path = agentPath(for: record, template: machine.template), let transport = machine.agentTransport?.config {
+            let image = try Data(contentsOf: path)
+            agent = BareboneInjectedAgentConfig(image: [UInt8](image), transport: transport)
         }
 
         var image: BareboneImageConfig?
@@ -208,12 +209,25 @@ public final class VirtualMachineManager {
 }
 
 extension BareboneAgentTransport {
-    var config: BareboneTransportConfig {
+    var config: BareboneInjectingTransportConfig {
         switch self {
-        case .hostlink(let qmpSocket, let bus, let ecam):
-            return BareboneHostlinkTransportConfig(qmp: "unix:\(qmpSocket.path)", bus: bus, ecam: ecam)
+        case .hostlink(let qmpSocket, let bus, let fabric):
+            return BareboneHostlinkTransportConfig(qmp: "unix:\(qmpSocket.path)", bus: bus, fabric: fabric.config)
         case .vsock(let socketPath, let port):
             return BareboneVsockTransportConfig(socketPath: socketPath.path, port: port)
+        }
+    }
+}
+
+extension BareboneHostlinkFabric {
+    var config: Frida.BareboneHostlinkFabric {
+        switch self {
+        case .ports:
+            return BareboneHostlinkPortsFabric()
+        case .ecam(let base):
+            return BareboneHostlinkEcamFabric(ecam: base)
+        case .mmio:
+            return BareboneHostlinkMmioFabric()
         }
     }
 }
