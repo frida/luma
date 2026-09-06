@@ -41,8 +41,8 @@ struct QemuGuest {
         ),
         QemuGuest(
             id: "qemu.winxp",
-            name: "Windows XP",
-            summary: "A 32-bit Windows XP disk image. Frida injects the winnt agent into its kernel.",
+            name: "Windows NT (x86)",
+            summary: "A 32-bit NT-based Windows disk image. Frida injects the winnt agent into its kernel.",
             iconName: "windows-nt",
             operatingSystem: .windows,
             emulator: "qemu-system-i386",
@@ -60,8 +60,8 @@ struct QemuGuest {
         ),
         QemuGuest(
             id: "qemu.winxp64",
-            name: "Windows XP x64",
-            summary: "A 64-bit Windows XP disk image. Frida injects the winnt agent into its kernel.",
+            name: "Windows NT (x64)",
+            summary: "A 64-bit NT-based Windows disk image. Frida injects the winnt agent into its kernel.",
             iconName: "windows-nt",
             operatingSystem: .windows,
             emulator: "qemu-system-x86_64",
@@ -204,21 +204,29 @@ struct QemuGuest {
     }
 
     static var templates: [VirtualMachineTemplate] {
-        all.filter { $0.operatingSystem != .linux }.map(\.template) + [linuxTemplate]
+        all.filter { !$0.isGrouped }.map(\.template) + [linuxTemplate, winntTemplate]
     }
 
     static let linuxTemplateID = "qemu.linux"
+    static let winntTemplateID = "qemu.winnt"
 
     static var linuxTemplate: VirtualMachineTemplate {
-        let guests = linuxGuestsNativeFirst
+        groupedTemplate(id: linuxTemplateID, name: "Linux", guests: linuxGuestsNativeFirst)
+    }
+
+    static var winntTemplate: VirtualMachineTemplate {
+        groupedTemplate(id: winntTemplateID, name: "Windows NT", guests: winntGuestsNativeFirst)
+    }
+
+    private static func groupedTemplate(id: String, name: String, guests: [QemuGuest]) -> VirtualMachineTemplate {
         let primary = guests[0]
         return VirtualMachineTemplate(
-            id: linuxTemplateID,
+            id: id,
             backendID: "qemu",
-            name: "Linux",
+            name: name,
             summary: primary.summary,
             iconName: primary.iconName,
-            operatingSystem: .linux,
+            operatingSystem: primary.operatingSystem,
             variants: guests.map {
                 VirtualMachineTemplateVariant(
                     architecture: $0.architecture,
@@ -226,7 +234,7 @@ struct QemuGuest {
                     starterImages: $0.starterImages
                 )
             },
-            parameters: [architectureParameter(guests)] + QemuBoot.linuxKernel.parameters + [
+            parameters: [architectureParameter(guests)] + primary.boot.parameters + [
                 memoryParameter(default: primary.defaultMemory)
             ]
         )
@@ -246,10 +254,12 @@ struct QemuGuest {
     }
 
     static func guest(for templateID: String, parameters: [String: VirtualMachineParameterValue]) -> QemuGuest? {
-        guard templateID == linuxTemplateID else {
-            return all.first { $0.id == templateID }
+        let guests: [QemuGuest]
+        switch templateID {
+        case linuxTemplateID: guests = linuxGuestsNativeFirst
+        case winntTemplateID: guests = winntGuestsNativeFirst
+        default: return all.first { $0.id == templateID }
         }
-        let guests = linuxGuestsNativeFirst
         guard let chosen = parameters[VirtualMachineTemplate.architectureParameterID]?.text else {
             return guests[0]
         }
@@ -257,9 +267,16 @@ struct QemuGuest {
     }
 
     private static var linuxGuestsNativeFirst: [QemuGuest] {
-        let linux = all.filter { $0.operatingSystem == .linux }
+        nativeFirst(all.filter { $0.operatingSystem == .linux })
+    }
+
+    private static var winntGuestsNativeFirst: [QemuGuest] {
+        nativeFirst(all.filter { $0.agentFlavor?.kernel == .winnt })
+    }
+
+    private static func nativeFirst(_ guests: [QemuGuest]) -> [QemuGuest] {
         let native = nativeArchitecture
-        return linux.filter { $0.architecture == native } + linux.filter { $0.architecture != native }
+        return guests.filter { $0.architecture == native } + guests.filter { $0.architecture != native }
     }
 
     private static var nativeArchitecture: VirtualMachineArchitecture {
@@ -272,6 +289,10 @@ struct QemuGuest {
         #else
         return .arm
         #endif
+    }
+
+    var isGrouped: Bool {
+        operatingSystem == .linux || agentFlavor?.kernel == .winnt
     }
 
     var template: VirtualMachineTemplate {
@@ -323,7 +344,13 @@ struct QemuGuest {
         }
         arguments += ["-drive", "file=\(snapshotDisk.path),format=qcow2,if=none,id=\(QemuIdentifier.snapshotDisk)"]
         arguments += pointer.arguments(plugging: usb)
-        arguments += vga.isEmpty ? ["-device", "virtio-gpu-pci"] : ["-vga", vga]
+        // A 32-bit Arm guest has no PCI host driver, so it reaches its devices over
+        // virtio-mmio; the display goes there too, speaking modern virtio.
+        if architecture == .arm {
+            arguments += ["-global", "virtio-mmio.force-legacy=false", "-device", "virtio-gpu-device"]
+        } else {
+            arguments += vga.isEmpty ? ["-device", "virtio-gpu-pci"] : ["-vga", vga]
+        }
         arguments += [
             "-serial", "file:\(request.storageDirectory.appendingPathComponent("serial.log").path)"
         ]
@@ -334,8 +361,9 @@ struct QemuGuest {
                 "-device", "isa-debugcon,iobase=0xe9,chardev=\(QemuIdentifier.agentLogChardev)",
             ]
         }
+        let hostlinkTransport = architecture == .arm ? "virtio-serial-device" : "virtio-serial-pci"
         arguments += [
-            "-device", "virtio-serial-pci,id=\(QemuIdentifier.hostlinkController)",
+            "-device", "\(hostlinkTransport),id=\(QemuIdentifier.hostlinkController)",
             "-nic", "none",
             "-display", "dbus,p2p=yes",
             "-monitor", "none",
