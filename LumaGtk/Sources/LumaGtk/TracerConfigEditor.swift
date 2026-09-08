@@ -14,7 +14,6 @@ final class TracerConfigEditor {
     private weak var engine: Engine?
     private let sessionID: UUID
     private let apply: (Data) -> Void
-    private let sharedEditor: MonacoEditor
     private let isConfigOnly: Bool
 
     fileprivate var config: TracerConfig
@@ -34,14 +33,12 @@ final class TracerConfigEditor {
         engine: Engine,
         sessionID: UUID,
         config: TracerConfig,
-        tracerEditor: MonacoEditor,
         isConfigOnly: Bool = false,
         apply: @escaping (Data) -> Void
     ) {
         self.engine = engine
         self.sessionID = sessionID
         self.config = config
-        self.sharedEditor = tracerEditor
         self.isConfigOnly = isConfigOnly
         self.apply = apply
         self.selectedHookID = isConfigOnly ? config.hooks.first?.id : nil
@@ -201,7 +198,6 @@ final class TracerConfigEditor {
         let editorPane = EditorPane(
             engine: engine,
             hook: selectedHook,
-            sharedEditor: sharedEditor,
             showToolbar: false,
             onSave: { [weak self] updated in
                 self?.saveHook(updated)
@@ -1029,13 +1025,12 @@ final class EditorPane {
     let saveButton: Button?
     private let editorHost: Box
     private let placeholder: Label
-    private let monaco: MonacoEditor
+    private let codeEditor: CodeEditor
     private let initialCaptured: Int
 
     init(
         engine: Engine?,
         hook: TracerConfig.Hook?,
-        sharedEditor: MonacoEditor,
         showToolbar: Bool = true,
         captured: Int = 0,
         onSave: @escaping (TracerConfig.Hook) -> Void,
@@ -1043,7 +1038,8 @@ final class EditorPane {
     ) {
         self.engine = engine
         self.hook = hook
-        self.monaco = sharedEditor
+        let packages = (try? engine?.store.fetchPackagesState().packages) ?? []
+        self.codeEditor = CodeEditor(engine: engine, profile: EditorProfile.fridaTracerHook(packages: packages))
         self.showToolbar = showToolbar
         self.onSave = onSave
         self.onITraceChanged = onITraceChanged
@@ -1131,7 +1127,7 @@ final class EditorPane {
         placeholder.visible = false
         widget.append(child: placeholder)
 
-        monaco.onTextChanged = { [weak self] text in
+        codeEditor.onTextChanged = { [weak self] text in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.draftCode = text
@@ -1139,14 +1135,10 @@ final class EditorPane {
             }
         }
 
-        monaco.onAccelerator = { [weak self] keyval, modifiers in
+        codeEditor.onCommit = { [weak self] in
             MainActor.assumeIsolated {
-                guard let self else { return false }
-                let mods = Gdk.ModifierType(rawValue: UInt32(truncatingIfNeeded: modifiers))
-                let isSave = keyval == UInt(UInt8(ascii: "s")) && mods == .controlMask
-                guard isSave else { return false }
-                if self.isDirty { self.commit() }
-                return true
+                guard let self, self.isDirty else { return }
+                self.commit()
             }
         }
 
@@ -1165,8 +1157,8 @@ final class EditorPane {
             }
         }
 
-        sharedEditor.installInto(editorHost)
-        sharedEditor.setText(hook?.code ?? "")
+        codeEditor.installInto(editorHost)
+        codeEditor.setText(hook?.code ?? "")
 
         applyHookToUI()
     }
@@ -1193,7 +1185,7 @@ final class EditorPane {
             itracePill?.widget.visible = hook.kind == .function
             itracePill?.update(arming: hook.itraceArming, captured: initialCaptured)
             draftCode = hook.code
-            monaco.setText(hook.code)
+            codeEditor.setText(hook.code)
             isDirty = false
             saveButton?.sensitive = false
             dirtyIndicator?.visible = false
@@ -1203,7 +1195,7 @@ final class EditorPane {
             placeholder.visible = false
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 50_000_000)
-                self.monaco.focus()
+                self.codeEditor.focus()
             }
         } else {
             toolbar?.visible = false

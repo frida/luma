@@ -49,7 +49,7 @@ final class PharoTextView: PharoTextViewBase, NSTextStorageDelegate {
     private let resultModel = PharoResultMarkModel()
 
     #if canImport(UIKit)
-        private let candidates = PharoCompletionCandidates()
+        private let candidates = CompletionCandidates()
         private let completionBarHeight: CGFloat = 38
 
         /// A TextKit 2 text view leaves `textStorage` behind, so the stack is
@@ -1035,7 +1035,7 @@ final class PharoTextView: PharoTextViewBase, NSTextStorageDelegate {
                 self?.accept(completion: word)
             }
             guard inputAccessoryView == nil, !list.candidates.isEmpty else { return }
-            let bar = PlatformHostingView(rootView: PharoCompletionStrip(candidates: candidates))
+            let bar = PlatformHostingView(rootView: CompletionStrip(candidates: candidates))
             bar.frame.size.height = completionBarHeight
             bar.autoresizingMask = .flexibleWidth
             inputAccessoryView = bar
@@ -1457,40 +1457,3 @@ extension PlatformImage {
         #endif
     }
 }
-
-#if canImport(UIKit)
-    @Observable
-    final class PharoCompletionCandidates {
-        private(set) var words: [String] = []
-        @ObservationIgnored private var accept: (String) -> Void = { _ in }
-
-        func offer(_ words: [String], accept: @escaping (String) -> Void) {
-            self.words = words
-            self.accept = accept
-        }
-
-        func take(_ word: String) {
-            accept(word)
-        }
-    }
-
-    struct PharoCompletionStrip: View {
-        let candidates: PharoCompletionCandidates
-
-        var body: some View {
-            ScrollView(.horizontal) {
-                HStack(spacing: 6) {
-                    ForEach(candidates.words, id: \.self) { word in
-                        Button(word) { candidates.take(word) }
-                            .font(.system(.footnote, design: .monospaced))
-                            .buttonStyle(.bordered)
-                    }
-                }
-                .padding(.horizontal, 8)
-            }
-            .scrollIndicators(.hidden)
-            .frame(maxHeight: .infinity)
-            .background(.bar)
-        }
-    }
-#endif

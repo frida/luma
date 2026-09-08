@@ -16,7 +16,7 @@ let lumaExecutableIconResource = compileWindowsExecutableIcon()
 #endif
 
 #if os(macOS)
-let cLumaSources: [String] = ["shim_gtk.c", "svg_paintable.c", "shim_webkit.m"]
+let cLumaSources: [String] = ["shim_gtk.c", "svg_paintable.c"]
 let cLumaCSettings: [CSetting] = [
     .unsafeFlags(pkgConfigFlags(["gtk4", "libadwaita-1", "epoxy", "librsvg-2.0"])),
 ]
@@ -30,13 +30,11 @@ let lumaGtkLinkerSettings: [LinkerSetting] = [
     .unsafeFlags(["-Xlinker", "-export_dynamic"]),
 ]
 #elseif os(Windows)
-let cLumaSources: [String] = ["shim_gtk.c", "svg_paintable.c", "shim_webview2.cpp", "webview2_capture.cpp"]
+let cLumaSources: [String] = ["shim_gtk.c", "svg_paintable.c"]
 let cLumaCSettings: [CSetting] = [
     .unsafeFlags(pkgConfigFlags(["gtk4", "epoxy", "librsvg-2.0"])),
 ]
-let cLumaCxxSettings: [CXXSetting] = [
-    .unsafeFlags(pkgConfigFlags(["gtk4", "epoxy"])),
-]
+let cLumaCxxSettings: [CXXSetting] = []
 let cLumaLinkerSettings: [LinkerSetting] = [
     .linkedLibrary("WebView2Loader.dll"),
     .linkedLibrary("user32"),
@@ -65,11 +63,9 @@ let lumaGtkLinkerSettings: [LinkerSetting] = [
     )
 ]
 #else
-let cLumaSources: [String] = ["shim_gtk.c", "svg_paintable.c", "shim_webkitgtk.c"]
+let cLumaSources: [String] = ["shim_gtk.c", "svg_paintable.c"]
 let cLumaCSettings: [CSetting] = [
-    .unsafeFlags(
-        pkgConfigFlags(["webkitgtk-6.0", "gtk4", "libsoup-3.0", "epoxy", "librsvg-2.0"])
-    ),
+    .unsafeFlags(pkgConfigFlags(["gtk4", "epoxy", "librsvg-2.0"])),
 ]
 let cLumaCxxSettings: [CXXSetting] = []
 let cLumaLinkerSettings: [LinkerSetting] = [
@@ -100,7 +96,6 @@ let package = Package(
         .package(url: "https://github.com/frida/SwiftGtk.git", branch: "gtk4-development"),
         .package(url: "https://github.com/frida/SwiftAdw.git", branch: "development"),
         .package(url: "https://github.com/frida/SwiftGtkSourceView.git", branch: "development"),
-        .package(url: "https://github.com/frida/SwiftyMonaco.git", branch: "main"),
     ],
     targets: [
         .target(
@@ -119,7 +114,6 @@ let package = Package(
                 .product(name: "Gtk", package: "SwiftGtk"),
                 .product(name: "Adw", package: "SwiftAdw"),
                 .product(name: "GtkSource", package: "SwiftGtkSourceView"),
-                .product(name: "MonacoWebBundle", package: "SwiftyMonaco"),
                 "CLuma",
             ],
             path: "Sources/LumaGtk",

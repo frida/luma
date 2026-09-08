@@ -63,7 +63,7 @@ struct SaveBarOverlay: View {
 
     private var shortcutHost: some View {
         Button("", action: onSave)
-            .keyboardShortcut("s", modifiers: [.command])
+            .keyboardShortcut(.return, modifiers: [.command])
             .disabled(!isDirty)
             .frame(width: 0, height: 0)
             .opacity(0)

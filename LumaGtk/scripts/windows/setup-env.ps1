@@ -105,7 +105,7 @@ if ((Test-Path $pkgconf) -and -not (Test-Path $pkgAlias)) {
 
 # vcpkg drops a dirent.h polyfill at $prefix/include that conflicts with
 # Swift's _FoundationCShims. Mirror the root headers into a staging dir
-# excluding dirent.h so clang still finds WebView2.h, sqlite3.h, etc.
+# excluding dirent.h so clang still finds sqlite3.h, etc.
 $shim = Join-Path $vcpkg 'include\vcpkg-shim'
 New-Item -ItemType Directory -Force -Path $shim | Out-Null
 Get-ChildItem (Join-Path $vcpkg 'include\*.h') -File | Where-Object {
@@ -123,7 +123,7 @@ $pkgConfigDirs = @($frida, $r2, $pharo, $vcpkg) |
     ForEach-Object { $_ -replace '\\','/' } |
     Select-Object -Unique
 
-# Root-level vcpkg headers (WebView2.h, sqlite3.h, ...) aren't
+# Root-level vcpkg headers (sqlite3.h, ...) aren't
 # reachable through pkg-config, so point clang at the vcpkg-shim
 # staging dir that mirrors $VCPKG_PREFIX/include minus the dirent.h
 # polyfill that clashes with Swift's _FoundationCShims. Everything

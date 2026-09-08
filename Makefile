@@ -32,6 +32,11 @@ check-patches: $(PHARO_IMAGE)
 check-examples: $(PHARO_IMAGE)
 	swift run --disable-sandbox LumaExampleCheck
 
+# The editor's completions come from the compiler's language server, which
+# only a running one can vouch for.
+check-editor: $(PHARO_IMAGE)
+	swift run --disable-sandbox LumaEditorCheck
+
 $(PHARO_IMAGE):
 	scripts/stage-pharo-image.sh
 
@@ -57,4 +62,4 @@ clean:
 	rm -rf "$(BUILD_DIR)"
 	rm -rf .build LumaGtk/.build
 
-.PHONY: all check-examples check-patches gtk gtk-release clean
+.PHONY: all check-examples check-patches check-editor gtk gtk-release clean

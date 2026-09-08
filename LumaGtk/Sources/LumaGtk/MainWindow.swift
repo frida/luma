@@ -64,9 +64,6 @@ final class MainWindow: InstrumentUIHost {
     private var currentModulePane: ModuleSymbolsPane?
     private var currentThreadPane: ThreadDetailPane?
     private var sessionDetailViews: [UUID: SessionDetailView] = [:]
-    private(set) lazy var sharedTracerEditor: MonacoEditor = makeSharedTracerEditor()
-    private(set) lazy var sharedCodeShareEditor: MonacoEditor = makeSharedCodeShareEditor()
-    private(set) lazy var sharedCustomInstrumentEditor: MonacoEditor = makeSharedCustomInstrumentEditor()
 
     private var sessions: [LumaCore.ProcessSession] = []
     private var installedPackages: [LumaCore.InstalledPackage] = []
@@ -1477,8 +1474,7 @@ final class MainWindow: InstrumentUIHost {
             pane = CustomInstrumentDefPane(
                 engine: engine,
                 def: def,
-                file: file,
-                sourceEditor: sharedCustomInstrumentEditor
+                file: file
             )
             pane.onRevertNavigation = { [weak self] revertedPath in
                 self?.select(.customInstrumentFile(defID, revertedPath))
@@ -1773,14 +1769,6 @@ final class MainWindow: InstrumentUIHost {
         return scroll
     }
 
-    private func reclaimSharedEditors() {
-        for editor in [sharedTracerEditor, sharedCodeShareEditor] {
-            if editor.widget.parent != nil {
-                editor.widget.unparent()
-            }
-        }
-    }
-
     private func renderDetail() {
         if case .repl(let id) = selection {
             if currentREPLSessionID != id {
@@ -1793,11 +1781,9 @@ final class MainWindow: InstrumentUIHost {
         }
         if let iid = activeInstrumentID(in: selection) {
             if currentInstrumentDetail?.instrumentID != iid {
-                reclaimSharedEditors()
                 currentInstrumentDetail = nil
             }
         } else {
-            reclaimSharedEditors()
             currentInstrumentDetail = nil
         }
         if case .insight(_, let iid) = selection {
@@ -2185,9 +2171,7 @@ final class MainWindow: InstrumentUIHost {
                 sessionID: sessionID,
                 descriptors: engine.descriptors,
                 disabledDescriptorIDs: disabledDescriptorIDs,
-                incompatibilityReasons: incompatibilityReasons,
-                tracerEditor: self.sharedTracerEditor,
-                codeShareEditor: self.sharedCodeShareEditor
+                incompatibilityReasons: incompatibilityReasons
             ) { [weak self] instance in
                 guard let self else { return }
                 if instance.kind == .custom, let defID = UUID(uuidString: instance.sourceIdentifier) {
@@ -2292,7 +2276,7 @@ final class MainWindow: InstrumentUIHost {
 
     private func registerInstrumentUIs() {
         let registry = InstrumentUIRegistry.shared
-        registry.register(.tracer, ui: TracerUIKind(sharedMonaco: sharedTracerEditor))
+        registry.register(.tracer, ui: TracerUIKind())
         registry.register(.hookPack, ui: HookPackUIKind())
         registry.register(.codeShare, ui: CodeShareUIKind())
         registry.register(.custom, ui: CustomUIKind())
@@ -2500,7 +2484,7 @@ final class MainWindow: InstrumentUIHost {
     private func focusEditorIfNeeded(for selection: SidebarSelection) {
         switch selection {
         case .customInstrumentDef, .customInstrumentFile:
-            sharedCustomInstrumentEditor.focus()
+            currentCustomInstrumentDefPane?.focusEditor()
         default:
             break
         }
@@ -3986,27 +3970,6 @@ final class MainWindow: InstrumentUIHost {
         renderPackages(snapshot)
     }
 
-    private func makeSharedTracerEditor() -> MonacoEditor {
-        let installedPackages = (try? engine?.store.fetchPackagesState().packages) ?? []
-        let profile = EditorProfile.fridaTracerHook(packages: installedPackages)
-        let editor = MonacoEditor(profile: profile)
-        if let engine {
-            Task { @MainActor in
-                await engine.rebuildEditorFSSnapshotIfNeeded()
-                editor.setFSSnapshot(engine.editorFSSnapshot)
-            }
-        }
-        return editor
-    }
-
-    private func makeSharedCodeShareEditor() -> MonacoEditor {
-        return MonacoEditor(profile: EditorProfile.fridaCodeShare())
-    }
-
-    private func makeSharedCustomInstrumentEditor() -> MonacoEditor {
-        let packages = (try? engine?.store.fetchPackagesState().packages) ?? []
-        return MonacoEditor(profile: EditorProfile.fridaCustomInstrument(packages: packages))
-    }
 }
 
 @MainActor

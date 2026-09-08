@@ -5,12 +5,6 @@ import LumaCore
 
 @MainActor
 final class TracerUIKind: InstrumentUIKind {
-    private let sharedMonaco: MonacoEditor
-
-    init(sharedMonaco: MonacoEditor) {
-        self.sharedMonaco = sharedMonaco
-    }
-
     func makeDetailUI(
         engine: Engine,
         instrument: LumaCore.InstrumentInstance,
@@ -19,7 +13,6 @@ final class TracerUIKind: InstrumentUIKind {
         TracerDetailUI(
             engine: engine,
             instrument: instrument,
-            sharedMonaco: sharedMonaco,
             host: host
         )
     }
@@ -170,7 +163,6 @@ private final class TracerDetailUI: InstrumentDetailUI {
     init(
         engine: Engine,
         instrument: LumaCore.InstrumentInstance,
-        sharedMonaco: MonacoEditor,
         host: InstrumentUIHost
     ) {
         self.engine = engine
@@ -181,7 +173,6 @@ private final class TracerDetailUI: InstrumentDetailUI {
             engine: engine,
             sessionID: instrument.sessionID,
             config: config,
-            tracerEditor: sharedMonaco,
             apply: { data in
                 box?.applyConfig(data)
             }

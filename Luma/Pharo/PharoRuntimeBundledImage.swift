@@ -3,9 +3,9 @@ import LumaCore
 import SwiftyPharo
 
 extension PharoRuntime {
-    /// Boots the image before Monaco's web views reserve their large virtual
-    /// regions, so the Spur heap still finds its expected base free. Returns at
-    /// once; the image loads on its own thread.
+    /// Boots the image before anything else reserves large virtual regions, so
+    /// the Spur heap still finds its expected base free. Returns at once; the
+    /// image loads on its own thread.
     static func bootBundledImage() {
         PharoWorkspace.boot()
     }

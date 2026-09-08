@@ -1,18 +1,5 @@
 const pinned = [];
 
-let latestMonacoText = null;
-
-Interceptor.attach(Module.getGlobalExportByName('luma_monaco_view_evaluate'), {
-    onEnter(args) {
-        const script = args[1].readUtf8String();
-        const match = setTextScriptRegex.exec(script);
-        if (match !== null)
-            latestMonacoText = base64DecodeUtf8(match[1]);
-    }
-});
-
-const setTextScriptRegex = /editor\.setText\(atob\('([^']*)'\)\)/;
-
 function base64DecodeUtf8(input) {
     const bytes = [];
     let buffer = 0;
@@ -38,6 +25,7 @@ const gtk = findModule('libgtk-4');
 
 const GLib = {
     idleAdd: nativeFn(glib, 'g_idle_add', 'uint', ['pointer', 'pointer']),
+    free: nativeFn(glib, 'g_free', 'void', ['pointer']),
 };
 
 function gListToArray(list) {
@@ -105,6 +93,15 @@ const Widget = {
     hasCssClass: nativeFn(gtk, 'gtk_widget_has_css_class', 'int', ['pointer', 'pointer']),
     getCssClasses: nativeFn(gtk, 'gtk_widget_get_css_classes', 'pointer', ['pointer']),
     activate: nativeFn(gtk, 'gtk_widget_activate', 'int', ['pointer']),
+};
+
+const TextView = {
+    getBuffer: nativeFn(gtk, 'gtk_text_view_get_buffer', 'pointer', ['pointer']),
+};
+
+const TextBuffer = {
+    getBounds: nativeFn(gtk, 'gtk_text_buffer_get_bounds', 'void', ['pointer', 'pointer', 'pointer']),
+    getText: nativeFn(gtk, 'gtk_text_buffer_get_text', 'pointer', ['pointer', 'pointer', 'pointer', 'int']),
 };
 
 const ListBox = {
@@ -327,8 +324,9 @@ rpc.exports = {
         return selectSidebarRowByLabel('Tracer');
     },
 
-    monacoLatestText() {
-        return latestMonacoText;
+    codeEditorTexts() {
+        return runOnMainThread(() =>
+            appWindows().flatMap(w => collectSourceViewTexts(w)));
     },
 
     replCellCodes() {
@@ -479,6 +477,34 @@ function collectAllLabels(root, cssTag) {
             stack.push(child);
     }
     return out;
+}
+
+function collectSourceViewTexts(root) {
+    const out = [];
+    if (root.isNull())
+        return out;
+    const stack = [root];
+    while (stack.length > 0) {
+        const widget = stack.pop();
+        if (gTypeName(widget) === 'GtkSourceView')
+            out.push(textViewText(widget));
+        for (let child = Widget.getFirstChild(widget);
+             !child.isNull();
+             child = Widget.getNextSibling(child))
+            stack.push(child);
+    }
+    return out;
+}
+
+function textViewText(view) {
+    const buffer = TextView.getBuffer(view);
+    const start = Memory.alloc(128);
+    const end = Memory.alloc(128);
+    TextBuffer.getBounds(buffer, start, end);
+    const text = TextBuffer.getText(buffer, start, end, 1);
+    const result = text.readUtf8String();
+    GLib.free(text);
+    return result;
 }
 
 function widgetHasCssClass(widget, cssTag) {

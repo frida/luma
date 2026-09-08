@@ -94,11 +94,8 @@ public final class Engine {
     public internal(set) var customInstrumentDefUIStates: [UUID: CustomInstrumentDefUIState] = [:]
     public private(set) var missions: [Mission] = []
     public private(set) var installedPackages: [InstalledPackage] = []
-    public private(set) var editorFSSnapshot: EditorFSSnapshot?
-    @ObservationIgnored public var editorFSSnapshotDirty: Bool = true
-    @ObservationIgnored private var editorFSSnapshotVersion: Int = 0
-    @ObservationIgnored private var cachedNodeModulesSnapshotFiles: [EditorFSSnapshotFile]?
 
+    @ObservationIgnored private var typeScriptProjects: [TypeScriptProjectKey: Task<TypeScriptProject, Swift.Error>] = [:]
     private var addressActionProviders: [AddressActionProvider] = []
     @ObservationIgnored private var protectionRegionsBySession: [UUID: [ProtectionRegion]] = [:]
     @ObservationIgnored private var unmappedPagesBySession: [UUID: Set<UInt64>] = [:]
@@ -1756,70 +1753,25 @@ public final class Engine {
         return installed
     }
 
-    public func rebuildEditorFSSnapshotIfNeeded() async {
-        guard editorFSSnapshotDirty else { return }
-        do {
+    public func typeScriptProject(for profile: EditorProfile) async throws -> TypeScriptProject {
+        let key = TypeScriptProjectKey(languageId: profile.languageId, ambientDeclarations: profile.ambientDeclarations)
+        if let starting = typeScriptProjects[key] {
+            return try await starting.value
+        }
+        let starting = Task { @MainActor in
             let paths = try compilerWorkspacePaths()
-            _ = try await compilerWorkspace.ensureReady(paths: paths)
-            let snapshot = try buildEditorFSSnapshot(paths: paths)
-            editorFSSnapshotVersion += 1
-            editorFSSnapshot = snapshot.withVersion(editorFSSnapshotVersion)
-            editorFSSnapshotDirty = false
+            let root = try await compilerWorkspace.ensureReady(paths: paths)
+            let project = TypeScriptProject(root: root)
+            try await project.start(ambientDeclarations: profile.ambientDeclarations)
+            return project
+        }
+        typeScriptProjects[key] = starting
+        do {
+            return try await starting.value
         } catch {
-            emitEngineError(subsystem: "editor", text: "Failed to rebuild editor FS snapshot: \(userFacingMessage(error))")
+            typeScriptProjects[key] = nil
+            throw error
         }
-    }
-
-    private func buildEditorFSSnapshot(paths: CompilerWorkspacePaths) throws -> EditorFSSnapshot {
-        let workspaceRootURI = "file:///workspace/"
-
-        if let cached = cachedNodeModulesSnapshotFiles {
-            return EditorFSSnapshot(version: 0, files: cached)
-        }
-        let files = try Self.scanNodeModulesSnapshotFiles(paths: paths, workspaceRootURI: workspaceRootURI)
-        cachedNodeModulesSnapshotFiles = files
-        return EditorFSSnapshot(version: 0, files: files)
-    }
-
-    private static func scanNodeModulesSnapshotFiles(
-        paths: CompilerWorkspacePaths,
-        workspaceRootURI: String
-    ) throws -> [EditorFSSnapshotFile] {
-        let fm = FileManager.default
-        let root = paths.root
-        let nodeModules = paths.nodeModules
-
-        guard fm.fileExists(atPath: nodeModules.path) else { return [] }
-
-        func toWorkspaceURI(_ fileURL: URL) -> String? {
-            guard fileURL.path.hasPrefix(root.path) else { return nil }
-            var rel = String(fileURL.path.dropFirst(root.path.count))
-            if rel.hasPrefix("/") {
-                rel.removeFirst()
-            }
-            return workspaceRootURI + rel.replacingOccurrences(of: " ", with: "%20")
-        }
-
-        let keys: [URLResourceKey] = [.isRegularFileKey, .nameKey]
-        let enumerator = fm.enumerator(
-            at: nodeModules,
-            includingPropertiesForKeys: keys,
-            options: [.skipsHiddenFiles]
-        )
-
-        var out: [EditorFSSnapshotFile] = []
-        out.reserveCapacity(2048)
-        while let url = enumerator?.nextObject() as? URL {
-            let values = try url.resourceValues(forKeys: Set(keys))
-            guard values.isRegularFile == true else { continue }
-            let name = values.name ?? url.lastPathComponent
-            guard name == "package.json" || name.hasSuffix(".d.ts") else { continue }
-            guard let uri = toWorkspaceURI(url) else { continue }
-            let data = try Data(contentsOf: url)
-            guard let text = String(data: data, encoding: .utf8) else { continue }
-            out.append(.init(path: uri, text: text))
-        }
-        return out
     }
 
     public func upgradePackage(_ package: InstalledPackage) async throws -> InstalledPackage {
@@ -1833,8 +1785,6 @@ public final class Engine {
     public func removePackage(_ package: InstalledPackage) async throws {
         let paths = try compilerWorkspacePaths()
         try await compilerWorkspace.removePackage(package, paths: paths)
-        cachedNodeModulesSnapshotFiles = nil
-        editorFSSnapshotDirty = true
         await recompileAttachedInstruments()
     }
 
@@ -1877,8 +1827,6 @@ public final class Engine {
     }
 
     private func propagatePackage(_ package: InstalledPackage) async {
-        cachedNodeModulesSnapshotFiles = nil
-        editorFSSnapshotDirty = true
         for node in processNodes {
             await loadPackage(package, on: node)
         }

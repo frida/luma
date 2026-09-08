@@ -9,6 +9,7 @@ working with code in this repository.
 make                 # Incremental release build via xcodebuild → build/Luma.app
 make check-examples  # Read the Pharo example catalogue in the image
 make check-patches   # Play every patch offline, and check panning and echo
+make check-editor    # Ask the compiler's language server what it completes
 make clean           # Remove build artifacts
 ```
 
@@ -22,6 +23,11 @@ glance.
 and reports what the process is holding as it goes -- the game leaks
 nothing, but it took three fixes to get there, and a flat line is only
 worth reading once the snippet is seen moving.
+
+`make check-editor` opens a hook in a scratch project and asks the
+compiler's language server what it completes, hovers and reports. The
+editor draws what that server says, and the server sees the workspace
+the way a build does -- so a typing that went missing shows here first.
 
 `PharoExampleCatalog` is Smalltalk inside Swift string literals, which
 no compiler reads. `make check-examples` parses each one in the image
@@ -208,6 +214,18 @@ is gitignored — it is produced at build time.
   the callback allocates, retains or locks. Eight channels, each with
   its own patch and pattern on its own step clock. `CLumaAudio` holds
   only the device layer (miniaudio); the voices are Swift.
+- **TypeScript editing (`Sources/LumaCore/TypeScript/`)** — the
+  editors ask `Frida.LanguageServer` for what they show, which is the
+  compiler's own language server speaking LSP in-process. `LanguageClient`
+  does the JSON-RPC, `TypeScriptProject` owns one server per editor
+  surface so the declarations a surface adds ambiently stay out of the
+  others' programs, and `TypeScriptDocument` is the open file the
+  frontends talk to for completions, hover, diagnostics and symbols.
+  `TypeScriptEditorSession` opens a project for an `EditorProfile`. The
+  server sees the compiler workspace's `node_modules` and the typings
+  embedded in the compiler, so the editor and a build agree. Lexical
+  colouring is `TypeScriptLexer`, and `SourceSyntaxPalette` its colours,
+  shared by both frontends.
 - **Pharo bridges (`Sources/LumaCore/Pharo/`)** — `PharoHostBridge`
   publishes record feeds; `PharoSynthBridge` and `PharoCanvasBridge`
   are the image's entry points into the synthesiser and the canvas.
@@ -218,9 +236,9 @@ is gitignored — it is produced at build time.
 ### Host (`Luma/`)
 
 - **`Workspace`** — thin host adapter. Owns `Engine`, exposes a few
-  UI-only flags (`targetPickerContext`, `isCollaborationPanelVisible`,
-  `monacoFSSnapshot`), wires the SwiftUI instrument-UI registry,
-  and provides `processNode(for: event)` / `instrument(for: event)`
+  UI-only flags (`targetPickerContext`, `isCollaborationPanelVisible`),
+  wires the SwiftUI instrument-UI registry, and provides
+  `processNode(for: event)` / `instrument(for: event)`
   / `sidebarItem(for: NavigationTarget)` lookup helpers.
 - **`MainWindowView`** — top-level SwiftUI view; splits into
   sidebar (process/instrument list) and detail area.
@@ -228,8 +246,9 @@ is gitignored — it is produced at build time.
   (`TracerUI`, `HookPackUI`, `CodeShareUI`), the `InstrumentUI`
   protocol, the `InstrumentUIRegistry` dispatcher, and
   `InstrumentEventMenuItem`.
-- **`Luma/Editor/`** — SwiftyMonaco glue: `TypeScriptEnvironment`,
-  `CodeShareEditorProfile`, `TracerEditorProfile`.
+- **`Luma/Editor/`** — the TypeScript and JavaScript editor:
+  `CodeTextView` is the text view (AppKit and UIKit), `CodeTextEditor`
+  the representable that binds it to a `TypeScriptEditorSession`.
 - **`StyledTextSwiftUI.swift`** — host-side conversion of
   `LumaCore.StyledText` to `AttributedString` (SwiftUI) and
   `NSAttributedString` (AppKit / Metal CFG renderer).
@@ -319,7 +338,6 @@ both configurations; a passing Release build says nothing about Debug.
   disassembly)
 - `GRDB.swift` — SQLite persistence
 - `swift-crypto` — collaboration crypto
-- `SwiftyMonaco` — Monaco code editor component (host only)
 - `SwiftyPharo` — Pharo VM, image and the `<gtView>` builder shim
 - `miniaudio` — vendored in `Sources/CLumaAudio`, device layer only
 - `glslang` + `spirv-cross` — GLSL to Metal, at build time and at

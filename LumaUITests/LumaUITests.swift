@@ -229,9 +229,9 @@ final class LumaUITests: XCTestCase {
                 return !hits.isEmpty
             }
             try await waitUntil(timeout: 30) { [bobApp] in
-                let text = try await bobApp.monacoLatestText() ?? ""
-                print("[LumaUITests] bob monaco textLen=\(text.count) HOOKED-?=\(text.contains("HOOKED-"))")
-                return text.contains("HOOKED-")
+                let texts = try await bobApp.codeEditorTexts()
+                print("[LumaUITests] bob editors=\(texts.count) HOOKED-?=\(texts.contains { $0.contains("HOOKED-") })")
+                return texts.contains { $0.contains("HOOKED-") }
             }
         }
 

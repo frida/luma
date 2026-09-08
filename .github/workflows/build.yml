@@ -91,6 +91,9 @@ jobs:
       - name: Play every patch
         run: make check-patches
 
+      - name: Ask the language server
+        run: make check-editor
+
   frida-core:
     runs-on: macos-26
     needs: version
@@ -775,7 +778,6 @@ jobs:
             gtk4-devel \
             libadwaita-devel \
             gtksourceview5-devel \
-            webkitgtk6.0-devel \
             glib2-devel \
             pango-devel \
             cairo-devel \
@@ -983,7 +985,6 @@ jobs:
           apt-get install -y \
             libgtk-4-dev \
             libadwaita-1-dev \
-            libwebkitgtk-6.0-dev \
             libgtksourceview-5-dev \
             libglib2.0-dev \
             libpango1.0-dev \
@@ -1423,7 +1424,7 @@ jobs:
           if [ -f "$VCPKG_PREFIX/tools/pkgconf/pkgconf.exe" ] && [ ! -f "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe" ]; then
             cp "$VCPKG_PREFIX/tools/pkgconf/pkgconf.exe" "$VCPKG_PREFIX/tools/pkgconf/pkg-config.exe"
           fi
-          # Mirror root-level vcpkg headers (WebView2.h, sqlite3.h,
+          # Mirror root-level vcpkg headers (sqlite3.h,
           # ...) into a staging dir, skipping dirent.h whose vcpkg
           # polyfill clashes with Swift's _FoundationCShims. Put just
           # the shim on CPATH — everything else (gtk4, libadwaita,

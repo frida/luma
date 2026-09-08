@@ -1,6 +1,5 @@
 import LumaCore
 import SwiftUI
-import SwiftyMonaco
 
 struct CodeShareConfigView: View {
     @Binding var config: CodeShareConfig
@@ -12,7 +11,7 @@ struct CodeShareConfigView: View {
 
     @State private var errorMessage: String?
 
-    @StateObject private var monacoIntrospector = MonacoIntrospector()
+    @StateObject private var introspector = CodeIntrospector()
 
     var body: some View {
         VStack(spacing: 12) {
@@ -139,7 +138,7 @@ struct CodeShareConfigView: View {
             CodeEditorView(
                 text: $draftSource,
                 profile: EditorProfile.fridaCodeShare(),
-                introspector: monacoIntrospector,
+                introspector: introspector,
                 engine: engine,
             )
         }
@@ -163,7 +162,7 @@ struct CodeShareConfigView: View {
         errorMessage = nil
 
         Task { @MainActor in
-            let symbols = await monacoIntrospector.topLevelSymbols()
+            let symbols = await introspector.topLevelSymbols()
 
             config.source = draftSource
             config.exports = symbols.map(\.text)

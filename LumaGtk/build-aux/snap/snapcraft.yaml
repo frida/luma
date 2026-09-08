@@ -202,7 +202,6 @@ parts:
     build-packages:
       - libgtk-4-dev
       - libadwaita-1-dev
-      - libwebkitgtk-6.0-dev
       - libglib2.0-dev
       - libpango1.0-dev
       - libcairo2-dev
@@ -230,7 +229,6 @@ parts:
     stage-packages:
       - libgtk-4-1
       - libadwaita-1-0
-      - libwebkitgtk-6.0-4
       - libepoxy0
       - libgtksourceview-5-0
       - librsvg2-2

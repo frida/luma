@@ -14,18 +14,23 @@ final class CustomInstrumentDefPane {
     var onRevertNavigation: ((String) -> Void)?
 
     private weak var engine: Engine?
-    private let sourceEditor: MonacoEditor
+    private let sourceEditor: CodeEditor
     private let saveBar: SaveBar
     private var draftContent: String
     private var pendingDef: CustomInstrumentDef?
     private var pendingFile: CustomInstrumentFile?
 
-    init(engine: Engine, def: CustomInstrumentDef, file: CustomInstrumentFile, sourceEditor: MonacoEditor) {
+    init(engine: Engine, def: CustomInstrumentDef, file: CustomInstrumentFile) {
         self.engine = engine
         self.def = def
         self.file = file
         self.draftContent = file.content
-        self.sourceEditor = sourceEditor
+        let packages = (try? engine.store.fetchPackagesState().packages) ?? []
+        self.sourceEditor = CodeEditor(
+            engine: engine,
+            profile: Self.profile(def: def, file: file, files: engine.customInstruments.files(forDefID: def.id), packages: packages),
+            initialText: file.content
+        )
 
         widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
@@ -38,6 +43,10 @@ final class CustomInstrumentDefPane {
 
         layout()
         box = self
+    }
+
+    func focusEditor() {
+        sourceEditor.focus()
     }
 
     func refresh(def: CustomInstrumentDef, file: CustomInstrumentFile) {
@@ -98,8 +107,16 @@ final class CustomInstrumentDefPane {
         file: CustomInstrumentFile,
         packages: [LumaCore.InstalledPackage]
     ) -> EditorProfile {
-        let files = engine?.customInstruments.files(forDefID: def.id) ?? []
-        return EditorProfile.fridaCustomInstrument(
+        Self.profile(def: def, file: file, files: engine?.customInstruments.files(forDefID: def.id) ?? [], packages: packages)
+    }
+
+    private static func profile(
+        def: CustomInstrumentDef,
+        file: CustomInstrumentFile,
+        files: [CustomInstrumentFile],
+        packages: [LumaCore.InstalledPackage]
+    ) -> EditorProfile {
+        EditorProfile.fridaCustomInstrument(
             packages: packages,
             def: def,
             files: files,
@@ -111,9 +128,6 @@ final class CustomInstrumentDefPane {
         let container = Box(orientation: .vertical, spacing: 0)
         container.hexpand = true
         container.vexpand = true
-        let packages = (try? engine?.store.fetchPackagesState().packages) ?? []
-        sourceEditor.setProfile(currentProfile(def: def, file: file, packages: packages))
-        sourceEditor.setText(draftContent)
         sourceEditor.installInto(container)
         sourceEditor.onTextChanged = { [weak self] text in
             MainActor.assumeIsolated {

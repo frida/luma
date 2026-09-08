@@ -31,7 +31,7 @@ final class CodeShareBrowser {
     private let descriptionLabel: Label
     private let sourceHeader: Label
     private let sourceContainer: Box
-    private let sourceEditor: MonacoEditor
+    private let sourceEditor: CodeEditor
     private let actionsRow: Box
     private let addButton: Button
     private let detailErrorLabel: Label
@@ -52,10 +52,10 @@ final class CodeShareBrowser {
     private var detailsTask: Task<Void, Never>?
     private var isAdding = false
 
-    init(engine: Engine, sessionID: UUID, codeShareEditor: MonacoEditor) {
+    init(engine: Engine, sessionID: UUID) {
         self.engine = engine
         self.sessionID = sessionID
-        self.sourceEditor = codeShareEditor
+        self.sourceEditor = CodeEditor(engine: engine, profile: EditorProfile.fridaCodeShare(readOnly: true))
 
         widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
@@ -205,9 +205,7 @@ final class CodeShareBrowser {
             MainActor.assumeIsolated { self?.addAsInstrument() }
         }
 
-        codeShareEditor.setProfile(EditorProfile.fridaCodeShare(readOnly: true))
-        codeShareEditor.setText("")
-        codeShareEditor.installInto(sourceContainer)
+        sourceEditor.installInto(sourceContainer)
 
         showDetailState(.placeholder)
         loadPopular()
@@ -468,22 +466,17 @@ final class CodeShareBrowser {
         }
     }
 
-    static func present(from anchor: Widget, engine: Engine, sessionID: UUID, codeShareEditor: MonacoEditor) {
+    static func present(from anchor: Widget, engine: Engine, sessionID: UUID) {
         let parent = anchor.root?.ptr.map { Gtk.WindowRef(raw: $0) }
-        present(from: parent, engine: engine, sessionID: sessionID, codeShareEditor: codeShareEditor)
+        present(from: parent, engine: engine, sessionID: sessionID)
     }
 
-    static func present(from parent: Gtk.Window?, engine: Engine, sessionID: UUID, codeShareEditor: MonacoEditor) {
-        present(
-            from: parent.map { Gtk.WindowRef(raw: $0.ptr) },
-            engine: engine,
-            sessionID: sessionID,
-            codeShareEditor: codeShareEditor
-        )
+    static func present(from parent: Gtk.Window?, engine: Engine, sessionID: UUID) {
+        present(from: parent.map { Gtk.WindowRef(raw: $0.ptr) }, engine: engine, sessionID: sessionID)
     }
 
-    static func present(from parent: Gtk.WindowRef?, engine: Engine, sessionID: UUID, codeShareEditor: MonacoEditor) {
-        let browser = CodeShareBrowser(engine: engine, sessionID: sessionID, codeShareEditor: codeShareEditor)
+    static func present(from parent: Gtk.WindowRef?, engine: Engine, sessionID: UUID) {
+        let browser = CodeShareBrowser(engine: engine, sessionID: sessionID)
 
         let window = Adw.Window()
         window.title = "CodeShare"

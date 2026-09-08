@@ -2263,7 +2263,7 @@ public enum MissionTools {
     private static func registerReadCustomInstrumentTypings(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "read_custom_instrument_typings",
-            description: "Return the TypeScript ambient declarations the editor injects when authoring this custom instrument's source: the shared CustomInstrument* surface plus the def-scoped CustomInstrumentFeatureMap and CustomInstrumentWidgetMap that narrow `config.features.<id>`, `ctx.widget(<id>)`, and the `onAction` parameter to the exact ids/series/actions you declared. Use this to write source that compiles against the same types Monaco enforces.",
+            description: "Return the TypeScript ambient declarations the editor injects when authoring this custom instrument's source: the shared CustomInstrument* surface plus the def-scoped CustomInstrumentFeatureMap and CustomInstrumentWidgetMap that narrow `config.features.<id>`, `ctx.widget(<id>)`, and the `onAction` parameter to the exact ids/series/actions you declared. Use this to write source that compiles against the same types the editor enforces.",
             inputSchemaJSON: """
                 {"type":"object","properties":{"def_id":{"type":"string"}},"required":["def_id"],"additionalProperties":false}
                 """,

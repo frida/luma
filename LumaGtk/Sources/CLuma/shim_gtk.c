@@ -4,6 +4,34 @@
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <string.h>
 
+void *
+luma_text_buffer_create_style_tag(void *gtk_text_buffer,
+                                   const char *name,
+                                   const char *foreground,
+                                   bool bold,
+                                   bool italic)
+{
+    return gtk_text_buffer_create_tag(GTK_TEXT_BUFFER(gtk_text_buffer), name,
+                                      "foreground", foreground,
+                                      "weight", bold ? PANGO_WEIGHT_BOLD : PANGO_WEIGHT_NORMAL,
+                                      "style", italic ? PANGO_STYLE_ITALIC : PANGO_STYLE_NORMAL,
+                                      NULL);
+}
+
+void *
+luma_text_buffer_create_underline_tag(void *gtk_text_buffer,
+                                       const char *name,
+                                       const char *color,
+                                       bool error)
+{
+    GdkRGBA rgba;
+    gdk_rgba_parse(&rgba, color);
+    return gtk_text_buffer_create_tag(GTK_TEXT_BUFFER(gtk_text_buffer), name,
+                                      "underline", error ? PANGO_UNDERLINE_ERROR : PANGO_UNDERLINE_SINGLE,
+                                      "underline-rgba", &rgba,
+                                      NULL);
+}
+
 // --- File menu / actions ----------------------------------------------------
 
 typedef struct {

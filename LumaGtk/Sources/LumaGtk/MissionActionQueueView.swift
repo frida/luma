@@ -111,6 +111,7 @@ final class MissionActionQueueView {
                 } else {
                     let card = ActionCard(
                         action: action,
+                        engine: engine,
                         onApprove: { [weak self] id in
                             guard let self, let engine = self.engine else { return }
                             Task { @MainActor in
@@ -202,18 +203,21 @@ private final class ActionCard {
     private let argsLabel: Label
     private let argsContainer: Box
     private let codeHost: Box
-    private var codeEditor: MonacoEditor?
+    private var codeEditor: CodeEditor?
     private let rationaleLabel: Label
     private let approveButton: Button
     private let rejectButton: Button
+    private weak var engine: Engine?
     private let onApprove: (UUID) -> Void
     private let onReject: (UUID, String) -> Void
 
     init(
         action: MissionAction,
+        engine: Engine?,
         onApprove: @escaping (UUID) -> Void,
         onReject: @escaping (UUID, String) -> Void
     ) {
+        self.engine = engine
         self.onApprove = onApprove
         self.onReject = onReject
 
@@ -328,7 +332,7 @@ private final class ActionCard {
             editor.setProfile(attachment.profile)
             editor.setText(attachment.source)
         } else {
-            let editor = MonacoEditor(profile: attachment.profile, initialText: attachment.source)
+            let editor = CodeEditor(engine: engine, profile: attachment.profile, initialText: attachment.source)
             editor.installInto(codeHost)
             codeEditor = editor
         }

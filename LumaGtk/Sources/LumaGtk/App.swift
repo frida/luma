@@ -5,6 +5,7 @@ import CLuma
 import Foundation
 import Gdk
 import Gtk
+import GtkSource
 import LumaCore
 import SwiftyPharo
 
@@ -51,6 +52,7 @@ final class LumaApplication {
     }
 
     private func startup() {
+        gtk_source_init()
         StyleSheet.install()
         registerDevelopmentIconPaths()
         installActions()

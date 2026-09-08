@@ -1,6 +1,5 @@
 import CryptoKit
 import SwiftUI
-import SwiftyMonaco
 import LumaCore
 
 struct CodeShareBrowserView: View {
@@ -229,7 +228,7 @@ struct CodeShareProjectDetailView: View {
     @State private var source: String = ""
     @State private var isLoadingDetails = false
     @State private var loadError: String?
-    @StateObject private var monacoIntrospector = MonacoIntrospector()
+    @StateObject private var introspector = CodeIntrospector()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -257,7 +256,7 @@ struct CodeShareProjectDetailView: View {
                     CodeEditorView(
                         text: $source,
                         profile: EditorProfile.fridaCodeShare(),
-                        introspector: monacoIntrospector,
+                        introspector: introspector,
                         engine: engine,
                     )
                 }
@@ -340,7 +339,7 @@ struct CodeShareProjectDetailView: View {
     }
 
     private func addInstrument(details: CodeShareService.ProjectDetails) async {
-        let symbols = await monacoIntrospector.topLevelSymbols()
+        let symbols = await introspector.topLevelSymbols()
 
         let projectRef = CodeShareProjectRef(
             id: details.id,

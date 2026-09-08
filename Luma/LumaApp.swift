@@ -2,7 +2,6 @@ import Combine
 import Frida
 import LumaCore
 import SwiftUI
-import SwiftyMonaco
 import SwiftyPharo
 import UniformTypeIdentifiers
 
@@ -21,8 +20,6 @@ func sharedGitHubAuth() -> GitHubAuth { sharedWelcomeModel.gitHubAuth }
 
         init() {
             PharoRuntime.bootBundledImage()
-            SwiftyMonaco.prewarmPool(profile: MonacoEditorProfile(from: EditorProfile.fridaCodeShare()), count: 2)
-            SwiftyMonaco.prewarmPool(profile: MonacoEditorProfile(from: EditorProfile.fridaTracerHook(packages: [])), count: 2)
             MainActor.assumeIsolated {
                 InstrumentUIRegistry.shared.registerGlobalDefaults()
             }

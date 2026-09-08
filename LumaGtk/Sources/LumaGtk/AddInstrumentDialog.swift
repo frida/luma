@@ -27,8 +27,7 @@ final class AddInstrumentDialog {
     private var tracerEditor: TracerConfigEditor?
     private var customFeatureEditors: [FeatureValueEditor] = []
     private var hookPackFeatureEditors: [FeatureValueEditor] = []
-    private let sharedTracerMonaco: MonacoEditor
-    private let sharedCodeShareMonaco: MonacoEditor
+    private var codeShareEditor: CodeEditor?
     private var rowKinds: [RowKind] = []
 
     private enum RowKind {
@@ -45,8 +44,6 @@ final class AddInstrumentDialog {
         descriptors: [LumaCore.InstrumentDescriptor],
         disabledDescriptorIDs: Set<String> = [],
         incompatibilityReasons: [String: String] = [:],
-        tracerEditor: MonacoEditor,
-        codeShareEditor: MonacoEditor,
         onAdded: OnAdded? = nil
     ) {
         self.descriptors = descriptors
@@ -56,8 +53,6 @@ final class AddInstrumentDialog {
         self.engine = engine
         self.sessionID = sessionID
         self.parentWindow = parent
-        self.sharedTracerMonaco = tracerEditor
-        self.sharedCodeShareMonaco = codeShareEditor
 
         dialog = Adw.Dialog()
         dialog.set(title: "Add Instrument")
@@ -555,7 +550,6 @@ final class AddInstrumentDialog {
             engine: engine,
             sessionID: sessionID,
             config: config,
-            tracerEditor: sharedTracerMonaco,
             isConfigOnly: true,
             apply: { [weak self] data in
                 MainActor.assumeIsolated { self?.pendingConfigJSON = data }
@@ -728,9 +722,8 @@ final class AddInstrumentDialog {
         editorContainer.setSizeRequest(width: -1, height: 320)
         detailContainer.append(child: editorContainer)
 
-        let editor = sharedCodeShareMonaco
-        editor.setProfile(EditorProfile.fridaCodeShare())
-        editor.setText(config.source)
+        let editor = CodeEditor(engine: engine, profile: EditorProfile.fridaCodeShare(), initialText: config.source)
+        codeShareEditor = editor
         editor.installInto(editorContainer)
 
         var currentSource = config.source
@@ -866,9 +859,8 @@ final class AddInstrumentDialog {
 
     private func openCodeShareBrowser() {
         let parent = parentWindow
-        let editor = sharedCodeShareMonaco
         close()
-        CodeShareBrowser.present(from: parent, engine: engine, sessionID: sessionID, codeShareEditor: editor)
+        CodeShareBrowser.present(from: parent, engine: engine, sessionID: sessionID)
     }
 }
 

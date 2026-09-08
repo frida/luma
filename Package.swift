@@ -189,6 +189,14 @@ let lumaTargets: [Target] = [
         ]
     ),
     .executableTarget(
+        name: "LumaEditorCheck",
+        dependencies: ["LumaCore"],
+        path: "Sources/LumaEditorCheck",
+        swiftSettings: [
+            .swiftLanguageMode(.v6),
+        ]
+    ),
+    .executableTarget(
         name: "LumaShaderCompiler",
         dependencies: shaderTranslateDeps,
         path: "Sources/LumaShaderCompiler",
@@ -221,6 +229,7 @@ let package = Package(
         .executable(name: "LumaBundleCompiler", targets: ["LumaBundleCompiler"]),
         .executable(name: "LumaShaderCompiler", targets: ["LumaShaderCompiler"]),
         .executable(name: "LumaExampleCheck", targets: ["LumaExampleCheck"]),
+        .executable(name: "LumaEditorCheck", targets: ["LumaEditorCheck"]),
         .executable(name: "LumaSynthCheck", targets: ["LumaSynthCheck"]),
     ],
     dependencies: [

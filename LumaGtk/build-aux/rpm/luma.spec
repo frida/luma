@@ -11,7 +11,6 @@ AutoReq:        no
 AutoProv:       no
 
 Requires:       libadwaita
-Requires:       webkitgtk6.0
 Requires:       libepoxy
 Requires:       libzip
 Requires:       libnice

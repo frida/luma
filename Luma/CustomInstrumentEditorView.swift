@@ -1,6 +1,5 @@
 import LumaCore
 import SwiftUI
-import SwiftyMonaco
 
 struct CustomInstrumentEditorView: View {
     let defID: UUID

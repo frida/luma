@@ -16,7 +16,7 @@
       "location" : "https://github.com/frida/gir2swift.git",
       "state" : {
         "branch" : "development",
-        "revision" : "6bd85f6d599c520d8c741a8b203d4bf2e4d7608c"
+        "revision" : "866e9afdee94b10eacf2529f3b279369cf735200"
       }
     },
     {
@@ -169,7 +169,7 @@
       "location" : "https://github.com/frida/SwiftGtkSourceView.git",
       "state" : {
         "branch" : "development",
-        "revision" : "e8c76ae9314eb5e8431f94134116a5a57dfce24a"
+        "revision" : "e90940b6d8e9525c8a585cfb0e1621385de8ae75"
       }
     },
     {

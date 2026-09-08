@@ -6,7 +6,6 @@
   autoPatchelfHook,
   wrapGAppsHook4,
   libadwaita,
-  webkitgtk_6_0,
   libzip,
   libnice,
   swift,
@@ -37,7 +36,6 @@ stdenv.mkDerivation (finalAttrs: {
 
   buildInputs = [
     libadwaita
-    webkitgtk_6_0
     libzip
     libnice
     swift

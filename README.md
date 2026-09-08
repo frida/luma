@@ -106,7 +106,7 @@ dependencies:
 ```sh
 sudo dnf install -y \
     gcc-c++ libstdc++-static patch golang-bin nodejs swift-lang \
-    libadwaita-devel atk-devel webkitgtk6.0-devel \
+    libadwaita-devel atk-devel \
     libepoxy-devel librsvg2-devel \
     libgee-devel json-glib-devel libsoup3-devel \
     libunwind-devel libdwarf-devel libnice-devel \
