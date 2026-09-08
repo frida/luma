@@ -1,5 +1,5 @@
 {
-  "originHash" : "6b05ede71e10699e68a3cb1e2a83feb886d99b0fc6ec66ac2dcfb1858d90e303",
+  "originHash" : "83827c06e29968f63e8e125c5343cfc60416482b50fb5aff346648c1f33b85db",
   "pins" : [
     {
       "identity" : "frida-swift",
@@ -7,7 +7,7 @@
       "location" : "https://github.com/frida/frida-swift",
       "state" : {
         "branch" : "main",
-        "revision" : "45cb298d00b64f5eaee1efce5d436b64ceb57743"
+        "revision" : "9f1bd75246805e9b3e681aeea23f2232331f9b64"
       }
     },
     {
@@ -206,15 +206,6 @@
       "state" : {
         "branch" : "development",
         "revision" : "0e18a547afbe16274b3d27d526b4b1f373b04f04"
-      }
-    },
-    {
-      "identity" : "swiftymonaco",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/SwiftyMonaco.git",
-      "state" : {
-        "branch" : "main",
-        "revision" : "25fd808c0aec5a395bd87e4673d3b66e58b6d7d9"
       }
     },
     {
