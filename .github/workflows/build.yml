@@ -8,9 +8,6 @@ on:
   workflow_dispatch:
 
 env:
-  FRIDA_CORE_REF: "c812943c457376c906802f7bb79d13c67a6e4d22"
-  RADARE2_REF: "7ed1e8c6fd000b99c8aa6835e12bef1657d92746"
-  SWIFTY_PHARO_REF: "809f08769913666af2a58e2aa49195a88d5a30e2"
   SPARKLE_VERSION: "2.9.1"
   SWIFT_VERSION: "6.2"
   # ilammy/msvc-dev-cmd hasn't cut a Node-24-compatible release yet
@@ -25,10 +22,21 @@ jobs:
     outputs:
       version: ${{ steps.compute.outputs.version }}
       build: ${{ steps.compute.outputs.build }}
+      frida_core_ref: ${{ steps.refs.outputs.FRIDA_CORE_REF }}
+      radare2_ref: ${{ steps.refs.outputs.RADARE2_REF }}
+      swifty_pharo_ref: ${{ steps.refs.outputs.SWIFTY_PHARO_REF }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      # Cache keys are interpolated before any step of the job they
+      # belong to has run, so the pinned revisions cannot be read from a
+      # file by the jobs that use them. Publishing them from here, where
+      # every such job already waits, keeps
+      # .github/dependency-refs.env the only place they are written.
+      - name: Read the pinned dependency revisions
+        id: refs
+        run: grep -E '^[A-Z0-9_]+=' .github/dependency-refs.env >> $GITHUB_OUTPUT
       - id: compute
         run: |
           DESCRIPTION=$(git describe --tags --always --long --match='[0-9]*.[0-9]*.[0-9]*')
@@ -84,6 +92,9 @@ jobs:
 
   frida-core:
     runs-on: macos-26
+    needs: version
+    env:
+      FRIDA_CORE_REF: ${{ needs.version.outputs.frida_core_ref }}
     strategy:
       fail-fast: false
       matrix:
@@ -753,6 +764,9 @@ jobs:
     needs: version
     env:
       LUMA_VERSION: ${{ needs.version.outputs.version }}
+      FRIDA_CORE_REF: ${{ needs.version.outputs.frida_core_ref }}
+      RADARE2_REF: ${{ needs.version.outputs.radare2_ref }}
+      SWIFTY_PHARO_REF: ${{ needs.version.outputs.swifty_pharo_ref }}
     steps:
       - name: Install system dependencies
         run: |
@@ -953,6 +967,9 @@ jobs:
             extra_runtime_deps: ""
     env:
       LUMA_VERSION: ${{ needs.version.outputs.version }}
+      FRIDA_CORE_REF: ${{ needs.version.outputs.frida_core_ref }}
+      RADARE2_REF: ${{ needs.version.outputs.radare2_ref }}
+      SWIFTY_PHARO_REF: ${{ needs.version.outputs.swifty_pharo_ref }}
     steps:
       - name: Install system dependencies
         env:
@@ -1173,6 +1190,7 @@ jobs:
     needs: version
     env:
       LUMA_VERSION: ${{ needs.version.outputs.version }}
+      FRIDA_CORE_REF: ${{ needs.version.outputs.frida_core_ref }}
     steps:
       - uses: actions/checkout@v6
 
@@ -1249,6 +1267,7 @@ jobs:
     needs: version
     env:
       LUMA_VERSION: ${{ needs.version.outputs.version }}
+      FRIDA_CORE_REF: ${{ needs.version.outputs.frida_core_ref }}
     # Kept non-blocking as a safety net while the core26 snap build
     # settles on the hosted runners.
     continue-on-error: true
@@ -1311,6 +1330,9 @@ jobs:
     needs: version
     env:
       LUMA_VERSION: ${{ needs.version.outputs.version }}
+      FRIDA_CORE_REF: ${{ needs.version.outputs.frida_core_ref }}
+      RADARE2_REF: ${{ needs.version.outputs.radare2_ref }}
+      SWIFTY_PHARO_REF: ${{ needs.version.outputs.swifty_pharo_ref }}
     strategy:
       fail-fast: false
       matrix:
@@ -1364,12 +1386,12 @@ jobs:
           key: vcpkg-${{ matrix.vcpkg_triplet }}-v12
 
       - name: Install dependencies via vcpkg
-        run: >-
-          vcpkg install
-          --overlay-triplets=${{ github.workspace }}/.github/vcpkg-triplets
-          --overlay-ports=${{ github.workspace }}/.github/vcpkg-ports
-          --triplet ${{ matrix.vcpkg_triplet }}
-          glib glib-networking json-glib libsoup libffi openssl gtk[introspection] atk[introspection] libadwaita[introspection] gtksourceview[introspection] libepoxy librsvg libxml2 graphite2 sqlite3[snapshot] webview2
+        shell: pwsh
+        run: >
+          ./LumaGtk/scripts/windows/bootstrap.ps1
+          -Only vcpkg
+          -Arch ${{ matrix.win_arch == 'arm64' && 'arm64' || 'x64' }}
+          -VcpkgRoot C:\vcpkg
 
       - name: Save vcpkg cache
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
@@ -1518,35 +1540,15 @@ jobs:
 
       - name: Build frida-core (shared)
         if: steps.frida-cache.outputs.cache-hit != 'true'
+        shell: pwsh
         env:
           MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          git clone https://github.com/frida/frida-core.git $env:RUNNER_TEMP\frida-core
-          Push-Location $env:RUNNER_TEMP\frida-core
-          git checkout $env:FRIDA_CORE_REF
-          git submodule update --init --recursive --depth 1
-          python -c "import sys; sys.path.insert(0, '.'); from releng.meson_configure import main; main()" `
-              . `
-              --enable-shared `
-              --enable-compiler-backend `
-              --without-prebuilds=sdk `
-              "--prefix=$env:RUNNER_TEMP\frida-prefix" `
-              -- --force-fallback-for=openssl,libnghttp2 -Dtests=disabled "-Dfrida-gum:v8=disabled"
-          if ($LASTEXITCODE -ne 0) {
-              Write-Host "---- meson-log.txt ----"
-              Get-Content build\meson-logs\meson-log.txt -ErrorAction SilentlyContinue
-              throw "configure failed with exit code $LASTEXITCODE"
-          }
-          python releng/meson/meson.py compile -C build
-          if ($LASTEXITCODE -ne 0) { throw "compile failed with exit code $LASTEXITCODE" }
-          python releng/meson/meson.py install -C build --no-rebuild --skip-subprojects
-          if ($LASTEXITCODE -ne 0) { throw "install failed with exit code $LASTEXITCODE" }
-          Get-ChildItem "$env:RUNNER_TEMP\frida-prefix\lib\pkgconfig\*.pc" | ForEach-Object {
-            (Get-Content $_.FullName) -replace '^prefix=.*', 'prefix=${pcfiledir}/../..' |
-              Set-Content $_.FullName
-          }
-          Pop-Location
+        run: >
+          ./LumaGtk/scripts/windows/bootstrap.ps1
+          -Only frida-core
+          -Arch ${{ matrix.win_arch == 'arm64' && 'arm64' || 'x64' }}
+          -VcpkgPrefix C:\vcpkg\installed\${{ matrix.vcpkg_triplet }}
+          -FridaPrefix $env:RUNNER_TEMP\frida-prefix
 
       - name: Save frida-core cache
         if: steps.frida-cache.outputs.cache-hit != 'true'
@@ -1564,19 +1566,13 @@ jobs:
 
       - name: Build radare2 (shared)
         if: steps.r2-cache.outputs.cache-hit != 'true'
-        run: |
-          git clone https://github.com/radareorg/radare2.git $env:RUNNER_TEMP\radare2
-          Push-Location $env:RUNNER_TEMP\radare2
-          git checkout $env:RADARE2_REF
-          $env:CFLAGS = "/D_Static_assert=static_assert /std:c11"
-          meson setup build "--prefix=$env:RUNNER_TEMP\r2-prefix" --buildtype=release --default-library=shared -Dcli=disabled
-          meson compile -C build
-          meson install -C build
-          Get-ChildItem "$env:RUNNER_TEMP\r2-prefix\lib\pkgconfig\*.pc" | ForEach-Object {
-            (Get-Content $_.FullName) -replace '^prefix=.*', 'prefix=${pcfiledir}/../..' |
-              Set-Content $_.FullName
-          }
-          Pop-Location
+        shell: pwsh
+        run: >
+          ./LumaGtk/scripts/windows/bootstrap.ps1
+          -Only radare2
+          -Arch ${{ matrix.win_arch == 'arm64' && 'arm64' || 'x64' }}
+          -VcpkgPrefix C:\vcpkg\installed\${{ matrix.vcpkg_triplet }}
+          -R2Prefix $env:RUNNER_TEMP\r2-prefix
 
       - name: Save radare2 cache
         if: steps.r2-cache.outputs.cache-hit != 'true'
@@ -1594,24 +1590,13 @@ jobs:
 
       - name: Build Pharo VM
         if: steps.pharo-cache.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          git clone https://github.com/frida/SwiftyPharo.git /tmp/swifty-pharo
-          cd /tmp/swifty-pharo
-          git checkout $SWIFTY_PHARO_REF
-          # Git bash ships a link.exe of its own, and meson takes the first it
-          # finds over the one that goes with cl.
-          export PATH="$(dirname "$(command -v cl)"):$PATH"
-          # An MSVC-flavoured linker looks for libraries along LIB, which knows
-          # about the toolchain's own and nothing about vcpkg's.
-          export LIB="C:\\vcpkg\\installed\\${{ matrix.vcpkg_triplet }}\\lib;$LIB"
-          # The interpreter and the JIT are written in GNU C -- computed gotos,
-          # arithmetic on void pointers -- which cl rejects and clang takes.
-          # An empty DESTDIR is what says install, rather than stage for someone
-          # else to copy.
-          CC=clang-cl CXX=clang-cl PLATFORM=windows DESTDIR= \
-              PREFIX="$(cygpath -m "$RUNNER_TEMP")/pharo-prefix" \
-              tools/build-vm.sh
+        shell: pwsh
+        run: >
+          ./LumaGtk/scripts/windows/bootstrap.ps1
+          -Only pharo-vm
+          -Arch ${{ matrix.win_arch == 'arm64' && 'arm64' || 'x64' }}
+          -VcpkgPrefix C:\vcpkg\installed\${{ matrix.vcpkg_triplet }}
+          -PharoPrefix $env:RUNNER_TEMP\pharo-prefix
 
       - name: Save Pharo VM cache
         if: steps.pharo-cache.outputs.cache-hit != 'true'

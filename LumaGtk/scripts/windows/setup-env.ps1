@@ -27,16 +27,24 @@ function Resolve-Prefix {
     foreach ($c in $Candidates) {
         if (Test-Path -LiteralPath $c) { return (Resolve-Path -LiteralPath $c).Path }
     }
-    throw "Could not locate $EnvName. Pass -$($EnvName.Replace('_PREFIX','Prefix')) or set `$env:$EnvName."
+    throw @"
+Could not locate $EnvName.
+Run .\scripts\windows\bootstrap.ps1 to provision the dependencies, or
+pass -$($EnvName.Replace('_PREFIX','Prefix')) / set `$env:$EnvName to an existing prefix.
+"@
 }
 
+$deps    = Join-Path $env:LOCALAPPDATA 'Luma\windows-deps'
+$triplet = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64-windows-release' } else { 'x64-windows-release' }
+
 $vcpkg = Resolve-Prefix $VcpkgPrefix 'VCPKG_PREFIX' @(
-    'C:\vcpkg\installed\x64-windows-release',
-    'C:\src\vcpkg\installed\x64-windows-release'
+    (Join-Path $deps "vcpkg\installed\$triplet"),
+    "C:\vcpkg\installed\$triplet",
+    "C:\src\vcpkg\installed\$triplet"
 )
-$frida = Resolve-Prefix $FridaPrefix 'FRIDA_PREFIX' @('C:\src\dist')
-$r2    = Resolve-Prefix $R2Prefix    'R2_PREFIX'    @('C:\src\dist')
-$pharo = Resolve-Prefix $PharoPrefix 'PHARO_PREFIX' @('C:\src\pharo')
+$frida = Resolve-Prefix $FridaPrefix 'FRIDA_PREFIX' @((Join-Path $deps 'frida-prefix'), 'C:\src\dist')
+$r2    = Resolve-Prefix $R2Prefix    'R2_PREFIX'    @((Join-Path $deps 'r2-prefix'), 'C:\src\dist')
+$pharo = Resolve-Prefix $PharoPrefix 'PHARO_PREFIX' @((Join-Path $deps 'pharo-prefix'), 'C:\src\pharo')
 
 # frida-core, radare2 and pharo-vm install .pc files with an absolute prefix
 # like `prefix=C:/src/dist`. vcpkg's pkgconf trips over the colon in
@@ -164,8 +172,13 @@ $sedDir = $sedCandidates |
     Select-Object -First 1 |
     ForEach-Object { Split-Path -Parent $_ }
 if ($sedDir) {
+    $gitBefore = (Get-Command git -ErrorAction SilentlyContinue).Source
     if (-not (($env:PATH -split ';') -contains $sedDir)) {
         $env:PATH = "$sedDir;$env:PATH"
+    }
+    $gitAfter = (Get-Command git -ErrorAction SilentlyContinue).Source
+    if ($gitBefore -and $gitAfter -ne $gitBefore) {
+        $env:PATH = "$(Split-Path -Parent $gitBefore);$env:PATH"
     }
     Write-Host "  sed/awk      = $sedDir"
 } else {
@@ -188,10 +201,9 @@ $prefixBins = @(
     (Join-Path $r2    'bin'),
     (Join-Path $pharo 'bin')
 ) | Where-Object { Test-Path $_ }
-foreach ($p in $prefixBins) {
-    if (-not (($env:PATH -split ';') -contains $p)) {
-        $env:PATH = "$p;$env:PATH"
-    }
+$missing = $prefixBins | Where-Object { ($env:PATH -split ';') -notcontains $_ }
+if ($missing) {
+    $env:PATH = (@($missing) + $env:PATH) -join ';'
 }
 
 # rc.exe lives in the Windows SDK bin and isn't on PATH in plain

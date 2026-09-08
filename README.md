@@ -153,32 +153,56 @@ make install PREFIX=/usr/local
 
 ## Building the GTK frontend (Windows)
 
-Requires Swift for Windows, Visual Studio 2022 (for `cl.exe`),
-vcpkg with gtk4, and prebuilt `frida-core` / `radare2` / `pharo-vm`
-prefixes.
+Install four things by hand, then let the scripts do the rest:
 
-No distribution packages a Pharo VM, so build one from our fork, which
-carries the Meson build and the tweaks that make it compile with MSVC.
-It generates its own interpreter sources, so Meson, Ninja and Python
-are all it needs beyond the compiler:
+- **Visual Studio 2022** (or the Build Tools) with the *Desktop
+  development with C++* workload
+- **[Swift for Windows](https://www.swift.org/install/windows/)** 6.2 or
+  newer, on `PATH`
+- **Python 3** and **Node.js**, on `PATH`
+- **Git for Windows**
 
-```powershell
-git clone -b pharo-12 https://github.com/frida/pharo-vm.git C:\src\pharo-vm
-cd C:\src\pharo-vm
-meson setup build --prefix C:/src/pharo
-meson install -C build
-```
-
-Then launch a **Developer PowerShell for VS** and run from `LumaGtk/`:
+Nothing else has to be a Developer PowerShell: the scripts load the MSVC
+environment themselves. From `LumaGtk/`, in an ordinary PowerShell:
 
 ```powershell
+.\scripts\windows\bootstrap.ps1                        # one-time, ~1-2h
 .\scripts\windows\build.ps1                            # debug
 .\scripts\windows\build.ps1 -Configuration release
 .\scripts\windows\package-msi.ps1 -Version 0.1.0       # build\Luma-*.msi
 .\scripts\windows\run.ps1                              # launch with DLL PATH set
 ```
 
-Prefix locations default to `C:\vcpkg\installed\x64-windows-release`,
-`C:\src\dist` and `C:\src\pharo`; override with `-VcpkgPrefix`,
-`-FridaPrefix`, `-R2Prefix`, `-PharoPrefix` (or `$env:VCPKG_PREFIX`
-etc.).
+`bootstrap.ps1` provisions everything the build links against —
+vcpkg with GTK 4, libadwaita and GtkSourceView, then `frida-core`,
+`radare2` and a Pharo VM built from source — into
+`%LOCALAPPDATA%\Luma\windows-deps`. It skips whatever is already
+there, so re-running it after a failure resumes rather than restarts,
+and `-Only <component>` (`vcpkg`, `gnu-tools`, `frida-core`,
+`radare2`, `pharo-vm`) rebuilds just one. The upstream revisions come
+from `.github/dependency-refs.env`, and CI runs the same script one
+component at a time, so what a contributor builds is what CI builds.
+
+One thing bootstrap cannot do for you: radare2 ships a collection of
+shellcode as source, and Windows Defender quarantines it mid-build,
+which surfaces as `fatal error C1083: Cannot open include file` for a
+generated file. Bootstrap asks Defender what it took and says so, but
+excluding a directory from your antivirus is your call to make, not a
+build script's — from an elevated PowerShell:
+
+```powershell
+Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\Luma\windows-deps"
+```
+
+Or point `-R2Prefix` at a radare2 you already have and skip it.
+
+No distribution packages a Pharo VM, and the one bootstrap builds comes
+from our fork, which carries the Meson build and the tweaks that make it
+compile with MSVC. It generates its own interpreter sources, so Meson,
+Ninja and Python are all it needs beyond the compiler — bootstrap
+installs the first two if they are missing.
+
+Prefixes are found in `%LOCALAPPDATA%\Luma\windows-deps` first, then the
+older `C:\vcpkg`, `C:\src\dist` and `C:\src\pharo` locations; override
+any of them with `-VcpkgPrefix`, `-FridaPrefix`, `-R2Prefix`,
+`-PharoPrefix` (or `$env:VCPKG_PREFIX` etc.) on every script here.

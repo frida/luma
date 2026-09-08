@@ -36,13 +36,17 @@ function Resolve-PrefixDir {
     throw "Could not locate $EnvName. Pass -$($EnvName.Replace('_PREFIX','Prefix')) or set `$env:$EnvName."
 }
 
+$deps    = Join-Path $env:LOCALAPPDATA 'Luma\windows-deps'
+$triplet = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64-windows-release' } else { 'x64-windows-release' }
+
 $VcpkgPrefix = Resolve-PrefixDir $VcpkgPrefix 'VCPKG_PREFIX' @(
-    'C:\vcpkg\installed\x64-windows-release',
-    'C:\src\vcpkg\installed\x64-windows-release'
+    (Join-Path $deps "vcpkg\installed\$triplet"),
+    "C:\vcpkg\installed\$triplet",
+    "C:\src\vcpkg\installed\$triplet"
 )
-$FridaPrefix = Resolve-PrefixDir $FridaPrefix 'FRIDA_PREFIX' @('C:\src\dist')
-$R2Prefix    = Resolve-PrefixDir $R2Prefix    'R2_PREFIX'    @('C:\src\dist')
-$PharoPrefix = Resolve-PrefixDir $PharoPrefix 'PHARO_PREFIX' @('C:\src\pharo')
+$FridaPrefix = Resolve-PrefixDir $FridaPrefix 'FRIDA_PREFIX' @((Join-Path $deps 'frida-prefix'), 'C:\src\dist')
+$R2Prefix    = Resolve-PrefixDir $R2Prefix    'R2_PREFIX'    @((Join-Path $deps 'r2-prefix'), 'C:\src\dist')
+$PharoPrefix = Resolve-PrefixDir $PharoPrefix 'PHARO_PREFIX' @((Join-Path $deps 'pharo-prefix'), 'C:\src\pharo')
 
 $exe = Join-Path $pkg ".build\$Configuration\LumaGtk.exe"
 if (-not (Test-Path $exe)) {
