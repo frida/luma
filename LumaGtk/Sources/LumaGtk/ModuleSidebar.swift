@@ -42,7 +42,7 @@ enum ModuleSidebar {
 
     static func presentBrowser(
         modules: [LumaCore.ProcessModule],
-        anchor: Widget,
+        anchor: WidgetProtocol,
         onChoose: @escaping @MainActor (LumaCore.ProcessModule) -> Void
     ) {
         let browser = SidebarBrowserPopover(

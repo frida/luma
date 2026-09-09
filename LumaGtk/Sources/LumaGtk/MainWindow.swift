@@ -79,7 +79,7 @@ final class MainWindow: InstrumentUIHost {
     private var instrumentChevronImages: [UUID: Gtk.Image] = [:]
     private var instrumentChildActions: [String: @MainActor () -> Void] = [:]
     private var instrumentChildKeyByComponent: [InstrumentComponentReference: String] = [:]
-    private var groupChildActions: [String: @MainActor () -> Void] = [:]
+    private var groupChildActions: [String: @MainActor (WidgetProtocol) -> Void] = [:]
     private var groupChevronImages: [String: Gtk.Image] = [:]
     private var groupCountLabels: [String: Label] = [:]
 
@@ -3011,7 +3011,7 @@ final class MainWindow: InstrumentUIHost {
     private func makeGroupChildren(
         sessionID: UUID,
         group: SessionSidebarGroup
-    ) -> [(key: String, row: ListBoxRow, onActivate: @MainActor () -> Void)] {
+    ) -> [(key: String, row: ListBoxRow, onActivate: @MainActor (WidgetProtocol) -> Void)] {
         guard let engine else { return [] }
         switch group {
         case .modules:
@@ -3024,11 +3024,11 @@ final class MainWindow: InstrumentUIHost {
     private func makeModuleChildren(
         sessionID: UUID,
         engine: Engine
-    ) -> [(key: String, row: ListBoxRow, onActivate: @MainActor () -> Void)] {
+    ) -> [(key: String, row: ListBoxRow, onActivate: @MainActor (WidgetProtocol) -> Void)] {
         let modules = sessionModules(sessionID)
         let highlights = modules.sidebarHighlights(
             mainModule: sessionMainModule(sessionID), selectedID: selectedModuleID(in: sessionID))
-        var children: [(key: String, row: ListBoxRow, onActivate: @MainActor () -> Void)] = []
+        var children: [(key: String, row: ListBoxRow, onActivate: @MainActor (WidgetProtocol) -> Void)] = []
         for module in highlights {
             let status = engine.moduleAnalysisStatus(sessionID: sessionID, modulePath: module.path)
             let (row, anchor) = ModuleSidebar.makeModuleRow(module: module, status: status)
@@ -3037,15 +3037,15 @@ final class MainWindow: InstrumentUIHost {
             children.append((
                 key: moduleChildKey(moduleID: moduleID),
                 row: row,
-                onActivate: { [weak self] in self?.navigateToModule(sessionID: sessionID, moduleID: moduleID) }
+                onActivate: { [weak self] _ in self?.navigateToModule(sessionID: sessionID, moduleID: moduleID) }
             ))
         }
         if modules.count > highlights.count {
-            let (row, anchor) = SidebarFeatureRow.makeBrowseAll(totalCount: modules.count)
+            let (row, _) = SidebarFeatureRow.makeBrowseAll(totalCount: modules.count)
             children.append((
                 key: "browse",
                 row: row,
-                onActivate: { [weak self] in
+                onActivate: { [weak self] anchor in
                     ModuleSidebar.presentBrowser(modules: modules, anchor: anchor) { module in
                         self?.navigateToModule(sessionID: sessionID, moduleID: module.id)
                     }
@@ -3058,10 +3058,10 @@ final class MainWindow: InstrumentUIHost {
     private func makeThreadChildren(
         sessionID: UUID,
         engine: Engine
-    ) -> [(key: String, row: ListBoxRow, onActivate: @MainActor () -> Void)] {
+    ) -> [(key: String, row: ListBoxRow, onActivate: @MainActor (WidgetProtocol) -> Void)] {
         let threads = sessionThreads(sessionID)
         let highlights = threads.sidebarHighlights(selectedID: selectedThreadID(in: sessionID))
-        var children: [(key: String, row: ListBoxRow, onActivate: @MainActor () -> Void)] = []
+        var children: [(key: String, row: ListBoxRow, onActivate: @MainActor (WidgetProtocol) -> Void)] = []
         for thread in highlights {
             let (row, anchor) = ThreadSidebar.makeThreadRow(thread: thread)
             ThreadSidebar.attachContextMenu(to: anchor, thread: thread, engine: engine, sessionID: sessionID)
@@ -3069,15 +3069,15 @@ final class MainWindow: InstrumentUIHost {
             children.append((
                 key: threadChildKey(threadID: threadID),
                 row: row,
-                onActivate: { [weak self] in self?.navigateToThread(sessionID: sessionID, threadID: threadID) }
+                onActivate: { [weak self] _ in self?.navigateToThread(sessionID: sessionID, threadID: threadID) }
             ))
         }
         if threads.count > highlights.count {
-            let (row, anchor) = SidebarFeatureRow.makeBrowseAll(totalCount: threads.count)
+            let (row, _) = SidebarFeatureRow.makeBrowseAll(totalCount: threads.count)
             children.append((
                 key: "browse",
                 row: row,
-                onActivate: { [weak self] in
+                onActivate: { [weak self] anchor in
                     ThreadSidebar.presentBrowser(threads: threads, anchor: anchor) { thread in
                         self?.navigateToThread(sessionID: sessionID, threadID: thread.id)
                     }
@@ -3124,7 +3124,16 @@ final class MainWindow: InstrumentUIHost {
     }
 
     private func activateGroupChild(sessionID: UUID, group: SessionSidebarGroup, key: String) {
-        groupChildActions[groupChildActionKey(sessionID: sessionID, group: group, key: key)]?()
+        guard let row = groupChildRow(sessionID: sessionID, group: group, key: key) else { return }
+        groupChildActions[groupChildActionKey(sessionID: sessionID, group: group, key: key)]?(row)
+    }
+
+    private func groupChildRow(sessionID: UUID, group: SessionSidebarGroup, key: String) -> WidgetProtocol? {
+        let index = sessionsRowKinds.firstIndex {
+            groupChildKey($0, sessionID: sessionID, group: group) == key
+        }
+        guard let index else { return nil }
+        return sessionsList.getRowAt(index: index)
     }
 
     private func toggleGroupExpansion(sessionID: UUID, group: SessionSidebarGroup) {

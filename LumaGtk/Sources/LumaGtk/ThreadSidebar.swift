@@ -44,7 +44,7 @@ enum ThreadSidebar {
 
     static func presentBrowser(
         threads: [LumaCore.ProcessThread],
-        anchor: Widget,
+        anchor: WidgetProtocol,
         onChoose: @escaping @MainActor (LumaCore.ProcessThread) -> Void
     ) {
         let browser = SidebarBrowserPopover(
