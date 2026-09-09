@@ -38,7 +38,7 @@ public protocol ModuleIntrospector: AnyObject {
     var isAvailable: Bool { get }
     func getModuleIdentity(name: String) async throws -> String?
     func enumerateModuleRanges(name: String) async throws -> [ProcessNode.ModuleRange]
-    func enumerateModuleSymbols(name: String) async throws -> ModuleSymbolBundle
+    func enumerateModuleFunctions(name: String) async throws -> [ModuleFunction]
 }
 
 @MainActor
@@ -248,8 +248,8 @@ private func fetchFunctionEnd(hex: String) async -> UInt64? {
         )
         try? store.save(stub)
 
-        let bundle = try? await introspector.enumerateModuleSymbols(name: module.path)
-        var functions = await registerKnownFunctions(bundle: bundle, module: module)
+        let known = (try? await introspector.enumerateModuleFunctions(name: module.path)) ?? []
+        var functions = await registerKnownFunctions(known: known, module: module)
         await runBoundedPreludeScan(ranges: ranges, module: module)
         await harvestPreludeFunctions(module: module, into: &functions)
         await harvestBasicBlocks(module: module, into: &functions)
@@ -306,28 +306,14 @@ private func fetchFunctionEnd(hex: String) async -> UInt64? {
         }
     }
 
-    private func registerKnownFunctions(bundle: ModuleSymbolBundle?, module: ProcessModule) async -> [ModuleAnalysis.Function] {
-        guard let bundle else { return [] }
+    private func registerKnownFunctions(known: [ModuleFunction], module: ProcessModule) async -> [ModuleAnalysis.Function] {
         var result: [ModuleAnalysis.Function] = []
-        var seenOffsets: Set<UInt64> = []
-        let lo = module.base
-        let hi = module.base &+ module.size
 
-        for export in bundle.exports where export.kind == .function {
-            guard export.address >= lo, export.address < hi else { continue }
-            let offset = export.address &- lo
-            await defineFunction(at: export.address, name: export.name)
-            result.append(.init(offset: offset, name: export.name, source: .exported))
-            seenOffsets.insert(offset)
+        for function in known {
+            await defineFunction(at: module.base &+ function.offset, name: function.name)
+            result.append(.init(offset: function.offset, name: function.name, source: function.source))
         }
-        for symbol in bundle.symbols where symbol.isCode {
-            guard symbol.address > lo, symbol.address < hi else { continue }
-            let offset = symbol.address &- lo
-            if seenOffsets.contains(offset) { continue }
-            await defineFunction(at: symbol.address, name: symbol.name)
-            result.append(.init(offset: offset, name: symbol.name, source: .symbol))
-            seenOffsets.insert(offset)
-        }
+
         return result
     }
 

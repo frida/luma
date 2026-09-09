@@ -6074,11 +6074,11 @@ final class SessionDisassemblyEnvironment: ModuleIntrospector, MemoryReader, Pag
         return try await node.enumerateModuleRanges(name: name)
     }
 
-    func enumerateModuleSymbols(name: String) async throws -> ModuleSymbolBundle {
+    func enumerateModuleFunctions(name: String) async throws -> [ModuleFunction] {
         guard let node = engine.node(forSessionID: sessionID) else {
             throw DisassemblyError.detached
         }
-        return try await node.enumerateModuleSymbols(name: name)
+        return try await node.enumerateModuleFunctions(name: name)
     }
 
     func read(at address: UInt64, count: Int) async throws -> [UInt8] {

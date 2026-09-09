@@ -1049,6 +1049,14 @@ public final class ProcessNode: Identifiable {
         return ThreadSnapshot.fromJSON(dict)
     }
 
+    public func enumerateModuleFunctions(name: String) async throws -> [ModuleFunction] {
+        let raw = try await script.exports.enumerateModuleFunctions(name)
+        guard let rows = raw as? [[String: Any]] else {
+            throw LumaCoreError.protocolViolation("enumerateModuleFunctions: unexpected response shape")
+        }
+        return rows.compactMap(ModuleFunction.fromJSON)
+    }
+
     public func enumerateModuleSymbols(name: String) async throws -> ModuleSymbolBundle {
         let raw = try await script.exports.enumerateModuleSymbols(name)
         guard let dict = raw as? [String: Any] else {

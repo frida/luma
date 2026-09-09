@@ -86,6 +86,64 @@ export function getModuleIdentity(name: string): string | null {
     return null;
 }
 
+export interface ModuleFunctionEntry {
+    offset: number;
+    name: string;
+    source: "exported" | "symbol";
+}
+
+export function enumerateModuleFunctions(name: string): ModuleFunctionEntry[] {
+    const index = getModuleIndex(name);
+    const { base, size } = index.module;
+    const lower = base;
+    const upper = base.add(size);
+
+    const functions: ModuleFunctionEntry[] = [];
+    const taken = new Set<number>();
+
+    for (const row of collectedRows(index, "exports") as ModuleExportDetails[]) {
+        const { address } = row;
+        if (row.type !== "function" || address.compare(lower) < 0 || address.compare(upper) >= 0) {
+            continue;
+        }
+
+        const offset = address.sub(lower).toUInt32();
+        taken.add(offset);
+        functions.push({ offset, name: row.name, source: "exported" });
+    }
+
+    for (const row of collectedRows(index, "symbols") as ModuleSymbolDetails[]) {
+        const { address } = row;
+        if (!holdsCode(row) || address.compare(lower) <= 0 || address.compare(upper) >= 0) {
+            continue;
+        }
+
+        const offset = address.sub(lower).toUInt32();
+        if (taken.has(offset)) {
+            continue;
+        }
+
+        taken.add(offset);
+        functions.push({ offset, name: row.name, source: "symbol" });
+    }
+
+    return functions;
+}
+
+function holdsCode(row: ModuleSymbolDetails): boolean {
+    const { type, section } = row;
+
+    if (type === "undefined") {
+        return false;
+    }
+
+    if (type === "function") {
+        return true;
+    }
+
+    return section?.protection.includes("x") ?? false;
+}
+
 export function enumerateModuleSymbols(name: string): ModuleSymbolBundle {
     const index = getModuleIndex(name);
     return {
