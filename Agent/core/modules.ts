@@ -87,11 +87,11 @@ export function getModuleIdentity(name: string): string | null {
 }
 
 export function enumerateModuleSymbols(name: string): ModuleSymbolBundle {
-    const index = getSymbolIndex(name);
+    const index = getModuleIndex(name);
     return {
-        exports: index.exports.map(e => e.row),
-        imports: index.imports.map(e => e.row),
-        symbols: index.symbols.map(e => e.row),
+        exports: reported(index, "exports") as ExportEntry[],
+        imports: reported(index, "imports") as ImportEntry[],
+        symbols: reported(index, "symbols") as SymbolEntry[],
     };
 }
 
@@ -113,101 +113,181 @@ export interface SymbolPage {
 }
 
 export function queryModuleSymbols(request: SymbolQueryRequest): SymbolPage {
-    const index = getSymbolIndex(request.module);
-    const entries = index[request.category];
+    const index = getModuleIndex(request.module);
+    const rows = sortedRows(index, request.category);
 
     const needle = request.query.toLowerCase();
-    const matched = needle === "" ? entries : entries.filter(e => e.key.includes(needle));
+    const matched = (needle === "") ? rows : rowsMatching(index, request.category, needle);
     const matchedCount = matched.length;
     const offset = Math.max(0, Math.min(request.offset, matchedCount - 1));
-    const page = matched.slice(offset, offset + request.limit);
 
     return {
-        rows: page.map(e => e.row),
+        rows: matched.slice(offset, offset + request.limit)
+            .map(row => reportedRow(row, request.category)),
         matched: matchedCount,
         offset,
         counts: {
-            exports: index.exports.length,
-            imports: index.imports.length,
-            symbols: index.symbols.length,
+            exports: collectedRows(index, "exports").length,
+            imports: collectedRows(index, "imports").length,
+            symbols: collectedRows(index, "symbols").length,
         },
     };
 }
 
-interface IndexedEntry<T> {
-    row: T;
-    key: string;
+type SymbolRow = ModuleExportDetails | ModuleImportDetails | ModuleSymbolDetails;
+
+interface CategoryIndex {
+    rows: SymbolRow[];
+    sorted?: SymbolRow[];
+    searchable?: string[];
 }
 
-interface SymbolIndex {
-    exports: IndexedEntry<ExportEntry>[];
-    imports: IndexedEntry<ImportEntry>[];
-    symbols: IndexedEntry<SymbolEntry>[];
+interface ModuleIndex {
+    module: Module;
+    categories: Map<SymbolCategory, CategoryIndex>;
 }
 
-const symbolIndexCache = new Map<string, SymbolIndex>();
+const moduleIndexCache = new Map<string, ModuleIndex>();
 
-function getSymbolIndex(name: string): SymbolIndex {
-    const cached = symbolIndexCache.get(name);
-    if (cached !== undefined) {
-        return cached;
+function getModuleIndex(name: string): ModuleIndex {
+    let index = moduleIndexCache.get(name);
+    if (index === undefined) {
+        index = { module: Process.getModuleByName(name), categories: new Map() };
+        moduleIndexCache.set(name, index);
     }
-
-    const module = Process.getModuleByName(name);
-    const index = buildSymbolIndex(module);
-    symbolIndexCache.set(name, index);
     return index;
 }
 
-function buildSymbolIndex(module: Module): SymbolIndex {
-    const exports = module.enumerateExports().map(e => {
-        const { type, name, address } = e;
-        const addr = address.toString();
-        const row: ExportEntry = { type, name, address: addr };
-        return indexed(row, [name, type, addr]);
-    });
+function rowsMatching(index: ModuleIndex, category: SymbolCategory, needle: string): SymbolRow[] {
+    const rows = sortedRows(index, category);
+    const searchable = searchableText(index, category);
 
-    const seen = new Set<string>();
-    const imports: IndexedEntry<ImportEntry>[] = [];
-    for (const i of module.enumerateImports()) {
-        const { name, type, module: origin, address, slot } = i;
-        const identity = name + "\x00" + (origin ?? "");
-        if (seen.has(identity)) {
-            continue;
+    const matched: SymbolRow[] = [];
+    for (let i = 0; i !== rows.length; i++) {
+        if (searchable[i].includes(needle)) {
+            matched.push(rows[i]);
         }
-        seen.add(identity);
-
-        const row: ImportEntry = { name };
-        const addr = address?.toString();
-        if (type !== undefined) row.type = type;
-        if (origin !== undefined) row.module = origin;
-        if (addr !== undefined) row.address = addr;
-        if (slot !== undefined) row.slot = slot.toString();
-        imports.push(indexed(row, [name, origin, type, addr]));
     }
 
-    const symbols = module.enumerateSymbols().filter(s => !s.address.isNull()).map(s => {
-        const { name, type, address, isGlobal, size, section } = s;
-        const addr = address.toString();
-        const row: SymbolEntry = { name, type, address: addr, isGlobal };
-        if (size !== undefined) row.size = size;
-        if (section !== undefined) {
-            row.sectionID = section.id;
-            row.sectionProtection = section.protection;
-        }
-        return indexed(row, [name, type, row.sectionID, addr]);
-    });
-
-    const byName = (a: { row: { name: string } }, b: { row: { name: string } }) =>
-        a.row.name < b.row.name ? -1 : (a.row.name > b.row.name ? 1 : 0);
-
-    return {
-        exports: exports.sort(byName),
-        imports: imports.sort(byName),
-        symbols: symbols.sort(byName),
-    };
+    return matched;
 }
 
-function indexed<T>(row: T, fields: (string | undefined)[]): IndexedEntry<T> {
-    return { row, key: fields.filter(f => f !== undefined).join("\x00").toLowerCase() };
+function sortedRows(index: ModuleIndex, category: SymbolCategory): SymbolRow[] {
+    const entry = collected(index, category);
+    if (entry.sorted !== undefined) {
+        return entry.sorted;
+    }
+
+    const { rows } = entry;
+
+    const width = String(rows.length).length;
+    const decorated = rows.map((row, at) => row.name + "\u0000" + String(at).padStart(width, "0"));
+    decorated.sort();
+
+    const sorted: SymbolRow[] = new Array(rows.length);
+    for (let i = 0; i !== decorated.length; i++) {
+        const decoration = decorated[i];
+        sorted[i] = rows[+decoration.slice(decoration.lastIndexOf("\u0000") + 1)];
+    }
+
+    entry.sorted = sorted;
+    return sorted;
+}
+
+function searchableText(index: ModuleIndex, category: SymbolCategory): string[] {
+    const entry = collected(index, category);
+    if (entry.searchable !== undefined) {
+        return entry.searchable;
+    }
+
+    const rows = sortedRows(index, category);
+    const searchable = new Array<string>(rows.length);
+    for (let i = 0; i !== rows.length; i++) {
+        searchable[i] = searchableRow(rows[i], category);
+    }
+
+    entry.searchable = searchable;
+    return searchable;
+}
+
+function searchableRow(row: SymbolRow, category: SymbolCategory): string {
+    if (category === "exports") {
+        const e = row as ModuleExportDetails;
+        return (e.name + "\u0000" + e.type + "\u0000" + e.address).toLowerCase();
+    }
+
+    if (category === "imports") {
+        const i = row as ModuleImportDetails;
+        return (i.name + "\u0000" + (i.module ?? "") + "\u0000" + (i.type ?? "") + "\u0000"
+            + (i.address ?? "")).toLowerCase();
+    }
+
+    const s = row as ModuleSymbolDetails;
+    return (s.name + "\u0000" + s.type + "\u0000" + (s.section?.id ?? "") + "\u0000"
+        + s.address).toLowerCase();
+}
+
+function collectedRows(index: ModuleIndex, category: SymbolCategory): SymbolRow[] {
+    return collected(index, category).rows;
+}
+
+function collected(index: ModuleIndex, category: SymbolCategory): CategoryIndex {
+    let entry = index.categories.get(category);
+    if (entry === undefined) {
+        entry = { rows: collectRows(index.module, category) };
+        index.categories.set(category, entry);
+    }
+    return entry;
+}
+
+function collectRows(module: Module, category: SymbolCategory): SymbolRow[] {
+    if (category === "exports") {
+        return module.enumerateExports();
+    }
+
+    if (category === "imports") {
+        const seen = new Set<string>();
+        const rows: ModuleImportDetails[] = [];
+        for (const row of module.enumerateImports()) {
+            const identity = row.name + "\u0000" + (row.module ?? "");
+            if (seen.has(identity)) {
+                continue;
+            }
+            seen.add(identity);
+            rows.push(row);
+        }
+        return rows;
+    }
+
+    return module.enumerateSymbols().filter(({ address }) => !address.isNull());
+}
+
+function reported(index: ModuleIndex, category: SymbolCategory): object[] {
+    return sortedRows(index, category).map(row => reportedRow(row, category));
+}
+
+function reportedRow(row: SymbolRow, category: SymbolCategory): object {
+    if (category === "exports") {
+        const { type, name, address } = row as ModuleExportDetails;
+        return { type, name, address: address.toString() };
+    }
+
+    if (category === "imports") {
+        const { name, type, module: origin, address, slot } = row as ModuleImportDetails;
+        const reported: ImportEntry = { name };
+        if (type !== undefined) reported.type = type;
+        if (origin !== undefined) reported.module = origin;
+        if (address !== undefined) reported.address = address.toString();
+        if (slot !== undefined) reported.slot = slot.toString();
+        return reported;
+    }
+
+    const { name, type, address, isGlobal, size, section } = row as ModuleSymbolDetails;
+    const reported: SymbolEntry = { name, type, address: address.toString(), isGlobal };
+    if (size !== undefined) reported.size = size;
+    if (section !== undefined) {
+        reported.sectionID = section.id;
+        reported.sectionProtection = section.protection;
+    }
+    return reported;
 }
