@@ -4,11 +4,6 @@ import Gtk
 
 @MainActor
 final class SidebarBrowserPopover<Item> {
-    private enum Entry {
-        case sectionHeader(String)
-        case item(Item)
-    }
-
     private let items: [Item]
     private let placeholder: String
     private let emptyMessage: String
@@ -22,12 +17,7 @@ final class SidebarBrowserPopover<Item> {
     private var retainer: SidebarBrowserPopover?
     private var popover: Popover?
     private var listBox: ListBox?
-    private var entries: [Entry] = []
     private var query: String = ""
-    private var filterTask: Task<Void, Never>?
-    private var refreshGeneration: UInt = 0
-
-    private static var visibleRowLimit: Int { 250 }
 
     init(
         items: [Item],
@@ -93,8 +83,8 @@ final class SidebarBrowserPopover<Item> {
         searchEntry.hexpand = true
         searchEntry.onSearchChanged { [weak self] entry in
             MainActor.assumeIsolated {
-                self?.query = entry.text
-                self?.scheduleRefresh()
+                self?.query = entry.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                self?.listBox?.invalidateFilter()
             }
         }
         searchEntry.onActivate { [weak self] _ in
@@ -113,14 +103,22 @@ final class SidebarBrowserPopover<Item> {
         let listBox = ListBox()
         listBox.selectionMode = .none
         listBox.add(cssClass: "navigation-sidebar")
+        listBox.set(placeholder: makeEmptyLabel())
+        listBox.setFilterFunc { [weak self] row in
+            MainActor.assumeIsolated {
+                guard let self else { return false }
+                return self.isVisible(self.items[Int(row.index)])
+            }
+        }
+        listBox.setHeaderFunc { [weak self] row, previous in
+            MainActor.assumeIsolated {
+                self?.updateHeader(of: row, following: previous)
+            }
+        }
         listBox.onRowActivated { [weak self] _, row in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                let index = Int(row.index)
-                guard index >= 0, index < self.entries.count else { return }
-                if case .item(let item) = self.entries[index] {
-                    self.choose(item)
-                }
+                self.choose(self.items[Int(row.index)])
             }
         }
         scroll.set(child: listBox)
@@ -132,73 +130,47 @@ final class SidebarBrowserPopover<Item> {
         self.popover = popover
         self.listBox = listBox
 
-        refreshList()
+        for item in items {
+            listBox.append(child: makeItemRow(item))
+        }
+
         popover.popup()
         _ = searchEntry.grabFocus()
     }
 
-    private func scheduleRefresh() {
-        filterTask?.cancel()
-        filterTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 120_000_000)
-            guard let self, !Task.isCancelled else { return }
-            self.refreshList()
-        }
+    private func isVisible(_ item: Item) -> Bool {
+        query.isEmpty || matches(item, query)
     }
 
-    private func refreshList() {
-        guard let listBox else { return }
-        refreshGeneration &+= 1
-        let generation = refreshGeneration
-        let matching = filteredItems()
-        let limit = Self.visibleRowLimit
-        let visible = Array(matching.prefix(limit))
-        let truncated = matching.count > limit
-
-        clearListBox(listBox)
-
-        entries = []
-        var previousGroup: String?
-        for item in visible {
-            guard generation == refreshGeneration else { return }
-            let group = groupName(item)
-            if group != previousGroup {
-                entries.append(.sectionHeader(group))
-                listBox.append(child: makeSectionHeaderRow(name: group))
-                previousGroup = group
-            }
-            entries.append(.item(item))
-            listBox.append(child: makeItemRow(item))
+    private func updateHeader(of row: ListBoxRowRef, following previous: ListBoxRowRef?) {
+        let group = groupName(items[Int(row.index)])
+        guard let previous, groupName(items[Int(previous.index)]) == group else {
+            row.set(header: makeSectionHeader(name: group))
+            return
         }
-
-        if matching.isEmpty {
-            listBox.append(child: makeEmptyRow())
-        } else if truncated {
-            listBox.append(child: makeTruncationRow(shown: visible.count, total: matching.count))
-        }
+        row.set(header: WidgetRef?.none)
     }
 
-    private func clearListBox(_ listBox: ListBox) {
-        while let child = listBox.firstChild {
-            listBox.remove(child: child)
-        }
+    private func chooseFirstMatch() {
+        guard let item = items.first(where: isVisible) else { return }
+        choose(item)
     }
 
-    private func makeSectionHeaderRow(name: String) -> ListBoxRow {
-        let row = ListBoxRow()
-        row.selectable = false
-        row.activatable = false
-        row.canFocus = false
-        let label = Label(str: name)
-        label.halign = .start
-        label.add(cssClass: "caption-heading")
-        label.add(cssClass: "dim-label")
-        label.marginStart = 12
-        label.marginEnd = 12
-        label.marginTop = 6
-        label.marginBottom = 2
-        row.set(child: label)
-        return row
+    private func choose(_ item: Item) {
+        dismiss()
+        onChoose(item)
+    }
+
+    private func dismiss() {
+        popover?.popdown()
+        cleanup()
+    }
+
+    private func cleanup() {
+        popover?.unparent()
+        popover = nil
+        listBox = nil
+        retainer = nil
     }
 
     private func makeItemRow(_ item: Item) -> ListBoxRow {
@@ -221,69 +193,26 @@ final class SidebarBrowserPopover<Item> {
         return row
     }
 
-    private func makeEmptyRow() -> ListBoxRow {
-        let row = ListBoxRow()
-        row.selectable = false
+    private func makeSectionHeader(name: String) -> Label {
+        let label = Label(str: name)
+        label.halign = .start
+        label.add(cssClass: "caption-heading")
+        label.add(cssClass: "dim-label")
+        label.marginStart = 12
+        label.marginEnd = 12
+        label.marginTop = 6
+        label.marginBottom = 2
+        return label
+    }
+
+    private func makeEmptyLabel() -> Label {
         let label = Label(str: emptyMessage)
         label.halign = .start
+        label.add(cssClass: "dim-label")
         label.marginStart = 12
         label.marginEnd = 12
         label.marginTop = 6
         label.marginBottom = 6
-        label.add(cssClass: "dim-label")
-        row.set(child: label)
-        return row
-    }
-
-    private func makeTruncationRow(shown: Int, total: Int) -> ListBoxRow {
-        let row = ListBoxRow()
-        row.selectable = false
-        row.activatable = false
-        let label = Label(str: "Showing \(shown) of \(total). Refine the filter to see more.")
-        label.halign = .start
-        label.marginStart = 12
-        label.marginEnd = 12
-        label.marginTop = 6
-        label.marginBottom = 6
-        label.wrap = true
-        label.add(cssClass: "dim-label")
-        label.add(cssClass: "caption")
-        row.set(child: label)
-        return row
-    }
-
-    private func filteredItems() -> [Item] {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return items }
-        return items.filter { matches($0, trimmed) }
-    }
-
-    private func chooseFirstMatch() {
-        for entry in entries {
-            if case .item(let item) = entry {
-                choose(item)
-                return
-            }
-        }
-    }
-
-    private func choose(_ item: Item) {
-        dismiss()
-        onChoose(item)
-    }
-
-    private func dismiss() {
-        popover?.popdown()
-        cleanup()
-    }
-
-    private func cleanup() {
-        filterTask?.cancel()
-        filterTask = nil
-        refreshGeneration &+= 1
-        popover?.unparent()
-        popover = nil
-        listBox = nil
-        retainer = nil
+        return label
     }
 }
