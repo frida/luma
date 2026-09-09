@@ -60,23 +60,20 @@ interface EncodeState {
 export function encodeValue(value: unknown, options?: EncodeOptions): PackedValue {
     const chunks: BinaryChunk[] = [];
     const maxDepth = options?.maxDepth ?? DEFAULT_MAX_DEPTH;
-    const state = makeEncodeState();
-    const tree = collectTree(value, chunks, maxDepth, 0, state);
-    const { blob, offsets } = packChunks(chunks);
-    const patchedTree = patchTree(tree, offsets);
-    return [patchedTree, blob];
+    const tree = collectTree(value, chunks, maxDepth, makeEncodeState());
+    const blob = packChunks(chunks);
+    return [tree, blob];
 }
 
 export function encodeValues(values: unknown[], options?: EncodeOptions): PackedValues {
     const chunks: BinaryChunk[] = [];
     const maxDepth = options?.maxDepth ?? DEFAULT_MAX_DEPTH;
-    const trees = values.map(v => {
-        const state = makeEncodeState();
-        return collectTree(v, chunks, maxDepth, 0, state);
-    });
-    const { blob, offsets } = packChunks(chunks);
-    const patchedTrees = trees.map(t => patchTree(t, offsets));
-    return [patchedTrees, blob];
+    const trees: EncodedValueTree[] = [];
+    for (const value of values) {
+        trees.push(collectTree(value, chunks, maxDepth, makeEncodeState()));
+    }
+    const blob = packChunks(chunks);
+    return [trees, blob];
 }
 
 function makeEncodeState(): EncodeState {
@@ -87,11 +84,29 @@ function makeEncodeState(): EncodeState {
 }
 
 function collectTree(
+    root: unknown,
+    chunks: BinaryChunk[],
+    maxDepth: number,
+    state: EncodeState
+): EncodedValueTree {
+    const slot: EncodedValueTree[] = [];
+    const pending: PendingValue[] = [{ value: root, depth: 0, target: slot, index: 0 }];
+
+    while (pending.length !== 0) {
+        const { value, depth, target, index } = pending.pop()!;
+        target[index] = encodeValueTree(value, chunks, maxDepth, depth, state, pending);
+    }
+
+    return slot[0];
+}
+
+function encodeValueTree(
     value: unknown,
     chunks: BinaryChunk[],
     maxDepth: number,
     depth: number,
-    state: EncodeState
+    state: EncodeState,
+    pending: PendingValue[]
 ): EncodedValueTree {
     if (value === null) {
         return [ValueTag.Null];
@@ -108,18 +123,56 @@ function collectTree(
     }
 
     if (t === "object") {
-        const obj = value as any;
+        return encodeObjectTree(value as any, chunks, maxDepth, depth, state, pending);
+    }
 
+    if (t === "boolean") {
+        return [ValueTag.Boolean, value as boolean];
+    }
+
+    if (t === "function") {
+        const fn = value as Function;
+        const name = fn.name ?? "";
+        const sig = name === "" ? "[Function]" : `[Function: ${name}]`;
+        return [ValueTag.Function, sig];
+    }
+
+    if (t === "undefined") {
+        return [ValueTag.Undefined];
+    }
+
+    if (t === "bigint") {
+        const big = value as bigint;
+        return [ValueTag.BigInt, big.toString()];
+    }
+
+    if (t === "symbol") {
+        return [ValueTag.Symbol, String(value)];
+    }
+
+    return [ValueTag.Undefined];
+}
+
+function encodeObjectTree(
+    value: any,
+    chunks: BinaryChunk[],
+    maxDepth: number,
+    depth: number,
+    state: EncodeState,
+    pending: PendingValue[]
+): EncodedValueTree {
+    let obj = value;
+
+    while (true) {
         if (obj instanceof NativePointer) {
             return [ValueTag.NativePointer, (obj as NativePointer).toString()];
         }
 
         if (isBinaryLike(obj)) {
-            const index = chunks.length;
             const binary = obj as ArrayBufferView | ArrayBuffer;
-            const kind = getBytesKind(binary);
-            chunks.push({ index, buf: binary });
-            return [ValueTag.Bytes, index, kind];
+            const node: BytesEncoded = [ValueTag.Bytes, 0, 0, getBytesKind(binary)];
+            chunks.push({ buf: binary, node });
+            return node;
         }
 
         if (obj instanceof Error) {
@@ -176,181 +229,130 @@ function collectTree(
         const id = state.nextId++;
         state.seen.set(obj, id);
 
-        if (isMap) {
-            const mapValue = obj as Map<unknown, unknown>;
-            const entries: [EncodedValueTree, EncodedValueTree][] = [];
-            for (const [k, v] of mapValue.entries()) {
-                const keyTree = collectTree(k, chunks, maxDepth, depth + 1, state);
-                const valueTree = collectTree(v, chunks, maxDepth, depth + 1, state);
-                entries.push([keyTree, valueTree]);
+        if (!isArray && !isMap && !isSet) {
+            const converted = convertedThroughToJson(obj);
+            if (converted !== obj) {
+                obj = converted;
+                continue;
             }
+        }
+
+        const wanted: PendingValue[] = [];
+
+        if (isMap) {
+            const entries: EncodedEntry[] = [];
+            for (const [k, v] of (obj as Map<unknown, unknown>).entries()) {
+                const entry: EncodedEntry = [] as unknown as EncodedEntry;
+                entries.push(entry);
+                wanted.push({ value: k, depth: depth + 1, target: entry, index: 0 });
+                wanted.push({ value: v, depth: depth + 1, target: entry, index: 1 });
+            }
+            expectAll(pending, wanted);
             return [ValueTag.Map, id, entries];
         }
 
         if (isSet) {
-            const setValue = obj as Set<unknown>;
             const items: EncodedValueTree[] = [];
-            for (const v of setValue.values()) {
-                items.push(collectTree(v, chunks, maxDepth, depth + 1, state));
+            let index = 0;
+            for (const v of (obj as Set<unknown>).values()) {
+                wanted.push({ value: v, depth: depth + 1, target: items, index: index++ });
             }
+            expectAll(pending, wanted);
             return [ValueTag.Set, id, items];
         }
 
         if (isArray) {
-            const elements = (obj as unknown[]).map(v =>
-                collectTree(v, chunks, maxDepth, depth + 1, state),
-            );
+            const elements: EncodedValueTree[] = [];
+            const values = obj as unknown[];
+            for (let index = 0; index !== values.length; index++) {
+                wanted.push({ value: values[index], depth: depth + 1, target: elements, index });
+            }
+            expectAll(pending, wanted);
             return [ValueTag.Array, id, elements];
         }
 
-        try {
-            const maybeToJSON = obj.toJSON;
-            if (typeof maybeToJSON === "function") {
-                const converted = maybeToJSON.call(obj);
-                return collectTree(converted, chunks, maxDepth, depth, state);
-            }
-        } catch {
-        }
-
-        const entries: [EncodedValueTree, EncodedValueTree][] = [];
+        const entries: EncodedEntry[] = [];
 
         for (const k of Object.keys(obj as Record<string, unknown>)) {
-            const keyTree: EncodedValueTree = [ValueTag.String, k];
-            const v = obj[k];
-            const valueTree = collectTree(v, chunks, maxDepth, depth + 1, state);
-            entries.push([keyTree, valueTree]);
+            const entry: EncodedEntry = [[ValueTag.String, k], []] as unknown as EncodedEntry;
+            entries.push(entry);
+            wanted.push({ value: obj[k], depth: depth + 1, target: entry, index: 1 });
         }
 
-        const symbols = Object.getOwnPropertySymbols(obj as object);
-        for (const s of symbols) {
+        for (const s of Object.getOwnPropertySymbols(obj as object)) {
             if (!Object.prototype.propertyIsEnumerable.call(obj, s)) {
                 continue;
             }
-            const keyTree: EncodedValueTree = [ValueTag.Symbol, String(s)];
-            const v = obj[s];
-            const valueTree = collectTree(v, chunks, maxDepth, depth + 1, state);
-            entries.push([keyTree, valueTree]);
+            const entry: EncodedEntry = [[ValueTag.Symbol, String(s)], []] as unknown as EncodedEntry;
+            entries.push(entry);
+            wanted.push({ value: obj[s], depth: depth + 1, target: entry, index: 1 });
         }
 
+        expectAll(pending, wanted);
         return [ValueTag.Object, id, entries];
     }
+}
 
-    if (t === "boolean") {
-        return [ValueTag.Boolean, value as boolean];
+// The pending list is walked from the back, so what a value holds is put there
+// in reverse -- that way each one is encoded in the order it was found in.
+function expectAll(pending: PendingValue[], wanted: PendingValue[]): void {
+    for (let i = wanted.length - 1; i !== -1; i--) {
+        pending.push(wanted[i]);
+    }
+}
+
+function convertedThroughToJson(obj: any): unknown {
+    try {
+        const maybeToJSON = obj.toJSON;
+        if (typeof maybeToJSON === "function") {
+            return maybeToJSON.call(obj);
+        }
+    } catch {
     }
 
-    if (t === "function") {
-        const fn = value as Function;
-        const name = fn.name ?? "";
-        const sig = name === "" ? "[Function]" : `[Function: ${name}]`;
-        return [ValueTag.Function, sig];
-    }
-
-    if (t === "undefined") {
-        return [ValueTag.Undefined];
-    }
-
-    if (t === "bigint") {
-        const big = value as bigint;
-        return [ValueTag.BigInt, big.toString()];
-    }
-
-    if (t === "symbol") {
-        return [ValueTag.Symbol, String(value)];
-    }
-
-    return [ValueTag.Undefined];
+    return obj;
 }
 
 interface BinaryChunk {
-    index: number;
     buf: ArrayBufferView | ArrayBuffer;
+    node: BytesEncoded;
 }
 
-function packChunks(chunks: BinaryChunk[]): {
-    blob: ArrayBuffer | null;
-    offsets: { offset: number; length: number }[];
-} {
+interface PendingValue {
+    value: unknown;
+    depth: number;
+    target: EncodedValueTree[];
+    index: number;
+}
+
+type EncodedEntry = [EncodedValueTree, EncodedValueTree];
+
+function packChunks(chunks: BinaryChunk[]): ArrayBuffer | null {
     if (chunks.length === 0) {
-        return { blob: null, offsets: [] };
+        return null;
     }
 
     let total = 0;
-    const lengths = chunks.map(({ buf }) => {
-        const b = buf instanceof ArrayBuffer ? buf : buf.buffer;
-        return b.byteLength;
-    });
-    for (const len of lengths) {
-        total += len;
+    for (const { buf } of chunks) {
+        total += buf.byteLength;
     }
 
     const blob = new Uint8Array(total);
-    const offsets: { offset: number; length: number }[] = [];
 
     let offset = 0;
-    chunks.forEach(({ buf }, index) => {
+    for (const { buf, node } of chunks) {
         const raw = buf instanceof ArrayBuffer
             ? new Uint8Array(buf)
             : new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
         blob.set(raw, offset);
-        offsets[index] = { offset, length: raw.byteLength };
+
+        node[1] = offset;
+        node[2] = raw.byteLength;
+
         offset += raw.byteLength;
-    });
-
-    return { blob: blob.buffer, offsets };
-}
-
-function patchTree(
-    tree: EncodedValueTree,
-    offsets: { offset: number; length: number }[]
-): EncodedValueTree {
-    const [tag, ...rest] = tree;
-
-    switch (tag) {
-        case ValueTag.Object: {
-            const id = rest[0] as number;
-            const entries = rest[1] as [EncodedValueTree, EncodedValueTree][];
-            const patchedEntries = entries.map(([k, v]) => [
-                patchTree(k, offsets),
-                patchTree(v, offsets),
-            ] as [EncodedValueTree, EncodedValueTree]);
-            return [ValueTag.Object, id, patchedEntries];
-        }
-
-        case ValueTag.Array: {
-            const id = rest[0] as number;
-            const items = (rest[1] as EncodedValueTree[])
-                .map(child => patchTree(child, offsets));
-            return [ValueTag.Array, id, items];
-        }
-
-        case ValueTag.Bytes: {
-            const index = rest[0] as number;
-            const kind = rest[1] as BytesKind;
-            const { offset, length } = offsets[index];
-            return [ValueTag.Bytes, offset, length, kind] as BytesEncoded;
-        }
-
-        case ValueTag.Map: {
-            const id = rest[0] as number;
-            const entries = rest[1] as [EncodedValueTree, EncodedValueTree][];
-            const patchedEntries = entries.map(([k, v]) => [
-                patchTree(k, offsets),
-                patchTree(v, offsets),
-            ] as [EncodedValueTree, EncodedValueTree]);
-            return [ValueTag.Map, id, patchedEntries];
-        }
-
-        case ValueTag.Set: {
-            const id = rest[0] as number;
-            const items = rest[1] as EncodedValueTree[];
-            const patchedItems = items.map(child => patchTree(child, offsets));
-            return [ValueTag.Set, id, patchedItems];
-        }
-
-        default:
-            return tree;
     }
+
+    return blob.buffer;
 }
 
 function getBytesKind(v: ArrayBufferView | ArrayBuffer): BytesKind {
