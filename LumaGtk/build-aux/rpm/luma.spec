@@ -17,6 +17,10 @@ Requires:       libnice
 Requires:       gtksourceview5
 Requires:       librsvg2
 Requires:       swift-lang
+Requires:       qemu-system-aarch64-core
+Requires:       qemu-system-arm-core
+Requires:       qemu-system-x86-core
+Requires:       qemu-img
 
 %description
 Luma is a native app for interactive dynamic instrumentation,
