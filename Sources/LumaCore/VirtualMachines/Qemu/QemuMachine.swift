@@ -9,6 +9,8 @@ import Glibc
 import WinSDK
 #endif
 
+#if os(macOS) || os(Linux) || os(Windows)
+
 @Observable
 @MainActor
 final class QemuMachine: VirtualMachine {
@@ -314,3 +316,4 @@ final class QemuMachine: VirtualMachine {
     #endif
 }
 
+#endif

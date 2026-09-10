@@ -3,6 +3,8 @@ import SwiftUI
 
 #if canImport(Virtualization)
 import Virtualization
+
+#if canImport(AppKit)
 #endif
 
 /// Whichever way a machine offers its display: pixels the host draws, or a
@@ -62,4 +64,6 @@ struct VirtualizationScreen: PlatformViewRepresentable {
         view.virtualMachine = guest
     }
 }
+#endif
+
 #endif

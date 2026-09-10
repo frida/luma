@@ -1,5 +1,7 @@
 import Foundation
 
+#if os(macOS) || os(Linux) || os(Windows)
+
 @MainActor
 public final class QemuBackend: VirtualMachineBackend {
     public let id = "qemu"
@@ -88,3 +90,4 @@ enum QemuExecutable {
     #endif
 }
 
+#endif

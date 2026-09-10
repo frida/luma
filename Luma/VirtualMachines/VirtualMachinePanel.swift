@@ -2,6 +2,8 @@ import Frida
 import LumaCore
 import SwiftUI
 
+#if canImport(AppKit)
+
 struct VirtualMachinePanel: View {
     let engine: Engine
 
@@ -293,3 +295,5 @@ extension VirtualMachineState {
         }
     }
 }
+
+#endif

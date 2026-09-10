@@ -1,6 +1,8 @@
 import LumaCore
 import SwiftUI
 
+#if canImport(AppKit)
+
 struct VirtualMachineScreen: View {
     let source: any VirtualMachineFrameSource
     let capturing: PointerCapturePolicy
@@ -183,3 +185,5 @@ extension VirtualMachineFrameSource {
         return CGFloat(frame.width) / CGFloat(frame.height)
     }
 }
+
+#endif

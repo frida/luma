@@ -212,7 +212,9 @@ private struct ProjectContentView: View {
         case .collaboration:
             CollaborationPanel(engine: engine)
         case .virtualMachines:
+            #if canImport(AppKit)
             VirtualMachinePanel(engine: engine)
+            #endif
         }
     }
 

@@ -191,12 +191,14 @@ struct TargetPickerView: View {
                 detailPane
             }
             .frame(minWidth: isCompactWidth ? 0 : 904, minHeight: isCompactWidth ? 0 : 560)
+            #if canImport(AppKit)
             .sheet(isPresented: $showingBootMachineSheet) {
                 BootVirtualMachineSheet(engine: engine) { device in
                     pendingDeviceSelection = device.id
                     selectedDeviceID = device.id
                 }
             }
+            #endif
             .sheet(isPresented: $showingAddRemoteSheet) {
                 addRemoteSheet()
             }
@@ -1246,11 +1248,13 @@ struct TargetPickerView: View {
                     showingAddRemoteSheet = true
                 }
 
+                #if canImport(AppKit)
                 Button("Boot Virtual Machine…") {
                     showingBootMachineSheet = true
                 }
                 .disabled(bootableTemplate == nil)
                 .help(virtualMachineHelp)
+                #endif
             } label: {
                 Image(systemName: "plus.circle.fill")
                     .foregroundStyle(.tint)

@@ -3,6 +3,8 @@ import LumaCore
 import SwiftUI
 import UniformTypeIdentifiers
 
+#if canImport(AppKit)
+
 struct BootVirtualMachineSheet: View {
     let engine: Engine
     let deviceAdded: (Device) -> Void
@@ -414,3 +416,5 @@ struct BootVirtualMachineSheet: View {
         )
     }
 }
+
+#endif
