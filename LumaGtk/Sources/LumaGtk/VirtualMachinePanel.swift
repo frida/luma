@@ -232,7 +232,6 @@ private final class MachineRow {
         widget.append(child: summary)
 
         screenHost = Box(orientation: .vertical, spacing: 0)
-        screenHost.setSizeRequest(width: -1, height: 200)
         widget.append(child: screenHost)
 
         disclosure.onClicked { [weak self] _ in
@@ -261,10 +260,15 @@ private final class MachineRow {
 
     func refreshState() {
         let machine = self.machine
+        let isStopping = engine?.virtualMachines.isStopping(record) ?? false
         let summary: String?
-        switch machine?.state {
-        case .running, .stopped, nil: summary = nil
-        case .some(let state): summary = state.panelSummary
+        if isStopping {
+            summary = "Stopping…"
+        } else {
+            switch machine?.state {
+            case .running, .stopped, nil: summary = nil
+            case .some(let state): summary = state.panelSummary
+            }
         }
 
         if summary != lastSummary {
@@ -276,7 +280,7 @@ private final class MachineRow {
         if machine != nil {
             primaryButton.iconName = "media-playback-stop-symbolic"
             primaryButton.tooltipText = "Stop"
-            primaryButton.sensitive = (machine?.state != .starting)
+            primaryButton.sensitive = (machine?.state != .starting) && !isStopping
         } else {
             primaryButton.iconName = "media-playback-start-symbolic"
             primaryButton.tooltipText =
