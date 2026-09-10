@@ -182,7 +182,9 @@ public final class Engine {
             }
         )
 
+        #if os(macOS) || os(Linux) || os(Windows)
         virtualMachines.register(QemuBackend())
+        #endif
         #if os(macOS)
         virtualMachines.register(VirtualizationBackend())
         virtualMachines.register(VPhoneBackend())
@@ -2977,8 +2979,12 @@ public final class Engine {
     }
 
     public func resolve(sessionID: UUID, anchor: AddressAnchor, hint: UInt64? = nil) async -> UInt64? {
-        if let node = node(forSessionID: sessionID), let resolved = try? await node.resolve(anchor) {
-            return resolved
+        if let node = node(forSessionID: sessionID) {
+            do {
+                return try await node.resolve(anchor)
+            } catch {
+                return nil
+            }
         }
         switch anchor {
         case .absolute(let a):

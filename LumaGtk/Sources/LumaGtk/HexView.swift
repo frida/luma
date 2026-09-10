@@ -205,7 +205,7 @@ public final class HexView {
             // Offset
             ctx.setSource(red: 0.36, green: 0.78, blue: 0.43, alpha: 0.9)
             ctx.moveTo(marginX, baseline)
-            String(format: "%08X", Int(baseAddress) + rowStart).withCString { ctx.showText($0) }
+            String(format: "%08llX", baseAddress &+ UInt64(rowStart)).withCString { ctx.showText($0) }
 
             // Hex bytes
             for col in 0..<rowLen {

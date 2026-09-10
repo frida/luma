@@ -11,7 +11,11 @@ let flushScheduled = false;
 let flushGeneration = 0;
 
 export function readMemory(address: string, count: number): ArrayBuffer {
-    return ptr(address).readByteArray(count)!;
+    const bytes = ptr(address).readByteArray(count);
+    if (bytes === null) {
+        throw new Error(`Nothing mapped at ${address}`);
+    }
+    return bytes;
 }
 
 export function writeMemory(address: string, bytes: ArrayBuffer | number[]): number {

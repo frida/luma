@@ -423,10 +423,8 @@ private func fetchFunctionEnd(hex: String) async -> UInt64? {
             await r2.config.set("asm.arch", string: Self.r2Arch(fromFridaArch: processInfo.arch))
             await r2.config.set("asm.bits", int: processInfo.pointerSize * 8)
 
-            let uri = "frida-mem://0x0"
-            await r2.openFile(uri: uri)
+            await r2.cmd("o frida-mem://0x0")
             await r2.cmd("=!")
-            await r2.binLoad(uri: uri)
 
             await self.applyUserInsightNames()
         }
@@ -488,6 +486,7 @@ public final class CachingMemoryReader: MemoryReader {
     public var fetchRemote: ((MemoryPageRegion) async -> Data?)?
 
     private var ephemeralCache: [UInt64: Data] = [:]
+    private var unreadablePages: Set<UInt64> = []
 
     public init(sessionID: UUID, store: ProjectStore, keying: PageKeying, live: MemoryReader?) {
         self.sessionID = sessionID
@@ -520,6 +519,9 @@ public final class CachingMemoryReader: MemoryReader {
         if let bytes = cachedBytes(for: key) {
             return ResolvedPage(base: key.pageBase, bytes: bytes)
         }
+        if unreadablePages.contains(key.pageBase) {
+            throw DisassemblyError.unreadable(pageAddress: key.pageBase)
+        }
         if let remote = try await fetchRemoteBytes(for: key) {
             persist(key, bytes: remote, publishToRoom: false)
             return ResolvedPage(base: key.pageBase, bytes: remote)
@@ -527,7 +529,13 @@ public final class CachingMemoryReader: MemoryReader {
         guard let live else {
             throw DisassemblyError.notCached(pageAddress: key.pageBase)
         }
-        let raw = try await live.read(at: key.pageBase, count: Int(MemoryPage.size))
+        let raw: [UInt8]
+        do {
+            raw = try await live.read(at: key.pageBase, count: Int(MemoryPage.size))
+        } catch {
+            unreadablePages.insert(key.pageBase)
+            throw error
+        }
         let bytes = Data(raw)
         persist(key, bytes: bytes, publishToRoom: true)
         return ResolvedPage(base: key.pageBase, bytes: bytes)
@@ -606,12 +614,15 @@ public final class CachingMemoryReader: MemoryReader {
 
 public enum DisassemblyError: Error, LocalizedError {
     case notCached(pageAddress: UInt64)
+    case unreadable(pageAddress: UInt64)
     case detached
 
     public var errorDescription: String? {
         switch self {
         case .notCached(let page):
             return "No cached memory at 0x\(String(page, radix: 16)). Reattach to fetch it."
+        case .unreadable(let page):
+            return "Nothing mapped at 0x\(String(page, radix: 16))."
         case .detached:
             return "Operation requires a live session."
         }
