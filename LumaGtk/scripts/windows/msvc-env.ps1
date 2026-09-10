@@ -6,8 +6,11 @@
 #
 #     . .\scripts\windows\msvc-env.ps1
 #
-# Does nothing when cl.exe is already reachable, so it is safe to call
-# from a Developer PowerShell too.
+# Leaves the toolchain alone when cl.exe is already reachable, so it is
+# safe to call from a Developer PowerShell too, and always compacts PATH
+# on the way out: cmd.exe expands at most 8191 characters, and a machine
+# that has stacked several toolchains onto PATH goes past that, leaving
+# every child process without one.
 
 [CmdletBinding()]
 param(
@@ -17,36 +20,39 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-if (Get-Command cl.exe -ErrorAction SilentlyContinue) { return }
-
-$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-if (-not (Test-Path $vswhere)) {
-    throw @"
+if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (-not (Test-Path $vswhere)) {
+        throw @"
 vswhere.exe not found at $vswhere.
 Install Visual Studio 2022 (or the Build Tools) with the "Desktop
 development with C++" workload, or start this from a Developer
 PowerShell for VS.
 "@
-}
+    }
 
-$vsRoot = & $vswhere -latest -products * `
-    -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
-    -property installationPath
-if (-not $vsRoot) {
-    throw "No Visual Studio installation with the MSVC toolchain found. Install the `"Desktop development with C++`" workload."
-}
+    $vsRoot = & $vswhere -latest -products * `
+        -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+        -property installationPath
+    if (-not $vsRoot) {
+        throw "No Visual Studio installation with the MSVC toolchain found. Install the `"Desktop development with C++`" workload."
+    }
 
-$vcvarsName = if ($Arch -eq 'x64') { 'vcvars64.bat' } else { "vcvars$Arch.bat" }
-$vcvars = Join-Path $vsRoot "VC\Auxiliary\Build\$vcvarsName"
-if (-not (Test-Path $vcvars)) { throw "$vcvarsName not found under $vsRoot." }
+    $vcvarsName = if ($Arch -eq 'x64') { 'vcvars64.bat' } else { "vcvars$Arch.bat" }
+    $vcvars = Join-Path $vsRoot "VC\Auxiliary\Build\$vcvarsName"
+    if (-not (Test-Path $vcvars)) { throw "$vcvarsName not found under $vsRoot." }
 
-& $env:ComSpec /c "call `"$vcvars`" >nul 2>&1 && set" | ForEach-Object {
-    $name, $value = $_ -split '=', 2
-    if ($name -and $null -ne $value) {
-        Set-Item -Path "env:$name" -Value $value
+    & $env:ComSpec /c "call `"$vcvars`" >nul 2>&1 && set" | ForEach-Object {
+        $name, $value = $_ -split '=', 2
+        if ($name -and $null -ne $value) {
+            Set-Item -Path "env:$name" -Value $value
+        }
+    }
+
+    if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
+        throw "Ran $vcvars but cl.exe is still not on PATH."
     }
 }
 
-if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
-    throw "Ran $vcvars but cl.exe is still not on PATH."
-}
+$seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+$env:Path = ($env:Path -split ';' | Where-Object { $_ -and $seen.Add($_.TrimEnd('\')) }) -join ';'
