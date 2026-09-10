@@ -16,6 +16,10 @@
 
 set -eu
 
+# Only the notes belong on stdout: the workflow feeds them straight into the
+# release body. The build's own chatter goes to the log instead.
+exec 3>&1 1>&2
+
 version=$1
 build=$2
 output=$(cd "$3" && pwd)
@@ -84,7 +88,7 @@ artifact="qemu-$build-windows-$arch.zip"
 (cd "$stage" && zip -qr "$output/$artifact" .)
 
 checksum=$(sha256sum "$output/$artifact" | cut -d' ' -f1)
-cat <<EOF
+cat >&3 <<EOF
 QEMU $version, built from the unmodified source at
 https://download.qemu.org/qemu-$version.tar.xz with the GTK, SDL, VNC
 and curses frontends disabled. QEMU is GPLv2; COPYING and COPYING.LIB
