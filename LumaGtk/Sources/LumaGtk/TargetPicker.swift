@@ -490,6 +490,7 @@ final class TargetPicker {
         let scroll = ScrolledWindow()
         scroll.hexpand = true
         scroll.vexpand = true
+        scroll.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
         scroll.set(child: deviceList)
         column.append(child: scroll)
         return column
@@ -1072,10 +1073,14 @@ final class TargetPicker {
         }
         hbox.append(child: icon)
         let textBox = Box(orientation: .vertical, spacing: 0)
+        textBox.hexpand = true
         let nameLabel = Label(str: device.name)
         nameLabel.halign = .start
+        nameLabel.ellipsize = EllipsizeMode.end
         let idLabel = Label(str: device.id)
         idLabel.halign = .start
+        idLabel.ellipsize = EllipsizeMode.end
+        idLabel.tooltipText = device.id
         idLabel.add(cssClass: "dim-label")
         idLabel.add(cssClass: "caption")
         textBox.append(child: nameLabel)
@@ -1145,15 +1150,7 @@ final class TargetPicker {
     }
 
     private func renderProcesses(_ snapshot: [ProcessDetails], for device: Frida.Device) {
-        let sorted = snapshot.sorted {
-            let aHasIcon = !$0.icons.isEmpty
-            let bHasIcon = !$1.icons.isEmpty
-            if aHasIcon != bHasIcon {
-                return aHasIcon
-            }
-            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-        }
-        processes = sorted
+        processes = snapshot.sortedWithKernelFirst()
         applyProcessFilter(query: processSearchEntry.text)
         processStatus.visible = false
 
@@ -1186,6 +1183,11 @@ final class TargetPicker {
             hbox.marginBottom = 4
             if let fridaIcon = proc.icons.last, let img = IconPixbuf.makeImage(from: fridaIcon, pixelSize: 24) {
                 hbox.append(child: img)
+            } else if proc.pid == 0 {
+                let icon = Gtk.Image(iconName: "computer-chip-symbolic")
+                icon.pixelSize = 24
+                icon.add(cssClass: "dim-label")
+                hbox.append(child: icon)
             } else {
                 hbox.append(child: IconPlaceholderView.make(
                     seed: proc.name,
@@ -1198,6 +1200,9 @@ final class TargetPicker {
             let nameLabel = Label(str: proc.name)
             nameLabel.halign = .start
             nameLabel.ellipsize = EllipsizeMode.end
+            if proc.pid == 0 {
+                nameLabel.add(cssClass: "heading")
+            }
             let subtitle = processSubtitle(for: proc)
             let subtitleLabel = Label(str: subtitle)
             subtitleLabel.halign = .start
@@ -1216,6 +1221,7 @@ final class TargetPicker {
     }
 
     private func processSubtitle(for proc: ProcessDetails) -> String {
+        guard proc.pid != 0 else { return "The kernel" }
         guard let argv = proc.parameters["argv"] as? [String], !argv.isEmpty else {
             return "PID \(proc.pid)"
         }

@@ -914,6 +914,13 @@ struct TargetPickerView: View {
                                         .aspectRatio(contentMode: .fit)
                                         .frame(width: 24, height: 24)
                                         .cornerRadius(4)
+                                } else if proc.pid == 0 {
+                                    Image(systemName: "cpu")
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(width: 20, height: 20)
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 24, height: 24)
                                 } else {
                                     IconPlaceholderView(
                                         seed: proc.name,
@@ -925,6 +932,7 @@ struct TargetPickerView: View {
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(proc.name)
+                                        .fontWeight(proc.pid == 0 ? .semibold : .regular)
                                     Text(processSubtitle(for: proc))
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
@@ -980,6 +988,7 @@ struct TargetPickerView: View {
     }
 
     private func processSubtitle(for proc: ProcessDetails) -> String {
+        guard proc.pid != 0 else { return "The kernel" }
         guard let argv = proc.parameters["argv"] as? [String], !argv.isEmpty else {
             return "PID \(proc.pid)"
         }
@@ -1105,16 +1114,7 @@ struct TargetPickerView: View {
         do {
             let procs = try await device.enumerateProcesses(scope: .full)
 
-            processes = procs.sorted {
-                let aHasIcon = !$0.icons.isEmpty
-                let bHasIcon = !$1.icons.isEmpty
-
-                if aHasIcon != bHasIcon {
-                    return aHasIcon
-                }
-
-                return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-            }
+            processes = procs.sortedWithKernelFirst()
             processError = nil
         } catch {
             processes = []
