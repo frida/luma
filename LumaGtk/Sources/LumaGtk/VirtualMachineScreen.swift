@@ -11,12 +11,19 @@ final class VirtualMachineScreen {
     let widget: Box
 
     private let source: any VirtualMachineFrameSource
+    private let sizing: Sizing
+    private let aspect: AspectFrame
     private let area: DrawingArea
     private let hintLabel: Label
     private var lastRevision: UInt64 = .max
     private var redrawTask: Task<Void, Never>?
 
     private var placement: (x: Double, y: Double, width: Double, height: Double) = (0, 0, 0, 0)
+
+    enum Sizing {
+        case fitsContainer
+        case guestResolution
+    }
 
     private enum PointerMode {
         case free
@@ -31,16 +38,20 @@ final class VirtualMachineScreen {
     private var pointer: PointerMode = .free
     private var lastPointerPosition: (x: Double, y: Double) = (0, 0)
     private var isPointerInside = false
-    private var hintDismissal: Task<Void, Never>?
+    private var isFocused = false
 
-    init(source: any VirtualMachineFrameSource, interactive: Bool = true) {
+    init(
+        source: any VirtualMachineFrameSource,
+        interactive: Bool = true,
+        sizing: Sizing = .fitsContainer
+    ) {
         self.source = source
+        self.sizing = sizing
 
         widget = Box(orientation: .vertical, spacing: 0)
 
         area = DrawingArea()
         area.hexpand = true
-        area.vexpand = true
 
         hintLabel = Label(str: "")
         hintLabel.add(cssClass: "osd")
@@ -55,8 +66,11 @@ final class VirtualMachineScreen {
         overlay.set(child: area)
         overlay.addOverlay(widget: hintLabel)
         overlay.hexpand = true
-        overlay.vexpand = true
-        widget.append(child: overlay)
+
+        aspect = AspectFrame(xalign: 0.5, yalign: 0.5, ratio: 4.0 / 3.0, obeyChild: false)
+        aspect.hexpand = true
+        aspect.set(child: overlay)
+        widget.append(child: aspect)
 
         area.setDrawFunc { [weak self] _, ctx, width, height in
             MainActor.assumeIsolated {
@@ -75,6 +89,7 @@ final class VirtualMachineScreen {
                 guard let self else { return }
                 guard self.source.revision != self.lastRevision else { continue }
                 self.lastRevision = self.source.revision
+                self.matchAspectToFrame()
                 self.area.queueDraw()
             }
         }
@@ -82,8 +97,20 @@ final class VirtualMachineScreen {
 
     deinit {
         redrawTask?.cancel()
-        hintDismissal?.cancel()
     }
+
+    private func matchAspectToFrame() {
+        guard let frame = source.frame, frame.width > 0, frame.height > 0 else { return }
+        aspect.ratio = CFloat(Double(frame.width) / Double(frame.height))
+
+        guard case .guestResolution = sizing else { return }
+        let shrinkage = min(1, Double(Self.widestGuestResolution) / Double(frame.width))
+        area.setSizeRequest(
+            width: Int(Double(frame.width) * shrinkage),
+            height: Int(Double(frame.height) * shrinkage))
+    }
+
+    private static var widestGuestResolution: Int { 960 }
 
     private func draw(ctx: Cairo.ContextRef, width: Double, height: Double) {
         let raw = ctx.context_ptr
@@ -165,10 +192,29 @@ final class VirtualMachineScreen {
         area.install(controller: keys)
 
         let focus = EventControllerFocus()
+        focus.onEnter { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.isFocused = true
+                self?.refreshHint()
+            }
+        }
         focus.onLeave { [weak self] _ in
-            MainActor.assumeIsolated { self?.releasePointer() }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.isFocused = false
+                self.releasePointer()
+                self.refreshHint()
+            }
         }
         area.install(controller: focus)
+
+        let focusClick = GestureClick()
+        focusClick.set(button: 0)
+        focusClick.propagationPhase = .capture
+        focusClick.onPressed { [weak self] _, _, _, _ in
+            MainActor.assumeIsolated { _ = self?.area.grabFocus() }
+        }
+        area.install(controller: focusClick)
     }
 
     private func attachPointer() {
@@ -204,7 +250,6 @@ final class VirtualMachineScreen {
             click.onPressed { [weak self] _, _, x, y in
                 MainActor.assumeIsolated {
                     guard let self else { return }
-                    _ = self.area.grabFocus()
                     if guestButton == .left, !self.source.pointerIsAbsolute,
                         case .free = self.pointer
                     {
@@ -243,7 +288,7 @@ final class VirtualMachineScreen {
         if let ptr = area.widget_ptr.map(UnsafeMutableRawPointer.init) {
             luma_widget_set_cursor_name(ptr, "none")
         }
-        showHint("Ctrl+Alt releases the pointer", briefly: true)
+        refreshHint()
     }
 
     private func releasePointer() {
@@ -299,27 +344,19 @@ final class VirtualMachineScreen {
     }
 
     private func refreshHint() {
-        if case .captured = pointer { return }
-
-        if !source.pointerIsAbsolute, isPointerInside {
-            showHint("Click to drive the pointer", briefly: false)
-        } else {
-            hintDismissal?.cancel()
+        guard let text = hintText else {
             hintLabel.visible = false
+            return
         }
-    }
-
-    private func showHint(_ text: String, briefly: Bool) {
-        hintDismissal?.cancel()
         hintLabel.label = text
         hintLabel.visible = true
+    }
 
-        guard briefly else { return }
-        hintDismissal = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            guard !Task.isCancelled else { return }
-            self?.hintLabel.visible = false
-        }
+    private var hintText: String? {
+        if case .captured = pointer { return "Ctrl+Alt releases the pointer" }
+        guard isPointerInside else { return nil }
+        if !isFocused { return "Click to send keys and clicks" }
+        return source.pointerIsAbsolute ? nil : "Click to drive the pointer"
     }
 
     private static func isReleaseChord(keyval: UInt, state: Gdk.ModifierType) -> Bool {

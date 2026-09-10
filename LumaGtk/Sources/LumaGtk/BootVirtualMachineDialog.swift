@@ -456,6 +456,9 @@ final class BootVirtualMachineDialog {
     }
 
     private func showBootedView(_ machine: any VirtualMachine) {
+        dialog.followsContentSize = true
+        scroll.propagateNaturalWidth = true
+        scroll.propagateNaturalHeight = true
         cancelButton.label = "Later"
         bootButton.label = "Mark Ready"
         bootButton.sensitive = true
@@ -467,8 +470,7 @@ final class BootVirtualMachineDialog {
         content.marginBottom = 18
 
         if case .frames(let source)? = machine.display {
-            let screen = VirtualMachineScreen(source: source)
-            screen.widget.vexpand = true
+            let screen = VirtualMachineScreen(source: source, sizing: .guestResolution)
             content.append(child: screen.widget)
             self.screen = screen
         }
