@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  SPARKLE_VERSION: "2.9.1"
+  SPARKLE_VERSION: "2.9.6"
   SWIFT_VERSION: "6.2"
   # ilammy/msvc-dev-cmd hasn't cut a Node-24-compatible release yet
   # (v1 is its only major). Opt into Node 24 ahead of GitHub's
