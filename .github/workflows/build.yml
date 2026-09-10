@@ -286,7 +286,7 @@ jobs:
           Description: Frida core library
           Version: 17.0.0
           Cflags: -I\${prefix} $(pkg-config --cflags gio-unix-2.0)
-          Libs: -L\${prefix} -lfrida-core-1.0
+          Libs: -L\${prefix} -lfrida-core-1.0 -framework Network
           EOF
           echo "USE_SYSTEM_FRIDA=1" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=$DEVKIT/pkgconfig" >> $GITHUB_ENV
