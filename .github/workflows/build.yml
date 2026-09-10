@@ -25,7 +25,7 @@ jobs:
       frida_core_ref: ${{ steps.refs.outputs.FRIDA_CORE_REF }}
       radare2_ref: ${{ steps.refs.outputs.RADARE2_REF }}
       swifty_pharo_ref: ${{ steps.refs.outputs.SWIFTY_PHARO_REF }}
-      qemu_windows_build: ${{ steps.refs.outputs.QEMU_WINDOWS_BUILD }}
+      qemu_build: ${{ steps.refs.outputs.QEMU_BUILD }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -208,6 +208,7 @@ jobs:
     env:
       LUMA_VERSION: ${{ needs.version.outputs.version }}
       LUMA_BUILD: ${{ needs.version.outputs.build }}
+      QEMU_BUILD: ${{ needs.version.outputs.qemu_build }}
     strategy:
       fail-fast: false
       matrix:
@@ -344,6 +345,18 @@ jobs:
           mkdir -p build
           cp -r build/.derived/Build/Products/Release/Luma.app build/
 
+      - name: Bundle QEMU
+        run: |
+          ARCHIVE=qemu-$QEMU_BUILD-macos-${{ matrix.arch }}.zip
+          curl -sSfLO "https://github.com/frida/luma/releases/download/qemu-$QEMU_BUILD/$ARCHIVE"
+          EXPECTED=$(grep -E "^QEMU_MACOS_$(echo ${{ matrix.arch }} | tr a-z A-Z)_SHA256=" \
+              .github/dependency-refs.env | cut -d= -f2)
+          echo "$EXPECTED  $ARCHIVE" | shasum -a 256 -c -
+          # QemuExecutable looks beside the LumaCore resource bundle, and
+          # -L points the emulators at the firmware that travels with them.
+          unzip -q "$ARCHIVE" -d build/Luma.app/Contents/Resources/qemu
+          chmod +x build/Luma.app/Contents/Resources/qemu/qemu-*
+
       - name: Post-process binary
         run: |
           strip -Sx build/Luma.app/Contents/MacOS/Luma
@@ -400,6 +413,12 @@ jobs:
             done
             [ -d "$SPARKLE_ROOT/Updater.app" ] && sign "$SPARKLE_ROOT/Updater.app"
           fi
+          QEMU=build/Luma.app/Contents/Resources/qemu
+          for macho in "$QEMU"/qemu-* "$QEMU"/lib/*.dylib; do
+            codesign --force --options runtime --timestamp \
+              --entitlements Luma/QEMU-macOS.entitlements \
+              --sign "Developer ID Application" "$macho"
+          done
           # Signing a framework seals what is inside it, so the Pharo VM's
           # plugins have to be signed before it is, not after.
           find build/Luma.app/Contents/Frameworks -name '*.dylib' | while read dylib; do
@@ -1335,7 +1354,7 @@ jobs:
       FRIDA_CORE_REF: ${{ needs.version.outputs.frida_core_ref }}
       RADARE2_REF: ${{ needs.version.outputs.radare2_ref }}
       SWIFTY_PHARO_REF: ${{ needs.version.outputs.swifty_pharo_ref }}
-      QEMU_WINDOWS_BUILD: ${{ needs.version.outputs.qemu_windows_build }}
+      QEMU_BUILD: ${{ needs.version.outputs.qemu_build }}
     strategy:
       fail-fast: false
       matrix:
@@ -1676,7 +1695,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/qemu
-          key: ${{ runner.os }}-x86_64-qemu-${{ env.QEMU_WINDOWS_BUILD }}
+          key: ${{ runner.os }}-x86_64-qemu-${{ env.QEMU_BUILD }}
 
       - name: Install QEMU
         if: matrix.win_arch == 'x86_64' && steps.qemu-cache.outputs.cache-hit != 'true'

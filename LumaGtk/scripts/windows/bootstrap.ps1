@@ -368,8 +368,8 @@ if (Test-Wanted 'qemu') {
     } else {
         Write-Step "Installing QEMU -> $QemuPrefix"
 
-        $build = $refs['QEMU_WINDOWS_BUILD']
-        $expected = $refs['QEMU_WINDOWS_SHA256']
+        $build = $refs['QEMU_BUILD']
+        $expected = $refs['QEMU_WINDOWS_X86_64_SHA256']
         $cache = Join-Path $sourceRoot 'qemu'
         New-Item -ItemType Directory -Force -Path $cache | Out-Null
         $archive = Join-Path $cache "qemu-$build-windows-x86_64.zip"
