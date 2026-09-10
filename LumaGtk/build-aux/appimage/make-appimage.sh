@@ -9,7 +9,8 @@ VERSION=${LUMA_VERSION:-1.0.0}
 echo "Installing package dependencies..."
 echo "---------------------------------------------------------------"
 pacman -Syu --noconfirm libgee libadwaita webkitgtk-6.0 libepoxy libzip \
-    libnice gtksourceview5 librsvg patchelf
+    libnice gtksourceview5 librsvg patchelf \
+    qemu-system-x86 qemu-system-aarch64 qemu-system-arm qemu-img
 
 echo "Installing debloated packages..."
 echo "---------------------------------------------------------------"
@@ -29,6 +30,12 @@ echo 'libpatch.so' > ./AppDir/.preload
 
 mv -f ./AppDir/lib/luma/* ./AppDir/bin/
 rm -rf ./AppDir/lib
+
+# The emulators go where the app already looks -- its own bin/ is on PATH --
+# and QEMU finds the firmware itself at ../share/qemu from there.
+cp /usr/bin/qemu-system-* /usr/bin/qemu-img ./AppDir/bin/
+mkdir -p ./AppDir/share
+cp -r /usr/share/qemu ./AppDir/share/
 
 export ARCH VERSION
 export OUTPATH=$(pwd)

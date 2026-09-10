@@ -233,3 +233,6 @@ parts:
       - libgtksourceview-5-0
       - librsvg2-2
       - libsoup-3.0-0
+      - qemu-system-arm
+      - qemu-system-x86
+      - qemu-utils
