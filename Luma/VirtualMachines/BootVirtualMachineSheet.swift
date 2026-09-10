@@ -32,6 +32,7 @@ struct BootVirtualMachineSheet: View {
                 bootedView(machine)
             } else {
                 templateChooser
+                    .frame(maxHeight: .infinity)
             }
 
             if let failure {
@@ -43,7 +44,7 @@ struct BootVirtualMachineSheet: View {
             actions
         }
         .padding(20)
-        .frame(minWidth: 680, minHeight: 460)
+        .frame(minWidth: 680, minHeight: 460, idealHeight: 560, maxHeight: 720)
         .onAppear(perform: selectFirstAvailableTemplate)
         .task { await engine.virtualMachines.agents.refreshReleases() }
         .fileImporter(isPresented: $isImporting, allowedContentTypes: allowedImportTypes) { result in
@@ -367,8 +368,7 @@ struct BootVirtualMachineSheet: View {
     }
 
     private func defaultMachineName() -> String {
-        guard let template = selectedTemplate else { return "" }
-        return "\(template.name) \(template.variant(for: parameters).architecture.displayName)"
+        selectedTemplate?.name ?? ""
     }
 
     private func refreshDefaultName() {
