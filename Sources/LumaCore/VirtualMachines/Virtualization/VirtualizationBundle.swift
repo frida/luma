@@ -1,6 +1,6 @@
 import Foundation
 
-#if canImport(Virtualization)
+#if canImport(Virtualization) && arch(arm64)
 import Virtualization
 
 /// What a macOS guest keeps between boots: the disk it was installed on, the

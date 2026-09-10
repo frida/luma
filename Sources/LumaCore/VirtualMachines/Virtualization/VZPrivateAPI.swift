@@ -1,4 +1,4 @@
-#if canImport(Virtualization)
+#if canImport(Virtualization) && arch(arm64)
 import Foundation
 import ObjectiveC
 import Virtualization

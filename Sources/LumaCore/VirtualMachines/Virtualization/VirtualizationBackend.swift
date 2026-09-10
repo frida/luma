@@ -69,9 +69,13 @@ public final class VirtualizationBackend: VirtualMachineBackend {
             throw VirtualMachineError.launchFailed(reason: "A macOS guest needs macOS 13 or newer")
         }
 
+        #if arch(arm64)
         let machine = VirtualizationMachine(request: request)
         try await machine.start()
         return machine
+        #else
+        throw VirtualMachineError.launchFailed(reason: "Virtualization.framework runs Apple silicon guests only")
+        #endif
     }
 
     private var isAppleSilicon: Bool {

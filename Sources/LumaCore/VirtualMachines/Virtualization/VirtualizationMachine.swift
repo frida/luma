@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-#if canImport(Virtualization)
+#if canImport(Virtualization) && arch(arm64)
 import Virtualization
 
 @Observable
