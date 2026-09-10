@@ -40,13 +40,15 @@ if (-not $SkipBuild) {
         -Configuration $Configuration `
         -VcpkgPrefix   $VcpkgPrefix `
         -FridaPrefix   $FridaPrefix `
-        -R2Prefix      $R2Prefix
+        -R2Prefix      $R2Prefix `
+        -PharoPrefix   $PharoPrefix
     if ($LASTEXITCODE -ne 0) { throw "build failed" }
 } else {
     & (Join-Path $script 'setup-env.ps1') `
         -VcpkgPrefix $VcpkgPrefix `
         -FridaPrefix $FridaPrefix `
-        -R2Prefix    $R2Prefix
+        -R2Prefix    $R2Prefix `
+        -PharoPrefix $PharoPrefix
 }
 
 $triplet = @{
