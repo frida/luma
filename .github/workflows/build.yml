@@ -794,7 +794,7 @@ jobs:
     steps:
       - name: Install system dependencies
         run: |
-          dnf install -y \
+          dnf install -y --setopt=install_weak_deps=False \
             gtk4-devel \
             libadwaita-devel \
             gtksourceview5-devel \
