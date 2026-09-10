@@ -369,15 +369,16 @@ if (Test-Wanted 'qemu') {
         Write-Step "Installing QEMU -> $QemuPrefix"
 
         $build = $refs['QEMU_BUILD']
-        $expected = $refs['QEMU_WINDOWS_X86_64_SHA256']
+        $qemuArch = if ($Arch -eq 'arm64') { 'arm64' } else { 'x86_64' }
+        $expected = $refs["QEMU_WINDOWS_$($qemuArch.ToUpper())_SHA256"]
         $cache = Join-Path $sourceRoot 'qemu'
         New-Item -ItemType Directory -Force -Path $cache | Out-Null
-        $archive = Join-Path $cache "qemu-$build-windows-x86_64.zip"
+        $archive = Join-Path $cache "qemu-$build-windows-$qemuArch.zip"
 
         if (-not (Test-Path $archive)) {
             Write-Host "Fetching QEMU $build"
             Invoke-WebRequest -UseBasicParsing `
-                -Uri "https://github.com/frida/luma/releases/download/qemu-$build/qemu-$build-windows-x86_64.zip" `
+                -Uri "https://github.com/frida/luma/releases/download/qemu-$build/qemu-$build-windows-$qemuArch.zip" `
                 -OutFile $archive
         }
 

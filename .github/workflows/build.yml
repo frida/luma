@@ -1690,15 +1690,14 @@ jobs:
           -BuildPath "$env:RUNNER_TEMP\b"
 
       - name: Cache QEMU
-        if: matrix.win_arch == 'x86_64'
         id: qemu-cache
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/qemu
-          key: ${{ runner.os }}-x86_64-qemu-${{ env.QEMU_BUILD }}
+          key: ${{ runner.os }}-${{ matrix.win_arch }}-qemu-${{ env.QEMU_BUILD }}
 
       - name: Install QEMU
-        if: matrix.win_arch == 'x86_64' && steps.qemu-cache.outputs.cache-hit != 'true'
+        if: steps.qemu-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: >
           ./LumaGtk/scripts/windows/bootstrap.ps1

@@ -15,9 +15,21 @@ env:
   QEMU_VERSION: "11.1.0"
 
 jobs:
-  windows-x86_64:
-    runs-on: windows-2022
+  windows:
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: windows-2022
+            msystem: MINGW64
+            package_prefix: mingw-w64-x86_64
+          - arch: arm64
+            runner: windows-11-arm
+            msystem: CLANGARM64
+            package_prefix: mingw-w64-clang-aarch64
     defaults:
       run:
         shell: msys2 {0}
@@ -27,17 +39,18 @@ jobs:
 
       - uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: ${{ matrix.msystem }}
           install: >-
+            base-devel
             git
             zip
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-glib2
-            mingw-w64-x86_64-pixman
-            mingw-w64-x86_64-pkgconf
-            mingw-w64-x86_64-python
-            mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-ntldd
+            ${{ matrix.package_prefix }}-toolchain
+            ${{ matrix.package_prefix }}-glib2
+            ${{ matrix.package_prefix }}-pixman
+            ${{ matrix.package_prefix }}-pkgconf
+            ${{ matrix.package_prefix }}-python
+            ${{ matrix.package_prefix }}-ninja
+            ${{ matrix.package_prefix }}-ntldd
 
       - name: Resolve build name
         run: |
@@ -58,8 +71,8 @@ jobs:
       - name: Upload archive
         uses: actions/upload-artifact@v7
         with:
-          name: qemu-${{ env.QEMU_BUILD }}-windows-x86_64.zip
-          path: artifacts/qemu-${{ env.QEMU_BUILD }}-windows-x86_64.zip
+          name: qemu-${{ env.QEMU_BUILD }}-windows-${{ matrix.arch }}.zip
+          path: artifacts/qemu-${{ env.QEMU_BUILD }}-windows-${{ matrix.arch }}.zip
           if-no-files-found: error
 
       - name: Publish release
@@ -68,7 +81,7 @@ jobs:
         with:
           body_path: artifacts.txt
           append_body: true
-          files: artifacts/qemu-${{ env.QEMU_BUILD }}-windows-x86_64.zip
+          files: artifacts/qemu-${{ env.QEMU_BUILD }}-windows-${{ matrix.arch }}.zip
 
   macos:
     runs-on: ${{ matrix.runner }}

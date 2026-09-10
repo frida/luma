@@ -8,7 +8,7 @@
 #
 #     build-qemu.sh <upstream-version> <build> <output-dir>
 #
-# Stages a qemu-<build>-windows-x86_64.zip laid out the way
+# Stages a qemu-<build>-windows-<arch>.zip laid out the way
 # package-msi.ps1 stages it onward: emulators, qemu-img and their DLLs
 # at the root beside COPYING and COPYING.LIB, firmware in share/ and
 # keymaps in share/keymaps. Prints the artifact's checksum and the
@@ -20,12 +20,22 @@ version=$1
 build=$2
 output=$(cd "$3" && pwd)
 
+# The MSYS2 runtime is x86_64 whatever it builds for, so uname would call an
+# arm64 build Intel. The environment is what says which one this is.
+case $MSYSTEM in
+CLANGARM64) arch=arm64 ;;
+*)          arch=x86_64 ;;
+esac
+
 workdir=$(mktemp -d)
 trap 'rm -rf "$workdir"' EXIT
 cd "$workdir"
 
 curl -sSfLO "https://download.qemu.org/qemu-$version.tar.xz"
-tar xf "qemu-$version.tar.xz"
+# The tarball carries symlinks that dangle -- edk2's X11IncludeHack among
+# them -- and MSYS2 copies a symlink's target by default, so extraction
+# fails on them. Shortcuts are made without looking at the target.
+MSYS=winsymlinks:lnk tar xf "qemu-$version.tar.xz"
 
 prefix="$workdir/install"
 mkdir build
@@ -64,13 +74,13 @@ for exe in "$stage"/*.exe; do
     ntldd -R "$exe"
 done | grep -io '[a-z0-9_.+-]*\.dll => [a-z]:\\[^ ]*' | cut -d' ' -f3 | sort -u | while read -r dll; do
     case $(cygpath -u "$dll") in
-    /mingw*/bin/*)
+    "$MINGW_PREFIX"/bin/*)
         cp "$(cygpath -u "$dll")" "$stage/"
         ;;
     esac
 done
 
-artifact="qemu-$build-windows-x86_64.zip"
+artifact="qemu-$build-windows-$arch.zip"
 (cd "$stage" && zip -qr "$output/$artifact" .)
 
 checksum=$(sha256sum "$output/$artifact" | cut -d' ' -f1)
