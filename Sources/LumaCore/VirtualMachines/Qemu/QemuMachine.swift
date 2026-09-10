@@ -66,6 +66,7 @@ final class QemuMachine: VirtualMachine {
         process.executableURL = executable
         process.arguments = try guest.arguments(
             for: request,
+            firmwareDirectory: QemuExecutable.firmwareDirectory(beside: executable),
             gdbPort: gdbPort,
             qmpPath: qmpSocketPath,
             agentQmpPath: agentQmpSocketPath,

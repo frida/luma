@@ -37,6 +37,20 @@ public final class QemuBackend: VirtualMachineBackend {
 }
 
 enum QemuExecutable {
+    /// The firmware a copy of QEMU that travels with the app brings along.
+    /// Only Windows looks beside the executable for it, so the rest need
+    /// telling where it went.
+    static func firmwareDirectory(beside executable: URL) -> URL? {
+        let candidate = executable
+            .deletingLastPathComponent()
+            .appendingPathComponent("share", isDirectory: true)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: candidate.path, isDirectory: &isDirectory),
+            isDirectory.boolValue
+        else { return nil }
+        return candidate
+    }
+
     static func path(for emulator: String) -> URL? {
         for directory in searchPaths {
             let candidate = directory.appendingPathComponent(emulator + executableSuffix)

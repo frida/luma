@@ -327,12 +327,17 @@ struct QemuGuest {
 
     func arguments(
         for request: VirtualMachineLaunchRequest,
+        firmwareDirectory: URL?,
         gdbPort: UInt16,
         qmpPath: URL,
         agentQmpPath: URL,
         snapshotDisk: URL
     ) throws -> [String] {
         var arguments = ["-machine", machine, "-m", String(request.number(QemuParameter.memory) ?? defaultMemory)]
+
+        if let firmwareDirectory {
+            arguments += ["-L", firmwareDirectory.path]
+        }
 
         if let cpu {
             arguments += ["-cpu", cpu]
