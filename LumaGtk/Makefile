@@ -95,8 +95,23 @@ endif
 $(PHARO_IMAGE):
 	$(PROJECT_ROOT)/scripts/stage-pharo-image.sh
 
+ifeq ($(shell uname -s),Darwin)
+# macOS hands activation to the process that launched an unbundled binary, so
+# the window can be clicked but never keeps keyboard focus. Run the same
+# executable from inside a bundle, which keeps stdio on the terminal.
+APP_BUNDLE := .build/Luma.app
+
+run: build $(APP_BUNDLE)
+	$(APP_BUNDLE)/Contents/MacOS/Luma
+
+$(APP_BUNDLE): data/macos/Info.plist
+	mkdir -p $(APP_BUNDLE)/Contents/MacOS
+	cp data/macos/Info.plist $(APP_BUNDLE)/Contents/Info.plist
+	ln -sf $(CURDIR)/.build/debug/LumaGtk $(APP_BUNDLE)/Contents/MacOS/Luma
+else
 run: build
 	./.build/debug/LumaGtk
+endif
 
 screenshots: build
 	mkdir -p screenshots
