@@ -1716,6 +1716,7 @@ jobs:
           -VcpkgPrefix "C:\vcpkg\installed\${{ matrix.vcpkg_triplet }}"
           -FridaPrefix "$env:RUNNER_TEMP\frida-prefix"
           -R2Prefix "$env:RUNNER_TEMP\r2-prefix"
+          -PharoPrefix "$env:RUNNER_TEMP\pharo-prefix"
           -BuildPath "$env:RUNNER_TEMP\b"
 
       - name: Cache QEMU
