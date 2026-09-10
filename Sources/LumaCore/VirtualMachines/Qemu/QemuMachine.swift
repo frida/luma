@@ -287,7 +287,7 @@ final class QemuMachine: VirtualMachine {
     }
     #else
     private static func reserveGdbPort() throws -> UInt16 {
-        let handle = socket(AF_INET, SOCK_STREAM, 0)
+        let handle = socket(AF_INET, streamSocketType, 0)
         defer { close(handle) }
 
         var address = sockaddr_in()
@@ -312,6 +312,14 @@ final class QemuMachine: VirtualMachine {
             }
         }
         return UInt16(bigEndian: assigned.sin_port)
+    }
+
+    private static var streamSocketType: Int32 {
+        #if canImport(Glibc)
+        Int32(SOCK_STREAM.rawValue)
+        #else
+        SOCK_STREAM
+        #endif
     }
     #endif
 }
