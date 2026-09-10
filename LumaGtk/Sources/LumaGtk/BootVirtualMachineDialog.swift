@@ -6,6 +6,7 @@ import Frida
 import GLibObject
 import Gtk
 import LumaCore
+import Observation
 
 @MainActor
 final class BootVirtualMachineDialog {
