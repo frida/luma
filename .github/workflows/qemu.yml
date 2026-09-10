@@ -70,9 +70,17 @@ jobs:
           append_body: true
           files: artifacts/qemu-${{ env.QEMU_BUILD }}-windows-x86_64.zip
 
-  macos-arm64:
-    runs-on: macos-26
+  macos:
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-26
+          - arch: x86_64
+            runner: macos-15-intel
     steps:
       - name: Check out repo
         uses: actions/checkout@v7
@@ -99,8 +107,8 @@ jobs:
       - name: Upload archive
         uses: actions/upload-artifact@v7
         with:
-          name: qemu-${{ env.QEMU_BUILD }}-macos-arm64.zip
-          path: artifacts/qemu-${{ env.QEMU_BUILD }}-macos-arm64.zip
+          name: qemu-${{ env.QEMU_BUILD }}-macos-${{ matrix.arch }}.zip
+          path: artifacts/qemu-${{ env.QEMU_BUILD }}-macos-${{ matrix.arch }}.zip
           if-no-files-found: error
 
       - name: Publish release
@@ -109,4 +117,4 @@ jobs:
         with:
           body_path: artifacts.txt
           append_body: true
-          files: artifacts/qemu-${{ env.QEMU_BUILD }}-macos-arm64.zip
+          files: artifacts/qemu-${{ env.QEMU_BUILD }}-macos-${{ matrix.arch }}.zip
