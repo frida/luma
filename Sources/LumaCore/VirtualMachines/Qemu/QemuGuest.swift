@@ -14,7 +14,7 @@ struct QemuGuest {
     let agentFlavor: BareboneAgentFlavor?
     let fabric: BareboneHostlinkFabric
     let boot: QemuBoot
-    let pointer: QemuPointer
+    let input: QemuInputDevices
     let usb: QemuUSBController
     let defaultMemory: Int
     let starterImages: StarterImages?
@@ -34,7 +34,7 @@ struct QemuGuest {
             agentFlavor: .win9xX86,
             fabric: .ports,
             boot: .diskImage(defaultInterface: .ide),
-            pointer: .ps2,
+            input: .ps2,
             usb: .onboard,
             defaultMemory: 128,
             starterImages: nil
@@ -53,7 +53,7 @@ struct QemuGuest {
             agentFlavor: .winntX86,
             fabric: .ports,
             boot: .diskImage(defaultInterface: .ide),
-            pointer: .usbTablet,
+            input: .usb,
             usb: .onboard,
             defaultMemory: 512,
             starterImages: nil
@@ -72,7 +72,7 @@ struct QemuGuest {
             agentFlavor: .winntX86_64,
             fabric: .ports,
             boot: .diskImage(defaultInterface: .ide),
-            pointer: .usbTablet,
+            input: .usb,
             usb: .onboard,
             defaultMemory: 1024,
             starterImages: nil
@@ -94,7 +94,7 @@ struct QemuGuest {
             agentFlavor: .linuxArm64,
             fabric: .ecam(base: 0x40_1000_0000),
             boot: .linuxKernel,
-            pointer: .usbTablet,
+            input: .usb,
             usb: .xhci,
             defaultMemory: 2048,
             starterImages: Self.alpineArm64
@@ -116,7 +116,7 @@ struct QemuGuest {
             agentFlavor: .linuxX86_64,
             fabric: .ports,
             boot: .linuxKernel,
-            pointer: .usbTablet,
+            input: .usb,
             usb: .onboard,
             defaultMemory: 1024,
             starterImages: Self.alpineX86_64
@@ -138,7 +138,7 @@ struct QemuGuest {
             agentFlavor: .linuxArm,
             fabric: .mmio,
             boot: .linuxKernel,
-            pointer: .usbTablet,
+            input: .usb,
             usb: .xhci,
             defaultMemory: 1024,
             starterImages: Self.alpineArm
@@ -160,7 +160,7 @@ struct QemuGuest {
             agentFlavor: .linuxX86,
             fabric: .ports,
             boot: .linuxKernel,
-            pointer: .usbTablet,
+            input: .usb,
             usb: .onboard,
             defaultMemory: 1024,
             starterImages: Self.alpineX86
@@ -343,7 +343,7 @@ struct QemuGuest {
             arguments += ["-loadvm", QemuIdentifier.readySnapshot]
         }
         arguments += ["-drive", "file=\(snapshotDisk.path),format=qcow2,if=none,id=\(QemuIdentifier.snapshotDisk)"]
-        arguments += pointer.arguments(plugging: usb)
+        arguments += input.arguments(plugging: usb)
         // A 32-bit Arm guest has no PCI host driver, so it reaches its devices over
         // virtio-mmio; the display goes there too, speaking modern virtio.
         if architecture == .arm {
@@ -377,21 +377,21 @@ struct QemuGuest {
     }
 }
 
-enum QemuPointer {
-    case usbTablet
+enum QemuInputDevices {
+    case usb
     case ps2
 
     func arguments(plugging controller: QemuUSBController) -> [String] {
         switch self {
-        case .usbTablet:
-            return controller.arguments + ["-device", "usb-tablet"]
+        case .usb:
+            return controller.arguments + ["-device", "usb-kbd", "-device", "usb-tablet"]
         case .ps2:
             return []
         }
     }
 
-    var isAbsolute: Bool {
-        self == .usbTablet
+    var pointerIsAbsolute: Bool {
+        self == .usb
     }
 }
 

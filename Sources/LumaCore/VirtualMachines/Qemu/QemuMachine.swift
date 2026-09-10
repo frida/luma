@@ -83,7 +83,7 @@ final class QemuMachine: VirtualMachine {
             let monitor = try await QemuMonitor(socketPath: qmpSocketPath, deadline: Date().addingTimeInterval(10))
             self.monitor = monitor
             displayConnection = try await QemuDisplayConnection(
-                monitor: monitor, pointerIsAbsolute: guest.pointer.isAbsolute,
+                monitor: monitor, pointerIsAbsolute: guest.input.pointerIsAbsolute,
                 processID: process.processIdentifier)
             display = displayConnection.map { .frames($0) }
         } catch {
