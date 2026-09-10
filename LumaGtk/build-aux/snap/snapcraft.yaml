@@ -220,6 +220,7 @@ parts:
       - libffi-dev
       - uuid-dev
       - libssl-dev
+      - libncurses-dev
       - unzip
       - wget
       - nodejs

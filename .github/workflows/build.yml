@@ -278,13 +278,14 @@ jobs:
               $RUNNER_TEMP/devkits/frida-core-devkit-macos-x86_64/libfrida-core.a \
               -output $DEVKIT/libfrida-core-1.0.a
           rm $DEVKIT/libfrida-core.a
+          brew install glib
           mkdir -p $DEVKIT/pkgconfig
           cat > $DEVKIT/pkgconfig/frida-core-1.0.pc <<EOF
           prefix=$DEVKIT
           Name: frida-core
           Description: Frida core library
           Version: 17.0.0
-          Cflags: -I\${prefix}
+          Cflags: -I\${prefix} $(pkg-config --cflags gio-unix-2.0)
           Libs: -L\${prefix} -lfrida-core-1.0
           EOF
           echo "USE_SYSTEM_FRIDA=1" >> $GITHUB_ENV
@@ -857,15 +858,27 @@ jobs:
           path: /tmp/frida-destdir
           key: ${{ runner.os }}-fedora44-frida-core-${{ env.FRIDA_CORE_REF }}-v4
 
+      - name: Clone frida-core
+        if: steps.frida-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/frida/frida-core.git /tmp/frida-core
+          cd /tmp/frida-core
+          git checkout $FRIDA_CORE_REF
+
+      - name: Install Go toolchain
+        if: steps.frida-cache.outputs.cache-hit != 'true'
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: /tmp/frida-core/src/compiler/go.mod
+          cache: false
+
       - name: Build frida-core (shared)
         if: steps.frida-cache.outputs.cache-hit != 'true'
         env:
           CC: gcc
           CXX: g++
         run: |
-          git clone https://github.com/frida/frida-core.git /tmp/frida-core
           cd /tmp/frida-core
-          git checkout $FRIDA_CORE_REF
           ./configure --enable-shared --enable-compiler-backend --without-prebuilds=sdk --prefix=/usr \
             -- -Dfrida-gum:v8=disabled
           make -j$(nproc)
@@ -1069,12 +1082,24 @@ jobs:
           path: /tmp/frida-destdir
           key: ${{ runner.os }}-ubuntu${{ matrix.release }}-frida-core-${{ env.FRIDA_CORE_REF }}-v4
 
-      - name: Build frida-core (shared)
+      - name: Clone frida-core
         if: steps.frida-cache.outputs.cache-hit != 'true'
         run: |
           git clone https://github.com/frida/frida-core.git /tmp/frida-core
           cd /tmp/frida-core
           git checkout $FRIDA_CORE_REF
+
+      - name: Install Go toolchain
+        if: steps.frida-cache.outputs.cache-hit != 'true'
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: /tmp/frida-core/src/compiler/go.mod
+          cache: false
+
+      - name: Build frida-core (shared)
+        if: steps.frida-cache.outputs.cache-hit != 'true'
+        run: |
+          cd /tmp/frida-core
           ./configure --enable-shared --enable-compiler-backend --without-prebuilds=sdk --prefix=/usr \
             -- --force-fallback-for=openssl -Dfrida-gum:v8=disabled
           make -j$(nproc)
@@ -1381,6 +1406,10 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "20"
+
+      - name: Keep Node on PATH
+        shell: pwsh
+        run: Add-Content -Path $env:GITHUB_PATH -Value (Split-Path (Get-Command node).Source)
 
       - uses: ilammy/msvc-dev-cmd@v1
         with:
