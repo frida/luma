@@ -32,7 +32,6 @@ struct BootVirtualMachineSheet: View {
                 bootedView(machine)
             } else {
                 templateChooser
-                    .frame(maxHeight: .infinity)
             }
 
             if let failure {
@@ -44,7 +43,7 @@ struct BootVirtualMachineSheet: View {
             actions
         }
         .padding(20)
-        .frame(minWidth: 680, minHeight: 460, idealHeight: 560, maxHeight: 720)
+        .frame(minWidth: 680, minHeight: 460, maxHeight: 720)
         .onAppear(perform: selectFirstAvailableTemplate)
         .task { await engine.virtualMachines.agents.refreshReleases() }
         .fileImporter(isPresented: $isImporting, allowedContentTypes: allowedImportTypes) { result in
@@ -117,10 +116,7 @@ struct BootVirtualMachineSheet: View {
                     }
                 }
                 .formStyle(.grouped)
-                .fixedSize(horizontal: false, vertical: true)
                 .contentMargins(.top, 0)
-
-                Spacer(minLength: 0)
                 }
             }
         }
