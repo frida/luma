@@ -35,11 +35,7 @@ let cLumaCSettings: [CSetting] = [
 ]
 let cLumaCxxSettings: [CXXSetting] = []
 let cLumaLinkerSettings: [LinkerSetting] = [
-    .linkedLibrary("WebView2Loader.dll"),
     .linkedLibrary("user32"),
-    .linkedLibrary("ole32"),
-    .linkedLibrary("oleaut32"),
-    .linkedLibrary("runtimeobject"),
     .linkedLibrary("epoxy"),
     .linkedLibrary("rsvg-2"),
 ]

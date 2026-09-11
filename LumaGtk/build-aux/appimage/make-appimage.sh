@@ -8,7 +8,7 @@ VERSION=${LUMA_VERSION:-1.0.0}
 
 echo "Installing package dependencies..."
 echo "---------------------------------------------------------------"
-pacman -Syu --noconfirm libgee libadwaita webkitgtk-6.0 libepoxy libzip \
+pacman -Syu --noconfirm libgee libadwaita libepoxy libzip \
     libnice gtksourceview5 librsvg patchelf \
     qemu-system-x86 qemu-system-aarch64 qemu-system-arm qemu-img
 

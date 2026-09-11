@@ -3,7 +3,7 @@ import LumaCore
 import SwiftyPharo
 
 extension PharoRuntime {
-    /// Boots the image before GTK, WebKit and cairo reserve their large virtual
+    /// Boots the image before GTK and cairo reserve their large virtual
     /// regions, so the Spur heap still finds its expected base free. Returns at
     /// once; the image loads on its own thread.
     static func bootBundledImage() {
