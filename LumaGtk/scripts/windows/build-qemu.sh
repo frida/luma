@@ -63,6 +63,7 @@ cd build
     --disable-vnc \
     --disable-curses \
     --disable-docs \
+    --disable-plugins \
     --disable-guest-agent \
     --disable-guest-agent-msi \
     --disable-slirp \
