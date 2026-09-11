@@ -6,7 +6,6 @@ on:
       - qemu-*
   pull_request:
     paths:
-      - LumaGtk/scripts/windows/build-qemu.sh
       - scripts/build-qemu-macos.sh
       - .github/workflows/qemu.yml
   workflow_dispatch:
@@ -15,74 +14,6 @@ env:
   QEMU_VERSION: "11.1.0"
 
 jobs:
-  windows:
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 180
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x86_64
-            runner: windows-2022
-            msystem: MINGW64
-            package_prefix: mingw-w64-x86_64
-          - arch: arm64
-            runner: windows-11-arm
-            msystem: CLANGARM64
-            package_prefix: mingw-w64-clang-aarch64
-    defaults:
-      run:
-        shell: msys2 {0}
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v7
-
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: ${{ matrix.msystem }}
-          install: >-
-            base-devel
-            git
-            zip
-            ${{ matrix.package_prefix }}-toolchain
-            ${{ matrix.package_prefix }}-glib2
-            ${{ matrix.package_prefix }}-pixman
-            ${{ matrix.package_prefix }}-pkgconf
-            ${{ matrix.package_prefix }}-python
-            ${{ matrix.package_prefix }}-ninja
-            ${{ matrix.package_prefix }}-ntldd
-
-      - name: Resolve build name
-        run: |
-          case "$GITHUB_REF" in
-          refs/tags/qemu-*)
-            echo "QEMU_BUILD=${GITHUB_REF#refs/tags/qemu-}" >> "$GITHUB_ENV"
-            ;;
-          *)
-            echo "QEMU_BUILD=$QEMU_VERSION-dev" >> "$GITHUB_ENV"
-            ;;
-          esac
-
-      - name: Build QEMU
-        run: |
-          mkdir artifacts
-          LumaGtk/scripts/windows/build-qemu.sh "$QEMU_VERSION" "$QEMU_BUILD" artifacts | tee artifacts.txt
-
-      - name: Upload archive
-        uses: actions/upload-artifact@v7
-        with:
-          name: qemu-${{ env.QEMU_BUILD }}-windows-${{ matrix.arch }}.zip
-          path: artifacts/qemu-${{ env.QEMU_BUILD }}-windows-${{ matrix.arch }}.zip
-          if-no-files-found: error
-
-      - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/qemu-')
-        uses: softprops/action-gh-release@v2
-        with:
-          body_path: artifacts.txt
-          append_body: true
-          files: artifacts/qemu-${{ env.QEMU_BUILD }}-windows-${{ matrix.arch }}.zip
-
   macos:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120

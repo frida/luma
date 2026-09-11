@@ -53,6 +53,26 @@ enum QemuExecutable {
         return candidate
     }
 
+    /// The emulators live in a directory of their own inside the
+    /// installation and link the GLib the app carries one level up, so
+    /// that it is shipped once rather than once each. Nothing looks
+    /// there on its own -- a process searches its own directory, then
+    /// the system's, then PATH -- so PATH is where it gets said.
+    static func environment(beside executable: URL) -> [String: String]? {
+        #if os(Windows)
+            var environment = ProcessInfo.processInfo.environment
+            let installation = executable
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .path
+            let existing = environment["PATH"] ?? ""
+            environment["PATH"] = existing.isEmpty ? installation : installation + ";" + existing
+            return environment
+        #else
+            return nil
+        #endif
+    }
+
     static func path(for emulator: String) -> URL? {
         for directory in searchPaths {
             let candidate = directory.appendingPathComponent(emulator + executableSuffix)

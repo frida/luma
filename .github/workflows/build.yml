@@ -26,6 +26,7 @@ jobs:
       radare2_ref: ${{ steps.refs.outputs.RADARE2_REF }}
       swifty_pharo_ref: ${{ steps.refs.outputs.SWIFTY_PHARO_REF }}
       qemu_build: ${{ steps.refs.outputs.QEMU_BUILD }}
+      qemu_version: ${{ steps.refs.outputs.QEMU_VERSION }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -1381,7 +1382,7 @@ jobs:
       FRIDA_CORE_REF: ${{ needs.version.outputs.frida_core_ref }}
       RADARE2_REF: ${{ needs.version.outputs.radare2_ref }}
       SWIFTY_PHARO_REF: ${{ needs.version.outputs.swifty_pharo_ref }}
-      QEMU_BUILD: ${{ needs.version.outputs.qemu_build }}
+      QEMU_VERSION: ${{ needs.version.outputs.qemu_version }}
     strategy:
       fail-fast: false
       matrix:
@@ -1392,8 +1393,8 @@ jobs:
             swift_build_arch: amd64
             vcpkg_triplet: x64-windows-release
             toolcache_arch: x64
-            msys2_system: MINGW64
-            msys2_package: mingw-w64-x86_64-gcc
+            msys2_system: UCRT64
+            msys2_package: mingw-w64-ucrt-x86_64
           - runner: windows-11-arm
             win_arch: arm64
             msvc_arch: arm64
@@ -1401,7 +1402,7 @@ jobs:
             vcpkg_triplet: arm64-windows-release
             toolcache_arch: arm64
             msys2_system: CLANGARM64
-            msys2_package: mingw-w64-clang-aarch64-clang
+            msys2_package: mingw-w64-clang-aarch64
     steps:
       - uses: actions/checkout@v6
 
@@ -1436,7 +1437,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-${{ matrix.vcpkg_triplet }}-v13
+          key: vcpkg-${{ matrix.vcpkg_triplet }}-v14
 
       - name: Install dependencies via vcpkg
         shell: pwsh
@@ -1451,7 +1452,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-${{ matrix.vcpkg_triplet }}-v13
+          key: vcpkg-${{ matrix.vcpkg_triplet }}-v14
 
       - name: Set up vcpkg environment
         shell: bash
@@ -1566,6 +1567,15 @@ jobs:
           path: ${{ runner.temp }}\frida-prefix
           key: ${{ runner.os }}-${{ matrix.win_arch }}-frida-core-${{ env.FRIDA_CORE_REF }}-v8
 
+      # QEMU is built much further down, but whether it has to be
+      # decides whether the MSYS2 step below is wanted at all.
+      - name: Restore QEMU cache
+        id: qemu-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}\qemu
+          key: ${{ runner.os }}-${{ matrix.win_arch }}-qemu-${{ env.QEMU_VERSION }}-${{ hashFiles('LumaGtk/scripts/windows/build-qemu.sh') }}-v1
+
       - name: Install Go toolchain
         if: steps.frida-cache.outputs.cache-hit != 'true'
         shell: pwsh
@@ -1582,13 +1592,23 @@ jobs:
           "$goBin" >> $env:GITHUB_PATH
           & (Join-Path $goBin 'go.exe') version
 
-      - name: Install MinGW toolchain for cgo
-        if: steps.frida-cache.outputs.cache-hit != 'true'
+      # frida-core's cgo wants a MinGW compiler, and QEMU builds under
+      # MinGW and nowhere else on Windows. Both environments here are
+      # UCRT ones, so the QEMU this produces and the vcpkg DLLs it
+      # links sit on the same C runtime.
+      - name: Install MinGW toolchain
+        if: steps.frida-cache.outputs.cache-hit != 'true' || steps.qemu-cache.outputs.cache-hit != 'true'
         id: msys2
         uses: msys2/setup-msys2@v2
         with:
           msystem: ${{ matrix.msys2_system }}
-          install: ${{ matrix.msys2_package }}
+          install: >-
+            base-devel
+            ${{ matrix.msys2_package }}-toolchain
+            ${{ matrix.msys2_package }}-pkgconf
+            ${{ matrix.msys2_package }}-python
+            ${{ matrix.msys2_package }}-ninja
+            ${{ matrix.msys2_package }}-ntldd
 
 
       - name: Build frida-core (shared)
@@ -1721,20 +1741,24 @@ jobs:
           -PharoPrefix "$env:RUNNER_TEMP\pharo-prefix"
           -BuildPath "$env:RUNNER_TEMP\b"
 
-      - name: Cache QEMU
-        id: qemu-cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}/qemu
-          key: ${{ runner.os }}-${{ matrix.win_arch }}-qemu-${{ env.QEMU_BUILD }}
-
-      - name: Install QEMU
+      - name: Build QEMU
         if: steps.qemu-cache.outputs.cache-hit != 'true'
         shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
         run: >
           ./LumaGtk/scripts/windows/bootstrap.ps1
           -Only qemu
+          -Arch ${{ matrix.win_arch == 'arm64' && 'arm64' || 'x64' }}
+          -VcpkgPrefix C:\vcpkg\installed\${{ matrix.vcpkg_triplet }}
           -QemuPrefix $env:RUNNER_TEMP\qemu
+
+      - name: Save QEMU cache
+        if: steps.qemu-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}\qemu
+          key: ${{ runner.os }}-${{ matrix.win_arch }}-qemu-${{ env.QEMU_VERSION }}-${{ hashFiles('LumaGtk/scripts/windows/build-qemu.sh') }}-v1
 
       - name: Package MSI
         shell: pwsh

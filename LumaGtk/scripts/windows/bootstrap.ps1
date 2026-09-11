@@ -197,7 +197,7 @@ if (Test-Wanted 'vcpkg') {
         'glib', 'glib-networking', 'json-glib', 'libsoup', 'libffi', 'openssl',
         'gtk[introspection]', 'atk[introspection]', 'libadwaita[introspection]',
         'gtksourceview[introspection]', 'libepoxy', 'librsvg', 'libxml2',
-        'graphite2', 'sqlite3[snapshot]', 'liblzma'
+        'graphite2', 'sqlite3[snapshot]', 'liblzma', 'pixman'
     )
     Invoke-Checked 'vcpkg install' {
         & $vcpkgExe install `
@@ -366,30 +366,30 @@ if (Test-Wanted 'qemu') {
     if ((Test-Path $qemuExecutable) -and -not $Force) {
         Write-Step "QEMU already at $QemuPrefix"
     } else {
-        Write-Step "Installing QEMU -> $QemuPrefix"
+        Write-Step "Building QEMU -> $QemuPrefix"
 
-        $build = $refs['QEMU_BUILD']
-        $qemuArch = if ($Arch -eq 'arm64') { 'arm64' } else { 'x86_64' }
-        $expected = $refs["QEMU_WINDOWS_$($qemuArch.ToUpper())_SHA256"]
-        $cache = Join-Path $sourceRoot 'qemu'
-        New-Item -ItemType Directory -Force -Path $cache | Out-Null
-        $archive = Join-Path $cache "qemu-$build-windows-$qemuArch.zip"
-
-        if (-not (Test-Path $archive)) {
-            Write-Host "Fetching QEMU $build"
-            Invoke-WebRequest -UseBasicParsing `
-                -Uri "https://github.com/frida/luma/releases/download/qemu-$build/qemu-$build-windows-$qemuArch.zip" `
-                -OutFile $archive
+        # QEMU builds under MinGW and nowhere else on Windows, so this
+        # one component steps out of the MSVC environment the rest of
+        # the tree is built in. It still links the vcpkg GLib the app
+        # links, which is what keeps one copy of it in the installer.
+        $msys2Root = $env:MSYS2_LOCATION
+        if (-not $msys2Root) { $msys2Root = 'C:\msys64' }
+        $msys2Bash = Join-Path $msys2Root 'usr\bin\bash.exe'
+        if (-not (Test-Path $msys2Bash)) {
+            throw "QEMU needs MSYS2, which is not at $msys2Root. Install it from https://www.msys2.org/, or set MSYS2_LOCATION."
         }
+        $msystem = if ($Arch -eq 'arm64') { 'CLANGARM64' } else { 'UCRT64' }
 
-        $actual = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLower()
-        if ($actual -ne $expected) {
-            Remove-Item $archive -Force
-            throw "QEMU $build hashed $actual, expected $expected."
+        $script = (Join-Path $scriptDir 'build-qemu.sh') -replace '\\', '/'
+        $saved = $env:MSYSTEM
+        try {
+            $env:MSYSTEM = $msystem
+            Invoke-Checked 'build-qemu.sh' {
+                & $msys2Bash -lc "'$script' '$($refs['QEMU_VERSION'])' '$($QemuPrefix -replace '\\', '/')' '$($VcpkgPrefix -replace '\\', '/')'"
+            }
+        } finally {
+            $env:MSYSTEM = $saved
         }
-
-        Remove-Item -Recurse -Force $QemuPrefix -ErrorAction SilentlyContinue
-        Expand-Archive -Path $archive -DestinationPath $QemuPrefix
 
         $backends = & $qemuExecutable -display help
         if ($backends -notcontains 'dbus') {

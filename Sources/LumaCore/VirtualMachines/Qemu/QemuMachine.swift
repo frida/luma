@@ -66,6 +66,7 @@ final class QemuMachine: VirtualMachine {
         collectComplaints(from: complaints.fileHandleForReading)
 
         process.executableURL = executable
+        process.environment = QemuExecutable.environment(beside: executable)
         process.arguments = try guest.arguments(
             for: request,
             firmwareDirectory: QemuExecutable.firmwareDirectory(beside: executable),
@@ -228,6 +229,7 @@ final class QemuMachine: VirtualMachine {
 
         let creation = Process()
         creation.executableURL = qemuImage
+        creation.environment = QemuExecutable.environment(beside: qemuImage)
         creation.arguments = ["create", "-f", "qcow2", disk.path, Self.snapshotDiskSize]
         creation.standardOutput = FileHandle.nullDevice
         let creationComplaints = Pipe()

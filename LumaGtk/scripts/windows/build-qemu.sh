@@ -6,30 +6,39 @@
 # curses frontends the upstream Windows build carries are left out, and
 # with them the second copy of GTK the installer used to ship.
 #
-#     build-qemu.sh <upstream-version> <build> <output-dir>
+#     build-qemu.sh <upstream-version> <prefix> <vcpkg-prefix>
 #
-# Stages a qemu-<build>-windows-<arch>.zip laid out the way
-# package-msi.ps1 stages it onward: emulators, qemu-img and their DLLs
-# at the root beside COPYING and COPYING.LIB, firmware in share/ and
-# keymaps in share/keymaps. Prints the artifact's checksum and the
-# source it corresponds to, which is what the release notes carry.
+# GLib and pixman are taken from the same vcpkg prefix the app itself
+# links against, so the installer carries one copy of each rather than
+# a MinGW set beside the MSVC one. That is a MinGW compiler linking
+# MSVC-built DLLs, which holds because both sides sit on the UCRT: the
+# MSYS2 environments this runs in -- UCRT64 and CLANGARM64 -- are UCRT
+# environments, so a file descriptor or a FILE* means the same thing on
+# either side of the call.
+#
+# Stages <prefix> the way package-msi.ps1 reads it onward: emulators,
+# qemu-img and the MinGW runtime DLLs at the root beside COPYING and
+# COPYING.LIB, firmware in share/ and keymaps in share/keymaps.
+# Everything vcpkg already provides is left where the app's own copy
+# is, one directory up from where the emulators land.
 
 set -eu
 
-# Only the notes belong on stdout: the workflow feeds them straight into the
-# release body. The build's own chatter goes to the log instead.
-exec 3>&1 1>&2
-
 version=$1
-build=$2
-output=$(cd "$3" && pwd)
+prefix=$2
+vcpkg=$(cygpath -u "$3")
 
-# The MSYS2 runtime is x86_64 whatever it builds for, so uname would call an
-# arm64 build Intel. The environment is what says which one this is.
 case $MSYSTEM in
-CLANGARM64) arch=arm64 ;;
-*)          arch=x86_64 ;;
+UCRT64|CLANGARM64) ;;
+*) echo "build-qemu.sh wants a UCRT environment; $MSYSTEM is not one." >&2; exit 1 ;;
 esac
+
+# The .pc files vcpkg writes name Windows paths, so pkgconf has to be
+# told about them the way Windows writes a list.
+PKG_CONFIG_PATH=$(cygpath -m "$vcpkg/lib/pkgconfig")
+export PKG_CONFIG_PATH
+PATH="$vcpkg/bin:$PATH"
+export PATH
 
 workdir=$(mktemp -d)
 trap 'rm -rf "$workdir"' EXIT
@@ -41,11 +50,11 @@ curl -sSfLO "https://download.qemu.org/qemu-$version.tar.xz"
 # fails on them. Shortcuts are made without looking at the target.
 MSYS=winsymlinks:lnk tar xf "qemu-$version.tar.xz"
 
-prefix="$workdir/install"
+staging="$workdir/install"
 mkdir build
 cd build
 "../qemu-$version/configure" \
-    --prefix="$prefix" \
+    --prefix="$staging" \
     --target-list=i386-softmmu,x86_64-softmmu,arm-softmmu,aarch64-softmmu \
     --enable-dbus-display \
     --enable-tools \
@@ -62,39 +71,28 @@ make -j"$(nproc)"
 make install
 cd ..
 
-stage="$workdir/stage"
+stage=$(cygpath -u "$prefix")
+rm -rf "$stage"
 mkdir -p "$stage/share/keymaps"
 
-find "$prefix" -name 'qemu-system-*.exe' -exec cp {} "$stage/" \;
-find "$prefix" -name 'qemu-img.exe' -exec cp {} "$stage/" \;
+find "$staging" -name 'qemu-system-*.exe' -exec cp {} "$stage/" \;
+find "$staging" -name 'qemu-img.exe' -exec cp {} "$stage/" \;
 
-datadir=$(dirname "$(find "$prefix" -name 'bios-256k.bin')")
+datadir=$(dirname "$(find "$staging" -name 'bios-256k.bin')")
 find "$datadir" -maxdepth 1 -type f -exec cp {} "$stage/share/" \;
 cp -R "$datadir/keymaps/." "$stage/share/keymaps/"
 
 cp "qemu-$version/COPYING" "qemu-$version/COPYING.LIB" "$stage/"
 
+# Only what MinGW itself contributes travels with the emulators; the
+# vcpkg DLLs are already beside the app, which is where the emulators
+# find them from.
 for exe in "$stage"/*.exe; do
     ntldd -R "$exe"
-done | grep -io '[a-z0-9_.+-]*\.dll => [a-z]:\\[^ ]*' | cut -d' ' -f3 | sort -u | while read -r dll; do
+done | grep -io '[a-z0-9_.+-]*\.dll => [a-z]:\[^ ]*' | cut -d' ' -f3 | sort -u | while read -r dll; do
     case $(cygpath -u "$dll") in
     "$MINGW_PREFIX"/bin/*)
         cp "$(cygpath -u "$dll")" "$stage/"
         ;;
     esac
 done
-
-artifact="qemu-$build-windows-$arch.zip"
-(cd "$stage" && zip -qr "$output/$artifact" .)
-
-checksum=$(sha256sum "$output/$artifact" | cut -d' ' -f1)
-cat >&3 <<EOF
-QEMU $version, built from the unmodified source at
-https://download.qemu.org/qemu-$version.tar.xz with the GTK, SDL, VNC
-and curses frontends disabled. QEMU is GPLv2; COPYING and COPYING.LIB
-are in the archive, and the URL above is the complete corresponding
-source.
-
-$artifact
-SHA256: $checksum
-EOF
