@@ -47,7 +47,7 @@ public final class ClaudeCodeProvider: LLMProvider {
         baseURL: URL?
     ) -> AsyncThrowingStream<LLMTurnEvent, Error> {
         AsyncThrowingStream<LLMTurnEvent, Error> { continuation in
-            let process = Process()
+            let process = ChildProcess()
             let mcpHandle = MCPServerHandle()
             let work = Task<Void, Never> { @MainActor in
                 do {
@@ -68,7 +68,7 @@ public final class ClaudeCodeProvider: LLMProvider {
     }
 
     private func drive(
-        process: Process,
+        process: ChildProcess,
         mcpHandle: MCPServerHandle,
         request: LLMTurnRequest,
         continuation: AsyncThrowingStream<LLMTurnEvent, Error>.Continuation

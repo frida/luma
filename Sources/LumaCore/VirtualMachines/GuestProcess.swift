@@ -2,7 +2,7 @@ import Foundation
 
 #if os(macOS) || os(Linux) || os(Windows)
 
-extension Process {
+extension ChildProcess {
     /// A guest keeps its disk image locked for as long as it lives, so the
     /// next boot has to wait for this one to be gone rather than merely asked
     /// to leave.

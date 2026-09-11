@@ -37,7 +37,7 @@ final class QemuMachine: VirtualMachine {
     private let guest: QemuGuest
     private let executable: URL
     private let request: VirtualMachineLaunchRequest
-    private let process = Process()
+    private let process = ChildProcess()
     private let runtimeDirectory: URL
     private var monitor: QemuMonitor?
     private var displayConnection: QemuDisplayConnection?
@@ -227,7 +227,7 @@ final class QemuMachine: VirtualMachine {
             throw VirtualMachineError.launchFailed(reason: "qemu-img is not installed")
         }
 
-        let creation = Process()
+        let creation = ChildProcess()
         creation.executableURL = qemuImage
         creation.environment = QemuExecutable.environment(beside: qemuImage)
         creation.arguments = ["create", "-f", "qcow2", disk.path, Self.snapshotDiskSize]
