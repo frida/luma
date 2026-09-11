@@ -37,7 +37,7 @@ esac
 # told about them the way Windows writes a list.
 PKG_CONFIG_PATH=$(cygpath -m "$vcpkg/lib/pkgconfig")
 export PKG_CONFIG_PATH
-PATH="$vcpkg/bin:$PATH"
+PATH="$vcpkg/bin:$vcpkg/tools/glib:$PATH"
 export PATH
 
 workdir=$(mktemp -d)
