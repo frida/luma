@@ -54,7 +54,6 @@ public struct StarterImageFile: Sendable, Equatable {
 
 public enum StarterImagePackaging: Sendable, Equatable {
     case plain
-    case gzip
     /// However the distribution wrapped its kernel, what gets stored is the
     /// bare image the framework boots.
     case linuxKernel
@@ -167,9 +166,6 @@ public final class StarterImageLibrary {
         switch file.packaging {
         case .plain:
             try FileManager.default.moveItem(at: downloaded, to: destination)
-        case .gzip:
-            try GzipArchive.decompress(downloaded, to: destination)
-            try? FileManager.default.removeItem(at: downloaded)
         case .linuxKernel:
             let packed = try Data(contentsOf: downloaded, options: .mappedIfSafe)
             try LinuxKernelImage.raw(from: packed).write(to: destination)

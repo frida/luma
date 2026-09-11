@@ -2,14 +2,11 @@ import Foundation
 
 #if canImport(Compression)
 import Compression
+#else
+import CZlib
 #endif
 
 public enum GzipArchive {
-    public static func decompress(_ archive: URL, to destination: URL) throws {
-        try? FileManager.default.removeItem(at: destination)
-        try decompress(Data(contentsOf: archive, options: .mappedIfSafe)).write(to: destination)
-    }
-
     #if canImport(Compression)
     public static func decompress(_ archive: Data) throws -> Data {
         let deflated = archive.subdata(in: try payloadStart(of: archive)..<archive.count)
@@ -84,25 +81,42 @@ public enum GzipArchive {
     }
     #else
     public static func decompress(_ archive: Data) throws -> Data {
-        let gzip = Process()
-        gzip.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        gzip.arguments = ["gzip", "--decompress", "--stdout"]
-
-        let input = Pipe()
-        let output = Pipe()
-        gzip.standardInput = input
-        gzip.standardOutput = output
-        try gzip.run()
-
-        try input.fileHandleForWriting.write(contentsOf: archive)
-        try input.fileHandleForWriting.close()
-
-        let plain = try output.fileHandleForReading.readToEnd() ?? Data()
-        gzip.waitUntilExit()
-        guard gzip.terminationStatus == 0 else {
-            throw GzipError.corrupt(reason: "gzip exited with \(gzip.terminationStatus)")
+        var stream = z_stream()
+        guard inflateInit2_(&stream, 15 + 16, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK else {
+            throw GzipError.corrupt(reason: "unsupported archive")
         }
-        return plain
+        defer { inflateEnd(&stream) }
+
+        let blockSize = 1024 * 1024
+        let block = UnsafeMutablePointer<UInt8>.allocate(capacity: blockSize)
+        defer { block.deallocate() }
+
+        var output = Data()
+        var failure: String?
+        archive.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            stream.next_in = UnsafeMutablePointer(mutating: raw.bindMemory(to: UInt8.self).baseAddress!)
+            stream.avail_in = uInt(raw.count)
+
+            while true {
+                stream.next_out = block
+                stream.avail_out = uInt(blockSize)
+
+                let status = inflate(&stream, Z_NO_FLUSH)
+                output.append(block, count: blockSize - Int(stream.avail_out))
+
+                if status == Z_STREAM_END {
+                    return
+                }
+                if status != Z_OK {
+                    failure = "corrupt archive"
+                    return
+                }
+            }
+        }
+        if let failure {
+            throw GzipError.corrupt(reason: failure)
+        }
+        return output
     }
     #endif
 }

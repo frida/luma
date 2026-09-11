@@ -75,7 +75,7 @@ let cSoupTargets: [Target] = [
 ]
 let lumaCoreSoupDeps: [Target.Dependency] = ["CSoup"]
 
-let cLzmaTargets: [Target] = [
+let cCompressionTargets: [Target] = [
     .systemLibrary(
         name: "CLzma",
         path: "Sources/CLzma",
@@ -84,14 +84,23 @@ let cLzmaTargets: [Target] = [
             .apt(["liblzma-dev"]),
             .yum(["xz-devel"]),
         ]
-    )
+    ),
+    .systemLibrary(
+        name: "CZlib",
+        path: "Sources/CZlib",
+        pkgConfig: "zlib",
+        providers: [
+            .apt(["zlib1g-dev"]),
+            .yum(["zlib-devel"]),
+        ]
+    ),
 ]
-let lumaCoreLzmaDeps: [Target.Dependency] = ["CLzma"]
+let lumaCoreCompressionDeps: [Target.Dependency] = ["CLzma", "CZlib"]
 #else
 let cSoupTargets: [Target] = []
 let lumaCoreSoupDeps: [Target.Dependency] = []
-let cLzmaTargets: [Target] = []
-let lumaCoreLzmaDeps: [Target.Dependency] = []
+let cCompressionTargets: [Target] = []
+let lumaCoreCompressionDeps: [Target.Dependency] = []
 #endif
 
 // Runtime GLSL->MSL translation, so a shader written in a snippet reaches a
@@ -150,7 +159,7 @@ let lumaTargets: [Target] = [
             .product(name: "SwiftyPharo", package: "SwiftyPharo"),
             "CLumaAudio",
             "CZstd",
-        ] + lumaCoreSoupDeps + lumaCoreLzmaDeps + shaderTranslateDeps,
+        ] + lumaCoreSoupDeps + lumaCoreCompressionDeps + shaderTranslateDeps,
         path: "Sources/LumaCore",
         exclude: lumaCoreExcludes,
         resources: [
@@ -254,5 +263,5 @@ let package = Package(
         .package(url: "https://github.com/radareorg/SwiftyR2", branch: "main"),
         .package(url: "https://github.com/frida/SwiftyPharo", branch: "main"),
     ],
-    targets: cSoupTargets + cLzmaTargets + shaderTranslateTargets + lumaTargets + lumaBundlePluginTargets
+    targets: cSoupTargets + cCompressionTargets + shaderTranslateTargets + lumaTargets + lumaBundlePluginTargets
 )
