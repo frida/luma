@@ -108,7 +108,7 @@ sudo dnf install -y \
     gcc-c++ libstdc++-static patch golang-bin nodejs swift-lang \
     libadwaita-devel atk-devel \
     libepoxy-devel librsvg2-devel \
-    libgee-devel json-glib-devel libsoup3-devel \
+    libgee-devel json-glib-devel libsoup3-devel xz-devel \
     libunwind-devel libdwarf-devel libnice-devel \
     ngtcp2-crypto-ossl-devel libbpf-devel capstone-devel \
     lzfse-devel

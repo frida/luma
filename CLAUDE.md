@@ -340,6 +340,8 @@ both configurations; a passing Release build says nothing about Debug.
 - `swift-crypto` — collaboration crypto
 - `SwiftyPharo` — Pharo VM, image and the `<gtView>` builder shim
 - `miniaudio` — vendored in `Sources/CLumaAudio`, device layer only
+- `liblzma` — unpacks the Barebone agent off Apple, where
+  Compression is not there to do it
 - `glslang` + `spirv-cross` — GLSL to Metal, at build time and at
   runtime. Found wherever they happen to be installed; shipping wants
   prebuilt libraries beside the Pharo VM's, neither project building
