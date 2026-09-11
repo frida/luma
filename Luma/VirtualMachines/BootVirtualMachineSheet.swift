@@ -374,7 +374,8 @@ struct BootVirtualMachineSheet: View {
     }
 
     private func availabilityText(for template: VirtualMachineTemplate) -> String {
-        engine.virtualMachines.availability(for: template).reason ?? template.architecture.rawValue
+        if let reason = engine.virtualMachines.availability(for: template).reason { return reason }
+        return template.variants.map(\.architecture.displayName).joined(separator: " \u{00b7} ")
     }
 
     private var allowedImportTypes: [UTType] {
