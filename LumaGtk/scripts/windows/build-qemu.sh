@@ -90,7 +90,7 @@ cp "qemu-$version/COPYING" "qemu-$version/COPYING.LIB" "$stage/"
 # find them from.
 for exe in "$stage"/*.exe; do
     ntldd -R "$exe"
-done | grep -io '[a-z0-9_.+-]*\.dll => [a-z]:\[^ ]*' | cut -d' ' -f3 | sort -u | while read -r dll; do
+done | grep -io '[a-z0-9_.+-]*\.dll => [a-z]:[^ ]*' | cut -d' ' -f3 | sort -u | while read -r dll; do
     case $(cygpath -u "$dll") in
     "$MINGW_PREFIX"/bin/*)
         cp "$(cygpath -u "$dll")" "$stage/"
