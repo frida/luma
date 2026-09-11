@@ -187,7 +187,7 @@ public final class StarterImageLibrary {
                 Task { @MainActor in report(fraction) }
             }
         } catch {
-            throw StarterImageError.downloadFailed(url: url)
+            throw StarterImageError.downloadFailed(url: url, reason: error.localizedDescription)
         }
     }
 
@@ -197,13 +197,13 @@ public final class StarterImageLibrary {
 }
 
 public enum StarterImageError: Swift.Error, LocalizedError {
-    case downloadFailed(url: URL)
+    case downloadFailed(url: URL, reason: String)
     case symbolsUnavailable
 
     public var errorDescription: String? {
         switch self {
-        case .downloadFailed(let url):
-            return "Unable to download \(url.lastPathComponent)"
+        case .downloadFailed(let url, let reason):
+            return "Unable to download \(url.lastPathComponent): \(reason)"
         case .symbolsUnavailable:
             return "The kernel does not say which version it is, so its symbols cannot be found"
         }

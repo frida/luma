@@ -51,7 +51,7 @@ final class ProgressiveDownload: NSObject, URLSessionDownloadDelegate, @unchecke
     ) {
         let result: Result<URL, any Error>
         if let http = downloadTask.response as? HTTPURLResponse, http.statusCode != 200 {
-            result = .failure(URLError(.fileDoesNotExist))
+            result = .failure(DownloadError.rejected(status: http.statusCode))
         } else {
             let kept = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: false)
@@ -70,5 +70,16 @@ final class ProgressiveDownload: NSObject, URLSessionDownloadDelegate, @unchecke
         guard let error else { return }
         continuation?.resume(throwing: error)
         continuation = nil
+    }
+}
+
+enum DownloadError: Swift.Error, LocalizedError {
+    case rejected(status: Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .rejected(let status):
+            return "the server answered \(status) \(HTTPURLResponse.localizedString(forStatusCode: status))"
+        }
     }
 }

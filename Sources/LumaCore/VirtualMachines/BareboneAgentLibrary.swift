@@ -105,7 +105,7 @@ public final class BareboneAgentLibrary {
             defer { try? FileManager.default.removeItem(at: downloaded) }
             return try Data(contentsOf: downloaded)
         } catch {
-            throw BareboneAgentError.downloadFailed(flavor: flavor, version: version)
+            throw BareboneAgentError.downloadFailed(flavor: flavor, version: version, reason: error.localizedDescription)
         }
     }
 
@@ -173,15 +173,15 @@ public enum BareboneAgentState: Sendable, Equatable {
 
 public enum BareboneAgentError: Swift.Error, LocalizedError {
     case noneAvailable(flavor: BareboneAgentFlavor)
-    case downloadFailed(flavor: BareboneAgentFlavor, version: String)
+    case downloadFailed(flavor: BareboneAgentFlavor, version: String, reason: String)
     case decompressionFailed(reason: String)
 
     public var errorDescription: String? {
         switch self {
         case .noneAvailable(let flavor):
             return "No published \(flavor.name) agent found"
-        case .downloadFailed(let flavor, let version):
-            return "No \(flavor.name) agent published for Frida \(version)"
+        case .downloadFailed(let flavor, let version, let reason):
+            return "Unable to fetch the \(flavor.name) agent for Frida \(version): \(reason)"
         case .decompressionFailed(let reason):
             return "Unable to unpack the agent: \(reason)"
         }
