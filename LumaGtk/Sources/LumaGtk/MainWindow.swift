@@ -2744,11 +2744,9 @@ final class MainWindow: InstrumentUIHost {
     }
 
     private func removeSessionRows(_ sessionID: UUID) {
-        if let rootPtr = sessionsList.root?.ptr {
-            Gtk.WindowRef(raw: rootPtr).focus = nil
-        }
         while let idx = sessionsRowKinds.firstIndex(where: { $0.sessionID == sessionID }) {
             if let row = sessionsList.getRowAt(index: idx) {
+                row.clearFocusIfInside()
                 sessionsList.remove(child: row)
             }
             sessionsRowKinds.remove(at: idx)
@@ -3535,9 +3533,7 @@ final class MainWindow: InstrumentUIHost {
 
     private func refreshDetachedIndicator(for session: LumaCore.ProcessSession) {
         guard let host = sessionDetachedHosts[session.id] else { return }
-        if let rootPtr = host.root?.ptr {
-            Gtk.WindowRef(raw: rootPtr).focus = nil
-        }
+        host.clearFocusIfInside()
         while let child = host.firstChild {
             host.remove(child: child)
         }
