@@ -197,7 +197,7 @@ if (Test-Wanted 'vcpkg') {
         'glib', 'glib-networking', 'json-glib', 'libsoup', 'libffi', 'openssl',
         'gtk[introspection]', 'atk[introspection]', 'libadwaita[introspection]',
         'gtksourceview[introspection]', 'libepoxy', 'librsvg', 'libxml2',
-        'graphite2', 'sqlite3[snapshot]', 'liblzma', 'pixman'
+        'graphite2', 'sqlite3[snapshot]', 'liblzma', 'zstd', 'pixman'
     )
     Invoke-Checked 'vcpkg install' {
         & $vcpkgExe install `

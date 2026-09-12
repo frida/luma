@@ -35,8 +35,9 @@ esac
 
 # The .pc files vcpkg writes name Windows paths, so pkgconf has to be
 # told about them the way Windows writes a list.
-PKG_CONFIG_PATH=$(cygpath -m "$vcpkg/lib/pkgconfig")
-export PKG_CONFIG_PATH
+PKG_CONFIG_LIBDIR=$(cygpath -m "$vcpkg/lib/pkgconfig")
+export PKG_CONFIG_LIBDIR
+unset PKG_CONFIG_PATH
 PATH="$vcpkg/bin:$vcpkg/tools/glib:$PATH"
 export PATH
 
@@ -51,12 +52,20 @@ curl -sSfLO "https://download.qemu.org/qemu-$version.tar.xz"
 MSYS=winsymlinks:lnk tar xf "qemu-$version.tar.xz"
 
 staging="$workdir/install"
+bzip2_headers="$workdir/bzip2-headers"
+mkdir -p "$bzip2_headers"
+cp "$vcpkg/include/bzlib.h" "$bzip2_headers/"
+
 mkdir build
 cd build
 "../qemu-$version/configure" \
     --prefix="$staging" \
+    --extra-cflags="-I$(cygpath -m "$bzip2_headers")" \
+    --extra-ldflags="-L$(cygpath -m "$vcpkg/lib")" \
     --target-list=i386-softmmu,x86_64-softmmu,arm-softmmu,aarch64-softmmu \
     --enable-dbus-display \
+    --enable-bzip2 \
+    --enable-zstd \
     --enable-tools \
     --disable-gtk \
     --disable-sdl \
@@ -93,7 +102,7 @@ for exe in "$stage"/*.exe; do
 done | grep -io '[a-z0-9_.+-]*\.dll => [a-z]:[^ ]*' | cut -d' ' -f3 | sort -u | while read -r dll; do
     case $(cygpath -u "$dll") in
     "$MINGW_PREFIX"/bin/*)
-        cp "$(cygpath -u "$dll")" "$stage/"
+        [ -f "$vcpkg/bin/$(basename "$dll")" ] || cp "$(cygpath -u "$dll")" "$stage/"
         ;;
     esac
 done
