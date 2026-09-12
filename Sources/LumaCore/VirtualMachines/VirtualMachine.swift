@@ -50,6 +50,9 @@ public struct VirtualMachineCapabilities: OptionSet, Sendable {
 public enum BareboneAgentTransport: Sendable, Equatable {
     case hostlink(qmpSocket: URL, bus: String?, fabric: BareboneHostlinkFabric)
     case vsock(socketPath: URL, port: UInt)
+    /// The guest dials out over vsock and the emulator bridges it to this host UNIX socket; the
+    /// path is whitelisted in the emulator by the barebone backend's instrumentation.
+    case pipeVsock(socketPath: URL)
 }
 
 public enum BareboneHostlinkFabric: Sendable, Equatable {
@@ -61,4 +64,7 @@ public enum BareboneHostlinkFabric: Sendable, Equatable {
 public enum BareboneDebugStub: Sendable, Equatable {
     case gdbRemote(host: String, port: UInt16)
     case virtualization(pid: UInt)
+    /// The Android emulator's gdbstub, reachable over host/port but unusable until the backend
+    /// instruments the hosting qemu process at `pid`.
+    case androidEmulator(host: String, port: UInt16, pid: UInt)
 }

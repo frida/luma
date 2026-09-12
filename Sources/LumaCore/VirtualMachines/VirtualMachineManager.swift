@@ -215,6 +215,8 @@ extension BareboneAgentTransport {
             return BareboneHostlinkTransportConfig(qmp: "unix:\(qmpSocket.path)", bus: bus, fabric: fabric.config)
         case .vsock(let socketPath, let port):
             return BareboneVsockTransportConfig(socketPath: socketPath.path, port: port)
+        case .pipeVsock(let socketPath):
+            return BareboneVsockPipeTransportConfig(socketPath: socketPath.path)
         }
     }
 }
@@ -239,6 +241,8 @@ extension BareboneDebugStub {
             return BareboneConnectionConfig(host: host, port: UInt(port), flavor: .gdbRemote)
         case .virtualization(let pid):
             return BareboneConnectionConfig(pid: pid, flavor: .vz)
+        case .androidEmulator(let host, let port, let pid):
+            return BareboneConnectionConfig(host: host, port: UInt(port), pid: pid, flavor: .androidEmulator)
         }
     }
 }
