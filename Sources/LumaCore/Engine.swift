@@ -194,6 +194,7 @@ public final class Engine {
         #if os(macOS)
         virtualMachines.register(VirtualizationBackend())
         virtualMachines.register(VPhoneBackend())
+        virtualMachines.register(AndroidEmulatorBackend())
         #endif
 
         registerDescriptor(Self.tracerDescriptor)
