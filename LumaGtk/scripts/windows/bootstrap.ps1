@@ -391,6 +391,7 @@ if (Test-Wanted 'qemu') {
             $env:MSYSTEM = $saved
         }
 
+        $env:PATH = "$VcpkgPrefix\bin;" + $env:PATH
         $backends = & $qemuExecutable -display help
         if ($backends -notcontains 'dbus') {
             throw "This QEMU has no dbus display, which the virtual machines draw through."
