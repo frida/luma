@@ -94,6 +94,9 @@ function Sync-Checkout {
         }
         if ($previous -ne (& git rev-parse HEAD)) {
             Remove-Item -Recurse -Force 'build' -ErrorAction SilentlyContinue
+            Get-ChildItem 'subprojects' -Filter *.wrap -ErrorAction SilentlyContinue | ForEach-Object {
+                Remove-Item -Recurse -Force (Join-Path 'subprojects' $_.BaseName) -ErrorAction SilentlyContinue
+            }
         }
     } finally {
         Pop-Location
