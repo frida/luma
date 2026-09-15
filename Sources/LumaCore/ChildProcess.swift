@@ -207,7 +207,7 @@ public enum ChildProcessError: Swift.Error, LocalizedError {
     }
 }
 
-#else
+#elseif os(macOS) || os(Linux)
 
 public typealias ChildProcess = Process
 
