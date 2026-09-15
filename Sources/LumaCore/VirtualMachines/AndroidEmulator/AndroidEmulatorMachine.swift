@@ -54,8 +54,9 @@ final class AndroidEmulatorMachine: VirtualMachine {
         let consolePort = try Self.reserveConsolePort()
 
         // Old guest kernels lack vsock, so they are reached over a virtio-serial hostlink and
-        // launched single-core.
-        let hasVsock = Self.kernelSupportsVsock(avd.kernelImage)
+        // launched single-core. Inflating and scanning the kernel image is off the main thread.
+        let kernelImage = avd.kernelImage
+        let hasVsock = await Task.detached { Self.kernelSupportsVsock(kernelImage) }.value
 
         // Debug fast path: load a pre-booted snapshot and never save, so each iteration starts from
         // the same clean guest in seconds instead of a cold boot, and injection damage is discarded.
@@ -193,13 +194,13 @@ final class AndroidEmulatorMachine: VirtualMachine {
 
     /// vsock landed in ~4.8, so a guest kernel that names no vsock symbol needs the virtio-serial
     /// hostlink instead. The image is often gzip-compressed, so it is inflated before searching.
-    private static func kernelSupportsVsock(_ url: URL?) -> Bool {
+    private nonisolated static func kernelSupportsVsock(_ url: URL?) -> Bool {
         guard let url, let data = try? Data(contentsOf: url) else { return true }
         let image = data.starts(with: [0x1f, 0x8b]) ? (gunzip(data) ?? data) : data
         return image.range(of: Data("vsock".utf8)) != nil
     }
 
-    private static func gunzip(_ data: Data) -> Data? {
+    private nonisolated static func gunzip(_ data: Data) -> Data? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/gzip")
         process.arguments = ["-dc"]
@@ -213,9 +214,13 @@ final class AndroidEmulatorMachine: VirtualMachine {
         } catch {
             return nil
         }
-        // gzip stops at the trailer, so a broken pipe once it has what it wants is expected.
-        input.fileHandleForWriting.write(data)
-        try? input.fileHandleForWriting.close()
+        // Feed gzip from another thread while draining its output here: a kernel image larger than
+        // the pipe buffer would otherwise wedge both ends. gzip stops at the trailer, so a broken
+        // pipe once it has what it wants is expected.
+        DispatchQueue.global().async {
+            try? input.fileHandleForWriting.write(contentsOf: data)
+            try? input.fileHandleForWriting.close()
+        }
         let inflated = try? output.fileHandleForReading.readToEnd()
         process.waitUntilExit()
         return inflated
