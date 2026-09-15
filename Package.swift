@@ -1,5 +1,15 @@
 // swift-tools-version: 6.1
 
+let lumaFridaDevkitLinkerSettings: [LinkerSetting] = {
+    guard let devkit = ProcessInfo.processInfo.environment["LUMA_FRIDA_DEVKIT"], !devkit.isEmpty else { return [] }
+    var flags = ["-L\(devkit)/lib", "-lfrida-core", "-lc++", "-lresolv", "-liconv", "-lbsm", "-lm"]
+    for framework in ["Foundation", "CoreFoundation", "AppKit", "CoreServices", "IOKit", "Security", "Network", "SystemConfiguration"] {
+        flags += ["-framework", framework]
+    }
+    return [.unsafeFlags(flags)]
+}()
+
+
 import Foundation
 import PackageDescription
 
@@ -223,6 +233,18 @@ let lumaTargets: [Target] = [
         swiftSettings: [
             .swiftLanguageMode(.v6),
         ]
+    ),
+    .executableTarget(
+        name: "LumaEmulatorCheck",
+        dependencies: [
+            "LumaCore",
+            .product(name: "Frida", package: "frida-swift"),
+        ],
+        path: "Sources/LumaEmulatorCheck",
+        swiftSettings: [
+            .swiftLanguageMode(.v5),
+        ],
+        linkerSettings: lumaFridaDevkitLinkerSettings
     ),
     .executableTarget(
         name: "LumaShaderCompiler",
