@@ -60,7 +60,7 @@ struct BootVirtualMachineSheet: View {
 
     private var templateChooser: some View {
         HStack(alignment: .top, spacing: 16) {
-            List(engine.virtualMachines.templates, id: \.id, selection: $selectedTemplateID) { template in
+            List(engine.virtualMachines.templates, id: \.id, selection: templateSelection) { template in
                 HStack(spacing: 8) {
                     if let icon = template.icon {
                         icon.swiftUIImage
@@ -80,7 +80,6 @@ struct BootVirtualMachineSheet: View {
             }
             .contentMargins(.top, 0)
             .frame(width: 220)
-            .onChange(of: selectedTemplateID) { _, _ in adoptTemplateDefaults() }
             .onChange(of: parameters) { _, _ in refreshDefaultName() }
 
             if let template = selectedTemplate {
@@ -118,8 +117,19 @@ struct BootVirtualMachineSheet: View {
                 .formStyle(.grouped)
                 .contentMargins(.top, 0)
                 }
+                .id(template.id)
             }
         }
+    }
+
+    private var templateSelection: Binding<String?> {
+        Binding(
+            get: { selectedTemplateID },
+            set: { newValue in
+                selectedTemplateID = newValue
+                adoptTemplateDefaults()
+            }
+        )
     }
 
     @ViewBuilder
