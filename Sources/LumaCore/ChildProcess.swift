@@ -164,7 +164,8 @@ public final class ChildProcess: @unchecked Sendable {
     }
 
     private static func environmentBlock(_ environment: [String: String]) -> String {
-        environment.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)\0" }.joined()
+        environment.sorted { $0.key.caseInsensitiveCompare($1.key) == .orderedAscending }
+            .map { "\($0.key)=\($0.value)\0" }.joined()
     }
 
     private static func quoted(_ commandLine: [String]) -> String {

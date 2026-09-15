@@ -65,8 +65,9 @@ enum QemuExecutable {
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
                 .path
-            let existing = environment["PATH"] ?? ""
-            environment["PATH"] = existing.isEmpty ? installation : installation + ";" + existing
+            let key = searchPathKey(in: environment)
+            let existing = environment[key] ?? ""
+            environment[key] = existing.isEmpty ? installation : installation + ";" + existing
             return environment
         #else
             return nil
@@ -94,9 +95,14 @@ enum QemuExecutable {
     }
 
     private static var installedDirectories: [URL] {
-        let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
+        let environment = ProcessInfo.processInfo.environment
+        let path = environment[searchPathKey(in: environment)] ?? ""
         return (path.split(separator: pathSeparator).map(String.init) + packageManagerPaths)
             .map { URL(fileURLWithPath: $0, isDirectory: true) }
+    }
+
+    private static func searchPathKey(in environment: [String: String]) -> String {
+        environment.keys.first { $0.caseInsensitiveCompare("PATH") == .orderedSame } ?? "PATH"
     }
 
     #if os(Windows)
