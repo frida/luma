@@ -41,22 +41,57 @@ final class AndroidEmulatorMachine: VirtualMachine {
         runtimeDirectory.appendingPathComponent("hostlink.sock")
     }
 
+    private var qmpSocketPath: URL {
+        runtimeDirectory.appendingPathComponent("qmp.sock")
+    }
+
+    private static let hostlinkBus = "frida-vserial.0"
+    private static let hostlinkController = "frida-vserial"
+    private static let pcieEcamBase: UInt64 = 0x3f00_0000
+
     func start() async throws {
         let gdbPort = try Self.reserveGdbPort()
         let consolePort = try Self.reserveConsolePort()
+
+        // Old guest kernels lack vsock, so they are reached over a virtio-serial hostlink and
+        // launched single-core.
+        let hasVsock = Self.kernelSupportsVsock(avd.kernelImage)
+
+        // Debug fast path: load a pre-booted snapshot and never save, so each iteration starts from
+        // the same clean guest in seconds instead of a cold boot, and injection damage is discarded.
+        let snapshot = ProcessInfo.processInfo.environment["FRIDA_EMULATOR_SNAPSHOT"]
 
         process.executableURL = emulator
         process.arguments = [
             "@\(avd.name)",
             "-no-window",
-            "-no-snapshot",
             "-no-audio",
             "-no-boot-anim",
             "-gpu", "swiftshader_indirect",
+        ]
+        if let snapshot {
+            process.arguments! += ["-snapshot", snapshot, "-no-snapshot-save"]
+        } else {
+            process.arguments! += ["-no-snapshot"]
+        }
+        if !hasVsock {
+            // A multi-core guest never returns from an injected call on this emulator, and the
+            // barebone backend drives calls into a single vCPU only.
+            process.arguments! += ["-cores", "1"]
+        }
+        process.arguments! += [
             "-ports", "\(consolePort),\(consolePort + 1)",
             "-qemu",
             "-gdb", "tcp::\(gdbPort)",
         ]
+        if !hasVsock {
+            // The injected agent drives this controller itself over the guest's PCIe config space
+            // at the ranchu ECAM base; the QMP channel opens the host end of its serial port.
+            process.arguments! += [
+                "-qmp", "unix:\(qmpSocketPath.path),server,nowait",
+                "-device", "virtio-serial-pci,id=\(Self.hostlinkController)",
+            ]
+        }
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
 
@@ -69,8 +104,7 @@ final class AndroidEmulatorMachine: VirtualMachine {
 
         do {
             // adb answering means the kernel is up and scheduling -- what Frida needs to walk it,
-            // and proof its QEMU is running so its pid can be found. The emulator's own transport
-            // (pipe-over-vsock) and the direct instrumentation of that QEMU need no QMP channel.
+            // and proof its QEMU is running so its pid can be found.
             try await waitForDevice(serial: "emulator-\(consolePort)")
 
             guard let qemuPid = Self.qemuProcess(matchingGdbPort: gdbPort) else {
@@ -78,7 +112,9 @@ final class AndroidEmulatorMachine: VirtualMachine {
             }
 
             debugStub = .androidEmulator(host: "127.0.0.1", port: gdbPort, pid: UInt(qemuPid))
-            agentTransport = .pipeVsock(socketPath: pipeSocketPath)
+            agentTransport = hasVsock
+                ? .pipeVsock(socketPath: pipeSocketPath)
+                : .hostlink(qmpSocket: qmpSocketPath, bus: Self.hostlinkBus, fabric: .ecam(base: Self.pcieEcamBase))
             state = .running
         } catch {
             await shutDown()
@@ -153,6 +189,36 @@ final class AndroidEmulatorMachine: VirtualMachine {
         // whole thing can be searched as one string.
         let bytes = buffer.prefix(size).map { $0 == 0 ? UInt8(ascii: " ") : $0 }
         return String(decoding: bytes, as: UTF8.self)
+    }
+
+    /// vsock landed in ~4.8, so a guest kernel that names no vsock symbol needs the virtio-serial
+    /// hostlink instead. The image is often gzip-compressed, so it is inflated before searching.
+    private static func kernelSupportsVsock(_ url: URL?) -> Bool {
+        guard let url, let data = try? Data(contentsOf: url) else { return true }
+        let image = data.starts(with: [0x1f, 0x8b]) ? (gunzip(data) ?? data) : data
+        return image.range(of: Data("vsock".utf8)) != nil
+    }
+
+    private static func gunzip(_ data: Data) -> Data? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/gzip")
+        process.arguments = ["-dc"]
+        let input = Pipe()
+        let output = Pipe()
+        process.standardInput = input
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+        // gzip stops at the trailer, so a broken pipe once it has what it wants is expected.
+        input.fileHandleForWriting.write(data)
+        try? input.fileHandleForWriting.close()
+        let inflated = try? output.fileHandleForReading.readToEnd()
+        process.waitUntilExit()
+        return inflated
     }
 
     private static func reserveGdbPort() throws -> UInt16 {
