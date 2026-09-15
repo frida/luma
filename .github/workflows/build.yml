@@ -1604,6 +1604,7 @@ jobs:
           msystem: ${{ matrix.msys2_system }}
           install: >-
             base-devel
+            git
             ${{ matrix.msys2_package }}-toolchain
             ${{ matrix.msys2_package }}-pkgconf
             ${{ matrix.msys2_package }}-python
