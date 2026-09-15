@@ -14,7 +14,7 @@ final class AndroidEmulatorMachine: VirtualMachine {
     private(set) var agentTransport: BareboneAgentTransport?
 
     var capabilities: VirtualMachineCapabilities {
-        []
+        [.snapshot, .liveDisplay, .input]
     }
 
     var kernelImage: URL? {
@@ -26,6 +26,11 @@ final class AndroidEmulatorMachine: VirtualMachine {
     private let avd: AndroidEmulatorSDK.AVD
     private let process = Process()
     private let runtimeDirectory: URL
+    private let hasReadySnapshot: Bool
+    private var controlEndpoint: EmulatorControlEndpoint?
+    private var displayConnection: EmulatorDisplayConnection?
+
+    private static let readySnapshotName = "frida-ready"
 
     init(emulator: URL, adb: URL, avd: AndroidEmulatorSDK.AVD, request: VirtualMachineLaunchRequest) {
         self.id = request.id
@@ -34,6 +39,7 @@ final class AndroidEmulatorMachine: VirtualMachine {
         self.emulator = emulator
         self.adb = adb
         self.avd = avd
+        self.hasReadySnapshot = request.resumesFromReadySnapshot
         self.runtimeDirectory = GuestSocketDirectory.make()
     }
 
@@ -51,6 +57,7 @@ final class AndroidEmulatorMachine: VirtualMachine {
 
     func start() async throws {
         let gdbPort = try Self.reserveGdbPort()
+        let grpcPort = try Self.reserveGdbPort()
         let consolePort = try Self.reserveConsolePort()
 
         // Old guest kernels lack vsock, so they are reached over a virtio-serial hostlink and
@@ -58,9 +65,11 @@ final class AndroidEmulatorMachine: VirtualMachine {
         let kernelImage = avd.kernelImage
         let hasVsock = await Task.detached { Self.kernelSupportsVsock(kernelImage) }.value
 
-        // Debug fast path: load a pre-booted snapshot and never save, so each iteration starts from
-        // the same clean guest in seconds instead of a cold boot, and injection damage is discarded.
-        let snapshot = ProcessInfo.processInfo.environment["FRIDA_EMULATOR_SNAPSHOT"]
+        // Boot from the ready snapshot when resuming, or from the one named in the environment for a
+        // fast debug loop; either way never save on exit, so injection damage is discarded.
+        let snapshot = hasReadySnapshot
+            ? Self.readySnapshotName
+            : ProcessInfo.processInfo.environment["FRIDA_EMULATOR_SNAPSHOT"]
 
         process.executableURL = emulator
         process.arguments = [
@@ -82,6 +91,7 @@ final class AndroidEmulatorMachine: VirtualMachine {
         }
         process.arguments! += [
             "-ports", "\(consolePort),\(consolePort + 1)",
+            "-grpc", "\(grpcPort)",
             "-qemu",
             "-gdb", "tcp::\(gdbPort)",
         ]
@@ -116,6 +126,11 @@ final class AndroidEmulatorMachine: VirtualMachine {
             agentTransport = hasVsock
                 ? .pipeVsock(socketPath: pipeSocketPath)
                 : .hostlink(qmpSocket: qmpSocketPath, bus: Self.hostlinkBus, fabric: .ecam(base: Self.pcieEcamBase))
+
+            let endpoint = EmulatorControlEndpoint.discover(launcherPID: process.processIdentifier, port: Int(grpcPort))
+            controlEndpoint = endpoint
+            displayConnection = try? EmulatorDisplayConnection(endpoint: endpoint)
+            display = displayConnection.map { .frames($0) }
             state = .running
         } catch {
             await shutDown()
@@ -136,20 +151,32 @@ final class AndroidEmulatorMachine: VirtualMachine {
     }
 
     func captureReadySnapshot() async throws {
-        throw VirtualMachineError.snapshotFailed(reason: "An Android emulator guest cannot be snapshotted")
+        try? await snapshot(.delete)
+        try await snapshot(.save)
     }
 
     func restoreReadySnapshot() async throws {
-        throw VirtualMachineError.snapshotFailed(reason: "An Android emulator guest cannot be snapshotted")
+        try await snapshot(.load)
     }
 
     func discardReadySnapshot() async throws {
-        throw VirtualMachineError.snapshotFailed(reason: "An Android emulator guest cannot be snapshotted")
+        try? await snapshot(.delete)
+    }
+
+    private func snapshot(_ verb: EmulatorControlEndpoint.SnapshotVerb) async throws {
+        guard let controlEndpoint else {
+            throw VirtualMachineError.snapshotFailed(reason: "The emulator is not running")
+        }
+        try await controlEndpoint.runSnapshot(verb, name: Self.readySnapshotName)
     }
 
     func shutDown() async {
+        displayConnection?.close()
+        displayConnection = nil
+        display = nil
         await process.terminateAndWaitForExit()
         try? FileManager.default.removeItem(at: runtimeDirectory)
+        controlEndpoint = nil
         debugStub = nil
         agentTransport = nil
         state = .stopped

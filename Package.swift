@@ -157,6 +157,10 @@ let lumaTargets: [Target] = [
             .product(name: "GRDB", package: "GRDB.swift"),
             .product(name: "SwiftyR2", package: "SwiftyR2"),
             .product(name: "SwiftyPharo", package: "SwiftyPharo"),
+            .product(name: "GRPCCore", package: "grpc-swift-2"),
+            .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
+            .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
+            .product(name: "SwiftProtobuf", package: "swift-protobuf"),
             "CLumaAudio",
             "CZstd",
         ] + lumaCoreSoupDeps + lumaCoreCompressionDeps + shaderTranslateDeps,
@@ -273,6 +277,10 @@ let package = Package(
         .package(url: "https://github.com/groue/GRDB.swift", .upToNextMajor(from: "7.0.0")),
         .package(url: "https://github.com/radareorg/SwiftyR2", branch: "main"),
         .package(url: "https://github.com/frida/SwiftyPharo", branch: "main"),
+        .package(url: "https://github.com/grpc/grpc-swift-2.git", .upToNextMajor(from: "2.0.0")),
+        .package(url: "https://github.com/grpc/grpc-swift-nio-transport", .upToNextMajor(from: "2.0.0")),
+        .package(url: "https://github.com/grpc/grpc-swift-protobuf", .upToNextMajor(from: "2.0.0")),
+        .package(url: "https://github.com/apple/swift-protobuf", .upToNextMajor(from: "1.28.0")),
     ],
     targets: cSoupTargets + cCompressionTargets + shaderTranslateTargets + lumaTargets + lumaBundlePluginTargets
 )
