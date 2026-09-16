@@ -1,6 +1,6 @@
 import Foundation
 
-#if os(macOS) || os(Linux) || os(Windows)
+#if os(Windows) || os(macOS) || os(Linux)
 
 /// Locates the Android SDK's emulator and the AVDs a developer already made in Android Studio,
 /// and resolves the kernel image each AVD boots -- the barebone backend mines that image for the
@@ -9,6 +9,11 @@ enum AndroidEmulatorSDK {
     struct AVD: Sendable, Equatable {
         let name: String
         let kernelImage: URL
+        let architecture: VirtualMachineArchitecture
+
+        var agentFlavor: BareboneAgentFlavor {
+            BareboneAgentFlavor(kernel: .linux, architecture: architecture)
+        }
     }
 
     static var root: URL? {
@@ -68,8 +73,8 @@ enum AndroidEmulatorSDK {
         for line in listing.split(whereSeparator: \.isNewline) {
             let name = line.trimmingCharacters(in: .whitespacesAndNewlines)
             if name.isEmpty { continue }
-            if let kernel = kernelImage(for: name) {
-                result.append(AVD(name: name, kernelImage: kernel))
+            if let described = describe(name) {
+                result.append(described)
             }
         }
         return result
@@ -79,7 +84,7 @@ enum AndroidEmulatorSDK {
     /// beside that image as `kernel-ranchu`. A config may also pin `kernel.path` outright. The
     /// AVD's directory is not its name plus ".avd" -- the `<name>.ini` file's `path=` says where
     /// it really is.
-    private static func kernelImage(for avd: String) -> URL? {
+    private static func describe(_ avd: String) -> AVD? {
         guard let root else { return nil }
 
         let pointer = avdHome.appendingPathComponent("\(avd).ini")
@@ -100,20 +105,36 @@ enum AndroidEmulatorSDK {
             }
         }
 
+        guard let architecture = architecture(named: values["abi.type"] ?? values["hw.cpu.arch"]) else {
+            return nil
+        }
+
         if let explicit = values["kernel.path"], !explicit.isEmpty {
             let url = URL(fileURLWithPath: nativePath(explicit))
-            if FileManager.default.fileExists(atPath: url.path) { return url }
+            if FileManager.default.fileExists(atPath: url.path) {
+                return AVD(name: avd, kernelImage: url, architecture: architecture)
+            }
         }
         guard let sysdir = values["image.sysdir.1"], !sysdir.isEmpty else { return nil }
         for name in ["kernel-ranchu", "kernel-ranchu-64", "kernel-qemu"] {
             let candidate = root.appendingPathComponent(nativePath(sysdir)).appendingPathComponent(name)
-            if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                return AVD(name: avd, kernelImage: candidate, architecture: architecture)
+            }
         }
         return nil
     }
 
-    /// An AVD config on Windows spells its paths with backslashes, which URL keeps as ordinary
-    /// characters rather than separators.
+    private static func architecture(named abi: String?) -> VirtualMachineArchitecture? {
+        switch abi {
+        case "x86_64": return .x86_64
+        case "x86": return .x86
+        case "arm64-v8a", "arm64": return .arm64
+        case "armeabi-v7a", "armeabi", "arm": return .arm
+        default: return nil
+        }
+    }
+
     private static func nativePath(_ path: String) -> String {
         #if os(Windows)
         path.replacingOccurrences(of: "\\", with: "/")

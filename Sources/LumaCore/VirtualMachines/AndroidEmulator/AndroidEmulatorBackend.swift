@@ -12,15 +12,21 @@ public final class AndroidEmulatorBackend: VirtualMachineBackend {
 
     public static let avdParameterID = "avd"
 
+    /// Frida instruments the emulator's QEMU through a gdbstub shim that reaches for an aarch64
+    /// export, so an AVD on any other ABI cannot be injected into however well it boots.
+    private static let instrumentableArchitectures: [VirtualMachineArchitecture] = [.arm64]
+
     public init() {
     }
 
     public var templates: [VirtualMachineTemplate] {
         let avds = AndroidEmulatorSDK.listAVDs()
-        let options = avds.map { VirtualMachineParameterOption(id: $0.name, name: $0.name) }
-        return [
-            VirtualMachineTemplate(
-                id: "android-emulator.avd",
+        return Self.instrumentableArchitectures.map { architecture in
+            let options = avds
+                .filter { $0.architecture == architecture }
+                .map { VirtualMachineParameterOption(id: $0.name, name: $0.name) }
+            return VirtualMachineTemplate(
+                id: "android-emulator.avd.\(architecture.rawValue)",
                 backendID: id,
                 name: "Android Emulator",
                 summary: """
@@ -30,8 +36,8 @@ public final class AndroidEmulatorBackend: VirtualMachineBackend {
                     """,
                 iconName: "android",
                 operatingSystem: .android,
-                architecture: .arm64,
-                agentFlavor: .linuxArm64,
+                architecture: architecture,
+                agentFlavor: BareboneAgentFlavor(kernel: .linux, architecture: architecture),
                 parameters: [
                     VirtualMachineParameter(
                         id: Self.avdParameterID,
@@ -40,7 +46,7 @@ public final class AndroidEmulatorBackend: VirtualMachineBackend {
                     )
                 ]
             )
-        ]
+        }
     }
 
     public func availability(for template: VirtualMachineTemplate) -> VirtualMachineAvailability {
@@ -50,8 +56,17 @@ public final class AndroidEmulatorBackend: VirtualMachineBackend {
         guard AndroidEmulatorSDK.adb != nil else {
             return .unavailable(reason: "The Android SDK platform-tools (adb) are not installed")
         }
-        guard !AndroidEmulatorSDK.listAVDs().isEmpty else {
+        let avds = AndroidEmulatorSDK.listAVDs()
+        guard !avds.isEmpty else {
             return .unavailable(reason: "No AVDs found; create one in Android Studio")
+        }
+        guard avds.contains(where: { $0.architecture == template.architecture }) else {
+            let found = Set(avds.map(\.architecture.displayName)).sorted().joined(separator: ", ")
+            return .unavailable(
+                reason: """
+                    Frida can only instrument \(template.architecture.displayName) AVDs, and the ones \
+                    installed are \(found). Create one in Android Studio.
+                    """)
         }
         return .available
     }
@@ -65,6 +80,10 @@ public final class AndroidEmulatorBackend: VirtualMachineBackend {
         }
         guard let avd = AndroidEmulatorSDK.listAVDs().first(where: { $0.name == avdName }) else {
             throw VirtualMachineError.launchFailed(reason: "AVD \(avdName) was not found")
+        }
+        guard Self.instrumentableArchitectures.contains(avd.architecture) else {
+            throw VirtualMachineError.launchFailed(
+                reason: "AVD \(avdName) is \(avd.architecture.displayName), which Frida cannot instrument")
         }
 
         let machine = AndroidEmulatorMachine(

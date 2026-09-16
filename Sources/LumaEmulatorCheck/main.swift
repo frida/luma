@@ -47,18 +47,24 @@ func run() async throws {
     }
     let code = env["LUMA_EMULATOR_SCRIPT"] ?? "send(1 + 1);"
 
+    func avds(of template: VirtualMachineTemplate) -> [String] {
+        guard case .choice(let options, _) = template.parameters.first?.kind else { return [] }
+        return options.map(\.id)
+    }
+
     let backend = AndroidEmulatorBackend()
-    guard let template = backend.templates.first else { fail("no Android emulator template") }
+    let templates = backend.templates
+    let wanted = env["LUMA_EMULATOR_AVD"]
+    guard let template = templates.first(where: { wanted.map(avds(of:)($0).contains) ?? false })
+            ?? templates.first
+    else { fail("no Android emulator template") }
     let availability = backend.availability(for: template)
     guard availability.isAvailable else { fail(availability.reason ?? "backend unavailable") }
 
-    let avdName = env["LUMA_EMULATOR_AVD"] ?? {
-        guard case .choice(let options, let fallback) = template.parameters.first?.kind else { return "" }
-        return options.first?.id ?? fallback
-    }()
+    let avdName = wanted ?? avds(of: template).first ?? ""
     guard !avdName.isEmpty else { fail("no AVD to launch") }
 
-    note("launching AVD \(avdName)…")
+    note("launching AVD \(avdName) (\(template.architecture.rawValue))…")
     let request = VirtualMachineLaunchRequest(
         id: UUID(),
         template: template,
