@@ -32,7 +32,7 @@ public final class BareboneAgentLibrary {
 
     public func availableVersions(for flavor: BareboneAgentFlavor) -> [String] {
         releases
-            .filter { $0.assets.contains(flavor.assetName) }
+            .filter { $0.assets.contains(flavor.assetName(version: $0.version)) }
             .map(\.version)
             .sorted { Self.precedes($1, $0) }
     }
@@ -95,7 +95,8 @@ public final class BareboneAgentLibrary {
     }
 
     private func fetch(_ flavor: BareboneAgentFlavor, version: String) async throws -> Data {
-        let url = URL(string: "https://github.com/frida/frida/releases/download/\(version)/\(flavor.assetName)")!
+        let url = URL(string:
+            "https://github.com/frida/frida/releases/download/\(version)/\(flavor.assetName(version: version))")!
         do {
             let downloaded = try await ProgressiveDownload.fetch(url) { [weak self] fraction in
                 Task { @MainActor in
