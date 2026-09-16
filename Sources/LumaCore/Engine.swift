@@ -188,13 +188,15 @@ public final class Engine {
             }
         )
 
-        #if os(macOS) || os(Linux) || os(Windows)
+        #if os(Windows) || os(macOS) || os(Linux)
         virtualMachines.register(QemuBackend())
+        #endif
+        #if os(Windows) || os(macOS) || os(Linux)
+        virtualMachines.register(AndroidEmulatorBackend())
         #endif
         #if os(macOS)
         virtualMachines.register(VirtualizationBackend())
         virtualMachines.register(VPhoneBackend())
-        virtualMachines.register(AndroidEmulatorBackend())
         #endif
 
         registerDescriptor(Self.tracerDescriptor)
@@ -256,7 +258,7 @@ public final class Engine {
             }
         }
 
-        #if os(macOS) || os(Linux) || os(Windows)
+        #if os(Windows) || os(macOS) || os(Linux)
         llmRegistry.register(ClaudeCodeProvider(engine: self))
         #endif
         llmRegistry.register(AnthropicProvider())

@@ -1,6 +1,6 @@
 import Foundation
 
-#if os(macOS)
+#if os(macOS) || os(Linux) || os(Windows)
 
 /// Attaches Frida's barebone backend to the Android emulator: it launches an AVD the developer
 /// already created in Android Studio with a GDB stub and instruments the hosting QEMU so the

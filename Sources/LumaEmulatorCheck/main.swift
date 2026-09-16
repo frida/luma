@@ -17,10 +17,34 @@ func note(_ message: String) {
     FileHandle.standardError.write(Data("[check] \(message)\n".utf8))
 }
 
+/// Watches the frame source the emulator backend published, which exercises the gRPC control
+/// channel and the shared-memory frame transport without needing a guest agent.
+@MainActor
+func checkDisplay(_ machine: any VirtualMachine) async throws {
+    guard case .frames(let source)? = machine.display else { fail("machine published no frame source") }
+
+    let deadline = Date().addingTimeInterval(60)
+    while source.revision == 0, Date() < deadline {
+        try await Task.sleep(for: .milliseconds(100))
+    }
+    guard let frame = source.frame, source.revision > 0 else {
+        fail("no frame arrived within 60s")
+    }
+    note("first frame \(frame.width)x\(frame.height) stride \(frame.stride)")
+
+    let settled = source.revision
+    try await Task.sleep(for: .seconds(3))
+    guard source.revision > settled else { fail("the stream stalled after its first frame") }
+    note("OK — \(source.revision - settled) further frames in 3s")
+}
+
 @MainActor
 func run() async throws {
     let env = ProcessInfo.processInfo.environment
-    guard let agentPath = env["LUMA_BAREBONE_AGENT"] else { fail("set LUMA_BAREBONE_AGENT to the barebone agent binary") }
+    let displayOnly = env["LUMA_EMULATOR_DISPLAY_ONLY"] != nil
+    guard let agentPath = env["LUMA_BAREBONE_AGENT"] ?? (displayOnly ? "" : nil) else {
+        fail("set LUMA_BAREBONE_AGENT to the barebone agent binary")
+    }
     let code = env["LUMA_EMULATOR_SCRIPT"] ?? "send(1 + 1);"
 
     let backend = AndroidEmulatorBackend()
@@ -46,6 +70,12 @@ func run() async throws {
     )
     let machine = try await backend.launch(request)
     note("emulator launched; stub reported")
+
+    if displayOnly {
+        try await checkDisplay(machine)
+        await machine.shutDown()
+        return
+    }
 
     do {
         guard case .androidEmulator(let host, let port, let pid)? = machine.debugStub else { fail("machine did not report an androidEmulator stub") }

@@ -4,6 +4,7 @@ import Foundation
 import Frida
 import Gtk
 import LumaCore
+import Observation
 import Pango
 
 @MainActor

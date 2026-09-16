@@ -1,13 +1,15 @@
 import Foundation
-import Darwin
-import Accelerate
-import GRPCCore
-import GRPCNIOTransportHTTP2
+import Observation
 import SwiftProtobuf
 
-#if os(macOS)
+#if canImport(WinSDK)
+import WinSDK
+#elseif canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
-typealias EmulatorController = Android_Emulation_Control_EmulatorController
 typealias EmulatorImageFormat = Android_Emulation_Control_ImageFormat
 typealias EmulatorImage = Android_Emulation_Control_Image
 typealias EmulatorMouseEvent = Android_Emulation_Control_MouseEvent
@@ -15,56 +17,64 @@ typealias EmulatorKeyboardEvent = Android_Emulation_Control_KeyboardEvent
 
 /// Where a running emulator's gRPC control endpoint lives, and the bearer token it
 /// guards it with. The launcher writes both into the running-avd discovery ini.
-struct EmulatorControlEndpoint {
+struct EmulatorControlEndpoint: Sendable {
     let host: String
     let port: Int
     let token: String?
 
-    static func discover(launcherPID: Int32, port: Int) -> EmulatorControlEndpoint {
-        let ini = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Caches/TemporaryItems/avd/running/pid_\(launcherPID).ini")
-        let token = (try? String(contentsOf: ini, encoding: .utf8))
-            .flatMap { contents in
-                contents.split(separator: "\n").first { $0.hasPrefix("grpc.token=") }
+    static func discover(launcherPID: Int32, port: Int, gdbPort: UInt16) -> EmulatorControlEndpoint {
+        let contents = runningAVDEntry(launcherPID: launcherPID, gdbPort: gdbPort)
+        let token = contents
+            .flatMap { text in
+                text.split(whereSeparator: \.isNewline).first { $0.hasPrefix("grpc.token=") }
             }
             .map { String($0.dropFirst("grpc.token=".count)) }
         return EmulatorControlEndpoint(host: "127.0.0.1", port: port, token: token)
     }
 
-    var callMetadata: Metadata {
-        guard let token else { return [:] }
-        var metadata = Metadata()
-        metadata.addString("Bearer \(token)", forKey: "authorization")
-        return metadata
-    }
-
-    enum SnapshotVerb {
-        case save
-        case load
-        case delete
-    }
-
-    func runSnapshot(_ verb: SnapshotVerb, name: String) async throws {
-        let transport = try HTTP2ClientTransport.Posix(
-            target: .dns(host: host, port: port), transportSecurity: .plaintext)
-        let metadata = callMetadata
-        try await withGRPCClient(transport: transport) { client in
-            let service = Android_Emulation_Control_SnapshotService.Client(wrapping: client)
-            var package = Android_Emulation_Control_SnapshotPackage()
-            package.snapshotID = name
-
-            let reply: Android_Emulation_Control_SnapshotPackage
-            switch verb {
-            case .save: reply = try await service.saveSnapshot(package, metadata: metadata)
-            case .load: reply = try await service.loadSnapshot(package, metadata: metadata)
-            case .delete: reply = try await service.deleteSnapshot(package, metadata: metadata)
-            }
-
-            if !reply.success {
-                let reason = String(data: reply.err, encoding: .utf8) ?? "the emulator refused the snapshot"
-                throw VirtualMachineError.snapshotFailed(reason: reason)
-            }
+    private static func runningAVDEntry(launcherPID: Int32, gdbPort: UInt16) -> String? {
+        let directory = runningAVDDirectory
+        let named = directory.appendingPathComponent("pid_\(launcherPID).ini")
+        if let contents = try? String(contentsOf: named, encoding: .utf8) {
+            return contents
         }
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil)
+        else { return nil }
+        return entries
+            .filter { $0.lastPathComponent.hasPrefix("pid_") }
+            .compactMap { try? String(contentsOf: $0, encoding: .utf8) }
+            .first { $0.contains("tcp::\(gdbPort)") }
+    }
+
+    private static var runningAVDDirectory: URL {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        #if os(macOS)
+        let base = home.appendingPathComponent("Library/Caches/TemporaryItems", isDirectory: true)
+        #elseif os(Windows)
+        let base = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        #else
+        let base = ProcessInfo.processInfo.environment["XDG_RUNTIME_DIR"]
+            .map { URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? home.appendingPathComponent(".android", isDirectory: true)
+        #endif
+        return base.appendingPathComponent("avd/running", isDirectory: true)
+    }
+
+    var callHeaders: [(name: String, value: String)] {
+        guard let token else { return [] }
+        return [(name: "authorization", value: "Bearer \(token)")]
+    }
+
+    func connect() async throws -> EmulatorControlClient {
+        EmulatorControlClient(
+            connection: try await GRPCConnection(host: host, port: port, headers: callHeaders))
+    }
+
+    func runSnapshot(_ verb: EmulatorControlClient.SnapshotVerb, name: String) async throws {
+        let client = try await connect()
+        defer { Task { await client.close() } }
+        try await client.runSnapshot(verb, name: name)
     }
 }
 
@@ -75,35 +85,27 @@ final class EmulatorDisplayConnection: VirtualMachineFrameSource {
     private(set) var revision: UInt64 = 0
     let pointerIsAbsolute = true
 
-    // Room for a 4096x4096 RGBA frame, which covers any emulated display and rotation.
-    private static let sharedFrameBytes = 4096 * 4096 * 4
-
     private let endpoint: EmulatorControlEndpoint
-    private let client: GRPCClient<HTTP2ClientTransport.Posix>
-    private let controller: EmulatorController.Client<HTTP2ClientTransport.Posix>
-    private let sharedFramePath: String
-    private let sharedFrame: UnsafeRawPointer
+    private let sharedFrame: SharedFrameBuffer?
+    private var client: EmulatorControlClient?
     private var tasks: [Task<Void, Never>] = []
     private var screenshotStream: Task<Void, Never>?
     private var heldButtons: Int32 = 0
     private var lastPointer: (x: Double, y: Double)?
 
-    init(endpoint: EmulatorControlEndpoint) throws {
+    init(endpoint: EmulatorControlEndpoint) {
         self.endpoint = endpoint
-        sharedFramePath = NSTemporaryDirectory() + "frida-emulator-\(UUID().uuidString).rgba"
-        sharedFrame = try Self.mapSharedFrame(at: sharedFramePath)
+        self.sharedFrame = SharedFrameBuffer.make()
+        tasks.append(Task { await self.run() })
+    }
 
-        let transport = try HTTP2ClientTransport.Posix(
-            target: .dns(host: endpoint.host, port: endpoint.port),
-            transportSecurity: .plaintext
-        )
-        client = GRPCClient(transport: transport)
-        controller = EmulatorController.Client(wrapping: client)
-
-        tasks.append(Task { [client] in
-            do { try await client.runConnections() }
-            catch { Self.log("runConnections failed: \(error)") }
-        })
+    private func run() async {
+        do {
+            client = try await endpoint.connect()
+        } catch {
+            Self.log("unable to reach the emulator's control endpoint: \(error)")
+            return
+        }
         tasks.append(Task { await self.pumpFrames() })
         tasks.append(Task { await self.watchDisplayChanges() })
     }
@@ -128,11 +130,13 @@ final class EmulatorDisplayConnection: VirtualMachineFrameSource {
     }
 
     func close() {
-        client.beginGracefulShutdown()
         for task in tasks { task.cancel() }
         tasks.removeAll()
-        munmap(UnsafeMutableRawPointer(mutating: sharedFrame), Self.sharedFrameBytes)
-        unlink(sharedFramePath)
+        if let client {
+            Task { await client.close() }
+        }
+        client = nil
+        sharedFrame?.close()
     }
 
     /// The emulator sizes the shared frame from the requested dimensions, so each stream is opened
@@ -147,12 +151,11 @@ final class EmulatorDisplayConnection: VirtualMachineFrameSource {
     }
 
     private func watchDisplayChanges() async {
+        guard let client else { return }
         do {
-            try await controller.streamNotification(Google_Protobuf_Empty(), metadata: endpoint.callMetadata) { response in
-                for try await notification in response.messages {
-                    if case .displayConfigurationsChangedNotification = notification.type {
-                        await self.restartStream()
-                    }
+            for try await notification in client.notifications() {
+                if case .displayConfigurationsChangedNotification = notification.type {
+                    restartStream()
                 }
             }
         } catch {
@@ -164,8 +167,8 @@ final class EmulatorDisplayConnection: VirtualMachineFrameSource {
     }
 
     private func displaySize() async -> (width: Int, height: Int)? {
-        let configurations = try? await controller.getDisplayConfigurations(
-            Google_Protobuf_Empty(), metadata: endpoint.callMetadata)
+        guard let client else { return nil }
+        let configurations = try? await client.displayConfigurations()
         let display = configurations?.displays.first { $0.display == 0 } ?? configurations?.displays.first
         guard let display, display.width > 0, display.height > 0 else {
             Self.log("no display configuration")
@@ -175,19 +178,20 @@ final class EmulatorDisplayConnection: VirtualMachineFrameSource {
     }
 
     private func streamScreenshots(width: Int, height: Int) async {
+        guard let client else { return }
         var format = EmulatorImageFormat()
         format.format = .rgba8888
         format.display = 0
         format.width = UInt32(width)
         format.height = UInt32(height)
-        format.transport.channel = .mmap
-        format.transport.handle = "file://" + sharedFramePath
-        Self.log("streaming \(width)x\(height) into \(sharedFramePath)")
+        if let sharedFrame {
+            format.transport.channel = .mmap
+            format.transport.handle = sharedFrame.handle
+        }
+        Self.log("streaming \(width)x\(height)\(sharedFrame.map { " into \($0.handle)" } ?? "")")
         do {
-            try await controller.streamScreenshot(format, metadata: endpoint.callMetadata) { response in
-                for try await image in response.messages {
-                    await self.adopt(image)
-                }
+            for try await image in client.screenshots(format: format) {
+                adopt(image)
             }
         } catch {
             Self.log("streamScreenshot failed: \(error)")
@@ -200,18 +204,29 @@ final class EmulatorDisplayConnection: VirtualMachineFrameSource {
         event.x = Int32(x)
         event.y = Int32(y)
         event.buttons = buttons
-        let metadata = endpoint.callMetadata
-        Task { [controller] in try? await controller.sendMouse(event, metadata: metadata) { _ in } }
+        guard let client else { return }
+        Task { try? await client.sendMouse(event) }
     }
 
     private func adopt(_ image: EmulatorImage) {
         let width = Int(image.format.width)
         let height = Int(image.format.height)
         let byteCount = width * height * 4
-        guard width > 0, height > 0, byteCount <= Self.sharedFrameBytes else { return }
+        guard width > 0, height > 0 else { return }
         if revision == 0 { Self.log("first frame: \(width)x\(height)") }
 
-        let converted = Self.bgra(from: sharedFrame, width: width, height: height)
+        let converted: PixelBuffer
+        if !image.image.isEmpty {
+            guard image.image.count >= byteCount else { return }
+            converted = image.image.withUnsafeBytes { source in
+                Self.bgra(from: source.baseAddress!, width: width, height: height)
+            }
+        } else if let sharedFrame, byteCount <= sharedFrame.byteCount {
+            converted = Self.bgra(from: sharedFrame.baseAddress, width: width, height: height)
+        } else {
+            return
+        }
+
         frame = VirtualMachineFrame(
             width: width,
             height: height,
@@ -227,31 +242,16 @@ final class EmulatorDisplayConnection: VirtualMachineFrameSource {
     /// The emulator writes top-down RGBA rows into shared memory; the renderer wants BGRA. Reorder
     /// the channels into our own buffer, off the shared region.
     private static func bgra(from source: UnsafeRawPointer, width: Int, height: Int) -> PixelBuffer {
-        let buffer = PixelBuffer(length: width * height * 4)
-        var src = vImage_Buffer(
-            data: UnsafeMutableRawPointer(mutating: source),
-            height: vImagePixelCount(height), width: vImagePixelCount(width), rowBytes: width * 4)
-        var dst = vImage_Buffer(
-            data: buffer.baseAddress, height: vImagePixelCount(height),
-            width: vImagePixelCount(width), rowBytes: width * 4)
-        var map: [UInt8] = [2, 1, 0, 3]
-        vImagePermuteChannels_ARGB8888(&src, &dst, &map, vImage_Flags(kvImageNoFlags))
+        let count = width * height
+        let buffer = PixelBuffer(length: count * 4)
+        let input = source.bindMemory(to: UInt32.self, capacity: count)
+        let output = buffer.baseAddress.bindMemory(to: UInt32.self, capacity: count)
+        for index in 0..<count {
+            let pixel = input[index]
+            output[index] =
+                (pixel & 0xff00_ff00) | ((pixel & 0x00ff_0000) >> 16) | ((pixel & 0x0000_00ff) << 16)
+        }
         return buffer
-    }
-
-    private static func mapSharedFrame(at path: String) throws -> UnsafeRawPointer {
-        let descriptor = open(path, O_RDWR | O_CREAT | O_TRUNC, 0o600)
-        guard descriptor >= 0 else {
-            throw VirtualMachineError.launchFailed(reason: "Unable to create the emulator display buffer")
-        }
-        defer { Darwin.close(descriptor) }
-        guard ftruncate(descriptor, off_t(sharedFrameBytes)) == 0,
-            let base = mmap(nil, sharedFrameBytes, PROT_READ, MAP_SHARED, descriptor, 0),
-            base != MAP_FAILED
-        else {
-            throw VirtualMachineError.launchFailed(reason: "Unable to map the emulator display buffer")
-        }
-        return UnsafeRawPointer(base)
     }
 }
 
@@ -269,4 +269,79 @@ final class PixelBuffer: VirtualMachineFrameStorage, @unchecked Sendable {
     }
 }
 
-#endif
+final class SharedFrameBuffer {
+    static let byteCount = 4096 * 4096 * 4
+
+    let baseAddress: UnsafeRawPointer
+    let handle: String
+    private let path: String
+    #if os(Windows)
+    private let mapping: HANDLE
+    #endif
+
+    var byteCount: Int { Self.byteCount }
+
+    static func make() -> SharedFrameBuffer? {
+        let path = NSTemporaryDirectory() + "frida-emulator-\(UUID().uuidString).rgba"
+        #if os(Windows)
+        guard let file = path.withCString(encodedAs: UTF16.self, { wide in
+            CreateFileW(
+                wide,
+                DWORD(GENERIC_READ) | DWORD(GENERIC_WRITE),
+                DWORD(FILE_SHARE_READ) | DWORD(FILE_SHARE_WRITE) | DWORD(FILE_SHARE_DELETE),
+                nil,
+                DWORD(CREATE_ALWAYS),
+                DWORD(FILE_ATTRIBUTE_NORMAL),
+                nil
+            )
+        }), file != INVALID_HANDLE_VALUE else { return nil }
+        defer { CloseHandle(file) }
+
+        let size = UInt64(byteCount)
+        guard let mapping = CreateFileMappingW(
+            file, nil, DWORD(PAGE_READWRITE), DWORD(size >> 32), DWORD(size & 0xffff_ffff), nil
+        ) else { return nil }
+
+        guard let base = MapViewOfFile(mapping, DWORD(FILE_MAP_READ), 0, 0, SIZE_T(byteCount)) else {
+            CloseHandle(mapping)
+            return nil
+        }
+        return SharedFrameBuffer(baseAddress: UnsafeRawPointer(base), path: path, mapping: mapping)
+        #else
+        let descriptor = open(path, O_RDWR | O_CREAT | O_TRUNC, 0o600)
+        guard descriptor >= 0 else { return nil }
+        defer { close(descriptor) }
+        guard ftruncate(descriptor, off_t(byteCount)) == 0,
+            let base = mmap(nil, byteCount, PROT_READ, MAP_SHARED, descriptor, 0),
+            base != MAP_FAILED
+        else { return nil }
+        return SharedFrameBuffer(baseAddress: UnsafeRawPointer(base), path: path)
+        #endif
+    }
+
+    #if os(Windows)
+    private init(baseAddress: UnsafeRawPointer, path: String, mapping: HANDLE) {
+        self.baseAddress = baseAddress
+        self.path = path
+        self.mapping = mapping
+        self.handle = "file://" + path.replacingOccurrences(of: "\\", with: "/")
+    }
+    #else
+    private init(baseAddress: UnsafeRawPointer, path: String) {
+        self.baseAddress = baseAddress
+        self.path = path
+        self.handle = "file://" + path
+    }
+    #endif
+
+    func close() {
+        #if os(Windows)
+        UnmapViewOfFile(baseAddress)
+        CloseHandle(mapping)
+        try? FileManager.default.removeItem(atPath: path)
+        #else
+        munmap(UnsafeMutableRawPointer(mutating: baseAddress), Self.byteCount)
+        unlink(path)
+        #endif
+    }
+}

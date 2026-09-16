@@ -1,6 +1,6 @@
 import Foundation
 
-#if os(macOS)
+#if os(macOS) || os(Linux) || os(Windows)
 
 /// Locates the Android SDK's emulator and the AVDs a developer already made in Android Studio,
 /// and resolves the kernel image each AVD boots -- the barebone backend mines that image for the
@@ -18,29 +18,55 @@ enum AndroidEmulatorSDK {
                 return URL(fileURLWithPath: path, isDirectory: true)
             }
         }
-        let fallback = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Android/sdk", isDirectory: true)
-        return directoryExists(fallback) ? fallback : nil
+        for fallback in defaultRoots where directoryExists(fallback) {
+            return fallback
+        }
+        return nil
     }
 
     static var emulator: URL? {
-        guard let root else { return nil }
-        let candidate = root.appendingPathComponent("emulator/emulator")
-        return FileManager.default.isExecutableFile(atPath: candidate.path) ? candidate : nil
+        tool(at: "emulator", named: "emulator")
     }
 
     static var adb: URL? {
+        tool(at: "platform-tools", named: "adb")
+    }
+
+    private static func tool(at directory: String, named name: String) -> URL? {
         guard let root else { return nil }
-        let candidate = root.appendingPathComponent("platform-tools/adb")
+        let candidate = root
+            .appendingPathComponent(directory, isDirectory: true)
+            .appendingPathComponent(name + executableSuffix)
         return FileManager.default.isExecutableFile(atPath: candidate.path) ? candidate : nil
+    }
+
+    private static var executableSuffix: String {
+        #if os(Windows)
+        ".exe"
+        #else
+        ""
+        #endif
+    }
+
+    private static var defaultRoots: [URL] {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        #if os(macOS)
+        return [home.appendingPathComponent("Library/Android/sdk", isDirectory: true)]
+        #elseif os(Windows)
+        let localAppData = ProcessInfo.processInfo.environment["LOCALAPPDATA"]
+            .map { URL(fileURLWithPath: $0, isDirectory: true) }
+        return [localAppData?.appendingPathComponent("Android/Sdk", isDirectory: true)].compactMap { $0 }
+        #else
+        return [home.appendingPathComponent("Android/Sdk", isDirectory: true)]
+        #endif
     }
 
     static func listAVDs() -> [AVD] {
         guard let emulator else { return [] }
         guard let listing = run(emulator, ["-list-avds"]) else { return [] }
         var result: [AVD] = []
-        for line in listing.split(separator: "\n") {
-            let name = line.trimmingCharacters(in: .whitespaces)
+        for line in listing.split(whereSeparator: \.isNewline) {
+            let name = line.trimmingCharacters(in: .whitespacesAndNewlines)
             if name.isEmpty { continue }
             if let kernel = kernelImage(for: name) {
                 result.append(AVD(name: name, kernelImage: kernel))
@@ -61,34 +87,46 @@ enum AndroidEmulatorSDK {
             let avdDirectory = value(of: "path", in: pointerText)
         else { return nil }
 
-        let config = URL(fileURLWithPath: avdDirectory, isDirectory: true).appendingPathComponent("config.ini")
+        let config = URL(fileURLWithPath: nativePath(avdDirectory), isDirectory: true)
+            .appendingPathComponent("config.ini")
         guard let settings = try? String(contentsOf: config, encoding: .utf8) else { return nil }
 
         var values: [String: String] = [:]
-        for line in settings.split(separator: "\n") {
+        for line in settings.split(whereSeparator: \.isNewline) {
             let parts = line.split(separator: "=", maxSplits: 1)
             if parts.count == 2 {
-                values[parts[0].trimmingCharacters(in: .whitespaces)] = parts[1].trimmingCharacters(in: .whitespaces)
+                values[parts[0].trimmingCharacters(in: .whitespacesAndNewlines)] =
+                    parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
             }
         }
 
         if let explicit = values["kernel.path"], !explicit.isEmpty {
-            let url = URL(fileURLWithPath: explicit)
+            let url = URL(fileURLWithPath: nativePath(explicit))
             if FileManager.default.fileExists(atPath: url.path) { return url }
         }
         guard let sysdir = values["image.sysdir.1"], !sysdir.isEmpty else { return nil }
         for name in ["kernel-ranchu", "kernel-ranchu-64", "kernel-qemu"] {
-            let candidate = root.appendingPathComponent(sysdir).appendingPathComponent(name)
+            let candidate = root.appendingPathComponent(nativePath(sysdir)).appendingPathComponent(name)
             if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
         }
         return nil
     }
 
+    /// An AVD config on Windows spells its paths with backslashes, which URL keeps as ordinary
+    /// characters rather than separators.
+    private static func nativePath(_ path: String) -> String {
+        #if os(Windows)
+        path.replacingOccurrences(of: "\\", with: "/")
+        #else
+        path
+        #endif
+    }
+
     private static func value(of key: String, in text: String) -> String? {
-        for line in text.split(separator: "\n") {
+        for line in text.split(whereSeparator: \.isNewline) {
             let parts = line.split(separator: "=", maxSplits: 1)
-            if parts.count == 2, parts[0].trimmingCharacters(in: .whitespaces) == key {
-                let value = parts[1].trimmingCharacters(in: .whitespaces)
+            if parts.count == 2, parts[0].trimmingCharacters(in: .whitespacesAndNewlines) == key {
+                let value = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
                 return value.isEmpty ? nil : value
             }
         }
@@ -110,7 +148,7 @@ enum AndroidEmulatorSDK {
 
     @discardableResult
     static func run(_ executable: URL, _ arguments: [String]) -> String? {
-        let process = Process()
+        let process = ChildProcess()
         process.executableURL = executable
         process.arguments = arguments
         let output = Pipe()
