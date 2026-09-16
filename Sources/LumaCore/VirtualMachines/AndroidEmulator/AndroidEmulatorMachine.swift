@@ -1,10 +1,14 @@
 import Foundation
 
+#if os(Windows)
+import WinSDK
+#endif
+
 #if os(macOS) || os(Linux) || os(Windows)
 
 @MainActor
 final class AndroidEmulatorMachine: VirtualMachine {
-    let id: UUID
+    let id: Foundation.UUID
     let name: String
     let template: VirtualMachineTemplate
     private(set) var state: VirtualMachineState = .starting
@@ -29,11 +33,60 @@ final class AndroidEmulatorMachine: VirtualMachine {
     private var controlEndpoint: EmulatorControlEndpoint?
     private var qemuPid: HostProcessID?
     private var displayConnection: EmulatorDisplayConnection?
+    #if os(Windows)
+    private var qmpHandle: HANDLE?
+    #endif
 
     private static let readySnapshotName = "frida-ready"
-    private static let noVsockReason = """
-        This AVD's kernel has no vsock, and the virtio-serial fallback needs a QEMU UNIX socket,         which Windows does not have. Choose an AVD on a newer system image.
-        """
+
+    /// QEMU has no UNIX sockets on Windows, so QMP is carried over a named pipe there instead.
+    /// The backend adopts the handle already connected above rather than opening its own, which
+    /// QEMU would no longer answer.
+    private func qmpTransportAddress(socket: URL) -> String {
+        #if os(Windows)
+        "handle:\(UInt(bitPattern: qmpHandle.map { Int(bitPattern: $0) } ?? 0))"
+        #else
+        "unix:\(socket.path)"
+        #endif
+    }
+
+    #if os(Windows)
+    /// QEMU creates the pipe as it starts and then waits, so this retries until it is there.
+    private static func connectToPipe(named name: String) throws -> HANDLE {
+        let path = "\\\\.\\pipe\\" + name
+        let deadline = Date().addingTimeInterval(pipeConnectSeconds)
+
+        while Date() < deadline {
+            let handle = path.withCString(encodedAs: UTF16.self) { wide in
+                CreateFileW(
+                    wide,
+                    DWORD(GENERIC_READ) | DWORD(GENERIC_WRITE),
+                    0,
+                    nil,
+                    DWORD(OPEN_EXISTING),
+                    DWORD(FILE_ATTRIBUTE_NORMAL),
+                    nil)
+            }
+            if let handle, handle != INVALID_HANDLE_VALUE {
+                return handle
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+
+        throw VirtualMachineError.launchFailed(
+            reason: "The emulator never opened its QMP pipe at \(path)")
+    }
+
+    private static let pipeConnectSeconds: TimeInterval = 20
+    #endif
+
+    private static func qmpArgument(socket: URL, pipe: String) -> String {
+        #if os(Windows)
+        "pipe:\(pipe)"
+        #else
+        "unix:\(socket.path),server,nowait"
+        #endif
+    }
 
     init(emulator: URL, adb: URL, avd: AndroidEmulatorSDK.AVD, request: VirtualMachineLaunchRequest) {
         self.id = request.id
@@ -68,14 +121,15 @@ final class AndroidEmulatorMachine: VirtualMachine {
         let kernelImage = avd.kernelImage
         let hasVsock = await Task.detached { Self.kernelSupportsVsock(kernelImage) }.value
 
-        // The hostlink needs a QMP UNIX socket, which QEMU refuses to open on Windows, so a guest
-        // that cannot be reached over vsock cannot be reached at all there.
+        // The emulator bridges a guest's vsock to a host UNIX socket, which it has none of on
+        // Windows, so the guest is reached over the virtio-serial hostlink there whatever its
+        // kernel offers.
         #if os(Windows)
-        guard hasVsock else {
-            state = .failed(reason: Self.noVsockReason)
-            throw VirtualMachineError.launchFailed(reason: Self.noVsockReason)
-        }
+        let usesVsock = false
+        #else
+        let usesVsock = hasVsock
         #endif
+        let qmpPipe = "frida-qmp-" + Foundation.UUID().uuidString.prefix(8).lowercased()
 
         // Boot from the ready snapshot when resuming, or from the one named in the environment for a
         // fast debug loop; either way never save on exit, so injection damage is discarded.
@@ -96,22 +150,17 @@ final class AndroidEmulatorMachine: VirtualMachine {
         } else {
             process.arguments! += ["-no-snapshot"]
         }
-        if !hasVsock {
-            // A multi-core guest never returns from an injected call on this emulator, and the
-            // barebone backend drives calls into a single vCPU only.
-            process.arguments! += ["-cores", "1"]
-        }
         process.arguments! += [
             "-ports", "\(consolePort),\(consolePort + 1)",
             "-grpc", "\(grpcPort)",
             "-qemu",
             "-gdb", "tcp::\(gdbPort)",
         ]
-        if !hasVsock {
+        if !usesVsock {
             // The injected agent drives this controller itself over the guest's PCIe config space
             // at the ranchu ECAM base; the QMP channel opens the host end of its serial port.
             process.arguments! += [
-                "-qmp", "unix:\(qmpSocketPath.path),server,nowait",
+                "-qmp", Self.qmpArgument(socket: qmpSocketPath, pipe: qmpPipe),
                 "-device", "virtio-serial-pci,id=\(Self.hostlinkController)",
             ]
         }
@@ -125,6 +174,22 @@ final class AndroidEmulatorMachine: VirtualMachine {
             throw VirtualMachineError.launchFailed(reason: error.localizedDescription)
         }
 
+        // QEMU holds the machine still until its QMP pipe is connected to, and gives the pipe up
+        // for good once that connection goes, so it is opened here, before the guest is waited on,
+        // and held for the backend to adopt.
+        #if os(Windows)
+        if !usesVsock {
+            do {
+                qmpHandle = try Self.connectToPipe(named: qmpPipe)
+            } catch {
+                await shutDown()
+                let reason = (error as? VirtualMachineError)?.reason ?? error.localizedDescription
+                state = .failed(reason: reason)
+                throw VirtualMachineError.launchFailed(reason: reason)
+            }
+        }
+        #endif
+
         do {
             // adb answering means the kernel is up and scheduling -- what Frida needs to walk it,
             // and proof its QEMU is running so its pid can be found.
@@ -136,9 +201,12 @@ final class AndroidEmulatorMachine: VirtualMachine {
 
             self.qemuPid = qemuPid
             debugStub = .androidEmulator(host: "127.0.0.1", port: gdbPort, pid: UInt(qemuPid))
-            agentTransport = hasVsock
+            agentTransport = usesVsock
                 ? .pipeVsock(socketPath: pipeSocketPath)
-                : .hostlink(qmpSocket: qmpSocketPath, bus: Self.hostlinkBus, fabric: .ecam(base: Self.pcieEcamBase))
+                : .hostlink(
+                    qmp: qmpTransportAddress(socket: qmpSocketPath),
+                    bus: Self.hostlinkBus,
+                    fabric: .ecam(base: Self.pcieEcamBase))
 
             let endpoint = EmulatorControlEndpoint.discover(
                 launcherPID: process.processIdentifier, port: Int(grpcPort), gdbPort: gdbPort)
@@ -192,6 +260,10 @@ final class AndroidEmulatorMachine: VirtualMachine {
         if let qemuPid { await Self.reap(qemuPid) }
         qemuPid = nil
         try? FileManager.default.removeItem(at: runtimeDirectory)
+        #if os(Windows)
+        if let qmpHandle { CloseHandle(qmpHandle) }
+        qmpHandle = nil
+        #endif
         controlEndpoint = nil
         debugStub = nil
         agentTransport = nil

@@ -17,8 +17,6 @@ func note(_ message: String) {
     FileHandle.standardError.write(Data("[check] \(message)\n".utf8))
 }
 
-/// Watches the frame source the emulator backend published, which exercises the gRPC control
-/// channel and the shared-memory frame transport without needing a guest agent.
 @MainActor
 func checkDisplay(_ machine: any VirtualMachine) async throws {
     guard case .frames(let source)? = machine.display else { fail("machine published no frame source") }
@@ -91,14 +89,14 @@ func run() async throws {
         case .pipeVsock(let socketPath)?:
             transport = BareboneVsockPipeTransportConfig(socketPath: socketPath.path)
             note("transport pipe-vsock")
-        case .hostlink(let qmpSocket, let bus, let fabric)?:
+        case .hostlink(let qmp, let bus, let fabric)?:
             let fabricConfig: Frida.BareboneHostlinkFabric
             switch fabric {
             case .ports: fabricConfig = BareboneHostlinkPortsFabric()
             case .ecam(let base): fabricConfig = BareboneHostlinkEcamFabric(ecam: base)
             case .mmio: fabricConfig = BareboneHostlinkMmioFabric()
             }
-            transport = BareboneHostlinkTransportConfig(qmp: "unix:\(qmpSocket.path)", bus: bus, fabric: fabricConfig)
+            transport = BareboneHostlinkTransportConfig(qmp: qmp, bus: bus, fabric: fabricConfig)
             note("transport hostlink virtio-pci")
         default:
             fail("machine did not report a supported transport")

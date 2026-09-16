@@ -211,8 +211,8 @@ public final class VirtualMachineManager {
 extension BareboneAgentTransport {
     var config: BareboneInjectingTransportConfig {
         switch self {
-        case .hostlink(let qmpSocket, let bus, let fabric):
-            return BareboneHostlinkTransportConfig(qmp: "unix:\(qmpSocket.path)", bus: bus, fabric: fabric.config)
+        case .hostlink(let qmp, let bus, let fabric):
+            return BareboneHostlinkTransportConfig(qmp: qmp, bus: bus, fabric: fabric.config)
         case .vsock(let socketPath, let port):
             return BareboneVsockTransportConfig(socketPath: socketPath.path, port: port)
         case .pipeVsock(let socketPath):

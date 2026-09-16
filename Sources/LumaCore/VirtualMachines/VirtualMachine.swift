@@ -48,7 +48,7 @@ public struct VirtualMachineCapabilities: OptionSet, Sendable {
 }
 
 public enum BareboneAgentTransport: Sendable, Equatable {
-    case hostlink(qmpSocket: URL, bus: String?, fabric: BareboneHostlinkFabric)
+    case hostlink(qmp: String, bus: String?, fabric: BareboneHostlinkFabric)
     case vsock(socketPath: URL, port: UInt)
     /// The guest dials out over vsock and the emulator bridges it to this host UNIX socket; the
     /// path is whitelisted in the emulator by the barebone backend's instrumentation.
