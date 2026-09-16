@@ -1,6 +1,6 @@
 import Foundation
 
-#if os(macOS) || os(Linux) || os(Windows)
+#if os(Windows) || os(macOS) || os(Linux)
 
 /// Attaches Frida's barebone backend to the Android emulator: it launches an AVD the developer
 /// already created in Android Studio with a GDB stub and instruments the hosting QEMU so the
@@ -12,9 +12,7 @@ public final class AndroidEmulatorBackend: VirtualMachineBackend {
 
     public static let avdParameterID = "avd"
 
-    /// Frida instruments the emulator's QEMU through a gdbstub shim that reaches for an aarch64
-    /// export, so an AVD on any other ABI cannot be injected into however well it boots.
-    private static let instrumentableArchitectures: [VirtualMachineArchitecture] = [.arm64]
+    private static let instrumentableArchitectures: [VirtualMachineArchitecture] = [.arm64, .x86_64]
 
     public init() {
     }
