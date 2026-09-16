@@ -557,6 +557,7 @@ final class MainWindow: InstrumentUIHost {
         applyEventStreamLayout()
         engine.onSessionListChanged = { [weak self] change in self?.handleSessionListChange(change) }
         observeModuleAnalysis()
+        observeConnectionActivity()
         engine.onREPLCellAdded = { [weak self] cell in self?.currentREPLPane?.appendCell(cell) }
         engine.onNotebookChanged = { [weak self] change in
             guard let self else { return }
@@ -2500,7 +2501,7 @@ final class MainWindow: InstrumentUIHost {
                 sessions[i] = session
             }
             sessionNameLabels[session.id]?.label = session.processName
-            sessionDeviceLabels[session.id]?.label = session.deviceName
+            sessionDeviceLabels[session.id]?.label = deviceSubtitle(for: session)
             sessionArmIcons[session.id]?.visible = isArmed(session)
             refreshDetachedIndicator(for: session)
             if currentREPLSessionID == session.id {
@@ -2656,7 +2657,7 @@ final class MainWindow: InstrumentUIHost {
         armIcon.visible = isArmed(session)
         nameRow.append(child: armIcon)
         titles.append(child: nameRow)
-        let deviceLabel = Label(str: session.deviceName)
+        let deviceLabel = Label(str: deviceSubtitle(for: session))
         deviceLabel.halign = .start
         deviceLabel.add(cssClass: "caption")
         deviceLabel.add(cssClass: "dim-label")
@@ -3223,6 +3224,28 @@ final class MainWindow: InstrumentUIHost {
         switch group {
         case .modules: return "modules"
         case .threads: return "threads"
+        }
+    }
+
+    private func deviceSubtitle(for session: LumaCore.ProcessSession) -> String {
+        if session.phase == .attaching, let stage = engine?.connectionActivity.stage(for: session.deviceID) {
+            return "\(stage.status)\u{2026}"
+        }
+        return session.deviceName
+    }
+
+    private func observeConnectionActivity() {
+        guard let engine else { return }
+        withObservationTracking {
+            _ = engine.connectionActivity.stages
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                for session in self.sessions {
+                    self.sessionDeviceLabels[session.id]?.label = self.deviceSubtitle(for: session)
+                }
+                self.observeConnectionActivity()
+            }
         }
     }
 

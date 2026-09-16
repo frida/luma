@@ -26,6 +26,8 @@ final class TargetPicker {
     private let processLoading: Box
     private let processLoadingSpinner: Spinner
     private let processLoadingLabel: Label
+    private let processConnectingLabel: Label
+    private let processConnectingBar: ProgressBar
     private let processContent: Box
     private let processError: Box
     private let processErrorMessage: Label
@@ -54,6 +56,8 @@ final class TargetPicker {
     private let appLoading: Box
     private let appLoadingSpinner: Spinner
     private let appLoadingLabel: Label
+    private let appConnectingLabel: Label
+    private let appConnectingBar: ProgressBar
     private let appContent: Box
     private let appError: Box
     private let appErrorMessage: Label
@@ -87,6 +91,7 @@ final class TargetPicker {
     private var snapshotTask: Task<Void, Never>?
     private var processFetchTask: Task<Void, Never>?
     private var appFetchTask: Task<Void, Never>?
+    private var connectingAnimations: [Adw.TimedAnimation] = []
     private var selectedDeviceID: String?
     private var selectedProcessIndex: Int?
     private var selectedApplicationIdentifier: String?
@@ -144,6 +149,8 @@ final class TargetPicker {
         processLoading = Box(orientation: .vertical, spacing: 8)
         processLoadingSpinner = makeSpinner()
         processLoadingLabel = Label(str: "Enumerating processes\u{2026}")
+        processConnectingLabel = Label(str: "")
+        processConnectingBar = ProgressBar()
         processContent = Box(orientation: .vertical, spacing: 0)
         processError = Box(orientation: .vertical, spacing: 8)
         processErrorMessage = Label(str: "")
@@ -172,6 +179,8 @@ final class TargetPicker {
         appLoading = Box(orientation: .vertical, spacing: 8)
         appLoadingSpinner = makeSpinner()
         appLoadingLabel = Label(str: "Enumerating applications\u{2026}")
+        appConnectingLabel = Label(str: "")
+        appConnectingBar = ProgressBar()
         appContent = Box(orientation: .vertical, spacing: 0)
         appError = Box(orientation: .vertical, spacing: 8)
         appErrorMessage = Label(str: "")
@@ -413,6 +422,7 @@ final class TargetPicker {
 
     func present() {
         dialog.present(parent: parent)
+        observeConnectionActivity()
         snapshotTask = Task { @MainActor in
             renderDevices(await engine.deviceManager.currentDevices())
             for await change in await engine.deviceManager.changes() {
@@ -437,9 +447,7 @@ final class TargetPicker {
 
     private func close() {
         persistState()
-        snapshotTask?.cancel()
-        processFetchTask?.cancel()
-        appFetchTask?.cancel()
+        cancelLoadingTasks()
         _ = dialog.close()
     }
 
@@ -527,12 +535,19 @@ final class TargetPicker {
         processLoadingSpinner.setSizeRequest(width: 24, height: 24)
         processLoadingLabel.add(cssClass: "dim-label")
         processLoadingLabel.add(cssClass: "caption")
+        processConnectingLabel.add(cssClass: "dim-label")
+        processConnectingLabel.add(cssClass: "caption")
+        processConnectingLabel.visible = false
+        processConnectingBar.setSizeRequest(width: 240, height: -1)
+        processConnectingBar.visible = false
         processLoading.halign = .center
         processLoading.valign = .center
         processLoading.hexpand = true
         processLoading.vexpand = true
         processLoading.append(child: processLoadingSpinner)
         processLoading.append(child: processLoadingLabel)
+        processLoading.append(child: processConnectingLabel)
+        processLoading.append(child: processConnectingBar)
         processLoading.visible = false
 
         configureErrorPane(processError, message: processErrorMessage, title: "Failed to Enumerate Processes")
@@ -641,12 +656,19 @@ final class TargetPicker {
         appLoadingSpinner.setSizeRequest(width: 24, height: 24)
         appLoadingLabel.add(cssClass: "dim-label")
         appLoadingLabel.add(cssClass: "caption")
+        appConnectingLabel.add(cssClass: "dim-label")
+        appConnectingLabel.add(cssClass: "caption")
+        appConnectingLabel.visible = false
+        appConnectingBar.setSizeRequest(width: 240, height: -1)
+        appConnectingBar.visible = false
         appLoading.halign = .center
         appLoading.valign = .center
         appLoading.hexpand = true
         appLoading.vexpand = true
         appLoading.append(child: appLoadingSpinner)
         appLoading.append(child: appLoadingLabel)
+        appLoading.append(child: appConnectingLabel)
+        appLoading.append(child: appConnectingBar)
         appLoading.visible = false
 
         configureErrorPane(appError, message: appErrorMessage, title: "Failed to Enumerate Applications")
@@ -1093,6 +1115,7 @@ final class TargetPicker {
     private func handleDeviceRow(_ row: ListBoxRowRef?) {
         guard let row else {
             selectedDeviceID = nil
+            applyConnectionStage()
             programBrowseButton.visible = false
             applyMode()
             return
@@ -1101,6 +1124,7 @@ final class TargetPicker {
         guard index >= 0, index < devices.count else { return }
         let device = devices[index]
         selectedDeviceID = device.id
+        applyConnectionStage()
         programBrowseButton.visible = (device.id == "local")
         applyMode()
         loadProcesses(for: device)
@@ -1108,6 +1132,60 @@ final class TargetPicker {
             loadApplications(for: device)
         }
         refreshSpawnButtonSensitivity()
+    }
+
+    private func observeConnectionActivity() {
+        withObservationTracking {
+            _ = engine.connectionActivity.stages
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.applyConnectionStage()
+                self.observeConnectionActivity()
+            }
+        }
+    }
+
+    private func applyConnectionStage() {
+        guard let id = selectedDeviceID, let stage = engine.connectionActivity.stage(for: id) else {
+            hideConnectionStage()
+            return
+        }
+        showConnectionStage(stage)
+    }
+
+    private func showConnectionStage(_ stage: ConnectionStage) {
+        for label in [processConnectingLabel, appConnectingLabel] {
+            label.setText(str: "\(stage.status)\u{2026}")
+            label.visible = true
+        }
+        let restingFraction = stage.fraction + (1.0 - stage.fraction) * 0.5
+        for bar in [processConnectingBar, appConnectingBar] {
+            animate(bar, to: restingFraction, over: max(stage.expectedDuration, 0.3))
+            bar.visible = true
+        }
+    }
+
+    private func hideConnectionStage() {
+        connectingAnimations.removeAll()
+        for bar in [processConnectingBar, appConnectingBar] {
+            bar.fraction = 0
+        }
+        for widget in [processConnectingLabel, appConnectingLabel, processConnectingBar, appConnectingBar] {
+            widget.visible = false
+        }
+    }
+
+    private func animate(_ bar: ProgressBar, to target: Double, over seconds: Double) {
+        let animation = Adw.TimedAnimation(
+            widget: bar,
+            from: bar.fraction,
+            to: target,
+            duration: Int(seconds * 1000),
+            target: Adw.PropertyAnimationTarget(object: bar, propertyName: "fraction")
+        )
+        animation.play()
+        connectingAnimations.append(animation)
     }
 
     private func loadProcesses(for device: Frida.Device) {
