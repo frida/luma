@@ -445,9 +445,15 @@ private struct SidebarSessionHeaderRow: View {
                             .help("Armed for next matching launch")
                     }
                 }
-                Text(displayDeviceName)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if session.phase == .attaching, let stage = engine.connectionActivity.stage(for: session.deviceID) {
+                    Text("\(stage.status)…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(displayDeviceName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Spacer()

@@ -406,16 +406,7 @@ struct TargetPickerView: View {
     @ViewBuilder
     private func applicationSpawnPane(for device: Device) -> some View {
         if loadingApplications {
-            ZStack {
-                Color.clear
-                VStack(spacing: 8) {
-                    ProgressView("Enumerating applications…")
-                    Text("Querying \(device.name)…")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                .padding()
-            }
+            deviceActivityView("Enumerating applications…", for: device)
         } else if let applicationError {
             ZStack {
                 Color.clear
@@ -825,16 +816,7 @@ struct TargetPickerView: View {
     private func processDetailPane(for device: Device) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if loadingProcesses {
-                ZStack {
-                    Color.clear
-                    VStack(spacing: 8) {
-                        ProgressView("Enumerating processes…")
-                        Text("Querying \(device.name)…")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding()
-                }
+                deviceActivityView("Enumerating processes…", for: device)
             } else if let processError {
                 ZStack {
                     Color.clear
@@ -1103,6 +1085,23 @@ struct TargetPickerView: View {
             result[key] = entry.value
         }
         return result
+    }
+
+    private func deviceActivityView(_ activity: String, for device: Device) -> some View {
+        ZStack {
+            Color.clear
+            VStack(spacing: 10) {
+                ProgressView(activity)
+                if let stage = engine.connectionActivity.stage(for: device.id) {
+                    ConnectionStageView(stage: stage)
+                } else {
+                    Text("Querying \(device.name)…")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding()
+        }
     }
 
     private func loadProcesses(for device: Device) async {
@@ -1694,5 +1693,38 @@ private struct CompactGroupedList: ViewModifier {
         #else
             content
         #endif
+    }
+}
+
+private struct ConnectionStageView: View {
+    let stage: ConnectionStage
+
+    @State private var displayedFraction: Double = 0
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Text("\(stage.status)…")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            ProgressView(value: min(displayedFraction, 1.0))
+                .frame(maxWidth: 240)
+        }
+        .onAppear {
+            displayedFraction = stage.fraction
+            creep(toward: stage)
+        }
+        .onChange(of: stage) { _, newStage in
+            creep(toward: newStage)
+        }
+    }
+
+    private func creep(toward stage: ConnectionStage) {
+        withAnimation(.easeOut(duration: 0.3)) {
+            displayedFraction = stage.fraction
+        }
+        let restingFraction = stage.fraction + (1.0 - stage.fraction) * 0.5
+        withAnimation(.easeInOut(duration: max(stage.expectedDuration, 0.3)).delay(0.3)) {
+            displayedFraction = restingFraction
+        }
     }
 }
