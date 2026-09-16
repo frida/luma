@@ -38,6 +38,104 @@ public enum LinuxKernelImage {
         return nil
     }
 
+    public static func names(_ symbol: String, in packed: Data) -> Bool {
+        let needle = Data(symbol.utf8)
+        let image = (try? raw(from: packed)) ?? packed
+        if image.range(of: needle) != nil {
+            return true
+        }
+        for start in gzipStreams(in: image) {
+            guard let payload = try? GzipArchive.decompress(Data(image[start...])) else {
+                continue
+            }
+            if payload.range(of: needle) != nil {
+                return true
+            }
+        }
+        for start in streams(of: lz4LegacyMagic, in: image) {
+            guard let payload = lz4Legacy(from: image[start...]) else { continue }
+            if payload.range(of: needle) != nil {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static let lz4LegacyMagic = Data([0x02, 0x21, 0x4c, 0x18])
+    private static let payloadLimit = 256 * 1024 * 1024
+
+    private static func lz4Legacy(from stream: Data) -> Data? {
+        var payload = Data()
+        var cursor = stream.index(stream.startIndex, offsetBy: lz4LegacyMagic.count)
+
+        while stream.index(cursor, offsetBy: 4, limitedBy: stream.endIndex) != nil {
+            let size = Int(read32(stream, at: stream.distance(from: stream.startIndex, to: cursor)))
+            cursor = stream.index(cursor, offsetBy: 4)
+            guard size > 0, size <= payloadLimit,
+                let end = stream.index(cursor, offsetBy: size, limitedBy: stream.endIndex),
+                let block = lz4Block(stream[cursor..<end])
+            else { break }
+            payload.append(block)
+            cursor = end
+            if payload.count >= payloadLimit { break }
+        }
+        return payload.isEmpty ? nil : payload
+    }
+
+    private static func lz4Block(_ source: Data) -> Data? {
+        var output = [UInt8]()
+        output.reserveCapacity(source.count * 4)
+        let input = [UInt8](source)
+        var cursor = 0
+
+        func extend(_ initial: Int) -> Int? {
+            var total = initial
+            guard initial == 15 else { return total }
+            while cursor < input.count {
+                let byte = Int(input[cursor])
+                cursor += 1
+                total += byte
+                if byte != 255 { return total }
+            }
+            return nil
+        }
+
+        while cursor < input.count {
+            let token = Int(input[cursor])
+            cursor += 1
+
+            guard let literals = extend(token >> 4) else { return nil }
+            guard cursor + literals <= input.count else { return nil }
+            output.append(contentsOf: input[cursor..<cursor + literals])
+            cursor += literals
+
+            guard cursor + 2 <= input.count else { break }
+            let offset = Int(input[cursor]) | Int(input[cursor + 1]) << 8
+            cursor += 2
+            guard offset > 0, offset <= output.count else { return nil }
+
+            guard let matched = extend(token & 15) else { return nil }
+            var remaining = matched + 4
+            var from = output.count - offset
+            while remaining > 0 {
+                output.append(output[from])
+                from += 1
+                remaining -= 1
+            }
+        }
+        return Data(output)
+    }
+
+    private static func streams(of magic: Data, in image: Data) -> [Data.Index] {
+        var offsets: [Data.Index] = []
+        var from = image.startIndex
+        while let found = image[from...].firstRange(of: magic) {
+            offsets.append(found.lowerBound)
+            from = image.index(after: found.lowerBound)
+        }
+        return offsets
+    }
+
     private static func versionMarker(in image: Data) -> String? {
         if let marker = image.firstRange(of: Data("Linux version ".utf8)) {
             return word(in: image[marker.upperBound...].prefix(128))
