@@ -228,6 +228,17 @@ let lumaTargets: [Target] = [
             .swiftLanguageMode(.v5),
         ]
     ),
+    .executableTarget(
+        name: "LumaVMCheck",
+        dependencies: [
+            "LumaCore",
+            .product(name: "Frida", package: "frida-swift"),
+        ],
+        path: "Sources/LumaVMCheck",
+        swiftSettings: [
+            .swiftLanguageMode(.v5),
+        ]
+    ),
 ]
 
 // Frida comes from the published bindings and the artifact they name. Work on
