@@ -28,6 +28,7 @@ final class AndroidEmulatorMachine: VirtualMachine {
     private let runtimeDirectory: URL
     private let hasReadySnapshot: Bool
     private var controlEndpoint: EmulatorControlEndpoint?
+    private var qemuPid: pid_t?
     private var displayConnection: EmulatorDisplayConnection?
 
     private static let readySnapshotName = "frida-ready"
@@ -122,6 +123,7 @@ final class AndroidEmulatorMachine: VirtualMachine {
                 throw VirtualMachineError.launchFailed(reason: "Unable to find the emulator's QEMU process")
             }
 
+            self.qemuPid = qemuPid
             debugStub = .androidEmulator(host: "127.0.0.1", port: gdbPort, pid: UInt(qemuPid))
             agentTransport = hasVsock
                 ? .pipeVsock(socketPath: pipeSocketPath)
@@ -175,6 +177,8 @@ final class AndroidEmulatorMachine: VirtualMachine {
         displayConnection = nil
         display = nil
         await process.terminateAndWaitForExit()
+        if let qemuPid { await Self.reap(qemuPid) }
+        qemuPid = nil
         try? FileManager.default.removeItem(at: runtimeDirectory)
         controlEndpoint = nil
         debugStub = nil
@@ -217,6 +221,19 @@ final class AndroidEmulatorMachine: VirtualMachine {
         // whole thing can be searched as one string.
         let bytes = buffer.prefix(size).map { $0 == 0 ? UInt8(ascii: " ") : $0 }
         return String(decoding: bytes, as: UTF8.self)
+    }
+
+    private static func reap(_ pid: pid_t) async {
+        kill(pid, SIGTERM)
+        let deadline = Date().addingTimeInterval(3)
+        while kill(pid, 0) == 0, Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        guard kill(pid, 0) == 0 else { return }
+        kill(pid, SIGKILL)
+        while kill(pid, 0) == 0 {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
     }
 
     /// vsock landed in ~4.8, so a guest kernel that names no vsock symbol needs the virtio-serial
