@@ -57,6 +57,7 @@ public final class Engine {
 
     public let eventLog = EventLog()
     public let eventChime = EventChime()
+    public let connectionActivity: ConnectionActivityCenter
 
     private var deviceEventTasks: [String: Task<Void, Never>] = [:]
     private var gatingEnabledDevices: Set<String> = []
@@ -144,6 +145,11 @@ public final class Engine {
         self.blobs = blobs
         self.eventStore = eventStore
         self.dataDirectory = dataDirectory
+        self.connectionActivity = ConnectionActivityCenter(
+            durations: StageDurationMemory(
+                fileURL: dataDirectory.appendingPathComponent("connection-stage-durations.json")
+            )
+        )
         self.compilerWorkspace = CompilerWorkspace(store: store)
         let hookPacksDir = dataDirectory.appendingPathComponent("HookPacks", isDirectory: true)
         try? FileManager.default.createDirectory(at: hookPacksDir, withIntermediateDirectories: true)
@@ -1717,6 +1723,7 @@ public final class Engine {
             for await snapshot in await self.deviceManager.snapshots() {
                 await self.systemParameters.retain(deviceIDs: Set(snapshot.map(\.id)))
                 for device in snapshot {
+                    self.ensureDeviceEventsHooked(for: device)
                     await self.evaluateGating(forDeviceID: device.id)
                 }
             }
@@ -5425,7 +5432,19 @@ public func deleteCustomInstrument(_ defID: UUID) async {
                 case .spawnAdded(let details):
                     await self.handleSpawnAdded(device: device, details: details)
 
+                case .connecting(let status, let progress):
+                    self.connectionActivity.report(
+                        deviceID: device.id,
+                        deviceKind: device.type.description,
+                        status: status,
+                        fraction: progress
+                    )
+
+                case .connected:
+                    self.connectionActivity.complete(deviceID: device.id)
+
                 case .lost:
+                    self.connectionActivity.complete(deviceID: device.id)
                     self.deviceEventTasks[device.id]?.cancel()
                     self.deviceEventTasks[device.id] = nil
                     self.gatingEnabledDevices.remove(device.id)
