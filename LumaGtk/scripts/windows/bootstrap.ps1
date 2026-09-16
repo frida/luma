@@ -89,14 +89,11 @@ function Sync-Checkout {
         $previous = & git rev-parse HEAD
         Invoke-Checked 'git checkout' { git checkout --quiet --detach $Ref }
         Invoke-Checked 'git reset' { git reset --quiet --hard $Ref }
-        if ($Submodules) {
-            Invoke-Checked 'git submodule update' { git submodule update --init --recursive --depth 1 }
-        }
         if ($previous -ne (& git rev-parse HEAD)) {
             Remove-Item -Recurse -Force 'build' -ErrorAction SilentlyContinue
-            Get-ChildItem 'subprojects' -Filter *.wrap -ErrorAction SilentlyContinue | ForEach-Object {
-                Remove-Item -Recurse -Force (Join-Path 'subprojects' $_.BaseName) -ErrorAction SilentlyContinue
-            }
+        }
+        if ($Submodules) {
+            Invoke-Checked 'git submodule update' { git submodule update --init --recursive --depth 1 }
         }
     } finally {
         Pop-Location
