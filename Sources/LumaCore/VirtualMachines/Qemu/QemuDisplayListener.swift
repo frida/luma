@@ -1,12 +1,12 @@
 import Foundation
 import Frida
 
-#if canImport(Darwin)
+#if canImport(WinSDK)
+import WinSDK
+#elseif canImport(Darwin)
 import Darwin
 #elseif canImport(Glibc)
 import Glibc
-#elseif canImport(WinSDK)
-import WinSDK
 #endif
 
 final class QemuDisplayListener: GLib.DBusObjectHandler, @unchecked Sendable {

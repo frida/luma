@@ -1,6 +1,6 @@
 import Foundation
 
-#if os(macOS) || os(Linux) || os(Windows)
+#if os(Windows) || os(macOS) || os(Linux)
 
 extension ChildProcess {
     /// A guest keeps its disk image locked for as long as it lives, so the

@@ -1,6 +1,6 @@
 import Foundation
 
-#if os(macOS) || os(Linux) || os(Windows)
+#if os(Windows) || os(macOS) || os(Linux)
 
 @MainActor
 public final class QemuBackend: VirtualMachineBackend {

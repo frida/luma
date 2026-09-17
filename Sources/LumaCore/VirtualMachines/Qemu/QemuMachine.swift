@@ -1,15 +1,15 @@
 import Foundation
 import Observation
 
-#if canImport(Darwin)
+#if canImport(WinSDK)
+import WinSDK
+#elseif canImport(Darwin)
 import Darwin
 #elseif canImport(Glibc)
 import Glibc
-#elseif canImport(WinSDK)
-import WinSDK
 #endif
 
-#if os(macOS) || os(Linux) || os(Windows)
+#if os(Windows) || os(macOS) || os(Linux)
 
 @Observable
 @MainActor

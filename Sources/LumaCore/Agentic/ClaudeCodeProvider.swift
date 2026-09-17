@@ -3,7 +3,7 @@ import Foundation
 import FoundationNetworking
 #endif
 
-#if os(macOS) || os(Linux) || os(Windows)
+#if os(Windows) || os(macOS) || os(Linux)
 
 @MainActor
 public final class ClaudeCodeProvider: LLMProvider {
