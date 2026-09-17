@@ -4,7 +4,7 @@ import Foundation
 import WinSDK
 #endif
 
-#if os(macOS) || os(Linux) || os(Windows)
+#if os(Windows) || os(macOS) || os(Linux)
 
 @MainActor
 final class AndroidEmulatorMachine: VirtualMachine {
@@ -34,59 +34,10 @@ final class AndroidEmulatorMachine: VirtualMachine {
     private var qemuPid: HostProcessID?
     private var displayConnection: EmulatorDisplayConnection?
     #if os(Windows)
-    private var qmpHandle: HANDLE?
+    private var qmpPort: UInt16 = 0
     #endif
 
     private static let readySnapshotName = "frida-ready"
-
-    /// QEMU has no UNIX sockets on Windows, so QMP is carried over a named pipe there instead.
-    /// The backend adopts the handle already connected above rather than opening its own, which
-    /// QEMU would no longer answer.
-    private func qmpTransportAddress(socket: URL) -> String {
-        #if os(Windows)
-        "handle:\(UInt(bitPattern: qmpHandle.map { Int(bitPattern: $0) } ?? 0))"
-        #else
-        "unix:\(socket.path)"
-        #endif
-    }
-
-    #if os(Windows)
-    /// QEMU creates the pipe as it starts and then waits, so this retries until it is there.
-    private static func connectToPipe(named name: String) throws -> HANDLE {
-        let path = "\\\\.\\pipe\\" + name
-        let deadline = Date().addingTimeInterval(pipeConnectSeconds)
-
-        while Date() < deadline {
-            let handle = path.withCString(encodedAs: UTF16.self) { wide in
-                CreateFileW(
-                    wide,
-                    DWORD(GENERIC_READ) | DWORD(GENERIC_WRITE),
-                    0,
-                    nil,
-                    DWORD(OPEN_EXISTING),
-                    DWORD(FILE_ATTRIBUTE_NORMAL),
-                    nil)
-            }
-            if let handle, handle != INVALID_HANDLE_VALUE {
-                return handle
-            }
-            Thread.sleep(forTimeInterval: 0.05)
-        }
-
-        throw VirtualMachineError.launchFailed(
-            reason: "The emulator never opened its QMP pipe at \(path)")
-    }
-
-    private static let pipeConnectSeconds: TimeInterval = 20
-    #endif
-
-    private static func qmpArgument(socket: URL, pipe: String) -> String {
-        #if os(Windows)
-        "pipe:\(pipe)"
-        #else
-        "unix:\(socket.path),server,nowait"
-        #endif
-    }
 
     init(emulator: URL, adb: URL, avd: AndroidEmulatorSDK.AVD, request: VirtualMachineLaunchRequest) {
         self.id = request.id
@@ -121,15 +72,14 @@ final class AndroidEmulatorMachine: VirtualMachine {
         let kernelImage = avd.kernelImage
         let hasVsock = await Task.detached { Self.kernelSupportsVsock(kernelImage) }.value
 
-        // The emulator bridges a guest's vsock to a host UNIX socket, which it has none of on
-        // Windows, so the guest is reached over the virtio-serial hostlink there whatever its
-        // kernel offers.
         #if os(Windows)
         let usesVsock = false
         #else
         let usesVsock = hasVsock
         #endif
-        let qmpPipe = "frida-qmp-" + Foundation.UUID().uuidString.prefix(8).lowercased()
+        #if os(Windows)
+        qmpPort = try Self.reserveGdbPort()
+        #endif
 
         // Boot from the ready snapshot when resuming, or from the one named in the environment for a
         // fast debug loop; either way never save on exit, so injection damage is discarded.
@@ -160,7 +110,7 @@ final class AndroidEmulatorMachine: VirtualMachine {
             // The injected agent drives this controller itself over the guest's PCIe config space
             // at the ranchu ECAM base; the QMP channel opens the host end of its serial port.
             process.arguments! += [
-                "-qmp", Self.qmpArgument(socket: qmpSocketPath, pipe: qmpPipe),
+                "-qmp", qmpArgument(socket: qmpSocketPath),
                 "-device", "virtio-serial-pci,id=\(Self.hostlinkController)",
             ]
         }
@@ -173,22 +123,6 @@ final class AndroidEmulatorMachine: VirtualMachine {
             state = .failed(reason: error.localizedDescription)
             throw VirtualMachineError.launchFailed(reason: error.localizedDescription)
         }
-
-        // QEMU holds the machine still until its QMP pipe is connected to, and gives the pipe up
-        // for good once that connection goes, so it is opened here, before the guest is waited on,
-        // and held for the backend to adopt.
-        #if os(Windows)
-        if !usesVsock {
-            do {
-                qmpHandle = try Self.connectToPipe(named: qmpPipe)
-            } catch {
-                await shutDown()
-                let reason = (error as? VirtualMachineError)?.reason ?? error.localizedDescription
-                state = .failed(reason: reason)
-                throw VirtualMachineError.launchFailed(reason: reason)
-            }
-        }
-        #endif
 
         do {
             // adb answering means the kernel is up and scheduling -- what Frida needs to walk it,
@@ -222,6 +156,14 @@ final class AndroidEmulatorMachine: VirtualMachine {
         }
     }
 
+    private func qmpArgument(socket: URL) -> String {
+        #if os(Windows)
+        "tcp:127.0.0.1:\(qmpPort),server,nowait"
+        #else
+        "unix:\(socket.path),server,nowait"
+        #endif
+    }
+
     private func waitForDevice(serial: String) async throws {
         let adb = self.adb
         let ok = await Task.detached {
@@ -230,6 +172,14 @@ final class AndroidEmulatorMachine: VirtualMachine {
         if !ok {
             throw VirtualMachineError.launchFailed(reason: "The emulator did not finish booting")
         }
+    }
+
+    private func qmpTransportAddress(socket: URL) -> String {
+        #if os(Windows)
+        "tcp:127.0.0.1:\(qmpPort)"
+        #else
+        "unix:\(socket.path)"
+        #endif
     }
 
     func captureReadySnapshot() async throws {
@@ -260,10 +210,6 @@ final class AndroidEmulatorMachine: VirtualMachine {
         if let qemuPid { await Self.reap(qemuPid) }
         qemuPid = nil
         try? FileManager.default.removeItem(at: runtimeDirectory)
-        #if os(Windows)
-        if let qmpHandle { CloseHandle(qmpHandle) }
-        qmpHandle = nil
-        #endif
         controlEndpoint = nil
         debugStub = nil
         agentTransport = nil
