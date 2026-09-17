@@ -105,13 +105,15 @@ func run() async throws {
         note("kernel \(kernel.path)")
 
         let agentData = try Data(contentsOf: URL(fileURLWithPath: agentPath))
+        let kernelSymbols = try LinuxKernelImage.open(path: kernel.path)
+        note("kernel names vsock: \(kernelSymbols.hasSymbol(name: "vsock"))")
         let config = BareboneConfig(
             connection: BareboneConnectionConfig(host: host, port: UInt(port), pid: pid, flavor: .androidEmulator),
             agent: BareboneInjectedAgentConfig(
                 image: [UInt8](agentData),
                 transport: transport
             ),
-            image: BareboneImageConfig(file: kernel.path),
+            image: BareboneLinuxKernelConfig(kernel: kernelSymbols),
             kernel: .linux
         )
 

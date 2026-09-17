@@ -1,4 +1,5 @@
 import Foundation
+import Frida
 
 #if os(Windows)
 import WinSDK
@@ -237,11 +238,10 @@ final class AndroidEmulatorMachine: VirtualMachine {
     }
 
     /// vsock landed in ~4.8, so a guest kernel that names no vsock symbol needs the virtio-serial
-    /// hostlink instead. Distributions ship the image wrapped -- gzipped on arm64, a self-extracting
-    /// PE on x86 -- and the symbol is only in the payload, so it is unwrapped before searching.
+    /// hostlink instead.
     private nonisolated static func kernelSupportsVsock(_ url: URL?) -> Bool {
-        guard let url, let packed = try? Data(contentsOf: url) else { return true }
-        return LinuxKernelImage.names("vsock", in: packed)
+        guard let url, let image = try? Frida.LinuxKernelImage.open(path: url.path) else { return true }
+        return image.hasSymbol(name: "vsock")
     }
 
     private static func reserveGdbPort() throws -> UInt16 {

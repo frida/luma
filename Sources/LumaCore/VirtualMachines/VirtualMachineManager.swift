@@ -142,9 +142,10 @@ public final class VirtualMachineManager {
             agent = BareboneInjectedAgentConfig(image: [UInt8](image), transport: transport)
         }
 
+        let kernel = machine.template.variant(for: record?.parameters ?? [:]).agentFlavor?.kernel
         var image: BareboneImageConfig?
         if let kernelImage = machine.kernelImage {
-            image = BareboneImageConfig(file: kernelImage.path)
+            image = try Self.imageConfig(for: kernel, at: kernelImage)
         }
 
         let device = try await deviceManager.addBareboneDevice(
@@ -152,7 +153,7 @@ public final class VirtualMachineManager {
                 connection: stub.connectionConfig,
                 agent: agent,
                 image: image,
-                kernel: machine.template.variant(for: record?.parameters ?? [:]).agentFlavor?.kernel.kind
+                kernel: kernel?.kind
             ),
             id: Self.deviceID(for: machine.id),
             name: machine.name,
@@ -164,6 +165,18 @@ public final class VirtualMachineManager {
 
     static func deviceID(for machineID: UUID) -> String {
         "barebone-vm-\(machineID.uuidString)"
+    }
+
+    private static func imageConfig(
+        for kernel: BareboneAgentKernel?,
+        at url: URL
+    ) throws -> sending BareboneImageConfig {
+        switch kernel {
+        case .linux:
+            return BareboneLinuxKernelConfig(kernel: try Frida.LinuxKernelImage.open(path: url.path))
+        default:
+            return BareboneXnuKernelcacheConfig(kernelcache: try Frida.XnuKernelcache.open(path: url.path))
+        }
     }
 
     public func isStopping(_ record: VirtualMachineRecord) -> Bool {
