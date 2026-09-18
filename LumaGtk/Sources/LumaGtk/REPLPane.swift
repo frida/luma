@@ -186,10 +186,8 @@ final class REPLPane {
 
         guard bannerDirty else { return }
 
-        if let rootPtr = widget.root?.ptr {
-            WindowRef(raw: rootPtr).focus = nil
-        }
         if let existing = currentBanner {
+            existing.clearFocusIfInside()
             bannerSlot.remove(child: existing)
             currentBanner = nil
         }
