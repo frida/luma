@@ -13,8 +13,11 @@ func fail(_ message: String) -> Never {
     exit(1)
 }
 
+let started = Date()
+
 func note(_ message: String) {
-    FileHandle.standardError.write(Data("[check] \(message)\n".utf8))
+    let elapsed = String(format: "%6.1fs", Date().timeIntervalSince(started))
+    FileHandle.standardError.write(Data("[check \(elapsed)] \(message)\n".utf8))
 }
 
 @MainActor
@@ -120,7 +123,9 @@ func run() async throws {
         note("connecting frida-core (parse kallsyms + instrument + inject)…")
         let manager = DeviceManager()
         let device = try await manager.addBareboneDevice(config: config, id: "emulator-check", name: "emulator-check")
+        note("device added")
         let session = try await device.attach(pid: 0)
+        note("session attached")
         let script = try await session.createScript(source: code)
         // Subscribe before load: the script's send() fires as it loads, so a consumer started
         // afterwards can miss it. A detached task begins draining events first, then load runs.
@@ -132,7 +137,7 @@ func run() async throws {
             }
             return nil
         }
-        note("loading script…")
+        note("script created; loading…")
         try await script.load()
 
         let timeout = Task { () -> String? in
