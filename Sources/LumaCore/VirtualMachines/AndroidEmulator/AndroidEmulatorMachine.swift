@@ -68,18 +68,14 @@ final class AndroidEmulatorMachine: VirtualMachine {
         let grpcPort = try Self.reserveGdbPort()
         let consolePort = try Self.reserveConsolePort()
 
+        #if os(Windows)
+        let usesVsock = false
+        qmpPort = try Self.reserveGdbPort()
+        #else
         // Old guest kernels lack vsock, so they are reached over a virtio-serial hostlink and
         // launched single-core. Inflating and scanning the kernel image is off the main thread.
         let kernelImage = avd.kernelImage
-        let hasVsock = await Task.detached { Self.kernelSupportsVsock(kernelImage) }.value
-
-        #if os(Windows)
-        let usesVsock = false
-        #else
-        let usesVsock = hasVsock
-        #endif
-        #if os(Windows)
-        qmpPort = try Self.reserveGdbPort()
+        let usesVsock = await Task.detached { Self.kernelSupportsVsock(kernelImage) }.value
         #endif
 
         // Boot from the ready snapshot when resuming, or from the one named in the environment for a
