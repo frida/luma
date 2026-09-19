@@ -115,8 +115,16 @@ final class AndroidEmulatorMachine: VirtualMachine {
                 "-device", "virtio-serial-pci,id=\(Self.hostlinkController)",
             ]
         }
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        if let path = ProcessInfo.processInfo.environment["FRIDA_EMULATOR_KERNEL_LOG"] {
+            process.arguments!.insert("-show-kernel", at: 1)
+            FileManager.default.createFile(atPath: path, contents: nil)
+            let sink = FileHandle(forWritingAtPath: path)!
+            process.standardOutput = sink
+            process.standardError = sink
+        } else {
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+        }
 
         do {
             try process.run()
