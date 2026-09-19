@@ -12,7 +12,7 @@ public final class AndroidEmulatorBackend: VirtualMachineBackend {
 
     public static let avdParameterID = "avd"
 
-    private static let instrumentableArchitectures: [VirtualMachineArchitecture] = [.arm64]
+    private static let instrumentableArchitectures: [VirtualMachineArchitecture] = [.arm64, .x86_64]
 
     public init() {
     }
