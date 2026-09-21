@@ -136,7 +136,6 @@ final class EmulatorDisplayConnection: VirtualMachineFrameSource {
             Task { await client.close() }
         }
         client = nil
-        sharedFrame?.close()
     }
 
     /// The emulator sizes the shared frame from the requested dimensions, so each stream is opened
@@ -334,7 +333,7 @@ final class SharedFrameBuffer {
     }
     #endif
 
-    func close() {
+    deinit {
         #if os(Windows)
         UnmapViewOfFile(baseAddress)
         CloseHandle(mapping)
