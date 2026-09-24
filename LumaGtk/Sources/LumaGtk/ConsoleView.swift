@@ -426,6 +426,9 @@ final class ConsoleView {
             gtk_popover_set_pointing_to(popover.popover_ptr, ptr)
         }
         popover.popup()
+        // A popped GtkPopover takes the keyboard grab. On Windows that reads as the
+        // REPL entry losing focus, so hand the caret straight back to the input.
+        _ = inputEntry.grabFocus()
     }
 
     private func caretRectInEntry() -> (x: Double, y: Double, width: Double, height: Double) {

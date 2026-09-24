@@ -202,8 +202,10 @@ final class NotebookPane {
 
     private func rebuildEntries() {
         guard let engine else { return }
-        clearWindowFocus()
-        clearChildren(of: entriesBox)
+        while let child = entriesBox.firstChild {
+            child.clearFocusIfInside()
+            entriesBox.remove(child: child)
+        }
         jsValueKeepers.removeAll()
         pharoCells.removeAll()
         entryRows.removeAll()
@@ -675,12 +677,6 @@ final class NotebookPane {
         return buffer.getText(start: start, end: end, includeHiddenChars: true) ?? ""
     }
 
-    private func clearWindowFocus() {
-        guard let rootPtr = widget.root?.ptr else { return }
-        let window = Gtk.WindowRef(raw: rootPtr)
-        window.focus = nil
-    }
-
     private static func makeWalkthroughStep(number: Int, text: String) -> Box {
         let row = Box(orientation: .horizontal, spacing: 10)
         row.setSizeRequest(width: 350, height: -1)
@@ -808,12 +804,6 @@ final class NotebookPane {
 
         outer.append(child: stack)
         return outer
-    }
-
-    private func clearChildren(of container: Box) {
-        while let child = container.firstChild {
-            container.remove(child: child)
-        }
     }
 }
 
