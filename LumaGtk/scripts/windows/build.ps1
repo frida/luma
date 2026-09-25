@@ -62,9 +62,6 @@ try {
         -R2Prefix    $R2Prefix `
         -PharoPrefix $PharoPrefix
 
-    $pathVcvarsWasLoadedOnto = 'env:__VSCMD_PREINIT_PATH'
-    Remove-Item $pathVcvarsWasLoadedOnto
-
     # /ignore:importeddllmain silences vcpkg libxml2's DllMain re-export.
     # /ignore:4217 silences LNK4217 — Swift-on-Windows marks every C
     # module import as dllimport even when the C target links into the

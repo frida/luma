@@ -42,15 +42,22 @@ PowerShell for VS.
     $vcvars = Join-Path $vsRoot "VC\Auxiliary\Build\$vcvarsName"
     if (-not (Test-Path $vcvars)) { throw "$vcvarsName not found under $vsRoot." }
 
-    & $env:ComSpec /c "call `"$vcvars`" >nul 2>&1 && set" | ForEach-Object {
+    $callerPath = $env:Path
+    $pathCmdCanExpand = @("$env:SystemRoot\System32", $env:SystemRoot, "$env:SystemRoot\System32\WindowsPowerShell\v1.0") -join ';'
+    $env:Path = $pathCmdCanExpand
+
+    $vcvarsOutput = & $env:ComSpec /c "call `"$vcvars`" 2>&1 && set"
+    $vcvarsOutput | ForEach-Object {
         $name, $value = $_ -split '=', 2
         if ($name -and $null -ne $value) {
             Set-Item -Path "env:$name" -Value $value
         }
     }
 
-    if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
-        throw "Ran $vcvars but cl.exe is still not on PATH."
+    $env:Path = $env:Path.Replace($pathCmdCanExpand, $callerPath)
+
+    if (-not $env:VCToolsInstallDir) {
+        throw "Ran $vcvars but it loaded nothing:`n$($vcvarsOutput -join "`n")"
     }
 }
 
