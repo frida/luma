@@ -1395,6 +1395,7 @@ jobs:
             toolcache_arch: x64
             msys2_system: UCRT64
             msys2_package: mingw-w64-ucrt-x86_64
+            cgo_package: mingw-w64-x86_64-gcc
           - runner: windows-11-arm
             win_arch: arm64
             msvc_arch: arm64
@@ -1610,6 +1611,7 @@ jobs:
             ${{ matrix.msys2_package }}-python
             ${{ matrix.msys2_package }}-ninja
             ${{ matrix.msys2_package }}-ntldd
+            ${{ matrix.cgo_package }}
 
 
       - name: Build frida-core (shared)
