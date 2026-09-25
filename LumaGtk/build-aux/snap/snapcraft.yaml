@@ -127,7 +127,7 @@ parts:
   pharo-vm:
     plugin: nil
     source: https://github.com/frida/SwiftyPharo.git
-    source-commit: 809f08769913666af2a58e2aa49195a88d5a30e2
+    source-commit: 8d7620f388c18475c5f66a0540c145b93dedc4ef
     override-build: |
       DESTDIR="$CRAFT_PART_INSTALL" PREFIX=/usr/local LIBDIR=/usr/local/lib \
         PLATFORM=linux tools/build-vm.sh

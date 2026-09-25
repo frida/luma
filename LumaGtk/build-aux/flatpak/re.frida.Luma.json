@@ -192,7 +192,7 @@
                 {
                     "type": "git",
                     "url": "https://github.com/frida/SwiftyPharo.git",
-                    "commit": "809f08769913666af2a58e2aa49195a88d5a30e2"
+                    "commit": "8d7620f388c18475c5f66a0540c145b93dedc4ef"
                 }
             ]
         },
