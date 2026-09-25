@@ -10,6 +10,8 @@ import Darwin
 import Glibc
 #endif
 
+#if os(Windows) || os(macOS) || os(Linux)
+
 typealias EmulatorImageFormat = Android_Emulation_Control_ImageFormat
 typealias EmulatorImage = Android_Emulation_Control_Image
 typealias EmulatorMouseEvent = Android_Emulation_Control_MouseEvent
@@ -344,3 +346,5 @@ final class SharedFrameBuffer {
         #endif
     }
 }
+
+#endif
