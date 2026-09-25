@@ -147,7 +147,12 @@ $libDirs = @($vcpkg, $frida, $r2, $pharo) |
     ForEach-Object { Join-Path $_ 'lib' } |
     Where-Object { Test-Path $_ } |
     Select-Object -Unique
-$env:LIB = (@($libDirs) + @($env:LIB | Where-Object { $_ })) -join ';'
+function Join-DistinctDirectories {
+    param([string[]] $Directories)
+    $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    ($Directories | Where-Object { $_ -and $seen.Add($_.TrimEnd('\')) }) -join ';'
+}
+$env:LIB = Join-DistinctDirectories (@($libDirs) + ($env:LIB -split ';'))
 
 # Link frida-swift against the system frida-core devkit rather than
 # downloading one, and point GLib at vcpkg's glib-networking so TLS
@@ -221,6 +226,8 @@ if (-not (Get-Command rc.exe -ErrorAction SilentlyContinue)) {
         if ($sdkBin) { $env:PATH = "$sdkBin;$env:PATH" }
     }
 }
+
+$env:PATH = Join-DistinctDirectories ($env:PATH -split ';')
 
 Write-Host "LumaGtk build env configured:"
 Write-Host "  VCPKG_PREFIX  = $vcpkg"

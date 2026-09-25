@@ -43,13 +43,12 @@ if (-not $SkipBuild) {
         -R2Prefix      $R2Prefix `
         -PharoPrefix   $PharoPrefix
     if ($LASTEXITCODE -ne 0) { throw "build failed" }
-} else {
-    & (Join-Path $script 'setup-env.ps1') `
-        -VcpkgPrefix $VcpkgPrefix `
-        -FridaPrefix $FridaPrefix `
-        -R2Prefix    $R2Prefix `
-        -PharoPrefix $PharoPrefix
 }
+& (Join-Path $script 'setup-env.ps1') `
+    -VcpkgPrefix $VcpkgPrefix `
+    -FridaPrefix $FridaPrefix `
+    -R2Prefix    $R2Prefix `
+    -PharoPrefix $PharoPrefix
 
 $triplet = @{
     'x86_64' = 'x86_64-unknown-windows-msvc'

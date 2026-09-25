@@ -6,8 +6,8 @@
 #
 #     . .\scripts\windows\msvc-env.ps1
 #
-# Leaves the toolchain alone when cl.exe is already reachable, so it is
-# safe to call from a Developer PowerShell too, and always compacts PATH
+# Leaves the toolchain alone when its environment is already loaded, so it
+# is safe to call from a Developer PowerShell too, and always compacts PATH
 # on the way out: cmd.exe expands at most 8191 characters, and a machine
 # that has stacked several toolchains onto PATH goes past that, leaving
 # every child process without one.
@@ -20,7 +20,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
+if (-not $env:VCToolsInstallDir) {
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
     if (-not (Test-Path $vswhere)) {
         throw @"
