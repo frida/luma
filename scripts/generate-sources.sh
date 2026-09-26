@@ -24,9 +24,6 @@ fi
 
 "$root/scripts/stage-pharo-image.sh"
 
-# Xcode hands a scheme pre-action SDKROOT=auto, which swift cannot resolve.
-unset SDKROOT
-
 swift run --package-path "$root" LumaBundleCompiler \
     --config       "$root/Agent/bundle.json" \
     --project-root "$root" \
