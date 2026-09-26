@@ -1,6 +1,6 @@
 @MainActor
 public final class PackageOperationQueue {
-    private var pending: [() async throws -> Void] = []
+    private var pending: [() async -> Void] = []
     private var isRunning = false
 
     public init() {}
@@ -18,13 +18,13 @@ public final class PackageOperationQueue {
 
             if !isRunning {
                 Task { [self] in
-                    try await runNext()
+                    await runNext()
                 }
             }
         }
     }
 
-    private func runNext() async throws {
+    private func runNext() async {
         guard !pending.isEmpty else {
             isRunning = false
             return
@@ -32,14 +32,7 @@ public final class PackageOperationQueue {
 
         isRunning = true
         let op = pending.removeFirst()
-
-        do {
-            try await op()
-            try await runNext()
-        } catch {
-            isRunning = false
-            pending.removeAll()
-            throw error
-        }
+        await op()
+        await runNext()
     }
 }
