@@ -30,15 +30,7 @@ final class GRPCConnection: Sendable {
         callHeaders = headers
         group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
 
-        var configuration = NIOHTTP2Handler.Configuration()
-        configuration.connection.targetWindowSize = Self.windowSize
-        configuration.stream.targetWindowSize = Self.windowSize
-        configuration.connection.initialSettings = [
-            HTTP2Setting(parameter: .initialWindowSize, value: Self.windowSize),
-            HTTP2Setting(parameter: .maxFrameSize, value: 1 << 20),
-            HTTP2Setting(parameter: .maxConcurrentStreams, value: 100),
-            HTTP2Setting(parameter: .enablePush, value: 0),
-        ]
+        let configuration = Self.makeHTTP2Configuration()
 
         do {
             multiplexer = try await ClientBootstrap(group: group)
@@ -153,6 +145,19 @@ final class GRPCConnection: Sendable {
 
             if let status { throw status }
         }
+    }
+
+    private static func makeHTTP2Configuration() -> NIOHTTP2Handler.Configuration {
+        var configuration = NIOHTTP2Handler.Configuration()
+        configuration.connection.targetWindowSize = windowSize
+        configuration.stream.targetWindowSize = windowSize
+        configuration.connection.initialSettings = [
+            HTTP2Setting(parameter: .initialWindowSize, value: windowSize),
+            HTTP2Setting(parameter: .maxFrameSize, value: 1 << 20),
+            HTTP2Setting(parameter: .maxConcurrentStreams, value: 100),
+            HTTP2Setting(parameter: .enablePush, value: 0),
+        ]
+        return configuration
     }
 
     private static func frame(_ message: some Message) -> ByteBuffer {
