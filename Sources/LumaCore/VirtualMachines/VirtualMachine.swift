@@ -10,8 +10,7 @@ public protocol VirtualMachine: AnyObject, Identifiable {
     var display: VirtualMachineDisplay? { get }
     var debugStub: BareboneDebugStub? { get }
     var agentTransport: BareboneAgentTransport? { get }
-    /// The image the guest booted, which carries the kernel's symbols.
-    var kernelImage: URL? { get }
+    var kernelSymbols: BareboneKernelSymbols? { get }
 
     func captureReadySnapshot() async throws
     func restoreReadySnapshot() async throws
@@ -20,7 +19,7 @@ public protocol VirtualMachine: AnyObject, Identifiable {
 }
 
 extension VirtualMachine {
-    public var kernelImage: URL? {
+    public var kernelSymbols: BareboneKernelSymbols? {
         nil
     }
 }
@@ -67,4 +66,10 @@ public enum BareboneDebugStub: Sendable, Equatable {
     /// The Android emulator's gdbstub, reachable over host/port but unusable until the backend
     /// instruments the hosting qemu process at `pid`.
     case androidEmulator(host: String, port: UInt16, pid: UInt)
+}
+
+public enum BareboneKernelSymbols: Sendable, Equatable {
+    case linuxImage(URL)
+    case linuxSystemMap(URL)
+    case xnuKernelcache(URL)
 }

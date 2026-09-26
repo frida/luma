@@ -86,7 +86,7 @@ func run() async throws {
 
     do {
         guard case .androidEmulator(let host, let port, let pid)? = machine.debugStub else { fail("machine did not report an androidEmulator stub") }
-        guard let kernel = machine.kernelImage else { fail("machine has no kernel image") }
+        guard case .linuxImage(let kernel)? = machine.kernelSymbols else { fail("machine has no kernel image") }
         let transport: BareboneInjectingTransportConfig
         switch machine.agentTransport {
         case .pipeVsock(let socketPath)?:

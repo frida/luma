@@ -21,8 +21,8 @@ final class AndroidEmulatorMachine: VirtualMachine {
         [.snapshot, .liveDisplay, .input]
     }
 
-    var kernelImage: URL? {
-        avd.kernelImage
+    var kernelSymbols: BareboneKernelSymbols? {
+        .linuxImage(avd.kernelImage)
     }
 
     private let emulator: URL

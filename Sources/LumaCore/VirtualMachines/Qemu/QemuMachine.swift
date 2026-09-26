@@ -29,9 +29,8 @@ final class QemuMachine: VirtualMachine {
         .hostlink(qmp: "unix:\(agentQmpSocketPath.path)", bus: QemuIdentifier.hostlinkBus, fabric: guest.fabric)
     }
 
-    /// What the guest booted, which for a kernel the host has the map of is that map.
-    var kernelImage: URL? {
-        request.text(QemuParameter.symbols).map { URL(fileURLWithPath: $0) }
+    var kernelSymbols: BareboneKernelSymbols? {
+        request.text(QemuParameter.symbols).map { .linuxSystemMap(URL(fileURLWithPath: $0)) }
     }
 
     private let guest: QemuGuest

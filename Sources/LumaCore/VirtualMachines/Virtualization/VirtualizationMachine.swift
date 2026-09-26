@@ -16,11 +16,11 @@ final class VirtualizationMachine: NSObject, VirtualMachine {
     private(set) var debugStub: BareboneDebugStub?
     private(set) var agentTransport: BareboneAgentTransport?
 
-    var kernelImage: URL? {
+    var kernelSymbols: BareboneKernelSymbols? {
         guard template.id == VirtualizationTemplate.macOS else {
-            return try? VirtualizationLinuxImage(request: request).symbols
+            return try? VirtualizationLinuxImage(request: request).symbols.map { .linuxSystemMap($0) }
         }
-        return bundle.kernelImage
+        return bundle.kernelImage.map { .xnuKernelcache($0) }
     }
 
     var capabilities: VirtualMachineCapabilities {

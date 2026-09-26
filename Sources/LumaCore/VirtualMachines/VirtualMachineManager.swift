@@ -142,18 +142,12 @@ public final class VirtualMachineManager {
             agent = BareboneInjectedAgentConfig(image: [UInt8](image), transport: transport)
         }
 
-        let kernel = machine.template.variant(for: record?.parameters ?? [:]).agentFlavor?.kernel
-        var image: BareboneImageConfig?
-        if let kernelImage = machine.kernelImage {
-            image = try Self.imageConfig(for: kernel, at: kernelImage)
-        }
-
         let device = try await deviceManager.addBareboneDevice(
             config: BareboneConfig(
                 connection: stub.connectionConfig,
                 agent: agent,
-                image: image,
-                kernel: kernel?.kind
+                image: try machine.kernelSymbols?.imageConfig,
+                kernel: machine.template.variant(for: record?.parameters ?? [:]).agentFlavor?.kernel.kind
             ),
             id: Self.deviceID(for: machine.id),
             name: machine.name,
@@ -165,18 +159,6 @@ public final class VirtualMachineManager {
 
     static func deviceID(for machineID: UUID) -> String {
         "barebone-vm-\(machineID.uuidString)"
-    }
-
-    private static func imageConfig(
-        for kernel: BareboneAgentKernel?,
-        at url: URL
-    ) throws -> sending BareboneImageConfig {
-        switch kernel {
-        case .linux:
-            return BareboneLinuxKernelConfig(kernel: try Frida.LinuxKernelImage.open(path: url.path))
-        default:
-            return BareboneXnuKernelcacheConfig(kernelcache: try Frida.XnuKernelcache.open(path: url.path))
-        }
     }
 
     public func isStopping(_ record: VirtualMachineRecord) -> Bool {
@@ -256,6 +238,21 @@ extension BareboneDebugStub {
             return BareboneConnectionConfig(pid: pid, flavor: .vz)
         case .androidEmulator(let host, let port, let pid):
             return BareboneConnectionConfig(host: host, port: UInt(port), pid: pid, flavor: .androidEmulator)
+        }
+    }
+}
+
+extension BareboneKernelSymbols {
+    var imageConfig: BareboneImageConfig {
+        get throws {
+            switch self {
+            case .linuxImage(let url):
+                return BareboneLinuxKernelConfig(kernel: try Frida.LinuxKernelImage.open(path: url.path))
+            case .linuxSystemMap(let url):
+                return BareboneLinuxKernelConfig(kernel: try LinuxSystemMap.open(path: url.path))
+            case .xnuKernelcache(let url):
+                return BareboneXnuKernelcacheConfig(kernelcache: try XnuKernelcache.open(path: url.path))
+            }
         }
     }
 }
