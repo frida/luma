@@ -24,7 +24,7 @@ let usesXcodePackageResolution = manifestFileno != nil && manifestFileno != "4"
 #else
 let usesXcodePackageResolution = false
 #endif
-let lumaCoreExcludes = usesXcodePackageResolution ? [] : ["Generated"]
+let lumaCoreExcludes = ["VirtualMachines/AndroidEmulator/EmulatorControl/proto"] + (usesXcodePackageResolution ? [] : ["Generated"])
 let lumaCorePlugins: [Target.PluginUsage] = usesXcodePackageResolution ? [] : [
     .plugin(name: "LumaBundlePlugin"),
     .plugin(name: "LumaShaderPlugin"),
