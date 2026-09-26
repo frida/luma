@@ -103,7 +103,14 @@ public final class VirtualMachineManager {
             )
         )
         running[record.id] = machine
-        _ = try? await addBareboneDevice(for: machine)
+
+        do {
+            try await addBareboneDevice(for: machine)
+        } catch {
+            await stop(record)
+            throw error
+        }
+
         return machine
     }
 
@@ -114,11 +121,12 @@ public final class VirtualMachineManager {
 
         try await machine.captureReadySnapshot()
 
-        _ = try? await addBareboneDevice(for: machine)
+        if let index = records.firstIndex(where: { $0.id == machine.id }) {
+            records[index].hasReadySnapshot = true
+            try store.save(records[index])
+        }
 
-        guard let index = records.firstIndex(where: { $0.id == machine.id }) else { return }
-        records[index].hasReadySnapshot = true
-        try store.save(records[index])
+        try await addBareboneDevice(for: machine)
     }
 
     public func discardReadySnapshot(_ record: VirtualMachineRecord) async throws {
@@ -129,7 +137,7 @@ public final class VirtualMachineManager {
         try store.save(records[index])
     }
 
-    private func addBareboneDevice(for machine: any VirtualMachine) async throws -> Device {
+    private func addBareboneDevice(for machine: any VirtualMachine) async throws {
         guard let stub = machine.debugStub else {
             throw VirtualMachineError.launchFailed(reason: "The machine has no debugger to connect to")
         }
@@ -154,7 +162,6 @@ public final class VirtualMachineManager {
             icon: machine.template.icon
         )
         devices[machine.id] = device
-        return device
     }
 
     static func deviceID(for machineID: UUID) -> String {
