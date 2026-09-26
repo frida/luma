@@ -17,6 +17,7 @@ export PKG_CONFIG_PATH := $(if $(PKG_CONFIG_PATH),$(PKG_CONFIG_PATH):)$(SYSTEM_P
 export USE_SYSTEM_FRIDA := 1
 
 PROJECT_ROOT := $(abspath ..)
+IN_BUILD_ENVIRONMENT := $(PROJECT_ROOT)/scripts/in-build-environment.sh
 
 LOCAL_SHADER_TOOLCHAIN := $(PROJECT_ROOT)/artifacts/ShaderToolchain.xcframework
 ifneq ($(wildcard $(LOCAL_SHADER_TOOLCHAIN)),)
@@ -52,7 +53,7 @@ SHADER_SOURCES := $(wildcard $(PROJECT_ROOT)/Shaders/*.frag.glsl)
 bundle: $(AGENT_BUNDLE) $(TYPINGS_BUNDLE) $(SHADER_BUNDLE)
 
 $(AGENT_BUNDLE): $(AGENT_SOURCES) $(PROJECT_ROOT)/Agent/bundle.json
-	swift run --package-path $(PROJECT_ROOT) LumaBundleCompiler \
+	$(IN_BUILD_ENVIRONMENT) swift run --package-path $(PROJECT_ROOT) LumaBundleCompiler \
 	    --config       "$(PROJECT_ROOT)/Agent/bundle.json" \
 	    --project-root "$(PROJECT_ROOT)" \
 	    --staging-dir  "$(AGENT_STAGING)"
@@ -60,7 +61,7 @@ $(AGENT_BUNDLE): $(AGENT_SOURCES) $(PROJECT_ROOT)/Agent/bundle.json
 $(TYPINGS_BUNDLE): $(AGENT_BUNDLE)
 
 $(SHADER_BUNDLE): $(SHADER_SOURCES) $(PROJECT_ROOT)/Sources/LumaShaderCompiler/main.swift
-	swift run --package-path $(PROJECT_ROOT) LumaShaderCompiler \
+	$(IN_BUILD_ENVIRONMENT) swift run --package-path $(PROJECT_ROOT) LumaShaderCompiler \
 	    --shader-dir "$(PROJECT_ROOT)/Shaders" \
 	    --swift-out  "$@"
 
@@ -76,7 +77,7 @@ render-tests: build
 PHARO_VM_RPATH := $(if $(PHARO_VM),-Xlinker -rpath -Xlinker $(PHARO_VM_PREFIX)/lib)
 
 build: bundle $(PHARO_IMAGE) $(PHARO_VM)
-	swift build $(SWIFT_BUILD_FLAGS) $(PHARO_VM_RPATH)
+	$(IN_BUILD_ENVIRONMENT) swift build $(SWIFT_BUILD_FLAGS) $(PHARO_VM_RPATH)
 
 ifneq ($(PHARO_VM_PC),)
 # Resolving first is what puts the script on disk, and resolving does not need
@@ -85,7 +86,7 @@ $(PHARO_VM_PC):
 	@if [ -d "$(PHARO_SOURCE)/tools" ]; then \
 	    tools="$(PHARO_SOURCE)"; \
 	else \
-	    swift package resolve; \
+	    $(IN_BUILD_ENVIRONMENT) swift package resolve; \
 	    tools="$(CURDIR)/.build/checkouts/SwiftyPharo"; \
 	fi; \
 	echo "Building the Pharo VM into $(PHARO_VM_PREFIX)"; \

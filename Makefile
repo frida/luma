@@ -19,6 +19,8 @@ ifneq ($(wildcard $(LOCAL_SHADER_TOOLCHAIN)),)
 export SHADER_TOOLCHAIN_ROOT := $(LOCAL_SHADER_TOOLCHAIN)
 endif
 
+IN_BUILD_ENVIRONMENT := scripts/in-build-environment.sh
+
 all: $(APP)
 
 # The examples are Smalltalk in Swift string literals, which nothing else
@@ -27,23 +29,23 @@ all: $(APP)
 # Both build the agent bundle through a plugin, and SwiftPM runs those in a
 # sandbox with no network for npm to install from.
 check-patches: $(PHARO_IMAGE)
-	swift run --disable-sandbox LumaSynthCheck
+	$(IN_BUILD_ENVIRONMENT) swift run --disable-sandbox LumaSynthCheck
 
 check-examples: $(PHARO_IMAGE)
-	swift run --disable-sandbox LumaExampleCheck
+	$(IN_BUILD_ENVIRONMENT) swift run --disable-sandbox LumaExampleCheck
 
 # The editor's completions come from the compiler's language server, which
 # only a running one can vouch for.
 check-editor: $(PHARO_IMAGE)
-	swift run --disable-sandbox LumaEditorCheck
+	$(IN_BUILD_ENVIRONMENT) swift run --disable-sandbox LumaEditorCheck
 
 $(PHARO_IMAGE):
 	scripts/stage-pharo-image.sh
 
 $(APP): $(SOURCES) $(SHADER_SOURCES) Luma.xcodeproj Package.swift
 	mkdir -p "$(BUILD_DIR)"
-	scripts/generate-sources.sh
-	xcodebuild \
+	$(IN_BUILD_ENVIRONMENT) scripts/generate-sources.sh
+	$(IN_BUILD_ENVIRONMENT) xcodebuild \
 		-project Luma.xcodeproj \
 		-scheme Luma \
 		-configuration Release \
