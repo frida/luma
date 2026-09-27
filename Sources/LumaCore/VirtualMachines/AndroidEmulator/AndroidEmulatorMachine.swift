@@ -265,7 +265,7 @@ final class AndroidEmulatorMachine: VirtualMachine {
     /// hostlink instead.
     private nonisolated static func kernelSupportsVsock(_ url: URL?) -> Bool {
         guard let url, let image = try? Frida.LinuxKernelImage.open(path: url.path) else { return true }
-        return image.hasSymbol(name: "vsock")
+        return image.hasSymbol(name: "vsock_core_register")
     }
 
     private static func reserveGdbPort() throws -> UInt16 {
