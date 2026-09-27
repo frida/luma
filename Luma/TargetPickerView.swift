@@ -1143,55 +1143,49 @@ struct TargetPickerView: View {
 
     @ViewBuilder
     private func deviceListPane() -> some View {
-        switch store.discoveryState {
-        case .discovering:
-            discoveringView
-
-        case .ready:
-            if store.devices.isEmpty {
-                emptyDevicesView
-            } else {
-                deviceListWithHeaderView
-            }
-        }
-    }
-
-    private var discoveringView: some View {
-        ZStack {
-            Color.clear
-            VStack(alignment: .leading, spacing: 12) {
-                ProgressView("Searching for devices…")
-                    .controlSize(.small)
-
-                Text("Connect a device or add a remote target.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.vertical, 8)
-            .padding(.horizontal, 12)
-        }
-    }
-
-    private var emptyDevicesView: some View {
-        VStack(spacing: 12) {
-            deviceListHeaderView
-
-            ZStack {
-                Color.clear
-                ContentUnavailableView(
-                    "No Devices",
-                    systemImage: "ipad.and.iphone",
-                    description: Text("Connect a device or add a remote target to get started.")
-                )
-            }
-        }
-    }
-
-    private var deviceListWithHeaderView: some View {
         VStack(spacing: 0) {
             deviceListHeaderView
 
+            switch store.discoveryState {
+            case .discovering:
+                discoveringBody
+            case .ready:
+                if store.devices.isEmpty {
+                    emptyDevicesBody
+                } else {
+                    deviceList
+                }
+            }
+        }
+        .modifier(CompactGroupedBackground(isCompactWidth: isCompactWidth))
+    }
+
+    private var discoveringBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Connect a device or add a remote target.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, deviceListHeaderHorizontalPadding)
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var emptyDevicesBody: some View {
+        ZStack {
+            Color.clear
+            ContentUnavailableView(
+                "No Devices",
+                systemImage: "ipad.and.iphone",
+                description: Text("Connect a device or add a remote target to get started.")
+            )
+        }
+    }
+
+    private var deviceList: some View {
+        VStack(spacing: 0) {
             List(selection: $selectedDeviceID) {
                 ForEach(store.devices, id: \.id) { device in
                 HStack(spacing: 8) {
@@ -1228,7 +1222,6 @@ struct TargetPickerView: View {
             }
             .modifier(CompactGroupedList(isCompactWidth: isCompactWidth))
         }
-        .modifier(CompactGroupedBackground(isCompactWidth: isCompactWidth))
     }
 
     private var deviceListHeaderView: some View {
