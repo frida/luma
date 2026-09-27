@@ -90,6 +90,9 @@ private struct ProjectContentView: View {
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
         } detail: {
             detailWithSidePanel
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    eventStreamBottomBar
+                }
         }
         .sheet(
             item: Binding(
@@ -107,9 +110,6 @@ private struct ProjectContentView: View {
                 targetPickerSheet(context: context)
             }
         )
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            eventStreamBottomBar
-        }
         .background {
             GeometryReader { proxy in
                 Color.clear
