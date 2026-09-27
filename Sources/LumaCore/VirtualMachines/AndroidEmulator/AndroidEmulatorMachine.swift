@@ -32,6 +32,7 @@ final class AndroidEmulatorMachine: VirtualMachine {
     private let runtimeDirectory: URL
     private let hasReadySnapshot: Bool
     private var controlEndpoint: EmulatorControlEndpoint?
+    private var gdbPort: UInt16 = 0
     private var qemuPid: HostProcessID?
     private var displayConnection: EmulatorDisplayConnection?
     #if os(Windows)
@@ -64,7 +65,7 @@ final class AndroidEmulatorMachine: VirtualMachine {
     private static let pcieEcamBase: UInt64 = 0x3f00_0000
 
     func start() async throws {
-        let gdbPort = try Self.reserveGdbPort()
+        gdbPort = try Self.reserveGdbPort()
         let grpcPort = try Self.reserveGdbPort()
         let consolePort = try Self.reserveConsolePort()
 
@@ -170,12 +171,29 @@ final class AndroidEmulatorMachine: VirtualMachine {
     }
 
     private func waitForDevice(serial: String) async throws {
-        let adb = self.adb
-        let ok = await Task.detached {
-            AndroidEmulatorSDK.run(adb, ["-s", serial, "wait-for-device"]) != nil
-        }.value
-        if !ok {
-            throw VirtualMachineError.launchFailed(reason: "The emulator did not finish booting")
+        let waiter = ChildProcess()
+        waiter.executableURL = adb
+        waiter.arguments = ["-s", serial, "wait-for-device"]
+        waiter.standardOutput = FileHandle.nullDevice
+        waiter.standardError = FileHandle.nullDevice
+
+        let ready: Bool = await withCheckedContinuation { continuation in
+            waiter.terminationHandler = { continuation.resume(returning: $0.terminationStatus == 0) }
+            do {
+                try waiter.run()
+            } catch {
+                continuation.resume(returning: false)
+                return
+            }
+            process.terminationHandler = { [weak waiter] _ in waiter?.terminate() }
+            if !process.isRunning {
+                waiter.terminate()
+            }
+        }
+        process.terminationHandler = nil
+
+        guard ready else {
+            throw VirtualMachineError.launchFailed(reason: "The emulator exited before the device came up")
         }
     }
 
@@ -212,7 +230,9 @@ final class AndroidEmulatorMachine: VirtualMachine {
         displayConnection = nil
         display = nil
         await process.terminateAndWaitForExit()
-        if let qemuPid { await Self.reap(qemuPid) }
+        if let qemu = qemuPid ?? Self.qemuProcess(matchingGdbPort: gdbPort) {
+            await Self.reap(qemu)
+        }
         qemuPid = nil
         try? FileManager.default.removeItem(at: runtimeDirectory)
         controlEndpoint = nil
