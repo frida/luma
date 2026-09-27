@@ -1,6 +1,9 @@
 import Frida
 import SwiftUI
 import LumaCore
+#if canImport(AppKit)
+    import AppKit
+#endif
 
 struct MainWindowView: View {
     @Binding private var document: LumaProject
@@ -74,14 +77,46 @@ private struct ProjectContentView: View {
     @Binding var collapsedNewEvents: Int
     @Binding var isShowingHostingBlockedAlert: Bool
 
+    @State private var availableHeight: CGFloat = 800
+    @State private var dragStartHeight: Double?
+
+    private static let collapsedEventStreamHeight: CGFloat = 32
+    private static let minEventStreamHeight: Double = 120
+    private static let minMainContentHeight: CGFloat = 160
+
     var body: some View {
-        CollapsibleVSplitView(
-            isCollapsed: isEventStreamCollapsed,
-            bottomHeight: eventStreamBottomHeight
-        ) {
-            mainContent
-        } bottom: {
-            eventStreamArea
+        NavigationSplitView {
+            SidebarView(engine: engine, selection: selection)
+                .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
+        } detail: {
+            detailWithSidePanel
+        }
+        .sheet(
+            item: Binding(
+                get: { picker.context },
+                set: { newValue in
+                    Task { @MainActor in
+                        picker.context = newValue
+                    }
+                }
+            ),
+            onDismiss: {
+                picker.context = nil
+            },
+            content: { context in
+                targetPickerSheet(context: context)
+            }
+        )
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            eventStreamBottomBar
+        }
+        .background {
+            GeometryReader { proxy in
+                Color.clear
+                    .onChange(of: proxy.size.height, initial: true) { _, height in
+                        availableHeight = height
+                    }
+            }
         }
         .toolbarRole(.editor)
         .toolbar {
@@ -157,20 +192,6 @@ private struct ProjectContentView: View {
         }
     }
 
-    private var isEventStreamCollapsed: Binding<Bool> {
-        Binding(
-            get: { engine.projectUIState.isEventStreamCollapsed },
-            set: { engine.setEventStreamCollapsed($0) }
-        )
-    }
-
-    private var eventStreamBottomHeight: Binding<Double> {
-        Binding(
-            get: { engine.projectUIState.eventStreamBottomHeight },
-            set: { engine.setEventStreamBottomHeight($0) }
-        )
-    }
-
     private var selection: Binding<SidebarItemID?> {
         Binding(
             get: { engine.selectedSidebarItem },
@@ -178,11 +199,11 @@ private struct ProjectContentView: View {
         )
     }
 
-    private var mainContent: some View {
+    private var detailWithSidePanel: some View {
         #if os(macOS)
             HSplitView {
-                navigationAndDetail
-                    .frame(minWidth: 560)
+                DetailView(engine: engine, selection: selection)
+                    .frame(minWidth: 480)
 
                 if let panel = engine.projectUIState.sidePanel {
                     HStack(spacing: 0) {
@@ -195,7 +216,7 @@ private struct ProjectContentView: View {
             }
         #else
             HStack(spacing: 0) {
-                navigationAndDetail
+                DetailView(engine: engine, selection: selection)
 
                 if let panel = engine.projectUIState.sidePanel {
                     Divider()
@@ -217,37 +238,6 @@ private struct ProjectContentView: View {
             VirtualMachinePanel(engine: engine)
             #endif
         }
-    }
-
-    private var navigationAndDetail: some View {
-        NavigationSplitView {
-            SidebarView(
-                engine: engine,
-                selection: selection
-            )
-            .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
-        } detail: {
-            DetailView(
-                engine: engine,
-                selection: selection
-            )
-        }
-        .sheet(
-            item: Binding(
-                get: { picker.context },
-                set: { newValue in
-                    Task { @MainActor in
-                        picker.context = newValue
-                    }
-                }
-            ),
-            onDismiss: {
-                picker.context = nil
-            },
-            content: { context in
-                targetPickerSheet(context: context)
-            }
-        )
     }
 
     private func targetPickerSheet(context: TargetPickerContext) -> some View {
@@ -307,21 +297,71 @@ private struct ProjectContentView: View {
         }
     }
 
-    private var eventStreamArea: some View {
-        ZStack(alignment: .bottomLeading) {
-            EventStreamView(
-                engine: engine,
-                selection: selection,
-                onCollapseRequested: {
-                    engine.setEventStreamCollapsed(true)
+    @ViewBuilder
+    private var eventStreamBottomBar: some View {
+        Group {
+            if engine.projectUIState.isEventStreamCollapsed {
+                VStack(spacing: 0) {
+                    Divider()
+                    collapsedEventStreamBar
+                        .frame(height: Self.collapsedEventStreamHeight)
                 }
-            )
-            .opacity(engine.projectUIState.isEventStreamCollapsed ? 0 : 1)
-            .clipped()
-
-            collapsedEventStreamBar
-                .opacity(engine.projectUIState.isEventStreamCollapsed ? 1 : 0)
+            } else {
+                VStack(spacing: 0) {
+                    eventStreamResizeHandle
+                    EventStreamView(
+                        engine: engine,
+                        selection: selection,
+                        onCollapseRequested: {
+                            engine.setEventStreamCollapsed(true)
+                        }
+                    )
+                    .clipped()
+                }
+                .frame(height: currentEventStreamHeight)
+            }
         }
+        .frame(maxWidth: .infinity)
+        .background(eventStreamBackground)
+    }
+
+    private var eventStreamBackground: Color {
+        #if canImport(AppKit)
+            Color(nsColor: .windowBackgroundColor)
+        #else
+            Color(uiColor: .systemBackground)
+        #endif
+    }
+
+    private var currentEventStreamHeight: CGFloat {
+        let maxHeight = max(Self.minEventStreamHeight, Double(availableHeight - Self.minMainContentHeight))
+        return CGFloat(min(max(engine.projectUIState.eventStreamBottomHeight, Self.minEventStreamHeight), maxHeight))
+    }
+
+    private var eventStreamResizeHandle: some View {
+        Divider()
+            .frame(height: 6)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(coordinateSpace: .global)
+                    .onChanged { value in
+                        let start = dragStartHeight ?? engine.projectUIState.eventStreamBottomHeight
+                        dragStartHeight = start
+                        let maxHeight = max(Self.minEventStreamHeight, Double(availableHeight - Self.minMainContentHeight))
+                        let proposed = start - Double(value.translation.height)
+                        engine.setEventStreamBottomHeight(min(max(proposed, Self.minEventStreamHeight), maxHeight))
+                    }
+                    .onEnded { _ in dragStartHeight = nil }
+            )
+            #if os(macOS)
+                .onHover { inside in
+                    if inside {
+                        NSCursor.resizeUpDown.push()
+                    } else {
+                        NSCursor.pop()
+                    }
+                }
+            #endif
     }
 
     private var collapsedEventStreamBar: some View {
@@ -523,272 +563,3 @@ struct ProjectToolbar: ToolbarContent {
     }
 }
 
-#if os(macOS)
-    import AppKit
-
-    struct CollapsibleVSplitView<Top: View, Bottom: View>: NSViewRepresentable {
-        @Binding var isCollapsed: Bool
-        @Binding var bottomHeight: Double
-
-        let top: Top
-        let bottom: Bottom
-
-        private static var collapsedHeight: CGFloat { 32 }
-        private static var minBottomHeight: CGFloat { 120 }
-        private static var minTopHeight: CGFloat { 160 }
-
-        init(
-            isCollapsed: Binding<Bool>,
-            bottomHeight: Binding<Double>,
-            @ViewBuilder top: () -> Top,
-            @ViewBuilder bottom: () -> Bottom
-        ) {
-            self._isCollapsed = isCollapsed
-            self._bottomHeight = bottomHeight
-            self.top = top()
-            self.bottom = bottom()
-        }
-
-        func makeCoordinator() -> Coordinator {
-            Coordinator(
-                isCollapsed: _isCollapsed,
-                bottomHeight: _bottomHeight
-            )
-        }
-
-        func makeNSView(context: Context) -> NSSplitView {
-            let split = NSSplitView()
-            split.isVertical = false
-            split.dividerStyle = .thin
-            split.translatesAutoresizingMaskIntoConstraints = false
-            split.delegate = context.coordinator
-
-            let topHost = NSHostingView(rootView: AnyView(top))
-            topHost.translatesAutoresizingMaskIntoConstraints = true
-            topHost.autoresizingMask = [.width, .height]
-            topHost.setContentHuggingPriority(.defaultLow, for: .vertical)
-            topHost.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
-
-            let bottomHost = NSHostingView(rootView: AnyView(bottom))
-            bottomHost.translatesAutoresizingMaskIntoConstraints = true
-            bottomHost.autoresizingMask = [.width, .height]
-            bottomHost.setContentHuggingPriority(.defaultLow, for: .vertical)
-            bottomHost.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
-
-            split.addArrangedSubview(topHost)
-            split.addArrangedSubview(bottomHost)
-
-            return split
-        }
-
-        func updateNSView(_ split: NSSplitView, context: Context) {
-            guard split.subviews.count == 2 else { return }
-
-            if let topHost = split.subviews[0] as? NSHostingView<AnyView> {
-                topHost.rootView = AnyView(top)
-            }
-            if let bottomHost = split.subviews[1] as? NSHostingView<AnyView> {
-                bottomHost.rootView = AnyView(bottom)
-            }
-
-            let totalHeight = split.bounds.height
-            guard totalHeight > 0 else { return }
-
-            let coordinator = context.coordinator
-
-            let nowCollapsed = isCollapsed
-            let previousCollapsed = coordinator.lastIsCollapsed
-            let didToggle = (previousCollapsed != nowCollapsed)
-            coordinator.lastIsCollapsed = nowCollapsed
-
-            if didToggle {
-                if previousCollapsed && !nowCollapsed {
-                    let h = CGFloat(bottomHeight)
-                    if h > 0 {
-                        coordinator.lastBottomHeight = h
-                    }
-                }
-
-                coordinator.didPerformInitialLayout = true
-
-                coordinator.performProgrammaticLayout(
-                    in: split,
-                    totalHeight: totalHeight,
-                    collapsedOverride: nowCollapsed
-                )
-            }
-        }
-
-        final class Coordinator: NSObject, NSSplitViewDelegate {
-            @Binding var isCollapsed: Bool
-            @Binding var bottomHeight: Double
-
-            var lastIsCollapsed: Bool
-            var lastBottomHeight: CGFloat
-
-            var didPerformInitialLayout: Bool = false
-            var isProgrammaticAdjustment: Bool = false
-
-            init(
-                isCollapsed: Binding<Bool>,
-                bottomHeight: Binding<Double>
-            ) {
-                _isCollapsed = isCollapsed
-                _bottomHeight = bottomHeight
-
-                lastIsCollapsed = isCollapsed.wrappedValue
-                lastBottomHeight = CGFloat(bottomHeight.wrappedValue)
-            }
-
-            // Explicit deinit dodges a swift-frontend EarlyPerfInliner
-            // crash on Xcode 26.4 Release builds.
-            deinit {}
-
-            private func syncOutStoredHeight() {
-                let h = Double(lastBottomHeight)
-                let previousBottomHeight = self.bottomHeight
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, self.bottomHeight == previousBottomHeight else {
-                        return
-                    }
-                    self.bottomHeight = h
-                }
-            }
-
-            func splitViewDidResizeSubviews(_ notification: Notification) {
-                guard let split = notification.object as? NSSplitView else { return }
-                guard split.subviews.count == 2 else { return }
-
-                let totalHeight = split.bounds.height
-                guard totalHeight > 0 else { return }
-
-                if !didPerformInitialLayout {
-                    performProgrammaticLayout(in: split, totalHeight: totalHeight)
-                    didPerformInitialLayout = true
-                    return
-                }
-
-                if !isCollapsed && !isProgrammaticAdjustment {
-                    let newHeight = split.subviews[1].frame.height
-
-                    guard newHeight > 0 else { return }
-
-                    lastBottomHeight = newHeight
-                    syncOutStoredHeight()
-                }
-            }
-
-            func splitView(
-                _ splitView: NSSplitView,
-                constrainMinCoordinate proposedMinimumPosition: CGFloat,
-                ofSubviewAt dividerIndex: Int
-            ) -> CGFloat {
-                let totalHeight = splitView.bounds.height
-
-                if isProgrammaticAdjustment {
-                    return proposedMinimumPosition
-                }
-
-                if isCollapsed {
-                    return totalHeight - CollapsibleVSplitView.collapsedHeight
-                }
-
-                let minPos = CollapsibleVSplitView.minTopHeight
-                let maxPos = totalHeight - CollapsibleVSplitView.minBottomHeight
-                return max(minPos, min(proposedMinimumPosition, maxPos))
-            }
-
-            func splitView(
-                _ splitView: NSSplitView,
-                constrainMaxCoordinate proposedMaximumPosition: CGFloat,
-                ofSubviewAt dividerIndex: Int
-            ) -> CGFloat {
-                let totalHeight = splitView.bounds.height
-
-                if isProgrammaticAdjustment {
-                    return proposedMaximumPosition
-                }
-
-                if isCollapsed {
-                    return totalHeight - CollapsibleVSplitView.collapsedHeight
-                }
-
-                let minPos = CollapsibleVSplitView.minTopHeight
-                let maxPos = totalHeight - CollapsibleVSplitView.minBottomHeight
-                return max(minPos, min(proposedMaximumPosition, maxPos))
-            }
-
-            func performProgrammaticLayout(
-                in split: NSSplitView,
-                totalHeight: CGFloat,
-                collapsedOverride: Bool? = nil
-            ) {
-                let minBottomHeight = CollapsibleVSplitView.minBottomHeight
-                let minTopHeight = CollapsibleVSplitView.minTopHeight
-                let collapsedHeight = CollapsibleVSplitView.collapsedHeight
-
-                let maxBottomHeight: CGFloat = max(minBottomHeight, totalHeight - minTopHeight)
-
-                if lastBottomHeight <= 0 {
-                    let source = CGFloat(bottomHeight)
-                    if source > 0 {
-                        lastBottomHeight = source
-                    } else {
-                        lastBottomHeight = min(
-                            maxBottomHeight,
-                            max(minBottomHeight, totalHeight * 0.25)
-                        )
-                    }
-                }
-
-                let clampedBottom = min(
-                    maxBottomHeight,
-                    max(minBottomHeight, lastBottomHeight)
-                )
-
-                let effectiveCollapsed = collapsedOverride ?? isCollapsed
-
-                let targetBottomHeight = effectiveCollapsed ? collapsedHeight : clampedBottom
-
-                let targetDividerPosition = totalHeight - targetBottomHeight
-                let currentDividerPosition = split.subviews[0].frame.height
-
-                guard abs(currentDividerPosition - targetDividerPosition) > 1.0 else { return }
-
-                isProgrammaticAdjustment = true
-                split.setPosition(targetDividerPosition, ofDividerAt: 0)
-                isProgrammaticAdjustment = false
-            }
-        }
-    }
-#else
-
-    struct CollapsibleVSplitView<Top: View, Bottom: View>: View {
-        @Binding var isCollapsed: Bool
-        let top: Top
-        let bottom: Bottom
-
-        init(
-            isCollapsed: Binding<Bool>,
-            bottomHeight: Binding<Double>,
-            @ViewBuilder top: () -> Top,
-            @ViewBuilder bottom: () -> Bottom
-        ) {
-            self._isCollapsed = isCollapsed
-            self.top = top()
-            self.bottom = bottom()
-        }
-
-        var body: some View {
-            VStack(spacing: 0) {
-                top
-                Divider()
-                if isCollapsed {
-                    bottom.frame(height: 32)
-                } else {
-                    bottom.frame(minHeight: 120)
-                }
-            }
-        }
-    }
-#endif
