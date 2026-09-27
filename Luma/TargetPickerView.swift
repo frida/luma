@@ -342,7 +342,7 @@ struct TargetPickerView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(maxWidth: 260)
+            .fixedSize()
 
             Spacer()
 
@@ -1161,16 +1161,8 @@ struct TargetPickerView: View {
     }
 
     private var discoveringBody: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Connect a device or add a remote target.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, deviceListHeaderHorizontalPadding)
-
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        Color.clear
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var emptyDevicesBody: some View {
