@@ -66,7 +66,19 @@ enum AndroidEmulatorSDK {
         #endif
     }
 
+    @MainActor private static var cachedAVDs: [AVD] = []
+
+    @MainActor
     static func listAVDs() -> [AVD] {
+        cachedAVDs
+    }
+
+    @MainActor
+    static func reloadAVDs() async {
+        cachedAVDs = await Task.detached(priority: .userInitiated) { enumerateAVDs() }.value
+    }
+
+    private static func enumerateAVDs() -> [AVD] {
         guard let emulator else { return [] }
         guard let listing = run(emulator, ["-list-avds"]) else { return [] }
         var result: [AVD] = []

@@ -36,18 +36,36 @@ public final class VirtualMachineManager {
         records = (try? store.fetchVirtualMachines()) ?? []
     }
 
+    private var warmthToken = 0
+
     public var templates: [VirtualMachineTemplate] {
-        backends.flatMap(\.templates).sorted { left, right in
+        _ = warmthToken
+        return backends.flatMap(\.templates).sorted { left, right in
             (left.operatingSystem, left.architecture, left.name)
                 < (right.operatingSystem, right.architecture, right.name)
         }
     }
 
     public func availability(for template: VirtualMachineTemplate) -> VirtualMachineAvailability {
+        _ = warmthToken
         guard let backend = backend(for: template) else {
             return .unavailable(reason: "No backend named \(template.backendID) is registered")
         }
         return backend.availability(for: template)
+    }
+
+    public func prewarm() async {
+        for backend in backends {
+            await backend.prewarm()
+        }
+        warmthToken &+= 1
+    }
+
+    public func resolvedParameters(
+        for template: VirtualMachineTemplate,
+        parameters: [String: VirtualMachineParameterValue]
+    ) -> [String: VirtualMachineParameterValue] {
+        backend(for: template)?.resolvedParameters(for: template, parameters: parameters) ?? parameters
     }
 
     public func machine(for record: VirtualMachineRecord) -> (any VirtualMachine)? {
@@ -67,7 +85,7 @@ public final class VirtualMachineManager {
         let record = VirtualMachineRecord(
             name: name,
             templateID: template.id,
-            parameters: parameters,
+            parameters: resolvedParameters(for: template, parameters: parameters),
             agentPath: agentPath?.path
         )
         try store.save(record)

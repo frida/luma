@@ -18,13 +18,12 @@ public final class AndroidEmulatorBackend: VirtualMachineBackend {
     }
 
     public var templates: [VirtualMachineTemplate] {
-        let avds = AndroidEmulatorSDK.listAVDs()
-        return Self.instrumentableArchitectures.map { architecture in
-            let options = avds
-                .filter { $0.architecture == architecture }
-                .map { VirtualMachineParameterOption(id: $0.name, name: $0.name) }
-            return VirtualMachineTemplate(
-                id: "android-emulator.avd.\(architecture.rawValue)",
+        let options = instrumentableAVDs().map {
+            VirtualMachineParameterOption(id: $0.name, name: "\($0.name) (\($0.architecture.displayName))")
+        }
+        return [
+            VirtualMachineTemplate(
+                id: "android-emulator",
                 backendID: id,
                 name: "Android Emulator",
                 summary: """
@@ -34,8 +33,13 @@ public final class AndroidEmulatorBackend: VirtualMachineBackend {
                     """,
                 iconName: "android",
                 operatingSystem: .android,
-                architecture: architecture,
-                agentFlavor: BareboneAgentFlavor(kernel: .linux, architecture: architecture),
+                variants: Self.instrumentableArchitectures.map { architecture in
+                    VirtualMachineTemplateVariant(
+                        architecture: architecture,
+                        agentFlavor: BareboneAgentFlavor(kernel: .linux, architecture: architecture),
+                        starterImages: nil
+                    )
+                },
                 parameters: [
                     VirtualMachineParameter(
                         id: Self.avdParameterID,
@@ -44,7 +48,7 @@ public final class AndroidEmulatorBackend: VirtualMachineBackend {
                     )
                 ]
             )
-        }
+        ]
     }
 
     public func availability(for template: VirtualMachineTemplate) -> VirtualMachineAvailability {
@@ -54,19 +58,30 @@ public final class AndroidEmulatorBackend: VirtualMachineBackend {
         guard AndroidEmulatorSDK.adb != nil else {
             return .unavailable(reason: "The Android SDK platform-tools (adb) are not installed")
         }
-        let avds = AndroidEmulatorSDK.listAVDs()
-        guard !avds.isEmpty else {
-            return .unavailable(reason: "No AVDs found; create one in Android Studio")
-        }
-        guard avds.contains(where: { $0.architecture == template.architecture }) else {
-            let found = Set(avds.map(\.architecture.displayName)).sorted().joined(separator: ", ")
-            return .unavailable(
-                reason: """
-                    Frida can only instrument \(template.architecture.displayName) AVDs, and the ones \
-                    installed are \(found). Create one in Android Studio.
-                    """)
+        guard !instrumentableAVDs().isEmpty else {
+            return .unavailable(reason: "No arm64 or x86-64 AVD found; create one in Android Studio")
         }
         return .available
+    }
+
+    public func prewarm() async {
+        await AndroidEmulatorSDK.reloadAVDs()
+    }
+
+    public func resolvedParameters(
+        for template: VirtualMachineTemplate,
+        parameters: [String: VirtualMachineParameterValue]
+    ) -> [String: VirtualMachineParameterValue] {
+        guard let avdName = parameters[Self.avdParameterID]?.text,
+            let avd = AndroidEmulatorSDK.listAVDs().first(where: { $0.name == avdName })
+        else { return parameters }
+        var resolved = parameters
+        resolved[VirtualMachineTemplate.architectureParameterID] = .text(avd.architecture.rawValue)
+        return resolved
+    }
+
+    private func instrumentableAVDs() -> [AndroidEmulatorSDK.AVD] {
+        AndroidEmulatorSDK.listAVDs().filter { Self.instrumentableArchitectures.contains($0.architecture) }
     }
 
     public func launch(_ request: VirtualMachineLaunchRequest) async throws -> any VirtualMachine {
@@ -75,6 +90,9 @@ public final class AndroidEmulatorBackend: VirtualMachineBackend {
         }
         guard let avdName = request.text(Self.avdParameterID), !avdName.isEmpty else {
             throw VirtualMachineError.launchFailed(reason: "No AVD was chosen")
+        }
+        if AndroidEmulatorSDK.listAVDs().isEmpty {
+            await AndroidEmulatorSDK.reloadAVDs()
         }
         guard let avd = AndroidEmulatorSDK.listAVDs().first(where: { $0.name == avdName }) else {
             throw VirtualMachineError.launchFailed(reason: "AVD \(avdName) was not found")

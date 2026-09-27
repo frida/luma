@@ -45,6 +45,7 @@ struct BootVirtualMachineSheet: View {
         .padding(20)
         .frame(minWidth: 680, minHeight: 460, maxHeight: 720)
         .onAppear(perform: selectFirstAvailableTemplate)
+        .task { await engine.virtualMachines.prewarm() }
         .task { await engine.virtualMachines.agents.refreshReleases() }
         .fileImporter(isPresented: $isImporting, allowedContentTypes: allowedImportTypes) { result in
             if let awaitedImport, case .success(let url) = result {
@@ -102,7 +103,7 @@ struct BootVirtualMachineSheet: View {
                         parameterField(architecture)
                     }
 
-                    if let starterImages = template.variant(for: parameters).starterImages {
+                    if let starterImages = template.variant(for: effectiveParameters).starterImages {
                         starterSection(starterImages)
                     }
 
@@ -110,7 +111,7 @@ struct BootVirtualMachineSheet: View {
                         parameterField(parameter)
                     }
 
-                    if let flavor = template.variant(for: parameters).agentFlavor {
+                    if let flavor = template.variant(for: effectiveParameters).agentFlavor {
                         agentSection(flavor)
                     }
                 }
@@ -395,6 +396,11 @@ struct BootVirtualMachineSheet: View {
 
     private var selectedTemplate: VirtualMachineTemplate? {
         engine.virtualMachines.templates.first { $0.id == selectedTemplateID }
+    }
+
+    private var effectiveParameters: [String: VirtualMachineParameterValue] {
+        guard let selectedTemplate else { return parameters }
+        return engine.virtualMachines.resolvedParameters(for: selectedTemplate, parameters: parameters)
     }
 
     private var isReadyToBoot: Bool {

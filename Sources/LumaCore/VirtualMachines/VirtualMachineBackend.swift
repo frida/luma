@@ -8,6 +8,24 @@ public protocol VirtualMachineBackend: AnyObject {
 
     func availability(for template: VirtualMachineTemplate) -> VirtualMachineAvailability
     func launch(_ request: VirtualMachineLaunchRequest) async throws -> any VirtualMachine
+
+    func prewarm() async
+
+    func resolvedParameters(
+        for template: VirtualMachineTemplate,
+        parameters: [String: VirtualMachineParameterValue]
+    ) -> [String: VirtualMachineParameterValue]
+}
+
+extension VirtualMachineBackend {
+    public func prewarm() async {}
+
+    public func resolvedParameters(
+        for template: VirtualMachineTemplate,
+        parameters: [String: VirtualMachineParameterValue]
+    ) -> [String: VirtualMachineParameterValue] {
+        parameters
+    }
 }
 
 public enum VirtualMachineAvailability: Sendable, Equatable {

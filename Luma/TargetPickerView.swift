@@ -208,6 +208,7 @@ struct TargetPickerView: View {
                 guard !Task.isCancelled else { return }
                 pendingDeviceSelection = nil
             }
+            .task { await engine.virtualMachines.prewarm() }
             .task {
                 if pickerState == nil {
                     pickerState = TargetPickerState()
