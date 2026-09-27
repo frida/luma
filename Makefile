@@ -21,6 +21,11 @@ endif
 
 IN_BUILD_ENVIRONMENT := scripts/in-build-environment.sh
 
+SYSTEM_FRIDA_ENTITLEMENTS := $(BUILD_DIR)/Luma-macOS-system-frida.entitlements
+ifneq ($(USE_SYSTEM_FRIDA),)
+ENTITLEMENTS_OVERRIDE := CODE_SIGN_ENTITLEMENTS=$(SYSTEM_FRIDA_ENTITLEMENTS)
+endif
+
 all: $(APP)
 
 # The examples are Smalltalk in Swift string literals, which nothing else
@@ -44,6 +49,10 @@ $(PHARO_IMAGE):
 
 $(APP): $(SOURCES) $(SHADER_SOURCES) Luma.xcodeproj Package.swift
 	mkdir -p "$(BUILD_DIR)"
+	@if [ -n "$(USE_SYSTEM_FRIDA)" ]; then \
+		cp Luma/Luma-macOS.entitlements "$(SYSTEM_FRIDA_ENTITLEMENTS)"; \
+		/usr/libexec/PlistBuddy -c "Add :com.apple.security.cs.disable-library-validation bool true" "$(SYSTEM_FRIDA_ENTITLEMENTS)"; \
+	fi
 	$(IN_BUILD_ENVIRONMENT) scripts/generate-sources.sh
 	$(IN_BUILD_ENVIRONMENT) xcodebuild \
 		-project Luma.xcodeproj \
@@ -51,6 +60,7 @@ $(APP): $(SOURCES) $(SHADER_SOURCES) Luma.xcodeproj Package.swift
 		-configuration Release \
 		-derivedDataPath "$(DERIVED_DIR)" \
 		CONFIGURATION_BUILD_DIR="$(BUILD_DIR)" \
+		$(ENTITLEMENTS_OVERRIDE) \
 		build
 	@touch $@
 
