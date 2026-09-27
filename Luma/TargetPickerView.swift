@@ -318,6 +318,8 @@ struct TargetPickerView: View {
                 case .attach:
                     processDetailPane(for: device)
                 }
+            } else if store.discoveryState == .discovering {
+                detailLoadingPlaceholder
             } else {
                 ZStack {
                     Color.clear
@@ -331,6 +333,19 @@ struct TargetPickerView: View {
         }
         .navigationTitle("New Session")
         .toolbar { sharedToolbar }
+    }
+
+    @ViewBuilder
+    private var detailLoadingPlaceholder: some View {
+        if mode == .spawn && spawnSubmode == .application {
+            skeletonRows(placeholderApplicationNames)
+        } else {
+            VStack(spacing: 0) {
+                skeletonSearchField
+                Divider()
+                skeletonRows(placeholderProcessNames)
+            }
+        }
     }
 
     private func modeSelector() -> some View {
@@ -406,7 +421,7 @@ struct TargetPickerView: View {
     @ViewBuilder
     private func applicationSpawnPane(for device: Device) -> some View {
         if loadingApplications {
-            deviceActivityView("Enumerating applications…", for: device)
+            enumeratingList(placeholderApplicationNames, withSearchField: false, for: device)
         } else if let applicationError {
             ZStack {
                 Color.clear
@@ -816,7 +831,7 @@ struct TargetPickerView: View {
     private func processDetailPane(for device: Device) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if loadingProcesses {
-                deviceActivityView("Enumerating processes…", for: device)
+                enumeratingList(placeholderProcessNames, withSearchField: true, for: device)
             } else if let processError {
                 ZStack {
                     Color.clear
@@ -1087,23 +1102,6 @@ struct TargetPickerView: View {
         return result
     }
 
-    private func deviceActivityView(_ activity: String, for device: Device) -> some View {
-        ZStack {
-            Color.clear
-            VStack(spacing: 10) {
-                ProgressView(activity)
-                if let stage = engine.connectionActivity.stage(for: device.id) {
-                    ConnectionStageView(stage: stage)
-                } else {
-                    Text("Querying \(device.name)…")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding()
-        }
-    }
-
     private func loadProcesses(for device: Device) async {
         loadingProcesses = true
         processes = []
@@ -1161,14 +1159,11 @@ struct TargetPickerView: View {
     }
 
     private var discoveringBody: some View {
-        List {
+        skeletonList {
             ForEach(placeholderDeviceNames, id: \.self) { name in
-                devicePlaceholderRow(name: name)
+                skeletonRow(name: name)
             }
         }
-        .redacted(reason: .placeholder)
-        .disabled(true)
-        .modifier(CompactGroupedList(isCompactWidth: isCompactWidth))
     }
 
     private var emptyDevicesBody: some View {
@@ -1226,18 +1221,88 @@ struct TargetPickerView: View {
         ["Local System", "Remote Device", "Attached Phone"]
     }
 
-    private func devicePlaceholderRow(name: String) -> some View {
+    private var placeholderProcessNames: [String] {
+        ["SpringBoard", "com.apple.WebKit.Networking", "Notification Center", "backboardd", "launchd"]
+    }
+
+    private var placeholderApplicationNames: [String] {
+        ["Messages", "Maps", "Photos", "Settings"]
+    }
+
+    private func enumeratingList(_ names: [String], withSearchField: Bool, for device: Device) -> some View {
+        VStack(spacing: 0) {
+            if withSearchField {
+                skeletonSearchField
+                Divider()
+            }
+            skeletonRows(names)
+        }
+        .overlay(alignment: .bottom) {
+            enumeratingStatus(for: device)
+        }
+    }
+
+    @ViewBuilder
+    private func enumeratingStatus(for device: Device) -> some View {
+        Group {
+            if let stage = engine.connectionActivity.stage(for: device.id) {
+                ConnectionStageView(stage: stage)
+            } else {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Querying \(device.name)…")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity)
+        .background(.bar)
+    }
+
+    private func skeletonList<Rows: View>(@ViewBuilder rows: () -> Rows) -> some View {
+        List {
+            rows()
+        }
+        .redacted(reason: .placeholder)
+        .disabled(true)
+        .modifier(CompactGroupedList(isCompactWidth: isCompactWidth))
+    }
+
+    private func skeletonRows(_ names: [String]) -> some View {
+        skeletonList {
+            ForEach(names, id: \.self) { name in
+                skeletonRow(name: name)
+            }
+        }
+    }
+
+    private func skeletonRow(name: String) -> some View {
         HStack(spacing: 8) {
             defaultDeviceIcon()
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
-                Text(String(repeating: "0", count: name.count))
-                    .font(.caption2)
+                Text(String(repeating: "0", count: name.count + 6))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 2)
+    }
+
+    private var skeletonSearchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            RoundedRectangle(cornerRadius: 6)
+                .fill(.quaternary)
+                .frame(height: 22)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     private var deviceListHeaderView: some View {
