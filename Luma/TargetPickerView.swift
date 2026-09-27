@@ -1161,8 +1161,14 @@ struct TargetPickerView: View {
     }
 
     private var discoveringBody: some View {
-        Color.clear
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        List {
+            ForEach(placeholderDeviceNames, id: \.self) { name in
+                devicePlaceholderRow(name: name)
+            }
+        }
+        .redacted(reason: .placeholder)
+        .disabled(true)
+        .modifier(CompactGroupedList(isCompactWidth: isCompactWidth))
     }
 
     private var emptyDevicesBody: some View {
@@ -1214,6 +1220,24 @@ struct TargetPickerView: View {
             }
             .modifier(CompactGroupedList(isCompactWidth: isCompactWidth))
         }
+    }
+
+    private var placeholderDeviceNames: [String] {
+        ["Local System", "Remote Device", "Attached Phone"]
+    }
+
+    private func devicePlaceholderRow(name: String) -> some View {
+        HStack(spacing: 8) {
+            defaultDeviceIcon()
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name)
+                Text(String(repeating: "0", count: name.count))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
     }
 
     private var deviceListHeaderView: some View {
