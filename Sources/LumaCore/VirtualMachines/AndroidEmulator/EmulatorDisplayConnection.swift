@@ -144,8 +144,11 @@ final class EmulatorDisplayConnection: VirtualMachineFrameSource {
     /// for the display's current size and re-opened whenever a notification says it changed.
     private func pumpFrames() async {
         while !Task.isCancelled {
-            guard let size = await displaySize() else { return }
-            let stream = Task { await self.streamScreenshots(width: size.width, height: size.height) }
+            let size = await displaySize()
+            let stream = Task {
+                await self.streamScreenshots(
+                    width: size?.width ?? 0, height: size?.height ?? 0, sharedFrame: size != nil ? self.sharedFrame : nil)
+            }
             screenshotStream = stream
             await stream.value
         }
@@ -178,7 +181,7 @@ final class EmulatorDisplayConnection: VirtualMachineFrameSource {
         return (Int(display.width), Int(display.height))
     }
 
-    private func streamScreenshots(width: Int, height: Int) async {
+    private func streamScreenshots(width: Int, height: Int, sharedFrame: SharedFrameBuffer?) async {
         guard let client else { return }
         var format = EmulatorImageFormat()
         format.format = .rgba8888
