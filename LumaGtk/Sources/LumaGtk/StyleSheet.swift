@@ -139,6 +139,10 @@ enum StyleSheet {
         background-color: alpha(@theme_fg_color, 0.14);
     }
 
+    .luma-hex-selection {
+        background-color: alpha(@accent_bg_color, 0.3);
+    }
+
     .luma-wordmark {
         font-family: sans-serif;
         font-size: 64px;
