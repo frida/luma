@@ -3,13 +3,14 @@ import Frida
 
 public struct SpawnConfig: nonisolated Codable, @unchecked Sendable {
     public enum Target: Codable, Sendable {
-        case application(identifier: String, name: String)
+        case application(identifier: String, name: String, iconPNGData: Data?)
         case program(path: String)
 
         private enum CodingKeys: String, CodingKey {
             case kind
             case identifier
             case name
+            case icon
             case path
         }
 
@@ -22,10 +23,11 @@ public struct SpawnConfig: nonisolated Codable, @unchecked Sendable {
             var container = encoder.container(keyedBy: CodingKeys.self)
 
             switch self {
-            case .application(let identifier, let name):
+            case .application(let identifier, let name, let iconPNGData):
                 try container.encode(Kind.application, forKey: .kind)
                 try container.encode(identifier, forKey: .identifier)
                 try container.encode(name, forKey: .name)
+                try container.encodeIfPresent(iconPNGData, forKey: .icon)
             case .program(let path):
                 try container.encode(Kind.program, forKey: .kind)
                 try container.encode(path, forKey: .path)
@@ -40,7 +42,8 @@ public struct SpawnConfig: nonisolated Codable, @unchecked Sendable {
             case .application:
                 let identifier = try container.decode(String.self, forKey: .identifier)
                 let name = try container.decode(String.self, forKey: .name)
-                self = .application(identifier: identifier, name: name)
+                let iconPNGData = try container.decodeIfPresent(Data.self, forKey: .icon)
+                self = .application(identifier: identifier, name: name, iconPNGData: iconPNGData)
             case .program:
                 let path = try container.decode(String.self, forKey: .path)
                 self = .program(path: path)
@@ -73,7 +76,7 @@ public struct SpawnConfig: nonisolated Codable, @unchecked Sendable {
 
     public var defaultDisplayName: String {
         switch target {
-        case .application(_, let name):
+        case .application(_, let name, _):
             return name
         case .program(let path):
             // FIXME: This won't work for a Windows path
@@ -85,7 +88,7 @@ public struct SpawnConfig: nonisolated Codable, @unchecked Sendable {
 
     public var programString: String {
         switch target {
-        case .application(let identifier, _):
+        case .application(let identifier, _, _):
             return identifier
         case .program(let path):
             return path

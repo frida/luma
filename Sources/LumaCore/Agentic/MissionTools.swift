@@ -292,7 +292,7 @@ public enum MissionTools {
                     return errorResult("application target requires non-empty 'identifier'", code: .invalidInput)
                 }
                 let displayName = (invocation.args["name"] as? String) ?? identifier
-                target = .application(identifier: identifier, name: displayName)
+                target = .application(identifier: identifier, name: displayName, iconPNGData: nil)
             default:
                 return errorResult("unknown target_kind: \(kind)", code: .invalidInput)
             }
@@ -397,7 +397,7 @@ public enum MissionTools {
         switch (a, b) {
         case (.program(let p1), .program(let p2)):
             return p1 == p2
-        case (.application(let id1, _), .application(let id2, _)):
+        case (.application(let id1, _, _), .application(let id2, _, _)):
             return id1 == id2
         default:
             return false

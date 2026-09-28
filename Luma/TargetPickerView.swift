@@ -1028,7 +1028,8 @@ struct TargetPickerView: View {
         guard !pattern.isEmpty else { return }
         let displayName = resolvedArmDisplayName(forPattern: pattern)
         let config = SpawnConfig(
-            target: .application(identifier: armTargetIdentifier(forPattern: pattern), name: displayName),
+            target: .application(
+                identifier: armTargetIdentifier(forPattern: pattern), name: displayName, iconPNGData: nil),
             arguments: [],
             environment: [:],
             workingDirectory: nil,
@@ -1064,7 +1065,8 @@ struct TargetPickerView: View {
                 let app = applications.first(where: { $0.identifier == identifier })
             else { return nil }
             return SpawnConfig(
-                target: .application(identifier: app.identifier, name: app.name),
+                target: .application(
+                    identifier: app.identifier, name: app.name, iconPNGData: app.icons.last?.pngData),
                 arguments: parseArguments(from: appArgumentsText),
                 environment: buildEnvironment(from: appEnvEntries),
                 workingDirectory: appWorkingDirectory.nilIfBlank,
@@ -1127,7 +1129,7 @@ struct TargetPickerView: View {
         defer { loadingApplications = false }
 
         do {
-            let apps = try await device.enumerateApplications()
+            let apps = try await device.enumerateApplications(scope: .full)
 
             applications = apps.sorted {
                 $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending

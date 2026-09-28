@@ -1969,6 +1969,9 @@ public final class Engine {
         session.deviceName = device.name
         session.processName = config.defaultDisplayName
         session.phase = .attaching
+        if session.iconPNGData == nil, case .application(_, _, let iconPNGData) = config.target {
+            session.iconPNGData = iconPNGData
+        }
         surfaceSession(session, isNew: existing == nil)
         return session
     }
