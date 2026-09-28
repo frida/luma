@@ -19,6 +19,7 @@ struct BootVirtualMachineSheet: View {
     @State private var machine: (any VirtualMachine)?
     @State private var failure: String?
     @State private var isBooting = false
+    @State private var isMarkingReady = false
     @State private var isImporting = false
     @State private var awaitedImport: String?
     @State private var importingParameter: VirtualMachineParameter?
@@ -30,6 +31,8 @@ struct BootVirtualMachineSheet: View {
 
             if let machine {
                 bootedView(machine)
+            } else if isBooting {
+                bootingView
             } else {
                 templateChooser
             }
@@ -294,8 +297,30 @@ struct BootVirtualMachineSheet: View {
         VStack(alignment: .leading, spacing: 8) {
             if let display = machine.display {
                 VirtualMachineDisplayView(display: display)
-                    .frame(maxWidth: .infinity, minHeight: 320)
+                    .frame(maxWidth: .infinity, minHeight: 320, maxHeight: .infinity)
             }
+
+            Text("Drive the machine to the state you want to come back to, then mark it ready.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var bootingView: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.black.opacity(0.85))
+
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .controlSize(.large)
+                    Text("Booting \(machineName)…")
+                        .foregroundStyle(.secondary)
+                }
+                .environment(\.colorScheme, .dark)
+            }
+            .frame(maxWidth: .infinity, minHeight: 320, maxHeight: .infinity)
 
             Text("Drive the machine to the state you want to come back to, then mark it ready.")
                 .font(.footnote)
@@ -307,21 +332,40 @@ struct BootVirtualMachineSheet: View {
         HStack {
             Spacer()
 
-            Button(machine == nil ? "Cancel" : "Later") { finish() }
+            Button(machine == nil && !isBooting ? "Cancel" : "Later") { finish() }
+                .disabled(isMarkingReady)
 
-            if let machine {
-                Button("Mark Ready") {
-                    perform {
-                        try await engine.virtualMachines.markReady(machine)
-                        finish()
+            if machine != nil || isBooting {
+                Button {
+                    markReady()
+                } label: {
+                    if isMarkingReady {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Marking Ready…")
+                        }
+                    } else {
+                        Text("Mark Ready")
                     }
                 }
                 .keyboardShortcut(.defaultAction)
+                .disabled(machine == nil || isMarkingReady)
             } else {
                 Button("Boot") { boot() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(isBooting || !isReadyToBoot)
             }
+        }
+    }
+
+    private func markReady() {
+        guard let machine else { return }
+        isMarkingReady = true
+        perform {
+            defer { isMarkingReady = false }
+            try await engine.virtualMachines.markReady(machine)
+            finish()
         }
     }
 

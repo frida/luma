@@ -105,6 +105,7 @@ struct VirtualMachineControls: View {
             if !isMiniature, let display = machine?.display {
                 VirtualMachineDisplayView(display: display)
                     .frame(maxWidth: .infinity)
+                    .containerRelativeFrame(.vertical) { height, _ in height * 0.85 }
             }
         }
         .confirmationDialog("Forget Machine?", isPresented: $isConfirmingForget, titleVisibility: .visible) {
