@@ -4,6 +4,7 @@ import Cairo
 import Foundation
 import Gdk
 import Gtk
+import LumaCore
 
 @MainActor
 public final class HexView {
@@ -18,6 +19,11 @@ public final class HexView {
     private var baseAddress: UInt64
     private var layout: HexLayout
     private var selection: Selection?
+    private var themeToken: gulong = 0
+
+    deinit {
+        ThemeWatcher.unsubscribe(handlerID: themeToken)
+    }
 
     public init(bytes: Data, baseAddress: UInt64 = 0) {
         self.bytes = Array(bytes)
@@ -63,6 +69,7 @@ public final class HexView {
         installGestures()
         installKeyController()
         applyContentSize()
+        themeToken = ThemeWatcher.subscribe(owner: self) { $0.bytesArea.queueDraw() }
     }
 
     public func setBytes(_ bytes: Data, baseAddress: UInt64 = 0) {
@@ -77,9 +84,10 @@ public final class HexView {
 
     private func drawBytes(ctx: Cairo.ContextRef) {
         HexMetrics.selectFont(on: ctx._ptr)
+        let palette = GlyphPalette(appearance: ThemeWatcher.currentAppearance(), foreground: foregroundColor())
 
         if bytes.isEmpty {
-            ctx.setSource(red: 0.6, green: 0.6, blue: 0.6, alpha: 0.8)
+            palette.dimmed.setSource(on: ctx._ptr)
             ctx.moveTo(HexLayout.marginX, layout.baseline(ofRow: 0))
             "(no data)".withCString { ctx.showText($0) }
             return
@@ -89,8 +97,14 @@ public final class HexView {
         for row in 0..<layout.rowCount {
             runs.removeAll()
             collectGlyphs(ofRow: row, into: &runs)
-            runs.show(on: ctx._ptr)
+            runs.show(on: ctx._ptr, palette: palette)
         }
+    }
+
+    private func foregroundColor() -> GdkRGBA {
+        var color = GdkRGBA()
+        gtk_widget_get_color(bytesArea.widget_ptr, &color)
+        return color
     }
 
     private func collectGlyphs(ofRow row: Int, into runs: inout GlyphRuns) {
@@ -386,17 +400,6 @@ private enum GlyphStyle: Int, CaseIterable {
         default: self = .high
         }
     }
-
-    var color: (red: Double, green: Double, blue: Double, alpha: Double) {
-        switch self {
-        case .address: (0.36, 0.78, 0.43, 0.9)
-        case .zero: (0.55, 0.55, 0.58, 1.0)
-        case .printable: (0.36, 0.82, 0.66, 1.0)
-        case .control: (0.95, 0.65, 0.2, 1.0)
-        case .high: (0.35, 0.78, 0.92, 1.0)
-        case .ascii: (0.72, 0.72, 0.75, 1.0)
-        }
-    }
 }
 
 private struct GlyphRuns {
@@ -412,14 +415,47 @@ private struct GlyphRuns {
         }
     }
 
-    func show(on cr: UnsafeMutablePointer<cairo_t>) {
+    func show(on cr: UnsafeMutablePointer<cairo_t>, palette: GlyphPalette) {
         for style in GlyphStyle.allCases where !glyphs[style.rawValue].isEmpty {
-            let color = style.color
-            cairo_set_source_rgba(cr, color.red, color.green, color.blue, color.alpha)
+            palette.color(for: style).setSource(on: cr)
             glyphs[style.rawValue].withUnsafeBufferPointer {
                 cairo_show_glyphs(cr, $0.baseAddress, Int32($0.count))
             }
         }
+    }
+}
+
+private struct GlyphPalette {
+    let appearance: Appearance
+    let foreground: GdkRGBA
+
+    func color(for style: GlyphStyle) -> GdkRGBA {
+        switch (style, appearance) {
+        case (.address, .light): GdkRGBA(red: 0.15, green: 0.64, blue: 0.41, alpha: 1)
+        case (.address, .dark): GdkRGBA(red: 0.36, green: 0.78, blue: 0.43, alpha: 0.9)
+        case (.zero, _): faint
+        case (.printable, .light): GdkRGBA(red: 0.13, green: 0.56, blue: 0.64, alpha: 1)
+        case (.printable, .dark): GdkRGBA(red: 0.36, green: 0.82, blue: 0.66, alpha: 1)
+        case (.control, .light): GdkRGBA(red: 0.78, green: 0.27, blue: 0.0, alpha: 1)
+        case (.control, .dark): GdkRGBA(red: 0.95, green: 0.65, blue: 0.2, alpha: 1)
+        case (.high, .light): GdkRGBA(red: 0.11, green: 0.44, blue: 0.85, alpha: 1)
+        case (.high, .dark): GdkRGBA(red: 0.35, green: 0.78, blue: 0.92, alpha: 1)
+        case (.ascii, _): dimmed
+        }
+    }
+
+    var dimmed: GdkRGBA { foreground.scalingAlpha(by: 0.6) }
+
+    private var faint: GdkRGBA { foreground.scalingAlpha(by: 0.4) }
+}
+
+extension GdkRGBA {
+    fileprivate func scalingAlpha(by factor: Float) -> GdkRGBA {
+        GdkRGBA(red: red, green: green, blue: blue, alpha: alpha * factor)
+    }
+
+    fileprivate func setSource(on cr: UnsafeMutablePointer<cairo_t>) {
+        cairo_set_source_rgba(cr, Double(red), Double(green), Double(blue), Double(alpha))
     }
 }
 
