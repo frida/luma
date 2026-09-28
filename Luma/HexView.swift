@@ -1,25 +1,11 @@
 import SwiftUI
 
 struct HexView: View {
-    let data: Data
-    var baseAddress: UInt64 = 0
-
-    let bytesPerRow: Int = 16
-
-    let groupSpacing: CGFloat = 20
-    let hexSpacing: CGFloat = 2
-    let asciiSpacing: CGFloat = 0
+    private let bytes: [UInt8]
+    private let baseAddress: UInt64
 
     @FocusState private var isFocused: Bool
-    @State private var caretIndex: Int? = nil
-
-    @State private var dragSelection: ClosedRange<Int>? = nil
-    @State private var dragStartIndex: Int? = nil
-
-    @State private var offsetColumnWidth: CGFloat = 0
-    @State private var hexCellSize: CGSize = .zero
-    @State private var asciiCellSize: CGSize = .zero
-    @State private var rowHeight: CGFloat = 0
+    @State private var selection: Selection?
 
     #if canImport(UIKit)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -28,27 +14,22 @@ struct HexView: View {
     private var isCompactWidth: Bool { false }
     #endif
 
-    private var bytes: [UInt8] { Array(data) }
-
-    private static let offsetFormat = "%08llX"
-
-    private var rowFont: Font { .system(.caption, design: .monospaced) }
-    private var hexFont: Font {
-        isCompactWidth ? .system(size: 10, design: .monospaced) : rowFont
-    }
-    private var asciiFont: Font {
-        isCompactWidth ? .system(size: 9, design: .monospaced) : rowFont
+    init(data: Data, baseAddress: UInt64 = 0) {
+        bytes = Array(data)
+        self.baseAddress = baseAddress
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(rows.indices, id: \.self) { rowIndex in
-                rowView(rows[rowIndex])
+        let layout = self.layout
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(0..<rowCount, id: \.self) { row in
+                self.row(row, layout: layout)
+                    .equatable()
             }
         }
         .contentShape(Rectangle())
         .textSelection(.disabled)
-        .gesture(dragGesture)
+        .gesture(dragGesture(layout: layout))
         .contextMenu {
             if !bytes.isEmpty {
                 Button("Copy Hex") { copySelection(.hex) }
@@ -68,312 +49,236 @@ struct HexView: View {
         }
     }
 
-    private func rowView(_ row: Row) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: groupSpacing) {
-            if !isCompactWidth {
-                offsetText(row.offset)
-            }
-            hexBytes(row)
-            asciiBytes(row)
-        }
-        .background(
-            GeometryReader { proxy in
-                Color.clear.onAppear { rowHeight = proxy.size.height + 2 }
-            }
-        )
+    private var layout: HexLayout {
+        isCompactWidth
+            ? HexLayout(metrics: .compact, addressDigits: nil)
+            : HexLayout(metrics: .regular, addressDigits: addressDigits)
     }
 
-    private func offsetText(_ offset: Int) -> some View {
-        Text(String(format: HexView.offsetFormat, baseAddress &+ UInt64(offset)))
-            .font(rowFont)
-            .lineLimit(1)
-            .foregroundStyle(Color.green.opacity(0.85))
-            .background(
-                GeometryReader { geo in
-                    Color.clear.onAppear { offsetColumnWidth = geo.size.width }
-                }
-            )
-            .textSelection(.enabled)
+    private var addressDigits: Int {
+        let lastRow = max(rowCount - 1, 0)
+        let lastRowAddress = baseAddress &+ UInt64(lastRow * HexLayout.bytesPerRow)
+        return max(8, String(lastRowAddress, radix: 16).count)
     }
 
-    private func hexBytes(_ row: Row) -> some View {
-        HStack(spacing: hexSpacing) {
-            ForEach(row.bytes.indices, id: \.self) { col in
-                let global = row.offset + col
-                let byte = row.bytes[col]
-                Text(String(format: "%02X", byte))
-                    .font(hexFont)
-                    .lineLimit(1)
-                    .foregroundStyle(color(for: byte))
-                    .padding(.horizontal, 2)
-                    .background(selectionBackground(for: global))
-                    .background(
-                        GeometryReader { geo in
-                            Color.clear.onAppear { hexCellSize = geo.size }
-                        }
-                    )
-            }
-        }
+    private var rowCount: Int {
+        (bytes.count + HexLayout.bytesPerRow - 1) / HexLayout.bytesPerRow
     }
 
-    private func asciiBytes(_ row: Row) -> some View {
-        HStack(spacing: asciiSpacing) {
-            ForEach(row.bytes.indices, id: \.self) { col in
-                let global = row.offset + col
-                let byte = row.bytes[col]
-                let ch = ascii(for: byte)
-                Text(String(ch))
-                    .font(asciiFont)
-                    .lineLimit(1)
-                    .foregroundStyle(.secondary)
-                    .background(selectionBackground(for: global))
-                    .background(
-                        GeometryReader { geo in
-                            Color.clear.onAppear { asciiCellSize = geo.size }
-                        }
-                    )
-            }
-        }
+    private func row(_ row: Int, layout: HexLayout) -> HexRow {
+        let start = row * HexLayout.bytesPerRow
+        let end = min(start + HexLayout.bytesPerRow, bytes.count)
+        return HexRow(
+            address: layout.addressDigits.map { formatAddress(baseAddress &+ UInt64(start), digits: $0) },
+            bytes: bytes[start..<end],
+            selectedColumns: selectedColumns(inRowStartingAt: start),
+            layout: layout)
     }
 
-    private var rows: [Row] {
-        stride(from: 0, to: bytes.count, by: bytesPerRow).map { start in
-            let end = min(start + bytesPerRow, bytes.count)
-            return Row(offset: start, bytes: Array(bytes[start..<end]))
-        }
+    private func formatAddress(_ address: UInt64, digits: Int) -> String {
+        let hex = String(address, radix: 16, uppercase: true)
+        return String(repeating: "0", count: digits - hex.count) + hex
     }
 
-    private struct Row {
-        let offset: Int
-        let bytes: [UInt8]
+    private func selectedColumns(inRowStartingAt start: Int) -> ClosedRange<Int>? {
+        guard let range = selection?.range else { return nil }
+        let first = max(range.lowerBound, start)
+        let last = min(range.upperBound, start + HexLayout.bytesPerRow - 1)
+        return first <= last ? (first - start)...(last - start) : nil
     }
 
-    private func color(for byte: UInt8) -> Color {
-        switch byte {
-        case 0x00:
-            return .gray.opacity(0.6)
-        case 0x20...0x7E:
-            return .mint
-        case 0x01...0x1F, 0x7F:
-            return .orange
-        default:
-            return .cyan
-        }
-    }
-
-    private func ascii(for byte: UInt8) -> Character {
-        (0x20...0x7E).contains(byte)
-            ? Character(UnicodeScalar(byte))
-            : "."
-    }
-
-    private func ensureCaretInitialized() {
-        guard !bytes.isEmpty else { return }
-        if caretIndex == nil {
-            caretIndex = 0
-            dragSelection = 0...0
-        }
-    }
-
-    private func updateSelection(to newIndex: Int, extend: Bool) {
-        guard !bytes.isEmpty else { return }
-
-        let clamped = max(0, min(bytes.count - 1, newIndex))
-        caretIndex = clamped
-
-        if extend, let currentRange = dragSelection {
-            let anchor = currentRange.lowerBound
-            let lower = min(anchor, clamped)
-            let upper = max(anchor, clamped)
-            dragSelection = lower...upper
-        } else {
-            dragSelection = clamped...clamped
-        }
-    }
-
-    private func moveCaret(rowDelta: Int, colDelta: Int, extend: Bool) {
-        guard !bytes.isEmpty else { return }
-        ensureCaretInitialized()
-
-        let current = caretIndex ?? 0
-        let currentRow = current / bytesPerRow
-        let currentCol = current % bytesPerRow
-
-        var newRow = currentRow + rowDelta
-        newRow = max(0, min(newRow, (bytes.count - 1) / bytesPerRow))
-
-        let rowStart = newRow * bytesPerRow
-        let rowLen = min(bytesPerRow, bytes.count - rowStart)
-
-        var newCol = currentCol + colDelta
-        newCol = max(0, min(newCol, rowLen - 1))
-
-        let newIndex = rowStart + newCol
-        updateSelection(to: newIndex, extend: extend)
-    }
-
-    private func handleKeyPress(_ keyPress: KeyPress) -> KeyPress.Result {
-        guard !bytes.isEmpty else { return .ignored }
-
-        let extend = keyPress.modifiers.contains(.shift)
-        let key = keyPress.key
-
-        if key == .leftArrow {
-            moveCaret(rowDelta: 0, colDelta: -1, extend: extend)
-            return .handled
-        }
-        if key == .rightArrow {
-            moveCaret(rowDelta: 0, colDelta: 1, extend: extend)
-            return .handled
-        }
-        if key == .upArrow {
-            moveCaret(rowDelta: -1, colDelta: 0, extend: extend)
-            return .handled
-        }
-        if key == .downArrow {
-            moveCaret(rowDelta: 1, colDelta: 0, extend: extend)
-            return .handled
-        }
-
-        let h = KeyEquivalent("h")
-        let j = KeyEquivalent("j")
-        let k = KeyEquivalent("k")
-        let l = KeyEquivalent("l")
-
-        if key == h {
-            moveCaret(rowDelta: 0, colDelta: -1, extend: extend)
-            return .handled
-        }
-        if key == l {
-            moveCaret(rowDelta: 0, colDelta: 1, extend: extend)
-            return .handled
-        }
-        if key == k {
-            moveCaret(rowDelta: -1, colDelta: 0, extend: extend)
-            return .handled
-        }
-        if key == j {
-            moveCaret(rowDelta: 1, colDelta: 0, extend: extend)
-            return .handled
-        }
-
-        return .ignored
-    }
-
-    private func selectionBackground(for index: Int) -> some View {
-        RoundedRectangle(cornerRadius: 2)
-            .fill(
-                (dragSelection?.contains(index) ?? false)
-                    ? Color.accentColor.opacity(0.25)
-                    : .clear)
-    }
-
-    private var dragGesture: some Gesture {
+    private func dragGesture(layout: HexLayout) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
-                guard let start = dragStartIndex ?? index(at: value.startLocation),
-                    let current = index(at: value.location)
+                guard let anchor = byteIndex(at: value.startLocation, layout: layout),
+                    let caret = byteIndex(at: value.location, layout: layout)
                 else { return }
-
-                if dragStartIndex == nil {
-                    dragStartIndex = start
-                }
-
-                let lower = min(start, current)
-                let upper = max(start, current)
-                dragSelection = lower...upper
-                caretIndex = current
-            }
-            .onEnded { _ in
-                dragStartIndex = nil
+                selection = Selection(anchor: anchor, caret: caret)
             }
     }
 
-    private func index(at location: CGPoint) -> Int? {
-        guard rowHeight > 0, hexCellSize.width > 0 else { return nil }
-        guard isCompactWidth || offsetColumnWidth > 0 else { return nil }
-
-        let row = max(0, Int(location.y / rowHeight))
-        let rowStart = row * bytesPerRow
-        guard rowStart < bytes.count else { return nil }
-
-        let remaining = bytes.count - rowStart
-        let rowLen = min(bytesPerRow, remaining)
-        guard rowLen > 0 else { return nil }
-
-        let x = location.x
-
-        let hexStartX: CGFloat = isCompactWidth ? 0 : offsetColumnWidth + groupSpacing
-        let hexCellStride = hexCellSize.width + hexSpacing
-        let hexRowWidth =
-            CGFloat(rowLen) * hexCellSize.width
-            + CGFloat(max(0, rowLen - 1)) * hexSpacing
-
-        let haveAscii = asciiCellSize.width > 0
-        let asciiStartX = hexStartX + hexRowWidth + groupSpacing
-        let asciiCellStride = asciiCellSize.width + asciiSpacing
-        let asciiRowWidth =
-            CGFloat(rowLen) * asciiCellSize.width
-            + CGFloat(max(0, rowLen - 1)) * asciiSpacing
-
-        if x >= hexStartX && x <= hexStartX + hexRowWidth {
-            let relativeX = x - hexStartX
-            let stride = hexCellStride
-
-            var col = Int(relativeX / stride)
-            let offsetInStride = relativeX - CGFloat(col) * stride
-
-            if offsetInStride >= hexCellSize.width {
-                col += 1
-            }
-
-            col = max(0, min(rowLen - 1, col))
-
-            let idx = rowStart + col
-            return idx < bytes.count ? idx : nil
-        }
-
-        if haveAscii,
-            x >= asciiStartX && x <= asciiStartX + asciiRowWidth
-        {
-            let relativeX = x - asciiStartX
-            let stride = asciiCellStride
-
-            var col = Int(relativeX / stride)
-            let offsetInStride = relativeX - CGFloat(col) * stride
-
-            if offsetInStride >= asciiCellSize.width {
-                col += 1
-            }
-
-            col = max(0, min(rowLen - 1, col))
-
-            let idx = rowStart + col
-            return idx < bytes.count ? idx : nil
-        }
-
-        return nil
+    private func byteIndex(at point: CGPoint, layout: HexLayout) -> Int? {
+        guard point.y >= 0 else { return nil }
+        let rowStart = Int(point.y / layout.metrics.rowHeight) * HexLayout.bytesPerRow
+        guard rowStart < bytes.count, let column = layout.byteColumn(atX: point.x) else { return nil }
+        return min(rowStart + column, bytes.count - 1)
     }
 
     private enum CopyFormat { case hex, ascii, base64 }
 
     private func copySelection(_ format: CopyFormat) {
-        guard !bytes.isEmpty else { return }
-
-        let range = dragSelection ?? 0...(bytes.count - 1)
-        let slice = Array(bytes[range])
-        let data = Data(slice)
+        let slice = bytes[selection?.range ?? 0...(bytes.count - 1)]
 
         let text: String
         switch format {
         case .hex:
-            text = slice.map { String(format: "%02X", $0) }.joined(separator: " ")
+            text = slice.map { HexRow.hexDigits[Int($0)] }.joined(separator: " ")
         case .ascii:
-            text = String(slice.map(ascii))
+            text = String(slice.map(HexRow.asciiCharacter))
         case .base64:
-            text = data.base64EncodedString()
+            text = Data(slice).base64EncodedString()
         }
 
         Platform.copyToClipboard(text)
+    }
+
+    private func handleKeyPress(_ keyPress: KeyPress) -> KeyPress.Result {
+        guard !bytes.isEmpty, let motion = caretMotion(for: keyPress.key) else { return .ignored }
+        moveCaret(rows: motion.rows, columns: motion.columns, extending: keyPress.modifiers.contains(.shift))
+        return .handled
+    }
+
+    private func caretMotion(for key: KeyEquivalent) -> (rows: Int, columns: Int)? {
+        switch key {
+        case .leftArrow, "h": (0, -1)
+        case .rightArrow, "l": (0, 1)
+        case .upArrow, "k": (-1, 0)
+        case .downArrow, "j": (1, 0)
+        default: nil
+        }
+    }
+
+    private func moveCaret(rows: Int, columns: Int, extending: Bool) {
+        let caret = selection?.caret ?? 0
+        let lastRow = rowCount - 1
+        let row = min(max(caret / HexLayout.bytesPerRow + rows, 0), lastRow)
+        let column = min(max(caret % HexLayout.bytesPerRow + columns, 0), HexLayout.bytesPerRow - 1)
+        let newCaret = min(row * HexLayout.bytesPerRow + column, bytes.count - 1)
+        selection = Selection(anchor: extending ? selection?.anchor ?? 0 : newCaret, caret: newCaret)
+    }
+
+    private struct Selection {
+        var anchor: Int
+        var caret: Int
+
+        var range: ClosedRange<Int> { min(anchor, caret)...max(anchor, caret) }
+    }
+}
+
+private struct HexRow: View, Equatable {
+    let address: String?
+    let bytes: ArraySlice<UInt8>
+    let selectedColumns: ClosedRange<Int>?
+    let layout: HexLayout
+
+    static let hexDigits: [String] = (0...255).map { String(format: "%02X", $0) }
+
+    var body: some View {
+        Text(line)
+            .font(layout.metrics.font)
+            .lineLimit(1)
+            .fixedSize()
+            .frame(height: layout.metrics.rowHeight)
+    }
+
+    private var line: AttributedString {
+        var line = AttributedString()
+        if let address {
+            line += run(address, color: Color.green.opacity(0.85))
+            line += run(HexLayout.sectionGap)
+        }
+        line += hexColumn
+        line += run(HexLayout.sectionGap)
+        line += asciiColumn
+        return line
+    }
+
+    private var hexColumn: AttributedString {
+        var column = AttributedString()
+        for (index, byte) in zip(0..., bytes) {
+            if index > 0 {
+                column += run(" ", selected: isSelected(index - 1) && isSelected(index))
+            }
+            column += run(Self.hexDigits[Int(byte)], color: color(for: byte), selected: isSelected(index))
+        }
+        let missingBytes = HexLayout.bytesPerRow - bytes.count
+        column += run(String(repeating: " ", count: missingBytes * HexLayout.hexCellWidth))
+        return column
+    }
+
+    private var asciiColumn: AttributedString {
+        var column = AttributedString()
+        for (index, byte) in zip(0..., bytes) {
+            column += run(String(Self.asciiCharacter(for: byte)), color: .secondary, selected: isSelected(index))
+        }
+        return column
+    }
+
+    private func run(_ text: String, color: Color? = nil, selected: Bool = false) -> AttributedString {
+        var run = AttributedString(text)
+        run.foregroundColor = color
+        if selected {
+            run.backgroundColor = Color.accentColor.opacity(0.25)
+        }
+        return run
+    }
+
+    private func isSelected(_ column: Int) -> Bool {
+        selectedColumns?.contains(column) ?? false
+    }
+
+    private func color(for byte: UInt8) -> Color {
+        switch byte {
+        case 0x00:
+            .gray.opacity(0.6)
+        case 0x20...0x7E:
+            .mint
+        case 0x01...0x1F, 0x7F:
+            .orange
+        default:
+            .cyan
+        }
+    }
+
+    static func asciiCharacter(for byte: UInt8) -> Character {
+        (0x20...0x7E).contains(byte) ? Character(UnicodeScalar(byte)) : "."
+    }
+}
+
+private struct HexLayout: Equatable {
+    let metrics: HexMetrics
+    let addressDigits: Int?
+
+    static let bytesPerRow = 16
+    static let hexCellWidth = 3
+    static let sectionGap = "   "
+
+    func byteColumn(atX x: CGFloat) -> Int? {
+        let column = x / metrics.advance
+        let hexStart = CGFloat(hexStartColumn)
+        let hexEnd = hexStart + CGFloat(Self.bytesPerRow * Self.hexCellWidth - 1)
+        let asciiStart = hexEnd + CGFloat(Self.sectionGap.count)
+        let asciiEnd = asciiStart + CGFloat(Self.bytesPerRow)
+
+        if (hexStart..<hexEnd).contains(column) {
+            let cellCenteredColumn = column - hexStart + 0.5
+            return Int(cellCenteredColumn) / Self.hexCellWidth
+        }
+        if (asciiStart..<asciiEnd).contains(column) {
+            return Int(column - asciiStart)
+        }
+        return nil
+    }
+
+    private var hexStartColumn: Int {
+        addressDigits.map { $0 + Self.sectionGap.count } ?? 0
+    }
+}
+
+private struct HexMetrics: Equatable {
+    let font: Font
+    let advance: CGFloat
+    let rowHeight: CGFloat
+
+    static let regular = HexMetrics(
+        PlatformFont.monospacedSystemFont(ofSize: PlatformFont.preferredFont(forTextStyle: .caption1).pointSize, weight: .regular))
+    static let compact = HexMetrics(PlatformFont.monospacedSystemFont(ofSize: 9, weight: .regular))
+
+    private static let rowGap: CGFloat = 3
+
+    private init(_ font: PlatformFont) {
+        self.font = Font(font as CTFont)
+        advance = ("0" as NSString).size(withAttributes: [.font: font]).width
+        rowHeight = (font.ascender - font.descender + font.leading).rounded(.up) + Self.rowGap
     }
 }
