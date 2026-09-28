@@ -85,109 +85,110 @@ private struct ProjectContentView: View {
     private static let minMainContentHeight: CGFloat = 160
 
     var body: some View {
-        NavigationSplitView {
-            SidebarView(engine: engine, selection: selection)
-                .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
-        } detail: {
-            detailWithSidePanel
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    eventStreamBottomBar
-                }
-        }
-        .sheet(
-            item: Binding(
-                get: { picker.context },
-                set: { newValue in
-                    Task { @MainActor in
-                        picker.context = newValue
-                    }
-                }
-            ),
-            onDismiss: {
-                picker.context = nil
-            },
-            content: { context in
-                targetPickerSheet(context: context)
+        VStack(spacing: 0) {
+            NavigationSplitView {
+                SidebarView(engine: engine, selection: selection)
+                    .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
+            } detail: {
+                detailWithSidePanel
             }
-        )
+            .sheet(
+                item: Binding(
+                    get: { picker.context },
+                    set: { newValue in
+                        Task { @MainActor in
+                            picker.context = newValue
+                        }
+                    }
+                ),
+                onDismiss: {
+                    picker.context = nil
+                },
+                content: { context in
+                    targetPickerSheet(context: context)
+                }
+            )
+            .toolbarRole(.editor)
+            .toolbar {
+                ProjectToolbar(
+                    engine: engine,
+                    picker: picker,
+                    selection: selection,
+                    isShowingHostingBlockedAlert: $isShowingHostingBlockedAlert
+                )
+            }
+            .toolbarBackground(.hidden, for: .windowToolbar)
+            .alert(
+                "Only lab owners can host sessions",
+                isPresented: $isShowingHostingBlockedAlert
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("You're a member of this lab. Ask an owner to promote you before starting a session.")
+            }
+            .frame(
+                minWidth: 900,
+                idealWidth: 1100,
+                maxWidth: .infinity,
+                minHeight: 600,
+                idealHeight: 680,
+                maxHeight: .infinity,
+                alignment: .topLeading
+            )
+            .environment(picker)
+            .task {
+                await EngineRegistry.shared.startIfNeeded(for: projectURL)
+                engine.attachInstrumentUIs()
+                #if os(macOS)
+                    engine.attachLocalNotifier()
+                #endif
+                if engine.collaboration.isCollaborative {
+                    engine.setSidePanel(.collaboration)
+                }
+                if engine.selectedSidebarItem == nil {
+                    engine.selectedSidebarItem = .notebook
+                }
+            }
+            .onChange(of: restorationPath, initial: true) { _, newPath in
+                LumaAppState.shared.lastDocumentPath = newPath
+            }
+            .onDisappear {
+                let url = projectURL
+                Task { @MainActor in
+                    await EngineRegistry.shared.release(workingProjectURL: url)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: ProjectStore.didCommitNotification)) { note in
+                guard let id = note.userInfo?["instanceID"] as? UUID,
+                    id == engine.store.instanceID
+                else { return }
+                markDocumentEdited()
+            }
+            .onChange(of: engine.eventLog.totalReceived) { _, newVersion in
+                if engine.projectUIState.isEventStreamCollapsed {
+                    let delta = max(0, newVersion - collapsedEventBaselineVersion)
+                    collapsedNewEvents += delta
+                    collapsedEventBaselineVersion = newVersion
+                } else {
+                    collapsedEventBaselineVersion = newVersion
+                    collapsedNewEvents = 0
+                }
+            }
+            .onChange(of: engine.projectUIState.isEventStreamCollapsed) { _, isCollapsed in
+                collapsedEventBaselineVersion = engine.eventLog.totalReceived
+                if !isCollapsed {
+                    collapsedNewEvents = 0
+                }
+            }
+
+            eventStreamBottomBar
+        }
         .background {
             GeometryReader { proxy in
                 Color.clear
                     .onChange(of: proxy.size.height, initial: true) { _, height in
                         availableHeight = height
                     }
-            }
-        }
-        .toolbarRole(.editor)
-        .toolbar {
-            ProjectToolbar(
-                engine: engine,
-                picker: picker,
-                selection: selection,
-                isShowingHostingBlockedAlert: $isShowingHostingBlockedAlert
-            )
-        }
-        .toolbarBackground(.hidden, for: .windowToolbar)
-        .alert(
-            "Only lab owners can host sessions",
-            isPresented: $isShowingHostingBlockedAlert
-        ) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("You're a member of this lab. Ask an owner to promote you before starting a session.")
-        }
-        .frame(
-            minWidth: 900,
-            idealWidth: 1100,
-            maxWidth: .infinity,
-            minHeight: 600,
-            idealHeight: 680,
-            maxHeight: .infinity,
-            alignment: .topLeading
-        )
-        .environment(picker)
-        .task {
-            await EngineRegistry.shared.startIfNeeded(for: projectURL)
-            engine.attachInstrumentUIs()
-            #if os(macOS)
-                engine.attachLocalNotifier()
-            #endif
-            if engine.collaboration.isCollaborative {
-                engine.setSidePanel(.collaboration)
-            }
-            if engine.selectedSidebarItem == nil {
-                engine.selectedSidebarItem = .notebook
-            }
-        }
-        .onChange(of: restorationPath, initial: true) { _, newPath in
-            LumaAppState.shared.lastDocumentPath = newPath
-        }
-        .onDisappear {
-            let url = projectURL
-            Task { @MainActor in
-                await EngineRegistry.shared.release(workingProjectURL: url)
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: ProjectStore.didCommitNotification)) { note in
-            guard let id = note.userInfo?["instanceID"] as? UUID,
-                id == engine.store.instanceID
-            else { return }
-            markDocumentEdited()
-        }
-        .onChange(of: engine.eventLog.totalReceived) { _, newVersion in
-            if engine.projectUIState.isEventStreamCollapsed {
-                let delta = max(0, newVersion - collapsedEventBaselineVersion)
-                collapsedNewEvents += delta
-                collapsedEventBaselineVersion = newVersion
-            } else {
-                collapsedEventBaselineVersion = newVersion
-                collapsedNewEvents = 0
-            }
-        }
-        .onChange(of: engine.projectUIState.isEventStreamCollapsed) { _, isCollapsed in
-            collapsedEventBaselineVersion = engine.eventLog.totalReceived
-            if !isCollapsed {
-                collapsedNewEvents = 0
             }
         }
     }
