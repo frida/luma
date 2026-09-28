@@ -1532,7 +1532,8 @@ final class TargetPicker {
         guard !pattern.isEmpty else { return }
         let displayName = resolvedArmDisplayName(forPattern: pattern)
         let config = SpawnConfig(
-            target: .application(identifier: armTargetIdentifier(forPattern: pattern), name: displayName),
+            target: .application(
+                identifier: armTargetIdentifier(forPattern: pattern), name: displayName, iconPNGData: nil),
             arguments: [],
             environment: [:],
             workingDirectory: nil,
@@ -1571,7 +1572,7 @@ final class TargetPicker {
             guard let identifier = selectedApplicationIdentifier,
                 let app = applications.first(where: { $0.identifier == identifier })
             else { return nil }
-            target = .application(identifier: app.identifier, name: app.name)
+            target = .application(identifier: app.identifier, name: app.name, iconPNGData: app.icons.last?.pngData)
             form = appSubmodeForm
         case .program:
             let path = programPathEntry.text.trimmingCharacters(in: .whitespacesAndNewlines)
