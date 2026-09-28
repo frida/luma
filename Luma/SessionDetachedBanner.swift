@@ -2,6 +2,10 @@ import Frida
 import LumaCore
 import SwiftUI
 
+#if canImport(AppKit)
+    import AppKit
+#endif
+
 struct SessionContent<Content: View>: View {
     let sessionID: UUID?
     let engine: Engine
@@ -45,6 +49,9 @@ struct SessionContent<Content: View>: View {
         }
         if !hasError, engine.isHostedRemotelyLive(session.id) {
             return .none
+        }
+        if hasError {
+            return .detached(session)
         }
         if session.phase == .attaching {
             return .detached(session)
@@ -210,6 +217,7 @@ struct SessionDetachedBanner: View {
     let engine: Engine
 
     @Environment(TargetPicker.self) private var picker
+    @State private var isShowingErrorDetail = false
 
     var body: some View {
         LumaBanner(style: bannerStyle) {
@@ -241,13 +249,27 @@ struct SessionDetachedBanner: View {
                                 .truncationMode(.tail)
                         }
                     } else if let errorText = errorText {
-                        let errorPrefix = "Last \(session.kind.verbDisplayName) attempt failed: "
-                        Text(errorPrefix + errorText)
+                        let errorMessage = "Last \(session.kind.verbDisplayName) attempt failed: " + errorText
+                        Text(errorMessage)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.tail)
+                            .help(errorMessage)
                             .accessibilityIdentifier("session.errorText")
+
+                        Button {
+                            isShowingErrorDetail = true
+                        } label: {
+                            Image(systemName: "info.circle")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .help("Show the full error")
+                        .popover(isPresented: $isShowingErrorDetail, arrowEdge: .bottom) {
+                            errorDetail(errorMessage)
+                        }
                     } else if let reasonText = detachReasonText {
                         Text(reasonText)
                             .font(.caption)
@@ -326,6 +348,27 @@ struct SessionDetachedBanner: View {
                 picker.context = .reestablish(session: session, reason: reason)
             }
         }
+    }
+
+    private func errorDetail(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(message)
+                .font(.callout)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Spacer()
+                Button("Copy") {
+                    #if canImport(AppKit)
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(message, forType: .string)
+                    #endif
+                }
+            }
+        }
+        .padding()
+        .frame(width: 420)
     }
 }
 
