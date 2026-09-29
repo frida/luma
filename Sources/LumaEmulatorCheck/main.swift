@@ -54,6 +54,7 @@ func run() async throws {
     }
 
     let backend = AndroidEmulatorBackend()
+    await backend.prewarm()
     let templates = backend.templates
     let wanted = env["LUMA_EMULATOR_AVD"]
     guard let template = templates.first(where: { wanted.map(avds(of:)($0).contains) ?? false })
