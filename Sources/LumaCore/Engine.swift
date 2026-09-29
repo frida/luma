@@ -67,6 +67,8 @@ public final class Engine {
     private var eventStoreFlushTail: Task<Void, Never> = Task {}
 
     public let hookPacks: HookPackLibrary
+    public let patterns: PatternLibrary
+    public let patternDecoder = PatternDecoder()
     public let customInstruments: CustomInstrumentLibrary
     public let virtualMachines: VirtualMachineManager
 
@@ -154,6 +156,9 @@ public final class Engine {
         let hookPacksDir = dataDirectory.appendingPathComponent("HookPacks", isDirectory: true)
         try? FileManager.default.createDirectory(at: hookPacksDir, withIntermediateDirectories: true)
         self.hookPacks = HookPackLibrary(directory: hookPacksDir)
+        let patternsDir = dataDirectory.appendingPathComponent("Patterns", isDirectory: true)
+        try? FileManager.default.createDirectory(at: patternsDir, withIntermediateDirectories: true)
+        self.patterns = PatternLibrary(directory: patternsDir)
         self.customInstruments = CustomInstrumentLibrary()
         self.virtualMachines = VirtualMachineManager(deviceManager: deviceManager, store: store, dataDirectory: dataDirectory)
         self.collaboration = CollaborationSession(
@@ -277,6 +282,7 @@ public final class Engine {
             self?.emitEngineError(subsystem: "hookpacks", text: message)
         }
         hookPacks.reload()
+        patterns.reload()
     }
 
     private func syncAPNsSubscription() {
