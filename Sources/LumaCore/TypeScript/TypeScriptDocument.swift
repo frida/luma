@@ -10,6 +10,8 @@ public final class TypeScriptDocument {
     public private(set) var diagnostics: [LSP.Diagnostic] = []
     public var onDiagnostics: (([LSP.Diagnostic]) -> Void)?
     public var onSemanticTokens: (([SemanticToken]) -> Void)?
+    public var onFoldingRanges: (([LSP.FoldingRange]) -> Void)?
+    public var onColors: (([LSP.ColorInformation]) -> Void)?
 
     private unowned let project: TypeScriptProject
     private var diagnosticsRefresh: Task<Void, Never>?
@@ -40,7 +42,17 @@ public final class TypeScriptDocument {
             guard !Task.isCancelled else { return }
             await refreshDiagnostics()
             await refreshSemanticTokens()
+            await refreshOutline()
         }
+    }
+
+    public func refreshOutline() async {
+        let requestedVersion = version
+        let folding = (try? await foldingRanges()) ?? []
+        let colors = (try? await documentColors()) ?? []
+        guard requestedVersion == version else { return }
+        onFoldingRanges?(folding)
+        onColors?(colors)
     }
 
     public func refreshSemanticTokens() async {
@@ -88,6 +100,16 @@ public final class TypeScriptDocument {
     public func definitions(at position: LSP.Position) async throws -> [LSP.Location] {
         let response: DefinitionResponse? = try await project.request("textDocument/definition", positionParams(position))
         return response?.locations ?? []
+    }
+
+    public func foldingRanges() async throws -> [LSP.FoldingRange] {
+        let response: [LSP.FoldingRange]? = try await project.request("textDocument/foldingRange", documentParams)
+        return response ?? []
+    }
+
+    public func documentColors() async throws -> [LSP.ColorInformation] {
+        let response: [LSP.ColorInformation]? = try await project.request("textDocument/documentColor", documentParams)
+        return response ?? []
     }
 
     public func symbols() async throws -> [LSP.DocumentSymbol] {

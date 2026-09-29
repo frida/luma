@@ -128,6 +128,26 @@ public enum LSP {
         case offsets(Int, Int)
     }
 
+    public struct FoldingRange: Codable, Hashable, Sendable {
+        public var startLine: Int
+        public var startCharacter: Int?
+        public var endLine: Int
+        public var endCharacter: Int?
+        public var kind: String?
+    }
+
+    public struct ColorInformation: Codable, Hashable, Sendable {
+        public var range: Range
+        public var color: Color
+    }
+
+    public struct Color: Codable, Hashable, Sendable {
+        public var red: Double
+        public var green: Double
+        public var blue: Double
+        public var alpha: Double
+    }
+
     public struct DocumentSymbol: Codable, Sendable {
         public var name: String
         public var detail: String?
@@ -268,7 +288,12 @@ public enum LSP {
         public var diagnostic: DiagnosticCapabilities
         public var publishDiagnostics: PublishDiagnosticsCapabilities
         public var documentSymbol: DocumentSymbolCapabilities
+        public var foldingRange: FoldingRangeCapabilities
         public var semanticTokens: SemanticTokensClientCapabilities
+    }
+
+    public struct FoldingRangeCapabilities: Codable, Sendable {
+        public var lineFoldingOnly: Bool
     }
 
     public struct DiagnosticCapabilities: Codable, Sendable {

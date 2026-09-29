@@ -65,6 +65,7 @@ final class LanguageClient {
                 tagSupport: LSP.PublishDiagnosticsCapabilities.TagSupport(valueSet: [1, 2])
             ),
             documentSymbol: LSP.DocumentSymbolCapabilities(hierarchicalDocumentSymbolSupport: true),
+            foldingRange: LSP.FoldingRangeCapabilities(lineFoldingOnly: false),
             semanticTokens: LSP.SemanticTokensClientCapabilities(
                 requests: LSP.SemanticTokensClientCapabilities.Requests(full: true),
                 tokenTypes: semanticTokenTypes,
