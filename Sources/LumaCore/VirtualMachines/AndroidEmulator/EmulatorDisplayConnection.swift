@@ -195,7 +195,7 @@ final class EmulatorDisplayConnection: VirtualMachineFrameSource {
         Self.log("streaming \(width)x\(height)\(sharedFrame.map { " into \($0.handle)" } ?? "")")
         do {
             for try await image in client.screenshots(format: format) {
-                adopt(image)
+                await adopt(image)
             }
         } catch {
             Self.log("streamScreenshot failed: \(error)")
@@ -212,7 +212,7 @@ final class EmulatorDisplayConnection: VirtualMachineFrameSource {
         Task { try? await client.sendMouse(event) }
     }
 
-    private func adopt(_ image: EmulatorImage) {
+    private func adopt(_ image: EmulatorImage) async {
         let width = Int(image.format.width)
         let height = Int(image.format.height)
         let byteCount = width * height * 4
@@ -222,11 +222,10 @@ final class EmulatorDisplayConnection: VirtualMachineFrameSource {
         let converted: PixelBuffer
         if !image.image.isEmpty {
             guard image.image.count >= byteCount else { return }
-            converted = image.image.withUnsafeBytes { source in
-                Self.bgra(from: source.baseAddress!, width: width, height: height)
-            }
+            converted = await Self.bgra(fromData: image.image, width: width, height: height)
         } else if let sharedFrame, byteCount <= sharedFrame.byteCount {
-            converted = Self.bgra(from: sharedFrame.baseAddress, width: width, height: height)
+            let source: UnsafeRawPointer = sharedFrame.baseAddress
+            converted = await Self.bgra(fromRaw: source, width: width, height: height)
         } else {
             return
         }
@@ -243,17 +242,27 @@ final class EmulatorDisplayConnection: VirtualMachineFrameSource {
         revision &+= 1
     }
 
+    private nonisolated static func bgra(fromData data: Data, width: Int, height: Int) async -> PixelBuffer {
+        data.withUnsafeBytes { bgra(from: $0.baseAddress!, width: width, height: height) }
+    }
+
+    private nonisolated static func bgra(fromRaw source: UnsafeRawPointer, width: Int, height: Int) async -> PixelBuffer {
+        bgra(from: source, width: width, height: height)
+    }
+
     /// The emulator writes top-down RGBA rows into shared memory; the renderer wants BGRA. Reorder
     /// the channels into our own buffer, off the shared region.
-    private static func bgra(from source: UnsafeRawPointer, width: Int, height: Int) -> PixelBuffer {
+    private nonisolated static func bgra(from source: UnsafeRawPointer, width: Int, height: Int) -> PixelBuffer {
         let count = width * height
         let buffer = PixelBuffer(length: count * 4)
         let input = source.bindMemory(to: UInt32.self, capacity: count)
         let output = buffer.baseAddress.bindMemory(to: UInt32.self, capacity: count)
-        for index in 0..<count {
+        var index = 0
+        while index < count {
             let pixel = input[index]
             output[index] =
                 (pixel & 0xff00_ff00) | ((pixel & 0x00ff_0000) >> 16) | ((pixel & 0x0000_00ff) << 16)
+            index += 1
         }
         return buffer
     }
@@ -273,7 +282,7 @@ final class PixelBuffer: VirtualMachineFrameStorage, @unchecked Sendable {
     }
 }
 
-final class SharedFrameBuffer {
+final class SharedFrameBuffer: @unchecked Sendable {
     static let byteCount = 4096 * 4096 * 4
 
     let baseAddress: UnsafeRawPointer
