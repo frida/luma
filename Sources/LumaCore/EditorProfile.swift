@@ -29,6 +29,10 @@ public struct EditorProfile: Sendable, Equatable {
     public var readOnly: Bool
     public var ambientDeclarations: [AmbientDeclarations]
 
+    public var syntax: SourceSyntax {
+        languageId == "hexpat" ? .pattern : .typeScript
+    }
+
     public init(
         languageId: String = "javascript",
         projectFiles: [EditorProjectFile] = [],
@@ -56,6 +60,10 @@ extension EditorProfile {
         EditorProfile(languageId: "javascript", readOnly: readOnly)
     }
 
+    public static func pattern(activePath: String) -> EditorProfile {
+        EditorProfile(languageId: "hexpat", activePath: activePath)
+    }
+
     public static func fridaCustomInstrument(
         packages: [InstalledPackage],
         def: CustomInstrumentDef? = nil,
@@ -75,6 +83,20 @@ extension EditorProfile {
                 + (def.flatMap(CustomInstrumentTypings.featureMap(for:)).map { [$0] } ?? [])
                 + PackageAliasTypings.declarations(for: packages)
         )
+    }
+}
+
+public enum SourceSyntax: Hashable, Sendable {
+    case typeScript
+    case pattern
+
+    public func tokenize(_ text: String) -> [TypeScriptToken] {
+        switch self {
+        case .typeScript:
+            return TypeScriptLexer.tokenize(text)
+        case .pattern:
+            return PatternLexer.tokenize(text)
+        }
     }
 }
 

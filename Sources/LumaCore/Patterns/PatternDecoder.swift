@@ -8,12 +8,19 @@ public final class PatternDecoder {
 
     public init() {}
 
-    public func summary(of source: PatternSource, arch: String, platform: String) async throws -> PatternSummary {
-        let key = SummaryKey(text: source.text, arch: arch, platform: platform)
+    public static let hostArch = "arm64"
+    public static let hostPlatform = "darwin"
+
+    public func summary(of source: PatternSource, arch: String = hostArch, platform: String = hostPlatform) async throws -> PatternSummary {
+        try await summary(ofText: source.text, arch: arch, platform: platform)
+    }
+
+    public func summary(ofText text: String, arch: String = hostArch, platform: String = hostPlatform) async throws -> PatternSummary {
+        let key = SummaryKey(text: text, arch: arch, platform: platform)
         if let cached = summaries[key] {
             return cached
         }
-        let summary = try await Self.describe(source.text, arch: arch, platform: platform, using: compiler)
+        let summary = try await Self.describe(text, arch: arch, platform: platform, using: compiler)
         summaries[key] = summary
         return summary
     }

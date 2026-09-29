@@ -18,7 +18,11 @@ public struct TypeScriptToken: Hashable, Sendable {
 
 public enum TypeScriptLexer {
     public static func tokenize(_ text: String) -> [TypeScriptToken] {
-        var scanner = Scanner(units: Array(text.utf16))
+        tokenize(text, keywords: typeScriptKeywords, allowsRegex: true)
+    }
+
+    static func tokenize(_ text: String, keywords: Set<String>, allowsRegex: Bool) -> [TypeScriptToken] {
+        var scanner = Scanner(units: Array(text.utf16), keywords: keywords, allowsRegex: allowsRegex)
         var tokens: [TypeScriptToken] = []
         while let token = scanner.next() {
             tokens.append(token)
@@ -29,11 +33,15 @@ public enum TypeScriptLexer {
 
 private struct Scanner {
     let units: [UInt16]
+    let keywords: Set<String>
+    let allowsRegex: Bool
     var position = 0
     var previous: TypeScriptToken?
 
-    init(units: [UInt16]) {
+    init(units: [UInt16], keywords: Set<String>, allowsRegex: Bool) {
         self.units = units
+        self.keywords = keywords
+        self.allowsRegex = allowsRegex
     }
 
     mutating func next() -> TypeScriptToken? {
@@ -166,6 +174,7 @@ private struct Scanner {
     }
 
     private func regexMayStart() -> Bool {
+        guard allowsRegex else { return false }
         guard let previous else { return true }
         switch previous.kind {
         case .identifier, .number, .string, .template, .regex:
@@ -231,7 +240,7 @@ private struct Scanner {
     }
 }
 
-private let keywords: Set<String> = [
+private let typeScriptKeywords: Set<String> = [
     "abstract", "any", "as", "asserts", "async", "await", "bigint", "boolean", "break", "case", "catch", "class",
     "const", "constructor", "continue", "debugger", "declare", "default", "delete", "do", "else", "enum", "export",
     "extends", "false", "finally", "for", "from", "function", "get", "if", "implements", "import", "in",
