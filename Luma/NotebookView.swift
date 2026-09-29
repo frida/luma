@@ -619,20 +619,11 @@ struct NotebookEmptyStateView: View {
 
     private var defaultContent: some View {
         VStack(spacing: 24) {
-            VStack(spacing: 8) {
-                Image(systemName: "book.pages")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.secondary)
-
-                Text("Notebook")
-                    .font(.title2.weight(.semibold))
-
-                Text("Capture interesting findings here.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity, alignment: .center)
+            EmptyStateHeading(
+                title: "Notebook",
+                systemImage: "book.pages",
+                subtitle: "Capture interesting findings here."
+            )
 
             if !isCompact {
                 walkthrough

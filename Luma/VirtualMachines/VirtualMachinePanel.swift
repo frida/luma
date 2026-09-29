@@ -9,6 +9,7 @@ struct VirtualMachinePanel: View {
 
     @State private var miniaturized: Set<UUID> = []
     @State private var failure: String?
+    @State private var isShowingBootSheet = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -17,12 +18,7 @@ struct VirtualMachinePanel: View {
             if !records.isEmpty {
                 machineList
             } else {
-                ContentUnavailableView(
-                    "No Machines",
-                    systemImage: "desktopcomputer",
-                    description: Text("Boot one from the target picker to see it here.")
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                emptyState
             }
 
             if let failure {
@@ -67,10 +63,35 @@ struct VirtualMachinePanel: View {
         )
     }
 
+    private var emptyState: some View {
+        VStack(spacing: 24) {
+            EmptyStateHeading(
+                title: "Machines",
+                systemImage: "desktopcomputer",
+                subtitle: "Boot a guest and instrument anything running in it."
+            )
+
+            Button {
+                isShowingBootSheet = true
+            } label: {
+                Label("Boot Machine", systemImage: "play.fill")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        }
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .sheet(isPresented: $isShowingBootSheet) {
+            BootVirtualMachineSheet(engine: engine) { _ in }
+        }
+    }
+
     private var header: some View {
         HStack {
-            Text("Machines")
-                .font(.headline)
+            if !records.isEmpty {
+                Text("Machines")
+                    .font(.headline)
+            }
 
             Spacer()
 
