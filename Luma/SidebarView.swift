@@ -337,7 +337,7 @@ private struct SidebarMissionRow: View {
     }
 }
 
-private struct SidebarDisclosure: View {
+struct SidebarDisclosure: View {
     let isExpanded: Bool
     var canToggle: Bool = true
     let onToggle: () -> Void

@@ -12,6 +12,7 @@ struct CodeTextEditor: PlatformViewRepresentable {
     let profile: EditorProfile
     let introspector: CodeIntrospector?
     let focused: Binding<Bool>?
+    var reveal: EditorReveal? = nil
     let engine: Engine
 
     func makeCoordinator() -> Coordinator {
@@ -103,6 +104,7 @@ struct CodeTextEditor: PlatformViewRepresentable {
         }
         context.coordinator.reconcileSession(profile: profile, engine: engine)
         context.coordinator.reconcileFocus(view: view)
+        context.coordinator.reconcileReveal(view: view, reveal: reveal)
     }
 
     @MainActor
@@ -146,6 +148,16 @@ struct CodeTextEditor: PlatformViewRepresentable {
             }
         }
 
+        private var appliedReveal: EditorReveal?
+
+        func reconcileReveal(view: CodeTextView, reveal: EditorReveal?) {
+            guard let reveal, reveal != appliedReveal else { return }
+            appliedReveal = reveal
+            #if canImport(AppKit)
+                DispatchQueue.main.async { view.reveal(reveal.range) }
+            #endif
+        }
+
         func reconcileFocus(view: CodeTextView) {
             guard let focused = parent.focused else { return }
             guard focused.wrappedValue else {
@@ -173,6 +185,11 @@ struct CodeTextEditor: PlatformViewRepresentable {
             }
         #endif
     }
+}
+
+struct EditorReveal: Equatable {
+    let range: LSP.Range
+    let generation: Int
 }
 
 #if canImport(AppKit)

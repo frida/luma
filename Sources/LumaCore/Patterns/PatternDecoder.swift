@@ -99,7 +99,11 @@ public struct PatternSummary: Hashable, Sendable {
     public let diagnostics: [PatternDiagnosticSummary]
 
     init(module: PatternModule) {
-        types = module.types.map { PatternTypeSummary(name: $0.name, kind: $0.kind, size: $0.size < 0 ? nil : Int($0.size)) }
+        types = module.types.map {
+            PatternTypeSummary(
+                name: $0.name, kind: $0.kind, size: $0.size < 0 ? nil : Int($0.size), file: $0.file,
+                line: Int($0.line), character: Int($0.character))
+        }
         rootType = module.rootType
         inputs = module.inputs.map { PatternInputSummary(name: $0.name, typeName: $0.typeRef?.display) }
         diagnostics = module.diagnostics.map {
@@ -110,6 +114,10 @@ public struct PatternSummary: Hashable, Sendable {
     public var decodableTypes: [PatternTypeSummary] {
         types.filter { $0.name != rootType && ($0.kind == .struct || $0.kind == .union || $0.kind == .bitfield) }
     }
+
+    public var declaredTypes: [PatternTypeSummary] {
+        types.filter { $0.name != rootType && $0.isDeclaredInSource }
+    }
 }
 
 public struct PatternTypeSummary: Identifiable, Hashable, Sendable {
@@ -117,6 +125,17 @@ public struct PatternTypeSummary: Identifiable, Hashable, Sendable {
     public let name: String
     public let kind: PatternTypeKind
     public let size: Int?
+    public let file: String?
+    public let line: Int
+    public let character: Int
+
+    public var isDeclaredInSource: Bool { file == nil }
+}
+
+extension Array where Element == PatternTypeSummary {
+    public func sidebarHighlights(selectedID: String?, limit: Int = SidebarHighlights.defaultLimit) -> [PatternTypeSummary] {
+        Array(prefix(limit)).withSelected(selectedID, from: self, limit: limit)
+    }
 }
 
 public struct PatternInputSummary: Hashable, Sendable {

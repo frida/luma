@@ -3,14 +3,25 @@ import SwiftUI
 
 struct PatternEditorView: View {
     let sourceID: String
+    let focusedType: String?
     let engine: Engine
     @Binding var selection: SidebarItemID?
 
-    @State private var draft = ""
+    @State private var reveal: EditorReveal?
+
+    @State private var draft: String
     @State private var isDirty = false
     @State private var showSavedCheck = false
     @State private var isEditorFocused = false
     @State private var errorMessage: String?
+
+    init(sourceID: String, focusedType: String?, engine: Engine, selection: Binding<SidebarItemID?>) {
+        self.sourceID = sourceID
+        self.focusedType = focusedType
+        self.engine = engine
+        _selection = selection
+        _draft = State(initialValue: engine.patterns.source(withID: sourceID)?.text ?? "")
+    }
 
     private var source: PatternSource? {
         engine.patterns.source(withID: sourceID)
@@ -39,6 +50,7 @@ struct PatternEditorView: View {
                 text: $draft,
                 profile: .pattern(activePath: "Patterns/" + source.id),
                 focused: $isEditorFocused,
+                reveal: reveal,
                 engine: engine
             )
             .accessibilityIdentifier("pattern.editor")
@@ -54,8 +66,7 @@ struct PatternEditorView: View {
         .padding(.leading, 8)
         .padding(.bottom, 8)
         .onAppear {
-            draft = source.text
-            isEditorFocused = true
+            isEditorFocused = focusedType == nil
         }
         .onChange(of: source.text) { _, newValue in
             if !isDirty { draft = newValue }
@@ -63,7 +74,19 @@ struct PatternEditorView: View {
         .onChange(of: draft) { _, newValue in
             isDirty = newValue != source.text
         }
+        .task(id: focusedType) {
+            await revealFocusedType()
+        }
         .onDisappear { flushIfNeeded() }
+    }
+
+    private func revealFocusedType() async {
+        guard let focusedType,
+            let summary = try? await engine.patternDecoder.summary(ofText: draft),
+            let type = summary.types.first(where: { $0.name == focusedType }), type.isDeclaredInSource
+        else { return }
+        let name = LSP.Position(line: type.line, character: type.character)
+        reveal = EditorReveal(range: LSP.Range(start: name, end: name), generation: (reveal?.generation ?? 0) + 1)
     }
 
     private func save() {

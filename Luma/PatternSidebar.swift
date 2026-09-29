@@ -1,3 +1,4 @@
+import Frida
 import LumaCore
 import SwiftUI
 
@@ -5,15 +6,103 @@ struct PatternsSidebarRows: View {
     let engine: Engine
     @Binding var selection: SidebarItemID?
 
+    @State private var outlines: [String: [PatternTypeSummary]] = [:]
+    @State private var expanded: Set<String> = []
+
     private var sources: [PatternSource] { engine.patterns.sources }
 
     var body: some View {
         SidebarPatternsRow(count: sources.count)
             .tag(SidebarItemID.patterns)
         ForEach(sources) { source in
-            SidebarPatternRow(source: source, engine: engine, selection: $selection)
-                .tag(SidebarItemID.pattern(source.id))
+            let types = outlines[source.id] ?? []
+            let isExpanded = expanded.contains(source.id)
+            SidebarPatternRow(
+                source: source,
+                engine: engine,
+                selection: $selection,
+                hasTypes: !types.isEmpty,
+                isExpanded: isExpanded,
+                onToggleExpansion: { toggle(source.id) }
+            )
+            .tag(SidebarItemID.pattern(source.id))
+            if isExpanded {
+                PatternTypeSidebarChildren(source: source, types: types, selection: $selection)
+            }
         }
+        .task(id: sources) {
+            await outline()
+        }
+        .onChange(of: selection, initial: true) {
+            if let selectedSource {
+                expanded.insert(selectedSource)
+            }
+        }
+    }
+
+    private var selectedSource: String? {
+        switch selection {
+        case .pattern(let id), .patternType(let id, _):
+            return id
+        default:
+            return nil
+        }
+    }
+
+    private func toggle(_ sourceID: String) {
+        if expanded.contains(sourceID) {
+            expanded.remove(sourceID)
+        } else {
+            expanded.insert(sourceID)
+        }
+    }
+
+    private func outline() async {
+        for source in sources {
+            guard let summary = try? await engine.patternDecoder.summary(of: source) else { continue }
+            outlines[source.id] = summary.declaredTypes
+        }
+    }
+}
+
+private struct PatternTypeSidebarChildren: View {
+    let source: PatternSource
+    let types: [PatternTypeSummary]
+    @Binding var selection: SidebarItemID?
+
+    var body: some View {
+        let highlights = types.sidebarHighlights(selectedID: selectedTypeName)
+        ForEach(highlights) { type in
+            SidebarFeatureRowLabel(
+                icon: { Image(systemName: type.kind.symbolName).font(.system(size: 11)) },
+                title: type.name,
+                help: type.kind.title
+            )
+            .tag(SidebarItemID.patternType(source.id, type.name))
+        }
+        if types.count > highlights.count {
+            SidebarBrowseAllRow(count: types.count) { dismiss in
+                SidebarBrowserPopover(
+                    placeholder: "Filter types",
+                    emptyMessage: "No matching types",
+                    items: types,
+                    groupName: { $0.kind.title },
+                    title: { $0.name },
+                    help: { $0.kind.title },
+                    isDimmed: { _ in false },
+                    matches: { type, query in type.name.localizedCaseInsensitiveContains(query) },
+                    onChoose: { type in
+                        selection = .patternType(source.id, type.name)
+                        dismiss()
+                    }
+                )
+            }
+        }
+    }
+
+    private var selectedTypeName: String? {
+        if case .patternType(let id, let name) = selection, id == source.id { return name }
+        return nil
     }
 }
 
@@ -39,6 +128,9 @@ private struct SidebarPatternRow: View {
     let source: PatternSource
     let engine: Engine
     @Binding var selection: SidebarItemID?
+    let hasTypes: Bool
+    let isExpanded: Bool
+    let onToggleExpansion: () -> Void
 
     @State private var isShowingRename = false
     @State private var newName = ""
@@ -46,16 +138,17 @@ private struct SidebarPatternRow: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 0) {
+            SidebarDisclosure(isExpanded: isExpanded, canToggle: hasTypes, onToggle: onToggleExpansion)
             Image(systemName: source.kind.symbolName)
                 .foregroundStyle(.secondary)
                 .frame(width: sidebarChildIconWidth)
+                .padding(.trailing, sidebarIconToLabelSpacing)
             Text(source.name)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 0)
         }
-        .padding(.leading, sidebarChildIndent)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("sidebar.pattern.\(source.id)")
         .contextMenu {
@@ -135,6 +228,36 @@ extension PatternSource.Kind {
             return "doc.text"
         case .library:
             return "books.vertical"
+        }
+    }
+}
+
+extension PatternTypeKind {
+    var title: String {
+        switch self {
+        case .struct:
+            return "Struct"
+        case .union:
+            return "Union"
+        case .enum:
+            return "Enum"
+        case .bitfield:
+            return "Bitfield"
+        case .alias:
+            return "Alias"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .struct, .union:
+            return "curlybraces"
+        case .enum:
+            return "list.number"
+        case .bitfield:
+            return "01.square"
+        case .alias:
+            return "equal"
         }
     }
 }

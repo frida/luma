@@ -7,12 +7,13 @@ struct CodeEditorView: View {
     let profile: EditorProfile
     var introspector: CodeIntrospector? = nil
     var focused: Binding<Bool>? = nil
+    var reveal: EditorReveal? = nil
     let engine: Engine
 
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        CodeTextEditor(text: $text, profile: profile, introspector: introspector, focused: focused, engine: engine)
+        CodeTextEditor(text: $text, profile: profile, introspector: introspector, focused: focused, reveal: reveal, engine: engine)
             .overlay(alignment: .top) {
                 Rectangle()
                     .fill(editorBorderColor)

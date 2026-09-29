@@ -32,7 +32,11 @@ struct DetailView: View {
                 PatternsListView(engine: engine, selection: $selection)
 
             case .some(.pattern(let sourceID)):
-                PatternEditorView(sourceID: sourceID, engine: engine, selection: $selection)
+                PatternEditorView(sourceID: sourceID, focusedType: nil, engine: engine, selection: $selection)
+                    .id(sourceID)
+
+            case .some(.patternType(let sourceID, let typeName)):
+                PatternEditorView(sourceID: sourceID, focusedType: typeName, engine: engine, selection: $selection)
                     .id(sourceID)
 
             case .some(.session(let sessionID)):

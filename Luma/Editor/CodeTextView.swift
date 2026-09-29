@@ -353,6 +353,16 @@ final class CodeTextView: CodeTextViewBase {
             applyFolds()
         }
 
+        func reveal(_ range: LSP.Range) {
+            let target = LineMap(text: source).utf16Range(of: range)
+            folds.removeAll { NSIntersectionRange($0.hidden, NSRange(location: target.lowerBound, length: max(target.count, 1))).length > 0 || NSLocationInRange(target.lowerBound, $0.hidden) }
+            applyFolds()
+            let selection = NSRange(location: target.lowerBound, length: target.count)
+            setSelectedRange(selection)
+            scrollRangeToVisible(selection)
+            window?.makeFirstResponder(self)
+        }
+
         private func updateFoldable(_ ranges: [LSP.FoldingRange]) {
             foldable = ranges
             let kept = foldedStartLines
