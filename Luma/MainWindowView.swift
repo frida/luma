@@ -79,10 +79,15 @@ private struct ProjectContentView: View {
 
     @State private var availableHeight: CGFloat = 800
     @State private var dragStartHeight: Double?
+    @State private var detailColumnWidth: CGFloat = .infinity
+    @State private var sidePanelWidth: CGFloat = 300
+    @State private var sidePanelResizingFrom: CGFloat?
 
     private static let collapsedEventStreamHeight: CGFloat = 32
     private static let minEventStreamHeight: Double = 120
     private static let minMainContentHeight: CGFloat = 160
+    private static let minDetailWidth: CGFloat = 480
+    private static let sidePanelWidthRange: ClosedRange<CGFloat> = 260...520
 
     var body: some View {
         VStack(spacing: 0) {
@@ -201,32 +206,19 @@ private struct ProjectContentView: View {
     }
 
     private var detailWithSidePanel: some View {
-        #if os(macOS)
-            HSplitView {
-                DetailView(engine: engine, selection: selection)
-                    .frame(minWidth: 480)
+        HStack(spacing: 0) {
+            DetailView(engine: engine, selection: selection)
+                .frame(maxWidth: .infinity)
 
-                if let panel = engine.projectUIState.sidePanel {
-                    HStack(spacing: 0) {
-                        Divider()
-                        sidePanel(panel)
-                    }
-                    .frame(minWidth: 260, idealWidth: 300, maxWidth: 520)
+            if let panel = engine.projectUIState.sidePanel {
+                Divider()
+                sidePanel(panel)
+                    .frame(width: displayedSidePanelWidth)
+                    .overlay(alignment: .leading) { sidePanelResizeHandle }
                     .transition(.move(edge: .trailing).combined(with: .opacity))
-                }
             }
-        #else
-            HStack(spacing: 0) {
-                DetailView(engine: engine, selection: selection)
-
-                if let panel = engine.projectUIState.sidePanel {
-                    Divider()
-                    sidePanel(panel)
-                        .frame(minWidth: 260, idealWidth: 300, maxWidth: 520)
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                }
-            }
-        #endif
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { detailColumnWidth = $0 }
     }
 
     @ViewBuilder
@@ -239,6 +231,31 @@ private struct ProjectContentView: View {
             VirtualMachinePanel(engine: engine)
             #endif
         }
+    }
+
+    private var displayedSidePanelWidth: CGFloat {
+        min(sidePanelWidth, maxSidePanelWidth)
+    }
+
+    private var sidePanelResizeHandle: some View {
+        Rectangle()
+            .fill(.clear)
+            .frame(width: 8)
+            .contentShape(Rectangle())
+            .platformPointer(.columnResize)
+            .gesture(
+                DragGesture(coordinateSpace: .global)
+                    .onChanged { drag in
+                        let base = sidePanelResizingFrom ?? displayedSidePanelWidth
+                        sidePanelResizingFrom = base
+                        sidePanelWidth = min(max(base - drag.translation.width, Self.sidePanelWidthRange.lowerBound), maxSidePanelWidth)
+                    }
+                    .onEnded { _ in sidePanelResizingFrom = nil })
+    }
+
+    private var maxSidePanelWidth: CGFloat {
+        let range = Self.sidePanelWidthRange
+        return min(max(detailColumnWidth - Self.minDetailWidth, range.lowerBound), range.upperBound)
     }
 
     private func targetPickerSheet(context: TargetPickerContext) -> some View {
