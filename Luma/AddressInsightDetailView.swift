@@ -37,8 +37,13 @@ struct AddressInsightDetailView: View {
                 switch kind {
                 case .memory:
                     ScrollView([.vertical]) {
-                        HexView(data: memoryData)
-                            .padding(.vertical, 2)
+                        PatternDecodeView(
+                            data: memoryData,
+                            baseAddress: insight?.lastResolvedAddress,
+                            sessionID: session.id,
+                            engine: engine
+                        )
+                        .padding(.vertical, 2)
                     }
                 case .disassembly:
                     DisassemblyView(

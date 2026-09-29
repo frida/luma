@@ -540,7 +540,7 @@ private struct REPLCellView: View {
                             )
 
                         case .binary(let data, let meta):
-                            HexView(data: data, baseAddress: meta?.baseAddress ?? 0)
+                            PatternDecodeView(data: data, baseAddress: meta?.baseAddress, sessionID: sessionID, engine: engine)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }

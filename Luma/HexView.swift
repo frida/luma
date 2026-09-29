@@ -1,8 +1,12 @@
 import SwiftUI
 
-struct HexView: View {
+struct HexView<MenuItems: View>: View {
     private let bytes: [UInt8]
     private let baseAddress: UInt64
+    private let annotations: [HexAnnotation]
+    private let emphasis: HexAnnotation?
+    private let onCaretMove: ((Int) -> Void)?
+    private let menuItems: () -> MenuItems
 
     @FocusState private var isFocused: Bool
     @State private var selection: Selection?
@@ -14,9 +18,20 @@ struct HexView: View {
     private var isCompactWidth: Bool { false }
     #endif
 
-    init(data: Data, baseAddress: UInt64 = 0) {
+    init(
+        data: Data,
+        baseAddress: UInt64 = 0,
+        annotations: [HexAnnotation] = [],
+        emphasis: HexAnnotation? = nil,
+        onCaretMove: ((Int) -> Void)? = nil,
+        @ViewBuilder menuItems: @escaping () -> MenuItems
+    ) {
         bytes = Array(data)
         self.baseAddress = baseAddress
+        self.annotations = annotations
+        self.emphasis = emphasis
+        self.onCaretMove = onCaretMove
+        self.menuItems = menuItems
     }
 
     var body: some View {
@@ -25,6 +40,15 @@ struct HexView: View {
             ForEach(0..<rowCount, id: \.self) { row in
                 self.row(row, layout: layout)
                     .equatable()
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            HexAnnotationLayer(annotations: annotations, byteCount: bytes.count, layout: layout)
+                .equatable()
+        }
+        .overlay(alignment: .topLeading) {
+            if let emphasis {
+                HexEmphasisLayer(emphasis: emphasis, byteCount: bytes.count, layout: layout)
             }
         }
         .contentShape(Rectangle())
@@ -36,6 +60,7 @@ struct HexView: View {
                 Button("Copy ASCII") { copySelection(.ascii) }
                 Button("Copy Base64") { copySelection(.base64) }
             }
+            menuItems()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .focusable()
@@ -46,6 +71,11 @@ struct HexView: View {
         }
         .onKeyPress { keyPress in
             handleKeyPress(keyPress)
+        }
+        .onChange(of: selection?.caret) { _, caret in
+            if let caret {
+                onCaretMove?(caret)
+            }
         }
     }
 
@@ -155,6 +185,53 @@ struct HexView: View {
     }
 }
 
+extension HexView where MenuItems == EmptyView {
+    init(data: Data, baseAddress: UInt64 = 0) {
+        self.init(data: data, baseAddress: baseAddress, menuItems: { EmptyView() })
+    }
+}
+
+struct HexAnnotation: Identifiable, Equatable {
+    let id: UUID
+    let range: Range<Int>
+    let color: Color
+}
+
+private struct HexAnnotationLayer: View, Equatable {
+    let annotations: [HexAnnotation]
+    let byteCount: Int
+    let layout: HexLayout
+
+    var body: some View {
+        let annotations = annotations
+        let byteCount = byteCount
+        let layout = layout
+        Canvas { context, _ in
+            for annotation in annotations {
+                let outline = layout.outline(of: annotation.range, byteCount: byteCount)
+                context.stroke(outline, with: .color(annotation.color.opacity(0.7)), lineWidth: 1)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+private struct HexEmphasisLayer: View {
+    let emphasis: HexAnnotation
+    let byteCount: Int
+    let layout: HexLayout
+
+    var body: some View {
+        let outline = layout.outline(of: emphasis.range, byteCount: byteCount)
+        let color = emphasis.color
+        Canvas { context, _ in
+            context.fill(outline, with: .color(color.opacity(0.22)))
+            context.stroke(outline, with: .color(color), lineWidth: 2)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 private struct HexRow: View, Equatable {
     let address: String?
     let bytes: ArraySlice<UInt8>
@@ -260,8 +337,61 @@ private struct HexLayout: Equatable {
         return nil
     }
 
+    func outline(of range: Range<Int>, byteCount: Int) -> Path {
+        let visible = range.clamped(to: 0..<byteCount)
+        guard !visible.isEmpty else { return Path() }
+        var path = sectionOutline(of: visible, in: .hex)
+        path.addPath(sectionOutline(of: visible, in: .ascii))
+        return path
+    }
+
+    private enum Section {
+        case hex
+        case ascii
+    }
+
+    private func sectionOutline(of range: Range<Int>, in section: Section) -> Path {
+        let first = cellRect(range.lowerBound, in: section)
+        let last = cellRect(range.upperBound - 1, in: section)
+        guard first.minY != last.minY else {
+            return Path(CGRect(x: first.minX, y: first.minY, width: last.maxX - first.minX, height: first.height))
+        }
+        let left = cellRect(0, in: section).minX
+        let right = cellRect(Self.bytesPerRow - 1, in: section).maxX
+        var path = Path()
+        path.move(to: CGPoint(x: first.minX, y: first.minY))
+        path.addLine(to: CGPoint(x: right, y: first.minY))
+        path.addLine(to: CGPoint(x: right, y: last.minY))
+        path.addLine(to: CGPoint(x: last.maxX, y: last.minY))
+        path.addLine(to: CGPoint(x: last.maxX, y: last.maxY))
+        path.addLine(to: CGPoint(x: left, y: last.maxY))
+        path.addLine(to: CGPoint(x: left, y: first.maxY))
+        path.addLine(to: CGPoint(x: first.minX, y: first.maxY))
+        path.closeSubpath()
+        return path
+    }
+
+    private func cellRect(_ index: Int, in section: Section) -> CGRect {
+        let row = index / Self.bytesPerRow
+        let column = index % Self.bytesPerRow
+        let y = CGFloat(row) * metrics.rowHeight
+        switch section {
+        case .hex:
+            let inset = metrics.advance / 4
+            let x = CGFloat(hexStartColumn + column * Self.hexCellWidth) * metrics.advance - inset
+            return CGRect(x: x, y: y, width: 2 * metrics.advance + 2 * inset, height: metrics.rowHeight)
+        case .ascii:
+            let x = CGFloat(asciiStartColumn + column) * metrics.advance
+            return CGRect(x: x, y: y, width: metrics.advance, height: metrics.rowHeight)
+        }
+    }
+
     private var hexStartColumn: Int {
         addressDigits.map { $0 + Self.sectionGap.count } ?? 0
+    }
+
+    private var asciiStartColumn: Int {
+        hexStartColumn + Self.bytesPerRow * Self.hexCellWidth - 1 + Self.sectionGap.count
     }
 }
 
