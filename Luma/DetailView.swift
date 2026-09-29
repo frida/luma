@@ -28,6 +28,13 @@ struct DetailView: View {
                 MissionView(engine: engine, missionID: missionID, selection: $selection)
                     .id(missionID)
 
+            case .some(.patterns):
+                PatternsListView(engine: engine, selection: $selection)
+
+            case .some(.pattern(let sourceID)):
+                PatternEditorView(sourceID: sourceID, engine: engine, selection: $selection)
+                    .id(sourceID)
+
             case .some(.session(let sessionID)):
                 if engine.sessions.contains(where: { $0.id == sessionID }) {
                     SessionContent(sessionID: sessionID, engine: engine) {

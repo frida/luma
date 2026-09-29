@@ -6,6 +6,8 @@ enum SidebarItemID: Codable, Hashable {
     case pharo
     case missions
     case mission(UUID)
+    case patterns
+    case pattern(String)
     case session(UUID)
     case repl(UUID)
     case module(UUID, String)

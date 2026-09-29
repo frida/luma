@@ -36,6 +36,7 @@ struct SidebarView: View {
                     SidebarMissionRow(mission: mission, engine: engine, selection: $selection)
                         .tag(SidebarItemID.mission(mission.id))
                 }
+                PatternsSidebarRows(engine: engine, selection: $selection)
             }
 
             Section("Sessions") {

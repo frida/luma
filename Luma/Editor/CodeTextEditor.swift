@@ -88,6 +88,7 @@ struct CodeTextEditor: PlatformViewRepresentable {
         view.onEdit = { text = $0 }
         view.onFocused = { focused?.wrappedValue = true }
         view.isEditable = !profile.readOnly
+        view.syntax = profile.syntax
         if view.source != text {
             view.setSource(text)
         }

@@ -22,6 +22,12 @@ final class CodeTextView: CodeTextViewBase {
         didSet { bindSession() }
     }
 
+    var syntax: SourceSyntax = .typeScript {
+        didSet {
+            if oldValue != syntax { restyle() }
+        }
+    }
+
     private var diagnostics: [LSP.Diagnostic] = []
     private var semanticTokens: [SemanticToken] = []
     private var fetched: [LSP.CompletionItem] = []
@@ -97,7 +103,7 @@ final class CodeTextView: CodeTextViewBase {
         let whole = NSRange(location: 0, length: storage.length)
         storage.beginEditing()
         storage.setAttributes([.font: sourceFont, .foregroundColor: PlatformColor.platformLabel], range: whole)
-        for token in TypeScriptLexer.tokenize(text) {
+        for token in syntax.tokenize(text) {
             guard let style = SourceSyntaxPalette.style(for: token.kind, dark: false),
                 let darkStyle = SourceSyntaxPalette.style(for: token.kind, dark: true)
             else { continue }
