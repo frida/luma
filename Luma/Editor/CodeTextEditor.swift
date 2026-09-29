@@ -37,7 +37,8 @@ struct CodeTextEditor: PlatformViewRepresentable {
             view.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
             view.textContainer?.widthTracksTextView = false
             view.textContainer?.size = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-            view.textContainerInset = NSSize(width: 4, height: 8)
+            view.textContainerInset = NSSize(width: 0, height: 8)
+            view.textContainer?.lineFragmentPadding = 0
 
             let scroll = NSScrollView()
             scroll.documentView = view
@@ -45,6 +46,13 @@ struct CodeTextEditor: PlatformViewRepresentable {
             scroll.hasVerticalScroller = true
             scroll.autohidesScrollers = true
             scroll.borderType = .noBorder
+            let gutter = CodeGutterView(scrollView: scroll, textView: view)
+            gutter.onToggleFold = { [weak view] line in view?.toggleFold(atLine: line) }
+            view.onLineStateChanged = { [weak gutter] in gutter?.refresh() }
+            scroll.hasVerticalRuler = true
+            scroll.verticalRulerView = gutter
+            scroll.rulersVisible = true
+            gutter.refresh()
             return scroll
         }
 
@@ -74,6 +82,7 @@ struct CodeTextEditor: PlatformViewRepresentable {
     private func makeTextView(context: Context) -> CodeTextView {
         #if canImport(AppKit)
             let view = CodeTextView(usingTextLayoutManager: false)
+            view.textContainer?.replaceLayoutManager(FoldingLayoutManager())
         #else
             let view = CodeTextView()
         #endif

@@ -15,7 +15,12 @@ final class CodeTextView: CodeTextViewBase {
     var onEdit: ((String) -> Void)?
     var onFocused: (() -> Void)?
     var sourceFont = PlatformFont.monospacedSystemFont(ofSize: PlatformFont.systemFontSize, weight: .regular) {
-        didSet { restyle() }
+        didSet {
+            restyle()
+            #if canImport(AppKit)
+                onLineStateChanged?()
+            #endif
+        }
     }
 
     var session: TypeScriptEditorSession? {
@@ -27,6 +32,14 @@ final class CodeTextView: CodeTextViewBase {
             if oldValue != syntax { restyle() }
         }
     }
+
+    #if canImport(AppKit)
+        var onLineStateChanged: (() -> Void)?
+
+        private var foldable: [LSP.FoldingRange] = []
+        private var folds: [CodeFold] = []
+        private var colors: [LSP.ColorInformation] = []
+    #endif
 
     private var diagnostics: [LSP.Diagnostic] = []
     private var semanticTokens: [SemanticToken] = []
@@ -40,6 +53,10 @@ final class CodeTextView: CodeTextViewBase {
         private var hoverRequest: DispatchWorkItem?
         private var signatureRequest: Task<Void, Never>?
         private var argumentPlaceholders: [NSRange] = []
+
+        private var foldingLayoutManager: FoldingLayoutManager {
+            layoutManager as! FoldingLayoutManager
+        }
     #else
         private let candidates = CompletionCandidates()
         private let completionBarHeight: CGFloat = 38
@@ -70,6 +87,9 @@ final class CodeTextView: CodeTextViewBase {
         isReplacingSource = false
         restyle()
         session?.document.replaceText(newSource)
+        #if canImport(AppKit)
+            onLineStateChanged?()
+        #endif
     }
 
     private func bindSession() {
@@ -88,12 +108,24 @@ final class CodeTextView: CodeTextViewBase {
             self?.semanticTokens = tokens
             self?.restyle()
         }
+        #if canImport(AppKit)
+            session.document.onFoldingRanges = { [weak self] ranges in
+                self?.updateFoldable(ranges)
+            }
+            session.document.onColors = { [weak self] colors in
+                self?.colors = colors
+                self?.restyle()
+            }
+        #endif
     }
 
     func noteEdited() {
         guard !isReplacingSource else { return }
         let text = source
         restyle()
+        #if canImport(AppKit)
+            onLineStateChanged?()
+        #endif
         session?.document.replaceText(text)
         onEdit?(text)
     }
@@ -102,7 +134,9 @@ final class CodeTextView: CodeTextViewBase {
         let text = source
         let whole = NSRange(location: 0, length: storage.length)
         storage.beginEditing()
-        storage.setAttributes([.font: sourceFont, .foregroundColor: PlatformColor.platformLabel], range: whole)
+        let plain: [NSAttributedString.Key: Any] = [.font: sourceFont, .foregroundColor: PlatformColor.platformLabel]
+        storage.setAttributes(plain, range: whole)
+        typingAttributes = plain
         for token in syntax.tokenize(text) {
             guard let style = SourceSyntaxPalette.style(for: token.kind, dark: false),
                 let darkStyle = SourceSyntaxPalette.style(for: token.kind, dark: true)
@@ -123,6 +157,22 @@ final class CodeTextView: CodeTextViewBase {
             guard let color = semanticColor(for: token, faded: faded) else { continue }
             storage.addAttribute(.foregroundColor, value: color, range: NSRange(location: lower, length: upper - lower))
         }
+        #if canImport(AppKit)
+            var swatches: [CodeSwatch] = []
+            for color in colors {
+                let range = lineMap.utf16Range(of: color.range)
+                guard range.lowerBound > 0, range.lowerBound <= storage.length else { continue }
+                storage.addAttribute(
+                    .kern, value: FoldingLayoutManager.swatchSize + FoldingLayoutManager.swatchGap,
+                    range: NSRange(location: range.lowerBound - 1, length: 1))
+                swatches.append(CodeSwatch(location: range.lowerBound, color: NSColor(color.color)))
+            }
+            foldingLayoutManager.swatches = swatches
+            for fold in folds where fold.hidden.location > 0 {
+                storage.addAttribute(
+                    .kern, value: FoldingLayoutManager.placeholderKern, range: NSRange(location: fold.hidden.location - 1, length: 1))
+            }
+        #endif
         for diagnostic in diagnostics where !diagnostic.isUnnecessary {
             let range = lineMap.utf16Range(of: diagnostic.range)
             let marked = range.isEmpty ? range.lowerBound..<min(range.lowerBound + 1, lineMap.utf16Count) : range
@@ -253,9 +303,79 @@ final class CodeTextView: CodeTextViewBase {
         override func shouldChangeText(in affectedCharRange: NSRange, replacementString: String?) -> Bool {
             let allowed = super.shouldChangeText(in: affectedCharRange, replacementString: replacementString)
             if allowed {
-                shiftPlaceholders(for: affectedCharRange, replacementLength: (replacementString ?? "").utf16.count)
+                let replacementLength = (replacementString ?? "").utf16.count
+                shiftPlaceholders(for: affectedCharRange, replacementLength: replacementLength)
+                shiftFolds(for: affectedCharRange, replacementLength: replacementLength)
             }
             return allowed
+        }
+
+        override func drawBackground(in rect: NSRect) {
+            super.drawBackground(in: rect)
+            if let band = CurrentLineBand.rect(in: self, font: sourceFont), band.intersects(rect) {
+                CurrentLineBand.color.setFill()
+                band.fill()
+            }
+            let folded = foldedStartLines
+            ScopeGuides.draw(foldable.filter { !folded.contains($0.startLine) }, in: self, dirtyRect: rect)
+        }
+
+        override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
+            super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+            setNeedsDisplay(visibleRect)
+            onLineStateChanged?()
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            let point = convert(event.locationInWindow, from: nil)
+            if let hit = foldingLayoutManager.placeholderRects.first(where: { $0.rect.contains(point) }) {
+                folds.removeAll { $0.hidden == hit.hidden }
+                applyFolds()
+                return
+            }
+            super.mouseDown(with: event)
+        }
+
+        var foldableStartLines: Set<Int> {
+            Set(foldable.map(\.startLine))
+        }
+
+        var foldedStartLines: Set<Int> {
+            Set(folds.map(\.startLine))
+        }
+
+        func toggleFold(atLine line: Int) {
+            if let index = folds.firstIndex(where: { $0.startLine == line }) {
+                folds.remove(at: index)
+            } else if let fold = CodeFold.folds(from: foldable.filter { $0.startLine == line }, in: source).first {
+                folds.append(fold)
+            }
+            applyFolds()
+        }
+
+        private func updateFoldable(_ ranges: [LSP.FoldingRange]) {
+            foldable = ranges
+            let kept = foldedStartLines
+            folds = CodeFold.folds(from: ranges.filter { kept.contains($0.startLine) }, in: source)
+            applyFolds()
+        }
+
+        private func shiftFolds(for edited: NSRange, replacementLength: Int) {
+            let delta = replacementLength - edited.length
+            folds = folds.compactMap { fold in
+                let touchesHidden = NSIntersectionRange(edited, fold.hidden).length > 0 || NSLocationInRange(edited.location, fold.hidden)
+                if touchesHidden { return nil }
+                guard fold.hidden.location >= NSMaxRange(edited) else { return fold }
+                return CodeFold(startLine: fold.startLine, hidden: NSRange(location: fold.hidden.location + delta, length: fold.hidden.length))
+            }
+            foldingLayoutManager.hiddenRanges = folds.map(\.hidden)
+        }
+
+        private func applyFolds() {
+            foldingLayoutManager.hiddenRanges = folds.map(\.hidden)
+            restyle()
+            needsDisplay = true
+            onLineStateChanged?()
         }
 
         override func insertText(_ string: Any, replacementRange: NSRange) {
