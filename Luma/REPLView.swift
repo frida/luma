@@ -540,8 +540,17 @@ private struct REPLCellView: View {
                             )
 
                         case .binary(let data, let meta):
-                            PatternDecodeView(data: data, baseAddress: meta?.baseAddress, sessionID: sessionID, engine: engine)
-                                .fixedSize(horizontal: false, vertical: true)
+                            PatternDecodeView(
+                                data: data,
+                                baseAddress: meta?.baseAddress,
+                                sessionID: sessionID,
+                                engine: engine,
+                                placements: Binding(
+                                    get: { cell.placements },
+                                    set: { engine.setPlacements($0, forREPLCell: cell.id) }
+                                )
+                            )
+                            .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     .font(.system(.caption, design: .monospaced))

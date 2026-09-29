@@ -1424,6 +1424,7 @@ public final class ProjectStore: Sendable {
             t.column("code", .text).notNull()
             t.column("language", .text).notNull().defaults(to: REPLLanguage.javascript.rawValue)
             t.column("result", .blob).notNull()
+            t.column("placements", .blob)
             t.column("timestamp", .datetime).notNull()
             t.column("is_session_boundary", .boolean).notNull().defaults(to: false)
         }
@@ -1500,6 +1501,7 @@ public final class ProjectStore: Sendable {
             t.column("kind", .integer).notNull()
             t.column("anchor", .blob).notNull()
             t.column("byte_count", .integer).notNull()
+            t.column("placements", .blob)
             t.column("last_resolved_address", .integer)
             t.column("parent_insight_id", .text)
         }
@@ -1816,6 +1818,8 @@ public final class ProjectStore: Sendable {
     private static func addColumnsForExistingDatabases(_ db: Database) throws {
         let javascript = REPLLanguage.javascript.rawValue
         try addColumnIfMissing(db, table: "repl_cell", column: "language", definition: "TEXT NOT NULL DEFAULT '\(javascript)'")
+        try addColumnIfMissing(db, table: "repl_cell", column: "placements", definition: "BLOB")
+        try addColumnIfMissing(db, table: "address_insight", column: "placements", definition: "BLOB")
         try addColumnIfMissing(db, table: "notebook_entry", column: "styled_details", definition: "BLOB")
         try addColumnIfMissing(db, table: "notebook_entry", column: "pharo_snapshot", definition: "BLOB")
         try addColumnIfMissing(db, table: "notebook_entry", column: "pharo_result_fuel", definition: "BLOB")

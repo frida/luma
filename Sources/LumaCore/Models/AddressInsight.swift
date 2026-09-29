@@ -11,6 +11,7 @@ public struct AddressInsight: Codable, Identifiable, Sendable, FetchableRecord, 
     public var kind: Kind
     public var anchor: AddressAnchor
     public var byteCount: Int
+    public var placements: [PatternPlacement]
     public var lastResolvedAddress: UInt64?
     public var parentInsightID: UUID?
 
@@ -22,6 +23,7 @@ public struct AddressInsight: Codable, Identifiable, Sendable, FetchableRecord, 
         case kind
         case anchor
         case byteCount = "byte_count"
+        case placements
         case lastResolvedAddress = "last_resolved_address"
         case parentInsightID = "parent_insight_id"
     }
@@ -42,7 +44,22 @@ public struct AddressInsight: Codable, Identifiable, Sendable, FetchableRecord, 
         self.kind = kind
         self.anchor = anchor
         self.byteCount = byteCount
+        self.placements = []
         self.parentInsightID = parentInsightID
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        sessionID = try container.decode(UUID.self, forKey: .sessionID)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        userTitle = try container.decodeIfPresent(String.self, forKey: .userTitle)
+        kind = try container.decode(Kind.self, forKey: .kind)
+        anchor = try container.decode(AddressAnchor.self, forKey: .anchor)
+        byteCount = try container.decode(Int.self, forKey: .byteCount)
+        placements = try container.decodeIfPresent([PatternPlacement].self, forKey: .placements) ?? []
+        lastResolvedAddress = try container.decodeIfPresent(UInt64.self, forKey: .lastResolvedAddress)
+        parentInsightID = try container.decodeIfPresent(UUID.self, forKey: .parentInsightID)
     }
 
     public enum Kind: Int, Codable, Sendable, DatabaseValueConvertible {
@@ -56,8 +73,9 @@ public struct AddressInsight: Codable, Identifiable, Sendable, FetchableRecord, 
         container["created_at"] = createdAt
         container["user_title"] = userTitle
         container["kind"] = kind
-        container["anchor"] = try Self.anchorEncoder.encode(anchor)
+        container["anchor"] = try Self.blobEncoder.encode(anchor)
         container["byte_count"] = byteCount
+        container["placements"] = try Self.blobEncoder.encode(placements)
         container["last_resolved_address"] = lastResolvedAddress.map(Int64.init(bitPattern:))
         container["parent_insight_id"] = parentInsightID
     }
@@ -68,16 +86,18 @@ public struct AddressInsight: Codable, Identifiable, Sendable, FetchableRecord, 
         createdAt = row["created_at"]
         userTitle = row["user_title"]
         kind = row["kind"]
-        anchor = try Self.anchorDecoder.decode(AddressAnchor.self, from: row["anchor"])
+        anchor = try Self.blobDecoder.decode(AddressAnchor.self, from: row["anchor"])
         byteCount = row["byte_count"]
+        let storedPlacements: Data? = row["placements"]
+        placements = try storedPlacements.map { try Self.blobDecoder.decode([PatternPlacement].self, from: $0) } ?? []
         let storedAddress: Int64? = row["last_resolved_address"]
         lastResolvedAddress = storedAddress.map(UInt64.init(bitPattern:))
         parentInsightID = row["parent_insight_id"]
     }
 
-    private static let anchorEncoder = JSONEncoder()
+    private static let blobEncoder = JSONEncoder()
 
-    private static let anchorDecoder = JSONDecoder()
+    private static let blobDecoder = JSONDecoder()
 
     private static let wireEncoder: JSONEncoder = {
         let e = JSONEncoder()

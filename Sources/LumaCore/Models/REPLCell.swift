@@ -10,6 +10,7 @@ public struct REPLCell: Codable, Identifiable, Sendable, FetchableRecord, Persis
     public var code: String
     public var language: REPLLanguage
     public var result: Result
+    public var placements: [PatternPlacement]
     public var timestamp: Date
     public var isSessionBoundary: Bool
 
@@ -20,6 +21,7 @@ public struct REPLCell: Codable, Identifiable, Sendable, FetchableRecord, Persis
         case code
         case language
         case result
+        case placements
         case timestamp
         case isSessionBoundary = "is_session_boundary"
     }
@@ -31,6 +33,7 @@ public struct REPLCell: Codable, Identifiable, Sendable, FetchableRecord, Persis
         code: String,
         language: REPLLanguage = .javascript,
         result: Result,
+        placements: [PatternPlacement] = [],
         timestamp: Date = .now,
         isSessionBoundary: Bool = false
     ) {
@@ -40,8 +43,22 @@ public struct REPLCell: Codable, Identifiable, Sendable, FetchableRecord, Persis
         self.code = code
         self.language = language
         self.result = result
+        self.placements = placements
         self.timestamp = timestamp
         self.isSessionBoundary = isSessionBoundary
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        sessionID = try container.decode(UUID.self, forKey: .sessionID)
+        author = try container.decodeIfPresent(Author.self, forKey: .author)
+        code = try container.decode(String.self, forKey: .code)
+        language = try container.decode(REPLLanguage.self, forKey: .language)
+        result = try container.decode(Result.self, forKey: .result)
+        placements = try container.decodeIfPresent([PatternPlacement].self, forKey: .placements) ?? []
+        timestamp = try container.decode(Date.self, forKey: .timestamp)
+        isSessionBoundary = try container.decode(Bool.self, forKey: .isSessionBoundary)
     }
 
     public enum Result: Codable, Equatable, Sendable {

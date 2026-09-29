@@ -2795,6 +2795,20 @@ public final class Engine {
         emitInsightUpdated(updated)
     }
 
+    public func setPlacements(_ placements: [PatternPlacement], forInsight insight: AddressInsight) {
+        var updated = insight
+        updated.placements = placements
+        persistInsight(updated)
+        collaboration.enqueueUpdateInsight(sessionID: updated.sessionID, insight: updated)
+        emitInsightUpdated(updated)
+    }
+
+    public func setPlacements(_ placements: [PatternPlacement], forREPLCell cellID: UUID) {
+        guard var cell = try? store.fetchREPLCell(id: cellID) else { return }
+        cell.placements = placements
+        try? store.save(cell)
+    }
+
     private func persistInsight(_ insight: AddressInsight) {
         try? store.save(insight)
         upsertInsightCache(insight)

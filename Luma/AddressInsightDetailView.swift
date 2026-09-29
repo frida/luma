@@ -41,7 +41,15 @@ struct AddressInsightDetailView: View {
                             data: memoryData,
                             baseAddress: insight?.lastResolvedAddress,
                             sessionID: session.id,
-                            engine: engine
+                            engine: engine,
+                            placements: Binding(
+                                get: { insight?.placements ?? [] },
+                                set: { placements in
+                                    if let insight {
+                                        engine.setPlacements(placements, forInsight: insight)
+                                    }
+                                }
+                            )
                         )
                         .padding(.vertical, 2)
                     }

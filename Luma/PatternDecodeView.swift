@@ -6,10 +6,10 @@ struct PatternDecodeView: View {
     let baseAddress: UInt64?
     let sessionID: UUID
     let engine: Engine
+    @Binding var placements: [PatternPlacement]
 
     @State private var summaries: [String: PatternSummary] = [:]
     @State private var describeProblem: String?
-    @State private var placements: [PatternPlacement] = []
     @State private var results: [PatternPlacement.ID: PlacementResult] = [:]
     @State private var locations: [UUID: NodeLocation] = [:]
     @State private var caret = 0
@@ -103,6 +103,7 @@ struct PatternDecodeView: View {
             ForEach(placements) { placement in
                 PlacementRows(
                     placement: placement,
+                    title: title(of: placement),
                     result: results[placement.id],
                     address: (baseAddress ?? 0) &+ UInt64(placement.offset),
                     locations: locations,
@@ -113,6 +114,15 @@ struct PatternDecodeView: View {
             }
         }
         .font(.system(.caption, design: .monospaced))
+    }
+
+    private func title(of placement: PatternPlacement) -> String {
+        if summaries[placement.sourceID]?.rootType == placement.typeName,
+            let source = engine.patterns.source(withID: placement.sourceID)
+        {
+            return source.name
+        }
+        return placement.typeName
     }
 
     private func place(_ placement: PatternPlacement) {
@@ -198,26 +208,18 @@ private struct PlacementItems: View {
                 Section(source.name) {
                     if let rootType = summary.rootType {
                         Button("Run file") {
-                            place(PatternPlacement(sourceID: source.id, typeName: rootType, title: source.name, offset: 0))
+                            place(PatternPlacement(sourceID: source.id, typeName: rootType, offset: 0))
                         }
                     }
                     ForEach(summary.decodableTypes) { type in
                         Button(type.name) {
-                            place(PatternPlacement(sourceID: source.id, typeName: type.name, title: type.name, offset: caret))
+                            place(PatternPlacement(sourceID: source.id, typeName: type.name, offset: caret))
                         }
                     }
                 }
             }
         }
     }
-}
-
-struct PatternPlacement: Identifiable, Hashable {
-    let id = UUID()
-    let sourceID: String
-    let typeName: String
-    let title: String
-    let offset: Int
 }
 
 private enum PlacementResult {
@@ -246,6 +248,7 @@ private struct DecodeKey: Equatable {
 
 private struct PlacementRows: View {
     let placement: PatternPlacement
+    let title: String
     let result: PlacementResult?
     let address: UInt64
     let locations: [UUID: NodeLocation]
@@ -258,7 +261,7 @@ private struct PlacementRows: View {
     var body: some View {
         HStack(spacing: 6) {
             DisclosureChevron(isExpanded: isExpanded, isVisible: true) { toggle() }
-            Text(placement.title)
+            Text(title)
                 .fontWeight(.semibold)
             Text(String(format: "@ 0x%llx", address))
                 .foregroundStyle(.secondary)
