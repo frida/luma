@@ -210,8 +210,8 @@ public final class HexView {
     private func moveCaret(rows: Int, columns: Int, extending: Bool) {
         let caret = selection?.caret ?? 0
         let row = min(max(caret / HexLayout.bytesPerRow + rows, 0), layout.rowCount - 1)
-        let column = min(max(caret % HexLayout.bytesPerRow + columns, 0), HexLayout.bytesPerRow - 1)
-        let newCaret = min(row * HexLayout.bytesPerRow + column, bytes.count - 1)
+        let column = caret % HexLayout.bytesPerRow
+        let newCaret = min(max(row * HexLayout.bytesPerRow + column + columns, 0), bytes.count - 1)
         select(anchor: extending ? selection?.anchor ?? 0 : newCaret, caret: newCaret)
     }
 
