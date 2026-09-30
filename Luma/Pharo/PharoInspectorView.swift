@@ -546,6 +546,10 @@ struct PharoObjectColumn: View {
             if let canvas = declaration.canvas {
                 PharoCanvasSceneView(scene: canvas.scene)
             }
+        case "lumaPatternBytes":
+            PharoPatternView(kind: .bytes, reference: declaration.text ?? "")
+        case "lumaPatternVisualization":
+            PharoPatternView(kind: .visualization, reference: declaration.text ?? "")
         default:
             ContentUnavailableView(
                 "\(declaration.viewName) views are not rendered yet", systemImage: "square.dashed")
