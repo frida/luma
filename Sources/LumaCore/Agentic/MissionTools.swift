@@ -82,6 +82,7 @@ public enum MissionTools {
         registerUnpinInsight(in: catalog, engine: engine)
         registerRenameInsight(in: catalog, engine: engine)
         registerPatterns(in: catalog, engine: engine)
+        registerVirtualMachines(in: catalog, engine: engine)
         registerDetachSession(in: catalog, engine: engine)
         registerReadWidgetState(in: catalog, engine: engine)
         registerInvokeWidgetAction(in: catalog, engine: engine)

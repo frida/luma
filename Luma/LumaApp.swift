@@ -24,6 +24,7 @@ func sharedGitHubAuth() -> GitHubAuth { sharedWelcomeModel.gitHubAuth }
                 InstrumentUIRegistry.shared.registerGlobalDefaults()
             }
             CoreTextGlyphAtlas.install()
+            CoreGraphicsFrameEncoder.install()
         }
 
         var body: some Scene {
@@ -193,6 +194,7 @@ func sharedGitHubAuth() -> GitHubAuth { sharedWelcomeModel.gitHubAuth }
                 InstrumentUIRegistry.shared.registerGlobalDefaults()
             }
             CoreTextGlyphAtlas.install()
+            CoreGraphicsFrameEncoder.install()
         }
 
         var body: some Scene {
