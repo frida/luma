@@ -189,6 +189,11 @@ final class PharoColumnView {
         while notebook.getNPages() > 0 {
             notebook.removePage(pageNum: notebook.getNPages() - 1)
         }
+        listViews.removeAll()
+        canvasAreas.removeAll()
+        patternPages.removeAll()
+        graphAreas.removeAll()
+        chartAreas.removeAll()
         Task { @MainActor in
             let views: [PharoViewDeclaration]
             do {
@@ -224,6 +229,12 @@ final class PharoColumnView {
         case "canvas":
             guard let canvas = view.canvas else { return textPage("Empty canvas.") }
             return canvasPage(scene: canvas.scene)
+        case "lumaPatternBytes":
+            guard let target = PharoPatternTarget(reference: view.text ?? "") else { return textPage(Self.releasedPattern) }
+            return patternBytesPage(target)
+        case "lumaPatternVisualization":
+            guard let target = PharoPatternTarget(reference: view.text ?? "") else { return textPage(Self.releasedPattern) }
+            return patternVisualizationPage(target)
         default:
             return textPage("\(view.viewName) views are not drawn yet.")
         }
@@ -245,7 +256,32 @@ final class PharoColumnView {
         return canvas.widget
     }
 
+    private func patternBytesPage(_ target: PharoPatternTarget) -> Widget {
+        let page = PharoPatternBytesPage(target: target)
+        patternPages.append(page)
+        return page.widget
+    }
+
+    private func patternVisualizationPage(_ target: PharoPatternTarget) -> Widget {
+        let visualization: PatternVisualization
+        do {
+            visualization = try PatternVisualization(target.node.visualizer!, of: target.node, in: target.decoding.root)
+        } catch {
+            return failurePage(error.localizedDescription)
+        }
+        let view = PatternVisualizationWidget(visualization)
+        patternPages.append(view)
+        let scroll = ScrolledWindow()
+        scroll.hexpand = true
+        scroll.vexpand = true
+        scroll.set(child: view.widget)
+        return scroll
+    }
+
+    private static let releasedPattern = "The host no longer holds this value."
+
     private var canvasAreas: [PharoCanvasArea] = []
+    private var patternPages: [AnyObject] = []
     private var listViews: [PharoListView] = []
     private var graphAreas: [PharoGraphArea] = []
     private var chartAreas: [PharoChartArea] = []
