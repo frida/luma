@@ -175,6 +175,8 @@ private func editorProfile(for language: CodePreviewLanguage) -> EditorProfile {
         return .fridaCodeShare()
     case .fridaTypeScript:
         return .fridaTracerHook(packages: [])
+    case .patternLanguage:
+        return .pattern(activePath: "Patterns/preview.hexpat")
     }
 }
 

@@ -81,6 +81,7 @@ public enum MissionTools {
         registerListAddressInsights(in: catalog, engine: engine)
         registerUnpinInsight(in: catalog, engine: engine)
         registerRenameInsight(in: catalog, engine: engine)
+        registerPatterns(in: catalog, engine: engine)
         registerDetachSession(in: catalog, engine: engine)
         registerReadWidgetState(in: catalog, engine: engine)
         registerInvokeWidgetAction(in: catalog, engine: engine)
@@ -3936,6 +3937,11 @@ public enum MissionTools {
         if let addr = insight.lastResolvedAddress {
             obj["last_resolved_address"] = String(format: "0x%llx", addr)
         }
+        if !insight.placements.isEmpty {
+            obj["placements"] = insight.placements.map { placement -> [String: Any] in
+                ["id": placement.id.uuidString, "pattern_id": placement.sourceID, "type": placement.typeName, "offset": placement.offset]
+            }
+        }
         return obj
     }
 
@@ -4006,7 +4012,7 @@ public enum MissionTools {
         return .success(needsTrailingNewline && !joined.hasSuffix("\n") ? joined + "\n" : joined)
     }
 
-    private static func parseSessionID(_ args: [String: Any]) -> UUID? {
+    static func parseSessionID(_ args: [String: Any]) -> UUID? {
         guard let str = args["session_id"] as? String else { return nil }
         return UUID(uuidString: str)
     }
@@ -4019,7 +4025,7 @@ public enum MissionTools {
         }
     }
 
-    private static func parseHexAddress(_ s: String) -> UInt64? {
+    static func parseHexAddress(_ s: String) -> UInt64? {
         let trimmed = s.lowercased()
         if trimmed.hasPrefix("0x") {
             return UInt64(trimmed.dropFirst(2), radix: 16)

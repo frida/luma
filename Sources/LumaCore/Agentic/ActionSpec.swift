@@ -3,6 +3,7 @@ import Foundation
 public enum CodePreviewLanguage: String, Sendable, Equatable {
     case fridaJavaScript
     case fridaTypeScript
+    case patternLanguage
 }
 
 public struct CodePreviewArg: Sendable, Equatable {
