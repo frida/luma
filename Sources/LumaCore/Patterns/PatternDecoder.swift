@@ -4,7 +4,7 @@ import Frida
 @MainActor
 public final class PatternDecoder {
     private let compiler = PatternCompiler()
-    private var summaries: [SummaryKey: PatternSummary] = [:]
+    private var summaries: [SummaryKey: SourceSummary] = [:]
 
     public init() {}
 
@@ -12,17 +12,17 @@ public final class PatternDecoder {
     public static let hostPlatform = "darwin"
 
     public func summary(of source: PatternSource, arch: String = hostArch, platform: String = hostPlatform) async throws -> PatternSummary {
-        try await summary(ofText: source.text, arch: arch, platform: platform)
+        let key = SummaryKey(sourceID: source.id, arch: arch, platform: platform)
+        if let cached = summaries[key], cached.text == source.text {
+            return cached.summary
+        }
+        let summary = try await summary(ofText: source.text, arch: arch, platform: platform)
+        summaries[key] = SourceSummary(text: source.text, summary: summary)
+        return summary
     }
 
     public func summary(ofText text: String, arch: String = hostArch, platform: String = hostPlatform) async throws -> PatternSummary {
-        let key = SummaryKey(text: text, arch: arch, platform: platform)
-        if let cached = summaries[key] {
-            return cached
-        }
-        let summary = try await Self.describe(text, arch: arch, platform: platform, using: compiler)
-        summaries[key] = summary
-        return summary
+        try await Self.describe(text, arch: arch, platform: platform, using: compiler)
     }
 
     private nonisolated static func describe(_ text: String, arch: String, platform: String, using compiler: PatternCompiler) async throws -> PatternSummary {
@@ -38,8 +38,21 @@ public final class PatternDecoder {
         platform: String,
         inputs: [String: PatternInputValue] = [:]
     ) async throws -> DecodedPattern {
+        try await decode(
+            text: source.text, typeName: typeName, data: data, address: address, arch: arch, platform: platform, inputs: inputs)
+    }
+
+    public func decode(
+        text: String,
+        typeName: String,
+        data: Data,
+        address: UInt64,
+        arch: String,
+        platform: String,
+        inputs: [String: PatternInputValue] = [:]
+    ) async throws -> DecodedPattern {
         try await Self.decode(
-            source.text, typeName: typeName, data: Array(data), address: address, arch: arch, platform: platform, inputs: inputs,
+            text, typeName: typeName, data: Array(data), address: address, arch: arch, platform: platform, inputs: inputs,
             using: compiler)
     }
 
@@ -65,10 +78,60 @@ public final class PatternDecoder {
         return DecodedPattern(value: value)
     }
 
+    public func callFunction(
+        _ function: String,
+        on nodeID: UInt,
+        of source: PatternSource,
+        typeName: String,
+        data: Data,
+        address: UInt64,
+        arch: String,
+        platform: String
+    ) async throws -> String {
+        try await callFunction(
+            function, on: nodeID, ofText: source.text, typeName: typeName, data: data, address: address, arch: arch, platform: platform)
+    }
+
+    public func callFunction(
+        _ function: String,
+        on nodeID: UInt,
+        ofText text: String,
+        typeName: String,
+        data: Data,
+        address: UInt64,
+        arch: String,
+        platform: String
+    ) async throws -> String {
+        try await Self.callFunction(
+            function, on: nodeID, of: text, typeName: typeName, data: Array(data), address: address, arch: arch, platform: platform,
+            using: compiler)
+    }
+
+    private nonisolated static func callFunction(
+        _ function: String,
+        on nodeID: UInt,
+        of text: String,
+        typeName: String,
+        data: [UInt8],
+        address: UInt64,
+        arch: String,
+        platform: String,
+        using compiler: PatternCompiler
+    ) async throws -> String {
+        try await compiler.callFunction(
+            source: text, typeName: typeName, data: data, address: address, arch: arch, platform: platform, pattern: nodeID,
+            function: function)
+    }
+
     private struct SummaryKey: Hashable {
-        let text: String
+        let sourceID: String
         let arch: String
         let platform: String
+    }
+
+    private struct SourceSummary {
+        let text: String
+        let summary: PatternSummary
     }
 }
 
@@ -151,6 +214,7 @@ public struct PatternDiagnosticSummary: Hashable, Sendable {
 
 public struct DecodedPattern: Identifiable, Sendable {
     public let id = UUID()
+    public let nodeID: UInt
     public let name: String
     public let typeName: String
     public let address: UInt64
@@ -170,8 +234,10 @@ public struct DecodedPattern: Identifiable, Sendable {
     public let fields: [DecodedPattern]
     public let elements: [DecodedPattern]
     public let truncated: Bool
+    public let visualizer: DecodedVisualizer?
 
     init(value: PatternValue) {
+        nodeID = value.id
         name = value.name
         typeName = value.typeName
         address = value.address
@@ -191,10 +257,23 @@ public struct DecodedPattern: Identifiable, Sendable {
         fields = value.fields.map(DecodedPattern.init)
         elements = value.elements.map(DecodedPattern.init)
         truncated = value.truncated
+        visualizer = value.visualizer.map(DecodedVisualizer.init)
     }
 
     public var children: [DecodedPattern] {
         fields.isEmpty ? elements : fields
+    }
+
+    public func descendant(withNodeID wanted: UInt) -> DecodedPattern? {
+        if nodeID == wanted {
+            return self
+        }
+        for child in children {
+            if let match = child.descendant(withNodeID: wanted) {
+                return match
+            }
+        }
+        return nil
     }
 
     public var summary: String {
@@ -214,7 +293,7 @@ public struct DecodedPattern: Identifiable, Sendable {
     }
 }
 
-public enum DecodedScalar: Sendable, CustomStringConvertible {
+public enum DecodedScalar: Sendable, Hashable, CustomStringConvertible {
     case integer(Int64)
     case unsigned(UInt64)
     case floating(Double)
@@ -236,6 +315,21 @@ public enum DecodedScalar: Sendable, CustomStringConvertible {
         case let text as String:
             self = .string(text)
         default:
+            return nil
+        }
+    }
+
+    public var number: Double? {
+        switch self {
+        case .integer(let number):
+            return Double(number)
+        case .unsigned(let number):
+            return Double(number)
+        case .floating(let number):
+            return number
+        case .boolean(let flag):
+            return flag ? 1 : 0
+        case .string:
             return nil
         }
     }
