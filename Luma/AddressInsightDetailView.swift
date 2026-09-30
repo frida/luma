@@ -36,23 +36,22 @@ struct AddressInsightDetailView: View {
             } else if let kind = insight?.kind {
                 switch kind {
                 case .memory:
-                    ScrollView([.vertical]) {
-                        PatternDecodeView(
-                            data: memoryData,
-                            baseAddress: insight?.lastResolvedAddress,
-                            sessionID: session.id,
-                            engine: engine,
-                            placements: Binding(
-                                get: { insight?.placements ?? [] },
-                                set: { placements in
-                                    if let insight {
-                                        engine.setPlacements(placements, forInsight: insight)
-                                    }
+                    PatternDecodeView(
+                        data: memoryData,
+                        baseAddress: insight?.lastResolvedAddress,
+                        sessionID: session.id,
+                        engine: engine,
+                        placements: Binding(
+                            get: { insight?.placements ?? [] },
+                            set: { placements in
+                                if let insight {
+                                    engine.setPlacements(placements, forInsight: insight)
                                 }
-                            )
-                        )
-                        .padding(.vertical, 2)
-                    }
+                            }
+                        ),
+                        sizing: .fill
+                    )
+                    .padding(.vertical, 2)
                 case .disassembly:
                     DisassemblyView(
                         lines: disasmLines,

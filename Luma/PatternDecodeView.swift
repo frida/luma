@@ -7,14 +7,20 @@ struct PatternDecodeView: View {
     let sessionID: UUID
     let engine: Engine
     @Binding var placements: [PatternPlacement]
+    var sizing: PatternDecodeSizing = .capped
 
     @State private var summaries: [String: PatternSummary] = [:]
     @State private var describeProblem: String?
     @State private var results: [PatternPlacement.ID: PlacementResult] = [:]
-    @State private var locations: [UUID: NodeLocation] = [:]
+    @State private var locations: [UUID: PatternLocation] = [:]
+    @State private var annotations: [HexAnnotation] = []
     @State private var caret = 0
     @State private var selectedNodeID: UUID?
     @State private var expanded: Set<UUID> = []
+    @State private var visualizations: [UUID: NodeVisualization] = [:]
+    @State private var openVisualizer: UUID?
+    @State private var callOutcome: CallOutcome?
+    @FocusState private var isTreeFocused: Bool
 
     private var target: LumaCore.ProcessNode.ProcessInfo? {
         engine.node(forSessionID: sessionID)?.processInfo
@@ -36,15 +42,15 @@ struct PatternDecodeView: View {
         VStack(alignment: .leading, spacing: 6) {
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .top, spacing: 16) {
-                    hexView
+                    hexPane
                     if !placements.isEmpty {
-                        tree.frame(minWidth: 360, maxWidth: .infinity, alignment: .topLeading)
+                        treePane.frame(minWidth: 360, maxWidth: .infinity, alignment: .topLeading)
                     }
                 }
                 VStack(alignment: .leading, spacing: 6) {
-                    hexView
+                    hexPane
                     if !placements.isEmpty {
-                        tree
+                        treePane
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -68,6 +74,23 @@ struct PatternDecodeView: View {
         String(format: "0x%llx", (baseAddress ?? 0) &+ UInt64(caret))
     }
 
+    private var hexPane: some View {
+        ScrollViewReader { proxy in
+            DecodePane(sizing: sizing) {
+                hexView
+                    .padding(.top, TreeMetrics.inset)
+            }
+            .onChange(of: caret) { _, caret in
+                proxy.scrollTo(caret / HexLayout.bytesPerRow)
+            }
+            .onChange(of: emphasis?.range.lowerBound) { _, start in
+                if let start {
+                    proxy.scrollTo(start / HexLayout.bytesPerRow)
+                }
+            }
+        }
+    }
+
     private var hexView: some View {
         HexView(
             data: data,
@@ -88,32 +111,199 @@ struct PatternDecodeView: View {
         .fixedSize(horizontal: true, vertical: false)
     }
 
-    private var annotations: [HexAnnotation] {
-        locations.values
-            .filter(\.isLeaf)
-            .map { HexAnnotation(id: $0.node.id, range: $0.range, color: $0.color) }
+    private var emphasis: HexAnnotation? {
+        selectedNodeID.flatMap { locations[$0] }.map(\.annotation)
     }
 
-    private var emphasis: HexAnnotation? {
-        selectedNodeID.flatMap { locations[$0] }.map { HexAnnotation(id: $0.node.id, range: $0.range, color: $0.color) }
+    private var treePane: some View {
+        ScrollViewReader { proxy in
+            DecodePane(sizing: sizing) {
+                tree
+            }
+            .onChange(of: selectedNodeID) { _, id in
+                if let id {
+                    proxy.scrollTo(id)
+                }
+            }
+        }
+        .focusable()
+        .focusEffectDisabled()
+        .focused($isTreeFocused)
+        .overlay {
+            if isTreeFocused {
+                RoundedRectangle(cornerRadius: 5)
+                    .strokeBorder(Color.accentColor.opacity(0.5), lineWidth: 3)
+                    .allowsHitTesting(false)
+            }
+        }
+        .onKeyPress(keys: [.upArrow, .downArrow, .leftArrow, .rightArrow, .space, .return]) { press in
+            navigate(press.key)
+        }
     }
 
     private var tree: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(placements) { placement in
-                PlacementRows(
-                    placement: placement,
-                    title: title(of: placement),
-                    result: results[placement.id],
-                    address: (baseAddress ?? 0) &+ UInt64(placement.offset),
-                    locations: locations,
-                    expanded: $expanded,
-                    selection: $selectedNodeID,
-                    remove: { placements.removeAll { $0.id == placement.id } }
-                )
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(visibleRows) { row in
+                treeRow(row)
             }
         }
         .font(.system(.caption, design: .monospaced))
+        .padding(TreeMetrics.inset)
+    }
+
+    @ViewBuilder
+    private func treeRow(_ row: TreeRow) -> some View {
+        switch row.kind {
+        case .placement(let placement):
+            PlacementRow(
+                id: placement.id,
+                title: title(of: placement),
+                address: (baseAddress ?? 0) &+ UInt64(placement.offset),
+                failure: failure(of: placement),
+                isExpanded: expanded.contains(row.id),
+                highlight: highlight(of: row.id),
+                actions: actions(for: row.id),
+                remove: { placements.removeAll { $0.id == placement.id } }
+            )
+            .equatable()
+        case .node(let node):
+            NodeRow(
+                node: node,
+                depth: row.depth,
+                isExpandable: row.isExpandable,
+                isExpanded: expanded.contains(row.id),
+                highlight: highlight(of: row.id),
+                color: locations[node.id]?.color,
+                visualization: visualizations[node.id],
+                isVisualizerOpen: openVisualizer == node.id,
+                callOutcome: callOutcome?.rowID == node.id ? callOutcome : nil,
+                actions: actions(for: row.id)
+            )
+            .equatable()
+        }
+    }
+
+    private func failure(of placement: PatternPlacement) -> String? {
+        guard case .failed(let message) = results[placement.id] else { return nil }
+        return message
+    }
+
+    private func highlight(of id: UUID) -> RowHighlight {
+        guard selectedNodeID == id else { return .none }
+        return isTreeFocused ? .focused : .unfocused
+    }
+
+    private func actions(for id: UUID) -> RowActions {
+        RowActions(
+            select: {
+                selectedNodeID = id
+                isTreeFocused = true
+            },
+            toggle: {
+                if expanded.contains(id) {
+                    expanded.remove(id)
+                } else {
+                    expanded.insert(id)
+                }
+            },
+            press: { press(id) },
+            showVisualizer: { shown in
+                if shown {
+                    selectedNodeID = id
+                    openVisualizer = id
+                } else if openVisualizer == id {
+                    openVisualizer = nil
+                }
+            },
+            dismissCallOutcome: {
+                if callOutcome?.rowID == id {
+                    callOutcome = nil
+                }
+            }
+        )
+    }
+
+    private func navigate(_ key: KeyEquivalent) -> KeyPress.Result {
+        let rows = visibleRows
+        guard let current = rows.firstIndex(where: { $0.id == selectedNodeID }) else {
+            selectedNodeID = rows.first?.id
+            return rows.isEmpty ? .ignored : .handled
+        }
+        let row = rows[current]
+        let isExpanded = expanded.contains(row.id)
+        switch key {
+        case .upArrow:
+            selectedNodeID = rows[max(current - 1, 0)].id
+        case .downArrow:
+            selectedNodeID = rows[min(current + 1, rows.count - 1)].id
+        case .leftArrow:
+            if row.isExpandable && isExpanded {
+                expanded.remove(row.id)
+            } else if let parent = row.parent {
+                selectedNodeID = parent
+            }
+        case .rightArrow:
+            if row.isExpandable && !isExpanded {
+                expanded.insert(row.id)
+            } else if row.isExpandable {
+                selectedNodeID = rows[current + 1].id
+            }
+        default:
+            activate(row.id)
+        }
+        return .handled
+    }
+
+    private var visibleRows: [TreeRow] {
+        var rows: [TreeRow] = []
+        for placement in placements {
+            guard case .decoded(let root) = results[placement.id] else {
+                rows.append(TreeRow(id: placement.id, parent: nil, depth: 0, isExpandable: false, kind: .placement(placement)))
+                continue
+            }
+            let children = root.visibleChildren
+            rows.append(TreeRow(id: placement.id, parent: nil, depth: 0, isExpandable: !children.isEmpty, kind: .placement(placement)))
+            if expanded.contains(placement.id) {
+                appendRows(for: children, parent: placement.id, depth: 1, to: &rows)
+            }
+        }
+        return rows
+    }
+
+    private func appendRows(for nodes: [DecodedPattern], parent: UUID, depth: Int, to rows: inout [TreeRow]) {
+        for node in nodes {
+            let children = node.visibleChildren
+            rows.append(TreeRow(id: node.id, parent: parent, depth: depth, isExpandable: !children.isEmpty, kind: .node(node)))
+            if expanded.contains(node.id) {
+                appendRows(for: children, parent: node.id, depth: depth + 1, to: &rows)
+            }
+        }
+    }
+
+    private func activate(_ id: UUID) {
+        guard let visualization = visualizations[id] else { return }
+        if case .ready(let ready) = visualization.outcome, visualization.presentation == .inline, ready.isInline {
+            press(id)
+        } else {
+            openVisualizer = openVisualizer == id ? nil : id
+        }
+    }
+
+    private func press(_ id: UUID) {
+        guard let visualization = visualizations[id], case .ready(.button(let function, _)) = visualization.outcome,
+            let baseAddress, let target, let source = engine.patterns.source(withID: visualization.placement.sourceID)
+        else { return }
+        let placement = visualization.placement
+        Task {
+            do {
+                let output = try await engine.patternDecoder.callFunction(
+                    function, on: visualization.nodeID, of: source, typeName: placement.typeName, data: bytes(at: placement),
+                    address: baseAddress &+ UInt64(placement.offset), arch: target.arch, platform: target.platform)
+                callOutcome = CallOutcome(rowID: id, text: output.isEmpty ? "No output." : output, isFailure: false)
+            } catch {
+                callOutcome = CallOutcome(rowID: id, text: error.localizedDescription, isFailure: true)
+            }
+        }
     }
 
     private func title(of placement: PatternPlacement) -> String {
@@ -156,10 +346,9 @@ struct PatternDecodeView: View {
         var results: [PatternPlacement.ID: PlacementResult] = [:]
         for placement in placements {
             guard let source = engine.patterns.source(withID: placement.sourceID) else { continue }
-            let slice = data.suffix(from: data.startIndex + min(placement.offset, data.count))
             do {
                 let value = try await engine.patternDecoder.decode(
-                    source, typeName: placement.typeName, data: slice, address: baseAddress &+ UInt64(placement.offset),
+                    source, typeName: placement.typeName, data: bytes(at: placement), address: baseAddress &+ UInt64(placement.offset),
                     arch: target.arch, platform: target.platform)
                 results[placement.id] = .decoded(value)
             } catch {
@@ -169,30 +358,49 @@ struct PatternDecodeView: View {
         guard !Task.isCancelled else { return }
         self.results = results
         locations = locate(results, base: baseAddress)
+        annotations = locations.values.filter(\.isLeaf).map(\.annotation)
+        visualizations = visualize(results)
     }
 
-    private func locate(_ results: [PatternPlacement.ID: PlacementResult], base: UInt64) -> [UUID: NodeLocation] {
-        var located: [UUID: NodeLocation] = [:]
+    private func bytes(at placement: PatternPlacement) -> Data {
+        data.suffix(from: data.startIndex + min(placement.offset, data.count))
+    }
+
+    private func visualize(_ results: [PatternPlacement.ID: PlacementResult]) -> [UUID: NodeVisualization] {
+        var visualized: [UUID: NodeVisualization] = [:]
         for placement in placements {
             guard case .decoded(let root) = results[placement.id] else { continue }
-            for (index, field) in root.children.enumerated() where !field.hidden {
-                locate(field, ancestors: [placement.id], color: PatternPalette.color(for: field, index: index), base: base, into: &located)
+            visualize(root, root: root, placement: placement, into: &visualized)
+        }
+        return visualized
+    }
+
+    private func visualize(
+        _ node: DecodedPattern, root: DecodedPattern, placement: PatternPlacement, into visualized: inout [UUID: NodeVisualization]
+    ) {
+        if let visualizer = node.visualizer {
+            let outcome: NodeVisualization.Outcome
+            do {
+                outcome = .ready(try PatternVisualization(visualizer, of: node, in: root))
+            } catch {
+                outcome = .failed(error.localizedDescription)
+            }
+            visualized[node.id] = NodeVisualization(
+                placement: placement, nodeID: node.nodeID, presentation: visualizer.presentation, outcome: outcome)
+        }
+        for child in node.children {
+            visualize(child, root: root, placement: placement, into: &visualized)
+        }
+    }
+
+    private func locate(_ results: [PatternPlacement.ID: PlacementResult], base: UInt64) -> [UUID: PatternLocation] {
+        var located: [UUID: PatternLocation] = [:]
+        for placement in placements {
+            if case .decoded(let root) = results[placement.id] {
+                PatternLocation.locateFields(of: root, under: placement.id, base: base, into: &located)
             }
         }
         return located
-    }
-
-    private func locate(_ node: DecodedPattern, ancestors: [UUID], color: Color, base: UInt64, into located: inout [UUID: NodeLocation]) {
-        let children = node.sealed ? [] : node.children.filter { !$0.hidden }
-        let ownColor = node.color.flatMap(PatternPalette.color(hex:)) ?? color
-        if let size = node.size, size > 0, node.address >= base {
-            let start = Int(node.address - base)
-            let isLeaf = !children.contains { ($0.size ?? 0) > 0 }
-            located[node.id] = NodeLocation(node: node, range: start..<start + size, ancestors: ancestors, color: ownColor, isLeaf: isLeaf)
-        }
-        for child in children {
-            locate(child, ancestors: ancestors + [node.id], color: ownColor, base: base, into: &located)
-        }
     }
 }
 
@@ -222,17 +430,90 @@ private struct PlacementItems: View {
     }
 }
 
+private struct TreeRow: Identifiable {
+    let id: UUID
+    let parent: UUID?
+    let depth: Int
+    let isExpandable: Bool
+    let kind: Kind
+
+    enum Kind {
+        case placement(PatternPlacement)
+        case node(DecodedPattern)
+    }
+}
+
+private struct NodeVisualization {
+    let placement: PatternPlacement
+    let nodeID: UInt
+    let presentation: DecodedVisualizer.Presentation
+    let outcome: Outcome
+
+    enum Outcome {
+        case ready(PatternVisualization)
+        case failed(String)
+    }
+}
+
+private struct CallOutcome: Equatable {
+    let rowID: UUID
+    let text: String
+    let isFailure: Bool
+}
+
+enum PatternDecodeSizing {
+    case capped
+    case fill
+}
+
+private struct DecodePane<Content: View>: View {
+    let sizing: PatternDecodeSizing
+    @ViewBuilder let content: Content
+
+    @State private var contentHeight: CGFloat = 0
+
+    var body: some View {
+        switch sizing {
+        case .capped:
+            scrollView
+                .frame(height: min(contentHeight, TreeMetrics.cappedPaneHeight))
+        case .fill:
+            scrollView
+                .frame(maxHeight: .infinity, alignment: .top)
+        }
+    }
+
+    private var scrollView: some View {
+        ScrollView(.vertical) {
+            content
+                .onGeometryChange(for: CGFloat.self, of: \.size.height) { contentHeight = $0 }
+        }
+    }
+}
+
+private enum TreeMetrics {
+    static let inset: CGFloat = 4
+    static let cappedPaneHeight: CGFloat = 400
+    static let rowHeight = HexMetrics.regular.rowHeight
+}
+
+private enum RowHighlight {
+    case none
+    case unfocused
+    case focused
+}
+
+private struct RowActions {
+    let select: () -> Void
+    let toggle: () -> Void
+    let press: () -> Void
+    let showVisualizer: (Bool) -> Void
+    let dismissCallOutcome: () -> Void
+}
+
 private enum PlacementResult {
     case decoded(DecodedPattern)
     case failed(String)
-}
-
-private struct NodeLocation {
-    let node: DecodedPattern
-    let range: Range<Int>
-    let ancestors: [UUID]
-    let color: Color
-    let isLeaf: Bool
 }
 
 private struct DescribeKey: Equatable {
@@ -246,25 +527,35 @@ private struct DecodeKey: Equatable {
     let data: Data
 }
 
-private struct PlacementRows: View {
-    let placement: PatternPlacement
+private struct PlacementRow: View, Equatable {
+    let id: UUID
     let title: String
-    let result: PlacementResult?
     let address: UInt64
-    let locations: [UUID: NodeLocation]
-    @Binding var expanded: Set<UUID>
-    @Binding var selection: UUID?
+    let failure: String?
+    let isExpanded: Bool
+    let highlight: RowHighlight
+    let actions: RowActions
     let remove: () -> Void
 
-    private var isExpanded: Bool { expanded.contains(placement.id) }
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.id == rhs.id && lhs.title == rhs.title && lhs.address == rhs.address && lhs.failure == rhs.failure
+            && lhs.isExpanded == rhs.isExpanded && lhs.highlight == rhs.highlight
+    }
 
     var body: some View {
         HStack(spacing: 6) {
-            DisclosureChevron(isExpanded: isExpanded, isVisible: true) { toggle() }
+            DisclosureChevron(isExpanded: isExpanded, isVisible: failure == nil, toggle: actions.toggle)
             Text(title)
                 .fontWeight(.semibold)
             Text(String(format: "@ 0x%llx", address))
                 .foregroundStyle(.secondary)
+            if let failure {
+                Text(failure)
+                    .foregroundStyle(.red)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(failure)
+            }
             Spacer(minLength: 12)
             Button(action: remove) {
                 Image(systemName: "xmark.circle")
@@ -272,48 +563,32 @@ private struct PlacementRows: View {
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
         }
-        switch result {
-        case .decoded(let root):
-            if isExpanded {
-                ForEach(root.children.filter { !$0.hidden }) { child in
-                    PatternNodeRows(node: child, depth: 1, locations: locations, expanded: $expanded, selection: $selection)
-                }
-            }
-        case .failed(let message):
-            Text(message)
-                .foregroundStyle(.red)
-                .padding(.leading, 14)
-        case nil:
-            EmptyView()
-        }
-    }
-
-    private func toggle() {
-        if isExpanded {
-            expanded.remove(placement.id)
-        } else {
-            expanded.insert(placement.id)
-        }
+        .modifier(RowStyle(highlight: highlight, select: actions.select))
     }
 }
 
-private struct PatternNodeRows: View {
+private struct NodeRow: View, Equatable {
     let node: DecodedPattern
     let depth: Int
-    let locations: [UUID: NodeLocation]
-    @Binding var expanded: Set<UUID>
-    @Binding var selection: UUID?
+    let isExpandable: Bool
+    let isExpanded: Bool
+    let highlight: RowHighlight
+    let color: Color?
+    let visualization: NodeVisualization?
+    let isVisualizerOpen: Bool
+    let callOutcome: CallOutcome?
+    let actions: RowActions
 
-    private var children: [DecodedPattern] {
-        node.sealed ? [] : node.children.filter { !$0.hidden }
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.node.id == rhs.node.id && lhs.depth == rhs.depth && lhs.isExpandable == rhs.isExpandable
+            && lhs.isExpanded == rhs.isExpanded && lhs.highlight == rhs.highlight && lhs.color == rhs.color
+            && lhs.isVisualizerOpen == rhs.isVisualizerOpen && lhs.callOutcome == rhs.callOutcome
     }
-
-    private var isExpanded: Bool { expanded.contains(node.id) }
 
     var body: some View {
         HStack(spacing: 6) {
-            DisclosureChevron(isExpanded: isExpanded, isVisible: !children.isEmpty) { toggle() }
-            if let color = locations[node.id]?.color {
+            DisclosureChevron(isExpanded: isExpanded, isVisible: isExpandable, toggle: actions.toggle)
+            if let color {
                 RoundedRectangle(cornerRadius: 2)
                     .fill(color)
                     .frame(width: 8, height: 8)
@@ -323,28 +598,95 @@ private struct PatternNodeRows: View {
             Text(node.typeName)
                 .foregroundStyle(.secondary)
             Spacer(minLength: 12)
-            Text(node.summary)
-                .foregroundStyle(node.truncated ? .red : .primary)
-                .lineLimit(1)
+            value
         }
         .padding(.leading, CGFloat(depth) * 14)
-        .padding(.vertical, 1)
-        .background(selection == node.id ? Color.accentColor.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 3))
-        .contentShape(Rectangle())
-        .onTapGesture { selection = node.id }
+        .modifier(RowStyle(highlight: highlight, select: actions.select))
         .help(node.comment ?? String(format: "0x%llx", node.address))
-        if isExpanded {
-            ForEach(children) { child in
-                PatternNodeRows(node: child, depth: depth + 1, locations: locations, expanded: $expanded, selection: $selection)
+    }
+
+    @ViewBuilder
+    private var value: some View {
+        if let visualization {
+            if case .ready(let ready) = visualization.outcome, visualization.presentation == .inline, ready.isInline {
+                PatternInlineVisualizationView(visualization: ready, press: actions.press)
+                    .popover(isPresented: callOutcomeShown, arrowEdge: .bottom) {
+                        if let callOutcome {
+                            Text(callOutcome.text)
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(callOutcome.isFailure ? .red : .primary)
+                                .textSelection(.enabled)
+                                .padding(10)
+                        }
+                    }
+            } else {
+                summary
+                Button {
+                    actions.showVisualizer(!isVisualizerOpen)
+                } label: {
+                    Image(systemName: symbolName(of: visualization))
+                }
+                .buttonStyle(.borderless)
+                .help("Visualize")
+                .popover(isPresented: visualizerShown, arrowEdge: .bottom) {
+                    switch visualization.outcome {
+                    case .ready(let ready):
+                        PatternVisualizationView(visualization: ready)
+                    case .failed(let message):
+                        Text(message)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.red)
+                            .padding(10)
+                    }
+                }
             }
+        } else {
+            summary
         }
     }
 
-    private func toggle() {
-        if isExpanded {
-            expanded.remove(node.id)
-        } else {
-            expanded.insert(node.id)
+    private var summary: some View {
+        Text(node.summary)
+            .foregroundStyle(node.truncated ? AnyShapeStyle(.red) : AnyShapeStyle(.foreground))
+            .lineLimit(1)
+    }
+
+    private func symbolName(of visualization: NodeVisualization) -> String {
+        guard case .ready(let ready) = visualization.outcome else { return "exclamationmark.triangle" }
+        return ready.symbolName
+    }
+
+    private var visualizerShown: Binding<Bool> {
+        Binding(get: { isVisualizerOpen }, set: actions.showVisualizer)
+    }
+
+    private var callOutcomeShown: Binding<Bool> {
+        Binding(get: { callOutcome != nil }, set: { if !$0 { actions.dismissCallOutcome() } })
+    }
+}
+
+private struct RowStyle: ViewModifier {
+    let highlight: RowHighlight
+    let select: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .frame(height: TreeMetrics.rowHeight)
+            .padding(.trailing, 2)
+            .foregroundStyle(highlight == .focused ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+            .background(background, in: RoundedRectangle(cornerRadius: 3))
+            .contentShape(Rectangle())
+            .onTapGesture(perform: select)
+    }
+
+    private var background: Color {
+        switch highlight {
+        case .none:
+            .clear
+        case .unfocused:
+            Color.secondary.opacity(0.25)
+        case .focused:
+            .accentColor
         }
     }
 }
@@ -368,16 +710,22 @@ private struct DisclosureChevron: View {
 enum PatternPalette {
     private static let colors: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .yellow, .red]
 
-    static func color(for node: DecodedPattern, index: Int) -> Color {
-        node.color.flatMap(color(hex:)) ?? colors[index % colors.count]
+    static func color(for tint: PatternTint) -> Color {
+        switch tint {
+        case .palette(let index):
+            return colors[index % colors.count]
+        case .rgb(let red, let green, let blue):
+            return Color(red: Double(red) / 255, green: Double(green) / 255, blue: Double(blue) / 255)
+        }
+    }
+}
+
+extension PatternLocation {
+    var color: Color {
+        PatternPalette.color(for: tint)
     }
 
-    static func color(hex: String) -> Color? {
-        let digits = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
-        guard digits.count == 6, let value = UInt32(digits, radix: 16) else { return nil }
-        return Color(
-            red: Double((value >> 16) & 0xff) / 255,
-            green: Double((value >> 8) & 0xff) / 255,
-            blue: Double(value & 0xff) / 255)
+    var annotation: HexAnnotation {
+        HexAnnotation(id: node.id, range: range, color: color)
     }
 }

@@ -312,7 +312,7 @@ private struct HexRow: View, Equatable {
     }
 }
 
-private struct HexLayout: Equatable {
+struct HexLayout: Equatable {
     let metrics: HexMetrics
     let addressDigits: Int?
 
@@ -395,7 +395,7 @@ private struct HexLayout: Equatable {
     }
 }
 
-private struct HexMetrics: Equatable {
+struct HexMetrics: Equatable {
     let font: Font
     let advance: CGFloat
     let rowHeight: CGFloat
