@@ -73,6 +73,13 @@ public struct VirtualMachineKeyStroke: Sendable, Equatable {
         self.code = code
         self.shifted = shifted
     }
+
+    public var events: [VirtualMachineInputEvent] {
+        let press: [VirtualMachineInputEvent] = [.keyDown(code: code), .keyUp(code: code)]
+        guard shifted else { return press }
+        let shift = VirtualMachineKeyboard.code(for: .leftShift)
+        return [.keyDown(code: shift)] + press + [.keyUp(code: shift)]
+    }
 }
 
 public enum VirtualMachineKey: Sendable, Equatable {

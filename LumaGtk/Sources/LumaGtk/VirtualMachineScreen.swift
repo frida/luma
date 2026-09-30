@@ -175,11 +175,7 @@ final class VirtualMachineScreen {
                     return true
                 }
                 guard let stroke = Self.stroke(forKeyval: keyval) else { return false }
-                let shift = VirtualMachineKeyboard.code(for: .leftShift)
-                if stroke.shifted { self.source.send(.keyDown(code: shift)) }
-                self.source.send(.keyDown(code: stroke.code))
-                self.source.send(.keyUp(code: stroke.code))
-                if stroke.shifted { self.source.send(.keyUp(code: shift)) }
+                stroke.events.forEach(self.source.send)
                 return true
             }
         }

@@ -121,11 +121,7 @@ struct VirtualMachineScreen: View {
             let stroke = VirtualMachineKeyboard.stroke(for: character)
         else { return }
 
-        let shift = VirtualMachineKeyboard.code(for: .leftShift)
-        if stroke.shifted { source.send(.keyDown(code: shift)) }
-        source.send(.keyDown(code: stroke.code))
-        source.send(.keyUp(code: stroke.code))
-        if stroke.shifted { source.send(.keyUp(code: shift)) }
+        stroke.events.forEach(source.send)
     }
 
     private func placement(of frame: VirtualMachineFrame?, in size: CGSize) -> CGRect {
