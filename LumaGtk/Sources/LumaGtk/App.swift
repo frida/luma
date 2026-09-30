@@ -84,6 +84,7 @@ final class LumaApplication {
 
     private func activate() {
         PangoGlyphAtlas.install()
+        GdkFrameEncoder.install()
         if let directory = RenderTests.asked {
             exit(RenderTests.run(writingTo: directory))
         }
