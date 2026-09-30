@@ -49,7 +49,8 @@ struct AddressInsightDetailView: View {
                                 }
                             }
                         ),
-                        sizing: .fill
+                        sizing: .fill,
+                        onTruncated: readMoreMemory
                     )
                     .padding(.vertical, 2)
                 case .disassembly:
@@ -165,6 +166,19 @@ struct AddressInsightDetailView: View {
                 disasmScope = page.scope
                 memoryData = Data()
             }
+        }
+    }
+
+    private func readMoreMemory() {
+        guard let insight, insight.kind == .memory, let resolved = insight.lastResolvedAddress,
+            memoryData.count < Engine.largestPatternRead
+        else { return }
+        let byteCount = min(max(memoryData.count, insight.byteCount) * 2, Engine.largestPatternRead)
+        let reader = engine.memoryReader(forSessionID: session.id)
+        Task { @MainActor in
+            guard let bytes = try? await reader.read(at: resolved, count: byteCount) else { return }
+            memoryData = Data(bytes)
+            engine.setByteCount(byteCount, forInsight: insight)
         }
     }
 

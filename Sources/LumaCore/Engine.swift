@@ -2804,6 +2804,14 @@ public final class Engine {
         emitInsightUpdated(updated)
     }
 
+    public func setByteCount(_ byteCount: Int, forInsight insight: AddressInsight) {
+        var updated = insight
+        updated.byteCount = byteCount
+        persistInsight(updated)
+        collaboration.enqueueUpdateInsight(sessionID: updated.sessionID, insight: updated)
+        emitInsightUpdated(updated)
+    }
+
     public func setPlacements(_ placements: [PatternPlacement], forREPLCell cellID: UUID) {
         guard var cell = try? store.fetchREPLCell(id: cellID) else { return }
         cell.placements = placements

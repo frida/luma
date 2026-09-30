@@ -8,6 +8,7 @@ struct PatternDecodeView: View {
     let engine: Engine
     @Binding var placements: [PatternPlacement]
     var sizing: PatternDecodeSizing = .capped
+    var onTruncated: (() -> Void)? = nil
 
     @State private var summaries: [String: PatternSummary] = [:]
     @State private var describeProblem: String?
@@ -331,14 +332,16 @@ struct PatternDecodeView: View {
 
     private func describeSources() async {
         guard let target else { return }
-        for source in engine.patterns.sources where summaries[source.id] == nil {
+        var described: [String: PatternSummary] = [:]
+        for source in engine.patterns.sources {
             do {
-                let summary = try await engine.patternDecoder.summary(of: source, arch: target.arch, platform: target.platform)
-                summaries[source.id] = summary
+                described[source.id] = try await engine.patternDecoder.summary(of: source, arch: target.arch, platform: target.platform)
             } catch {
                 describeProblem = "\(source.name): \(error.localizedDescription)"
             }
         }
+        guard !Task.isCancelled else { return }
+        summaries = described
     }
 
     private func decodePlacements() async {
@@ -356,14 +359,29 @@ struct PatternDecodeView: View {
             }
         }
         guard !Task.isCancelled else { return }
+        let remap = PatternNodeRemap(from: Self.roots(of: self.results), to: Self.roots(of: results), placements: Set(results.keys))
         self.results = results
+        expanded = Set(expanded.compactMap(remap.callAsFunction))
+        selectedNodeID = selectedNodeID.flatMap(remap.callAsFunction)
+        openVisualizer = openVisualizer.flatMap(remap.callAsFunction)
+        callOutcome = nil
         locations = locate(results, base: baseAddress)
         annotations = locations.values.filter(\.isLeaf).map(\.annotation)
         visualizations = visualize(results)
+        if results.values.contains(where: \.isTruncated) {
+            onTruncated?()
+        }
     }
 
     private func bytes(at placement: PatternPlacement) -> Data {
         data.suffix(from: data.startIndex + min(placement.offset, data.count))
+    }
+
+    private static func roots(of results: [PatternPlacement.ID: PlacementResult]) -> [UUID: DecodedPattern] {
+        results.compactMapValues { result in
+            guard case .decoded(let root) = result else { return nil }
+            return root
+        }
     }
 
     private func visualize(_ results: [PatternPlacement.ID: PlacementResult]) -> [UUID: NodeVisualization] {
@@ -514,6 +532,11 @@ private struct RowActions {
 private enum PlacementResult {
     case decoded(DecodedPattern)
     case failed(String)
+
+    var isTruncated: Bool {
+        guard case .decoded(let root) = self else { return false }
+        return root.truncated
+    }
 }
 
 private struct DescribeKey: Equatable {
