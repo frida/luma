@@ -142,8 +142,8 @@ struct HexView: View {
         let caret = selection?.caret ?? 0
         let lastRow = rowCount - 1
         let row = min(max(caret / HexLayout.bytesPerRow + rows, 0), lastRow)
-        let column = min(max(caret % HexLayout.bytesPerRow + columns, 0), HexLayout.bytesPerRow - 1)
-        let newCaret = min(row * HexLayout.bytesPerRow + column, bytes.count - 1)
+        let column = caret % HexLayout.bytesPerRow
+        let newCaret = min(max(row * HexLayout.bytesPerRow + column + columns, 0), bytes.count - 1)
         selection = Selection(anchor: extending ? selection?.anchor ?? 0 : newCaret, caret: newCaret)
     }
 
