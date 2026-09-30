@@ -51,6 +51,7 @@ struct PatternEditorView: View {
                 profile: .pattern(activePath: "Patterns/" + source.id),
                 focused: $isEditorFocused,
                 reveal: reveal,
+                chrome: .pane,
                 engine: engine
             )
             .accessibilityIdentifier("pattern.editor")
@@ -62,9 +63,6 @@ struct PatternEditorView: View {
                 onSave: save
             )
         }
-        .padding(.top, 8)
-        .padding(.leading, 8)
-        .padding(.bottom, 8)
         .onAppear {
             isEditorFocused = focusedType == nil
         }

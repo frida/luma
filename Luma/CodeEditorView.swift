@@ -8,12 +8,31 @@ struct CodeEditorView: View {
     var introspector: CodeIntrospector? = nil
     var focused: Binding<Bool>? = nil
     var reveal: EditorReveal? = nil
+    var chrome: CodeEditorChrome = .bordered
     let engine: Engine
 
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        switch chrome {
+        case .bordered:
+            bordered
+        case .pane:
+            VStack(spacing: 0) {
+                Rectangle()
+                    .fill(Color.primary.opacity(0.1))
+                    .frame(height: 1.5)
+                editor
+            }
+        }
+    }
+
+    private var editor: some View {
         CodeTextEditor(text: $text, profile: profile, introspector: introspector, focused: focused, reveal: reveal, engine: engine)
+    }
+
+    private var bordered: some View {
+        editor
             .overlay(alignment: .top) {
                 Rectangle()
                     .fill(editorBorderColor)
@@ -39,6 +58,11 @@ struct CodeEditorView: View {
             ? Color(red: 0x2A / 255.0, green: 0x2B / 255.0, blue: 0x2C / 255.0)
             : Color(red: 0xF0 / 255.0, green: 0xF1 / 255.0, blue: 0xF2 / 255.0)
     }
+}
+
+enum CodeEditorChrome {
+    case bordered
+    case pane
 }
 
 @MainActor
