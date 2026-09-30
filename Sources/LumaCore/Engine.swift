@@ -90,6 +90,7 @@ public final class Engine {
     public private(set) var notebookEntries: [NotebookEntry] = []
     public private(set) var instrumentsBySession: [UUID: [InstrumentInstance]] = [:]
     public private(set) var insightsBySession: [UUID: [AddressInsight]] = [:]
+    public private(set) var insightRefreshGenerations: [UUID: Int] = [:]
     public private(set) var tracesBySession: [UUID: [ITrace]] = [:]
     public private(set) var moduleAnalysisStatuses: [UUID: [String: ModuleAnalysisStatus]] = [:]
     public internal(set) var projectUIState: ProjectUIState = ProjectUIState()
@@ -1656,7 +1657,7 @@ public final class Engine {
             }
         }
         insightsObservation = store.observeAllInsights { [weak self] grouped in
-            Task { @MainActor in self?.insightsBySession = grouped }
+            Task { @MainActor in self?.adoptInsights(grouped) }
         }
         tracesObservation = store.observeAllITraces { [weak self] grouped in
             Task { @MainActor in self?.tracesBySession = grouped }
@@ -2991,6 +2992,39 @@ public final class Engine {
             }
             cursor = cursor &+ MemoryPage.size
         }
+    }
+
+    public func rereadBytes(of insight: AddressInsight) async {
+        if let address = insight.lastResolvedAddress {
+            await invalidateInsightRange(sessionID: insight.sessionID, address: address, byteCount: insight.byteCount)
+        }
+        requestRefresh(of: insight)
+    }
+
+    public func reanalyzeModule(of insight: AddressInsight) {
+        guard let module = enclosingModule(of: insight) else { return }
+        invalidateModule(sessionID: insight.sessionID, modulePath: module.path)
+        requestRefresh(of: insight)
+    }
+
+    public func enclosingModule(of insight: AddressInsight) -> ProcessModule? {
+        if let address = insight.lastResolvedAddress, let module = enclosingModule(at: address, sessionID: insight.sessionID) {
+            return module
+        }
+        if case .moduleOffset(let name, _) = insight.anchor {
+            return modulesSnapshot(forSessionID: insight.sessionID).first { $0.name == name }
+        }
+        return nil
+    }
+
+    private func requestRefresh(of insight: AddressInsight) {
+        insightRefreshGenerations[insight.id, default: 0] += 1
+    }
+
+    private func adoptInsights(_ grouped: [UUID: [AddressInsight]]) {
+        insightsBySession = grouped
+        let live = Set(grouped.values.joined().map(\.id))
+        insightRefreshGenerations = insightRefreshGenerations.filter { live.contains($0.key) }
     }
 
     public func invalidateModule(sessionID: UUID, modulePath: String) {

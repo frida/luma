@@ -65,7 +65,6 @@ struct AddressInsightDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(8)
-        .overlay(alignment: .topTrailing) { refreshBar }
         .overlay(alignment: .center) {
             if showRefreshSpinner {
                 ProgressView()
@@ -83,61 +82,7 @@ struct AddressInsightDetailView: View {
             if attached { refresh() }
         }
         .onChange(of: insight?.lastResolvedAddress) { _, _ in refresh() }
-    }
-
-    @ViewBuilder private var refreshBar: some View {
-        HStack(spacing: 6) {
-            Button {
-                rereadBytes()
-            } label: {
-                Label("Reread Bytes", systemImage: "arrow.clockwise")
-                    .labelStyle(.iconOnly)
-            }
-            .help("Drop cached bytes for this view and refetch.")
-            .buttonStyle(.borderless)
-            .disabled(node == nil)
-
-            Button {
-                reanalyzeModule()
-            } label: {
-                Label("Reanalyze Module", systemImage: "arrow.triangle.2.circlepath")
-                    .labelStyle(.iconOnly)
-            }
-            .help("Drop disassembly analysis for this address's module.")
-            .buttonStyle(.borderless)
-            .disabled(node == nil || enclosingModule == nil)
-        }
-        .padding(.horizontal, 8)
-        .padding(.top, 4)
-    }
-
-    private var enclosingModule: LumaCore.ProcessModule? {
-        guard let insight else { return nil }
-        if let resolved = insight.lastResolvedAddress,
-            let module = engine.enclosingModule(at: resolved, sessionID: session.id)
-        {
-            return module
-        }
-        if case .moduleOffset(let name, _) = insight.anchor {
-            return engine.modulesSnapshot(forSessionID: session.id).first { $0.name == name }
-        }
-        return nil
-    }
-
-    private func rereadBytes() {
-        guard let insight, let resolved = insight.lastResolvedAddress else { return }
-        let sessionID = session.id
-        let byteCount = insight.byteCount
-        Task { @MainActor in
-            await engine.invalidateInsightRange(sessionID: sessionID, address: resolved, byteCount: byteCount)
-            refresh()
-        }
-    }
-
-    private func reanalyzeModule() {
-        guard let module = enclosingModule else { return }
-        engine.invalidateModule(sessionID: session.id, modulePath: module.path)
-        refresh()
+        .onChange(of: insight.flatMap { engine.insightRefreshGenerations[$0.id] }) { _, _ in refresh() }
     }
 
     private func refresh() {

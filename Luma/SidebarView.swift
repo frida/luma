@@ -876,6 +876,19 @@ private struct SidebarInsightRow: View {
                 Label("Rename…", systemImage: "pencil")
             }
             Divider()
+            Button {
+                Task { await engine.rereadBytes(of: insight) }
+            } label: {
+                Label("Reread Bytes", systemImage: "arrow.clockwise")
+            }
+            .disabled(!isAttached)
+            Button {
+                engine.reanalyzeModule(of: insight)
+            } label: {
+                Label("Reanalyze Module", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .disabled(!isAttached || engine.enclosingModule(of: insight) == nil)
+            Divider()
             Button(role: .destructive) {
                 deleteInsight()
             } label: {
@@ -891,6 +904,10 @@ private struct SidebarInsightRow: View {
             }
             Button("Cancel", role: .cancel) {}
         }
+    }
+
+    private var isAttached: Bool {
+        engine.node(forSessionID: session.id) != nil
     }
 
     private func deleteInsight() {
