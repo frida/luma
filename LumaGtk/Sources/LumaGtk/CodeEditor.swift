@@ -75,7 +75,7 @@ public final class CodeEditor {
         widget.append(child: find.widget)
         widget.append(child: scroll)
 
-        highlighter = LexicalHighlighter(buffer: buffer)
+        highlighter = LexicalHighlighter(buffer: buffer, syntax: profile.syntax)
         semanticHighlighter = CodeSemanticHighlighter(buffer: buffer)
         diagnosticMarks = CodeDiagnosticMarks(buffer: buffer)
         hover = CodeHoverTooltip(editor: editor, buffer: buffer, diagnostics: diagnosticMarks)
@@ -149,9 +149,22 @@ public final class CodeEditor {
         let needsNewSession = !TypeScriptEditorSession.isSameProject(newProfile, profile)
         profile = newProfile
         editor.editable = !newProfile.readOnly
+        if highlighter.syntax != newProfile.syntax {
+            highlighter.syntax = newProfile.syntax
+            highlighter.apply(to: text)
+        }
         if needsNewSession {
             restartSession()
         }
+    }
+
+    public func reveal(_ position: LSP.Position) {
+        let offset = CharacterOffsets(text: text).characterOffset(ofUTF16: LineMap(text: text).utf16Offset(of: position))
+        let iter = UnsafeMutablePointer<GtkTextIter>.allocate(capacity: 1)
+        defer { iter.deallocate() }
+        buffer.getIterAtOffset(iter: TextIter(iter), charOffset: offset)
+        buffer.placeCursor(where: TextIter(iter))
+        editor.scrollTo(mark: buffer.getInsert(), within: 0, useAlign: true, xalign: 0, yalign: 0.3)
     }
 
     private func restartSession() {
@@ -228,12 +241,15 @@ private func isEnter(_ keyval: UInt) -> Bool {
 
 @MainActor
 final class LexicalHighlighter {
+    var syntax: SourceSyntax
+
     private let buffer: GtkSource.Buffer
     private var tagNames: [Bool: [TypeScriptToken.Kind: String]] = [:]
     private var everyName: [String] = []
 
-    init(buffer: GtkSource.Buffer) {
+    init(buffer: GtkSource.Buffer, syntax: SourceSyntax) {
         self.buffer = buffer
+        self.syntax = syntax
         for dark in [false, true] {
             var names: [TypeScriptToken.Kind: String] = [:]
             for kind in [TypeScriptToken.Kind.keyword, .string, .template, .number, .regex, .comment] {
@@ -255,7 +271,7 @@ final class LexicalHighlighter {
             for name in everyName {
                 buffer.removeTagBy(name: name, start: start, end: end)
             }
-            for token in TypeScriptLexer.tokenize(text) {
+            for token in syntax.tokenize(text) {
                 guard let name = names[token.kind] else { continue }
                 buffer.getIterAtOffset(iter: start, charOffset: offsets.characterOffset(ofUTF16: token.utf16Range.lowerBound))
                 buffer.getIterAtOffset(iter: end, charOffset: offsets.characterOffset(ofUTF16: token.utf16Range.upperBound))

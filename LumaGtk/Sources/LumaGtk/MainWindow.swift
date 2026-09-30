@@ -45,6 +45,10 @@ final class MainWindow: InstrumentUIHost {
     private var missionRowIDs: [UUID] = []
     private var missionSidebarRows: [UUID: ListBoxRow] = [:]
     private var currentMissionsListPane: MissionsListPane?
+    private let patternsSection = Box(orientation: .vertical, spacing: 0)
+    private var patternSidebar: PatternSidebar?
+    private var currentPatternsListPane: PatternsListPane?
+    private var currentPatternEditor: PatternEditorPane?
     private var currentMissionDetailPane: MissionDetailPane?
     private let detailContainer: Box
     private let eventStreamPane: EventStreamPane
@@ -132,6 +136,7 @@ final class MainWindow: InstrumentUIHost {
         case customInstrumentFile(UUID, String)
         case missionsList
         case mission(UUID)
+        case patterns(PatternSidebarSelection)
     }
 
     private enum CustomInstrumentRow: Equatable {
@@ -606,6 +611,7 @@ final class MainWindow: InstrumentUIHost {
         engine.onMissionsChanged = { [weak self] missions in
             self?.renderMissions(missions)
         }
+        installPatternSidebar(engine: engine)
         eventStreamPane.attach(engine: engine)
         eventStreamPane.onNavigateToHook = { [weak self] sessionID, instrumentID, hookID in
             self?.navigateToInstrumentComponent(sessionID: sessionID, instrumentID: instrumentID, componentID: hookID)
@@ -759,6 +765,7 @@ final class MainWindow: InstrumentUIHost {
         column.append(child: buildNotebookSection())
         column.append(child: buildPharoSection())
         column.append(child: buildMissionsSection())
+        column.append(child: patternsSection)
         column.append(child: buildSessionsSection())
         column.append(child: buildCustomInstrumentsSection())
         column.append(child: buildPackagesSection())
@@ -1148,6 +1155,53 @@ final class MainWindow: InstrumentUIHost {
             self?.engine?.deleteMission(missionID: mission.id)
             self?.showToast("Mission deleted")
         }
+    }
+
+    private func installPatternSidebar(engine: Engine) {
+        let sidebar = PatternSidebar(engine: engine, window: window)
+        sidebar.onSelect = { [weak self] pattern in
+            self?.select(.patterns(pattern))
+        }
+        sidebar.onError = { [weak self] message in
+            self?.showToast(message)
+        }
+        patternsSection.append(child: sidebar.widget)
+        patternSidebar = sidebar
+    }
+
+    private func makePatternsListPane() -> PatternsListPane {
+        guard let engine else { fatalError("Engine not attached") }
+        return PatternsListPane(
+            engine: engine,
+            window: window,
+            onSelect: { [weak self] id in
+                self?.select(.patterns(.source(id)))
+            },
+            onError: { [weak self] message in
+                self?.showToast(message)
+            }
+        )
+    }
+
+    private func patternEditor(sourceID: String, focusedType: String?) -> Widget {
+        guard let engine, let source = engine.patterns.source(withID: sourceID) else {
+            return MainWindow.makeEmptyState(
+                icon: "view-grid-symbolic",
+                title: "Pattern unavailable",
+                subtitle: "This pattern is no longer in the library."
+            )
+        }
+        let pane: PatternEditorPane
+        if let existing = currentPatternEditor, existing.sourceID == sourceID {
+            pane = existing
+        } else {
+            pane = PatternEditorPane(engine: engine, source: source) { [weak self] message in
+                self?.showToast(message)
+            }
+            currentPatternEditor = pane
+        }
+        pane.show(focusedType: focusedType)
+        return pane.widget
     }
 
     private func buildSessionsSection() -> Box {
@@ -1834,6 +1888,14 @@ final class MainWindow: InstrumentUIHost {
         } else {
             currentMissionsListPane = nil
         }
+        if case .patterns(.library) = selection {} else {
+            currentPatternsListPane = nil
+        }
+        if case .patterns(let pattern) = selection, pattern.sourceID == currentPatternEditor?.sourceID {
+        } else {
+            currentPatternEditor?.flushDraftIfNeeded()
+            currentPatternEditor = nil
+        }
         let widget: Widget
         switch selection {
         case .notebook:
@@ -2002,6 +2064,14 @@ final class MainWindow: InstrumentUIHost {
                     subtitle: "This mission is no longer in the project."
                 )
             }
+        case .patterns(.library):
+            let pane = currentPatternsListPane ?? makePatternsListPane()
+            currentPatternsListPane = pane
+            widget = pane.widget
+        case .patterns(.source(let id)):
+            widget = patternEditor(sourceID: id, focusedType: nil)
+        case .patterns(.type(let id, let name)):
+            widget = patternEditor(sourceID: id, focusedType: name)
         }
         replaceDetail(with: wrapWithCollabHeader(widget))
         addInstrumentButton.sensitive = currentSessionID() != nil
@@ -2344,6 +2414,9 @@ final class MainWindow: InstrumentUIHost {
     private func select(_ newValue: SidebarSelection) {
         guard selection != newValue else { return }
         selection = newValue
+        if case .patterns = newValue {} else {
+            patternSidebar?.unselectAll()
+        }
         switch newValue {
         case .notebook:
             sessionsList.unselectAll()
@@ -2418,6 +2491,14 @@ final class MainWindow: InstrumentUIHost {
             {
                 missionsListBox.select(row: row)
             }
+        case .patterns(let pattern):
+            notebookListBox.unselectAll()
+            pharoListBox.unselectAll()
+            sessionsList.unselectAll()
+            packagesList.unselectAll()
+            customInstrumentsList.unselectAll()
+            missionsListBox.unselectAll()
+            patternSidebar?.select(pattern)
         }
         updateResumeButtonVisibility()
         renderDetail()
