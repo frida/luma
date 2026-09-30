@@ -606,6 +606,26 @@ public enum PharoExampleCatalog {
                 title: "Silence everything",
                 code: "LumaTune hush."),
         ]),
+        ("Decode", [
+            PharoExample(
+                title: "The pattern library",
+                code: "LumaProject patterns."),
+            PharoExample(
+                title: "Decode bytes with a pattern",
+                code: """
+                (LumaProject patterns at: 'macho.hexpat')
+                    decode: 'MachHeader'
+                    from: #[16rCF 16rFA 16rED 16rFE 16r0C 16r00 16r00 16r01 16r00 16r00 16r00 16r00 16r02 16r00 16r00 16r00 16r11 16r00 16r00 16r00 16r20 16r04 16r00 16r00 16r85 16r00 16r20 16r00 16r00 16r00 16r00 16r00]
+                    at: 16r100000000
+                """),
+            PharoExample(
+                title: "Decode a session's main module header",
+                code: """
+                | session |
+                session := LumaProject sessions items first.
+                (LumaProject patterns at: 'macho.hexpat') decodeIn: session at: 16r100000000
+                """),
+        ]),
         ("Explore", [
             PharoExample(
                 title: "Filter a big list (type in the field)",

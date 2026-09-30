@@ -8,6 +8,7 @@ public enum PharoLumaBindings {
         PharoSynthBridge.ensureExported()
         PharoCanvasBridge.ensureExported()
         _ = try await runtime.evaluate(source)
+        _ = try await runtime.evaluate(PharoPatternBindings.source)
     }
 
     /// Each feed is fetched only when it is asked for. A record carries its

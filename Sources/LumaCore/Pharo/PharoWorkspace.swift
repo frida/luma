@@ -31,6 +31,11 @@ public final class PharoWorkspace {
         Self.boot()
         try await runtime.runningState()
 
+        PharoAsyncBridge.shared.serve { [weak engine] request in
+            guard let engine else { throw PharoWorkspaceError.engineGone }
+            return try await engine.answerPharoRequest(request)
+        }
+
         let bridge = PharoHostBridge.shared
         bridge.publish(engine.sessions.map(recordWithIcon), as: .sessions)
         bridge.publish(engine.notebookEntries.map(\.recordForPharo), as: .notebookEntries)
