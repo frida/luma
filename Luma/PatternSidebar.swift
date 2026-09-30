@@ -8,13 +8,16 @@ struct PatternsSidebarRows: View {
 
     @State private var outlines: [String: [PatternTypeSummary]] = [:]
     @State private var expanded: Set<String> = []
+    @AppStorage("sidebar.patterns.expansion") private var expansion: SidebarExpansion = .expanded
 
     private var sources: [PatternSource] { engine.patterns.sources }
 
     var body: some View {
-        SidebarPatternsRow(count: sources.count)
-            .tag(SidebarItemID.patterns)
-        ForEach(sources) { source in
+        SidebarPatternsRow(count: sources.count, isExpanded: expansion == .expanded) {
+            expansion = expansion == .expanded ? .collapsed : .expanded
+        }
+        .tag(SidebarItemID.patterns)
+        ForEach(expansion == .expanded ? sources : []) { source in
             let types = outlines[source.id] ?? []
             let isExpanded = expanded.contains(source.id)
             SidebarPatternRow(
@@ -35,6 +38,7 @@ struct PatternsSidebarRows: View {
         }
         .onChange(of: selection, initial: true) {
             if let selectedSource {
+                expansion = .expanded
                 expanded.insert(selectedSource)
             }
         }
@@ -58,10 +62,14 @@ struct PatternsSidebarRows: View {
     }
 
     private func outline() async {
+        var outlined: [String: [PatternTypeSummary]] = [:]
         for source in sources {
             guard let summary = try? await engine.patternDecoder.summary(of: source) else { continue }
-            outlines[source.id] = summary.declaredTypes
+            outlined[source.id] = summary.declaredTypes
         }
+        guard !Task.isCancelled else { return }
+        outlines = outlined
+        expanded.formIntersection(sources.map(\.id))
     }
 }
 
@@ -108,6 +116,8 @@ private struct PatternTypeSidebarChildren: View {
 
 private struct SidebarPatternsRow: View {
     let count: Int
+    let isExpanded: Bool
+    let onToggle: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -117,6 +127,16 @@ private struct SidebarPatternsRow: View {
             Spacer()
             if count > 0 {
                 Text("\(count)").font(.caption).foregroundStyle(.secondary)
+                Button(action: onToggle) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .frame(width: sidebarChevronWidth, height: sidebarChevronWidth)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isExpanded ? "Collapse patterns" : "Expand patterns")
             }
         }
         .accessibilityElement(children: .combine)
