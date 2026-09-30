@@ -10,10 +10,24 @@ import LumaCore
 public final class HexView {
     public let widget: ScrolledWindow
 
+    static var rowHeight: Double { HexMetrics.shared.rowHeight }
+
+    var annotations: [HexAnnotation] = [] {
+        didSet { annotationsArea.queueDraw() }
+    }
+    var emphasis: HexAnnotation? {
+        didSet { emphasisArea.queueDraw() }
+    }
+    var onCaretMove: ((Int) -> Void)?
+    var menuSections: () -> [[ContextMenu.Item]] = { [] }
+
     private let surface: Overlay
     private let selectionLayer: Fixed
     private let selectionBands: [Box]
     private let bytesArea: DrawingArea
+    private let annotationsArea: DrawingArea
+    private let emphasisArea: DrawingArea
+    private var menuPoint = (x: 0.0, y: 0.0)
 
     private var bytes: [UInt8]
     private var baseAddress: UInt64
@@ -44,6 +58,10 @@ public final class HexView {
 
         bytesArea = DrawingArea()
         bytesArea.canTarget = false
+        annotationsArea = DrawingArea()
+        annotationsArea.canTarget = false
+        emphasisArea = DrawingArea()
+        emphasisArea.canTarget = false
 
         surface = Overlay()
         surface.hexpand = true
@@ -52,6 +70,8 @@ public final class HexView {
         surface.canFocus = true
         surface.set(child: selectionLayer)
         surface.addOverlay(widget: bytesArea)
+        surface.addOverlay(widget: annotationsArea)
+        surface.addOverlay(widget: emphasisArea)
 
         widget = ScrolledWindow()
         widget.hexpand = true
@@ -63,6 +83,16 @@ public final class HexView {
         bytesArea.setDrawFunc { [weak self] _, ctx, _, _ in
             MainActor.assumeIsolated {
                 self?.drawBytes(ctx: ctx)
+            }
+        }
+        annotationsArea.setDrawFunc { [weak self] _, ctx, _, _ in
+            MainActor.assumeIsolated {
+                self?.drawAnnotations(ctx: ctx)
+            }
+        }
+        emphasisArea.setDrawFunc { [weak self] _, ctx, _, _ in
+            MainActor.assumeIsolated {
+                self?.drawEmphasis(ctx: ctx)
             }
         }
 
@@ -79,7 +109,21 @@ public final class HexView {
         selection = nil
         applyContentSize()
         bytesArea.queueDraw()
+        annotationsArea.queueDraw()
+        emphasisArea.queueDraw()
         showSelection()
+    }
+
+    var caret: Int {
+        selection?.caret ?? 0
+    }
+
+    func rowSpan(containing index: Int) -> (top: Double, height: Double) {
+        layout.rowSpan(ofRow: index / HexLayout.bytesPerRow)
+    }
+
+    func presentMenu(_ sections: [[ContextMenu.Item]]) {
+        ContextMenu.present(sections, at: surface, x: menuPoint.x, y: menuPoint.y)
     }
 
     private func drawBytes(ctx: Cairo.ContextRef) {
@@ -99,6 +143,27 @@ public final class HexView {
             collectGlyphs(ofRow: row, into: &runs)
             runs.show(on: ctx._ptr, palette: palette)
         }
+    }
+
+    private func drawAnnotations(ctx: Cairo.ContextRef) {
+        let cr: UnsafeMutablePointer<cairo_t> = ctx._ptr
+        cairo_set_line_width(cr, 1)
+        for annotation in annotations {
+            layout.appendOutline(of: annotation.range, byteCount: bytes.count, to: cr)
+            annotation.color.scalingAlpha(by: 0.7).setSource(on: cr)
+            cairo_stroke(cr)
+        }
+    }
+
+    private func drawEmphasis(ctx: Cairo.ContextRef) {
+        guard let emphasis else { return }
+        let cr: UnsafeMutablePointer<cairo_t> = ctx._ptr
+        layout.appendOutline(of: emphasis.range, byteCount: bytes.count, to: cr)
+        emphasis.color.scalingAlpha(by: 0.22).setSource(on: cr)
+        cairo_fill_preserve(cr)
+        emphasis.color.setSource(on: cr)
+        cairo_set_line_width(cr, 2)
+        cairo_stroke(cr)
     }
 
     private func foregroundColor() -> GdkRGBA {
@@ -172,13 +237,14 @@ public final class HexView {
         if let index = byteIndex(atX: x, y: y), selection?.range.contains(index) != true {
             select(anchor: index, caret: index)
         }
+        menuPoint = (x, y)
         ContextMenu.present([
             [
                 .init("Copy Hex") { [weak self] in self?.copySelection(.hex) },
                 .init("Copy ASCII") { [weak self] in self?.copySelection(.ascii) },
                 .init("Copy Base64") { [weak self] in self?.copySelection(.base64) },
             ],
-        ], at: surface, x: x, y: y)
+        ] + menuSections(), at: surface, x: x, y: y)
     }
 
     private func installKeyController() {
@@ -229,6 +295,7 @@ public final class HexView {
     private func select(anchor: Int, caret: Int) {
         selection = Selection(anchor: anchor, caret: caret)
         showSelection()
+        onCaretMove?(caret)
     }
 
     private func showSelection() {
@@ -270,6 +337,12 @@ public final class HexView {
 
         var range: ClosedRange<Int> { min(anchor, caret)...max(anchor, caret) }
     }
+}
+
+struct HexAnnotation {
+    let id: UUID
+    let range: Swift.Range<Int>
+    let color: GdkRGBA
 }
 
 @MainActor
@@ -330,11 +403,61 @@ private struct HexLayout {
         return bands
     }
 
+    func rowSpan(ofRow row: Int) -> (top: Double, height: Double) {
+        (top(ofRow: row), metrics.rowHeight)
+    }
+
+    func appendOutline(of range: Swift.Range<Int>, byteCount: Int, to cr: UnsafeMutablePointer<cairo_t>) {
+        let visible = range.clamped(to: 0..<byteCount)
+        guard !visible.isEmpty else { return }
+        appendOutline(of: visible, in: .hex, to: cr)
+        appendOutline(of: visible, in: .ascii, to: cr)
+    }
+
     func byteIndex(atX x: Double, y: Double) -> Int? {
         guard y >= Self.marginY else { return nil }
         let row = Int((y - Self.marginY) / metrics.rowHeight)
         guard row < rowCount, let column = byteColumn(atX: x) else { return nil }
         return row * Self.bytesPerRow + column
+    }
+
+    private enum Section {
+        case hex
+        case ascii
+    }
+
+    private func appendOutline(of range: Swift.Range<Int>, in section: Section, to cr: UnsafeMutablePointer<cairo_t>) {
+        let first = cellRect(range.lowerBound, in: section)
+        let last = cellRect(range.upperBound - 1, in: section)
+        guard first.minY != last.minY else {
+            cairo_rectangle(cr, first.minX, first.minY, last.maxX - first.minX, first.height)
+            return
+        }
+        let left = cellRect(0, in: section).minX
+        let right = cellRect(Self.bytesPerRow - 1, in: section).maxX
+        cairo_move_to(cr, first.minX, first.minY)
+        cairo_line_to(cr, right, first.minY)
+        cairo_line_to(cr, right, last.minY)
+        cairo_line_to(cr, last.maxX, last.minY)
+        cairo_line_to(cr, last.maxX, last.maxY)
+        cairo_line_to(cr, left, last.maxY)
+        cairo_line_to(cr, left, first.maxY)
+        cairo_line_to(cr, first.minX, first.maxY)
+        cairo_close_path(cr)
+    }
+
+    private func cellRect(_ index: Int, in section: Section) -> CGRect {
+        let row = index / Self.bytesPerRow
+        let column = index % Self.bytesPerRow
+        let top = top(ofRow: row)
+        switch section {
+        case .hex:
+            let inset = metrics.advance / 4
+            let x = x(ofColumn: hexStartColumn + column * Self.hexCellColumns) - inset
+            return CGRect(x: x, y: top, width: 2 * metrics.advance + 2 * inset, height: metrics.rowHeight)
+        case .ascii:
+            return CGRect(x: x(ofColumn: asciiStartColumn + column), y: top, width: metrics.advance, height: metrics.rowHeight)
+        }
     }
 
     private func bands(rows: ClosedRange<Int>, columns: ClosedRange<Int>) -> [CGRect] {
@@ -450,11 +573,11 @@ private struct GlyphPalette {
 }
 
 extension GdkRGBA {
-    fileprivate func scalingAlpha(by factor: Float) -> GdkRGBA {
+    func scalingAlpha(by factor: Float) -> GdkRGBA {
         GdkRGBA(red: red, green: green, blue: blue, alpha: alpha * factor)
     }
 
-    fileprivate func setSource(on cr: UnsafeMutablePointer<cairo_t>) {
+    func setSource(on cr: UnsafeMutablePointer<cairo_t>) {
         cairo_set_source_rgba(cr, Double(red), Double(green), Double(blue), Double(alpha))
     }
 }

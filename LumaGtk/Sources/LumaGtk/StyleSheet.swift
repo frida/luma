@@ -139,6 +139,29 @@ enum StyleSheet {
         background-color: alpha(@theme_fg_color, 0.14);
     }
 
+    .luma-pattern-tree {
+        background: transparent;
+    }
+
+    .luma-pattern-tree > row.luma-pattern-row {
+        padding: 0;
+        min-height: 0;
+    }
+
+    .luma-pattern-text {
+        font-size: 12px;
+    }
+
+    .luma-pattern-name {
+        font-weight: bold;
+    }
+
+    button.luma-pattern-chevron {
+        padding: 0;
+        min-width: 16px;
+        min-height: 16px;
+    }
+
     .luma-hex-selection {
         background-color: alpha(@accent_bg_color, 0.3);
     }

@@ -45,7 +45,8 @@ final class InsightDetailView {
     private let disasmContentOverlay: Overlay
     private let disasmBox: Box
     private let flowArea: DrawingArea
-    private var hexView: HexView?
+    private var decodeView: PatternDecodeView?
+    private var memoryData = Data()
 
     private var disasmLines: [DisassemblyLine] = []
     private var disasmRows: [Box] = []
@@ -392,11 +393,16 @@ final class InsightDetailView {
 
         switch insight.kind {
         case .memory:
-            let hex = HexView(bytes: Data())
-            hexView = hex
-            setContent(hex.widget)
+            let decode = PatternDecodeView(
+                engine: engine, sessionID: sessionID, data: Data(), baseAddress: nil, placements: insight.placements, sizing: .fill
+            ) { [weak self] placements in
+                self?.savePlacements(placements)
+            }
+            decode.onTruncated = { [weak self] in self?.readMoreMemory() }
+            decodeView = decode
+            setContent(decode.widget)
         case .disassembly:
-            hexView = nil
+            decodeView = nil
             setContent(disasmHost)
         }
 
@@ -424,7 +430,8 @@ final class InsightDetailView {
                 do {
                     let bytes = try await reader.read(at: resolved, count: byteCount)
                     if Task.isCancelled { return }
-                    hexView?.setBytes(Data(bytes), baseAddress: resolved)
+                    memoryData = Data(bytes)
+                    decodeView?.setData(memoryData, baseAddress: resolved)
                 } catch {
                     if Task.isCancelled { return }
                     showErrorLabel(error.localizedDescription)
@@ -461,6 +468,22 @@ final class InsightDetailView {
                 }
                 _ = self.disasmBox.grabFocus()
             }
+        }
+    }
+
+    private func savePlacements(_ placements: [PatternPlacement]) {
+        engine?.setPlacements(placements, forInsight: insight)
+    }
+
+    private func readMoreMemory() {
+        guard let engine, let resolved = insight.lastResolvedAddress, memoryData.count < Engine.largestPatternRead else { return }
+        let byteCount = min(max(memoryData.count, insight.byteCount) * 2, Engine.largestPatternRead)
+        let reader = engine.memoryReader(forSessionID: sessionID)
+        Task { @MainActor [weak self] in
+            guard let self, let bytes = try? await reader.read(at: resolved, count: byteCount) else { return }
+            memoryData = Data(bytes)
+            decodeView?.setData(memoryData, baseAddress: resolved)
+            engine.setByteCount(byteCount, forInsight: insight)
         }
     }
 

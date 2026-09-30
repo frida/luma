@@ -363,12 +363,16 @@ final class REPLPane {
                 header.add(cssClass: "monospace")
                 header.halign = .start
                 column2.append(child: header)
-                let hex = HexView(bytes: data, baseAddress: meta?.baseAddress ?? 0)
-                rowKeepers.append(hex)
-                hex.widget.hexpand = true
-                hex.widget.vexpand = false
-                hex.widget.halign = .start
-                column2.append(child: hex.widget)
+                let cellID = cell.id
+                let decode = PatternDecodeView(
+                    engine: engine!, sessionID: sessionID, data: data, baseAddress: meta?.baseAddress,
+                    placements: cell.placements, sizing: .capped
+                ) { [weak engine] placements in
+                    engine?.setPlacements(placements, forREPLCell: cellID)
+                }
+                rowKeepers.append(decode)
+                decode.widget.hexpand = true
+                column2.append(child: decode.widget)
                 resultWidget = column2
             case .text(let s):
                 let view = REPLStyledResult(LumaCore.StyledText(s)) { [weak self] in self?.console.pinToBottom() }
