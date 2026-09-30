@@ -18,6 +18,14 @@ void *luma_text_buffer_create_underline_tag(void *gtk_text_buffer,
                                              const char *name,
                                              const char *color,
                                              bool error);
+void *luma_text_buffer_create_hidden_tag(void *gtk_text_buffer,
+                                         const char *name);
+void *luma_text_buffer_create_swatch_tag(void *gtk_text_buffer,
+                                         const char *name,
+                                         int spacing);
+bool luma_text_iter_get_foreground(const void *gtk_text_iter,
+                                   void *except,
+                                   void *gdk_rgba);
 
 // --- File menu / actions ----------------------------------------------------
 

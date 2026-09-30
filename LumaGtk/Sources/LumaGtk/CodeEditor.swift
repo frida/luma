@@ -19,6 +19,8 @@ public final class CodeEditor {
     private let buffer: GtkSource.Buffer
     private let scroll: ScrolledWindow
     private let find: PharoFindBar
+    private let folding: CodeFolding
+    private let swatches: CodeSwatches
     private let highlighter: LexicalHighlighter
     private let semanticHighlighter: CodeSemanticHighlighter
     private let diagnosticMarks: CodeDiagnosticMarks
@@ -44,7 +46,7 @@ public final class CodeEditor {
         editor = GtkSource.View(buffer: buffer)
         editor.monospace = true
         editor.enableSnippets = true
-        editor.showLineNumbers = true
+        editor.showLineNumbers = false
         editor.highlightCurrentLine = true
         editor.autoIndent = true
         editor.smartBackspace = true
@@ -68,12 +70,21 @@ public final class CodeEditor {
         scroll.set(child: editor)
 
         find = PharoFindBar(editor: editor, buffer: buffer)
+        folding = CodeFolding(editor: editor, buffer: buffer)
+        swatches = CodeSwatches(editor: editor, buffer: buffer)
+
+        let surface = Overlay()
+        surface.hexpand = true
+        surface.vexpand = true
+        surface.set(child: scroll)
+        surface.addOverlay(widget: folding.layer.area)
+        surface.addOverlay(widget: swatches.layer.area)
 
         widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
         widget.vexpand = true
         widget.append(child: find.widget)
-        widget.append(child: scroll)
+        widget.append(child: surface)
 
         highlighter = LexicalHighlighter(buffer: buffer, syntax: profile.syntax)
         semanticHighlighter = CodeSemanticHighlighter(buffer: buffer)
@@ -142,6 +153,8 @@ public final class CodeEditor {
         buffer.set(text: newText, len: Int(newText.utf8.count))
         suppressChange = false
         highlighter.apply(to: newText)
+        folding.textChanged()
+        swatches.textChanged()
         session?.document.replaceText(newText)
     }
 
@@ -177,6 +190,8 @@ public final class CodeEditor {
         hover.document = nil
         diagnosticMarks.apply([], to: text)
         semanticHighlighter.setTokens([], to: text)
+        folding.setRanges([], in: text)
+        swatches.setColors([], in: text)
         guard let engine else { return }
         let profile = profile
         let text = text
@@ -200,6 +215,14 @@ public final class CodeEditor {
             guard let self else { return }
             self.semanticHighlighter.setTokens(tokens, to: self.text)
         }
+        session.document.onFoldingRanges = { [weak self] ranges in
+            guard let self else { return }
+            self.folding.setRanges(ranges, in: self.text)
+        }
+        session.document.onColors = { [weak self] colors in
+            guard let self else { return }
+            self.swatches.setColors(colors, in: self.text)
+        }
         completion.document = session.document
         signatureHelp.document = session.document
         hover.document = session.document
@@ -209,6 +232,8 @@ public final class CodeEditor {
         guard !suppressChange else { return }
         text = buffer.text
         highlighter.apply(to: text)
+        folding.textChanged()
+        swatches.textChanged()
         session?.document.replaceText(text)
         onTextChanged?(text)
     }

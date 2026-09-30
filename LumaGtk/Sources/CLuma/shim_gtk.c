@@ -32,6 +32,59 @@ luma_text_buffer_create_underline_tag(void *gtk_text_buffer,
                                       NULL);
 }
 
+void *
+luma_text_buffer_create_hidden_tag(void *gtk_text_buffer,
+                                   const char *name)
+{
+    return gtk_text_buffer_create_tag(GTK_TEXT_BUFFER(gtk_text_buffer), name,
+                                      "invisible", TRUE,
+                                      NULL);
+}
+
+void *
+luma_text_buffer_create_swatch_tag(void *gtk_text_buffer,
+                                   const char *name,
+                                   int spacing)
+{
+    GdkRGBA invisible = { 0, 0, 0, 1.0 / G_MAXUINT16 };
+
+    return gtk_text_buffer_create_tag(GTK_TEXT_BUFFER(gtk_text_buffer), name,
+                                      "letter-spacing", spacing * PANGO_SCALE,
+                                      "foreground-rgba", &invisible,
+                                      NULL);
+}
+
+bool
+luma_text_iter_get_foreground(const void *gtk_text_iter,
+                              void *except,
+                              void *gdk_rgba)
+{
+    bool found = false;
+    GSList *tags, *cur;
+
+    tags = gtk_text_iter_get_tags(gtk_text_iter);
+    for (cur = tags; cur != NULL; cur = cur->next)
+    {
+        GtkTextTag *tag = cur->data;
+        gboolean is_set;
+        GdkRGBA *foreground;
+
+        if (tag == except)
+            continue;
+
+        g_object_get(tag, "foreground-set", &is_set, "foreground-rgba", &foreground, NULL);
+        if (is_set)
+        {
+            *(GdkRGBA *) gdk_rgba = *foreground;
+            found = true;
+        }
+        g_clear_pointer(&foreground, gdk_rgba_free);
+    }
+    g_slist_free(tags);
+
+    return found;
+}
+
 // --- File menu / actions ----------------------------------------------------
 
 typedef struct {
