@@ -162,6 +162,15 @@ enum StyleSheet {
         min-height: 16px;
     }
 
+    .luma-pattern-table {
+        border: 1px solid alpha(@theme_fg_color, 0.15);
+    }
+
+    .luma-pattern-cell {
+        padding: 3px 10px;
+        border: 1px solid alpha(@theme_fg_color, 0.08);
+    }
+
     .luma-hex-selection {
         background-color: alpha(@accent_bg_color, 0.3);
     }

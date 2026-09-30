@@ -172,6 +172,9 @@ func adwaitaFeatureDefines() -> [SwiftSetting] {
     if pkgConfigAtLeast("gtk4", "4.16") {
         defines.append(.define("HAS_GDK_MEMORY_TEXTURE_BUILDER"))
     }
+    if pkgConfigAtLeast("gtk4", "4.20") {
+        defines.append(.define("HAS_GTK_CALENDAR_SET_DATE"))
+    }
     return defines
 }
 

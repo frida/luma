@@ -3,6 +3,7 @@ import CGtk
 import Cairo
 import Foundation
 import Gdk
+import GLibObject
 import Gtk
 import LumaCore
 
@@ -32,6 +33,9 @@ final class PatternDecodeView {
     private var summaries: [String: PatternSummary] = [:]
     private var results: [UUID: PlacementResult] = [:]
     private var locations: [UUID: PatternLocation] = [:]
+    private var visualizations: [UUID: NodeVisualization] = [:]
+    private var visualizerAnchors: [UUID: Widget] = [:]
+    private var openPopover: Popover?
     private var expanded: Set<UUID> = []
     private var rows: [TreeRow] = []
     private var selectedID: UUID?
@@ -177,6 +181,13 @@ final class PatternDecodeView {
             }
         }
 
+        treeList.onRowActivated { [weak self] _, row in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.activate(self.rows[Int(row.index)].id)
+            }
+        }
+
         let keys = EventControllerKey()
         keys.onKeyPressed { [weak self] _, keyval, _, _ in
             MainActor.assumeIsolated {
@@ -184,6 +195,82 @@ final class PatternDecodeView {
             }
         }
         treeList.install(controller: keys)
+    }
+
+    private func activate(_ id: UUID) {
+        guard let visualization = visualizations[id], let anchor = visualizerAnchors[id] else { return }
+        if case .button = visualization.inline {
+            press(visualization, anchor: anchor)
+        } else {
+            presentVisualizer(visualization, anchor: anchor)
+        }
+    }
+
+    private func press(_ visualization: NodeVisualization, anchor: Widget) {
+        guard case .ready(.button(let function, _)) = visualization.outcome, let baseAddress, let target,
+            let source = engine.patterns.source(withID: visualization.placement.sourceID)
+        else { return }
+        let placement = visualization.placement
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let output: Label
+            do {
+                let printed = try await engine.patternDecoder.callFunction(
+                    function, on: visualization.nodeID, of: source, typeName: placement.typeName, data: bytes(at: placement),
+                    address: baseAddress &+ UInt64(placement.offset), arch: target.arch, platform: target.platform)
+                output = Label(str: printed.isEmpty ? "No output." : printed)
+            } catch {
+                output = Label(str: error.localizedDescription)
+                output.add(cssClass: "error")
+            }
+            output.add(cssClass: "monospace")
+            output.selectable = true
+            output.marginStart = 10
+            output.marginEnd = 10
+            output.marginTop = 10
+            output.marginBottom = 10
+            present(output, owning: nil, from: anchor)
+        }
+    }
+
+    private func presentVisualizer(_ visualization: NodeVisualization, anchor: Widget) {
+        switch visualization.outcome {
+        case .ready(let ready):
+            let view = PatternVisualizationWidget(ready)
+            present(view.widget, owning: view, from: anchor)
+        case .failed(let message):
+            let failure = Label(str: message)
+            failure.add(cssClass: "error")
+            failure.marginStart = 12
+            failure.marginEnd = 12
+            failure.marginTop = 12
+            failure.marginBottom = 12
+            present(failure, owning: nil, from: anchor)
+        }
+    }
+
+    private func present(_ content: Widget, owning view: AnyObject?, from anchor: Widget) {
+        openPopover?.popdown()
+        let popover = Popover()
+        popover.autohide = true
+        popover.position = .bottom
+        popover.set(parent: anchor)
+        popover.set(child: content)
+        if let view {
+            GLibObject.ObjectRef(raw: popover.ptr).setDataFull(
+                key: "luma-visualization", data: Unmanaged.passRetained(view).toOpaque(),
+                destroy: { data in Unmanaged<AnyObject>.fromOpaque(data!).release() })
+        }
+        popover.onClosed { [weak self] closed in
+            MainActor.assumeIsolated {
+                closed.unparent()
+                if self?.openPopover?.ptr == closed.ptr {
+                    self?.openPopover = nil
+                }
+            }
+        }
+        openPopover = popover
+        popover.popup()
     }
 
     private func handleKey(_ keyval: Int32) -> Bool {
@@ -253,11 +340,10 @@ final class PatternDecodeView {
         decodeTask = Task { @MainActor [weak self] in
             guard let self else { return }
             var results: [UUID: PlacementResult] = [:]
+            var described: [String: PatternSummary] = [:]
             for placement in placements {
                 guard let source = engine.patterns.source(withID: placement.sourceID) else { continue }
-                if summaries[source.id] == nil {
-                    summaries[source.id] = try? await engine.patternDecoder.summary(of: source, arch: target.arch, platform: target.platform)
-                }
+                described[source.id] = try? await engine.patternDecoder.summary(of: source, arch: target.arch, platform: target.platform)
                 do {
                     let value = try await engine.patternDecoder.decode(
                         source, typeName: placement.typeName, data: bytes(at: placement), address: baseAddress &+ UInt64(placement.offset),
@@ -268,6 +354,7 @@ final class PatternDecodeView {
                 }
             }
             guard !Task.isCancelled else { return }
+            summaries = described
             show(results, base: baseAddress)
             if results.values.contains(where: \.isTruncated) {
                 onTruncated?()
@@ -284,7 +371,10 @@ final class PatternDecodeView {
     }
 
     private func show(_ results: [UUID: PlacementResult], base: UInt64) {
+        let remap = PatternNodeRemap(from: Self.roots(of: self.results), to: Self.roots(of: results), placements: Set(placements.map(\.id)))
         self.results = results
+        expanded = Set(expanded.compactMap(remap.callAsFunction))
+        selectedID = selectedID.flatMap(remap.callAsFunction)
         var located: [UUID: PatternLocation] = [:]
         for placement in placements {
             if case .decoded(let root) = results[placement.id] {
@@ -292,13 +382,44 @@ final class PatternDecodeView {
             }
         }
         locations = located
+        visualizations = [:]
+        for placement in placements {
+            if case .decoded(let root) = results[placement.id] {
+                visualize(root, root: root, placement: placement)
+            }
+        }
         hexView.annotations = located.values.filter(\.isLeaf).map(\.annotation)
         hexView.emphasis = selectedID.flatMap { located[$0] }?.annotation
         rebuildRows()
     }
 
+    private static func roots(of results: [UUID: PlacementResult]) -> [UUID: DecodedPattern] {
+        results.compactMapValues { result in
+            guard case .decoded(let root) = result else { return nil }
+            return root
+        }
+    }
+
+    private func visualize(_ node: DecodedPattern, root: DecodedPattern, placement: PatternPlacement) {
+        if let visualizer = node.visualizer {
+            let outcome: NodeVisualization.Outcome
+            do {
+                outcome = .ready(try PatternVisualization(visualizer, of: node, in: root))
+            } catch {
+                outcome = .failed(error.localizedDescription)
+            }
+            visualizations[node.id] = NodeVisualization(
+                placement: placement, nodeID: node.nodeID, presentation: visualizer.presentation, outcome: outcome)
+        }
+        for child in node.children {
+            visualize(child, root: root, placement: placement)
+        }
+    }
+
     private func rebuildRows() {
+        openPopover?.popdown()
         rows = visibleRows
+        visualizerAnchors = [:]
         treeList.removeAll()
         for row in rows {
             treeList.append(child: makeRow(row))
@@ -404,10 +525,43 @@ final class PatternDecodeView {
         content.append(child: Self.label(node.displayName ?? node.name, classes: ["luma-pattern-name"]))
         content.append(child: Self.label(node.typeName, classes: ["dim-label"]))
         content.append(child: Self.spacer())
+        if let visualization = visualizations[node.id] {
+            appendVisualization(visualization, of: node, to: content)
+        } else {
+            content.append(child: summary(of: node))
+        }
+        content.tooltipText = node.comment ?? String(format: "0x%llx", node.address)
+    }
+
+    private func appendVisualization(_ visualization: NodeVisualization, of node: DecodedPattern, to content: Box) {
+        if let inline = visualization.inline {
+            let widget = inline.make { [weak self] anchor in
+                self?.press(visualization, anchor: anchor)
+            }
+            visualizerAnchors[node.id] = widget
+            content.append(child: widget)
+            return
+        }
+        content.append(child: summary(of: node))
+        let button = Button(iconName: visualization.iconName)
+        button.add(cssClass: "flat")
+        button.add(cssClass: "luma-pattern-chevron")
+        button.focusable = false
+        button.tooltipText = "Visualize"
+        button.onClicked { [weak self, weak button] _ in
+            MainActor.assumeIsolated {
+                guard let self, let button else { return }
+                self.presentVisualizer(visualization, anchor: button)
+            }
+        }
+        visualizerAnchors[node.id] = button
+        content.append(child: button)
+    }
+
+    private func summary(of node: DecodedPattern) -> Label {
         let value = Self.label(node.summary, classes: node.truncated ? ["error"] : [])
         value.ellipsize = .end
-        content.append(child: value)
-        content.tooltipText = node.comment ?? String(format: "0x%llx", node.address)
+        return value
     }
 
     private static func label(_ text: String, classes: [String]) -> Label {
@@ -460,6 +614,41 @@ private enum PlacementResult {
     var isTruncated: Bool {
         guard case .decoded(let root) = self else { return false }
         return root.truncated
+    }
+}
+
+private struct NodeVisualization {
+    let placement: PatternPlacement
+    let nodeID: UInt
+    let presentation: DecodedVisualizer.Presentation
+    let outcome: Outcome
+
+    enum Outcome {
+        case ready(PatternVisualization)
+        case failed(String)
+    }
+
+    var inline: PatternInlineVisualization? {
+        guard presentation == .inline, case .ready(let ready) = outcome else { return nil }
+        return PatternInlineVisualization(ready)
+    }
+
+    var iconName: String {
+        guard case .ready(let ready) = outcome else { return "dialog-warning-symbolic" }
+        switch ready {
+        case .image, .bitmap:
+            return "image-x-generic-symbolic"
+        case .sound:
+            return "audio-x-generic-symbolic"
+        case .timestamp:
+            return "x-office-calendar-symbolic"
+        case .coordinates:
+            return "mark-location-symbolic"
+        case .disassembly:
+            return "utilities-terminal-symbolic"
+        default:
+            return "view-reveal-symbolic"
+        }
     }
 }
 

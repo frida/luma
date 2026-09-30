@@ -98,6 +98,7 @@ enum RenderTests {
             atPath: directory, withIntermediateDirectories: true)
 
         var failures = fromTheImage(writingTo: directory)
+        failures += patternVisualizations(writingTo: directory)
 
         for probe in cases {
             let coverage = draw(
@@ -131,6 +132,109 @@ enum RenderTests {
         say("pharo-lettering: \(coverage > 0 ? "drew" : "DREW NOTHING"), \(marked) marked")
         return coverage > 0 ? 0 : 1
     }
+
+    private static func patternVisualizations(writingTo directory: String) -> Int32 {
+        guard let root = decodedShowcase() else {
+            say("pattern-visualizations: NO DECODE, the showcase did not decode")
+            return 1
+        }
+        var failures: Int32 = 0
+        for node in visualizedNodes(in: root) {
+            let name = "pattern-\(node.visualizer!.name)"
+            let visualization: PatternVisualization
+            do {
+                visualization = try PatternVisualization(node.visualizer!, of: node, in: root)
+            } catch {
+                say("\(name): DID NOT INTERPRET, \(error.localizedDescription)")
+                failures += 1
+                continue
+            }
+            let view = PatternVisualizationWidget(visualization)
+            let coverage = draw(view.widget, to: "\(directory)/\(name).png")
+            if coverage <= 0 {
+                failures += 1
+            }
+            say("\(name): \(coverage > 0 ? "drew" : "DREW NOTHING"), \(String(format: "%.2f%%", coverage * 100)) marked")
+        }
+        return failures
+    }
+
+    private static func decodedShowcase() -> DecodedPattern? {
+        final class Answer {
+            var root: DecodedPattern?
+            var settled = false
+        }
+
+        let answer = Answer()
+        Task { @MainActor in
+            defer { answer.settled = true }
+            answer.root = try? await PatternDecoder().decode(
+                text: showcaseSource, typeName: "Showcase", data: showcaseBytes, address: 0x1000, arch: "arm64", platform: "linux")
+        }
+        for _ in 0..<60 where !answer.settled {
+            settle(for: 100)
+        }
+        return answer.root
+    }
+
+    private static func visualizedNodes(in node: DecodedPattern) -> [DecodedPattern] {
+        (node.visualizer == nil ? [] : [node]) + node.children.flatMap(visualizedNodes)
+    }
+
+    private static let showcaseSource = """
+        bitfield Signal {
+            clock : 1;
+            data : 3;
+            enable : 1;
+            reserved : 3;
+        } [[hex::visualize("digital_signal", this)]];
+
+        struct Showcase {
+            float wave[64] [[hex::visualize("line_plot", this)]];
+            float xs[16];
+            float ys[16] [[hex::visualize("scatter_plot", xs, this)]];
+            u8 png[165] [[hex::visualize("image", this)]];
+            u8 pixels[64] [[hex::visualize("bitmap", this, 4, 4)]];
+            float vertices[24];
+            u16 indices[36] [[hex::visualize("3d", vertices, this)]];
+            s16 samples[800] [[hex::visualize("sound", this, 1, 8000)]];
+            double latitude;
+            double longitude [[hex::visualize("coordinates", latitude, this)]];
+            u32 when [[hex::visualize("timestamp", this)]];
+            u8 grid[6] [[hex::visualize("table", this, 3, 2)]];
+            Signal signal;
+            u8 blob[48] [[hex::visualize("hex_viewer", this)]];
+            u8 noise[256] [[hex::visualize("chunk_entropy", this, 32)]];
+        };
+        """
+
+    private static var showcaseBytes: Data {
+        var bytes = Data()
+        func append<T: BitwiseCopyable>(_ values: [T]) {
+            values.withUnsafeBytes { bytes.append(contentsOf: $0) }
+        }
+        append((0..<64).map { Float(sin(Double($0) / 64 * 4 * .pi)) })
+        append((0..<16).map { Float($0) })
+        append((0..<16).map { Float(($0 - 8) * ($0 - 8)) / 8 })
+        bytes.append(Data(base64Encoded: showcasePNG)!)
+        let pixelColors: [[UInt8]] = [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255], [255, 255, 255, 255]]
+        append((0..<16).flatMap { pixelColors[$0 % 4] })
+        let corners: [Float] = [-1, 1].flatMap { x in [-1, 1].flatMap { y in [-1, 1].flatMap { z in [x, y, z] } } }
+        append(corners)
+        let faces: [UInt16] = [0, 1, 3, 0, 3, 2, 4, 6, 7, 4, 7, 5, 0, 4, 5, 0, 5, 1, 2, 3, 7, 2, 7, 6, 0, 2, 6, 0, 6, 4, 1, 5, 7, 1, 7, 3]
+        append(faces)
+        append((0..<800).map { Int16(12000 * sin(2 * .pi * 440 * Double($0) / 8000)) })
+        append([59.9139, 10.7522])
+        append([UInt32(1_727_700_000)])
+        append([UInt8]([1, 2, 3, 4, 5, 6, 0b1010_0101]))
+        append((0..<48).map { UInt8($0) })
+        append((0..<256).map { UInt8(truncatingIfNeeded: $0 < 64 ? 0 : $0 * 7919 >> 3) })
+        return bytes
+    }
+
+    private static let showcasePNG = """
+        iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAbElEQVR42hXNQRUAUQhCUaMYhShGeVGIQhSizB+XXA7ODDtouIHBQ4YOM8suWm5h8ZKl+0CskDiBsIioHhx76LiDw0eO3oN/4FVf+J8h0PduzBqZ8x/bxNQPwgaFy192SGgelC0q13/CJaXlA8Z7WAFXOTbyAAAAAElFTkSuQmCC
+        """
 
     /// Asks the image for a lettered scene and answers which one, letting the
     /// loop run while it boots -- it answers on the same thread the drawing
@@ -294,6 +398,38 @@ enum RenderTests {
         guard let frame = effect.captured else { return 0 }
         write(frame, to: path)
         return coverage(of: frame)
+    }
+
+    private static func draw(_ widget: Widget, to path: String) -> Double {
+        let window = Window()
+        window.set(child: widget)
+        window.present()
+        settle(for: 700)
+        defer { window.close() }
+
+        let width = widget.width
+        let height = widget.height
+        guard width > 0, height > 0, let native = gtk_widget_get_native(widget.widget_ptr),
+            let renderer = gtk_native_get_renderer(native)
+        else { return 0 }
+        let paintable = gtk_widget_paintable_new(widget.widget_ptr)
+        defer { g_object_unref(paintable) }
+        let snapshot = gtk_snapshot_new()
+        gdk_paintable_snapshot(UnsafeMutableRawPointer(paintable)?.assumingMemoryBound(to: GdkPaintable.self), UnsafeMutableRawPointer(snapshot)?.assumingMemoryBound(to: GdkSnapshot.self), Double(width), Double(height))
+        guard let node = gtk_snapshot_free_to_node(snapshot),
+            let texture = gsk_renderer_render_texture(renderer, node, nil)
+        else { return 0 }
+        defer {
+            gsk_render_node_unref(node)
+            g_object_unref(texture)
+        }
+        gdk_texture_save_to_png(texture, path)
+
+        var pixels = [UInt8](repeating: 0, count: Int(width * height * 4))
+        pixels.withUnsafeMutableBufferPointer {
+            gdk_texture_download(texture, $0.baseAddress, gsize(width * 4))
+        }
+        return coverage(of: (pixels, Int(width), Int(height)))
     }
 
     /// Lets the loop run for a while, so what was presented gets painted.
