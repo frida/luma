@@ -3748,8 +3748,18 @@ final class MainWindow: InstrumentUIHost {
         y: Double,
         insight: LumaCore.AddressInsight
     ) {
+        guard let engine else { return }
+        let isAttached = engine.node(forSessionID: insight.sessionID) != nil
         ContextMenu.present([
             [.init("Rename…") { [weak self] in self?.presentRenameInsight(insight) }],
+            [
+                .init("Reread Bytes", enabled: isAttached) { [weak engine] in
+                    Task { await engine?.rereadBytes(of: insight) }
+                },
+                .init("Reanalyze Module", enabled: isAttached && engine.enclosingModule(of: insight) != nil) { [weak engine] in
+                    engine?.reanalyzeModule(of: insight)
+                },
+            ],
             [.init("Delete Insight", destructive: true) { [weak self] in self?.confirmDeleteInsight(insight) }],
         ], at: anchor, x: x, y: y)
     }

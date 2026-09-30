@@ -65,10 +65,7 @@ final class InsightDetailView {
     private var themeSignalID: gulong = 0
     private var valueChangedHandler: gulong = 0
     private var lastNodeAvailable: Bool = false
-
-    private let refreshBar: Box
-    private let rereadButton: Button
-    private let reanalyzeButton: Button
+    private var refreshGeneration: Int?
 
     private static let initialChunk = 64
     private static let moreChunk = 64
@@ -92,21 +89,6 @@ final class InsightDetailView {
         bannerSlot.hexpand = true
         widget.append(child: bannerSlot)
 
-        refreshBar = Box(orientation: .horizontal, spacing: 6)
-        refreshBar.halign = .end
-        refreshBar.valign = .start
-        refreshBar.marginTop = 4
-        refreshBar.marginEnd = 8
-        refreshBar.marginStart = 8
-        rereadButton = Button(iconName: "view-refresh-symbolic")
-        rereadButton.tooltipText = "Drop cached bytes for this view and refetch."
-        rereadButton.hasFrame = false
-        reanalyzeButton = Button(iconName: "emblem-synchronizing-symbolic")
-        reanalyzeButton.tooltipText = "Drop disassembly analysis for this address's module."
-        reanalyzeButton.hasFrame = false
-        refreshBar.append(child: rereadButton)
-        refreshBar.append(child: reanalyzeButton)
-
         contentOverlay = Overlay()
         contentOverlay.hexpand = true
         contentOverlay.vexpand = true
@@ -120,7 +102,6 @@ final class InsightDetailView {
         contentHost.marginTop = 8
         contentHost.marginBottom = 8
         contentOverlay.set(child: contentHost)
-        contentOverlay.addOverlay(widget: refreshBar)
 
         spinner = makeSpinner()
 
@@ -189,11 +170,9 @@ final class InsightDetailView {
             view.handleThemeChanged()
         }
 
-        rereadButton.onClicked { [weak self] _ in MainActor.assumeIsolated { self?.rereadBytes() } }
-        reanalyzeButton.onClicked { [weak self] _ in MainActor.assumeIsolated { self?.reanalyzeModule() } }
-
         applySessionState()
         scheduleRefresh()
+        observeRefreshRequests()
 
         engine.onAddressNoteChanged = { [weak self] change in
             MainActor.assumeIsolated {
@@ -290,38 +269,23 @@ final class InsightDetailView {
             scheduleRefresh()
         }
         lastNodeAvailable = nodeAvailable
-
-        rereadButton.sensitive = nodeAvailable
-        reanalyzeButton.sensitive = nodeAvailable && enclosingModule() != nil
     }
 
-    private func enclosingModule() -> LumaCore.ProcessModule? {
-        guard let engine else { return nil }
-        if let resolved = insight.lastResolvedAddress,
-            let module = engine.enclosingModule(at: resolved, sessionID: sessionID)
-        {
-            return module
+    private func observeRefreshRequests() {
+        guard let engine else { return }
+        let insightID = insight.id
+        refreshGeneration = withObservationTracking {
+            engine.insightRefreshGenerations[insightID]
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                let previous = self.refreshGeneration
+                self.observeRefreshRequests()
+                if self.refreshGeneration != previous {
+                    self.scheduleRefresh()
+                }
+            }
         }
-        if case .moduleOffset(let name, _) = insight.anchor {
-            return engine.modulesSnapshot(forSessionID: sessionID).first { $0.name == name }
-        }
-        return nil
-    }
-
-    private func rereadBytes() {
-        guard let engine, let resolved = insight.lastResolvedAddress else { return }
-        let byteCount = insight.byteCount
-        let sid = sessionID
-        Task { @MainActor in
-            await engine.invalidateInsightRange(sessionID: sid, address: resolved, byteCount: byteCount)
-            scheduleRefresh()
-        }
-    }
-
-    private func reanalyzeModule() {
-        guard let engine, let module = enclosingModule() else { return }
-        engine.invalidateModule(sessionID: sessionID, modulePath: module.path)
-        scheduleRefresh()
     }
 
     func requestFocus() {
