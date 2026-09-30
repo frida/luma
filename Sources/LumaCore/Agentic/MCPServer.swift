@@ -249,10 +249,12 @@ public final class MCPServer {
 
         onToolFinished?(toolName, result)
 
-        return jsonRPCResult(id: rpcID, result: toolCallPayload(toolCallID: toolCallID, body: result.resultJSON, isError: result.isError))
+        return jsonRPCResult(
+            id: rpcID,
+            result: toolCallPayload(toolCallID: toolCallID, body: result.resultJSON, attachments: result.attachments, isError: result.isError))
     }
 
-    private func toolCallPayload(toolCallID: String, body: String, isError: Bool) -> [String: Any] {
+    private func toolCallPayload(toolCallID: String, body: String, attachments: [LLMAttachment] = [], isError: Bool) -> [String: Any] {
         let envelope: [String: Any] = ["tool_call_id": toolCallID, "body": body]
         let text: String
         if let data = try? JSONSerialization.data(withJSONObject: envelope, options: [.sortedKeys]) {
@@ -260,8 +262,9 @@ public final class MCPServer {
         } else {
             text = #"{"body":"Failed to serialize tool result.","tool_call_id":""}"#
         }
+        let images = attachments.map { ["type": "image", "data": $0.base64, "mimeType": $0.mediaType] }
         return [
-            "content": [["type": "text", "text": text]],
+            "content": [["type": "text", "text": text]] + images,
             "isError": isError,
         ]
     }
