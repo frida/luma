@@ -190,7 +190,7 @@ public final class Engine {
             catalog: catalog,
             collaboration: collaboration,
             systemPromptBuilder: { mission in
-                MissionSystemPrompt.build(for: mission)
+                MissionSystemPrompt.build(for: mission, tools: catalog)
             }
         )
 
