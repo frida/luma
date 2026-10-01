@@ -832,7 +832,7 @@ final class CollaborationPanel {
                 self?.presentMemberContextMenu(for: member, anchor: overlay, x: x, y: y)
             }
         }
-        overlay.install(controller: rightClick)
+        overlay.add(controller: rightClick)
 
         return overlay
     }

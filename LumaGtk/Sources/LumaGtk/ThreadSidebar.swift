@@ -39,7 +39,7 @@ enum ThreadSidebar {
                 ContextMenu.present([items], at: anchor, x: x, y: y)
             }
         }
-        anchor.install(controller: gesture)
+        anchor.add(controller: gesture)
     }
 
     static func presentBrowser(

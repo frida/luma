@@ -26,7 +26,7 @@ enum PharoModifierWatcher {
             MainActor.assumeIsolated { PharoModifierWatcher.update(state) }
             return false
         }
-        window.install(controller: keys)
+        window.add(controller: keys)
 
         // macOS drops the release of Command now and then, so a held state can
         // linger; whenever focus leaves the window -- opening a menu, switching
@@ -35,7 +35,7 @@ enum PharoModifierWatcher {
         focus.onLeave { _ in
             MainActor.assumeIsolated { PharoModifierWatcher.reset() }
         }
-        window.install(controller: focus)
+        window.add(controller: focus)
     }
 
     static func reset() {

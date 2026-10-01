@@ -1113,7 +1113,7 @@ final class MainWindow: InstrumentUIHost {
                 self.presentMissionContextMenu(anchor: anchor, x: x, y: y, mission: mission)
             }
         }
-        row.install(controller: click)
+        row.add(controller: click)
     }
 
     private func firstLine(of text: String, max: Int) -> String {
@@ -1564,7 +1564,7 @@ final class MainWindow: InstrumentUIHost {
                 self.presentCustomInstrumentContextMenu(anchor: anchor, x: x, y: y, def: def)
             }
         }
-        row.install(controller: click)
+        row.add(controller: click)
     }
 
     private func presentCustomInstrumentContextMenu(
@@ -1610,7 +1610,7 @@ final class MainWindow: InstrumentUIHost {
                 self.presentCustomInstrumentFileContextMenu(anchor: anchor, x: x, y: y, def: def, file: file)
             }
         }
-        row.install(controller: click)
+        row.add(controller: click)
     }
 
     private func presentCustomInstrumentFileContextMenu(
@@ -3045,7 +3045,7 @@ final class MainWindow: InstrumentUIHost {
                 self?.toggleGroupExpansion(sessionID: sessionID, group: group)
             }
         }
-        row.install(controller: click)
+        row.add(controller: click)
 
         row.set(child: box)
         return row
@@ -3585,7 +3585,7 @@ final class MainWindow: InstrumentUIHost {
                 self.presentSessionContextMenu(anchor: anchor, x: x, y: y, session: session)
             }
         }
-        row.install(controller: click)
+        row.add(controller: click)
     }
 
     private func presentSessionContextMenu(anchor: Widget, x: Double, y: Double, session: LumaCore.ProcessSession) {
@@ -3791,7 +3791,7 @@ final class MainWindow: InstrumentUIHost {
                 self.presentInstrumentContextMenu(anchor: anchor, x: x, y: y, instrument: instrument)
             }
         }
-        row.install(controller: click)
+        row.add(controller: click)
     }
 
     private func presentInstrumentContextMenu(
@@ -3820,7 +3820,7 @@ final class MainWindow: InstrumentUIHost {
                 self.presentInsightContextMenu(anchor: anchor, x: x, y: y, insight: insight)
             }
         }
-        row.install(controller: click)
+        row.add(controller: click)
     }
 
     private func presentInsightContextMenu(
@@ -3882,7 +3882,7 @@ final class MainWindow: InstrumentUIHost {
                 self.presentTraceContextMenu(anchor: anchor, x: x, y: y, trace: trace)
             }
         }
-        row.install(controller: click)
+        row.add(controller: click)
     }
 
     private func presentTraceContextMenu(

@@ -123,11 +123,11 @@ final class PharoNotebookCell {
                 }
             }
         }
-        editor.install(controller: keys)
+        editor.add(controller: keys)
 
         let focus = EventControllerFocus()
         focus.onLeave { [weak self] _ in MainActor.assumeIsolated { self?.persistSource() } }
-        editor.install(controller: focus)
+        editor.add(controller: focus)
     }
 
     /// A field-scoped change lands here rather than rebuilding the row, so the

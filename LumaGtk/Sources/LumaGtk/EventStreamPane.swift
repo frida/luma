@@ -947,7 +947,7 @@ final class EventStreamPane {
                 )
             }
         }
-        column.install(controller: rightClick)
+        column.add(controller: rightClick)
 
         if case .array(_, let elems) = parsed.message,
             elems.count == 1,
@@ -1000,7 +1000,7 @@ final class EventStreamPane {
                 self.presentRowContextMenu(at: anchor, x: tx, y: ty, event: event)
             }
         }
-        row.install(controller: gesture)
+        row.add(controller: gesture)
     }
 
     private func presentRowContextMenu(at anchor: Widget, x: Double, y: Double, event: RuntimeEvent) {

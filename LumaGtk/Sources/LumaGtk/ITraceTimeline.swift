@@ -61,7 +61,7 @@ final class ITraceTimeline {
                 }
             }
         }
-        area.install(controller: click)
+        area.add(controller: click)
 
         area.onQueryTooltip { [weak self] _, x, _, _, tooltip in
             MainActor.assumeIsolated {

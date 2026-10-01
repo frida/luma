@@ -358,7 +358,7 @@ final class NotebookPane {
                     self?.beginEditing(entry)
                 }
             }
-            card.install(controller: dblClick)
+            card.add(controller: dblClick)
         }
 
         let rightClick = GestureClick()
@@ -368,7 +368,7 @@ final class NotebookPane {
                 self?.presentContextMenu(anchor: card, x: x, y: y, entry: entry)
             }
         }
-        card.install(controller: rightClick)
+        card.add(controller: rightClick)
 
 
         let inner = Box(orientation: .vertical, spacing: 6)

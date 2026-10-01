@@ -155,7 +155,7 @@ final class InsightDetailView {
                 self?.handleDisasmKey(keyval: keyval) ?? false
             }
         }
-        disasmBox.install(controller: keyController)
+        disasmBox.add(controller: keyController)
 
         if let vadj = disasmScroll.vadjustment {
             vadj.onValueChanged { [weak self] adj in
@@ -227,7 +227,7 @@ final class InsightDetailView {
                 self.openNotePopover(anchoredAt: anchor, address: address)
             }
         }
-        bubble.install(controller: click)
+        bubble.add(controller: click)
         decorationsBox.append(child: bubble)
         noteIndicatorsByAddress[address] = bubble
         return bubble
@@ -759,7 +759,7 @@ final class InsightDetailView {
                 }
             }
         }
-        row.install(controller: click)
+        row.add(controller: click)
 
         let motion = EventControllerMotion()
         motion.onEnter { [weak self] _, _, _ in
@@ -774,7 +774,7 @@ final class InsightDetailView {
                 self?.hoveredIndex = nil
             }
         }
-        row.install(controller: motion)
+        row.add(controller: motion)
 
         return row
     }
@@ -808,7 +808,7 @@ final class InsightDetailView {
                 self.showAddressMenu(anchor: label, x: tx, y: ty, address: address)
             }
         }
-        label.install(controller: gesture)
+        label.add(controller: gesture)
     }
 
     private func containsPrintedTarget(_ asm: StyledText, target: UInt64) -> Bool {

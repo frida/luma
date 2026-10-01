@@ -194,7 +194,7 @@ final class PatternDecodeView {
                 self?.handleKey(Int32(truncatingIfNeeded: keyval)) ?? false
             }
         }
-        treeList.install(controller: keys)
+        treeList.add(controller: keys)
     }
 
     private func activate(_ id: UUID) {

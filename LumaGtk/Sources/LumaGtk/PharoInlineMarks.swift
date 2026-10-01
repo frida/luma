@@ -93,7 +93,7 @@ final class PharoInlineMarks {
         bodyPress.onPressed { [weak self] gesture, _, x, y in
             MainActor.assumeIsolated { self?.claimBodyPress(gesture, x: x, y: y) }
         }
-        editor.install(controller: bodyPress)
+        editor.add(controller: bodyPress)
     }
 
     private var bodyEditors: [GtkSource.View] = []
@@ -110,7 +110,7 @@ final class PharoInlineMarks {
         focus.onLeave { [weak self] _ in
             MainActor.assumeIsolated { self?.endEditingBody() }
         }
-        view.install(controller: focus)
+        view.add(controller: focus)
     }
 
     private func claimBodyPress(_ gesture: GestureClickRef, x: Double, y: Double) {
@@ -371,7 +371,7 @@ final class PharoInlineMarks {
                 self.toggle(mark)
             }
         }
-        area.install(controller: click)
+        area.add(controller: click)
         let motion = EventControllerMotion()
         motion.onEnter { [weak mark] _, _, _ in
             MainActor.assumeIsolated {
@@ -385,7 +385,7 @@ final class PharoInlineMarks {
                 mark?.area.queueDraw()
             }
         }
-        area.install(controller: motion)
+        area.add(controller: motion)
 
         editor.addChildAtAnchor(child: area, anchor: anchor)
         marks[id] = mark

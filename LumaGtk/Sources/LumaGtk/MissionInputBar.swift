@@ -102,7 +102,7 @@ final class MissionInputBar {
                 return false
             }
         }
-        textView.install(controller: keyController)
+        textView.add(controller: keyController)
 
         update(status: getStatus())
     }

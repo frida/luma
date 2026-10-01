@@ -128,7 +128,7 @@ final class PharoCanvasArea {
                 self?.report { $0.isPointerInside = false }
             }
         }
-        area.widget.install(controller: motion)
+        area.widget.add(controller: motion)
 
         let click = GestureClick()
         click.set(button: 0)
@@ -145,7 +145,7 @@ final class PharoCanvasArea {
                 self?.report { $0.buttons &= ~Self.mask(for: UInt32(gesture.currentButton)) }
             }
         }
-        area.widget.install(controller: click)
+        area.widget.add(controller: click)
 
         let keys = EventControllerKey()
         keys.onKeyPressed { [weak self] _, keyval, _, _ in
@@ -159,7 +159,7 @@ final class PharoCanvasArea {
                 self?.report { $0.keysDown.remove(Self.code(for: UInt32(keyval))) }
             }
         }
-        area.widget.install(controller: keys)
+        area.widget.add(controller: keys)
     }
 
     /// Clip space, so what a snippet reads is in the coordinates it gave its

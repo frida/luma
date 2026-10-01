@@ -204,7 +204,7 @@ public final class HexView {
                 self?.continueDrag(gesture, offsetX: offsetX, offsetY: offsetY)
             }
         }
-        surface.install(controller: drag)
+        surface.add(controller: drag)
 
         let rightClick = GestureClick()
         rightClick.set(button: 3)
@@ -213,7 +213,7 @@ public final class HexView {
                 self?.presentContextMenu(atX: x, y: y)
             }
         }
-        surface.install(controller: rightClick)
+        surface.add(controller: rightClick)
     }
 
     private func beginDrag(atX x: Double, y: Double) {
@@ -254,7 +254,7 @@ public final class HexView {
                 self?.handleKey(keyval: keyval, state: state) ?? false
             }
         }
-        surface.install(controller: key)
+        surface.add(controller: key)
     }
 
     private func handleKey(keyval: UInt, state: Gdk.ModifierType) -> Bool {

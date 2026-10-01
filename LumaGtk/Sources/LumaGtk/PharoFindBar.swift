@@ -121,7 +121,7 @@ final class PharoFindBar {
                 return true
             }
         }
-        editor.install(controller: keys)
+        editor.add(controller: keys)
     }
 
     /// What is selected in the code is what the reader means to look for, the way

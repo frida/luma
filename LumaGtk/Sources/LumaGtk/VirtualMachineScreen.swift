@@ -185,7 +185,7 @@ final class VirtualMachineScreen {
                 self.source.send(.keyUp(code: VirtualMachineKeyboard.code(for: key)))
             }
         }
-        area.install(controller: keys)
+        area.add(controller: keys)
 
         let focus = EventControllerFocus()
         focus.onEnter { [weak self] _ in
@@ -202,7 +202,7 @@ final class VirtualMachineScreen {
                 self.refreshHint()
             }
         }
-        area.install(controller: focus)
+        area.add(controller: focus)
 
         let focusClick = GestureClick()
         focusClick.set(button: 0)
@@ -210,7 +210,7 @@ final class VirtualMachineScreen {
         focusClick.onPressed { [weak self] _, _, _, _ in
             MainActor.assumeIsolated { _ = self?.area.grabFocus() }
         }
-        area.install(controller: focusClick)
+        area.add(controller: focusClick)
     }
 
     private func attachPointer() {
@@ -235,7 +235,7 @@ final class VirtualMachineScreen {
                 self.refreshHint()
             }
         }
-        area.install(controller: motion)
+        area.add(controller: motion)
 
         let buttons: [(Int, VirtualMachinePointerButton)] = [
             (1, .left), (2, .middle), (3, .right),
@@ -261,7 +261,7 @@ final class VirtualMachineScreen {
                     self?.source.send(.pointerButtonUp(button: guestButton))
                 }
             }
-            area.install(controller: click)
+            area.add(controller: click)
         }
 
         let scroll = EventControllerScroll(flags: .bothAxes)
@@ -271,7 +271,7 @@ final class VirtualMachineScreen {
                 return true
             }
         }
-        area.install(controller: scroll)
+        area.add(controller: scroll)
     }
 
     private func capturePointer(at x: Double, y: Double) {

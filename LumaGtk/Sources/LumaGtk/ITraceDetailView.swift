@@ -192,7 +192,7 @@ final class ITraceDetailView {
                 return true
             }
         }
-        widget.install(controller: modeKey)
+        widget.add(controller: modeKey)
 
         if let btn = pendingCompareButton {
             self.compareButton = btn

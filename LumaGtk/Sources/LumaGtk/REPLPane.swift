@@ -418,7 +418,7 @@ final class REPLPane {
                 self?.presentCellContextMenu(at: anchor, x: x, y: y, cell: cell)
             }
         }
-        anchor.install(controller: gesture)
+        anchor.add(controller: gesture)
     }
 
     private func presentCellContextMenu(at anchor: Widget, x: Double, y: Double, cell: LumaCore.REPLCell) {

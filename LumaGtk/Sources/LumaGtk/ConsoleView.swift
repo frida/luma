@@ -180,7 +180,7 @@ final class ConsoleView {
         promptClick.onPressed { [weak self] _, _, _, _ in
             MainActor.assumeIsolated { self?.onPromptClicked?() }
         }
-        prompt.install(controller: promptClick)
+        prompt.add(controller: promptClick)
 
         let keyController = EventControllerKey()
         keyController.propagationPhase = .capture
@@ -190,7 +190,7 @@ final class ConsoleView {
                 return self.handleKeyPress(keyval: keyval)
             }
         }
-        inputEntry.install(controller: keyController)
+        inputEntry.add(controller: keyController)
     }
 
     private func installBackgroundContextMenu() {
@@ -202,7 +202,7 @@ final class ConsoleView {
                 handler(self.cellsScroll, x, y)
             }
         }
-        cellsScroll.install(controller: gesture)
+        cellsScroll.add(controller: gesture)
     }
 
     private func submit() {

@@ -222,7 +222,7 @@ final class PharoListView {
                     [[ContextMenu.Item("Copy") { Self.copyToClipboard(text) }]], at: row, x: x, y: y)
             }
         }
-        row.install(controller: copy)
+        row.add(controller: copy)
         return row
     }
 

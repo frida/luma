@@ -615,7 +615,7 @@ final class AddressNotePopover {
                 self?.showMessageContextMenu(anchor: body, x: x, y: y, messageID: messageID)
             }
         }
-        body.install(controller: click)
+        body.add(controller: click)
     }
 
     private func showMessageContextMenu(anchor: Widget, x: Double, y: Double, messageID: UUID) {

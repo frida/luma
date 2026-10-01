@@ -534,7 +534,7 @@ private final class ModelArea {
                 self.widget.queueDraw()
             }
         }
-        widget.install(controller: drag)
+        widget.add(controller: drag)
 
         let scroll = EventControllerScroll(flags: .vertical)
         scroll.onScroll { [weak self] _, _, dy in
@@ -545,7 +545,7 @@ private final class ModelArea {
                 return true
             }
         }
-        widget.install(controller: scroll)
+        widget.add(controller: scroll)
     }
 
     private func draw(on ctx: Cairo.ContextRef, width: Double, height: Double) {

@@ -97,7 +97,7 @@ final class PharoGraphArea {
         click.onPressed { [weak self] _, count, x, y in
             MainActor.assumeIsolated { self?.press(x, y, count: count) }
         }
-        area.install(controller: click)
+        area.add(controller: click)
 
         let secondary = GestureClick()
         secondary.button = Int(GDK_BUTTON_SECONDARY)
@@ -108,7 +108,7 @@ final class PharoGraphArea {
                 self?.presentCopyMenu(x, y)
             }
         }
-        area.install(controller: secondary)
+        area.add(controller: secondary)
 
         let motion = EventControllerMotion()
         motion.onMotion { [weak self] _, x, y in
@@ -121,7 +121,7 @@ final class PharoGraphArea {
         motion.onLeave { [weak self] _ in
             MainActor.assumeIsolated { self?.setHovered(nil) }
         }
-        area.install(controller: motion)
+        area.add(controller: motion)
 
         let drag = GestureDrag()
         drag.onDragBegin { [weak self] _, _, _ in
@@ -136,7 +136,7 @@ final class PharoGraphArea {
                 self.area.queueDraw()
             }
         }
-        area.install(controller: drag)
+        area.add(controller: drag)
 
         let scroll = EventControllerScroll(flags: .bothAxes)
         scroll.onScroll { [weak self] controller, dx, dy in
@@ -153,7 +153,7 @@ final class PharoGraphArea {
                 return true
             }
         }
-        area.install(controller: scroll)
+        area.add(controller: scroll)
 
         let pinch = GestureZoom()
         pinch.onBegin { [weak self] _, _ in
@@ -166,13 +166,13 @@ final class PharoGraphArea {
                 self.pinchBase = scale
             }
         }
-        area.install(controller: pinch)
+        area.add(controller: pinch)
 
         let keys = EventControllerKey()
         keys.onKeyPressed { [weak self] _, keyval, _, _ in
             MainActor.assumeIsolated { self?.handleKey(keyval) ?? false }
         }
-        area.install(controller: keys)
+        area.add(controller: keys)
     }
 
     private func press(_ x: Double, _ y: Double, count: Int) {

@@ -70,7 +70,7 @@ final class CodeFolding {
                 self.toggle(line: fold.startLine)
             }
         }
-        gutter.area.install(controller: click)
+        gutter.area.add(controller: click)
     }
 
     private func installHover() {
@@ -88,7 +88,7 @@ final class CodeFolding {
         hover.onLeave { [weak self] _ in
             MainActor.assumeIsolated { self?.fadeOpenChevrons(to: 0, over: Self.fadeOut) }
         }
-        gutter.area.install(controller: hover)
+        gutter.area.add(controller: hover)
     }
 
     private func fitGutter() {

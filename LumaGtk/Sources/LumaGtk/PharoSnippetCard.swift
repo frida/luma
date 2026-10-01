@@ -275,7 +275,7 @@ final class PharoSnippetCard {
         motion.onLeave { [weak self] _ in
             MainActor.assumeIsolated { self?.pointedAt = false; self?.updateReveal() }
         }
-        widget.install(controller: motion)
+        widget.add(controller: motion)
 
         let focus = EventControllerFocus()
         focus.onEnter { [weak self] _ in
@@ -284,7 +284,7 @@ final class PharoSnippetCard {
         focus.onLeave { [weak self] _ in
             MainActor.assumeIsolated { self?.editorFocused = false; self?.updateReveal(); self?.accent.queueDraw() }
         }
-        editor.install(controller: focus)
+        editor.add(controller: focus)
     }
 
     private func updateReveal() {
@@ -314,7 +314,7 @@ final class PharoSnippetCard {
         gesture.onPressed { _, _, x, y in
             MainActor.assumeIsolated { popover.presentPointing(at: x, y: y) }
         }
-        widget.install(controller: gesture)
+        widget.add(controller: gesture)
     }
 
     private func menuItem(_ label: String, _ popover: Popover, _ action: @escaping () -> Void) -> Button {
@@ -384,6 +384,6 @@ final class PharoSnippetCard {
                 }
             }
         }
-        editor.install(controller: keys)
+        editor.add(controller: keys)
     }
 }

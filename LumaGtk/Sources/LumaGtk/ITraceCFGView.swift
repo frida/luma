@@ -630,7 +630,7 @@ final class ITraceCFGView {
                 self.drawingArea.queueDraw()
             }
         }
-        container.install(controller: drag)
+        container.add(controller: drag)
 
         let scroll = EventControllerScroll(flags: .bothAxes)
         let motionForPos = EventControllerMotion()
@@ -642,7 +642,7 @@ final class ITraceCFGView {
                 lastMouseY = y
             }
         }
-        container.install(controller: motionForPos)
+        container.add(controller: motionForPos)
 
         scroll.onScroll { [weak self] controller, dx, dy in
             MainActor.assumeIsolated {
@@ -672,7 +672,7 @@ final class ITraceCFGView {
                 return true
             }
         }
-        container.install(controller: scroll)
+        container.add(controller: scroll)
     }
 
     private func panToNode(_ node: CFGGraph.Node) {
@@ -754,7 +754,7 @@ final class ITraceCFGView {
                 }
             }
         }
-        container.install(controller: key)
+        container.add(controller: key)
     }
 
     private func jumpToFirst() {

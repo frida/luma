@@ -79,7 +79,7 @@ final class PharoOverviewBar {
                 adjustment.value = self.thumbDragBase + offsetX / track * adjustment.upper
             }
         }
-        thumb.install(controller: drag)
+        thumb.add(controller: drag)
         let motion = EventControllerMotion()
         motion.onEnter { [weak self] _, _, _ in
             MainActor.assumeIsolated { self?.thumbHovered = true; self?.thumb.queueDraw() }
@@ -87,7 +87,7 @@ final class PharoOverviewBar {
         motion.onLeave { [weak self] _ in
             MainActor.assumeIsolated { self?.thumbHovered = false; self?.thumb.queueDraw() }
         }
-        thumb.install(controller: motion)
+        thumb.add(controller: motion)
     }
 
     private func drawThumb(_ ctx: Cairo.ContextRef, _ width: Double, _ height: Double) {

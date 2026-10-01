@@ -129,7 +129,7 @@ final class TracerUIKind: InstrumentUIKind {
                 )
             }
         }
-        row.install(controller: click)
+        row.add(controller: click)
     }
 
     private func inlineHooks(

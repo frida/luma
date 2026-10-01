@@ -69,7 +69,7 @@ final class SidebarBrowserPopover<Item> {
                 return false
             }
         }
-        popover.install(controller: key)
+        popover.add(controller: key)
 
         let column = Box(orientation: .vertical, spacing: 8)
         column.marginStart = 8

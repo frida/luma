@@ -284,7 +284,7 @@ final class ModuleSymbolsPane {
                 return true
             }
         }
-        widget.install(controller: key)
+        widget.add(controller: key)
     }
 
     deinit {
@@ -414,7 +414,7 @@ final class ModuleSymbolsPane {
                 )
             }
         }
-        rowView.box.install(controller: click)
+        rowView.box.add(controller: click)
 
         let menu = GestureClick()
         menu.set(button: 3)
@@ -431,7 +431,7 @@ final class ModuleSymbolsPane {
                     copyLabel: "Copy Address", context: data.context)
             }
         }
-        rowView.box.install(controller: menu)
+        rowView.box.add(controller: menu)
 
         return rowView
     }

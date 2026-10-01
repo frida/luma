@@ -340,7 +340,7 @@ private final class ConsoleWidget {
                 self?.presentRowContextMenu(at: anchor, x: x, y: y, entry: entry)
             }
         }
-        anchor.install(controller: gesture)
+        anchor.add(controller: gesture)
     }
 
     private func presentRowContextMenu(at anchor: Widget, x: Double, y: Double, entry: WidgetConsoleEntry) {

@@ -14,5 +14,5 @@ func installEscapeShortcut(on window: Window) {
             return false
         }
     }
-    window.install(controller: key)
+    window.add(controller: key)
 }

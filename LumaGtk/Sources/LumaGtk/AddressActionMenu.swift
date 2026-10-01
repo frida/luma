@@ -47,7 +47,7 @@ enum AddressActionMenu {
                 present(at: anchor, x: x, y: y, engine: engine, sessionID: sessionID, address: address, value: value, copyLabel: copyLabel, includeDisassembly: includeDisassembly, context: context)
             }
         }
-        anchor.install(controller: gesture)
+        anchor.add(controller: gesture)
     }
 
     static func present(

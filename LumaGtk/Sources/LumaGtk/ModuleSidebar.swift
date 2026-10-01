@@ -37,7 +37,7 @@ enum ModuleSidebar {
                 )
             }
         }
-        anchor.install(controller: gesture)
+        anchor.add(controller: gesture)
     }
 
     static func presentBrowser(

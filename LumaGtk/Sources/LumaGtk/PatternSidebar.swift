@@ -302,7 +302,7 @@ final class PatternSidebar {
                 ], at: anchor, x: x, y: y)
             }
         }
-        row.install(controller: click)
+        row.add(controller: click)
     }
 
     private func presentRename(_ source: PatternSource) {
