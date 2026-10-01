@@ -137,7 +137,7 @@ final class PatternDecodeView {
             guard let self else { return }
             var sections: [[ContextMenu.Item]] = []
             for source in engine.patterns.sources {
-                guard let summary = try? await engine.patternDecoder.summary(of: source, arch: target.arch, platform: target.platform)
+                guard let summary = try? await engine.patternDecoder.summary(of: source, platform: target.platform, arch: target.arch)
                 else { continue }
                 var items: [ContextMenu.Item] = [.init(source.name, enabled: false) {}]
                 if let rootType = summary.rootType {
@@ -217,7 +217,7 @@ final class PatternDecodeView {
             do {
                 let printed = try await engine.patternDecoder.callFunction(
                     function, on: visualization.nodeID, of: source, typeName: placement.typeName, data: bytes(at: placement),
-                    address: baseAddress &+ UInt64(placement.offset), arch: target.arch, platform: target.platform)
+                    address: baseAddress &+ UInt64(placement.offset), platform: target.platform, arch: target.arch)
                 output = Label(str: printed.isEmpty ? "No output." : printed)
             } catch {
                 output = Label(str: error.localizedDescription)
@@ -343,11 +343,11 @@ final class PatternDecodeView {
             var described: [String: PatternSummary] = [:]
             for placement in placements {
                 guard let source = engine.patterns.source(withID: placement.sourceID) else { continue }
-                described[source.id] = try? await engine.patternDecoder.summary(of: source, arch: target.arch, platform: target.platform)
+                described[source.id] = try? await engine.patternDecoder.summary(of: source, platform: target.platform, arch: target.arch)
                 do {
                     let value = try await engine.patternDecoder.decode(
                         source, typeName: placement.typeName, data: bytes(at: placement), address: baseAddress &+ UInt64(placement.offset),
-                        arch: target.arch, platform: target.platform)
+                        platform: target.platform, arch: target.arch)
                     results[placement.id] = .decoded(value)
                 } catch {
                     results[placement.id] = .failed(error.localizedDescription)

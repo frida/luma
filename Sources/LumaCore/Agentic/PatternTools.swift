@@ -193,7 +193,7 @@ extension MissionTools {
                 }
                 let output = try await engine.patternDecoder.callFunction(
                     function, on: node.nodeID, ofText: request.text, typeName: request.typeName, data: decoding.data,
-                    address: request.address, arch: target.arch, platform: target.platform)
+                    address: request.address, platform: target.platform, arch: target.arch)
                 return makeResult(jsonObject: ["output": output], summary: "Called \(function)")
             } catch {
                 return errorResult(error.localizedDescription, code: .failed)

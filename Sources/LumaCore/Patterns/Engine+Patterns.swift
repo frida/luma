@@ -40,7 +40,7 @@ extension Engine {
         var data = Data(try await node.readRemoteMemory(at: address, count: byteCount))
         while true {
             let value = try await patternDecoder.decode(
-                text: text, typeName: typeName, data: data, address: address, arch: target.arch, platform: target.platform)
+                text: text, typeName: typeName, data: data, address: address, platform: target.platform, arch: target.arch)
             guard value.truncated, data.count < Self.largestPatternRead,
                 let more = try? await node.readRemoteMemory(at: address, count: min(data.count * 2, Self.largestPatternRead))
             else {

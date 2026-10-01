@@ -169,7 +169,7 @@ enum RenderTests {
         Task { @MainActor in
             defer { answer.settled = true }
             answer.root = try? await PatternDecoder().decode(
-                text: showcaseSource, typeName: "Showcase", data: showcaseBytes, address: 0x1000, arch: "arm64", platform: "linux")
+                text: showcaseSource, typeName: "Showcase", data: showcaseBytes, address: 0x1000, platform: "linux", arch: "arm64")
         }
         for _ in 0..<60 where !answer.settled {
             settle(for: 100)

@@ -8,25 +8,18 @@ public final class PatternDecoder {
 
     public init() {}
 
-    public static let hostArch = "arm64"
-    public static let hostPlatform = "darwin"
-
-    public func summary(of source: PatternSource, arch: String = hostArch, platform: String = hostPlatform) async throws -> PatternSummary {
-        let key = SummaryKey(sourceID: source.id, arch: arch, platform: platform)
+    public func summary(of source: PatternSource, platform: String? = nil, arch: String? = nil) async throws -> PatternSummary {
+        let key = SummaryKey(sourceID: source.id, platform: platform, arch: arch)
         if let cached = summaries[key], cached.text == source.text {
             return cached.summary
         }
-        let summary = try await summary(ofText: source.text, arch: arch, platform: platform)
+        let summary = try await summary(ofText: source.text, platform: platform, arch: arch)
         summaries[key] = SourceSummary(text: source.text, summary: summary)
         return summary
     }
 
-    public func summary(ofText text: String, arch: String = hostArch, platform: String = hostPlatform) async throws -> PatternSummary {
-        try await Self.describe(text, arch: arch, platform: platform, using: compiler)
-    }
-
-    private nonisolated static func describe(_ text: String, arch: String, platform: String, using compiler: PatternCompiler) async throws -> PatternSummary {
-        PatternSummary(module: try await compiler.describe(source: text, arch: arch, platform: platform))
+    public func summary(ofText text: String, platform: String? = nil, arch: String? = nil) async throws -> PatternSummary {
+        PatternSummary(module: try await Self.compile(text, platform: platform, arch: arch, using: compiler))
     }
 
     public func decode(
@@ -34,12 +27,12 @@ public final class PatternDecoder {
         typeName: String,
         data: Data,
         address: UInt64,
-        arch: String,
-        platform: String,
+        platform: String? = nil,
+        arch: String? = nil,
         inputs: [String: PatternInputValue] = [:]
     ) async throws -> DecodedPattern {
         try await decode(
-            text: source.text, typeName: typeName, data: data, address: address, arch: arch, platform: platform, inputs: inputs)
+            text: source.text, typeName: typeName, data: data, address: address, platform: platform, arch: arch, inputs: inputs)
     }
 
     public func decode(
@@ -47,12 +40,12 @@ public final class PatternDecoder {
         typeName: String,
         data: Data,
         address: UInt64,
-        arch: String,
-        platform: String,
+        platform: String? = nil,
+        arch: String? = nil,
         inputs: [String: PatternInputValue] = [:]
     ) async throws -> DecodedPattern {
         try await Self.decode(
-            text, typeName: typeName, data: Array(data), address: address, arch: arch, platform: platform, inputs: inputs,
+            text, typeName: typeName, data: Array(data), address: address, platform: platform, arch: arch, inputs: inputs,
             using: compiler)
     }
 
@@ -61,20 +54,14 @@ public final class PatternDecoder {
         typeName: String,
         data: [UInt8],
         address: UInt64,
-        arch: String,
-        platform: String,
+        platform: String?,
+        arch: String?,
         inputs: [String: PatternInputValue],
         using compiler: PatternCompiler
     ) async throws -> DecodedPattern {
-        let value = try await compiler.decode(
-            source: text,
-            typeName: typeName,
-            data: data,
-            address: address,
-            arch: arch,
-            platform: platform,
-            inputs: inputs.isEmpty ? nil : inputs.mapValues(\.rawValue)
-        )
+        let module = try await compile(text, platform: platform, arch: arch, using: compiler)
+        let value = try await module.decode(
+            typeName: typeName, data: data, address: address, inputs: inputs.isEmpty ? nil : inputs.mapValues(\.rawValue))
         return DecodedPattern(value: value)
     }
 
@@ -85,11 +72,12 @@ public final class PatternDecoder {
         typeName: String,
         data: Data,
         address: UInt64,
-        arch: String,
-        platform: String
+        platform: String? = nil,
+        arch: String? = nil
     ) async throws -> String {
         try await callFunction(
-            function, on: nodeID, ofText: source.text, typeName: typeName, data: data, address: address, arch: arch, platform: platform)
+            function, on: nodeID, ofText: source.text, typeName: typeName, data: data, address: address, platform: platform,
+            arch: arch)
     }
 
     public func callFunction(
@@ -99,12 +87,12 @@ public final class PatternDecoder {
         typeName: String,
         data: Data,
         address: UInt64,
-        arch: String,
-        platform: String
+        platform: String? = nil,
+        arch: String? = nil
     ) async throws -> String {
         try await Self.callFunction(
-            function, on: nodeID, of: text, typeName: typeName, data: Array(data), address: address, arch: arch, platform: platform,
-            using: compiler)
+            function, on: nodeID, of: text, typeName: typeName, data: Array(data), address: address, platform: platform,
+            arch: arch, using: compiler)
     }
 
     private nonisolated static func callFunction(
@@ -114,19 +102,24 @@ public final class PatternDecoder {
         typeName: String,
         data: [UInt8],
         address: UInt64,
-        arch: String,
-        platform: String,
+        platform: String?,
+        arch: String?,
         using compiler: PatternCompiler
     ) async throws -> String {
-        try await compiler.callFunction(
-            source: text, typeName: typeName, data: data, address: address, arch: arch, platform: platform, pattern: nodeID,
-            function: function)
+        let module = try await compile(text, platform: platform, arch: arch, using: compiler)
+        return try await module.callFunction(typeName: typeName, data: data, address: address, pattern: nodeID, function: function)
+    }
+
+    private nonisolated static func compile(
+        _ text: String, platform: String?, arch: String?, using compiler: PatternCompiler
+    ) async throws -> PatternModule {
+        try await compiler.compile(source: text, platform: platform, arch: arch)
     }
 
     private struct SummaryKey: Hashable {
         let sourceID: String
-        let arch: String
-        let platform: String
+        let platform: String?
+        let arch: String?
     }
 
     private struct SourceSummary {

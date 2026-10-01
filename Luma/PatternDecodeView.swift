@@ -32,7 +32,7 @@ struct PatternDecodeView: View {
     }
 
     private var describeKey: DescribeKey? {
-        target.map { DescribeKey(sources: engine.patterns.sources, arch: $0.arch, platform: $0.platform) }
+        target.map { DescribeKey(sources: engine.patterns.sources, platform: $0.platform, arch: $0.arch) }
     }
 
     private var decodeKey: DecodeKey {
@@ -299,7 +299,7 @@ struct PatternDecodeView: View {
             do {
                 let output = try await engine.patternDecoder.callFunction(
                     function, on: visualization.nodeID, of: source, typeName: placement.typeName, data: bytes(at: placement),
-                    address: baseAddress &+ UInt64(placement.offset), arch: target.arch, platform: target.platform)
+                    address: baseAddress &+ UInt64(placement.offset), platform: target.platform, arch: target.arch)
                 callOutcome = CallOutcome(rowID: id, text: output.isEmpty ? "No output." : output, isFailure: false)
             } catch {
                 callOutcome = CallOutcome(rowID: id, text: error.localizedDescription, isFailure: true)
@@ -335,7 +335,7 @@ struct PatternDecodeView: View {
         var described: [String: PatternSummary] = [:]
         for source in engine.patterns.sources {
             do {
-                described[source.id] = try await engine.patternDecoder.summary(of: source, arch: target.arch, platform: target.platform)
+                described[source.id] = try await engine.patternDecoder.summary(of: source, platform: target.platform, arch: target.arch)
             } catch {
                 describeProblem = "\(source.name): \(error.localizedDescription)"
             }
@@ -352,7 +352,7 @@ struct PatternDecodeView: View {
             do {
                 let value = try await engine.patternDecoder.decode(
                     source, typeName: placement.typeName, data: bytes(at: placement), address: baseAddress &+ UInt64(placement.offset),
-                    arch: target.arch, platform: target.platform)
+                    platform: target.platform, arch: target.arch)
                 results[placement.id] = .decoded(value)
             } catch {
                 results[placement.id] = .failed(error.localizedDescription)
@@ -541,8 +541,8 @@ private enum PlacementResult {
 
 private struct DescribeKey: Equatable {
     let sources: [PatternSource]
-    let arch: String
     let platform: String
+    let arch: String
 }
 
 private struct DecodeKey: Equatable {

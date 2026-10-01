@@ -34,8 +34,7 @@ extension Engine {
             guard let data = Data(base64Encoded: encoded) else { throw PharoAsyncBridgeError.missingArgument("bytes") }
             let value = try await patternDecoder.decode(
                 text: text, typeName: typeName, data: data, address: address,
-                arch: request["arch"] as? String ?? PatternDecoder.hostArch,
-                platform: request["platform"] as? String ?? PatternDecoder.hostPlatform)
+                platform: request["platform"] as? String, arch: request["arch"] as? String)
             decoding = PatternMemoryDecoding(value: value, data: data)
         } else {
             decoding = try await decodePattern(
