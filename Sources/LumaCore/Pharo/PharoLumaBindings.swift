@@ -86,7 +86,7 @@ public enum PharoLumaBindings {
              the call and freed after it: the image has no other moment to do
              it, and a uniform set every frame would otherwise leak one a
              frame."
-            | address definition function lent arguments answer |
+            | address definition function lent arguments |
             address := ExternalAddress loadSymbol: aName module: nil.
             definition := TFFunctionDefinition parameterTypes: aParameterTypes returnType: aReturnType.
             function := TFExternalFunction fromAddress: address definition: definition.
@@ -95,9 +95,8 @@ public enum PharoLumaBindings {
                 each isString
                     ifTrue: [ lent add: (self cString: each); last ]
                     ifFalse: [ each ] ].
-            answer := TFSameThreadRunner uniqueInstance invokeFunction: function withArguments: arguments.
-            lent do: [ :each | each free ].
-            ^ answer'.
+            ^ [ TFSameThreadRunner uniqueInstance invokeFunction: function withArguments: arguments ]
+                ensure: [ lent do: [ :each | each free ] ]'.
         host class compile: 'invoke: aName
             ^ self invoke: aName parameters: #() return: TFBasicType void with: #()'.
         host class compile: 'cString: aString
