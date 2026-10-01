@@ -51,6 +51,9 @@ enum ContextMenu {
 
         popover.set(child: box)
         popover.set(parent: root)
+        popover.onClosed { closed in
+            MainActor.assumeIsolated { closed.unparent() }
+        }
         popover.presentPointing(at: px, y: py)
     }
 
@@ -67,9 +70,10 @@ enum ContextMenu {
         button.sensitive = item.isEnabled
 
         let handler = item.handler
+        let menu = PopoverRef(raw: popover.ptr)
         button.onClicked { _ in
             MainActor.assumeIsolated {
-                popover.popdown()
+                menu.popdown()
                 _Concurrency.Task { @MainActor in handler() }
             }
         }
