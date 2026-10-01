@@ -12,7 +12,7 @@ final class TypeScriptCompletionProvider: CompletionProviderImplementation {
     var document: TypeScriptDocument?
 
     private let buffer: GtkSource.Buffer
-    private let editorView: GtkSource.View
+    private unowned let editorView: GtkSource.View
     private var items: [LSP.CompletionItem] = []
     private var resolved: [Int: LSP.CompletionItem] = [:]
     private var indexByProposal: [OpaquePointer: Int] = [:]
