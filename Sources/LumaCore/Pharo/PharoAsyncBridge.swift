@@ -1,5 +1,9 @@
 import Foundation
 
+#if os(Windows)
+import WinSDK
+#endif
+
 public final class PharoAsyncBridge: @unchecked Sendable {
     public static let shared = PharoAsyncBridge()
 
@@ -13,8 +17,16 @@ public final class PharoAsyncBridge: @unchecked Sendable {
     private var replies: [Int32: Reply] = [:]
 
     private static let signalSemaphore = unsafeBitCast(
-        dlsym(dlopen(nil, RTLD_NOW), "signalSemaphoreWithIndex"),
+        vmFunction(named: "signalSemaphoreWithIndex"),
         to: (@convention(c) (Int) -> Int).self)
+
+    private static func vmFunction(named name: String) -> UnsafeRawPointer? {
+        #if os(Windows)
+        unsafeBitCast(GetProcAddress(GetModuleHandleA("PharoVMCore.dll"), name), to: UnsafeRawPointer?.self)
+        #else
+        UnsafeRawPointer(dlsym(dlopen(nil, RTLD_NOW), name))
+        #endif
+    }
 
     public func serve(with handler: @escaping Handler) {
         lock.lock()
