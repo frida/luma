@@ -69,8 +69,13 @@ try {
     # yaml_* function. These apply to all link invocations (including
     # plugin tool binaries), so they live here rather than in
     # Package.swift, which only scopes to its own targets.
+    # _ALLOW_COMPILER_AND_STL_VERSION_MISMATCH lets the Clang that Swift
+    # ships compile C++ against an MSVC STL newer than it knows, which
+    # otherwise stops with STL1000 -- as swift-crypto does on the
+    # Visual Studio 18 of the windows-11-arm image.
     $swiftArgs = @(
         'build', '-c', $Configuration,
+        '-Xcxx', '-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH',
         '-Xlinker', '/ignore:importeddllmain',
         '-Xlinker', '/ignore:4217'
     )
