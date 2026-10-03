@@ -68,7 +68,7 @@ public final class Engine {
 
     public let hookPacks: HookPackLibrary
     public let patterns: PatternLibrary
-    public let patternDecoder = PatternDecoder()
+    public let patternDecoder: PatternDecoder
     public let customInstruments: CustomInstrumentLibrary
     public let virtualMachines: VirtualMachineManager
 
@@ -160,6 +160,7 @@ public final class Engine {
         let patternsDir = dataDirectory.appendingPathComponent("Patterns", isDirectory: true)
         try? FileManager.default.createDirectory(at: patternsDir, withIntermediateDirectories: true)
         self.patterns = PatternLibrary(directory: patternsDir)
+        self.patternDecoder = PatternDecoder(projectRoot: patternsDir)
         self.customInstruments = CustomInstrumentLibrary()
         self.virtualMachines = VirtualMachineManager(deviceManager: deviceManager, store: store, dataDirectory: dataDirectory)
         self.collaboration = CollaborationSession(
