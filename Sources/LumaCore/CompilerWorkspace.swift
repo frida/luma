@@ -242,6 +242,40 @@ public final class CompilerWorkspace {
         let bundle: String
     }
 
+    public func buildPatternBundle(for source: PatternSource, paths: CompilerWorkspacePaths) async throws -> String {
+        _ = try await ensureReady(paths: paths)
+
+        let wrapperRelPath = "PatternGlobals/\(source.id).entry.js"
+        let wrapperURL = paths.root.appendingPathComponent(wrapperRelPath)
+
+        try FileManager.default.createDirectory(
+            at: wrapperURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .withoutEscapingSlashes
+        let quotedPath = String(decoding: try encoder.encode(source.url.path), as: UTF8.self)
+        try "export * from \(quotedPath);\n".write(to: wrapperURL, atomically: true, encoding: .utf8)
+
+        let libraryDirectory = URL(fileURLWithPath: String(source.url.path.dropLast(source.id.count))).standardizedFileURL.path + "/"
+        let pathInLibrary: @Sendable (String) -> String = { path in
+            let absolute = paths.root.appendingPathComponent(path).standardizedFileURL.path
+            return absolute.hasPrefix(libraryDirectory) ? String(absolute.dropFirst(libraryDirectory.count)) : path
+        }
+
+        let bundle = try await withCompilerDiagnostics(label: "pattern \(source.name)", pathDisplay: pathInLibrary) { compiler in
+            return try await compiler.build(
+                entrypoint: wrapperRelPath,
+                projectRoot: paths.root.path,
+                sourceMaps: .omitted,
+                compression: .terser)
+        }
+
+        let modules = try ESMBundleParser.parse(bundle)
+        return modules.modules[modules.order[0]]!
+    }
+
     public func withCompilerDiagnostics<T>(
         label: String,
         pathDisplay: (@Sendable (String) -> String)? = nil,

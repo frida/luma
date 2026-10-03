@@ -174,6 +174,11 @@ public final class ProcessNode: Identifiable {
         try await script.exports.loadPackages(JSValue(bundles))
     }
 
+    public func installPatternGlobals(_ globals: [Any], removing removed: [String]) async throws -> [String] {
+        let refused = try await script.exports.installPatternGlobals(globals, removed)
+        return refused as? [String] ?? []
+    }
+
     private func startObservingSessionState() {
         Task { @MainActor [weak self] in
             guard let self else { return }
