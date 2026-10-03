@@ -6,7 +6,7 @@ proxy_variables="http_proxy https_proxy no_proxy all_proxy HTTP_PROXY HTTPS_PROX
 toolchain_variables="DEVELOPER_DIR SDKROOT TOOLCHAINS SWIFTLY_HOME_DIR SWIFTLY_BIN_DIR SWIFTLY_TOOLCHAINS_DIR"
 variables_the_build_reads="PKG_CONFIG_PATH PKG_CONFIG_ALLOW_SYSTEM_CFLAGS PKG_CONFIG_ALLOW_SYSTEM_LIBS USE_SYSTEM_FRIDA
     FRIDA_SWIFT_ROOT LUMA_FRIDA_DEVKIT LUMA_VERSION SHADER_TOOLCHAIN_ROOT PHARO_VM_ROOT SQLITE_ENABLE_PREUPDATE_HOOK
-    GIR_EXTRA_SEARCH_PATH"
+    GIR_EXTRA_SEARCH_PATH LD_LIBRARY_PATH C_INCLUDE_PATH"
 
 for name in $unix_variables $proxy_variables $toolchain_variables $variables_the_build_reads; do
     eval "is_set=\${$name+yes}"
