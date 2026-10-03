@@ -8,12 +8,16 @@ public final class PatternLibrary {
 
     public let directory: URL
 
+    @ObservationIgnored
+    var onChange: (() -> Void)?
+
     public init(directory: URL) {
         self.directory = directory
     }
 
     public func reload() {
         sources = discover()
+        onChange?()
     }
 
     public func source(withID id: String) -> PatternSource? {

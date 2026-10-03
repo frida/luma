@@ -69,6 +69,7 @@ public final class Engine {
     public let hookPacks: HookPackLibrary
     public let patterns: PatternLibrary
     public let patternDecoder: PatternDecoder
+    private let patternGlobals = PatternGlobals()
     public let customInstruments: CustomInstrumentLibrary
     public let virtualMachines: VirtualMachineManager
 
@@ -284,6 +285,9 @@ public final class Engine {
             self?.emitEngineError(subsystem: "hookpacks", text: message)
         }
         hookPacks.reload()
+        patterns.onChange = { [weak self] in
+            self?.publishPatternGlobals()
+        }
         patterns.reload()
     }
 
@@ -1838,12 +1842,58 @@ public final class Engine {
             try await node.loadPackages([entry])
             node.loadedPackageNames.insert(package.name)
         } catch {
-            var message = "Failed to load package \(package.name): \(userFacingMessage(error))"
-            if let compile = error as? CompileFailure, !compile.diagnostics.isEmpty {
-                message += "\n\n" + compile.diagnostics.map(\.description).joined(separator: "\n")
-            }
-            emitEngineError(subsystem: "packages", text: message)
+            emitEngineError(subsystem: "packages", text: "Failed to load package \(package.name): \(describedCompileError(error))")
         }
+    }
+
+    private func loadPatternGlobals(on node: ProcessNode) async {
+        await refreshPatternGlobals()
+        await installPatternGlobals(patternGlobals.all, removing: [], on: node)
+    }
+
+    private func publishPatternGlobals() {
+        guard !processNodes.isEmpty else { return }
+        Task {
+            let update = await refreshPatternGlobals()
+            for node in processNodes {
+                await installPatternGlobals(update.installed, removing: update.removed, on: node)
+            }
+        }
+    }
+
+    @discardableResult
+    private func refreshPatternGlobals() async -> PatternGlobals.Update {
+        let update = await patternGlobals.refresh(from: patterns.sources) { [self] source in
+            try await compilerWorkspace.buildPatternBundle(for: source, paths: try compilerWorkspacePaths())
+        }
+        for (source, error) in update.failures {
+            emitEngineError(subsystem: "patterns", text: "Failed to expose \(source.name) to the REPL: \(describedCompileError(error))")
+        }
+        return update
+    }
+
+    private func installPatternGlobals(
+        _ globals: [PatternGlobals.CompiledPattern], removing removed: [String], on node: ProcessNode
+    ) async {
+        guard !globals.isEmpty || !removed.isEmpty else { return }
+        do {
+            let refused = try await node.installPatternGlobals(globals.map(\.agentEntry), removing: removed)
+            for global in refused {
+                let name = patternGlobals.source(ofGlobal: global) ?? global
+                let reason = userFacingMessage(PatternGlobalError.wouldReplace(global))
+                emitEngineError(subsystem: "patterns", text: "Failed to expose \(name) to the REPL: \(reason)")
+            }
+        } catch {
+            emitEngineError(subsystem: "patterns", text: "Failed to expose patterns to the REPL: \(userFacingMessage(error))")
+        }
+    }
+
+    private func describedCompileError(_ error: any Swift.Error) -> String {
+        var message = userFacingMessage(error)
+        if let compile = error as? CompileFailure, !compile.diagnostics.isEmpty {
+            message += "\n\n" + compile.diagnostics.map(\.description).joined(separator: "\n")
+        }
+        return message
     }
 
     private func propagatePackage(_ package: InstalledPackage) async {
@@ -2171,6 +2221,7 @@ public final class Engine {
             }
 
             await loadAllPackages(on: node)
+            await loadPatternGlobals(on: node)
 
             for ref in node.instruments where ref.state == .enabled {
                 await loadInstrumentOnNode(
