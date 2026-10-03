@@ -1,6 +1,7 @@
 import CCairo
 import CGtk
 import Foundation
+import Gdk
 import LumaCore
 
 enum GdkFrameEncoder {
@@ -19,7 +20,7 @@ enum GdkFrameEncoder {
         let stride = Int(cairo_image_surface_get_stride(surface))
         let pixels = g_bytes_new(cairo_image_surface_get_data(surface), gsize(stride * height))
         defer { g_bytes_unref(pixels) }
-        let texture = gdk_memory_texture_new(gint(width), gint(height), GDK_MEMORY_B8G8R8A8_PREMULTIPLIED, pixels, gsize(stride))
+        let texture = gdk_memory_texture_new(gint(width), gint(height), MemoryFormat.b8g8r8a8Premultiplied.value, pixels, gsize(stride))
         defer { g_object_unref(texture) }
 
         let png = gdk_texture_save_to_png_bytes(texture)
