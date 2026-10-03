@@ -168,7 +168,7 @@ enum RenderTests {
         let answer = Answer()
         Task { @MainActor in
             defer { answer.settled = true }
-            answer.root = try? await PatternDecoder().decode(
+            answer.root = try? await PatternDecoder(projectRoot: FileManager.default.temporaryDirectory).decode(
                 text: showcaseSource, typeName: "Showcase", data: showcaseBytes, address: 0x1000, platform: "linux", arch: "arm64")
         }
         for _ in 0..<60 where !answer.settled {
