@@ -122,7 +122,9 @@ private struct ProjectContentView: View {
                     isShowingHostingBlockedAlert: $isShowingHostingBlockedAlert
                 )
             }
-            .toolbarBackground(.hidden, for: .windowToolbar)
+            #if os(macOS)
+                .toolbarBackground(.hidden, for: .windowToolbar)
+            #endif
             .alert(
                 "Only lab owners can host sessions",
                 isPresented: $isShowingHostingBlockedAlert
