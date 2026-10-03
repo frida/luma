@@ -175,7 +175,7 @@ public final class ProcessNode: Identifiable {
     }
 
     public func installPatternGlobals(_ globals: [Any], removing removed: [String]) async throws -> [String] {
-        let refused = try await script.exports.installPatternGlobals(globals, removed)
+        let refused = try await script.exports.installPatternGlobals(JSValue(globals), JSValue(removed))
         return refused as? [String] ?? []
     }
 
