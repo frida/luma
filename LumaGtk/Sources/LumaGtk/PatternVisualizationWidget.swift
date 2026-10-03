@@ -506,11 +506,14 @@ private final class ModelArea {
         positions = raw.map { ($0 - center) / radius }
         let indices = model.indices.map { $0.map(Int.init) } ?? Array(0..<(vertexCount - vertexCount % 3))
         triangles = stride(from: 0, to: indices.count - 2, by: 3).map { (indices[$0], indices[$0 + 1], indices[$0 + 2]) }
-        let defaultColor = SIMD3<Double>(1, 0x7f / 255.0, 0x33 / 255.0)
-        colors =
-            model.colors.count == vertexCount * 4
-            ? (0..<vertexCount).map { SIMD3(Double(model.colors[$0 * 4]), Double(model.colors[$0 * 4 + 1]), Double(model.colors[$0 * 4 + 2])) }
-            : Array(repeating: defaultColor, count: vertexCount)
+        if model.colors.count == vertexCount * 4 {
+            colors = (0..<vertexCount).map { vertex -> SIMD3<Double> in
+                let rgba = vertex * 4
+                return SIMD3(Double(model.colors[rgba]), Double(model.colors[rgba + 1]), Double(model.colors[rgba + 2]))
+            }
+        } else {
+            colors = Array(repeating: SIMD3(1, 0x7f / 255.0, 0x33 / 255.0), count: vertexCount)
+        }
 
         widget = DrawingArea()
         widget.setSizeRequest(width: 400, height: 400)
