@@ -1,5 +1,6 @@
 import Adw
 import CAdw
+import Cairo
 import CGtk
 import CLuma
 import Foundation
@@ -194,8 +195,8 @@ final class CodeFolding {
         }
         cairo_set_source_rgba(cr, Double(color.red), Double(color.green), Double(color.blue), Self.chevronAlpha * alpha)
         cairo_set_line_width(cr, 1.5)
-        cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND)
-        cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND)
+        cairo_set_line_cap(cr, Cairo.LineCap.round.value)
+        cairo_set_line_join(cr, Cairo.LineJoin.round.value)
         cairo_stroke(cr)
     }
 

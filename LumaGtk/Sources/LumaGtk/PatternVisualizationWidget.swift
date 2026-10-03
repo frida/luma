@@ -506,10 +506,11 @@ private final class ModelArea {
         positions = raw.map { ($0 - center) / radius }
         let indices = model.indices.map { $0.map(Int.init) } ?? Array(0..<(vertexCount - vertexCount % 3))
         triangles = stride(from: 0, to: indices.count - 2, by: 3).map { (indices[$0], indices[$0 + 1], indices[$0 + 2]) }
+        let defaultColor = SIMD3<Double>(1, 0x7f / 255.0, 0x33 / 255.0)
         colors =
             model.colors.count == vertexCount * 4
             ? (0..<vertexCount).map { SIMD3(Double(model.colors[$0 * 4]), Double(model.colors[$0 * 4 + 1]), Double(model.colors[$0 * 4 + 2])) }
-            : Array(repeating: SIMD3(1, 0x7f / 255, 0x33 / 255), count: vertexCount)
+            : Array(repeating: defaultColor, count: vertexCount)
 
         widget = DrawingArea()
         widget.setSizeRequest(width: 400, height: 400)
@@ -665,7 +666,7 @@ private final class ClockArea: DrawnArea {
                     hand(Double(tick) / 12, from: radius * (tick % 3 == 0 ? 0.8 : 0.88), to: radius)
                 }
                 text.setSource(on: cr)
-                cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND)
+                cairo_set_line_cap(cr, Cairo.LineCap.round.value)
                 cairo_set_line_width(cr, 3)
                 hand(hours / 12, from: 0, to: radius * 0.5)
                 cairo_set_line_width(cr, 2)

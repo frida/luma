@@ -97,7 +97,7 @@ final class TextLayer {
         _ = gtk_widget_compute_point(widget.widget_ptr, editor.widget_ptr, &from, &to)
         var bufferX: gint = 0
         var bufferY: gint = 0
-        gtk_text_view_window_to_buffer_coords(editor.text_view_ptr, GTK_TEXT_WINDOW_WIDGET, 0, gint(to.y), &bufferX, &bufferY)
+        gtk_text_view_window_to_buffer_coords(editor.text_view_ptr, TextWindowType.widget.value, 0, gint(to.y), &bufferX, &bufferY)
         return line(atBufferY: bufferY)
     }
 
@@ -117,7 +117,7 @@ final class TextLayer {
     private func point(bufferX: gint, bufferY: gint) -> CGPoint {
         var windowX: gint = 0
         var windowY: gint = 0
-        gtk_text_view_buffer_to_window_coords(editor.text_view_ptr, GTK_TEXT_WINDOW_WIDGET, bufferX, bufferY, &windowX, &windowY)
+        gtk_text_view_buffer_to_window_coords(editor.text_view_ptr, TextWindowType.widget.value, bufferX, bufferY, &windowX, &windowY)
         var from = graphene_point_t(x: Float(windowX), y: Float(windowY))
         var to = graphene_point_t()
         _ = gtk_widget_compute_point(editor.widget_ptr, area.widget_ptr, &from, &to)

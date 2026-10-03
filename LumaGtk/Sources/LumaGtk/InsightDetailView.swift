@@ -8,6 +8,7 @@ import Gdk
 import struct Graphene.PointRef
 import Gtk
 import LumaCore
+import Observation
 import Pango
 
 @MainActor
