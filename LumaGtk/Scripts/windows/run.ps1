@@ -2,8 +2,8 @@
 # environment (PATH, GDK_PIXBUF_MODULE_FILE, XDG_DATA_DIRS) configured
 # for a working GTK install.
 #
-#     .\scripts\windows\run.ps1                      # debug
-#     .\scripts\windows\run.ps1 -Configuration release
+#     .\Scripts\windows\run.ps1                      # debug
+#     .\Scripts\windows\run.ps1 -Configuration release
 #
 # Extra arguments after -Configuration are forwarded to the exe.
 

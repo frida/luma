@@ -329,7 +329,7 @@ jobs:
         run: brew install glslang spirv-cross
 
       - name: Generate sources
-        run: scripts/generate-sources.sh
+        run: Scripts/generate-sources.sh
 
       - name: Build
         run: |
@@ -685,7 +685,7 @@ jobs:
         run: brew install glslang spirv-cross
 
       - name: Generate sources
-        run: scripts/generate-sources.sh
+        run: Scripts/generate-sources.sh
 
       - name: Build (unsigned, iOS Simulator)
         if: env.CAN_SIGN != 'true'
@@ -1443,7 +1443,7 @@ jobs:
       - name: Install dependencies via vcpkg
         shell: pwsh
         run: >
-          ./LumaGtk/scripts/windows/bootstrap.ps1
+          ./LumaGtk/Scripts/windows/bootstrap.ps1
           -Only vcpkg
           -Arch ${{ matrix.win_arch == 'arm64' && 'arm64' || 'x64' }}
           -VcpkgRoot C:\vcpkg
@@ -1575,7 +1575,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}\qemu
-          key: ${{ runner.os }}-${{ matrix.win_arch }}-qemu-${{ env.QEMU_VERSION }}-${{ hashFiles('LumaGtk/scripts/windows/build-qemu.sh') }}-v1
+          key: ${{ runner.os }}-${{ matrix.win_arch }}-qemu-${{ env.QEMU_VERSION }}-${{ hashFiles('LumaGtk/Scripts/windows/build-qemu.sh') }}-v1
 
       - name: Install Go toolchain
         if: steps.frida-cache.outputs.cache-hit != 'true'
@@ -1620,7 +1620,7 @@ jobs:
         env:
           MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
         run: >
-          ./LumaGtk/scripts/windows/bootstrap.ps1
+          ./LumaGtk/Scripts/windows/bootstrap.ps1
           -Only frida-core
           -Arch ${{ matrix.win_arch == 'arm64' && 'arm64' || 'x64' }}
           -VcpkgPrefix C:\vcpkg\installed\${{ matrix.vcpkg_triplet }}
@@ -1644,7 +1644,7 @@ jobs:
         if: steps.r2-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: >
-          ./LumaGtk/scripts/windows/bootstrap.ps1
+          ./LumaGtk/Scripts/windows/bootstrap.ps1
           -Only radare2
           -Arch ${{ matrix.win_arch == 'arm64' && 'arm64' || 'x64' }}
           -VcpkgPrefix C:\vcpkg\installed\${{ matrix.vcpkg_triplet }}
@@ -1668,7 +1668,7 @@ jobs:
         if: steps.pharo-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: >
-          ./LumaGtk/scripts/windows/bootstrap.ps1
+          ./LumaGtk/Scripts/windows/bootstrap.ps1
           -Only pharo-vm
           -Arch ${{ matrix.win_arch == 'arm64' && 'arm64' || 'x64' }}
           -VcpkgPrefix C:\vcpkg\installed\${{ matrix.vcpkg_triplet }}
@@ -1736,7 +1736,7 @@ jobs:
       - name: Build LumaGtk
         shell: pwsh
         run: >
-          ./LumaGtk/scripts/windows/build.ps1
+          ./LumaGtk/Scripts/windows/build.ps1
           -Configuration release
           -VcpkgPrefix "C:\vcpkg\installed\${{ matrix.vcpkg_triplet }}"
           -FridaPrefix "$env:RUNNER_TEMP\frida-prefix"
@@ -1750,7 +1750,7 @@ jobs:
         env:
           MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
         run: >
-          ./LumaGtk/scripts/windows/bootstrap.ps1
+          ./LumaGtk/Scripts/windows/bootstrap.ps1
           -Only qemu
           -Arch ${{ matrix.win_arch == 'arm64' && 'arm64' || 'x64' }}
           -VcpkgPrefix C:\vcpkg\installed\${{ matrix.vcpkg_triplet }}
@@ -1761,13 +1761,13 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}\qemu
-          key: ${{ runner.os }}-${{ matrix.win_arch }}-qemu-${{ env.QEMU_VERSION }}-${{ hashFiles('LumaGtk/scripts/windows/build-qemu.sh') }}-v1
+          key: ${{ runner.os }}-${{ matrix.win_arch }}-qemu-${{ env.QEMU_VERSION }}-${{ hashFiles('LumaGtk/Scripts/windows/build-qemu.sh') }}-v1
 
       - name: Package MSI
         shell: pwsh
         run: |
           cd LumaGtk
-          .\scripts\windows\package-msi.ps1 -SkipBuild -Configuration release `
+          .\Scripts\windows\package-msi.ps1 -SkipBuild -Configuration release `
               -Version "$env:LUMA_VERSION" `
               -Arch "${{ matrix.win_arch }}" `
               -BuildPath "$env:RUNNER_TEMP/b" `

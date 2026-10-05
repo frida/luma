@@ -166,11 +166,11 @@ Nothing else has to be a Developer PowerShell: the scripts load the MSVC
 environment themselves. From `LumaGtk/`, in an ordinary PowerShell:
 
 ```powershell
-.\scripts\windows\bootstrap.ps1                        # one-time, ~1-2h
-.\scripts\windows\build.ps1                            # debug
-.\scripts\windows\build.ps1 -Configuration release
-.\scripts\windows\package-msi.ps1 -Version 0.1.0       # build\Luma-*.msi
-.\scripts\windows\run.ps1                              # launch with DLL PATH set
+.\Scripts\windows\bootstrap.ps1                        # one-time, ~1-2h
+.\Scripts\windows\build.ps1                            # debug
+.\Scripts\windows\build.ps1 -Configuration release
+.\Scripts\windows\package-msi.ps1 -Version 0.1.0       # build\Luma-*.msi
+.\Scripts\windows\run.ps1                              # launch with DLL PATH set
 ```
 
 `bootstrap.ps1` provisions everything the build links against —

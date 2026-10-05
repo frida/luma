@@ -3,7 +3,7 @@
 # This script is intended to be dot-sourced from build.ps1 or from an
 # interactive PowerShell prompt when iterating on the build manually.
 #
-#     . .\scripts\windows\setup-env.ps1
+#     . .\Scripts\windows\setup-env.ps1
 #
 # Prefix locations can be overridden via -VcpkgPrefix / -FridaPrefix /
 # -R2Prefix / -PharoPrefix, or via the VCPKG_PREFIX / FRIDA_PREFIX /
@@ -29,7 +29,7 @@ function Resolve-Prefix {
     }
     throw @"
 Could not locate $EnvName.
-Run .\scripts\windows\bootstrap.ps1 to provision the dependencies, or
+Run .\Scripts\windows\bootstrap.ps1 to provision the dependencies, or
 pass -$($EnvName.Replace('_PREFIX','Prefix')) / set `$env:$EnvName to an existing prefix.
 "@
 }

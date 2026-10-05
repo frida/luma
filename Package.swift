@@ -119,7 +119,7 @@ let lumaCoreCompressionDeps: [Target.Dependency] = []
 // it stands, and neither the target nor the toolchain it needs is built.
 //
 // Neither project builds under SwiftPM, so CI makes them into an xcframework
-// (see scripts/make-shader-toolchain-xcframework.sh) and this names it.
+// (see Scripts/make-shader-toolchain-xcframework.sh) and this names it.
 //
 // A locally made one short-circuits the published artifact, the way
 // SwiftyPharo honours PHARO_VM_ROOT: run that script and set

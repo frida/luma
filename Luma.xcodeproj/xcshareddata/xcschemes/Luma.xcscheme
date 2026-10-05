@@ -11,7 +11,7 @@
             ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
             <ActionContent
                title = "Generate sources"
-               scriptText = "set -euo pipefail&#10;&quot;${WORKSPACE_PATH}/../../scripts/generate-sources.sh&quot; --require-existing&#10;">
+               scriptText = "set -euo pipefail&#10;&quot;${WORKSPACE_PATH}/../../Scripts/generate-sources.sh&quot; --require-existing&#10;">
             </ActionContent>
          </ExecutionAction>
       </PreActions>

@@ -1,7 +1,7 @@
 # Package LumaGtk as a Windows installer (.msi) using WiX 3.x.
 #
-#     .\scripts\windows\package-msi.ps1 -PharoPrefix C:\src\pharo
-#     .\scripts\windows\package-msi.ps1 -Configuration release
+#     .\Scripts\windows\package-msi.ps1 -PharoPrefix C:\src\pharo
+#     .\Scripts\windows\package-msi.ps1 -Configuration release
 #
 # By default builds release if no existing build is found. Produces
 # build\Luma-<version>-<arch>.msi.
@@ -183,7 +183,7 @@ Get-ChildItem -Path $QemuPrefix -Filter '*.dll' |
 
 Copy-Item (Join-Path $QemuPrefix 'COPYING')     $qemuStage
 Copy-Item (Join-Path $QemuPrefix 'COPYING.LIB') $qemuStage
-Copy-Item (Join-Path $pkg 'data\qemu-source-offer.txt') $qemuStage
+Copy-Item (Join-Path $pkg 'Data\qemu-source-offer.txt') $qemuStage
 
 $firmwareStage = Join-Path $qemuStage 'share'
 New-Item -ItemType Directory -Force -Path $firmwareStage | Out-Null
@@ -203,7 +203,7 @@ Copy-Tree (Join-Path $QemuPrefix 'share\keymaps') (Join-Path $firmwareStage 'key
 Write-Host "[stage] GTK data (schemas/icons)"
 Copy-Tree (Join-Path $env:VCPKG_PREFIX 'share\glib-2.0\schemas') (Join-Path $stage 'share\glib-2.0\schemas')
 Copy-Tree (Join-Path $env:VCPKG_PREFIX 'share\icons')            (Join-Path $stage 'share\icons')
-Copy-Tree (Join-Path $pkg 'data\icons\hicolor')                  (Join-Path $stage 'share\icons\hicolor')
+Copy-Tree (Join-Path $pkg 'Data\icons\hicolor')                  (Join-Path $stage 'share\icons\hicolor')
 
 # glib-networking ships the TLS backend GIO loads at runtime to
 # satisfy libsoup HTTPS. vcpkg's portfile relocates the modules from
@@ -286,8 +286,8 @@ $componentsWxs = Join-Path $wixObj 'components.wxs'
 if ($LASTEXITCODE -ne 0) { throw "heat failed ($LASTEXITCODE)" }
 
 $productWxs = Join-Path $wixObj 'product.wxs'
-$iconPath    = (Join-Path $pkg 'data\luma.ico')     -replace '\\','/'
-$licensePath = (Join-Path $pkg 'data\license.rtf')  -replace '\\','/'
+$iconPath    = (Join-Path $pkg 'Data\luma.ico')     -replace '\\','/'
+$licensePath = (Join-Path $pkg 'Data\license.rtf')  -replace '\\','/'
 @"
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">

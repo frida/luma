@@ -18,11 +18,11 @@ agent_out="$root/Sources/LumaCore/Generated/LumaAgent.swift"
 pharo_image="$root/Sources/LumaCore/Resources/pharo-image/SwiftyPharo.image"
 
 if $require_existing && { [ ! -f "$agent_out" ] || [ ! -f "$pharo_image" ]; }; then
-    echo "error: generated sources are missing; run scripts/generate-sources.sh and build again" >&2
+    echo "error: generated sources are missing; run Scripts/generate-sources.sh and build again" >&2
     exit 1
 fi
 
-"$root/scripts/stage-pharo-image.sh"
+"$root/Scripts/stage-pharo-image.sh"
 
 swift run --package-path "$root" LumaBundleCompiler \
     --config       "$root/Agent/bundle.json" \

@@ -19,7 +19,7 @@ ifneq ($(wildcard $(LOCAL_SHADER_TOOLCHAIN)),)
 export SHADER_TOOLCHAIN_ROOT := $(LOCAL_SHADER_TOOLCHAIN)
 endif
 
-IN_BUILD_ENVIRONMENT := scripts/in-build-environment.sh
+IN_BUILD_ENVIRONMENT := Scripts/in-build-environment.sh
 
 SYSTEM_FRIDA_ENTITLEMENTS := $(BUILD_DIR)/Luma-macOS-system-frida.entitlements
 ifneq ($(USE_SYSTEM_FRIDA),)
@@ -45,7 +45,7 @@ check-editor: $(PHARO_IMAGE)
 	$(IN_BUILD_ENVIRONMENT) swift run --disable-sandbox LumaEditorCheck
 
 $(PHARO_IMAGE):
-	scripts/stage-pharo-image.sh
+	Scripts/stage-pharo-image.sh
 
 $(APP): $(SOURCES) $(SHADER_SOURCES) Luma.xcodeproj Package.swift
 	mkdir -p "$(BUILD_DIR)"
@@ -53,7 +53,7 @@ $(APP): $(SOURCES) $(SHADER_SOURCES) Luma.xcodeproj Package.swift
 		cp Luma/Luma-macOS.entitlements "$(SYSTEM_FRIDA_ENTITLEMENTS)"; \
 		/usr/libexec/PlistBuddy -c "Add :com.apple.security.cs.disable-library-validation bool true" "$(SYSTEM_FRIDA_ENTITLEMENTS)"; \
 	fi
-	$(IN_BUILD_ENVIRONMENT) scripts/generate-sources.sh
+	$(IN_BUILD_ENVIRONMENT) Scripts/generate-sources.sh
 	$(IN_BUILD_ENVIRONMENT) xcodebuild \
 		-project Luma.xcodeproj \
 		-scheme Luma \

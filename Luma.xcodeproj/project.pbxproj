@@ -60,8 +60,8 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
-				"scripts/capture-screenshots.py",
-				"scripts/capture-screenshots.sh",
+				"Scripts/capture-screenshots.py",
+				"Scripts/capture-screenshots.sh",
 			);
 			target = 0CD209332EB511C400D027FC /* Luma */;
 		};

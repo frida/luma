@@ -3,7 +3,7 @@
 
 Usage:
     # Under headless mutter (make screenshots handles this):
-    python3 scripts/capture-screenshots.py <pid> <output-dir>
+    python3 Scripts/capture-screenshots.py <pid> <output-dir>
 """
 
 import frida

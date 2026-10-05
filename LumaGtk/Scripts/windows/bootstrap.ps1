@@ -1,13 +1,13 @@
 # Provision everything LumaGtk needs to build on Windows.
 #
-#     .\scripts\windows\bootstrap.ps1          # everything that is missing
-#     .\scripts\windows\bootstrap.ps1 -Force   # rebuild it anyway
+#     .\Scripts\windows\bootstrap.ps1          # everything that is missing
+#     .\Scripts\windows\bootstrap.ps1 -Force   # rebuild it anyway
 #
 # Each component is skipped when its prefix already looks populated, so
 # re-running after a failure picks up where it stopped. CI calls the same
 # script one component at a time, between its cache restore and save:
 #
-#     .\scripts\windows\bootstrap.ps1 -Only frida-core -FridaPrefix D:\a\_temp\frida-prefix
+#     .\Scripts\windows\bootstrap.ps1 -Only frida-core -FridaPrefix D:\a\_temp\frida-prefix
 #
 # so the recipes below are the only copy there is. The upstream revisions
 # live in .github/dependency-refs.env, which the workflow loads too.
@@ -407,4 +407,4 @@ Write-Host "  R2_PREFIX    = $R2Prefix"
 Write-Host "  PHARO_PREFIX = $PharoPrefix"
 Write-Host "  QEMU_PREFIX  = $QemuPrefix"
 Write-Host ""
-Write-Host "Next: .\scripts\windows\build.ps1"
+Write-Host "Next: .\Scripts\windows\build.ps1"

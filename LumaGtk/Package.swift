@@ -47,7 +47,7 @@ let cLumaLinkerSettings: [LinkerSetting] = [
 //
 // The /ignore:* warning filters also apply to those tool binaries and
 // can't be set on targets outside this package — they live on the
-// swift build command line (see scripts/windows/build.ps1 and the
+// swift build command line (see Scripts/windows/build.ps1 and the
 // Windows CI job).
 let windowsGuiLinkerFlags = ["-Xlinker", "/SUBSYSTEM:WINDOWS", "-Xlinker", "/ENTRY:mainCRTStartup"]
 let lumaGtkLinkerSettings: [LinkerSetting] = [

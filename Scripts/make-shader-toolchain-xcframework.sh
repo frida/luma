@@ -13,7 +13,7 @@ vendor="$root/Vendor/shader-toolchain"
 artifacts="$root/artifacts"
 staging="$root/build/xcframework"
 
-"$root/scripts/build-shader-toolchain.sh"
+"$root/Scripts/build-shader-toolchain.sh"
 
 rm -rf "$staging" "$artifacts/ShaderToolchain.xcframework" \
     "$artifacts/ShaderToolchain.xcframework.zip"

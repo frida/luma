@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# The macOS flavour of LumaGtk/scripts/windows/build-qemu.sh: the same
+# The macOS flavour of LumaGtk/Scripts/windows/build-qemu.sh: the same
 # slim QEMU, built against Homebrew, whose dylibs are copied in and
 # rewritten to @executable_path-relative names so the binaries travel
 # on their own. Rewriting breaks the ad-hoc signatures, so every

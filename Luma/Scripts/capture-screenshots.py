@@ -2,7 +2,7 @@
 """Capture screenshots of Luma (macOS/SwiftUI) views using Frida + Accessibility.
 
 Usage:
-    python3 scripts/capture-screenshots.py <pid-or-name> <output-dir>
+    python3 Scripts/capture-screenshots.py <pid-or-name> <output-dir>
 
 The agent navigates the sidebar via NSAccessibility, captures
 each view with CGWindowListCreateImage (in-process, no TCC

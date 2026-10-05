@@ -17,7 +17,7 @@ export PKG_CONFIG_PATH := $(if $(PKG_CONFIG_PATH),$(PKG_CONFIG_PATH):)$(SYSTEM_P
 export USE_SYSTEM_FRIDA := 1
 
 PROJECT_ROOT := $(abspath ..)
-IN_BUILD_ENVIRONMENT := $(PROJECT_ROOT)/scripts/in-build-environment.sh
+IN_BUILD_ENVIRONMENT := $(PROJECT_ROOT)/Scripts/in-build-environment.sh
 
 LOCAL_SHADER_TOOLCHAIN := $(PROJECT_ROOT)/artifacts/ShaderToolchain.xcframework
 ifneq ($(wildcard $(LOCAL_SHADER_TOOLCHAIN)),)
@@ -94,7 +94,7 @@ $(PHARO_VM_PC):
 endif
 
 $(PHARO_IMAGE):
-	$(PROJECT_ROOT)/scripts/stage-pharo-image.sh
+	$(PROJECT_ROOT)/Scripts/stage-pharo-image.sh
 
 ifeq ($(shell uname -s),Darwin)
 # macOS hands activation to the process that launched an unbundled binary, so
@@ -105,9 +105,9 @@ APP_BUNDLE := .build/Luma.app
 run: build $(APP_BUNDLE)
 	$(APP_BUNDLE)/Contents/MacOS/Luma
 
-$(APP_BUNDLE): data/macos/Info.plist
+$(APP_BUNDLE): Data/macos/Info.plist
 	mkdir -p $(APP_BUNDLE)/Contents/MacOS
-	cp data/macos/Info.plist $(APP_BUNDLE)/Contents/Info.plist
+	cp Data/macos/Info.plist $(APP_BUNDLE)/Contents/Info.plist
 	ln -sf $(CURDIR)/.build/debug/LumaGtk $(APP_BUNDLE)/Contents/MacOS/Luma
 else
 run: build
@@ -116,7 +116,7 @@ endif
 
 screenshots: build
 	mkdir -p screenshots
-	scripts/capture-screenshots.sh screenshots
+	Scripts/capture-screenshots.sh screenshots
 
 PREFIX ?= /usr/local
 BINDIR := $(PREFIX)/bin
@@ -126,10 +126,10 @@ ICON_SIZES := 32 48 64 128 256 512
 
 install: build
 	install -Dm755 .build/debug/LumaGtk $(DESTDIR)$(BINDIR)/luma
-	install -Dm644 data/re.frida.Luma.desktop $(DESTDIR)$(DATADIR)/applications/re.frida.Luma.desktop
-	install -Dm644 data/re.frida.Luma.xml $(DESTDIR)$(DATADIR)/mime/packages/re.frida.Luma.xml
+	install -Dm644 Data/re.frida.Luma.desktop $(DESTDIR)$(DATADIR)/applications/re.frida.Luma.desktop
+	install -Dm644 Data/re.frida.Luma.xml $(DESTDIR)$(DATADIR)/mime/packages/re.frida.Luma.xml
 	for size in $(ICON_SIZES); do \
-	    install -Dm644 data/icons/hicolor/$${size}x$${size}/apps/re.frida.Luma.png \
+	    install -Dm644 Data/icons/hicolor/$${size}x$${size}/apps/re.frida.Luma.png \
 	        $(DESTDIR)$(DATADIR)/icons/hicolor/$${size}x$${size}/apps/re.frida.Luma.png; \
 	done
 	-update-mime-database $(DESTDIR)$(DATADIR)/mime 2>/dev/null

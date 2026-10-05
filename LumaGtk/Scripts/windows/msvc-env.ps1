@@ -4,7 +4,7 @@
 # the Windows SDK on PATH without the caller having had to start a
 # Developer PowerShell:
 #
-#     . .\scripts\windows\msvc-env.ps1
+#     . .\Scripts\windows\msvc-env.ps1
 #
 # Leaves the toolchain alone when its environment is already loaded, so it
 # is safe to call from a Developer PowerShell too, and always compacts PATH

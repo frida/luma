@@ -192,10 +192,10 @@ parts:
       strip --strip-unneeded "$SWIFT_DST"/*.so
       patchelf --set-rpath '$ORIGIN/../lib/luma/swift:$ORIGIN/../lib' \
                "$CRAFT_PART_INSTALL/usr/local/bin/luma"
-      install -Dm644 data/re.frida.Luma.desktop "$CRAFT_PART_INSTALL/usr/local/share/applications/re.frida.Luma.desktop"
-      install -Dm644 data/re.frida.Luma.xml "$CRAFT_PART_INSTALL/usr/local/share/mime/packages/re.frida.Luma.xml"
+      install -Dm644 Data/re.frida.Luma.desktop "$CRAFT_PART_INSTALL/usr/local/share/applications/re.frida.Luma.desktop"
+      install -Dm644 Data/re.frida.Luma.xml "$CRAFT_PART_INSTALL/usr/local/share/mime/packages/re.frida.Luma.xml"
       for size in 32 48 64 128 256 512; do
-        install -Dm644 "data/icons/hicolor/${size}x${size}/apps/re.frida.Luma.png" \
+        install -Dm644 "Data/icons/hicolor/${size}x${size}/apps/re.frida.Luma.png" \
           "$CRAFT_PART_INSTALL/usr/local/share/icons/hicolor/${size}x${size}/apps/re.frida.Luma.png"
       done
       mv "$PARENT/luma" "$CRAFT_PART_BUILD"

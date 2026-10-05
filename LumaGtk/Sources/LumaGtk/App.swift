@@ -73,7 +73,7 @@ final class LumaApplication {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("data/icons")
+            .appendingPathComponent("Data/icons")
         guard FileManager.default.fileExists(
             atPath: sourceTreeIcons.appendingPathComponent("hicolor").path
         ) else { return }

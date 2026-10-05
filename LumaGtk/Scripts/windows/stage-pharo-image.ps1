@@ -1,4 +1,4 @@
-# Stage the Pharo image the way scripts/stage-pharo-image.sh does for the
+# Stage the Pharo image the way Scripts/stage-pharo-image.sh does for the
 # other platforms.
 #
 # The image is a resource of LumaCore, and PharoWorkspace.boot() takes its
@@ -25,7 +25,7 @@ $stagedImage = Join-Path $staged 'SwiftyPharo.image'
 
 if ((Test-Path $stagedImage) -and -not $Force) { return }
 
-$shellScript = Join-Path $repoRoot 'scripts\stage-pharo-image.sh'
+$shellScript = Join-Path $repoRoot 'Scripts\stage-pharo-image.sh'
 $release = (Select-String -Path $shellScript -Pattern '^release="([^"]+)"').Matches[0].Groups[1].Value
 if (-not $release) { throw "Could not read the image release from $shellScript." }
 

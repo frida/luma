@@ -1,7 +1,7 @@
 # Build LumaGtk on Windows.
 #
-#     .\scripts\windows\build.ps1                 # debug
-#     .\scripts\windows\build.ps1 -Configuration release
+#     .\Scripts\windows\build.ps1                 # debug
+#     .\Scripts\windows\build.ps1 -Configuration release
 #
 # Requires Swift for Windows on PATH and the dependency prefixes that
 # bootstrap.ps1 provisions. The MSVC environment is loaded on demand, so

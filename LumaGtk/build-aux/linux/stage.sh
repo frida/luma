@@ -97,9 +97,9 @@ for so in "$luma_lib/frida-1.0"/*/*.so; do
     patchelf --set-rpath '$ORIGIN/../..' "$so"
 done
 
-install -Dm644 "$lumagtk_root/data/re.frida.Luma.desktop" "$stage/usr/share/applications/re.frida.Luma.desktop"
-install -Dm644 "$lumagtk_root/data/re.frida.Luma.xml" "$stage/usr/share/mime/packages/re.frida.Luma.xml"
+install -Dm644 "$lumagtk_root/Data/re.frida.Luma.desktop" "$stage/usr/share/applications/re.frida.Luma.desktop"
+install -Dm644 "$lumagtk_root/Data/re.frida.Luma.xml" "$stage/usr/share/mime/packages/re.frida.Luma.xml"
 for size in 32 48 64 128 256 512; do
-    install -Dm644 "$lumagtk_root/data/icons/hicolor/${size}x${size}/apps/re.frida.Luma.png" \
+    install -Dm644 "$lumagtk_root/Data/icons/hicolor/${size}x${size}/apps/re.frida.Luma.png" \
                    "$stage/usr/share/icons/hicolor/${size}x${size}/apps/re.frida.Luma.png"
 done

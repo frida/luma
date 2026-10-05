@@ -6,8 +6,8 @@ on:
       - shader-toolchain-*
   pull_request:
     paths:
-      - scripts/build-shader-toolchain.sh
-      - scripts/make-shader-toolchain-xcframework.sh
+      - Scripts/build-shader-toolchain.sh
+      - Scripts/make-shader-toolchain-xcframework.sh
       - .github/workflows/shader-toolchain.yml
   workflow_dispatch:
 
@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Create xcframework
-        run: scripts/make-shader-toolchain-xcframework.sh | tee artifacts.txt
+        run: Scripts/make-shader-toolchain-xcframework.sh | tee artifacts.txt
 
       - name: Upload xcframework
         uses: actions/upload-artifact@v7
