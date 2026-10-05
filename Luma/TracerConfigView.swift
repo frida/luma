@@ -47,14 +47,6 @@ struct TracerConfigView: View {
     #endif
 
     var body: some View {
-        content
-            .padding(.top, isConfigOnlyContext ? 0 : 8)
-            .padding(.leading, 8)
-            .padding(.bottom, 8)
-    }
-
-    @ViewBuilder
-    private var content: some View {
         Group {
             if isTracerItemSelected || config.hooks.isEmpty {
                 emptyState
@@ -1060,6 +1052,7 @@ private struct HookEditorView: View {
             text: $draftCode,
             profile: EditorProfile.fridaTracerHook(packages: packages),
             focused: $editorFocused,
+            chrome: .pane,
             engine: engine,
         )
         .onChange(of: draftCode) { _, _ in
