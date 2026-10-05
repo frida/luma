@@ -57,64 +57,58 @@ struct EventStreamView: View {
             }
 
             ScrollViewReader { proxy in
-                GeometryReader { geo in
-                    ZStack(alignment: .bottomTrailing) {
-                        scrollContent
-                            .environment(\.pauseEventStream, pauseFromRow)
-                            .coordinateSpace(name: "EventScroll")
-                            .onPreferenceChange(BottomRowOffsetPreferenceKey.self) { bottomY in
-                                updateScrollPosition(bottomY: bottomY, viewportHeight: geo.size.height)
-                            }
+                ZStack(alignment: .bottomTrailing) {
+                    scrollContent
+                        .environment(\.pauseEventStream, pauseFromRow)
 
-                        if let empty = emptyStateReason {
-                            EmptyStateView(reason: empty, isCompactWidth: isCompactWidth)
-                        }
+                    if let empty = emptyStateReason {
+                        EmptyStateView(reason: empty, isCompactWidth: isCompactWidth)
+                    }
 
-                        if pendingNewEvents > 0 && (isPaused || !isAtBottom) {
-                            Button {
-                                goLiveAndScrollToBottom()
-                            } label: {
-                                Text("Show \(pendingNewEvents) new event\(pendingNewEvents == 1 ? "" : "s")")
-                                    .font(.caption)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(.thinMaterial)
-                                    .clipShape(Capsule())
-                            }
-                            .padding()
+                    if pendingNewEvents > 0 && (isPaused || !isAtBottom) {
+                        Button {
+                            goLiveAndScrollToBottom()
+                        } label: {
+                            Text("Show \(pendingNewEvents) new event\(pendingNewEvents == 1 ? "" : "s")")
+                                .font(.caption)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(.thinMaterial)
+                                .clipShape(Capsule())
                         }
+                        .padding()
                     }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        isSearchFocused = false
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    isSearchFocused = false
+                }
+                .onAppear {
+                    syncSnapshotFromEngine()
+                    isPaused = false
+                    pendingNewEvents = 0
+                    isAtBottom = true
+                    scrollToLastToken &+= 1
+                }
+                .onChange(of: engine.eventLog.flushVersion) { _, _ in
+                    handleEventVersionChange(engine.eventLog.totalReceived)
+                }
+                .onChange(of: scrollToLastToken) { _, _ in
+                    guard let last = filteredEvents.last else { return }
+                    isAutoScrolling = true
+                    proxy.scrollTo(last.id, anchor: .bottom)
+                    DispatchQueue.main.async {
+                        isAutoScrolling = false
                     }
-                    .onAppear {
-                        syncSnapshotFromEngine()
-                        isPaused = false
-                        pendingNewEvents = 0
-                        isAtBottom = true
-                        scrollToLastToken &+= 1
-                    }
-                    .onChange(of: engine.eventLog.flushVersion) { _, _ in
-                        handleEventVersionChange(engine.eventLog.totalReceived)
-                    }
-                    .onChange(of: scrollToLastToken) { _, _ in
-                        guard let last = filteredEvents.last else { return }
-                        isAutoScrolling = true
-                        proxy.scrollTo(last.id, anchor: .bottom)
-                        DispatchQueue.main.async {
-                            isAutoScrolling = false
-                        }
-                    }
-                    .onChange(of: searchText) { _, _ in
-                        rebuildFilteredEvents()
-                    }
-                    .onChange(of: sourceFilter) { _, _ in
-                        rebuildFilteredEvents()
-                    }
-                    .onChange(of: selectedProcessName) { _, _ in
-                        rebuildFilteredEvents()
-                    }
+                }
+                .onChange(of: searchText) { _, _ in
+                    rebuildFilteredEvents()
+                }
+                .onChange(of: sourceFilter) { _, _ in
+                    rebuildFilteredEvents()
+                }
+                .onChange(of: selectedProcessName) { _, _ in
+                    rebuildFilteredEvents()
                 }
             }
         }
@@ -303,23 +297,19 @@ struct EventStreamView: View {
                     }
                     .id(evt.id)
                     .accessibilityIdentifier("event.row")
-                    .background(
-                        GeometryReader { rowGeo in
-                            Color.clear
-                                .preference(
-                                    key: BottomRowOffsetPreferenceKey.self,
-                                    value: index == filteredEvents.count - 1
-                                        ? rowGeo.frame(in: .named("EventScroll")).maxY
-                                        : BottomRowOffsetPreferenceKey.defaultValue
-                                )
-                        }
-                    )
 
                     Divider()
                 }
             }
         }
         .defaultScrollAnchor(.bottom)
+        .onScrollGeometryChange(for: ScrollBottomGap.self) { geometry in
+            ScrollBottomGap(
+                distance: geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height,
+                viewportHeight: geometry.containerSize.height)
+        } action: { _, gap in
+            updateScrollPosition(gap)
+        }
     }
 
     enum EmptyReason {
@@ -370,20 +360,17 @@ struct EventStreamView: View {
         scrollToLastToken &+= 1
     }
 
-    private func updateScrollPosition(bottomY: CGFloat, viewportHeight: CGFloat) {
+    private func updateScrollPosition(_ gap: ScrollBottomGap) {
         guard !filteredEvents.isEmpty else {
             isAtBottom = true
             return
         }
 
-        if bottomY == BottomRowOffsetPreferenceKey.defaultValue { return }
-
         let minMeaningfulViewportHeight: CGFloat = 80
-        if viewportHeight < minMeaningfulViewportHeight { return }
+        if gap.viewportHeight < minMeaningfulViewportHeight { return }
 
         let threshold: CGFloat = 20
-        let distanceFromBottom = bottomY - viewportHeight
-        let atBottomNow = distanceFromBottom <= threshold
+        let atBottomNow = gap.distance <= threshold
 
         if atBottomNow != isAtBottom {
             if !atBottomNow && !isPaused && !isAutoScrolling {
@@ -578,15 +565,9 @@ extension EnvironmentValues {
     }
 }
 
-private struct BottomRowOffsetPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = .infinity
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        let new = nextValue()
-        if new != .infinity {
-            value = new
-        }
-    }
+private struct ScrollBottomGap: Equatable {
+    let distance: CGFloat
+    let viewportHeight: CGFloat
 }
 
 private enum EventSourceFilter: String, CaseIterable, Identifiable {
