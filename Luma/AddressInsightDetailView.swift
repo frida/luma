@@ -472,7 +472,7 @@ private struct DisasmRow: View {
         let decorations = annotation?.decorations ?? []
         let noteCount = annotation?.noteCount ?? 0
 
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .center, spacing: 10) {
             HStack(spacing: 3) {
                 ForEach(decorations.prefix(3)) { deco in
                     Circle()
