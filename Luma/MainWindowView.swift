@@ -133,15 +133,7 @@ private struct ProjectContentView: View {
             } message: {
                 Text("You're a member of this lab. Ask an owner to promote you before starting a session.")
             }
-            .frame(
-                minWidth: 900,
-                idealWidth: 1100,
-                maxWidth: .infinity,
-                minHeight: 600,
-                idealHeight: 680,
-                maxHeight: .infinity,
-                alignment: .topLeading
-            )
+            .frame(minHeight: Self.minMainContentHeight, maxHeight: .infinity, alignment: .topLeading)
             .environment(picker)
             .task {
                 await EngineRegistry.shared.startIfNeeded(for: projectURL)
@@ -190,6 +182,15 @@ private struct ProjectContentView: View {
 
             eventStreamBottomBar
         }
+        .frame(
+            minWidth: 900,
+            idealWidth: 1100,
+            maxWidth: .infinity,
+            minHeight: 600,
+            idealHeight: 680,
+            maxHeight: .infinity,
+            alignment: .topLeading
+        )
         .background {
             GeometryReader { proxy in
                 Color.clear
