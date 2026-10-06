@@ -2514,7 +2514,7 @@ public final class Engine {
     }
 
     public func instrument(id: UUID, sessionID: UUID) -> InstrumentInstance? {
-        try? store.fetchInstrument(id: id)
+        instrumentsBySession[sessionID]?.first { $0.id == id } ?? (try? store.fetchInstrument(id: id))
     }
 
     public func session(id: UUID) -> ProcessSession? {
