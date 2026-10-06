@@ -79,7 +79,7 @@ private struct ProjectContentView: View {
 
     @State private var availableHeight: CGFloat = 800
     @State private var dragStartHeight: Double?
-    @State private var detailColumnWidth: CGFloat = .infinity
+    @State private var maxSidePanelWidth: CGFloat = Self.sidePanelWidthRange.upperBound
     @State private var sidePanelWidth: CGFloat = 300
     @State private var sidePanelResizingFrom: CGFloat?
 
@@ -221,7 +221,9 @@ private struct ProjectContentView: View {
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { detailColumnWidth = $0 }
+        .onGeometryChange(for: CGFloat.self) { Self.maxSidePanelWidth(forDetailWidth: $0.size.width) } action: {
+            maxSidePanelWidth = $0
+        }
     }
 
     @ViewBuilder
@@ -256,9 +258,9 @@ private struct ProjectContentView: View {
                     .onEnded { _ in sidePanelResizingFrom = nil })
     }
 
-    private var maxSidePanelWidth: CGFloat {
-        let range = Self.sidePanelWidthRange
-        return min(max(detailColumnWidth - Self.minDetailWidth, range.lowerBound), range.upperBound)
+    private static func maxSidePanelWidth(forDetailWidth detailWidth: CGFloat) -> CGFloat {
+        let range = sidePanelWidthRange
+        return min(max(detailWidth - minDetailWidth, range.lowerBound), range.upperBound)
     }
 
     private func targetPickerSheet(context: TargetPickerContext) -> some View {
@@ -337,6 +339,7 @@ private struct ProjectContentView: View {
                             engine.setEventStreamCollapsed(true)
                         }
                     )
+                    .equatable()
                     .clipped()
                 }
                 .frame(height: currentEventStreamHeight)

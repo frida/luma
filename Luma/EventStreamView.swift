@@ -1,7 +1,7 @@
 import SwiftUI
 import LumaCore
 
-struct EventStreamView: View {
+struct EventStreamView: View, Equatable {
     let engine: Engine
     @Binding var selection: SidebarItemID?
 
@@ -13,6 +13,10 @@ struct EventStreamView: View {
     #endif
 
     var onCollapseRequested: (() -> Void)?
+
+    nonisolated static func == (lhs: EventStreamView, rhs: EventStreamView) -> Bool {
+        lhs.engine === rhs.engine
+    }
 
     @State private var displayedEvents: [RuntimeEvent] = []
     @State private var filteredEvents: [RuntimeEvent] = []
@@ -295,6 +299,7 @@ struct EventStreamView: View {
                     ) {
                         pin(evt)
                     }
+                    .equatable()
                     .id(evt.id)
                     .accessibilityIdentifier("event.row")
 
@@ -306,8 +311,9 @@ struct EventStreamView: View {
         .onScrollGeometryChange(for: ScrollBottomGap.self) { geometry in
             ScrollBottomGap(
                 distance: geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height,
-                viewportHeight: geometry.containerSize.height)
-        } action: { _, gap in
+                containerSize: geometry.containerSize)
+        } action: { previous, gap in
+            guard gap.containerSize == previous.containerSize else { return }
             updateScrollPosition(gap)
         }
     }
@@ -367,7 +373,7 @@ struct EventStreamView: View {
         }
 
         let minMeaningfulViewportHeight: CGFloat = 80
-        if gap.viewportHeight < minMeaningfulViewportHeight { return }
+        if gap.containerSize.height < minMeaningfulViewportHeight { return }
 
         let threshold: CGFloat = 20
         let atBottomNow = gap.distance <= threshold
@@ -567,7 +573,7 @@ extension EnvironmentValues {
 
 private struct ScrollBottomGap: Equatable {
     let distance: CGFloat
-    let viewportHeight: CGFloat
+    let containerSize: CGSize
 }
 
 private enum EventSourceFilter: String, CaseIterable, Identifiable {
@@ -659,12 +665,17 @@ private struct EmptyStateView: View {
     }
 }
 
-struct EventRow: View {
+struct EventRow: View, Equatable {
     let evt: RuntimeEvent
     let previousTimestamp: Date?
     let engine: Engine
     @Binding var selection: SidebarItemID?
     let pinAction: () -> Void
+
+    nonisolated static func == (lhs: EventRow, rhs: EventRow) -> Bool {
+        lhs.evt.id == rhs.evt.id && lhs.evt.sessionID == rhs.evt.sessionID && lhs.previousTimestamp == rhs.previousTimestamp
+            && lhs.engine === rhs.engine
+    }
 
     private static let timestampFormatter: DateFormatter = {
         let df = DateFormatter()
