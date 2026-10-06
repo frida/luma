@@ -135,7 +135,7 @@ struct SidebarCustomInstrumentDefRow: View {
                 .disabled(!addFilePrompt.canCommit)
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Relative path inside this instrument. Subdirectories allowed.")
+            Text("Relative path inside this instrument. Subdirectories allowed. Use .hexpat for a pattern, .pat for a pattern library.")
         }
         .alert("Rename Entrypoint File", isPresented: $renameEntrypointPrompt.isPresented) {
             TextField("path/to/file.ts", text: $renameEntrypointPrompt.draft)
@@ -253,7 +253,7 @@ struct SidebarCustomInstrumentDefRow: View {
         let defID = def.id
         Task { @MainActor in
             do {
-                let path = try engine.writeCustomInstrumentFile(defID: defID, path: trimmed, content: "")
+                let path = try engine.addCustomInstrumentFile(defID: defID, path: trimmed)
                 selection = .customInstrumentFile(defID, path)
             } catch {
                 exportErrorMessage = error.localizedDescription
@@ -327,7 +327,7 @@ struct SidebarCustomInstrumentFileRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "doc.text")
+            Image(systemName: file.patternKind?.symbolName ?? "doc.text")
                 .frame(width: 16, alignment: .center)
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
@@ -340,7 +340,7 @@ struct SidebarCustomInstrumentFileRow: View {
         .padding(.leading, sidebarChildIndent)
         .accessibilityIdentifier("sidebar.customInstrumentFile.\(def.id.uuidString).\(file.path)")
         .contextMenu {
-            if !isEntrypoint {
+            if !isEntrypoint && file.patternKind == nil {
                 Button {
                     setAsEntrypoint()
                 } label: {

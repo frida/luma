@@ -14,7 +14,7 @@ enum CustomInstrumentFileDialogs {
         let defID = def.id
         CustomInstrumentPathDialog(
             heading: "Add File",
-            body: "Relative path inside this instrument. Subdirectories allowed.",
+            body: "Relative path inside this instrument. Subdirectories allowed. Use .hexpat for a pattern, .pat for a pattern library.",
             actionID: "add",
             actionLabel: "_Add",
             initialText: "",
@@ -26,7 +26,7 @@ enum CustomInstrumentFileDialogs {
             onCommit: { input in
                 Task { @MainActor in
                     do {
-                        let path = try engine.writeCustomInstrumentFile(defID: defID, path: input, content: "")
+                        let path = try engine.addCustomInstrumentFile(defID: defID, path: input)
                         onCreated(path)
                     } catch {
                         presentError(error, parent: parent)

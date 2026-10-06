@@ -46,6 +46,10 @@ public struct CustomInstrumentFile: Sendable, Equatable, FetchableRecord, Persis
         }
     }
 
+    public var patternKind: PatternSource.Kind? {
+        PatternSource.Kind(path: path)
+    }
+
     public static func workspaceRelativePath(defID: UUID, path: String) -> String {
         let encoded = path.replacingOccurrences(of: " ", with: "%20")
         return "InstrumentSources/Custom/\(defID.uuidString)/\(encoded)"

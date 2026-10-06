@@ -111,6 +111,17 @@ public struct PatternSource: Identifiable, Hashable, Sendable {
         case pattern
         case library
 
+        public init?(path: String) {
+            switch (path as NSString).pathExtension.lowercased() {
+            case "hexpat":
+                self = .pattern
+            case "pat":
+                self = .library
+            default:
+                return nil
+            }
+        }
+
         public var fileExtension: String {
             switch self {
             case .pattern:
@@ -120,7 +131,7 @@ public struct PatternSource: Identifiable, Hashable, Sendable {
             }
         }
 
-        var template: String {
+        public var template: String {
             switch self {
             case .pattern:
                 return "struct Header {\n    u32 magic;\n};\n\nHeader header @ 0x00;\n"

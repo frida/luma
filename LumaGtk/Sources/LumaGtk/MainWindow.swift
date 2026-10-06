@@ -1447,7 +1447,7 @@ final class MainWindow: InstrumentUIHost {
     ) -> ListBoxRow {
         let row = ListBoxRow()
         let (box, iconHost) = MainWindow.makeChildRowBox()
-        let icon = Gtk.Image(iconName: "text-x-generic-symbolic")
+        let icon = Gtk.Image(iconName: file.patternKind?.iconName ?? "text-x-generic-symbolic")
         icon.pixelSize = 16
         MainWindow.centerInIconHost(icon)
         iconHost.append(child: icon)
@@ -1622,7 +1622,7 @@ final class MainWindow: InstrumentUIHost {
     ) {
         let isEntrypoint = file.path == def.entrypoint
         var sections: [[ContextMenu.Item]] = []
-        if !isEntrypoint {
+        if !isEntrypoint && file.patternKind == nil {
             sections.append([
                 .init("Set as Entrypoint") { [weak self] in self?.setCustomInstrumentEntrypoint(defID: def.id, path: file.path) }
             ])

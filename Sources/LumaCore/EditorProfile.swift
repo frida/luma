@@ -70,14 +70,22 @@ extension EditorProfile {
         files: [CustomInstrumentFile] = [],
         activePath: String? = nil
     ) -> EditorProfile {
-        EditorProfile(
+        let projectFiles = files.map { file in
+            EditorProjectFile(
+                path: CustomInstrumentFile.workspaceRelativePath(defID: file.defID, path: file.path),
+                text: file.content,
+                languageId: file.patternKind != nil ? "hexpat" : nil
+            )
+        }
+        if let activePath, PatternSource.Kind(path: activePath) != nil {
+            return EditorProfile(
+                languageId: "hexpat",
+                projectFiles: projectFiles.filter { $0.languageId == "hexpat" },
+                activePath: activePath)
+        }
+        return EditorProfile(
             languageId: "typescript",
-            projectFiles: files.map { file in
-                EditorProjectFile(
-                    path: CustomInstrumentFile.workspaceRelativePath(defID: file.defID, path: file.path),
-                    text: file.content
-                )
-            },
+            projectFiles: projectFiles,
             activePath: activePath,
             ambientDeclarations: [CustomInstrumentTypings.ambient]
                 + (def.flatMap(CustomInstrumentTypings.featureMap(for:)).map { [$0] } ?? [])

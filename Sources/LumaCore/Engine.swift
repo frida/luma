@@ -217,7 +217,9 @@ public final class Engine {
         }
         customInstruments.observers.append { [weak self] in
             self?.refreshCustomInstrumentDescriptors()
+            self?.mirrorCustomInstrumentSources()
         }
+        mirrorCustomInstrumentSources()
         bindCollaborationCallbacks()
         missionExecutor.liveDeltaSink = { [weak self] missionID, event in
             self?.handleMissionLiveEvent(missionID: missionID, event: event)
@@ -1983,6 +1985,15 @@ public final class Engine {
             registerDescriptor(desc)
         }
         onSessionListChanged?(.descriptorsChanged)
+    }
+
+    private func mirrorCustomInstrumentSources() {
+        guard let root = try? compilerWorkspacePaths().root else { return }
+        let customRoot = root.appendingPathComponent("InstrumentSources/Custom", isDirectory: true)
+        for def in customInstruments.defs {
+            let files = customInstruments.files(forDefID: def.id).map { (path: $0.path, content: Data($0.content.utf8)) }
+            try? Self.syncInstrumentSources(files, into: customRoot.appendingPathComponent(def.id.uuidString, isDirectory: true))
+        }
     }
 
     private func makeCodeShareDescriptor(for instance: InstrumentInstance) -> InstrumentDescriptor? {
@@ -4590,20 +4601,9 @@ public final class Engine {
     ) async throws -> String {
         _ = try await compilerWorkspace.ensureReady(paths: paths)
 
-        let fm = FileManager.default
         let dirRelPath = "InstrumentSources/\(sourceSlug)"
         let dirURL = paths.root.appendingPathComponent(dirRelPath, isDirectory: true)
-        if fm.fileExists(atPath: dirURL.path) {
-            try fm.removeItem(at: dirURL)
-        }
-        try fm.createDirectory(at: dirURL, withIntermediateDirectories: true)
-
-        for file in files {
-            let path = try CustomInstrumentFile.validateRelativePath(file.path)
-            let fileURL = dirURL.appendingPathComponent(path)
-            try fm.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try file.content.write(to: fileURL)
-        }
+        try Self.syncInstrumentSources(files, into: dirURL)
 
         let entryRelPath = "\(dirRelPath)/\(try CustomInstrumentFile.validateRelativePath(entrypoint))"
 
@@ -4624,6 +4624,29 @@ public final class Engine {
 
         let modules = try ESMBundleParser.parse(bundle)
         return modules.modules[modules.order[0]]!
+    }
+
+    private static func syncInstrumentSources(_ files: [(path: String, content: Data)], into dirURL: URL) throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: dirURL, withIntermediateDirectories: true)
+
+        var wanted = Set<String>()
+        for file in files {
+            let path = try CustomInstrumentFile.validateRelativePath(file.path)
+            wanted.insert(path)
+            let fileURL = dirURL.appendingPathComponent(path)
+            if fm.contents(atPath: fileURL.path) == file.content { continue }
+            try fm.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try file.content.write(to: fileURL)
+        }
+
+        for path in try fm.subpathsOfDirectory(atPath: dirURL.path) where !wanted.contains(path) {
+            var isDirectory: ObjCBool = false
+            let url = dirURL.appendingPathComponent(path)
+            if fm.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue {
+                try fm.removeItem(at: url)
+            }
+        }
     }
 
     private static func readHookPackFiles(
@@ -4725,6 +4748,11 @@ public final class Engine {
     }
 
     @discardableResult
+    public func addCustomInstrumentFile(defID: UUID, path: String) throws -> String {
+        try writeCustomInstrumentFile(defID: defID, path: path, content: PatternSource.Kind(path: path)?.template ?? "")
+    }
+
+    @discardableResult
     public func writeCustomInstrumentFile(defID: UUID, path: String, content: String) throws -> String {
         let validatedPath = try CustomInstrumentFile.validateRelativePath(path)
         let file = CustomInstrumentFile(defID: defID, path: validatedPath, content: content)
@@ -4755,9 +4783,13 @@ public final class Engine {
         guard try store.fetchCustomInstrumentFile(defID: defID, path: fromPath) != nil else {
             throw LumaCoreError.invalidArgument("No file '\(fromPath)' in this custom instrument.")
         }
+        let renamesEntrypoint = try requireCustomInstrumentDef(defID: defID).entrypoint == fromPath
+        if renamesEntrypoint {
+            try Self.requireEntrypointCandidate(toPath)
+        }
         try store.renameCustomInstrumentFile(defID: defID, from: fromPath, to: toPath)
         var def = try touchUpdatedAt(defID: defID)
-        if def.entrypoint == fromPath {
+        if renamesEntrypoint {
             def.entrypoint = toPath
         }
         try store.save(def)
@@ -4772,6 +4804,7 @@ public final class Engine {
         guard try store.fetchCustomInstrumentFile(defID: defID, path: validatedPath) != nil else {
             throw LumaCoreError.invalidArgument("No file '\(validatedPath)' in this custom instrument.")
         }
+        try Self.requireEntrypointCandidate(validatedPath)
         var def = try touchUpdatedAt(defID: defID)
         def.entrypoint = validatedPath
         try store.save(def)
@@ -4822,6 +4855,12 @@ public final class Engine {
         var def = try requireCustomInstrumentDef(defID: defID)
         def.updatedAt = Date()
         return def
+    }
+
+    private static func requireEntrypointCandidate(_ path: String) throws {
+        guard PatternSource.Kind(path: path) == nil else {
+            throw LumaCoreError.invalidArgument("A pattern file cannot be the entrypoint.")
+        }
     }
 
     @discardableResult
