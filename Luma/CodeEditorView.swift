@@ -18,12 +18,7 @@ struct CodeEditorView: View {
         case .bordered:
             bordered
         case .pane:
-            VStack(spacing: 0) {
-                Rectangle()
-                    .fill(Color.primary.opacity(0.1))
-                    .frame(height: 1.5)
-                editor
-            }
+            editor
         }
     }
 
