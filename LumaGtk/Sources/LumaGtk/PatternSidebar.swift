@@ -18,6 +18,10 @@ enum PatternSidebarSelection: Equatable {
             return id
         }
     }
+
+    var typeName: String? {
+        if case .type(_, let name) = self { name } else { nil }
+    }
 }
 
 @MainActor

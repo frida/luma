@@ -205,6 +205,25 @@ public struct PatternSummary: Hashable, Sendable {
     public var declaredTypes: [PatternTypeSummary] {
         types.filter { $0.name != rootType && $0.isDeclaredInSource }
     }
+
+    public func declaredTypeName(at position: LSP.Position, in symbols: [LSP.DocumentSymbol]) -> String? {
+        Self.innermostTypeName(at: position, in: symbols, scope: nil, among: Set(declaredTypes.map(\.name)))
+    }
+
+    private static func innermostTypeName(
+        at position: LSP.Position, in symbols: [LSP.DocumentSymbol], scope: String?, among declared: Set<String>
+    ) -> String? {
+        for symbol in symbols where symbol.range.start <= position && position <= symbol.range.end {
+            let name = scope.map { "\($0)::\(symbol.name)" } ?? symbol.name
+            if let inner = innermostTypeName(at: position, in: symbol.children ?? [], scope: name, among: declared) {
+                return inner
+            }
+            if declared.contains(name) {
+                return name
+            }
+        }
+        return nil
+    }
 }
 
 public struct PatternTypeSummary: Identifiable, Hashable, Sendable {

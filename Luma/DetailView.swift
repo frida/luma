@@ -31,12 +31,8 @@ struct DetailView: View {
             case .some(.patterns):
                 PatternsListView(engine: engine, selection: $selection)
 
-            case .some(.pattern(let sourceID)):
-                PatternEditorView(sourceID: sourceID, focusedType: nil, engine: engine, selection: $selection)
-                    .id(sourceID)
-
-            case .some(.patternType(let sourceID, let typeName)):
-                PatternEditorView(sourceID: sourceID, focusedType: typeName, engine: engine, selection: $selection)
+            case .some(.pattern(let sourceID)), .some(.patternType(let sourceID, _)):
+                PatternEditorView(sourceID: sourceID, focusedType: focusedPatternType, engine: engine, selection: $selection)
                     .id(sourceID)
 
             case .some(.session(let sessionID)):
@@ -141,5 +137,9 @@ struct DetailView: View {
         )
         engine.addNotebookEntry(entry, after: nil)
         selection = .notebook
+    }
+
+    private var focusedPatternType: String? {
+        if case .patternType(_, let typeName) = selection { typeName } else { nil }
     }
 }

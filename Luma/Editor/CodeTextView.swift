@@ -14,6 +14,7 @@ import SwiftUI
 final class CodeTextView: CodeTextViewBase {
     var onEdit: ((String) -> Void)?
     var onFocused: (() -> Void)?
+    var onCaretMove: ((LSP.Position) -> Void)?
     var sourceFont = PlatformFont.monospacedSystemFont(ofSize: PlatformFont.systemFontSize, weight: .regular) {
         didSet {
             restyle()
@@ -112,6 +113,10 @@ final class CodeTextView: CodeTextViewBase {
                 self?.restyle()
             }
         #endif
+    }
+
+    func noteCaretMoved() {
+        onCaretMove?(caretPosition)
     }
 
     func noteEdited() {
@@ -318,6 +323,7 @@ final class CodeTextView: CodeTextViewBase {
             super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
             setNeedsDisplay(visibleRect)
             onLineStateChanged?()
+            noteCaretMoved()
         }
 
         override func mouseDown(with event: NSEvent) {

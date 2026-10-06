@@ -13,6 +13,7 @@ public final class CodeEditor {
     public let widget: Box
     public var onTextChanged: ((String) -> Void)?
     public var onCommit: (() -> Void)?
+    public var onCaretMove: ((LSP.Position) -> Void)?
 
     private weak var engine: Engine?
     private let editor: GtkSource.View
@@ -102,6 +103,12 @@ public final class CodeEditor {
         buffer.onChanged { [weak self] _ in
             MainActor.assumeIsolated { self?.noteBufferChanged() }
         }
+        buffer.onMarkSet { [weak self] _, _, mark in
+            MainActor.assumeIsolated {
+                guard let self, mark.text_mark_ptr == gtk_text_buffer_get_insert(self.buffer.text_buffer_ptr) else { return }
+                self.onCaretMove?(self.caretPosition)
+            }
+        }
         applyStyleScheme()
         themeSubscription = ThemeWatcher.subscribe(owner: self) { $0.retheme() }
         restartSession()
@@ -171,6 +178,10 @@ public final class CodeEditor {
         }
     }
 
+    public func symbols() async throws -> [LSP.DocumentSymbol] {
+        try await session?.document.symbols() ?? []
+    }
+
     public func reveal(_ position: LSP.Position) {
         let offset = CharacterOffsets(text: text).characterOffset(ofUTF16: LineMap(text: text).utf16Offset(of: position))
         let iter = UnsafeMutablePointer<GtkTextIter>.allocate(capacity: 1)
@@ -226,6 +237,15 @@ public final class CodeEditor {
         completion.document = session.document
         signatureHelp.document = session.document
         hover.document = session.document
+    }
+
+    private var caretPosition: LSP.Position {
+        let current = buffer.text
+        let iter = UnsafeMutablePointer<GtkTextIter>.allocate(capacity: 1)
+        defer { iter.deallocate() }
+        buffer.getIterAtMark(iter: TextIter(iter), mark: buffer.getInsert())
+        let utf16Offset = CharacterOffsets(text: current).utf16Offset(ofCharacter: Int(gtk_text_iter_get_offset(iter)))
+        return LineMap(text: current).position(ofUTF16Offset: utf16Offset)
     }
 
     private func noteBufferChanged() {

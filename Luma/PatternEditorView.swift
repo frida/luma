@@ -8,6 +8,9 @@ struct PatternEditorView: View {
     @Binding var selection: SidebarItemID?
 
     @State private var reveal: EditorReveal?
+    @StateObject private var introspector = CodeIntrospector()
+    @State private var caretTypeLookup: Task<Void, Never>?
+    @State private var typeFollowingCaret: String?
 
     @State private var draft: String
     @State private var isDirty = false
@@ -49,8 +52,10 @@ struct PatternEditorView: View {
             CodeEditorView(
                 text: $draft,
                 profile: .pattern(activePath: "Patterns/" + source.id),
+                introspector: introspector,
                 focused: $isEditorFocused,
                 reveal: reveal,
+                onCaretMove: selectType(at:),
                 chrome: .pane,
                 engine: engine
             )
@@ -78,8 +83,23 @@ struct PatternEditorView: View {
         .onDisappear { flushIfNeeded() }
     }
 
+    private func selectType(at position: LSP.Position) {
+        caretTypeLookup?.cancel()
+        caretTypeLookup = Task {
+            guard let symbols = try? await introspector.document?.symbols(),
+                let summary = try? await engine.patternDecoder.summary(ofText: draft),
+                !Task.isCancelled
+            else { return }
+            let typeName = summary.declaredTypeName(at: position, in: symbols)
+            let target: SidebarItemID = typeName.map { .patternType(sourceID, $0) } ?? .pattern(sourceID)
+            guard selection != target else { return }
+            typeFollowingCaret = typeName
+            selection = target
+        }
+    }
+
     private func revealFocusedType() async {
-        guard let focusedType,
+        guard let focusedType, focusedType != typeFollowingCaret,
             let summary = try? await engine.patternDecoder.summary(ofText: draft),
             let type = summary.types.first(where: { $0.name == focusedType }), type.isDeclaredInSource
         else { return }

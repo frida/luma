@@ -7,6 +7,7 @@ import Observation
 final class PatternEditorPane {
     let widget: Overlay
     let sourceID: String
+    var onCaretInType: (String?) -> Void = { _ in }
 
     private let engine: Engine
     private let editor: CodeEditor
@@ -15,6 +16,7 @@ final class PatternEditorPane {
     private var draft: String
     private var savedText: String
     private var shownType: String??
+    private var caretTypeLookup: Task<Void, Never>?
 
     init(engine: Engine, source: PatternSource, onError: @escaping (String) -> Void) {
         self.engine = engine
@@ -38,6 +40,9 @@ final class PatternEditorPane {
             guard let self else { return }
             self.draft = text
             self.saveBar.setDirty(self.isDirty)
+        }
+        editor.onCaretMove = { [weak self] position in
+            self?.followCaret(to: position)
         }
         observeSource()
     }
@@ -75,6 +80,21 @@ final class PatternEditorPane {
             saveBar.setDirty(false)
         } catch {
             onError(error.localizedDescription)
+        }
+    }
+
+    private func followCaret(to position: LSP.Position) {
+        caretTypeLookup?.cancel()
+        let text = draft
+        caretTypeLookup = Task { @MainActor [weak self] in
+            guard let self, let symbols = try? await self.editor.symbols(),
+                let summary = try? await self.engine.patternDecoder.summary(ofText: text),
+                !Task.isCancelled
+            else { return }
+            let typeName = summary.declaredTypeName(at: position, in: symbols)
+            guard self.shownType != .some(typeName) else { return }
+            self.shownType = typeName
+            self.onCaretInType(typeName)
         }
     }
 

@@ -1198,6 +1198,9 @@ final class MainWindow: InstrumentUIHost {
             pane = PatternEditorPane(engine: engine, source: source) { [weak self] message in
                 self?.showToast(message)
             }
+            pane.onCaretInType = { [weak self] typeName in
+                self?.select(.patterns(typeName.map { .type(sourceID: sourceID, name: $0) } ?? .source(sourceID)))
+            }
             currentPatternEditor = pane
         }
         pane.show(focusedType: focusedType)
@@ -2501,7 +2504,11 @@ final class MainWindow: InstrumentUIHost {
             patternSidebar?.select(pattern)
         }
         updateResumeButtonVisibility()
-        renderDetail()
+        if case .patterns(let pattern) = newValue, let pane = currentPatternEditor, pane.sourceID == pattern.sourceID {
+            pane.show(focusedType: pattern.typeName)
+        } else {
+            renderDetail()
+        }
         switch newValue {
         case .instrument:
             currentInstrumentDetail?.showConfigurationView()

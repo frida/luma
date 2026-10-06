@@ -13,6 +13,7 @@ struct CodeTextEditor: PlatformViewRepresentable {
     let introspector: CodeIntrospector?
     let focused: Binding<Bool>?
     var reveal: EditorReveal? = nil
+    var onCaretMove: ((LSP.Position) -> Void)? = nil
     let engine: Engine
 
     func makeCoordinator() -> Coordinator {
@@ -92,6 +93,7 @@ struct CodeTextEditor: PlatformViewRepresentable {
         context.coordinator.parent = self
         view.onEdit = { text = $0 }
         view.onFocused = { focused?.wrappedValue = true }
+        view.onCaretMove = onCaretMove
         view.isEditable = !profile.readOnly
         view.syntax = profile.syntax
         if view.source != text {
@@ -177,6 +179,10 @@ struct CodeTextEditor: PlatformViewRepresentable {
         #else
             func textViewDidChange(_ view: UITextView) {
                 (view as? CodeTextView)?.noteEdited()
+            }
+
+            func textViewDidChangeSelection(_ view: UITextView) {
+                (view as? CodeTextView)?.noteCaretMoved()
             }
         #endif
     }

@@ -8,6 +8,7 @@ struct CodeEditorView: View {
     var introspector: CodeIntrospector? = nil
     var focused: Binding<Bool>? = nil
     var reveal: EditorReveal? = nil
+    var onCaretMove: ((LSP.Position) -> Void)? = nil
     var chrome: CodeEditorChrome = .bordered
     let engine: Engine
 
@@ -23,7 +24,9 @@ struct CodeEditorView: View {
     }
 
     private var editor: some View {
-        CodeTextEditor(text: $text, profile: profile, introspector: introspector, focused: focused, reveal: reveal, engine: engine)
+        CodeTextEditor(
+            text: $text, profile: profile, introspector: introspector, focused: focused, reveal: reveal, onCaretMove: onCaretMove,
+            engine: engine)
     }
 
     private var bordered: some View {
