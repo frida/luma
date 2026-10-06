@@ -81,12 +81,7 @@ struct CodeTextEditor: PlatformViewRepresentable {
     #endif
 
     private func makeTextView(context: Context) -> CodeTextView {
-        #if canImport(AppKit)
-            let view = CodeTextView(usingTextLayoutManager: false)
-            view.textContainer?.replaceLayoutManager(FoldingLayoutManager())
-        #else
-            let view = CodeTextView()
-        #endif
+        let view = CodeTextView.make()
         view.delegate = context.coordinator
         view.setSource(text)
         context.coordinator.attach(view)

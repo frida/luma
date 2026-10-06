@@ -30,6 +30,30 @@ import LumaCore
             }
         }
 
+        func hiddenParagraphs(in text: NSString) -> NSRange {
+            let firstHidden = NSMaxRange(text.lineRange(for: NSRange(location: hidden.location, length: 0)))
+            let closingLine = text.lineRange(for: NSRange(location: NSMaxRange(hidden), length: 0))
+            return NSRange(location: firstHidden, length: NSMaxRange(closingLine) - firstHidden)
+        }
+
+        func visibleEndOfFirstLine(in text: NSString) -> Int {
+            Self.contentEnd(ofLineRange: text.lineRange(for: NSRange(location: hidden.location, length: 0)), in: text)
+        }
+
+        func closingRange(in text: NSString) -> NSRange {
+            let closer = NSMaxRange(hidden)
+            let closingLine = text.lineRange(for: NSRange(location: closer, length: 0))
+            return NSRange(location: closer, length: Self.contentEnd(ofLineRange: closingLine, in: text) - closer)
+        }
+
+        private static func contentEnd(ofLineRange line: NSRange, in text: NSString) -> Int {
+            var end = NSMaxRange(line)
+            while end > line.location, text.character(at: end - 1) == 0x0A || text.character(at: end - 1) == 0x0D {
+                end -= 1
+            }
+            return end
+        }
+
         private static let openers: Set<UTF16.CodeUnit> = [0x7B, 0x28, 0x5B]
         private static let closers: Set<UTF16.CodeUnit> = [0x7D, 0x29, 0x5D]
     }
@@ -45,109 +69,68 @@ import LumaCore
         let color: NSColor
     }
 
-    nonisolated final class FoldingLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
-        static let swatchSize: CGFloat = 10
-        static let swatchGap: CGFloat = 4
-        static let placeholderWidth: CGFloat = 22
-        static let placeholderGap: CGFloat = 3
-        static let placeholderKern = placeholderWidth + placeholderGap * 2
+    nonisolated final class FoldedParagraphs: NSObject, NSTextContentStorageDelegate {
+        var ranges: [NSRange] = []
 
-        override init() {
-            super.init()
-            delegate = self
+        func textContentManager(
+            _ textContentManager: NSTextContentManager,
+            shouldEnumerate textElement: NSTextElement,
+            options: NSTextContentManager.EnumerationOptions
+        ) -> Bool {
+            guard let start = textElement.elementRange?.location else { return true }
+            return !hides(textContentManager.offset(from: textContentManager.documentRange.location, to: start))
         }
 
-        @available(*, unavailable)
-        required init?(coder: NSCoder) {
-            fatalError("FoldingLayoutManager is not loaded from a nib")
+        func hides(_ characterIndex: Int) -> Bool {
+            ranges.contains { NSLocationInRange(characterIndex, $0) }
         }
+    }
 
-        func layoutManager(
-            _ layoutManager: NSLayoutManager,
-            shouldUse action: NSLayoutManager.ControlCharacterAction,
-            forControlCharacterAt charIndex: Int
-        ) -> NSLayoutManager.ControlCharacterAction {
-            isHidden(charIndex) ? .zeroAdvancement : action
-        }
+    enum FoldPlaceholders {
+        static let width: CGFloat = 22
+        static let gap: CGFloat = 3
 
-        var hiddenRanges: [NSRange] = [] {
-            didSet {
-                guard hiddenRanges != oldValue else { return }
-                invalidateGlyphs(forCharacterRange: NSRange(location: 0, length: textStorage?.length ?? 0), changeInLength: 0, actualCharacterRange: nil)
-                invalidateLayout(forCharacterRange: NSRange(location: 0, length: textStorage?.length ?? 0), actualCharacterRange: nil)
-            }
-        }
-
-        var swatches: [CodeSwatch] = []
-
-        private(set) var placeholderRects: [(rect: NSRect, hidden: NSRange)] = []
-
-        override func setGlyphs(
-            _ glyphs: UnsafePointer<CGGlyph>,
-            properties: UnsafePointer<NSLayoutManager.GlyphProperty>,
-            characterIndexes: UnsafePointer<Int>,
-            font: NSFont,
-            forGlyphRange glyphRange: NSRange
-        ) {
-            guard !hiddenRanges.isEmpty else {
-                super.setGlyphs(glyphs, properties: properties, characterIndexes: characterIndexes, font: font, forGlyphRange: glyphRange)
-                return
-            }
-            var adjusted = Array(UnsafeBufferPointer(start: properties, count: glyphRange.length))
-            for index in 0..<glyphRange.length where isHidden(characterIndexes[index]) {
-                adjusted[index] = .null
-            }
-            adjusted.withUnsafeBufferPointer { buffer in
-                super.setGlyphs(glyphs, properties: buffer.baseAddress!, characterIndexes: characterIndexes, font: font, forGlyphRange: glyphRange)
-            }
-        }
-
-        override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
-            super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
-            drawPlaceholders(at: origin)
-            drawSwatches(at: origin)
-        }
-
-        private func drawPlaceholders(at origin: NSPoint) {
-            placeholderRects = []
-            guard let length = textStorage?.length else { return }
+        static func draw(_ folds: [CodeFold], in textView: CodeTextView) -> [(rect: NSRect, fold: CodeFold)] {
+            let text = textView.string as NSString
             let label = NSAttributedString(string: "\u{22EF}", attributes: [
                 .font: NSFont.systemFont(ofSize: 9, weight: .semibold),
                 .foregroundColor: NSColor.secondaryLabelColor,
             ])
             let labelSize = label.size()
-            for hidden in hiddenRanges where hidden.location > 0 && NSMaxRange(hidden) < length {
-                let resumed = glyphIndexForCharacter(at: NSMaxRange(hidden))
-                let line = lineFragmentRect(forGlyphAt: resumed, effectiveRange: nil)
-                let resumedX = line.minX + location(forGlyphAt: resumed).x
+            var targets: [(rect: NSRect, fold: CodeFold)] = []
+            for fold in folds {
+                let visibleEnd = fold.visibleEndOfFirstLine(in: text)
+                guard let line = textView.lineBox(at: visibleEnd),
+                    let end = textView.caretFrame(at: visibleEnd)
+                else { continue }
                 let pill = NSRect(
-                    x: origin.x + resumedX - Self.placeholderGap - Self.placeholderWidth,
-                    y: origin.y + line.midY - labelSize.height / 2 - 1,
-                    width: Self.placeholderWidth, height: labelSize.height + 2
+                    x: end.minX + gap, y: line.frame.midY - labelSize.height / 2 - 1,
+                    width: width, height: labelSize.height + 2
                 ).integral
                 NSColor.quaternaryLabelColor.setFill()
                 NSBezierPath(roundedRect: pill, xRadius: 4, yRadius: 4).fill()
                 label.draw(at: NSPoint(x: pill.midX - labelSize.width / 2, y: pill.minY + 1))
-                placeholderRects.append((pill, hidden))
+                let closing = textView.textStorage!.attributedSubstring(from: fold.closingRange(in: text))
+                closing.draw(at: NSPoint(x: pill.maxX + gap, y: line.frame.minY))
+                targets.append((pill.union(NSRect(x: pill.maxX, y: pill.minY, width: gap + closing.size().width, height: pill.height)), fold))
             }
+            return targets
         }
+    }
 
-        private func drawSwatches(at origin: NSPoint) {
-            guard let container = textContainers.first, let length = textStorage?.length else { return }
-            for swatch in swatches where swatch.location < length && !isHidden(swatch.location) {
-                let glyph = glyphIndexForCharacter(at: swatch.location)
-                let rect = boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
-                let side = Self.swatchSize
-                let square = NSRect(x: rect.minX + origin.x - side - Self.swatchGap / 2, y: rect.midY + origin.y - side / 2, width: side, height: side)
+    enum ColorSwatches {
+        static let size: CGFloat = 10
+        static let gap: CGFloat = 4
+
+        static func draw(_ swatches: [CodeSwatch], in textView: CodeTextView) {
+            for swatch in swatches where !textView.folding.hides(swatch.location) {
+                guard let glyph = textView.characterFrame(at: swatch.location) else { continue }
+                let square = NSRect(x: glyph.minX - size - gap / 2, y: glyph.midY - size / 2, width: size, height: size)
                 swatch.color.setFill()
                 NSBezierPath(roundedRect: square, xRadius: 2, yRadius: 2).fill()
                 NSColor.separatorColor.setStroke()
                 NSBezierPath(roundedRect: square.insetBy(dx: 0.5, dy: 0.5), xRadius: 2, yRadius: 2).stroke()
             }
-        }
-
-        func isHidden(_ characterIndex: Int) -> Bool {
-            hiddenRanges.contains { NSLocationInRange(characterIndex, $0) }
         }
     }
 
@@ -156,35 +139,35 @@ import LumaCore
             appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? NSColor(white: 0.25, alpha: 1) : NSColor(white: 0.827, alpha: 1)
         }
 
-        static func draw(_ scopes: [LSP.FoldingRange], in textView: NSTextView, dirtyRect: NSRect) {
-            guard let layoutManager = textView.layoutManager as? FoldingLayoutManager else { return }
+        static func draw(_ scopes: [LSP.FoldingRange], in textView: CodeTextView, dirtyRect: NSRect) {
             let text = textView.string as NSString
             let lines = LineMap(text: textView.string)
-            let origin = textView.textContainerOrigin
             color.setFill()
             for scope in scopes where scope.kind == nil && scope.endLine - scope.startLine >= 2 {
                 let opening = lines.utf16Offset(of: LSP.Position(line: scope.startLine, character: 0))
                 let firstInside = lines.utf16Offset(of: LSP.Position(line: scope.startLine + 1, character: 0))
                 let lastInside = lines.utf16Offset(of: LSP.Position(line: scope.endLine - 1, character: 0))
-                guard lastInside < text.length, !layoutManager.isHidden(firstInside) else { continue }
+                guard lastInside < text.length, !textView.folding.hides(firstInside) else { continue }
                 let indent = firstNonBlank(in: text, from: opening)
-                let indentGlyph = layoutManager.glyphIndexForCharacter(at: indent)
-                let openingFragment = layoutManager.lineFragmentRect(forGlyphAt: indentGlyph, effectiveRange: nil)
-                let x = origin.x + openingFragment.minX + layoutManager.location(forGlyphAt: indentGlyph).x
-                    + inkOffset(ofGlyph: indentGlyph, character: indent, in: layoutManager)
-                let top = layoutManager.lineFragmentRect(forGlyphAt: layoutManager.glyphIndexForCharacter(at: firstInside), effectiveRange: nil).minY
-                let bottom = layoutManager.lineFragmentRect(forGlyphAt: layoutManager.glyphIndexForCharacter(at: lastInside), effectiveRange: nil).maxY
+                guard let indentFrame = textView.characterFrame(at: indent),
+                    let top = textView.lineBox(at: firstInside)?.frame.minY,
+                    let bottom = textView.lineBox(at: lastInside)?.frame.maxY
+                else { continue }
+                let x = indentFrame.minX + inkOffset(ofCharacterAt: indent, in: textView.textStorage!)
                 let guide = textView.backingAlignedRect(
-                    NSRect(x: x, y: origin.y + top, width: 1, height: bottom - top), options: .alignAllEdgesNearest)
+                    NSRect(x: x, y: top, width: 1, height: bottom - top), options: .alignAllEdgesNearest)
                 if guide.intersects(dirtyRect) {
                     guide.fill()
                 }
             }
         }
 
-        private static func inkOffset(ofGlyph glyph: Int, character: Int, in layoutManager: NSLayoutManager) -> CGFloat {
-            guard let font = layoutManager.textStorage?.attribute(.font, at: character, effectiveRange: nil) as? NSFont else { return 0 }
-            return font.boundingRect(forCGGlyph: layoutManager.cgGlyph(at: glyph)).minX
+        private static func inkOffset(ofCharacterAt index: Int, in storage: NSTextStorage) -> CGFloat {
+            guard let font = storage.attribute(.font, at: index, effectiveRange: nil) as? NSFont else { return 0 }
+            var character = (storage.string as NSString).character(at: index)
+            var glyph = CGGlyph()
+            CTFontGetGlyphsForCharacters(font, &character, &glyph, 1)
+            return font.boundingRect(forCGGlyph: glyph).minX
         }
 
         private static func firstNonBlank(in text: NSString, from start: Int) -> Int {
@@ -201,29 +184,19 @@ import LumaCore
             appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? NSColor(white: 1, alpha: 0.07) : NSColor(white: 0, alpha: 0.07)
         }
 
-        static func rect(in textView: NSTextView, font: NSFont) -> NSRect? {
+        static func rect(in textView: CodeTextView, font: NSFont) -> NSRect? {
             let selection = textView.selectedRange()
-            guard selection.length == 0, let layoutManager = textView.layoutManager else { return nil }
-            let length = (textView.string as NSString).length
-            let fragment: NSRect
-            if selection.location >= length, !layoutManager.extraLineFragmentRect.isEmpty {
-                fragment = layoutManager.extraLineFragmentRect
-            } else if length > 0 {
-                let glyph = layoutManager.glyphIndexForCharacter(at: min(selection.location, length - 1))
-                fragment = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
-            } else {
-                return nil
-            }
+            guard selection.length == 0, let line = textView.lineBox(at: selection.location) else { return nil }
             let band = NSRect(
-                x: 0, y: fragment.minY + textView.textContainerOrigin.y + capsCentering(in: fragment, font: font, layoutManager: layoutManager),
-                width: textView.bounds.width, height: fragment.height)
+                x: 0, y: line.frame.minY + capsCentering(in: line, font: font),
+                width: textView.bounds.width, height: line.frame.height)
             return textView.backingAlignedRect(band, options: .alignAllEdgesNearest)
         }
 
-        private static func capsCentering(in fragment: NSRect, font: NSFont, layoutManager: NSLayoutManager) -> CGFloat {
-            let baseline = layoutManager.defaultBaselineOffset(for: font)
+        private static func capsCentering(in line: CodeTextView.LineBox, font: NSFont) -> CGFloat {
+            let baseline = line.baseline - line.frame.minY
             let spaceAboveCaps = baseline - font.capHeight
-            let spaceBelowBaseline = fragment.height - baseline
+            let spaceBelowBaseline = line.frame.height - baseline
             return (spaceAboveCaps - spaceBelowBaseline) / 2
         }
     }
@@ -366,37 +339,11 @@ import LumaCore
         }
 
         private func visibleRows() -> [Row] {
-            guard let layoutManager = textView.layoutManager as? FoldingLayoutManager else { return [] }
-            let text = textView.string as NSString
-            let origin = textView.textContainerOrigin
-            var rows: [Row] = []
-            var line = 0
-            var index = 0
-            let baselineOffset = layoutManager.defaultBaselineOffset(for: sourceFont)
-            var previousTop: CGFloat?
-            while true {
-                let fragment: NSRect
-                if index < text.length {
-                    fragment = layoutManager.lineFragmentRect(forGlyphAt: layoutManager.glyphIndexForCharacter(at: index), effectiveRange: nil)
-                } else if !layoutManager.extraLineFragmentRect.isEmpty {
-                    fragment = layoutManager.extraLineFragmentRect
-                } else {
-                    break
-                }
-                let top = convert(NSPoint(x: 0, y: fragment.minY + origin.y), from: textView).y
-                let isShown = !layoutManager.isHidden(index) || index == 0
-                if isShown, top != previousTop, top + fragment.height >= 0, top <= bounds.height {
-                    rows.append(Row(line: line, top: top, height: fragment.height, baseline: top + baselineOffset))
-                }
-                if isShown {
-                    previousTop = top
-                }
-                guard index < text.length else { break }
-                index = NSMaxRange(text.lineRange(for: NSRange(location: index, length: 0)))
-                line += 1
-                if index == text.length, text.character(at: text.length - 1) != 0x0A { break }
+            let visible = convert(bounds, to: textView)
+            return textView.lineBoxes(from: visible.minY, through: visible.maxY).map { line, box in
+                let top = convert(NSPoint(x: 0, y: box.frame.minY), from: textView).y
+                return Row(line: line, top: top, height: box.frame.height, baseline: top + box.baseline - box.frame.minY)
             }
-            return rows
         }
 
         private func drawNumber(_ number: Int, baseline: CGFloat, isCurrent: Bool) {

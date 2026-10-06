@@ -35,10 +35,14 @@ final class CodeTextView: CodeTextViewBase {
 
     #if canImport(AppKit)
         var onLineStateChanged: (() -> Void)?
+        let folding = FoldedParagraphs()
 
         private var foldable: [LSP.FoldingRange] = []
         private var folds: [CodeFold] = []
+        private var foldsDroppedByEdit = false
         private var colors: [LSP.ColorInformation] = []
+        private var swatches: [CodeSwatch] = []
+        private var placeholderTargets: [(rect: NSRect, fold: CodeFold)] = []
     #endif
 
     private var diagnostics: [LSP.Diagnostic] = []
@@ -54,26 +58,17 @@ final class CodeTextView: CodeTextViewBase {
         private var signatureRequest: Task<Void, Never>?
         private var argumentPlaceholders: [NSRange] = []
 
-        private var foldingLayoutManager: FoldingLayoutManager {
-            layoutManager as! FoldingLayoutManager
+        static func make() -> CodeTextView {
+            let view = CodeTextView(usingTextLayoutManager: true)
+            view.textContentStorage!.delegate = view.folding
+            return view
         }
     #else
         private let candidates = CompletionCandidates()
         private let completionBarHeight: CGFloat = 38
 
-        init() {
-            let container = NSTextContainer(
-                size: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude))
-            let layout = NSLayoutManager()
-            layout.addTextContainer(container)
-            let storage = NSTextStorage()
-            storage.addLayoutManager(layout)
-            super.init(frame: .zero, textContainer: container)
-        }
-
-        @available(*, unavailable)
-        required init?(coder: NSCoder) {
-            fatalError("CodeTextView is not loaded from a nib")
+        static func make() -> CodeTextView {
+            CodeTextView(usingTextLayoutManager: true)
         }
     #endif
 
@@ -158,19 +153,14 @@ final class CodeTextView: CodeTextViewBase {
             storage.addAttribute(.foregroundColor, value: color, range: NSRange(location: lower, length: upper - lower))
         }
         #if canImport(AppKit)
-            var swatches: [CodeSwatch] = []
+            swatches = []
             for color in colors {
                 let range = lineMap.utf16Range(of: color.range)
                 guard range.lowerBound > 0, range.lowerBound <= storage.length else { continue }
                 storage.addAttribute(
-                    .kern, value: FoldingLayoutManager.swatchSize + FoldingLayoutManager.swatchGap,
+                    .kern, value: ColorSwatches.size + ColorSwatches.gap,
                     range: NSRange(location: range.lowerBound - 1, length: 1))
                 swatches.append(CodeSwatch(location: range.lowerBound, color: NSColor(color.color)))
-            }
-            foldingLayoutManager.swatches = swatches
-            for fold in folds where fold.hidden.location > 0 {
-                storage.addAttribute(
-                    .kern, value: FoldingLayoutManager.placeholderKern, range: NSRange(location: fold.hidden.location - 1, length: 1))
             }
         #endif
         for diagnostic in diagnostics where !diagnostic.isUnnecessary {
@@ -297,6 +287,8 @@ final class CodeTextView: CodeTextViewBase {
 
         override func didChangeText() {
             super.didChangeText()
+            hideFoldedParagraphs(relayout: foldsDroppedByEdit)
+            foldsDroppedByEdit = false
             noteEdited()
         }
 
@@ -318,6 +310,8 @@ final class CodeTextView: CodeTextViewBase {
             }
             let folded = foldedStartLines
             ScopeGuides.draw(foldable.filter { !folded.contains($0.startLine) }, in: self, dirtyRect: rect)
+            placeholderTargets = FoldPlaceholders.draw(folds, in: self)
+            ColorSwatches.draw(swatches, in: self)
         }
 
         override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
@@ -328,8 +322,8 @@ final class CodeTextView: CodeTextViewBase {
 
         override func mouseDown(with event: NSEvent) {
             let point = convert(event.locationInWindow, from: nil)
-            if let hit = foldingLayoutManager.placeholderRects.first(where: { $0.rect.contains(point) }) {
-                folds.removeAll { $0.hidden == hit.hidden }
+            if let hit = placeholderTargets.first(where: { $0.rect.contains(point) }) {
+                folds.removeAll { $0 == hit.fold }
                 applyFolds()
                 return
             }
@@ -372,20 +366,29 @@ final class CodeTextView: CodeTextViewBase {
 
         private func shiftFolds(for edited: NSRange, replacementLength: Int) {
             let delta = replacementLength - edited.length
+            let previousCount = folds.count
             folds = folds.compactMap { fold in
                 let touchesHidden = NSIntersectionRange(edited, fold.hidden).length > 0 || NSLocationInRange(edited.location, fold.hidden)
                 if touchesHidden { return nil }
                 guard fold.hidden.location >= NSMaxRange(edited) else { return fold }
                 return CodeFold(startLine: fold.startLine, hidden: NSRange(location: fold.hidden.location + delta, length: fold.hidden.length))
             }
-            foldingLayoutManager.hiddenRanges = folds.map(\.hidden)
+            foldsDroppedByEdit = foldsDroppedByEdit || folds.count != previousCount
         }
 
         private func applyFolds() {
-            foldingLayoutManager.hiddenRanges = folds.map(\.hidden)
+            hideFoldedParagraphs(relayout: true)
             restyle()
             needsDisplay = true
             onLineStateChanged?()
+        }
+
+        private func hideFoldedParagraphs(relayout: Bool) {
+            let text = string as NSString
+            folding.ranges = folds.map { $0.hiddenParagraphs(in: text) }
+            if relayout {
+                textLayoutManager!.invalidateLayout(for: textLayoutManager!.documentRange)
+            }
         }
 
         override func insertText(_ string: Any, replacementRange: NSRange) {
@@ -709,12 +712,91 @@ final class CodeTextView: CodeTextViewBase {
         }
 
         private func showHover(_ text: NSAttributedString, at offset: Int) {
-            guard text.length > 0, let layoutManager, let textContainer else { return }
-            let glyphRange = layoutManager.glyphRange(forCharacterRange: NSRange(location: offset, length: 1), actualCharacterRange: nil)
-            var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-            rect.origin.x += textContainerOrigin.x
-            rect.origin.y += textContainerOrigin.y
+            guard text.length > 0, let rect = characterFrame(at: offset) else { return }
             hover.show(text, key: offset, relativeTo: rect, of: self, preferredEdge: .maxY)
+        }
+
+        struct LineBox {
+            let frame: NSRect
+            let baseline: CGFloat
+        }
+
+        func lineBox(at offset: Int) -> LineBox? {
+            guard offset < (string as NSString).length else { return lastLineBox() }
+            let layout = textLayoutManager!
+            guard let fragment = layout.textLayoutFragment(for: location(atOffset: offset)),
+                let line = fragment.textLineFragments.first
+            else { return nil }
+            return box(of: line, in: fragment)
+        }
+
+        func lineBoxes(from minY: CGFloat, through maxY: CGFloat) -> [(line: Int, box: LineBox)] {
+            let layout = textLayoutManager!
+            let content = textContentStorage!
+            let text = string as NSString
+            let top = CGPoint(x: 0, y: max(minY - textContainerOrigin.y, 0))
+            let start = layout.textLayoutFragment(for: top)?.rangeInElement.location ?? layout.documentRange.location
+            var boxes: [(line: Int, box: LineBox)] = []
+            var line = 0
+            var counted = 0
+            layout.enumerateTextLayoutFragments(from: start, options: [.ensuresLayout]) { fragment in
+                let offset = content.offset(from: content.documentRange.location, to: fragment.rangeInElement.location)
+                line += Self.newlineCount(in: text, from: counted, to: offset)
+                counted = offset
+                for (index, lineFragment) in fragment.textLineFragments.enumerated() {
+                    boxes.append((line + index, box(of: lineFragment, in: fragment)))
+                }
+                return fragment.layoutFragmentFrame.maxY + textContainerOrigin.y < maxY
+            }
+            return boxes
+        }
+
+        func characterFrame(at offset: Int) -> NSRect? {
+            let end = min(offset + 1, (string as NSString).length)
+            return segmentFrame(of: NSTextRange(location: location(atOffset: offset), end: location(atOffset: end)))
+        }
+
+        func caretFrame(at offset: Int) -> NSRect? {
+            segmentFrame(of: NSTextRange(location: location(atOffset: offset)))
+        }
+
+        private func lastLineBox() -> LineBox? {
+            let layout = textLayoutManager!
+            var last: LineBox?
+            layout.enumerateTextLayoutFragments(from: layout.documentRange.endLocation, options: [.reverse, .ensuresLayout]) { fragment in
+                last = fragment.textLineFragments.last.map { box(of: $0, in: fragment) }
+                return false
+            }
+            return last
+        }
+
+        private func box(of line: NSTextLineFragment, in fragment: NSTextLayoutFragment) -> LineBox {
+            let origin = fragment.layoutFragmentFrame.origin
+            let frame = line.typographicBounds.offsetBy(dx: origin.x + textContainerOrigin.x, dy: origin.y + textContainerOrigin.y)
+            return LineBox(frame: frame, baseline: frame.minY + line.glyphOrigin.y)
+        }
+
+        private func segmentFrame(of range: NSTextRange?) -> NSRect? {
+            guard let range else { return nil }
+            var frame: NSRect?
+            textLayoutManager!.enumerateTextSegments(in: range, type: .standard, options: []) { _, segment, _, _ in
+                frame = frame?.union(segment) ?? segment
+                return true
+            }
+            return frame?.offsetBy(dx: textContainerOrigin.x, dy: textContainerOrigin.y)
+        }
+
+        private func location(atOffset offset: Int) -> NSTextLocation {
+            let content = textContentStorage!
+            return content.location(content.documentRange.location, offsetBy: offset)!
+        }
+
+        private static func newlineCount(in text: NSString, from start: Int, to end: Int) -> Int {
+            var count = 0
+            for index in start..<end where text.character(at: index) == 0x0A {
+                count += 1
+            }
+            return count
         }
     #else
         override func becomeFirstResponder() -> Bool {
