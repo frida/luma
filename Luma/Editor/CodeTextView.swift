@@ -649,6 +649,9 @@ final class CodeTextView: CodeTextViewBase {
         override func mouseMoved(with event: NSEvent) {
             super.mouseMoved(with: event)
             let point = convert(event.locationInWindow, from: nil)
+            if isOverPlaceholder(point) {
+                NSCursor.pointingHand.set()
+            }
             scheduleHover(at: characterIndexForInsertion(at: point))
         }
 
@@ -661,6 +664,18 @@ final class CodeTextView: CodeTextViewBase {
         override func keyDown(with event: NSEvent) {
             hover.dismiss()
             super.keyDown(with: event)
+        }
+
+        override func cursorUpdate(with event: NSEvent) {
+            guard isOverPlaceholder(convert(event.locationInWindow, from: nil)) else {
+                super.cursorUpdate(with: event)
+                return
+            }
+            NSCursor.pointingHand.set()
+        }
+
+        private func isOverPlaceholder(_ point: NSPoint) -> Bool {
+            placeholderTargets.contains { $0.rect.contains(point) }
         }
 
         private func scheduleHover(at offset: Int) {
