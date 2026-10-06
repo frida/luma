@@ -96,7 +96,7 @@ struct CustomInstrumentEditorView: View {
         .onAppear {
             isEditorFocused = true
         }
-        .onChange(of: file.content) { _, newValue in
+        .onChange(of: file.content, initial: true) { _, newValue in
             if !isDirty { draftContent = newValue }
         }
         .onChange(of: draftContent) { _, _ in recomputeDirty() }
