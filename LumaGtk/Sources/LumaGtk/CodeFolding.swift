@@ -15,18 +15,14 @@ final class CodeFolding {
     static let hiddenTag = "luma-fold-hidden"
 
     private let buffer: GtkSource.Buffer
-    private let gutter: TextLayer
+    private let chevrons = FoldChevronRenderer()
     private var folds: [CodeFold] = []
     private var collapsed: Set<Int> = []
-    private var numberWidth = 0.0
     private var openChevronAlpha = 0.0
     private var fade: Adw.TimedAnimation?
 
-    private static let numberLeading = 8.0
-    private static let numberToChevron = 4.0
-    private static let chevronColumnWidth = 14.0
-    private static let chevronToCode = 2.0
-    private static let numberAlpha = 0.55
+    private static let chevronColumnWidth = 14
+    private static let chevronToCode = 2
     private static let chevronAlpha = 0.6
     private static let fadeIn = 150
     private static let fadeOut = 400
@@ -36,84 +32,69 @@ final class CodeFolding {
     init(editor: GtkSource.View, buffer: GtkSource.Buffer) {
         self.buffer = buffer
         layer = TextLayer(editor: editor, buffer: buffer)
-        gutter = TextLayer(editor: editor, buffer: buffer)
-        gutter.area.canTarget = true
-        gtk_text_view_set_gutter(editor.text_view_ptr, GTK_TEXT_WINDOW_LEFT, gutter.area.widget_ptr)
         _ = luma_text_buffer_create_hidden_tag(buffer.ptr, Self.hiddenTag)
 
-        buffer.onMarkSet { [weak self] _, _, _ in
-            MainActor.assumeIsolated { self?.gutter.queueDraw() }
-        }
-        installClicks()
-        installHover()
-        fitGutter()
-        gutter.onDraw = { [weak self] cr in self?.drawGutter(on: cr) }
+        chevrons.folding = self
+        installChevrons(in: editor)
+        installPlaceholderInteraction(on: editor)
         layer.onDraw = { [weak self] cr in self?.drawScopes(on: cr) }
     }
 
     func setRanges(_ ranges: [LSP.FoldingRange], in text: String) {
-        folds = CodeFold.folds(from: ranges, in: text)
+        folds = CodeFold.folds(from: ranges.filter { $0.endLine > $0.startLine }, in: text)
         collapsed.formIntersection(folds.map(\.startLine))
         applyCollapsed()
     }
 
     func textChanged() {
-        fitGutter()
-        gutter.queueDraw()
         layer.queueDraw()
     }
 
-    private func installClicks() {
+    private func installChevrons(in editor: GtkSource.View) {
+        let gutter = editor.getGutter(windowType: .left)!
+        _ = gutter.insert(renderer: GutterRendererRef(chevrons.handle), position: 1)
+        chevronsWidget.setSizeRequest(width: Self.chevronColumnWidth + Self.chevronToCode, height: -1)
+
+        let gutterHover = EventControllerMotion()
+        gutterHover.onEnter { [weak self] _, _, _ in
+            MainActor.assumeIsolated { self?.fadeOpenChevrons(to: 1, over: Self.fadeIn) }
+        }
+        gutterHover.onLeave { [weak self] _ in
+            MainActor.assumeIsolated { self?.fadeOpenChevrons(to: 0, over: Self.fadeOut) }
+        }
+        gutter.add(controller: gutterHover)
+
+        let chevronHover = EventControllerMotion()
+        chevronHover.onEnter { [weak self] _, _, y in
+            MainActor.assumeIsolated { self?.updatePointer(atY: y) }
+        }
+        chevronHover.onMotion { [weak self] _, _, y in
+            MainActor.assumeIsolated { self?.updatePointer(atY: y) }
+        }
+        chevronsWidget.add(controller: chevronHover)
+    }
+
+    private func installPlaceholderInteraction(on editor: GtkSource.View) {
         let click = GestureClick()
-        click.onPressed { [weak self] _, _, x, y in
+        click.propagationPhase = .capture
+        click.onPressed { [weak self] gesture, _, x, y in
             MainActor.assumeIsolated {
-                guard let self, let fold = self.fold(atX: x, y: y) else { return }
+                guard let self, let fold = self.collapsedFold(atPlaceholder: self.layer.point(fromEditorX: x, y: y)) else { return }
+                _ = gesture.set(state: .claimed)
                 self.toggle(line: fold.startLine)
             }
         }
-        gutter.area.add(controller: click)
-    }
+        editor.add(controller: click)
 
-    private func installHover() {
         let hover = EventControllerMotion()
-        hover.onEnter { [weak self] _, x, y in
+        hover.onMotion { [weak self, weak editor] _, x, y in
             MainActor.assumeIsolated {
-                guard let self else { return }
-                self.fadeOpenChevrons(to: 1, over: Self.fadeIn)
-                self.updatePointer(atX: x, y: y)
+                guard let self, let editor else { return }
+                let overPlaceholder = self.collapsedFold(atPlaceholder: self.layer.point(fromEditorX: x, y: y)) != nil
+                editor.setCursorFrom(name: overPlaceholder ? "pointer" : "text")
             }
         }
-        hover.onMotion { [weak self] _, x, y in
-            MainActor.assumeIsolated { self?.updatePointer(atX: x, y: y) }
-        }
-        hover.onLeave { [weak self] _ in
-            MainActor.assumeIsolated { self?.fadeOpenChevrons(to: 0, over: Self.fadeOut) }
-        }
-        gutter.area.add(controller: hover)
-    }
-
-    private func fitGutter() {
-        let digits = max(String(buffer.lineCount).count, 2)
-        let widest = gutter.textLayout(markup: String(repeating: "8", count: digits))
-        defer { g_object_unref(widest) }
-        var width: gint = 0
-        pango_layout_get_pixel_size(widest, &width, nil)
-        numberWidth = Double(width)
-        let total = Self.numberLeading + numberWidth + Self.numberToChevron + Self.chevronColumnWidth + Self.chevronToCode
-        gutter.area.setSizeRequest(width: Int(total.rounded(.up)), height: -1)
-    }
-
-    private func drawGutter(on cr: UnsafeMutablePointer<cairo_t>) {
-        let color = gutter.textColor
-        let cursorLine = gutter.cursorLine
-        let visible = gutter.visibleLines()
-        for line in visible.lowerBound...min(visible.upperBound, buffer.lineCount - 1) where !isFoldedAway(line) {
-            let row = gutter.rect(ofLine: line)
-            drawNumber(line, isCursor: line == cursorLine, in: row, color: color, on: cr)
-            if let fold = folds.first(where: { $0.startLine == line }) {
-                drawChevron(for: fold, in: row, color: color, on: cr)
-            }
-        }
+        editor.add(controller: hover)
     }
 
     private func drawScopes(on cr: UnsafeMutablePointer<cairo_t>) {
@@ -129,12 +110,31 @@ final class CodeFolding {
         }
     }
 
-    private func fold(atX x: Double, y: Double) -> CodeFold? {
-        guard x >= chevronColumnStart else { return nil }
-        return visibleFold(startingAt: gutter.line(atY: y, in: gutter.area))
+    private func fadeOpenChevrons(to target: Double, over milliseconds: Int) {
+        fade?.pause()
+        let receiver = Unmanaged.passRetained(FadeReceiver(folding: self)).toOpaque()
+        let animation = Adw.TimedAnimation(
+            widget: chevronsWidget, from: openChevronAlpha, to: target, duration: milliseconds,
+            target: Adw.CallbackAnimationTarget(callback: fadeStep, userData: receiver, destroy: releaseFadeReceiver))
+        fade = animation
+        animation.play()
     }
 
-    private func toggle(line: Int) {
+    fileprivate func setOpenChevronAlpha(_ alpha: Double) {
+        openChevronAlpha = alpha
+        chevronsWidget.queueDraw()
+    }
+
+    private func updatePointer(atY y: Double) {
+        let line = layer.line(atY: y, in: chevronsWidget)
+        chevronsWidget.setCursorFrom(name: startsFold(line: line) && !isFoldedAway(line) ? "pointer" : nil)
+    }
+
+    private func collapsedFold(atPlaceholder point: CGPoint) -> CodeFold? {
+        folds.first { collapsed.contains($0.startLine) && !isFoldedAway($0.startLine) && placeholderRect(for: $0).contains(point) }
+    }
+
+    fileprivate func toggle(line: Int) {
         if collapsed.contains(line) {
             collapsed.remove(line)
         } else {
@@ -143,47 +143,31 @@ final class CodeFolding {
         applyCollapsed()
     }
 
-    private func fadeOpenChevrons(to target: Double, over milliseconds: Int) {
-        fade?.pause()
-        let receiver = Unmanaged.passRetained(FadeReceiver(folding: self)).toOpaque()
-        let animation = Adw.TimedAnimation(
-            widget: gutter.area, from: openChevronAlpha, to: target, duration: milliseconds,
-            target: Adw.CallbackAnimationTarget(callback: fadeStep, userData: receiver, destroy: releaseFadeReceiver))
-        fade = animation
-        animation.play()
+    fileprivate func startsFold(line: Int) -> Bool {
+        folds.contains { $0.startLine == line }
     }
 
-    fileprivate func setOpenChevronAlpha(_ alpha: Double) {
-        openChevronAlpha = alpha
-        gutter.queueDraw()
-    }
-
-    private func updatePointer(atX x: Double, y: Double) {
-        if fold(atX: x, y: y) == nil {
-            gtk_widget_set_cursor(gutter.area.widget_ptr, nil)
-        } else {
-            gtk_widget_set_cursor_from_name(gutter.area.widget_ptr, "pointer")
-        }
-    }
-
-    private func drawNumber(_ line: Int, isCursor: Bool, in row: CGRect, color: GdkRGBA, on cr: UnsafeMutablePointer<cairo_t>) {
-        let number = gutter.textLayout(markup: isCursor ? "<b>\(line + 1)</b>" : "\(line + 1)")
-        defer { g_object_unref(number) }
-        var width: gint = 0
-        var height: gint = 0
-        pango_layout_get_pixel_size(number, &width, &height)
-        let alpha = isCursor ? 1 : Self.numberAlpha
-        cairo_set_source_rgba(cr, Double(color.red), Double(color.green), Double(color.blue), Double(color.alpha) * alpha)
-        cairo_move_to(cr, Self.numberLeading + numberWidth - Double(width), row.minY + (row.height - Double(height)) / 2)
-        pango_cairo_show_layout(cr, number)
-    }
-
-    private func drawChevron(for fold: CodeFold, in row: CGRect, color: GdkRGBA, on cr: UnsafeMutablePointer<cairo_t>) {
-        let isCollapsed = collapsed.contains(fold.startLine)
+    fileprivate func snapshotChevron(onLine line: Int, lines: GutterLinesRef, snapshot: UnsafeMutablePointer<GtkSnapshot>) {
+        guard startsFold(line: line) else { return }
+        let isCollapsed = collapsed.contains(line)
         let alpha = isCollapsed ? 1 : openChevronAlpha
         guard alpha > 0 else { return }
-        let x = chevronColumnStart + Self.chevronColumnWidth / 2
-        let y = row.midY
+        var top: gint = 0
+        var height: gint = 0
+        lines.getLineYrange(line: line, mode: .cell, y: &top, height: &height)
+        guard height > 0 else { return }
+        var cell = graphene_rect_t(
+            origin: graphene_point_t(x: 0, y: Float(top)),
+            size: graphene_size_t(width: Float(chevronsWidget.width), height: Float(height)))
+        let cr = gtk_snapshot_append_cairo(snapshot, &cell)!
+        defer { cairo_destroy(cr) }
+        drawChevron(collapsed: isCollapsed, alpha: alpha, centeredAt: CGPoint(x: Double(Self.chevronColumnWidth) / 2, y: Double(top) + Double(height) / 2), on: cr)
+    }
+
+    private func drawChevron(collapsed isCollapsed: Bool, alpha: Double, centeredAt center: CGPoint, on cr: UnsafeMutablePointer<cairo_t>) {
+        var color = GdkRGBA()
+        gtk_widget_get_color(chevronsWidget.widget_ptr, &color)
+        let (x, y) = (center.x, center.y)
         if isCollapsed {
             cairo_move_to(cr, x - 1.75, y - 3.5)
             cairo_line_to(cr, x + 1.75, y)
@@ -201,11 +185,8 @@ final class CodeFolding {
     }
 
     private func drawPlaceholder(for fold: CodeFold, color: GdkRGBA, on cr: UnsafeMutablePointer<cairo_t>) {
-        let opener = layer.rect(ofOffset: fold.hidden.lowerBound - 1)
-        let width = Self.placeholderWidth
-        let height = min(opener.height - 4, 14)
-        let x = opener.maxX + Self.placeholderGap
-        let y = opener.minY + (opener.height - height) / 2
+        let pill = placeholderRect(for: fold)
+        let (x, y, width, height) = (pill.minX, pill.minY, pill.width, pill.height)
         let radius = height / 2
         cairo_new_sub_path(cr)
         cairo_arc(cr, x + width - radius, y + radius, radius, -.pi / 2, .pi / 2)
@@ -233,17 +214,16 @@ final class CodeFolding {
         cairo_stroke(cr)
     }
 
+    private func placeholderRect(for fold: CodeFold) -> CGRect {
+        let opener = layer.rect(ofOffset: fold.hidden.lowerBound - 1)
+        let height = min(opener.height - 4, 14)
+        return CGRect(
+            x: opener.maxX + Self.placeholderGap, y: opener.minY + (opener.height - height) / 2,
+            width: Self.placeholderWidth, height: height)
+    }
+
     private func isFoldedAway(_ line: Int) -> Bool {
         folds.contains { collapsed.contains($0.startLine) && line > $0.startLine && line < $0.endLine }
-    }
-
-    private var chevronColumnStart: Double {
-        Self.numberLeading + numberWidth + Self.numberToChevron
-    }
-
-    private func visibleFold(startingAt line: Int) -> CodeFold? {
-        guard !isFoldedAway(line) else { return nil }
-        return folds.first { $0.startLine == line }
     }
 
     private func applyCollapsed() {
@@ -260,8 +240,32 @@ final class CodeFolding {
             gtk_text_buffer_get_iter_at_offset(buffer.text_buffer_ptr, end, gint(fold.hidden.upperBound))
             gtk_text_buffer_apply_tag_by_name(buffer.text_buffer_ptr, Self.hiddenTag, start, end)
         }
-        gutter.queueDraw()
+        chevronsWidget.queueDraw()
         layer.queueDraw()
+    }
+
+    private var chevronsWidget: WidgetRef {
+        WidgetRef(raw: chevrons.handle)
+    }
+}
+
+@MainActor
+private final class FoldChevronRenderer: GutterRendererSubclass {
+    weak var folding: CodeFolding?
+
+    override func activate(
+        iter: UnsafeMutablePointer<GtkTextIter>?, area: UnsafeMutablePointer<GdkRectangle>?, button: guint, state: GdkModifierType,
+        nPresses: gint
+    ) {
+        folding?.toggle(line: Int(gtk_text_iter_get_line(iter)))
+    }
+
+    override func queryActivatable(iter: UnsafeMutablePointer<GtkTextIter>?, area: UnsafeMutablePointer<GdkRectangle>?) -> gboolean {
+        folding?.startsFold(line: Int(gtk_text_iter_get_line(iter))) == true ? 1 : 0
+    }
+
+    override func snapshotLine(snapshot: UnsafeMutablePointer<GtkSnapshot>?, lines: UnsafeMutablePointer<GtkSourceGutterLines>?, line: guint) {
+        folding?.snapshotChevron(onLine: Int(line), lines: GutterLinesRef(lines!), snapshot: snapshot!)
     }
 }
 

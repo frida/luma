@@ -20,6 +20,7 @@ public final class CodeEditor {
     private let buffer: GtkSource.Buffer
     private let scroll: ScrolledWindow
     private let find: PharoFindBar
+    private let lineNumbers: CodeLineNumbers
     private let folding: CodeFolding
     private let swatches: CodeSwatches
     private let highlighter: LexicalHighlighter
@@ -71,6 +72,7 @@ public final class CodeEditor {
         scroll.set(child: editor)
 
         find = PharoFindBar(editor: editor, buffer: buffer)
+        lineNumbers = CodeLineNumbers(editor: editor, buffer: buffer)
         folding = CodeFolding(editor: editor, buffer: buffer)
         swatches = CodeSwatches(editor: editor, buffer: buffer)
 
@@ -160,6 +162,7 @@ public final class CodeEditor {
         buffer.set(text: newText, len: Int(newText.utf8.count))
         suppressChange = false
         highlighter.apply(to: newText)
+        lineNumbers.textChanged()
         folding.textChanged()
         swatches.textChanged()
         session?.document.replaceText(newText)
@@ -252,6 +255,7 @@ public final class CodeEditor {
         guard !suppressChange else { return }
         text = buffer.text
         highlighter.apply(to: text)
+        lineNumbers.textChanged()
         folding.textChanged()
         swatches.textChanged()
         session?.document.replaceText(text)

@@ -38,13 +38,6 @@ final class TextLayer {
         return color
     }
 
-    var cursorLine: Int {
-        withIter { iter in
-            gtk_text_buffer_get_iter_at_mark(buffer.text_buffer_ptr, iter, gtk_text_buffer_get_insert(buffer.text_buffer_ptr))
-            return Int(gtk_text_iter_get_line(iter))
-        }
-    }
-
     func textLayout(markup: String) -> UnsafeMutablePointer<PangoLayout> {
         let layout = gtk_widget_create_pango_layout(editor.widget_ptr, nil)!
         pango_layout_set_markup(layout, markup, -1)
@@ -73,21 +66,10 @@ final class TextLayer {
         return CGRect(x: origin.x, y: origin.y, width: Double(location.width), height: Double(location.height))
     }
 
-    func rect(ofLine line: Int) -> CGRect {
-        var top: gint = 0
-        var height: gint = 0
-        withIter { iter in
-            gtk_text_buffer_get_iter_at_line(buffer.text_buffer_ptr, iter, gint(line))
-            gtk_text_view_get_line_yrange(editor.text_view_ptr, iter, &top, &height)
-        }
-        let origin = point(bufferX: 0, bufferY: top)
-        return CGRect(x: origin.x, y: origin.y, width: 0, height: Double(height))
-    }
-
-    func origin(of widget: some WidgetProtocol) -> CGPoint {
-        var from = graphene_point_t(x: 0, y: 0)
+    func point(fromEditorX x: Double, y: Double) -> CGPoint {
+        var from = graphene_point_t(x: Float(x), y: Float(y))
         var to = graphene_point_t()
-        _ = gtk_widget_compute_point(widget.widget_ptr, area.widget_ptr, &from, &to)
+        _ = gtk_widget_compute_point(editor.widget_ptr, area.widget_ptr, &from, &to)
         return CGPoint(x: Double(to.x), y: Double(to.y))
     }
 
