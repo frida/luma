@@ -58,6 +58,7 @@ final class CodeTextView: CodeTextViewBase {
         private var hoverRequest: DispatchWorkItem?
         private var signatureRequest: Task<Void, Never>?
         private var argumentPlaceholders: [NSRange] = []
+        private var completionWordStart = 0
 
         static func make() -> CodeTextView {
             let view = CodeTextView(usingTextLayoutManager: true)
@@ -446,9 +447,22 @@ final class CodeTextView: CodeTextViewBase {
         override func deleteBackward(_ sender: Any?) {
             if selectedRange().length == 0, let dedent = SourceIndentation.backspaceDedent(in: source, atUTF16: caret) {
                 super.insertText("", replacementRange: NSRange(location: dedent.lowerBound, length: dedent.count))
+            } else {
+                super.deleteBackward(sender)
+            }
+            refilterCompletionsAfterDeletion()
+        }
+
+        private func refilterCompletionsAfterDeletion() {
+            guard completionPanel.isShown else { return }
+            let word = completionWordRange
+            let isSameWord = word.location == completionWordStart
+            let followsMemberAccess = word.location > 0 && (source as NSString).character(at: word.location - 1) == 0x2E
+            guard isSameWord, word.length > 0 || followsMemberAccess else {
+                completionPanel.dismiss()
                 return
             }
-            super.deleteBackward(sender)
+            offerCompletions()
         }
 
         override func doCommand(by selector: Selector) {
@@ -496,7 +510,8 @@ final class CodeTextView: CodeTextViewBase {
             completionPanel.classify = { [weak self] code in
                 await self?.session?.document.classify(code) ?? []
             }
-            let anchor = firstRect(forCharacterRange: NSRange(location: completionWordRange.location, length: 0), actualRange: nil)
+            completionWordStart = completionWordRange.location
+            let anchor = firstRect(forCharacterRange: NSRange(location: completionWordStart, length: 0), actualRange: nil)
             completionPanel.show(matching, belowScreenRect: anchor, of: self)
         }
 
