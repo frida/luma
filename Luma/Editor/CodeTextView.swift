@@ -327,6 +327,7 @@ final class CodeTextView: CodeTextViewBase {
         }
 
         override func mouseDown(with event: NSEvent) {
+            completionPanel.dismiss()
             let point = convert(event.locationInWindow, from: nil)
             if let hit = placeholderTargets.first(where: { $0.rect.contains(point) }) {
                 folds.removeAll { $0 == hit.fold }
