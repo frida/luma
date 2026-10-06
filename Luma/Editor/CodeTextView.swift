@@ -358,7 +358,7 @@ final class CodeTextView: CodeTextViewBase {
         }
 
         private func updateFoldable(_ ranges: [LSP.FoldingRange]) {
-            foldable = ranges
+            foldable = ranges.filter { $0.endLine > $0.startLine }
             let kept = foldedStartLines
             folds = CodeFold.folds(from: ranges.filter { kept.contains($0.startLine) }, in: source)
             applyFolds()
