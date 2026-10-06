@@ -1194,6 +1194,9 @@ final class MainWindow: InstrumentUIHost {
         let pane: PatternEditorPane
         if let existing = currentPatternEditor, existing.sourceID == sourceID {
             pane = existing
+            if pane.widget.parent != nil {
+                pane.widget.unparent()
+            }
         } else {
             pane = PatternEditorPane(engine: engine, source: source) { [weak self] message in
                 self?.showToast(message)
