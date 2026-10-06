@@ -18,13 +18,17 @@ struct LumaBanner<Content: View>: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
-        .background(style.backgroundColor)
-        .overlay(
+        .background(style.backgroundColor, ignoresSafeAreaEdges: [])
+        .overlay(alignment: .top) {
             Rectangle()
                 .frame(height: 1)
-                .foregroundColor(style.borderColor),
-            alignment: .bottom
-        )
+                .foregroundColor(style.borderColor)
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .frame(height: 1)
+                .foregroundColor(style.borderColor)
+        }
     }
 }
 
