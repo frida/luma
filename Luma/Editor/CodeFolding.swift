@@ -33,17 +33,11 @@ import LumaCore
         func hiddenParagraphs(in text: NSString) -> NSRange {
             let firstHidden = NSMaxRange(text.lineRange(for: NSRange(location: hidden.location, length: 0)))
             let closingLine = text.lineRange(for: NSRange(location: NSMaxRange(hidden), length: 0))
-            return NSRange(location: firstHidden, length: NSMaxRange(closingLine) - firstHidden)
+            return NSRange(location: firstHidden, length: closingLine.location - firstHidden)
         }
 
         func visibleEndOfFirstLine(in text: NSString) -> Int {
             Self.contentEnd(ofLineRange: text.lineRange(for: NSRange(location: hidden.location, length: 0)), in: text)
-        }
-
-        func closingRange(in text: NSString) -> NSRange {
-            let closer = NSMaxRange(hidden)
-            let closingLine = text.lineRange(for: NSRange(location: closer, length: 0))
-            return NSRange(location: closer, length: Self.contentEnd(ofLineRange: closingLine, in: text) - closer)
         }
 
         private static func contentEnd(ofLineRange line: NSRange, in text: NSString) -> Int {
@@ -110,9 +104,7 @@ import LumaCore
                 NSColor.quaternaryLabelColor.setFill()
                 NSBezierPath(roundedRect: pill, xRadius: 4, yRadius: 4).fill()
                 label.draw(at: NSPoint(x: pill.midX - labelSize.width / 2, y: pill.minY + 1))
-                let closing = textView.textStorage!.attributedSubstring(from: fold.closingRange(in: text))
-                closing.draw(at: NSPoint(x: pill.maxX + gap, y: line.frame.minY))
-                targets.append((pill.union(NSRect(x: pill.maxX, y: pill.minY, width: gap + closing.size().width, height: pill.height)), fold))
+                targets.append((pill, fold))
             }
             return targets
         }
