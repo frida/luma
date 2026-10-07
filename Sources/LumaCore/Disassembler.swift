@@ -119,7 +119,7 @@ public final class Disassembler {
 
     private func disassembleFunctionIfStart(at address: UInt64, hex: String) async -> [DisassemblyLine]? {
         if await fetchFunctionBegin(hex: hex) == nil {
-            _ = await r2.cmd("af 0x\(hex)")
+            _ = await r2.cmd("af @ 0x\(hex)")
         }
         guard let begin = await fetchFunctionBegin(hex: hex), begin == address,
             let end = await fetchFunctionEnd(hex: hex), end > begin
