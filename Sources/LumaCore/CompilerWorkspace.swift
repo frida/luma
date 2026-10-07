@@ -198,7 +198,7 @@ public final class CompilerWorkspace {
     private func buildAllPackageBundles(packagesState: ProjectPackagesState, paths: CompilerWorkspacePaths) async throws {
         packageBundles.removeAll()
 
-        for pkg in packagesState.packages {
+        for pkg in packagesState.packages where PatternPackageManifest.of(pkg, in: paths) == nil {
             let descriptor = try await buildBundle(for: pkg, paths: paths)
             packageBundles[pkg.name] = descriptor.bundle
         }
@@ -258,7 +258,7 @@ public final class CompilerWorkspace {
         let quotedPath = String(decoding: try encoder.encode(source.url.path), as: UTF8.self)
         try "export * from \(quotedPath);\n".write(to: wrapperURL, atomically: true, encoding: .utf8)
 
-        let libraryDirectory = URL(fileURLWithPath: String(source.url.path.dropLast(source.id.count))).standardizedFileURL.path + "/"
+        let libraryDirectory = source.url.deletingLastPathComponent().standardizedFileURL.path + "/"
         let pathInLibrary: @Sendable (String) -> String = { path in
             let absolute = paths.root.appendingPathComponent(path).standardizedFileURL.path
             return absolute.hasPrefix(libraryDirectory) ? String(absolute.dropFirst(libraryDirectory.count)) : path

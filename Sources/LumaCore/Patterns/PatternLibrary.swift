@@ -68,7 +68,7 @@ public final class PatternLibrary {
         guard let source = source(withID: id) else {
             throw PatternLibraryError.notFound(id)
         }
-        return try add(PatternSourceRecord(name: source.url.deletingPathExtension().lastPathComponent, kind: source.kind, text: source.text))
+        return try add(PatternSourceRecord(name: source.name, kind: source.kind, text: source.text))
     }
 
     public func write(_ text: String, to id: String) throws {
@@ -142,39 +142,22 @@ public final class PatternLibrary {
     private func installedPatternPackages() -> [PatternSource] {
         let installed = (try? store.fetchPackagesState().packages) ?? []
         return installed.compactMap { package in
-            let packageDirectory = workspace.nodeModules.appendingPathComponent(package.name, isDirectory: true)
-            guard let manifest = PatternPackageManifest(at: packageDirectory.appendingPathComponent("package.json")),
-                manifest.keywords.contains(Self.packageKeyword),
-                let kind = PatternSource.Kind(path: manifest.main)
+            guard let manifest = PatternPackageManifest.of(package, in: workspace), let kind = PatternSource.Kind(path: manifest.main)
             else {
                 return nil
             }
-            let url = packageDirectory.appendingPathComponent(manifest.main)
+            let url = workspace.nodeModules.appendingPathComponent(package.name, isDirectory: true).appendingPathComponent(manifest.main)
             guard let text = try? String(contentsOf: url, encoding: .utf8) else {
                 return nil
             }
             return PatternSource(
-                id: "package:" + package.name, name: package.name, kind: kind, origin: .package(package.name), url: url,
-                workspacePath: workspacePath(of: url), text: text)
+                id: "package:" + package.name, name: url.deletingPathExtension().lastPathComponent, kind: kind,
+                origin: .package(package.name), url: url, workspacePath: workspacePath(of: url), text: text)
         }
     }
 
     private func workspacePath(of url: URL) -> String {
         url.standardizedFileURL.path.replacingOccurrences(of: workspace.root.standardizedFileURL.path + "/", with: "")
-    }
-}
-
-private struct PatternPackageManifest: Decodable {
-    let main: String
-    let keywords: [String]
-
-    init?(at url: URL) {
-        guard let data = FileManager.default.contents(atPath: url.path),
-            let manifest = try? JSONDecoder().decode(PatternPackageManifest.self, from: data)
-        else {
-            return nil
-        }
-        self = manifest
     }
 }
 

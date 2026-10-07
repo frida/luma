@@ -103,13 +103,15 @@ struct PackageSearchView: View {
             .font(.callout)
             .help("Enter a package name or name@version to install.")
 
-            LabeledContent("Global alias:") {
-                TextField("optional, e.g. ObjC", text: $globalAlias)
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(isInstalling)
+            if category != .pattern {
+                LabeledContent("Global alias:") {
+                    TextField("optional, e.g. ObjC", text: $globalAlias)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(isInstalling)
+                }
+                .font(.callout)
+                .help("Optional global alias to expose the package as a global (e.g. ObjC, Java, Swift).")
             }
-            .font(.callout)
-            .help("Optional global alias to expose the package as a global (e.g. ObjC, Java, Swift).")
 
             if isInstalling {
                 HStack(spacing: 8) {
@@ -217,7 +219,7 @@ struct PackageSearchView: View {
             }
 
             let aliasText = canonicalizedGlobalAlias
-            let alias: String? = !aliasText.isEmpty ? aliasText : nil
+            let alias: String? = !aliasText.isEmpty && category != .pattern ? aliasText : nil
 
             isInstalling = true
             errorMessage = nil

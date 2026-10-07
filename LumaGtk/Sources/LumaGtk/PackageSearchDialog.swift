@@ -318,7 +318,7 @@ final class PackageSearchDialog {
             return
         }
 
-        let aliasText = (aliasEntry.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let aliasText = category == .pattern ? "" : (aliasEntry.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let alias: String? = aliasText.isEmpty ? nil : aliasText
 
         isInstalling = true
