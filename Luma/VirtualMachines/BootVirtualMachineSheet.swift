@@ -125,6 +125,7 @@ struct BootVirtualMachineSheet: View {
                 .id(template.id)
             }
         }
+        .frame(height: Self.setupHeight)
     }
 
     private var templateSelection: Binding<String?> {
@@ -291,6 +292,7 @@ struct BootVirtualMachineSheet: View {
     private static let agentImport = "barebone-agent"
     private static let listRowInset: CGFloat = 10
     private static let formGroupInset: CGFloat = 20
+    private static let setupHeight: CGFloat = 400
 
     private func bootedView(_ machine: any VirtualMachine) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -325,6 +327,7 @@ struct BootVirtualMachineSheet: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
+        .frame(height: Self.setupHeight)
     }
 
     private var bootingLabel: String {
