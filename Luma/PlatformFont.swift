@@ -12,6 +12,16 @@ import SwiftUI
     typealias PlatformColor = UIColor
 #endif
 
+extension Font {
+    static let monospacedContent = Font.system(.body, design: .monospaced)
+}
+
+extension PlatformFont {
+    static var monospacedContent: PlatformFont {
+        .monospacedSystemFont(ofSize: preferredFont(forTextStyle: .body).pointSize, weight: .regular)
+    }
+}
+
 extension PlatformColor {
     static var platformLabel: PlatformColor {
         #if canImport(AppKit)

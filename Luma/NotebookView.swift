@@ -311,7 +311,6 @@ struct NotebookEntryRow: View {
 
             if let data = entry.binaryData, !data.isEmpty {
                 HexView(data: data)
-                    .font(.system(.footnote, design: .monospaced))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -514,14 +513,14 @@ struct NotebookEntryRow: View {
                 engine: engine,
                 selection: $selection
             )
-            .font(.system(.footnote, design: .monospaced))
+            .font(.monospacedContent)
         } else if let styled = entry.styledDetails {
             Text(styled.attributed)
-                .font(.system(.body, design: .monospaced))
+                .font(.monospacedContent)
                 .textSelection(.enabled)
         } else if !entry.details.isEmpty {
             Text(entry.details)
-                .font(.system(.body, design: .monospaced))
+                .font(.monospacedContent)
                 .textSelection(.enabled)
         }
     }

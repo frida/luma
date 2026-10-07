@@ -148,7 +148,7 @@ struct PatternDecodeView: View {
                 treeRow(row)
             }
         }
-        .font(.system(.caption, design: .monospaced))
+        .font(.monospacedContent)
         .padding(TreeMetrics.inset)
     }
 

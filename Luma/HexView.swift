@@ -400,8 +400,7 @@ struct HexMetrics: Equatable {
     let advance: CGFloat
     let rowHeight: CGFloat
 
-    static let regular = HexMetrics(
-        PlatformFont.monospacedSystemFont(ofSize: PlatformFont.preferredFont(forTextStyle: .caption1).pointSize, weight: .regular))
+    static let regular = HexMetrics(.monospacedContent)
     static let compact = HexMetrics(PlatformFont.monospacedSystemFont(ofSize: 9, weight: .regular))
 
     private static let rowGap: CGFloat = 3

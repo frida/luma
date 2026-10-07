@@ -179,7 +179,7 @@ struct REPLView: View {
                     toggleMode()
                 } label: {
                     Text(mode.promptGlyph)
-                        .font(.system(size: 13, design: .monospaced))
+                        .font(.monospacedContent)
                         .foregroundStyle(mode.promptColor)
                 }
                 .buttonStyle(.plain)
@@ -503,11 +503,11 @@ private struct REPLCellView: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .top, spacing: 6) {
                     Text(cell.language.promptGlyph)
-                        .font(.system(.caption, design: .monospaced))
+                        .font(.monospacedContent)
                         .foregroundStyle(cell.language.promptColor)
                     ScrollView(.horizontal, showsIndicators: false) {
                         Text(cell.code)
-                            .font(.system(.caption, design: .monospaced))
+                            .font(.monospacedContent)
                             .textSelection(.enabled)
                             .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)
@@ -553,7 +553,7 @@ private struct REPLCellView: View {
                             .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    .font(.system(.caption, design: .monospaced))
+                    .font(.monospacedContent)
                 }
             }
             .padding(.bottom, 4)
@@ -668,6 +668,7 @@ private struct REPLInputField: View {
             )
         #else
             TextField(placeholder, text: $text, axis: .horizontal)
+                .font(.monospacedContent)
                 .textInputAutocapitalization(.never)
                 .disableAutocorrection(true)
                 .focused($focused)
@@ -706,7 +707,7 @@ private struct REPLInputField: View {
             field.cell = REPLTextFieldCell()
             field.isBordered = false
             field.drawsBackground = false
-            field.font = NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+            field.font = .monospacedContent
             field.focusRingType = .none
             field.lineBreakMode = .byClipping
             field.usesSingleLineMode = true
