@@ -1155,12 +1155,13 @@ public final class ProcessNode: Identifiable {
             return nil
         }
         processInfo = info
-        mainModule = ProcessModule(
-            name: info.mainModule.name,
-            path: info.mainModule.path,
-            base: info.mainModule.parsedBase,
-            size: UInt64(info.mainModule.size)
-        )
+        mainModule = info.mainModule.map { main in
+            ProcessModule(
+                name: main.name,
+                path: main.path,
+                base: main.parsedBase,
+                size: UInt64(main.size))
+        }
         return info
     }
 
@@ -1168,7 +1169,7 @@ public final class ProcessNode: Identifiable {
         public let platform: String
         public let arch: String
         public let pointerSize: Int
-        public let mainModule: MainModule
+        public let mainModule: MainModule?
         public let identity: String
 
         public struct MainModule: Codable, Sendable {

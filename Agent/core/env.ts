@@ -2,7 +2,7 @@ export interface ProcessInfo {
     platform: Platform;
     arch: Architecture;
     pointerSize: number;
-    mainModule: ModuleInfo;
+    mainModule: ModuleInfo | null;
     identity: string;
 }
 
@@ -14,18 +14,27 @@ export interface ModuleInfo {
 }
 
 export function getProcessInfo(): ProcessInfo {
-    const main = Process.mainModule;
     return {
         platform: Process.platform,
         arch: Process.arch,
         pointerSize: Process.pointerSize,
-        mainModule: {
-            name: main.name,
-            path: main.path,
-            base: main.base.toString(),
-            size: main.size,
-        },
+        mainModule: lookupMainModule(),
         identity: computeProcessIdentity(),
+    };
+}
+
+function lookupMainModule(): ModuleInfo | null {
+    let main: Module;
+    try {
+        main = Process.mainModule;
+    } catch (_) {
+        return null;
+    }
+    return {
+        name: main.name,
+        path: main.path,
+        base: main.base.toString(),
+        size: main.size,
     };
 }
 
@@ -50,7 +59,7 @@ function osSpecificIdentitySource(): string | null {
 }
 
 function fallbackIdentitySource(): string {
-    return `mainbase=${Process.mainModule.base.toString()};pid=${Process.id}`;
+    return `mainbase=${lookupMainModule()?.base ?? "?"};pid=${Process.id}`;
 }
 
 function linuxIdentitySource(): string {
