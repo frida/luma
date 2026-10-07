@@ -180,6 +180,7 @@ struct QemuGuest {
         let netboot = URL(string: "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/\(architecture)/netboot")!
         return StarterImages(
             name: "Alpine Linux kernel and ramdisk (\(architecture))",
+            distribution: "Alpine Linux",
             files: [
                 StarterImageFile(
                     parameterID: QemuParameter.kernelImage,

@@ -16,6 +16,7 @@ struct BootVirtualMachineSheet: View {
     @State private var autoName: String = ""
     @State private var agentPath: URL?
     @State private var parameters: [String: VirtualMachineParameterValue] = [:]
+    @State private var imageSource: ImageSource = .starter
     @State private var machine: (any VirtualMachine)?
     @State private var failure: String?
     @State private var isBooting = false
@@ -107,10 +108,10 @@ struct BootVirtualMachineSheet: View {
                     }
 
                     if let starterImages = template.variant(for: effectiveParameters).starterImages {
-                        starterSection(starterImages)
+                        imageSourcePicker(starterImages)
                     }
 
-                    ForEach(template.parameters.filter { $0.id != VirtualMachineTemplate.architectureParameterID }) { parameter in
+                    ForEach(template.parameters.filter { !hiddenParameterIDs.contains($0.id) }) { parameter in
                         parameterField(parameter)
                     }
 
@@ -186,34 +187,24 @@ struct BootVirtualMachineSheet: View {
         }
     }
 
-    @ViewBuilder
-    private func starterSection(_ images: StarterImages) -> some View {
-        LabeledContent("Starter files") {
-            HStack {
+    private func imageSourcePicker(_ images: StarterImages) -> some View {
+        Picker(selection: $imageSource) {
+            Text(images.distribution).tag(ImageSource.starter)
+            Text("Your Own Files").tag(ImageSource.own)
+        } label: {
+            Text("System")
+            if imageSource == .starter {
                 Text(starterDescription(images))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                Button("Download") {
-                    perform {
-                        let paths = try await engine.virtualMachines.starterImages.download(images)
-                        for (parameter, path) in paths {
-                            parameters[parameter] = .text(path.path)
-                        }
-                    }
-                }
-                .help("Download \(images.name) and fill these in")
-                .disabled(engine.virtualMachines.starterImages.state(for: images).isDownloading)
             }
         }
     }
 
     private func starterDescription(_ images: StarterImages) -> String {
         switch engine.virtualMachines.starterImages.state(for: images) {
-        case .ready, .missing:
-            return images.name
+        case .ready:
+            return "Downloaded"
+        case .missing:
+            return "Downloaded when you boot"
         case .downloading(let fraction):
             return downloadingLabel(fraction)
         case .failed(let reason):
@@ -292,6 +283,11 @@ struct BootVirtualMachineSheet: View {
         }
     }
 
+    private enum ImageSource {
+        case starter
+        case own
+    }
+
     private static let agentImport = "barebone-agent"
     private static let listRowInset: CGFloat = 10
     private static let formGroupInset: CGFloat = 20
@@ -318,7 +314,7 @@ struct BootVirtualMachineSheet: View {
                 VStack(spacing: 12) {
                     ProgressView()
                         .controlSize(.large)
-                    Text("Booting \(machineName)…")
+                    Text(bootingLabel)
                         .foregroundStyle(.secondary)
                 }
                 .environment(\.colorScheme, .dark)
@@ -329,6 +325,16 @@ struct BootVirtualMachineSheet: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private var bootingLabel: String {
+        if imageSource == .starter, let images = selectedStarterImages,
+            case .downloading(let fraction) = engine.virtualMachines.starterImages.state(for: images)
+        {
+            let progress = fraction.map { " \(Int($0 * 100))%" } ?? ""
+            return "Downloading \(images.distribution)…\(progress)"
+        }
+        return "Booting \(machineName)…"
     }
 
     private var actions: some View {
@@ -382,13 +388,21 @@ struct BootVirtualMachineSheet: View {
     private func boot() {
         guard let template = selectedTemplate else { return }
 
+        let starterImages = imageSource == .starter ? selectedStarterImages : nil
+
         isBooting = true
         perform {
             defer { isBooting = false }
+            var bootParameters = parameters
+            if let starterImages {
+                for (parameter, path) in try await engine.virtualMachines.starterImages.download(starterImages) {
+                    bootParameters[parameter] = .text(path.path)
+                }
+            }
             machine = try await engine.virtualMachines.create(
                 template: template,
                 name: machineName,
-                parameters: parameters,
+                parameters: bootParameters,
                 agentPath: agentPath
             )
             engine.setSidePanel(.virtualMachines)
@@ -416,6 +430,7 @@ struct BootVirtualMachineSheet: View {
 
     private func adoptTemplateDefaults() {
         agentPath = nil
+        imageSource = .starter
         parameters = selectedTemplate?.defaultParameterValues ?? [:]
         autoName = defaultMachineName()
         machineName = autoName
@@ -448,6 +463,18 @@ struct BootVirtualMachineSheet: View {
     private var effectiveParameters: [String: VirtualMachineParameterValue] {
         guard let selectedTemplate else { return parameters }
         return engine.virtualMachines.resolvedParameters(for: selectedTemplate, parameters: parameters)
+    }
+
+    private var hiddenParameterIDs: Set<String> {
+        var hidden: Set<String> = [VirtualMachineTemplate.architectureParameterID]
+        if imageSource == .starter, let images = selectedStarterImages {
+            hidden.formUnion(images.parameterIDs)
+        }
+        return hidden
+    }
+
+    private var selectedStarterImages: StarterImages? {
+        selectedTemplate?.variant(for: effectiveParameters).starterImages
     }
 
     private var isReadyToBoot: Bool {

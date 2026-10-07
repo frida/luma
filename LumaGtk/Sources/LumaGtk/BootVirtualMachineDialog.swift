@@ -19,6 +19,7 @@ final class BootVirtualMachineDialog {
     private let nameRow: Adw.EntryRow
     private let machineGroup: Adw.PreferencesGroup
     private let starterGroup: Adw.PreferencesGroup
+    private let systemRow: Adw.ComboRow
     private let parameterGroup: Adw.PreferencesGroup
     private let agentGroup: Adw.PreferencesGroup
     private let failureLabel: Label
@@ -28,7 +29,7 @@ final class BootVirtualMachineDialog {
 
     private let templates: [VirtualMachineTemplate]
     private var parameterRows: [String: ParameterRow] = [:]
-    private var starterRow: Adw.ActionRow?
+    private var listedStarterImages: StarterImages?
     private var agentRow: Adw.ActionRow?
     private var agentPath: String?
     private var versionsRequested = false
@@ -71,6 +72,9 @@ final class BootVirtualMachineDialog {
         machineGroup.add(child: nameRow)
 
         starterGroup = Adw.PreferencesGroup()
+        systemRow = Adw.ComboRow()
+        systemRow.title = "System"
+        starterGroup.add(child: systemRow)
 
         parameterGroup = Adw.PreferencesGroup()
         parameterGroup.title = "Parameters"
@@ -121,6 +125,9 @@ final class BootVirtualMachineDialog {
         templateRow.onNotifySelected { [weak self] _, _ in
             MainActor.assumeIsolated { self?.adoptTemplate() }
         }
+        systemRow.onNotifySelected { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.refreshVariantSections() }
+        }
 
         adoptTemplate()
         observeDownloads()
@@ -157,6 +164,7 @@ final class BootVirtualMachineDialog {
         }
         parameterRows.removeAll()
         agentPath = nil
+        systemRow.selected = 0
 
         guard let template = selectedTemplate else {
             starterGroup.visible = false
@@ -189,42 +197,42 @@ final class BootVirtualMachineDialog {
     private func refreshVariantSections() {
         guard let template = selectedTemplate else { return }
         let variant = template.variant(for: currentParameterValues())
-        rebuildStarterRow(variant.starterImages)
+        refreshSystemRow(variant.starterImages)
         rebuildAgentRow(variant.agentFlavor)
     }
 
-    private func rebuildStarterRow(_ images: StarterImages?) {
-        if let starterRow {
-            starterGroup.remove(child: starterRow)
-            self.starterRow = nil
+    private func refreshSystemRow(_ images: StarterImages?) {
+        if let images, images != listedStarterImages {
+            let source = imageSource
+            listedStarterImages = images
+            systemRow.set(model: makeStringList([images.distribution, "Your Own Files"]))
+            systemRow.selected = source == .starter ? 0 : 1
         }
+
+        let hidden = imageSource == .starter ? images?.parameterIDs ?? [] : []
+        for (id, row) in parameterRows where id != VirtualMachineTemplate.architectureParameterID {
+            row.widget.visible = !hidden.contains(id)
+        }
+
         guard let images else {
             starterGroup.visible = false
             return
         }
 
-        let row = Adw.ActionRow()
-        row.title = "Starter files"
-        row.subtitle = starterDescription(images)
-
-        let download = Button(label: "Download")
-        download.valign = .center
-        download.tooltipText = "Download \(images.name) and fill these in"
-        download.sensitive = !engine.virtualMachines.starterImages.state(for: images).isDownloading
-        download.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.downloadStarterImages(images) }
-        }
-        row.addSuffix(widget: download)
-
-        starterGroup.add(child: row)
+        systemRow.subtitle = imageSource == .starter ? starterDescription(images) : ""
         starterGroup.visible = true
-        starterRow = row
+    }
+
+    private var imageSource: ImageSource {
+        systemRow.selected == 1 ? .own : .starter
     }
 
     private func starterDescription(_ images: StarterImages) -> String {
         switch engine.virtualMachines.starterImages.state(for: images) {
-        case .ready, .missing:
-            return images.name
+        case .ready:
+            return "Downloaded"
+        case .missing:
+            return "Downloaded when you boot"
         case .downloading(let fraction):
             return downloadingLabel(fraction)
         case .failed(let reason):
@@ -235,21 +243,6 @@ final class BootVirtualMachineDialog {
     private func downloadingLabel(_ fraction: Double?) -> String {
         guard let fraction else { return "Downloading\u{2026}" }
         return "Downloading\u{2026} \(Int(fraction * 100))%"
-    }
-
-    private func downloadStarterImages(_ images: StarterImages) {
-        Task { @MainActor in
-            do {
-                let paths = try await engine.virtualMachines.starterImages.download(images)
-                for (parameterID, url) in paths {
-                    (parameterRows[parameterID]?.widget as? Adw.EntryRow)?.text = url.path
-                }
-            } catch {
-                showFailure(error.localizedDescription)
-            }
-            self.refreshVariantSections()
-        }
-        refreshVariantSections()
     }
 
     private func rebuildAgentRow(_ flavor: BareboneAgentFlavor?) {
@@ -354,6 +347,11 @@ final class BootVirtualMachineDialog {
         }
     }
 
+    private enum ImageSource {
+        case starter
+        case own
+    }
+
     private static let agentImport = "barebone-agent"
 
     private func currentParameterValues() -> [String: VirtualMachineParameterValue] {
@@ -436,15 +434,22 @@ final class BootVirtualMachineDialog {
 
         let typed = nameRow.text ?? ""
         let name = typed.isEmpty ? template.name : typed
+        var parameters = currentParameterValues()
+        let starterImages = imageSource == .starter ? template.variant(for: parameters).starterImages : nil
         failureLabel.visible = false
         bootButton.sensitive = false
 
         Task { @MainActor in
             do {
+                if let starterImages {
+                    for (parameterID, url) in try await engine.virtualMachines.starterImages.download(starterImages) {
+                        parameters[parameterID] = .text(url.path)
+                    }
+                }
                 let machine = try await engine.virtualMachines.create(
                     template: template,
                     name: name,
-                    parameters: currentParameterValues(),
+                    parameters: parameters,
                     agentPath: agentPath.map { URL(fileURLWithPath: $0) })
                 self.machine = machine
                 self.showBootedView(machine)

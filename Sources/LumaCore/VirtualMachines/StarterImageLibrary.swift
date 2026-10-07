@@ -10,13 +10,19 @@ import FoundationNetworking
 /// parameters the user would otherwise have to go and find.
 public struct StarterImages: Sendable, Equatable {
     public let name: String
+    public let distribution: String
     public let files: [StarterImageFile]
     public let symbols: StarterImageSymbols?
 
-    public init(name: String, files: [StarterImageFile], symbols: StarterImageSymbols? = nil) {
+    public init(name: String, distribution: String, files: [StarterImageFile], symbols: StarterImageSymbols? = nil) {
         self.name = name
+        self.distribution = distribution
         self.files = files
         self.symbols = symbols
+    }
+
+    public var parameterIDs: Set<String> {
+        Set(files.map(\.parameterID) + [symbols?.parameterID].compactMap { $0 })
     }
 }
 
