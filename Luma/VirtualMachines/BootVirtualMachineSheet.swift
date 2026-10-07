@@ -144,8 +144,9 @@ struct BootVirtualMachineSheet: View {
 
         case .number(_, let minimum, let maximum, let unit):
             LabeledContent(parameter.name) {
-                HStack {
+                HStack(alignment: .firstTextBaseline) {
                     TextField("", value: numberBinding(parameter), format: .number)
+                        .labelsHidden()
                         .frame(width: 80)
                     if let unit {
                         Text(unit).foregroundStyle(.secondary)
@@ -157,11 +158,13 @@ struct BootVirtualMachineSheet: View {
 
         case .filePath:
             LabeledContent(parameter.name) {
-                HStack {
-                    Text(parameters[parameter.id]?.text ?? "")
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                        .foregroundStyle(.secondary)
+                HStack(alignment: .firstTextBaseline) {
+                    if let path = parameters[parameter.id]?.text, !path.isEmpty {
+                        Text(path)
+                            .lineLimit(1)
+                            .truncationMode(.head)
+                            .foregroundStyle(.secondary)
+                    }
                     Spacer()
                     Button("Choose…") {
                         awaitedImport = parameter.id
