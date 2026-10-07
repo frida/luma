@@ -10,6 +10,7 @@ struct VirtualMachinePanel: View {
     @State private var miniaturized: Set<UUID> = []
     @State private var failure: String?
     @State private var isShowingBootSheet = false
+    @State private var maximumScreenHeight: CGFloat = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -38,6 +39,7 @@ struct VirtualMachinePanel: View {
                     VirtualMachineControls(
                         engine: engine,
                         record: record,
+                        maximumScreenHeight: maximumScreenHeight,
                         isMiniature: miniature(record),
                         failure: $failure
                     )
@@ -48,6 +50,7 @@ struct VirtualMachinePanel: View {
                 }
             }
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height * 0.85 } action: { maximumScreenHeight = $0 }
     }
 
     private func miniature(_ record: VirtualMachineRecord) -> Binding<Bool> {
@@ -113,6 +116,7 @@ struct VirtualMachinePanel: View {
 struct VirtualMachineControls: View {
     let engine: Engine
     let record: VirtualMachineRecord
+    let maximumScreenHeight: CGFloat
 
     @Binding var isMiniature: Bool
     @Binding var failure: String?
@@ -124,9 +128,10 @@ struct VirtualMachineControls: View {
             summary
 
             if !isMiniature, let display = machine?.display {
-                VirtualMachineDisplayView(display: display)
-                    .frame(maxWidth: .infinity)
-                    .containerRelativeFrame(.vertical) { height, _ in height * 0.85 }
+                HeightLimitedLayout(maximumHeight: maximumScreenHeight) {
+                    VirtualMachineDisplayView(display: display)
+                }
+                .frame(maxWidth: .infinity)
             }
         }
         .confirmationDialog("Forget Machine?", isPresented: $isConfirmingForget, titleVisibility: .visible) {
@@ -301,6 +306,22 @@ struct VirtualMachineControls: View {
                 failure = error.localizedDescription
             }
         }
+    }
+}
+
+private struct HeightLimitedLayout: Layout {
+    let maximumHeight: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        subviews[0].sizeThatFits(limited(proposal))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews[0].place(at: CGPoint(x: bounds.midX, y: bounds.minY), anchor: .top, proposal: limited(proposal))
+    }
+
+    private func limited(_ proposal: ProposedViewSize) -> ProposedViewSize {
+        ProposedViewSize(width: proposal.width, height: min(proposal.height ?? .infinity, maximumHeight))
     }
 }
 
