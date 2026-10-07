@@ -249,7 +249,7 @@ final class PatternSidebar {
         disclosure.marginEnd = Self.chevronToIconSpacing
         box.append(child: disclosure)
 
-        let icon = Gtk.Image(iconName: source.kind.iconName)
+        let icon = Gtk.Image(iconName: source.iconName)
         icon.pixelSize = 16
         icon.add(cssClass: "dim-label")
         icon.setSizeRequest(width: 16, height: -1)
@@ -300,13 +300,30 @@ final class PatternSidebar {
         click.onPressed { [weak self, weak anchor] _, _, x, y in
             MainActor.assumeIsolated {
                 guard let self, let anchor else { return }
-                ContextMenu.present([
-                    [.init("Rename…") { [weak self] in self?.presentRename(source) }],
-                    [.init("Delete", destructive: true) { [weak self] in self?.confirmDelete(source) }],
-                ], at: anchor, x: x, y: y)
+                ContextMenu.present(self.contextMenuItems(for: source), at: anchor, x: x, y: y)
             }
         }
         row.add(controller: click)
+    }
+
+    private func contextMenuItems(for source: PatternSource) -> [[ContextMenu.Item]] {
+        switch source.origin {
+        case .project:
+            return [
+                [.init("Rename…") { [weak self] in self?.presentRename(source) }],
+                [.init("Delete", destructive: true) { [weak self] in self?.confirmDelete(source) }],
+            ]
+        case .package:
+            return [[.init("Copy to Project") { [weak self] in self?.copyToProject(source) }]]
+        }
+    }
+
+    private func copyToProject(_ source: PatternSource) {
+        do {
+            onSelect(.source(try engine.patterns.copyToProject(source.id).id))
+        } catch {
+            onError(error.localizedDescription)
+        }
     }
 
     private func presentRename(_ source: PatternSource) {
@@ -347,7 +364,7 @@ final class PatternSidebar {
     }
 
     private func confirmDelete(_ source: PatternSource) {
-        let dialog = Adw.AlertDialog(heading: "Delete \(source.name)?", body: "This removes \(source.id) from the pattern library.")
+        let dialog = Adw.AlertDialog(heading: "Delete \(source.name)?", body: "This removes \(source.fileName) from the project.")
         dialog.addResponse(id: "cancel", label: "_Cancel")
         dialog.addResponse(id: "delete", label: "_Delete")
         dialog.setResponseAppearance(response: "delete", appearance: .destructive)
@@ -398,6 +415,26 @@ final class PatternSidebar {
             self.outlines = outlined
             self.expandedSources.formIntersection(sources.map(\.id))
             self.render()
+        }
+    }
+}
+
+extension PatternSource {
+    var iconName: String {
+        switch origin {
+        case .project:
+            return kind.iconName
+        case .package:
+            return "package-x-generic-symbolic"
+        }
+    }
+
+    var originDescription: String {
+        switch origin {
+        case .project:
+            return workspacePath
+        case .package(let package):
+            return "From \(package)"
         }
     }
 }

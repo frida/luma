@@ -51,7 +51,7 @@ struct PatternEditorView: View {
         ZStack(alignment: .topTrailing) {
             CodeEditorView(
                 text: $draft,
-                profile: .pattern(activePath: "Patterns/" + source.id),
+                profile: .pattern(source),
                 introspector: introspector,
                 focused: $isEditorFocused,
                 reveal: reveal,
@@ -61,12 +61,19 @@ struct PatternEditorView: View {
             )
             .accessibilityIdentifier("pattern.editor")
 
-            SaveBarOverlay(
-                isDirty: isDirty,
-                showSavedCheck: showSavedCheck,
-                saveTooltip: "Save (\u{2318}S)",
-                onSave: save
-            )
+            switch source.origin {
+            case .project:
+                SaveBarOverlay(
+                    isDirty: isDirty,
+                    showSavedCheck: showSavedCheck,
+                    saveTooltip: "Save (\u{2318}S)",
+                    onSave: save
+                )
+            case .package:
+                Button("Copy to Project", action: copyToProject)
+                    .padding(8)
+                    .help("Make an editable copy of this pattern in the project.")
+            }
         }
         .onAppear {
             isEditorFocused = focusedType == nil
@@ -116,6 +123,14 @@ struct PatternEditorView: View {
                 try? await Task.sleep(for: .seconds(1))
                 withAnimation { showSavedCheck = false }
             }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func copyToProject() {
+        do {
+            selection = .pattern(try engine.patterns.copyToProject(sourceID).id)
         } catch {
             errorMessage = error.localizedDescription
         }

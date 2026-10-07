@@ -22,7 +22,13 @@ extension Engine {
     public func describePatternLibrary() async -> [[String: Any]] {
         var described: [[String: Any]] = []
         for source in patterns.sources {
-            var entry: [String: Any] = ["id": source.id, "name": source.name, "kind": source.kind == .library ? "library" : "pattern"]
+            var entry: [String: Any] = [
+                "id": source.id, "name": source.name, "kind": source.kind == .library ? "library" : "pattern",
+                "file": source.workspacePath,
+            ]
+            if case .package(let package) = source.origin {
+                entry["package"] = package
+            }
             if let summary = try? await patternDecoder.summary(of: source) {
                 entry.merge(summary.jsonObject) { _, new in new }
             }

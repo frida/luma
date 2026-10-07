@@ -1,6 +1,8 @@
 import Adw
+import CGtk
 import Foundation
 import Frida
+import GLibObject
 import Gtk
 import LumaCore
 
@@ -30,9 +32,11 @@ final class PackageSearchDialog {
     private var debounceTask: Task<Void, Never>?
     private var isInstalling = false
     private var currentQuery: String = ""
+    private var category: PackageCategory
 
-    init(engine: Engine) {
+    init(engine: Engine, category: PackageCategory) {
         self.engine = engine
+        self.category = category
 
         widget = Box(orientation: .vertical, spacing: 8)
         widget.marginStart = 12
@@ -128,6 +132,12 @@ final class PackageSearchDialog {
         searchEntry.onActivate { [weak self] _ in
             MainActor.assumeIsolated { self?.scheduleSearch(debounce: false) }
         }
+        let categoryDropdown = makeCategoryDropdown(initial: category) { [weak self] category in
+            guard let self else { return }
+            self.category = category
+            self.scheduleSearch(debounce: false)
+        }
+        searchRow.insertChildAfter(child: categoryDropdown, sibling: searchEntry)
         searchEntry.onChanged { [weak self] _ in
             MainActor.assumeIsolated { self?.scheduleSearch(debounce: true) }
         }
@@ -177,7 +187,7 @@ final class PackageSearchDialog {
     }
 
     private func scheduleSearch(debounce: Bool) {
-        let query = (searchEntry.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = category.searchText(for: searchEntry.text ?? "") ?? ""
         currentQuery = query
 
         debounceTask?.cancel()
@@ -346,9 +356,10 @@ final class PackageSearchDialog {
         return (spec, nil)
     }
 
-    static func present(from anchor: Widget, engine: Engine, onInstalled: @escaping (InstalledPackage) -> Void) {
-        let dialog = PackageSearchDialog(engine: engine)
+    static func present(from anchor: Widget, engine: Engine, category: PackageCategory, onInstalled: @escaping (InstalledPackage) -> Void) {
+        let dialog = PackageSearchDialog(engine: engine, category: category)
         dialog.onInstalled = onInstalled
+        dialog.scheduleSearch(debounce: false)
 
         let adwDialog = Adw.Dialog()
         adwDialog.set(title: "Install Package")
@@ -367,4 +378,25 @@ final class PackageSearchDialog {
 
         adwDialog.present(parent: anchor)
     }
+}
+
+@MainActor
+private func makeCategoryDropdown(initial: PackageCategory, onChanged: @escaping (PackageCategory) -> Void) -> DropDown {
+    let categories = PackageCategory.allCases
+    let cStrings = categories.map { strdup($0.title) }
+    defer { cStrings.forEach { free($0) } }
+    var ptrs = cStrings.map { UnsafePointer($0) as UnsafePointer<CChar>? }
+    ptrs.append(nil)
+    let widgetPtr = ptrs.withUnsafeBufferPointer { buf in
+        gtk_drop_down_new_from_strings(buf.baseAddress)
+    }!
+    g_object_ref_sink(UnsafeMutableRawPointer(widgetPtr))
+    let dropdown = DropDown(raw: UnsafeMutableRawPointer(widgetPtr))
+    dropdown.selected = categories.firstIndex(of: initial)!
+    dropdown.onNotifySelected { dd, _ in
+        MainActor.assumeIsolated {
+            onChanged(categories[Int(dd.selected)])
+        }
+    }
+    return dropdown
 }

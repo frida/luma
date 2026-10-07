@@ -8,6 +8,7 @@ struct PackageSearchView: View {
     let engine: Engine
     @Binding var selection: SidebarItemID?
 
+    @State private var category: PackageCategory
     @State private var query: String = ""
     @State private var results: [Package] = []
     @State private var isSearching = false
@@ -34,6 +35,12 @@ struct PackageSearchView: View {
 
     private let manager = PackageManager()
 
+    init(engine: Engine, selection: Binding<SidebarItemID?>, category: PackageCategory = .any) {
+        self.engine = engine
+        _selection = selection
+        _category = State(initialValue: category)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -41,6 +48,15 @@ struct PackageSearchView: View {
                     .textFieldStyle(.roundedBorder)
                     .disabled(isInstalling)
                     .focused($isSearchFieldFocused)
+
+                Picker("Category", selection: $category) {
+                    ForEach(PackageCategory.allCases) { category in
+                        Text(category.title).tag(category)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
 
                 if isSearching {
                     ProgressView()
@@ -124,6 +140,9 @@ struct PackageSearchView: View {
         .onAppear {
             isSearchFieldFocused = true
         }
+        .task(id: category) {
+            await performSearch()
+        }
         .onChange(of: query) { _, newValue in
             Task {
                 await performSearchDebounced(query: newValue)
@@ -140,9 +159,7 @@ struct PackageSearchView: View {
 
     @MainActor
     private func performSearch() async {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !trimmed.isEmpty else {
+        guard let text = category.searchText(for: query) else {
             results = []
             statusMessage = nil
             errorMessage = nil
@@ -158,7 +175,7 @@ struct PackageSearchView: View {
         defer { isSearching = false }
 
         do {
-            let result = try await manager.search(query: trimmed, limit: 25)
+            let result = try await manager.search(query: text, limit: 25)
             results = result.packages
 
             if result.packages.isEmpty {
@@ -215,7 +232,7 @@ struct PackageSearchView: View {
                 )
                 statusMessage = "Installed \(name)@\(versionSpec)."
 
-                selection = .package(installed.id)
+                selection = category == .pattern ? .pattern("package:" + installed.name) : .package(installed.id)
 
                 dismiss()
             } catch {

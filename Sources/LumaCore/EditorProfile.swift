@@ -60,8 +60,12 @@ extension EditorProfile {
         EditorProfile(languageId: "javascript", readOnly: readOnly)
     }
 
-    public static func pattern(activePath: String) -> EditorProfile {
-        EditorProfile(languageId: "hexpat", activePath: activePath)
+    public static func pattern(_ source: PatternSource) -> EditorProfile {
+        EditorProfile(languageId: "hexpat", activePath: source.workspacePath, readOnly: source.origin != .project)
+    }
+
+    public static func patternPreview() -> EditorProfile {
+        EditorProfile(languageId: "hexpat", activePath: "patterns/preview.hexpat")
     }
 
     public static func fridaCustomInstrument(

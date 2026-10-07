@@ -4080,7 +4080,7 @@ final class MainWindow: InstrumentUIHost {
 
     private func openPackageSearch(anchor: Button) {
         guard let engine else { return }
-        PackageSearchDialog.present(from: anchor, engine: engine) { [weak self] installed in
+        PackageSearchDialog.present(from: anchor, engine: engine, category: .any) { [weak self] installed in
             self?.reloadPackages()
             self?.select(.package(installed.id))
             self?.showToast("Package installed")

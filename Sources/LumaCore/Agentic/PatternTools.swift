@@ -12,7 +12,7 @@ extension MissionTools {
     }
 
     private static let patternSourceSchema = """
-        "pattern_id":{"type":"string","description":"Library file, as list_patterns names it, e.g. \\"macho.hexpat\\""},\
+        "pattern_id":{"type":"string","description":"Pattern id, as list_patterns names it"},\
         "source":{"type":"string","description":"Inline pattern source, instead of pattern_id"},\
         "type":{"type":"string","description":"Type to decode; defaults to the source's root placement"}
         """
@@ -22,8 +22,9 @@ extension MissionTools {
             name: "list_patterns",
             description: """
                 List the pattern library: ImHex-style pattern language files (.hexpat patterns, .pat \
-                libraries) with the types each declares and any compile errors. Patterns describe binary \
-                layouts; decode_memory applies one to process memory.
+                libraries) with the types each declares and any compile errors, both the project's own \
+                and those from installed packages. Patterns describe binary layouts; decode_memory \
+                applies one to process memory.
                 """,
             inputSchemaJSON: """
                 {"type":"object","properties":{},"additionalProperties":false}
@@ -90,12 +91,12 @@ extension MissionTools {
         let spec = ActionSpec(
             name: "write_pattern",
             description: """
-                Create or replace a pattern library file. The id is a file name ending in .hexpat \
-                (a pattern) or .pat (a library other files import). Returns the diagnostics of what was \
-                written. Requires user approval.
+                Create or replace one of the project's pattern files. The name is a file name ending in \
+                .hexpat (a pattern) or .pat (a library other files import). Returns the diagnostics of \
+                what was written. Requires user approval.
                 """,
             inputSchemaJSON: """
-                {"type":"object","properties":{"pattern_id":{"type":"string","description":"e.g. \\"elf.hexpat\\""},"source":{"type":"string"}},"required":["pattern_id","source"],"additionalProperties":false}
+                {"type":"object","properties":{"name":{"type":"string","description":"e.g. \\"elf.hexpat\\""},"source":{"type":"string"}},"required":["name","source"],"additionalProperties":false}
                 """,
             isObserve: false,
             requiresSession: false,
@@ -103,19 +104,26 @@ extension MissionTools {
         )
         catalog.register(spec: spec) { [weak engine] invocation in
             guard let engine else { return errorResult("engine unavailable", code: .unavailable) }
-            guard let id = invocation.args["pattern_id"] as? String, let text = invocation.args["source"] as? String else {
-                return errorResult("pattern_id and source are required", code: .invalidInput)
+            guard let name = invocation.args["name"] as? String, let text = invocation.args["source"] as? String else {
+                return errorResult("name and source are required", code: .invalidInput)
             }
-            let url = URL(fileURLWithPath: id)
-            guard id == url.lastPathComponent, !id.hasPrefix("."), PatternSource.extensions.contains(url.pathExtension.lowercased()) else {
-                return errorResult("pattern_id must be a plain file name ending in .hexpat or .pat", code: .invalidInput)
+            let url = URL(fileURLWithPath: name)
+            guard name == url.lastPathComponent, !name.hasPrefix("."), let kind = PatternSource.Kind(path: name) else {
+                return errorResult("name must be a plain file name ending in .hexpat or .pat", code: .invalidInput)
             }
+            let stem = url.deletingPathExtension().lastPathComponent
             do {
-                try engine.patterns.write(text, to: id)
+                let id: String
+                if let existing = engine.patterns.projectSources.first(where: { $0.name == stem && $0.kind == kind }) {
+                    try engine.patterns.write(text, to: existing.id)
+                    id = existing.id
+                } else {
+                    id = try engine.patterns.create(named: stem, kind: kind, text: text).id
+                }
                 let summary = try await engine.patternDecoder.summary(ofText: text)
                 var payload = summary.jsonObject
                 payload["id"] = id
-                return makeResult(jsonObject: payload, summary: "Wrote \(id)")
+                return makeResult(jsonObject: payload, summary: "Wrote \(name)")
             } catch {
                 return errorResult("write failed: \(error.localizedDescription)", code: .failed)
             }

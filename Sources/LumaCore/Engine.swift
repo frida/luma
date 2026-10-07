@@ -158,10 +158,11 @@ public final class Engine {
         let hookPacksDir = dataDirectory.appendingPathComponent("HookPacks", isDirectory: true)
         try? FileManager.default.createDirectory(at: hookPacksDir, withIntermediateDirectories: true)
         self.hookPacks = HookPackLibrary(directory: hookPacksDir)
-        let patternsDir = dataDirectory.appendingPathComponent("Patterns", isDirectory: true)
-        try? FileManager.default.createDirectory(at: patternsDir, withIntermediateDirectories: true)
-        self.patterns = PatternLibrary(directory: patternsDir)
-        self.patternDecoder = PatternDecoder(projectRoot: patternsDir, defines: PatternDecoder.processMemoryDefines)
+        let workspace = try! Self.compilerWorkspacePaths(store: store, dataDirectory: dataDirectory)
+        self.patterns = PatternLibrary(store: store, workspace: workspace)
+        self.patternDecoder = PatternDecoder(
+            projectRoot: workspace.root, draftDirectory: PatternLibrary.directory(in: workspace),
+            defines: PatternDecoder.processMemoryDefines)
         self.customInstruments = CustomInstrumentLibrary()
         self.virtualMachines = VirtualMachineManager(deviceManager: deviceManager, store: store, dataDirectory: dataDirectory)
         self.collaboration = CollaborationSession(
@@ -1672,8 +1673,15 @@ public final class Engine {
         packagesObservation = store.observeInstalledPackages { [weak self] packages in
             Task { @MainActor in
                 self?.installedPackages = packages
+                self?.patterns.reload()
                 self?.onInstalledPackagesChanged?(packages)
             }
+        }
+        patterns.reload()
+        Task { [weak self] in
+            guard let self, let paths = try? compilerWorkspacePaths() else { return }
+            _ = try? await compilerWorkspace.ensureReady(paths: paths)
+            patterns.reload()
         }
 
         await loadRemoteDevices()
@@ -5377,6 +5385,10 @@ public func deleteCustomInstrument(_ defID: UUID) async {
     }
 
     public func compilerWorkspacePaths() throws -> CompilerWorkspacePaths {
+        try Self.compilerWorkspacePaths(store: store, dataDirectory: dataDirectory)
+    }
+
+    private static func compilerWorkspacePaths(store: ProjectStore, dataDirectory: URL) throws -> CompilerWorkspacePaths {
         let packagesState = try store.fetchPackagesState()
         let fm = FileManager.default
 

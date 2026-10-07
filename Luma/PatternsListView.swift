@@ -9,53 +9,33 @@ struct PatternsListView: View {
     @State private var creatingKind: PatternSource.Kind?
     @State private var newName = ""
     @State private var isImporting = false
+    @State private var isShowingPackageSearch = false
     @State private var errorMessage: String?
 
-    private var sources: [PatternSource] { engine.patterns.sources }
+    private var projectSources: [PatternSource] { engine.patterns.projectSources }
+    private var packageSources: [PatternSource] { engine.patterns.packageSources }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Patterns")
-                    .font(.title2.bold())
-                Spacer()
-                Button {
-                    isImporting = true
-                } label: {
-                    Label("Import…", systemImage: "square.and.arrow.down")
-                }
-                newMenu
-                    .buttonStyle(.borderedProminent)
-            }
-            .padding(.horizontal)
-            .padding(.top)
-
-            if sources.isEmpty {
-                ContentUnavailableView {
-                    Label("No patterns yet", systemImage: "square.stack.3d.up")
-                } description: {
-                    Text("Pattern files describe structs to decode memory against. Libraries hold definitions shared between them.")
-                } actions: {
-                    newMenu
-                        .buttonStyle(.borderedProminent)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            header
+            if projectSources.isEmpty && packageSources.isEmpty {
+                emptyState
             } else {
-                List {
-                    ForEach(sources) { source in
-                        Button {
-                            selection = .pattern(source.id)
-                        } label: {
-                            PatternListRow(source: source)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .listStyle(.inset)
+                list
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(.background)
+        .sheet(isPresented: $isShowingPackageSearch) {
+            VStack(alignment: .leading) {
+                Text("Add Pattern Package")
+                    .font(.title2)
+                    .bold()
+                    .padding(.bottom, 8)
+                PackageSearchView(engine: engine, selection: $selection, category: .pattern)
+            }
+            .padding()
+        }
         .alert("New \(creatingKind?.title ?? "")", isPresented: isCreating) {
             TextField("Name", text: $newName)
             Button("Create") { create() }
@@ -68,6 +48,65 @@ struct PatternsListView: View {
             Button("OK") { errorMessage = nil }
         } message: { message in
             Text(message)
+        }
+    }
+
+    private var header: some View {
+        HStack {
+            Text("Patterns")
+                .font(.title2.bold())
+            Spacer()
+            Button {
+                isImporting = true
+            } label: {
+                Label("Import…", systemImage: "square.and.arrow.down")
+            }
+            newMenu
+                .buttonStyle(.borderedProminent)
+        }
+        .padding(.horizontal)
+        .padding(.top)
+    }
+
+    private var emptyState: some View {
+        ContentUnavailableView {
+            Label("No patterns yet", systemImage: "square.stack.3d.up")
+        } description: {
+            Text(
+                "Pattern files describe structs to decode memory against. Libraries hold definitions shared between them. Packages from npm bring ready-made ones for PE, Mach-O and ELF."
+            )
+        } actions: {
+            Button("Add Pattern Package…") { isShowingPackageSearch = true }
+                .buttonStyle(.borderedProminent)
+            newMenu
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var list: some View {
+        List {
+            if !projectSources.isEmpty {
+                Section("Project") {
+                    rows(projectSources)
+                }
+            }
+            if !packageSources.isEmpty {
+                Section("Packages") {
+                    rows(packageSources)
+                }
+            }
+        }
+        .listStyle(.inset)
+    }
+
+    private func rows(_ sources: [PatternSource]) -> some View {
+        ForEach(sources) { source in
+            Button {
+                selection = .pattern(source.id)
+            } label: {
+                PatternListRow(source: source)
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -134,13 +173,13 @@ private struct PatternListRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: source.kind.symbolName)
+            Image(systemName: source.symbolName)
                 .foregroundStyle(.secondary)
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 2) {
                 Text(source.name)
                     .font(.headline)
-                Text(source.id)
+                Text(source.originDescription)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

@@ -1187,6 +1187,32 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    public func fetchPatternSources() throws -> [PatternSourceRecord] {
+        try db.read { db in
+            try PatternSourceRecord
+                .order(Column("name").collating(.localizedCaseInsensitiveCompare).asc)
+                .fetchAll(db)
+        }
+    }
+
+    public func fetchPatternSource(id: UUID) throws -> PatternSourceRecord? {
+        try db.read { db in
+            try PatternSourceRecord.fetchOne(db, key: id)
+        }
+    }
+
+    public func save(_ record: PatternSourceRecord) throws {
+        try db.write { db in
+            try record.save(db)
+        }
+    }
+
+    public func deletePatternSource(id: UUID) throws {
+        try db.write { db in
+            _ = try PatternSourceRecord.deleteOne(db, key: id)
+        }
+    }
+
     public func fetchCustomInstrumentFiles(defID: UUID) throws -> [CustomInstrumentFile] {
         try db.read { db in
             try CustomInstrumentFile
@@ -1639,6 +1665,15 @@ public final class ProjectStore: Sendable {
             t.column("version", .text).notNull()
             t.column("global_alias", .text)
             t.column("added_at", .datetime).notNull()
+        }
+
+        try db.create(table: "pattern_source", ifNotExists: true) { t in
+            t.primaryKey("id", .text).notNull()
+            t.column("name", .text).notNull()
+            t.column("kind", .text).notNull()
+            t.column("text", .text).notNull()
+            t.column("created_at", .datetime).notNull()
+            t.column("updated_at", .datetime).notNull()
         }
 
         try db.create(table: "project_collaboration_state", ifNotExists: true) { t in

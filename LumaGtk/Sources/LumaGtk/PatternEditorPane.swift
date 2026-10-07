@@ -24,7 +24,7 @@ final class PatternEditorPane {
         self.onError = onError
         draft = source.text
         savedText = source.text
-        editor = CodeEditor(engine: engine, profile: .pattern(activePath: "Patterns/" + source.id), initialText: source.text)
+        editor = CodeEditor(engine: engine, profile: .pattern(source), initialText: source.text)
 
         widget = Overlay()
         widget.hexpand = true
@@ -34,7 +34,9 @@ final class PatternEditorPane {
         saveBar = SaveBar(saveTooltip: "Save pattern") { [weak self] in
             self?.save()
         }
-        widget.addOverlay(widget: saveBar.widget)
+        if source.origin == .project {
+            widget.addOverlay(widget: saveBar.widget)
+        }
 
         editor.onTextChanged = { [weak self] text in
             guard let self else { return }

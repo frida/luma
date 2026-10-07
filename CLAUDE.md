@@ -185,10 +185,17 @@ is gitignored — it is produced at build time.
   `InstrumentInstance`, `REPLCell`, `NotebookEntry`, `ITrace` (metadata
   only; data lives in `TraceStore`), `AddressInsight`,
   `RemoteDeviceConfig`, `ProjectPackagesState`, `InstalledPackage`,
-  `ProjectCollaborationState`, `TargetPickerState`, plus UI-state
-  singletons `ProjectUIState` and per-session `SessionUIState`.
-  Schema is created with `if not exists` on every open; pre-release,
-  no migrations.
+  `PatternSourceRecord`, `ProjectCollaborationState`,
+  `TargetPickerState`, plus UI-state singletons `ProjectUIState` and
+  per-session `SessionUIState`. Schema is created with `if not exists`
+  on every open; pre-release, no migrations.
+- **`PatternLibrary`** — the project's patterns are rows, materialized
+  into `patterns/` in the per-project compiler workspace beside its
+  `node_modules`, so a pattern can import an installed package and a
+  shared `.luma` carries what its placements refer to. Installed
+  packages carrying the `frida-pattern` keyword show up read-only
+  beside them. `PatternDecoder` compiles with the workspace as project
+  root and defines `__MEMORY__`, since Luma only decodes process memory.
 - **`TraceStore`** — file-backed blob store for raw ITrace data.
   Engine routes reads through `loadTraceData(traceID:sessionID:expectedSize:)`,
   which checks live in-memory pending state, then the local file,

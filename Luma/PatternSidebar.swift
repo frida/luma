@@ -17,6 +17,9 @@ struct PatternsSidebarRows: View {
             expansion = expansion == .expanded ? .collapsed : .expanded
         }
         .tag(SidebarItemID.patterns)
+        if sources.isEmpty {
+            SidebarAddPatternPackageRow(engine: engine, selection: $selection)
+        }
         ForEach(expansion == .expanded ? sources : []) { source in
             let types = outlines[source.id] ?? []
             let isExpanded = expanded.contains(source.id)
@@ -160,7 +163,7 @@ private struct SidebarPatternRow: View {
     var body: some View {
         HStack(spacing: 0) {
             SidebarDisclosure(isExpanded: isExpanded, canToggle: hasTypes, onToggle: onToggleExpansion)
-            Image(systemName: source.kind.symbolName)
+            Image(systemName: source.symbolName)
                 .foregroundStyle(.secondary)
                 .frame(width: sidebarChildIconWidth)
                 .padding(.trailing, sidebarIconToLabelSpacing)
@@ -172,16 +175,23 @@ private struct SidebarPatternRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("sidebar.pattern.\(source.id)")
         .contextMenu {
-            Button {
-                newName = source.name
-                isShowingRename = true
-            } label: {
-                Label("Rename…", systemImage: "pencil")
-            }
-            Button(role: .destructive) {
-                isShowingDeleteConfirmation = true
-            } label: {
-                Label("Delete", systemImage: "trash")
+            switch source.origin {
+            case .project:
+                Button {
+                    newName = source.name
+                    isShowingRename = true
+                } label: {
+                    Label("Rename…", systemImage: "pencil")
+                }
+                Button(role: .destructive) {
+                    isShowingDeleteConfirmation = true
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            case .package:
+                Button(action: copyToProject) {
+                    Label("Copy to Project", systemImage: "doc.on.doc")
+                }
             }
         }
         .alert("Rename \(source.kind.title)", isPresented: $isShowingRename) {
@@ -193,7 +203,7 @@ private struct SidebarPatternRow: View {
             Button("Delete", role: .destructive) { delete() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes \(source.id) from the pattern library.")
+            Text("This removes \(source.fileName) from the project.")
         }
         .alert("Pattern library error", isPresented: errorBinding, presenting: errorMessage) { _ in
             Button("OK") { errorMessage = nil }
@@ -224,11 +234,77 @@ private struct SidebarPatternRow: View {
         }
     }
 
+    private func copyToProject() {
+        do {
+            selection = .pattern(try engine.patterns.copyToProject(source.id).id)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     private var errorBinding: Binding<Bool> {
         Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )
+    }
+}
+
+private struct SidebarAddPatternPackageRow: View {
+    let engine: Engine
+    @Binding var selection: SidebarItemID?
+
+    @State private var isShowingPackageSearch = false
+
+    var body: some View {
+        Button {
+            isShowingPackageSearch = true
+        } label: {
+            HStack(spacing: 0) {
+                Image(systemName: "plus.circle")
+                    .foregroundStyle(.secondary)
+                    .frame(width: sidebarChildIconWidth)
+                    .padding(.leading, sidebarChevronWidth)
+                    .padding(.trailing, sidebarIconToLabelSpacing)
+                Text("Add Pattern Package…")
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Install a pattern package from npm.")
+        .accessibilityIdentifier("sidebar.patterns.add-package")
+        .sheet(isPresented: $isShowingPackageSearch) {
+            VStack(alignment: .leading) {
+                Text("Add Pattern Package")
+                    .font(.title2)
+                    .bold()
+                    .padding(.bottom, 8)
+                PackageSearchView(engine: engine, selection: $selection, category: .pattern)
+            }
+            .padding()
+        }
+    }
+}
+
+extension PatternSource {
+    var symbolName: String {
+        switch origin {
+        case .project:
+            return kind.symbolName
+        case .package:
+            return "shippingbox"
+        }
+    }
+
+    var originDescription: String {
+        switch origin {
+        case .project:
+            return workspacePath
+        case .package(let package):
+            return "From \(package)"
+        }
     }
 }
 

@@ -7,11 +7,13 @@ public final class PatternDecoder {
 
     private let compiler = PatternCompiler()
     private let projectRoot: URL
+    private let draftDirectory: URL
     private let defines: [String: String]
     private var summaries: [SummaryKey: SourceSummary] = [:]
 
-    public init(projectRoot: URL, defines: [String: String]) {
+    public init(projectRoot: URL, draftDirectory: URL, defines: [String: String]) {
         self.projectRoot = projectRoot
+        self.draftDirectory = draftDirectory
         self.defines = defines
     }
 
@@ -21,13 +23,13 @@ public final class PatternDecoder {
             return cached.summary
         }
         let summary = try await Self.summary(
-            of: source.id, in: projectRoot, platform: platform, arch: arch, defines: defines, using: compiler)
+            of: source.workspacePath, in: projectRoot, platform: platform, arch: arch, defines: defines, using: compiler)
         summaries[key] = SourceSummary(text: source.text, summary: summary)
         return summary
     }
 
     public func summary(ofText text: String, platform: String? = nil, arch: String? = nil) async throws -> PatternSummary {
-        try await Self.withDraft(text, in: projectRoot) { [projectRoot, defines, compiler] entrypoint in
+        try await Self.withDraft(text, in: draftDirectory, of: projectRoot) { [projectRoot, defines, compiler] entrypoint in
             try await Self.summary(of: entrypoint, in: projectRoot, platform: platform, arch: arch, defines: defines, using: compiler)
         }
     }
@@ -50,8 +52,8 @@ public final class PatternDecoder {
         inputs: [String: PatternInputValue] = [:]
     ) async throws -> DecodedPattern {
         try await Self.decode(
-            source.id, in: projectRoot, typeName: typeName, data: Array(data), address: address, platform: platform, arch: arch,
-            defines: defines, inputs: inputs, using: compiler)
+            source.workspacePath, in: projectRoot, typeName: typeName, data: Array(data), address: address, platform: platform,
+            arch: arch, defines: defines, inputs: inputs, using: compiler)
     }
 
     public func decode(
@@ -63,7 +65,7 @@ public final class PatternDecoder {
         arch: String? = nil,
         inputs: [String: PatternInputValue] = [:]
     ) async throws -> DecodedPattern {
-        try await Self.withDraft(text, in: projectRoot) { [projectRoot, defines, compiler] entrypoint in
+        try await Self.withDraft(text, in: draftDirectory, of: projectRoot) { [projectRoot, defines, compiler] entrypoint in
             try await Self.decode(
                 entrypoint, in: projectRoot, typeName: typeName, data: Array(data), address: address, platform: platform, arch: arch,
                 defines: defines, inputs: inputs, using: compiler)
@@ -99,7 +101,7 @@ public final class PatternDecoder {
         arch: String? = nil
     ) async throws -> String {
         try await Self.callFunction(
-            function, on: nodeID, of: source.id, in: projectRoot, typeName: typeName, data: Array(data), address: address,
+            function, on: nodeID, of: source.workspacePath, in: projectRoot, typeName: typeName, data: Array(data), address: address,
             platform: platform, arch: arch, defines: defines, using: compiler)
     }
 
@@ -113,7 +115,7 @@ public final class PatternDecoder {
         platform: String? = nil,
         arch: String? = nil
     ) async throws -> String {
-        try await Self.withDraft(text, in: projectRoot) { [projectRoot, defines, compiler] entrypoint in
+        try await Self.withDraft(text, in: draftDirectory, of: projectRoot) { [projectRoot, defines, compiler] entrypoint in
             try await Self.callFunction(
                 function, on: nodeID, of: entrypoint, in: projectRoot, typeName: typeName, data: Array(data), address: address,
                 platform: platform, arch: arch, defines: defines, using: compiler)
@@ -147,12 +149,12 @@ public final class PatternDecoder {
 
     // The module goes back to its entrypoint on every decode, so the draft has to outlive the compile.
     private nonisolated static func withDraft<T: Sendable>(
-        _ text: String, in projectRoot: URL, _ body: @Sendable (String) async throws -> T
+        _ text: String, in draftDirectory: URL, of projectRoot: URL, _ body: @Sendable (String) async throws -> T
     ) async throws -> T {
-        let entrypoint = ".draft-\(UUID().uuidString).hexpat"
-        let url = projectRoot.appendingPathComponent(entrypoint)
+        let url = draftDirectory.appendingPathComponent(".draft-\(UUID().uuidString).hexpat")
         try text.write(to: url, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: url) }
+        let entrypoint = url.standardizedFileURL.path.replacingOccurrences(of: projectRoot.standardizedFileURL.path + "/", with: "")
         return try await body(entrypoint)
     }
 

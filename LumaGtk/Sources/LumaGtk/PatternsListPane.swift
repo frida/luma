@@ -132,12 +132,28 @@ final class PatternsListPane {
         let page = Adw.StatusPage()
         page.iconName = "view-grid-symbolic"
         page.title = "No patterns yet"
-        page.description = "Pattern files describe structs to decode memory against. Libraries hold definitions shared between them."
+        page.description =
+            "Pattern files describe structs to decode memory against. Libraries hold definitions shared between them. Packages from npm bring ready-made ones for PE, Mach-O and ELF."
         page.vexpand = true
-        let button = makeNewButton()
-        button.halign = .center
-        button.add(cssClass: "pill")
-        page.set(child: button)
+        let actions = Box(orientation: .horizontal, spacing: 12)
+        actions.halign = .center
+        let addPackage = Button(label: "Add Pattern Package…")
+        addPackage.add(cssClass: "suggested-action")
+        addPackage.add(cssClass: "pill")
+        addPackage.onClicked { [weak self, weak addPackage] _ in
+            MainActor.assumeIsolated {
+                guard let self, let addPackage else { return }
+                PackageSearchDialog.present(from: addPackage, engine: self.engine, category: .pattern) { [weak self] installed in
+                    self?.onSelect("package:" + installed.name)
+                }
+            }
+        }
+        actions.append(child: addPackage)
+        let newButton = makeNewButton()
+        newButton.remove(cssClass: "suggested-action")
+        newButton.add(cssClass: "pill")
+        actions.append(child: newButton)
+        page.set(child: actions)
         return page
     }
 
@@ -168,7 +184,7 @@ final class PatternsListPane {
         box.marginTop = 8
         box.marginBottom = 8
 
-        let icon = Gtk.Image(iconName: source.kind.iconName)
+        let icon = Gtk.Image(iconName: source.iconName)
         icon.pixelSize = 16
         icon.add(cssClass: "dim-label")
         box.append(child: icon)
@@ -179,7 +195,7 @@ final class PatternsListPane {
         name.add(cssClass: "heading")
         name.halign = .start
         text.append(child: name)
-        let path = Label(str: source.id)
+        let path = Label(str: source.originDescription)
         path.add(cssClass: "caption")
         path.add(cssClass: "dim-label")
         path.halign = .start
