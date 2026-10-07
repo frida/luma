@@ -12,15 +12,16 @@ export interface FilesystemRoots {
 export function getFilesystemRoots(): FilesystemRoots {
     return {
         root: (Process.platform === "windows") ? "C:\\" : "/",
-        home: lookup(() => Process.getHomeDir()),
-        cwd: lookup(() => Process.getCurrentDir()),
-        tmp: lookup(() => Process.getTmpDir()),
+        home: existingDirectory(() => Process.getHomeDir()),
+        cwd: existingDirectory(() => Process.getCurrentDir()),
+        tmp: existingDirectory(() => Process.getTmpDir()),
     };
 }
 
-function lookup(read: () => string): string | null {
+function existingDirectory(read: () => string): string | null {
     try {
-        return read();
+        const path = read();
+        return fs.statSync(path).isDirectory() ? path : null;
     } catch (e) {
         return null;
     }
