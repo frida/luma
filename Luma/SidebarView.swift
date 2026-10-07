@@ -63,6 +63,8 @@ struct SidebarView: View {
 
                         SidebarSessionREPLRow(sessionID: session.id)
                             .tag(SidebarItemID.repl(session.id))
+                        SidebarSessionFilesRow()
+                            .tag(SidebarItemID.files(session.id))
 
                         ForEach(instruments) { instance in
                             let hasChildren = hasInstrumentChildren(instance: instance)
@@ -136,6 +138,7 @@ struct SidebarView: View {
         switch selection {
         case .session(let id),
             .repl(let id),
+            .files(let id),
             .module(let id, _),
             .thread(let id, _),
             .instrument(let id, _),
@@ -759,6 +762,25 @@ private struct SidebarSessionREPLRow: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("sidebar.repl")
+    }
+}
+
+private struct SidebarSessionFilesRow: View {
+    private let iconWidth: CGFloat = 16
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "folder")
+                .frame(width: iconWidth, alignment: .center)
+                .font(.system(size: 12))
+            Text("Files")
+            Spacer()
+        }
+        .font(.callout)
+        .padding(.leading, sidebarChildIndent)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("sidebar.files")
     }
 }
 

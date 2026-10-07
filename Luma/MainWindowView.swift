@@ -558,6 +558,7 @@ struct ProjectToolbar: ToolbarContent {
 
         case .session(let sessionID),
             .repl(let sessionID),
+            .files(let sessionID),
             .module(let sessionID, _),
             .thread(let sessionID, _),
             .instrument(let sessionID, _),
@@ -577,6 +578,7 @@ struct ProjectToolbar: ToolbarContent {
             return nil
         case .session(let sessionID),
             .repl(let sessionID),
+            .files(let sessionID),
             .module(let sessionID, _),
             .thread(let sessionID, _),
             .instrument(let sessionID, _),

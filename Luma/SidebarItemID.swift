@@ -11,6 +11,7 @@ enum SidebarItemID: Codable, Hashable {
     case patternType(String, String)
     case session(UUID)
     case repl(UUID)
+    case files(UUID)
     case module(UUID, String)
     case thread(UUID, UInt)
     case instrument(UUID, UUID)

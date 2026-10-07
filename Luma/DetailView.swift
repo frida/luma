@@ -51,6 +51,14 @@ struct DetailView: View {
                     .id(session.id)
                 }
 
+            case .some(.files(let sessionID)):
+                if engine.sessions.contains(where: { $0.id == sessionID }) {
+                    SessionContent(sessionID: sessionID, engine: engine) {
+                        FilesView(sessionID: sessionID, engine: engine)
+                    }
+                    .id(sessionID)
+                }
+
             case .some(.module(let sessionID, let moduleID)):
                 if let session = engine.sessions.first(where: { $0.id == sessionID }),
                     let module = session.lastKnownModules?.first(where: { $0.id == moduleID })

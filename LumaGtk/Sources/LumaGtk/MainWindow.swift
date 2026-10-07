@@ -67,6 +67,7 @@ final class MainWindow: InstrumentUIHost {
     private var currentITraceID: UUID?
     private var currentModulePane: ModuleSymbolsPane?
     private var currentThreadPane: ThreadDetailPane?
+    private var currentFilesPane: FilesPane?
     private var sessionDetailViews: [UUID: SessionDetailView] = [:]
 
     private var sessions: [LumaCore.ProcessSession] = []
@@ -127,6 +128,7 @@ final class MainWindow: InstrumentUIHost {
         case module(sessionID: UUID, moduleID: String)
         case thread(sessionID: UUID, threadID: UInt)
         case repl(UUID)
+        case files(UUID)
         case instrument(sessionID: UUID, instrumentID: UUID)
         case instrumentComponent(sessionID: UUID, instrumentID: UUID, componentID: UUID)
         case insight(sessionID: UUID, insightID: UUID)
@@ -150,6 +152,7 @@ final class MainWindow: InstrumentUIHost {
         case threadGroup(UUID)
         case threadChild(sessionID: UUID, key: String)
         case repl(UUID)
+        case files(UUID)
         case instrument(sessionID: UUID, instrumentID: UUID)
         case instrumentChild(sessionID: UUID, instrumentID: UUID, key: String)
         case insight(sessionID: UUID, insightID: UUID)
@@ -162,7 +165,8 @@ final class MainWindow: InstrumentUIHost {
                 .moduleChild(let id, _),
                 .threadGroup(let id),
                 .threadChild(let id, _),
-                .repl(let id):
+                .repl(let id),
+                .files(let id):
                 return id
             case .instrument(let id, _),
                 .instrumentChild(let id, _, _),
@@ -1231,6 +1235,8 @@ final class MainWindow: InstrumentUIHost {
                     self.activateGroupChild(sessionID: sid, group: .threads, key: key)
                 case .repl(let id):
                     self.select(.repl(id))
+                case .files(let id):
+                    self.select(.files(id))
                 case .instrument(let sid, let iid):
                     self.select(.instrument(sessionID: sid, instrumentID: iid))
                 case .instrumentChild(let sid, let iid, let key):
@@ -1868,6 +1874,13 @@ final class MainWindow: InstrumentUIHost {
         if case .module = selection {} else {
             currentModulePane = nil
         }
+        if case .files(let id) = selection {
+            if currentFilesPane?.sessionID != id {
+                currentFilesPane = nil
+            }
+        } else {
+            currentFilesPane = nil
+        }
         if case .thread = selection {} else {
             currentThreadPane = nil
         }
@@ -1954,6 +1967,20 @@ final class MainWindow: InstrumentUIHost {
                     icon: "cpu-symbolic",
                     title: "Thread unavailable",
                     subtitle: "This thread is no longer running."
+                )
+            }
+        case .files(let id):
+            if sessions.contains(where: { $0.id == id }), let engine {
+                let pane = currentFilesPane ?? FilesPane(engine: engine, sessionID: id, window: window) { [weak self] message in
+                    self?.showToast(message)
+                }
+                currentFilesPane = pane
+                widget = pane.widget
+            } else {
+                widget = MainWindow.makeEmptyState(
+                    icon: "folder-symbolic",
+                    title: "Files unavailable",
+                    subtitle: "The owning session is no longer in the store."
                 )
             }
         case .repl(let id):
@@ -2099,7 +2126,7 @@ final class MainWindow: InstrumentUIHost {
 
     private func currentSessionID() -> UUID? {
         switch selection {
-        case .session(let id), .repl(let id):
+        case .session(let id), .repl(let id), .files(let id):
             return id
         case .module(let id, _),
             .thread(let id, _),
@@ -2438,7 +2465,7 @@ final class MainWindow: InstrumentUIHost {
             missionsListBox.unselectAll()
             notebookListBox.unselectAll()
             pharoListBox.select(row: pharoRow)
-        case .session, .module, .thread, .repl, .instrument, .instrumentComponent, .insight, .itrace:
+        case .session, .module, .thread, .repl, .files, .instrument, .instrumentComponent, .insight, .itrace:
             notebookListBox.unselectAll()
             packagesList.unselectAll()
             customInstrumentsList.unselectAll()
@@ -2635,6 +2662,7 @@ final class MainWindow: InstrumentUIHost {
                 .module(let sid, _),
                 .thread(let sid, _),
                 .repl(let sid),
+                .files(let sid),
                 .instrument(let sid, _),
                 .instrumentComponent(let sid, _, _),
                 .insight(let sid, _),
@@ -2784,6 +2812,18 @@ final class MainWindow: InstrumentUIHost {
         replRow.set(child: replBox)
         insertChildRow(replRow, kind: .repl(session.id), sessionID: session.id)
 
+        let filesRow = ListBoxRow()
+        let (filesBox, filesIconHost) = MainWindow.makeChildRowBox()
+        let filesIcon = Gtk.Image(iconName: "folder-symbolic")
+        filesIcon.pixelSize = 16
+        MainWindow.centerInIconHost(filesIcon)
+        filesIconHost.append(child: filesIcon)
+        let filesLabel = Label(str: "Files")
+        filesLabel.halign = .start
+        filesBox.append(child: filesLabel)
+        filesRow.set(child: filesBox)
+        insertChildRow(filesRow, kind: .files(session.id), sessionID: session.id)
+
         reconcileGroupChildren(sessionID: session.id, group: .modules)
         reconcileGroupChildren(sessionID: session.id, group: .threads)
     }
@@ -2876,9 +2916,10 @@ final class MainWindow: InstrumentUIHost {
             case .moduleGroup, .moduleChild: return 1
             case .threadGroup, .threadChild: return 2
             case .repl: return 3
-            case .instrument, .instrumentChild: return 4
-            case .insight: return 5
-            case .itrace: return 6
+            case .files: return 4
+            case .instrument, .instrumentChild: return 5
+            case .insight: return 6
+            case .itrace: return 7
             }
         }
         let target = kindOrder(kind)
@@ -4012,6 +4053,11 @@ final class MainWindow: InstrumentUIHost {
         case .repl(let id):
             return sessionsRowKinds.firstIndex {
                 if case .repl(let s) = $0 { return s == id }
+                return false
+            }
+        case .files(let id):
+            return sessionsRowKinds.firstIndex {
+                if case .files(let s) = $0 { return s == id }
                 return false
             }
         case .instrument(_, let id):

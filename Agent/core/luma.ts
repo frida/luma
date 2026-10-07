@@ -1,5 +1,6 @@
 import "./console.js";
 import * as env from "./env.js";
+import * as fs from "./fs.js";
 import * as instrument from "./instrument.js";
 import * as memory from "./memory.js";
 import * as modules from "./modules.js";
@@ -12,6 +13,7 @@ import * as threads from "./threads.js";
 
 rpc.exports = {
     ...env,
+    ...fs,
     ...instrument,
     ...memory,
     ...modules,

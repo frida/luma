@@ -72,6 +72,8 @@ public final class ProcessNode: Identifiable {
     public private(set) var instruments: [InstrumentRef] = []
 
     public var loadedPackageNames = Set<String>()
+    private var fileTransfers: [Int: FileTransfer] = [:]
+    private var nextFileTransferID = 1
 
     private let _events = AsyncEventSource<RuntimeEvent>()
     private let _replResults = AsyncEventSource<REPLResult>()
@@ -331,6 +333,21 @@ public final class ProcessNode: Identifiable {
                     data: data.map { Array($0) }
                 ))
 
+                return true
+
+            case "fs:chunk":
+                guard let id = dict["id"] as? Int, let chunk = data else { return false }
+                fileTransfers[id]?.receive(chunk)
+                return true
+
+            case "fs:end":
+                guard let id = dict["id"] as? Int else { return false }
+                fileTransfers.removeValue(forKey: id)?.finish()
+                return true
+
+            case "fs:error":
+                guard let id = dict["id"] as? Int, let message = dict["error"] as? String else { return false }
+                fileTransfers.removeValue(forKey: id)?.fail(LumaCoreError.invalidOperation(message))
                 return true
 
             case "itrace:start":
@@ -936,6 +953,89 @@ public final class ProcessNode: Identifiable {
             throw LumaCoreError.protocolViolation("Invalid reply")
         }
         return bytes
+    }
+
+    public func filesystemRoots() async throws -> RemoteFilesystemRoots {
+        let raw = try await script.exports.getFilesystemRoots()
+        guard let dict = raw as? [String: Any], let roots = RemoteFilesystemRoots.fromJSON(dict) else {
+            throw LumaCoreError.protocolViolation("getFilesystemRoots: unexpected response shape")
+        }
+        return roots
+    }
+
+    public func listDirectory(at path: String) async throws -> RemoteDirectoryListing {
+        let raw = try await script.exports.listDirectory(path)
+        guard let dict = raw as? [String: Any], let listing = RemoteDirectoryListing.fromJSON(dict) else {
+            throw LumaCoreError.protocolViolation("listDirectory: unexpected response shape")
+        }
+        return listing
+    }
+
+    public func pullFile(at path: String, to destination: URL, onProgress: @escaping @MainActor (Int64) -> Void) async throws {
+        let id = allocateFileTransferID()
+        FileManager.default.createFile(atPath: destination.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: destination)
+        defer { try? handle.close() }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Swift.Error>) in
+            fileTransfers[id] = FileTransfer(continuation: continuation) { chunk in
+                handle.write(Data(chunk))
+                onProgress(Int64(chunk.count))
+            }
+            Task {
+                do {
+                    _ = try await script.exports.pullFile(path, id)
+                } catch {
+                    fileTransfers.removeValue(forKey: id)?.fail(error)
+                }
+            }
+        }
+    }
+
+    public func pushFile(from source: URL, to path: String, onProgress: @escaping @MainActor (Int64) -> Void) async throws {
+        let id = allocateFileTransferID()
+        let handle = try FileHandle(forReadingFrom: source)
+        defer { try? handle.close() }
+        _ = try await script.exports.pushFile(path, id)
+        let messageType = "fs:push:\(id)"
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Swift.Error>) in
+            fileTransfers[id] = FileTransfer(continuation: continuation) { _ in }
+            while let chunk = try? handle.read(upToCount: Self.fileTransferChunkSize), !chunk.isEmpty {
+                script.post(["type": messageType, "done": false], data: Array(chunk))
+                onProgress(Int64(chunk.count))
+            }
+            script.post(["type": messageType, "done": true])
+        }
+    }
+
+    private static let fileTransferChunkSize = 256 * 1024
+
+    private func allocateFileTransferID() -> Int {
+        defer { nextFileTransferID += 1 }
+        return nextFileTransferID
+    }
+
+    private final class FileTransfer {
+        private var continuation: CheckedContinuation<Void, Swift.Error>?
+        private let onChunk: ([UInt8]) -> Void
+
+        init(continuation: CheckedContinuation<Void, Swift.Error>, onChunk: @escaping ([UInt8]) -> Void) {
+            self.continuation = continuation
+            self.onChunk = onChunk
+        }
+
+        func receive(_ chunk: [UInt8]) {
+            onChunk(chunk)
+        }
+
+        func finish() {
+            continuation?.resume()
+            continuation = nil
+        }
+
+        func fail(_ error: Swift.Error) {
+            continuation?.resume(throwing: error)
+            continuation = nil
+        }
     }
 
     public func writeRemoteMemory(at address: UInt64, bytes: [UInt8]) async throws {
