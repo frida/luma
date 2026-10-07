@@ -26,6 +26,9 @@ public final class TypeScriptProject {
 
         let capabilities = try await client.start()
         semanticTokensLegend = capabilities.semanticTokensProvider?.legend
+        try client.notify("workspace/didChangeConfiguration", LSP.DidChangeConfigurationParams(
+            settings: LSP.Settings(patterns: LSP.PatternSettings(defines: PatternDecoder.processMemoryDefines))
+        ))
 
         ambientDocuments = ambientDeclarations.map { declarations in
             openDocument(path: ".luma/" + declarations.fileName, text: declarations.content, languageId: "typescript")

@@ -457,16 +457,16 @@ struct ImportByName {
     char Name[];
 };
 
-#ifdef __IMHEX__
+#ifdef __MEMORY__
+struct ImportAddress<Addr> {
+    Addr address;
+    str summary = std::format("{:#x}", address);
+} [[format("summaryOf")]];
+#else
 struct ImportAddress<Addr> {
     u64 imageStart = parent.imageStart;
     ImportThunk<Addr> thunk [[inline]];
     str summary = std::core::formatted_value(thunk);
-} [[format("summaryOf")]];
-#else
-struct ImportAddress<Addr> {
-    Addr address;
-    str summary = std::format("{:#x}", address);
 } [[format("summaryOf")]];
 #endif
 
@@ -1924,7 +1924,27 @@ fn enumName(str qualified) {
     return std::string::substr(qualified, start, std::string::length(qualified) - start);
 };
 
-#ifdef __IMHEX__
+#ifdef __MEMORY__
+fn dataOffsetOfRva(u64 imageStart, u64 rva) {
+    return imageStart + rva;
+};
+
+fn sectionContentsOffset(u64 imageStart, u32 virtualAddress, u32 pointerToRawData) {
+    return imageStart + virtualAddress;
+};
+
+fn sectionContentsSize(u32 virtualSize, u32 sizeOfRawData) {
+    return virtualSize;
+};
+
+fn debugDataOffset(u64 imageStart, u32 rva, u32 fileOffset) {
+    return imageStart + rva;
+};
+
+fn fileOffsetIsMapped() {
+    return false;
+};
+#else
 fn dataOffsetOfRva(u64 imageStart, u64 rva) {
     SectionMapping section = sectionContainingRva(imageStart, rva);
     if (section.rawSize == 0) {
@@ -1947,26 +1967,6 @@ fn debugDataOffset(u64 imageStart, u32 rva, u32 fileOffset) {
 
 fn fileOffsetIsMapped() {
     return true;
-};
-#else
-fn dataOffsetOfRva(u64 imageStart, u64 rva) {
-    return imageStart + rva;
-};
-
-fn sectionContentsOffset(u64 imageStart, u32 virtualAddress, u32 pointerToRawData) {
-    return imageStart + virtualAddress;
-};
-
-fn sectionContentsSize(u32 virtualSize, u32 sizeOfRawData) {
-    return virtualSize;
-};
-
-fn debugDataOffset(u64 imageStart, u32 rva, u32 fileOffset) {
-    return imageStart + rva;
-};
-
-fn fileOffsetIsMapped() {
-    return false;
 };
 #endif
 

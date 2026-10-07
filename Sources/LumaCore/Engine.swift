@@ -161,7 +161,7 @@ public final class Engine {
         let patternsDir = dataDirectory.appendingPathComponent("Patterns", isDirectory: true)
         try? FileManager.default.createDirectory(at: patternsDir, withIntermediateDirectories: true)
         self.patterns = PatternLibrary(directory: patternsDir)
-        self.patternDecoder = PatternDecoder(projectRoot: patternsDir)
+        self.patternDecoder = PatternDecoder(projectRoot: patternsDir, defines: PatternDecoder.processMemoryDefines)
         self.customInstruments = CustomInstrumentLibrary()
         self.virtualMachines = VirtualMachineManager(deviceManager: deviceManager, store: store, dataDirectory: dataDirectory)
         self.collaboration = CollaborationSession(

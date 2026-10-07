@@ -2495,20 +2495,7 @@ fn is64Bit(u64 imageStart) {
     return std::mem::read_unsigned(imageStart + 4, 1) == Class::Elf64;
 };
 
-#ifdef __IMHEX__
-fn dataOffsetOf(u64 imageStart, u64 fileOffset) {
-    return imageStart + fileOffset;
-};
-
-fn dataOffsetOfAddress(u64 imageStart, u64 address) {
-    LoadSegment segment = loadSegmentContainingAddress(imageStart, address);
-    return imageStart + segment.offset + (address - segment.address);
-};
-
-fn fileOffsetIsMapped(u64 imageStart, u64 fileOffset) {
-    return true;
-};
-#else
+#ifdef __MEMORY__
 fn dataOffsetOf(u64 imageStart, u64 fileOffset) {
     LoadSegment segment = loadSegmentContainingOffset(imageStart, fileOffset);
     return imageStart + (segment.address - loadBaseAddress(imageStart)) + (fileOffset - segment.offset);
@@ -2521,6 +2508,19 @@ fn dataOffsetOfAddress(u64 imageStart, u64 address) {
 fn fileOffsetIsMapped(u64 imageStart, u64 fileOffset) {
     LoadSegment segment = loadSegmentContainingOffset(imageStart, fileOffset);
     return segment.size > 0;
+};
+#else
+fn dataOffsetOf(u64 imageStart, u64 fileOffset) {
+    return imageStart + fileOffset;
+};
+
+fn dataOffsetOfAddress(u64 imageStart, u64 address) {
+    LoadSegment segment = loadSegmentContainingAddress(imageStart, address);
+    return imageStart + segment.offset + (address - segment.address);
+};
+
+fn fileOffsetIsMapped(u64 imageStart, u64 fileOffset) {
+    return true;
 };
 #endif
 

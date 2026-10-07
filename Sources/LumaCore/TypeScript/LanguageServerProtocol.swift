@@ -263,6 +263,18 @@ public enum LSP {
         public var disablePushDiagnostics: Bool
     }
 
+    public struct DidChangeConfigurationParams: Codable, Sendable {
+        public var settings: Settings
+    }
+
+    public struct Settings: Codable, Sendable {
+        public var patterns: PatternSettings
+    }
+
+    public struct PatternSettings: Codable, Sendable {
+        public var defines: [String: String]
+    }
+
     public struct ClientCapabilities: Codable, Sendable {
         public var general: GeneralCapabilities
         public var workspace: WorkspaceCapabilities

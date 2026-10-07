@@ -2169,15 +2169,15 @@ fn virtualAddressOf(u64 imageStart, u64 fileOffset) {
     return mapping.vmaddr + (fileOffset - mapping.fileoff);
 };
 
-#ifdef __IMHEX__
-fn dataOffsetOf(u64 imageStart, u64 fileOffset) {
-    return imageStart + fileOffset;
-};
-#else
+#ifdef __MEMORY__
 fn dataOffsetOf(u64 imageStart, u64 fileOffset) {
     SegmentMapping mapping = segmentContaining(imageStart, fileOffset);
     SegmentMapping header = segmentContaining(imageStart, 0);
     return imageStart + (mapping.vmaddr - header.vmaddr) + (fileOffset - mapping.fileoff);
+};
+#else
+fn dataOffsetOf(u64 imageStart, u64 fileOffset) {
+    return imageStart + fileOffset;
 };
 #endif
 
