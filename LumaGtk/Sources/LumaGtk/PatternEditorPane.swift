@@ -60,14 +60,21 @@ final class PatternEditorPane {
     }
 
     private func reveal(typeNamed name: String) {
-        let text = draft
         Task { @MainActor [weak self] in
-            guard let self, let summary = try? await self.engine.patternDecoder.summary(ofText: text),
-                let type = summary.types.first(where: { $0.name == name }), type.isDeclaredInSource
-            else { return }
-            self.editor.reveal(LSP.Position(line: type.line, character: type.character))
+            guard let self, let position = await self.declaration(of: name) else { return }
+            self.editor.reveal(position)
             self.editor.focus()
         }
+    }
+
+    private func declaration(of typeName: String) async -> LSP.Position? {
+        if let symbols = try? await editor.symbols() {
+            return PatternSummary.declaration(of: typeName, in: symbols)
+        }
+        guard let summary = try? await engine.patternDecoder.summary(ofText: draft),
+            let type = summary.types.first(where: { $0.name == typeName }), type.isDeclaredInSource
+        else { return nil }
+        return LSP.Position(line: type.line, character: type.character)
     }
 
     func flushDraftIfNeeded() {

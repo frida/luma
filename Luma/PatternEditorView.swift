@@ -106,12 +106,18 @@ struct PatternEditorView: View {
     }
 
     private func revealFocusedType() async {
-        guard let focusedType, focusedType != typeFollowingCaret,
-            let summary = try? await engine.patternDecoder.summary(ofText: draft),
-            let type = summary.types.first(where: { $0.name == focusedType }), type.isDeclaredInSource
-        else { return }
-        let name = LSP.Position(line: type.line, character: type.character)
+        guard let focusedType, focusedType != typeFollowingCaret, let name = await declaration(of: focusedType) else { return }
         reveal = EditorReveal(range: LSP.Range(start: name, end: name), generation: (reveal?.generation ?? 0) + 1)
+    }
+
+    private func declaration(of typeName: String) async -> LSP.Position? {
+        if let symbols = try? await introspector.document?.symbols() {
+            return PatternSummary.declaration(of: typeName, in: symbols)
+        }
+        guard let summary = try? await engine.patternDecoder.summary(ofText: draft),
+            let type = summary.types.first(where: { $0.name == typeName }), type.isDeclaredInSource
+        else { return nil }
+        return LSP.Position(line: type.line, character: type.character)
     }
 
     private func save() {

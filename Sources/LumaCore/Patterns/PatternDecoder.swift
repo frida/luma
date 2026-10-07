@@ -221,6 +221,23 @@ public struct PatternSummary: Hashable, Sendable {
         Self.innermostTypeName(at: position, in: symbols, scope: nil, among: Set(declaredTypes.map(\.name)))
     }
 
+    public static func declaration(of typeName: String, in symbols: [LSP.DocumentSymbol]) -> LSP.Position? {
+        declaration(of: typeName, in: symbols, scope: nil)
+    }
+
+    private static func declaration(of typeName: String, in symbols: [LSP.DocumentSymbol], scope: String?) -> LSP.Position? {
+        for symbol in symbols {
+            let name = scope.map { "\($0)::\(symbol.name)" } ?? symbol.name
+            if name == typeName {
+                return symbol.selectionRange.start
+            }
+            if let inner = declaration(of: typeName, in: symbol.children ?? [], scope: name) {
+                return inner
+            }
+        }
+        return nil
+    }
+
     private static func innermostTypeName(
         at position: LSP.Position, in symbols: [LSP.DocumentSymbol], scope: String?, among declared: Set<String>
     ) -> String? {
