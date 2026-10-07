@@ -132,25 +132,28 @@ import LumaCore
         }
 
         static func draw(_ scopes: [LSP.FoldingRange], in textView: CodeTextView, dirtyRect: NSRect) {
+            var boxes: [Int: CodeTextView.LineBox] = [:]
+            for (line, box) in textView.lineBoxes(from: dirtyRect.minY, through: dirtyRect.maxY) where boxes[line] == nil {
+                boxes[line] = box
+            }
+            guard let firstVisible = boxes.keys.min(), let lastVisible = boxes.keys.max() else { return }
             let text = textView.string as NSString
             let lines = LineMap(text: textView.string)
             color.setFill()
-            for scope in scopes where scope.kind == nil && scope.endLine - scope.startLine >= 2 {
+            for scope in scopes
+            where scope.kind == nil && scope.endLine - scope.startLine >= 2 && scope.startLine < lastVisible && scope.endLine > firstVisible {
                 let opening = lines.utf16Offset(of: LSP.Position(line: scope.startLine, character: 0))
                 let firstInside = lines.utf16Offset(of: LSP.Position(line: scope.startLine + 1, character: 0))
                 let lastInside = lines.utf16Offset(of: LSP.Position(line: scope.endLine - 1, character: 0))
                 guard lastInside < text.length, !textView.folding.hides(firstInside) else { continue }
                 let indent = firstNonBlank(in: text, from: opening)
-                guard let indentFrame = textView.characterFrame(at: indent),
-                    let top = textView.lineBox(at: firstInside)?.frame.minY,
-                    let bottom = textView.lineBox(at: lastInside)?.frame.maxY
-                else { continue }
+                guard let indentFrame = textView.characterFrame(at: indent) else { continue }
+                let top = boxes[scope.startLine + 1]?.frame.minY ?? dirtyRect.minY
+                let bottom = boxes[scope.endLine - 1]?.frame.maxY ?? dirtyRect.maxY
                 let x = indentFrame.minX + inkOffset(ofCharacterAt: indent, in: textView.textStorage!)
                 let guide = textView.backingAlignedRect(
                     NSRect(x: x, y: top, width: 1, height: bottom - top), options: .alignAllEdgesNearest)
-                if guide.intersects(dirtyRect) {
-                    guide.fill()
-                }
+                guide.fill()
             }
         }
 

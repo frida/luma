@@ -771,7 +771,8 @@ final class CodeTextView: CodeTextViewBase {
             let layout = textLayoutManager!
             let content = textContentStorage!
             let text = string as NSString
-            let top = CGPoint(x: 0, y: max(minY - textContainerOrigin.y, 0))
+            let originY = textContainerOrigin.y
+            let top = CGPoint(x: 0, y: max(minY - originY, 0))
             let start = layout.textLayoutFragment(for: top)?.rangeInElement.location ?? layout.documentRange.location
             var boxes: [(line: Int, box: LineBox)] = []
             var line = 0
@@ -783,7 +784,7 @@ final class CodeTextView: CodeTextViewBase {
                 for (index, lineFragment) in fragment.textLineFragments.enumerated() {
                     boxes.append((line + index, box(of: lineFragment, in: fragment)))
                 }
-                return fragment.layoutFragmentFrame.maxY + textContainerOrigin.y < maxY
+                return fragment.layoutFragmentFrame.maxY + originY < maxY
             }
             return boxes
         }
