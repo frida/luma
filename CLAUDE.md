@@ -69,6 +69,11 @@ hand. SwiftPM generates the sources through `LumaBundlePlugin` and
 `LumaShaderPlugin` instead, and both Makefiles stage the image through
 `Scripts/stage-pharo-image.sh`.
 
+`LUMA_LOCAL_PACKAGES="frida-fs=$HOME/src/frida-fs" make` builds the
+agent against a checkout instead of the npm package of the same name,
+for trying a change before it is published. Space-separated
+`name=path` pairs; the checkout must already be built.
+
 `LumaCore` (the cross-platform Swift package) can be built and
 type-checked on Linux without Xcode:
 

@@ -24,10 +24,16 @@ fi
 
 "$root/Scripts/stage-pharo-image.sh"
 
+local_package_flags=""
+for override in ${LUMA_LOCAL_PACKAGES:-}; do
+    local_package_flags="$local_package_flags --local-package ${override%%=*} ${override#*=}"
+done
+
 swift run --package-path "$root" LumaBundleCompiler \
     --config       "$root/Agent/bundle.json" \
     --project-root "$root" \
-    --staging-dir  "$root/build/.agent-staging"
+    --staging-dir  "$root/build/.agent-staging" \
+    $local_package_flags
 
 # Built through SwiftPM rather than as a target in the Xcode project, so it
 # links the same shader toolchain the runtime translation does.
