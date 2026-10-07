@@ -1,5 +1,5 @@
 import { Buffer } from "buffer";
-import fs from "fs";
+import fs, { Stats } from "frida-fs";
 import fsPath from "path";
 
 export interface FilesystemRoots {
@@ -53,7 +53,7 @@ export function listDirectory(path: string): DirectoryListing {
     const entries: FileEntry[] = [];
     for (const name of fs.readdirSync(path)) {
         const entryPath = fsPath.join(path, name);
-        let stats: fs.Stats;
+        let stats: Stats;
         try {
             stats = fs.lstatSync(entryPath);
         } catch (e) {
@@ -64,7 +64,7 @@ export function listDirectory(path: string): DirectoryListing {
     return { path, entries };
 }
 
-function entryFromStats(path: string, name: string, stats: fs.Stats): FileEntry {
+function entryFromStats(path: string, name: string, stats: Stats): FileEntry {
     const kind = kindFromMode(stats.mode);
     return {
         name,
