@@ -21,6 +21,7 @@ struct PatternDecodeView: View {
     @State private var visualizations: [UUID: NodeVisualization] = [:]
     @State private var openVisualizer: UUID?
     @State private var callOutcome: CallOutcome?
+    @State private var browsingSource: PatternSource?
     @FocusState private var isTreeFocused: Bool
 
     private var target: LumaCore.ProcessNode.ProcessInfo? {
@@ -105,11 +106,29 @@ struct PatternDecodeView: View {
         ) {
             if canDecode {
                 Menu("Decode at \(caretLabel) as…") {
-                    PlacementItems(sources: engine.patterns.sources, summaries: summaries, caret: caret, place: place)
+                    PlacementItems(
+                        sources: engine.patterns.sources, summaries: summaries, recent: engine.placementHistory.recent, caret: caret,
+                        place: place, browse: { browsingSource = $0 })
                 }
             }
         }
         .fixedSize(horizontal: true, vertical: false)
+        .popover(item: $browsingSource, arrowEdge: .trailing) { source in
+            SidebarBrowserPopover(
+                placeholder: "Filter types",
+                emptyMessage: "No matching types",
+                items: summaries[source.id]?.decodableTypes ?? [],
+                groupName: { $0.kind.title },
+                title: { $0.name },
+                help: { $0.kind.title },
+                isDimmed: { _ in false },
+                matches: { type, query in type.name.localizedCaseInsensitiveContains(query) },
+                onChoose: { type in
+                    place(PatternPlacement(sourceID: source.id, typeName: type.name, offset: caret))
+                    browsingSource = nil
+                }
+            )
+        }
     }
 
     private var emphasis: HexAnnotation? {
@@ -319,6 +338,7 @@ struct PatternDecodeView: View {
     private func place(_ placement: PatternPlacement) {
         placements.append(placement)
         expanded.insert(placement.id)
+        engine.placementHistory.note(placement)
     }
 
     private func selectNode(at index: Int) {
@@ -423,25 +443,64 @@ struct PatternDecodeView: View {
 }
 
 private struct PlacementItems: View {
+    static let typeLimit = 8
+
     let sources: [PatternSource]
     let summaries: [String: PatternSummary]
+    let recent: [PatternPlacementHistory.Entry]
     let caret: Int
     let place: (PatternPlacement) -> Void
+    let browse: (PatternSource) -> Void
 
     var body: some View {
-        ForEach(sources) { source in
-            if let summary = summaries[source.id] {
-                Section(source.name) {
-                    if let rootType = summary.rootType {
-                        Button("Run file") {
-                            place(PatternPlacement(sourceID: source.id, typeName: rootType, offset: 0))
-                        }
+        let recentPlacements = recent.compactMap(recentPlacement(for:))
+        if !recentPlacements.isEmpty {
+            Section("Recent") {
+                ForEach(recentPlacements, id: \.placement.typeName) { entry in
+                    Button(sources.count > 1 ? "\(entry.placement.typeName) (\(entry.source.name))" : entry.placement.typeName) {
+                        place(entry.placement)
                     }
-                    ForEach(summary.decodableTypes) { type in
-                        Button(type.name) {
-                            place(PatternPlacement(sourceID: source.id, typeName: type.name, offset: caret))
-                        }
+                }
+            }
+        }
+        if sources.count == 1 {
+            items(for: sources[0])
+        } else {
+            ForEach(sources) { source in
+                if summaries[source.id] != nil {
+                    Menu(source.name) {
+                        items(for: source)
                     }
+                }
+            }
+        }
+    }
+
+    private func recentPlacement(for entry: PatternPlacementHistory.Entry) -> (source: PatternSource, placement: PatternPlacement)? {
+        guard let source = sources.first(where: { $0.id == entry.sourceID }),
+            summaries[source.id]?.decodableTypes.contains(where: { $0.name == entry.typeName }) == true
+        else { return nil }
+        return (source, PatternPlacement(sourceID: source.id, typeName: entry.typeName, offset: caret))
+    }
+
+    @ViewBuilder
+    private func items(for source: PatternSource) -> some View {
+        if let summary = summaries[source.id] {
+            if let rootType = summary.rootType {
+                Button("Run file") {
+                    place(PatternPlacement(sourceID: source.id, typeName: rootType, offset: 0))
+                }
+                Divider()
+            }
+            ForEach(summary.decodableTypes.prefix(Self.typeLimit)) { type in
+                Button(type.name) {
+                    place(PatternPlacement(sourceID: source.id, typeName: type.name, offset: caret))
+                }
+            }
+            if summary.decodableTypes.count > Self.typeLimit {
+                Divider()
+                Button("All \(summary.decodableTypes.count) types…") {
+                    browse(source)
                 }
             }
         }

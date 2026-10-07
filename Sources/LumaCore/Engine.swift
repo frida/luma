@@ -99,6 +99,7 @@ public final class Engine {
     public internal(set) var customInstrumentDefUIStates: [UUID: CustomInstrumentDefUIState] = [:]
     public private(set) var missions: [Mission] = []
     public private(set) var installedPackages: [InstalledPackage] = []
+    public let placementHistory = PatternPlacementHistory()
 
     @ObservationIgnored private var typeScriptProjects: [TypeScriptProjectKey: Task<TypeScriptProject, Swift.Error>] = [:]
     private var addressActionProviders: [AddressActionProvider] = []

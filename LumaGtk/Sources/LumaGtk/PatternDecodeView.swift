@@ -131,36 +131,84 @@ final class PatternDecodeView {
         return [[.init(label) { [weak self] in self?.presentPlacementMenu(caret: caret) }]]
     }
 
+    private static let menuTypeLimit = 8
+
     private func presentPlacementMenu(caret: Int) {
         guard let target else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
-            var sections: [[ContextMenu.Item]] = []
+            var described: [String: PatternSummary] = [:]
             for source in engine.patterns.sources {
-                guard let summary = try? await engine.patternDecoder.summary(of: source, platform: target.platform, arch: target.arch)
-                else { continue }
-                var items: [ContextMenu.Item] = [.init(source.name, enabled: false) {}]
-                if let rootType = summary.rootType {
-                    items.append(
-                        .init("Run file") { [weak self] in
-                            self?.place(PatternPlacement(sourceID: source.id, typeName: rootType, offset: 0))
-                        })
-                }
-                for type in summary.decodableTypes {
-                    items.append(
-                        .init(type.name) { [weak self] in
-                            self?.place(PatternPlacement(sourceID: source.id, typeName: type.name, offset: caret))
-                        })
-                }
-                sections.append(items)
+                described[source.id] = try? await engine.patternDecoder.summary(of: source, platform: target.platform, arch: target.arch)
+            }
+            var sections: [[ContextMenu.Item]] = []
+            let recent = recentItems(caret: caret, summaries: described)
+            if !recent.isEmpty {
+                sections.append([.init("Recent", enabled: false) {}] + recent)
+            }
+            for source in engine.patterns.sources {
+                guard let summary = described[source.id] else { continue }
+                sections.append(items(for: source, summary: summary, caret: caret))
             }
             hexView.presentMenu(sections)
         }
     }
 
+    private func recentItems(caret: Int, summaries: [String: PatternSummary]) -> [ContextMenu.Item] {
+        let sources = engine.patterns.sources
+        return engine.placementHistory.recent.compactMap { entry in
+            guard let source = sources.first(where: { $0.id == entry.sourceID }),
+                summaries[source.id]?.decodableTypes.contains(where: { $0.name == entry.typeName }) == true
+            else { return nil }
+            let label = sources.count > 1 ? "\(entry.typeName) (\(source.name))" : entry.typeName
+            return .init(label) { [weak self] in
+                self?.place(PatternPlacement(sourceID: source.id, typeName: entry.typeName, offset: caret))
+            }
+        }
+    }
+
+    private func items(for source: PatternSource, summary: PatternSummary, caret: Int) -> [ContextMenu.Item] {
+        var items: [ContextMenu.Item] = [.init(source.name, enabled: false) {}]
+        if let rootType = summary.rootType {
+            items.append(
+                .init("Run file") { [weak self] in
+                    self?.place(PatternPlacement(sourceID: source.id, typeName: rootType, offset: 0))
+                })
+        }
+        for type in summary.decodableTypes.prefix(Self.menuTypeLimit) {
+            items.append(
+                .init(type.name) { [weak self] in
+                    self?.place(PatternPlacement(sourceID: source.id, typeName: type.name, offset: caret))
+                })
+        }
+        if summary.decodableTypes.count > Self.menuTypeLimit {
+            items.append(
+                .init("All \(summary.decodableTypes.count) types…") { [weak self] in
+                    self?.browseTypes(of: source, summary: summary, caret: caret)
+                })
+        }
+        return items
+    }
+
+    private func browseTypes(of source: PatternSource, summary: PatternSummary, caret: Int) {
+        SidebarBrowserPopover(
+            items: summary.decodableTypes,
+            placeholder: "Filter types",
+            emptyMessage: "No matching types",
+            groupName: { $0.kind.title },
+            title: { $0.name },
+            tooltip: { $0.kind.title },
+            matches: { type, query in type.name.localizedCaseInsensitiveContains(query) },
+            onChoose: { [weak self] type in
+                self?.place(PatternPlacement(sourceID: source.id, typeName: type.name, offset: caret))
+            }
+        ).presentAnchored(to: hexView.widget)
+    }
+
     private func place(_ placement: PatternPlacement) {
         placements.append(placement)
         expanded.insert(placement.id)
+        engine.placementHistory.note(placement)
         onPlacementsChanged(placements)
         showTree()
         decode()
