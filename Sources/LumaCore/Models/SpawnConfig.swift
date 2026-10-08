@@ -114,3 +114,9 @@ public struct SpawnConfig: nonisolated Codable, @unchecked Sendable {
         return cwd
     }
 }
+
+extension SpawnConfig {
+    public static func defaultApplicationStdio(on system: SystemParameters?) -> Stdio {
+        system?.osID == "android" ? .inherit : .pipe
+    }
+}

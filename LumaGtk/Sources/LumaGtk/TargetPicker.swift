@@ -1132,7 +1132,17 @@ final class TargetPicker {
         if mode == .spawn {
             loadApplications(for: device)
         }
+        applyDefaultApplicationStdio(for: device)
         refreshSpawnButtonSensitivity()
+    }
+
+    private func applyDefaultApplicationStdio(for device: Frida.Device) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let system = await engine.systemParameters.parameters(for: device)
+            guard selectedDeviceID == device.id else { return }
+            appSubmodeForm.select(stdio: SpawnConfig.defaultApplicationStdio(on: system))
+        }
     }
 
     private func observeConnectionActivity() {
@@ -1874,6 +1884,15 @@ private final class SpawnSubmodeForm {
 
     func stdio() -> Frida.Stdio {
         selectedStdio
+    }
+
+    func select(stdio: Frida.Stdio) {
+        switch stdio {
+        case .inherit:
+            stdioInheritToggle.active = true
+        case .pipe:
+            stdioPipeToggle.active = true
+        }
     }
 
     func autoResume() -> Bool {

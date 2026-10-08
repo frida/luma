@@ -285,6 +285,7 @@ struct TargetPickerView: View {
                     pendingDeviceSelection = nil
                 }
                 pickerState?.lastSelectedDeviceID = newID
+                applyDefaultApplicationStdio()
             }
             .onChange(of: mode) { _, newValue in
                 pickerState?.lastModeRaw = newValue.rawValue
@@ -1056,6 +1057,15 @@ struct TargetPickerView: View {
         if trimmed.hasSuffix("$") { trimmed.removeLast() }
         let metacharacters: Set<Character> = ["\\", ".", "*", "+", "?", "(", ")", "[", "]", "{", "}", "|"]
         return trimmed.contains(where: { metacharacters.contains($0) }) ? nil : trimmed
+    }
+
+    private func applyDefaultApplicationStdio() {
+        guard let device = selectedDevice else { return }
+        Task {
+            let system = await engine.systemParameters.parameters(for: device)
+            guard selectedDeviceID == device.id else { return }
+            appStdio = SpawnConfig.defaultApplicationStdio(on: system)
+        }
     }
 
     private func currentSpawnConfig() -> SpawnConfig? {
