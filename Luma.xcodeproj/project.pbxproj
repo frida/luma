@@ -252,6 +252,7 @@
 				0CD209312EB511C400D027FC /* Frameworks */,
 				0CD209322EB511C400D027FC /* Resources */,
 				0CE0E5262ED0A38A000B1E01 /* Embed Frameworks */,
+				0CF1A0012EB6000000000001 /* Sign Pharo VM plugins */,
 			);
 			buildRules = (
 			);
@@ -376,6 +377,21 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/zsh;
 			shellScript = "set -euo pipefail\nmkdir -p \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\ncp \"${SRCROOT}/LumaUITests/Resources/frida-gadget.dylib\" \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/frida-gadget.dylib\"\ncp \"${SRCROOT}/LumaUITests/Resources/frida-gadget.config\" \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/frida-gadget.config\"\n";
+		};
+		0CF1A0012EB6000000000001 /* Sign Pharo VM plugins */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Sign Pharo VM plugins";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/zsh;
+			shellScript = "set -euo pipefail\n[[ $CODE_SIGNING_ALLOWED == YES ]] || exit 0\nvm=\"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/PharoVM.framework\"\nfind \"$vm\" -name '*.dylib' -exec codesign --force --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" --options runtime --timestamp=none {} +\ncodesign --force --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" --options runtime --timestamp=none --preserve-metadata=identifier \"$vm\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
