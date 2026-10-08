@@ -28,6 +28,7 @@ struct REPLView: View {
     @State private var inputCode: String = ""
     @State private var isInputFocused: Bool = false
     @State private var mode: LumaCore.REPLLanguage = .javascript
+    @ScaledMetric(relativeTo: .body) private var gutterWidth = REPLGutter.width
     @State private var didRestoreInputState = false
     @State private var draftSaveTask: Task<Void, Never>?
 
@@ -143,7 +144,7 @@ struct REPLView: View {
                                 minHeight: outerGeo.size.height,
                                 alignment: .bottomLeading
                             )
-                            .detailPaneInset()
+                            .detailPaneInset(hanging: gutterWidth)
 
                             Color.clear
                                 .frame(height: 2)
@@ -167,13 +168,14 @@ struct REPLView: View {
 
             Divider()
 
-            HStack(spacing: 8) {
+            HStack(spacing: 0) {
                 Button {
                     toggleMode()
                 } label: {
                     Text(mode.promptGlyph)
                         .font(.monospacedContent)
                         .foregroundStyle(mode.promptColor)
+                        .replGutter()
                 }
                 .buttonStyle(.plain)
                 .help("Switch between JavaScript and r2 input — or type “:” to toggle")
@@ -234,8 +236,9 @@ struct REPLView: View {
                 .buttonStyle(.borderless)
                 .help("Run")
                 .disabled(!canSubmit)
+                .padding(.leading, 8)
             }
-            .detailPaneInset()
+            .detailPaneInset(hanging: gutterWidth)
             .padding(.vertical, 8)
             .background(.bar)
         }
@@ -494,10 +497,11 @@ private struct REPLCellView: View {
             .padding(.vertical, 4)
         } else {
             VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .top, spacing: 6) {
+                HStack(alignment: .top, spacing: 0) {
                     Text(cell.language.promptGlyph)
                         .font(.monospacedContent)
                         .foregroundStyle(cell.language.promptColor)
+                        .replGutter()
                     ScrollView(.horizontal, showsIndicators: false) {
                         Text(cell.code)
                             .font(.monospacedContent)
@@ -510,12 +514,14 @@ private struct REPLCellView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .help(cell.timestamp.formatted())
+                        .padding(.leading, 6)
                 }
 
                 if !isResultEmpty {
-                    HStack(alignment: resultAlignment, spacing: 6) {
+                    HStack(alignment: resultAlignment, spacing: 0) {
                         Text("←")
                             .foregroundStyle(.secondary)
+                            .replGutter()
 
                         switch cell.result {
                         case .text(let s):
@@ -977,6 +983,24 @@ private struct REPLInputField: View {
     }
 
 #endif
+
+private enum REPLGutter {
+    static let width: CGFloat = 12
+}
+
+extension View {
+    fileprivate func replGutter() -> some View {
+        modifier(REPLGutterColumn())
+    }
+}
+
+private struct REPLGutterColumn: ViewModifier {
+    @ScaledMetric(relativeTo: .body) private var width = REPLGutter.width
+
+    func body(content: Content) -> some View {
+        content.frame(width: width, alignment: .leading)
+    }
+}
 
 private struct REPLExpandActionKey: EnvironmentKey {
     static let defaultValue: () -> Void = {}
