@@ -43,6 +43,7 @@ struct CodeTextEditor: PlatformViewRepresentable {
             view.textContainer?.lineFragmentPadding = 0
 
             let scroll = NSScrollView()
+            scroll.contentView = RulerAwareClipView()
             scroll.documentView = view
             scroll.hasHorizontalScroller = true
             scroll.hasVerticalScroller = true
@@ -85,6 +86,11 @@ struct CodeTextEditor: PlatformViewRepresentable {
         let view = CodeTextView.make()
         view.delegate = context.coordinator
         view.setSource(text)
+        #if canImport(AppKit)
+            view.setSelectedRange(NSRange(location: 0, length: 0))
+        #else
+            view.selectedRange = NSRange(location: 0, length: 0)
+        #endif
         context.coordinator.attach(view)
         return view
     }
@@ -197,4 +203,17 @@ struct EditorReveal: Equatable {
     typealias CodeTextViewDelegate = NSTextViewDelegate
 #else
     typealias CodeTextViewDelegate = UITextViewDelegate
+#endif
+
+#if canImport(AppKit)
+    private final class RulerAwareClipView: NSClipView {
+        override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
+            var rect = super.constrainBoundsRect(proposedBounds)
+            guard let gutterWidth = enclosingScrollView?.verticalRulerView?.ruleThickness, gutterWidth > 0,
+                proposedBounds.origin.x < rect.origin.x
+            else { return rect }
+            rect.origin.x = max(proposedBounds.origin.x, -gutterWidth)
+            return rect
+        }
+    }
 #endif
