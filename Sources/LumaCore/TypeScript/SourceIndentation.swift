@@ -80,6 +80,20 @@ public enum SourceIndentation {
         return closerDedent(in: text, atUTF16: caret)
     }
 
+    public struct BlockReindent: Equatable, Sendable {
+        public let range: Range<Int>
+        public let replacement: String
+        public let selection: Range<Int>
+    }
+
+    public static func indentLines(in text: String, selectionUTF16 selection: Range<Int>) -> BlockReindent {
+        reindentBlock(in: text, selection: selection, indent: true)
+    }
+
+    public static func dedentLines(in text: String, selectionUTF16 selection: Range<Int>) -> BlockReindent {
+        reindentBlock(in: text, selection: selection, indent: false)
+    }
+
     private static func leadingWhitespace(_ line: ArraySlice<UInt16>) -> String {
         let run = line.prefix { $0 == 0x20 || $0 == 0x09 }
         return String(utf16CodeUnits: Array(run), count: run.count)
@@ -113,5 +127,53 @@ public enum SourceIndentation {
             return unit == 0x29 || unit == 0x5D || unit == 0x7D
         }
         return false
+    }
+
+    private static func reindentBlock(in text: String, selection: Range<Int>, indent: Bool) -> BlockReindent {
+        let units = Array(text.utf16)
+        let lower = selection.lowerBound
+        let upper = selection.upperBound
+
+        let blockStart = units[..<lower].lastIndex(where: isNewline).map { $0 + 1 } ?? 0
+        let probe = (upper > lower && isNewline(units[upper - 1])) ? upper - 1 : upper
+        let blockEnd = units[probe...].firstIndex(where: isNewline) ?? units.count
+
+        let block = String(utf16CodeUnits: Array(units[blockStart..<blockEnd]), count: blockEnd - blockStart)
+        var removedFromFirstLine = 0
+        let newLines = block.components(separatedBy: "\n").enumerated().map { index, line -> String in
+            if indent {
+                return line.isEmpty ? line : unit + line
+            }
+            let (dedented, removed) = dropLeadingIndent(line)
+            if index == 0 { removedFromFirstLine = removed }
+            return dedented
+        }
+        let replacement = newLines.joined(separator: "\n")
+
+        let selectionUTF16: Range<Int>
+        if selection.isEmpty {
+            let caret = indent ? lower + unit.utf16.count : max(blockStart, lower - removedFromFirstLine)
+            selectionUTF16 = caret..<caret
+        } else {
+            selectionUTF16 = blockStart..<(blockStart + replacement.utf16.count)
+        }
+
+        return BlockReindent(range: blockStart..<blockEnd, replacement: replacement, selection: selectionUTF16)
+    }
+
+    private static func dropLeadingIndent(_ line: String) -> (String, Int) {
+        let units = Array(line.utf16)
+        if units.first == 0x09 {
+            return (String(utf16CodeUnits: Array(units.dropFirst()), count: units.count - 1), 1)
+        }
+        var removed = 0
+        while removed < unit.utf16.count, removed < units.count, units[removed] == 0x20 {
+            removed += 1
+        }
+        return (String(utf16CodeUnits: Array(units.dropFirst(removed)), count: units.count - removed), removed)
+    }
+
+    private static func isNewline(_ unit: UInt16) -> Bool {
+        unit == 0x0A || unit == 0x0D
     }
 }

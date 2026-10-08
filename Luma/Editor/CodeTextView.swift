@@ -437,11 +437,23 @@ final class CodeTextView: CodeTextViewBase {
 
         override func insertTab(_ sender: Any?) {
             if selectPlaceholder(forward: true) { return }
-            super.insertText(SourceIndentation.unit, replacementRange: selectedRange())
+            let selection = selectedRange()
+            if selection.length > 0 {
+                applyBlockReindent(SourceIndentation.indentLines(in: source, selectionUTF16: selection.lowerBound..<selection.upperBound))
+                return
+            }
+            super.insertText(SourceIndentation.unit, replacementRange: selection)
         }
 
         override func insertBacktab(_ sender: Any?) {
-            _ = selectPlaceholder(forward: false)
+            if selectPlaceholder(forward: false) { return }
+            let selection = selectedRange()
+            applyBlockReindent(SourceIndentation.dedentLines(in: source, selectionUTF16: selection.lowerBound..<selection.upperBound))
+        }
+
+        private func applyBlockReindent(_ edit: SourceIndentation.BlockReindent) {
+            super.insertText(edit.replacement, replacementRange: NSRange(location: edit.range.lowerBound, length: edit.range.count))
+            setSelectedRange(NSRange(location: edit.selection.lowerBound, length: edit.selection.count))
         }
 
         override func deleteBackward(_ sender: Any?) {
