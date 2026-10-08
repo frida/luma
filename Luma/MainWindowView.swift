@@ -212,6 +212,7 @@ private struct ProjectContentView: View {
         HStack(spacing: 0) {
             DetailView(engine: engine, selection: selection)
                 .frame(maxWidth: .infinity)
+                .clipped()
 
             if let panel = engine.projectUIState.sidePanel {
                 Divider()
