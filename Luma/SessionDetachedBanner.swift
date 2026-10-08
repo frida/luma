@@ -309,6 +309,9 @@ struct SessionDetachedBanner: View {
     }
 
     private var bannerStyle: LumaBannerStyle {
+        if session.phase == .attaching {
+            return .info
+        }
         switch session.detachReason {
         case .applicationRequested:
             return .warning

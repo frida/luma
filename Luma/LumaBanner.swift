@@ -40,7 +40,7 @@ enum LumaBannerStyle {
     var backgroundColor: Color {
         switch self {
         case .info:
-            return .yellow.opacity(0.15)
+            return .blue.opacity(0.12)
         case .warning:
             return .orange.opacity(0.15)
         case .error:
@@ -51,7 +51,7 @@ enum LumaBannerStyle {
     var borderColor: Color {
         switch self {
         case .info:
-            return .yellow.opacity(0.3)
+            return .blue.opacity(0.3)
         case .warning:
             return .orange.opacity(0.4)
         case .error:
