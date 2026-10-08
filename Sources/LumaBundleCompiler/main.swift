@@ -210,14 +210,9 @@ struct LumaBundleCompiler {
                 try fm.createDirectory(atPath: stagingDir, withIntermediateDirectories: true)
             }
 
-            for local in localPackages {
-                let dst = URL(fileURLWithPath: stagingDir)
-                    .appendingPathComponent("node_modules", isDirectory: true)
-                    .appendingPathComponent(local.name, isDirectory: true)
-                if (try? fm.destinationOfSymbolicLink(atPath: dst.path)) != nil {
-                    try fm.removeItem(at: dst)
-                }
-            }
+            try clearPackageSymlinks(
+                in: URL(fileURLWithPath: stagingDir).appendingPathComponent("node_modules", isDirectory: true),
+                fm: fm)
 
             if hasManifest || !packageSpecs.isEmpty {
                 if hasManifest, let src = manifestPath {
@@ -382,6 +377,18 @@ struct LumaBundleCompiler {
                 TypingsEntry(swiftName: typing.name, packageName: typing.package))
         }
         externals.append(contentsOf: config.input.externals)
+    }
+
+    static func clearPackageSymlinks(in nodeModules: URL, fm: FileManager) throws {
+        let names = (try? fm.contentsOfDirectory(atPath: nodeModules.path)) ?? []
+        for name in names {
+            let entry = nodeModules.appendingPathComponent(name)
+            if (try? fm.destinationOfSymbolicLink(atPath: entry.path)) != nil {
+                try fm.removeItem(at: entry)
+            } else if name.hasPrefix("@") {
+                try clearPackageSymlinks(in: entry, fm: fm)
+            }
+        }
     }
 
     static func syncFile(at source: String, into directory: String) throws {
