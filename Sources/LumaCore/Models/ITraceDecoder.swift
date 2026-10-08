@@ -126,10 +126,11 @@ public enum ITraceDecoder {
         let registerNames = metadata.regSpecs.map(\.name)
 
         let blocksByAddress = Dictionary(
-            uniqueKeysWithValues: metadata.blocks.compactMap { block -> (UInt64, ITraceMetadata.BlockSpec)? in
+            metadata.blocks.compactMap { block -> (UInt64, ITraceMetadata.BlockSpec)? in
                 guard let addr = parseHexAddress(block.address) else { return nil }
                 return (addr, block)
-            }
+            },
+            uniquingKeysWith: { first, _ in first }
         )
 
         var blockBytesMap: [UInt64: Data] = [:]
