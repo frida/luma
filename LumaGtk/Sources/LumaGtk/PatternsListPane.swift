@@ -13,6 +13,7 @@ final class PatternsListPane {
     private let window: Gtk.Window
     private let onSelect: (String) -> Void
     private let onError: (String) -> Void
+    private let header: Box
     private let body: Box
 
     init(engine: Engine, window: Gtk.Window, onSelect: @escaping (String) -> Void, onError: @escaping (String) -> Void) {
@@ -29,33 +30,31 @@ final class PatternsListPane {
         widget.marginTop = 18
         widget.marginBottom = 18
 
+        header = Box(orientation: .horizontal, spacing: 8)
+        header.halign = .end
+
         body = Box(orientation: .vertical, spacing: 0)
         body.hexpand = true
         body.vexpand = true
 
-        widget.append(child: makeHeader())
+        populateHeader()
+        widget.append(child: header)
         widget.append(child: body)
         render()
         observeSources()
     }
 
-    private func makeHeader() -> Box {
-        let header = Box(orientation: .horizontal, spacing: 8)
+    private func populateHeader() {
+        header.append(child: makeImportButton())
+        header.append(child: makeNewButton())
+    }
 
-        let title = Label(str: "Patterns")
-        title.add(cssClass: "title-2")
-        title.halign = .start
-        title.hexpand = true
-        header.append(child: title)
-
-        let importButton = Button(label: "Import…")
-        importButton.onClicked { [weak self] _ in
+    private func makeImportButton() -> Button {
+        let button = Button(label: "Import…")
+        button.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.presentImport() }
         }
-        header.append(child: importButton)
-
-        header.append(child: makeNewButton())
-        return header
+        return button
     }
 
     private func presentImport() {
@@ -125,21 +124,28 @@ final class PatternsListPane {
             body.remove(child: child)
         }
         let sources = engine.patterns.sources
+        header.visible = !sources.isEmpty
         body.append(child: sources.isEmpty ? makeEmptyState() : makeList(sources))
     }
 
     private func makeEmptyState() -> Widget {
         let page = Adw.StatusPage()
         page.iconName = "view-grid-symbolic"
-        page.title = "No patterns yet"
-        page.description =
-            "Pattern files describe structs to decode memory against. Libraries hold definitions shared between them. Packages from npm bring ready-made ones for PE, Mach-O and ELF."
+        page.title = "Patterns"
+        page.description = "Describe structs to decode memory against, or add ready-made ones for PE, Mach-O and ELF."
         page.vexpand = true
         let actions = Box(orientation: .horizontal, spacing: 12)
         actions.halign = .center
-        let addPackage = Button(label: "Add Pattern Package…")
-        addPackage.add(cssClass: "suggested-action")
-        addPackage.add(cssClass: "pill")
+        let newPattern = Button(label: "New Pattern")
+        newPattern.add(cssClass: "suggested-action")
+        newPattern.onClicked { [weak self] _ in
+            MainActor.assumeIsolated { self?.presentCreate(.pattern) }
+        }
+        let newLibrary = Button(label: "New Library")
+        newLibrary.onClicked { [weak self] _ in
+            MainActor.assumeIsolated { self?.presentCreate(.library) }
+        }
+        let addPackage = Button(label: "Add Package…")
         addPackage.onClicked { [weak self, weak addPackage] _ in
             MainActor.assumeIsolated {
                 guard let self, let addPackage else { return }
@@ -148,11 +154,10 @@ final class PatternsListPane {
                 }
             }
         }
-        actions.append(child: addPackage)
-        let newButton = makeNewButton()
-        newButton.remove(cssClass: "suggested-action")
-        newButton.add(cssClass: "pill")
-        actions.append(child: newButton)
+        for button in [newPattern, newLibrary, addPackage, makeImportButton()] {
+            button.add(cssClass: "pill")
+            actions.append(child: button)
+        }
         page.set(child: actions)
         return page
     }
