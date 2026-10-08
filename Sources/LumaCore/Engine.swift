@@ -4470,6 +4470,7 @@ public final class Engine {
             sourceSlug: sourceSlug,
             files: files,
             entrypoint: def.entrypoint,
+            ambientTypings: CustomInstrumentTypings.compilerTypings(for: def, packages: installedPackages),
             paths: paths,
             diagnosticLabel: "custom instrument \(def.id.uuidString)"
         )
@@ -4605,6 +4606,7 @@ public final class Engine {
         sourceSlug: String,
         files: [(path: String, content: Data)],
         entrypoint: String,
+        ambientTypings: String? = nil,
         paths: CompilerWorkspacePaths,
         diagnosticLabel: String
     ) async throws -> String {
@@ -4614,7 +4616,9 @@ public final class Engine {
         let dirURL = paths.root.appendingPathComponent(dirRelPath, isDirectory: true)
         try Self.syncInstrumentSources(files, into: dirURL)
 
-        let entryRelPath = "\(dirRelPath)/\(try CustomInstrumentFile.validateRelativePath(entrypoint))"
+        let userEntry = try CustomInstrumentFile.validateRelativePath(entrypoint)
+        let entryRelPath = try Self.stageInstrumentEntry(
+            userEntry: userEntry, ambientTypings: ambientTypings, in: dirURL, relativeTo: dirRelPath)
 
         let sourcePrefix = "\(dirRelPath)/"
         let bundle = try await compilerWorkspace.withCompilerDiagnostics(
@@ -4656,6 +4660,27 @@ public final class Engine {
                 try fm.removeItem(at: url)
             }
         }
+    }
+
+    private static func stageInstrumentEntry(
+        userEntry: String,
+        ambientTypings: String?,
+        in dirURL: URL,
+        relativeTo dirRelPath: String
+    ) throws -> String {
+        guard let ambientTypings else {
+            return "\(dirRelPath)/\(userEntry)"
+        }
+
+        let typingsName = "luma-ambient-typings.ts"
+        let wrapperName = "luma-entry.ts"
+        try Data(ambientTypings.utf8).write(to: dirURL.appendingPathComponent(typingsName))
+        let wrapper = """
+            import "./\(typingsName)";
+            export * from "./\(userEntry)";
+            """
+        try Data(wrapper.utf8).write(to: dirURL.appendingPathComponent(wrapperName))
+        return "\(dirRelPath)/\(wrapperName)"
     }
 
     private static func readHookPackFiles(

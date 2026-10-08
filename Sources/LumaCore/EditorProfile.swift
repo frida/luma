@@ -267,6 +267,13 @@ public enum CustomInstrumentTypings {
         )
     }
 
+    public static func compilerTypings(for def: CustomInstrumentDef, packages: [InstalledPackage]) -> String {
+        ([ambient.content]
+            + (featureMap(for: def).map { [$0.content] } ?? [])
+            + PackageAliasTypings.declarations(for: packages).map(\.content))
+            .joined(separator: "\n\n")
+    }
+
     public static func defScopedDeclarations(for def: CustomInstrumentDef) -> String {
         var sections: [String] = []
         if !def.features.isEmpty {
