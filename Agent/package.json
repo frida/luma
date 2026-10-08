@@ -5,7 +5,7 @@
   "dependencies": {
     "@types/frida-gum": "^19.11.0",
     "@types/node": "^18",
-    "frida-fs": "^7.1.0",
+    "frida-fs": "^7.1.1",
     "frida-itrace": "^6.1.0",
     "frida-java-bridge": "^7.0.13"
   }
