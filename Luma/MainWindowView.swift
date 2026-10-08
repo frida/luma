@@ -364,9 +364,12 @@ private struct ProjectContentView: View {
     }
 
     private var eventStreamResizeHandle: some View {
-        Divider()
-            .frame(height: 6)
+        Rectangle()
+            .fill(.clear)
+            .frame(height: 11)
+            .overlay { Divider() }
             .contentShape(Rectangle())
+            .platformPointer(.rowResize)
             .gesture(
                 DragGesture(coordinateSpace: .global)
                     .onChanged { value in
@@ -378,15 +381,6 @@ private struct ProjectContentView: View {
                     }
                     .onEnded { _ in dragStartHeight = nil }
             )
-            #if os(macOS)
-                .onHover { inside in
-                    if inside {
-                        NSCursor.resizeUpDown.push()
-                    } else {
-                        NSCursor.pop()
-                    }
-                }
-            #endif
     }
 
     private var collapsedEventStreamBar: some View {

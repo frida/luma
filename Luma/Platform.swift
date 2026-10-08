@@ -54,6 +54,7 @@ enum Platform {
 enum PointerShape {
     case link
     case columnResize
+    case rowResize
     case grab
 }
 
@@ -64,6 +65,7 @@ extension View {
             switch shape {
             case .link: pointerStyle(.link)
             case .columnResize: pointerStyle(.columnResize)
+            case .rowResize: pointerStyle(.rowResize)
             case .grab: pointerStyle(.grabIdle)
             }
         #else
