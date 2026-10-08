@@ -22,7 +22,7 @@ struct CustomInstrumentsSidebarSection: View {
                         isExpanded: isExpanded,
                         onToggleExpansion: { toggleExpansion(defID: def.id) }
                     )
-                    .tag(SidebarItemID.customInstrumentFile(def.id, def.entrypoint))
+                    .sidebarItemTag(SidebarItemID.customInstrumentFile(def.id, def.entrypoint))
 
                     if isExpanded {
                         ForEach(auxiliaryFiles, id: \.path) { file in
@@ -32,7 +32,7 @@ struct CustomInstrumentsSidebarSection: View {
                                 engine: engine,
                                 selection: $selection
                             )
-                            .tag(SidebarItemID.customInstrumentFile(def.id, file.path))
+                            .sidebarItemTag(SidebarItemID.customInstrumentFile(def.id, file.path))
                         }
                     }
                 }

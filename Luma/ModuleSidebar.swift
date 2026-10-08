@@ -11,7 +11,7 @@ struct ModuleSidebarChildren: View {
         let highlights = modules.sidebarHighlights(mainModule: mainModule, selectedID: selectedModuleID)
         ForEach(highlights) { module in
             ModuleSidebarRow(sessionID: sessionID, module: module, engine: engine, selection: $selection)
-                .tag(SidebarItemID.module(sessionID, module.id))
+                .sidebarItemTag(SidebarItemID.module(sessionID, module.id))
         }
         if modules.count > highlights.count {
             SidebarBrowseAllRow(count: modules.count) { dismiss in

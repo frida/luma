@@ -23,7 +23,7 @@ struct TracerSidebarChildren: View {
                     instrumentID: instance.id,
                     selection: $selection
                 )
-                .tag(SidebarItemID.instrumentComponent(sessionID, instance.id, hook.id))
+                .sidebarItemTag(SidebarItemID.instrumentComponent(sessionID, instance.id, hook.id))
             }
             if ordered.count > inline.count {
                 TracerSidebarBrowseAllRow(

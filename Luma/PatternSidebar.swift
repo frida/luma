@@ -16,7 +16,7 @@ struct PatternsSidebarRows: View {
         SidebarPatternsRow(count: sources.count, isExpanded: expansion == .expanded) {
             expansion = expansion == .expanded ? .collapsed : .expanded
         }
-        .tag(SidebarItemID.patterns)
+        .sidebarItemTag(SidebarItemID.patterns)
         if sources.isEmpty {
             SidebarAddPatternPackageRow(engine: engine, selection: $selection)
         }
@@ -31,7 +31,7 @@ struct PatternsSidebarRows: View {
                 isExpanded: isExpanded,
                 onToggleExpansion: { toggle(source.id) }
             )
-            .tag(SidebarItemID.pattern(source.id))
+            .sidebarItemTag(SidebarItemID.pattern(source.id))
             if isExpanded {
                 PatternTypeSidebarChildren(source: source, types: types, selection: $selection)
             }
@@ -89,7 +89,7 @@ private struct PatternTypeSidebarChildren: View {
                 title: type.name,
                 help: type.kind.title
             )
-            .tag(SidebarItemID.patternType(source.id, type.name))
+            .sidebarItemTag(SidebarItemID.patternType(source.id, type.name))
         }
         if types.count > highlights.count {
             SidebarBrowseAllRow(count: types.count) { dismiss in

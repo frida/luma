@@ -24,17 +24,27 @@ struct SidebarView: View {
     var missions: [LumaCore.Mission] { engine.missions }
 
     var body: some View {
+        ScrollViewReader { proxy in
+            sidebarList
+                .onChange(of: selection) { _, newSelection in
+                    ensureSessionExpanded(for: newSelection)
+                    ensureVisible(newSelection, using: proxy)
+                }
+        }
+    }
+
+    private var sidebarList: some View {
         List(selection: $selection) {
             Section {
                 SidebarNotebookRow()
-                    .tag(SidebarItemID.notebook)
+                    .sidebarItemTag(SidebarItemID.notebook)
                 SidebarPharoRow()
-                    .tag(SidebarItemID.pharo)
+                    .sidebarItemTag(SidebarItemID.pharo)
                 SidebarMissionsRow(count: missions.count)
-                    .tag(SidebarItemID.missions)
+                    .sidebarItemTag(SidebarItemID.missions)
                 ForEach(missions) { mission in
                     SidebarMissionRow(mission: mission, engine: engine, selection: $selection)
-                        .tag(SidebarItemID.mission(mission.id))
+                        .sidebarItemTag(SidebarItemID.mission(mission.id))
                 }
                 PatternsSidebarRows(engine: engine, selection: $selection)
             }
@@ -55,16 +65,16 @@ struct SidebarView: View {
                         isExpanded: isExpanded,
                         onToggleExpansion: { toggleSessionExpansion(sessionID: session.id) }
                     )
-                    .tag(SidebarItemID.session(session.id))
+                    .sidebarItemTag(SidebarItemID.session(session.id))
 
                     if isExpanded {
                         moduleGroup(session: session)
                         threadGroup(session: session)
 
                         SidebarSessionREPLRow(sessionID: session.id)
-                            .tag(SidebarItemID.repl(session.id))
+                            .sidebarItemTag(SidebarItemID.repl(session.id))
                         SidebarSessionFilesRow()
-                            .tag(SidebarItemID.files(session.id))
+                            .sidebarItemTag(SidebarItemID.files(session.id))
 
                         ForEach(instruments) { instance in
                             let hasChildren = hasInstrumentChildren(instance: instance)
@@ -79,7 +89,7 @@ struct SidebarView: View {
                                 onToggle: { toggleHooksExpansion(sessionID: session.id, instrumentID: instance.id) },
                                 selection: $selection
                             )
-                            .tag(SidebarItemID.instrument(session.id, instance.id))
+                            .sidebarItemTag(SidebarItemID.instrument(session.id, instance.id))
 
                             if hasChildren, hooksExpanded {
                                 instrumentChildren(sessionID: session.id, instance: instance)
@@ -93,7 +103,7 @@ struct SidebarView: View {
                                 engine: engine,
                                 selection: $selection
                             )
-                            .tag(SidebarItemID.insight(session.id, insight.id))
+                            .sidebarItemTag(SidebarItemID.insight(session.id, insight.id))
                         }
 
                         ForEach(traces.sorted(by: { $0.startedAt < $1.startedAt })) { trace in
@@ -103,7 +113,7 @@ struct SidebarView: View {
                                 engine: engine,
                                 selection: $selection
                             )
-                            .tag(SidebarItemID.itrace(session.id, trace.id))
+                            .sidebarItemTag(SidebarItemID.itrace(session.id, trace.id))
                         }
                     }
                 }
@@ -116,14 +126,18 @@ struct SidebarView: View {
                 Section("Packages") {
                     ForEach(packages) { pkg in
                         SidebarPackageRow(package: pkg)
-                            .tag(SidebarItemID.package(pkg.id))
+                            .sidebarItemTag(SidebarItemID.package(pkg.id))
                     }
                 }
             }
         }
         .listStyle(.sidebar)
-        .onChange(of: selection) { _, newSelection in
-            ensureSessionExpanded(for: newSelection)
+    }
+
+    private func ensureVisible(_ selection: SidebarItemID?, using proxy: ScrollViewProxy) {
+        guard let selection else { return }
+        DispatchQueue.main.async {
+            proxy.scrollTo(selection, anchor: nil)
         }
     }
 
@@ -1010,3 +1024,9 @@ private struct SidebarPackageRow: View {
     }
 }
 
+
+extension View {
+    func sidebarItemTag(_ id: SidebarItemID) -> some View {
+        tag(id).id(id)
+    }
+}

@@ -11,7 +11,7 @@ struct ThreadSidebarChildren: View {
         let highlights = threads.sidebarHighlights(selectedID: selectedThreadID)
         ForEach(highlights) { thread in
             ThreadSidebarRow(sessionID: sessionID, thread: thread, engine: engine, selection: $selection)
-                .tag(SidebarItemID.thread(sessionID, thread.id))
+                .sidebarItemTag(SidebarItemID.thread(sessionID, thread.id))
         }
         if threads.count > highlights.count {
             SidebarBrowseAllRow(count: threads.count) { dismiss in
