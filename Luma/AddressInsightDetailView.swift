@@ -65,7 +65,8 @@ struct AddressInsightDetailView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(8)
+        .padding(.vertical, 8)
+        .detailPaneInset()
         .overlay(alignment: .center) {
             if showRefreshSpinner {
                 ProgressView()

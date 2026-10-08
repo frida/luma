@@ -46,7 +46,7 @@ struct ModuleDetailView: View {
 
                 content
             }
-            .padding(.leading, 12)
+            .detailPaneInset(.leading)
             .padding(.top, 8)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 

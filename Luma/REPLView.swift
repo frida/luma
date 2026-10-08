@@ -116,20 +116,13 @@ struct REPLView: View {
         }
     }
 
-    #if canImport(UIKit)
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    private var horizontalInset: CGFloat { horizontalSizeClass == .compact ? 6 : 12 }
-    #else
-    private var horizontalInset: CGFloat { 12 }
-    #endif
-
     var body: some View {
         VStack(spacing: 0) {
             GeometryReader { outerGeo in
                 if orderedCells.isEmpty {
                     REPLEmptyState()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(.horizontal, horizontalInset)
+                        .detailPaneInset()
                 } else {
                     ScrollViewReader { proxy in
                         ScrollView {
@@ -150,7 +143,7 @@ struct REPLView: View {
                                 minHeight: outerGeo.size.height,
                                 alignment: .bottomLeading
                             )
-                            .padding(.horizontal, horizontalInset)
+                            .detailPaneInset()
 
                             Color.clear
                                 .frame(height: 2)
@@ -242,7 +235,7 @@ struct REPLView: View {
                 .help("Run")
                 .disabled(!canSubmit)
             }
-            .padding(.horizontal, horizontalInset)
+            .detailPaneInset()
             .padding(.vertical, 8)
             .background(.bar)
         }

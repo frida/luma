@@ -14,7 +14,7 @@ struct SessionDetailView: View {
             Divider()
             summaryContent
         }
-        .padding(.horizontal, 20)
+        .detailPaneInset()
         .padding(.vertical, 16)
     }
 
