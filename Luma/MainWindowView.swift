@@ -12,8 +12,6 @@ struct MainWindowView: View {
 
     @State private var engineResult: Result<Engine, any Swift.Error>
     @State private var picker = TargetPicker()
-    @State private var collapsedEventBaselineVersion: Int = 0
-    @State private var collapsedNewEvents: Int = 0
     @State private var isShowingHostingBlockedAlert = false
 
     init(document: Binding<LumaProject>, fileURL: URL? = nil) {
@@ -43,8 +41,6 @@ struct MainWindowView: View {
                 projectURL: projectURL,
                 restorationPath: restorationPath,
                 markDocumentEdited: { document.unsavedChangeCount &+= 1 },
-                collapsedEventBaselineVersion: $collapsedEventBaselineVersion,
-                collapsedNewEvents: $collapsedNewEvents,
                 isShowingHostingBlockedAlert: $isShowingHostingBlockedAlert
             )
         case .failure(let error):
@@ -73,8 +69,6 @@ private struct ProjectContentView: View {
     let restorationPath: String
     let markDocumentEdited: () -> Void
 
-    @Binding var collapsedEventBaselineVersion: Int
-    @Binding var collapsedNewEvents: Int
     @Binding var isShowingHostingBlockedAlert: Bool
 
     @State private var availableHeight: CGFloat = 800
@@ -163,23 +157,6 @@ private struct ProjectContentView: View {
                 else { return }
                 markDocumentEdited()
             }
-            .onChange(of: engine.eventLog.totalReceived) { _, newVersion in
-                if engine.projectUIState.isEventStreamCollapsed {
-                    let delta = max(0, newVersion - collapsedEventBaselineVersion)
-                    collapsedNewEvents += delta
-                    collapsedEventBaselineVersion = newVersion
-                } else {
-                    collapsedEventBaselineVersion = newVersion
-                    collapsedNewEvents = 0
-                }
-            }
-            .onChange(of: engine.projectUIState.isEventStreamCollapsed) { _, isCollapsed in
-                collapsedEventBaselineVersion = engine.eventLog.totalReceived
-                if !isCollapsed {
-                    collapsedNewEvents = 0
-                }
-            }
-
             eventStreamBottomBar
         }
         .frame(
@@ -327,7 +304,7 @@ private struct ProjectContentView: View {
             if engine.projectUIState.isEventStreamCollapsed {
                 VStack(spacing: 0) {
                     Divider()
-                    collapsedEventStreamBar
+                    CollapsedEventStreamBar(engine: engine)
                         .frame(height: Self.collapsedEventStreamHeight)
                 }
             } else {
@@ -382,18 +359,26 @@ private struct ProjectContentView: View {
                     .onEnded { _ in dragStartHeight = nil }
             )
     }
+}
 
-    private var collapsedEventStreamBar: some View {
+private struct CollapsedEventStreamBar: View {
+    let engine: Engine
+
+    @State private var newEvents = 0
+    @State private var baseline: Int
+
+    init(engine: Engine) {
+        self.engine = engine
+        _baseline = State(initialValue: engine.eventLog.totalReceived)
+    }
+
+    var body: some View {
         HStack {
             Button {
                 engine.setEventStreamCollapsed(false)
-                collapsedNewEvents = 0
-                collapsedEventBaselineVersion = engine.eventLog.totalReceived
             } label: {
-                if collapsedNewEvents > 0 {
-                    Label(
-                        "Show Event Stream (\(collapsedNewEvents) new)",
-                        systemImage: "chevron.up")
+                if newEvents > 0 {
+                    Label("Show Event Stream (\(newEvents) new)", systemImage: "chevron.up")
                 } else {
                     Label("Show Event Stream", systemImage: "chevron.up")
                 }
@@ -406,11 +391,11 @@ private struct ProjectContentView: View {
         }
         .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            collapsedNewEvents > 0
-                ? Color.accentColor.opacity(0.12)
-                : Color.clear
-        )
+        .background(newEvents > 0 ? Color.accentColor.opacity(0.12) : Color.clear)
+        .onChange(of: engine.eventLog.totalReceived) { _, newVersion in
+            newEvents += max(0, newVersion - baseline)
+            baseline = newVersion
+        }
     }
 }
 
