@@ -408,6 +408,8 @@ public enum ITraceDecoder {
 
         var cleanEntries = Array(rawTrace.entries[firstMeaningfulIdx...lastMeaningfulIdx])
 
+        var mergedBlockSpec: ITraceMetadata.BlockSpec?
+
         if let hookTarget, let prologueData,
             firstMeaningfulIdx > 0
         {
@@ -453,7 +455,7 @@ public enum ITraceDecoder {
                     String(firstEntry.blockName[firstEntry.blockName.index(after: bangIdx)...]))!
                 let mergedName = "\(moduleName)!0x\(String(origOffset - UInt64(overwrittenSize), radix: 16))"
 
-                let mergedBlockSpec = ITraceMetadata.BlockSpec(
+                mergedBlockSpec = ITraceMetadata.BlockSpec(
                     name: mergedName,
                     address: String(format: "0x%llx", hookTarget),
                     size: mergedBytesData.count,
@@ -468,19 +470,17 @@ public enum ITraceDecoder {
                     blockName: mergedName,
                     registerWrites: mergedWrites
                 )
-
-                var cleanBlocks = [mergedBlockSpec]
-                for block in metadata.blocks where block.name.contains("!") {
-                    let addr = parseHexAddress(block.address)
-                    if addr != firstEntry.blockAddress {
-                        cleanBlocks.append(block)
-                    }
-                }
-                metadata.blocks = cleanBlocks
             }
-        } else {
-            metadata.blocks = metadata.blocks.filter { $0.name.contains("!") }
         }
+
+        let referencedAddresses = Set(cleanEntries.map(\.blockAddress))
+        var cleanBlocks: [ITraceMetadata.BlockSpec] = mergedBlockSpec.map { [$0] } ?? []
+        for block in metadata.blocks {
+            guard let addr = parseHexAddress(block.address), referencedAddresses.contains(addr) else { continue }
+            if mergedBlockSpec != nil, addr == hookTarget { continue }
+            cleanBlocks.append(block)
+        }
+        metadata.blocks = cleanBlocks
 
         traceData = rebuildTraceData(entries: cleanEntries, metadata: metadata)
 
