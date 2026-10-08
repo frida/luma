@@ -17,7 +17,8 @@ struct VirtualMachineScreen: View {
     var body: some View {
         GeometryReader { geometry in
             let frame = source.frame
-            let placement = placement(of: frame, in: geometry.size)
+            let fullPlacement = placement(of: frame, in: geometry.size)
+            let placement = fullPlacement.isEmpty ? fullPlacement : fullPlacement.insetBy(dx: Self.borderWidth, dy: Self.borderWidth)
 
             ZStack {
                 Color.black
@@ -31,7 +32,7 @@ struct VirtualMachineScreen: View {
                 }
             }
             .clipShape(Self.border)
-            .overlay(Self.border.strokeBorder(isFocused ? Color.accentColor : .clear, lineWidth: 2))
+            .overlay(Self.border.strokeBorder(isFocused ? Color.accentColor : .clear, lineWidth: Self.borderWidth))
             .overlay(pointer(frame: frame, placement: placement))
             .overlay(alignment: .bottom) { hintLabel }
             .animation(.easeInOut(duration: 0.2), value: hint)
@@ -54,6 +55,7 @@ struct VirtualMachineScreen: View {
     }
 
     private static let border = RoundedRectangle(cornerRadius: 6)
+    private static let borderWidth: CGFloat = 2
 
     @ViewBuilder
     private var hintLabel: some View {
