@@ -17,10 +17,10 @@ struct PatternsListView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
             if projectSources.isEmpty && packageSources.isEmpty {
                 emptyState
             } else {
+                toolbar
                 list
             }
         }
@@ -51,16 +51,10 @@ struct PatternsListView: View {
         }
     }
 
-    private var header: some View {
-        HStack {
-            Text("Patterns")
-                .font(.title2.bold())
+    private var toolbar: some View {
+        HStack(spacing: 8) {
             Spacer()
-            Button {
-                isImporting = true
-            } label: {
-                Label("Import…", systemImage: "square.and.arrow.down")
-            }
+            Button("Import…") { isImporting = true }
             newMenu
                 .buttonStyle(.borderedProminent)
         }
@@ -69,17 +63,33 @@ struct PatternsListView: View {
     }
 
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label("No patterns yet", systemImage: "square.stack.3d.up")
-        } description: {
-            Text(
-                "Pattern files describe structs to decode memory against. Libraries hold definitions shared between them. Packages from npm bring ready-made ones for PE, Mach-O and ELF."
+        VStack(spacing: 24) {
+            EmptyStateHeading(
+                title: "Patterns",
+                systemImage: "square.stack.3d.up",
+                subtitle: "Describe structs to decode memory against, or add ready-made ones for PE, Mach-O and ELF."
             )
-        } actions: {
-            Button("Add Pattern Package…") { isShowingPackageSearch = true }
+
+            HStack(spacing: 8) {
+                Button {
+                    startCreating(.pattern)
+                } label: {
+                    Label("New Pattern", systemImage: "plus")
+                }
                 .buttonStyle(.borderedProminent)
-            newMenu
+
+                Button("New Library") { startCreating(.library) }
+                    .buttonStyle(.bordered)
+
+                Button("Add Package…") { isShowingPackageSearch = true }
+                    .buttonStyle(.bordered)
+
+                Button("Import…") { isImporting = true }
+                    .buttonStyle(.bordered)
+            }
+            .controlSize(.large)
         }
+        .padding(.horizontal, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -115,7 +125,7 @@ struct PatternsListView: View {
             Button("New Pattern") { startCreating(.pattern) }
             Button("New Library") { startCreating(.library) }
         } label: {
-            Label("New", systemImage: "plus.circle.fill")
+            Text("New")
         }
         .fixedSize()
     }
