@@ -152,21 +152,7 @@ final class NotebookPane {
                 cell.apply(entry, changed: changed)
                 break
             }
-            if let existing = entryRows[entry.id] {
-                let parent = entriesBox
-                // Anchor on the widget *before* the one we're replacing.
-                // `gtk_box_insert_child_after(box, row, nil)` inserts at
-                // the head, so using `next.prevSibling` after removal
-                // collapses to nil when `existing` was the last row and
-                // lands the fresh row at the top. Grabbing the previous
-                // sibling up-front gives us a stable anchor: nil means
-                // "was first, stay first"; otherwise insert right after.
-                let prev = existing.prevSibling
-                parent.remove(child: existing)
-                let row = makeRow(for: entry)
-                entryRows[entry.id] = row
-                gtk_box_insert_child_after(parent.box_ptr, row.widget_ptr, prev?.widget_ptr)
-            }
+            replaceRow(for: entry)
         case .removed(let id):
             if let row = entryRows.removeValue(forKey: id) {
                 entriesBox.remove(child: row)
@@ -178,7 +164,7 @@ final class NotebookPane {
             autoEditedEntries.remove(id)
             draftEntries.remove(id)
         case .reordered:
-            rebuildEntries()
+            reorderRows()
         }
         updateVisibility()
     }
@@ -236,6 +222,25 @@ final class NotebookPane {
         }
     }
 
+    private func replaceRow(for entry: LumaCore.NotebookEntry) {
+        guard let existing = entryRows[entry.id] else { return }
+        let rowBefore = existing.prevSibling
+        entriesBox.remove(child: existing)
+        let row = makeRow(for: entry)
+        entryRows[entry.id] = row
+        gtk_box_insert_child_after(entriesBox.box_ptr, row.widget_ptr, rowBefore?.widget_ptr)
+    }
+
+    private func reorderRows() {
+        guard let engine else { return }
+        var previous: Widget?
+        for entry in sortedEntries(from: engine) {
+            guard let row = entryRows[entry.id] else { continue }
+            gtk_box_reorder_child_after(entriesBox.box_ptr, row.widget_ptr, previous?.widget_ptr)
+            previous = row
+        }
+    }
+
     private func updateVisibility() {
         let hasEntries = !entryRows.isEmpty
         let anyEditing = !editingEntries.isEmpty
@@ -273,7 +278,8 @@ final class NotebookPane {
     private func beginEditing(_ entry: LumaCore.NotebookEntry) {
         editingEntries.insert(entry.id)
         Task { @MainActor [weak self] in
-            self?.rebuildEntries()
+            self?.replaceRow(for: entry)
+            self?.updateVisibility()
         }
     }
 
@@ -641,7 +647,8 @@ final class NotebookPane {
                 }
                 Task { @MainActor [weak self] in
                     guard let self else { return }
-                    self.rebuildEntries()
+                    self.replaceRow(for: entry)
+                    self.updateVisibility()
                     _ = self.newNoteButton.grabFocus()
                 }
             }
