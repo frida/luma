@@ -49,9 +49,15 @@ struct FilesView: View {
             }
         }
         #if !os(macOS)
-            .fileExporter(item: pulled, contentTypes: [.data], defaultFilename: pulled?.name) { _ in
-                pulled = nil
-            }
+            .fileExporter(
+                isPresented: Binding(
+                    get: { pulled != nil },
+                    set: { if !$0 { pulled = nil } }
+                ),
+                item: pulled,
+                contentTypes: [.data],
+                defaultFilename: pulled?.name
+            ) { _ in }
         #endif
     }
 
