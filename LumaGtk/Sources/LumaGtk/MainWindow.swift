@@ -2656,6 +2656,9 @@ final class MainWindow: InstrumentUIHost {
             }
             currentInstrumentDetail?.applySessionState()
             currentInsightDetail?.applySessionState()
+            if currentFilesPane?.sessionID == session.id {
+                currentFilesPane?.applySessionState()
+            }
             sessionDetailViews[session.id]?.applySessionState()
             scheduleGroupChildrenReconcile(sessionID: session.id, group: .modules)
             scheduleGroupChildrenReconcile(sessionID: session.id, group: .threads)

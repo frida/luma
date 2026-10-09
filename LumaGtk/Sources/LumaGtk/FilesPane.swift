@@ -21,6 +21,7 @@ final class FilesPane {
     private let list: ListBox
 
     private var roots: RemoteFilesystemRoots?
+    private var loadedNodeID: UUID?
     private var path = ""
     private var entries: [RemoteFileEntry] = []
 
@@ -128,6 +129,12 @@ final class FilesPane {
             }
         }
 
+        applySessionState()
+    }
+
+    func applySessionState() {
+        guard engine?.session(id: sessionID)?.phase == .attached, let node, node.id != loadedNodeID else { return }
+        loadedNodeID = node.id
         Task { @MainActor [weak self] in
             await self?.start()
         }
