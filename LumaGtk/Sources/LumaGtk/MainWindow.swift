@@ -79,7 +79,7 @@ final class MainWindow: InstrumentUIHost {
     private var sessionNameLabels: [UUID: Label] = [:]
     private var sessionDeviceLabels: [UUID: Label] = [:]
     private var sessionArmIcons: [UUID: Gtk.Image] = [:]
-    private var sessionDetachedHosts: [UUID: Box] = [:]
+    private var sessionIndicators: [UUID: SessionRowIndicators] = [:]
     private var sessionChevronImages: [UUID: Gtk.Image] = [:]
     private var instrumentChevronImages: [UUID: Gtk.Image] = [:]
     private var instrumentChildActions: [String: @MainActor () -> Void] = [:]
@@ -2650,7 +2650,7 @@ final class MainWindow: InstrumentUIHost {
             sessionNameLabels.removeValue(forKey: id)
             sessionDeviceLabels.removeValue(forKey: id)
             sessionArmIcons.removeValue(forKey: id)
-            sessionDetachedHosts.removeValue(forKey: id)
+            sessionIndicators.removeValue(forKey: id)
             sessionChevronImages.removeValue(forKey: id)
             for group in [SessionSidebarGroup.modules, .threads] {
                 groupChevronImages.removeValue(forKey: groupKey(sessionID: id, group: group))
@@ -2783,14 +2783,17 @@ final class MainWindow: InstrumentUIHost {
         titles.append(child: deviceLabel)
         headerBox.append(child: titles)
 
-        let detachedHost = Box(orientation: .horizontal, spacing: 0)
-        detachedHost.valign = .center
-        headerBox.append(child: detachedHost)
+        let indicators = SessionRowIndicators()
+        let sessionID = session.id
+        indicators.onReestablish = { [weak self] in
+            self?.reestablishSession(id: sessionID)
+        }
+        headerBox.append(child: indicators.widget)
 
         sessionNameLabels[session.id] = nameLabel
         sessionDeviceLabels[session.id] = deviceLabel
         sessionArmIcons[session.id] = armIcon
-        sessionDetachedHosts[session.id] = detachedHost
+        sessionIndicators[session.id] = indicators
         refreshDetachedIndicator(for: session)
 
         headerRow.set(child: headerBox)
@@ -3607,22 +3610,6 @@ final class MainWindow: InstrumentUIHost {
         )
     }
 
-    private func makeHostAvatar(
-        host: LumaCore.CollaborationSession.UserInfo,
-        size: Int
-    ) -> Widget {
-        let displayName = host.name.isEmpty ? "@\(host.id)" : host.name
-        let avatar = Adw.Avatar(size: size, text: displayName, showInitials: true)
-        avatar.tooltipText = displayName
-        if let url = host.avatarURL.flatMap({ URL(string: "\($0.absoluteString)&s=\(size * 2)") }) {
-            Task { @MainActor [avatar] in
-                guard let texture = await AvatarCache.shared.texture(for: url) else { return }
-                avatar.set(customImage: texture)
-            }
-        }
-        return avatar
-    }
-
     private func attachSessionContextMenu(
         row: ListBoxRow,
         anchor: Widget,
@@ -3689,50 +3676,27 @@ final class MainWindow: InstrumentUIHost {
     }
 
     private func refreshDetachedIndicator(for session: LumaCore.ProcessSession) {
-        guard let host = sessionDetachedHosts[session.id] else { return }
-        if let rootPtr = host.root?.ptr {
-            Gtk.WindowRef(raw: rootPtr).focus = nil
-        }
-        while let child = host.firstChild {
-            host.remove(child: child)
-        }
-
-        if let badge = makeHostBadge(for: session) {
-            host.append(child: badge)
-        }
-
-        guard shouldShowDetachedIndicator(session) else { return }
-        if session.phase == .attaching {
-            let spinner = makeSpinner()
-            spinner.tooltipText = "\(session.kind.reestablishLabel)ing\u{2026}"
-            host.append(child: spinner)
-            return
-        }
-        let icon = Gtk.Image(iconName: "view-refresh-symbolic")
-        icon.pixelSize = 14
-        icon.add(cssClass: detachedTintCssClass(for: session))
-        let button = Button()
-        button.set(child: icon)
-        button.add(cssClass: "flat")
-        button.add(cssClass: "luma-sidebar-detached")
-        button.valign = .center
-        button.tooltipText = "\(session.kind.reestablishLabel)\u{2026}"
-        let sessionID = session.id
-        button.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.reestablishSession(id: sessionID) }
-        }
-        host.append(child: button)
+        guard let indicators = sessionIndicators[session.id] else { return }
+        indicators.show(remoteHost: remoteHost(of: session), deviceName: session.deviceName)
+        indicators.show(detachment(of: session))
     }
 
-    private func makeHostBadge(for session: LumaCore.ProcessSession) -> Widget? {
+    private func remoteHost(of session: LumaCore.ProcessSession) -> LumaCore.CollaborationSession.UserInfo? {
         guard let engine,
               let host = session.host,
               engine.node(forSessionID: session.id) == nil,
               host.id != engine.localUserID
         else { return nil }
-        let avatar = makeHostAvatar(host: host, size: 18)
-        avatar.tooltipText = "Hosted by @\(host.id) on \(session.deviceName)"
-        return avatar
+        return host
+    }
+
+    private func detachment(of session: LumaCore.ProcessSession) -> SessionRowIndicators.Detachment? {
+        guard shouldShowDetachedIndicator(session) else { return nil }
+        let label = session.kind.reestablishLabel
+        if session.phase == .attaching {
+            return .reestablishing(label: label)
+        }
+        return .detached(label: label, tint: detachedTint(for: session))
     }
 
     private func shouldShowDetachedIndicator(_ session: LumaCore.ProcessSession) -> Bool {
@@ -3743,12 +3707,12 @@ final class MainWindow: InstrumentUIHost {
         return false
     }
 
-    private func detachedTintCssClass(for session: LumaCore.ProcessSession) -> String {
+    private func detachedTint(for session: LumaCore.ProcessSession) -> SessionRowIndicators.Tint {
         switch session.detachReason {
         case .applicationRequested:
-            return "warning"
+            return .warning
         default:
-            return "error"
+            return .error
         }
     }
 
