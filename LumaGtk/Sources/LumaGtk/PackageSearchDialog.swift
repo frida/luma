@@ -20,6 +20,7 @@ final class PackageSearchDialog {
     private let errorLabel: Label
 
     private let specifierEntry: Entry
+    private let aliasRow: Box
     private let aliasEntry: Entry
     private let installButton: Button
     private let installSpinner: Spinner
@@ -103,7 +104,7 @@ final class PackageSearchDialog {
         specifierRow.append(child: specifierEntry)
         formBox.append(child: specifierRow)
 
-        let aliasRow = Box(orientation: .horizontal, spacing: 8)
+        aliasRow = Box(orientation: .horizontal, spacing: 8)
         let aliasNameLabel = Label(str: "Global alias:")
         aliasNameLabel.halign = .start
         aliasNameLabel.setSizeRequest(width: 140, height: -1)
@@ -112,6 +113,7 @@ final class PackageSearchDialog {
         aliasEntry.placeholderText = "optional, e.g. ObjC"
         aliasEntry.hexpand = true
         aliasRow.append(child: aliasEntry)
+        aliasRow.visible = category != .pattern
         formBox.append(child: aliasRow)
 
         let installRow = Box(orientation: .horizontal, spacing: 8)
@@ -132,12 +134,15 @@ final class PackageSearchDialog {
         searchEntry.onActivate { [weak self] _ in
             MainActor.assumeIsolated { self?.scheduleSearch(debounce: false) }
         }
-        let categoryDropdown = makeCategoryDropdown(initial: category) { [weak self] category in
-            guard let self else { return }
-            self.category = category
-            self.scheduleSearch(debounce: false)
+        if category == .any {
+            let categoryDropdown = makeCategoryDropdown(initial: category) { [weak self] category in
+                guard let self else { return }
+                self.category = category
+                self.aliasRow.visible = category != .pattern
+                self.scheduleSearch(debounce: false)
+            }
+            searchRow.insertChildAfter(child: categoryDropdown, sibling: searchEntry)
         }
-        searchRow.insertChildAfter(child: categoryDropdown, sibling: searchEntry)
         searchEntry.onChanged { [weak self] _ in
             MainActor.assumeIsolated { self?.scheduleSearch(debounce: true) }
         }
@@ -362,7 +367,7 @@ final class PackageSearchDialog {
         dialog.scheduleSearch(debounce: false)
 
         let adwDialog = Adw.Dialog()
-        adwDialog.set(title: "Install Package")
+        adwDialog.set(title: category == .pattern ? "Add Pattern Package" : "Install Package")
         adwDialog.set(contentWidth: 640)
         adwDialog.set(contentHeight: 560)
 
