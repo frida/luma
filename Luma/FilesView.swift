@@ -21,6 +21,11 @@ struct FilesView: View {
         engine.node(forSessionID: sessionID)
     }
 
+    private var attachedNodeID: UUID? {
+        guard engine.session(id: sessionID)?.phase == .attached else { return nil }
+        return node?.id
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
@@ -40,7 +45,7 @@ struct FilesView: View {
         .padding(.horizontal, 12)
         .padding(.top, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .task(id: node?.id) {
+        .task(id: attachedNodeID) {
             await start()
         }
         .fileImporter(isPresented: $isImportingPush, allowedContentTypes: [.item]) { result in
