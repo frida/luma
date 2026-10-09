@@ -113,6 +113,9 @@ final class PatternsListPane {
         let entry = Entry()
         entry.hexpand = true
         entry.activatesDefault = true
+        entry.onMap { mapped in
+            _ = mapped.grabFocus()
+        }
         let dialog = Adw.AlertDialog(heading: "New \(kind.title)", body: nil)
         dialog.addResponse(id: "cancel", label: "_Cancel")
         dialog.addResponse(id: "create", label: "C_reate")
