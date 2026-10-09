@@ -44,6 +44,7 @@ final class PatternSidebar {
 
     private enum Row: Equatable {
         case header
+        case addPackage
         case source(String)
         case type(sourceID: String, name: String)
         case browseAll(sourceID: String)
@@ -97,12 +98,20 @@ final class PatternSidebar {
         switch rows[index] {
         case .header:
             onSelect(.library)
+        case .addPackage:
+            presentPackageSearch()
         case .source(let id):
             onSelect(.source(id))
         case .type(let sourceID, let name):
             onSelect(.type(sourceID: sourceID, name: name))
         case .browseAll(let sourceID):
             presentTypeBrowser(sourceID: sourceID, anchor: anchor)
+        }
+    }
+
+    private func presentPackageSearch() {
+        PackageSearchDialog.present(from: window, engine: engine, category: .pattern) { [weak self] installed in
+            self?.onSelect(.source("package:" + installed.name))
         }
     }
 
@@ -134,7 +143,11 @@ final class PatternSidebar {
     }
 
     private func visibleRows() -> [Row] {
-        [.header] + (isExpanded ? engine.patterns.sources.flatMap(rows(of:)) : [])
+        let sources = engine.patterns.sources
+        if sources.isEmpty {
+            return [.header, .addPackage]
+        }
+        return [.header] + (isExpanded ? sources.flatMap(rows(of:)) : [])
     }
 
     private func rows(of source: PatternSource) -> [Row] {
@@ -176,6 +189,8 @@ final class PatternSidebar {
         switch row {
         case .header:
             return makeHeaderRow(sourceCount: sourceCount)
+        case .addPackage:
+            return makeAddPackageRow()
         case .source(let id):
             return makeSourceRow(engine.patterns.source(withID: id)!)
         case .type(let sourceID, let name):
@@ -232,6 +247,34 @@ final class PatternSidebar {
         }
 
         let row = ListBoxRow()
+        row.set(child: box)
+        return row
+    }
+
+    private func makeAddPackageRow() -> ListBoxRow {
+        let box = Box(orientation: .horizontal, spacing: 0)
+        box.halign = .start
+        box.marginStart = MainWindow.sessionChildMarginStart
+        box.marginEnd = 12
+        box.marginTop = 2
+        box.marginBottom = 2
+        box.tooltipText = "Install a pattern package from npm."
+
+        let icon = Gtk.Image(iconName: "list-add-symbolic")
+        icon.pixelSize = 16
+        icon.add(cssClass: "dim-label")
+        icon.setSizeRequest(width: 16, height: -1)
+        icon.marginEnd = 6
+        box.append(child: icon)
+
+        let label = Label(str: "Add Package…")
+        label.halign = .start
+        label.ellipsize = .end
+        label.add(cssClass: "dim-label")
+        box.append(child: label)
+
+        let row = ListBoxRow()
+        row.selectable = false
         row.set(child: box)
         return row
     }
