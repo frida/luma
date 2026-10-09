@@ -263,7 +263,7 @@ final class PatternSidebar {
 
         let row = ListBoxRow()
         row.set(child: box)
-        attachContextMenu(to: row, anchor: box, source: source)
+        attachContextMenu(to: row, source: source)
         return row
     }
 
@@ -294,12 +294,12 @@ final class PatternSidebar {
         return button
     }
 
-    private func attachContextMenu(to row: ListBoxRow, anchor: Box, source: PatternSource) {
+    private func attachContextMenu(to row: ListBoxRow, source: PatternSource) {
         let click = GestureClick()
         click.set(button: 3)
-        click.onPressed { [weak self, weak anchor] _, _, x, y in
+        click.onPressed { [weak self] gesture, _, x, y in
             MainActor.assumeIsolated {
-                guard let self, let anchor else { return }
+                guard let self, let anchor = gesture.widget else { return }
                 ContextMenu.present(self.contextMenuItems(for: source), at: anchor, x: x, y: y)
             }
         }
