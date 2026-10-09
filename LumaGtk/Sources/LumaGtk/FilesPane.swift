@@ -7,6 +7,7 @@ import LumaCore
 @MainActor
 final class FilesPane {
     let widget: Box
+    let toolbar: Box
     let sessionID: UUID
 
     private weak var engine: Engine?
@@ -29,36 +30,35 @@ final class FilesPane {
         self.window = window
         self.onError = onError
 
-        widget = Box(orientation: .vertical, spacing: 6)
-        widget.marginStart = 12
-        widget.marginEnd = 12
-        widget.marginTop = 12
-        widget.marginBottom = 12
+        widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
         widget.vexpand = true
 
-        let header = Box(orientation: .horizontal, spacing: 6)
+        toolbar = Box(orientation: .horizontal, spacing: 6)
+        toolbar.add(cssClass: "toolbar")
+        toolbar.marginStart = 6
+        toolbar.marginEnd = 6
 
         let goButton = Button(label: "Go")
-        header.append(child: goButton)
+        toolbar.append(child: goButton)
 
         upButton = Button()
         upButton.set(iconName: "go-up-symbolic")
         upButton.tooltipText = "Parent directory"
-        header.append(child: upButton)
+        toolbar.append(child: upButton)
 
         pathEntry = Entry()
         pathEntry.hexpand = true
         pathEntry.add(cssClass: "monospace")
-        header.append(child: pathEntry)
+        toolbar.append(child: pathEntry)
 
         let refreshButton = Button()
         refreshButton.set(iconName: "view-refresh-symbolic")
         refreshButton.tooltipText = "Refresh"
-        header.append(child: refreshButton)
+        toolbar.append(child: refreshButton)
 
         pushButton = Button(label: "Push File Here…")
-        header.append(child: pushButton)
+        toolbar.append(child: pushButton)
 
         problemLabel = Label(str: "")
         problemLabel.halign = .start
@@ -83,10 +83,16 @@ final class FilesPane {
         transferLabel.add(cssClass: "caption")
         transferLabel.visible = false
 
-        widget.append(child: header)
-        widget.append(child: problemLabel)
-        widget.append(child: scroller)
-        widget.append(child: transferLabel)
+        let content = Box(orientation: .vertical, spacing: 6)
+        content.marginStart = 12
+        content.marginEnd = 12
+        content.marginBottom = 12
+        content.vexpand = true
+        content.append(child: problemLabel)
+        content.append(child: scroller)
+        content.append(child: transferLabel)
+
+        widget.append(child: content)
 
         goButton.onClicked { [weak self] button in
             MainActor.assumeIsolated {

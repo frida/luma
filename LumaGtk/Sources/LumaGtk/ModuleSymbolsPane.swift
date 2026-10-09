@@ -8,6 +8,7 @@ import LumaCore
 @MainActor
 final class ModuleSymbolsPane {
     let widget: Box
+    let toolbar: Box
 
     private weak var engine: Engine?
     private let sessionID: UUID
@@ -148,12 +149,16 @@ final class ModuleSymbolsPane {
         symbolScroll.set(child: symbolList)
         listContainer.append(child: symbolScroll)
 
+        toolbar = Box(orientation: .horizontal, spacing: 6)
+        toolbar.add(cssClass: "toolbar")
+        toolbar.marginStart = 6
+        toolbar.marginEnd = 6
+        toolbar.append(child: toggleBar)
+
         let contentBox = Box(orientation: .vertical, spacing: 8)
         contentBox.hexpand = true
         contentBox.vexpand = true
         contentBox.marginStart = 12
-        contentBox.marginTop = 8
-        contentBox.append(child: toggleBar)
         contentBox.append(child: statusLabel)
         contentBox.append(child: listContainer)
 

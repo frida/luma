@@ -52,6 +52,7 @@ final class MainWindow: InstrumentUIHost {
     private var currentMissionDetailPane: MissionDetailPane?
     private let detailContainer: Box
     private let detailTopBar = Box(orientation: .vertical, spacing: 0)
+    private var detailToolbar: Box?
     private lazy var sessionBanner = SessionDetachedBanner(
         actions: SessionDetachedBanner.Actions(
             reattach: { [weak self] in self?.reestablishSession(id: $0.id) },
@@ -2123,6 +2124,7 @@ final class MainWindow: InstrumentUIHost {
             widget = patternEditor(sourceID: id, focusedType: name)
         }
         replaceDetail(with: wrapWithCollabHeader(widget))
+        show(detailToolbar: paneToolbar())
         refreshSessionBanner()
         addInstrumentButton.sensitive = currentSessionID() != nil
         if case .insight = selection {
@@ -2139,6 +2141,29 @@ final class MainWindow: InstrumentUIHost {
         widget.vexpand = true
         column.append(child: widget)
         return column
+    }
+
+    private func paneToolbar() -> Box? {
+        switch selection {
+        case .files:
+            return currentFilesPane?.toolbar
+        case .module:
+            return currentModulePane?.toolbar
+        case .patterns(.library):
+            return currentPatternsListPane?.toolbar
+        default:
+            return nil
+        }
+    }
+
+    private func show(detailToolbar toolbar: Box?) {
+        if let detailToolbar {
+            detailTopBar.remove(child: detailToolbar)
+        }
+        if let toolbar {
+            detailTopBar.append(child: toolbar)
+        }
+        detailToolbar = toolbar
     }
 
     private func refreshSessionBanner() {

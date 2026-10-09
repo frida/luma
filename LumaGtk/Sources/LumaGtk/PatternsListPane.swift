@@ -8,12 +8,12 @@ import Observation
 @MainActor
 final class PatternsListPane {
     let widget: Box
+    let toolbar: Box
 
     private let engine: Engine
     private let window: Gtk.Window
     private let onSelect: (String) -> Void
     private let onError: (String) -> Void
-    private let header: Box
     private let body: Box
 
     init(engine: Engine, window: Gtk.Window, onSelect: @escaping (String) -> Void, onError: @escaping (String) -> Void) {
@@ -22,31 +22,32 @@ final class PatternsListPane {
         self.onSelect = onSelect
         self.onError = onError
 
-        widget = Box(orientation: .vertical, spacing: 12)
+        widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
         widget.vexpand = true
-        widget.marginStart = 18
-        widget.marginEnd = 18
-        widget.marginTop = 18
-        widget.marginBottom = 18
 
-        header = Box(orientation: .horizontal, spacing: 8)
-        header.halign = .end
+        toolbar = Box(orientation: .horizontal, spacing: 8)
+        toolbar.add(cssClass: "toolbar")
+        toolbar.halign = .end
+        toolbar.marginStart = 12
+        toolbar.marginEnd = 12
 
         body = Box(orientation: .vertical, spacing: 0)
         body.hexpand = true
         body.vexpand = true
+        body.marginStart = 18
+        body.marginEnd = 18
+        body.marginBottom = 18
 
-        populateHeader()
-        widget.append(child: header)
+        populateToolbar()
         widget.append(child: body)
         render()
         observeSources()
     }
 
-    private func populateHeader() {
+    private func populateToolbar() {
         for button in makeActionButtons() {
-            header.append(child: button)
+            toolbar.append(child: button)
         }
     }
 
@@ -145,7 +146,7 @@ final class PatternsListPane {
             body.remove(child: child)
         }
         let sources = engine.patterns.sources
-        header.visible = !sources.isEmpty
+        toolbar.visible = !sources.isEmpty
         body.append(child: sources.isEmpty ? makeEmptyState() : makeList(sources))
     }
 
