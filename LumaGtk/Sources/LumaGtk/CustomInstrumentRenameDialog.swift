@@ -25,6 +25,9 @@ final class CustomInstrumentRenameDialog {
         nameEntry = Entry()
         nameEntry.text = def.name
         nameEntry.hexpand = true
+        nameEntry.onMap { mapped in
+            _ = mapped.grabFocus()
+        }
 
         bitmapPreview = Box(orientation: .horizontal, spacing: 0)
 
@@ -69,7 +72,6 @@ final class CustomInstrumentRenameDialog {
     func present() {
         dialog.own(self)
         dialog.present(parent: parentWindow)
-        Task { @MainActor in _ = nameEntry.grabFocus() }
     }
 
     private func layoutContent() -> Box {

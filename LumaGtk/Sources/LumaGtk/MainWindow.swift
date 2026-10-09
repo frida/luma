@@ -3902,6 +3902,9 @@ final class MainWindow: InstrumentUIHost {
         entry.text = engine.displayTitle(for: insight)
         entry.hexpand = true
         entry.activatesDefault = true
+        entry.onMap { mapped in
+            _ = mapped.grabFocus()
+        }
         let dialog = Adw.AlertDialog(heading: "Rename Insight", body: insight.anchor.displayString)
         dialog.addResponse(id: "cancel", label: "_Cancel")
         dialog.addResponse(id: "rename", label: "_Rename")

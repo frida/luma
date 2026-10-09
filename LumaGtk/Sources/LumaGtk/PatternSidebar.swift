@@ -374,6 +374,9 @@ final class PatternSidebar {
         entry.text = source.name
         entry.hexpand = true
         entry.activatesDefault = true
+        entry.onMap { mapped in
+            _ = mapped.grabFocus()
+        }
         let dialog = Adw.AlertDialog(heading: "Rename \(source.kind.title)", body: nil)
         dialog.addResponse(id: "cancel", label: "_Cancel")
         dialog.addResponse(id: "rename", label: "_Rename")
