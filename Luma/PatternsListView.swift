@@ -119,7 +119,7 @@ struct PatternsListView: View {
             Button("New Pattern") { startCreating(.pattern) }
             Button("New Library") { startCreating(.library) }
         } label: {
-            Label("New", systemImage: "plus")
+            Text("New")
         }
         .fixedSize()
     }
