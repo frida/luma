@@ -2908,9 +2908,6 @@ final class MainWindow: InstrumentUIHost {
     }
 
     private func removeSessionRows(_ sessionID: UUID) {
-        if let rootPtr = sessionsList.root?.ptr {
-            Gtk.WindowRef(raw: rootPtr).focus = nil
-        }
         while let idx = sessionsRowKinds.firstIndex(where: { $0.sessionID == sessionID }) {
             if let row = sessionsList.getRowAt(index: idx) {
                 sessionsList.remove(child: row)

@@ -260,19 +260,10 @@ final class InsightDetailView {
         }
     }
 
-    private func clearFocusIfInside<W: WidgetProtocol>(_ subtree: W) {
-        guard let root = subtree.root else { return }
-        guard let focused = root.focus else { return }
-        if focused.widget_ptr == subtree.widget_ptr || focused.is_(ancestor: subtree) {
-            root.focus = nil
-        }
-    }
-
     // MARK: - Content swap
 
     private func setContent(_ child: Widget) {
         while let cur = contentHost.firstChild {
-            clearFocusIfInside(cur)
             contentHost.remove(child: cur)
         }
         contentHost.append(child: child)
@@ -989,7 +980,6 @@ final class InsightDetailView {
 
     private func clearChildren(of box: Box) {
         while let child = box.firstChild {
-            clearFocusIfInside(child)
             box.remove(child: child)
         }
     }
