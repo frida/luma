@@ -176,8 +176,8 @@
             "sources": [
                 {
                     "type": "archive",
-                    "url": "https://github.com/radareorg/radare2/archive/b015691bbd1e5a78f502630c3adc4de7b3246999.tar.gz",
-                    "sha256": "555e26e59dec1b73c08e18d39634b20d4f1d697b12522dec9b677caa5cce4545",
+                    "url": "https://github.com/radareorg/radare2/archive/0b48eab0fb5964ac8ed4dca24f85a6eb48d15459.tar.gz",
+                    "sha256": "fde0e1dd083f9f66f8b3ad107a3d6f7624bd1ea6b0e17b555984b89ab098fbf2",
                     "strip-components": 1
                 }
             ]
