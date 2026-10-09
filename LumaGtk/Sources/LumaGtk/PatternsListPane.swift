@@ -45,8 +45,13 @@ final class PatternsListPane {
     }
 
     private func populateHeader() {
-        header.append(child: makeImportButton())
-        header.append(child: makeNewButton())
+        for button in makeActionButtons() {
+            header.append(child: button)
+        }
+    }
+
+    private func makeActionButtons() -> [Button] {
+        [makeImportButton(), makeAddPackageButton(), makeNewButton()]
     }
 
     private func makeImportButton() -> Button {
@@ -74,12 +79,25 @@ final class PatternsListPane {
         }
     }
 
+    private func makeAddPackageButton() -> Button {
+        let button = Button(label: "Add Package…")
+        button.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                PackageSearchDialog.present(from: self.window, engine: self.engine, category: .pattern) { [weak self] installed in
+                    self?.onSelect("package:" + installed.name)
+                }
+            }
+        }
+        return button
+    }
+
     private func makeNewButton() -> Button {
         let button = Button(label: "New")
         button.add(cssClass: "suggested-action")
-        button.onClicked { [weak self, weak button] _ in
+        button.onClicked { [weak self] button in
             MainActor.assumeIsolated {
-                guard let self, let button else { return }
+                guard let self else { return }
                 ContextMenu.present([
                     [
                         .init("New Pattern") { [weak self] in self?.presentCreate(.pattern) },
@@ -136,25 +154,7 @@ final class PatternsListPane {
         page.vexpand = true
         let actions = Box(orientation: .horizontal, spacing: 12)
         actions.halign = .center
-        let newPattern = Button(label: "New Pattern")
-        newPattern.add(cssClass: "suggested-action")
-        newPattern.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.presentCreate(.pattern) }
-        }
-        let newLibrary = Button(label: "New Library")
-        newLibrary.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.presentCreate(.library) }
-        }
-        let addPackage = Button(label: "Add Package…")
-        addPackage.onClicked { [weak self, weak addPackage] _ in
-            MainActor.assumeIsolated {
-                guard let self, let addPackage else { return }
-                PackageSearchDialog.present(from: addPackage, engine: self.engine, category: .pattern) { [weak self] installed in
-                    self?.onSelect("package:" + installed.name)
-                }
-            }
-        }
-        for button in [newPattern, newLibrary, addPackage, makeImportButton()] {
+        for button in makeActionButtons() {
             button.add(cssClass: "pill")
             actions.append(child: button)
         }
