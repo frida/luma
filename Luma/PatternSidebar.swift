@@ -264,9 +264,9 @@ private struct SidebarAddPatternPackageRow: View {
                 Image(systemName: "plus.circle")
                     .foregroundStyle(.secondary)
                     .frame(width: sidebarChildIconWidth)
-                    .padding(.leading, sidebarChevronWidth)
+                    .padding(.leading, sidebarChildIndent)
                     .padding(.trailing, sidebarIconToLabelSpacing)
-                Text("Add Pattern Package…")
+                Text("Add Package…")
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
             }
