@@ -8,6 +8,7 @@ struct PackageSearchView: View {
     let engine: Engine
     @Binding var selection: SidebarItemID?
 
+    private let scope: PackageCategory
     @State private var category: PackageCategory
     @State private var query: String = ""
     @State private var results: [Package] = []
@@ -38,6 +39,7 @@ struct PackageSearchView: View {
     init(engine: Engine, selection: Binding<SidebarItemID?>, category: PackageCategory = .any) {
         self.engine = engine
         _selection = selection
+        scope = category
         _category = State(initialValue: category)
     }
 
@@ -49,14 +51,16 @@ struct PackageSearchView: View {
                     .disabled(isInstalling)
                     .focused($isSearchFieldFocused)
 
-                Picker("Category", selection: $category) {
-                    ForEach(PackageCategory.allCases) { category in
-                        Text(category.title).tag(category)
+                if scope == .any {
+                    Picker("Category", selection: $category) {
+                        ForEach(PackageCategory.allCases) { category in
+                            Text(category.title).tag(category)
+                        }
                     }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
 
                 if isSearching {
                     ProgressView()
