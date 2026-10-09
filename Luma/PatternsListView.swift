@@ -54,9 +54,7 @@ struct PatternsListView: View {
     private var toolbar: some View {
         HStack(spacing: 8) {
             Spacer()
-            Button("Import…") { isImporting = true }
-            newMenu
-                .buttonStyle(.borderedProminent)
+            actions
         }
         .padding(.horizontal)
         .padding(.top)
@@ -71,26 +69,22 @@ struct PatternsListView: View {
             )
 
             HStack(spacing: 8) {
-                Button {
-                    startCreating(.pattern)
-                } label: {
-                    Label("New Pattern", systemImage: "plus")
-                }
-                .buttonStyle(.borderedProminent)
-
-                Button("New Library") { startCreating(.library) }
-                    .buttonStyle(.bordered)
-
-                Button("Add Package…") { isShowingPackageSearch = true }
-                    .buttonStyle(.bordered)
-
-                Button("Import…") { isImporting = true }
-                    .buttonStyle(.bordered)
+                actions
             }
             .controlSize(.large)
         }
         .padding(.horizontal, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var actions: some View {
+        Button("Import…") { isImporting = true }
+            .buttonStyle(.bordered)
+        Button("Add Package…") { isShowingPackageSearch = true }
+            .buttonStyle(.bordered)
+        newMenu
+            .buttonStyle(.borderedProminent)
     }
 
     private var list: some View {
@@ -125,7 +119,7 @@ struct PatternsListView: View {
             Button("New Pattern") { startCreating(.pattern) }
             Button("New Library") { startCreating(.library) }
         } label: {
-            Text("New")
+            Label("New", systemImage: "plus")
         }
         .fixedSize()
     }
