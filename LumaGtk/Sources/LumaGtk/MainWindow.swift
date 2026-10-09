@@ -51,6 +51,15 @@ final class MainWindow: InstrumentUIHost {
     private var currentPatternEditor: PatternEditorPane?
     private var currentMissionDetailPane: MissionDetailPane?
     private let detailContainer: Box
+    private let detailTopBar = Box(orientation: .vertical, spacing: 0)
+    private lazy var sessionBanner = SessionDetachedBanner(
+        actions: SessionDetachedBanner.Actions(
+            reattach: { [weak self] in self?.reestablishSession(id: $0.id) },
+            disarm: { [weak self] in self?.disarm(sessionID: $0.id) },
+            arm: { [weak self] in self?.presentArmDialog(session: $0) },
+            resumeGating: { [weak self] in self?.resumeGating(sessionID: $0.id) }
+        )
+    )
     private let eventStreamPane: EventStreamPane
     private var notebookPane: NotebookPane?
     private var pharoPane: PharoPlaygroundPane?
@@ -1825,7 +1834,7 @@ final class MainWindow: InstrumentUIHost {
         return packagesSection
     }
 
-    private func buildDetailPane() -> ScrolledWindow {
+    private func buildDetailPane() -> Adw.ToolbarView {
         detailContainer.hexpand = true
         detailContainer.vexpand = true
 
@@ -1833,7 +1842,14 @@ final class MainWindow: InstrumentUIHost {
         scroll.hexpand = true
         scroll.vexpand = true
         scroll.set(child: detailContainer)
-        return scroll
+
+        detailTopBar.append(child: sessionBanner.widget)
+
+        let toolbarView = Adw.ToolbarView()
+        toolbarView.topBarStyle = .raised
+        toolbarView.addTopBar(widget: detailTopBar)
+        toolbarView.set(content: WidgetRef(scroll))
+        return toolbarView
     }
 
     private func renderDetail() {
@@ -2003,7 +2019,7 @@ final class MainWindow: InstrumentUIHost {
                     existing.applySessionState()
                     detail = existing
                 } else {
-                    detail = InsightDetailView(engine: engine, session: session, insight: insight, owner: self)
+                    detail = InsightDetailView(engine: engine, session: session, insight: insight)
                     currentInsightDetail = detail
                     currentInsightID = iid
                 }
@@ -2107,6 +2123,7 @@ final class MainWindow: InstrumentUIHost {
             widget = patternEditor(sourceID: id, focusedType: name)
         }
         replaceDetail(with: wrapWithCollabHeader(widget))
+        refreshSessionBanner()
         addInstrumentButton.sensitive = currentSessionID() != nil
         if case .insight = selection {
             currentInsightDetail?.requestFocus()
@@ -2122,6 +2139,11 @@ final class MainWindow: InstrumentUIHost {
         widget.vexpand = true
         column.append(child: widget)
         return column
+    }
+
+    private func refreshSessionBanner() {
+        let session = currentSessionID().flatMap { id in sessions.first { $0.id == id } }
+        sessionBanner.update(for: session, engine: engine)
     }
 
     private func currentSessionID() -> UUID? {
@@ -2162,9 +2184,7 @@ final class MainWindow: InstrumentUIHost {
         let instrumentID = instrument.id
         let pane = InstrumentDetailPane(
             engine: engine,
-            session: session,
             instrument: instrument,
-            owner: self,
             host: self,
             onComponentAdded: { [weak self] componentID in
                 self?.navigateToInstrumentComponent(sessionID: sessionID, instrumentID: instrumentID, componentID: componentID)
@@ -2203,17 +2223,6 @@ final class MainWindow: InstrumentUIHost {
         column.vexpand = true
 
         guard let engine else {
-            if SessionDetachedBanner.shouldShow(for: session) {
-                let banner = SessionDetachedBanner.make(
-                    for: session,
-                    gatingActive: false,
-                    onReattach: { [weak self] in self?.reestablishSession(id: session.id) },
-                    onDisarm: { },
-                    onArm: { [weak self] in self?.presentArmDialog(session: session) },
-                    onResumeGating: { }
-                )
-                column.append(child: banner)
-            }
             let subtitle = "\(session.deviceName) · pid \(session.lastKnownPID)"
             column.append(child: makePlaceholder(title: session.processName, subtitle: subtitle))
             return column
@@ -2229,12 +2238,6 @@ final class MainWindow: InstrumentUIHost {
             detail = SessionDetailView(engine: engine, session: session)
             sessionDetailViews[session.id] = detail
         }
-        detail.onReestablish = { [weak self] in
-            self?.reestablishSession(id: session.id)
-        }
-        detail.onArmRequested = { [weak self] in
-            self?.presentArmDialog(session: session)
-        }
         detail.applySessionState()
         column.append(child: detail.widget)
         return column
@@ -2245,7 +2248,7 @@ final class MainWindow: InstrumentUIHost {
         column.hexpand = true
         column.vexpand = true
 
-        let repl = REPLPane(engine: engine, sessionID: session.id, owner: self)
+        let repl = REPLPane(engine: engine, sessionID: session.id)
         currentREPLPane = repl
         currentREPLSessionID = session.id
         column.append(child: repl.widget)
@@ -2622,6 +2625,7 @@ final class MainWindow: InstrumentUIHost {
             sessionDeviceLabels[session.id]?.label = deviceSubtitle(for: session)
             sessionArmIcons[session.id]?.visible = isArmed(session)
             refreshDetachedIndicator(for: session)
+            refreshSessionBanner()
             if currentREPLSessionID == session.id {
                 currentREPLPane?.applySessionState()
             }
@@ -3782,6 +3786,13 @@ final class MainWindow: InstrumentUIHost {
     }
 
     private static var armDialogRetainer: [ObjectIdentifier: Adw.Dialog] = [:]
+
+    private func resumeGating(sessionID: UUID) {
+        guard let engine else { return }
+        Task { @MainActor in
+            await engine.resumeGating(forSessionID: sessionID)
+        }
+    }
 
     private func rehost(sessionID: UUID) {
         guard let engine else { return }

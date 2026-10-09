@@ -9,33 +9,21 @@ final class REPLPane {
 
     private weak var engine: Engine?
     private let sessionID: UUID
-    private let bannerSlot: Box
-    private var currentBanner: Widget?
-    private var lastBannerPhase: LumaCore.ProcessSession.Phase?
-    private var lastBannerError: String?
-    private var lastBannerGatingActive: Bool?
-    private var lastBannerArmed: Bool?
     private let console: ConsoleView
     private let timeFormatter: DateFormatter
-    private weak var owner: MainWindow?
 
     private var cells: [LumaCore.REPLCell] = []
     private var rowKeepers: [Any] = []
     private var mode: LumaCore.REPLLanguage = .javascript
     private var draftSaveTask: Task<Void, Never>?
 
-    init(engine: Engine, sessionID: UUID, owner: MainWindow? = nil) {
+    init(engine: Engine, sessionID: UUID) {
         self.engine = engine
         self.sessionID = sessionID
-        self.owner = owner
 
         widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
         widget.vexpand = true
-
-        bannerSlot = Box(orientation: .vertical, spacing: 0)
-        bannerSlot.hexpand = true
-        widget.append(child: bannerSlot)
 
         console = ConsoleView(
             style: ConsoleView.Style(
@@ -140,7 +128,6 @@ final class REPLPane {
         }
         console.setInputEnabled(canType, placeholder: placeholder)
 
-        updateBanner(for: session, engine: engine)
     }
 
     private func isLive(session: LumaCore.ProcessSession?, engine: Engine) -> Bool {
@@ -163,53 +150,6 @@ final class REPLPane {
         guard cell.sessionID == sessionID else { return }
         cells.append(cell)
         console.appendEntry(makeRow(for: cell))
-    }
-
-    private func updateBanner(for session: LumaCore.ProcessSession?, engine: Engine) {
-        let wantsBanner = session.map { SessionDetachedBanner.shouldShow(for: $0) } ?? false
-        let phase = session?.phase
-        let error = session?.lastError
-        let armed: Bool? = session.map {
-            if case .armed = $0.armingState { return true }
-            return false
-        }
-        let gatingActive: Bool? = session.map { engine.isGatingActive(forDeviceID: $0.deviceID) }
-        let bannerDirty = wantsBanner != (currentBanner != nil)
-            || phase != lastBannerPhase
-            || error != lastBannerError
-            || armed != lastBannerArmed
-            || gatingActive != lastBannerGatingActive
-        lastBannerPhase = phase
-        lastBannerError = error
-        lastBannerArmed = armed
-        lastBannerGatingActive = gatingActive
-
-        guard bannerDirty else { return }
-
-        if let rootPtr = widget.root?.ptr {
-            WindowRef(raw: rootPtr).focus = nil
-        }
-        if let existing = currentBanner {
-            bannerSlot.remove(child: existing)
-            currentBanner = nil
-        }
-        guard let session, wantsBanner else { return }
-
-        let banner = SessionDetachedBanner.make(
-            for: session,
-            gatingActive: engine.isGatingActive(forDeviceID: session.deviceID),
-            canReattach: engine.canTakeHosting(session),
-            onReattach: { [weak self] in self?.owner?.reestablishSession(id: session.id) },
-            onDisarm: { [weak engine] in
-                Task { @MainActor in await engine?.disarmSession(id: session.id) }
-            },
-            onArm: { [weak self] in self?.owner?.presentArmDialog(session: session) },
-            onResumeGating: { [weak engine] in
-                Task { @MainActor in await engine?.resumeGating(forSessionID: session.id) }
-            }
-        )
-        bannerSlot.append(child: banner)
-        currentBanner = banner
     }
 
     private func inactiveMessage(for session: LumaCore.ProcessSession) -> String {

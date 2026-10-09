@@ -8,17 +8,40 @@ import LumaCore
 final class SessionDetailView {
     let widget: Box
 
-    var onReestablish: (() -> Void)?
-    var onArmRequested: (() -> Void)?
-
     private weak var engine: Engine?
     private let sessionID: UUID
 
-    private let bannerSlot: Box
-    private var currentBanner: Widget?
     private let titleLabel: Label
-    private let summaryBox: Box
-    private var summaryKeyGroup: SizeGroup
+    private var summaryValues: [SummaryField: Label] = [:]
+    private var baseAddress: UInt64?
+
+    private enum SummaryField: CaseIterable {
+        case status
+        case device
+        case pid
+        case platform
+        case architecture
+        case pointerSize
+        case mainModule
+        case path
+        case base
+        case size
+
+        var title: String {
+            switch self {
+            case .status: return "Status"
+            case .device: return "Device"
+            case .pid: return "PID"
+            case .platform: return "Platform"
+            case .architecture: return "Architecture"
+            case .pointerSize: return "Pointer size"
+            case .mainModule: return "Main module"
+            case .path: return "Path"
+            case .base: return "Base"
+            case .size: return "Size"
+            }
+        }
+    }
 
     init(engine: Engine, session: LumaCore.ProcessSession) {
         self.engine = engine
@@ -27,8 +50,6 @@ final class SessionDetailView {
         widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
         widget.vexpand = true
-
-        bannerSlot = Box(orientation: .vertical, spacing: 0)
 
         let body = Box(orientation: .vertical, spacing: 12)
         body.marginStart = 16
@@ -41,9 +62,8 @@ final class SessionDetailView {
         titleLabel.halign = .start
         titleLabel.add(cssClass: "title-2")
 
-        summaryBox = Box(orientation: .vertical, spacing: 4)
+        let summaryBox = Box(orientation: .vertical, spacing: 4)
         summaryBox.halign = .start
-        summaryKeyGroup = SizeGroup(mode: .horizontal)
 
         let summaryScroll = ScrolledWindow()
         summaryScroll.hexpand = true
@@ -53,76 +73,43 @@ final class SessionDetailView {
         body.append(child: titleLabel)
         body.append(child: summaryScroll)
 
-        widget.append(child: bannerSlot)
         widget.append(child: body)
 
-        rebuildSummary(session: session)
-        applyBanner(for: session)
+        let keyGroup = SizeGroup(mode: .horizontal)
+        for field in SummaryField.allCases {
+            summaryBox.append(child: makeSummaryRow(field, keyGroup: keyGroup))
+        }
+
+        applySessionState(session)
     }
 
     func applySessionState() {
         guard let session = engine?.session(id: sessionID) else { return }
+        applySessionState(session)
+    }
+
+    private func applySessionState(_ session: LumaCore.ProcessSession) {
         titleLabel.label = session.processName
-        rebuildSummary(session: session)
-        applyBanner(for: session)
+        updateSummary(session: session)
     }
 
-    private func applyBanner(for session: LumaCore.ProcessSession) {
-        if let existing = currentBanner {
-            bannerSlot.remove(child: existing)
-            currentBanner = nil
-        }
-        guard SessionDetachedBanner.shouldShow(for: session) else { return }
-        let gatingActive = engine?.isGatingActive(forDeviceID: session.deviceID) ?? false
-        let banner = SessionDetachedBanner.make(
-            for: session,
-            gatingActive: gatingActive,
-            canReattach: engine?.canTakeHosting(session) ?? true,
-            onReattach: { [weak self] in self?.onReestablish?() },
-            onDisarm: { [weak self] in self?.disarmSession(session.id) },
-            onArm: { [weak self] in self?.onArmRequested?() },
-            onResumeGating: { [weak self] in self?.resumeGating(for: session.id) }
-        )
-        bannerSlot.append(child: banner)
-        currentBanner = banner
-    }
-
-    private func disarmSession(_ id: UUID) {
-        guard let engine else { return }
-        Task { @MainActor in await engine.disarmSession(id: id) }
-    }
-
-    private func resumeGating(for id: UUID) {
-        guard let engine else { return }
-        Task { @MainActor in await engine.resumeGating(forSessionID: id) }
-    }
-
-    private func rebuildSummary(session: LumaCore.ProcessSession) {
-        clearBox(summaryBox)
-        summaryKeyGroup = SizeGroup(mode: .horizontal)
-
+    private func updateSummary(session: LumaCore.ProcessSession) {
         let node = engine?.node(forSessionID: sessionID)
+        let platform = node?.processInfo.map { ($0.platform, $0.arch, $0.pointerSize) }
+            ?? session.processInfo.map { ($0.platform, $0.arch, $0.pointerSize) }
+        let main = node?.mainModule
+        baseAddress = main?.base
 
-        appendSummary(label: "Status", value: statusText(session: session, node: node))
-        appendSummary(label: "Device", value: node?.deviceName ?? session.deviceName)
-        appendSummary(label: "PID", value: String(node?.pid ?? session.lastKnownPID))
-
-        if let info = node?.processInfo {
-            appendSummary(label: "Platform", value: info.platform)
-            appendSummary(label: "Architecture", value: info.arch)
-            appendSummary(label: "Pointer size", value: "\(info.pointerSize) bytes")
-        } else if let info = session.processInfo {
-            appendSummary(label: "Platform", value: info.platform)
-            appendSummary(label: "Architecture", value: info.arch)
-            appendSummary(label: "Pointer size", value: "\(info.pointerSize) bytes")
-        }
-
-        if let main = node?.mainModule {
-            appendSummary(label: "Main module", value: main.name)
-            appendSummary(label: "Path", value: main.path)
-            appendBaseSummary(address: main.base)
-            appendSummary(label: "Size", value: "\(main.size) bytes")
-        }
+        show(.status, statusText(session: session, node: node))
+        show(.device, node?.deviceName ?? session.deviceName)
+        show(.pid, String(node?.pid ?? session.lastKnownPID))
+        show(.platform, platform?.0)
+        show(.architecture, platform?.1)
+        show(.pointerSize, platform.map { "\($0.2) bytes" })
+        show(.mainModule, main?.name)
+        show(.path, main?.path)
+        show(.base, main.map { String(format: "0x%llx", $0.base) })
+        show(.size, main.map { "\($0.size) bytes" })
     }
 
     private func statusText(session: LumaCore.ProcessSession, node: LumaCore.ProcessNode?) -> String {
@@ -141,53 +128,61 @@ final class SessionDetailView {
         }
     }
 
-    private func appendSummary(label: String, value: String) {
-        let row = Box(orientation: .horizontal, spacing: 12)
+    private func show(_ field: SummaryField, _ value: String?) {
+        let label = summaryValues[field]!
+        label.parent!.visible = value != nil
+        if let value, label.label != value {
+            label.label = value
+        }
+    }
 
-        let key = Label(str: label)
+    private func makeSummaryRow(_ field: SummaryField, keyGroup: SizeGroup) -> Box {
+        let row = Box(orientation: .horizontal, spacing: 12)
+        row.visible = false
+
+        let key = Label(str: field.title)
         key.halign = .start
         key.xalign = 0
         key.add(cssClass: "dim-label")
-        summaryKeyGroup.add(widget: key)
+        keyGroup.add(widget: key)
 
-        let val = Label(str: value)
-        val.halign = .start
-        val.selectable = true
-        val.wrap = true
-        val.xalign = 0
-        val.hexpand = true
-
-        row.append(child: key)
-        row.append(child: val)
-        summaryBox.append(child: row)
-    }
-
-    private func appendBaseSummary(address: UInt64) {
-        let row = Box(orientation: .horizontal, spacing: 12)
-
-        let key = Label(str: "Base")
-        key.halign = .start
-        key.xalign = 0
-        key.add(cssClass: "dim-label")
-        summaryKeyGroup.add(widget: key)
-
-        let val = Label(str: String(format: "0x%llx", address))
-        val.halign = .start
-        val.selectable = false
-        val.xalign = 0
-        val.hexpand = true
-        if let engine {
-            AddressActionMenu.attach(to: val, engine: engine, sessionID: sessionID, address: address, value: String(format: "0x%llx", address))
+        let value = Label(str: "")
+        value.halign = .start
+        value.xalign = 0
+        value.hexpand = true
+        if field == .base {
+            attachBaseAddressMenu(to: value)
+        } else {
+            value.selectable = true
+            value.wrap = true
         }
 
         row.append(child: key)
-        row.append(child: val)
-        summaryBox.append(child: row)
+        row.append(child: value)
+        summaryValues[field] = value
+        return row
     }
 
-    private func clearBox(_ box: Box) {
-        while let child = box.firstChild {
-            box.remove(child: child)
+    private func attachBaseAddressMenu(to label: Label) {
+        let gesture = GestureClick()
+        gesture.set(button: 3)
+        gesture.propagationPhase = .capture
+        gesture.onPressed { [weak self] gesture, _, x, y in
+            MainActor.assumeIsolated {
+                guard let self, let engine = self.engine else { return }
+                let address = self.baseAddress!
+                _ = gesture.set(state: .claimed)
+                AddressActionMenu.present(
+                    at: gesture.widget!,
+                    x: x,
+                    y: y,
+                    engine: engine,
+                    sessionID: self.sessionID,
+                    address: address,
+                    value: String(format: "0x%llx", address)
+                )
+            }
         }
+        label.add(controller: gesture)
     }
 }

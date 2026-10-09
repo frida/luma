@@ -27,13 +27,9 @@ final class InsightDetailView {
     let widget: Box
 
     private weak var engine: Engine?
-    private weak var owner: MainWindow?
     private let sessionID: UUID
     private var session: LumaCore.ProcessSession
     private var insight: LumaCore.AddressInsight
-
-    private let bannerSlot: Box
-    private var currentBanner: Widget?
 
     private let contentOverlay: Overlay
     private let contentHost: Box
@@ -75,9 +71,8 @@ final class InsightDetailView {
     private static let flowBaseX: Double = 12
     private static let flowLaneSpacing: Double = 6
 
-    init(engine: Engine, session: LumaCore.ProcessSession, insight: LumaCore.AddressInsight, owner: MainWindow?) {
+    init(engine: Engine, session: LumaCore.ProcessSession, insight: LumaCore.AddressInsight) {
         self.engine = engine
-        self.owner = owner
         self.sessionID = session.id
         self.session = session
         self.insight = insight
@@ -85,10 +80,6 @@ final class InsightDetailView {
         widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
         widget.vexpand = true
-
-        bannerSlot = Box(orientation: .vertical, spacing: 0)
-        bannerSlot.hexpand = true
-        widget.append(child: bannerSlot)
 
         contentOverlay = Overlay()
         contentOverlay.hexpand = true
@@ -234,36 +225,10 @@ final class InsightDetailView {
         return bubble
     }
 
-    // MARK: - Session banner
-
     func applySessionState() {
         guard let engine else { return }
         guard let current = engine.sessions.first(where: { $0.id == sessionID }) else { return }
         session = current
-
-        if let existing = currentBanner {
-            clearFocusIfInside(existing)
-            bannerSlot.remove(child: existing)
-            currentBanner = nil
-        }
-        if SessionDetachedBanner.shouldShow(for: current) {
-            let gatingActive = engine.isGatingActive(forDeviceID: current.deviceID)
-            let banner = SessionDetachedBanner.make(
-                for: current,
-                gatingActive: gatingActive,
-                canReattach: engine.canTakeHosting(current),
-                onReattach: { [weak self] in self?.owner?.reestablishSession(id: current.id) },
-                onDisarm: { [weak engine] in
-                    Task { @MainActor in await engine?.disarmSession(id: current.id) }
-                },
-                onArm: { [weak self] in self?.owner?.presentArmDialog(session: current) },
-                onResumeGating: { [weak engine] in
-                    Task { @MainActor in await engine?.resumeGating(forSessionID: current.id) }
-                }
-            )
-            bannerSlot.append(child: banner)
-            currentBanner = banner
-        }
 
         let nodeAvailable = engine.node(forSessionID: sessionID) != nil
         if nodeAvailable && !lastNodeAvailable {

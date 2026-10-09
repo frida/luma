@@ -51,7 +51,7 @@ enum AddressActionMenu {
     }
 
     static func present(
-        at anchor: Widget,
+        at anchor: some WidgetProtocol,
         x: Double,
         y: Double,
         engine: Engine,

@@ -4,166 +4,187 @@ import Gtk
 import LumaCore
 
 @MainActor
-enum SessionDetachedBanner {
-    static func make(
-        for session: LumaCore.ProcessSession,
-        gatingActive: Bool,
-        canReattach: Bool = true,
-        onReattach: @escaping () -> Void,
-        onDisarm: @escaping () -> Void,
-        onArm: @escaping () -> Void,
-        onResumeGating: @escaping () -> Void
-    ) -> Widget {
-        if isArmedAndIdle(session) {
-            return makeArmed(
-                for: session,
-                gatingActive: gatingActive,
-                onDisarm: onDisarm,
-                onResumeGating: onResumeGating
-            )
-        }
-        let hasError = session.lastError?.isEmpty == false
-        if session.lastAttachedAt == nil, !hasError, case .spawn = session.kind {
-            return makeIdle(for: session, canReattach: canReattach, onReattach: onReattach, onArm: onArm)
-        }
-        let style: LumaBannerStyle = hasError || session.detachReason != .applicationRequested ? .error : .warning
-        let actionLabel = "\(session.kind.reestablishLabel)\u{2026}"
-        return buildBanner(
-            style: style,
-            iconName: "network-offline-symbolic",
-            processName: session.processName,
-            message: statusText(for: session),
-            actionLabel: actionLabel,
-            actionStyle: .suggested,
-            actionEnabled: canReattach && session.phase != .attaching,
-            onAction: onReattach
-        )
+final class SessionDetachedBanner {
+    struct Actions {
+        var reattach: @MainActor (LumaCore.ProcessSession) -> Void
+        var disarm: @MainActor (LumaCore.ProcessSession) -> Void
+        var arm: @MainActor (LumaCore.ProcessSession) -> Void
+        var resumeGating: @MainActor (LumaCore.ProcessSession) -> Void
     }
 
-    private static func makeArmed(
-        for session: LumaCore.ProcessSession,
-        gatingActive: Bool,
-        onDisarm: @escaping () -> Void,
-        onResumeGating: @escaping () -> Void
-    ) -> Widget {
-        let hasError = session.lastError?.isEmpty == false
-        let style: LumaBannerStyle = hasError ? .error : (gatingActive ? .info : .warning)
-        let actionLabel: String
-        let actionStyle: BannerActionStyle
-        let onAction: () -> Void
-        if !gatingActive {
-            actionLabel = "Resume"
-            actionStyle = .suggested
-            onAction = onResumeGating
-        } else {
-            actionLabel = "Disarm"
-            actionStyle = .normal
-            onAction = onDisarm
+    let widget: Box
+
+    private let icon: Image
+    private let nameLabel: Label
+    private let divider: Box
+    private let messageLabel: Label
+    private let secondaryButton: Button
+    private let primaryButton: Button
+    private let state = State()
+    private var styleCssClass: String?
+
+    private final class State {
+        var session: LumaCore.ProcessSession?
+        var primaryAction: Action?
+        var secondaryAction: Action?
+    }
+
+    private enum Action {
+        case reattach
+        case disarm
+        case arm
+        case resumeGating
+
+        @MainActor
+        func perform(_ actions: Actions, on session: LumaCore.ProcessSession) {
+            switch self {
+            case .reattach: actions.reattach(session)
+            case .disarm: actions.disarm(session)
+            case .arm: actions.arm(session)
+            case .resumeGating: actions.resumeGating(session)
+            }
         }
-        return buildBanner(
-            style: style,
-            iconName: "find-location-symbolic",
-            processName: session.processName,
-            message: armedStatusText(for: session, gatingActive: gatingActive),
-            actionLabel: actionLabel,
-            actionStyle: actionStyle,
-            actionEnabled: true,
-            onAction: onAction
-        )
     }
 
-    private static func makeIdle(
-        for session: LumaCore.ProcessSession,
-        canReattach: Bool,
-        onReattach: @escaping () -> Void,
-        onArm: @escaping () -> Void
-    ) -> Widget {
-        return buildBanner(
-            style: .warning,
-            iconName: "network-offline-symbolic",
-            processName: session.processName,
-            message: "Idle — not waiting for a launch.",
-            actionLabel: "\(session.kind.reestablishLabel)\u{2026}",
-            actionStyle: .suggested,
-            actionEnabled: canReattach,
-            onAction: onReattach,
-            secondaryActionLabel: "Arm\u{2026}",
-            onSecondaryAction: onArm
-        )
+    private struct Content {
+        var style: LumaBannerStyle
+        var iconName: String
+        var message: String?
+        var primary: ActionButton
+        var secondary: ActionButton?
+
+        struct ActionButton {
+            var label: String
+            var action: Action
+            var isSuggested: Bool
+            var isEnabled: Bool
+        }
     }
 
-    private static func buildBanner(
-        style: LumaBannerStyle,
-        iconName: String,
-        processName: String,
-        message: String?,
-        actionLabel: String,
-        actionStyle: BannerActionStyle,
-        actionEnabled: Bool,
-        onAction: @escaping () -> Void,
-        secondaryActionLabel: String? = nil,
-        onSecondaryAction: (() -> Void)? = nil
-    ) -> Widget {
-        let row = Box(orientation: .horizontal, spacing: 8)
-        row.hexpand = true
-        row.add(cssClass: "luma-banner")
-        row.add(cssClass: style.cssClass)
+    init(actions: Actions) {
+        widget = Box(orientation: .horizontal, spacing: 8)
+        widget.hexpand = true
+        widget.visible = false
+        widget.add(cssClass: "luma-banner")
 
         let leading = Box(orientation: .horizontal, spacing: 8)
         leading.hexpand = true
         leading.valign = .center
 
-        let icon = Image(iconName: iconName)
+        icon = Image(iconName: "network-offline-symbolic")
         icon.pixelSize = 16
         icon.valign = .center
         leading.append(child: icon)
 
-        let nameLabel = Label(str: processName)
+        nameLabel = Label(str: "")
         nameLabel.add(cssClass: "heading")
         nameLabel.xalign = 0
         nameLabel.valign = .center
         leading.append(child: nameLabel)
 
-        if let message {
-            let divider = Box(orientation: .vertical, spacing: 0)
-            divider.add(cssClass: "luma-banner-divider")
-            divider.valign = .center
-            divider.setSizeRequest(width: 1, height: 16)
-            leading.append(child: divider)
+        divider = Box(orientation: .vertical, spacing: 0)
+        divider.add(cssClass: "luma-banner-divider")
+        divider.valign = .center
+        divider.setSizeRequest(width: 1, height: 16)
+        leading.append(child: divider)
 
-            let messageLabel = Label(str: message)
-            messageLabel.add(cssClass: "caption")
-            messageLabel.add(cssClass: "dim-label")
-            messageLabel.xalign = 0
-            messageLabel.valign = .center
-            messageLabel.wrap = true
-            messageLabel.hexpand = true
-            leading.append(child: messageLabel)
-        }
+        messageLabel = Label(str: "")
+        messageLabel.add(cssClass: "caption")
+        messageLabel.add(cssClass: "dim-label")
+        messageLabel.xalign = 0
+        messageLabel.valign = .center
+        messageLabel.wrap = true
+        messageLabel.hexpand = true
+        leading.append(child: messageLabel)
 
-        row.append(child: leading)
+        widget.append(child: leading)
 
-        if let secondaryActionLabel, let onSecondaryAction {
-            let secondaryButton = Button(label: secondaryActionLabel)
-            secondaryButton.valign = .center
-            secondaryButton.onClicked { _ in
-                MainActor.assumeIsolated { onSecondaryAction() }
+        let state = state
+        secondaryButton = Button(label: "")
+        secondaryButton.valign = .center
+        secondaryButton.onClicked { _ in
+            MainActor.assumeIsolated {
+                state.secondaryAction!.perform(actions, on: state.session!)
             }
-            row.append(child: secondaryButton)
         }
+        widget.append(child: secondaryButton)
 
-        let button = Button(label: actionLabel)
-        button.valign = .center
-        button.sensitive = actionEnabled
-        if actionStyle == .suggested {
-            button.add(cssClass: "suggested-action")
+        primaryButton = Button(label: "")
+        primaryButton.valign = .center
+        primaryButton.onClicked { _ in
+            MainActor.assumeIsolated {
+                state.primaryAction!.perform(actions, on: state.session!)
+            }
         }
-        button.onClicked { _ in
-            MainActor.assumeIsolated { onAction() }
-        }
-        row.append(child: button)
+        widget.append(child: primaryButton)
+    }
 
-        return row
+    func update(for session: LumaCore.ProcessSession?, engine: Engine?) {
+        state.session = session
+        guard let session, Self.shouldShow(for: session) else {
+            widget.visible = false
+            return
+        }
+        let gatingActive = engine?.isGatingActive(forDeviceID: session.deviceID) ?? false
+        let canReattach = engine?.canTakeHosting(session) ?? true
+        apply(Self.content(for: session, gatingActive: gatingActive, canReattach: canReattach), processName: session.processName)
+        widget.visible = true
+    }
+
+    private static func shouldShow(for session: LumaCore.ProcessSession) -> Bool {
+        if session.phase == .attached { return false }
+        if session.phase == .attaching { return false }
+        return true
+    }
+
+    private static func content(
+        for session: LumaCore.ProcessSession,
+        gatingActive: Bool,
+        canReattach: Bool
+    ) -> Content {
+        if isArmedAndIdle(session) {
+            return armedContent(for: session, gatingActive: gatingActive)
+        }
+        let reestablish = Content.ActionButton(
+            label: "\(session.kind.reestablishLabel)\u{2026}",
+            action: .reattach,
+            isSuggested: true,
+            isEnabled: canReattach && session.phase != .attaching
+        )
+        let hasError = session.lastError?.isEmpty == false
+        if session.lastAttachedAt == nil, !hasError, case .spawn = session.kind {
+            return Content(
+                style: .warning,
+                iconName: "network-offline-symbolic",
+                message: "Idle — not waiting for a launch.",
+                primary: reestablish,
+                secondary: Content.ActionButton(label: "Arm\u{2026}", action: .arm, isSuggested: false, isEnabled: true)
+            )
+        }
+        return Content(
+            style: hasError || session.detachReason != .applicationRequested ? .error : .warning,
+            iconName: "network-offline-symbolic",
+            message: statusText(for: session),
+            primary: reestablish
+        )
+    }
+
+    private static func isArmedAndIdle(_ session: LumaCore.ProcessSession) -> Bool {
+        guard case .armed = session.armingState else { return false }
+        return session.phase != .attached
+    }
+
+    private static func armedContent(for session: LumaCore.ProcessSession, gatingActive: Bool) -> Content {
+        let hasError = session.lastError?.isEmpty == false
+        let primary = gatingActive
+            ? Content.ActionButton(label: "Disarm", action: .disarm, isSuggested: false, isEnabled: true)
+            : Content.ActionButton(label: "Resume", action: .resumeGating, isSuggested: true, isEnabled: true)
+        return Content(
+            style: hasError ? .error : (gatingActive ? .info : .warning),
+            iconName: "find-location-symbolic",
+            message: armedStatusText(for: session, gatingActive: gatingActive),
+            primary: primary
+        )
     }
 
     private static func armedStatusText(for session: LumaCore.ProcessSession, gatingActive: Bool) -> String {
@@ -177,11 +198,6 @@ enum SessionDetachedBanner {
         return pattern.isEmpty
             ? "Waiting for the next matching launch."
             : "Waiting for the next launch matching \(pattern)."
-    }
-
-    private static func isArmedAndIdle(_ session: LumaCore.ProcessSession) -> Bool {
-        guard case .armed = session.armingState else { return false }
-        return session.phase != .attached
     }
 
     private static func statusText(for session: LumaCore.ProcessSession) -> String? {
@@ -202,10 +218,36 @@ enum SessionDetachedBanner {
         }
     }
 
-    static func shouldShow(for session: LumaCore.ProcessSession) -> Bool {
-        if session.phase == .attached { return false }
-        if session.phase == .attaching { return false }
-        return true
+    private func apply(_ content: Content, processName: String) {
+        if let styleCssClass {
+            widget.remove(cssClass: styleCssClass)
+        }
+        styleCssClass = content.style.cssClass
+        widget.add(cssClass: content.style.cssClass)
+
+        icon.setFrom(iconName: content.iconName)
+        nameLabel.label = processName
+        divider.visible = content.message != nil
+        messageLabel.visible = content.message != nil
+        messageLabel.label = content.message ?? ""
+
+        configure(primaryButton, with: content.primary)
+        state.primaryAction = content.primary.action
+        secondaryButton.visible = content.secondary != nil
+        if let secondary = content.secondary {
+            configure(secondaryButton, with: secondary)
+        }
+        state.secondaryAction = content.secondary?.action
+    }
+
+    private func configure(_ button: Button, with content: Content.ActionButton) {
+        button.label = content.label
+        button.sensitive = content.isEnabled
+        if content.isSuggested {
+            button.add(cssClass: "suggested-action")
+        } else {
+            button.remove(cssClass: "suggested-action")
+        }
     }
 }
 
@@ -221,9 +263,4 @@ enum LumaBannerStyle {
         case .error: return "luma-banner-error"
         }
     }
-}
-
-private enum BannerActionStyle {
-    case suggested
-    case normal
 }
