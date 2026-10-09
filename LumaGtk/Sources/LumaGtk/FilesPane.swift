@@ -88,10 +88,10 @@ final class FilesPane {
         widget.append(child: scroller)
         widget.append(child: transferLabel)
 
-        goButton.onClicked { [weak self, weak goButton] _ in
+        goButton.onClicked { [weak self] button in
             MainActor.assumeIsolated {
-                guard let self, let goButton else { return }
-                ContextMenu.present([self.rootItems()], at: goButton, x: 0, y: Double(goButton.height))
+                guard let self else { return }
+                ContextMenu.present([self.rootItems()], at: button, x: 0, y: Double(button.height))
             }
         }
         upButton.onClicked { [weak self] _ in
@@ -214,16 +214,16 @@ final class FilesPane {
         let row = ListBoxRow()
         row.activatable = true
         row.set(child: box)
-        attachContextMenu(to: row, anchor: box, entry: entry)
+        attachContextMenu(to: row, entry: entry)
         return row
     }
 
-    private func attachContextMenu(to row: ListBoxRow, anchor: Box, entry: RemoteFileEntry) {
+    private func attachContextMenu(to row: ListBoxRow, entry: RemoteFileEntry) {
         let click = GestureClick()
         click.set(button: 3)
-        click.onPressed { [weak self, weak anchor] _, _, x, y in
+        click.onPressed { [weak self] gesture, _, x, y in
             MainActor.assumeIsolated {
-                guard let self, let anchor else { return }
+                guard let self else { return }
                 var items: [ContextMenu.Item] = []
                 if entry.opensAsDirectory {
                     items.append(.init("Open") { [weak self] in self?.open(entry) })
@@ -232,7 +232,7 @@ final class FilesPane {
                     items.append(.init("Pull…") { [weak self] in self?.presentPull(entry) })
                 }
                 items.append(.init("Copy Path") { [weak self] in self?.copyPath(of: entry) })
-                ContextMenu.present([items], at: anchor, x: x, y: y)
+                ContextMenu.present([items], at: gesture.widget!, x: x, y: y)
             }
         }
         row.add(controller: click)

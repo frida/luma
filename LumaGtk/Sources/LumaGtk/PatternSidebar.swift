@@ -342,8 +342,8 @@ final class PatternSidebar {
         click.set(button: 3)
         click.onPressed { [weak self] gesture, _, x, y in
             MainActor.assumeIsolated {
-                guard let self, let anchor = gesture.widget else { return }
-                ContextMenu.present(self.contextMenuItems(for: source), at: anchor, x: x, y: y)
+                guard let self else { return }
+                ContextMenu.present(self.contextMenuItems(for: source), at: gesture.widget!, x: x, y: y)
             }
         }
         row.add(controller: click)

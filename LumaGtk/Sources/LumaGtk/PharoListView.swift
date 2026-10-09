@@ -212,10 +212,11 @@ final class PharoListView {
         let copy = GestureClick()
         copy.button = Int(GDK_BUTTON_SECONDARY)
         copy.propagationPhase = .capture
-        copy.onPressed { [weak self, weak row] gesture, _, x, y in
+        copy.onPressed { [weak self] gesture, _, x, y in
             MainActor.assumeIsolated {
                 _ = gesture.set(state: .claimed)
-                guard let self, let row else { return }
+                guard let self else { return }
+                let row = ListBoxRowRef(raw: gesture.widget!.ptr)
                 self.rows.select(row: row)
                 let text = cells.compactMap(\.text).joined(separator: "\t")
                 ContextMenu.present(

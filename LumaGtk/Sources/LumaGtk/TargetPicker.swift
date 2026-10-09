@@ -1664,9 +1664,9 @@ final class TargetPicker {
         let certificateEntry = Entry()
         certificateEntry.placeholderText = "PEM file path (optional)"
         let certificateBrowseButton = Button(label: "Browse\u{2026}")
-        certificateBrowseButton.onClicked { [weak self, weak certificateEntry] _ in
+        certificateBrowseButton.onClicked { [weak self, certificateEntry] _ in
             MainActor.assumeIsolated {
-                guard let self, let certificateEntry else { return }
+                guard let self else { return }
                 self.presentCertificateBrowseDialog(into: certificateEntry)
             }
         }

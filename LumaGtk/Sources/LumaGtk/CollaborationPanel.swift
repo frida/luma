@@ -1,4 +1,5 @@
 import Adw
+import CGtk
 import CLuma
 import CPango
 import Foundation
@@ -425,9 +426,9 @@ final class CollaborationPanel {
         let leaveButton = Button(label: "Leave lab")
         leaveButton.add(cssClass: "flat")
         leaveButton.add(cssClass: "luma-menu-destructive")
-        leaveButton.onClicked { [weak self, weak popover] _ in
+        leaveButton.onClicked { [weak self] button in
             MainActor.assumeIsolated {
-                popover?.popdown()
+                Self.popdownPopover(containing: button)
                 self?.confirmAndLeaveLab()
             }
         }
@@ -435,9 +436,9 @@ final class CollaborationPanel {
 
         let disconnectButton = Button(label: "Disconnect from lab")
         disconnectButton.add(cssClass: "flat")
-        disconnectButton.onClicked { [weak self, weak popover] _ in
+        disconnectButton.onClicked { [weak self] button in
             MainActor.assumeIsolated {
-                popover?.popdown()
+                Self.popdownPopover(containing: button)
                 guard let engine = self?.engine else { return }
                 Task { @MainActor in
                     await engine.collaboration.stop()
@@ -531,10 +532,10 @@ final class CollaborationPanel {
 
         let profileButton = Button(label: "View GitHub Profile")
         profileButton.add(cssClass: "flat")
-        profileButton.onClicked { [weak self, weak popover] _ in
+        profileButton.onClicked { [weak self] button in
             MainActor.assumeIsolated {
                 self?.openGitHubProfile(for: user)
-                popover?.popdown()
+                Self.popdownPopover(containing: button)
             }
         }
         menuBox.append(child: profileButton)
@@ -542,14 +543,14 @@ final class CollaborationPanel {
         let signOutButton = Button(label: "Sign out")
         signOutButton.add(cssClass: "flat")
         signOutButton.add(cssClass: "luma-menu-destructive")
-        signOutButton.onClicked { [weak self, weak popover] _ in
+        signOutButton.onClicked { [weak self] button in
             MainActor.assumeIsolated {
                 guard let engine = self?.engine else { return }
                 Task { @MainActor in
                     await engine.gitHubAuth.signOut()
                     await engine.collaboration.stop()
                 }
-                popover?.popdown()
+                Self.popdownPopover(containing: button)
             }
         }
         menuBox.append(child: signOutButton)
@@ -1134,6 +1135,10 @@ final class CollaborationPanel {
         while let child = container.firstChild {
             container.remove(child: child)
         }
+    }
+
+    private static func popdownPopover(containing button: ButtonRef) {
+        PopoverRef(raw: button.getAncestor(widgetType: gtk_popover_get_type()).ptr).popdown()
     }
 }
 
