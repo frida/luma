@@ -1,3 +1,4 @@
+import CGtk
 import Foundation
 import Gdk
 import Gtk
@@ -16,8 +17,23 @@ final class SidebarBrowserPopover<Item> {
 
     private var retainer: SidebarBrowserPopover?
     private var popover: Popover?
-    private var listBox: ListBox?
+    private var rowModel: StringList?
+    private var emptyLabel: Label?
+    private var rowViews: [UnsafeMutableRawPointer: RowView] = [:]
+    private var visibleItems: [Item] = []
     private var query: String = ""
+
+    private final class RowView {
+        let box: Box
+        let headerLabel: Label
+        let titleLabel: Label
+
+        init(box: Box, headerLabel: Label, titleLabel: Label) {
+            self.box = box
+            self.headerLabel = headerLabel
+            self.titleLabel = titleLabel
+        }
+    }
 
     init(
         items: [Item],
@@ -84,7 +100,7 @@ final class SidebarBrowserPopover<Item> {
         searchEntry.onSearchChanged { [weak self] entry in
             MainActor.assumeIsolated {
                 self?.query = entry.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                self?.listBox?.invalidateFilter()
+                self?.refreshRows()
             }
         }
         searchEntry.onActivate { [weak self] _ in
@@ -95,64 +111,102 @@ final class SidebarBrowserPopover<Item> {
         }
         column.append(child: searchEntry)
 
+        let rowModel = StringList(strings: nil)
+        let selection = NoSelection(model: rowModel)
+        let factory = SignalListItemFactory()
+        let listView = ListView(model: selection, factory: factory)
+        _ = g_object_ref(rowModel.ptr)
+        _ = g_object_ref(selection.ptr)
+        listView.singleClickActivate = true
+        listView.add(cssClass: "navigation-sidebar")
+        listView.onActivate { [weak self] _, position in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.choose(self.visibleItems[Int(position)])
+            }
+        }
+        configure(factory)
+
+        let emptyLabel = makeEmptyLabel()
+        column.append(child: emptyLabel)
+
         let scroll = ScrolledWindow()
         scroll.hexpand = true
         scroll.vexpand = true
         scroll.hasFrame = false
-
-        let listBox = ListBox()
-        listBox.selectionMode = .none
-        listBox.add(cssClass: "navigation-sidebar")
-        listBox.set(placeholder: makeEmptyLabel())
-        listBox.setFilterFunc { [weak self] row in
-            MainActor.assumeIsolated {
-                guard let self else { return false }
-                return self.isVisible(self.items[Int(row.index)])
-            }
-        }
-        listBox.setHeaderFunc { [weak self] row, previous in
-            MainActor.assumeIsolated {
-                self?.updateHeader(of: row, following: previous)
-            }
-        }
-        listBox.onRowActivated { [weak self] _, row in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.choose(self.items[Int(row.index)])
-            }
-        }
-        scroll.set(child: listBox)
+        scroll.set(child: listView)
         column.append(child: scroll)
 
         popover.set(child: column)
         popover.set(parent: WidgetRef(anchor))
 
         self.popover = popover
-        self.listBox = listBox
+        self.rowModel = rowModel
+        self.emptyLabel = emptyLabel
 
-        for item in items {
-            listBox.append(child: makeItemRow(item))
-        }
+        refreshRows()
 
         popover.popup()
         _ = searchEntry.grabFocus()
+    }
+
+    private func configure(_ factory: SignalListItemFactory) {
+        factory.onSetup { [weak self] _, object in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let rowView = self.makeRowView()
+                self.rowViews[rowView.box.ptr] = rowView
+                ListItemRef(raw: object.ptr).set(child: rowView.box)
+            }
+        }
+        factory.onBind { [weak self] _, object in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let item = ListItemRef(raw: object.ptr)
+                guard let child = item.child, let rowView = self.rowViews[child.ptr] else { return }
+                self.bind(rowView, to: item.position)
+            }
+        }
+        factory.onTeardown { [weak self] _, object in
+            MainActor.assumeIsolated {
+                guard let self, let child = ListItemRef(raw: object.ptr).child else { return }
+                self.rowViews.removeValue(forKey: child.ptr)
+            }
+        }
+    }
+
+    private func refreshRows() {
+        visibleItems = items.filter(isVisible)
+        emptyLabel?.visible = visibleItems.isEmpty
+        replaceRows(count: visibleItems.count)
+    }
+
+    private func replaceRows(count: Int) {
+        guard let rowModel else { return }
+        "".withCString { blank in
+            let additions = [UnsafePointer<CChar>?](repeating: blank, count: count) + [nil]
+            additions.withUnsafeBufferPointer {
+                rowModel.splice(position: 0, nRemovals: rowModel.nItems, additions: $0.baseAddress)
+            }
+        }
+    }
+
+    private func bind(_ rowView: RowView, to position: Int) {
+        let item = visibleItems[position]
+        let group = groupName(item)
+        rowView.headerLabel.setText(str: group)
+        rowView.headerLabel.visible = position == 0 || groupName(visibleItems[position - 1]) != group
+        rowView.titleLabel.setText(str: title(item))
+        rowView.titleLabel.opacity = dimmed(item) ? 0.5 : 1
+        rowView.box.tooltipText = tooltip(item)
     }
 
     private func isVisible(_ item: Item) -> Bool {
         query.isEmpty || matches(item, query)
     }
 
-    private func updateHeader(of row: ListBoxRowRef, following previous: ListBoxRowRef?) {
-        let group = groupName(items[Int(row.index)])
-        guard let previous, groupName(items[Int(previous.index)]) == group else {
-            row.set(header: makeSectionHeader(name: group))
-            return
-        }
-        row.set(header: WidgetRef?.none)
-    }
-
     private func chooseFirstMatch() {
-        guard let item = items.first(where: isVisible) else { return }
+        guard let item = visibleItems.first else { return }
         choose(item)
     }
 
@@ -169,32 +223,31 @@ final class SidebarBrowserPopover<Item> {
     private func cleanup() {
         popover?.unparent()
         popover = nil
-        listBox = nil
+        rowModel = nil
+        emptyLabel = nil
         retainer = nil
     }
 
-    private func makeItemRow(_ item: Item) -> ListBoxRow {
-        let row = ListBoxRow()
-        let box = Box(orientation: .horizontal, spacing: 6)
-        box.marginStart = 12
-        box.marginEnd = 12
-        box.marginTop = 4
-        box.marginBottom = 4
-        let label = Label(str: title(item))
-        label.halign = .start
-        label.hexpand = true
-        label.ellipsize = .end
-        box.append(child: label)
-        if dimmed(item) {
-            box.opacity = 0.5
-        }
-        box.tooltipText = tooltip(item)
-        row.set(child: box)
-        return row
+    private func makeRowView() -> RowView {
+        let headerLabel = makeSectionHeader()
+
+        let titleLabel = Label(str: "")
+        titleLabel.halign = .start
+        titleLabel.hexpand = true
+        titleLabel.ellipsize = .end
+        titleLabel.marginStart = 12
+        titleLabel.marginEnd = 12
+        titleLabel.marginTop = 4
+        titleLabel.marginBottom = 4
+
+        let box = Box(orientation: .vertical, spacing: 0)
+        box.append(child: headerLabel)
+        box.append(child: titleLabel)
+        return RowView(box: box, headerLabel: headerLabel, titleLabel: titleLabel)
     }
 
-    private func makeSectionHeader(name: String) -> Label {
-        let label = Label(str: name)
+    private func makeSectionHeader() -> Label {
+        let label = Label(str: "")
         label.halign = .start
         label.add(cssClass: "caption-heading")
         label.add(cssClass: "dim-label")
