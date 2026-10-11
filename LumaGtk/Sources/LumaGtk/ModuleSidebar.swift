@@ -7,14 +7,63 @@ import LumaCore
 enum ModuleSidebar {
     static func makeModuleRow(
         module: LumaCore.ProcessModule,
-        status: ModuleAnalysisStatus
+        status: ModuleAnalysisStatus,
+        disclosure: SidebarFeatureRow.Disclosure
     ) -> (row: ListBoxRow, anchor: Box) {
         SidebarFeatureRow.make(
             icon: makeModuleIcon(),
             title: module.name,
             tooltip: module.path,
-            accessory: makeStatusIndicator(status: status)
+            accessory: makeStatusIndicator(status: status),
+            disclosure: disclosure
         )
+    }
+
+    static func makeCategoryRow(_ category: ModuleSymbolCategory, count: Int?) -> ListBoxRow {
+        SidebarFeatureRow.make(
+            icon: makeSymbolicIcon(category.iconName),
+            title: category.title,
+            accessory: count.map(SidebarFeatureRow.makeCount),
+            depth: 1
+        ).row
+    }
+
+    static func makeSwiftTypesRow(count: Int?, disclosure: SidebarFeatureRow.Disclosure?) -> ListBoxRow {
+        SidebarFeatureRow.make(
+            icon: makeSymbolicIcon("applications-engineering-symbolic"),
+            title: "Swift Types",
+            accessory: count.map(SidebarFeatureRow.makeCount),
+            depth: 1,
+            disclosure: disclosure
+        ).row
+    }
+
+    static func makeSwiftTypeRow(_ type: SwiftTypeSummary, module: LumaCore.ProcessModule) -> ListBoxRow {
+        SidebarFeatureRow.make(
+            icon: makeKindBadge(type.kind),
+            title: type.displayName(inModule: module.name),
+            tooltip: "\(type.kind.title) \(type.name)",
+            depth: 2
+        ).row
+    }
+
+    static func presentSwiftTypeBrowser(
+        types: [SwiftTypeSummary],
+        module: LumaCore.ProcessModule,
+        anchor: WidgetProtocol,
+        onChoose: @escaping @MainActor (SwiftTypeSummary) -> Void
+    ) {
+        let browser = SidebarBrowserPopover(
+            items: types,
+            placeholder: "Filter types",
+            emptyMessage: "No matching types",
+            groupName: { $0.kind.pluralTitle },
+            title: { $0.displayName(inModule: module.name) },
+            tooltip: { $0.name },
+            matches: { type, query in type.name.localizedCaseInsensitiveContains(query) },
+            onChoose: onChoose
+        )
+        browser.presentAnchored(to: anchor)
     }
 
     static func attachContextMenu(
@@ -85,6 +134,25 @@ enum ModuleSidebar {
         return icon
     }
 
+    private static func makeSymbolicIcon(_ name: String) -> Widget {
+        let icon = Gtk.Image(iconName: name)
+        icon.pixelSize = 12
+        icon.hexpand = true
+        icon.halign = .center
+        icon.add(cssClass: "dim-label")
+        return icon
+    }
+
+    static func makeKindBadge(_ kind: SwiftTypeKind) -> Label {
+        let badge = Label(str: kind.badgeLetter)
+        badge.hexpand = true
+        badge.halign = .center
+        badge.add(cssClass: "dim-label")
+        badge.add(cssClass: "caption-heading")
+        badge.add(cssClass: "monospace")
+        return badge
+    }
+
     private static func makeStatusIndicator(status: ModuleAnalysisStatus) -> Widget? {
         switch status {
         case .notAnalyzed:
@@ -100,5 +168,21 @@ enum ModuleSidebar {
             icon.add(cssClass: "success")
             return icon
         }
+    }
+}
+
+extension ModuleSymbolCategory {
+    var iconName: String {
+        switch self {
+        case .exports: return "go-up-symbolic"
+        case .imports: return "go-down-symbolic"
+        case .symbols: return "format-justify-left-symbolic"
+        }
+    }
+}
+
+extension SwiftTypeKind {
+    var badgeLetter: String {
+        String(title.prefix(1))
     }
 }

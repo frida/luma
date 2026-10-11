@@ -8,16 +8,12 @@ import LumaCore
 @MainActor
 final class ModuleSymbolsPane {
     let widget: Box
-    let toolbar: Box
 
     private weak var engine: Engine?
     private let sessionID: UUID
     private let module: LumaCore.ProcessModule
+    private let category: LumaCore.ModuleSymbolCategory
 
-    private let toggleBar: Box
-    private let exportsButton: ToggleButton
-    private let importsButton: ToggleButton
-    private let symbolsButton: ToggleButton
     private let listContainer: Box
     private let symbolScroll: ScrolledWindow
     private let symbolModel: StringList
@@ -31,9 +27,7 @@ final class ModuleSymbolsPane {
     private let nextButton: Button
 
     private var page: LumaCore.ModuleSymbolPage?
-    private var counts: LumaCore.ModuleSymbolPage.Counts?
     private var queryTask: Task<Void, Never>?
-    private var tab: Tab = .exports
     private var filterText: String = ""
     private var pageIndex = 0
     private var rows: [RowData] = []
@@ -82,46 +76,15 @@ final class ModuleSymbolsPane {
         }
     }
 
-    enum Tab {
-        case exports
-        case imports
-        case symbols
-
-        var category: LumaCore.ModuleSymbolCategory {
-            switch self {
-            case .exports: return .exports
-            case .imports: return .imports
-            case .symbols: return .symbols
-            }
-        }
-    }
-
-    init(engine: Engine, sessionID: UUID, module: LumaCore.ProcessModule) {
+    init(engine: Engine, sessionID: UUID, module: LumaCore.ProcessModule, category: LumaCore.ModuleSymbolCategory) {
         self.engine = engine
         self.sessionID = sessionID
         self.module = module
+        self.category = category
 
         widget = Box(orientation: .vertical, spacing: 0)
         widget.hexpand = true
         widget.vexpand = true
-
-        exportsButton = ToggleButton()
-        exportsButton.label = "Exports"
-        exportsButton.active = true
-
-        importsButton = ToggleButton()
-        importsButton.label = "Imports"
-        importsButton.set(group: exportsButton)
-
-        symbolsButton = ToggleButton()
-        symbolsButton.label = "Symbols"
-        symbolsButton.set(group: exportsButton)
-
-        toggleBar = Box(orientation: .horizontal, spacing: 0)
-        toggleBar.add(cssClass: "linked")
-        toggleBar.append(child: exportsButton)
-        toggleBar.append(child: importsButton)
-        toggleBar.append(child: symbolsButton)
 
         statusLabel = Label(str: "Loading\u{2026}")
         statusLabel.halign = .start
@@ -148,12 +111,6 @@ final class ModuleSymbolsPane {
         symbolScroll.setSizeRequest(width: -1, height: 280)
         symbolScroll.set(child: symbolList)
         listContainer.append(child: symbolScroll)
-
-        toolbar = Box(orientation: .horizontal, spacing: 6)
-        toolbar.add(cssClass: "toolbar")
-        toolbar.marginStart = 6
-        toolbar.marginEnd = 6
-        toolbar.append(child: toggleBar)
 
         let contentBox = Box(orientation: .vertical, spacing: 8)
         contentBox.hexpand = true
@@ -193,25 +150,6 @@ final class ModuleSymbolsPane {
         widget.append(child: contentBox)
         widget.append(child: Separator(orientation: .horizontal))
         widget.append(child: filterBar)
-
-        exportsButton.onToggled { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, self.exportsButton.active else { return }
-                self.switchTab(.exports)
-            }
-        }
-        importsButton.onToggled { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, self.importsButton.active else { return }
-                self.switchTab(.imports)
-            }
-        }
-        symbolsButton.onToggled { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, self.symbolsButton.active else { return }
-                self.switchTab(.symbols)
-            }
-        }
 
         filterEntry.onSearchChanged { [weak self] entry in
             MainActor.assumeIsolated {
@@ -273,12 +211,6 @@ final class ModuleSymbolsPane {
         }
     }
 
-    private func switchTab(_ tab: Tab) {
-        self.tab = tab
-        pageIndex = 0
-        runQuery()
-    }
-
     private func installFilterShortcut() {
         let key = EventControllerKey()
         key.propagationPhase = .capture
@@ -314,7 +246,7 @@ final class ModuleSymbolsPane {
         }
 
         let moduleName = module.name
-        let category = tab.category
+        let category = category
         let query = filterText
         let offset = pageIndex * LumaCore.ModuleSymbolPage.pageSize
         queryTask = Task { @MainActor [weak self] in
@@ -322,8 +254,6 @@ final class ModuleSymbolsPane {
                 let result = try await node.queryModuleSymbols(name: moduleName, category: category, query: query, offset: offset)
                 guard let self, !Task.isCancelled else { return }
                 self.page = result
-                self.counts = result.counts
-                self.updateTabLabels()
                 self.statusLabel.visible = false
                 self.renderCurrent()
             } catch {
@@ -332,13 +262,6 @@ final class ModuleSymbolsPane {
                 self.statusLabel.visible = true
             }
         }
-    }
-
-    private func updateTabLabels() {
-        guard let counts else { return }
-        exportsButton.label = "Exports (\(counts.exports))"
-        importsButton.label = "Imports (\(counts.imports))"
-        symbolsButton.label = "Symbols (\(counts.symbols))"
     }
 
     private func renderCurrent() {

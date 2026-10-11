@@ -75,7 +75,11 @@ final class MainWindow: InstrumentUIHost {
     private var currentInsightID: UUID?
     private var currentITraceDetail: ITraceDetailView?
     private var currentITraceID: UUID?
-    private var currentModulePane: ModuleSymbolsPane?
+    private var currentModulePane: AnyObject?
+    private var expandedModules: Set<String> = []
+    private var expandedSwiftTypeLists: Set<String> = []
+    private var moduleOutlines: [String: ModuleOutline] = [:]
+    private var pendingModuleOutlines: Set<String> = []
     private var currentThreadPane: ThreadDetailPane?
     private var currentFilesPane: FilesPane?
     private var sessionDetailViews: [UUID: SessionDetailView] = [:]
@@ -136,6 +140,9 @@ final class MainWindow: InstrumentUIHost {
         case pharo
         case session(UUID)
         case module(sessionID: UUID, moduleID: String)
+        case moduleSymbols(sessionID: UUID, moduleID: String, category: ModuleSymbolCategory)
+        case swiftTypes(sessionID: UUID, moduleID: String)
+        case swiftType(sessionID: UUID, moduleID: String, type: SwiftTypeSummary)
         case thread(sessionID: UUID, threadID: UInt)
         case repl(UUID)
         case files(UUID)
@@ -149,11 +156,25 @@ final class MainWindow: InstrumentUIHost {
         case missionsList
         case mission(UUID)
         case patterns(PatternSidebarSelection)
+
+        var moduleLocation: (sessionID: UUID, moduleID: String)? {
+            switch self {
+            case .module(let sessionID, let moduleID),
+                .moduleSymbols(let sessionID, let moduleID, _),
+                .swiftTypes(let sessionID, let moduleID),
+                .swiftType(let sessionID, let moduleID, _):
+                return (sessionID, moduleID)
+            default:
+                return nil
+            }
+        }
     }
 
     private enum CustomInstrumentRow: Equatable {
         case file(defID: UUID, path: String)
     }
+
+    private typealias SidebarGroupChild = (key: String, row: ListBoxRow, onActivate: @MainActor (WidgetProtocol) -> Void)
 
     private enum SessionsRow: Equatable {
         case session(UUID)
@@ -576,6 +597,7 @@ final class MainWindow: InstrumentUIHost {
         applyEventStreamLayout()
         engine.onSessionListChanged = { [weak self] change in self?.handleSessionListChange(change) }
         observeModuleAnalysis()
+        observeLoadedPackages()
         observeConnectionActivity()
         engine.onREPLCellAdded = { [weak self] cell in self?.currentREPLPane?.appendCell(cell) }
         engine.onNotebookChanged = { [weak self] change in
@@ -1264,7 +1286,7 @@ final class MainWindow: InstrumentUIHost {
                 let index = Int(row.index)
                 guard index >= 0, index < self.sessionsRowKinds.count else { return }
                 switch self.sessionsRowKinds[index] {
-                case .moduleChild(let sid, let key) where key == "browse":
+                case .moduleChild(let sid, let key) where self.isBrowseChildKey(key):
                     self.activateGroupChild(sessionID: sid, group: .modules, key: key)
                 case .threadChild(let sid, let key) where key == "browse":
                     self.activateGroupChild(sessionID: sid, group: .threads, key: key)
@@ -1888,7 +1910,7 @@ final class MainWindow: InstrumentUIHost {
             currentITraceDetail = nil
             currentITraceID = nil
         }
-        if case .module = selection {} else {
+        if selection.moduleLocation == nil {
             currentModulePane = nil
         }
         if case .files(let id) = selection {
@@ -1963,16 +1985,29 @@ final class MainWindow: InstrumentUIHost {
                 )
             }
         case .module(let sid, let moduleID):
-            if let engine, let module = sessionModules(sid).first(where: { $0.id == moduleID }) {
-                let pane = ModuleSymbolsPane(engine: engine, sessionID: sid, module: module)
-                currentModulePane = pane
-                widget = pane.widget
-            } else {
-                widget = MainWindow.makeEmptyState(
-                    icon: "package-x-generic-symbolic",
-                    title: "Module unavailable",
-                    subtitle: "This module is no longer loaded."
-                )
+            widget = makeModuleDetail(sessionID: sid, moduleID: moduleID) { engine, module in
+                let pane = ModuleOverviewPane(engine: engine, sessionID: sid, module: module) { [weak self] target in
+                    guard let self else { return }
+                    self.select(self.moduleSelection(for: target, sessionID: sid, moduleID: moduleID))
+                }
+                return (pane, pane.widget)
+            }
+        case .moduleSymbols(let sid, let moduleID, let category):
+            widget = makeModuleDetail(sessionID: sid, moduleID: moduleID) { engine, module in
+                let pane = ModuleSymbolsPane(engine: engine, sessionID: sid, module: module, category: category)
+                return (pane, pane.widget)
+            }
+        case .swiftTypes(let sid, let moduleID):
+            widget = makeModuleDetail(sessionID: sid, moduleID: moduleID) { engine, module in
+                let pane = SwiftTypesPane(engine: engine, sessionID: sid, module: module) { [weak self] type in
+                    self?.select(.swiftType(sessionID: sid, moduleID: moduleID, type: type))
+                }
+                return (pane, pane.widget)
+            }
+        case .swiftType(let sid, let moduleID, let type):
+            widget = makeModuleDetail(sessionID: sid, moduleID: moduleID) { engine, module in
+                let pane = SwiftTypePane(engine: engine, sessionID: sid, module: module, type: type)
+                return (pane, pane.widget)
             }
         case .thread(let sid, let threadID):
             if let engine, let thread = sessionThreads(sid).first(where: { $0.id == threadID }) {
@@ -2147,8 +2182,6 @@ final class MainWindow: InstrumentUIHost {
         switch selection {
         case .files:
             return currentFilesPane?.toolbar
-        case .module:
-            return currentModulePane?.toolbar
         case .patterns(.library):
             return currentPatternsListPane?.toolbar
         default:
@@ -2176,6 +2209,9 @@ final class MainWindow: InstrumentUIHost {
         case .session(let id), .repl(let id), .files(let id):
             return id
         case .module(let id, _),
+            .moduleSymbols(let id, _, _),
+            .swiftTypes(let id, _),
+            .swiftType(let id, _, _),
             .thread(let id, _),
             .instrument(let id, _),
             .instrumentComponent(let id, _, _),
@@ -2184,6 +2220,36 @@ final class MainWindow: InstrumentUIHost {
             return id
         default:
             return nil
+        }
+    }
+
+    private func makeModuleDetail(
+        sessionID: UUID,
+        moduleID: String,
+        build: (Engine, LumaCore.ProcessModule) -> (pane: AnyObject, widget: Widget)
+    ) -> Widget {
+        guard let engine, let module = sessionModules(sessionID).first(where: { $0.id == moduleID }) else {
+            return MainWindow.makeEmptyState(
+                icon: "package-x-generic-symbolic",
+                title: "Module unavailable",
+                subtitle: "This module is no longer loaded."
+            )
+        }
+        let (pane, widget) = build(engine, module)
+        currentModulePane = pane
+        return widget
+    }
+
+    private func moduleSelection(
+        for target: ModuleOverviewPane.Target,
+        sessionID: UUID,
+        moduleID: String
+    ) -> SidebarSelection {
+        switch target {
+        case .symbols(let category):
+            return .moduleSymbols(sessionID: sessionID, moduleID: moduleID, category: category)
+        case .swiftTypes:
+            return .swiftTypes(sessionID: sessionID, moduleID: moduleID)
         }
     }
 
@@ -2493,13 +2559,15 @@ final class MainWindow: InstrumentUIHost {
             missionsListBox.unselectAll()
             notebookListBox.unselectAll()
             pharoListBox.select(row: pharoRow)
-        case .session, .module, .thread, .repl, .files, .instrument, .instrumentComponent, .insight, .itrace:
+        case .session, .module, .moduleSymbols, .swiftTypes, .swiftType, .thread, .repl, .files, .instrument, .instrumentComponent,
+            .insight, .itrace:
             notebookListBox.unselectAll()
             packagesList.unselectAll()
             customInstrumentsList.unselectAll()
             missionsListBox.unselectAll()
-            if case .module(let sid, _) = newValue {
-                reconcileSidebarGroupAfterSelection(sessionID: sid, group: .modules)
+            if let location = newValue.moduleLocation {
+                revealModuleContents(of: newValue)
+                reconcileSidebarGroupAfterSelection(sessionID: location.sessionID, group: .modules)
             } else if case .thread(let sid, _) = newValue {
                 reconcileSidebarGroupAfterSelection(sessionID: sid, group: .threads)
             } else {
@@ -2692,6 +2760,9 @@ final class MainWindow: InstrumentUIHost {
             switch selection {
             case .session(let sid),
                 .module(let sid, _),
+                .moduleSymbols(let sid, _, _),
+                .swiftTypes(let sid, _),
+                .swiftType(let sid, _, _),
                 .thread(let sid, _),
                 .repl(let sid),
                 .files(let sid),
@@ -3176,7 +3247,7 @@ final class MainWindow: InstrumentUIHost {
     private func makeGroupChildren(
         sessionID: UUID,
         group: SessionSidebarGroup
-    ) -> [(key: String, row: ListBoxRow, onActivate: @MainActor (WidgetProtocol) -> Void)] {
+    ) -> [SidebarGroupChild] {
         guard let engine else { return [] }
         switch group {
         case .modules:
@@ -3189,21 +3260,28 @@ final class MainWindow: InstrumentUIHost {
     private func makeModuleChildren(
         sessionID: UUID,
         engine: Engine
-    ) -> [(key: String, row: ListBoxRow, onActivate: @MainActor (WidgetProtocol) -> Void)] {
+    ) -> [SidebarGroupChild] {
         let modules = sessionModules(sessionID)
         let highlights = modules.sidebarHighlights(
             mainModule: sessionMainModule(sessionID), selectedID: selectedModuleID(in: sessionID))
-        var children: [(key: String, row: ListBoxRow, onActivate: @MainActor (WidgetProtocol) -> Void)] = []
+        var children: [SidebarGroupChild] = []
         for module in highlights {
             let status = engine.moduleAnalysisStatus(sessionID: sessionID, modulePath: module.path)
-            let (row, anchor) = ModuleSidebar.makeModuleRow(module: module, status: status)
-            ModuleSidebar.attachContextMenu(to: anchor, module: module, engine: engine, sessionID: sessionID)
             let moduleID = module.id
+            let isExpanded = expandedModules.contains(moduleExpansionKey(sessionID: sessionID, moduleID: moduleID))
+            let disclosure = SidebarFeatureRow.Disclosure(expansion: isExpanded ? .expanded : .collapsed) { [weak self] in
+                self?.toggleModuleExpansion(sessionID: sessionID, moduleID: moduleID)
+            }
+            let (row, anchor) = ModuleSidebar.makeModuleRow(module: module, status: status, disclosure: disclosure)
+            ModuleSidebar.attachContextMenu(to: anchor, module: module, engine: engine, sessionID: sessionID)
             children.append((
                 key: moduleChildKey(moduleID: moduleID),
                 row: row,
                 onActivate: { [weak self] _ in self?.navigateToModule(sessionID: sessionID, moduleID: moduleID) }
             ))
+            if isExpanded {
+                children += makeModuleContentsChildren(sessionID: sessionID, module: module)
+            }
         }
         if modules.count > highlights.count {
             let (row, _) = SidebarFeatureRow.makeBrowseAll(totalCount: modules.count)
@@ -3220,13 +3298,118 @@ final class MainWindow: InstrumentUIHost {
         return children
     }
 
+    private func makeModuleContentsChildren(sessionID: UUID, module: LumaCore.ProcessModule) -> [SidebarGroupChild] {
+        let moduleID = module.id
+        let outline = moduleOutline(sessionID: sessionID, module: module)
+        var children: [SidebarGroupChild] = ModuleSymbolCategory.allCases.map { category in
+            (
+                key: moduleCategoryKey(moduleID: moduleID, category: category),
+                row: ModuleSidebar.makeCategoryRow(category, count: outline?.counts[category]),
+                onActivate: { @MainActor [weak self] _ in
+                    self?.select(.moduleSymbols(sessionID: sessionID, moduleID: moduleID, category: category))
+                }
+            )
+        }
+        let selectSwiftTypes: @MainActor (WidgetProtocol) -> Void = { [weak self] _ in
+            self?.select(.swiftTypes(sessionID: sessionID, moduleID: moduleID))
+        }
+        switch outline?.swiftTypes {
+        case .needsBridge:
+            children.append((
+                key: swiftTypesKey(moduleID: moduleID),
+                row: ModuleSidebar.makeSwiftTypesRow(count: nil, disclosure: nil),
+                onActivate: selectSwiftTypes
+            ))
+        case .available(let types):
+            let isExpanded = expandedSwiftTypeLists.contains(moduleExpansionKey(sessionID: sessionID, moduleID: moduleID))
+            let disclosure = types.isEmpty
+                ? nil
+                : SidebarFeatureRow.Disclosure(expansion: isExpanded ? .expanded : .collapsed) { [weak self] in
+                    self?.toggleSwiftTypesExpansion(sessionID: sessionID, moduleID: moduleID)
+                }
+            children.append((
+                key: swiftTypesKey(moduleID: moduleID),
+                row: ModuleSidebar.makeSwiftTypesRow(count: types.count, disclosure: disclosure),
+                onActivate: selectSwiftTypes
+            ))
+            if isExpanded {
+                children += makeSwiftTypeChildren(sessionID: sessionID, module: module, types: types)
+            }
+        case .absent, nil:
+            break
+        }
+        return children
+    }
+
+    private func makeSwiftTypeChildren(
+        sessionID: UUID,
+        module: LumaCore.ProcessModule,
+        types: [SwiftTypeSummary]
+    ) -> [SidebarGroupChild] {
+        let moduleID = module.id
+        let highlights = types.sidebarHighlights(selectedID: selectedSwiftTypeName(in: sessionID, moduleID: moduleID))
+        var children: [SidebarGroupChild] = highlights.map { type in
+            (
+                key: swiftTypeKey(moduleID: moduleID, typeName: type.name),
+                row: ModuleSidebar.makeSwiftTypeRow(type, module: module),
+                onActivate: { @MainActor [weak self] _ in self?.select(.swiftType(sessionID: sessionID, moduleID: moduleID, type: type)) }
+            )
+        }
+        if types.count > highlights.count {
+            let (row, _) = SidebarFeatureRow.makeBrowseAll(totalCount: types.count, depth: 2)
+            children.append((
+                key: swiftTypeKey(moduleID: moduleID, typeName: "browse"),
+                row: row,
+                onActivate: { [weak self] anchor in
+                    ModuleSidebar.presentSwiftTypeBrowser(types: types, module: module, anchor: anchor) { type in
+                        self?.select(.swiftType(sessionID: sessionID, moduleID: moduleID, type: type))
+                    }
+                }
+            ))
+        }
+        return children
+    }
+
+    private func moduleOutline(sessionID: UUID, module: LumaCore.ProcessModule) -> ModuleOutline? {
+        let key = moduleExpansionKey(sessionID: sessionID, moduleID: module.id)
+        if let outline = moduleOutlines[key] {
+            return outline
+        }
+        loadModuleOutline(sessionID: sessionID, module: module, key: key)
+        return nil
+    }
+
+    private func loadModuleOutline(sessionID: UUID, module: LumaCore.ProcessModule, key: String) {
+        guard !pendingModuleOutlines.contains(key), let node = engine?.node(forSessionID: sessionID) else { return }
+        pendingModuleOutlines.insert(key)
+        Task { @MainActor [weak self] in
+            let outline = try? await node.outlineModule(name: module.name)
+            guard let self else { return }
+            self.pendingModuleOutlines.remove(key)
+            self.moduleOutlines[key] = outline
+            if outline != nil {
+                self.scheduleGroupChildrenReconcile(sessionID: sessionID, group: .modules, force: true)
+            }
+        }
+    }
+
+    private func toggleModuleExpansion(sessionID: UUID, moduleID: String) {
+        expandedModules.formSymmetricDifference([moduleExpansionKey(sessionID: sessionID, moduleID: moduleID)])
+        scheduleGroupChildrenReconcile(sessionID: sessionID, group: .modules, force: true)
+    }
+
+    private func toggleSwiftTypesExpansion(sessionID: UUID, moduleID: String) {
+        expandedSwiftTypeLists.formSymmetricDifference([moduleExpansionKey(sessionID: sessionID, moduleID: moduleID)])
+        scheduleGroupChildrenReconcile(sessionID: sessionID, group: .modules, force: true)
+    }
+
     private func makeThreadChildren(
         sessionID: UUID,
         engine: Engine
-    ) -> [(key: String, row: ListBoxRow, onActivate: @MainActor (WidgetProtocol) -> Void)] {
+    ) -> [SidebarGroupChild] {
         let threads = sessionThreads(sessionID)
         let highlights = threads.sidebarHighlights(selectedID: selectedThreadID(in: sessionID))
-        var children: [(key: String, row: ListBoxRow, onActivate: @MainActor (WidgetProtocol) -> Void)] = []
+        var children: [SidebarGroupChild] = []
         for thread in highlights {
             let (row, anchor) = ThreadSidebar.makeThreadRow(thread: thread)
             ThreadSidebar.attachContextMenu(to: anchor, thread: thread, engine: engine, sessionID: sessionID)
@@ -3363,8 +3546,8 @@ final class MainWindow: InstrumentUIHost {
     }
 
     private func selectedModuleID(in sessionID: UUID) -> String? {
-        guard case .module(let sid, let moduleID) = selection, sid == sessionID else { return nil }
-        return moduleID
+        guard let location = selection.moduleLocation, location.sessionID == sessionID else { return nil }
+        return location.moduleID
     }
 
     private func selectedThreadID(in sessionID: UUID) -> UInt? {
@@ -3372,7 +3555,54 @@ final class MainWindow: InstrumentUIHost {
         return threadID
     }
 
+    private func selectedSwiftTypeName(in sessionID: UUID, moduleID: String) -> String? {
+        guard case .swiftType(sessionID, moduleID, let type) = selection else { return nil }
+        return type.name
+    }
+
+    private func revealModuleContents(of selection: SidebarSelection) {
+        guard let location = selection.moduleLocation else { return }
+        let key = moduleExpansionKey(sessionID: location.sessionID, moduleID: location.moduleID)
+        expandedModules.insert(key)
+        if case .swiftType = selection {
+            expandedSwiftTypeLists.insert(key)
+        }
+    }
+
+    private func moduleContentsKey(for selection: SidebarSelection) -> String? {
+        switch selection {
+        case .module(_, let moduleID):
+            return moduleChildKey(moduleID: moduleID)
+        case .moduleSymbols(_, let moduleID, let category):
+            return moduleCategoryKey(moduleID: moduleID, category: category)
+        case .swiftTypes(_, let moduleID):
+            return swiftTypesKey(moduleID: moduleID)
+        case .swiftType(_, let moduleID, let type):
+            return swiftTypeKey(moduleID: moduleID, typeName: type.name)
+        default:
+            return nil
+        }
+    }
+
     private func moduleChildKey(moduleID: String) -> String { "module:\(moduleID)" }
+
+    private func moduleCategoryKey(moduleID: String, category: ModuleSymbolCategory) -> String {
+        "\(moduleChildKey(moduleID: moduleID))/\(category.rawValue)"
+    }
+
+    private func swiftTypesKey(moduleID: String) -> String { "\(moduleChildKey(moduleID: moduleID))/swift" }
+
+    private func swiftTypeKey(moduleID: String, typeName: String) -> String {
+        "\(swiftTypesKey(moduleID: moduleID))/\(typeName)"
+    }
+
+    private func moduleExpansionKey(sessionID: UUID, moduleID: String) -> String {
+        "\(sessionID.uuidString)/\(moduleID)"
+    }
+
+    private func isBrowseChildKey(_ key: String) -> Bool {
+        key == "browse" || key.hasSuffix("/browse")
+    }
 
     private func threadChildKey(threadID: UInt) -> String { "thread:\(threadID)" }
 
@@ -3424,6 +3654,27 @@ final class MainWindow: InstrumentUIHost {
                     self.scheduleGroupChildrenReconcile(sessionID: session.id, group: .modules, force: true)
                 }
                 self.observeModuleAnalysis()
+            }
+        }
+    }
+
+    private func observeLoadedPackages() {
+        guard let engine else { return }
+        withObservationTracking {
+            for node in engine.processNodes {
+                _ = node.loadedPackageNames
+            }
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.moduleOutlines.removeAll()
+                for session in self.sessions {
+                    self.scheduleGroupChildrenReconcile(sessionID: session.id, group: .modules, force: true)
+                }
+                if case .swiftTypes = self.selection {
+                    self.renderDetail()
+                }
+                self.observeLoadedPackages()
             }
         }
     }
@@ -4041,8 +4292,9 @@ final class MainWindow: InstrumentUIHost {
                 if case .session(let s) = $0 { return s == id }
                 return false
             }
-        case .module(let sid, let moduleID):
-            let key = moduleChildKey(moduleID: moduleID)
+        case .module, .moduleSymbols, .swiftTypes, .swiftType:
+            guard let location = selection.moduleLocation, let key = moduleContentsKey(for: selection) else { return nil }
+            let sid = location.sessionID
             return sessionsRowKinds.firstIndex {
                 if case .moduleChild(let s, let k) = $0 { return s == sid && k == key }
                 return false
