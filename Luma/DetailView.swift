@@ -60,13 +60,36 @@ struct DetailView: View {
                 }
 
             case .some(.module(let sessionID, let moduleID)):
-                if let session = engine.sessions.first(where: { $0.id == sessionID }),
-                    let module = session.lastKnownModules?.first(where: { $0.id == moduleID })
-                {
+                if let module = knownModule(sessionID: sessionID, moduleID: moduleID) {
                     SessionContent(sessionID: sessionID, engine: engine) {
-                        ModuleDetailView(sessionID: sessionID, module: module, engine: engine, selection: $selection)
+                        ModuleOverviewView(sessionID: sessionID, module: module, engine: engine, selection: $selection)
                     }
                     .id(moduleID)
+                }
+
+            case .some(.moduleSymbols(let sessionID, let moduleID, let category)):
+                if let module = knownModule(sessionID: sessionID, moduleID: moduleID) {
+                    SessionContent(sessionID: sessionID, engine: engine) {
+                        ModuleSymbolsView(
+                            sessionID: sessionID, module: module, category: category, engine: engine, selection: $selection)
+                    }
+                    .id(selection)
+                }
+
+            case .some(.swiftTypes(let sessionID, let moduleID)):
+                if let module = knownModule(sessionID: sessionID, moduleID: moduleID) {
+                    SessionContent(sessionID: sessionID, engine: engine) {
+                        SwiftTypesView(sessionID: sessionID, module: module, engine: engine, selection: $selection)
+                    }
+                    .id(selection)
+                }
+
+            case .some(.swiftType(let sessionID, let moduleID, let type)):
+                if let module = knownModule(sessionID: sessionID, moduleID: moduleID) {
+                    SessionContent(sessionID: sessionID, engine: engine) {
+                        SwiftTypeView(sessionID: sessionID, module: module, type: type, engine: engine, selection: $selection)
+                    }
+                    .id(selection)
                 }
 
             case .some(.thread(let sessionID, let threadID)):
@@ -149,5 +172,9 @@ struct DetailView: View {
 
     private var focusedPatternType: String? {
         if case .patternType(_, let typeName) = selection { typeName } else { nil }
+    }
+
+    private func knownModule(sessionID: UUID, moduleID: String) -> LumaCore.ProcessModule? {
+        engine.session(id: sessionID)?.lastKnownModules?.first(where: { $0.id == moduleID })
     }
 }

@@ -1,66 +1,33 @@
 import LumaCore
 import SwiftUI
 
-struct ModuleDetailView: View {
+struct ModuleSymbolsView: View {
     let sessionID: UUID
     let module: LumaCore.ProcessModule
+    let category: LumaCore.ModuleSymbolCategory
     let engine: Engine
     @Binding var selection: SidebarItemID?
 
     @State private var page: LumaCore.ModuleSymbolPage?
-    @State private var counts: LumaCore.ModuleSymbolPage.Counts?
     @State private var loadError: String?
-    @State private var tab: Tab = .exports
     @State private var selectedRowID: Int?
     @State private var facts: [UInt64: AddressFacts] = [:]
     @State private var filterText: String = ""
     @State private var pageIndex = 0
     @FocusState private var filterFocused: Bool
 
-    enum Tab: String, CaseIterable, Identifiable {
-        case exports = "Exports"
-        case imports = "Imports"
-        case symbols = "Symbols"
-
-        var id: String { rawValue }
-
-        var category: LumaCore.ModuleSymbolCategory {
-            switch self {
-            case .exports: return .exports
-            case .imports: return .imports
-            case .symbols: return .symbols
-            }
-        }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
-                Picker("", selection: $tab) {
-                    ForEach(Tab.allCases) { t in
-                        Text(label(for: t)).tag(t)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-
-                content
-            }
-            .detailPaneInset(.leading)
-            .padding(.top, 8)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            content
+                .detailPaneInset(.leading)
+                .padding(.top, 8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
             Divider()
             filterBar
         }
-        .background {
-            Button("") { filterFocused = true }
-                .keyboardShortcut("f", modifiers: .command)
-                .hidden()
-        }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onChange(of: filterText) { pageIndex = 0 }
-        .onChange(of: tab) { pageIndex = 0 }
         .task(id: queryKey) {
             try? await Task.sleep(for: .milliseconds(180))
             guard !Task.isCancelled else { return }
@@ -69,7 +36,7 @@ struct ModuleDetailView: View {
     }
 
     private var queryKey: String {
-        "\(module.id)\u{0}\(tab.rawValue)\u{0}\(filterText)\u{0}\(pageIndex)"
+        "\(module.id)\u{0}\(filterText)\u{0}\(pageIndex)"
     }
 
     @ViewBuilder
@@ -80,39 +47,18 @@ struct ModuleDetailView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             switch page?.rows {
-            case .exports(let rows) where tab == .exports: exportsTable(rows)
-            case .imports(let rows) where tab == .imports: importsTable(rows)
-            case .symbols(let rows) where tab == .symbols: symbolsTable(rows)
-            default: ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .exports(let rows): exportsTable(rows)
+            case .imports(let rows): importsTable(rows)
+            case .symbols(let rows): symbolsTable(rows)
+            case nil: ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
 
-    private func label(for tab: Tab) -> String {
-        guard let counts else { return tab.rawValue }
-        return "\(tab.rawValue) (\(counts[tab.category]))"
-    }
-
     private var filterBar: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-                .font(.system(size: 11))
-            TextField("Filter", text: $filterText)
-                .textFieldStyle(.plain)
-                .font(.system(size: 12))
-                .focused($filterFocused)
-            if !filterText.isEmpty {
-                Button(action: { filterText = "" }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
+        DetailFilterBar(text: $filterText, isFocused: $filterFocused) {
             if let page {
-                Text(rangeStatus(page))
-                    .foregroundStyle(.secondary)
-                    .font(.system(size: 11))
+                DetailFilterStatus(text: rangeStatus(page))
                 Button { pageIndex = max(0, pageIndex - 1) } label: { Image(systemName: "chevron.left") }
                     .buttonStyle(.plain)
                     .disabled(!page.hasPrevious)
@@ -121,8 +67,6 @@ struct ModuleDetailView: View {
                     .disabled(!page.hasNext)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
     }
 
     private func lastPageIndex(_ page: LumaCore.ModuleSymbolPage) -> Int {
@@ -255,13 +199,12 @@ struct ModuleDetailView: View {
         do {
             let result = try await node.queryModuleSymbols(
                 name: module.name,
-                category: tab.category,
+                category: category,
                 query: filterText,
                 offset: pageIndex * LumaCore.ModuleSymbolPage.pageSize
             )
             guard !Task.isCancelled else { return }
             page = result
-            counts = result.counts
             selectedRowID = nil
             loadError = nil
         } catch {
@@ -270,7 +213,7 @@ struct ModuleDetailView: View {
     }
 }
 
-extension ModuleDetailView {
+extension ModuleSymbolsView {
     fileprivate func addressContext(for export: LumaCore.ModuleSymbolBundle.Export) -> AddressContext {
         AddressContext(
             kind: export.kind == .function ? .function : .data,

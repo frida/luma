@@ -12,6 +12,8 @@ let sidebarChildIconWidth: CGFloat = 16
 let sidebarChildIndent: CGFloat =
     sidebarRowLeadingPad + sidebarChevronWidth + sidebarChevronToIconSpacing + sidebarParentIconWidth
 let sidebarGrandchildIndent: CGFloat = sidebarChildIndent + sidebarChildIconWidth
+let sidebarGreatGrandchildIndent: CGFloat = sidebarGrandchildIndent + sidebarChildIconWidth
+let sidebarGreatGreatGrandchildIndent: CGFloat = sidebarGreatGrandchildIndent + sidebarChildIconWidth
 
 private let subrowIconWidth: CGFloat = sidebarChildIconWidth
 
@@ -154,6 +156,9 @@ struct SidebarView: View {
             .repl(let id),
             .files(let id),
             .module(let id, _),
+            .moduleSymbols(let id, _, _),
+            .swiftTypes(let id, _),
+            .swiftType(let id, _, _),
             .thread(let id, _),
             .instrument(let id, _),
             .instrumentComponent(let id, _, _),
@@ -357,11 +362,12 @@ private struct SidebarMissionRow: View {
 struct SidebarDisclosure: View {
     let isExpanded: Bool
     var canToggle: Bool = true
+    var indent: CGFloat = sidebarChildIndent
     let onToggle: () -> Void
 
     var body: some View {
         chevron
-            .padding(.leading, sidebarChildIndent - sidebarChevronWidth - sidebarChevronToIconSpacing)
+            .padding(.leading, indent - sidebarChevronWidth - sidebarChevronToIconSpacing)
             .padding(.trailing, sidebarChevronToIconSpacing)
     }
 

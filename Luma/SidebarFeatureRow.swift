@@ -6,6 +6,7 @@ struct SidebarFeatureRowLabel<Icon: View, Accessory: View>: View {
     let title: String
     var isDimmed: Bool = false
     var help: String = ""
+    var indent: CGFloat = sidebarGrandchildIndent
     @ViewBuilder var accessory: () -> Accessory
 
     var body: some View {
@@ -21,20 +22,27 @@ struct SidebarFeatureRowLabel<Icon: View, Accessory: View>: View {
         }
         .font(.callout)
         .contentShape(Rectangle())
-        .padding(.leading, sidebarGrandchildIndent)
+        .padding(.leading, indent)
         .opacity(isDimmed ? 0.5 : 1)
         .help(help)
     }
 }
 
 extension SidebarFeatureRowLabel where Accessory == EmptyView {
-    init(@ViewBuilder icon: @escaping () -> Icon, title: String, isDimmed: Bool = false, help: String = "") {
-        self.init(icon: icon, title: title, isDimmed: isDimmed, help: help, accessory: { EmptyView() })
+    init(
+        @ViewBuilder icon: @escaping () -> Icon,
+        title: String,
+        isDimmed: Bool = false,
+        help: String = "",
+        indent: CGFloat = sidebarGrandchildIndent
+    ) {
+        self.init(icon: icon, title: title, isDimmed: isDimmed, help: help, indent: indent, accessory: { EmptyView() })
     }
 }
 
 struct SidebarBrowseAllRow<Popover: View>: View {
     let count: Int
+    var indent: CGFloat = sidebarGrandchildIndent
     @ViewBuilder var popover: (_ dismiss: @escaping () -> Void) -> Popover
 
     @State private var isShowing = false
@@ -55,7 +63,7 @@ struct SidebarBrowseAllRow<Popover: View>: View {
         .buttonStyle(.plain)
         .font(.callout)
         .contentShape(Rectangle())
-        .padding(.leading, sidebarGrandchildIndent)
+        .padding(.leading, indent)
         .popover(isPresented: $isShowing, arrowEdge: .trailing) {
             popover({ isShowing = false })
         }
