@@ -15,6 +15,7 @@ struct FilesView: View {
     @State private var problem: String?
     @State private var isChoosingUploads = false
     @State private var isDropTargeted = false
+    @State private var pendingDeletion: [RemoteFileEntry] = []
     #if !os(macOS)
         @State private var downloaded: [URL] = []
     #endif
@@ -30,6 +31,10 @@ struct FilesView: View {
 
     private var acceptsUploads: Bool {
         node != nil && !path.isEmpty
+    }
+
+    private var deletionTitle: String {
+        pendingDeletion.count == 1 ? "Delete “\(pendingDeletion[0].name)”?" : "Delete \(pendingDeletion.count) items?"
     }
 
     var body: some View {
@@ -56,6 +61,18 @@ struct FilesView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task(id: attachedNodeID) {
             await start()
+        }
+        .confirmationDialog(
+            deletionTitle,
+            isPresented: Binding(
+                get: { !pendingDeletion.isEmpty },
+                set: { if !$0 { pendingDeletion = [] } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) { delete(pendingDeletion) }
+        } message: {
+            Text("This can’t be undone.")
         }
         .fileImporter(isPresented: $isChoosingUploads, allowedContentTypes: [.item, .folder], allowsMultipleSelection: true) { result in
             if let urls = try? result.get() {
@@ -169,11 +186,20 @@ struct FilesView: View {
             if selected.count == 1 {
                 Button("Copy Path") { copyPath(of: selected[0]) }
             }
+            if !selected.isEmpty {
+                Divider()
+                Button("Delete…", role: .destructive) { pendingDeletion = selected }
+            }
         } primaryAction: { names in
             if let entry = names.first.flatMap(entry(named:)) {
                 open(entry)
             }
         }
+        #if os(macOS)
+            .onDeleteCommand {
+                pendingDeletion = entries.filter { selectedNames.contains($0.name) }
+            }
+        #endif
         .dropDestination(for: URL.self) { urls, _ in
             guard acceptsUploads else { return false }
             upload(urls)
@@ -298,6 +324,19 @@ struct FilesView: View {
                 }
             }
             finish()
+        }
+    }
+
+    private func delete(_ doomed: [RemoteFileEntry]) {
+        guard let node else { return }
+        let remotePaths = doomed.map { RemotePath.join(path, $0.name) }
+        Task {
+            do {
+                try await node.removeItems(at: remotePaths)
+            } catch {
+                problem = error.localizedDescription
+            }
+            navigate(to: path)
         }
     }
 

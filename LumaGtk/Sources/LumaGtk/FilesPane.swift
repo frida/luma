@@ -1,3 +1,4 @@
+import Adw
 import CGtk
 import Foundation
 import Gdk
@@ -160,6 +161,7 @@ final class FilesPane {
         }
         installDropTarget(on: listArea)
         installDragSource()
+        installDeleteKey()
 
         applySessionState()
     }
@@ -240,6 +242,18 @@ final class FilesPane {
             return UnsafeMutableRawPointer(bitPattern: provider).map(Gdk.ContentProviderRef.init(raw:))
         }
         list.add(controller: source)
+    }
+
+    private func installDeleteKey() {
+        let keys = EventControllerKey()
+        keys.onKeyPressed { [weak self] _, keyval, _, _ in
+            MainActor.assumeIsolated {
+                guard let self, Int32(keyval) == Gdk.keyDelete, !self.selectedEntries.isEmpty else { return false }
+                self.confirmDeletion(of: self.selectedEntries)
+                return true
+            }
+        }
+        list.add(controller: keys)
     }
 
     private func observeTransfers(of node: LumaCore.ProcessNode) {
@@ -336,13 +350,13 @@ final class FilesPane {
                     self.list.unselectAll()
                     self.list.select(row: row)
                 }
-                ContextMenu.present([self.contextItems(for: self.selectedEntries)], at: gesture.widget!, x: x, y: y)
+                ContextMenu.present(self.contextSections(for: self.selectedEntries), at: gesture.widget!, x: x, y: y)
             }
         }
         row.add(controller: click)
     }
 
-    private func contextItems(for selected: [RemoteFileEntry]) -> [ContextMenu.Item] {
+    private func contextSections(for selected: [RemoteFileEntry]) -> [[ContextMenu.Item]] {
         var items: [ContextMenu.Item] = []
         if selected.count == 1, selected[0].opensAsDirectory {
             items.append(.init("Open") { [weak self] in self?.open(selected[0]) })
@@ -353,7 +367,8 @@ final class FilesPane {
         if selected.count == 1 {
             items.append(.init("Copy Path") { [weak self] in self?.copyPath(of: selected[0]) })
         }
-        return items
+        let deletion: [ContextMenu.Item] = [.init("Delete…", destructive: true) { [weak self] in self?.confirmDeletion(of: selected) }]
+        return [items, deletion]
     }
 
     private func open(_ entry: RemoteFileEntry) {
@@ -412,6 +427,37 @@ final class FilesPane {
                 }
             }
             finish()
+        }
+    }
+
+    private func confirmDeletion(of doomed: [RemoteFileEntry]) {
+        let heading = doomed.count == 1 ? "Delete “\(doomed[0].name)”?" : "Delete \(doomed.count) items?"
+        let dialog = Adw.AlertDialog(heading: heading, body: "This can’t be undone.")
+        dialog.addResponse(id: "cancel", label: "_Cancel")
+        dialog.addResponse(id: "delete", label: "_Delete")
+        dialog.setResponseAppearance(response: "delete", appearance: .destructive)
+        dialog.setDefault(response: "cancel")
+        dialog.setClose(response: "cancel")
+        dialog.onResponse { [weak self] _, responseID in
+            MainActor.assumeIsolated {
+                guard responseID == "delete" else { return }
+                self?.delete(doomed)
+            }
+        }
+        dialog.present(parent: widget)
+    }
+
+    private func delete(_ doomed: [RemoteFileEntry]) {
+        guard let node else { return }
+        let remotePaths = doomed.map { RemotePath.join(path, $0.name) }
+        _Concurrency.Task { @MainActor [weak self] in
+            do {
+                try await node.removeItems(at: remotePaths)
+            } catch {
+                self?.onError(error.localizedDescription)
+            }
+            guard let self else { return }
+            self.navigate(to: self.path)
         }
     }
 

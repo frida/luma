@@ -177,6 +177,17 @@ export function makeDirectory(path: string): void {
     fs.mkdirSync(path, { recursive: true });
 }
 
+export function removePath(path: string): void {
+    if (fs.lstatSync(path).isDirectory()) {
+        for (const name of fs.readdirSync(path)) {
+            removePath(joinPath(path, name));
+        }
+        fs.rmdirSync(path);
+    } else {
+        fs.unlinkSync(path);
+    }
+}
+
 const activePulls = new Map<number, () => void>();
 
 export function pullFile(path: string, id: number): number {

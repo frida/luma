@@ -1021,6 +1021,16 @@ public final class ProcessNode: Identifiable {
         return transfer
     }
 
+    public func removeItems(at remotePaths: [String]) async throws {
+        for remotePath in remotePaths {
+            do {
+                _ = try await script.exports.removePath(remotePath)
+            } catch {
+                throw LumaCoreError.invalidOperation("\(RemotePath.lastComponent(of: remotePath)): \(error.localizedDescription)")
+            }
+        }
+    }
+
     private func download(_ roots: [(remotePath: String, destination: URL)], reportingTo transfer: RemoteFileTransfer) async throws {
         var plan: [(entry: RemoteTreeEntry, destination: URL)] = []
         for root in roots {
