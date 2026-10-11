@@ -581,6 +581,13 @@ enum StyleSheet {
     box.luma-pharo-class-body {
         margin: 2px 0;
     }
+    box.luma-drop-zone {
+        border: 2px dashed @accent_color;
+        border-radius: 12px;
+        background-color: alpha(@window_bg_color, 0.92);
+        background-image: linear-gradient(alpha(@accent_bg_color, 0.12), alpha(@accent_bg_color, 0.12));
+        color: @accent_color;
+    }
     """
 
     static func install() {

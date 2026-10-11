@@ -119,20 +119,94 @@ function permissionsFromMode(mode: number): string {
     return access;
 }
 
+export interface TreeEntry {
+    path: string;
+    components: string[];
+    kind: "file" | "directory";
+    size: number;
+}
+
+export function walkTree(root: string): TreeEntry[] {
+    const stats = fs.statSync(root);
+    const components = [baseName(root)];
+    if (stats.isFile()) {
+        return [{ path: root, components, kind: "file", size: stats.size }];
+    }
+    if (!stats.isDirectory()) {
+        throw new Error(`${root} is neither a file nor a directory`);
+    }
+    const entries: TreeEntry[] = [{ path: root, components, kind: "directory", size: 0 }];
+    walkDirectory(root, components, entries);
+    return entries;
+}
+
+function walkDirectory(directory: string, components: string[], entries: TreeEntry[]): void {
+    for (const name of fs.readdirSync(directory)) {
+        const path = joinPath(directory, name);
+        const childComponents = [...components, name];
+        const stats = fs.lstatSync(path);
+        if (stats.isDirectory()) {
+            entries.push({ path, components: childComponents, kind: "directory", size: 0 });
+            walkDirectory(path, childComponents, entries);
+        } else if (stats.isFile()) {
+            entries.push({ path, components: childComponents, kind: "file", size: stats.size });
+        } else if (stats.isSymbolicLink()) {
+            const target = statOrNull(path);
+            if (target !== null && target.isFile()) {
+                entries.push({ path, components: childComponents, kind: "file", size: target.size });
+            }
+        }
+    }
+}
+
+function statOrNull(path: string): Stats | null {
+    try {
+        return fs.statSync(path);
+    } catch (e) {
+        return null;
+    }
+}
+
+function baseName(path: string): string {
+    const trimmed = path.replace(/[\\/]+$/, "");
+    const cut = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+    return trimmed.substring(cut + 1);
+}
+
+export function makeDirectory(path: string): void {
+    fs.mkdirSync(path, { recursive: true });
+}
+
+const activePulls = new Map<number, () => void>();
+
 export function pullFile(path: string, id: number): number {
     const size = fs.statSync(path).size;
     const reader = fs.createReadStream(path);
+    activePulls.set(id, () => reader.destroy());
     reader.on("data", (chunk: Buffer) => {
         send({ type: "fs:chunk", id }, chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength) as ArrayBuffer);
     });
     reader.on("end", () => {
+        activePulls.delete(id);
         send({ type: "fs:end", id });
     });
     reader.on("error", (error: Error) => {
+        activePulls.delete(id);
         send({ type: "fs:error", id, error: error.message });
     });
     return size;
 }
+
+export function cancelPull(id: number): void {
+    const cancel = activePulls.get(id);
+    activePulls.delete(id);
+    cancel?.();
+}
+
+type PushMessage =
+    | { action: "write" }
+    | { action: "end" }
+    | { action: "cancel" };
 
 export function pushFile(path: string, id: number): void {
     const writer = fs.createWriteStream(path);
@@ -143,17 +217,31 @@ export function pushFile(path: string, id: number): void {
         send({ type: "fs:error", id, error: error.message });
     });
     const messageType = `fs:push:${id}`;
-    const onChunk = (message: { done: boolean }, data: ArrayBuffer | null) => {
-        if (message.done) {
-            writer.end();
-            return;
+    const onMessage = (message: PushMessage, data: ArrayBuffer | null) => {
+        switch (message.action) {
+            case "write":
+                writer.write(Buffer.from(data!), () => {
+                    send({ type: "fs:ack", id });
+                });
+                break;
+            case "end":
+                writer.end();
+                return;
+            case "cancel":
+                writer.once("close", () => discardPartialFile(path));
+                writer.destroy();
+                return;
         }
-        if (data !== null) {
-            writer.write(Buffer.from(data));
-        }
-        recv(messageType, onChunk);
+        recv(messageType, onMessage);
     };
-    recv(messageType, onChunk);
+    recv(messageType, onMessage);
+}
+
+function discardPartialFile(path: string): void {
+    try {
+        fs.unlinkSync(path);
+    } catch (e) {
+    }
 }
 
 const ERANGE = 34;

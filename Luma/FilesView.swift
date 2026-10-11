@@ -13,9 +13,11 @@ struct FilesView: View {
     @State private var selectedNames: Set<String> = []
     @State private var isLoading = false
     @State private var problem: String?
-    @State private var transfer: String?
-    @State private var isImportingPush = false
-    @State private var pulled: PulledFile?
+    @State private var isChoosingUploads = false
+    @State private var isDropTargeted = false
+    #if !os(macOS)
+        @State private var downloaded: [URL] = []
+    #endif
 
     private var node: LumaCore.ProcessNode? {
         engine.node(forSessionID: sessionID)
@@ -24,6 +26,10 @@ struct FilesView: View {
     private var attachedNodeID: UUID? {
         guard engine.session(id: sessionID)?.phase == .attached else { return nil }
         return node?.id
+    }
+
+    private var acceptsUploads: Bool {
+        node != nil && !path.isEmpty
     }
 
     var body: some View {
@@ -36,10 +42,13 @@ struct FilesView: View {
                     .textSelection(.enabled)
             }
             table
-            if let transfer {
-                Text(transfer)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            if let transfers = node?.fileTransfers, !transfers.isEmpty {
+                VStack(spacing: 6) {
+                    ForEach(transfers) { transfer in
+                        FileTransferRow(transfer: transfer)
+                    }
+                }
+                .padding(.bottom, 8)
             }
         }
         .padding(.horizontal, 12)
@@ -48,20 +57,18 @@ struct FilesView: View {
         .task(id: attachedNodeID) {
             await start()
         }
-        .fileImporter(isPresented: $isImportingPush, allowedContentTypes: [.item]) { result in
-            if let url = try? result.get() {
-                push(url)
+        .fileImporter(isPresented: $isChoosingUploads, allowedContentTypes: [.item, .folder], allowsMultipleSelection: true) { result in
+            if let urls = try? result.get() {
+                upload(urls)
             }
         }
         #if !os(macOS)
-            .fileExporter(
+            .fileMover(
                 isPresented: Binding(
-                    get: { pulled != nil },
-                    set: { if !$0 { pulled = nil } }
+                    get: { !downloaded.isEmpty },
+                    set: { if !$0 { downloaded = [] } }
                 ),
-                item: pulled,
-                contentTypes: [.data],
-                defaultFilename: pulled?.name
+                files: downloaded
             ) { _ in }
         #endif
     }
@@ -103,15 +110,15 @@ struct FilesView: View {
                     .labelStyle(.iconOnly)
             }
             .disabled(isLoading)
-            Button("Push File Here…") {
-                isImportingPush = true
+            Button("Upload…") {
+                isChoosingUploads = true
             }
-            .disabled(node == nil || path.isEmpty)
+            .disabled(!acceptsUploads)
         }
     }
 
     private var table: some View {
-        Table(entries, selection: $selectedNames) {
+        Table(of: RemoteFileEntry.self, selection: $selectedNames) {
             TableColumn("Name") { entry in
                 HStack(spacing: 6) {
                     Image(systemName: entry.symbolName)
@@ -145,31 +152,64 @@ struct FilesView: View {
                     .foregroundStyle(.secondary)
             }
             .width(min: 80, ideal: 120)
+        } rows: {
+            ForEach(entries) { entry in
+                TableRow(entry)
+                    .itemProvider { dragProvider(for: entry) }
+            }
         }
         .contextMenu(forSelectionType: String.self) { names in
-            if let entry = names.first.flatMap(entry(named:)) {
-                if entry.opensAsDirectory {
-                    Button("Open") { open(entry) }
-                }
-                if entry.kind == .file || entry.target?.kind == .file {
-                    Button("Pull…") { pull(entry) }
-                }
-                Button("Copy Path") { copyPath(of: entry) }
+            let selected = entries.filter { names.contains($0.name) }
+            if selected.count == 1, selected[0].opensAsDirectory {
+                Button("Open") { open(selected[0]) }
+            }
+            if !selected.isEmpty, selected.allSatisfy(\.isDownloadable) {
+                Button("Download…") { download(selected) }
+            }
+            if selected.count == 1 {
+                Button("Copy Path") { copyPath(of: selected[0]) }
             }
         } primaryAction: { names in
             if let entry = names.first.flatMap(entry(named:)) {
                 open(entry)
             }
         }
+        .dropDestination(for: URL.self) { urls, _ in
+            guard acceptsUploads else { return false }
+            upload(urls)
+            return true
+        } isTargeted: { targeted in
+            isDropTargeted = targeted && acceptsUploads
+        }
         .overlay {
-            if isLoading && entries.isEmpty {
+            if isDropTargeted {
+                dropHighlight
+            } else if isLoading && entries.isEmpty {
                 ProgressView()
             }
         }
     }
 
-    private func entry(named name: String) -> RemoteFileEntry? {
-        entries.first { $0.name == name }
+    private var dropHighlight: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(.regularMaterial)
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.accentColor.opacity(0.1))
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+            VStack(spacing: 6) {
+                Image(systemName: "arrow.up.doc")
+                    .font(.largeTitle)
+                Text("Upload to \(path)")
+                    .font(.headline)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .foregroundStyle(Color.accentColor)
+            .padding()
+        }
+        .allowsHitTesting(false)
     }
 
     private func start() async {
@@ -205,69 +245,86 @@ struct FilesView: View {
         if entry.opensAsDirectory {
             navigate(to: RemotePath.join(path, entry.name))
         } else {
-            pull(entry)
+            download([entry])
         }
     }
 
-    private func pull(_ entry: RemoteFileEntry) {
+    private func download(_ selected: [RemoteFileEntry]) {
         guard let node else { return }
-        let remotePath = RemotePath.join(path, entry.name)
-        Task {
-            let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            var received: Int64 = 0
-            transfer = "Pulling \(entry.name)…"
-            do {
-                try await node.pullFile(at: remotePath, to: temporary) { count in
-                    received += count
-                    transfer = "Pulling \(entry.name)… \(ByteCountFormatter.string(fromByteCount: received, countStyle: .file))"
-                }
-                transfer = nil
-                deliver(PulledFile(name: entry.name, url: temporary))
-            } catch {
-                transfer = nil
-                problem = "\(entry.name): \(error.localizedDescription)"
-            }
-        }
-    }
-
-    private func deliver(_ file: PulledFile) {
+        let remotePaths = selected.map { RemotePath.join(path, $0.name) }
         #if os(macOS)
-            let panel = NSSavePanel()
-            panel.nameFieldStringValue = file.name
-            guard panel.runModal() == .OK, let destination = panel.url else { return }
-            do {
-                try? FileManager.default.removeItem(at: destination)
-                try FileManager.default.moveItem(at: file.url, to: destination)
-            } catch {
-                problem = "\(file.name): \(error.localizedDescription)"
+            if selected.count == 1 {
+                let panel = NSSavePanel()
+                panel.nameFieldStringValue = selected[0].name
+                guard panel.runModal() == .OK, let destination = panel.url else { return }
+                watch(node.download(remotePaths[0], to: destination))
+            } else {
+                let panel = NSOpenPanel()
+                panel.canChooseFiles = false
+                panel.canChooseDirectories = true
+                panel.canCreateDirectories = true
+                panel.prompt = "Download"
+                guard panel.runModal() == .OK, let directory = panel.url else { return }
+                watch(node.download(remotePaths, into: directory))
             }
         #else
-            pulled = file
+            let staging = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try? FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+            let transfer = node.download(remotePaths, into: staging)
+            watch(transfer) {
+                downloaded = (try? FileManager.default.contentsOfDirectory(at: staging, includingPropertiesForKeys: nil)) ?? []
+            }
         #endif
     }
 
-    private func push(_ source: URL) {
+    private func upload(_ sources: [URL]) {
         guard let node else { return }
-        let accessing = source.startAccessingSecurityScopedResource()
-        let remotePath = RemotePath.join(path, source.lastPathComponent)
-        Task {
-            defer {
-                if accessing { source.stopAccessingSecurityScopedResource() }
+        let accessed = sources.filter { $0.startAccessingSecurityScopedResource() }
+        watch(node.upload(sources, into: path)) {
+            for source in accessed {
+                source.stopAccessingSecurityScopedResource()
             }
-            var sent: Int64 = 0
-            transfer = "Pushing \(source.lastPathComponent)…"
-            do {
-                try await node.pushFile(from: source, to: remotePath) { count in
-                    sent += count
-                    transfer = "Pushing \(source.lastPathComponent)… \(ByteCountFormatter.string(fromByteCount: sent, countStyle: .file))"
-                }
-                transfer = nil
-                navigate(to: path)
-            } catch {
-                transfer = nil
-                problem = "\(source.lastPathComponent): \(error.localizedDescription)"
-            }
+            navigate(to: path)
         }
+    }
+
+    private func watch(_ transfer: RemoteFileTransfer, then finish: @escaping () -> Void = {}) {
+        Task {
+            do {
+                try await transfer.waitUntilFinished()
+            } catch {
+                if !(error is CancellationError) {
+                    problem = "\(transfer.subject): \(error.localizedDescription)"
+                }
+            }
+            finish()
+        }
+    }
+
+    private func dragProvider(for entry: RemoteFileEntry) -> NSItemProvider {
+        let provider = NSItemProvider()
+        provider.suggestedName = entry.name
+        guard let node, entry.isDownloadable else { return provider }
+        let remotePath = RemotePath.join(path, entry.name)
+        provider.registerFileRepresentation(forTypeIdentifier: entry.contentType.identifier, fileOptions: [], visibility: .all) { completion in
+            let progress = Progress(totalUnitCount: 1)
+            Task { @MainActor in
+                let staging = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                do {
+                    try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+                    let destination = staging.appendingPathComponent(entry.name)
+                    let transfer = node.download(remotePath, to: destination)
+                    progress.addChild(transfer.progress, withPendingUnitCount: 1)
+                    try await transfer.waitUntilFinished()
+                    completion(destination, false, nil)
+                } catch {
+                    completion(nil, false, error)
+                }
+                try? FileManager.default.removeItem(at: staging)
+            }
+            return progress
+        }
+        return provider
     }
 
     private func copyPath(of entry: RemoteFileEntry) {
@@ -279,20 +336,53 @@ struct FilesView: View {
             UIPasteboard.general.string = remotePath
         #endif
     }
+
+    private func entry(named name: String) -> RemoteFileEntry? {
+        entries.first { $0.name == name }
+    }
 }
 
-private struct PulledFile: Transferable {
-    let name: String
-    let url: URL
+private struct FileTransferRow: View {
+    let transfer: RemoteFileTransfer
 
-    static var transferRepresentation: some TransferRepresentation {
-        FileRepresentation(exportedContentType: .data) { file in
-            SentTransferredFile(file.url)
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: transfer.direction == .upload ? "arrow.up.circle" : "arrow.down.circle")
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(transfer.activityDescription)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if let fraction = transfer.fractionCompleted {
+                    ProgressView(value: fraction)
+                } else {
+                    ProgressView()
+                        .progressViewStyle(.linear)
+                }
+                Text(transfer.progressDescription)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Button {
+                transfer.cancel()
+            } label: {
+                Label("Cancel", systemImage: "xmark.circle.fill")
+                    .labelStyle(.iconOnly)
+            }
+            .buttonStyle(.borderless)
+            .help("Cancel")
         }
     }
 }
 
 extension RemoteFileEntry {
+    fileprivate var contentType: UTType {
+        opensAsDirectory ? .folder : UTType(filenameExtension: (name as NSString).pathExtension) ?? .data
+    }
+
     fileprivate var symbolName: String {
         switch target?.kind ?? kind {
         case .directory:

@@ -72,7 +72,8 @@ public final class ProcessNode: Identifiable {
     public private(set) var instruments: [InstrumentRef] = []
 
     public var loadedPackageNames = Set<String>()
-    private var fileTransfers: [Int: FileTransfer] = [:]
+    public private(set) var fileTransfers: [RemoteFileTransfer] = []
+    private var fileTransferChannels: [Int: AsyncThrowingStream<FileTransferEvent, Swift.Error>.Continuation] = [:]
     private var nextFileTransferID = 1
 
     private let _events = AsyncEventSource<RuntimeEvent>()
@@ -190,6 +191,7 @@ public final class ProcessNode: Identifiable {
                 case .detached(let reason, _):
                     await self.finalizePendingTracesOnCrash()
                     self.failInitialModulesSnapshotWaitersIfNeeded()
+                    self.failFileTransferChannels()
                     self._detachEvents.yield(reason)
                     self._events.finish()
                     self._replResults.finish()
@@ -337,17 +339,23 @@ public final class ProcessNode: Identifiable {
 
             case "fs:chunk":
                 guard let id = dict["id"] as? Int, let chunk = data else { return false }
-                fileTransfers[id]?.receive(chunk)
+                fileTransferChannels[id]?.yield(.chunk(chunk))
+                return true
+
+            case "fs:ack":
+                guard let id = dict["id"] as? Int else { return false }
+                fileTransferChannels[id]?.yield(.acknowledged)
                 return true
 
             case "fs:end":
-                guard let id = dict["id"] as? Int else { return false }
-                fileTransfers.removeValue(forKey: id)?.finish()
+                guard let id = dict["id"] as? Int, let channel = fileTransferChannels.removeValue(forKey: id) else { return false }
+                channel.yield(.finished)
+                channel.finish()
                 return true
 
             case "fs:error":
                 guard let id = dict["id"] as? Int, let message = dict["error"] as? String else { return false }
-                fileTransfers.removeValue(forKey: id)?.fail(LumaCoreError.invalidOperation(message))
+                fileTransferChannels.removeValue(forKey: id)?.finish(throwing: LumaCoreError.invalidOperation(message))
                 return true
 
             case "itrace:start":
@@ -971,71 +979,179 @@ public final class ProcessNode: Identifiable {
         return listing
     }
 
-    public func pullFile(at path: String, to destination: URL, onProgress: @escaping @MainActor (Int64) -> Void) async throws {
-        let id = allocateFileTransferID()
-        FileManager.default.createFile(atPath: destination.path, contents: nil)
-        let handle = try FileHandle(forWritingTo: destination)
-        defer { try? handle.close() }
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Swift.Error>) in
-            fileTransfers[id] = FileTransfer(continuation: continuation) { chunk in
-                handle.write(Data(chunk))
-                onProgress(Int64(chunk.count))
-            }
-            Task {
-                do {
-                    _ = try await script.exports.pullFile(path, id)
-                } catch {
-                    fileTransfers.removeValue(forKey: id)?.fail(error)
+    public func upload(_ sources: [URL], into directory: String) -> RemoteFileTransfer {
+        let transfer = RemoteFileTransfer(direction: .upload, itemNames: sources.map(\.lastPathComponent))
+        track(transfer) { [unowned self] transfer in
+            let entries = try sources.flatMap(LocalTreeEntry.walk)
+            transfer.beginTransferring(totalBytes: entries.reduce(0) { $0 + $1.size })
+            for entry in entries {
+                try Task.checkCancellation()
+                let remotePath = entry.components.reduce(directory, RemotePath.join)
+                transfer.beginItem(named: entry.components.last!)
+                switch entry.kind {
+                case .directory:
+                    _ = try await script.exports.makeDirectory(remotePath)
+                case .file:
+                    try await pushFile(from: entry.url, to: remotePath) { transfer.advance(by: $0) }
                 }
             }
         }
+        return transfer
     }
 
-    public func pushFile(from source: URL, to path: String, onProgress: @escaping @MainActor (Int64) -> Void) async throws {
-        let id = allocateFileTransferID()
+    public func download(_ remotePath: String, to destination: URL) -> RemoteFileTransfer {
+        let transfer = RemoteFileTransfer(direction: .download, itemNames: [destination.lastPathComponent])
+        track(transfer) { [unowned self] transfer in
+            try? FileManager.default.removeItem(at: destination)
+            try await download([(remotePath, destination)], reportingTo: transfer)
+        }
+        return transfer
+    }
+
+    public func download(_ remotePaths: [String], into directory: URL) -> RemoteFileTransfer {
+        let transfer = RemoteFileTransfer(direction: .download, itemNames: remotePaths.map(RemotePath.lastComponent(of:)))
+        track(transfer) { [unowned self] transfer in
+            var claimed = Set<String>()
+            let roots = remotePaths.map { remotePath in
+                let destination = Self.unclaimedDestination(for: RemotePath.lastComponent(of: remotePath), in: directory, claimed: &claimed)
+                return (remotePath, destination)
+            }
+            try await download(roots, reportingTo: transfer)
+        }
+        return transfer
+    }
+
+    private func download(_ roots: [(remotePath: String, destination: URL)], reportingTo transfer: RemoteFileTransfer) async throws {
+        var plan: [(entry: RemoteTreeEntry, destination: URL)] = []
+        for root in roots {
+            for entry in try await walkRemoteTree(root.remotePath) {
+                plan.append((entry, entry.components.dropFirst().reduce(root.destination) { $0.appendingPathComponent($1) }))
+            }
+            try Task.checkCancellation()
+        }
+        transfer.beginTransferring(totalBytes: plan.reduce(0) { $0 + $1.entry.size })
+        do {
+            for (entry, destination) in plan {
+                try Task.checkCancellation()
+                transfer.beginItem(named: entry.components.last!)
+                switch entry.kind {
+                case .directory:
+                    try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+                case .file:
+                    try await pullFile(at: entry.path, to: destination) { transfer.advance(by: $0) }
+                }
+            }
+        } catch {
+            for root in roots {
+                try? FileManager.default.removeItem(at: root.destination)
+            }
+            throw error
+        }
+    }
+
+    private func walkRemoteTree(_ path: String) async throws -> [RemoteTreeEntry] {
+        let raw = try await script.exports.walkTree(path)
+        guard let items = raw as? [[String: Any]] else {
+            throw LumaCoreError.protocolViolation("walkTree: unexpected response shape")
+        }
+        return items.compactMap(RemoteTreeEntry.fromJSON)
+    }
+
+    private func pullFile(at path: String, to destination: URL, onProgress: (Int64) -> Void) async throws {
+        let (id, events) = openFileTransferChannel()
+        defer { fileTransferChannels[id] = nil }
+        FileManager.default.createFile(atPath: destination.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: destination)
+        defer { try? handle.close() }
+        _ = try await script.exports.pullFile(path, id)
+        for try await event in events {
+            guard case .chunk(let chunk) = event else { return }
+            try handle.write(contentsOf: chunk)
+            onProgress(Int64(chunk.count))
+        }
+        _ = try? await script.exports.cancelPull(id)
+        throw CancellationError()
+    }
+
+    private func pushFile(from source: URL, to path: String, onProgress: (Int64) -> Void) async throws {
+        let (id, events) = openFileTransferChannel()
+        defer { fileTransferChannels[id] = nil }
         let handle = try FileHandle(forReadingFrom: source)
         defer { try? handle.close() }
         _ = try await script.exports.pushFile(path, id)
         let messageType = "fs:push:\(id)"
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Swift.Error>) in
-            fileTransfers[id] = FileTransfer(continuation: continuation) { _ in }
-            while let chunk = try? handle.read(upToCount: Self.fileTransferChunkSize), !chunk.isEmpty {
-                script.post(["type": messageType, "done": false], data: Array(chunk))
+        var replies = events.makeAsyncIterator()
+        var unacknowledged = 0
+        do {
+            while let chunk = try handle.read(upToCount: Self.fileTransferChunkSize), !chunk.isEmpty {
+                if unacknowledged == Self.fileTransferWindow {
+                    try await awaitReply(from: &replies)
+                    unacknowledged -= 1
+                }
+                try Task.checkCancellation()
+                script.post(["type": messageType, "action": "write"], data: Array(chunk))
+                unacknowledged += 1
                 onProgress(Int64(chunk.count))
             }
-            script.post(["type": messageType, "done": true])
+        } catch is CancellationError {
+            script.post(["type": messageType, "action": "cancel"])
+            throw CancellationError()
         }
+        script.post(["type": messageType, "action": "end"])
+        for _ in 0..<unacknowledged {
+            try await awaitReply(from: &replies)
+        }
+        try await awaitReply(from: &replies)
+    }
+
+    private func awaitReply(from replies: inout AsyncThrowingStream<FileTransferEvent, Swift.Error>.Iterator) async throws {
+        guard try await replies.next(isolation: #isolation) != nil else { throw CancellationError() }
+    }
+
+    private func track(_ transfer: RemoteFileTransfer, _ body: @escaping @MainActor (RemoteFileTransfer) async throws -> Void) {
+        fileTransfers.append(transfer)
+        transfer.start { [weak self] transfer in
+            defer { self?.fileTransfers.removeAll { $0 === transfer } }
+            try await body(transfer)
+        }
+    }
+
+    private static func unclaimedDestination(for name: String, in directory: URL, claimed: inout Set<String>) -> URL {
+        let base = (name as NSString).deletingPathExtension
+        let pathExtension = (name as NSString).pathExtension
+        var candidate = name
+        var counter = 2
+        while claimed.contains(candidate) || FileManager.default.fileExists(atPath: directory.appendingPathComponent(candidate).path) {
+            candidate = pathExtension.isEmpty ? "\(base) \(counter)" : "\(base) \(counter).\(pathExtension)"
+            counter += 1
+        }
+        claimed.insert(candidate)
+        return directory.appendingPathComponent(candidate)
     }
 
     private static let fileTransferChunkSize = 256 * 1024
+    private static let fileTransferWindow = 4
 
-    private func allocateFileTransferID() -> Int {
-        defer { nextFileTransferID += 1 }
-        return nextFileTransferID
+    private func openFileTransferChannel() -> (id: Int, events: AsyncThrowingStream<FileTransferEvent, Swift.Error>) {
+        let id = nextFileTransferID
+        nextFileTransferID += 1
+        let (events, channel) = AsyncThrowingStream<FileTransferEvent, Swift.Error>.makeStream()
+        fileTransferChannels[id] = channel
+        return (id, events)
     }
 
-    private final class FileTransfer {
-        private var continuation: CheckedContinuation<Void, Swift.Error>?
-        private let onChunk: ([UInt8]) -> Void
-
-        init(continuation: CheckedContinuation<Void, Swift.Error>, onChunk: @escaping ([UInt8]) -> Void) {
-            self.continuation = continuation
-            self.onChunk = onChunk
+    private func failFileTransferChannels() {
+        let channels = fileTransferChannels.values
+        fileTransferChannels.removeAll()
+        for channel in channels {
+            channel.finish(throwing: LumaCoreError.invalidOperation("Session detached"))
         }
+    }
 
-        func receive(_ chunk: [UInt8]) {
-            onChunk(chunk)
-        }
-
-        func finish() {
-            continuation?.resume()
-            continuation = nil
-        }
-
-        func fail(_ error: Swift.Error) {
-            continuation?.resume(throwing: error)
-            continuation = nil
-        }
+    private enum FileTransferEvent: Sendable {
+        case chunk([UInt8])
+        case acknowledged
+        case finished
     }
 
     public func writeRemoteMemory(at address: UInt64, bytes: [UInt8]) async throws {

@@ -31,6 +31,15 @@ public struct RemoteFileEntry: Identifiable, Hashable, Sendable {
         kind == .directory || target?.kind == .directory
     }
 
+    public var isDownloadable: Bool {
+        switch target?.kind ?? kind {
+        case .file, .directory:
+            return true
+        case .symlink, .characterDevice, .blockDevice, .fifo, .socket:
+            return false
+        }
+    }
+
     static func fromJSON(_ dict: [String: Any]) -> RemoteFileEntry? {
         guard let name = dict["name"] as? String,
             let kind = (dict["kind"] as? String).flatMap(Kind.init(rawValue:)),
@@ -87,6 +96,13 @@ public enum RemotePath {
         guard let cut = trimmed.lastIndex(where: { String($0) == separator }) else { return path }
         let parent = String(trimmed[..<cut])
         return parent.isEmpty || parent.hasSuffix(":") ? parent + separator : parent
+    }
+
+    public static func lastComponent(of path: String) -> String {
+        let separator = separator(in: path)
+        let trimmed = path.count > 1 && path.hasSuffix(separator) ? String(path.dropLast()) : path
+        guard let cut = trimmed.lastIndex(where: { String($0) == separator }) else { return trimmed }
+        return String(trimmed[trimmed.index(after: cut)...])
     }
 
     private static func separator(in path: String) -> String {
