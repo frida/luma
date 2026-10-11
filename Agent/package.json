@@ -7,6 +7,7 @@
     "@types/node": "^18",
     "frida-fs": "^8.1.1",
     "frida-itrace": "^6.1.0",
-    "frida-java-bridge": "^7.0.13"
+    "frida-java-bridge": "^7.0.13",
+    "frida-swift-bridge": "^4.0.0-preview.1"
   }
 }

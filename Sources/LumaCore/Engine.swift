@@ -1788,6 +1788,15 @@ public final class Engine {
         return installed
     }
 
+    public func installSwiftBridge() async throws {
+        let name = SwiftTypesOutline.bridgePackageName
+        _ = try await installPackage(
+            name: name,
+            versionSpec: SwiftTypesOutline.bridgeVersionSpec,
+            globalAlias: InstalledPackage.defaultGlobalAlias(forPackageName: name)
+        )
+    }
+
     public func typeScriptProject(for profile: EditorProfile) async throws -> TypeScriptProject {
         let key = TypeScriptProjectKey(languageId: profile.languageId, ambientDeclarations: profile.ambientDeclarations)
         if let starting = typeScriptProjects[key] {

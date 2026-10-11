@@ -26,6 +26,7 @@ struct LumaBundlePlugin: BuildToolPlugin {
             "Agent/core/pkg.ts",
             "Agent/core/repl.ts",
             "Agent/core/resolver.ts",
+            "Agent/core/swift.ts",
             "Agent/core/symbolicate.ts",
             "Agent/core/threads.ts",
             "Agent/core/value.ts",

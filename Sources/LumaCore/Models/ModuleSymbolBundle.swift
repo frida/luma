@@ -145,10 +145,18 @@ extension ModuleSymbolBundle {
     }
 }
 
-public enum ModuleSymbolCategory: String, Sendable {
+public enum ModuleSymbolCategory: String, Sendable, Codable, CaseIterable {
     case exports
     case imports
     case symbols
+
+    public var title: String {
+        switch self {
+        case .exports: return "Exports"
+        case .imports: return "Imports"
+        case .symbols: return "Symbols"
+        }
+    }
 }
 
 public struct ModuleSymbolPage: Sendable {
@@ -188,6 +196,15 @@ public struct ModuleSymbolPage: Sendable {
             case .symbols: return symbols
             }
         }
+
+        static func fromJSON(_ value: Any?) -> Counts {
+            let obj = (value as? [String: Any]) ?? [:]
+            return Counts(
+                exports: obj["exports"] as? Int ?? 0,
+                imports: obj["imports"] as? Int ?? 0,
+                symbols: obj["symbols"] as? Int ?? 0
+            )
+        }
     }
 
     public static func fromJSON(_ obj: [String: Any], category: ModuleSymbolCategory) -> ModuleSymbolPage {
@@ -199,18 +216,11 @@ public struct ModuleSymbolPage: Sendable {
         case .symbols: rows = .symbols(rowDicts.compactMap(ModuleSymbolBundle.decodeSymbol))
         }
 
-        let countsObj = (obj["counts"] as? [String: Any]) ?? [:]
-        let counts = Counts(
-            exports: countsObj["exports"] as? Int ?? 0,
-            imports: countsObj["imports"] as? Int ?? 0,
-            symbols: countsObj["symbols"] as? Int ?? 0
-        )
-
         return ModuleSymbolPage(
             rows: rows,
             matched: obj["matched"] as? Int ?? rowDicts.count,
             offset: obj["offset"] as? Int ?? 0,
-            counts: counts
+            counts: Counts.fromJSON(obj["counts"])
         )
     }
 }

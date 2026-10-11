@@ -15,7 +15,8 @@
       { "name": "node",     "package": "@types/node" }
     ],
     "externals": [
-      "frida-java-bridge"
+      "frida-java-bridge",
+      "frida-swift-bridge"
     ]
   }
 }

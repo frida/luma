@@ -1,3 +1,5 @@
+import * as swift from "./swift.js";
+
 export interface ModuleSymbolBundle {
     exports: ExportEntry[];
     imports: ImportEntry[];
@@ -167,7 +169,13 @@ export interface SymbolPage {
     rows: object[];
     matched: number;
     offset: number;
-    counts: { exports: number; imports: number; symbols: number };
+    counts: SymbolCounts;
+}
+
+export interface SymbolCounts {
+    exports: number;
+    imports: number;
+    symbols: number;
 }
 
 export function queryModuleSymbols(request: SymbolQueryRequest): SymbolPage {
@@ -184,11 +192,32 @@ export function queryModuleSymbols(request: SymbolQueryRequest): SymbolPage {
             .map(row => reportedRow(row, request.category)),
         matched: matchedCount,
         offset,
-        counts: {
-            exports: collectedRows(index, "exports").length,
-            imports: collectedRows(index, "imports").length,
-            symbols: collectedRows(index, "symbols").length,
-        },
+        counts: symbolCounts(index),
+    };
+}
+
+export interface ModuleOutline {
+    counts: SymbolCounts;
+    swiftTypes: swift.SwiftTypesOutline;
+}
+
+export async function outlineModule(name: string): Promise<ModuleOutline> {
+    const index = getModuleIndex(name);
+    return {
+        counts: symbolCounts(index),
+        swiftTypes: await swift.outlineSwiftTypes(index.module),
+    };
+}
+
+export async function describeSwiftType(module: string, type: swift.SwiftTypeEntry): Promise<swift.SwiftTypeDescription> {
+    return await swift.describeSwiftType(Process.getModuleByName(module), type);
+}
+
+function symbolCounts(index: ModuleIndex): SymbolCounts {
+    return {
+        exports: collectedRows(index, "exports").length,
+        imports: collectedRows(index, "imports").length,
+        symbols: collectedRows(index, "symbols").length,
     };
 }
 

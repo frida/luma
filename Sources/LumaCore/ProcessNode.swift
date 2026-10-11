@@ -1316,6 +1316,22 @@ public final class ProcessNode: Identifiable {
         return ModuleSymbolPage.fromJSON(dict, category: category)
     }
 
+    public func outlineModule(name: String) async throws -> ModuleOutline {
+        let raw = try await script.exports.outlineModule(name)
+        guard let dict = raw as? [String: Any] else {
+            throw LumaCoreError.protocolViolation("outlineModule: unexpected response shape")
+        }
+        return try ModuleOutline.fromJSON(dict)
+    }
+
+    public func describeSwiftType(module: String, type: SwiftTypeSummary) async throws -> SwiftTypeDescription {
+        let raw = try await script.exports.describeSwiftType(JSValue(module), JSValue(type.json))
+        guard let dict = raw as? [String: Any] else {
+            throw LumaCoreError.protocolViolation("describeSwiftType: unexpected response shape")
+        }
+        return try SwiftTypeDescription.fromJSON(dict)
+    }
+
     public func enumerateModuleRanges(name: String) async throws -> [ModuleRange] {
         let raw = try await script.exports.enumerateModuleRanges(name)
         guard let arr = raw as? [[String: Any]] else {
