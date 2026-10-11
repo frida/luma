@@ -1,5 +1,5 @@
 {
-  "originHash" : "04c6e1d5b794fca3dd2e0fe37658344b19ef790c7fe50ef881e177ac8118632f",
+  "originHash" : "b22386dc4bc1189af4f14a9261a77ab8ac08fedc34a02065c384cd9bfd838c3e",
   "pins" : [
     {
       "identity" : "frida-swift",
@@ -16,7 +16,7 @@
       "location" : "https://github.com/frida/gir2swift.git",
       "state" : {
         "branch" : "development",
-        "revision" : "0b6186a0cc4812a8b47dc805474d8eebf56f9127"
+        "revision" : "7cd90b3d75c0c1628b811e815853802bef3bf8e0"
       }
     },
     {
@@ -169,7 +169,7 @@
       "location" : "https://github.com/frida/SwiftGLib.git",
       "state" : {
         "branch" : "development",
-        "revision" : "0c317ade2870a02bb06ece6348557deb2b71e226"
+        "revision" : "6430d760e838ebc37e0827fa9b90d5dede150152"
       }
     },
     {
