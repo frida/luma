@@ -19,9 +19,31 @@ export function readMemory(address: string, count: number): ArrayBuffer {
 }
 
 export function writeMemory(address: string, bytes: ArrayBuffer | number[]): number {
-    const buffer = bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : new Uint8Array(bytes);
-    ptr(address).writeByteArray(Array.from(buffer));
-    return buffer.length;
+    const target = ptr(address);
+    const data = Array.from(new Uint8Array(bytes));
+    const protection = Memory.queryProtection(target);
+    if (protection.includes("x")) {
+        Memory.patchCode(target, data.length, code => {
+            code.writeByteArray(data);
+        });
+    } else if (protection.includes("w")) {
+        target.writeByteArray(data);
+    } else {
+        writeThroughProtection(target, data, protection);
+    }
+    return data.length;
+}
+
+function writeThroughProtection(target: NativePointer, data: number[], protection: PageProtection) {
+    const writable = (protection[0] + "w" + protection[2]) as PageProtection;
+    if (!Memory.protect(target, data.length, writable)) {
+        throw new Error(`Unable to make ${target} writable`);
+    }
+    try {
+        target.writeByteArray(data);
+    } finally {
+        Memory.protect(target, data.length, protection);
+    }
 }
 
 Process.attachModuleObserver({
