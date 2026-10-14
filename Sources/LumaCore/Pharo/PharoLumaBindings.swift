@@ -16,7 +16,7 @@ public enum PharoLumaBindings {
     /// fields, so opening one shows what the host knows about it rather than
     /// the line it would have printed.
     private static let source = """
-        | record event records sessions entries events hostError host subscription project synth tune canvas drawable label |
+        | record event records sessions entries events hostError host subscription project journal synth tune canvas drawable label |
         record := Object << #LumaRecord slots: { #fields. #icon }; package: 'Luma'; install.
         record compile: 'setFields: aDictionary icon: anIcon
             fields := aDictionary.
@@ -812,6 +812,58 @@ public enum PharoLumaBindings {
             ^ self watch: { #op -> ''watch_events'' } do: aBlock'.
         project class compile: 'watch: aRequest do: aBlock
             ^ LumaSubscription subscribe: aRequest asDictionary do: [ :each | aBlock value: (LumaEvent fromJSON: each) ]'.
+
+        journal := Object << #LumaJournal slots: {}; sharedVariables: { #Subscription }; package: 'Luma'; install.
+        journal class compile: 'start
+            Subscription ifNil: [
+                Subscription := SystemAnnouncer uniqueInstance
+                    when: ClassAdded, ClassModifiedClassDefinition, ClassRemoved,
+                        MethodAdded, MethodModified, MethodRecategorized, MethodRemoved
+                    send: #note: to: self ]'.
+        journal class compile: 'note: anAnnouncement
+            (anAnnouncement isKindOf: MethodAnnouncement)
+                ifTrue: [ self noteMethod: anAnnouncement ]
+                ifFalse: [ self noteClass: anAnnouncement ]'.
+        journal class compile: 'noteMethod: anAnnouncement
+            | owner |
+            owner := anAnnouncement methodClass.
+            (self keeps: owner instanceSide) ifFalse: [ ^ self ].
+            (anAnnouncement isKindOf: MethodRemoved) ifTrue: [
+                ^ LumaHost request: {
+                    #op -> ''forget_method''.
+                    #class -> owner instanceSide name asString.
+                    #side -> (self sideOf: owner).
+                    #selector -> anAnnouncement selector asString } asDictionary ].
+            ^ LumaHost request: {
+                #op -> ''record_method''.
+                #class -> owner instanceSide name asString.
+                #side -> (self sideOf: owner).
+                #selector -> anAnnouncement selector asString.
+                #category -> anAnnouncement method protocolName asString.
+                #source -> anAnnouncement method sourceCode } asDictionary'.
+        journal class compile: 'noteClass: anAnnouncement
+            | aClass |
+            aClass := anAnnouncement classAffected.
+            (anAnnouncement isKindOf: ClassRemoved) ifTrue: [
+                ^ LumaHost request: { #op -> ''forget_class''. #name -> aClass originalName asString } asDictionary ].
+            (self keeps: aClass) ifFalse: [ ^ self ].
+            ^ LumaHost request: {
+                #op -> ''record_class''.
+                #name -> aClass name asString.
+                #superclass -> aClass superclass name asString.
+                #package -> aClass package name asString.
+                #tag -> (self tagOf: aClass).
+                #instanceVariables -> ('' '' join: aClass instVarNames).
+                #classVariables -> ('' '' join: aClass classVarNames).
+                #classInstanceVariables -> ('' '' join: aClass class instVarNames) } asDictionary'.
+        journal class compile: 'keeps: aClass
+            ^ (#(#Luma #SwiftyPharo) includes: aClass package name) not'.
+        journal class compile: 'sideOf: aBehavior
+            ^ aBehavior isMeta ifTrue: [ ''class'' ] ifFalse: [ ''instance'' ]'.
+        journal class compile: 'tagOf: aClass
+            ^ aClass packageTag name = #Uncategorized
+                ifTrue: [ '''' ]
+                ifFalse: [ aClass packageTag name asString ]'.
         project
         """
 }

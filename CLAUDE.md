@@ -190,7 +190,8 @@ is gitignored — it is produced at build time.
   `InstrumentInstance`, `REPLCell`, `NotebookEntry`, `ITrace` (metadata
   only; data lives in `TraceStore`), `AddressInsight`,
   `RemoteDeviceConfig`, `ProjectPackagesState`, `InstalledPackage`,
-  `PatternSourceRecord`, `ProjectCollaborationState`,
+  `PatternSourceRecord`, `PharoClassDefinition`, `PharoMethodDefinition`,
+  `ProjectCollaborationState`,
   `TargetPickerState`, plus UI-state singletons `ProjectUIState` and
   per-session `SessionUIState`. Schema is created with `if not exists`
   on every open; pre-release, no migrations.
@@ -245,7 +246,10 @@ is gitignored — it is produced at build time.
   `PharoSynthBridge` and `PharoCanvasBridge` are the image's entry
   points into the synthesiser and the canvas. `PharoLumaBindings`
   compiles the `Luma*` classes into the image on the way up, with
-  `PharoSessionBindings` and `PharoPatternBindings` after it. See the
+  `PharoSessionBindings` and `PharoPatternBindings` after it. Classes
+  and methods written in the image are the project's: `LumaJournal`
+  hears the system announcer and the Engine keeps them as rows, which
+  `PharoWorkspace` replays into the image on the next start. See the
   symbol-visibility note below: nothing in Swift calls these
   `@_cdecl` exports, and that has bitten twice.
 

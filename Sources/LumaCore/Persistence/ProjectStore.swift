@@ -1213,6 +1213,45 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    public func fetchPharoClassDefinitions() throws -> [PharoClassDefinition] {
+        try db.read { db in
+            try PharoClassDefinition.order(Column("updated_at").asc).fetchAll(db)
+        }
+    }
+
+    public func fetchPharoMethodDefinitions() throws -> [PharoMethodDefinition] {
+        try db.read { db in
+            try PharoMethodDefinition.order(Column("updated_at").asc).fetchAll(db)
+        }
+    }
+
+    public func save(_ definition: PharoClassDefinition) throws {
+        try db.write { db in
+            try definition.save(db)
+        }
+    }
+
+    public func save(_ definition: PharoMethodDefinition) throws {
+        try db.write { db in
+            try definition.save(db)
+        }
+    }
+
+    public func deletePharoClassDefinition(named name: String) throws {
+        try db.write { db in
+            _ = try PharoClassDefinition.deleteOne(db, key: name)
+            _ = try PharoMethodDefinition.filter(Column("class_name") == name).deleteAll(db)
+        }
+    }
+
+    public func deletePharoMethodDefinition(className: String, side: String, selector: String) throws {
+        try db.write { db in
+            _ = try PharoMethodDefinition
+                .filter(Column("class_name") == className && Column("side") == side && Column("selector") == selector)
+                .deleteAll(db)
+        }
+    }
+
     public func fetchCustomInstrumentFiles(defID: UUID) throws -> [CustomInstrumentFile] {
         try db.read { db in
             try CustomInstrumentFile
@@ -1674,6 +1713,27 @@ public final class ProjectStore: Sendable {
             t.column("text", .text).notNull()
             t.column("created_at", .datetime).notNull()
             t.column("updated_at", .datetime).notNull()
+        }
+
+        try db.create(table: "pharo_class", ifNotExists: true) { t in
+            t.primaryKey("name", .text).notNull()
+            t.column("superclass", .text).notNull()
+            t.column("package", .text).notNull()
+            t.column("tag", .text).notNull()
+            t.column("instance_variables", .text).notNull()
+            t.column("class_variables", .text).notNull()
+            t.column("class_instance_variables", .text).notNull()
+            t.column("updated_at", .datetime).notNull()
+        }
+
+        try db.create(table: "pharo_method", ifNotExists: true) { t in
+            t.column("class_name", .text).notNull()
+            t.column("side", .text).notNull()
+            t.column("selector", .text).notNull()
+            t.column("category", .text).notNull()
+            t.column("source", .text).notNull()
+            t.column("updated_at", .datetime).notNull()
+            t.primaryKey(["class_name", "side", "selector"])
         }
 
         try db.create(table: "project_collaboration_state", ifNotExists: true) { t in

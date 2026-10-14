@@ -26,7 +26,7 @@ public final class PharoWorkspace {
     /// starts the VM and teaches it about the host, and the rest wait for it.
     @discardableResult
     public func started() async throws -> PharoRuntime {
-        guard engine != nil else { throw PharoWorkspaceError.engineGone }
+        guard let engine else { throw PharoWorkspaceError.engineGone }
 
         Self.boot()
         try await runtime.runningState()
@@ -38,8 +38,44 @@ public final class PharoWorkspace {
 
         guard !hasBindings else { return runtime }
         try await PharoLumaBindings.install(into: runtime)
+        try await replayDefinitions(from: engine.store)
+        _ = try await runtime.evaluate("LumaJournal start")
         hasBindings = true
         return runtime
+    }
+
+    private func replayDefinitions(from store: ProjectStore) async throws {
+        let classes = try store.fetchPharoClassDefinitions()
+        var defined: Set<String> = []
+        for definition in classes {
+            await define(definition, among: classes, defined: &defined)
+        }
+        for (className, methods) in Dictionary(grouping: try store.fetchPharoMethodDefinitions(), by: \.className) {
+            await compile(methods, into: className)
+        }
+    }
+
+    private func define(_ definition: PharoClassDefinition, among all: [PharoClassDefinition], defined: inout Set<String>) async {
+        guard defined.insert(definition.name).inserted else { return }
+        if let parent = all.first(where: { $0.name == definition.superclass }) {
+            await define(parent, among: all, defined: &defined)
+        }
+        _ = try? await runtime.defineClass(
+            name: definition.name,
+            superclass: definition.superclass,
+            package: definition.package,
+            tag: definition.tag,
+            instanceVariables: definition.instanceVariables,
+            classVariables: definition.classVariables,
+            classInstanceVariables: definition.classInstanceVariables)
+    }
+
+    private func compile(_ methods: [PharoMethodDefinition], into className: String) async {
+        guard let target = try? await runtime.evaluate(className) else { return }
+        for method in methods {
+            _ = try? await runtime.compileMethod(in: target, side: method.side, category: method.category, source: method.source)
+        }
+        try? await runtime.release(target)
     }
 
     /// Starts the VM and returns at once, so a frontend that has to beat
