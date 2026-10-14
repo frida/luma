@@ -70,6 +70,13 @@ public enum PharoExampleCatalog {
                 nodeHook
                 """),
             PharoExample(
+                title: "A thread \u{2014} registers, backtrace, where it is",
+                code: """
+                | thread |
+                thread := LumaProject sessions items first threads items first.
+                { thread programCounter symbol. thread stackPointer. thread backtrace }
+                """),
+            PharoExample(
                 title: "Write memory the process keeps",
                 code: """
                 | session scratch |

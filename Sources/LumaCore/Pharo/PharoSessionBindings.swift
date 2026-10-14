@@ -460,6 +460,20 @@ enum PharoSessionBindings {
             name ifNotNil: [ aStream space; nextPutAll: name ]'.
         thread compile: 'snapshot
             ^ session request: { #op -> ''thread_snapshot''. #thread -> id }'.
+        thread compile: 'state
+            ^ self snapshot at: ''state'''.
+        thread compile: 'registers
+            ^ ((self snapshot at: ''registers'') collect: [ :each |
+                (each at: ''name'') -> (LumaPointer numberFrom: (each at: ''value'')) ]) asDictionary'.
+        thread compile: 'register: aName
+            ^ session pointer: (self registers at: aName asString)'.
+        thread compile: 'programCounter
+            ^ self register: (self registers keys detect: [ :each | #(''pc'' ''rip'' ''eip'') includes: each ])'.
+        thread compile: 'stackPointer
+            ^ self register: (self registers keys detect: [ :each | #(''sp'' ''rsp'' ''esp'') includes: each ])'.
+        thread compile: 'backtrace
+            ^ (session evaluate: ''Thread.backtrace(Process.findThreadById('' , id printString , '').context)'')
+                collect: [ :each | session pointer: each ]'.
         thread compile: 'gtRegistersFor: aView
             <gtView>
             ^ aView columnedList
@@ -468,6 +482,15 @@ enum PharoSessionBindings {
                 items: [ self snapshot at: ''registers'' ];
                 column: ''Register'' text: [ :each | each at: ''name'' ];
                 column: ''Value'' text: [ :each | each at: ''value'' ]'.
+        thread compile: 'gtBacktraceFor: aView
+            <gtView>
+            ^ aView columnedList
+                title: ''Backtrace'';
+                priority: 2;
+                items: [ self backtrace ];
+                column: ''Address'' text: [ :each | each hex ];
+                column: ''Symbol'' text: [ :each | each symbol ifNil: [ '''' ] ifNotNil: [ :found |
+                    (found at: ''module'') , ''!'' , (found at: ''name'') ] ]'.
         session
         """
 }
