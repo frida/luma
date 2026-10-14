@@ -70,6 +70,15 @@ public enum PharoExampleCatalog {
                 nodeHook
                 """),
             PharoExample(
+                title: "A live tally \u{2014} inspect it, and watch the rows change",
+                code: """
+                callers := Dictionary new.
+                callerHook := (LumaProject sessions items first functionNamed: 'malloc') onCall: [ :call |
+                    callers at: call returnAddress hex put: (callers at: call returnAddress hex ifAbsent: [ 0 ]) + 1.
+                    callers lumaChanged ].
+                callers
+                """),
+            PharoExample(
                 title: "A thread \u{2014} registers, backtrace, where it is",
                 code: """
                 | thread |

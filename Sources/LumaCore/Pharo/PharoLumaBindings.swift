@@ -136,6 +136,16 @@ public enum PharoLumaBindings {
                 parameters: { TFBasicType sint }
                 return: TFBasicType void
                 with: { aTicket }'.
+        host class compile: 'objectChanged: anObject
+            ((SwpBridge install instVarNamed: ''session'') instVarNamed: ''objectsByHandle'')
+                keysAndValuesDo: [ :handle :held |
+                    held == anObject ifTrue: [
+                        self invoke: ''luma_object_changed''
+                            parameters: { TFBasicType sint }
+                            return: TFBasicType void
+                            with: { handle } ] ]'.
+        Object compile: 'lumaChanged
+            LumaHost objectChanged: self' classified: '*Luma'.
         host class compile: 'request: aDictionary
             | semaphore ticket reply |
             semaphore := Semaphore new.
@@ -818,7 +828,6 @@ public enum PharoLumaBindings {
             ^ self watch: { #op -> ''watch_events'' } do: aBlock'.
         project class compile: 'definitions
             ^ LumaDefinitions fetch'.
-
         project class compile: 'watch: aRequest do: aBlock
             ^ LumaSubscription subscribe: aRequest asDictionary do: [ :batch |
                 batch do: [ :each | aBlock value: (LumaEvent fromJSON: each) ] ]'.
@@ -902,7 +911,6 @@ public enum PharoLumaBindings {
                 text: [ self source ]'.
 
         journal := Object << #LumaJournal slots: {}; sharedVariables: { #Subscription }; package: 'Luma'; install.
-
         journal class compile: 'start
             Subscription ifNil: [
                 Subscription := SystemAnnouncer uniqueInstance

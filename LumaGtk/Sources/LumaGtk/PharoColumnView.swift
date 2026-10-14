@@ -49,6 +49,24 @@ final class PharoColumnView {
         column.append(child: Separator(orientation: .horizontal))
         column.append(child: object.isClass ? classBrowserBody(of: object) : tabs())
         widget.set(child: column)
+        observeChanges()
+    }
+
+    private var seenGeneration = 0
+
+    private func observeChanges() {
+        withObservationTracking {
+            seenGeneration = PharoObjectChanges.shared.generation(of: object.handle)
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                let before = self.seenGeneration
+                self.observeChanges()
+                if self.seenGeneration != before {
+                    self.reload()
+                }
+            }
+        }
     }
 
     private var classBrowsers: [PharoClassBrowser] = []

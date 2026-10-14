@@ -1,3 +1,4 @@
+import LumaCore
 import SwiftUI
 import SwiftyPharo
 
@@ -412,6 +413,7 @@ struct PharoObjectColumn: View {
         .overlay(alignment: .topTrailing) { menuButton }
         .onHover { isPointedAt = $0 }
         .task(id: reloadToken) { await load() }
+        .onChange(of: PharoObjectChanges.shared.generation(of: object.handle)) { reloadToken &+= 1 }
     }
 
     private var restoreButton: some View {
