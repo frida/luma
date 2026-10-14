@@ -78,6 +78,11 @@ public final class PharoWorkspace {
         try? await runtime.release(target)
     }
 
+    public func stopRun(_ owner: UUID) async {
+        guard hasBindings else { return }
+        try? await runtime.stopRun(owner)
+    }
+
     /// Starts the VM and returns at once, so a frontend that has to beat
     /// something else to the address space can ask for it before anything else
     /// runs. The build stages the image, so its absence is a broken build

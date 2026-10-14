@@ -374,7 +374,7 @@ final class PharoPlaygroundPane {
             defer { evaluating.remove(id) }
             do {
                 try await PharoRuntime.shared.startPlayground(for: engine)
-                let produced = try await PharoRuntime.shared.evaluate(source)
+                let produced = try await PharoRuntime.shared.evaluate(source, runningFor: id)
                 cards[id]?.flashOutcome(success: true)
                 switch mode {
                 case .doIt:
@@ -404,10 +404,11 @@ final class PharoPlaygroundPane {
 
         Task { @MainActor in
             do {
+                let entryID = UUID()
                 try await PharoRuntime.shared.startPlayground(for: engine)
-                let produced = try await PharoRuntime.shared.evaluate(source)
+                let produced = try await PharoRuntime.shared.evaluate(source, runningFor: entryID)
                 let snapshot = try await PharoSnapshot.capture(of: produced, using: PharoRuntime.shared)
-                let entry = NotebookEntry(kind: .pharo, title: "", details: source, pharoSnapshot: snapshot)
+                let entry = NotebookEntry(id: entryID, kind: .pharo, title: "", details: source, pharoSnapshot: snapshot)
                 engine.addNotebookEntry(entry)
                 card.flashOutcome(success: true)
             } catch {

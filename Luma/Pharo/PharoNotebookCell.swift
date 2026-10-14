@@ -151,7 +151,7 @@ struct PharoNotebookCell: View {
         defer { isEvaluating = false }
         do {
             try await runtime.startBundledImage(for: engine)
-            let produced = try await runtime.evaluate(source)
+            let produced = try await runtime.evaluate(source, runningFor: entry.id)
             evaluated = produced
             fuel = try? await runtime.serialize(produced)
             failure = nil

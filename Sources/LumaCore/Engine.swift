@@ -377,6 +377,9 @@ public final class Engine {
     }
 
     public func deleteNotebookEntry(_ entry: NotebookEntry) {
+        if entry.kind == .pharo {
+            Task { await pharo.stopRun(entry.id) }
+        }
         try? store.deleteNotebookEntry(id: entry.id)
         notebookEntries.removeAll { $0.id == entry.id }
         onNotebookChanged?(.removed(entry.id))

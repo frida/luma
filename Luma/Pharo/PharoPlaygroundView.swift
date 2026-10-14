@@ -281,7 +281,7 @@ struct PharoPlaygroundView: View {
         guard evaluating.insert(snippet.id).inserted else { return }
         defer { evaluating.remove(snippet.id) }
         do {
-            let produced = try await runtime.evaluate(snippet.source)
+            let produced = try await runtime.evaluate(snippet.source, runningFor: snippet.id)
             results[snippet.id] = produced
             let snapshot = try await PharoSnapshot.capture(of: produced, using: runtime)
             keep(snapshot: snapshot, fuel: try? await runtime.serialize(produced), for: snippet.id)

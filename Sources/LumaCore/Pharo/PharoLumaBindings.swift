@@ -16,7 +16,7 @@ public enum PharoLumaBindings {
     /// fields, so opening one shows what the host knows about it rather than
     /// the line it would have printed.
     private static let source = """
-        | record event records sessions entries events hostError host subscription view project definitions classDefinition methodDefinition journal synth tune canvas drawable label |
+        | record event records sessions entries events hostError host run subscription view project definitions classDefinition methodDefinition journal synth voice tune canvas drawable label |
         record := Object << #LumaRecord slots: { #fields. #icon }; package: 'Luma'; install.
         record compile: 'setFields: aDictionary icon: anIcon
             fields := aDictionary.
@@ -155,6 +155,29 @@ public enum PharoLumaBindings {
             reply at: ''error'' ifPresent: [ :message | LumaHostError signal: message ].
             ^ reply at: ''result'''.
 
+        run := Object << #LumaRun slots: {}; sharedVariables: { #Current. #Owned }; package: 'Luma'; install.
+        run class compile: 'owned
+            Owned ifNil: [ Owned := Dictionary new ].
+            ^ Owned'.
+        run class compile: 'begin: anOwner
+            self stop: anOwner.
+            Current := anOwner'.
+        run class compile: 'end
+            Current := nil'.
+        run class compile: 'adopt: aThing
+            Current ifNotNil: [ :owner |
+                (self owned at: owner ifAbsentPut: [ OrderedCollection new ]) addIfNotPresent: aThing ].
+            ^ aThing'.
+        run class compile: 'fork: aBlock
+            ^ self adopt: aBlock fork'.
+        run class compile: 'stop: anOwner
+            (self owned removeKey: anOwner ifAbsent: [ ^ self ]) do: [ :each |
+                [ (each isKindOf: Process) ifTrue: [ each terminate ] ifFalse: [ each stop ] ]
+                    on: Error
+                    do: [ :failure | failure return ] ]'.
+        run class compile: 'stopAll
+            self owned keys do: [ :each | self stop: each ]'.
+
         subscription := Object << #LumaSubscription
             slots: { #ticket. #semaphore. #block. #process. #error };
             sharedVariables: { #Active };
@@ -178,6 +201,7 @@ public enum PharoLumaBindings {
             block := aBlock'.
         subscription compile: 'start
             self class active add: self.
+            LumaRun adopt: self.
             process := [ [ self deliverNext ] repeat ] forkAt: Processor userBackgroundPriority'.
         subscription compile: 'deliverNext
             | reply |
@@ -213,10 +237,13 @@ public enum PharoLumaBindings {
                 return: TFBasicType void
                 with: { aLevel asFloat }'.
         synth class compile: 'play: aFrequency velocity: aVelocity channel: aChannel
-            ^ LumaHost invoke: ''luma_synth_play''
+            | voice |
+            voice := LumaHost invoke: ''luma_synth_play''
                 parameters: { TFBasicType sint. TFBasicType float. TFBasicType float }
                 return: TFBasicType sint
-                with: { aChannel. aFrequency asFloat. aVelocity asFloat }'.
+                with: { aChannel. aFrequency asFloat. aVelocity asFloat }.
+            LumaRun adopt: (LumaVoice id: voice).
+            ^ voice'.
         synth class compile: 'release: aVoice
             ^ LumaHost invoke: ''luma_synth_release''
                 parameters: { TFBasicType sint }
@@ -311,6 +338,14 @@ public enum PharoLumaBindings {
             ^ self channel: aChannel waveform: self triangle detune: 0.08 attack: 0.004
                 decay: 0.18 sustain: 0 release: 0.05 cutoff: 2600 resonance: 0.35 gain: 0.5'.
 
+        voice := Object << #LumaVoice slots: { #id }; package: 'Luma'; install.
+        voice class compile: 'id: aVoice
+            ^ self new setID: aVoice; yourself'.
+        voice compile: 'setID: aVoice
+            id := aVoice'.
+        voice compile: 'stop
+            LumaSynth release: id'.
+
         tune := Object << #LumaTune
             slots: { #name. #channel. #tempo. #division. #root. #scale. #notes. #loops. #playing };
             sharedVariables: { #Registry };
@@ -365,6 +400,7 @@ public enum PharoLumaBindings {
             playing ifTrue: [ self upload ]'.
         tune compile: 'play
             playing := true.
+            LumaRun adopt: self.
             LumaSynth start.
             self upload'.
         tune compile: 'stop

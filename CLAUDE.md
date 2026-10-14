@@ -251,7 +251,9 @@ is gitignored — it is produced at build time.
   hears the system announcer and the Engine keeps them as rows, which
   `PharoWorkspace` replays into the image on the next start. An object
   that says `lumaChanged` has every inspector column showing it reload,
-  through `PharoObjectChanges`. See the
+  through `PharoObjectChanges`. A cell evaluates as a `LumaRun` named by
+  its id: the subscriptions, tunes, voices and `LumaRun fork:` processes
+  it starts stop when the cell runs again or is deleted. See the
   symbol-visibility note below: nothing in Swift calls these
   `@_cdecl` exports, and that has bitten twice.
 

@@ -150,7 +150,7 @@ final class PharoNotebookCell {
             defer { self.running = false }
             do {
                 try await PharoRuntime.shared.startPlayground(for: engine)
-                let produced = try await PharoRuntime.shared.evaluate(source)
+                let produced = try await PharoRuntime.shared.evaluate(source, runningFor: entry.id)
                 let snapshot = try await PharoSnapshot.capture(of: produced, using: PharoRuntime.shared)
                 failure.visible = false
                 // The result reaches the view back through the model's change,

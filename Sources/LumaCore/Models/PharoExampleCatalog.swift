@@ -472,7 +472,7 @@ public enum PharoExampleCatalog {
                     at := { (-85 to: 85) atRandom / 100.0. 1.15 }.
                     faller ramp: 'at' from: at to: at over: 0.
                     faller image: 'icon' form: icons atRandom ].
-                playing := [ [ game isDown: #escape ] whileFalse: [
+                playing := LumaRun fork: [ [ game isDown: #escape ] whileFalse: [
                     | wanted below landed was fell beat aimed chase nudge |
                     "How long the last turn round the loop actually took, which
                      is what the next move has to be spread over: a ramp given
@@ -541,7 +541,7 @@ public enum PharoExampleCatalog {
                                 respawn value ] ].
 
                     (Delay forMilliseconds: 33) wait ].
-                    LumaTune hush ] fork.
+                    LumaTune hush ].
                 game
                 """),
             PharoExample(
@@ -563,9 +563,9 @@ public enum PharoExampleCatalog {
                 code: """
                 "Run the lettering example first. Nothing is rasterised here:
                  each new string is corners and nothing else."
-                ticking := [ 1 to: 600 do: [ :each |
+                ticking := LumaRun fork: [ 1 to: 600 do: [ :each |
                     sign show: 'FRAME ', each printString.
-                    (Delay forMilliseconds: 16) wait ] ] fork
+                    (Delay forMilliseconds: 16) wait ] ]
                 """),
             PharoExample(
                 title: "An effect over the whole view",

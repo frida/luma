@@ -12,6 +12,10 @@ extension Engine {
     public func setPharoSnippets(_ snippets: [PharoPlaygroundSnippet]) {
         let json = (try? JSONEncoder().encode(snippets)).flatMap { String(data: $0, encoding: .utf8) }
         guard projectUIState.pharoSnippetsJSON != json else { return }
+        let kept = Set(snippets.map(\.id))
+        for removed in pharoSnippets.map(\.id) where !kept.contains(removed) {
+            Task { await pharo.stopRun(removed) }
+        }
         Task { @MainActor [weak self] in
             guard let self, self.projectUIState.pharoSnippetsJSON != json else { return }
             self.projectUIState.pharoSnippetsJSON = json
