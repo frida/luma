@@ -4,31 +4,62 @@ extension Engine {
     func answerPharoRequest(_ request: [String: Any]) async throws -> Any {
         guard let operation = request["op"] as? String else { throw PharoAsyncBridgeError.missingArgument("op") }
         switch operation {
+        case "sessions":
+            return sessions.map { pharo.recordWithIcon(for: $0).json }
+        case "notebook_entries":
+            return notebookEntries.map { $0.recordForPharo.json }
+        case "events":
+            return try recentEventsForPharo(request)
+        case "watch_events":
+            return watchEventsForPharo(request)
         case "patterns":
             return await describePatternLibrary()
         case "pattern_source":
             return try librarySource(named: request).text
         case "check_pattern":
-            return try await patternDecoder.summary(ofText: try argument("source", of: request)).jsonObject
-        case "read_memory":
-            return try await readMemoryForPharo(request)
+            return try await patternDecoder.summary(ofText: try pharoArgument("source", of: request)).jsonObject
         case "decode":
             return try await decodeForPharo(request)
         default:
-            throw PharoAsyncBridgeError.unknownOperation(operation)
+            return try await answerPharoSessionRequest(operation, request)
         }
     }
 
-    private func readMemoryForPharo(_ request: [String: Any]) async throws -> String {
-        guard let node = node(forSessionID: try sessionID(of: request)) else { throw PatternMemoryError.detached }
-        let count: Int = try argument("count", of: request)
-        return Data(try await node.readRemoteMemory(at: try address(of: request), count: count)).base64EncodedString()
+    private func recentEventsForPharo(_ request: [String: Any]) throws -> [[String: Any]] {
+        let limit: Int = try pharoArgument("limit", of: request)
+        let matches = Self.pharoEventFilter(request)
+        return eventLog.events.filter(matches).suffix(limit).map { $0.recordForPharo.json }
+    }
+
+    private func watchEventsForPharo(_ request: [String: Any]) -> PharoStreamedResult {
+        let matches = Self.pharoEventFilter(request)
+        let source = events
+        return PharoStreamedResult(
+            items: AsyncStream { continuation in
+                let forwarding = Task {
+                    for await event in source where matches(event) {
+                        continuation.yield(event.recordForPharo.json)
+                    }
+                    continuation.finish()
+                }
+                continuation.onTermination = { _ in forwarding.cancel() }
+            })
+    }
+
+    private static func pharoEventFilter(_ request: [String: Any]) -> (RuntimeEvent) -> Bool {
+        let sessionID = (request["session"] as? String).flatMap(UUID.init)
+        let hook = request["hook"] as? String
+        return { event in
+            if let sessionID, event.sessionID != sessionID { return false }
+            if let hook, event.hookTag != hook { return false }
+            return true
+        }
     }
 
     private func decodeForPharo(_ request: [String: Any]) async throws -> PharoHeldResult {
         let text = try request["source"] as? String ?? librarySource(named: request).text
         let typeName = try await typeName(of: request, in: text)
-        let address = try address(of: request)
+        let address = try pharoAddress(of: request)
         let decoding: PatternMemoryDecoding
         if let encoded = request["bytes"] as? String {
             guard let data = Data(base64Encoded: encoded) else { throw PharoAsyncBridgeError.missingArgument("bytes") }
@@ -38,7 +69,7 @@ extension Engine {
             decoding = PatternMemoryDecoding(value: value, data: data)
         } else {
             decoding = try await decodePattern(
-                text: text, typeName: typeName, sessionID: try sessionID(of: request), address: address, byteCount: 0x200)
+                text: text, typeName: typeName, sessionID: try pharoSessionID(of: request), address: address, byteCount: 0x200)
         }
         let id = PharoPatternRegistry.shared.register(
             PharoPatternDecoding(root: decoding.value, data: decoding.data, address: address))
@@ -48,7 +79,7 @@ extension Engine {
     }
 
     private func librarySource(named request: [String: Any]) throws -> PatternSource {
-        let id: String = try argument("pattern_id", of: request)
+        let id: String = try pharoArgument("pattern_id", of: request)
         guard let source = patterns.source(withID: id) else { throw PharoAsyncBridgeError.missingArgument("pattern_id") }
         return source
     }
@@ -63,21 +94,32 @@ extension Engine {
         return rootType
     }
 
-    private func sessionID(of request: [String: Any]) throws -> UUID {
+    func pharoNode(of request: [String: Any]) throws -> ProcessNode {
+        guard let node = node(forSessionID: try pharoSessionID(of: request)) else { throw PatternMemoryError.detached }
+        return node
+    }
+
+    func pharoSessionID(of request: [String: Any]) throws -> UUID {
         guard let text = request["session"] as? String, let id = UUID(uuidString: text) else {
             throw PharoAsyncBridgeError.missingArgument("session")
         }
         return id
     }
 
-    private func address(of request: [String: Any]) throws -> UInt64 {
+    func pharoAddress(of request: [String: Any]) throws -> UInt64 {
         guard let number = request["address"] as? NSNumber else { throw PharoAsyncBridgeError.missingArgument("address") }
         return number.uint64Value
     }
 
-    private func argument<T>(_ name: String, of request: [String: Any]) throws -> T {
+    func pharoArgument<T>(_ name: String, of request: [String: Any]) throws -> T {
         guard let value = request[name] as? T else { throw PharoAsyncBridgeError.missingArgument(name) }
         return value
+    }
+}
+
+extension RuntimeEvent {
+    fileprivate var hookTag: String? {
+        (sentPayload as? [String: Any])?["hook"] as? String
     }
 }
 

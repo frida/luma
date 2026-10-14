@@ -238,12 +238,16 @@ is gitignored — it is produced at build time.
   embedded in the compiler, so the editor and a build agree. Lexical
   colouring is `TypeScriptLexer`, and `SourceSyntaxPalette` its colours,
   shared by both frontends.
-- **Pharo bridges (`Sources/LumaCore/Pharo/`)** — `PharoHostBridge`
-  publishes record feeds; `PharoSynthBridge` and `PharoCanvasBridge`
-  are the image's entry points into the synthesiser and the canvas.
-  `PharoLumaBindings` compiles the `Luma*` classes into the image on
-  the way up. See the symbol-visibility note below: nothing in Swift
-  calls these `@_cdecl` exports, and that has bitten twice.
+- **Pharo bridges (`Sources/LumaCore/Pharo/`)** — `PharoAsyncBridge`
+  carries the image's requests to the Engine and the answers back,
+  one reply or a stream of them; `Engine+PharoRequests` answers for
+  the project and `Engine+PharoSessionRequests` for a process.
+  `PharoSynthBridge` and `PharoCanvasBridge` are the image's entry
+  points into the synthesiser and the canvas. `PharoLumaBindings`
+  compiles the `Luma*` classes into the image on the way up, with
+  `PharoSessionBindings` and `PharoPatternBindings` after it. See the
+  symbol-visibility note below: nothing in Swift calls these
+  `@_cdecl` exports, and that has bitten twice.
 
 ### Host (`Luma/`)
 

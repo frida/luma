@@ -471,7 +471,7 @@ private struct PharoPlaygroundEmptyState: View {
         [
             "Write an expression and run it to inspect what it makes; double-click a row to drill in.",
             "Paint graphs and charts, or script your own views of the result.",
-            "Reach the project itself with LumaProject events and LumaProject sessions.",
+            "Reach the project with LumaProject sessions; a session answers its modules, threads and functions.",
         ]
     }
 

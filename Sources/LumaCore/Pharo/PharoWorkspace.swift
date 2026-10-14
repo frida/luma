@@ -1,9 +1,9 @@
 import Foundation
 import SwiftyPharo
 
-/// The image as the project sees it: started once, told about the host's
-/// sessions, notebook and events, and holding on to whatever objects an
-/// evaluation has produced so a later request can still reach them.
+/// The image as the project sees it: started once, answering what it asks
+/// about the host's sessions, notebook and events, and holding on to whatever
+/// objects an evaluation has produced so a later request can still reach them.
 ///
 /// The image ships with LumaCore, the way the agent's JavaScript does, so a
 /// frontend says nothing about where it lives. How a session without an icon
@@ -26,7 +26,7 @@ public final class PharoWorkspace {
     /// starts the VM and teaches it about the host, and the rest wait for it.
     @discardableResult
     public func started() async throws -> PharoRuntime {
-        guard let engine else { throw PharoWorkspaceError.engineGone }
+        guard engine != nil else { throw PharoWorkspaceError.engineGone }
 
         Self.boot()
         try await runtime.runningState()
@@ -35,11 +35,6 @@ public final class PharoWorkspace {
             guard let engine else { throw PharoWorkspaceError.engineGone }
             return try await engine.answerPharoRequest(request)
         }
-
-        let bridge = PharoHostBridge.shared
-        bridge.publish(engine.sessions.map(recordWithIcon), as: .sessions)
-        bridge.publish(engine.notebookEntries.map(\.recordForPharo), as: .notebookEntries)
-        bridge.publish(engine.eventLog.events.suffix(200).map(\.recordForPharo), as: .events)
 
         guard !hasBindings else { return runtime }
         try await PharoLumaBindings.install(into: runtime)
@@ -59,7 +54,7 @@ public final class PharoWorkspace {
 
     /// A session that came with no icon still shows one, drawn the way the
     /// sidebar draws it.
-    private func recordWithIcon(for session: ProcessSession) -> PharoHostRecord {
+    func recordWithIcon(for session: ProcessSession) -> PharoHostRecord {
         var record = session.recordForPharo
         if record.icon == nil {
             record.icon = sessionIcon?(session)

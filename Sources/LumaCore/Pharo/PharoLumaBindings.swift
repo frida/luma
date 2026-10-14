@@ -8,6 +8,7 @@ public enum PharoLumaBindings {
         PharoSynthBridge.ensureExported()
         PharoCanvasBridge.ensureExported()
         _ = try await runtime.evaluate(source)
+        _ = try await runtime.evaluate(PharoSessionBindings.source)
         _ = try await runtime.evaluate(PharoPatternBindings.source)
     }
 
@@ -15,7 +16,7 @@ public enum PharoLumaBindings {
     /// fields, so opening one shows what the host knows about it rather than
     /// the line it would have printed.
     private static let source = """
-        | record records sessions entries events project host synth tune canvas drawable label |
+        | record event records sessions entries events hostError host subscription project synth tune canvas drawable label |
         record := Object << #LumaRecord slots: { #fields. #icon }; package: 'Luma'; install.
         record compile: 'setFields: aDictionary icon: anIcon
             fields := aDictionary.
@@ -43,8 +44,15 @@ public enum PharoLumaBindings {
                 setFields: fields icon: (aDictionary at: ''icon'' ifAbsent: [ nil ]);
                 yourself'.
 
-        #(#LumaSession #LumaNotebookEntry #LumaEvent) do: [ :each |
+        #(#LumaSession #LumaNotebookEntry) do: [ :each |
             record << each slots: {}; package: 'Luma'; install ].
+        event := record << #LumaEvent slots: {}; package: 'Luma'; install.
+        event compile: 'payload
+            ^ STONJSON fromString: (self at: #payload)'.
+        event compile: 'message
+            ^ self payload at: ''value'''.
+        event compile: 'sessionID
+            ^ self at: #session'.
 
         records := Object << #LumaRecords slots: { #items }; package: 'Luma'; install.
         records compile: 'setItems: aCollection
@@ -79,6 +87,8 @@ public enum PharoLumaBindings {
                 column: ''Time'' text: [ :each | each at: #timestamp ];
                 column: ''Event'' text: [ :each | each name ]'.
 
+        hostError := Error << #LumaHostError slots: {}; package: 'Luma'; install.
+
         host := Object << #LumaHost slots: {}; package: 'Luma'; install.
         host class compile: 'invoke: aName parameters: aParameterTypes return: aReturnType with: aCollection
             "Calls one of the host''s luma_* entry points, which it resolves by
@@ -109,6 +119,80 @@ public enum PharoLumaBindings {
                 address unsignedByteAt: index put: (bytes at: index) ].
             address unsignedByteAt: bytes size + 1 put: 0.
             ^ address'.
+        host class compile: 'start: aDictionary signalling: aSemaphore
+            ^ self invoke: ''luma_async_start''
+                parameters: { TFBasicType pointer. TFBasicType sint }
+                return: TFBasicType sint
+                with: { STONJSON toString: aDictionary. Smalltalk registerExternalObject: aSemaphore }'.
+        host class compile: 'take: aTicket
+            | answer |
+            answer := self invoke: ''luma_async_take''
+                parameters: { TFBasicType sint }
+                return: TFBasicType pointer
+                with: { aTicket }.
+            ^ [ STONJSON fromString: answer readString utf8Decoded ] ensure: [ answer free ]'.
+        host class compile: 'abandon: aTicket
+            ^ self invoke: ''luma_async_abandon''
+                parameters: { TFBasicType sint }
+                return: TFBasicType void
+                with: { aTicket }'.
+        host class compile: 'request: aDictionary
+            | semaphore ticket reply |
+            semaphore := Semaphore new.
+            [ ticket := self start: aDictionary signalling: semaphore.
+                [ semaphore wait.
+                    reply := self take: ticket ]
+                    ifCurtailed: [ self abandon: ticket ] ]
+                ensure: [ Smalltalk unregisterExternalObject: semaphore ].
+            reply at: ''error'' ifPresent: [ :message | LumaHostError signal: message ].
+            ^ reply at: ''result'''.
+
+        subscription := Object << #LumaSubscription
+            slots: { #ticket. #semaphore. #block. #process. #error };
+            sharedVariables: { #Active };
+            package: 'Luma';
+            install.
+        subscription class compile: 'subscribe: aDictionary do: aBlock
+            | semaphore |
+            semaphore := Semaphore new.
+            ^ self new
+                setTicket: (LumaHost start: aDictionary signalling: semaphore) semaphore: semaphore block: aBlock;
+                start;
+                yourself'.
+        subscription class compile: 'active
+            Active ifNil: [ Active := OrderedCollection new ].
+            ^ Active'.
+        subscription class compile: 'stopAll
+            self active copy do: [ :each | each stop ]'.
+        subscription compile: 'setTicket: aTicket semaphore: aSemaphore block: aBlock
+            ticket := aTicket.
+            semaphore := aSemaphore.
+            block := aBlock'.
+        subscription compile: 'start
+            self class active add: self.
+            process := [ [ self deliverNext ] repeat ] forkAt: Processor userBackgroundPriority'.
+        subscription compile: 'deliverNext
+            | reply |
+            semaphore wait.
+            reply := LumaHost take: ticket.
+            reply at: ''error'' ifPresent: [ :message | error := message. ^ self stop ].
+            reply at: ''end'' ifPresent: [ :ended | ^ self stop ].
+            [ block value: (reply at: ''result'') ]
+                on: Error
+                do: [ :failure | error := failure messageText. ^ self stop ]'.
+        subscription compile: 'stop
+            self class active remove: self ifAbsent: [ ^ self ].
+            LumaHost abandon: ticket.
+            Smalltalk unregisterExternalObject: semaphore.
+            process terminate'.
+        subscription compile: 'isActive
+            ^ self class active includes: self'.
+        subscription compile: 'error
+            ^ error'.
+        subscription compile: 'printOn: aStream
+            aStream nextPutAll: self class name; nextPut: $(; print: ticket; nextPut: $).
+            self isActive ifFalse: [ aStream nextPutAll: '' stopped'' ].
+            error ifNotNil: [ aStream nextPutAll: '': ''; nextPutAll: error ]'.
 
         synth := Object << #LumaSynth slots: {}; package: 'Luma'; install.
         synth class compile: 'start
@@ -710,21 +794,24 @@ public enum PharoLumaBindings {
         label compile: 'drawable ^ drawable'.
 
         project := Object << #LumaProject slots: {}; package: 'Luma'; install.
-        project class compile: 'fetch: aName as: aClass
-            | json |
-            json := (LumaHost invoke: aName
-                parameters: #() return: TFBasicType pointer with: #()) readString utf8Decoded.
-            ^ (STONJSON fromString: json) collect: [ :each | aClass fromJSON: each ]'.
+        project class compile: 'fetch: aRequest as: aClass
+            ^ (LumaHost request: aRequest asDictionary) collect: [ :each | aClass fromJSON: each ]'.
         project class compile: 'sessions
-            ^ LumaSessions new setItems: (self fetch: ''luma_sessions'' as: LumaSession); yourself'.
+            ^ LumaSessions new setItems: (self fetch: { #op -> ''sessions'' } as: LumaSession); yourself'.
         project class compile: 'notebookEntries
             ^ LumaNotebookEntries new
-                setItems: (self fetch: ''luma_notebook_entries'' as: LumaNotebookEntry);
+                setItems: (self fetch: { #op -> ''notebook_entries'' } as: LumaNotebookEntry);
                 yourself'.
         project class compile: 'events
-            ^ LumaEvents new
-                setItems: (self fetch: ''luma_events'' as: LumaEvent);
-                yourself'.
+            ^ self events: 200'.
+        project class compile: 'events: aCount
+            ^ self fetchEvents: { #op -> ''events''. #limit -> aCount }'.
+        project class compile: 'fetchEvents: aRequest
+            ^ LumaEvents new setItems: (self fetch: aRequest as: LumaEvent); yourself'.
+        project class compile: 'onEvent: aBlock
+            ^ self watch: { #op -> ''watch_events'' } do: aBlock'.
+        project class compile: 'watch: aRequest do: aBlock
+            ^ LumaSubscription subscribe: aRequest asDictionary do: [ :each | aBlock value: (LumaEvent fromJSON: each) ]'.
         project
         """
 }

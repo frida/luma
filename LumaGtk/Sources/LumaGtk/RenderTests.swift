@@ -252,11 +252,6 @@ enum RenderTests {
             PharoRuntime.bootBundledImage()
             try? await PharoRuntime.shared.runningState()
             try? await PharoLumaBindings.install(into: PharoRuntime.shared)
-            // A snippet may ask the host what it knows; nothing has published
-            // any of it here.
-            for feed in PharoHostFeed.allCases {
-                PharoHostBridge.shared.publish([], as: feed)
-            }
             let handle = try? await PharoRuntime.shared.evaluate(snippet)
             answer.scene = handle.flatMap { Int($0.printString.trimmingCharacters(in: .whitespaces)) }
         }

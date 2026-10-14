@@ -2,7 +2,7 @@ import Foundation
 
 /// What the host hands the image, one record per thing rather than a line of
 /// text, so the image can open one up and ask it questions.
-public struct PharoHostRecord: Codable, Sendable {
+public struct PharoHostRecord: Sendable {
     public let headline: String
     /// Base64 PNG, which is how a picture reaches the image.
     public var icon: String?
@@ -12,6 +12,14 @@ public struct PharoHostRecord: Codable, Sendable {
         self.headline = headline
         self.icon = icon
         self.fields = fields
+    }
+
+    public var json: [String: Any] {
+        var object: [String: Any] = ["headline": headline, "fields": fields]
+        if let icon {
+            object["icon"] = icon
+        }
+        return object
     }
 }
 
@@ -46,14 +54,32 @@ extension NotebookEntry {
 
 extension RuntimeEvent {
     public var recordForPharo: PharoHostRecord {
-        PharoHostRecord(
-            headline: String(describing: payload),
+        let payload = logPayload
+        return PharoHostRecord(
+            headline: headlineForPharo(of: payload),
             fields: [
                 "id": id.uuidString,
                 "timestamp": timestamp.formatted(.iso8601),
                 "source": String(describing: source),
-                "payload": String(describing: payload),
+                "payload": jsonText(of: payload),
                 "session": sessionID?.uuidString ?? "",
             ])
+    }
+
+    private func headlineForPharo(of payload: [String: Any]) -> String {
+        guard case .raw = self.payload else { return String(describing: self.payload) }
+        return jsonText(of: sentPayload ?? payload["value"] ?? "")
+    }
+
+    var sentPayload: Any? {
+        guard case .raw(let message, _) = payload, let envelope = message as? [String: Any],
+            envelope["type"] as? String == "send"
+        else { return nil }
+        return envelope["payload"]
+    }
+
+    private func jsonText(of value: Any) -> String {
+        let data = try! JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .sortedKeys])
+        return String(decoding: data, as: UTF8.self)
     }
 }

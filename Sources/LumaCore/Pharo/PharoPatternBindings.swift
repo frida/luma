@@ -1,31 +1,6 @@
 enum PharoPatternBindings {
     static let source = """
-        | hostError host view decoding session pattern patterns value project |
-        hostError := Error << #LumaHostError slots: {}; package: 'Luma'; install.
-
-        host := LumaHost.
-        host class compile: 'request: aDictionary
-            | semaphore index ticket answer reply |
-            semaphore := Semaphore new.
-            index := Smalltalk registerExternalObject: semaphore.
-            [ ticket := self invoke: ''luma_async_start''
-                    parameters: { TFBasicType pointer. TFBasicType sint }
-                    return: TFBasicType sint
-                    with: { STONJSON toString: aDictionary. index }.
-                [ semaphore wait.
-                    answer := self invoke: ''luma_async_take''
-                        parameters: { TFBasicType sint }
-                        return: TFBasicType pointer
-                        with: { ticket } ]
-                    ifCurtailed: [ self invoke: ''luma_async_abandon''
-                        parameters: { TFBasicType sint }
-                        return: TFBasicType void
-                        with: { ticket } ].
-                reply := [ STONJSON fromString: answer readString utf8Decoded ] ensure: [ answer free ] ]
-                ensure: [ Smalltalk unregisterExternalObject: semaphore ].
-            reply at: ''error'' ifPresent: [ :message | LumaHostError signal: message ].
-            ^ reply at: ''result'''.
-
+        | view decoding session pattern patterns value project |
         view := SwpTextView << #LumaView slots: { #kindName }; package: 'Luma'; install.
         view compile: 'kindName: aString
             kindName := aString'.
@@ -47,12 +22,6 @@ enum PharoPatternBindings {
             ^ id'.
 
         session := LumaSession.
-        session compile: 'read: aCount at: anAddress
-            ^ (LumaHost request: {
-                #op -> ''read_memory''.
-                #session -> (self at: #id).
-                #address -> anAddress.
-                #count -> aCount } asDictionary) base64Decoded'.
         session compile: 'decode: aTypeName using: aPattern at: anAddress
             ^ aPattern decode: aTypeName in: self at: anAddress'.
 

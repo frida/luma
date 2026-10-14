@@ -90,13 +90,17 @@ public struct RuntimeEvent: Identifiable, Sendable {
         )
     }
 
+    public var logPayload: [String: Any] {
+        Self.encodePayloadForLog(payload)
+    }
+
     public func toLogJSON() -> [String: Any]? {
         guard let sourceObj = Self.encodeSource(source) else { return nil }
         var obj: [String: Any] = [
             "id": id.uuidString,
             "timestamp": Self.wireFormatter.string(from: timestamp),
             "source": sourceObj,
-            "payload": Self.encodePayloadForLog(payload),
+            "payload": logPayload,
         ]
         if let sessionID {
             obj["sessionID"] = sessionID.uuidString

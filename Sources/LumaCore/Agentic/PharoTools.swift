@@ -33,7 +33,9 @@ extension MissionTools {
                 Evaluate a Smalltalk expression in the embedded Pharo image and hold on to what it \
                 answers. The result comes back as a handle other pharo_* tools take. LumaProject \
                 reaches the host: `LumaProject sessions`, `LumaProject notebookEntries`, \
-                `LumaProject events`. Use pharo_inspect to see what a result can show.
+                `LumaProject events`, `LumaProject onEvent: [ :event | ... ]`. A session answers \
+                `modules`, `threads`, `functionNamed:`, `evaluate:` (JavaScript in the process), and a \
+                function answers `onCall: [ :call | ... ]`. Use pharo_inspect to see what a result can show.
                 """,
             inputSchemaJSON: """
                 {"type":"object","properties":{"source":{"type":"string","description":"Smalltalk to evaluate, e.g. \\"LumaProject sessions\\""}},"required":["source"],"additionalProperties":false}

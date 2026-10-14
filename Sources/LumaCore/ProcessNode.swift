@@ -954,6 +954,11 @@ public final class ProcessNode: Identifiable {
         return a.name.lowercased() < b.name.lowercased()
     }
 
+    public func evaluateJavaScript(_ code: String) async throws -> JSInspectValue {
+        let packed = try await script.exports.evaluate(code, ["raw": false])
+        return try JSInspectValue.decodePacked(from: packed)
+    }
+
     public func readRemoteMemory(at address: UInt64, count: Int) async throws -> [UInt8] {
         let addr = String(format: "0x%llx", address)
         let any = try await script.exports.readMemory(addr, count)
