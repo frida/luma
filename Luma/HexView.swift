@@ -369,7 +369,8 @@ private struct HexRow: View, Equatable {
         var run = AttributedString(text)
         run.foregroundColor = color
         if caret {
-            run.backgroundColor = Color.accentColor.opacity(0.55)
+            run.foregroundColor = .white
+            run.backgroundColor = Color.accentColor
         } else if selected {
             run.backgroundColor = Color.accentColor.opacity(0.25)
         }

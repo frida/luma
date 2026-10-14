@@ -61,6 +61,11 @@ struct PatternDecodeView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            if hexWriter != nil {
+                Text(Self.editingHint)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             ForEach([describeProblem, writeProblem].compactMap { $0 }, id: \.self) { problem in
                 Text(problem)
                     .font(.caption)
@@ -139,6 +144,8 @@ struct PatternDecodeView: View {
     private var emphasis: HexAnnotation? {
         selectedNodeID.flatMap { locations[$0] }.map(\.annotation)
     }
+
+    private static let editingHint = "Live memory: type hex or text over the selected byte to change it. Tab switches column."
 
     private var hexWriter: ((Int, [UInt8]) -> Void)? {
         guard memoryWriter != nil, let baseAddress else { return nil }

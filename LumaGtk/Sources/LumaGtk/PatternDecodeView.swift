@@ -19,6 +19,7 @@ final class PatternDecodeView {
     var memoryWriter: ((_ bytes: [UInt8], _ address: UInt64) async throws -> Void)? {
         didSet {
             hexView.onWrite = memoryWriter == nil ? nil : { [weak self] offset, bytes in self?.write(bytes, atOffset: offset) }
+            hintLabel.visible = memoryWriter != nil
         }
     }
     var onTruncated: (() -> Void)?
@@ -31,6 +32,7 @@ final class PatternDecodeView {
     private let hexScroller: ScrolledWindow
     private let treeScroller: ScrolledWindow
     private let treeList: ListBox
+    private let hintLabel: Label
     private let problemLabel: Label
 
     private var data: Data
@@ -95,6 +97,13 @@ final class PatternDecodeView {
         panes.append(child: hexScroller)
         panes.append(child: treeScroller)
 
+        hintLabel = Label(str: "Live memory: type hex or text over the selected byte to change it. Tab switches column.")
+        hintLabel.add(cssClass: "dim-label")
+        hintLabel.add(cssClass: "caption")
+        hintLabel.xalign = 0
+        hintLabel.wrap = true
+        hintLabel.visible = false
+
         problemLabel = Label(str: "")
         problemLabel.add(cssClass: "error")
         problemLabel.add(cssClass: "caption")
@@ -105,6 +114,7 @@ final class PatternDecodeView {
 
         widget = Box(orientation: .vertical, spacing: 6)
         widget.append(child: panes)
+        widget.append(child: hintLabel)
         widget.append(child: problemLabel)
 
         for scroller in [hexScroller, treeScroller] {
