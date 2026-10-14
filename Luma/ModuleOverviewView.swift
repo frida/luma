@@ -86,6 +86,6 @@ struct ModuleOverviewView: View {
                 }
             }
         }
-        .buttonStyle(.link)
+        .platformLinkButtonStyle()
     }
 }
