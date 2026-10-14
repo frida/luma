@@ -8,6 +8,129 @@ public struct PharoExample: Identifiable, Sendable {
 
 public enum PharoExampleCatalog {
     public static let sections: [(heading: String, examples: [PharoExample])] = [
+        ("Process", [
+            PharoExample(
+                title: "A session \u{2014} drill into its modules, threads and events",
+                code: "LumaProject sessions items first."),
+            PharoExample(
+                title: "The functions of a module",
+                code: """
+                | session |
+                session := LumaProject sessions items first.
+                session modules items first functions
+                """),
+            PharoExample(
+                title: "Find a function by name, and read it",
+                code: "(LumaProject sessions items first) functionNamed: 'malloc'."),
+            PharoExample(
+                title: "Count calls as they happen",
+                code: """
+                | session calls label |
+                session := LumaProject sessions items first.
+                callScene := LumaCanvas new.
+                label := LumaText on: callScene addDrawable pointSize: 28.
+                label show: 'waiting for malloc'.
+                calls := 0.
+                mallocHook := (session functionNamed: 'malloc') onCall: [ :call |
+                    calls := calls + 1.
+                    label show: 'malloc x ' , calls printString ].
+                callScene
+                """),
+            PharoExample(
+                title: "What the last call carried \u{2014} thread, arguments, return address",
+                code: """
+                lastCall := nil.
+                argumentHook := (LumaProject sessions items first functionNamed: 'malloc')
+                    onCall: [ :call | lastCall := call ].
+                argumentHook
+                """),
+            PharoExample(
+                title: "Name the arguments, and keep the string behind one at call time",
+                code: """
+                | strlen |
+                strlen := LumaProject sessions items first functionNamed: 'strlen'.
+                strlen arguments: #(#string); capturing: { #text -> 'args[0].readUtf8String()' }.
+                strlenHook := strlen onCall: [ :call | lastText := call captured: #text ].
+                strlenHook
+                """),
+            PharoExample(
+                title: "What a function hands back",
+                code: """
+                mallocReturns := (LumaProject sessions items first functionNamed: 'malloc')
+                    onReturn: [ :call | lastBlock := call retval ].
+                mallocReturns
+                """),
+            PharoExample(
+                title: "Decode the struct behind an argument",
+                code: """
+                | node |
+                node := LumaPattern fromSource: 'struct Node { u32 value; u32 pad; Node *next : u64; };'.
+                nodeHook := (LumaProject sessions items first functionNamed: 'free')
+                    onCall: [ :call | lastNode := (call at: 1) decode: 'Node' using: node ].
+                nodeHook
+                """),
+            PharoExample(
+                title: "Read memory behind a pointer",
+                code: """
+                | session base |
+                session := LumaProject sessions items first.
+                base := session pointer: session modules items first base.
+                { base readU32 printStringBase: 16. base readPointer. (base + 16) hexDump: 32. base symbol }
+                """),
+            PharoExample(
+                title: "Stop a hook",
+                code: "mallocHook stop. argumentHook stop."),
+            PharoExample(
+                title: "Ask the process in JavaScript",
+                code: "(LumaProject sessions items first) evaluate: 'Process.enumerateThreads().map(t => t.id)'."),
+            PharoExample(
+                title: "Every event, as it arrives",
+                code: """
+                eventScene := LumaCanvas new.
+                latest := LumaText on: eventScene addDrawable pointSize: 18.
+                eventWatch := LumaProject onEvent: [ :event | latest show: event name ].
+                eventScene
+                """),
+            PharoExample(
+                title: "Stop watching everything",
+                code: "LumaSubscription stopAll."),
+        ]),
+        ("Decode", [
+            PharoExample(
+                title: "The pattern library",
+                code: "LumaProject patterns."),
+            PharoExample(
+                title: "Decode bytes with a pattern",
+                code: """
+                (LumaProject patterns at: 'macho.hexpat')
+                    decode: 'MachHeader'
+                    from: #[16rCF 16rFA 16rED 16rFE 16r0C 16r00 16r00 16r01 16r00 16r00 16r00 16r00 16r02 16r00 16r00 16r00 16r11 16r00 16r00 16r00 16r20 16r04 16r00 16r00 16r85 16r00 16r20 16r00 16r00 16r00 16r00 16r00]
+                    at: 16r100000000
+                """),
+            PharoExample(
+                title: "Decode a session's main module header",
+                code: """
+                | session |
+                session := LumaProject sessions items first.
+                (LumaProject patterns at: 'macho.hexpat') decodeIn: session at: 16r100000000
+                """),
+            PharoExample(
+                title: "A pattern written here, decoded where the main module starts",
+                code: """
+                | session header |
+                session := LumaProject sessions items first.
+                header := LumaPattern fromSource: 'struct Header { u32 magic; u32 cputype; };'.
+                header decode: 'Header' in: session at: session modules items first base
+                """),
+            PharoExample(
+                title: "Follow a pointer past the bytes that were read \u{2014} put your own address in",
+                code: """
+                | session list |
+                session := LumaProject sessions items first.
+                list := LumaPattern fromSource: 'struct Node { u32 value; u32 pad; Node *next : u64; };'.
+                ((list decode: 'Node' in: session at: 16r100008000) at: 'next') follow
+                """),
+        ]),
         ("Visualize", [
             PharoExample(
                 title: "Graph — a ring",
@@ -605,129 +728,6 @@ public enum PharoExampleCatalog {
             PharoExample(
                 title: "Silence everything",
                 code: "LumaTune hush."),
-        ]),
-        ("Process", [
-            PharoExample(
-                title: "A session \u{2014} drill into its modules, threads and events",
-                code: "LumaProject sessions items first."),
-            PharoExample(
-                title: "The functions of a module",
-                code: """
-                | session |
-                session := LumaProject sessions items first.
-                session modules items first functions
-                """),
-            PharoExample(
-                title: "Find a function by name, and read it",
-                code: "(LumaProject sessions items first) functionNamed: 'malloc'."),
-            PharoExample(
-                title: "Count calls as they happen",
-                code: """
-                | session calls label |
-                session := LumaProject sessions items first.
-                callScene := LumaCanvas new.
-                label := LumaText on: callScene addDrawable pointSize: 28.
-                label show: 'waiting for malloc'.
-                calls := 0.
-                mallocHook := (session functionNamed: 'malloc') onCall: [ :call |
-                    calls := calls + 1.
-                    label show: 'malloc x ' , calls printString ].
-                callScene
-                """),
-            PharoExample(
-                title: "What the last call carried \u{2014} thread, arguments, return address",
-                code: """
-                lastCall := nil.
-                argumentHook := (LumaProject sessions items first functionNamed: 'malloc')
-                    onCall: [ :call | lastCall := call ].
-                argumentHook
-                """),
-            PharoExample(
-                title: "Name the arguments, and keep the string behind one at call time",
-                code: """
-                | strlen |
-                strlen := LumaProject sessions items first functionNamed: 'strlen'.
-                strlen arguments: #(#string); capturing: { #text -> 'args[0].readUtf8String()' }.
-                strlenHook := strlen onCall: [ :call | lastText := call captured: #text ].
-                strlenHook
-                """),
-            PharoExample(
-                title: "What a function hands back",
-                code: """
-                mallocReturns := (LumaProject sessions items first functionNamed: 'malloc')
-                    onReturn: [ :call | lastBlock := call retval ].
-                mallocReturns
-                """),
-            PharoExample(
-                title: "Decode the struct behind an argument",
-                code: """
-                | node |
-                node := LumaPattern fromSource: 'struct Node { u32 value; u32 pad; Node *next : u64; };'.
-                nodeHook := (LumaProject sessions items first functionNamed: 'free')
-                    onCall: [ :call | lastNode := (call at: 1) decode: 'Node' using: node ].
-                nodeHook
-                """),
-            PharoExample(
-                title: "Read memory behind a pointer",
-                code: """
-                | session base |
-                session := LumaProject sessions items first.
-                base := session pointer: session modules items first base.
-                { base readU32 printStringBase: 16. base readPointer. (base + 16) hexDump: 32. base symbol }
-                """),
-            PharoExample(
-                title: "Stop a hook",
-                code: "mallocHook stop. argumentHook stop."),
-            PharoExample(
-                title: "Ask the process in JavaScript",
-                code: "(LumaProject sessions items first) evaluate: 'Process.enumerateThreads().map(t => t.id)'."),
-            PharoExample(
-                title: "Every event, as it arrives",
-                code: """
-                eventScene := LumaCanvas new.
-                latest := LumaText on: eventScene addDrawable pointSize: 18.
-                eventWatch := LumaProject onEvent: [ :event | latest show: event name ].
-                eventScene
-                """),
-            PharoExample(
-                title: "Stop watching everything",
-                code: "LumaSubscription stopAll."),
-        ]),
-        ("Decode", [
-            PharoExample(
-                title: "The pattern library",
-                code: "LumaProject patterns."),
-            PharoExample(
-                title: "Decode bytes with a pattern",
-                code: """
-                (LumaProject patterns at: 'macho.hexpat')
-                    decode: 'MachHeader'
-                    from: #[16rCF 16rFA 16rED 16rFE 16r0C 16r00 16r00 16r01 16r00 16r00 16r00 16r00 16r02 16r00 16r00 16r00 16r11 16r00 16r00 16r00 16r20 16r04 16r00 16r00 16r85 16r00 16r20 16r00 16r00 16r00 16r00 16r00]
-                    at: 16r100000000
-                """),
-            PharoExample(
-                title: "Decode a session's main module header",
-                code: """
-                | session |
-                session := LumaProject sessions items first.
-                (LumaProject patterns at: 'macho.hexpat') decodeIn: session at: 16r100000000
-                """),
-            PharoExample(
-                title: "A pattern written here, decoded where the main module starts",
-                code: """
-                | session header |
-                session := LumaProject sessions items first.
-                header := LumaPattern fromSource: 'struct Header { u32 magic; u32 cputype; };'.
-                header decode: 'Header' in: session at: session modules items first base
-                """),
-            PharoExample(
-                title: "Follow a pointer past the bytes that were read \u{2014} put your own address in",
-                code: """
-                | session list |
-                session := LumaProject sessions items first.
-                list := LumaPattern fromSource: 'struct Node { u32 value; u32 pad; Node *next : u64; };'.
-                ((list decode: 'Node' in: session at: 16r100008000) at: 'next') follow
-                """),
         ]),
         ("Explore", [
             PharoExample(
