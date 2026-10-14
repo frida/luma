@@ -679,6 +679,22 @@ public enum PharoExampleCatalog {
                 session := LumaProject sessions items first.
                 (LumaProject patterns at: 'macho.hexpat') decodeIn: session at: 16r100000000
                 """),
+            PharoExample(
+                title: "A pattern written here, decoded where the main module starts",
+                code: """
+                | session header |
+                session := LumaProject sessions items first.
+                header := LumaPattern fromSource: 'struct Header { u32 magic; u32 cputype; };'.
+                header decode: 'Header' in: session at: session modules items first base
+                """),
+            PharoExample(
+                title: "Follow a pointer past the bytes that were read \u{2014} put your own address in",
+                code: """
+                | session list |
+                session := LumaProject sessions items first.
+                list := LumaPattern fromSource: 'struct Node { u32 value; u32 pad; Node *next : u64; };'.
+                ((list decode: 'Node' in: session at: 16r100008000) at: 'next') follow
+                """),
         ]),
         ("Explore", [
             PharoExample(

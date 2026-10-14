@@ -25,9 +25,22 @@ enum PharoPatternBindings {
         session compile: 'decode: aTypeName using: aPattern at: anAddress
             ^ aPattern decode: aTypeName in: self at: anAddress'.
 
-        pattern := Object << #LumaPattern slots: { #id. #name. #kind. #types. #rootType. #diagnostics }; package: 'Luma'; install.
+        pattern := Object << #LumaPattern
+            slots: { #id. #name. #kind. #types. #rootType. #diagnostics. #text };
+            package: 'Luma';
+            install.
         pattern class compile: 'fromJSON: aDictionary
             ^ self new setJSON: aDictionary; yourself'.
+        pattern class compile: 'fromSource: aString
+            ^ self new setText: aString; yourself'.
+        pattern compile: 'setText: aString
+            text := aString.
+            name := ''untitled''.
+            kind := ''source''.
+            types := #().
+            diagnostics := #()'.
+        pattern compile: 'identity
+            ^ text ifNil: [ { #pattern_id -> id } ] ifNotNil: [ { #source -> text } ]'.
         pattern compile: 'setJSON: aDictionary
             id := aDictionary at: ''id''.
             name := aDictionary at: ''name''.
@@ -48,23 +61,27 @@ enum PharoPatternBindings {
         pattern compile: 'printOn: aStream
             aStream nextPutAll: name'.
         pattern compile: 'source
-            ^ LumaHost request: { #op -> ''pattern_source''. #pattern_id -> id } asDictionary'.
+            ^ text ifNil: [ LumaHost request: { #op -> ''pattern_source''. #pattern_id -> id } asDictionary ]'.
         pattern compile: 'decode: aByteArray at: anAddress
             ^ self decode: rootType from: aByteArray at: anAddress'.
         pattern compile: 'decode: aTypeName from: aByteArray at: anAddress
-            ^ LumaPatternValue fromReply: (LumaHost request: {
-                #op -> ''decode''.
-                #pattern_id -> id.
-                #type -> aTypeName.
-                #bytes -> aByteArray base64Encoded.
-                #address -> anAddress } asDictionary)'.
+            ^ LumaPatternValue
+                fromReply: (LumaHost request: (self identity , {
+                    #op -> ''decode''.
+                    #type -> aTypeName.
+                    #bytes -> aByteArray base64Encoded.
+                    #address -> anAddress }) asDictionary)
+                pattern: self
+                session: nil'.
         pattern compile: 'decode: aTypeName in: aSession at: anAddress
-            ^ LumaPatternValue fromReply: (LumaHost request: {
-                #op -> ''decode''.
-                #pattern_id -> id.
-                #type -> aTypeName.
-                #session -> (aSession at: #id).
-                #address -> anAddress } asDictionary)'.
+            ^ LumaPatternValue
+                fromReply: (LumaHost request: (self identity , {
+                    #op -> ''decode''.
+                    #type -> aTypeName.
+                    #session -> (aSession at: #id).
+                    #address -> anAddress }) asDictionary)
+                pattern: self
+                session: aSession'.
         pattern compile: 'decodeIn: aSession at: anAddress
             ^ self decode: rootType in: aSession at: anAddress'.
         pattern compile: 'gtTypesFor: aView
@@ -100,16 +117,29 @@ enum PharoPatternBindings {
                 column: ''Name'' text: [ :each | each name ];
                 column: ''Types'' text: [ :each | each types size asString ]'.
 
-        value := Object << #LumaPatternValue slots: { #json. #children. #decoding }; package: 'Luma'; install.
-        value class compile: 'fromReply: aDictionary
-            ^ self fromJSON: (aDictionary at: ''root'') in: (LumaDecoding id: (aDictionary at: ''decode''))'.
-        value class compile: 'fromJSON: aDictionary in: aDecoding
-            ^ self new setJSON: aDictionary in: aDecoding; yourself'.
-        value compile: 'setJSON: aDictionary in: aDecoding
+        value := Object << #LumaPatternValue
+            slots: { #json. #children. #decoding. #pattern. #session };
+            package: 'Luma';
+            install.
+        value class compile: 'fromReply: aDictionary pattern: aPattern session: aSession
+            ^ self
+                fromJSON: (aDictionary at: ''root'')
+                in: (LumaDecoding id: (aDictionary at: ''decode''))
+                pattern: aPattern
+                session: aSession'.
+        value class compile: 'fromJSON: aDictionary in: aDecoding pattern: aPattern session: aSession
+            ^ self new setJSON: aDictionary in: aDecoding pattern: aPattern session: aSession; yourself'.
+        value compile: 'setJSON: aDictionary in: aDecoding pattern: aPattern session: aSession
             json := aDictionary.
             decoding := aDecoding.
+            pattern := aPattern.
+            session := aSession.
             children := ((aDictionary at: ''fields'' ifAbsent: [ #() ]) , (aDictionary at: ''elements'' ifAbsent: [ #() ]))
-                collect: [ :each | LumaPatternValue fromJSON: each in: aDecoding ]'.
+                collect: [ :each | LumaPatternValue fromJSON: each in: aDecoding pattern: aPattern session: aSession ]'.
+        value compile: 'pattern
+            ^ pattern'.
+        value compile: 'session
+            ^ session'.
         value compile: 'name
             ^ json at: ''display_name'' ifAbsent: [ json at: ''name'' ifAbsent: [ '''' ] ]'.
         value compile: 'typeName
@@ -120,6 +150,16 @@ enum PharoPatternBindings {
             ^ json at: ''size'' ifAbsent: [ nil ]'.
         value compile: 'value
             ^ json at: ''value'' ifAbsent: [ nil ]'.
+        value compile: 'number
+            ^ json at: ''number'''.
+        value compile: 'isPointer
+            ^ self typeName includes: $*'.
+        value compile: 'pointeeTypeName
+            ^ (self typeName copyUpTo: $*) trimBoth'.
+        value compile: 'follow
+            ^ self follow: self pointeeTypeName'.
+        value compile: 'follow: aTypeName
+            ^ pattern decode: aTypeName in: session at: self number'.
         value compile: 'children
             ^ children'.
         value compile: 'at: aName
@@ -150,6 +190,14 @@ enum PharoPatternBindings {
                 column: ''Name'' text: [ :each | each name ];
                 column: ''Type'' text: [ :each | each typeName ];
                 column: ''Value'' text: [ :each | each value ifNil: [ '''' ] ]'.
+        value compile: 'gtPointeeFor: aView
+            <gtView>
+            (self isPointer and: [ children isEmpty ]) ifFalse: [ ^ aView ].
+            ^ aView forward
+                title: ''Pointee'';
+                priority: 1;
+                object: [ self follow ];
+                view: #gtFieldsFor:'.
         value compile: 'gtBytesFor: aView
             <gtView>
             ^ (LumaView new kindName: ''lumaPatternBytes'')

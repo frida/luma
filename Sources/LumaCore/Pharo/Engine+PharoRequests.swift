@@ -135,6 +135,14 @@ extension DecodedPattern {
     fileprivate var pharoJSON: [String: Any] {
         var object = projection(depth: 0, elementLimit: 0)
         object["node"] = nodeID
+        switch value {
+        case .integer(let number)?:
+            object["number"] = number
+        case .unsigned(let number)?:
+            object["number"] = number
+        default:
+            break
+        }
         let visibleFields = fields.filter { !$0.hidden }
         if !visibleFields.isEmpty {
             object["fields"] = visibleFields.map(\.pharoJSON)
