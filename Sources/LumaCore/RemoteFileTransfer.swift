@@ -29,7 +29,9 @@ public final class RemoteFileTransfer: Identifiable {
         self.direction = direction
         self.itemNames = itemNames
         progress.kind = .file
-        progress.fileOperationKind = direction == .upload ? .uploading : .downloading
+        #if canImport(Darwin)
+            progress.fileOperationKind = direction == .upload ? .uploading : .downloading
+        #endif
         progress.cancellationHandler = { [weak self] in
             Task { @MainActor in self?.cancel() }
         }
