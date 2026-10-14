@@ -3,6 +3,7 @@ import Foundation
 import Gtk
 import GtkSource
 import LumaCore
+import Observation
 import SwiftyPharo
 
 /// One column of a moldable inspection: the object's print string over the views
