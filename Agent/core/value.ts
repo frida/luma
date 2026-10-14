@@ -168,6 +168,10 @@ function encodeObjectTree(
             return [ValueTag.NativePointer, (obj as NativePointer).toString()];
         }
 
+        if (obj instanceof UInt64 || obj instanceof Int64) {
+            return [ValueTag.BigInt, obj.toString()];
+        }
+
         if (isBinaryLike(obj)) {
             const binary = obj as ArrayBufferView | ArrayBuffer;
             const node: BytesEncoded = [ValueTag.Bytes, 0, 0, getBytesKind(binary)];

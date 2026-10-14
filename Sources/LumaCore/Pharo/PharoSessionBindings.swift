@@ -364,11 +364,11 @@ enum PharoSessionBindings {
         pointer compile: 'readU8 ^ self javaScript: ''readU8()'''.
         pointer compile: 'readU16 ^ self javaScript: ''readU16()'''.
         pointer compile: 'readU32 ^ self javaScript: ''readU32()'''.
-        pointer compile: 'readU64 ^ Integer readFrom: (self javaScript: ''readU64().toString()'')'.
+        pointer compile: 'readU64 ^ self javaScript: ''readU64()'''.
         pointer compile: 'readS8 ^ self javaScript: ''readS8()'''.
         pointer compile: 'readS16 ^ self javaScript: ''readS16()'''.
         pointer compile: 'readS32 ^ self javaScript: ''readS32()'''.
-        pointer compile: 'readS64 ^ Integer readFrom: (self javaScript: ''readS64().toString()'')'.
+        pointer compile: 'readS64 ^ self javaScript: ''readS64()'''.
         pointer compile: 'readFloat ^ self javaScript: ''readFloat()'''.
         pointer compile: 'readDouble ^ self javaScript: ''readDouble()'''.
         pointer compile: 'readUtf8String ^ self javaScript: ''readUtf8String()'''.

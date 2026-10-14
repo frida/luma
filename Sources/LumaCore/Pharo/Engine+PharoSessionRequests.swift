@@ -119,9 +119,10 @@ extension JSInspectValue {
             switch self {
             case .number(let value):
                 return value.rounded() == value && value.magnitude < 9_007_199_254_740_992 ? Int64(value) : value
-            case .string(let value), .nativePointer(let value), .bigInt(let value), .function(let value),
-                .symbol(let value), .date(let value):
+            case .string(let value), .nativePointer(let value), .function(let value), .symbol(let value), .date(let value):
                 return value
+            case .bigInt(let value):
+                return Int64(value) ?? UInt64(value) ?? value
             case .boolean(let value):
                 return value
             case .null, .undefined, .promise, .weakMap, .weakSet, .depthLimit, .circular:
