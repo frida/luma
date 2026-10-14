@@ -29,6 +29,11 @@ extension Engine {
         case "read_memory":
             let count: Int = try pharoArgument("count", of: request)
             return Data(try await node().readRemoteMemory(at: try pharoAddress(of: request), count: count)).base64EncodedString()
+        case "write_memory":
+            let encoded: String = try pharoArgument("bytes", of: request)
+            guard let bytes = Data(base64Encoded: encoded) else { throw PharoAsyncBridgeError.missingArgument("bytes") }
+            try await node().writeRemoteMemory(at: try pharoAddress(of: request), bytes: Array(bytes))
+            return NSNull()
         default:
             throw PharoAsyncBridgeError.unknownOperation(operation)
         }

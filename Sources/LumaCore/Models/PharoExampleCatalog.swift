@@ -70,6 +70,16 @@ public enum PharoExampleCatalog {
                 nodeHook
                 """),
             PharoExample(
+                title: "Write memory the process keeps",
+                code: """
+                | session scratch |
+                session := LumaProject sessions items first.
+                scratch := session pointer: (session evaluate: '(globalThis.lumaScratch = Memory.alloc(16))').
+                scratch writeUtf8String: 'hello'.
+                (scratch + 8) writeU32: 42.
+                { scratch readUtf8String. (scratch + 8) readU32. scratch hexDump: 16 }
+                """),
+            PharoExample(
                 title: "Read memory behind a pointer",
                 code: """
                 | session base |

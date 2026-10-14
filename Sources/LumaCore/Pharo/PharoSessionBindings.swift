@@ -40,6 +40,8 @@ enum PharoSessionBindings {
             ^ self request: { #op -> ''range_at''. #address -> anAddress }'.
         session compile: 'read: aCount at: anAddress
             ^ (self request: { #op -> ''read_memory''. #address -> anAddress. #count -> aCount }) base64Decoded'.
+        session compile: 'write: aByteArray at: anAddress
+            ^ self request: { #op -> ''write_memory''. #address -> anAddress. #bytes -> aByteArray base64Encoded }'.
         session compile: 'disassemble: aCount at: anAddress
             ^ self request: { #op -> ''disassemble''. #address -> anAddress. #count -> aCount }'.
         session compile: 'evaluate: aJavaScriptSource
@@ -335,9 +337,12 @@ enum PharoSessionBindings {
         pointer class compile: 'in: aSession at: anAddressOrHex
             ^ self new setSession: aSession address: (self numberFrom: anAddressOrHex); yourself'.
         pointer class compile: 'numberFrom: anObject
-            ^ anObject isString
-                ifTrue: [ Integer readFrom: (anObject allButFirst: 2) base: 16 ]
-                ifFalse: [ anObject ]'.
+            anObject isString ifTrue: [
+                ^ (anObject beginsWith: ''0x'')
+                    ifTrue: [ Integer readFrom: (anObject allButFirst: 2) base: 16 ]
+                    ifFalse: [ anObject asNumber ] ].
+            (anObject isKindOf: LumaPointer) ifTrue: [ ^ anObject address ].
+            ^ anObject'.
         pointer compile: 'setSession: aSession address: anAddress
             session := aSession.
             address := anAddress'.
@@ -378,6 +383,22 @@ enum PharoSessionBindings {
         pointer compile: 'readCString ^ self javaScript: ''readCString()'''.
         pointer compile: 'read: aCount
             ^ session read: aCount at: address'.
+        pointer compile: 'write: aByteArray
+            session write: aByteArray at: address'.
+        pointer compile: 'writeU8: aValue self javaScript: ''writeU8('' , aValue printString , '')'''.
+        pointer compile: 'writeU16: aValue self javaScript: ''writeU16('' , aValue printString , '')'''.
+        pointer compile: 'writeU32: aValue self javaScript: ''writeU32('' , aValue printString , '')'''.
+        pointer compile: 'writeU64: aValue self javaScript: ''writeU64(uint64("'' , aValue printString , ''"))'''.
+        pointer compile: 'writeS8: aValue self javaScript: ''writeS8('' , aValue printString , '')'''.
+        pointer compile: 'writeS16: aValue self javaScript: ''writeS16('' , aValue printString , '')'''.
+        pointer compile: 'writeS32: aValue self javaScript: ''writeS32('' , aValue printString , '')'''.
+        pointer compile: 'writeS64: aValue self javaScript: ''writeS64(int64("'' , aValue printString , ''"))'''.
+        pointer compile: 'writeFloat: aValue self javaScript: ''writeFloat('' , aValue asFloat printString , '')'''.
+        pointer compile: 'writeDouble: aValue self javaScript: ''writeDouble('' , aValue asFloat printString , '')'''.
+        pointer compile: 'writePointer: aPointer
+            self javaScript: ''writePointer(ptr("'' , (LumaPointer in: session at: aPointer) hex , ''"))'''.
+        pointer compile: 'writeUtf8String: aString
+            self javaScript: ''writeUtf8String('' , (STONJSON toString: aString) , '')'''.
         pointer compile: 'decode: aTypeName using: aPattern
             ^ aPattern decode: aTypeName in: session at: address'.
         pointer compile: 'symbol
