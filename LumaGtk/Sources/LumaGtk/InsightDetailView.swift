@@ -17,10 +17,12 @@ final class InsightDetailView {
 
     func handleInsightUpdated(_ updated: LumaCore.AddressInsight) {
         guard updated.id == insight.id else { return }
-        let prevResolved = insight.lastResolvedAddress
+        let previous = insight
         insight = updated
-        if updated.lastResolvedAddress != prevResolved {
+        if updated.lastResolvedAddress != previous.lastResolvedAddress {
             scheduleRefresh()
+        } else if updated.placements != previous.placements {
+            decodeView?.setPlacements(updated.placements)
         }
     }
 

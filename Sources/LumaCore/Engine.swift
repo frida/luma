@@ -113,7 +113,7 @@ public final class Engine {
     private var customInstrumentReloadWaiters: [UUID: [CheckedContinuation<Void, Never>]] = [:]
     private var threadActionProviders: [ThreadActionProvider] = []
     @ObservationIgnored public var onSessionListChanged: (@MainActor (SessionListChange) -> Void)?
-    @ObservationIgnored public var onREPLCellAdded: (@MainActor (REPLCell) -> Void)?
+    @ObservationIgnored public var onREPLCellSaved: (@MainActor (REPLCell) -> Void)?
     @ObservationIgnored public var onNotebookChanged: (@MainActor (NotebookChange) -> Void)?
     @ObservationIgnored public var onAddressNoteChanged: (@MainActor (AddressNoteChange) -> Void)?
     @ObservationIgnored public var onInstalledPackagesChanged: (@MainActor ([InstalledPackage]) -> Void)?
@@ -1080,6 +1080,10 @@ public final class Engine {
             self?.applyRemoteSessionReplCell(sessionID: sessionID, cell: cell)
         }
 
+        collaboration.onSessionReplCellUpdated = { [weak self] sessionID, cell in
+            self?.applyRemoteSessionReplCell(sessionID: sessionID, cell: cell)
+        }
+
         collaboration.onSessionReplEvalRequested = { [weak self] sessionID, code, language, cellID in
             self?.handleRemoteReplEvalRequest(sessionID: sessionID, code: code, language: language, cellID: cellID)
         }
@@ -1192,7 +1196,7 @@ public final class Engine {
         var updated = cell
         updated.result = .text("Timed out — host did not respond.")
         try? store.save(updated)
-        onREPLCellAdded?(updated)
+        onREPLCellSaved?(updated)
     }
 
     private func applyRemoteSessionEvent(sessionID: UUID, event: RuntimeEvent) {
@@ -1523,7 +1527,7 @@ public final class Engine {
             var stored = cell
             stored.sessionID = session.id
             try? store.save(stored)
-            onREPLCellAdded?(stored)
+            onREPLCellSaved?(stored)
         }
 
         for inst in session.instruments {
@@ -1615,7 +1619,7 @@ public final class Engine {
         var stored = cell
         stored.sessionID = sessionID
         try? store.save(stored)
-        onREPLCellAdded?(stored)
+        onREPLCellSaved?(stored)
     }
 
     private func applyRemoteSessionRemoval(sessionID: UUID) {
@@ -2214,7 +2218,7 @@ public final class Engine {
                     isSessionBoundary: true
                 )
                 try? store.save(cell)
-                onREPLCellAdded?(cell)
+                onREPLCellSaved?(cell)
             }
 
             updateSession(id: s.id) {
@@ -2900,6 +2904,8 @@ public final class Engine {
         guard var cell = try? store.fetchREPLCell(id: cellID) else { return }
         cell.placements = placements
         try? store.save(cell)
+        onREPLCellSaved?(cell)
+        collaboration.enqueueUpdateReplCell(sessionID: cell.sessionID, cell: cell)
     }
 
     private func persistInsight(_ insight: AddressInsight) {
@@ -5538,7 +5544,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
                     timestamp: result.timestamp
                 )
                 try? self?.store.save(cell)
-                self?.onREPLCellAdded?(cell)
+                self?.onREPLCellSaved?(cell)
                 if let sid = self?.collabSessionID(forNode: node) {
                     self?.collaboration.enqueueAddReplCell(sessionID: sid, cell: cell)
                 }

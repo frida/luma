@@ -132,6 +132,14 @@ final class PatternDecodeView {
         decode()
     }
 
+    func setPlacements(_ placements: [PatternPlacement]) {
+        guard placements != self.placements else { return }
+        expanded.formUnion(Set(placements.map(\.id)).subtracting(self.placements.map(\.id)))
+        self.placements = placements
+        showTree()
+        decode()
+    }
+
     private func write(_ bytes: [UInt8], atOffset offset: Int) {
         guard let baseAddress else { return }
         write(bytes, at: baseAddress &+ UInt64(offset))

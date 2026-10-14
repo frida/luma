@@ -599,7 +599,7 @@ final class MainWindow: InstrumentUIHost {
         observeModuleAnalysis()
         observeLoadedPackages()
         observeConnectionActivity()
-        engine.onREPLCellAdded = { [weak self] cell in self?.currentREPLPane?.appendCell(cell) }
+        engine.onREPLCellSaved = { [weak self] cell in self?.currentREPLPane?.showCell(cell) }
         engine.onNotebookChanged = { [weak self] change in
             guard let self else { return }
             self.notebookPane?.handleNotebookChange(change)

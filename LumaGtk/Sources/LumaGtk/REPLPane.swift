@@ -14,6 +14,7 @@ final class REPLPane {
 
     private var cells: [LumaCore.REPLCell] = []
     private var rowKeepers: [Any] = []
+    private var decodeViews: [UUID: PatternDecodeView] = [:]
     private var mode: LumaCore.REPLLanguage = .javascript
     private var draftSaveTask: Task<Void, Never>?
 
@@ -146,10 +147,20 @@ final class REPLPane {
         console.focusInput()
     }
 
-    func appendCell(_ cell: LumaCore.REPLCell) {
+    func showCell(_ cell: LumaCore.REPLCell) {
         guard cell.sessionID == sessionID else { return }
-        cells.append(cell)
-        console.appendEntry(makeRow(for: cell))
+        guard let index = cells.firstIndex(where: { $0.id == cell.id }) else {
+            cells.append(cell)
+            console.appendEntry(makeRow(for: cell))
+            return
+        }
+        let shown = cells[index]
+        cells[index] = cell
+        if cell.code == shown.code && cell.result == shown.result {
+            decodeViews[cell.id]?.setPlacements(cell.placements)
+        } else {
+            loadCells()
+        }
     }
 
     private func inactiveMessage(for session: LumaCore.ProcessSession) -> String {
@@ -177,6 +188,7 @@ final class REPLPane {
         cells = (try? engine.store.fetchREPLCells(sessionID: sessionID)) ?? []
         console.clearEntries()
         rowKeepers.removeAll()
+        decodeViews.removeAll()
         let sorted = cells.sorted(by: { $0.timestamp < $1.timestamp })
         for cell in sorted {
             console.appendEntry(makeRow(for: cell))
@@ -310,7 +322,7 @@ final class REPLPane {
                 ) { [weak engine] placements in
                     engine?.setPlacements(placements, forREPLCell: cellID)
                 }
-                rowKeepers.append(decode)
+                decodeViews[cellID] = decode
                 decode.widget.hexpand = true
                 column2.append(child: decode.widget)
                 resultWidget = column2
@@ -390,6 +402,7 @@ final class REPLPane {
         try? engine?.store.deleteREPLCells(sessionID: sessionID)
         cells.removeAll()
         rowKeepers.removeAll()
+        decodeViews.removeAll()
         console.clearEntries()
         console.setHistory([])
     }

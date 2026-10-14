@@ -325,6 +325,7 @@ public final class CollaborationSession {
     public var onSessionThreadsUpdated: ((UUID, ThreadDelta) -> Void)?
     public var onSessionHostChanged: ((UUID, UserInfo, String, String, UInt, String) -> Void)?
     public var onSessionReplCellAdded: ((UUID, REPLCell) -> Void)?
+    public var onSessionReplCellUpdated: ((UUID, REPLCell) -> Void)?
     public var onSessionReplEvalRequested: ((UUID, String, REPLLanguage, UUID) -> Void)?
     public var onSessionInstrumentAdded: ((UUID, InstrumentInstance) -> Void)?
     public var onSessionInstrumentUpdated: ((UUID, InstrumentInstance) -> Void)?
@@ -1002,6 +1003,12 @@ public final class CollaborationSession {
         enqueueSessionOp(.addReplCell(.init(sessionID: sessionID, cell: wireCell)))
     }
 
+    public func enqueueUpdateReplCell(sessionID: UUID, cell: REPLCell) {
+        var wireCell = cell
+        wireCell.sessionID = sessionID
+        enqueueSessionOp(.updateReplCell(.init(sessionID: sessionID, cell: wireCell)))
+    }
+
     public func enqueueAddInstrument(sessionID: UUID, instance: InstrumentInstance, runtimeStatus: InstrumentStatus? = nil) {
         var wireInst = instance
         wireInst.sessionID = sessionID
@@ -1345,6 +1352,9 @@ public final class CollaborationSession {
         case .addReplCell(let a):
             cancelPendingReplTimeout(cellID: a.cell.id)
             onSessionReplCellAdded?(a.sessionID, a.cell)
+
+        case .updateReplCell(let u):
+            onSessionReplCellUpdated?(u.sessionID, u.cell)
 
         case .addInstrument(let a):
             onSessionInstrumentAdded?(a.sessionID, a.instance)

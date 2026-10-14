@@ -16,6 +16,7 @@ public enum SessionOp: Sendable {
     case updateThreads(UpdateThreads)
     case claimHost(ClaimHost)
     case addReplCell(AddReplCell)
+    case updateReplCell(UpdateReplCell)
     case addInstrument(AddInstrument)
     case updateInstrument(UpdateInstrument)
     case removeInstrument(RemoveInstrument)
@@ -39,6 +40,7 @@ public enum SessionOp: Sendable {
         case .updateThreads(let u): return u.opID
         case .claimHost(let c): return c.opID
         case .addReplCell(let a): return a.opID
+        case .updateReplCell(let u): return u.opID
         case .addInstrument(let a): return a.opID
         case .updateInstrument(let u): return u.opID
         case .removeInstrument(let r): return r.opID
@@ -64,6 +66,7 @@ public enum SessionOp: Sendable {
         case .updateThreads(let u): return u.sessionID
         case .claimHost(let c): return c.sessionID
         case .addReplCell(let a): return a.sessionID
+        case .updateReplCell(let u): return u.sessionID
         case .addInstrument(let a): return a.sessionID
         case .updateInstrument(let u): return u.sessionID
         case .removeInstrument(let r): return r.sessionID
@@ -89,6 +92,7 @@ public enum SessionOp: Sendable {
         case .updateThreads: return "update-threads"
         case .claimHost: return "claim-host"
         case .addReplCell: return "add-repl-cell"
+        case .updateReplCell: return "update-repl-cell"
         case .addInstrument: return "add-instrument"
         case .updateInstrument: return "update-instrument"
         case .removeInstrument: return "remove-instrument"
@@ -280,6 +284,18 @@ public enum SessionOp: Sendable {
     }
 
     public struct AddReplCell: Sendable {
+        public let opID: UUID
+        public let sessionID: UUID
+        public let cell: REPLCell
+
+        public init(opID: UUID = UUID(), sessionID: UUID, cell: REPLCell) {
+            self.opID = opID
+            self.sessionID = sessionID
+            self.cell = cell
+        }
+    }
+
+    public struct UpdateReplCell: Sendable {
         public let opID: UUID
         public let sessionID: UUID
         public let cell: REPLCell
@@ -486,6 +502,10 @@ public enum SessionOp: Sendable {
             if let cellObj = a.cell.toWireJSON() {
                 obj["cell"] = cellObj
             }
+        case .updateReplCell(let u):
+            if let cellObj = u.cell.toWireJSON() {
+                obj["cell"] = cellObj
+            }
         case .addInstrument(let a):
             if let instObj = Self.wireInstrument(instance: a.instance, runtimeStatus: a.runtimeStatus) {
                 obj["instance"] = instObj
@@ -682,6 +702,16 @@ public enum SessionOp: Sendable {
                 let cell = REPLCell.fromWireJSON(cellObj)
             else { return nil }
             return .addReplCell(AddReplCell(
+                opID: opID,
+                sessionID: sessionID,
+                cell: cell
+            ))
+
+        case "update-repl-cell":
+            guard let cellObj = obj["cell"] as? [String: Any],
+                let cell = REPLCell.fromWireJSON(cellObj)
+            else { return nil }
+            return .updateReplCell(UpdateReplCell(
                 opID: opID,
                 sessionID: sessionID,
                 cell: cell
