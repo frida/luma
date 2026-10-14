@@ -160,6 +160,8 @@ enum PharoPatternBindings {
             ^ self follow: self pointeeTypeName'.
         value compile: 'follow: aTypeName
             ^ pattern decode: aTypeName in: session at: self number'.
+        value compile: 'pointer
+            ^ session pointer: self number'.
         value compile: 'children
             ^ children'.
         value compile: 'at: aName

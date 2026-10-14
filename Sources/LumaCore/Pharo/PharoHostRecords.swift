@@ -34,6 +34,7 @@ extension ProcessSession {
                 "device": deviceName,
                 "phase": String(describing: phase),
                 "kind": String(describing: kind),
+                "pointerSize": processInfo.map { String($0.pointerSize) } ?? "",
             ])
     }
 }

@@ -643,6 +643,39 @@ public enum PharoExampleCatalog {
                 argumentHook
                 """),
             PharoExample(
+                title: "Name the arguments, and keep the string behind one at call time",
+                code: """
+                | strlen |
+                strlen := LumaProject sessions items first functionNamed: 'strlen'.
+                strlen arguments: #(#string); capturing: { #text -> 'args[0].readUtf8String()' }.
+                strlenHook := strlen onCall: [ :call | lastText := call captured: #text ].
+                strlenHook
+                """),
+            PharoExample(
+                title: "What a function hands back",
+                code: """
+                mallocReturns := (LumaProject sessions items first functionNamed: 'malloc')
+                    onReturn: [ :call | lastBlock := call retval ].
+                mallocReturns
+                """),
+            PharoExample(
+                title: "Decode the struct behind an argument",
+                code: """
+                | node |
+                node := LumaPattern fromSource: 'struct Node { u32 value; u32 pad; Node *next : u64; };'.
+                nodeHook := (LumaProject sessions items first functionNamed: 'free')
+                    onCall: [ :call | lastNode := (call at: 1) decode: 'Node' using: node ].
+                nodeHook
+                """),
+            PharoExample(
+                title: "Read memory behind a pointer",
+                code: """
+                | session base |
+                session := LumaProject sessions items first.
+                base := session pointer: session modules items first base.
+                { base readU32 printStringBase: 16. base readPointer. (base + 16) hexDump: 32. base symbol }
+                """),
+            PharoExample(
                 title: "Stop a hook",
                 code: "mallocHook stop. argumentHook stop."),
             PharoExample(

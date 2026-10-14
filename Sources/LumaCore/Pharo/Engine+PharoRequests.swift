@@ -44,9 +44,10 @@ extension Engine {
         let source = events
         return PharoStreamedResult(
             items: AsyncStream { continuation in
+                let batches = PharoEventBatches(into: continuation)
                 let forwarding = Task {
                     for await event in source where matches(event) {
-                        continuation.yield(event.recordForPharo.json)
+                        await batches.add(event.recordForPharo)
                     }
                     continuation.finish()
                 }
@@ -122,6 +123,32 @@ extension Engine {
     func pharoArgument<T>(_ name: String, of request: [String: Any]) throws -> T {
         guard let value = request[name] as? T else { throw PharoAsyncBridgeError.missingArgument(name) }
         return value
+    }
+}
+
+private actor PharoEventBatches {
+    private let continuation: AsyncStream<Any>.Continuation
+    private var pending: [PharoHostRecord] = []
+    private var isFlushScheduled = false
+
+    init(into continuation: AsyncStream<Any>.Continuation) {
+        self.continuation = continuation
+    }
+
+    func add(_ record: PharoHostRecord) {
+        pending.append(record)
+        guard !isFlushScheduled else { return }
+        isFlushScheduled = true
+        Task {
+            try? await Task.sleep(for: .milliseconds(16))
+            await flush()
+        }
+    }
+
+    private func flush() {
+        continuation.yield(pending.map(\.json))
+        pending = []
+        isFlushScheduled = false
     }
 }
 

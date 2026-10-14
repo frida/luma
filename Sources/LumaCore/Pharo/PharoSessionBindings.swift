@@ -1,9 +1,13 @@
 enum PharoSessionBindings {
     static let source = """
-        | session modules module functions function hook threads thread |
+        | session modules module functions function hook call pointer threads thread |
         session := LumaSession.
         session compile: 'id
             ^ self at: #id'.
+        session compile: 'pointerSize
+            ^ (self at: #pointerSize) asNumber'.
+        session compile: 'pointer: anAddress
+            ^ LumaPointer in: self at: anAddress'.
         session compile: 'request: anArrayOfAssociations
             | request |
             request := anArrayOfAssociations asDictionary.
@@ -139,18 +143,36 @@ enum PharoSessionBindings {
                 column: ''Name'' text: [ :each | each name ];
                 column: ''Detail'' text: [ :each | each detail ]'.
 
-        function := Object << #LumaFunction slots: { #session. #name. #address. #detail }; package: 'Luma'; install.
+        function := Object << #LumaFunction
+            slots: { #session. #name. #address. #detail. #names. #arity. #captures };
+            package: 'Luma';
+            install.
         function class compile: 'fromJSON: aDictionary in: aSession
             ^ self new setSession: aSession json: aDictionary; yourself'.
         function compile: 'setSession: aSession json: aDictionary
             session := aSession.
             name := aDictionary at: ''name''.
             address := aDictionary at: ''address''.
-            detail := aDictionary at: ''detail'''.
+            detail := aDictionary at: ''detail''.
+            names := #().
+            arity := 8.
+            captures := Dictionary new'.
         function compile: 'session ^ session'.
         function compile: 'name ^ name'.
         function compile: 'address ^ address'.
         function compile: 'detail ^ detail'.
+        function compile: 'arguments: aCollection
+            names := aCollection collect: [ :each | each asString ].
+            arity := names size'.
+        function compile: 'names ^ names'.
+        function compile: 'arity: aCount
+            arity := aCount'.
+        function compile: 'arity ^ arity'.
+        function compile: 'capturing: aCollection
+            captures := aCollection asDictionary'.
+        function compile: 'captures ^ captures'.
+        function compile: 'pointer
+            ^ session pointer: address'.
         function compile: 'addressString
             ^ ''0x'' , (address printStringBase: 16) asLowercase'.
         function compile: 'printOn: aStream
@@ -160,7 +182,9 @@ enum PharoSessionBindings {
         function compile: 'disassembly
             ^ session disassemble: 64 at: address'.
         function compile: 'onCall: aBlock
-            ^ LumaHook on: self do: aBlock'.
+            ^ LumaHook on: self at: #enter do: aBlock'.
+        function compile: 'onReturn: aBlock
+            ^ LumaHook on: self at: #leave do: aBlock'.
         function compile: 'gtDisassemblyFor: aView
             <gtView>
             ^ aView columnedList
@@ -173,38 +197,220 @@ enum PharoSessionBindings {
                 column: ''Comment'' text: [ :each | each at: ''comment'' ]'.
 
         hook := LumaSubscription << #LumaHook
-            slots: { #function. #tag };
+            slots: { #function. #tag. #cut };
             sharedVariables: { #Issued };
             package: 'Luma';
             install.
-        hook class compile: 'on: aFunction do: aBlock
+        hook class compile: 'on: aFunction at: aCut do: aBlock
             | tag watching |
             tag := self nextTag.
             watching := self
                 subscribe: { #op -> ''watch_events''. #session -> aFunction session id. #hook -> tag } asDictionary
-                do: [ :each | aBlock value: ((LumaEvent fromJSON: each) message at: ''payload'') ].
-            watching setFunction: aFunction tag: tag.
-            aFunction session evaluate: (self attachSourceFor: aFunction tag: tag).
+                do: [ :batch | batch do: [ :each |
+                    aBlock value: (LumaCall on: aFunction json: ((LumaEvent fromJSON: each) message at: ''payload'')) ] ].
+            watching setFunction: aFunction tag: tag cut: aCut.
+            aFunction session evaluate: (self attachSourceFor: aFunction tag: tag at: aCut).
             ^ watching'.
         hook class compile: 'nextTag
             Issued := (Issued ifNil: [ 0 ]) + 1.
             ^ ''hook'' , Issued printString'.
-        hook class compile: 'attachSourceFor: aFunction tag: aTag
-            ^ ''(globalThis.lumaHooks = globalThis.lumaHooks || {})["'' , aTag , ''"] = Interceptor.attach(ptr("'' , aFunction addressString , ''"), { onEnter(args) { send({ hook: "'' , aTag , ''", thread: this.threadId, returnAddress: this.returnAddress.toString(), args: [args[0].toString(), args[1].toString(), args[2].toString(), args[3].toString()] }); } });'''.
+        hook class compile: 'attachSourceFor: aFunction tag: aTag at: aCut
+            | tag |
+            tag := STONJSON toString: aTag.
+            ^ String streamContents: [ :js |
+                js nextPutAll: ''(globalThis.lumaHooks = globalThis.lumaHooks || {})['';
+                    nextPutAll: tag;
+                    nextPutAll: ''] = Interceptor.attach(ptr("'';
+                    nextPutAll: aFunction addressString;
+                    nextPutAll: ''"), { onEnter(args) { this.lumaArgs = '';
+                    nextPutAll: (self argumentsSourceFor: aFunction);
+                    nextPutAll: ''; this.lumaCaptured = '';
+                    nextPutAll: (self capturesSourceFor: aFunction);
+                    nextPutAll: ''; ''.
+                aCut = #enter ifTrue: [ js nextPutAll: (self sendSourceFor: tag cut: aCut retval: ''null'') ].
+                js nextPutAll: '' }''.
+                aCut = #leave ifTrue: [
+                    js nextPutAll: '', onLeave(retval) { '';
+                        nextPutAll: (self sendSourceFor: tag cut: aCut retval: ''retval.toString()'');
+                        nextPutAll: '' }'' ].
+                js nextPutAll: '' });'' ]'.
+        hook class compile: 'sendSourceFor: aTagLiteral cut: aCut retval: aRetvalSource
+            ^ ''send({ hook: '' , aTagLiteral , '', cut: "'' , aCut , ''", thread: this.threadId, returnAddress: this.returnAddress.toString(), args: this.lumaArgs, captured: this.lumaCaptured, retval: '' , aRetvalSource , '' });'''.
+        hook class compile: 'argumentsSourceFor: aFunction
+            ^ String streamContents: [ :js |
+                js nextPut: $[.
+                1 to: aFunction arity do: [ :index |
+                    index > 1 ifTrue: [ js nextPutAll: '', '' ].
+                    js nextPutAll: ''args[''; print: index - 1; nextPutAll: ''].toString()'' ].
+                js nextPut: $] ]'.
+        hook class compile: 'capturesSourceFor: aFunction
+            ^ String streamContents: [ :js |
+                js nextPut: ${.
+                aFunction captures keysAndValuesDo: [ :name :expression |
+                    js nextPutAll: (STONJSON toString: name asString); nextPutAll: '': ''; nextPutAll: expression; nextPutAll: '', '' ].
+                js nextPut: $} ]'.
         hook class compile: 'detachSourceFor: aTag
             ^ ''globalThis.lumaHooks["'' , aTag , ''"].detach(); delete globalThis.lumaHooks["'' , aTag , ''"];'''.
-        hook compile: 'setFunction: aFunction tag: aTag
+        hook compile: 'setFunction: aFunction tag: aTag cut: aCut
             function := aFunction.
-            tag := aTag'.
+            tag := aTag.
+            cut := aCut'.
         hook compile: 'function ^ function'.
+        hook compile: 'cut ^ cut'.
         hook compile: 'stop
             self isActive ifFalse: [ ^ self ].
             function session evaluate: (self class detachSourceFor: tag).
             super stop'.
         hook compile: 'printOn: aStream
-            aStream nextPutAll: ''LumaHook(''; nextPutAll: function name; nextPut: $).
+            aStream nextPutAll: ''LumaHook(''; nextPutAll: function name; nextPutAll: '' ''; nextPutAll: cut; nextPut: $).
             self isActive ifFalse: [ aStream nextPutAll: '' stopped'' ].
             self error ifNotNil: [ :message | aStream nextPutAll: '': ''; nextPutAll: message ]'.
+
+        call := Object << #LumaCall slots: { #function. #json }; package: 'Luma'; install.
+        call class compile: 'on: aFunction json: aDictionary
+            ^ self new setFunction: aFunction json: aDictionary; yourself'.
+        call compile: 'setFunction: aFunction json: aDictionary
+            function := aFunction.
+            json := aDictionary'.
+        call compile: 'function ^ function'.
+        call compile: 'session ^ function session'.
+        call compile: 'cut
+            ^ (json at: ''cut'') asSymbol'.
+        call compile: 'thread
+            ^ json at: ''thread'''.
+        call compile: 'returnAddress
+            ^ function session pointer: (json at: ''returnAddress'')'.
+        call compile: 'arguments
+            ^ (json at: ''args'') collect: [ :each | function session pointer: each ]'.
+        call compile: 'at: anIndex
+            ^ function session pointer: ((json at: ''args'') at: anIndex)'.
+        call compile: 'named: aName
+            ^ self at: (function names indexOf: aName asString)'.
+        call compile: 'captured
+            ^ json at: ''captured'''.
+        call compile: 'captured: aName
+            ^ self captured at: aName asString'.
+        call compile: 'retval
+            ^ (json at: ''retval'') ifNotNil: [ :each | function session pointer: each ]'.
+        call compile: 'nameOfArgument: anIndex
+            ^ function names at: anIndex ifAbsent: [ anIndex printString ]'.
+        call compile: 'printOn: aStream
+            aStream nextPutAll: function name; nextPut: $(.
+            self arguments doWithIndex: [ :each :index |
+                index > 1 ifTrue: [ aStream nextPutAll: '', '' ].
+                aStream print: each ].
+            aStream nextPut: $).
+            self retval ifNotNil: [ :result | aStream nextPutAll: '' -> ''; print: result ]'.
+        call compile: 'gtArgumentsFor: aView
+            <gtView>
+            ^ aView columnedList
+                title: ''Arguments'';
+                priority: 1;
+                items: [ self arguments ];
+                column: ''Name'' text: [ :each | self nameOfArgument: (self arguments indexOf: each) ];
+                column: ''Value'' text: [ :each | each hex ]'.
+        call compile: 'gtCapturedFor: aView
+            <gtView>
+            self captured isEmpty ifTrue: [ ^ aView ].
+            ^ aView columnedList
+                title: ''Captured'';
+                priority: 2;
+                items: [ self captured associations ];
+                column: ''Name'' text: [ :each | each key ];
+                column: ''Value'' text: [ :each | each value printString ]'.
+        call compile: 'gtCallFor: aView
+            <gtView>
+            ^ aView columnedList
+                title: ''Call'';
+                priority: 3;
+                items: [ {
+                    ''Function'' -> function printString.
+                    ''Thread'' -> self thread printString.
+                    ''Return address'' -> self returnAddress hex.
+                    ''Returned'' -> (self retval ifNil: [ '''' ] ifNotNil: [ :result | result hex ]) } ];
+                column: ''Field'' text: [ :each | each key ];
+                column: ''Value'' text: [ :each | each value ]'.
+
+        pointer := Object << #LumaPointer slots: { #session. #address }; package: 'Luma'; install.
+        pointer class compile: 'in: aSession at: anAddressOrHex
+            ^ self new setSession: aSession address: (self numberFrom: anAddressOrHex); yourself'.
+        pointer class compile: 'numberFrom: anObject
+            ^ anObject isString
+                ifTrue: [ Integer readFrom: (anObject allButFirst: 2) base: 16 ]
+                ifFalse: [ anObject ]'.
+        pointer compile: 'setSession: aSession address: anAddress
+            session := aSession.
+            address := anAddress'.
+        pointer compile: 'session ^ session'.
+        pointer compile: 'address ^ address'.
+        pointer compile: 'isNull
+            ^ address = 0'.
+        pointer compile: 'hex
+            ^ ''0x'' , (address printStringBase: 16) asLowercase'.
+        pointer compile: 'printOn: aStream
+            aStream nextPutAll: self hex'.
+        pointer compile: '= anObject
+            ^ (anObject isKindOf: LumaPointer) and: [ anObject address = address ]'.
+        pointer compile: 'hash
+            ^ address hash'.
+        pointer compile: '+ anOffset
+            ^ LumaPointer in: session at: address + anOffset'.
+        pointer compile: '- anOffset
+            ^ LumaPointer in: session at: address - anOffset'.
+        pointer compile: 'javaScript: aMessage
+            ^ session evaluate: ''ptr("'' , self hex , ''").'' , aMessage'.
+        pointer compile: 'readPointer
+            ^ LumaPointer in: session at: (self javaScript: ''readPointer().toString()'')'.
+        pointer compile: 'readU8 ^ self javaScript: ''readU8()'''.
+        pointer compile: 'readU16 ^ self javaScript: ''readU16()'''.
+        pointer compile: 'readU32 ^ self javaScript: ''readU32()'''.
+        pointer compile: 'readU64 ^ Integer readFrom: (self javaScript: ''readU64().toString()'')'.
+        pointer compile: 'readS8 ^ self javaScript: ''readS8()'''.
+        pointer compile: 'readS16 ^ self javaScript: ''readS16()'''.
+        pointer compile: 'readS32 ^ self javaScript: ''readS32()'''.
+        pointer compile: 'readS64 ^ Integer readFrom: (self javaScript: ''readS64().toString()'')'.
+        pointer compile: 'readFloat ^ self javaScript: ''readFloat()'''.
+        pointer compile: 'readDouble ^ self javaScript: ''readDouble()'''.
+        pointer compile: 'readUtf8String ^ self javaScript: ''readUtf8String()'''.
+        pointer compile: 'readUtf8String: aLength
+            ^ self javaScript: ''readUtf8String('' , aLength printString , '')'''.
+        pointer compile: 'readUtf16String ^ self javaScript: ''readUtf16String()'''.
+        pointer compile: 'readCString ^ self javaScript: ''readCString()'''.
+        pointer compile: 'read: aCount
+            ^ session read: aCount at: address'.
+        pointer compile: 'decode: aTypeName using: aPattern
+            ^ aPattern decode: aTypeName in: session at: address'.
+        pointer compile: 'symbol
+            ^ session symbolicate: address'.
+        pointer compile: 'module
+            ^ session moduleAt: address'.
+        pointer compile: 'hexDump: aCount
+            | bytes |
+            bytes := self read: aCount.
+            ^ String streamContents: [ :dump |
+                0 to: aCount - 1 by: 16 do: [ :offset |
+                    dump nextPutAll: (self + offset) hex; nextPutAll: ''  ''.
+                    (bytes copyFrom: offset + 1 to: (offset + 16 min: aCount))
+                        do: [ :byte | dump nextPutAll: (byte printStringBase: 16 length: 2 padded: true) asLowercase ]
+                        separatedBy: [ dump space ].
+                    dump lf ] ]'.
+        pointer compile: 'gtSymbolFor: aView
+            <gtView>
+            | symbol |
+            symbol := self symbol.
+            symbol ifNil: [ ^ aView ].
+            ^ aView columnedList
+                title: ''Symbol'';
+                priority: 1;
+                items: [ symbol associations select: [ :each | each value notNil ] ];
+                column: ''Field'' text: [ :each | each key ];
+                column: ''Value'' text: [ :each | each value printString ]'.
+        pointer compile: 'gtBytesFor: aView
+            <gtView>
+            ^ aView text
+                title: ''Bytes'';
+                priority: 2;
+                text: [ self hexDump: 64 ]'.
 
         threads := LumaRecords << #LumaThreads slots: {}; package: 'Luma'; install.
         threads compile: 'gtThreadsFor: aView

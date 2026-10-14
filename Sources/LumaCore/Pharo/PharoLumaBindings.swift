@@ -811,7 +811,8 @@ public enum PharoLumaBindings {
         project class compile: 'onEvent: aBlock
             ^ self watch: { #op -> ''watch_events'' } do: aBlock'.
         project class compile: 'watch: aRequest do: aBlock
-            ^ LumaSubscription subscribe: aRequest asDictionary do: [ :each | aBlock value: (LumaEvent fromJSON: each) ]'.
+            ^ LumaSubscription subscribe: aRequest asDictionary do: [ :batch |
+                batch do: [ :each | aBlock value: (LumaEvent fromJSON: each) ] ]'.
 
         journal := Object << #LumaJournal slots: {}; sharedVariables: { #Subscription }; package: 'Luma'; install.
         journal class compile: 'start
