@@ -231,17 +231,17 @@ enum PharoSessionBindings {
                 js nextPutAll: '' }''.
                 aCut = #leave ifTrue: [
                     js nextPutAll: '', onLeave(retval) { '';
-                        nextPutAll: (self sendSourceFor: tag cut: aCut retval: ''retval.toString()'');
+                        nextPutAll: (self sendSourceFor: tag cut: aCut retval: ''retval'');
                         nextPutAll: '' }'' ].
                 js nextPutAll: '' });'' ]'.
         hook class compile: 'sendSourceFor: aTagLiteral cut: aCut retval: aRetvalSource
-            ^ ''send({ hook: '' , aTagLiteral , '', cut: "'' , aCut , ''", thread: this.threadId, returnAddress: this.returnAddress.toString(), args: this.lumaArgs, captured: this.lumaCaptured, retval: '' , aRetvalSource , '' });'''.
+            ^ ''send({ hook: '' , aTagLiteral , '', cut: "'' , aCut , ''", thread: this.threadId, returnAddress: this.returnAddress, args: this.lumaArgs, captured: this.lumaCaptured, retval: '' , aRetvalSource , '' });'''.
         hook class compile: 'argumentsSourceFor: aFunction
             ^ String streamContents: [ :js |
                 js nextPut: $[.
                 1 to: aFunction arity do: [ :index |
                     index > 1 ifTrue: [ js nextPutAll: '', '' ].
-                    js nextPutAll: ''args[''; print: index - 1; nextPutAll: ''].toString()'' ].
+                    js nextPutAll: ''args[''; print: index - 1; nextPut: $] ].
                 js nextPut: $] ]'.
         hook class compile: 'capturesSourceFor: aFunction
             ^ String streamContents: [ :js |
@@ -360,7 +360,7 @@ enum PharoSessionBindings {
         pointer compile: 'javaScript: aMessage
             ^ session evaluate: ''ptr("'' , self hex , ''").'' , aMessage'.
         pointer compile: 'readPointer
-            ^ LumaPointer in: session at: (self javaScript: ''readPointer().toString()'')'.
+            ^ LumaPointer in: session at: (self javaScript: ''readPointer()'')'.
         pointer compile: 'readU8 ^ self javaScript: ''readU8()'''.
         pointer compile: 'readU16 ^ self javaScript: ''readU16()'''.
         pointer compile: 'readU32 ^ self javaScript: ''readU32()'''.
