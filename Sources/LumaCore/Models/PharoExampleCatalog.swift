@@ -121,6 +121,35 @@ public enum PharoExampleCatalog {
                 title: "Stop watching everything",
                 code: "LumaSubscription stopAll."),
         ]),
+        ("Analyze", [
+            PharoExample(
+                title: "Ask radare2 anything \u{2014} a command, its output",
+                code: "(LumaProject sessions items first) r2: 'afl'."),
+            PharoExample(
+                title: "Run a command at a function",
+                code: "(LumaProject sessions items first functionNamed: 'malloc') r2: 'pd 12'."),
+            PharoExample(
+                title: "A command's JSON, as a Dictionary",
+                code: """
+                | session |
+                session := LumaProject sessions items first.
+                session r2 json: 'afij' at: (session functionNamed: 'malloc') address
+                """),
+            PharoExample(
+                title: "Pseudo-C of a function",
+                code: "(LumaProject sessions items first functionNamed: 'malloc') decompile."),
+            PharoExample(
+                title: "Who refers to a function \u{2014} calls, jumps and data",
+                code: "(LumaProject sessions items first functionNamed: 'malloc') references."),
+            PharoExample(
+                title: "Analyze a module, then see what radare2 found \u{2014} functions and flags",
+                code: """
+                | session |
+                session := LumaProject sessions items first.
+                session modules items first analyze.
+                session r2
+                """),
+        ]),
         ("Decode", [
             PharoExample(
                 title: "The pattern library",

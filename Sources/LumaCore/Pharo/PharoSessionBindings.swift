@@ -1,6 +1,6 @@
 enum PharoSessionBindings {
     static let source = """
-        | session modules module functions function hook call pointer threads thread |
+        | session modules module functions function hook call pointer threads thread radare flags flag references reference |
         session := LumaSession.
         session compile: 'id
             ^ self at: #id'.
@@ -44,6 +44,10 @@ enum PharoSessionBindings {
             ^ self request: { #op -> ''write_memory''. #address -> anAddress. #bytes -> aByteArray base64Encoded }'.
         session compile: 'disassemble: aCount at: anAddress
             ^ self request: { #op -> ''disassemble''. #address -> anAddress. #count -> aCount }'.
+        session compile: 'r2
+            ^ LumaRadare on: self'.
+        session compile: 'r2: aCommand
+            ^ self r2 cmd: aCommand'.
         session compile: 'evaluate: aJavaScriptSource
             ^ self request: { #op -> ''evaluate_js''. #source -> aJavaScriptSource }'.
         session compile: 'events
@@ -113,6 +117,8 @@ enum PharoSessionBindings {
                 yourself'.
         module compile: 'functionNamed: aName
             ^ self functions items detect: [ :each | each name = aName ]'.
+        module compile: 'analyze
+            session request: { #op -> ''analyze_module''. #module -> name }'.
         module compile: 'gtFunctionsFor: aView
             <gtView>
             ^ aView columnedList
@@ -183,6 +189,12 @@ enum PharoSessionBindings {
             ^ session moduleAt: address'.
         function compile: 'disassembly
             ^ session disassemble: 64 at: address'.
+        function compile: 'r2: aCommand
+            ^ session r2 cmd: aCommand at: address'.
+        function compile: 'decompile
+            ^ session request: { #op -> ''decompile''. #address -> address }'.
+        function compile: 'references
+            ^ session r2 referencesTo: address'.
         function compile: 'onCall: aBlock
             ^ LumaHook on: self at: #enter do: aBlock'.
         function compile: 'onReturn: aBlock
@@ -197,6 +209,22 @@ enum PharoSessionBindings {
                 column: ''Bytes'' text: [ :each | each at: ''bytes'' ];
                 column: ''Instruction'' text: [ :each | each at: ''asm'' ];
                 column: ''Comment'' text: [ :each | each at: ''comment'' ]'.
+        function compile: 'gtDecompileFor: aView
+            <gtView>
+            ^ aView text
+                title: ''Pseudo-C'';
+                priority: 2;
+                text: [ self decompile ]'.
+        function compile: 'gtReferencesFor: aView
+            <gtView>
+            ^ aView columnedList
+                title: ''References'';
+                priority: 3;
+                items: [ self references items ];
+                column: ''From'' text: [ :each | each fromString ];
+                column: ''Kind'' text: [ :each | each kind ];
+                column: ''In'' text: [ :each | each functionName ];
+                column: ''Instruction'' text: [ :each | each opcode ]'.
 
         hook := LumaSubscription << #LumaHook
             slots: { #function. #tag. #cut };
@@ -405,6 +433,10 @@ enum PharoSessionBindings {
             ^ session symbolicate: address'.
         pointer compile: 'module
             ^ session moduleAt: address'.
+        pointer compile: 'r2: aCommand
+            ^ session r2 cmd: aCommand at: address'.
+        pointer compile: 'references
+            ^ session r2 referencesTo: address'.
         pointer compile: 'hexDump: aCount
             | bytes |
             bytes := self read: aCount.
@@ -491,6 +523,121 @@ enum PharoSessionBindings {
                 column: ''Address'' text: [ :each | each hex ];
                 column: ''Symbol'' text: [ :each | each symbol ifNil: [ '''' ] ifNotNil: [ :found |
                     (found at: ''module'') , ''!'' , (found at: ''name'') ] ]'.
+
+        radare := Object << #LumaRadare slots: { #session }; package: 'Luma'; install.
+        radare class compile: 'on: aSession
+            ^ self new setSession: aSession; yourself'.
+        radare compile: 'setSession: aSession
+            session := aSession'.
+        radare compile: 'session ^ session'.
+        radare compile: 'cmd: aCommand
+            ^ session request: { #op -> ''r2''. #command -> aCommand }'.
+        radare compile: 'cmd: aCommand at: anAddress
+            ^ self cmd: aCommand , '' @ '' , (session pointer: anAddress) hex'.
+        radare compile: 'json: aCommand
+            ^ STONJSON fromString: (self cmd: aCommand)'.
+        radare compile: 'json: aCommand at: anAddress
+            ^ STONJSON fromString: (self cmd: aCommand at: anAddress)'.
+        radare compile: 'functions
+            ^ LumaFunctions new
+                setItems: ((self json: ''aflj'') collect: [ :each |
+                    LumaFunction fromJSON: {
+                        ''name'' -> (each at: ''name'').
+                        ''address'' -> (LumaPointer numberFrom: (each at: ''addr'')).
+                        ''detail'' -> (each at: ''type'') } asDictionary in: session ]);
+                yourself'.
+        radare compile: 'flags
+            ^ LumaFlags new
+                setItems: ((self json: ''fj'') collect: [ :each | LumaFlag fromJSON: each in: session ]);
+                yourself'.
+        radare compile: 'referencesTo: anAddress
+            ^ LumaReferences new
+                setItems: ((self json: ''axtj'' at: anAddress) collect: [ :each | LumaReference fromJSON: each in: session ]);
+                yourself'.
+        radare compile: 'printOn: aStream
+            aStream nextPutAll: ''radare2 in ''; print: session'.
+        radare compile: 'gtFunctionsFor: aView
+            <gtView>
+            ^ aView columnedList
+                title: ''Functions'';
+                priority: 1;
+                items: [ self functions items ];
+                column: ''Address'' text: [ :each | each addressString ];
+                column: ''Name'' text: [ :each | each name ];
+                column: ''Type'' text: [ :each | each detail ]'.
+        radare compile: 'gtFlagsFor: aView
+            <gtView>
+            ^ aView columnedList
+                title: ''Flags'';
+                priority: 2;
+                items: [ self flags items ];
+                column: ''Address'' text: [ :each | each addressString ];
+                column: ''Name'' text: [ :each | each name ];
+                column: ''Size'' text: [ :each | each size printString ]'.
+
+        flags := LumaRecords << #LumaFlags slots: {}; package: 'Luma'; install.
+        flags compile: 'gtFlagsFor: aView
+            <gtView>
+            ^ aView columnedList
+                title: ''Flags'';
+                items: [ items ];
+                column: ''Address'' text: [ :each | each addressString ];
+                column: ''Name'' text: [ :each | each name ];
+                column: ''Size'' text: [ :each | each size printString ]'.
+
+        flag := Object << #LumaFlag slots: { #session. #name. #address. #size }; package: 'Luma'; install.
+        flag class compile: 'fromJSON: aDictionary in: aSession
+            ^ self new setSession: aSession json: aDictionary; yourself'.
+        flag compile: 'setSession: aSession json: aDictionary
+            session := aSession.
+            name := aDictionary at: ''name''.
+            address := LumaPointer numberFrom: (aDictionary at: ''addr'').
+            size := LumaPointer numberFrom: (aDictionary at: ''size'')'.
+        flag compile: 'session ^ session'.
+        flag compile: 'name ^ name'.
+        flag compile: 'address ^ address'.
+        flag compile: 'size ^ size'.
+        flag compile: 'pointer
+            ^ session pointer: address'.
+        flag compile: 'addressString
+            ^ self pointer hex'.
+        flag compile: 'printOn: aStream
+            aStream nextPutAll: name; nextPutAll: '' @ ''; nextPutAll: self addressString'.
+
+        references := LumaRecords << #LumaReferences slots: {}; package: 'Luma'; install.
+        references compile: 'gtReferencesFor: aView
+            <gtView>
+            ^ aView columnedList
+                title: ''References'';
+                items: [ items ];
+                column: ''From'' text: [ :each | each fromString ];
+                column: ''Kind'' text: [ :each | each kind ];
+                column: ''In'' text: [ :each | each functionName ];
+                column: ''Instruction'' text: [ :each | each opcode ]'.
+
+        reference := Object << #LumaReference
+            slots: { #session. #from. #kind. #functionName. #opcode };
+            package: 'Luma';
+            install.
+        reference class compile: 'fromJSON: aDictionary in: aSession
+            ^ self new setSession: aSession json: aDictionary; yourself'.
+        reference compile: 'setSession: aSession json: aDictionary
+            session := aSession.
+            from := LumaPointer numberFrom: (aDictionary at: ''from'').
+            kind := aDictionary at: ''type''.
+            functionName := aDictionary at: ''fcn_name'' ifAbsent: [ aDictionary at: ''name'' ].
+            opcode := aDictionary at: ''opcode'''.
+        reference compile: 'session ^ session'.
+        reference compile: 'from ^ from'.
+        reference compile: 'kind ^ kind'.
+        reference compile: 'functionName ^ functionName'.
+        reference compile: 'opcode ^ opcode'.
+        reference compile: 'pointer
+            ^ session pointer: from'.
+        reference compile: 'fromString
+            ^ self pointer hex'.
+        reference compile: 'printOn: aStream
+            aStream nextPutAll: kind; nextPutAll: '' from ''; nextPutAll: self fromString; nextPutAll: '' in ''; nextPutAll: functionName'.
         session
         """
 }

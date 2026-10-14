@@ -1,4 +1,5 @@
 import Foundation
+import SwiftyR2
 
 extension Engine {
     func answerPharoSessionRequest(_ operation: String, _ request: [String: Any]) async throws -> Any {
@@ -24,6 +25,13 @@ extension Engine {
             return Self.pharoNullable(try await node().fetchThreadSnapshot(id: id.uintValue)?.pharoJSON)
         case "disassemble":
             return try await disassembleForPharo(request, in: try node())
+        case "r2":
+            return try await radareOutputForPharo(request, in: try node())
+        case "decompile":
+            return try await decompileForPharo(request, in: try node())
+        case "analyze_module":
+            try await analyzeModuleForPharo(request, in: try node())
+            return NSNull()
         case "evaluate_js":
             return try await node().evaluateJavaScript(try pharoArgument("source", of: request)).pharoJSON
         case "read_memory":
@@ -44,11 +52,8 @@ extension Engine {
     }
 
     private func moduleFunctionsForPharo(_ request: [String: Any], in node: ProcessNode) async throws -> [[String: Any]] {
-        let name: String = try pharoArgument("module", of: request)
-        guard let module = node.modules.first(where: { $0.name == name }) else {
-            throw PharoAsyncBridgeError.missingArgument("module")
-        }
-        return try await node.enumerateModuleFunctions(name: name).map {
+        let module = try pharoModule(of: request, in: node)
+        return try await node.enumerateModuleFunctions(name: module.name).map {
             ["name": $0.name, "address": module.base + $0.offset, "detail": $0.source.rawValue]
         }
     }
@@ -62,9 +67,8 @@ extension Engine {
     }
 
     private func disassembleForPharo(_ request: [String: Any], in node: ProcessNode) async throws -> [[String: String]] {
-        guard let disassembler = disassembler(forSessionID: node.sessionID) else { throw PatternMemoryError.detached }
         let count: Int = try pharoArgument("count", of: request)
-        let lines = await disassembler.disassemble(
+        let lines = try await pharoDisassembler(for: node).disassemble(
             DisassemblyRequest(address: try pharoAddress(of: request), count: count, appearance: .light))
         return lines.map {
             [
@@ -74,6 +78,37 @@ extension Engine {
                 "comment": $0.commentText?.plainText ?? "",
             ]
         }
+    }
+
+    private func radareOutputForPharo(_ request: [String: Any], in node: ProcessNode) async throws -> String {
+        let command: String = try pharoArgument("command", of: request)
+        return try Self.pharoRadareOutput(of: await pharoDisassembler(for: node).runCommand(command))
+    }
+
+    private func decompileForPharo(_ request: [String: Any], in node: ProcessNode) async throws -> String {
+        try Self.pharoRadareOutput(of: await pharoDisassembler(for: node).decompile(at: try pharoAddress(of: request)))
+    }
+
+    private func analyzeModuleForPharo(_ request: [String: Any], in node: ProcessNode) async throws {
+        try await pharoDisassembler(for: node).analyze(module: try pharoModule(of: request, in: node))
+    }
+
+    private func pharoModule(of request: [String: Any], in node: ProcessNode) throws -> ProcessModule {
+        let name: String = try pharoArgument("module", of: request)
+        guard let module = node.modules.first(where: { $0.name == name }) else {
+            throw PharoAsyncBridgeError.missingArgument("module")
+        }
+        return module
+    }
+
+    private func pharoDisassembler(for node: ProcessNode) throws -> Disassembler {
+        guard let disassembler = disassembler(forSessionID: node.sessionID) else { throw PatternMemoryError.detached }
+        return disassembler
+    }
+
+    private static func pharoRadareOutput(of result: R2CommandResult) throws -> String {
+        guard !result.hasErrors else { throw PharoRadareFailure(messages: result.errors.map(\.message)) }
+        return StyledText.parseAnsi(result.output ?? "").plainText
     }
 }
 
@@ -165,5 +200,13 @@ struct PharoEvaluationFailure: LocalizedError {
 
     var errorDescription: String? {
         "\(name): \(message)"
+    }
+}
+
+struct PharoRadareFailure: LocalizedError {
+    let messages: [String]
+
+    var errorDescription: String? {
+        messages.joined(separator: "\n")
     }
 }
