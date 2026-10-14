@@ -12,6 +12,8 @@ extension Engine {
             return try recentEventsForPharo(request)
         case "watch_events":
             return watchEventsForPharo(request)
+        case "definitions":
+            return try describePharoDefinitions()
         case "record_class":
             return try recordPharoClass(request)
         case "forget_class":

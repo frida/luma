@@ -16,7 +16,7 @@ public enum PharoLumaBindings {
     /// fields, so opening one shows what the host knows about it rather than
     /// the line it would have printed.
     private static let source = """
-        | record event records sessions entries events hostError host subscription view project journal synth tune canvas drawable label |
+        | record event records sessions entries events hostError host subscription view project definitions classDefinition methodDefinition journal synth tune canvas drawable label |
         record := Object << #LumaRecord slots: { #fields. #icon }; package: 'Luma'; install.
         record compile: 'setFields: aDictionary icon: anIcon
             fields := aDictionary.
@@ -816,11 +816,93 @@ public enum PharoLumaBindings {
             ^ LumaEvents new setItems: (self fetch: aRequest as: LumaEvent); yourself'.
         project class compile: 'onEvent: aBlock
             ^ self watch: { #op -> ''watch_events'' } do: aBlock'.
+        project class compile: 'definitions
+            ^ LumaDefinitions fetch'.
+
         project class compile: 'watch: aRequest do: aBlock
             ^ LumaSubscription subscribe: aRequest asDictionary do: [ :batch |
                 batch do: [ :each | aBlock value: (LumaEvent fromJSON: each) ] ]'.
 
+        definitions := Object << #LumaDefinitions slots: { #classes. #methods }; package: 'Luma'; install.
+        definitions class compile: 'fetch
+            | found |
+            found := LumaHost request: { #op -> ''definitions'' } asDictionary.
+            ^ self new
+                setClasses: ((found at: ''classes'') collect: [ :each | LumaClassDefinition fromJSON: each ])
+                methods: ((found at: ''methods'') collect: [ :each | LumaMethodDefinition fromJSON: each ])'.
+        definitions compile: 'setClasses: aClassCollection methods: aMethodCollection
+            classes := aClassCollection.
+            methods := aMethodCollection'.
+        definitions compile: 'classes ^ classes'.
+        definitions compile: 'methods ^ methods'.
+        definitions compile: 'printOn: aStream
+            aStream print: classes size; nextPutAll: '' classes, ''; print: methods size; nextPutAll: '' methods kept'''.
+        definitions compile: 'gtClassesFor: aView
+            <gtView>
+            ^ aView columnedList
+                title: ''Classes'';
+                priority: 1;
+                items: [ classes ];
+                column: ''Name'' text: [ :each | each name ];
+                column: ''Superclass'' text: [ :each | each superclass ];
+                column: ''Package'' text: [ :each | each package ]'.
+        definitions compile: 'gtMethodsFor: aView
+            <gtView>
+            ^ aView columnedList
+                title: ''Methods'';
+                priority: 2;
+                items: [ methods ];
+                column: ''Class'' text: [ :each | each className ];
+                column: ''Side'' text: [ :each | each side ];
+                column: ''Selector'' text: [ :each | each selector ]'.
+
+        classDefinition := Object << #LumaClassDefinition slots: { #json }; package: 'Luma'; install.
+        classDefinition class compile: 'fromJSON: aDictionary
+            ^ self new setJSON: aDictionary; yourself'.
+        classDefinition compile: 'setJSON: aDictionary
+            json := aDictionary'.
+        classDefinition compile: 'name ^ json at: ''name'''.
+        classDefinition compile: 'superclass ^ json at: ''superclass'''.
+        classDefinition compile: 'package ^ json at: ''package'''.
+        classDefinition compile: 'printOn: aStream
+            aStream nextPutAll: self name'.
+        classDefinition compile: 'forget
+            ^ LumaHost request: { #op -> ''forget_class''. #name -> self name } asDictionary'.
+        classDefinition compile: 'gtDefinitionFor: aView
+            <gtView>
+            ^ aView columnedList
+                title: ''Definition'';
+                items: [ json associations asSortedCollection: [ :a :b | a key <= b key ] ];
+                column: ''Field'' text: [ :each | each key ];
+                column: ''Value'' text: [ :each | each value ]'.
+
+        methodDefinition := Object << #LumaMethodDefinition slots: { #json }; package: 'Luma'; install.
+        methodDefinition class compile: 'fromJSON: aDictionary
+            ^ self new setJSON: aDictionary; yourself'.
+        methodDefinition compile: 'setJSON: aDictionary
+            json := aDictionary'.
+        methodDefinition compile: 'className ^ json at: ''class'''.
+        methodDefinition compile: 'side ^ json at: ''side'''.
+        methodDefinition compile: 'selector ^ json at: ''selector'''.
+        methodDefinition compile: 'source ^ json at: ''source'''.
+        methodDefinition compile: 'printOn: aStream
+            aStream nextPutAll: self className.
+            self side = ''class'' ifTrue: [ aStream nextPutAll: '' class'' ].
+            aStream nextPutAll: ''>>''; nextPutAll: self selector'.
+        methodDefinition compile: 'forget
+            ^ LumaHost request: {
+                #op -> ''forget_method''.
+                #class -> self className.
+                #side -> self side.
+                #selector -> self selector } asDictionary'.
+        methodDefinition compile: 'gtSourceFor: aView
+            <gtView>
+            ^ aView text
+                title: ''Source'';
+                text: [ self source ]'.
+
         journal := Object << #LumaJournal slots: {}; sharedVariables: { #Subscription }; package: 'Luma'; install.
+
         journal class compile: 'start
             Subscription ifNil: [
                 Subscription := SystemAnnouncer uniqueInstance
@@ -834,7 +916,7 @@ public enum PharoLumaBindings {
         journal class compile: 'noteMethod: anAnnouncement
             | owner |
             owner := anAnnouncement methodClass.
-            (self keeps: owner instanceSide) ifFalse: [ ^ self ].
+            (self keepsPackage: anAnnouncement methodPackage) ifFalse: [ ^ self ].
             (anAnnouncement isKindOf: MethodRemoved) ifTrue: [
                 ^ LumaHost request: {
                     #op -> ''forget_method''.
@@ -864,7 +946,9 @@ public enum PharoLumaBindings {
                 #classVariables -> ('' '' join: aClass classVarNames).
                 #classInstanceVariables -> ('' '' join: aClass class instVarNames) } asDictionary'.
         journal class compile: 'keeps: aClass
-            ^ (#(#Luma #SwiftyPharo) includes: aClass package name) not'.
+            ^ self keepsPackage: aClass package'.
+        journal class compile: 'keepsPackage: aPackage
+            ^ (#(#Luma #SwiftyPharo) includes: aPackage name) not'.
         journal class compile: 'sideOf: aBehavior
             ^ aBehavior isMeta ifTrue: [ ''class'' ] ifFalse: [ ''instance'' ]'.
         journal class compile: 'tagOf: aClass

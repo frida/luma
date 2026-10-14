@@ -1,6 +1,13 @@
 import Foundation
 
 extension Engine {
+    func describePharoDefinitions() throws -> [String: Any] {
+        [
+            "classes": try store.fetchPharoClassDefinitions().map(\.pharoJSON),
+            "methods": try store.fetchPharoMethodDefinitions().map(\.pharoJSON),
+        ]
+    }
+
     func recordPharoClass(_ request: [String: Any]) throws -> Any {
         try store.save(
             PharoClassDefinition(
@@ -36,5 +43,33 @@ extension Engine {
             side: try pharoArgument("side", of: request),
             selector: try pharoArgument("selector", of: request))
         return NSNull()
+    }
+}
+
+extension PharoClassDefinition {
+    fileprivate var pharoJSON: [String: Any] {
+        [
+            "name": name,
+            "superclass": superclass,
+            "package": package,
+            "tag": tag,
+            "instanceVariables": instanceVariables,
+            "classVariables": classVariables,
+            "classInstanceVariables": classInstanceVariables,
+            "updatedAt": updatedAt.formatted(.iso8601),
+        ]
+    }
+}
+
+extension PharoMethodDefinition {
+    fileprivate var pharoJSON: [String: Any] {
+        [
+            "class": className,
+            "side": side,
+            "selector": selector,
+            "category": category,
+            "source": source,
+            "updatedAt": updatedAt.formatted(.iso8601),
+        ]
     }
 }

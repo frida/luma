@@ -748,6 +748,9 @@ public enum PharoExampleCatalog {
         ]),
         ("Explore", [
             PharoExample(
+                title: "What the project keeps of your classes and methods",
+                code: "LumaProject definitions."),
+            PharoExample(
                 title: "Filter a big list (type in the field)",
                 code: "Smalltalk globals keys asSortedCollection asArray."),
             PharoExample(
