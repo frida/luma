@@ -137,13 +137,11 @@ public enum PharoLumaBindings {
                 return: TFBasicType void
                 with: { aTicket }'.
         host class compile: 'objectChanged: anObject
-            ((SwpBridge install instVarNamed: ''session'') instVarNamed: ''objectsByHandle'')
-                keysAndValuesDo: [ :handle :held |
-                    held == anObject ifTrue: [
-                        self invoke: ''luma_object_changed''
-                            parameters: { TFBasicType sint }
-                            return: TFBasicType void
-                            with: { handle } ] ]'.
+            (SwpBridge current session handlesOf: anObject) do: [ :handle |
+                self invoke: ''luma_object_changed''
+                    parameters: { TFBasicType sint }
+                    return: TFBasicType void
+                    with: { handle } ]'.
         Object compile: 'lumaChanged
             LumaHost objectChanged: self' classified: '*Luma'.
         host class compile: 'request: aDictionary
