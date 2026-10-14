@@ -334,7 +334,7 @@ private func fetchFunctionEnd(hex: String) async -> UInt64? {
         let hi = module.base &+ module.size
         var seen = Set(functions.map(\.offset))
         for entry in entries {
-            let absolute = entry.offset.value
+            let absolute = entry.addr.value
             guard absolute >= lo, absolute < hi else { continue }
             let offset = absolute &- lo
             if seen.contains(offset) { continue }
@@ -697,7 +697,7 @@ private struct R2Hex: Decodable {
 }
 
 private struct R2FunctionEntry: Decodable {
-    let offset: R2Hex
+    let addr: R2Hex
 }
 
 private struct R2BasicBlockEntry: Decodable {
