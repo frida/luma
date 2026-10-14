@@ -2843,7 +2843,7 @@ public final class Engine {
         }
     }
 
-    public func memoryReader(forSessionID sessionID: UUID) -> MemoryReader {
+    public func memoryReader(forSessionID sessionID: UUID) -> CachingMemoryReader {
         let env = SessionDisassemblyEnvironment(engine: self, sessionID: sessionID)
         return memoryReader(forSessionID: sessionID, env: env)
     }
@@ -3065,31 +3065,15 @@ public final class Engine {
         }
     }
 
-    public func invalidateInsightRange(sessionID: UUID, address: UInt64, byteCount: Int) async {
-        let env = SessionDisassemblyEnvironment(engine: self, sessionID: sessionID)
-        let end = address &+ UInt64(byteCount)
-        var cursor = MemoryPage.base(of: address)
-        while cursor < end {
-            switch await env.attribution(pageBase: cursor) {
-            case .module(let module):
-                if let uuid = await env.moduleUUID(forPath: module.path) {
-                    try? store.deleteMemoryPage(sessionID: sessionID, moduleUUID: uuid, offset: cursor &- module.base)
-                }
-            case .anonymous:
-                if let identity = env.processIdentity {
-                    try? store.deleteMemoryPage(sessionID: sessionID, processIdentity: identity, address: cursor)
-                }
-            case .ephemeral:
-                break
-            }
-            cursor = cursor &+ MemoryPage.size
-        }
-    }
-
     public func rereadBytes(of insight: AddressInsight) async {
         if let address = insight.lastResolvedAddress {
-            await invalidateInsightRange(sessionID: insight.sessionID, address: address, byteCount: insight.byteCount)
+            await memoryReader(forSessionID: insight.sessionID).forget(from: address, count: insight.byteCount)
         }
+        requestRefresh(of: insight)
+    }
+
+    public func writeMemory(_ bytes: [UInt8], at address: UInt64, of insight: AddressInsight) async throws {
+        try await memoryReader(forSessionID: insight.sessionID).write(bytes, at: address)
         requestRefresh(of: insight)
     }
 
@@ -6279,7 +6263,7 @@ public struct TracerHookCompileFailures: Swift.Error {
 }
 
 @MainActor
-final class SessionDisassemblyEnvironment: ModuleIntrospector, MemoryReader, PageKeying {
+final class SessionDisassemblyEnvironment: ModuleIntrospector, MemoryReader, MemoryWriter, PageKeying {
     private unowned let engine: Engine
     private let sessionID: UUID
     private var uuidCache: [String: String] = [:]
@@ -6320,6 +6304,13 @@ final class SessionDisassemblyEnvironment: ModuleIntrospector, MemoryReader, Pag
             throw DisassemblyError.detached
         }
         return try await node.readRemoteMemory(at: address, count: count)
+    }
+
+    func write(_ bytes: [UInt8], at address: UInt64) async throws {
+        guard let node = engine.node(forSessionID: sessionID) else {
+            throw DisassemblyError.detached
+        }
+        try await node.writeRemoteMemory(at: address, bytes: bytes)
     }
 
     func attribution(pageBase: UInt64) async -> PageAttribution {

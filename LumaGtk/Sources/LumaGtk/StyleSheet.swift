@@ -175,6 +175,10 @@ enum StyleSheet {
         background-color: alpha(@accent_bg_color, 0.3);
     }
 
+    .luma-hex-caret {
+        background-color: alpha(@accent_bg_color, 0.6);
+    }
+
     .luma-wordmark {
         font-family: sans-serif;
         font-size: 64px;

@@ -8,6 +8,7 @@ struct PatternDecodeView: View {
     let engine: Engine
     @Binding var placements: [PatternPlacement]
     var sizing: PatternDecodeSizing = .capped
+    var memoryWriter: ((_ bytes: [UInt8], _ address: UInt64) async throws -> Void)? = nil
     var onTruncated: (() -> Void)? = nil
 
     @State private var summaries: [String: PatternSummary] = [:]
@@ -19,6 +20,9 @@ struct PatternDecodeView: View {
     @State private var selectedNodeID: UUID?
     @State private var expanded: Set<UUID> = []
     @State private var visualizations: [UUID: NodeVisualization] = [:]
+    @State private var edits: [UUID: DecodedValueEdit] = [:]
+    @State private var editingNodeID: UUID?
+    @State private var writeProblem: String?
     @State private var openVisualizer: UUID?
     @State private var callOutcome: CallOutcome?
     @State private var browsingSource: PatternSource?
@@ -57,8 +61,8 @@ struct PatternDecodeView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            if let describeProblem {
-                Text(describeProblem)
+            ForEach([describeProblem, writeProblem].compactMap { $0 }, id: \.self) { problem in
+                Text(problem)
                     .font(.caption)
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
@@ -102,7 +106,8 @@ struct PatternDecodeView: View {
             onCaretMove: { index in
                 caret = index
                 selectNode(at: index)
-            }
+            },
+            onWrite: hexWriter
         ) {
             if canDecode {
                 Menu("Decode at \(caretLabel) as…") {
@@ -133,6 +138,23 @@ struct PatternDecodeView: View {
 
     private var emphasis: HexAnnotation? {
         selectedNodeID.flatMap { locations[$0] }.map(\.annotation)
+    }
+
+    private var hexWriter: ((Int, [UInt8]) -> Void)? {
+        guard memoryWriter != nil, let baseAddress else { return nil }
+        return { offset, bytes in write(bytes, at: baseAddress &+ UInt64(offset)) }
+    }
+
+    private func write(_ bytes: [UInt8], at address: UInt64) {
+        guard let memoryWriter else { return }
+        Task {
+            do {
+                try await memoryWriter(bytes, address)
+                writeProblem = nil
+            } catch {
+                writeProblem = error.localizedDescription
+            }
+        }
     }
 
     private var treePane: some View {
@@ -197,10 +219,16 @@ struct PatternDecodeView: View {
                 visualization: visualizations[node.id],
                 isVisualizerOpen: openVisualizer == node.id,
                 callOutcome: callOutcome?.rowID == node.id ? callOutcome : nil,
+                edit: editState(of: node.id),
                 actions: actions(for: row.id)
             )
             .equatable()
         }
+    }
+
+    private func editState(of id: UUID) -> NodeEditState {
+        guard let edit = edits[id] else { return .fixed }
+        return editingNodeID == id ? .editing(initial: edit.text) : .editable
     }
 
     private func failure(of placement: PatternPlacement) -> String? {
@@ -239,11 +267,26 @@ struct PatternDecodeView: View {
                 if callOutcome?.rowID == id {
                     callOutcome = nil
                 }
+            },
+            beginEdit: { editingNodeID = id },
+            commitEdit: { text in try commitEdit(of: id, text: text) },
+            cancelEdit: {
+                if editingNodeID == id {
+                    editingNodeID = nil
+                }
             }
         )
     }
 
+    private func commitEdit(of id: UUID, text: String) throws {
+        guard let edit = edits[id] else { return }
+        let bytes = try edit.bytes(parsing: text)
+        editingNodeID = nil
+        write(bytes, at: edit.address)
+    }
+
     private func navigate(_ key: KeyEquivalent) -> KeyPress.Result {
+        guard editingNodeID == nil else { return .ignored }
         let rows = visibleRows
         guard let current = rows.firstIndex(where: { $0.id == selectedNodeID }) else {
             selectedNodeID = rows.first?.id
@@ -301,7 +344,12 @@ struct PatternDecodeView: View {
     }
 
     private func activate(_ id: UUID) {
-        guard let visualization = visualizations[id] else { return }
+        guard let visualization = visualizations[id] else {
+            if edits[id] != nil {
+                editingNodeID = id
+            }
+            return
+        }
         if case .ready(let ready) = visualization.outcome, visualization.presentation == .inline, ready.isInline {
             press(id)
         } else {
@@ -385,9 +433,11 @@ struct PatternDecodeView: View {
         selectedNodeID = selectedNodeID.flatMap(remap.callAsFunction)
         openVisualizer = openVisualizer.flatMap(remap.callAsFunction)
         callOutcome = nil
+        editingNodeID = nil
         locations = locate(results, base: baseAddress)
         annotations = locations.values.filter(\.isLeaf).map(\.annotation)
         visualizations = visualize(results)
+        edits = memoryWriter == nil ? [:] : edits(of: locations)
         if results.values.contains(where: \.isTruncated) {
             onTruncated?()
         }
@@ -439,6 +489,15 @@ struct PatternDecodeView: View {
             }
         }
         return located
+    }
+
+    private func edits(of locations: [UUID: PatternLocation]) -> [UUID: DecodedValueEdit] {
+        let bytes = Array(data)
+        var edits: [UUID: DecodedValueEdit] = [:]
+        for location in locations.values where location.isLeaf && location.range.upperBound <= bytes.count {
+            edits[location.node.id] = DecodedValueEdit(location.node, bytes: bytes[location.range])
+        }
+        return edits
     }
 }
 
@@ -586,6 +645,15 @@ private struct RowActions {
     let press: () -> Void
     let showVisualizer: (Bool) -> Void
     let dismissCallOutcome: () -> Void
+    let beginEdit: () -> Void
+    let commitEdit: (String) throws -> Void
+    let cancelEdit: () -> Void
+}
+
+private enum NodeEditState: Equatable {
+    case fixed
+    case editable
+    case editing(initial: String)
 }
 
 private enum PlacementResult {
@@ -659,12 +727,13 @@ private struct NodeRow: View, Equatable {
     let visualization: NodeVisualization?
     let isVisualizerOpen: Bool
     let callOutcome: CallOutcome?
+    let edit: NodeEditState
     let actions: RowActions
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.node.id == rhs.node.id && lhs.depth == rhs.depth && lhs.isExpandable == rhs.isExpandable
             && lhs.isExpanded == rhs.isExpanded && lhs.highlight == rhs.highlight && lhs.color == rhs.color
-            && lhs.isVisualizerOpen == rhs.isVisualizerOpen && lhs.callOutcome == rhs.callOutcome
+            && lhs.isVisualizerOpen == rhs.isVisualizerOpen && lhs.callOutcome == rhs.callOutcome && lhs.edit == rhs.edit
     }
 
     var body: some View {
@@ -689,7 +758,9 @@ private struct NodeRow: View, Equatable {
 
     @ViewBuilder
     private var value: some View {
-        if let visualization {
+        if case .editing(let initial) = edit {
+            NodeValueEditor(initial: initial, commit: actions.commitEdit, cancel: actions.cancelEdit)
+        } else if let visualization {
             if case .ready(let ready) = visualization.outcome, visualization.presentation == .inline, ready.isInline {
                 PatternInlineVisualizationView(visualization: ready, press: actions.press)
                     .popover(isPresented: callOutcomeShown, arrowEdge: .bottom) {
@@ -727,7 +798,18 @@ private struct NodeRow: View, Equatable {
         }
     }
 
+    @ViewBuilder
     private var summary: some View {
+        if edit == .editable {
+            summaryText
+                .onTapGesture(count: 2, perform: actions.beginEdit)
+                .help("Double-click to change")
+        } else {
+            summaryText
+        }
+    }
+
+    private var summaryText: some View {
         Text(node.summary)
             .foregroundStyle(node.truncated ? AnyShapeStyle(.red) : AnyShapeStyle(.foreground))
             .lineLimit(1)
@@ -744,6 +826,56 @@ private struct NodeRow: View, Equatable {
 
     private var callOutcomeShown: Binding<Bool> {
         Binding(get: { callOutcome != nil }, set: { if !$0 { actions.dismissCallOutcome() } })
+    }
+}
+
+private struct NodeValueEditor: View {
+    let initial: String
+    let commit: (String) throws -> Void
+    let cancel: () -> Void
+
+    @State private var text = ""
+    @State private var problem: String?
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        TextField("", text: $text)
+            .textFieldStyle(.roundedBorder)
+            .font(.monospacedContent)
+            .frame(minWidth: 140)
+            .focused($isFocused)
+            .onAppear {
+                text = initial
+                isFocused = true
+            }
+            .onSubmit {
+                do {
+                    try commit(text)
+                } catch {
+                    problem = error.localizedDescription
+                }
+            }
+            #if os(macOS)
+                .onExitCommand(perform: cancel)
+            #else
+                .onChange(of: isFocused) { _, focused in
+                    if !focused {
+                        cancel()
+                    }
+                }
+            #endif
+            .popover(isPresented: problemShown, arrowEdge: .bottom) {
+                if let problem {
+                    Text(problem)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.red)
+                        .padding(10)
+                }
+            }
+    }
+
+    private var problemShown: Binding<Bool> {
+        Binding(get: { problem != nil }, set: { if !$0 { problem = nil } })
     }
 }
 

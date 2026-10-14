@@ -47,6 +47,11 @@ public protocol MemoryReader: AnyObject {
 }
 
 @MainActor
+public protocol MemoryWriter: AnyObject {
+    func write(_ bytes: [UInt8], at address: UInt64) async throws
+}
+
+@MainActor
 public final class Disassembler {
     private let sessionID: UUID
     private let processInfo: ProcessSession.ProcessInfo
@@ -481,14 +486,14 @@ public final class CachingMemoryReader: MemoryReader {
     private let sessionID: UUID
     private let store: ProjectStore
     private let keying: PageKeying
-    public var live: MemoryReader?
+    public var live: (MemoryReader & MemoryWriter)?
     public var publish: ((MemoryPagePublish) -> Void)?
     public var fetchRemote: ((MemoryPageRegion) async -> Data?)?
 
     private var ephemeralCache: [UInt64: Data] = [:]
     private var unreadablePages: Set<UInt64> = []
 
-    public init(sessionID: UUID, store: ProjectStore, keying: PageKeying, live: MemoryReader?) {
+    public init(sessionID: UUID, store: ProjectStore, keying: PageKeying, live: (MemoryReader & MemoryWriter)?) {
         self.sessionID = sessionID
         self.store = store
         self.keying = keying
@@ -512,6 +517,23 @@ public final class CachingMemoryReader: MemoryReader {
             cursor = copyEnd
         }
         return output
+    }
+
+    public func write(_ bytes: [UInt8], at address: UInt64) async throws {
+        guard let live else {
+            throw DisassemblyError.detached
+        }
+        try await live.write(bytes, at: address)
+        await forget(from: address, count: bytes.count)
+    }
+
+    public func forget(from address: UInt64, count: Int) async {
+        let end = address &+ UInt64(count)
+        var cursor = MemoryPage.base(of: address)
+        while cursor < end {
+            forget(await pageKey(for: cursor))
+            cursor = cursor &+ MemoryPage.size
+        }
     }
 
     private func pageContaining(address: UInt64) async throws -> ResolvedPage {
@@ -577,6 +599,20 @@ public final class CachingMemoryReader: MemoryReader {
             return (try? store.fetchMemoryPage(sessionID: sessionID, moduleUUID: uuid, offset: offset))?.bytes
         case .anonymous(let identity, let address):
             return (try? store.fetchMemoryPage(sessionID: sessionID, processIdentity: identity, address: address))?.bytes
+        }
+    }
+
+    private func forget(_ key: PageKey) {
+        unreadablePages.remove(key.pageBase)
+        guard case .mapped(let region) = key.region else {
+            ephemeralCache[key.pageBase] = nil
+            return
+        }
+        switch region {
+        case .module(let uuid, let offset):
+            try? store.deleteMemoryPage(sessionID: sessionID, moduleUUID: uuid, offset: offset)
+        case .anonymous(let identity, let address):
+            try? store.deleteMemoryPage(sessionID: sessionID, processIdentity: identity, address: address)
         }
     }
 

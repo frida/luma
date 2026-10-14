@@ -6,10 +6,12 @@ struct HexView<MenuItems: View>: View {
     private let annotations: [HexAnnotation]
     private let emphasis: HexAnnotation?
     private let onCaretMove: ((Int) -> Void)?
+    private let onWrite: ((Int, [UInt8]) -> Void)?
     private let menuItems: () -> MenuItems
 
     @FocusState private var isFocused: Bool
     @State private var selection: Selection?
+    @State private var pendingNibble: UInt8?
 
     #if canImport(UIKit)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -24,6 +26,7 @@ struct HexView<MenuItems: View>: View {
         annotations: [HexAnnotation] = [],
         emphasis: HexAnnotation? = nil,
         onCaretMove: ((Int) -> Void)? = nil,
+        onWrite: ((Int, [UInt8]) -> Void)? = nil,
         @ViewBuilder menuItems: @escaping () -> MenuItems
     ) {
         bytes = Array(data)
@@ -31,6 +34,7 @@ struct HexView<MenuItems: View>: View {
         self.annotations = annotations
         self.emphasis = emphasis
         self.onCaretMove = onCaretMove
+        self.onWrite = onWrite
         self.menuItems = menuItems
     }
 
@@ -73,8 +77,14 @@ struct HexView<MenuItems: View>: View {
             handleKeyPress(keyPress)
         }
         .onChange(of: selection?.caret) { _, caret in
+            pendingNibble = nil
             if let caret {
                 onCaretMove?(caret)
+            }
+        }
+        .onChange(of: bytes.count) { _, count in
+            if let selection, selection.caret >= count {
+                self.selection = count > 0 ? Selection(anchor: count - 1, caret: count - 1, section: selection.section) : nil
             }
         }
     }
@@ -102,6 +112,7 @@ struct HexView<MenuItems: View>: View {
             address: layout.addressDigits.map { formatAddress(baseAddress &+ UInt64(start), digits: $0) },
             bytes: bytes[start..<end],
             selectedColumns: selectedColumns(inRowStartingAt: start),
+            caret: caret(inRowStartingAt: start),
             layout: layout)
     }
 
@@ -117,21 +128,26 @@ struct HexView<MenuItems: View>: View {
         return first <= last ? (first - start)...(last - start) : nil
     }
 
+    private func caret(inRowStartingAt start: Int) -> HexCaret? {
+        guard onWrite != nil, let selection, (start..<start + HexLayout.bytesPerRow).contains(selection.caret) else { return nil }
+        return HexCaret(column: selection.caret - start, section: selection.section, pendingNibble: pendingNibble)
+    }
+
     private func dragGesture(layout: HexLayout) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
-                guard let anchor = byteIndex(at: value.startLocation, layout: layout),
-                    let caret = byteIndex(at: value.location, layout: layout)
+                guard let anchor = cell(at: value.startLocation, layout: layout),
+                    let caret = cell(at: value.location, layout: layout)
                 else { return }
-                selection = Selection(anchor: anchor, caret: caret)
+                selection = Selection(anchor: anchor.index, caret: caret.index, section: anchor.section)
             }
     }
 
-    private func byteIndex(at point: CGPoint, layout: HexLayout) -> Int? {
+    private func cell(at point: CGPoint, layout: HexLayout) -> (index: Int, section: HexSection)? {
         guard point.y >= 0 else { return nil }
         let rowStart = Int(point.y / layout.metrics.rowHeight) * HexLayout.bytesPerRow
-        guard rowStart < bytes.count, let column = layout.byteColumn(atX: point.x) else { return nil }
-        return min(rowStart + column, bytes.count - 1)
+        guard rowStart < bytes.count, let cell = layout.cell(atX: point.x) else { return nil }
+        return (min(rowStart + cell.column, bytes.count - 1), cell.section)
     }
 
     private enum CopyFormat { case hex, ascii, base64 }
@@ -153,33 +169,82 @@ struct HexView<MenuItems: View>: View {
     }
 
     private func handleKeyPress(_ keyPress: KeyPress) -> KeyPress.Result {
-        guard !bytes.isEmpty, let motion = caretMotion(for: keyPress.key) else { return .ignored }
-        moveCaret(rows: motion.rows, columns: motion.columns, extending: keyPress.modifiers.contains(.shift))
+        guard !bytes.isEmpty else { return .ignored }
+        if let motion = caretMotion(for: keyPress.key) {
+            moveCaret(rows: motion.rows, columns: motion.columns, extending: keyPress.modifiers.contains(.shift))
+            return .handled
+        }
+        guard onWrite != nil, keyPress.modifiers.isDisjoint(with: [.command, .control, .option]) else { return .ignored }
+        if keyPress.key == .tab {
+            switchSection()
+            return .handled
+        }
+        switch section {
+        case .hex:
+            guard let nibble = HexLayout.nibble(typedAs: keyPress.characters) else { return .ignored }
+            type(nibble)
+        case .ascii:
+            guard let byte = HexLayout.byte(typedAs: keyPress.characters) else { return .ignored }
+            write(byte)
+        }
         return .handled
     }
 
     private func caretMotion(for key: KeyEquivalent) -> (rows: Int, columns: Int)? {
         switch key {
-        case .leftArrow, "h": (0, -1)
-        case .rightArrow, "l": (0, 1)
-        case .upArrow, "k": (-1, 0)
-        case .downArrow, "j": (1, 0)
+        case .leftArrow: (0, -1)
+        case .rightArrow: (0, 1)
+        case .upArrow: (-1, 0)
+        case .downArrow: (1, 0)
+        case "h" where onWrite == nil: (0, -1)
+        case "l" where onWrite == nil: (0, 1)
+        case "k" where onWrite == nil: (-1, 0)
+        case "j" where onWrite == nil: (1, 0)
         default: nil
         }
     }
 
     private func moveCaret(rows: Int, columns: Int, extending: Bool) {
-        let caret = selection?.caret ?? 0
         let lastRow = rowCount - 1
         let row = min(max(caret / HexLayout.bytesPerRow + rows, 0), lastRow)
         let column = caret % HexLayout.bytesPerRow
         let newCaret = min(max(row * HexLayout.bytesPerRow + column + columns, 0), bytes.count - 1)
-        selection = Selection(anchor: extending ? selection?.anchor ?? 0 : newCaret, caret: newCaret)
+        selection = Selection(anchor: extending ? selection?.anchor ?? 0 : newCaret, caret: newCaret, section: section)
+    }
+
+    private func switchSection() {
+        pendingNibble = nil
+        selection = Selection(anchor: caret, caret: caret, section: section == .hex ? .ascii : .hex)
+    }
+
+    private func type(_ nibble: UInt8) {
+        guard let high = pendingNibble else {
+            pendingNibble = nibble
+            return
+        }
+        pendingNibble = nil
+        write(high << 4 | nibble)
+    }
+
+    private func write(_ byte: UInt8) {
+        let caret = caret
+        onWrite?(caret, [byte])
+        let next = min(caret + 1, bytes.count - 1)
+        selection = Selection(anchor: next, caret: next, section: section)
+    }
+
+    private var caret: Int {
+        selection?.caret ?? 0
+    }
+
+    private var section: HexSection {
+        selection?.section ?? .hex
     }
 
     private struct Selection {
         var anchor: Int
         var caret: Int
+        var section: HexSection
 
         var range: ClosedRange<Int> { min(anchor, caret)...max(anchor, caret) }
     }
@@ -195,6 +260,17 @@ struct HexAnnotation: Identifiable, Equatable {
     let id: UUID
     let range: Range<Int>
     let color: Color
+}
+
+struct HexCaret: Equatable {
+    let column: Int
+    let section: HexSection
+    let pendingNibble: UInt8?
+}
+
+enum HexSection {
+    case hex
+    case ascii
 }
 
 private struct HexAnnotationLayer: View, Equatable {
@@ -236,6 +312,7 @@ private struct HexRow: View, Equatable {
     let address: String?
     let bytes: ArraySlice<UInt8>
     let selectedColumns: ClosedRange<Int>?
+    let caret: HexCaret?
     let layout: HexLayout
 
     static let hexDigits: [String] = (0...255).map { String(format: "%02X", $0) }
@@ -266,7 +343,13 @@ private struct HexRow: View, Equatable {
             if index > 0 {
                 column += run(" ", selected: isSelected(index - 1) && isSelected(index))
             }
-            column += run(Self.hexDigits[Int(byte)], color: color(for: byte), selected: isSelected(index))
+            if let caret, caret.column == index, let high = caret.pendingNibble {
+                let digits = Self.hexDigits[Int(high)].suffix(1) + Self.hexDigits[Int(byte)].suffix(1)
+                column += run(String(digits), color: .accentColor, selected: true, caret: true)
+            } else {
+                let hasCaret = hasCaret(index, in: .hex)
+                column += run(Self.hexDigits[Int(byte)], color: color(for: byte), selected: isSelected(index), caret: hasCaret)
+            }
         }
         let missingBytes = HexLayout.bytesPerRow - bytes.count
         column += run(String(repeating: " ", count: missingBytes * HexLayout.hexCellWidth))
@@ -276,15 +359,18 @@ private struct HexRow: View, Equatable {
     private var asciiColumn: AttributedString {
         var column = AttributedString()
         for (index, byte) in zip(0..., bytes) {
-            column += run(String(Self.asciiCharacter(for: byte)), color: .secondary, selected: isSelected(index))
+            column += run(
+                String(Self.asciiCharacter(for: byte)), color: .secondary, selected: isSelected(index), caret: hasCaret(index, in: .ascii))
         }
         return column
     }
 
-    private func run(_ text: String, color: Color? = nil, selected: Bool = false) -> AttributedString {
+    private func run(_ text: String, color: Color? = nil, selected: Bool = false, caret: Bool = false) -> AttributedString {
         var run = AttributedString(text)
         run.foregroundColor = color
-        if selected {
+        if caret {
+            run.backgroundColor = Color.accentColor.opacity(0.55)
+        } else if selected {
             run.backgroundColor = Color.accentColor.opacity(0.25)
         }
         return run
@@ -292,6 +378,10 @@ private struct HexRow: View, Equatable {
 
     private func isSelected(_ column: Int) -> Bool {
         selectedColumns?.contains(column) ?? false
+    }
+
+    private func hasCaret(_ column: Int, in section: HexSection) -> Bool {
+        caret?.column == column && caret?.section == section
     }
 
     private func color(for byte: UInt8) -> Color {
@@ -320,7 +410,7 @@ struct HexLayout: Equatable {
     static let hexCellWidth = 3
     static let sectionGap = "   "
 
-    func byteColumn(atX x: CGFloat) -> Int? {
+    func cell(atX x: CGFloat) -> (column: Int, section: HexSection)? {
         let column = x / metrics.advance
         let hexStart = CGFloat(hexStartColumn)
         let hexEnd = hexStart + CGFloat(Self.bytesPerRow * Self.hexCellWidth - 1)
@@ -329,12 +419,22 @@ struct HexLayout: Equatable {
 
         if (hexStart..<hexEnd).contains(column) {
             let cellCenteredColumn = column - hexStart + 0.5
-            return Int(cellCenteredColumn) / Self.hexCellWidth
+            return (Int(cellCenteredColumn) / Self.hexCellWidth, .hex)
         }
         if (asciiStart..<asciiEnd).contains(column) {
-            return Int(column - asciiStart)
+            return (Int(column - asciiStart), .ascii)
         }
         return nil
+    }
+
+    static func nibble(typedAs characters: String) -> UInt8? {
+        guard characters.count == 1, let digit = characters.first?.hexDigitValue else { return nil }
+        return UInt8(digit)
+    }
+
+    static func byte(typedAs characters: String) -> UInt8? {
+        guard characters.count == 1, let scalar = characters.unicodeScalars.first, (0x20...0x7E).contains(scalar.value) else { return nil }
+        return UInt8(scalar.value)
     }
 
     func outline(of range: Range<Int>, byteCount: Int) -> Path {
@@ -345,12 +445,7 @@ struct HexLayout: Equatable {
         return path
     }
 
-    private enum Section {
-        case hex
-        case ascii
-    }
-
-    private func sectionOutline(of range: Range<Int>, in section: Section) -> Path {
+    private func sectionOutline(of range: Range<Int>, in section: HexSection) -> Path {
         let first = cellRect(range.lowerBound, in: section)
         let last = cellRect(range.upperBound - 1, in: section)
         guard first.minY != last.minY else {
@@ -371,7 +466,7 @@ struct HexLayout: Equatable {
         return path
     }
 
-    private func cellRect(_ index: Int, in section: Section) -> CGRect {
+    private func cellRect(_ index: Int, in section: HexSection) -> CGRect {
         let row = index / Self.bytesPerRow
         let column = index % Self.bytesPerRow
         let y = CGFloat(row) * metrics.rowHeight

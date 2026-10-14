@@ -33,23 +33,20 @@ struct AddressInsightDetailView: View {
                 Text(err)
                     .font(.system(.body, design: .monospaced))
                     .textSelection(.enabled)
-            } else if let kind = insight?.kind {
-                switch kind {
+            } else if let insight {
+                switch insight.kind {
                 case .memory:
                     PatternDecodeView(
                         data: memoryData,
-                        baseAddress: insight?.lastResolvedAddress,
+                        baseAddress: insight.lastResolvedAddress,
                         sessionID: session.id,
                         engine: engine,
                         placements: Binding(
-                            get: { insight?.placements ?? [] },
-                            set: { placements in
-                                if let insight {
-                                    engine.setPlacements(placements, forInsight: insight)
-                                }
-                            }
+                            get: { insight.placements },
+                            set: { engine.setPlacements($0, forInsight: insight) }
                         ),
                         sizing: .fill,
+                        memoryWriter: memoryWriter(of: insight),
                         onTruncated: readMoreMemory
                     )
                     .padding(.vertical, 2)
@@ -85,6 +82,11 @@ struct AddressInsightDetailView: View {
         }
         .onChange(of: insight?.lastResolvedAddress) { _, _ in refresh() }
         .onChange(of: insight.flatMap { engine.insightRefreshGenerations[$0.id] }) { _, _ in refresh() }
+    }
+
+    private func memoryWriter(of insight: LumaCore.AddressInsight) -> ((_ bytes: [UInt8], _ address: UInt64) async throws -> Void)? {
+        guard node != nil else { return nil }
+        return { bytes, address in try await engine.writeMemory(bytes, at: address, of: insight) }
     }
 
     private func refresh() {

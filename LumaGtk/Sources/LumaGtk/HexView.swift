@@ -19,11 +19,15 @@ public final class HexView {
         didSet { emphasisArea.queueDraw() }
     }
     var onCaretMove: ((Int) -> Void)?
+    var onWrite: ((Int, [UInt8]) -> Void)? {
+        didSet { showSelection() }
+    }
     var menuSections: () -> [[ContextMenu.Item]] = { [] }
 
     private let surface: Overlay
     private let selectionLayer: Fixed
     private let selectionBands: [Box]
+    private let caretBand: Box
     private let bytesArea: DrawingArea
     private let annotationsArea: DrawingArea
     private let emphasisArea: DrawingArea
@@ -33,6 +37,7 @@ public final class HexView {
     private var baseAddress: UInt64
     private var layout: HexLayout
     private var selection: Selection?
+    private var pendingNibble: UInt8?
     private var themeToken: gulong = 0
 
     deinit {
@@ -55,6 +60,10 @@ public final class HexView {
         for band in selectionBands {
             selectionLayer.put(widget: band, x: 0, y: 0)
         }
+        caretBand = Box(orientation: .horizontal, spacing: 0)
+        caretBand.add(cssClass: "luma-hex-caret")
+        caretBand.visible = false
+        selectionLayer.put(widget: caretBand, x: 0, y: 0)
 
         bytesArea = DrawingArea()
         bytesArea.canTarget = false
@@ -106,7 +115,10 @@ public final class HexView {
         self.bytes = Array(bytes)
         self.baseAddress = baseAddress
         layout = HexLayout(byteCount: self.bytes.count, baseAddress: baseAddress)
-        selection = nil
+        if let selection, selection.caret >= self.bytes.count {
+            let last = self.bytes.count - 1
+            self.selection = self.bytes.isEmpty ? nil : Selection(anchor: last, caret: last, section: selection.section)
+        }
         applyContentSize()
         bytesArea.queueDraw()
         annotationsArea.queueDraw()
@@ -184,10 +196,12 @@ public final class HexView {
 
         for (index, byte) in zip(0..., rowBytes) {
             let hexColumn = layout.hexStartColumn + index * HexLayout.hexCellColumns
-            let style = GlyphStyle(classifying: byte)
-            runs.append(layout.glyph(HexLayout.hexDigits[Int(byte >> 4)], atColumn: hexColumn, baseline: baseline), style: style)
+            let pending = selection?.caret == start + index ? pendingNibble : nil
+            let style: GlyphStyle = pending == nil ? GlyphStyle(classifying: byte) : .pending
+            runs.append(layout.glyph(HexLayout.hexDigits[Int(pending ?? byte >> 4)], atColumn: hexColumn, baseline: baseline), style: style)
             runs.append(layout.glyph(HexLayout.hexDigits[Int(byte & 0xf)], atColumn: hexColumn + 1, baseline: baseline), style: style)
-            runs.append(layout.glyph(HexLayout.asciiCode(for: byte), atColumn: layout.asciiStartColumn + index, baseline: baseline), style: .ascii)
+            let asciiColumn = layout.asciiStartColumn + index
+            runs.append(layout.glyph(HexLayout.asciiCode(for: byte), atColumn: asciiColumn, baseline: baseline), style: .ascii)
         }
     }
 
@@ -218,24 +232,24 @@ public final class HexView {
 
     private func beginDrag(atX x: Double, y: Double) {
         _ = surface.grabFocus()
-        guard let index = byteIndex(atX: x, y: y) else { return }
-        select(anchor: index, caret: index)
+        guard let cell = cell(atX: x, y: y) else { return }
+        select(anchor: cell.index, caret: cell.index, section: cell.section)
     }
 
     private func continueDrag(_ gesture: GestureDragRef, offsetX: Double, offsetY: Double) {
         var startX = 0.0
         var startY = 0.0
         _ = gesture.getStartPoint(x: &startX, y: &startY)
-        guard let anchor = byteIndex(atX: startX, y: startY),
-            let caret = byteIndex(atX: startX + offsetX, y: startY + offsetY)
+        guard let anchor = cell(atX: startX, y: startY),
+            let caret = cell(atX: startX + offsetX, y: startY + offsetY)
         else { return }
-        select(anchor: anchor, caret: caret)
+        select(anchor: anchor.index, caret: caret.index, section: anchor.section)
     }
 
     private func presentContextMenu(atX x: Double, y: Double) {
         guard !bytes.isEmpty else { return }
-        if let index = byteIndex(atX: x, y: y), selection?.range.contains(index) != true {
-            select(anchor: index, caret: index)
+        if let cell = cell(atX: x, y: y), selection?.range.contains(cell.index) != true {
+            select(anchor: cell.index, caret: cell.index, section: cell.section)
         }
         menuPoint = (x, y)
         ContextMenu.present([
@@ -258,27 +272,72 @@ public final class HexView {
     }
 
     private func handleKey(keyval: UInt, state: Gdk.ModifierType) -> Bool {
-        guard !bytes.isEmpty, let motion = caretMotion(for: Int32(truncatingIfNeeded: keyval)) else { return false }
-        moveCaret(rows: motion.rows, columns: motion.columns, extending: state.contains(.shiftMask))
+        guard !bytes.isEmpty else { return false }
+        let key = Int32(truncatingIfNeeded: keyval)
+        if let motion = caretMotion(for: key) {
+            moveCaret(rows: motion.rows, columns: motion.columns, extending: state.contains(.shiftMask))
+            return true
+        }
+        guard onWrite != nil, state.isDisjoint(with: [.controlMask, .altMask, .superMask]) else { return false }
+        if key == Gdk.keyTab || key == Gdk.keyISOLeftTab {
+            switchSection()
+            return true
+        }
+        let typed = Gdk.keyvalToUnicode(keyval: Int(keyval))
+        switch section {
+        case .hex:
+            guard let nibble = HexLayout.nibble(typedAs: typed) else { return false }
+            type(nibble)
+        case .ascii:
+            guard let byte = HexLayout.byte(typedAs: typed) else { return false }
+            write(byte)
+        }
         return true
     }
 
     private func caretMotion(for keyval: Int32) -> (rows: Int, columns: Int)? {
         switch keyval {
-        case Gdk.keyLeft, Gdk.keyh, Gdk.keyH: (0, -1)
-        case Gdk.keyRight, Gdk.keyl, Gdk.keyL: (0, 1)
-        case Gdk.keyUp, Gdk.keyk, Gdk.keyK: (-1, 0)
-        case Gdk.keyDown, Gdk.keyj, Gdk.keyJ: (1, 0)
+        case Gdk.keyLeft: (0, -1)
+        case Gdk.keyRight: (0, 1)
+        case Gdk.keyUp: (-1, 0)
+        case Gdk.keyDown: (1, 0)
+        case Gdk.keyh, Gdk.keyH: onWrite == nil ? (0, -1) : nil
+        case Gdk.keyl, Gdk.keyL: onWrite == nil ? (0, 1) : nil
+        case Gdk.keyk, Gdk.keyK: onWrite == nil ? (-1, 0) : nil
+        case Gdk.keyj, Gdk.keyJ: onWrite == nil ? (1, 0) : nil
         default: nil
         }
     }
 
     private func moveCaret(rows: Int, columns: Int, extending: Bool) {
-        let caret = selection?.caret ?? 0
         let row = min(max(caret / HexLayout.bytesPerRow + rows, 0), layout.rowCount - 1)
         let column = caret % HexLayout.bytesPerRow
         let newCaret = min(max(row * HexLayout.bytesPerRow + column + columns, 0), bytes.count - 1)
-        select(anchor: extending ? selection?.anchor ?? 0 : newCaret, caret: newCaret)
+        select(anchor: extending ? selection?.anchor ?? 0 : newCaret, caret: newCaret, section: section)
+    }
+
+    private func switchSection() {
+        select(anchor: caret, caret: caret, section: section == .hex ? .ascii : .hex)
+    }
+
+    private func type(_ nibble: UInt8) {
+        guard let high = pendingNibble else {
+            pendingNibble = nibble
+            bytesArea.queueDraw()
+            return
+        }
+        write(high << 4 | nibble)
+    }
+
+    private func write(_ byte: UInt8) {
+        let caret = caret
+        onWrite?(caret, [byte])
+        let next = min(caret + 1, bytes.count - 1)
+        select(anchor: next, caret: next, section: section)
+    }
+
+    private var section: HexSection {
+        selection?.section ?? .hex
     }
 
     private func applyContentSize() {
@@ -287,13 +346,17 @@ public final class HexView {
         widget.setSizeRequest(width: width, height: -1)
     }
 
-    private func byteIndex(atX x: Double, y: Double) -> Int? {
-        guard let index = layout.byteIndex(atX: x, y: y) else { return nil }
-        return min(index, bytes.count - 1)
+    private func cell(atX x: Double, y: Double) -> (index: Int, section: HexSection)? {
+        guard let cell = layout.cell(atX: x, y: y) else { return nil }
+        return (min(cell.index, bytes.count - 1), cell.section)
     }
 
-    private func select(anchor: Int, caret: Int) {
-        selection = Selection(anchor: anchor, caret: caret)
+    private func select(anchor: Int, caret: Int, section: HexSection) {
+        selection = Selection(anchor: anchor, caret: caret, section: section)
+        if pendingNibble != nil {
+            pendingNibble = nil
+            bytesArea.queueDraw()
+        }
         showSelection()
         onCaretMove?(caret)
     }
@@ -305,6 +368,11 @@ public final class HexView {
         }
         for band in selectionBands.dropFirst(bands.count) {
             band.visible = false
+        }
+        if onWrite != nil, let selection {
+            place(caretBand, over: layout.cellRect(selection.caret, in: selection.section))
+        } else {
+            caretBand.visible = false
         }
     }
 
@@ -334,6 +402,7 @@ public final class HexView {
     private struct Selection {
         var anchor: Int
         var caret: Int
+        var section: HexSection
 
         var range: ClosedRange<Int> { min(anchor, caret)...max(anchor, caret) }
     }
@@ -343,6 +412,11 @@ struct HexAnnotation {
     let id: UUID
     let range: Swift.Range<Int>
     let color: GdkRGBA
+}
+
+private enum HexSection {
+    case hex
+    case ascii
 }
 
 @MainActor
@@ -414,19 +488,23 @@ private struct HexLayout {
         appendOutline(of: visible, in: .ascii, to: cr)
     }
 
-    func byteIndex(atX x: Double, y: Double) -> Int? {
+    func cell(atX x: Double, y: Double) -> (index: Int, section: HexSection)? {
         guard y >= Self.marginY else { return nil }
         let row = Int((y - Self.marginY) / metrics.rowHeight)
-        guard row < rowCount, let column = byteColumn(atX: x) else { return nil }
-        return row * Self.bytesPerRow + column
+        guard row < rowCount, let cell = cell(atX: x) else { return nil }
+        return (row * Self.bytesPerRow + cell.column, cell.section)
     }
 
-    private enum Section {
-        case hex
-        case ascii
+    static func nibble(typedAs code: guint32) -> UInt8? {
+        guard let scalar = UnicodeScalar(code), let digit = Character(scalar).hexDigitValue else { return nil }
+        return UInt8(digit)
     }
 
-    private func appendOutline(of range: Swift.Range<Int>, in section: Section, to cr: UnsafeMutablePointer<cairo_t>) {
+    static func byte(typedAs code: guint32) -> UInt8? {
+        (0x20...0x7E).contains(code) ? UInt8(code) : nil
+    }
+
+    private func appendOutline(of range: Swift.Range<Int>, in section: HexSection, to cr: UnsafeMutablePointer<cairo_t>) {
         let first = cellRect(range.lowerBound, in: section)
         let last = cellRect(range.upperBound - 1, in: section)
         guard first.minY != last.minY else {
@@ -446,7 +524,7 @@ private struct HexLayout {
         cairo_close_path(cr)
     }
 
-    private func cellRect(_ index: Int, in section: Section) -> CGRect {
+    func cellRect(_ index: Int, in section: HexSection) -> CGRect {
         let row = index / Self.bytesPerRow
         let column = index % Self.bytesPerRow
         let top = top(ofRow: row)
@@ -473,7 +551,7 @@ private struct HexLayout {
         ]
     }
 
-    private func byteColumn(atX x: Double) -> Int? {
+    private func cell(atX x: Double) -> (column: Int, section: HexSection)? {
         let column = (x - Self.marginX) / metrics.advance
         let hexStart = Double(hexStartColumn)
         let hexEnd = hexStart + Double(hexColumnCount)
@@ -482,10 +560,10 @@ private struct HexLayout {
 
         if (hexStart..<hexEnd).contains(column) {
             let cellCenteredColumn = column - hexStart + 0.5
-            return Int(cellCenteredColumn) / Self.hexCellColumns
+            return (Int(cellCenteredColumn) / Self.hexCellColumns, .hex)
         }
         if (asciiStart..<asciiEnd).contains(column) {
-            return Int(column - asciiStart)
+            return (Int(column - asciiStart), .ascii)
         }
         return nil
     }
@@ -514,6 +592,7 @@ private enum GlyphStyle: Int, CaseIterable {
     case control
     case high
     case ascii
+    case pending
 
     init(classifying byte: UInt8) {
         switch byte {
@@ -564,6 +643,8 @@ private struct GlyphPalette {
         case (.high, .light): GdkRGBA(red: 0.11, green: 0.44, blue: 0.85, alpha: 1)
         case (.high, .dark): GdkRGBA(red: 0.35, green: 0.78, blue: 0.92, alpha: 1)
         case (.ascii, _): dimmed
+        case (.pending, .light): GdkRGBA(red: 0.55, green: 0.25, blue: 0.75, alpha: 1)
+        case (.pending, .dark): GdkRGBA(red: 0.8, green: 0.6, blue: 0.95, alpha: 1)
         }
     }
 

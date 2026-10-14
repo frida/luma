@@ -16,6 +16,11 @@ enum PatternDecodeSizing {
 final class PatternDecodeView {
     let widget: Box
 
+    var memoryWriter: ((_ bytes: [UInt8], _ address: UInt64) async throws -> Void)? {
+        didSet {
+            hexView.onWrite = memoryWriter == nil ? nil : { [weak self] offset, bytes in self?.write(bytes, atOffset: offset) }
+        }
+    }
     var onTruncated: (() -> Void)?
 
     private let engine: Engine
@@ -26,6 +31,7 @@ final class PatternDecodeView {
     private let hexScroller: ScrolledWindow
     private let treeScroller: ScrolledWindow
     private let treeList: ListBox
+    private let problemLabel: Label
 
     private var data: Data
     private var baseAddress: UInt64?
@@ -35,6 +41,9 @@ final class PatternDecodeView {
     private var locations: [UUID: PatternLocation] = [:]
     private var visualizations: [UUID: NodeVisualization] = [:]
     private var visualizerAnchors: [UUID: Widget] = [:]
+    private var edits: [UUID: DecodedValueEdit] = [:]
+    private var valueSlots: [UUID: ValueSlot] = [:]
+    private var activeEdit: ActiveEdit?
     private var openPopover: Popover?
     private var expanded: Set<UUID> = []
     private var rows: [TreeRow] = []
@@ -82,9 +91,21 @@ final class PatternDecodeView {
         treeScroller.hexpand = true
         treeScroller.setSizeRequest(width: 360, height: -1)
 
-        widget = Box(orientation: .horizontal, spacing: 16)
-        widget.append(child: hexScroller)
-        widget.append(child: treeScroller)
+        let panes = Box(orientation: .horizontal, spacing: 16)
+        panes.append(child: hexScroller)
+        panes.append(child: treeScroller)
+
+        problemLabel = Label(str: "")
+        problemLabel.add(cssClass: "error")
+        problemLabel.add(cssClass: "caption")
+        problemLabel.xalign = 0
+        problemLabel.wrap = true
+        problemLabel.selectable = true
+        problemLabel.visible = false
+
+        widget = Box(orientation: .vertical, spacing: 6)
+        widget.append(child: panes)
+        widget.append(child: problemLabel)
 
         for scroller in [hexScroller, treeScroller] {
             switch sizing {
@@ -109,6 +130,28 @@ final class PatternDecodeView {
         self.baseAddress = baseAddress
         hexView.setBytes(data, baseAddress: baseAddress ?? 0)
         decode()
+    }
+
+    private func write(_ bytes: [UInt8], atOffset offset: Int) {
+        guard let baseAddress else { return }
+        write(bytes, at: baseAddress &+ UInt64(offset))
+    }
+
+    private func write(_ bytes: [UInt8], at address: UInt64) {
+        guard let memoryWriter else { return }
+        Task { @MainActor [weak self] in
+            do {
+                try await memoryWriter(bytes, address)
+                self?.showProblem(nil)
+            } catch {
+                self?.showProblem(error.localizedDescription)
+            }
+        }
+    }
+
+    private func showProblem(_ text: String?) {
+        problemLabel.setText(str: text ?? "")
+        problemLabel.visible = text != nil
     }
 
     private func selectNode(at index: Int) {
@@ -246,12 +289,62 @@ final class PatternDecodeView {
     }
 
     private func activate(_ id: UUID) {
-        guard let visualization = visualizations[id], let anchor = visualizerAnchors[id] else { return }
+        guard let visualization = visualizations[id], let anchor = visualizerAnchors[id] else {
+            beginEdit(id)
+            return
+        }
         if case .button = visualization.inline {
             press(visualization, anchor: anchor)
         } else {
             presentVisualizer(visualization, anchor: anchor)
         }
+    }
+
+    private func beginEdit(_ id: UUID) {
+        guard let edit = edits[id], let slot = valueSlots[id] else { return }
+        endEdit()
+        let entry = Entry()
+        entry.text = edit.text
+        entry.add(cssClass: "monospace")
+        entry.add(cssClass: "luma-pattern-text")
+        entry.hexpand = true
+        entry.onActivate { [weak self] entry in
+            MainActor.assumeIsolated {
+                self?.commitEdit(id, text: entry.text ?? "")
+            }
+        }
+        let keys = EventControllerKey()
+        keys.onKeyPressed { [weak self] _, keyval, _, _ in
+            MainActor.assumeIsolated {
+                guard Int32(truncatingIfNeeded: keyval) == Gdk.keyEscape else { return false }
+                self?.endEdit()
+                return true
+            }
+        }
+        entry.add(controller: keys)
+        slot.content.insertChildAfter(child: WidgetRef(raw: entry.ptr), sibling: WidgetRef(raw: slot.label.ptr))
+        slot.label.visible = false
+        activeEdit = ActiveEdit(entry: entry, slot: slot)
+        _ = entry.grabFocus()
+    }
+
+    private func commitEdit(_ id: UUID, text: String) {
+        guard let edit = edits[id], let active = activeEdit else { return }
+        do {
+            let bytes = try edit.bytes(parsing: text)
+            endEdit()
+            write(bytes, at: edit.address)
+        } catch {
+            active.entry.add(cssClass: "error")
+            active.entry.tooltipText = error.localizedDescription
+        }
+    }
+
+    private func endEdit() {
+        guard let active = activeEdit else { return }
+        active.slot.content.remove(child: active.entry)
+        active.slot.label.visible = true
+        activeEdit = nil
     }
 
     private func press(_ visualization: NodeVisualization, anchor: Widget) {
@@ -436,9 +529,19 @@ final class PatternDecodeView {
                 visualize(root, root: root, placement: placement)
             }
         }
+        edits = memoryWriter == nil ? [:] : Self.edits(of: located, in: data)
         hexView.annotations = located.values.filter(\.isLeaf).map(\.annotation)
         hexView.emphasis = selectedID.flatMap { located[$0] }?.annotation
         rebuildRows()
+    }
+
+    private static func edits(of locations: [UUID: PatternLocation], in data: Data) -> [UUID: DecodedValueEdit] {
+        let bytes = Array(data)
+        var edits: [UUID: DecodedValueEdit] = [:]
+        for location in locations.values where location.isLeaf && location.range.upperBound <= bytes.count {
+            edits[location.node.id] = DecodedValueEdit(location.node, bytes: bytes[location.range])
+        }
+        return edits
     }
 
     private static func roots(of results: [UUID: PlacementResult]) -> [UUID: DecodedPattern] {
@@ -466,8 +569,10 @@ final class PatternDecodeView {
 
     private func rebuildRows() {
         openPopover?.popdown()
+        activeEdit = nil
         rows = visibleRows
         visualizerAnchors = [:]
+        valueSlots = [:]
         treeList.removeAll()
         for row in rows {
             treeList.append(child: makeRow(row))
@@ -576,7 +681,7 @@ final class PatternDecodeView {
         if let visualization = visualizations[node.id] {
             appendVisualization(visualization, of: node, to: content)
         } else {
-            content.append(child: summary(of: node))
+            appendSummary(of: node, to: content)
         }
         content.tooltipText = node.comment ?? String(format: "0x%llx", node.address)
     }
@@ -590,7 +695,7 @@ final class PatternDecodeView {
             content.append(child: widget)
             return
         }
-        content.append(child: summary(of: node))
+        appendSummary(of: node, to: content)
         let button = Button(iconName: visualization.iconName)
         button.add(cssClass: "flat")
         button.add(cssClass: "luma-pattern-chevron")
@@ -606,10 +711,24 @@ final class PatternDecodeView {
         content.append(child: button)
     }
 
-    private func summary(of node: DecodedPattern) -> Label {
+    private func appendSummary(of node: DecodedPattern, to content: Box) {
         let value = Self.label(node.summary, classes: node.truncated ? ["error"] : [])
         value.ellipsize = .end
-        return value
+        content.append(child: value)
+        guard edits[node.id] != nil else { return }
+        valueSlots[node.id] = ValueSlot(content: content, label: value)
+        value.tooltipText = "Double-click to change"
+        let click = GestureClick()
+        click.set(button: 1)
+        let id = node.id
+        click.onPressed { [weak self] _, pressCount, _, _ in
+            MainActor.assumeIsolated {
+                if pressCount == 2 {
+                    self?.beginEdit(id)
+                }
+            }
+        }
+        value.add(controller: click)
     }
 
     private static func label(_ text: String, classes: [String]) -> Label {
@@ -698,6 +817,16 @@ private struct NodeVisualization {
             return "view-reveal-symbolic"
         }
     }
+}
+
+private struct ValueSlot {
+    let content: Box
+    let label: Label
+}
+
+private struct ActiveEdit {
+    let entry: Entry
+    let slot: ValueSlot
 }
 
 private struct TreeRow {

@@ -319,6 +319,7 @@ final class InsightDetailView {
             ) { [weak self] placements in
                 self?.savePlacements(placements)
             }
+            decode.memoryWriter = memoryWriter(of: insight, through: engine)
             decode.onTruncated = { [weak self] in self?.readMoreMemory() }
             decodeView = decode
             setContent(decode.widget)
@@ -390,6 +391,13 @@ final class InsightDetailView {
                 _ = self.disasmBox.grabFocus()
             }
         }
+    }
+
+    private func memoryWriter(
+        of insight: LumaCore.AddressInsight, through engine: Engine
+    ) -> ((_ bytes: [UInt8], _ address: UInt64) async throws -> Void)? {
+        guard engine.node(forSessionID: sessionID) != nil else { return nil }
+        return { bytes, address in try await engine.writeMemory(bytes, at: address, of: insight) }
     }
 
     private func savePlacements(_ placements: [PatternPlacement]) {
