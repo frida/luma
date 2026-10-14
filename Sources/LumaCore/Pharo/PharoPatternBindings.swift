@@ -1,12 +1,6 @@
 enum PharoPatternBindings {
     static let source = """
-        | view decoding session pattern patterns value project |
-        view := SwpTextView << #LumaView slots: { #kindName }; package: 'Luma'; install.
-        view compile: 'kindName: aString
-            kindName := aString'.
-        view compile: 'typeName
-            ^ kindName'.
-
+        | decoding session pattern patterns value project |
         decoding := Object << #LumaDecoding slots: { #id }; package: 'Luma'; install.
         decoding class compile: 'id: anID
             | decoding |

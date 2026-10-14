@@ -229,6 +229,9 @@ final class PharoColumnView {
         case "canvas":
             guard let canvas = view.canvas else { return textPage("Empty canvas.") }
             return canvasPage(scene: canvas.scene)
+        case "lumaBytes":
+            guard let bytes = PharoBytesReference(view.text ?? "") else { return textPage("These bytes could not be read.") }
+            return bytesPage(bytes)
         case "lumaPatternBytes":
             guard let target = PharoPatternTarget(reference: view.text ?? "") else { return textPage(Self.releasedPattern) }
             return patternBytesPage(target)
@@ -254,6 +257,19 @@ final class PharoColumnView {
         let canvas = PharoCanvasArea(scene: scene)
         canvasAreas.append(canvas)
         return canvas.widget
+    }
+
+    private func bytesPage(_ bytes: PharoBytesReference) -> Widget {
+        let hexView = HexView(bytes: bytes.data, baseAddress: bytes.address)
+        hexView.widget.marginStart = 8
+        hexView.widget.marginTop = 8
+        patternPages.append(hexView)
+        let scroll = ScrolledWindow()
+        scroll.setPolicy(hscrollbarPolicy: .automatic, vscrollbarPolicy: .automatic)
+        scroll.hexpand = true
+        scroll.vexpand = true
+        scroll.set(child: hexView.widget)
+        return scroll
     }
 
     private func patternBytesPage(_ target: PharoPatternTarget) -> Widget {

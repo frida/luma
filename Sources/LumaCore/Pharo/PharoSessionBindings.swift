@@ -407,10 +407,11 @@ enum PharoSessionBindings {
                 column: ''Value'' text: [ :each | each value printString ]'.
         pointer compile: 'gtBytesFor: aView
             <gtView>
-            ^ aView text
+            ^ (LumaView new kindName: ''lumaBytes'')
                 title: ''Bytes'';
                 priority: 2;
-                text: [ self hexDump: 64 ]'.
+                text: [ self hex , '':'' , (self read: 256) base64Encoded ];
+                yourself'.
 
         threads := LumaRecords << #LumaThreads slots: {}; package: 'Luma'; install.
         threads compile: 'gtThreadsFor: aView

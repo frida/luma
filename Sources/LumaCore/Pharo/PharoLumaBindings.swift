@@ -16,7 +16,7 @@ public enum PharoLumaBindings {
     /// fields, so opening one shows what the host knows about it rather than
     /// the line it would have printed.
     private static let source = """
-        | record event records sessions entries events hostError host subscription project journal synth tune canvas drawable label |
+        | record event records sessions entries events hostError host subscription view project journal synth tune canvas drawable label |
         record := Object << #LumaRecord slots: { #fields. #icon }; package: 'Luma'; install.
         record compile: 'setFields: aDictionary icon: anIcon
             fields := aDictionary.
@@ -792,6 +792,12 @@ public enum PharoLumaBindings {
                     ifFalse: [ pen := pen + 0.5 ] ].
             ^ drawable remesh: corners primitive: #triangles'.
         label compile: 'drawable ^ drawable'.
+
+        view := SwpTextView << #LumaView slots: { #kindName }; package: 'Luma'; install.
+        view compile: 'kindName: aString
+            kindName := aString'.
+        view compile: 'typeName
+            ^ kindName'.
 
         project := Object << #LumaProject slots: {}; package: 'Luma'; install.
         project class compile: 'fetch: aRequest as: aClass

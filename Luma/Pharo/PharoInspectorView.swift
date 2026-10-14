@@ -546,6 +546,8 @@ struct PharoObjectColumn: View {
             if let canvas = declaration.canvas {
                 PharoCanvasSceneView(scene: canvas.scene)
             }
+        case "lumaBytes":
+            PharoBytesView(reference: declaration.text ?? "")
         case "lumaPatternBytes":
             PharoPatternView(kind: .bytes, reference: declaration.text ?? "")
         case "lumaPatternVisualization":
