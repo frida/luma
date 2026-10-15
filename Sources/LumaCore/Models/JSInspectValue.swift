@@ -51,10 +51,12 @@ public enum JSInspectValue: nonisolated Codable, nonisolated Equatable, @uncheck
     public struct Bytes: nonisolated Equatable {
         public let data: Data
         public let kind: BytesKind
+        public let address: UInt64?
 
-        nonisolated public init(data: Data, kind: BytesKind) {
+        nonisolated public init(data: Data, kind: BytesKind, address: UInt64? = nil) {
             self.data = data
             self.kind = kind
+            self.address = address
         }
     }
 
@@ -152,7 +154,8 @@ public enum JSInspectValue: nonisolated Codable, nonisolated Equatable, @uncheck
         case .bytes:
             let data = try container.decode(Data.self)
             let kind = try container.decode(BytesKind.self)
-            self = .bytes(Bytes(data: data, kind: kind))
+            let address = try container.decode(String?.self).map(Self.address(fromHex:))
+            self = .bytes(Bytes(data: data, kind: kind, address: address))
 
         case .function:
             self = .function(try container.decode(String.self))
@@ -267,6 +270,7 @@ public enum JSInspectValue: nonisolated Codable, nonisolated Equatable, @uncheck
             try container.encode(Kind.bytes.rawValue)
             try container.encode(bytes.data)
             try container.encode(bytes.kind)
+            try container.encode(bytes.address.map { String(format: "0x%llx", $0) })
 
         case .function(let t):
             try container.encode(Kind.function.rawValue)
@@ -341,6 +345,13 @@ public enum JSInspectValue: nonisolated Codable, nonisolated Equatable, @uncheck
     public var nativePointerAddress: UInt64? {
         guard case .nativePointer(let s) = self else { return nil }
         return UInt64(s.dropFirst(2), radix: 16)
+    }
+
+    nonisolated fileprivate static func address(fromHex text: String) throws -> UInt64 {
+        guard let address = UInt64(text.dropFirst(2), radix: 16) else {
+            throw DecodePackedError.invalidNode
+        }
+        return address
     }
 }
 
@@ -458,6 +469,7 @@ extension JSInspectValue {
                 let length = try intFrom(arr[2])
                 let kindRaw = try stringFrom(arr[3])
                 let kind = BytesKind(rawValue: kindRaw) ?? .arrayBuffer
+                let address = try (arr[4] as? String).map(Self.address(fromHex:))
 
                 let start = offset
                 let end = offset + length
@@ -466,7 +478,7 @@ extension JSInspectValue {
                 }
 
                 let slice = blobData.subdata(in: start..<end)
-                return .bytes(Bytes(data: slice, kind: kind))
+                return .bytes(Bytes(data: slice, kind: kind, address: address))
 
             case .function:
                 let sig = try stringFrom(arr[1])

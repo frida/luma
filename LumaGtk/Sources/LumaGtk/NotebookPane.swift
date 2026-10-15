@@ -152,6 +152,9 @@ final class NotebookPane {
                 cell.apply(entry, changed: changed)
                 break
             }
+            if changed == .jsValue, entryRows[entry.id]?.focusChild != nil {
+                break
+            }
             replaceRow(for: entry)
         case .removed(let id):
             if let row = entryRows.removeValue(forKey: id) {
@@ -408,7 +411,8 @@ final class NotebookPane {
                 let wrapper = JSInspectValueWidget.make(
                     value: jsValue,
                     engine: engine,
-                    sessionID: UUID()
+                    sessionID: entry.sessionID ?? UUID(),
+                    stored: .notebookEntry(entry.id)
                 )
                 jsValueKeepers.append(wrapper)
                 let valueWidget = wrapper.widget

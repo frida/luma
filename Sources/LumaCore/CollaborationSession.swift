@@ -344,6 +344,7 @@ public final class CollaborationSession {
     public var onSessionTraceRemoved: ((UUID, UUID) -> Void)?
     public var onSessionTraceDataProgressed: ((UUID, UUID, Int) -> Void)?
     public var onSessionEventReceived: ((UUID, RuntimeEvent) -> Void)?
+    public var onSessionEventUpdated: ((UUID, RuntimeEvent) -> Void)?
     public var onSessionWidgetUpdateReceived: ((UUID, WidgetUpdate) -> Void)?
     public var onSessionWidgetActionRequested: ((UUID, UUID, String, String, String?) -> Void)?
     public var onReplEvalTimedOut: ((UUID) -> Void)?
@@ -548,7 +549,8 @@ public final class CollaborationSession {
         title: String? = nil,
         details: String? = nil,
         processName: String? = nil,
-        pharoSnapshot: PharoSnapshot? = nil
+        pharoSnapshot: PharoSnapshot? = nil,
+        jsValue: JSInspectValue? = nil
     ) {
         guard isCollaborative else { return }
         let op = NotebookOp.update(.init(
@@ -556,7 +558,8 @@ public final class CollaborationSession {
             title: title,
             details: details,
             processName: processName,
-            pharoSnapshot: pharoSnapshot
+            pharoSnapshot: pharoSnapshot,
+            jsValue: jsValue
         ))
         try? store.saveOutboxOp(op)
         sendOpIfJoined(op)
@@ -1173,6 +1176,17 @@ public final class CollaborationSession {
         sendNotification(
             to: "/labs/\(labID)/sessions/\(sessionID.uuidString)/events",
             type: "+event",
+            payload: wirePayload
+        )
+    }
+
+    public func sendEventUpdate(sessionID: UUID, event: RuntimeEvent) {
+        guard case .joined(let labID) = status,
+            let wirePayload = event.toWireJSON()
+        else { return }
+        sendNotification(
+            to: "/labs/\(labID)/sessions/\(sessionID.uuidString)/events",
+            type: "+event-update",
             payload: wirePayload
         )
     }
@@ -1852,6 +1866,13 @@ public final class CollaborationSession {
                 let event = RuntimeEvent.fromWireJSON(payload)
             else { return }
             onSessionEventReceived?(sessionID, event)
+
+        case ("+event-update", let s)
+            where s.count == 5 && s[0] == "labs" && s[2] == "sessions" && s[4] == "events":
+            guard let sessionID = UUID(uuidString: s[3]),
+                let event = RuntimeEvent.fromWireJSON(payload)
+            else { return }
+            onSessionEventUpdated?(sessionID, event)
 
         case ("+widget-update", let s)
             where s.count == 5 && s[0] == "labs" && s[2] == "sessions" && s[4] == "widget-updates":

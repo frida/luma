@@ -365,13 +365,14 @@ public final class Engine {
             notebookEntries[i] = entry
         }
         onNotebookChanged?(.updated(entry, changed: changed))
-        if !changed.isDisjoint(with: [.title, .details, .processName, .pharoSnapshot]) {
+        if !changed.isDisjoint(with: [.title, .details, .processName, .pharoSnapshot, .jsValue]) {
             collaboration.enqueueUpdate(
                 entryID: entry.id,
                 title: entry.title,
                 details: entry.details,
                 processName: entry.processName,
-                pharoSnapshot: changed.contains(.pharoSnapshot) ? entry.pharoSnapshot : nil
+                pharoSnapshot: changed.contains(.pharoSnapshot) ? entry.pharoSnapshot : nil,
+                jsValue: changed.contains(.jsValue) ? entry.jsValue : nil
             )
         }
     }
@@ -1161,6 +1162,10 @@ public final class Engine {
             self?.applyRemoteSessionEvent(sessionID: sessionID, event: event)
         }
 
+        collaboration.onSessionEventUpdated = { [weak self] sessionID, event in
+            self?.applyRemoteSessionEventUpdate(sessionID: sessionID, event: event)
+        }
+
         collaboration.onSessionWidgetUpdateReceived = { [weak self] sessionID, update in
             self?.applyWidgetUpdate(update, sessionID: sessionID, origin: .remote)
         }
@@ -1203,6 +1208,12 @@ public final class Engine {
         var stamped = event
         stamped.sessionID = sessionID
         _events.yield(stamped)
+    }
+
+    private func applyRemoteSessionEventUpdate(sessionID: UUID, event: RuntimeEvent) {
+        var stamped = event
+        stamped.sessionID = sessionID
+        eventLog.update(stamped)
     }
 
     private func applyRemoteSessionTraceUpserted(sessionID: UUID, trace: ITrace) {
@@ -3079,8 +3090,63 @@ public final class Engine {
     }
 
     public func writeMemory(_ bytes: [UInt8], at address: UInt64, of insight: AddressInsight) async throws {
-        try await memoryReader(forSessionID: insight.sessionID).write(bytes, at: address)
+        try await writeMemory(bytes, at: address, forSessionID: insight.sessionID)
         requestRefresh(of: insight)
+    }
+
+    public func writeMemory(
+        _ bytes: [UInt8], at address: UInt64, forSessionID sessionID: UUID, updating stored: StoredValue
+    ) async throws {
+        try await writeMemory(bytes, at: address, forSessionID: sessionID)
+        recordMemory(bytes, at: address, in: stored)
+    }
+
+    @discardableResult
+    public func rereadMemory(of bytes: JSInspectValue.Bytes, forSessionID sessionID: UUID, updating stored: StoredValue) async throws -> [UInt8] {
+        guard let address = bytes.address, let node = node(forSessionID: sessionID) else {
+            throw DisassemblyError.detached
+        }
+        let fresh = try await node.readRemoteMemory(at: address, count: bytes.data.count)
+        recordMemory(fresh, at: address, in: stored)
+        return fresh
+    }
+
+    public func writeMemory(_ bytes: [UInt8], at address: UInt64, forSessionID sessionID: UUID) async throws {
+        try await memoryReader(forSessionID: sessionID).write(bytes, at: address)
+    }
+
+    private func recordMemory(_ bytes: [UInt8], at address: UInt64, in stored: StoredValue) {
+        switch stored {
+        case .replCell(let id):
+            recordMemory(bytes, at: address, inREPLCell: id)
+        case .notebookEntry(let id):
+            recordMemory(bytes, at: address, inNotebookEntry: id)
+        case .event(let id):
+            recordMemory(bytes, at: address, inEvent: id)
+        }
+    }
+
+    private func recordMemory(_ bytes: [UInt8], at address: UInt64, inREPLCell id: UUID) {
+        guard var cell = try? store.fetchREPLCell(id: id), case .js(let value) = cell.result else { return }
+        cell.result = .js(value.recordingMemory(bytes, at: address))
+        try? store.save(cell)
+        onREPLCellSaved?(cell)
+        collaboration.enqueueUpdateReplCell(sessionID: cell.sessionID, cell: cell)
+    }
+
+    private func recordMemory(_ bytes: [UInt8], at address: UInt64, inNotebookEntry id: UUID) {
+        guard var entry = notebookEntries.first(where: { $0.id == id }), let value = entry.jsValue else { return }
+        entry.jsValue = value.recordingMemory(bytes, at: address)
+        updateNotebookEntry(entry, changed: .jsValue)
+    }
+
+    private func recordMemory(_ bytes: [UInt8], at address: UInt64, inEvent id: RuntimeEvent.ID) {
+        guard let event = eventLog.event(id: id) else { return }
+        let updated = event.recordingMemory(bytes, at: address)
+        eventLog.update(updated)
+        if let sessionID = updated.sessionID, let collabID = collabSessionID(forSessionID: sessionID) {
+            collaboration.sendEventUpdate(sessionID: collabID, event: updated)
+        }
     }
 
     public func reanalyzeModule(of insight: AddressInsight) {

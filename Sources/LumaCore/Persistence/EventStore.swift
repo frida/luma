@@ -100,13 +100,19 @@ public actor EventStore {
 
     private func decodeStream(_ handle: FileHandle) -> [RuntimeEvent] {
         var events: [RuntimeEvent] = []
+        var indexByID: [RuntimeEvent.ID: Int] = [:]
         while let header = try? handle.read(upToCount: 4), header.count == 4 {
             let length = Int(readUInt32BE(header))
             guard let body = try? handle.read(upToCount: length), body.count == length else { break }
             guard let obj = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
                 let event = RuntimeEvent.fromLogJSON(obj)
             else { continue }
-            events.append(event)
+            if let index = indexByID[event.id] {
+                events[index] = event
+            } else {
+                indexByID[event.id] = events.count
+                events.append(event)
+            }
         }
         return events
     }

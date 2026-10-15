@@ -118,6 +118,11 @@ final class ConsoleView {
         scroller.pin()
     }
 
+    func replaceEntry(_ old: Widget, with new: Widget) {
+        cellsBox.insertChildAfter(child: new, sibling: old)
+        cellsBox.remove(child: old)
+    }
+
     func pinToBottom() {
         scroller.pin()
     }

@@ -97,7 +97,7 @@ final class PatternDecodeView {
         panes.append(child: hexScroller)
         panes.append(child: treeScroller)
 
-        hintLabel = Label(str: "Live memory: type hex or text over the selected byte to change it. Tab switches column.")
+        hintLabel = Label(str: HexView.editingHint)
         hintLabel.add(cssClass: "dim-label")
         hintLabel.add(cssClass: "caption")
         hintLabel.xalign = 0

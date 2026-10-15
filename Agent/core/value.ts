@@ -1,3 +1,5 @@
+import { addressOfBytes } from "./memory-origins.js";
+
 export interface EncodeOptions {
     maxDepth?: number;
 }
@@ -11,7 +13,7 @@ export type EncodedValueTree = EncodedValue;
 
 type EncodedValue = [ValueTag, ...any[]];
 
-type BytesEncoded = [tag: ValueTag.Bytes, offset: number, length: number, kind: BytesKind];
+type BytesEncoded = [tag: ValueTag.Bytes, offset: number, length: number, kind: BytesKind, address: string | null];
 type BytesKind = "ArrayBuffer" | "DataView" | TypedArrayName;
 
 const enum ValueTag {
@@ -174,7 +176,7 @@ function encodeObjectTree(
 
         if (isBinaryLike(obj)) {
             const binary = obj as ArrayBufferView | ArrayBuffer;
-            const node: BytesEncoded = [ValueTag.Bytes, 0, 0, getBytesKind(binary)];
+            const node: BytesEncoded = [ValueTag.Bytes, 0, 0, getBytesKind(binary), addressOfBytes(binary)];
             chunks.push({ buf: binary, node });
             return node;
         }

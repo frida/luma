@@ -7,6 +7,7 @@ public struct RuntimeEvent: Identifiable, Sendable {
     public let source: Source
     public let payload: Payload
     public let data: [UInt8]?
+    public internal(set) var revision = 0
 
     public enum Source: Sendable {
         case processOutput(fd: Int)
@@ -44,6 +45,20 @@ public struct RuntimeEvent: Identifiable, Sendable {
         self.source = source
         self.payload = payload
         self.data = data
+    }
+
+    public func recordingMemory(_ written: [UInt8], at address: UInt64) -> RuntimeEvent {
+        let updated: Payload
+        switch payload {
+        case .jsValue(let value):
+            updated = .jsValue(value.recordingMemory(written, at: address))
+        case .consoleMessage(let message):
+            updated = .consoleMessage(
+                ConsoleMessage(level: message.level, values: message.values.map { $0.recordingMemory(written, at: address) }))
+        case .jsError, .raw:
+            return self
+        }
+        return RuntimeEvent(id: id, timestamp: timestamp, sessionID: sessionID, source: source, payload: updated, data: data)
     }
 
     nonisolated(unsafe) private static let wireFormatter: ISO8601DateFormatter = {

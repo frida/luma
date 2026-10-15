@@ -97,6 +97,9 @@ struct EventStreamView: View, Equatable {
                 .onChange(of: engine.eventLog.flushVersion) { _, _ in
                     handleEventVersionChange(engine.eventLog.totalReceived)
                 }
+                .onChange(of: engine.eventLog.updateVersion) { _, _ in
+                    applyUpdatedEvent()
+                }
                 .onChange(of: scrollToLastToken) { _, _ in
                     guard let last = filteredEvents.last else { return }
                     isAutoScrolling = true
@@ -355,6 +358,15 @@ struct EventStreamView: View, Equatable {
     private func syncSnapshotFromEngine() {
         displayedEvents = engine.eventLog.events
         lastEventsVersion = engine.eventLog.totalReceived
+        rebuildFilteredEvents()
+    }
+
+    private func applyUpdatedEvent() {
+        guard let updated = engine.eventLog.lastUpdated,
+            let index = displayedEvents.firstIndex(where: { $0.id == updated.id })
+        else { return }
+        displayedEvents[index] = updated
+        searchCache[updated.id] = nil
         rebuildFilteredEvents()
     }
 
@@ -674,7 +686,7 @@ struct EventRow: View, Equatable {
 
     nonisolated static func == (lhs: EventRow, rhs: EventRow) -> Bool {
         lhs.evt.id == rhs.evt.id && lhs.evt.sessionID == rhs.evt.sessionID && lhs.previousTimestamp == rhs.previousTimestamp
-            && lhs.engine === rhs.engine
+            && lhs.evt.revision == rhs.evt.revision && lhs.engine === rhs.engine
     }
 
     private static let timestampFormatter: DateFormatter = {
@@ -702,6 +714,7 @@ struct EventRow: View, Equatable {
             }
 
             contentView
+                .environment(\.storedValue, .event(evt.id))
 
             Spacer(minLength: 8)
 

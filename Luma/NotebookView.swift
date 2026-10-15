@@ -513,6 +513,7 @@ struct NotebookEntryRow: View {
                 engine: engine,
                 selection: $selection
             )
+            .environment(\.storedValue, .notebookEntry(entry.id))
             .font(.monospacedContent)
         } else if let styled = entry.styledDetails {
             Text(styled.attributed)

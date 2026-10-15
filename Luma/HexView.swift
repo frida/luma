@@ -256,6 +256,14 @@ extension HexView where MenuItems == EmptyView {
     }
 }
 
+struct HexEditingCaption: View {
+    var body: some View {
+        Text("Live memory: type hex or text over the selected byte to change it. Tab switches column.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
+}
+
 struct HexAnnotation: Identifiable, Equatable {
     let id: UUID
     let range: Range<Int>

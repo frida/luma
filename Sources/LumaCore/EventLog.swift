@@ -6,11 +6,14 @@ public final class EventLog {
     public private(set) var events: [RuntimeEvent] = []
     public private(set) var totalReceived: Int = 0
     public private(set) var flushVersion: Int = 0
+    public private(set) var updateVersion: Int = 0
+    public private(set) var lastUpdated: RuntimeEvent?
 
     public let maxVisible: Int
     public let maxInMemory: Int
 
     @ObservationIgnored public var onEventsAppended: ((@MainActor (ArraySlice<RuntimeEvent>) -> Void))?
+    @ObservationIgnored public var onEventUpdated: ((@MainActor (RuntimeEvent) -> Void))?
     @ObservationIgnored public var onEventsCleared: ((@MainActor () -> Void))?
     @ObservationIgnored public var onEventsToPersist: ((@MainActor ([RuntimeEvent]) -> Void))?
     @ObservationIgnored private var allEvents: [RuntimeEvent] = []
@@ -33,6 +36,25 @@ public final class EventLog {
         }
 
         scheduleFlush()
+    }
+
+    public func event(id: RuntimeEvent.ID) -> RuntimeEvent? {
+        allEvents.last { $0.id == id }
+    }
+
+    public func update(_ event: RuntimeEvent) {
+        guard let index = allEvents.lastIndex(where: { $0.id == event.id }) else { return }
+        var revised = event
+        revised.revision = allEvents[index].revision &+ 1
+        allEvents[index] = revised
+        if let visibleIndex = events.lastIndex(where: { $0.id == event.id }) {
+            events[visibleIndex] = revised
+        }
+        lastUpdated = revised
+        updateVersion &+= 1
+        pendingPersist.append(revised)
+        persistPending()
+        onEventUpdated?(revised)
     }
 
     public func restore(_ events: [RuntimeEvent]) {
@@ -81,10 +103,13 @@ public final class EventLog {
         if newCount > prevCount {
             onEventsAppended?(visible[prevCount...])
         }
-        if !pendingPersist.isEmpty, let onEventsToPersist {
-            let batch = pendingPersist
-            pendingPersist.removeAll(keepingCapacity: true)
-            onEventsToPersist(batch)
-        }
+        persistPending()
+    }
+
+    private func persistPending() {
+        guard !pendingPersist.isEmpty, let onEventsToPersist else { return }
+        let batch = pendingPersist
+        pendingPersist.removeAll(keepingCapacity: true)
+        onEventsToPersist(batch)
     }
 }

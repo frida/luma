@@ -12,6 +12,8 @@ public final class HexView {
 
     static var rowHeight: Double { HexMetrics.shared.rowHeight }
 
+    static let editingHint = "Live memory: type hex or text over the selected byte to change it. Tab switches column."
+
     var annotations: [HexAnnotation] = [] {
         didSet { annotationsArea.queueDraw() }
     }

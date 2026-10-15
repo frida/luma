@@ -326,6 +326,9 @@ final class EventStreamPane {
         engine.eventLog.onEventsCleared = { [weak self] in
             self?.handleEventsCleared()
         }
+        engine.eventLog.onEventUpdated = { [weak self] event in
+            self?.handleEventUpdated(event)
+        }
 
         syncSnapshot()
     }
@@ -409,7 +412,9 @@ final class EventStreamPane {
             }
             filteredEvents.append(event)
             let prev = filteredEvents.dropLast().last?.timestamp
-            eventListBox.append(child: makeRow(for: event, previousTimestamp: prev))
+            let row = makeRow(for: event, previousTimestamp: prev)
+            rows.append(row)
+            eventListBox.append(child: row)
             appended = true
         }
 
@@ -419,6 +424,25 @@ final class EventStreamPane {
         }
         updateBar()
         updatePendingPill()
+    }
+
+    private func handleEventUpdated(_ event: RuntimeEvent) {
+        if let index = displayedEvents.lastIndex(where: { $0.id == event.id }) {
+            displayedEvents[index] = event
+        }
+        guard let index = filteredEvents.firstIndex(where: { $0.id == event.id }) else { return }
+        filteredEvents[index] = event
+        replaceRow(at: index)
+    }
+
+    private func replaceRow(at index: Int) {
+        let row = rows[index]
+        guard row.focusChild == nil else { return }
+        let previousTimestamp = index > 0 ? filteredEvents[index - 1].timestamp : nil
+        let replacement = makeRow(for: filteredEvents[index], previousTimestamp: previousTimestamp)
+        eventListBox.insertChildAfter(child: replacement, sibling: row)
+        eventListBox.remove(child: row)
+        rows[index] = replacement
     }
 
     private func syncSnapshot() {
@@ -474,13 +498,17 @@ final class EventStreamPane {
     }
 
     private var jsValueKeepers: [JSInspectValueWidget] = []
+    private var rows: [Widget] = []
 
     private func refreshRows() {
         clearChildren(of: eventListBox)
         jsValueKeepers.removeAll()
+        rows.removeAll()
         var prevTimestamp: Date? = nil
         for event in filteredEvents {
-            eventListBox.append(child: makeRow(for: event, previousTimestamp: prevTimestamp))
+            let row = makeRow(for: event, previousTimestamp: prevTimestamp)
+            rows.append(row)
+            eventListBox.append(child: row)
             prevTimestamp = event.timestamp
         }
         emptyStateBox.visible = filteredEvents.isEmpty
@@ -855,7 +883,7 @@ final class EventStreamPane {
             let column = Box(orientation: .vertical, spacing: 4)
             column.hexpand = true
             for value in message.values {
-                let wrapper = JSInspectValueWidget.make(value: value, engine: engine, sessionID: sessionID)
+                let wrapper = JSInspectValueWidget.make(value: value, engine: engine, sessionID: sessionID, stored: .event(event.id))
                 jsValueKeepers.append(wrapper)
                 wrapper.widget.halign = .fill
                 wrapper.widget.hexpand = true
@@ -903,7 +931,7 @@ final class EventStreamPane {
             isStructured(value)
         else { return nil }
 
-        let wrapper = JSInspectValueWidget.make(value: value, engine: engine, sessionID: sessionID)
+        let wrapper = JSInspectValueWidget.make(value: value, engine: engine, sessionID: sessionID, stored: .event(event.id))
         jsValueKeepers.append(wrapper)
         wrapper.widget.hexpand = true
         return wrapper.widget
@@ -964,7 +992,7 @@ final class EventStreamPane {
             payload.add(cssClass: "monospace")
             column.append(child: payload)
         } else {
-            let wrapper = JSInspectValueWidget.make(value: parsed.message, engine: engine!, sessionID: sessionID)
+            let wrapper = JSInspectValueWidget.make(value: parsed.message, engine: engine!, sessionID: sessionID, stored: .event(event.id))
             jsValueKeepers.append(wrapper)
             wrapper.widget.hexpand = true
             column.append(child: wrapper.widget)

@@ -303,11 +303,7 @@ private struct JSInspectNodeView: View {
     private func leafView(_ value: JSInspectValue) -> some View {
         switch value {
         case .bytes(let bytes):
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Bytes(\(bytes.kind.rawValue)[\(bytes.data.count)])")
-                    .foregroundStyle(.mint)
-                HexView(data: bytes.data)
-            }
+            InspectedBytesView(bytes: bytes, sessionID: sessionID, engine: engine)
 
         default:
             if case .nativePointer = value,

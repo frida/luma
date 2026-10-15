@@ -56,6 +56,7 @@ public enum NotebookOp: Sendable {
         public var processName: String?
 
         public var pharoSnapshot: PharoSnapshot?
+        public var jsValue: JSInspectValue?
 
         public init(
             opID: UUID = UUID(),
@@ -63,7 +64,8 @@ public enum NotebookOp: Sendable {
             title: String? = nil,
             details: String? = nil,
             processName: String? = nil,
-            pharoSnapshot: PharoSnapshot? = nil
+            pharoSnapshot: PharoSnapshot? = nil,
+            jsValue: JSInspectValue? = nil
         ) {
             self.opID = opID
             self.entryID = entryID
@@ -71,6 +73,7 @@ public enum NotebookOp: Sendable {
             self.details = details
             self.processName = processName
             self.pharoSnapshot = pharoSnapshot
+            self.jsValue = jsValue
         }
 
         public var changes: [String: String] {
@@ -123,6 +126,12 @@ public enum NotebookOp: Sendable {
             {
                 changes["pharo_snapshot"] = jsonObject
             }
+            if let value = u.jsValue,
+                let data = try? JSONEncoder().encode(value),
+                let jsonObject = try? JSONSerialization.jsonObject(with: data)
+            {
+                changes["js_value"] = jsonObject
+            }
             obj["changes"] = changes
         case .remove(let r):
             obj["entry_id"] = r.entryID.uuidString
@@ -160,13 +169,21 @@ public enum NotebookOp: Sendable {
             {
                 snapshot = decoded
             }
+            var jsValue: JSInspectValue? = nil
+            if let raw = changes["js_value"],
+                let data = try? JSONSerialization.data(withJSONObject: raw),
+                let decoded = try? JSONDecoder().decode(JSInspectValue.self, from: data)
+            {
+                jsValue = decoded
+            }
             return .update(Update(
                 opID: opID,
                 entryID: entryID,
                 title: changes["title"] as? String,
                 details: changes["details"] as? String,
                 processName: changes["process_name"] as? String,
-                pharoSnapshot: snapshot
+                pharoSnapshot: snapshot,
+                jsValue: jsValue
             ))
 
         case "remove":

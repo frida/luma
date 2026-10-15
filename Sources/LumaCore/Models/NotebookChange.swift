@@ -10,8 +10,9 @@ public struct NotebookEntryFields: OptionSet, Sendable {
     public static let details = NotebookEntryFields(rawValue: 1 << 1)
     public static let processName = NotebookEntryFields(rawValue: 1 << 2)
     public static let pharoSnapshot = NotebookEntryFields(rawValue: 1 << 3)
+    public static let jsValue = NotebookEntryFields(rawValue: 1 << 4)
 
-    public static let all: NotebookEntryFields = [.title, .details, .processName, .pharoSnapshot]
+    public static let all: NotebookEntryFields = [.title, .details, .processName, .pharoSnapshot, .jsValue]
 }
 
 public enum NotebookChange: Sendable {

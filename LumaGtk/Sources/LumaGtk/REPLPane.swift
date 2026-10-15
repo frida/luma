@@ -15,6 +15,7 @@ final class REPLPane {
     private var cells: [LumaCore.REPLCell] = []
     private var rowKeepers: [Any] = []
     private var decodeViews: [UUID: PatternDecodeView] = [:]
+    private var rows: [UUID: Widget] = [:]
     private var mode: LumaCore.REPLLanguage = .javascript
     private var draftSaveTask: Task<Void, Never>?
 
@@ -151,16 +152,31 @@ final class REPLPane {
         guard cell.sessionID == sessionID else { return }
         guard let index = cells.firstIndex(where: { $0.id == cell.id }) else {
             cells.append(cell)
-            console.appendEntry(makeRow(for: cell))
+            appendRow(for: cell)
             return
         }
         let shown = cells[index]
         cells[index] = cell
         if cell.code == shown.code && cell.result == shown.result {
             decodeViews[cell.id]?.setPlacements(cell.placements)
+        } else if cell.code == shown.code, case .js = cell.result, let row = rows[cell.id] {
+            replaceRow(row, for: cell)
         } else {
             loadCells()
         }
+    }
+
+    private func replaceRow(_ row: Widget, for cell: LumaCore.REPLCell) {
+        guard row.focusChild == nil else { return }
+        let replacement = makeRow(for: cell)
+        rows[cell.id] = replacement
+        console.replaceEntry(row, with: replacement)
+    }
+
+    private func appendRow(for cell: LumaCore.REPLCell) {
+        let row = makeRow(for: cell)
+        rows[cell.id] = row
+        console.appendEntry(row)
     }
 
     private func inactiveMessage(for session: LumaCore.ProcessSession) -> String {
@@ -189,9 +205,10 @@ final class REPLPane {
         console.clearEntries()
         rowKeepers.removeAll()
         decodeViews.removeAll()
+        rows.removeAll()
         let sorted = cells.sorted(by: { $0.timestamp < $1.timestamp })
         for cell in sorted {
-            console.appendEntry(makeRow(for: cell))
+            appendRow(for: cell)
         }
         console.setHistory(sorted.filter { !$0.isSessionBoundary }.map { $0.code })
     }
@@ -293,7 +310,7 @@ final class REPLPane {
             switch cell.result {
             case .js(let value):
                 if let engine {
-                    let wrapper = JSInspectValueWidget.make(value: value, engine: engine, sessionID: sessionID) { [weak self] in
+                    let wrapper = JSInspectValueWidget.make(value: value, engine: engine, sessionID: sessionID, stored: .replCell(cell.id)) { [weak self] in
                         self?.console.pinToBottom()
                     }
                     rowKeepers.append(wrapper)
@@ -403,6 +420,7 @@ final class REPLPane {
         cells.removeAll()
         rowKeepers.removeAll()
         decodeViews.removeAll()
+        rows.removeAll()
         console.clearEntries()
         console.setHistory([])
     }

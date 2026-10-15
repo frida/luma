@@ -537,6 +537,7 @@ private struct REPLCellView: View {
                                 engine: engine,
                                 selection: $selection
                             )
+                            .environment(\.storedValue, .replCell(cell.id))
 
                         case .binary(let data, let meta):
                             PatternDecodeView(

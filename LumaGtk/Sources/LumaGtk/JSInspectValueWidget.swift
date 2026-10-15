@@ -77,17 +77,18 @@ final class JSInspectValueWidget {
 
     private var keepAlive: [Any] = []
 
-    static func make(value: JSInspectValue, engine: Engine, sessionID: UUID, onExpand: @escaping () -> Void = {}) -> JSInspectValueWidget {
-        return JSInspectValueWidget(value: value, engine: engine, sessionID: sessionID, onExpand: onExpand)
+    static func make(value: JSInspectValue, engine: Engine, sessionID: UUID, stored: StoredValue? = nil, onExpand: @escaping () -> Void = {}) -> JSInspectValueWidget {
+        return JSInspectValueWidget(value: value, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand)
     }
 
-    init(value: JSInspectValue, engine: Engine, sessionID: UUID, onExpand: @escaping () -> Void) {
+    init(value: JSInspectValue, engine: Engine, sessionID: UUID, stored: StoredValue?, onExpand: @escaping () -> Void) {
         var keepers: [Any] = []
         self.widget = Self.build(
             value: value,
             depth: 0,
             engine: engine,
             sessionID: sessionID,
+            stored: stored,
             onExpand: onExpand,
             keepAlive: &keepers
         )
@@ -101,24 +102,25 @@ final class JSInspectValueWidget {
         depth: Int,
         engine: Engine,
         sessionID: UUID,
+        stored: StoredValue?,
         onExpand: @escaping () -> Void,
         keepAlive: inout [Any]
     ) -> Widget {
         switch value {
         case .object(_, let props):
-            return makeObjectExpander(props: props, depth: depth, engine: engine, sessionID: sessionID, onExpand: onExpand, keepAlive: &keepAlive)
+            return makeObjectExpander(props: props, depth: depth, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepAlive)
 
         case .array(_, let elements):
-            return makeArrayExpander(elements: elements, depth: depth, engine: engine, sessionID: sessionID, onExpand: onExpand, keepAlive: &keepAlive)
+            return makeArrayExpander(elements: elements, depth: depth, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepAlive)
 
         case .map(_, let entries):
-            return makeMapExpander(entries: entries, depth: depth, engine: engine, sessionID: sessionID, onExpand: onExpand, keepAlive: &keepAlive)
+            return makeMapExpander(entries: entries, depth: depth, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepAlive)
 
         case .set(_, let elements):
-            return makeSetExpander(elements: elements, depth: depth, engine: engine, sessionID: sessionID, onExpand: onExpand, keepAlive: &keepAlive)
+            return makeSetExpander(elements: elements, depth: depth, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepAlive)
 
         case .bytes(let bytes):
-            return makeBytesView(bytes: bytes, keepAlive: &keepAlive)
+            return makeBytesView(bytes: bytes, engine: engine, sessionID: sessionID, stored: stored, keepAlive: &keepAlive)
 
         case .error(let name, let message, let stack):
             return makeErrorView(name: name, message: message, stack: stack)
@@ -133,6 +135,7 @@ final class JSInspectValueWidget {
         depth: Int,
         engine: Engine,
         sessionID: UUID,
+        stored: StoredValue?,
         onExpand: @escaping () -> Void,
         keepAlive: inout [Any]
     ) -> Widget {
@@ -148,7 +151,7 @@ final class JSInspectValueWidget {
             key.valign = .start
             if isComposite(prop.value) { key.marginTop = 2 }
             row.append(child: key)
-            let child = build(value: prop.value, depth: depth + 1, engine: engine, sessionID: sessionID, onExpand: onExpand, keepAlive: &keepers)
+            let child = build(value: prop.value, depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
             child.hexpand = true
             child.halign = .start
             row.append(child: child)
@@ -168,6 +171,7 @@ final class JSInspectValueWidget {
         depth: Int,
         engine: Engine,
         sessionID: UUID,
+        stored: StoredValue?,
         onExpand: @escaping () -> Void,
         keepAlive: inout [Any]
     ) -> Widget {
@@ -182,7 +186,7 @@ final class JSInspectValueWidget {
             indexLabel.valign = .start
             if isComposite(elements[idx]) { indexLabel.marginTop = 2 }
             row.append(child: indexLabel)
-            let child = build(value: elements[idx], depth: depth + 1, engine: engine, sessionID: sessionID, onExpand: onExpand, keepAlive: &keepers)
+            let child = build(value: elements[idx], depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
             child.hexpand = true
             child.halign = .start
             row.append(child: child)
@@ -202,6 +206,7 @@ final class JSInspectValueWidget {
         depth: Int,
         engine: Engine,
         sessionID: UUID,
+        stored: StoredValue?,
         onExpand: @escaping () -> Void,
         keepAlive: inout [Any]
     ) -> Widget {
@@ -213,14 +218,14 @@ final class JSInspectValueWidget {
             let entry = entries[idx]
             let row = Box(orientation: .horizontal, spacing: 4)
             row.hexpand = true
-            let keyChild = build(value: entry.key, depth: depth + 1, engine: engine, sessionID: sessionID, onExpand: onExpand, keepAlive: &keepers)
+            let keyChild = build(value: entry.key, depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
             keyChild.valign = .start
             row.append(child: keyChild)
             let arrow = labelWithMarkup(span("→", color: dim))
             arrow.valign = .start
             if isComposite(entry.value) { arrow.marginTop = 2 }
             row.append(child: arrow)
-            let valChild = build(value: entry.value, depth: depth + 1, engine: engine, sessionID: sessionID, onExpand: onExpand, keepAlive: &keepers)
+            let valChild = build(value: entry.value, depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
             valChild.hexpand = true
             valChild.halign = .start
             row.append(child: valChild)
@@ -234,6 +239,7 @@ final class JSInspectValueWidget {
         depth: Int,
         engine: Engine,
         sessionID: UUID,
+        stored: StoredValue?,
         onExpand: @escaping () -> Void,
         keepAlive: inout [Any]
     ) -> Widget {
@@ -248,7 +254,7 @@ final class JSInspectValueWidget {
             bullet.valign = .start
             if isComposite(elements[idx]) { bullet.marginTop = 2 }
             row.append(child: bullet)
-            let child = build(value: elements[idx], depth: depth + 1, engine: engine, sessionID: sessionID, onExpand: onExpand, keepAlive: &keepers)
+            let child = build(value: elements[idx], depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
             child.hexpand = true
             child.halign = .start
             row.append(child: child)
@@ -324,7 +330,7 @@ final class JSInspectValueWidget {
         return expander
     }
 
-    private static func makeBytesView(bytes: JSInspectValue.Bytes, keepAlive: inout [Any]) -> Widget {
+    private static func makeBytesView(bytes: JSInspectValue.Bytes, engine: Engine, sessionID: UUID, stored: StoredValue?, keepAlive: inout [Any]) -> Widget {
         let column = Box(orientation: .vertical, spacing: 4)
         column.hexpand = true
         column.halign = .start
@@ -336,12 +342,9 @@ final class JSInspectValueWidget {
         )
         column.append(child: header)
 
-        let hex = HexView(bytes: bytes.data)
-        keepAlive.append(hex)
-        hex.widget.hexpand = true
-        let rows = max(1, (bytes.data.count + 15) / 16)
-        hex.widget.setSizeRequest(width: -1, height: min(220, rows * 18 + 20))
-        column.append(child: hex.widget)
+        let inspected = InspectedBytesWidget(bytes: bytes, engine: engine, sessionID: sessionID, stored: stored)
+        keepAlive.append(inspected)
+        column.append(child: inspected.widget)
         return column
     }
 
