@@ -141,6 +141,56 @@ CFLAGS="-O2 -g -ffunction-sections -fdata-sections" \
     ./sys/install.sh --install
 ```
 
+### Prerequisites (Arch)
+
+Swift is not in the official repositories; take the binary build from
+the AUR (shown with `yay`, use whichever AUR helper you have):
+
+```sh
+sudo pacman -S --needed \
+    base-devel git gobject-introspection vala meson ninja go \
+    patchelf capstone wget nodejs npm \
+    gtk4 libadwaita gtksourceview5 librsvg libepoxy libsoup3 xz \
+    libgee json-glib libunwind libdwarf elfutils libnice \
+    libngtcp2 libbpf
+yay -S --needed swift-bin
+```
+
+Build and install `frida-core` into `/usr/local` (Arch's `libbpf` is
+recent enough, so no fallback is needed):
+
+```sh
+git clone https://github.com/frida/frida-core.git
+cd frida-core
+./configure --prefix=/usr/local --enable-shared \
+    --without-prebuilds=sdk \
+    --enable-barebone-backend --enable-compiler-backend
+make
+sudo make install
+```
+
+Build and install `radare2` into `/usr/local`:
+
+```sh
+git clone https://github.com/radareorg/radare2.git
+cd radare2
+CFLAGS="-O2 -g -ffunction-sections -fdata-sections" \
+    LDFLAGS="-Wl,--gc-sections" \
+    meson setup build --prefix=/usr/local --buildtype=plain \
+    -Dcli=disabled
+ninja -C build
+sudo ninja -C build install
+```
+
+Arch searches neither `/usr/local/lib` for libraries nor
+`/usr/local/lib/pkgconfig` for `.pc` files, so tell it about both:
+
+```sh
+echo /usr/local/lib | sudo tee /etc/ld.so.conf.d/usr-local.conf
+sudo ldconfig
+export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+```
+
 ### Build and run
 
 From `LumaGtk/`:
