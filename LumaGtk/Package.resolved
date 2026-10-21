@@ -115,7 +115,7 @@
       "location" : "https://github.com/frida/SwiftAdw.git",
       "state" : {
         "branch" : "development",
-        "revision" : "d0477ba26b32620f65281949a93031e5e159e8b2"
+        "revision" : "999da624167585d9613a839ebe12e24dd16bfcf8"
       }
     },
     {
@@ -142,7 +142,7 @@
       "location" : "https://github.com/frida/SwiftGdk.git",
       "state" : {
         "branch" : "gtk4-development",
-        "revision" : "f20519ffefd28720b845fc214e9ea9094b080c1d"
+        "revision" : "62f9c68345dc2cdb202ded0631c149e3a0cc69b8"
       }
     },
     {
@@ -232,7 +232,7 @@
       "location" : "https://github.com/frida/SwiftHarfBuzz.git",
       "state" : {
         "branch" : "development",
-        "revision" : "52194d416071535a70c8d1a11d5f9dd0b8a0e4c2"
+        "revision" : "d3b108cef235a4524114a58d20ed58589dcdfe2a"
       }
     },
     {
