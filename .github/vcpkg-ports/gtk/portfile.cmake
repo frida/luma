@@ -1,13 +1,13 @@
 # It installs only shared libs, regardless build type.
 vcpkg_check_linkage(ONLY_DYNAMIC_LIBRARY)
 
-# Source frida/gtk rather than an upstream tarball so we can ship the
+# Source frida-forks/gtk rather than an upstream tarball so we can ship the
 # Windows CSD / DWM shadow fix (GNOME/gtk!8929) ahead of its upstream
 # merge — without it, libadwaita windows render a solid black shadow
 # margin on Windows for lack of a GDK compositor.
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
-    REPO frida/gtk
+    REPO frida-forks/gtk
     REF 68e5f298872eae30e89c614f7dd23f935062e4df
     SHA512 ef86640305705c42bc48188ae158ccc0baad1240ffc0137f638b4d6ec1f63f424a0941420e5b3bbce28feda6b9d6f95334a6b4e0c071877eaf03ec71ad6dd077
     HEAD_REF main

@@ -1,5 +1,5 @@
 {
-  "originHash" : "b22386dc4bc1189af4f14a9261a77ab8ac08fedc34a02065c384cd9bfd838c3e",
+  "originHash" : "587e867385568f8745819e7bef7c4769c41eaced806419328be4ac9895319ad2",
   "pins" : [
     {
       "identity" : "frida-swift",
@@ -112,7 +112,7 @@
     {
       "identity" : "swiftadw",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/SwiftAdw.git",
+      "location" : "https://github.com/frida-forks/SwiftAdw.git",
       "state" : {
         "branch" : "development",
         "revision" : "999da624167585d9613a839ebe12e24dd16bfcf8"
@@ -211,7 +211,7 @@
     {
       "identity" : "swiftgtk",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/SwiftGtk.git",
+      "location" : "https://github.com/frida-forks/SwiftGtk.git",
       "state" : {
         "branch" : "gtk4-development",
         "revision" : "88011a439bfaa40529ac15a07924cbb85231199d"
@@ -220,7 +220,7 @@
     {
       "identity" : "swiftgtksourceview",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/SwiftGtkSourceView.git",
+      "location" : "https://github.com/frida-forks/SwiftGtkSourceView.git",
       "state" : {
         "branch" : "development",
         "revision" : "e90940b6d8e9525c8a585cfb0e1621385de8ae75"

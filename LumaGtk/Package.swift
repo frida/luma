@@ -86,9 +86,9 @@ let package = Package(
     ],
     dependencies: [
         .package(name: "luma", path: ".."),
-        .package(url: "https://github.com/frida/SwiftGtk.git", branch: "gtk4-development"),
-        .package(url: "https://github.com/frida/SwiftAdw.git", branch: "development"),
-        .package(url: "https://github.com/frida/SwiftGtkSourceView.git", branch: "development"),
+        .package(url: "https://github.com/frida-forks/SwiftGtk.git", branch: "gtk4-development"),
+        .package(url: "https://github.com/frida-forks/SwiftAdw.git", branch: "development"),
+        .package(url: "https://github.com/frida-forks/SwiftGtkSourceView.git", branch: "development"),
     ],
     targets: [
         .target(
