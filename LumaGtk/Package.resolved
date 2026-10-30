@@ -13,10 +13,10 @@
     {
       "identity" : "gir2swift",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/gir2swift.git",
+      "location" : "https://github.com/frida-forks/gir2swift.git",
       "state" : {
         "branch" : "development",
-        "revision" : "7cd90b3d75c0c1628b811e815853802bef3bf8e0"
+        "revision" : "6ceabed95366e850e22934a0895a1a2cb5c93271"
       }
     },
     {
@@ -115,97 +115,97 @@
       "location" : "https://github.com/frida-forks/SwiftAdw.git",
       "state" : {
         "branch" : "development",
-        "revision" : "999da624167585d9613a839ebe12e24dd16bfcf8"
+        "revision" : "fc1528abda59e983ce4d1120a73af95892389cc2"
       }
     },
     {
       "identity" : "swiftatk",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/SwiftAtk.git",
+      "location" : "https://github.com/frida-forks/SwiftAtk.git",
       "state" : {
         "branch" : "development",
-        "revision" : "2764a6bc5003a9693b8a8ff3dfb4c66bb62b2696"
+        "revision" : "c00c0ad22b54fc07660974fcc1711b7a565e4677"
       }
     },
     {
       "identity" : "swiftcairo",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/SwiftCairo.git",
+      "location" : "https://github.com/frida-forks/SwiftCairo.git",
       "state" : {
         "branch" : "development",
-        "revision" : "6a4d20a5a3a4cc7a370673ce5bb6d7552a39fd07"
+        "revision" : "169e307dddce627a02d69738cdee1e31fe0335bc"
       }
     },
     {
       "identity" : "swiftgdk",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/SwiftGdk.git",
+      "location" : "https://github.com/frida-forks/SwiftGdk.git",
       "state" : {
         "branch" : "gtk4-development",
-        "revision" : "62f9c68345dc2cdb202ded0631c149e3a0cc69b8"
+        "revision" : "7157230316f787818b4c2343e887513963380250"
       }
     },
     {
       "identity" : "swiftgdkpixbuf",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/SwiftGdkPixbuf.git",
+      "location" : "https://github.com/frida-forks/SwiftGdkPixbuf.git",
       "state" : {
         "branch" : "development",
-        "revision" : "cdd8087ebc4f4dfd542f2e1a43e4be214710c9e3"
+        "revision" : "4fe568a42a4abc571874b3baf379ef8d9012b4cf"
       }
     },
     {
       "identity" : "swiftgio",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/SwiftGIO.git",
+      "location" : "https://github.com/frida-forks/SwiftGIO.git",
       "state" : {
         "branch" : "development",
-        "revision" : "7955d7cffcf929c6525ec39d200efd4bd0a1d390"
+        "revision" : "742c930389e7812f50345addb94f0c82e16ebc13"
       }
     },
     {
       "identity" : "swiftglib",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/SwiftGLib.git",
+      "location" : "https://github.com/frida-forks/SwiftGLib.git",
       "state" : {
         "branch" : "development",
-        "revision" : "6430d760e838ebc37e0827fa9b90d5dede150152"
+        "revision" : "a70d5881d644eee1c9a51c03a46fc693221a371b"
       }
     },
     {
       "identity" : "swiftgmodule",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/SwiftGModule.git",
+      "location" : "https://github.com/frida-forks/SwiftGModule.git",
       "state" : {
         "branch" : "development",
-        "revision" : "bc69b920ab1848927efe3b3afd6ccef669f23fca"
+        "revision" : "b7f4ea041b4589a366c7dc19def8772fc56037af"
       }
     },
     {
       "identity" : "swiftgobject",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/SwiftGObject.git",
+      "location" : "https://github.com/frida-forks/SwiftGObject.git",
       "state" : {
         "branch" : "development",
-        "revision" : "e9e3563dec0ce12b942ee7e009dbdde6eb69702d"
+        "revision" : "9d8e88bafb2fd2a7a24c5e4cacebdaca7abf811b"
       }
     },
     {
       "identity" : "swiftgraphene",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/SwiftGraphene.git",
+      "location" : "https://github.com/frida-forks/SwiftGraphene.git",
       "state" : {
         "branch" : "development",
-        "revision" : "44e816cec75102f9defbefe553430ce14bc4ac28"
+        "revision" : "d5a1cbb0bcf809901380e91edaf0576ccec2542f"
       }
     },
     {
       "identity" : "swiftgsk",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/SwiftGsk.git",
+      "location" : "https://github.com/frida-forks/SwiftGsk.git",
       "state" : {
         "branch" : "development",
-        "revision" : "168860a4124806ea2dfafb9fd9477ff83af88aaa"
+        "revision" : "7f135f80cab144652ffca96094200784b79b91f4"
       }
     },
     {
@@ -214,7 +214,7 @@
       "location" : "https://github.com/frida-forks/SwiftGtk.git",
       "state" : {
         "branch" : "gtk4-development",
-        "revision" : "88011a439bfaa40529ac15a07924cbb85231199d"
+        "revision" : "664f8d323aa3df7fb1c76249ff467e5898bf8d2c"
       }
     },
     {
@@ -223,22 +223,22 @@
       "location" : "https://github.com/frida-forks/SwiftGtkSourceView.git",
       "state" : {
         "branch" : "development",
-        "revision" : "e90940b6d8e9525c8a585cfb0e1621385de8ae75"
+        "revision" : "804c3c121523d8812cfaf4b0fe37960738fb1397"
       }
     },
     {
       "identity" : "swiftharfbuzz",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/SwiftHarfBuzz.git",
+      "location" : "https://github.com/frida-forks/SwiftHarfBuzz.git",
       "state" : {
         "branch" : "development",
-        "revision" : "d3b108cef235a4524114a58d20ed58589dcdfe2a"
+        "revision" : "7334e7efa34d4aea00aed4f5293dc465372ae6ee"
       }
     },
     {
       "identity" : "swiftlibxml",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/SwiftLibXML.git",
+      "location" : "https://github.com/frida-forks/SwiftLibXML.git",
       "state" : {
         "branch" : "main",
         "revision" : "bf42585f43b95e2e9a2d7b0957c1697e2f54b332"
@@ -247,19 +247,19 @@
     {
       "identity" : "swiftpango",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/SwiftPango.git",
+      "location" : "https://github.com/frida-forks/SwiftPango.git",
       "state" : {
         "branch" : "development",
-        "revision" : "0926cb4b185eb08d8385d12421c76b1df56e7f28"
+        "revision" : "1ac3a34558780512d4979de16f21e3847ac8c2dd"
       }
     },
     {
       "identity" : "swiftpangocairo",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/frida/SwiftPangoCairo.git",
+      "location" : "https://github.com/frida-forks/SwiftPangoCairo.git",
       "state" : {
         "branch" : "development",
-        "revision" : "0e18a547afbe16274b3d27d526b4b1f373b04f04"
+        "revision" : "6034b1080df9a5626b3910d6acab69793768e447"
       }
     },
     {
