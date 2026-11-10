@@ -737,7 +737,7 @@ extension GLuint {
 
     static func compile(_ kind: GLenum, _ source: String) -> GLuint? {
         let shader = epoxy_glCreateShader(kind)
-        source.withCString { text in
+        source.withSmallFractionsAsExponents.withCString { text in
             var sources: [UnsafePointer<GLchar>?] = [text]
             epoxy_glShaderSource(shader, 1, &sources, nil)
         }
@@ -789,6 +789,27 @@ extension CanvasGeometry.Primitive {
         case .triangles: return GLenum(GL_TRIANGLES)
         case .triangleStrip: return GLenum(GL_TRIANGLE_STRIP)
         }
+    }
+}
+
+extension String {
+    /// VirtualBox's GL driver drops the zeros after the point of a literal
+    /// below one -- `0.085` arrives as `0.85`, `.05e1` as `5` -- while
+    /// exponent form arrives intact, so those are spelled that way: `85e-3`.
+    fileprivate var withSmallFractionsAsExponents: String {
+        let literal = try! NSRegularExpression(pattern: #"(?<![\w.])0*\.(0+)(\d+)(?:[eE]([+-]?\d+))?"#)
+        var spelled = ""
+        var cursor = startIndex
+        for match in literal.matches(in: self, range: NSRange(startIndex..., in: self)) {
+            let whole = Swift.Range(match.range, in: self)!
+            let zeros = self[Swift.Range(match.range(at: 1), in: self)!].count
+            let digits = self[Swift.Range(match.range(at: 2), in: self)!]
+            let exponent = Swift.Range(match.range(at: 3), in: self).flatMap { Int(self[$0]) } ?? 0
+            spelled += self[cursor..<whole.lowerBound]
+            spelled += "\(digits)e\(exponent - zeros - digits.count)"
+            cursor = whole.upperBound
+        }
+        return spelled + self[cursor...]
     }
 }
 
