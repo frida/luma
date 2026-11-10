@@ -7,8 +7,9 @@
 # bootstrap.ps1 provisions. The MSVC environment is loaded on demand, so
 # a plain PowerShell will do.
 
-[CmdletBinding()]
+[CmdletBinding(PositionalBinding=$false)]
 param(
+    [Parameter(Position=0)]
     [ValidateSet('debug','release')]
     [string] $Configuration = 'debug',
 

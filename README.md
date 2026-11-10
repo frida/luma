@@ -203,14 +203,31 @@ make install PREFIX=/usr/local
 
 ## Building the GTK frontend (Windows)
 
-Install four things by hand, then let the scripts do the rest:
+Install these by hand, then let the scripts do the rest:
 
 - **Visual Studio 2022** (or the Build Tools) with the *Desktop
   development with C++* workload
 - **[Swift for Windows](https://www.swift.org/install/windows/)** 6.2 or
   newer, on `PATH`
-- **Python 3** and **Node.js**, on `PATH`
+- **Python 3**, **Node.js** and **Go** 1.26 or newer, on `PATH` --
+  frida-core's compiler backend is built with Go
 - **Git for Windows**
+- **[7-Zip](https://www.7-zip.org/)**, on `PATH` or in its default
+  location -- `run.ps1` and `package-msi.ps1` unpack the Adwaita icon
+  theme with it
+- **[MSYS2](https://www.msys2.org/)** in `C:\msys64`, with the MinGW
+  GCC that frida-core's cgo build and QEMU are compiled with — from a
+  UCRT64 shell:
+
+  ```sh
+  pacman -S --needed base-devel git mingw-w64-ucrt-x86_64-toolchain \
+      mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-python \
+      mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-ntldd \
+      mingw-w64-x86_64-gcc
+  ```
+- **Developer Mode** (*Settings → System → For developers*), unless
+  you build from an elevated shell: QEMU's install tree is made of
+  symlinks, which Windows otherwise reserves for administrators
 
 Nothing else has to be a Developer PowerShell: the scripts load the MSVC
 environment themselves. From `LumaGtk/`, in an ordinary PowerShell:

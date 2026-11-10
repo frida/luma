@@ -78,10 +78,13 @@ function Sync-Checkout {
     param([string] $Url, [string] $Ref, [string] $Path, [switch] $Submodules)
     if (-not (Test-Path (Join-Path $Path '.git'))) {
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Path) | Out-Null
-        Invoke-Checked "git clone $Url" { git clone $Url $Path }
+        Invoke-Checked "git clone $Url" { git clone --config core.autocrlf=false $Url $Path }
     }
     Push-Location $Path
     try {
+        # Git for Windows turns autocrlf on system-wide, and the CRLFs it
+        # writes leave patches that meson applies to subprojects corrupt.
+        Invoke-Checked 'git config' { git config core.autocrlf false }
         & git rev-parse --quiet --verify "$Ref^{commit}" 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) {
             Invoke-Checked 'git fetch' { git fetch --tags origin }
@@ -162,7 +165,9 @@ function Get-BashPath {
     throw "No bash.exe found. Install Git for Windows."
 }
 
-foreach ($tool in @('git', 'python', 'node')) {
+$requiredTools = @('git', 'python', 'node')
+if (Test-Wanted 'frida-core') { $requiredTools += 'go' }
+foreach ($tool in $requiredTools) {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
         throw "$tool is not on PATH. See the Windows section of README.md for the prerequisites."
     }
@@ -174,7 +179,7 @@ foreach ($tool in @('meson', 'ninja')) {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
         Write-Step "Installing $tool"
         Invoke-Checked "pip install $tool" { python -m pip install --user --quiet meson ninja setuptools }
-        $userScripts = & python -c "import site, os; print(os.path.join(site.USER_BASE, 'Scripts'))"
+        $userScripts = & python -c "import os, sysconfig; print(sysconfig.get_path('scripts', f'{os.name}_user'))"
         if (-not (($env:PATH -split ';') -contains $userScripts)) {
             $env:PATH = "$userScripts;$env:PATH"
         }
