@@ -635,8 +635,7 @@ private final class Drawable {
     }
 }
 
-/// The screen-filling effect: the author's fragment source over a quad, with
-/// the vertex stage handing down only where on screen the pixel sits.
+/// The screen-filling effect: the author's fragment source over a quad.
 @MainActor
 private final class ScreenFilling {
     private(set) var program: GLuint = 0
@@ -646,17 +645,19 @@ private final class ScreenFilling {
 
     private static let vertexSource = """
         in vec2 a_pos;
-        out vec2 v_uv;
         void main() {
-            v_uv = a_pos * 0.5 + 0.5;
             gl_Position = vec4(a_pos, 0.0, 1.0);
         }
         """
 
+    /// Where the pixel sits is worked out from the fragment's own position
+    /// rather than handed down from the vertex stage: VirtualBox's GL driver
+    /// loses the interpolated value after some thousands of frames of the
+    /// welcome backdrop, which then fades to a single colour.
     private static let fragmentPreamble = """
-        in vec2 v_uv;
         out vec4 frag_color;
         uniform vec2 u_resolution;
+        #define v_uv (gl_FragCoord.xy / u_resolution)
         uniform float u_time;
         uniform float u_scheme;
         uniform float u_activity;
