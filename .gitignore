@@ -25,4 +25,9 @@ LumaGtk/crash.dmp
 
 # Pharo VM runtime debug log
 PharoDebug.log
+
+# The image's change log, and where the Windows VM sends its output when
+# the app has no console
+SwiftyPharo.changes
+/LumaGtk/stdout
 /LumaGtk/local.mk
