@@ -20,19 +20,12 @@ final class VirtualMachineView {
     private let alarmDot: Box
     private let logHost: Box
     private let screenHost: Box
+    private let presentation = VirtualMachinePresentation()
 
     private var log: VirtualMachineLog?
     private var screen: VirtualMachineScreen?
     private var shownSourceID: ObjectIdentifier?
-    private var screenActivity = VirtualMachineScreenActivity()
-    private var page: Page = .log
-    private var switchesToScreenOnceLive = true
-    private var seenAlarmLineNumber: Int?
-
-    private enum Page: String {
-        case log
-        case screen
-    }
+    private var shownPage: VirtualMachinePresentation.Page = .log
 
     init(engine: Engine, record: VirtualMachineRecord, sizing: VirtualMachineScreen.Sizing, fillsHeight: Bool) {
         self.engine = engine
@@ -55,8 +48,8 @@ final class VirtualMachineView {
         widget = Stack()
         widget.transitionType = .crossfade
         widget.vexpand = fillsHeight
-        _ = widget.addNamed(child: logHost, name: Page.log.rawValue)
-        _ = widget.addNamed(child: screenHost, name: Page.screen.rawValue)
+        _ = widget.addNamed(child: logHost, name: Self.logPageName)
+        _ = widget.addNamed(child: screenHost, name: Self.screenPageName)
 
         pageButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.togglePage() }
@@ -67,8 +60,7 @@ final class VirtualMachineView {
     }
 
     private func togglePage() {
-        switchesToScreenOnceLive = false
-        show(page == .log ? .screen : .log)
+        presentation.toggle()
         refreshPage()
     }
 
@@ -104,9 +96,6 @@ final class VirtualMachineView {
         if let log {
             logHost.append(child: log.widget)
         }
-        show(.log)
-        switchesToScreenOnceLive = true
-        seenAlarmLineNumber = nil
     }
 
     private func refreshScreen() {
@@ -115,14 +104,10 @@ final class VirtualMachineView {
         if sourceID != shownSourceID {
             showScreen(of: source)
         }
-        if let source {
-            screenActivity.observe(source)
-        }
     }
 
     private func showScreen(of source: (any VirtualMachineFrameSource)?) {
         shownSourceID = source.map { ObjectIdentifier($0) }
-        screenActivity = VirtualMachineScreenActivity()
         if let screen {
             screenHost.remove(child: screen.widget)
         }
@@ -134,29 +119,21 @@ final class VirtualMachineView {
     }
 
     private func refreshPage() {
-        if screen == nil || machine?.state.isFailed == true {
-            show(.log)
-        } else if switchesToScreenOnceLive, screenActivity.isLive {
-            switchesToScreenOnceLive = false
-            show(.screen)
-        }
+        presentation.update(
+            console: log?.console, display: machine?.display, isFailed: machine?.state.isFailed == true)
+        show(presentation.page)
 
         widget.visible = !isHidden && (log != nil || screen != nil)
         pageToggle.visible = screen != nil
-        pageButton.iconName = (page == .log) ? "video-display-symbolic" : "utilities-terminal-symbolic"
-        pageButton.tooltipText = (page == .log) ? "Show Screen" : "Show Log"
-
-        let lastAlarmLineNumber = log?.console.lastAlarmLineNumber
-        if page == .log {
-            seenAlarmLineNumber = lastAlarmLineNumber
-        }
-        alarmDot.visible = lastAlarmLineNumber != seenAlarmLineNumber
+        pageButton.iconName = (shownPage == .log) ? "video-display-symbolic" : "utilities-terminal-symbolic"
+        pageButton.tooltipText = (shownPage == .log) ? "Show Screen" : "Show Log"
+        alarmDot.visible = presentation.hasUnseenAlarm
     }
 
-    private func show(_ wanted: Page) {
-        guard wanted != page else { return }
-        page = wanted
-        widget.setVisibleChild(name: page.rawValue)
+    private func show(_ page: VirtualMachinePresentation.Page) {
+        guard page != shownPage else { return }
+        shownPage = page
+        widget.setVisibleChild(name: page == .log ? Self.logPageName : Self.screenPageName)
         if page == .log {
             log?.scrollToBottom()
         }
@@ -170,4 +147,7 @@ final class VirtualMachineView {
     private var machine: (any VirtualMachine)? {
         engine?.virtualMachines.machine(for: record)
     }
+
+    private static let logPageName = "log"
+    private static let screenPageName = "screen"
 }
