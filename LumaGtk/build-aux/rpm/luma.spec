@@ -46,6 +46,7 @@ cp -a "%{_sourcedir}/stage/." "%{buildroot}/"
 gtk-update-icon-cache -f /usr/share/icons/hicolor &>/dev/null || :
 update-mime-database /usr/share/mime &>/dev/null || :
 update-desktop-database /usr/share/applications &>/dev/null || :
+setcap cap_net_admin+ep /usr/lib/luma/frida-1.0/plugins/idund &>/dev/null || :
 
 %postun
 if [ $1 -eq 0 ]; then
