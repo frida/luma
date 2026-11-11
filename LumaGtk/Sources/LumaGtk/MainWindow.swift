@@ -2358,7 +2358,8 @@ final class MainWindow: InstrumentUIHost {
         guard let engine, let sessionID = currentSessionID() else { return }
         let existing = (try? engine.store.fetchInstruments(sessionID: sessionID)) ?? []
         let disabledDescriptorIDs = Set(existing.map { engine.descriptor(for: $0).id })
-        Task { @MainActor in
+        Task { @MainActor [weak self] in
+            guard let self else { return }
             let incompatibilityReasons = await self.resolveIncompatibilityReasons(
                 engine: engine,
                 sessionID: sessionID

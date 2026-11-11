@@ -1074,7 +1074,7 @@ final class AddressNotePopover {
                 noteID: id,
                 providerID: defaults.providerID,
                 modelID: defaults.modelID,
-                onDelta: { [weak self] delta in self?.appendStreamingDelta(delta) }
+                onDelta: { delta in self.appendStreamingDelta(delta) }
             )
             self.removeStreamingPlaceholder()
             if let reply {

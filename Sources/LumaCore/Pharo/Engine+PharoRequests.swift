@@ -143,7 +143,7 @@ private actor PharoEventBatches {
         isFlushScheduled = true
         Task {
             try? await Task.sleep(for: .milliseconds(16))
-            await flush()
+            flush()
         }
     }
 

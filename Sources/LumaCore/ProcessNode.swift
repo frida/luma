@@ -1075,7 +1075,7 @@ public final class ProcessNode: Identifiable {
     private func pullFile(at path: String, to destination: URL, onProgress: (Int64) -> Void) async throws {
         let (id, events) = openFileTransferChannel()
         defer { fileTransferChannels[id] = nil }
-        FileManager.default.createFile(atPath: destination.path, contents: nil)
+        _ = FileManager.default.createFile(atPath: destination.path, contents: nil)
         let handle = try FileHandle(forWritingTo: destination)
         defer { try? handle.close() }
         _ = try await script.exports.pullFile(path, id)

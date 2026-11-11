@@ -162,7 +162,9 @@ extension JSInspectValue {
             case .string(let value), .nativePointer(let value), .function(let value), .symbol(let value), .date(let value):
                 return value
             case .bigInt(let value):
-                return Int64(value) ?? UInt64(value) ?? value
+                if let signed = Int64(value) { return signed }
+                if let unsigned = UInt64(value) { return unsigned }
+                return value
             case .boolean(let value):
                 return value
             case .null, .undefined, .promise, .weakMap, .weakSet, .depthLimit, .circular:
