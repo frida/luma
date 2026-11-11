@@ -122,14 +122,15 @@ struct VirtualMachineControls: View {
     @Binding var failure: String?
 
     @State private var isConfirmingForget = false
+    @State private var presentation = VirtualMachinePresentation()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             summary
 
-            if !isMiniature, let display = machine?.display {
+            if !isMiniature, hasSomethingToShow {
                 HeightLimitedLayout(maximumHeight: maximumScreenHeight) {
-                    VirtualMachineDisplayView(display: display)
+                    VirtualMachineView(engine: engine, record: record, presentation: presentation, logHeight: Self.logHeight)
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -201,6 +202,10 @@ struct VirtualMachineControls: View {
                     .truncationMode(.tail)
             }
 
+            if !isMiniature, machine?.display != nil {
+                VirtualMachinePageToggle(presentation: presentation)
+            }
+
             primaryAction
 
             Menu {
@@ -216,11 +221,11 @@ struct VirtualMachineControls: View {
 
     @ViewBuilder
     private var primaryAction: some View {
-        if let machine {
+        if machine != nil || isBooting {
             action("Stop", systemImage: "stop.fill") {
                 Task { await engine.virtualMachines.stop(record) }
             }
-            .disabled(machine.state == .starting || engine.virtualMachines.isStopping(record))
+            .disabled(machine == nil || machine?.state == .starting || engine.virtualMachines.isStopping(record))
         } else {
             action(record.hasReadySnapshot ? "Resume where it was marked ready" : "Boot", systemImage: "play.fill") {
                 perform { _ = try await engine.virtualMachines.boot(record) }
@@ -278,10 +283,14 @@ struct VirtualMachineControls: View {
     }
 
     private static let miniatureHeight: CGFloat = 40
+    private static let logHeight: CGFloat = 240
 
     /// Running and stopped are what the button beside this already says; the
     /// states worth a word are the ones on the way to somewhere.
     private var passingState: String? {
+        if isBooting {
+            return VirtualMachineState.starting.summary
+        }
         if engine.virtualMachines.isStopping(record) {
             return "Stopping…"
         }
@@ -291,6 +300,14 @@ struct VirtualMachineControls: View {
         case .some(let state):
             return state.summary
         }
+    }
+
+    private var hasSomethingToShow: Bool {
+        engine.virtualMachines.console(for: record) != nil || machine?.display != nil
+    }
+
+    private var isBooting: Bool {
+        engine.virtualMachines.isBooting(record)
     }
 
     private var machine: (any VirtualMachine)? {

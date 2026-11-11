@@ -17,7 +17,9 @@ struct BootVirtualMachineSheet: View {
     @State private var agentPath: URL?
     @State private var parameters: [String: VirtualMachineParameterValue] = [:]
     @State private var imageSource: ImageSource = .starter
+    @State private var record: VirtualMachineRecord?
     @State private var machine: (any VirtualMachine)?
+    @State private var presentation = VirtualMachinePresentation()
     @State private var failure: String?
     @State private var isBooting = false
     @State private var isMarkingReady = false
@@ -27,11 +29,19 @@ struct BootVirtualMachineSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Boot Virtual Machine")
-                .font(.title3.weight(.semibold))
+            HStack {
+                Text("Boot Virtual Machine")
+                    .font(.title3.weight(.semibold))
 
-            if let machine {
-                bootedView(machine)
+                Spacer()
+
+                if machine?.display != nil {
+                    VirtualMachinePageToggle(presentation: presentation)
+                }
+            }
+
+            if let record {
+                machineView(record)
             } else if isBooting {
                 bootingView
             } else {
@@ -294,12 +304,10 @@ struct BootVirtualMachineSheet: View {
     private static let formGroupInset: CGFloat = 20
     private static let setupHeight: CGFloat = 400
 
-    private func bootedView(_ machine: any VirtualMachine) -> some View {
+    private func machineView(_ record: VirtualMachineRecord) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let display = machine.display {
-                VirtualMachineDisplayView(display: display)
-                    .frame(maxWidth: .infinity, minHeight: 320, maxHeight: .infinity)
-            }
+            VirtualMachineView(engine: engine, record: record, presentation: presentation, logHeight: nil)
+                .frame(maxWidth: .infinity, minHeight: 320, maxHeight: .infinity)
 
             Text("Drive the machine to the state you want to come back to, then mark it ready.")
                 .font(.footnote)
@@ -344,7 +352,7 @@ struct BootVirtualMachineSheet: View {
         HStack {
             Spacer()
 
-            Button(machine == nil && !isBooting ? "Cancel" : "Later") { finish() }
+            Button(record == nil && !isBooting ? "Cancel" : "Later") { finish() }
                 .disabled(isMarkingReady)
 
             if machine != nil || isBooting {
@@ -364,9 +372,15 @@ struct BootVirtualMachineSheet: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(machine == nil || isMarkingReady)
             } else {
-                Button("Boot") { boot() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(isBooting || !isReadyToBoot)
+                Button("Boot") {
+                    if let record {
+                        boot(record)
+                    } else {
+                        boot()
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(record == nil && !isReadyToBoot)
             }
         }
     }
@@ -388,6 +402,14 @@ struct BootVirtualMachineSheet: View {
         dismiss()
     }
 
+    private func boot(_ record: VirtualMachineRecord) {
+        isBooting = true
+        perform {
+            defer { isBooting = false }
+            machine = try await engine.virtualMachines.boot(record)
+        }
+    }
+
     private func boot() {
         guard let template = selectedTemplate else { return }
 
@@ -402,13 +424,15 @@ struct BootVirtualMachineSheet: View {
                     bootParameters[parameter] = .text(path.path)
                 }
             }
-            machine = try await engine.virtualMachines.create(
+            let record = try engine.virtualMachines.add(
                 template: template,
                 name: machineName,
                 parameters: bootParameters,
                 agentPath: agentPath
             )
+            self.record = record
             engine.setSidePanel(.virtualMachines)
+            machine = try await engine.virtualMachines.boot(record)
         }
     }
 
