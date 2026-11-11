@@ -96,6 +96,8 @@ final class AddInstrumentDialog {
         paned.vexpand = true
         paned.startChild = WidgetRef(listScroll)
         paned.endChild = WidgetRef(detailScroll)
+        paned.shrinkStartChild = false
+        paned.shrinkEndChild = false
 
         let toolbarView = Adw.ToolbarView()
         toolbarView.addTopBar(widget: header)

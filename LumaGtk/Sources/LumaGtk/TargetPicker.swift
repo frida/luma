@@ -141,8 +141,7 @@ final class TargetPicker {
 
         dialog = Adw.Dialog()
         dialog.set(title: reason == nil ? "New Session" : "Re-Establish Session")
-        dialog.set(contentWidth: 880)
-        dialog.set(contentHeight: 540)
+        dialog.set(followsContentSize: true)
 
         deviceList = ListBox()
         processList = ListBox()
@@ -279,6 +278,7 @@ final class TargetPicker {
 
         let paned = Paned(orientation: .horizontal)
         paned.position = 260
+        paned.shrinkStartChild = false
         let devicePane = buildDevicePane()
         paned.startChild = WidgetRef(devicePane)
 
@@ -301,6 +301,7 @@ final class TargetPicker {
         rightPane.append(child: Separator(orientation: .horizontal))
         rightPane.append(child: modeStack)
         paned.endChild = WidgetRef(rightPane)
+        paned.shrinkEndChild = false
         paned.hexpand = true
         paned.vexpand = true
 
@@ -500,6 +501,7 @@ final class TargetPicker {
         scroll.hexpand = true
         scroll.vexpand = true
         scroll.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
+        scroll.propagateNaturalWidth = true
         scroll.set(child: deviceList)
         column.append(child: scroll)
         return column
@@ -525,6 +527,9 @@ final class TargetPicker {
         let scroll = ScrolledWindow()
         scroll.hexpand = true
         scroll.vexpand = true
+        scroll.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
+        scroll.propagateNaturalWidth = true
+        scroll.propagateNaturalHeight = true
         scroll.set(child: processList)
 
         processContent.hexpand = true
@@ -1100,6 +1105,8 @@ final class TargetPicker {
         let nameLabel = Label(str: device.name)
         nameLabel.halign = .start
         nameLabel.ellipsize = EllipsizeMode.end
+        nameLabel.widthChars = 14
+        nameLabel.xalign = 0
         let idLabel = Label(str: device.id)
         idLabel.halign = .start
         idLabel.ellipsize = EllipsizeMode.end
@@ -1296,6 +1303,7 @@ final class TargetPicker {
             let subtitleLabel = Label(str: subtitle)
             subtitleLabel.halign = .start
             subtitleLabel.ellipsize = EllipsizeMode.middle
+            subtitleLabel.maxWidthChars = 64
             subtitleLabel.add(cssClass: "dim-label")
             subtitleLabel.add(cssClass: "caption")
             subtitleLabel.tooltipText = subtitle
