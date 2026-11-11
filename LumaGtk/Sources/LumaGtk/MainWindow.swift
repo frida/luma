@@ -2542,30 +2542,14 @@ final class MainWindow: InstrumentUIHost {
     private func select(_ newValue: SidebarSelection) {
         guard selection != newValue else { return }
         selection = newValue
-        if case .patterns = newValue {} else {
-            patternSidebar?.unselectAll()
-        }
+        unselectSidebarLists(except: sidebarList(owning: newValue))
         switch newValue {
         case .notebook:
-            sessionsList.unselectAll()
-            packagesList.unselectAll()
-            customInstrumentsList.unselectAll()
-            missionsListBox.unselectAll()
-            pharoListBox.unselectAll()
             notebookListBox.select(row: notebookRow)
         case .pharo:
-            sessionsList.unselectAll()
-            packagesList.unselectAll()
-            customInstrumentsList.unselectAll()
-            missionsListBox.unselectAll()
-            notebookListBox.unselectAll()
             pharoListBox.select(row: pharoRow)
         case .session, .module, .moduleSymbols, .swiftTypes, .swiftType, .thread, .repl, .files, .instrument, .instrumentComponent,
             .insight, .itrace:
-            notebookListBox.unselectAll()
-            packagesList.unselectAll()
-            customInstrumentsList.unselectAll()
-            missionsListBox.unselectAll()
             if let location = newValue.moduleLocation {
                 revealModuleContents(of: newValue)
                 reconcileSidebarGroupAfterSelection(sessionID: location.sessionID, group: .modules)
@@ -2575,20 +2559,12 @@ final class MainWindow: InstrumentUIHost {
                 selectCurrentSessionsRow()
             }
         case .package(let id):
-            notebookListBox.unselectAll()
-            sessionsList.unselectAll()
-            customInstrumentsList.unselectAll()
-            missionsListBox.unselectAll()
             if let idx = installedPackages.firstIndex(where: { $0.id == id }),
                 let row = packagesList.getRowAt(index: idx)
             {
                 packagesList.select(row: row)
             }
         case .customInstrumentDef(let defID):
-            notebookListBox.unselectAll()
-            sessionsList.unselectAll()
-            packagesList.unselectAll()
-            missionsListBox.unselectAll()
             if let def = engine?.customInstruments.def(withId: defID),
                 let idx = customInstrumentRows.firstIndex(of: .file(defID: defID, path: def.entrypoint)),
                 let row = customInstrumentsList.getRowAt(index: idx)
@@ -2596,38 +2572,20 @@ final class MainWindow: InstrumentUIHost {
                 customInstrumentsList.select(row: row)
             }
         case .customInstrumentFile(let defID, let path):
-            notebookListBox.unselectAll()
-            sessionsList.unselectAll()
-            packagesList.unselectAll()
-            missionsListBox.unselectAll()
             if let idx = customInstrumentRows.firstIndex(of: .file(defID: defID, path: path)),
                 let row = customInstrumentsList.getRowAt(index: idx)
             {
                 customInstrumentsList.select(row: row)
             }
         case .missionsList:
-            notebookListBox.unselectAll()
-            sessionsList.unselectAll()
-            packagesList.unselectAll()
-            customInstrumentsList.unselectAll()
             missionsListBox.select(row: missionsHeaderRow)
         case .mission(let id):
-            notebookListBox.unselectAll()
-            sessionsList.unselectAll()
-            packagesList.unselectAll()
-            customInstrumentsList.unselectAll()
             if let idx = missionRowIDs.firstIndex(of: id),
                 let row = missionsListBox.getRowAt(index: idx + 1)
             {
                 missionsListBox.select(row: row)
             }
         case .patterns(let pattern):
-            notebookListBox.unselectAll()
-            pharoListBox.unselectAll()
-            sessionsList.unselectAll()
-            packagesList.unselectAll()
-            customInstrumentsList.unselectAll()
-            missionsListBox.unselectAll()
             patternSidebar?.select(pattern)
         }
         updateResumeButtonVisibility()
@@ -2645,6 +2603,44 @@ final class MainWindow: InstrumentUIHost {
             break
         }
         focusEditorIfNeeded(for: newValue)
+    }
+
+    private func unselectSidebarLists(except owner: SidebarList) {
+        for list in SidebarList.allCases where list != owner {
+            switch list {
+            case .notebook: notebookListBox.unselectAll()
+            case .pharo: pharoListBox.unselectAll()
+            case .sessions: sessionsList.unselectAll()
+            case .packages: packagesList.unselectAll()
+            case .customInstruments: customInstrumentsList.unselectAll()
+            case .missions: missionsListBox.unselectAll()
+            case .patterns: patternSidebar?.unselectAll()
+            }
+        }
+    }
+
+    private func sidebarList(owning selection: SidebarSelection) -> SidebarList {
+        switch selection {
+        case .notebook: .notebook
+        case .pharo: .pharo
+        case .session, .module, .moduleSymbols, .swiftTypes, .swiftType, .thread, .repl, .files, .instrument, .instrumentComponent,
+            .insight, .itrace:
+            .sessions
+        case .package: .packages
+        case .customInstrumentDef, .customInstrumentFile: .customInstruments
+        case .missionsList, .mission: .missions
+        case .patterns: .patterns
+        }
+    }
+
+    private enum SidebarList: CaseIterable {
+        case notebook
+        case pharo
+        case sessions
+        case packages
+        case customInstruments
+        case missions
+        case patterns
     }
 
     private func reconcileSidebarGroupAfterSelection(sessionID: UUID, group: SessionSidebarGroup) {
