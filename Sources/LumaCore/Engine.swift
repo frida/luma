@@ -1658,7 +1658,11 @@ public final class Engine {
         }
         virtualMachines.load()
         #if canImport(Network) || canImport(CSoup)
+        let externalMCPWasRunning = hasRunningExternalMCPMission()
         purgeExternalMCPMissions()
+        if externalMCPWasRunning {
+            Task { try? await self.enableExternalMCPServer() }
+        }
         #endif
         notebookEntries = (try? store.fetchNotebookEntries()) ?? []
         sessions = (try? store.fetchSessions()) ?? []
@@ -5884,6 +5888,11 @@ public func deleteCustomInstrument(_ defID: UUID) async {
 
     public func unregisterActiveMCPServer(for missionID: UUID) {
         activeMCPServersByMissionID.removeValue(forKey: missionID)
+    }
+
+    private func hasRunningExternalMCPMission() -> Bool {
+        let missions = (try? store.fetchMissions()) ?? []
+        return missions.contains { $0.providerID == externalMCPProviderID && $0.status == .running }
     }
 
     func purgeExternalMCPMissions() {
