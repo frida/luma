@@ -86,6 +86,38 @@ public struct VirtualMachineFrame: @unchecked Sendable {
 public protocol VirtualMachineFrameStorage: AnyObject, Sendable {
 }
 
+@MainActor
+public struct VirtualMachineScreenActivity {
+    public private(set) var isLive = false
+    private var firstFingerprint: Int?
+    private var checkedRevision: UInt64?
+
+    public init() {}
+
+    public mutating func observe(_ source: any VirtualMachineFrameSource) {
+        guard !isLive, source.revision != checkedRevision, let frame = source.frame else { return }
+        checkedRevision = source.revision
+        let fingerprint = frame.fingerprint
+        if let firstFingerprint {
+            isLive = fingerprint != firstFingerprint
+        } else {
+            firstFingerprint = fingerprint
+        }
+    }
+}
+
+extension VirtualMachineFrame {
+    fileprivate var fingerprint: Int {
+        withPixels { pixels in
+            var hasher = Hasher()
+            hasher.combine(width)
+            hasher.combine(height)
+            hasher.combine(bytes: pixels)
+            return hasher.finalize()
+        }
+    }
+}
+
 public enum VirtualMachineFrameFormat: Sendable {
     case bgrx8888
     case bgra8888

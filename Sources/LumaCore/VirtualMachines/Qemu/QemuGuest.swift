@@ -357,9 +357,7 @@ struct QemuGuest {
         } else {
             arguments += vga.isEmpty ? ["-device", "virtio-gpu-pci"] : ["-vga", vga]
         }
-        arguments += [
-            "-serial", "file:\(request.storageDirectory.appendingPathComponent("serial.log").path)"
-        ]
+        arguments += ["-serial", "stdio"]
         if architecture == .x86 || architecture == .x86_64 {
             arguments += [
                 "-chardev",

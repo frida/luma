@@ -59,9 +59,12 @@ final class QemuMachine: VirtualMachine {
         let gdbPort = try Self.reserveGdbPort()
         let snapshotDisk = try createSnapshotDisk()
 
+        let serial = Pipe()
         let complaints = Pipe()
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = serial
         process.standardError = complaints
-        process.standardOutput = FileHandle.nullDevice
+        request.console.follow(serial.fileHandleForReading)
         collectComplaints(from: complaints.fileHandleForReading)
 
         process.executableURL = executable
@@ -121,6 +124,7 @@ final class QemuMachine: VirtualMachine {
         Task { [weak self] in
             for await line in handle.lines {
                 guard let self else { return }
+                request.console.append(line)
                 complaints.append(line)
                 complaints = complaints.suffix(Self.complaintsKept)
             }

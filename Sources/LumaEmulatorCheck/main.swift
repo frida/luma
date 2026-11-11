@@ -66,7 +66,8 @@ func run() async throws {
     let avdName = wanted ?? avds(of: template).first ?? ""
     guard !avdName.isEmpty else { fail("no AVD to launch") }
 
-    note("launching AVD \(avdName) (\(template.architecture.rawValue))…")
+    let transcript = FileManager.default.temporaryDirectory.appendingPathComponent("emulator-check-console.log")
+    note("launching AVD \(avdName) (\(template.architecture.rawValue)), console in \(transcript.path)…")
     let request = VirtualMachineLaunchRequest(
         id: UUID(),
         template: template,
@@ -74,7 +75,8 @@ func run() async throws {
         parameters: [AndroidEmulatorBackend.avdParameterID: .text(avdName)],
         agentPath: nil,
         storageDirectory: FileManager.default.temporaryDirectory,
-        resumesFromReadySnapshot: false
+        resumesFromReadySnapshot: false,
+        console: VirtualMachineConsole(transcript: transcript)
     )
     let machine = try await backend.launch(request)
     note("emulator launched; stub reported")

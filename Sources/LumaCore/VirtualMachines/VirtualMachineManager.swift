@@ -11,7 +11,9 @@ public final class VirtualMachineManager {
     public let starterImages: StarterImageLibrary
 
     private var running: [UUID: any VirtualMachine] = [:]
+    private var consoles: [UUID: VirtualMachineConsole] = [:]
     private var devices: [UUID: Device] = [:]
+    private var booting: Set<UUID> = []
     private var stopping: Set<UUID> = []
 
     private let deviceManager: DeviceManager
@@ -72,6 +74,10 @@ public final class VirtualMachineManager {
         running[record.id]
     }
 
+    public func console(for record: VirtualMachineRecord) -> VirtualMachineConsole? {
+        consoles[record.id]
+    }
+
     public func template(for record: VirtualMachineRecord) -> VirtualMachineTemplate? {
         templates.first { $0.id == record.templateID }
     }
@@ -82,6 +88,15 @@ public final class VirtualMachineManager {
         parameters: [String: VirtualMachineParameterValue],
         agentPath: URL?
     ) async throws -> any VirtualMachine {
+        try await boot(add(template: template, name: name, parameters: parameters, agentPath: agentPath))
+    }
+
+    public func add(
+        template: VirtualMachineTemplate,
+        name: String,
+        parameters: [String: VirtualMachineParameterValue],
+        agentPath: URL?
+    ) throws -> VirtualMachineRecord {
         let record = VirtualMachineRecord(
             name: name,
             templateID: template.id,
@@ -90,7 +105,7 @@ public final class VirtualMachineManager {
         )
         try store.save(record)
         records.append(record)
-        return try await boot(record)
+        return record
     }
 
     public func device(for record: VirtualMachineRecord) -> Device? {
@@ -109,22 +124,36 @@ public final class VirtualMachineManager {
         let machineDirectory = storageDirectory.appendingPathComponent(record.id.uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: machineDirectory, withIntermediateDirectories: true)
 
-        let machine = try await backend.launch(
-            VirtualMachineLaunchRequest(
-                id: record.id,
-                template: template,
-                name: record.name,
-                parameters: record.parameters,
-                agentPath: agentPath(for: record, template: template),
-                storageDirectory: machineDirectory,
-                resumesFromReadySnapshot: record.hasReadySnapshot && resumingFromReadySnapshot
+        let console = VirtualMachineConsole(transcript: machineDirectory.appendingPathComponent("console.log"))
+        consoles[record.id] = console
+
+        booting.insert(record.id)
+        defer { booting.remove(record.id) }
+
+        let machine: any VirtualMachine
+        do {
+            machine = try await backend.launch(
+                VirtualMachineLaunchRequest(
+                    id: record.id,
+                    template: template,
+                    name: record.name,
+                    parameters: record.parameters,
+                    agentPath: agentPath(for: record, template: template),
+                    storageDirectory: machineDirectory,
+                    resumesFromReadySnapshot: record.hasReadySnapshot && resumingFromReadySnapshot,
+                    console: console
+                )
             )
-        )
+        } catch {
+            console.append(error.localizedDescription, alarming: true)
+            throw error
+        }
         running[record.id] = machine
 
         do {
             try await addBareboneDevice(for: machine)
         } catch {
+            console.append(error.localizedDescription, alarming: true)
             await stop(record)
             throw error
         }
@@ -186,6 +215,10 @@ public final class VirtualMachineManager {
         "barebone-vm-\(machineID.uuidString)"
     }
 
+    public func isBooting(_ record: VirtualMachineRecord) -> Bool {
+        booting.contains(record.id)
+    }
+
     public func isStopping(_ record: VirtualMachineRecord) -> Bool {
         stopping.contains(record.id)
     }
@@ -212,6 +245,7 @@ public final class VirtualMachineManager {
     public func forget(_ record: VirtualMachineRecord) async {
         await stop(record)
         try? store.deleteVirtualMachine(id: record.id)
+        consoles[record.id] = nil
         records.removeAll { $0.id == record.id }
         try? FileManager.default.removeItem(at: storageDirectory.appendingPathComponent(record.id.uuidString, isDirectory: true))
     }

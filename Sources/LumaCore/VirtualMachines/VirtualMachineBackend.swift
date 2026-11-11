@@ -50,6 +50,7 @@ public struct VirtualMachineLaunchRequest: Sendable {
     public let agentPath: URL?
     public let storageDirectory: URL
     public let resumesFromReadySnapshot: Bool
+    public let console: VirtualMachineConsole
 
     public init(
         id: UUID,
@@ -58,7 +59,8 @@ public struct VirtualMachineLaunchRequest: Sendable {
         parameters: [String: VirtualMachineParameterValue],
         agentPath: URL?,
         storageDirectory: URL,
-        resumesFromReadySnapshot: Bool
+        resumesFromReadySnapshot: Bool,
+        console: VirtualMachineConsole
     ) {
         self.id = id
         self.template = template
@@ -67,6 +69,7 @@ public struct VirtualMachineLaunchRequest: Sendable {
         self.agentPath = agentPath
         self.storageDirectory = storageDirectory
         self.resumesFromReadySnapshot = resumesFromReadySnapshot
+        self.console = console
     }
 
     public func text(_ id: String) -> String? {

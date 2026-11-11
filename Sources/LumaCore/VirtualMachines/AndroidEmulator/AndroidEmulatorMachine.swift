@@ -31,6 +31,7 @@ final class AndroidEmulatorMachine: VirtualMachine {
     private let process = ChildProcess()
     private let runtimeDirectory: URL
     private let hasReadySnapshot: Bool
+    private let console: VirtualMachineConsole
     private var controlEndpoint: EmulatorControlEndpoint?
     private var gdbPort: UInt16 = 0
     private var qemuPid: HostProcessID?
@@ -49,6 +50,7 @@ final class AndroidEmulatorMachine: VirtualMachine {
         self.adb = adb
         self.avd = avd
         self.hasReadySnapshot = request.resumesFromReadySnapshot
+        self.console = request.console
         self.runtimeDirectory = GuestSocketDirectory.make()
     }
 
@@ -79,22 +81,18 @@ final class AndroidEmulatorMachine: VirtualMachine {
         let usesVsock = await Task.detached { Self.kernelSupportsVsock(kernelImage) }.value
         #endif
 
-        // Boot from the ready snapshot when resuming, or from the one named in the environment for a
-        // fast debug loop; either way never save on exit, so injection damage is discarded.
-        let snapshot = hasReadySnapshot
-            ? Self.readySnapshotName
-            : ProcessInfo.processInfo.environment["FRIDA_EMULATOR_SNAPSHOT"]
-
+        // Never save on exit, so injection damage is discarded.
         process.executableURL = emulator
         process.arguments = [
             "@\(avd.name)",
+            "-show-kernel",
             "-no-window",
             "-no-audio",
             "-no-boot-anim",
             "-gpu", "swiftshader_indirect",
         ]
-        if let snapshot {
-            process.arguments! += ["-snapshot", snapshot, "-no-snapshot-save"]
+        if hasReadySnapshot {
+            process.arguments! += ["-snapshot", Self.readySnapshotName, "-no-snapshot-save"]
         } else {
             process.arguments! += ["-no-snapshot"]
         }
@@ -112,16 +110,12 @@ final class AndroidEmulatorMachine: VirtualMachine {
                 "-device", "virtio-serial-pci,id=\(Self.hostlinkController)",
             ]
         }
-        if let path = ProcessInfo.processInfo.environment["FRIDA_EMULATOR_KERNEL_LOG"] {
-            process.arguments!.insert("-show-kernel", at: 1)
-            FileManager.default.createFile(atPath: path, contents: nil)
-            let sink = FileHandle(forWritingAtPath: path)!
-            process.standardOutput = sink
-            process.standardError = sink
-        } else {
-            process.standardOutput = FileHandle.nullDevice
-            process.standardError = FileHandle.nullDevice
-        }
+        let output = Pipe()
+        let complaints = Pipe()
+        process.standardOutput = output
+        process.standardError = complaints
+        console.follow(output.fileHandleForReading)
+        console.follow(complaints.fileHandleForReading)
 
         do {
             try process.run()
