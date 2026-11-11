@@ -442,6 +442,17 @@ enum StyleSheet {
     .luma-member-dot.offline {
         background-color: alpha(@theme_fg_color, 0.4);
     }
+    .luma-alarm-dot {
+        min-width: 8px;
+        min-height: 8px;
+        margin: 4px;
+        border-radius: 50%;
+        background-color: @error_color;
+        box-shadow: 0 0 0 2px @window_bg_color;
+    }
+    .luma-machine-log {
+        font-size: 0.8em;
+    }
     .luma-member-owner-badge {
         color: @accent_color;
         min-width: 12px;

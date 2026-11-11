@@ -162,12 +162,10 @@ private final class MachineRow {
     private let stateLabel: Label
     private let primaryButton: Button
     private let disclosure: Button
-    private let screenHost: Box
     private let menuButton: Button
+    private let view: VirtualMachineView
 
     private var isCollapsed: Bool
-    private var screen: VirtualMachineScreen?
-    private var shownMachineID: ObjectIdentifier?
     private var lastSummary: String?
 
     init(
@@ -219,6 +217,10 @@ private final class MachineRow {
         stateLabel.ellipsize = .end
         summary.append(child: stateLabel)
 
+        view = VirtualMachineView(engine: engine, record: record, sizing: .fitsContainer, fillsHeight: false)
+        view.isHidden = isCollapsed
+        summary.append(child: view.pageToggle)
+
         primaryButton = Button()
         primaryButton.add(cssClass: "flat")
         summary.append(child: primaryButton)
@@ -231,8 +233,7 @@ private final class MachineRow {
 
         widget.append(child: summary)
 
-        screenHost = Box(orientation: .vertical, spacing: 0)
-        widget.append(child: screenHost)
+        widget.append(child: view.widget)
 
         disclosure.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.toggleCollapsed() }
@@ -255,14 +256,17 @@ private final class MachineRow {
         isCollapsed.toggle()
         disclosure.iconName = isCollapsed ? "pan-end-symbolic" : "pan-down-symbolic"
         onToggleCollapsed(isCollapsed)
-        refreshScreen()
+        view.isHidden = isCollapsed
     }
 
     func refreshState() {
         let machine = self.machine
+        let isBooting = engine?.virtualMachines.isBooting(record) ?? false
         let isStopping = engine?.virtualMachines.isStopping(record) ?? false
         let summary: String?
-        if isStopping {
+        if isBooting {
+            summary = VirtualMachineState.starting.panelSummary
+        } else if isStopping {
             summary = "Stopping…"
         } else {
             switch machine?.state {
@@ -277,46 +281,16 @@ private final class MachineRow {
             stateLabel.visible = (summary != nil)
         }
 
-        if machine != nil {
+        if machine != nil || isBooting {
             primaryButton.iconName = "media-playback-stop-symbolic"
             primaryButton.tooltipText = "Stop"
-            primaryButton.sensitive = (machine?.state != .starting) && !isStopping
+            primaryButton.sensitive = machine != nil && machine?.state != .starting && !isStopping
         } else {
             primaryButton.iconName = "media-playback-start-symbolic"
             primaryButton.tooltipText =
                 record.hasReadySnapshot ? "Resume where it was marked ready" : "Boot"
             primaryButton.sensitive = true
         }
-
-        refreshScreen()
-    }
-
-    private func refreshScreen() {
-        let wanted: (any VirtualMachineFrameSource)?
-        if !isCollapsed, case .frames(let source)? = machine?.display {
-            wanted = source
-        } else {
-            wanted = nil
-        }
-
-        let wantedID = wanted.map { ObjectIdentifier($0) }
-        guard wantedID != shownMachineID else { return }
-        shownMachineID = wantedID
-
-        while let child = screenHost.firstChild {
-            screenHost.remove(child: child)
-        }
-        screen = nil
-
-        guard let wanted else {
-            screenHost.visible = false
-            return
-        }
-
-        let screen = VirtualMachineScreen(source: wanted)
-        self.screen = screen
-        screenHost.append(child: screen.widget)
-        screenHost.visible = true
     }
 
     private func presentMenu() {
@@ -433,5 +407,10 @@ extension VirtualMachineState {
         case .stopped: return "Stopped"
         case .failed(let reason): return reason
         }
+    }
+
+    var isFailed: Bool {
+        guard case .failed = self else { return false }
+        return true
     }
 }

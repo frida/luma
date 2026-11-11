@@ -15,6 +15,7 @@ final class BootVirtualMachineDialog {
     private let onBooted: (Device) -> Void
 
     private let dialog: Adw.Dialog
+    private let header: Adw.HeaderBar
     private let templateRow: Adw.ComboRow
     private let nameRow: Adw.EntryRow
     private let machineGroup: Adw.PreferencesGroup
@@ -35,8 +36,9 @@ final class BootVirtualMachineDialog {
     private var versionsRequested = false
     private var fetchedVersionFlavor: BareboneAgentFlavor?
     private var pendingFileParameter: String?
+    private var record: VirtualMachineRecord?
     private var machine: (any VirtualMachine)?
-    private var screen: VirtualMachineScreen?
+    private var view: VirtualMachineView?
 
     init(parent: Gtk.Window, engine: Engine, onBooted: @escaping (Device) -> Void) {
         self.parent = parent
@@ -52,7 +54,7 @@ final class BootVirtualMachineDialog {
         dialog.set(contentWidth: 520)
         dialog.set(contentHeight: 640)
 
-        let header = Adw.HeaderBar()
+        header = Adw.HeaderBar()
         cancelButton = Button(label: "Cancel")
         header.packStart(child: cancelButton)
         bootButton = Button(label: "Boot")
@@ -117,6 +119,8 @@ final class BootVirtualMachineDialog {
                 guard let self else { return }
                 if let machine = self.machine {
                     self.markReady(machine)
+                } else if let record = self.record {
+                    self.boot(record)
                 } else {
                     self.boot()
                 }
@@ -446,14 +450,15 @@ final class BootVirtualMachineDialog {
                         parameters[parameterID] = .text(url.path)
                     }
                 }
-                let machine = try await engine.virtualMachines.create(
+                let record = try engine.virtualMachines.add(
                     template: template,
                     name: name,
                     parameters: parameters,
                     agentPath: agentPath.map { URL(fileURLWithPath: $0) })
-                self.machine = machine
-                self.showBootedView(machine)
+                self.record = record
+                self.showBootingView(record)
                 engine.setSidePanel(.virtualMachines)
+                self.boot(record)
             } catch {
                 showFailure(error.localizedDescription)
                 bootButton.sensitive = true
@@ -461,25 +466,21 @@ final class BootVirtualMachineDialog {
         }
     }
 
-    private func showBootedView(_ machine: any VirtualMachine) {
-        dialog.followsContentSize = true
-        scroll.propagateNaturalWidth = true
-        scroll.propagateNaturalHeight = true
+    private func showBootingView(_ record: VirtualMachineRecord) {
         cancelButton.label = "Later"
-        bootButton.label = "Mark Ready"
-        bootButton.sensitive = true
 
         let content = Box(orientation: .vertical, spacing: 8)
+        content.vexpand = true
         content.marginStart = 18
         content.marginEnd = 18
         content.marginTop = 12
         content.marginBottom = 18
 
-        if case .frames(let source)? = machine.display {
-            let screen = VirtualMachineScreen(source: source, sizing: .guestResolution)
-            content.append(child: screen.widget)
-            self.screen = screen
-        }
+        let view = VirtualMachineView(engine: engine, record: record, sizing: .guestResolution, fillsHeight: true)
+        view.onScreenAppeared = { [weak self] in self?.fitToScreen() }
+        header.packEnd(child: view.pageToggle)
+        content.append(child: view.widget)
+        self.view = view
 
         let hint = Label(str: "Drive the machine to the state you want to come back to, then mark it ready.")
         hint.add(cssClass: "dim-label")
@@ -491,6 +492,28 @@ final class BootVirtualMachineDialog {
         content.append(child: failureLabel)
 
         scroll.child = WidgetRef(content)
+    }
+
+    private func fitToScreen() {
+        dialog.followsContentSize = true
+        scroll.propagateNaturalWidth = true
+        scroll.propagateNaturalHeight = true
+    }
+
+    private func boot(_ record: VirtualMachineRecord) {
+        failureLabel.visible = false
+        bootButton.label = "Mark Ready"
+        bootButton.sensitive = false
+
+        Task { @MainActor in
+            do {
+                self.machine = try await engine.virtualMachines.boot(record)
+            } catch {
+                showFailure(error.localizedDescription)
+                bootButton.label = "Boot"
+            }
+            bootButton.sensitive = true
+        }
     }
 
     private func markReady(_ machine: any VirtualMachine) {

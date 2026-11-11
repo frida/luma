@@ -43,6 +43,11 @@ final class BottomScroller {
         setPinned(true)
     }
 
+    func scrollToBottom() {
+        setPinned(true)
+        schedule()
+    }
+
     private func setPinned(_ value: Bool) {
         guard value != pinned else { return }
         pinned = value
