@@ -472,51 +472,17 @@ final class REPLPane {
         case .binary(let data, let meta):
             let kind = meta?.typedArray ?? "binary"
             let header = "<\(kind) \(data.count) bytes>\n"
-            return header + Self.formatHexdumpPreview(data: data, maxLines: 4)
+            return header + hexDumpPreview(of: data)
         }
     }
 
-    private static func formatHexdumpPreview(data: Data, maxLines: Int) -> String {
+    private func hexDumpPreview(of data: Data) -> String {
         if data.isEmpty {
             return "<no data>"
         }
-        let bytes = [UInt8](data)
-        let total = bytes.count
-        let cap = min(total, maxLines * 16)
-        var out = ""
-        var i = 0
-        while i < cap {
-            out += String(format: "0x%016llx  ", UInt64(i))
-            var hexPart = ""
-            var asciiPart = ""
-            for col in 0..<16 {
-                let idx = i + col
-                if col == 8 {
-                    hexPart += " "
-                }
-                if idx < cap {
-                    let b = bytes[idx]
-                    hexPart += String(format: "%02x", b)
-                    if (0x20...0x7e).contains(b) {
-                        asciiPart.append(Character(UnicodeScalar(b)))
-                    } else {
-                        asciiPart.append(".")
-                    }
-                } else {
-                    hexPart += "  "
-                    asciiPart.append(" ")
-                }
-                if col != 15 {
-                    hexPart += " "
-                }
-            }
-            out += hexPart + "  |" + asciiPart + "|\n"
-            i += 16
-        }
-        if total > cap {
-            out += "\u{2026} (total \(total) bytes)"
-        }
-        return out
+        let previewLength = 4 * 16
+        let preview = hexDump(data.prefix(previewLength))
+        return data.count > previewLength ? "\(preview)\n\u{2026} (total \(data.count) bytes)" : preview
     }
 
     private static func makeEmptyState() -> Box {

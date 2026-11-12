@@ -1,18 +1,18 @@
 import Foundation
-import LumaCore
 
 extension JSInspectValue {
-    /// Multi-line plain-text rendering of a JS value, mirroring the layout of
-    /// the SwiftUI host's pretty printer (without colour).
-    func prettyDescription() -> String {
+    public enum BytesPresentation {
+        case summary
+        case hexDump
+    }
+
+    public func prettyDescription(bytes bytesPresentation: BytesPresentation = .summary) -> String {
         var output = ""
-        appendPretty(into: &output, indentLevel: 0)
+        appendPretty(into: &output, indentLevel: 0, bytesPresentation: bytesPresentation)
         return output
     }
 
-    /// Compact one-line rendering used for inline contexts (event rows,
-    /// notebook headers, etc.).
-    var inlineDescription: String {
+    public var inlineDescription: String {
         switch self {
         case .number(let n):
             if n.rounded(.towardZero) == n {
@@ -69,15 +69,23 @@ extension JSInspectValue {
         }
     }
 
-    private func appendPretty(into output: inout String, indentLevel: Int) {
+    private func appendPretty(into output: inout String, indentLevel: Int, bytesPresentation: BytesPresentation) {
         let indent = String(repeating: "  ", count: indentLevel)
         let childIndent = String(repeating: "  ", count: indentLevel + 1)
 
         switch self {
         case .number, .string, .nativePointer, .null, .boolean, .undefined,
              .bigInt, .symbol, .date, .regExp, .promise, .weakMap, .weakSet,
-             .depthLimit, .circular, .function, .bytes:
+             .depthLimit, .circular, .function:
             output += inlineDescription
+
+        case .bytes(let bytes):
+            output += inlineDescription
+            if bytesPresentation == .hexDump, !bytes.data.isEmpty {
+                for line in hexDump(bytes.data, baseAddress: bytes.address ?? 0).split(separator: "\n") {
+                    output += "\n\(childIndent)\(line)"
+                }
+            }
 
         case .error(let name, let message, let stack):
             output += message.isEmpty ? name : "\(name): \(message)"
@@ -95,7 +103,7 @@ extension JSInspectValue {
             output += "{\n"
             for (idx, prop) in props.enumerated() {
                 output += "\(childIndent)\(prop.displayKey): "
-                prop.value.appendPretty(into: &output, indentLevel: indentLevel + 1)
+                prop.value.appendPretty(into: &output, indentLevel: indentLevel + 1, bytesPresentation: bytesPresentation)
                 output += idx == props.count - 1 ? "\n" : ",\n"
             }
             output += "\(indent)}"
@@ -108,7 +116,7 @@ extension JSInspectValue {
             output += "[\n"
             for (idx, item) in items.enumerated() {
                 output += childIndent
-                item.appendPretty(into: &output, indentLevel: indentLevel + 1)
+                item.appendPretty(into: &output, indentLevel: indentLevel + 1, bytesPresentation: bytesPresentation)
                 output += idx == items.count - 1 ? "\n" : ",\n"
             }
             output += "\(indent)]"
@@ -121,9 +129,9 @@ extension JSInspectValue {
             output += "Map{\n"
             for (idx, entry) in entries.enumerated() {
                 output += childIndent
-                entry.key.appendPretty(into: &output, indentLevel: indentLevel + 1)
+                entry.key.appendPretty(into: &output, indentLevel: indentLevel + 1, bytesPresentation: bytesPresentation)
                 output += " => "
-                entry.value.appendPretty(into: &output, indentLevel: indentLevel + 1)
+                entry.value.appendPretty(into: &output, indentLevel: indentLevel + 1, bytesPresentation: bytesPresentation)
                 output += idx == entries.count - 1 ? "\n" : ",\n"
             }
             output += "\(indent)}"
@@ -136,7 +144,7 @@ extension JSInspectValue {
             output += "Set[\n"
             for (idx, item) in items.enumerated() {
                 output += "\(childIndent)• "
-                item.appendPretty(into: &output, indentLevel: indentLevel + 1)
+                item.appendPretty(into: &output, indentLevel: indentLevel + 1, bytesPresentation: bytesPresentation)
                 output += idx == items.count - 1 ? "\n" : ",\n"
             }
             output += "\(indent)]"
@@ -145,7 +153,7 @@ extension JSInspectValue {
 }
 
 extension JSInspectValue.Property {
-    var displayKey: String {
+    public var displayKey: String {
         switch key {
         case .string(let s): return s
         case .symbol(let t): return t

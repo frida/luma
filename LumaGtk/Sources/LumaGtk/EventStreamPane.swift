@@ -3,6 +3,7 @@ import CGraphene
 import CLuma
 import CPango
 import Foundation
+import Gdk
 import struct Graphene.PointRef
 import Gtk
 import LumaCore
@@ -40,6 +41,7 @@ final class EventStreamPane {
     private let searchEntry: Entry
     private let pauseButton: ToggleButton
     private let overflowMenuButton: MenuButton
+    private let copyEventsButton: Button
     private let clearEventsButton: Button
     private let soundEventsToggle: CheckButton
     private let liveIndicatorBox: Box
@@ -145,6 +147,10 @@ final class EventStreamPane {
         pauseButton.add(cssClass: "flat")
         filterBar.append(child: pauseButton)
 
+        copyEventsButton = Button(label: "Copy Events")
+        copyEventsButton.add(cssClass: "flat")
+        copyEventsButton.tooltipText = "Copy the events shown as text"
+
         clearEventsButton = Button(label: "Clear Events")
         clearEventsButton.add(cssClass: "flat")
         clearEventsButton.add(cssClass: "luma-menu-destructive")
@@ -159,6 +165,7 @@ final class EventStreamPane {
         overflowBox.marginTop = 6
         overflowBox.marginBottom = 6
         overflowBox.append(child: soundEventsToggle)
+        overflowBox.append(child: copyEventsButton)
         overflowBox.append(child: clearEventsButton)
 
         let overflowPopover = Popover()
@@ -269,6 +276,14 @@ final class EventStreamPane {
         soundEventsToggle.onToggled { [weak self] button in
             MainActor.assumeIsolated {
                 self?.engine?.eventChime.isEnabled = button.active
+            }
+        }
+
+        copyEventsButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.overflowMenuButton.popdown()
+                self.copyToClipboard(self.filteredEvents)
             }
         }
 
@@ -735,8 +750,7 @@ final class EventStreamPane {
     }
 
     private func makeSourceBadge(for event: RuntimeEvent) -> Widget {
-        let text = sourceBadgeText(for: event)
-        let label = Label(str: text)
+        let label = Label(str: engine!.sourceLabel(for: event))
         label.add(cssClass: "luma-event-badge")
         label.add(cssClass: "luma-event-source-\(colorIndex(for: badgeColorKey(for: event)))")
         label.valign = .center
@@ -749,35 +763,6 @@ final class EventStreamPane {
             hash = (hash &* 33) &+ UInt32(byte)
         }
         return Int(hash % 8)
-    }
-
-    private func sourceBadgeText(for event: RuntimeEvent) -> String {
-        let process = processName(for: event)
-        switch event.source {
-        case .processOutput(let fd):
-            let channel: String
-            switch fd {
-            case 1: channel = "stdout"
-            case 2: channel = "stderr"
-            default: channel = "fd\(fd)"
-            }
-            return "\(process) • \(channel)"
-        case .script:
-            return "\(process) • Script Runtime"
-        case .console:
-            return "\(process) • Console"
-        case .repl:
-            return "\(process) • REPL"
-        case .instrument:
-            let name = instrument(for: event)
-                .map { engine?.descriptor(for: $0).displayName ?? "Instrument" } ?? "Instrument"
-            return "\(name) • \(process)"
-        case .spawnGating(_, let deviceName, _, _, let outcome):
-            let label = outcome == .captured ? "Spawn Captured" : "Spawn Released"
-            return "\(deviceName) • \(label)"
-        case .engine(let subsystem):
-            return "Engine • \(subsystem)"
-        }
     }
 
     private func badgeColorKey(for event: RuntimeEvent) -> String {
@@ -1033,8 +1018,15 @@ final class EventStreamPane {
 
     private func presentRowContextMenu(at anchor: Widget, x: Double, y: Double, event: RuntimeEvent) {
         ContextMenu.present([
-            [.init("Pin to Notebook") { [weak self] in self?.pinToNotebook(event) }],
+            [
+                .init("Copy") { [weak self] in self?.copyToClipboard([event]) },
+                .init("Pin to Notebook") { [weak self] in self?.pinToNotebook(event) },
+            ],
         ], at: anchor, x: x, y: y)
+    }
+
+    private func copyToClipboard(_ events: [RuntimeEvent]) {
+        Display.getDefault()!.clipboard.set(text: engine!.transcript(of: events))
     }
 
     private func pinToNotebook(_ event: RuntimeEvent) {
@@ -1089,6 +1081,7 @@ final class EventStreamPane {
     ) {
         ContextMenu.present([
             [
+                .init("Copy") { [weak self] in self?.copyToClipboard([event]) },
                 .init("Pin to Notebook") { [weak self] in self?.pinToNotebook(event) },
                 .init("Go to Hook") { [weak self] in self?.onNavigateToHook?(sessionID, instrumentID, hookID) },
             ],

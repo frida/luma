@@ -272,6 +272,12 @@ struct EventStreamView: View, Equatable {
 
             Divider()
 
+            Button {
+                Platform.copyToClipboard(engine.transcript(of: filteredEvents))
+            } label: {
+                Label("Copy Events", systemImage: "doc.on.doc")
+            }
+
             Button(role: .destructive) {
                 engine.clearEventLog()
                 resetAllEventState()
@@ -726,6 +732,12 @@ struct EventRow: View, Equatable {
         .contentShape(Rectangle())
         .contextMenu {
             Button {
+                Platform.copyToClipboard(engine.transcript(of: [evt]))
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+
+            Button {
                 pinAction()
             } label: {
                 Label("Pin to Notebook", systemImage: "pin")
@@ -900,51 +912,13 @@ private struct EventSourceBadge: View {
     let engine: Engine
 
     var body: some View {
-        Text(labelText)
+        Text(engine.sourceLabel(for: evt))
             .font(.caption2)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(backgroundColor.opacity(0.15))
             .foregroundStyle(backgroundColor)
             .clipShape(RoundedRectangle(cornerRadius: 4))
-    }
-
-    private var processName: String {
-        engine.session(id: evt.sessionID ?? UUID())?.processName ?? ""
-    }
-
-    private var labelText: String {
-        switch evt.source {
-        case .processOutput(let fd):
-            let channel: String = {
-                switch fd {
-                case 1: return "stdout"
-                case 2: return "stderr"
-                default: return "fd\(fd)"
-                }
-            }()
-            return "\(processName) • \(channel)"
-
-        case .script:
-            return "\(processName) • Script Runtime"
-
-        case .console:
-            return "\(processName) • Console"
-
-        case .repl:
-            return "\(processName) • REPL"
-
-        case .instrument:
-            let name = engine.instrument(forEvent: evt).map { engine.descriptor(for: $0).displayName } ?? "Instrument"
-            return "\(name) • \(processName)"
-
-        case .spawnGating(_, let deviceName, _, _, let outcome):
-            let label = outcome == .captured ? "Spawn Captured" : "Spawn Released"
-            return "\(deviceName) • \(label)"
-
-        case .engine(let subsystem):
-            return "Engine • \(subsystem)"
-        }
     }
 
     private var backgroundColor: Color {

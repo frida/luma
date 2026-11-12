@@ -446,53 +446,6 @@ final class NotebookPane {
         return card
     }
 
-    private static func formatHexdumpPreview(data: Data, maxLines: Int) -> String {
-        let bytes = [UInt8](data)
-        let total = bytes.count
-        let cap = min(total, maxLines * 16)
-        var out = ""
-        var i = 0
-        while i < cap {
-            out += String(format: "0x%08x  ", i)
-            var hexPart = ""
-            var asciiPart = ""
-            for col in 0..<16 {
-                let idx = i + col
-                if col == 8 {
-                    hexPart += " "
-                }
-                if idx < cap {
-                    let b = bytes[idx]
-                    hexPart += String(format: "%02x", b)
-                    if (0x20...0x7e).contains(b) {
-                        asciiPart.append(Character(UnicodeScalar(b)))
-                    } else {
-                        asciiPart.append(".")
-                    }
-                } else {
-                    hexPart += "  "
-                    asciiPart.append(" ")
-                }
-                if col != 15 {
-                    hexPart += " "
-                }
-            }
-            out += hexPart
-            out += "  |"
-            out += asciiPart
-            out += "|"
-            i += 16
-            if i < cap {
-                out += "\n"
-            }
-        }
-        if total > cap {
-            if !out.isEmpty { out += "\n" }
-            out += "… (total \(total) bytes)"
-        }
-        return out
-    }
-
     private func makeHeader(for entry: LumaCore.NotebookEntry) -> Box {
         let header = Box(orientation: .horizontal, spacing: 10)
         header.hexpand = true
