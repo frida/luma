@@ -141,7 +141,6 @@ final class TargetPicker {
 
         dialog = Adw.Dialog()
         dialog.set(title: reason == nil ? "New Session" : "Re-Establish Session")
-        dialog.set(followsContentSize: true)
 
         deviceList = ListBox()
         processList = ListBox()
@@ -267,6 +266,7 @@ final class TargetPicker {
         modeHint.hexpand = true
         modeHint.xalign = 1
         modeHint.ellipsize = EllipsizeMode.end
+        modeHint.maxWidthChars = 40
 
         let modeHeader = Box(orientation: .horizontal, spacing: 12)
         modeHeader.marginStart = 12
@@ -423,6 +423,7 @@ final class TargetPicker {
     }
 
     func present() {
+        dialog.sizeToContent(within: parent)
         dialog.present(parent: parent)
         observeConnectionActivity()
         snapshotTask = Task { @MainActor in
@@ -528,8 +529,6 @@ final class TargetPicker {
         scroll.hexpand = true
         scroll.vexpand = true
         scroll.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
-        scroll.propagateNaturalWidth = true
-        scroll.propagateNaturalHeight = true
         scroll.set(child: processList)
 
         processContent.hexpand = true
@@ -1296,6 +1295,7 @@ final class TargetPicker {
             let nameLabel = Label(str: proc.name)
             nameLabel.halign = .start
             nameLabel.ellipsize = EllipsizeMode.end
+            nameLabel.maxWidthChars = 64
             if proc.pid == 0 {
                 nameLabel.add(cssClass: "heading")
             }
@@ -1303,6 +1303,7 @@ final class TargetPicker {
             let subtitleLabel = Label(str: subtitle)
             subtitleLabel.halign = .start
             subtitleLabel.ellipsize = EllipsizeMode.middle
+            subtitleLabel.xalign = 0
             subtitleLabel.maxWidthChars = 64
             subtitleLabel.add(cssClass: "dim-label")
             subtitleLabel.add(cssClass: "caption")

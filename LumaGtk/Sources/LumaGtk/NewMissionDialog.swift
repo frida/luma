@@ -34,6 +34,7 @@ final class NewMissionDialog {
     private let startButton: Button
     private let cancelButton: Button
     private let footerError: Label
+    private let formLabels = SizeGroup(mode: .horizontal)
 
     private var providerIDs: [String] = []
     private var modelsForProvider: [LLMModelInfo] = []
@@ -297,7 +298,8 @@ final class NewMissionDialog {
 
         let thinkingTitle = Label(str: "Thinking budget")
         thinkingTitle.halign = .start
-        thinkingTitle.setSizeRequest(width: 140, height: -1)
+        thinkingTitle.xalign = 0
+        formLabels.add(widget: thinkingTitle)
         thinkingBudgetRow.append(child: thinkingTitle)
         thinkingBudgetSpin.hexpand = true
         thinkingBudgetSpin.halign = .end
@@ -350,7 +352,8 @@ final class NewMissionDialog {
         let row = Box(orientation: .horizontal, spacing: 12)
         let label = Label(str: title)
         label.halign = .start
-        label.setSizeRequest(width: 110, height: -1)
+        label.xalign = 0
+        formLabels.add(widget: label)
         row.append(child: label)
         control.hexpand = true
         if let entry = control as? Entry {

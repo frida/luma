@@ -305,7 +305,8 @@ final class AddressNotePopover {
             }
         }
         let scroll = ScrolledWindow()
-        scroll.setSizeRequest(width: 260, height: -1)
+        scroll.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
+        scroll.propagateNaturalWidth = true
         scroll.propagateNaturalHeight = true
         scroll.maxContentHeight = 220
         scroll.set(child: list)

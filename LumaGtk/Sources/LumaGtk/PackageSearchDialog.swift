@@ -51,6 +51,7 @@ final class PackageSearchDialog {
         searchEntry = Entry()
         searchEntry.placeholderText = "Search npm registry…"
         searchEntry.hexpand = true
+        searchEntry.maxWidthChars = 48
         searchRow.append(child: searchEntry)
 
         searchSpinner = makeSpinner()
@@ -81,7 +82,6 @@ final class PackageSearchDialog {
         let listScroll = ScrolledWindow()
         listScroll.hexpand = true
         listScroll.vexpand = true
-        listScroll.setSizeRequest(width: -1, height: 260)
         listScroll.set(child: listBox)
 
         let listRow = Box(orientation: .horizontal, spacing: 8)
@@ -94,9 +94,11 @@ final class PackageSearchDialog {
         let formBox = Box(orientation: .vertical, spacing: 6)
 
         let specifierRow = Box(orientation: .horizontal, spacing: 8)
+        let formLabels = SizeGroup(mode: .horizontal)
         let specifierLabel = Label(str: "Install:")
         specifierLabel.halign = .start
-        specifierLabel.setSizeRequest(width: 140, height: -1)
+        specifierLabel.xalign = 0
+        formLabels.add(widget: specifierLabel)
         specifierRow.append(child: specifierLabel)
         specifierEntry = Entry()
         specifierEntry.placeholderText = "name or name@version"
@@ -107,7 +109,8 @@ final class PackageSearchDialog {
         aliasRow = Box(orientation: .horizontal, spacing: 8)
         let aliasNameLabel = Label(str: "Global alias:")
         aliasNameLabel.halign = .start
-        aliasNameLabel.setSizeRequest(width: 140, height: -1)
+        aliasNameLabel.xalign = 0
+        formLabels.add(widget: aliasNameLabel)
         aliasRow.append(child: aliasNameLabel)
         aliasEntry = Entry()
         aliasEntry.placeholderText = "optional, e.g. ObjC"
@@ -368,8 +371,6 @@ final class PackageSearchDialog {
 
         let adwDialog = Adw.Dialog()
         adwDialog.set(title: category == .pattern ? "Add Pattern Package" : "Install Package")
-        adwDialog.set(contentWidth: 640)
-        adwDialog.set(contentHeight: 560)
 
         let header = Adw.HeaderBar()
 
@@ -380,6 +381,7 @@ final class PackageSearchDialog {
 
         dialog.hostDialog = adwDialog
         adwDialog.own(dialog)
+        adwDialog.sizeToContent(within: WidgetRef(raw: anchor.root!.ptr))
 
         adwDialog.present(parent: anchor)
     }

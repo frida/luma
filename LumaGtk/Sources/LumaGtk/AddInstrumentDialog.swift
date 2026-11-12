@@ -56,8 +56,6 @@ final class AddInstrumentDialog {
 
         dialog = Adw.Dialog()
         dialog.set(title: "Add Instrument")
-        dialog.set(contentWidth: 960)
-        dialog.set(contentHeight: 720)
 
         listBox = ListBox()
         listBox.selectionMode = .single
@@ -82,12 +80,14 @@ final class AddInstrumentDialog {
         let listScroll = ScrolledWindow()
         listScroll.hexpand = false
         listScroll.vexpand = true
-        listScroll.setSizeRequest(width: 280, height: -1)
+        listScroll.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
+        listScroll.propagateNaturalWidth = true
         listScroll.set(child: listBox)
 
         let detailScroll = ScrolledWindow()
         detailScroll.hexpand = true
         detailScroll.vexpand = true
+        detailScroll.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
         detailScroll.set(child: detailContainer)
 
         let paned = Paned(orientation: .horizontal)
@@ -179,6 +179,7 @@ final class AddInstrumentDialog {
 
     func present() {
         dialog.own(self)
+        dialog.sizeToContent(within: parentWindow)
         dialog.present(parent: parentWindow)
     }
 
