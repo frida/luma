@@ -100,7 +100,7 @@ final class AndroidEmulatorMachine: VirtualMachine {
             "-ports", "\(consolePort),\(consolePort + 1)",
             "-grpc", "\(grpcPort)",
             "-qemu",
-            "-gdb", "tcp::\(gdbPort)",
+            "-gdb", "tcp::\(gdbPort),nodelay=on",
         ]
         if !usesVsock {
             // The injected agent drives this controller itself over the guest's PCIe config space

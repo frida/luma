@@ -374,7 +374,7 @@ struct QemuGuest {
             "-no-shutdown",
             "-qmp", "unix:\(qmpPath.path),server=on,wait=off",
             "-qmp", "unix:\(agentQmpPath.path),server=on,wait=off",
-            "-chardev", "socket,id=\(QemuIdentifier.gdbChardev),host=127.0.0.1,port=\(gdbPort),server=on,wait=off",
+            "-chardev", "socket,id=\(QemuIdentifier.gdbChardev),host=127.0.0.1,port=\(gdbPort),server=on,wait=off,nodelay=on",
             "-gdb", "chardev:\(QemuIdentifier.gdbChardev)",
         ]
         return arguments
