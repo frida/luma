@@ -4,6 +4,10 @@
 #
 #     .\Scripts\windows\run.ps1                      # debug
 #     .\Scripts\windows\run.ps1 -Configuration release
+#     .\Scripts\windows\run.ps1 -GtkBuild C:\Work\gtk\build-luma
+#
+# -GtkBuild (or $env:LUMA_GTK_BUILD) loads gtk-4-1.dll from a build made
+# by build-gtk.ps1 instead of the vcpkg one.
 #
 # Extra arguments after -Configuration are forwarded to the exe.
 
@@ -17,6 +21,7 @@ param(
     [string] $R2Prefix,
     [string] $PharoPrefix,
     [string] $QemuPrefix,
+    [string] $GtkBuild = $env:LUMA_GTK_BUILD,
 
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]] $ExtraArgs
@@ -65,6 +70,18 @@ if (-not (Test-Path (Join-Path $schemaDir 'gschemas.compiled'))) {
 
 $adwaitaShare = Join-Path $pkg 'build\share'
 & (Join-Path $script 'fetch-adwaita.ps1') -ShareDir $adwaitaShare -CacheDir (Join-Path $pkg 'build')
+
+$exeDir = Split-Path -Parent $exe
+if ($GtkBuild) {
+    $gtkDll = Join-Path (Resolve-Path -LiteralPath $GtkBuild).Path 'gtk\gtk-4-1.dll'
+    if (-not (Test-Path $gtkDll)) { throw "No gtk-4-1.dll at $gtkDll. Build it with build-gtk.ps1." }
+    # The loader searches the exe's directory before PATH, so only a copy
+    # there takes precedence over the vcpkg DLL.
+    Copy-Item -Force $gtkDll $exeDir
+    Write-Host "Using GTK from $gtkDll"
+} else {
+    Remove-Item -ErrorAction SilentlyContinue (Join-Path $exeDir 'gtk-4-1.dll')
+}
 
 $env:PATH = "$VcpkgPrefix\bin;$VcpkgPrefix\tools;$FridaPrefix\bin;$R2Prefix\bin;$PharoPrefix\bin;$QemuPrefix;$env:PATH"
 $env:GDK_PIXBUF_MODULE_FILE = "$VcpkgPrefix\lib\gdk-pixbuf-2.0\2.10.0\loaders.cache"
