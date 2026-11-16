@@ -1217,7 +1217,7 @@ final class TargetPicker {
         let capturedID = device.id
         processFetchTask = Task { @MainActor in
             do {
-                let result = try await device.enumerateProcesses(scope: .full)
+                let result = try await device.enumerateProcessesWithIcons()
                 guard !Task.isCancelled, self.selectedDeviceID == capturedID else { return }
                 self.setProcessState(result.isEmpty ? .empty : .content, deviceName: device.name)
                 self.renderProcesses(result, for: device)
@@ -1348,7 +1348,7 @@ final class TargetPicker {
         let capturedID = device.id
         appFetchTask = Task { @MainActor in
             do {
-                let result = try await device.enumerateApplications(scope: .full)
+                let result = try await device.enumerateApplicationsWithIcons()
                 guard !Task.isCancelled, self.selectedDeviceID == capturedID else { return }
                 self.setAppState(result.isEmpty ? .empty : .content, deviceName: device.name)
                 self.renderApplications(result, for: device)
