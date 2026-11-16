@@ -1122,7 +1122,7 @@ struct TargetPickerView: View {
         defer { loadingProcesses = false }
 
         do {
-            let procs = try await device.enumerateProcessesWithIcons()
+            let procs = try await device.enumerateProcesses(scope: .full)
 
             processes = procs.sortedWithKernelFirst()
             processError = nil
@@ -1139,7 +1139,7 @@ struct TargetPickerView: View {
         defer { loadingApplications = false }
 
         do {
-            let apps = try await device.enumerateApplicationsWithIcons()
+            let apps = try await device.enumerateApplications(scope: .full)
 
             applications = apps.sorted {
                 $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
