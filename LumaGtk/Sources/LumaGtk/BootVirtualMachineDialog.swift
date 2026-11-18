@@ -34,7 +34,7 @@ final class BootVirtualMachineDialog {
     private var agentRow: Adw.ActionRow?
     private var agentPath: String?
     private var versionsRequested = false
-    private var fetchedVersionFlavor: BareboneAgentFlavor?
+    private var installedVersionFlavor: BareboneAgentFlavor?
     private var pendingFileParameter: String?
     private var record: VirtualMachineRecord?
     private var machine: (any VirtualMachine)?
@@ -141,8 +141,8 @@ final class BootVirtualMachineDialog {
         withObservationTracking {
             _ = engine.virtualMachines.starterImages.states
             _ = engine.virtualMachines.agents.states
-            _ = engine.virtualMachines.agents.fetchedVersions
-            _ = engine.virtualMachines.agents.releases
+            _ = engine.virtualMachines.agents.installedVersions
+            _ = engine.fridaReleases.releases
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
@@ -299,14 +299,15 @@ final class BootVirtualMachineDialog {
     }
 
     private func requestAgentVersions(_ flavor: BareboneAgentFlavor) {
+        let releases = engine.fridaReleases
         let agents = engine.virtualMachines.agents
         if !versionsRequested {
             versionsRequested = true
-            Task { @MainActor in await agents.refreshReleases() }
+            Task { @MainActor in await releases.refresh() }
         }
-        if fetchedVersionFlavor != flavor {
-            fetchedVersionFlavor = flavor
-            Task { @MainActor in await agents.loadFetchedVersion(for: flavor) }
+        if installedVersionFlavor != flavor {
+            installedVersionFlavor = flavor
+            Task { @MainActor in await agents.loadInstalledVersion(for: flavor) }
         }
     }
 
@@ -317,10 +318,10 @@ final class BootVirtualMachineDialog {
         let agents = engine.virtualMachines.agents
         switch agents.state(for: flavor) {
         case .ready:
-            guard let version = agents.fetchedVersion(for: flavor) else {
+            guard let version = agents.installedVersion(for: flavor) else {
                 return "Downloaded \(flavor.name)"
             }
-            return "Downloaded \(flavor.name) \u{00b7} \(version)"
+            return "Downloaded \(flavor.name) \u{00b7} \(version.displayName)"
         case .downloading(let fraction):
             return downloadingLabel(fraction)
         case .missing:

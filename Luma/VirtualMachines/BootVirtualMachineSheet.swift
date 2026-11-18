@@ -60,7 +60,7 @@ struct BootVirtualMachineSheet: View {
         .frame(minWidth: 680, minHeight: 460, maxHeight: 720)
         .onAppear(perform: selectFirstAvailableTemplate)
         .task { await engine.virtualMachines.prewarm() }
-        .task { await engine.virtualMachines.agents.refreshReleases() }
+        .task { await engine.fridaReleases.refresh() }
         .fileImporter(isPresented: $isImporting, allowedContentTypes: allowedImportTypes) { result in
             if let awaitedImport, case .success(let url) = result {
                 if awaitedImport == Self.agentImport {
@@ -249,7 +249,7 @@ struct BootVirtualMachineSheet: View {
                 }
             }
             .task(id: flavor) {
-                await engine.virtualMachines.agents.loadFetchedVersion(for: flavor)
+                await engine.virtualMachines.agents.loadInstalledVersion(for: flavor)
             }
         }
     }
@@ -281,10 +281,10 @@ struct BootVirtualMachineSheet: View {
         let agents = engine.virtualMachines.agents
         switch agents.state(for: flavor) {
         case .ready:
-            guard let version = agents.fetchedVersion(for: flavor) else {
+            guard let version = agents.installedVersion(for: flavor) else {
                 return "Downloaded \(flavor.name)"
             }
-            return "Downloaded \(flavor.name) · \(version)"
+            return "Downloaded \(flavor.name) · \(version.displayName)"
         case .downloading(let fraction):
             return downloadingLabel(fraction)
         case .missing:

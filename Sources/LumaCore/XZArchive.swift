@@ -7,10 +7,6 @@ import CLzma
 #endif
 
 public enum XZArchive {
-    public static func decompress(_ archive: Data, to destination: URL) throws {
-        try decompress(archive).write(to: destination)
-    }
-
     #if canImport(Compression)
     public static func decompress(_ archive: Data) throws -> Data {
         let blockSize = 256 * 1024
@@ -19,7 +15,7 @@ public enum XZArchive {
 
         var stream = compression_stream(dst_ptr: block, dst_size: blockSize, src_ptr: block, src_size: 0, state: nil)
         guard compression_stream_init(&stream, COMPRESSION_STREAM_DECODE, COMPRESSION_LZMA) == COMPRESSION_STATUS_OK else {
-            throw BareboneAgentError.decompressionFailed(reason: "unsupported archive")
+            throw FridaBinaryError.decompressionFailed(reason: "unsupported archive")
         }
         defer { compression_stream_destroy(&stream) }
 
@@ -46,7 +42,7 @@ public enum XZArchive {
             }
         }
         if let failure {
-            throw BareboneAgentError.decompressionFailed(reason: failure)
+            throw FridaBinaryError.decompressionFailed(reason: failure)
         }
         return output
     }
@@ -56,7 +52,7 @@ public enum XZArchive {
     public static func decompress(_ archive: Data) throws -> Data {
         var stream = lzma_stream()
         guard lzma_stream_decoder(&stream, UInt64.max, concatenatedStreams) == LZMA_OK else {
-            throw BareboneAgentError.decompressionFailed(reason: "unsupported archive")
+            throw FridaBinaryError.decompressionFailed(reason: "unsupported archive")
         }
         defer { lzma_end(&stream) }
 
@@ -87,7 +83,7 @@ public enum XZArchive {
             }
         }
         if let failure {
-            throw BareboneAgentError.decompressionFailed(reason: failure)
+            throw FridaBinaryError.decompressionFailed(reason: failure)
         }
         return output
     }

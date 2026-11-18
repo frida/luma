@@ -20,11 +20,11 @@ public final class VirtualMachineManager {
     private let store: ProjectStore
     private let storageDirectory: URL
 
-    public init(deviceManager: DeviceManager, store: ProjectStore, dataDirectory: URL) {
+    public init(deviceManager: DeviceManager, store: ProjectStore, dataDirectory: URL, releases: FridaReleaseCatalog) {
         self.deviceManager = deviceManager
         self.store = store
         self.storageDirectory = dataDirectory.appendingPathComponent("VirtualMachines", isDirectory: true)
-        self.agents = BareboneAgentLibrary(directory: dataDirectory.appendingPathComponent("BareboneAgents", isDirectory: true))
+        self.agents = BareboneAgentLibrary(catalog: releases)
         self.starterImages = StarterImageLibrary(
             directory: dataDirectory.appendingPathComponent("StarterImages", isDirectory: true)
         )

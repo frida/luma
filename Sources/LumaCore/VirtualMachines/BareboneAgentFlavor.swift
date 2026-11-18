@@ -1,7 +1,9 @@
 import Foundation
 import Frida
 
-public struct BareboneAgentFlavor: Sendable, Equatable, Hashable, Codable {
+public typealias BareboneAgentLibrary = FridaBinaryLibrary<BareboneAgentFlavor>
+
+public struct BareboneAgentFlavor: FridaBinaryFlavor, Codable {
     public let kernel: BareboneAgentKernel
     public let architecture: VirtualMachineArchitecture
 
@@ -22,6 +24,14 @@ public struct BareboneAgentFlavor: Sendable, Equatable, Hashable, Codable {
 
     public var name: String {
         "\(kernel.rawValue)-\(architecture.rawValue)"
+    }
+
+    public var displayName: String {
+        "\(name) agent"
+    }
+
+    public var cachedFileName: String {
+        "barebone-agent-\(name)"
     }
 
     public func assetName(version: String) -> String {

@@ -22,7 +22,8 @@ func run() async throws {
 
     let store = try ProjectStore(path: root.appendingPathComponent("db.sqlite").path)
     let deviceManager = DeviceManager()
-    let manager = VirtualMachineManager(deviceManager: deviceManager, store: store, dataDirectory: root)
+    let manager = VirtualMachineManager(
+        deviceManager: deviceManager, store: store, dataDirectory: root, releases: FridaReleaseCatalog())
     manager.register(QemuBackend())
 
     guard let template = manager.templates.first(where: { $0.id == templateID }) else {

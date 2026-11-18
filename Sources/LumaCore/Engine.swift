@@ -71,6 +71,7 @@ public final class Engine {
     public let patternDecoder: PatternDecoder
     private let patternGlobals = PatternGlobals()
     public let customInstruments: CustomInstrumentLibrary
+    public let fridaReleases = FridaReleaseCatalog()
     public let virtualMachines: VirtualMachineManager
 
     /// The image the playground, the notebook cells and the mission tools all
@@ -165,7 +166,8 @@ public final class Engine {
             projectRoot: workspace.root, draftDirectory: PatternLibrary.directory(in: workspace),
             defines: PatternDecoder.processMemoryDefines)
         self.customInstruments = CustomInstrumentLibrary()
-        self.virtualMachines = VirtualMachineManager(deviceManager: deviceManager, store: store, dataDirectory: dataDirectory)
+        self.virtualMachines = VirtualMachineManager(
+            deviceManager: deviceManager, store: store, dataDirectory: dataDirectory, releases: fridaReleases)
         self.collaboration = CollaborationSession(
             deviceManager: deviceManager,
             store: store,
