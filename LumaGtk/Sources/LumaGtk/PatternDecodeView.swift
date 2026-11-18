@@ -521,8 +521,8 @@ final class PatternDecodeView {
         }
     }
 
-    private var target: LumaCore.ProcessNode.ProcessInfo? {
-        engine.node(forSessionID: sessionID)?.processInfo
+    private var target: ProcessSession.ProcessInfo? {
+        engine.session(id: sessionID)?.processInfo
     }
 
     private func bytes(at placement: PatternPlacement) -> Data {

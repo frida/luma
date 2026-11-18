@@ -339,6 +339,7 @@ public final class CollaborationSession {
     public var onSessionInstrumentUpdateConfigRequested: ((UUID, UUID, Data) -> Void)?
     public var onSessionInsightAdded: ((UUID, AddressInsight) -> Void)?
     public var onSessionInsightUpdated: ((UUID, AddressInsight) -> Void)?
+    public var onSessionPlacementsSet: ((UUID, SessionOp.SetPlacements.Subject, [PatternPlacement]) -> Void)?
     public var onSessionInsightRemoved: ((UUID, UUID) -> Void)?
     public var onSessionProcessInfoUpdated: ((UUID, ProcessSession.ProcessInfo) -> Void)?
     public var onSessionModuleAnalysisUpdated: ((UUID, ModuleAnalysis) -> Void)?
@@ -1081,6 +1082,10 @@ public final class CollaborationSession {
         enqueueSessionOp(.removeInsight(.init(sessionID: sessionID, insightID: insightID)))
     }
 
+    public func enqueueSetPlacements(_ placements: [PatternPlacement], sessionID: UUID, on subject: SessionOp.SetPlacements.Subject) {
+        enqueueSessionOp(.setPlacements(.init(sessionID: sessionID, subject: subject, placements: placements)))
+    }
+
     public func enqueueUpdateProcessInfo(sessionID: UUID, info: ProcessSession.ProcessInfo) {
         enqueueSessionOp(.updateProcessInfo(.init(sessionID: sessionID, info: info)))
     }
@@ -1424,6 +1429,9 @@ public final class CollaborationSession {
 
         case .removeInsight(let r):
             onSessionInsightRemoved?(r.sessionID, r.insightID)
+
+        case .setPlacements(let s):
+            onSessionPlacementsSet?(s.sessionID, s.subject, s.placements)
 
         case .upsertTrace(let u):
             onSessionTraceUpserted?(u.sessionID, u.trace)

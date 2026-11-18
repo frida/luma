@@ -1158,6 +1158,17 @@ public final class Engine {
             self?.applyRemoteSessionInsightUpdated(sessionID: sessionID, insight: insight)
         }
 
+        collaboration.onSessionPlacementsSet = { [weak self] sessionID, subject, placements in
+            guard let self else { return }
+            switch subject {
+            case .replCell(let cellID):
+                storePlacements(placements, forREPLCell: cellID)
+            case .insight(let insightID):
+                guard let insight = try? store.fetchInsights(sessionID: sessionID).first(where: { $0.id == insightID }) else { return }
+                storePlacements(placements, forInsight: insight)
+            }
+        }
+
         collaboration.onSessionInsightRemoved = { [weak self] sessionID, insightID in
             self?.applyRemoteSessionInsightRemoved(sessionID: sessionID, insightID: insightID)
         }
@@ -1557,6 +1568,7 @@ public final class Engine {
             record.phase = session.phase.toProcessSessionPhase
             record.lastKnownModules = session.modules
             record.lastKnownThreads = session.threads
+            record.processInfo = session.processInfo
             try? store.save(record)
             sessions.insert(record, at: 0)
             onSessionListChanged?(.sessionAdded(record))
@@ -2934,10 +2946,14 @@ public final class Engine {
     }
 
     public func setPlacements(_ placements: [PatternPlacement], forInsight insight: AddressInsight) {
+        storePlacements(placements, forInsight: insight)
+        collaboration.enqueueSetPlacements(placements, sessionID: insight.sessionID, on: .insight(insight.id))
+    }
+
+    private func storePlacements(_ placements: [PatternPlacement], forInsight insight: AddressInsight) {
         var updated = insight
         updated.placements = placements
         persistInsight(updated)
-        collaboration.enqueueUpdateInsight(sessionID: updated.sessionID, insight: updated)
         emitInsightUpdated(updated)
     }
 
@@ -2950,11 +2966,17 @@ public final class Engine {
     }
 
     public func setPlacements(_ placements: [PatternPlacement], forREPLCell cellID: UUID) {
-        guard var cell = try? store.fetchREPLCell(id: cellID) else { return }
+        guard let cell = storePlacements(placements, forREPLCell: cellID) else { return }
+        collaboration.enqueueSetPlacements(placements, sessionID: cell.sessionID, on: .replCell(cellID))
+    }
+
+    @discardableResult
+    private func storePlacements(_ placements: [PatternPlacement], forREPLCell cellID: UUID) -> REPLCell? {
+        guard var cell = try? store.fetchREPLCell(id: cellID) else { return nil }
         cell.placements = placements
         try? store.save(cell)
         onREPLCellSaved?(cell)
-        collaboration.enqueueUpdateReplCell(sessionID: cell.sessionID, cell: cell)
+        return cell
     }
 
     private func persistInsight(_ insight: AddressInsight) {

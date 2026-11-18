@@ -23,6 +23,7 @@ public enum SessionOp: Sendable {
     case addInsight(AddInsight)
     case updateInsight(UpdateInsight)
     case removeInsight(RemoveInsight)
+    case setPlacements(SetPlacements)
     case upsertTrace(UpsertTrace)
     case removeTrace(RemoveTrace)
     case traceDataProgressed(TraceDataProgressed)
@@ -47,6 +48,7 @@ public enum SessionOp: Sendable {
         case .addInsight(let a): return a.opID
         case .updateInsight(let u): return u.opID
         case .removeInsight(let r): return r.opID
+        case .setPlacements(let s): return s.opID
         case .upsertTrace(let u): return u.opID
         case .removeTrace(let r): return r.opID
         case .traceDataProgressed(let t): return t.opID
@@ -73,6 +75,7 @@ public enum SessionOp: Sendable {
         case .addInsight(let a): return a.sessionID
         case .updateInsight(let u): return u.sessionID
         case .removeInsight(let r): return r.sessionID
+        case .setPlacements(let s): return s.sessionID
         case .upsertTrace(let u): return u.sessionID
         case .removeTrace(let r): return r.sessionID
         case .traceDataProgressed(let t): return t.sessionID
@@ -99,6 +102,7 @@ public enum SessionOp: Sendable {
         case .addInsight: return "add-insight"
         case .updateInsight: return "update-insight"
         case .removeInsight: return "remove-insight"
+        case .setPlacements: return "set-placements"
         case .upsertTrace: return "upsert-trace"
         case .removeTrace: return "remove-trace"
         case .traceDataProgressed: return "trace-data-progressed"
@@ -393,6 +397,25 @@ public enum SessionOp: Sendable {
         }
     }
 
+    public struct SetPlacements: Sendable {
+        public let opID: UUID
+        public let sessionID: UUID
+        public let subject: Subject
+        public let placements: [PatternPlacement]
+
+        public enum Subject: Sendable {
+            case replCell(UUID)
+            case insight(UUID)
+        }
+
+        public init(opID: UUID = UUID(), sessionID: UUID, subject: Subject, placements: [PatternPlacement]) {
+            self.opID = opID
+            self.sessionID = sessionID
+            self.subject = subject
+            self.placements = placements
+        }
+    }
+
     public struct UpsertTrace: Sendable {
         public let opID: UUID
         public let sessionID: UUID
@@ -526,6 +549,14 @@ public enum SessionOp: Sendable {
             }
         case .removeInsight(let r):
             obj["insight_id"] = r.insightID.uuidString
+        case .setPlacements(let s):
+            switch s.subject {
+            case .replCell(let cellID):
+                obj["cell_id"] = cellID.uuidString
+            case .insight(let insightID):
+                obj["insight_id"] = insightID.uuidString
+            }
+            obj["placements"] = s.placements.map { $0.toWireJSON() }
         case .upsertTrace(let u):
             if let traceObj = u.trace.toWireJSON() {
                 obj["trace"] = traceObj
@@ -777,6 +808,19 @@ public enum SessionOp: Sendable {
                 opID: opID,
                 sessionID: sessionID,
                 insightID: insightID
+            ))
+
+        case "set-placements":
+            let cellID = (obj["cell_id"] as? String).flatMap(UUID.init(uuidString:))
+            let insightID = (obj["insight_id"] as? String).flatMap(UUID.init(uuidString:))
+            guard let subject = cellID.map(SetPlacements.Subject.replCell) ?? insightID.map(SetPlacements.Subject.insight),
+                let placements = obj["placements"] as? [[String: Any]]
+            else { return nil }
+            return .setPlacements(SetPlacements(
+                opID: opID,
+                sessionID: sessionID,
+                subject: subject,
+                placements: placements.compactMap(PatternPlacement.fromWireJSON)
             ))
 
         case "upsert-trace":

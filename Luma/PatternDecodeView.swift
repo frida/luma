@@ -28,8 +28,8 @@ struct PatternDecodeView: View {
     @State private var browsingSource: PatternSource?
     @FocusState private var isTreeFocused: Bool
 
-    private var target: LumaCore.ProcessNode.ProcessInfo? {
-        engine.node(forSessionID: sessionID)?.processInfo
+    private var target: ProcessSession.ProcessInfo? {
+        engine.session(id: sessionID)?.processInfo
     }
 
     private var canDecode: Bool {
