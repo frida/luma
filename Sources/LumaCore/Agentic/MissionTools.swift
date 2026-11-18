@@ -55,6 +55,8 @@ public enum MissionTools {
         registerReadCustomInstrument(in: catalog, engine: engine)
         registerCreateCustomInstrument(in: catalog, engine: engine)
         registerUpdateCustomInstrument(in: catalog, engine: engine)
+        registerLinkInstrumentFolder(in: catalog, engine: engine)
+        registerReloadCustomInstrumentFromFolder(in: catalog, engine: engine)
         registerDeleteCustomInstrument(in: catalog, engine: engine)
         registerListCustomInstrumentFiles(in: catalog, engine: engine)
         registerReadCustomInstrumentFile(in: catalog, engine: engine)
@@ -1728,7 +1730,7 @@ public enum MissionTools {
     private static func registerListInstruments(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "list_instruments",
-            description: "List the instruments this project can attach. Each entry has `id` (opaque descriptor id; pass to attach_instrument), `kind` (tracer | custom), `name`, `icon`. Custom instruments also report `def_id` (UUID for the custom_instrument_file/def tools) and source counts.",
+            description: "List the instruments this project can attach, and the instrument folders it could link. Attachable entries have `id` (opaque descriptor id; pass to attach_instrument), `kind` (tracer | custom), `name`, `icon`. Custom instruments also report `def_id` (UUID for the custom_instrument_file/def tools) and source counts; one linked to a folder on disk reports `linked_folder` and `folder_state`: `in_sync`, `folder_changed` once its files were edited on disk (call reload_custom_instrument_from_folder to take them), or `diverged` when the project's copy was edited as well. Entries of `kind` folder are instruments in Luma's library that this project has not linked yet: pass their `path` to link_instrument_folder to get one you can attach.",
             inputSchemaJSON: """
                 {"type":"object","properties":{},"additionalProperties":false}
                 """,
@@ -1737,7 +1739,8 @@ public enum MissionTools {
         )
         catalog.register(spec: spec) { [weak engine] _ in
             guard let engine else { return errorResult("engine unavailable", code: .unavailable) }
-            let array: [[String: Any]] = engine.descriptors.compactMap { instrumentDescriptorListEntry($0, engine: engine) }
+            let attachable = engine.descriptors.compactMap { instrumentDescriptorListEntry($0, engine: engine) }
+            let array = attachable + linkableInstrumentFolderListEntries(engine: engine)
             return makeResult(jsonObject: array, summary: "\(array.count) instrument\(array.count == 1 ? "" : "s")")
         }
     }
@@ -1759,16 +1762,47 @@ public enum MissionTools {
             entry["def_id"] = defID.uuidString
             entry["feature_count"] = def.features.count
             entry["widget_count"] = def.widgets.count
+            entry.merge(linkedInstrumentFolderJSON(defID: defID, engine: engine)) { _, new in new }
         case .codeShare:
             return nil
         }
         return entry
     }
 
+    private static func linkableInstrumentFolderListEntries(engine: Engine) -> [[String: Any]] {
+        engine.instrumentFolders.reload()
+        return engine.instrumentFolders.folders
+            .filter { engine.customInstrumentID(linkedToFolderAt: $0.folderURL) == nil }
+            .map { folder in
+                [
+                    "kind": "folder",
+                    "name": folder.name,
+                    "icon": describeIcon(folder.icon),
+                    "path": folder.folderURL.path,
+                ]
+            }
+    }
+
+    private static func linkedInstrumentFolderJSON(defID: UUID, engine: Engine) -> [String: Any] {
+        guard let link = engine.instrumentFolderLinks[defID] else { return [:] }
+        return [
+            "linked_folder": link.path,
+            "folder_state": instrumentFolderStateName(engine.instrumentFolderDrifts[defID]),
+        ]
+    }
+
+    private static func instrumentFolderStateName(_ drift: InstrumentFolderDrift?) -> String {
+        switch drift {
+        case nil: "in_sync"
+        case .folderChanged: "folder_changed"
+        case .diverged: "diverged"
+        }
+    }
+
     private static func registerReadCustomInstrument(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "read_custom_instrument",
-            description: "Read a custom instrument's metadata: entrypoint, dependencies, features, widgets, and the list of file paths. File contents are NOT included — call read_custom_instrument_file for each path you need.",
+            description: "Read a custom instrument's metadata: entrypoint, dependencies, features, widgets, and the list of file paths, plus `linked_folder` and `folder_state` (in_sync | folder_changed | diverged) when it is linked to a folder on disk. File contents are NOT included — call read_custom_instrument_file for each path you need.",
             inputSchemaJSON: """
                 {"type":"object","properties":{"def_id":{"type":"string"}},"required":["def_id"],"additionalProperties":false}
                 """,
@@ -1778,7 +1812,9 @@ public enum MissionTools {
         catalog.register(spec: spec) { [weak engine] invocation in
             await withResolvedCustomInstrumentDef(invocation.args, engine: engine) { engine, defID, def in
                 let files = engine.customInstruments.files(forDefID: defID)
-                return makeResult(jsonObject: customInstrumentJSON(def: def, files: files), summary: "Custom instrument \(def.name)")
+                let payload = customInstrumentJSON(def: def, files: files)
+                    .merging(linkedInstrumentFolderJSON(defID: defID, engine: engine)) { _, new in new }
+                return makeResult(jsonObject: payload, summary: "Custom instrument \(def.name)")
             }
         }
     }
@@ -1856,6 +1892,64 @@ public enum MissionTools {
                     defID: def.id,
                     summaryPrefix: "Updated custom instrument \(def.name)",
                     extraFields: ["name": def.name]
+                )
+            }
+        }
+    }
+
+    private static func registerLinkInstrumentFolder(in catalog: ToolCatalog, engine: Engine) {
+        let spec = ActionSpec(
+            name: "link_instrument_folder",
+            description: "Bring an instrument that lives in a folder on disk into the project as a custom instrument, and remember the folder so the instrument can be reloaded after its files change. The folder holds a package.json beside its sources: `main` names the TypeScript entrypoint, `dependencies` the npm packages it imports, and an optional `luma` object carries `icon`, `compatibility`, `features` and `widgets`. Hidden files and node_modules are left out. Returns `def_id` and the `id` to pass to attach_instrument; linking a folder this project already linked returns that instrument. `displayName` is the name shown, falling back to `name`. From then on the folder follows the project: edits made through the custom instrument tools are written to it, as long as its files have not been changed on disk in the meantime. Luma also keeps the instrument's typings in `luma.d.ts` there, for an editor to pick up.",
+            inputSchemaJSON: """
+                {"type":"object","properties":{"path":{"type":"string","description":"Absolute path of the folder"}},"required":["path"],"additionalProperties":false}
+                """,
+            isObserve: false,
+            requiresSession: false
+        )
+        catalog.register(spec: spec) { [weak engine] invocation in
+            guard let engine else { return errorResult("engine unavailable", code: .unavailable) }
+            guard let path = invocation.args["path"] as? String, !path.isEmpty else {
+                return errorResult("missing path", code: .invalidInput)
+            }
+            do {
+                let def = try engine.linkInstrumentFolder(at: URL(fileURLWithPath: path, isDirectory: true))
+                let payload: [String: Any] = [
+                    "def_id": def.id.uuidString,
+                    "id": engine.customInstruments.descriptor(for: def).id,
+                    "name": def.name,
+                    "entrypoint": def.entrypoint,
+                    "linked_folder": path,
+                ]
+                return makeResult(jsonObject: payload, summary: "Linked \(def.name)")
+            } catch {
+                return errorResult(error.localizedDescription, code: .invalidInput)
+            }
+        }
+    }
+
+    private static func registerReloadCustomInstrumentFromFolder(in catalog: ToolCatalog, engine: Engine) {
+        let spec = ActionSpec(
+            name: "reload_custom_instrument_from_folder",
+            description: "Re-read a linked custom instrument from its folder on disk — package.json and every source file — replacing what the project holds, then recompile its running instances. Call this after editing the files. Compile errors come back under `apply.errors`. Running instances are disposed and created again, so state they held in memory is lost. When `folder_state` is `diverged`, this discards the edits made to the project's copy.",
+            inputSchemaJSON: """
+                {"type":"object","properties":{"def_id":{"type":"string"}},"required":["def_id"],"additionalProperties":false}
+                """,
+            isObserve: false,
+            requiresSession: false
+        )
+        catalog.register(spec: spec) { [weak engine] invocation in
+            await withResolvedCustomInstrumentDef(invocation.args, engine: engine) { engine, defID, def in
+                do {
+                    try engine.reloadCustomInstrumentFromFolder(defID: defID)
+                } catch {
+                    return errorResult(error.localizedDescription, code: .invalidInput)
+                }
+                await engine.awaitCustomInstrumentReload(defID: defID)
+                return customInstrumentEditResult(
+                    engine: engine,
+                    defID: defID,
+                    summaryPrefix: "Reloaded \(def.name) from its folder"
                 )
             }
         }
