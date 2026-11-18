@@ -7,11 +7,14 @@ public struct PatternMemoryDecoding: Sendable {
 
 public enum PatternMemoryError: LocalizedError {
     case detached
+    case patternMissing
 
     public var errorDescription: String? {
         switch self {
         case .detached:
             return "The session is not attached."
+        case .patternMissing:
+            return "Its pattern is no longer in the project."
         }
     }
 }
@@ -59,6 +62,46 @@ extension Engine {
             }
             data = Data(more)
         }
+    }
+
+    public func describe(_ source: PatternSource, forSession sessionID: UUID?) async throws -> PatternSummary {
+        let target = patternTarget(forSession: sessionID)
+        return try await patternDecoder.summary(of: source, platform: target?.platform, arch: target?.arch)
+    }
+
+    public func decode(
+        _ placement: PatternPlacement, in data: Data, at baseAddress: UInt64, forSession sessionID: UUID?
+    ) async throws -> DecodedPattern {
+        let target = patternTarget(forSession: sessionID)
+        return try await patternDecoder.decode(
+            try source(of: placement), typeName: placement.typeName, data: Self.bytes(of: data, at: placement),
+            address: baseAddress &+ UInt64(placement.offset), platform: target?.platform, arch: target?.arch)
+    }
+
+    public func call(
+        _ function: String, on nodeID: UInt, of placement: PatternPlacement, in data: Data, at baseAddress: UInt64,
+        forSession sessionID: UUID?
+    ) async throws -> String {
+        let target = patternTarget(forSession: sessionID)
+        return try await patternDecoder.callFunction(
+            function, on: nodeID, of: try source(of: placement), typeName: placement.typeName,
+            data: Self.bytes(of: data, at: placement), address: baseAddress &+ UInt64(placement.offset), platform: target?.platform,
+            arch: target?.arch)
+    }
+
+    public func patternTarget(forSession sessionID: UUID?) -> ProcessSession.ProcessInfo? {
+        sessionID.flatMap(session(id:))?.processInfo
+    }
+
+    private func source(of placement: PatternPlacement) throws -> PatternSource {
+        guard let source = patterns.source(withID: placement.sourceID) else {
+            throw PatternMemoryError.patternMissing
+        }
+        return source
+    }
+
+    private static func bytes(of data: Data, at placement: PatternPlacement) -> Data {
+        data.suffix(from: data.startIndex + min(placement.offset, data.count))
     }
 }
 

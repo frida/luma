@@ -28,16 +28,13 @@ struct PatternDecodeView: View {
     @State private var browsingSource: PatternSource?
     @FocusState private var isTreeFocused: Bool
 
-    private var target: ProcessSession.ProcessInfo? {
-        sessionID.flatMap(engine.session(id:))?.processInfo
-    }
-
     private var canDecode: Bool {
         baseAddress != nil && !engine.patterns.placeableSources.isEmpty
     }
 
     private var describeKey: DescribeKey {
-        DescribeKey(sources: engine.patterns.placeableSources, platform: target?.platform, arch: target?.arch)
+        let target = engine.patternTarget(forSession: sessionID)
+        return DescribeKey(sources: engine.patterns.placeableSources, platform: target?.platform, arch: target?.arch)
     }
 
     private var decodeKey: DecodeKey {
@@ -361,15 +358,12 @@ struct PatternDecodeView: View {
     }
 
     private func press(_ id: UUID) {
-        guard let visualization = visualizations[id], case .ready(.button(let function, _)) = visualization.outcome,
-            let baseAddress, let source = engine.patterns.source(withID: visualization.placement.sourceID)
+        guard let visualization = visualizations[id], case .ready(.button(let function, _)) = visualization.outcome, let baseAddress
         else { return }
-        let placement = visualization.placement
         Task {
             do {
-                let output = try await engine.patternDecoder.callFunction(
-                    function, on: visualization.nodeID, of: source, typeName: placement.typeName, data: bytes(at: placement),
-                    address: baseAddress &+ UInt64(placement.offset), platform: target?.platform, arch: target?.arch)
+                let output = try await engine.call(
+                    function, on: visualization.nodeID, of: visualization.placement, in: data, at: baseAddress, forSession: sessionID)
                 callOutcome = CallOutcome(rowID: id, text: output.isEmpty ? "No output." : output, isFailure: false)
             } catch {
                 callOutcome = CallOutcome(rowID: id, text: error.localizedDescription, isFailure: true)
@@ -405,7 +399,7 @@ struct PatternDecodeView: View {
         var described: [String: PatternSummary] = [:]
         for source in engine.patterns.placeableSources {
             do {
-                described[source.id] = try await engine.patternDecoder.summary(of: source, platform: target?.platform, arch: target?.arch)
+                described[source.id] = try await engine.describe(source, forSession: sessionID)
             } catch {
                 describeProblem = "\(source.name): \(error.localizedDescription)"
             }
@@ -418,12 +412,8 @@ struct PatternDecodeView: View {
         guard let baseAddress else { return }
         var results: [PatternPlacement.ID: PlacementResult] = [:]
         for placement in placements {
-            guard let source = engine.patterns.source(withID: placement.sourceID) else { continue }
             do {
-                let value = try await engine.patternDecoder.decode(
-                    source, typeName: placement.typeName, data: bytes(at: placement), address: baseAddress &+ UInt64(placement.offset),
-                    platform: target?.platform, arch: target?.arch)
-                results[placement.id] = .decoded(value)
+                results[placement.id] = .decoded(try await engine.decode(placement, in: data, at: baseAddress, forSession: sessionID))
             } catch {
                 results[placement.id] = .failed(error.localizedDescription)
             }
@@ -443,10 +433,6 @@ struct PatternDecodeView: View {
         if results.values.contains(where: \.isTruncated) {
             onTruncated?()
         }
-    }
-
-    private func bytes(at placement: PatternPlacement) -> Data {
-        data.suffix(from: data.startIndex + min(placement.offset, data.count))
     }
 
     private static func roots(of results: [PatternPlacement.ID: PlacementResult]) -> [UUID: DecodedPattern] {

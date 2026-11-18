@@ -199,7 +199,7 @@ final class PatternDecodeView {
             guard let self else { return }
             var described: [String: PatternSummary] = [:]
             for source in engine.patterns.placeableSources {
-                described[source.id] = try? await engine.patternDecoder.summary(of: source, platform: target?.platform, arch: target?.arch)
+                described[source.id] = try? await engine.describe(source, forSession: sessionID)
             }
             var sections: [[ContextMenu.Item]] = []
             let recent = recentItems(caret: caret, summaries: described)
@@ -365,17 +365,13 @@ final class PatternDecodeView {
     }
 
     private func press(_ visualization: NodeVisualization, anchor: Widget) {
-        guard case .ready(.button(let function, _)) = visualization.outcome, let baseAddress,
-            let source = engine.patterns.source(withID: visualization.placement.sourceID)
-        else { return }
-        let placement = visualization.placement
+        guard case .ready(.button(let function, _)) = visualization.outcome, let baseAddress else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
             let output: Label
             do {
-                let printed = try await engine.patternDecoder.callFunction(
-                    function, on: visualization.nodeID, of: source, typeName: placement.typeName, data: bytes(at: placement),
-                    address: baseAddress &+ UInt64(placement.offset), platform: target?.platform, arch: target?.arch)
+                let printed = try await engine.call(
+                    function, on: visualization.nodeID, of: visualization.placement, in: data, at: baseAddress, forSession: sessionID)
                 output = Label(str: printed.isEmpty ? "No output." : printed)
             } catch {
                 output = Label(str: error.localizedDescription)
@@ -500,13 +496,11 @@ final class PatternDecodeView {
             var results: [UUID: PlacementResult] = [:]
             var described: [String: PatternSummary] = [:]
             for placement in placements {
-                guard let source = engine.patterns.source(withID: placement.sourceID) else { continue }
-                described[source.id] = try? await engine.patternDecoder.summary(of: source, platform: target?.platform, arch: target?.arch)
+                if let source = engine.patterns.source(withID: placement.sourceID) {
+                    described[source.id] = try? await engine.describe(source, forSession: sessionID)
+                }
                 do {
-                    let value = try await engine.patternDecoder.decode(
-                        source, typeName: placement.typeName, data: bytes(at: placement), address: baseAddress &+ UInt64(placement.offset),
-                        platform: target?.platform, arch: target?.arch)
-                    results[placement.id] = .decoded(value)
+                    results[placement.id] = .decoded(try await engine.decode(placement, in: data, at: baseAddress, forSession: sessionID))
                 } catch {
                     results[placement.id] = .failed(error.localizedDescription)
                 }
@@ -518,14 +512,6 @@ final class PatternDecodeView {
                 onTruncated?()
             }
         }
-    }
-
-    private var target: ProcessSession.ProcessInfo? {
-        sessionID.flatMap(engine.session(id:))?.processInfo
-    }
-
-    private func bytes(at placement: PatternPlacement) -> Data {
-        data.suffix(from: data.startIndex + min(placement.offset, data.count))
     }
 
     private func show(_ results: [UUID: PlacementResult], base: UInt64) {
