@@ -4421,19 +4421,16 @@ public final class Engine {
             try fm.createDirectory(at: dirURL, withIntermediateDirectories: true)
         }
 
-        let typingsRelPath = "\(dirRelPath)/luma-tracer-typings.ts"
         let moduleRelPath = "\(dirRelPath)/\(id.uuidString).ts"
         let entryRelPath = "\(dirRelPath)/\(id.uuidString).entry.ts"
 
-        let typingsURL = paths.root.appendingPathComponent(typingsRelPath)
         let moduleURL = paths.root.appendingPathComponent(moduleRelPath)
         let entryURL = paths.root.appendingPathComponent(entryRelPath)
 
-        try TracerTypings.handlerDeclarations.write(to: typingsURL, atomically: true, encoding: .utf8)
         try tsSource.write(to: moduleURL, atomically: true, encoding: .utf8)
 
-        let entrySource = """
-            import "./luma-tracer-typings.ts";
+        let ambientTypings = EditorProfile.fridaTracerHook(packages: installedPackages).ambientDeclarations
+        let entrySource = try Self.importsOfStaged(ambientTypings, in: dirURL) + """
             import "./\(id.uuidString).ts";
             export {};
             """
@@ -4642,7 +4639,7 @@ public final class Engine {
         files: [(path: String, content: Data)],
         entrypoint: String,
         dependencies: [String: String],
-        ambientTypings: String,
+        ambientTypings: [AmbientDeclarations],
         paths: CompilerWorkspacePaths,
         diagnosticLabel: String
     ) async throws -> String {
@@ -4703,19 +4700,22 @@ public final class Engine {
 
     private static func stageInstrumentEntry(
         userEntry: String,
-        ambientTypings: String,
+        ambientTypings: [AmbientDeclarations],
         in dirURL: URL,
         relativeTo dirRelPath: String
     ) throws -> String {
-        let typingsName = "luma-ambient-typings.ts"
         let wrapperName = "luma-entry.ts"
-        try Data(ambientTypings.utf8).write(to: dirURL.appendingPathComponent(typingsName))
-        let wrapper = """
-            import "./\(typingsName)";
-            export * from "./\(userEntry)";
-            """
+        let wrapper = try importsOfStaged(ambientTypings, in: dirURL) + "export * from \"./\(userEntry)\";\n"
         try Data(wrapper.utf8).write(to: dirURL.appendingPathComponent(wrapperName))
         return "\(dirRelPath)/\(wrapperName)"
+    }
+
+    private static func importsOfStaged(_ typings: [AmbientDeclarations], in dirURL: URL) throws -> String {
+        try typings.map { declarations in
+            let name = "luma-" + declarations.fileName.replacingOccurrences(of: ".d.ts", with: ".ts")
+            try Data(declarations.content.utf8).write(to: dirURL.appendingPathComponent(name))
+            return "import \"./\(name)\";\n"
+        }.joined()
     }
 
     private static func validatedCustomInstrumentBundle(_ bundle: CustomInstrumentBundle) throws -> CustomInstrumentBundle {
