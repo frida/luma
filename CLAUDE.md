@@ -214,8 +214,20 @@ is gitignored — it is produced at build time.
   `node_modules`, so a pattern can import an installed package and a
   shared `.luma` carries what its placements refer to. Installed
   packages carrying the `frida-pattern` keyword show up read-only
-  beside them. `PatternDecoder` compiles with the workspace as project
+  beside them, and a custom instrument's pattern files can be placed
+  too, though they are edited in the instrument and stay out of the
+  pattern list. `PatternDecoder` compiles with the workspace as project
   root and defines `__MEMORY__`, since Luma only decodes process memory.
+  A lab shares the project's patterns, since a placement is no use to a
+  collaborator without the pattern it names. Placements live on a REPL
+  cell, an insight, a notebook entry or an event, and any member may
+  set them. One on a byte array inside a JavaScript value names where
+  those bytes were read (`origin`), which is how several arrays in one
+  value keep theirs apart; one with no origin is on the holder's own
+  dump. Every hex view that can be decoded is the one decode view, and
+  decoding itself is the engine's. The lab's web page cannot decode,
+  so a pinned entry also sends a `PlacementSnapshot` of what its
+  placements decode to.
 - **`TraceStore`** — file-backed blob store for raw ITrace data.
   Engine routes reads through `loadTraceData(traceID:sessionID:expectedSize:)`,
   which checks live in-memory pending state, then the local file,
