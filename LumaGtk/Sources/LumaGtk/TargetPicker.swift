@@ -44,6 +44,8 @@ final class TargetPicker {
 
     private let modeStack: Box
     private let modeHint: Label
+    private let processGadgetStrip: GadgetStrip
+    private let applicationGadgetStrip: GadgetStrip
     private let attachPane: Box
     private let spawnPane: Box
     private let noDevicePane: Box
@@ -85,16 +87,19 @@ final class TargetPicker {
 
     private var devices: [Frida.Device] = []
     private var processes: [ProcessDetails] = []
-    private var filteredProcesses: [ProcessDetails] = []
+    private var processDebuggability: ApplicationDebuggability?
+    private var processRows: [TargetListRow<ProcessDetails>] = []
     private var applications: [ApplicationDetails] = []
-    private var filteredApplications: [ApplicationDetails] = []
+    private var applicationDebuggability: ApplicationDebuggability?
+    private var applicationRows: [TargetListRow<ApplicationDetails>] = []
     private var armSuggestionCandidates: [ApplicationDetails] = []
     private var snapshotTask: Task<Void, Never>?
     private var processFetchTask: Task<Void, Never>?
     private var appFetchTask: Task<Void, Never>?
+    private var commitTask: Task<Void, Never>?
     private var connectingAnimations: [Adw.TimedAnimation] = []
     private var selectedDeviceID: String?
-    private var selectedProcessIndex: Int?
+    private var selectedProcess: ProcessDetails?
     private var selectedApplicationIdentifier: String?
 
     private var pickerState: TargetPickerState
@@ -166,6 +171,8 @@ final class TargetPicker {
         armToggle = ToggleButton()
         armToggle.label = "Wait for Launch"
         modeHint = Label(str: "")
+        processGadgetStrip = GadgetStrip(engine: engine)
+        applicationGadgetStrip = GadgetStrip(engine: engine)
 
         submodeAppToggle = ToggleButton()
         submodeAppToggle.label = "Application"
@@ -404,6 +411,7 @@ final class TargetPicker {
         dialog.onClosed { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.persistState()
+                self?.commitTask?.cancel()
                 self?.armSuggestionsPopover.unparent()
             }
         }
@@ -474,8 +482,8 @@ final class TargetPicker {
         pickerState.lastSelectedDeviceID = selectedDeviceID
         pickerState.lastSpawnApplicationID = selectedApplicationIdentifier
         pickerState.lastSpawnProgramPath = programPathEntry.text
-        if let idx = selectedProcessIndex, idx < processes.count {
-            pickerState.lastSelectedProcessName = processes[idx].name
+        if let selectedProcess {
+            pickerState.lastSelectedProcessName = selectedProcess.name
         }
         try? engine.store.save(pickerState)
     }
@@ -536,6 +544,7 @@ final class TargetPicker {
         processContent.append(child: processStatus)
         processContent.append(child: processSearchEntry)
         processContent.append(child: scroll)
+        processContent.append(child: processGadgetStrip.widget)
 
         processLoadingSpinner.setSizeRequest(width: 24, height: 24)
         processLoadingLabel.add(cssClass: "dim-label")
@@ -657,6 +666,7 @@ final class TargetPicker {
         appContent.append(child: appStatus)
         appContent.append(child: appSearchEntry)
         appContent.append(child: appScroll)
+        appContent.append(child: applicationGadgetStrip.widget)
 
         appLoadingSpinner.setSizeRequest(width: 24, height: 24)
         appLoadingLabel.add(cssClass: "dim-label")
@@ -1048,7 +1058,7 @@ final class TargetPicker {
         case .program:
             hasSpawnTarget = !programPathEntry.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
-        spawnButton.sensitive = (mode == .spawn) && hasSpawnTarget
+        spawnButton.sensitive = (mode == .spawn) && hasSpawnTarget && commitTask == nil
         let hasArmRegex = !armRegexEntry.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let hasArmName = !armDisplayNameEntry.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         armButton.sensitive = (mode == .armForLaunch) && hasArmRegex && hasArmName
@@ -1120,6 +1130,7 @@ final class TargetPicker {
     }
 
     private func handleDeviceRow(_ row: ListBoxRowRef?) {
+        showGadget(nil)
         guard let row else {
             selectedDeviceID = nil
             applyConnectionStage()
@@ -1139,6 +1150,7 @@ final class TargetPicker {
             loadApplications(for: device)
         }
         applyDefaultApplicationStdio(for: device)
+        showGadget(for: device)
         refreshSpawnButtonSensitivity()
     }
 
@@ -1149,6 +1161,26 @@ final class TargetPicker {
             guard selectedDeviceID == device.id else { return }
             appSubmodeForm.select(stdio: SpawnConfig.defaultApplicationStdio(on: system))
         }
+    }
+
+    private func showGadget(for device: Frida.Device) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let flavor = await engine.gadgetFlavor(for: device)
+            if let flavor {
+                await engine.gadgets.loadInstalledVersion(for: flavor)
+            }
+            guard selectedDeviceID == device.id else { return }
+            showGadget(flavor)
+            if flavor != nil {
+                await engine.fridaReleases.refresh()
+            }
+        }
+    }
+
+    private func showGadget(_ flavor: GadgetFlavor?) {
+        processGadgetStrip.show(flavor)
+        applicationGadgetStrip.show(flavor)
     }
 
     private func observeConnectionActivity() {
@@ -1208,25 +1240,36 @@ final class TargetPicker {
     private func loadProcesses(for device: Frida.Device) {
         processList.removeAll()
         processes = []
-        filteredProcesses = []
-        selectedProcessIndex = nil
-        attachButton.sensitive = false
+        processRows = []
+        selectedProcess = nil
+        refreshAttachButtonSensitivity()
         setProcessState(.loading, deviceName: device.name)
 
         processFetchTask?.cancel()
         let capturedID = device.id
         processFetchTask = Task { @MainActor in
             do {
-                let result = try await device.enumerateProcesses(scope: .full)
+                async let enumeration = device.enumerateProcesses(scope: .full)
+                let debuggability = try await self.queryDebuggability(on: device)
+                let result = try await enumeration
                 guard !Task.isCancelled, self.selectedDeviceID == capturedID else { return }
                 self.setProcessState(result.isEmpty ? .empty : .content, deviceName: device.name)
-                self.renderProcesses(result, for: device)
+                self.renderProcesses(result, debuggability: debuggability)
             } catch {
                 guard !Task.isCancelled, self.selectedDeviceID == capturedID else { return }
                 self.processErrorMessage.setText(str: error.localizedDescription)
                 self.setProcessState(.error, deviceName: device.name)
             }
         }
+    }
+
+    private func refreshAttachButtonSensitivity() {
+        attachButton.sensitive = selectedProcess != nil && commitTask == nil
+    }
+
+    private func queryDebuggability(on device: Frida.Device) async throws -> ApplicationDebuggability? {
+        guard await engine.gadgetFlavor(for: device) != nil else { return nil }
+        return ApplicationDebuggability(applications: try await device.enumerateApplications(scope: .metadata))
     }
 
     private enum ListPaneState {
@@ -1244,13 +1287,14 @@ final class TargetPicker {
         processEmpty.visible = (state == .empty)
     }
 
-    private func renderProcesses(_ snapshot: [ProcessDetails], for device: Frida.Device) {
+    private func renderProcesses(_ snapshot: [ProcessDetails], debuggability: ApplicationDebuggability?) {
         processes = snapshot.sortedWithKernelFirst()
+        processDebuggability = debuggability
         applyProcessFilter(query: processSearchEntry.text)
         processStatus.visible = false
 
         if let savedName = pickerState.lastSelectedProcessName,
-            let idx = filteredProcesses.firstIndex(where: { $0.name == savedName }),
+            let idx = processRows.firstIndex(where: { $0.target?.name == savedName }),
             let row = processList.getRowAt(index: idx)
         {
             processList.select(row: row)
@@ -1259,63 +1303,92 @@ final class TargetPicker {
 
     private func applyProcessFilter(query: String) {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
+        let filtered: [ProcessDetails]
         if trimmed.isEmpty {
-            filteredProcesses = processes
+            filtered = processes
         } else {
-            filteredProcesses = processes.filter {
+            filtered = processes.filter {
                 $0.name.localizedCaseInsensitiveContains(trimmed)
                     || (($0.parameters["argv"] as? [String])?
                         .contains { $0.localizedCaseInsensitiveContains(trimmed) } ?? false)
             }
         }
+        processRows = TargetListRow.grouping(filtered, by: processDebuggability?.isDebuggable)
         processList.removeAll()
-        for proc in filteredProcesses {
-            let row = ListBoxRow()
-            let hbox = Box(orientation: .horizontal, spacing: 8)
-            hbox.marginStart = 12
-            hbox.marginEnd = 12
-            hbox.marginTop = 4
-            hbox.marginBottom = 4
-            if let fridaIcon = proc.icons.last, let img = IconPixbuf.makeImage(from: fridaIcon, pixelSize: 24) {
-                hbox.append(child: img)
-            } else if proc.pid == 0 {
-                let icon = Gtk.Image(iconName: "computer-chip-symbolic")
-                icon.pixelSize = 24
-                icon.add(cssClass: "dim-label")
-                hbox.append(child: icon)
-            } else {
-                hbox.append(child: IconPlaceholderView.make(
-                    seed: proc.name,
-                    displayName: proc.name,
-                    pixelSize: 24
-                ))
+        for row in processRows {
+            switch row {
+            case .heading(let group):
+                processList.append(child: makeHeadingRow(group))
+            case .target(let process, let emphasis):
+                processList.append(child: makeProcessRow(process, emphasis: emphasis))
             }
-            let textBox = Box(orientation: .vertical, spacing: 0)
-            textBox.valign = .center
-            let nameLabel = Label(str: proc.name)
-            nameLabel.halign = .start
-            nameLabel.ellipsize = EllipsizeMode.end
-            nameLabel.maxWidthChars = 64
-            if proc.pid == 0 {
-                nameLabel.add(cssClass: "heading")
-            }
-            let subtitle = processSubtitle(for: proc)
-            let subtitleLabel = Label(str: subtitle)
-            subtitleLabel.halign = .start
-            subtitleLabel.ellipsize = EllipsizeMode.middle
-            subtitleLabel.xalign = 0
-            subtitleLabel.maxWidthChars = 64
-            subtitleLabel.add(cssClass: "dim-label")
-            subtitleLabel.add(cssClass: "caption")
-            subtitleLabel.tooltipText = subtitle
-            textBox.append(child: nameLabel)
-            textBox.append(child: subtitleLabel)
-            hbox.append(child: textBox)
-            row.set(child: hbox)
-            processList.append(child: row)
         }
-        selectedProcessIndex = nil
-        attachButton.sensitive = false
+        selectedProcess = nil
+        refreshAttachButtonSensitivity()
+    }
+
+    private func makeHeadingRow(_ group: DebuggabilityGroup) -> ListBoxRow {
+        let row = ListBoxRow()
+        row.sensitive = false
+        row.selectable = false
+        row.activatable = false
+        let label = Label(str: group.title)
+        label.halign = .start
+        label.add(cssClass: "caption-heading")
+        label.add(cssClass: "dim-label")
+        label.marginStart = 12
+        label.marginEnd = 12
+        label.marginTop = 10
+        label.marginBottom = 4
+        row.set(child: label)
+        return row
+    }
+
+    private func makeProcessRow(_ proc: ProcessDetails, emphasis: TargetEmphasis) -> ListBoxRow {
+        let row = ListBoxRow()
+        let hbox = Box(orientation: .horizontal, spacing: 8)
+        hbox.marginStart = 12
+        hbox.marginEnd = 12
+        hbox.marginTop = 4
+        hbox.marginBottom = 4
+        if let fridaIcon = proc.icons.last, let img = IconPixbuf.makeImage(from: fridaIcon, pixelSize: 24) {
+            hbox.append(child: img)
+        } else if proc.pid == 0 {
+            let icon = Gtk.Image(iconName: "computer-chip-symbolic")
+            icon.pixelSize = 24
+            icon.add(cssClass: "dim-label")
+            hbox.append(child: icon)
+        } else {
+            hbox.append(child: IconPlaceholderView.make(
+                seed: proc.name,
+                displayName: proc.name,
+                pixelSize: 24
+            ))
+        }
+        let textBox = Box(orientation: .vertical, spacing: 0)
+        textBox.valign = .center
+        let nameLabel = Label(str: proc.name)
+        nameLabel.halign = .start
+        nameLabel.ellipsize = EllipsizeMode.end
+        nameLabel.maxWidthChars = 64
+        if proc.pid == 0 {
+            nameLabel.add(cssClass: "heading")
+        }
+        let subtitle = processSubtitle(for: proc)
+        let subtitleLabel = Label(str: subtitle)
+        subtitleLabel.halign = .start
+        subtitleLabel.ellipsize = EllipsizeMode.middle
+        subtitleLabel.xalign = 0
+        subtitleLabel.maxWidthChars = 64
+        subtitleLabel.add(cssClass: "dim-label")
+        subtitleLabel.add(cssClass: "caption")
+        subtitleLabel.tooltipText = subtitle
+        textBox.append(child: nameLabel)
+        textBox.append(child: subtitleLabel)
+        hbox.append(child: textBox)
+        hbox.opacity = emphasis.opacity
+        row.set(child: hbox)
+        return row
     }
 
     private func processSubtitle(for proc: ProcessDetails) -> String {
@@ -1328,20 +1401,20 @@ final class TargetPicker {
 
     private func handleProcessRow(_ row: ListBoxRowRef?) {
         guard let row else {
-            selectedProcessIndex = nil
-            attachButton.sensitive = false
+            selectedProcess = nil
+            refreshAttachButtonSensitivity()
             return
         }
         let index = Int(row.index)
-        guard index >= 0, index < filteredProcesses.count else { return }
-        selectedProcessIndex = index
-        attachButton.sensitive = true
+        guard index >= 0, index < processRows.count else { return }
+        selectedProcess = processRows[index].target
+        refreshAttachButtonSensitivity()
     }
 
     private func loadApplications(for device: Frida.Device) {
         appList.removeAll()
         applications = []
-        filteredApplications = []
+        applicationRows = []
         setAppState(.loading, deviceName: device.name)
 
         appFetchTask?.cancel()
@@ -1349,9 +1422,10 @@ final class TargetPicker {
         appFetchTask = Task { @MainActor in
             do {
                 let result = try await device.enumerateApplications(scope: .full)
+                let needsGadget = await self.engine.gadgetFlavor(for: device) != nil
                 guard !Task.isCancelled, self.selectedDeviceID == capturedID else { return }
                 self.setAppState(result.isEmpty ? .empty : .content, deviceName: device.name)
-                self.renderApplications(result, for: device)
+                self.renderApplications(result, debuggability: needsGadget ? ApplicationDebuggability(applications: result) : nil)
             } catch {
                 guard !Task.isCancelled, self.selectedDeviceID == capturedID else { return }
                 self.appErrorMessage.setText(str: error.localizedDescription)
@@ -1368,17 +1442,18 @@ final class TargetPicker {
         appEmpty.visible = (state == .empty)
     }
 
-    private func renderApplications(_ snapshot: [ApplicationDetails], for device: Frida.Device) {
+    private func renderApplications(_ snapshot: [ApplicationDetails], debuggability: ApplicationDebuggability?) {
         let sorted = snapshot.sorted {
             $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
         applications = sorted
+        applicationDebuggability = debuggability
         appStatus.visible = false
         applyAppFilter(query: appSearchEntry.text)
         applyArmSuggestionsFilter(query: armSuggestionsSearchEntry.text)
 
         if let saved = selectedApplicationIdentifier ?? pickerState.lastSpawnApplicationID,
-            let idx = filteredApplications.firstIndex(where: { $0.identifier == saved }),
+            let idx = applicationRows.firstIndex(where: { $0.target?.identifier == saved }),
             let row = appList.getRowAt(index: idx)
         {
             appList.select(row: row)
@@ -1444,55 +1519,67 @@ final class TargetPicker {
 
     private func applyAppFilter(query: String) {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
+        let filtered: [ApplicationDetails]
         if trimmed.isEmpty {
-            filteredApplications = applications
+            filtered = applications
         } else {
-            filteredApplications = applications.filter {
+            filtered = applications.filter {
                 $0.name.localizedCaseInsensitiveContains(trimmed)
                     || $0.identifier.localizedCaseInsensitiveContains(trimmed)
             }
         }
+        applicationRows = TargetListRow.grouping(filtered, by: applicationDebuggability?.isDebuggable)
         appList.removeAll()
-        for app in filteredApplications {
-            let row = ListBoxRow()
-            let hbox = Box(orientation: .horizontal, spacing: 8)
-            hbox.marginStart = 12
-            hbox.marginEnd = 12
-            hbox.marginTop = 4
-            hbox.marginBottom = 4
-            if let fridaIcon = app.icons.last, let img = IconPixbuf.makeImage(from: fridaIcon, pixelSize: 24) {
-                hbox.append(child: img)
-            } else {
-                hbox.append(child: IconPlaceholderView.make(
-                    seed: app.identifier,
-                    displayName: app.name,
-                    pixelSize: 24
-                ))
+        for row in applicationRows {
+            switch row {
+            case .heading(let group):
+                appList.append(child: makeHeadingRow(group))
+            case .target(let app, let emphasis):
+                appList.append(child: makeApplicationRow(app, emphasis: emphasis))
             }
-            let textBox = Box(orientation: .vertical, spacing: 0)
-            textBox.hexpand = true
-            textBox.valign = .center
-            let nameLabel = Label(str: app.name)
-            nameLabel.halign = .start
-            nameLabel.ellipsize = EllipsizeMode.end
-            let idLabel = Label(str: app.identifier)
-            idLabel.halign = .start
-            idLabel.ellipsize = EllipsizeMode.end
-            idLabel.add(cssClass: "dim-label")
-            idLabel.add(cssClass: "caption")
-            textBox.append(child: nameLabel)
-            textBox.append(child: idLabel)
-            hbox.append(child: textBox)
-            if app.pid != 0 {
-                let badge = Label(str: "Running (PID \(app.pid))")
-                badge.add(cssClass: "caption")
-                badge.add(cssClass: "luma-pid-badge")
-                badge.valign = .center
-                hbox.append(child: badge)
-            }
-            row.set(child: hbox)
-            appList.append(child: row)
         }
+    }
+
+    private func makeApplicationRow(_ app: ApplicationDetails, emphasis: TargetEmphasis) -> ListBoxRow {
+        let row = ListBoxRow()
+        let hbox = Box(orientation: .horizontal, spacing: 8)
+        hbox.marginStart = 12
+        hbox.marginEnd = 12
+        hbox.marginTop = 4
+        hbox.marginBottom = 4
+        if let fridaIcon = app.icons.last, let img = IconPixbuf.makeImage(from: fridaIcon, pixelSize: 24) {
+            hbox.append(child: img)
+        } else {
+            hbox.append(child: IconPlaceholderView.make(
+                seed: app.identifier,
+                displayName: app.name,
+                pixelSize: 24
+            ))
+        }
+        let textBox = Box(orientation: .vertical, spacing: 0)
+        textBox.hexpand = true
+        textBox.valign = .center
+        let nameLabel = Label(str: app.name)
+        nameLabel.halign = .start
+        nameLabel.ellipsize = EllipsizeMode.end
+        let idLabel = Label(str: app.identifier)
+        idLabel.halign = .start
+        idLabel.ellipsize = EllipsizeMode.end
+        idLabel.add(cssClass: "dim-label")
+        idLabel.add(cssClass: "caption")
+        textBox.append(child: nameLabel)
+        textBox.append(child: idLabel)
+        hbox.append(child: textBox)
+        if app.pid != 0 {
+            let badge = Label(str: "Running (PID \(app.pid))")
+            badge.add(cssClass: "caption")
+            badge.add(cssClass: "luma-pid-badge")
+            badge.valign = .center
+            hbox.append(child: badge)
+        }
+        hbox.opacity = emphasis.opacity
+        row.set(child: hbox)
+        return row
     }
 
     private func handleAppRow(_ row: ListBoxRowRef?) {
@@ -1502,8 +1589,8 @@ final class TargetPicker {
             return
         }
         let index = Int(row.index)
-        guard index >= 0, index < filteredApplications.count else { return }
-        selectedApplicationIdentifier = filteredApplications[index].identifier
+        guard index >= 0, index < applicationRows.count, let app = applicationRows[index].target else { return }
+        selectedApplicationIdentifier = app.identifier
         refreshSpawnButtonSensitivity()
     }
 
@@ -1523,26 +1610,16 @@ final class TargetPicker {
     }
 
     private func commitAttach() {
-        guard let device = currentDevice(),
-            let processIndex = selectedProcessIndex,
-            processIndex < filteredProcesses.count
-        else { return }
-        let process = filteredProcesses[processIndex]
+        guard commitTask == nil, let device = currentDevice(), let process = selectedProcess else { return }
         pickerState.lastSelectedProcessName = process.name
         persistState()
-        onAttach(device, process)
-        snapshotTask?.cancel()
-        processFetchTask?.cancel()
-        appFetchTask?.cancel()
-        _ = dialog.close()
+        commit(on: device) { [onAttach] in onAttach(device, process) }
     }
 
     private func commitSpawn() {
-        guard let device = currentDevice(), let config = currentSpawnConfig() else { return }
+        guard commitTask == nil, let device = currentDevice(), let config = currentSpawnConfig() else { return }
         persistState()
-        onSpawn(device, config)
-        cancelLoadingTasks()
-        _ = dialog.close()
+        commit(on: device) { [onSpawn] in onSpawn(device, config) }
     }
 
     private func commitArm() {
@@ -1581,6 +1658,34 @@ final class TargetPicker {
         if trimmed.hasSuffix("$") { trimmed.removeLast() }
         let metacharacters: Set<Character> = ["\\", ".", "*", "+", "?", "(", ")", "[", "]", "{", "}", "|"]
         return trimmed.contains(where: { metacharacters.contains($0) }) ? nil : trimmed
+    }
+
+    private func commit(on device: Frida.Device, handOff: @escaping () -> Void) {
+        commitTask = Task { @MainActor in
+            defer { endCommit() }
+            if let flavor = await engine.gadgetFlavor(for: device) {
+                do {
+                    _ = try await engine.gadgets.ensure(flavor)
+                } catch {
+                    return
+                }
+            }
+            guard !Task.isCancelled else { return }
+            handOff()
+            cancelLoadingTasks()
+            _ = dialog.close()
+        }
+        refreshCommitSensitivity()
+    }
+
+    private func endCommit() {
+        commitTask = nil
+        refreshCommitSensitivity()
+    }
+
+    private func refreshCommitSensitivity() {
+        refreshAttachButtonSensitivity()
+        refreshSpawnButtonSensitivity()
     }
 
     private func currentSpawnConfig() -> SpawnConfig? {
@@ -1819,6 +1924,57 @@ private let targetPickerCertificatePathThunk: @convention(c) (
             picker.handleCertificatePath(pathString)
         } else {
             picker.clearPendingCertificateEntry()
+        }
+    }
+}
+
+private enum TargetListRow<Target> {
+    case heading(DebuggabilityGroup)
+    case target(Target, emphasis: TargetEmphasis)
+
+    static func grouping(_ targets: [Target], by isDebuggable: ((Target) -> Bool)?) -> [TargetListRow] {
+        guard let isDebuggable else { return targets.map { .target($0, emphasis: .regular) } }
+        return section(.debuggable, targets.filter(isDebuggable)) + section(.other, targets.filter { !isDebuggable($0) })
+    }
+
+    private static func section(_ group: DebuggabilityGroup, _ targets: [Target]) -> [TargetListRow] {
+        guard !targets.isEmpty else { return [] }
+        return [.heading(group)] + targets.map { .target($0, emphasis: group.emphasis) }
+    }
+
+    var target: Target? {
+        guard case .target(let target, _) = self else { return nil }
+        return target
+    }
+}
+
+private enum DebuggabilityGroup {
+    case debuggable
+    case other
+
+    var title: String {
+        switch self {
+        case .debuggable: return "Debuggable"
+        case .other: return "Other"
+        }
+    }
+
+    var emphasis: TargetEmphasis {
+        switch self {
+        case .debuggable: return .regular
+        case .other: return .dimmed
+        }
+    }
+}
+
+private enum TargetEmphasis {
+    case regular
+    case dimmed
+
+    var opacity: Double {
+        switch self {
+        case .regular: return 1
+        case .dimmed: return 0.5
         }
     }
 }

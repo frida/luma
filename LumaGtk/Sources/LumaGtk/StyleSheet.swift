@@ -395,6 +395,11 @@ enum StyleSheet {
         padding: 6px 18px;
     }
 
+    button.luma-gadget-offer {
+        min-height: 0;
+        padding: 3px 12px;
+    }
+
     button.luma-pharo-inline-save {
         min-height: 0;
         min-width: 0;
