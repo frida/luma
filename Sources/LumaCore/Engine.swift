@@ -988,7 +988,6 @@ public final class Engine {
             let local = (try? self.store.fetchCustomInstrumentDefs()) ?? []
             for stale in local where !serverIDs.contains(stale.id) {
                 try? self.store.deleteCustomInstrumentDef(id: stale.id)
-                self.unlinkInstrumentFolder(defID: stale.id)
             }
             let normalized = bundles.map { bundle -> CustomInstrumentBundle in
                 var copy = bundle
