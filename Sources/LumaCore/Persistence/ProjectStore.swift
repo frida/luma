@@ -14,7 +14,7 @@ public enum ProjectStoreError: Error, LocalizedError {
 
 public final class ProjectStore: Sendable {
     public static let didCommitNotification = Notification.Name("LumaCore.ProjectStore.didCommit")
-    public static let currentSchemaVersion: Int = 3
+    public static let currentSchemaVersion: Int = 4
 
     public let instanceID = UUID()
     private let db: DatabaseQueue
@@ -272,128 +272,29 @@ public final class ProjectStore: Sendable {
         }
     }
 
-    public func saveOutboxOp(_ op: NotebookOp) throws {
-        try db.write { db in
-            try saveOutboxOp(op, in: db)
-        }
-    }
-
-    public func saveOutboxOps(_ ops: [NotebookOp]) throws {
+    public func saveOutboxOps<Op: OutboxOp>(_ ops: [Op]) throws {
         try db.write { db in
             for op in ops {
-                try saveOutboxOp(op, in: db)
+                try OutboxRecord(op).save(db)
             }
         }
     }
 
-    public func acknowledgeOutboxOp(opID: UUID) throws -> Bool {
-        try db.write { db in
-            let key = opID.uuidString
-            let removals = [
-                try NotebookOutboxRecord.deleteOne(db, key: key),
-                try SessionOutboxRecord.deleteOne(db, key: key),
-                try CustomInstrumentOutboxRecord.deleteOne(db, key: key),
-                try PatternSourceOutboxRecord.deleteOne(db, key: key),
-                try MissionOutboxRecord.deleteOne(db, key: key),
-                try AddressNoteOutboxRecord.deleteOne(db, key: key),
-            ]
-            return removals.contains(true)
-        }
-    }
-
-    public func fetchOutboxOps() throws -> [NotebookOp] {
+    public func fetchOutboxOps<Op: OutboxOp>(_ type: Op.Type) throws -> [Op] {
         try db.read { db in
-            let rows = try NotebookOutboxRecord
+            try OutboxRecord
+                .filter(Column("family") == Op.outboxFamily)
                 .order(Column("created_at").asc, Column("op_id").asc)
                 .fetchAll(db)
-            return rows.compactMap { $0.toOp() }
+                .compactMap { $0.toOp(type) }
         }
     }
 
-    public func removeOutboxOp(opID: UUID) throws {
+    @discardableResult
+    public func removeOutboxOp(opID: UUID) throws -> Bool {
         try db.write { db in
-            _ = try NotebookOutboxRecord.deleteOne(db, key: opID.uuidString)
+            try OutboxRecord.deleteOne(db, key: opID.uuidString)
         }
-    }
-
-    public func clearOutbox() throws {
-        try db.write { db in
-            _ = try NotebookOutboxRecord.deleteAll(db)
-        }
-    }
-
-    private func saveOutboxOp(_ op: NotebookOp, in db: Database) throws {
-        let payload = op.toJSON()
-        let data = try JSONSerialization.data(
-            withJSONObject: payload,
-            options: [.sortedKeys]
-        )
-        let json = String(data: data, encoding: .utf8) ?? "{}"
-        let binary: Data? = {
-            if case let .add(add) = op { return add.entry.binaryData }
-            return nil
-        }()
-        let record = NotebookOutboxRecord(
-            opID: op.opID.uuidString,
-            kind: op.kind,
-            entryID: op.entryID.uuidString,
-            payloadJSON: json,
-            binaryData: binary,
-            createdAt: Date()
-        )
-        try record.save(db)
-    }
-
-    public func saveSessionOutboxOp(_ op: SessionOp) throws {
-        try db.write { db in
-            try saveSessionOutboxOp(op, in: db)
-        }
-    }
-
-    public func saveSessionOutboxOps(_ ops: [SessionOp]) throws {
-        try db.write { db in
-            for op in ops {
-                try saveSessionOutboxOp(op, in: db)
-            }
-        }
-    }
-
-    public func fetchSessionOutboxOps() throws -> [SessionOp] {
-        try db.read { db in
-            let rows = try SessionOutboxRecord
-                .order(Column("created_at").asc, Column("op_id").asc)
-                .fetchAll(db)
-            return rows.compactMap { $0.toOp() }
-        }
-    }
-
-    public func removeSessionOutboxOp(opID: UUID) throws {
-        try db.write { db in
-            _ = try SessionOutboxRecord.deleteOne(db, key: opID.uuidString)
-        }
-    }
-
-    public func clearSessionOutbox() throws {
-        try db.write { db in
-            _ = try SessionOutboxRecord.deleteAll(db)
-        }
-    }
-
-    private func saveSessionOutboxOp(_ op: SessionOp, in db: Database) throws {
-        let payload = op.toJSON()
-        let data = try JSONSerialization.data(
-            withJSONObject: payload,
-            options: [.sortedKeys]
-        )
-        let json = String(data: data, encoding: .utf8) ?? "{}"
-        let record = SessionOutboxRecord(
-            opID: op.opID.uuidString,
-            kind: op.kind,
-            sessionID: op.sessionID.uuidString,
-            payloadJSON: json,
-            createdAt: Date()
-        )
-        try record.save(db)
     }
 
     public func fetchAllSessionUIStates() throws -> [UUID: SessionUIState] {
@@ -736,46 +637,6 @@ public final class ProjectStore: Sendable {
         }
     }
 
-    public func saveAddressNoteOutboxOp(_ op: AddressNoteOp) throws {
-        try db.write { db in
-            let payload = op.toJSON()
-            let data = try JSONSerialization.data(
-                withJSONObject: payload,
-                options: [.sortedKeys]
-            )
-            let json = String(data: data, encoding: .utf8) ?? "{}"
-            let record = AddressNoteOutboxRecord(
-                opID: op.opID.uuidString,
-                kind: op.kind,
-                noteID: op.noteID.uuidString,
-                payloadJSON: json,
-                createdAt: Date()
-            )
-            try record.save(db)
-        }
-    }
-
-    public func fetchAddressNoteOutboxOps() throws -> [AddressNoteOp] {
-        try db.read { db in
-            let rows = try AddressNoteOutboxRecord
-                .order(Column("created_at").asc, Column("op_id").asc)
-                .fetchAll(db)
-            return rows.compactMap { $0.toOp() }
-        }
-    }
-
-    public func removeAddressNoteOutboxOp(opID: UUID) throws {
-        try db.write { db in
-            _ = try AddressNoteOutboxRecord.deleteOne(db, key: opID.uuidString)
-        }
-    }
-
-    public func clearAddressNoteOutbox() throws {
-        try db.write { db in
-            _ = try AddressNoteOutboxRecord.deleteAll(db)
-        }
-    }
-
     public func observeMissions(
         onChange: @escaping @Sendable ([Mission]) -> Void
     ) -> StoreObservation {
@@ -1011,50 +872,6 @@ public final class ProjectStore: Sendable {
         }
     }
 
-    public func saveMissionOutboxOp(_ op: MissionOp) throws {
-        try db.write { db in
-            try saveMissionOutboxOp(op, in: db)
-        }
-    }
-
-    public func fetchMissionOutboxOps() throws -> [MissionOp] {
-        try db.read { db in
-            let rows = try MissionOutboxRecord
-                .order(Column("created_at").asc, Column("op_id").asc)
-                .fetchAll(db)
-            return rows.compactMap { $0.toOp() }
-        }
-    }
-
-    public func removeMissionOutboxOp(opID: UUID) throws {
-        try db.write { db in
-            _ = try MissionOutboxRecord.deleteOne(db, key: opID.uuidString)
-        }
-    }
-
-    public func clearMissionOutbox() throws {
-        try db.write { db in
-            _ = try MissionOutboxRecord.deleteAll(db)
-        }
-    }
-
-    private func saveMissionOutboxOp(_ op: MissionOp, in db: Database) throws {
-        let payload = op.toJSON()
-        let data = try JSONSerialization.data(
-            withJSONObject: payload,
-            options: [.sortedKeys]
-        )
-        let json = String(data: data, encoding: .utf8) ?? "{}"
-        let record = MissionOutboxRecord(
-            opID: op.opID.uuidString,
-            kind: op.kind,
-            missionID: op.missionID.uuidString,
-            payloadJSON: json,
-            createdAt: Date()
-        )
-        try record.save(db)
-    }
-
     public func fetchRemoteDevices() throws -> [RemoteDeviceConfig] {
         try db.read { db in
             try RemoteDeviceConfig.fetchAll(db)
@@ -1255,29 +1072,6 @@ public final class ProjectStore: Sendable {
         }
     }
 
-    public func savePatternSourceOutboxOps(_ ops: [PatternSourceOp]) throws {
-        try db.write { db in
-            for op in ops {
-                try PatternSourceOutboxRecord(op).save(db)
-            }
-        }
-    }
-
-    public func fetchPatternSourceOutboxOps() throws -> [PatternSourceOp] {
-        try db.read { db in
-            let rows = try PatternSourceOutboxRecord
-                .order(Column("created_at").asc, Column("op_id").asc)
-                .fetchAll(db)
-            return rows.compactMap { $0.toOp() }
-        }
-    }
-
-    public func removePatternSourceOutboxOp(opID: UUID) throws {
-        try db.write { db in
-            _ = try PatternSourceOutboxRecord.deleteOne(db, key: opID.uuidString)
-        }
-    }
-
     public func fetchPharoClassDefinitions() throws -> [PharoClassDefinition] {
         try db.read { db in
             try PharoClassDefinition.order(Column("updated_at").asc).fetchAll(db)
@@ -1370,33 +1164,6 @@ public final class ProjectStore: Sendable {
         }
     }
 
-    public func saveCustomInstrumentOutboxOp(_ op: CustomInstrumentOp) throws {
-        try db.write { db in
-            try saveCustomInstrumentOutboxOp(op, in: db)
-        }
-    }
-
-    public func fetchCustomInstrumentOutboxOps() throws -> [CustomInstrumentOp] {
-        try db.read { db in
-            let rows = try CustomInstrumentOutboxRecord
-                .order(Column("created_at").asc, Column("op_id").asc)
-                .fetchAll(db)
-            return rows.compactMap { $0.toOp() }
-        }
-    }
-
-    public func removeCustomInstrumentOutboxOp(opID: UUID) throws {
-        try db.write { db in
-            _ = try CustomInstrumentOutboxRecord.deleteOne(db, key: opID.uuidString)
-        }
-    }
-
-    public func clearCustomInstrumentOutbox() throws {
-        try db.write { db in
-            _ = try CustomInstrumentOutboxRecord.deleteAll(db)
-        }
-    }
-
     public func fetchWidgetStates(instanceID: UUID) throws -> [String: WidgetState] {
         try db.read { db in
             let rows = try Row.fetchAll(
@@ -1452,23 +1219,6 @@ public final class ProjectStore: Sendable {
                 arguments: [instanceID.uuidString]
             )
         }
-    }
-
-    private func saveCustomInstrumentOutboxOp(_ op: CustomInstrumentOp, in db: Database) throws {
-        let payload = op.toJSON()
-        let data = try JSONSerialization.data(
-            withJSONObject: payload,
-            options: [.sortedKeys]
-        )
-        let json = String(data: data, encoding: .utf8) ?? "{}"
-        let record = CustomInstrumentOutboxRecord(
-            opID: op.opID.uuidString,
-            kind: op.kind,
-            defID: op.defID.uuidString,
-            payloadJSON: json,
-            createdAt: Date()
-        )
-        try record.save(db)
     }
 
     public func fetchProjectUIState() throws -> ProjectUIState {
@@ -1576,23 +1326,6 @@ public final class ProjectStore: Sendable {
             t.column("placements", .blob).notNull()
             t.column("session_id", .text)
             t.column("process_name", .text)
-        }
-
-        try db.create(table: "notebook_outbox", ifNotExists: true) { t in
-            t.primaryKey("op_id", .text).notNull()
-            t.column("kind", .text).notNull()
-            t.column("entry_id", .text).notNull()
-            t.column("payload_json", .text).notNull()
-            t.column("binary_data", .blob)
-            t.column("created_at", .datetime).notNull()
-        }
-
-        try db.create(table: "session_outbox", ifNotExists: true) { t in
-            t.primaryKey("op_id", .text).notNull()
-            t.column("kind", .text).notNull()
-            t.column("session_id", .text).notNull()
-            t.column("payload_json", .text).notNull()
-            t.column("created_at", .datetime).notNull()
         }
 
         try db.create(table: "itrace", ifNotExists: true) { t in
@@ -1844,14 +1577,6 @@ public final class ProjectStore: Sendable {
             t.primaryKey(["instance_id", "widget_id"])
         }
 
-        try db.create(table: "custom_instrument_outbox", ifNotExists: true) { t in
-            t.primaryKey("op_id", .text).notNull()
-            t.column("kind", .text).notNull()
-            t.column("def_id", .text).notNull()
-            t.column("payload_json", .text).notNull()
-            t.column("created_at", .datetime).notNull()
-        }
-
         try db.create(table: "project_ui_state", ifNotExists: true) { t in
             t.primaryKey("id", .text).notNull()
             t.column("selected_item_json", .text)
@@ -1959,19 +1684,13 @@ public final class ProjectStore: Sendable {
             t.column("note", .text)
         }
 
-        try db.create(table: "mission_outbox", ifNotExists: true) { t in
+        try db.create(table: "outbox", ifNotExists: true) { t in
             t.primaryKey("op_id", .text).notNull()
+            t.column("family", .text).notNull()
             t.column("kind", .text).notNull()
-            t.column("mission_id", .text).notNull()
+            t.column("subject_id", .text).notNull()
             t.column("payload_json", .text).notNull()
-            t.column("created_at", .datetime).notNull()
-        }
-
-        try db.create(table: "address_note_outbox", ifNotExists: true) { t in
-            t.primaryKey("op_id", .text).notNull()
-            t.column("kind", .text).notNull()
-            t.column("note_id", .text).notNull()
-            t.column("payload_json", .text).notNull()
+            t.column("binary_data", .blob)
             t.column("created_at", .datetime).notNull()
         }
 
@@ -1981,13 +1700,6 @@ public final class ProjectStore: Sendable {
             t.column("type_name", .text).notNull()
         }
 
-        try db.create(table: "pattern_source_outbox", ifNotExists: true) { t in
-            t.primaryKey("op_id", .text).notNull()
-            t.column("kind", .text).notNull()
-            t.column("source_id", .text).notNull()
-            t.column("payload_json", .text).notNull()
-            t.column("created_at", .datetime).notNull()
-        }
     }
 }
 

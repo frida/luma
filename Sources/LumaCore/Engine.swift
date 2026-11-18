@@ -5461,14 +5461,14 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         else { return }
         let bundle = CustomInstrumentBundle(def: def, files: files)
         let op = CustomInstrumentOp.upsert(.init(bundle: bundle))
-        try? store.saveCustomInstrumentOutboxOp(op)
+        try? store.saveOutboxOps([op])
         collaboration.sendCustomInstrumentOpIfJoined(op)
         instrumentsEditedSinceSnapshots.insert(defID)
     }
 
     private func broadcastCustomInstrumentRemove(defID: UUID) {
         let op = CustomInstrumentOp.remove(.init(defID: defID))
-        try? store.saveCustomInstrumentOutboxOp(op)
+        try? store.saveOutboxOps([op])
         collaboration.sendCustomInstrumentOpIfJoined(op)
     }
 
