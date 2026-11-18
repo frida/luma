@@ -32,6 +32,7 @@ final class PatternDecodeView {
     private let hexView: HexView
     private let hexScroller: ScrolledWindow
     private let treeScroller: ScrolledWindow
+    private let treePane: Widget
     private let treeList: ListBox
     private let hintLabel: Label
     private let problemLabel: Label
@@ -94,9 +95,8 @@ final class PatternDecodeView {
         treeScroller.hexpand = true
         treeScroller.setSizeRequest(width: 360, height: -1)
 
-        let panes = Box(orientation: .horizontal, spacing: 16)
-        panes.append(child: hexScroller)
-        panes.append(child: treeScroller)
+        let panes: Widget
+        (panes, treePane) = Self.arrange(hexScroller, beside: treeScroller, sizing: sizing)
 
         hintLabel = Label(str: HexView.editingHint)
         hintLabel.add(cssClass: "dim-label")
@@ -134,6 +134,31 @@ final class PatternDecodeView {
         installTreeHandlers()
         showTree()
         decodeAsPatternsChange()
+    }
+
+    private static func arrange(_ hex: Widget, beside tree: Widget, sizing: PatternDecodeSizing) -> (panes: Widget, treePane: Widget) {
+        switch sizing {
+        case .capped:
+            let panes = FlowBox()
+            panes.selectionMode = .none
+            panes.minChildrenPerLine = 1
+            panes.maxChildrenPerLine = 2
+            panes.columnSpacing = 16
+            panes.rowSpacing = 6
+            let wrapped = [hex, tree].map { pane -> FlowBoxChild in
+                let child = FlowBoxChild()
+                child.focusable = false
+                child.set(child: pane)
+                panes.append(child: child)
+                return child
+            }
+            return (panes, wrapped[1])
+        case .fill:
+            let panes = Box(orientation: .horizontal, spacing: 16)
+            panes.append(child: hex)
+            panes.append(child: tree)
+            return (panes, tree)
+        }
     }
 
     func setData(_ data: Data, baseAddress: UInt64?) {
@@ -485,7 +510,7 @@ final class PatternDecodeView {
     }
 
     private func showTree() {
-        treeScroller.visible = !placements.isEmpty
+        treePane.visible = !placements.isEmpty
     }
 
     private func decodeAsPatternsChange() {
