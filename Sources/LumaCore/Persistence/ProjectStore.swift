@@ -1228,6 +1228,24 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    public func fetchRecentPlacements() throws -> [PatternPlacementHistory.Entry] {
+        try db.read { db in
+            try Row.fetchAll(db, sql: "SELECT source_id, type_name FROM recent_placement ORDER BY position")
+                .map { PatternPlacementHistory.Entry(sourceID: $0["source_id"], typeName: $0["type_name"]) }
+        }
+    }
+
+    public func saveRecentPlacements(_ entries: [PatternPlacementHistory.Entry]) throws {
+        try db.write { db in
+            try db.execute(sql: "DELETE FROM recent_placement")
+            for (position, entry) in entries.enumerated() {
+                try db.execute(
+                    sql: "INSERT INTO recent_placement (position, source_id, type_name) VALUES (?, ?, ?)",
+                    arguments: [position, entry.sourceID, entry.typeName])
+            }
+        }
+    }
+
     public func replacePatternSources(with records: [PatternSourceRecord]) throws {
         try db.write { db in
             _ = try PatternSourceRecord.deleteAll(db)
@@ -1955,6 +1973,12 @@ public final class ProjectStore: Sendable {
             t.column("note_id", .text).notNull()
             t.column("payload_json", .text).notNull()
             t.column("created_at", .datetime).notNull()
+        }
+
+        try db.create(table: "recent_placement", ifNotExists: true) { t in
+            t.primaryKey("position", .integer).notNull()
+            t.column("source_id", .text).notNull()
+            t.column("type_name", .text).notNull()
         }
 
         try db.create(table: "pattern_source_outbox", ifNotExists: true) { t in

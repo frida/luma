@@ -101,7 +101,7 @@ public final class Engine {
     public internal(set) var customInstrumentDefUIStates: [UUID: CustomInstrumentDefUIState] = [:]
     public private(set) var missions: [Mission] = []
     public private(set) var installedPackages: [InstalledPackage] = []
-    public let placementHistory = PatternPlacementHistory()
+    public let placementHistory: PatternPlacementHistory
 
     @ObservationIgnored private var placementSnapshotTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var instrumentsEditedSinceSnapshots: Set<UUID> = []
@@ -168,6 +168,7 @@ public final class Engine {
         self.instrumentFolders = InstrumentFolderLibrary(directory: instrumentFoldersDir)
         let workspace = try! Self.compilerWorkspacePaths(store: store, dataDirectory: dataDirectory)
         self.patterns = PatternLibrary(store: store, workspace: workspace)
+        self.placementHistory = PatternPlacementHistory(store: store)
         self.patternDecoder = PatternDecoder(
             projectRoot: workspace.root, draftDirectory: PatternLibrary.directory(in: workspace),
             defines: PatternDecoder.processMemoryDefines)
