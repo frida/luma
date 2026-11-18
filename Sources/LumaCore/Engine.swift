@@ -72,6 +72,7 @@ public final class Engine {
     private let patternGlobals = PatternGlobals()
     public let customInstruments: CustomInstrumentLibrary
     public let fridaReleases = FridaReleaseCatalog()
+    public let gadgets: GadgetLibrary
     public let virtualMachines: VirtualMachineManager
 
     /// The image the playground, the notebook cells and the mission tools all
@@ -166,6 +167,7 @@ public final class Engine {
             projectRoot: workspace.root, draftDirectory: PatternLibrary.directory(in: workspace),
             defines: PatternDecoder.processMemoryDefines)
         self.customInstruments = CustomInstrumentLibrary()
+        self.gadgets = GadgetLibrary(catalog: fridaReleases)
         self.virtualMachines = VirtualMachineManager(
             deviceManager: deviceManager, store: store, dataDirectory: dataDirectory, releases: fridaReleases)
         self.collaboration = CollaborationSession(
@@ -2121,13 +2123,16 @@ public final class Engine {
         ensureDeviceEventsHooked(for: device)
 
         do {
+            let gadget = try await gadgetPath(for: device)
+            let aux: [String: Any]? = if let gadget { ["gadget": gadget] } else { nil }
             let pid = try await device.spawn(
                 program: config.programString,
                 argv: config.argvParam,
                 envp: nil,
                 env: config.envParam,
                 cwd: config.cwdParam,
-                stdio: config.stdio
+                stdio: config.stdio,
+                aux: aux
             )
 
             let procs = try await device.enumerateProcesses(pids: [pid], scope: .full)
@@ -2191,7 +2196,7 @@ public final class Engine {
         do {
             ensureDeviceEventsHooked(for: device)
 
-            let fridaSession = try await device.attach(pid: process.pid)
+            let fridaSession = try await device.attach(pid: process.pid, gadgetPath: gadgetPath(for: device))
 
             updateSession(id: s.id) { $0.lastAttachedAt = Date() }
 
@@ -2299,6 +2304,15 @@ public final class Engine {
             }
             throw error
         }
+    }
+
+    private func gadgetPath(for device: Device) async throws -> String? {
+        guard let flavor = await gadgetFlavor(for: device) else { return nil }
+        return try await gadgets.ensure(flavor).path
+    }
+
+    public func gadgetFlavor(for device: Device) async -> GadgetFlavor? {
+        await systemParameters.parameters(for: device).flatMap(GadgetFlavor.init(system:))
     }
 
     private func announceLocalSession(_ node: ProcessNode) {
