@@ -159,7 +159,7 @@ is gitignored — it is produced at build time.
 
 - **`Engine`** — central `@Observable @MainActor` class. Owns the
   `DeviceManager`, all `ProcessNode` instances, the event log,
-  `CollaborationSession`, `GitHubAuth`, `HookPackLibrary`, the
+  `CollaborationSession`, `GitHubAuth`, `InstrumentFolderLibrary`, the
   `Disassembler` cache, address annotations, the descriptor
   registry, and the address-action provider list. Single public
   entry point: `start()` (called from the host once at launch).
@@ -175,9 +175,23 @@ is gitignored — it is produced at build time.
   return portable `DisassemblyLine` / `StyledText` (RGB-spans, no
   AppKit/SwiftUI dependency). Frontends ship a tiny extension to
   convert `StyledText` into their preferred styled-text type.
-- **`HookPackLibrary`** — discovers hook packs from a directory and
-  produces `InstrumentDescriptor`s. Engine owns one rooted at
-  `dataDirectory/HookPacks`.
+- **`InstrumentFolder` / `InstrumentFolderLibrary`** — a custom
+  instrument as a folder on disk: its sources beside a `package.json`
+  whose `main` is the entrypoint, whose `dependencies` are the packages
+  it imports, and whose `luma` object carries name, icon,
+  compatibility, features and widgets. Linking one brings it into the
+  project as a custom instrument and remembers the folder in
+  `LumaAppState`, outside the document, so collaborators get the
+  instrument without needing the folder. The link remembers what both
+  sides held when they last agreed, which is what tells an edit made in
+  Luma from one made on disk: the first is written through to the
+  folder, the second is offered as a reload rather than taken, since a
+  reload drops what running instances hold, and when both changed the
+  user picks. `InstrumentFolderMonitor` watches the folder. Names the
+  package shows come from `displayName`. The library is the folders under
+  `dataDirectory/Instruments`. An instrument's dependencies install
+  into its own `node_modules` inside the compiler workspace, ahead of
+  the project-wide packages.
 - **`AddressAction` / `ThreadAction`** — pluggable per-address and
   per-thread action providers. The tracer registers itself at engine
   init; future instrument kinds can call
@@ -267,7 +281,7 @@ is gitignored — it is produced at build time.
 - **`MainWindowView`** — top-level SwiftUI view; splits into
   sidebar (process/instrument list) and detail area.
 - **`Luma/Instruments/`** — per-instrument SwiftUI factories
-  (`TracerUI`, `HookPackUI`, `CodeShareUI`), the `InstrumentUI`
+  (`TracerUI`, `CustomInstrumentUI`, `CodeShareUI`), the `InstrumentUI`
   protocol, the `InstrumentUIRegistry` dispatcher, and
   `InstrumentEventMenuItem`.
 - **`Luma/Editor/`** — the TypeScript and JavaScript editor:

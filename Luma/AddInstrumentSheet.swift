@@ -41,21 +41,35 @@ struct AddInstrumentSheet: View {
         descriptors.filter { $0.kind == .custom }
     }
 
+    private var libraryFolders: [InstrumentFolder] {
+        engine.instrumentFolders.folders.filter { engine.customInstrumentID(linkedToFolderAt: $0.folderURL) == nil }
+    }
+
     private static let newCustomDescriptorID: String = "custom:__new__"
-    private static let importHookPackDescriptorID: String = "custom:__import__"
+    private static let linkFolderDescriptorID: String = "custom:__link__"
+
+    private static func libraryFolderDescriptorID(_ folder: InstrumentFolder) -> String {
+        "folder:\(folder.folderURL.path)"
+    }
 
     private var selectedDescriptor: InstrumentDescriptor? {
         guard let id = selectedDescriptorID else { return nil }
         return descriptors.first { $0.id == id }
     }
 
+    private var selectedLibraryFolder: InstrumentFolder? {
+        guard let id = selectedDescriptorID else { return nil }
+        return libraryFolders.first { Self.libraryFolderDescriptorID($0) == id }
+    }
+
     private var confirmActionLabel: String {
-        selectedDescriptorID == Self.importHookPackDescriptorID ? "Choose Folder\u{2026}" : "Add"
+        selectedDescriptorID == Self.linkFolderDescriptorID ? "Choose Folder\u{2026}" : "Add"
     }
 
     private var isConfirmActionDisabled: Bool {
         if selectedDescriptorID == Self.newCustomDescriptorID { return false }
-        if selectedDescriptorID == Self.importHookPackDescriptorID { return false }
+        if selectedDescriptorID == Self.linkFolderDescriptorID { return false }
+        if selectedLibraryFolder != nil { return false }
         guard let descriptor = selectedDescriptor else { return true }
         if isAlreadyAdded(descriptor) { return true }
         return incompatibilityReason(for: descriptor) != nil
@@ -95,16 +109,17 @@ struct AddInstrumentSheet: View {
             allowedContentTypes: [.folder]
         ) { result in
             if case .success(let url) = result {
-                importHookPack(at: url)
+                linkFolder(at: url)
             }
         }
-        .alert("Import failed", isPresented: importErrorBinding, presenting: importErrorMessage) { _ in
+        .alert("Could not link folder", isPresented: importErrorBinding, presenting: importErrorMessage) { _ in
             Button("OK") { importErrorMessage = nil }
         } message: { message in
             Text(message)
         }
         .task(id: session.deviceID) { await resolveSystemParameters() }
         .task(id: session.id) { refreshAlreadyAdded() }
+        .task { engine.instrumentFolders.reload() }
     }
 
     private var importErrorBinding: Binding<Bool> {
@@ -130,6 +145,13 @@ struct AddInstrumentSheet: View {
                             descriptorRow(descriptor)
                         }
                     }
+                    ForEach(libraryFolders, id: \.folderURL) { folder in
+                        Button {
+                            linkFolder(at: folder.folderURL)
+                        } label: {
+                            libraryFolderRow(folder)
+                        }
+                    }
                     Button {
                         Task { @MainActor in
                             await createNewCustomAndDismiss()
@@ -141,9 +163,9 @@ struct AddInstrumentSheet: View {
                     Button {
                         isShowingImportPicker = true
                     } label: {
-                        Label("Import from Hookpack\u{2026}", systemImage: "square.and.arrow.down")
+                        Label("Link Folder\u{2026}", systemImage: "folder")
                     }
-                    .accessibilityIdentifier("addInstrument.descriptor.\(Self.importHookPackDescriptorID)")
+                    .accessibilityIdentifier("addInstrument.descriptor.\(Self.linkFolderDescriptorID)")
                 }
             }
             .navigationTitle("Add Instrument")
@@ -182,6 +204,9 @@ struct AddInstrumentSheet: View {
             ForEach(customDescriptors) { descriptor in
                 descriptorRow(descriptor).tag(descriptor.id)
             }
+            ForEach(libraryFolders, id: \.folderURL) { folder in
+                libraryFolderRow(folder).tag(Self.libraryFolderDescriptorID(folder))
+            }
             HStack {
                 Image(systemName: "plus.circle")
                 Text("New Custom Instrument\u{2026}")
@@ -190,12 +215,12 @@ struct AddInstrumentSheet: View {
             .accessibilityIdentifier("addInstrument.descriptor.\(Self.newCustomDescriptorID)")
             .tag(Self.newCustomDescriptorID)
             HStack {
-                Image(systemName: "square.and.arrow.down")
-                Text("Import from Hookpack\u{2026}")
+                Image(systemName: "folder")
+                Text("Link Folder\u{2026}")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityIdentifier("addInstrument.descriptor.\(Self.importHookPackDescriptorID)")
-            .tag(Self.importHookPackDescriptorID)
+            .accessibilityIdentifier("addInstrument.descriptor.\(Self.linkFolderDescriptorID)")
+            .tag(Self.linkFolderDescriptorID)
         }
     }
 
@@ -211,8 +236,10 @@ struct AddInstrumentSheet: View {
             Group {
                 if selectedDescriptorID == Self.newCustomDescriptorID {
                     newCustomDetail
-                } else if selectedDescriptorID == Self.importHookPackDescriptorID {
-                    importHookPackDetail
+                } else if selectedDescriptorID == Self.linkFolderDescriptorID {
+                    linkFolderDetail
+                } else if let folder = selectedLibraryFolder {
+                    libraryFolderDetail(folder)
                 } else if let descriptor = selectedDescriptor {
                     detailContent(descriptor: descriptor)
                 } else {
@@ -225,11 +252,10 @@ struct AddInstrumentSheet: View {
         }
         .onChange(of: selectedDescriptorID) { _, newID in
             guard let id = newID else { return }
-            if id == Self.newCustomDescriptorID || id == Self.importHookPackDescriptorID {
+            guard let desc = descriptors.first(where: { $0.id == id }) else {
                 initialConfigJSON = Data()
                 return
             }
-            guard let desc = descriptors.first(where: { $0.id == id }) else { return }
             initialConfigJSON = desc.makeInitialConfigJSON()
         }
     }
@@ -268,14 +294,29 @@ struct AddInstrumentSheet: View {
         .padding()
     }
 
-    @ViewBuilder
-    private var importHookPackDetail: some View {
+    private var linkFolderDetail: some View {
+        folderDetail(
+            systemImage: "folder",
+            title: "Link Folder",
+            explanation: "Pick a folder holding a package.json and a TypeScript entry file. The instrument is brought into the project as a custom instrument that stays linked to the folder: when the files change, Luma offers to reload it."
+        )
+    }
+
+    private func libraryFolderDetail(_ folder: InstrumentFolder) -> some View {
+        folderDetail(
+            systemImage: "shippingbox",
+            title: folder.name,
+            explanation: "This instrument lives in \(folder.folderURL.path). Adding it brings it into the project as a custom instrument that stays linked to the folder: when the files change, Luma offers to reload it."
+        )
+    }
+
+    private func folderDetail(systemImage: String, title: String, explanation: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: "square.and.arrow.down")
+            Image(systemName: systemImage)
                 .font(.system(size: 32))
-            Text("Import from Hookpack")
+            Text(title)
                 .font(.headline)
-            Text("Pick a hookpack folder containing manifest.json and a TypeScript entry file. The hookpack is cloned into the project as a custom instrument with a fresh identity, so subsequent edits stay local.")
+            Text(explanation)
                 .foregroundStyle(.secondary)
             Spacer()
         }
@@ -283,11 +324,11 @@ struct AddInstrumentSheet: View {
     }
 
     @MainActor
-    private func importHookPack(at folderURL: URL) {
+    private func linkFolder(at folderURL: URL) {
         let started = folderURL.startAccessingSecurityScopedResource()
         defer { if started { folderURL.stopAccessingSecurityScopedResource() } }
         do {
-            let def = try engine.forkHookPackToCustomInstrument(folderURL: folderURL)
+            let def = try engine.linkInstrumentFolder(at: folderURL)
             Task { @MainActor in
                 let configJSON = CustomInstrumentConfig(
                     defID: def.id,
@@ -370,6 +411,17 @@ struct AddInstrumentSheet: View {
         .accessibilityIdentifier("addInstrument.descriptor.\(descriptor.id)")
     }
 
+    private func libraryFolderRow(_ folder: InstrumentFolder) -> some View {
+        HStack {
+            InstrumentIconView(icon: folder.icon, pointSize: 12)
+            Text(folder.name)
+            Spacer(minLength: 4)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("addInstrument.descriptor.\(Self.libraryFolderDescriptorID(folder))")
+    }
+
     @ToolbarContentBuilder
     private var sharedToolbar: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
@@ -377,19 +429,15 @@ struct AddInstrumentSheet: View {
                 dismiss()
             }
         }
-        if let pack = selectedHookPack {
-            ToolbarItem(placement: .automatic) {
-                Button("Edit a Copy\u{2026}") {
-                    forkSelectedPack(pack)
-                }
-                .accessibilityIdentifier("addInstrument.editCopy")
-            }
-        }
         ToolbarItem(placement: .confirmationAction) {
             Button(confirmActionLabel) {
                 commitCoordinator.flushPendingEdits()
-                if selectedDescriptorID == Self.importHookPackDescriptorID {
+                if selectedDescriptorID == Self.linkFolderDescriptorID {
                     isShowingImportPicker = true
+                    return
+                }
+                if let folder = selectedLibraryFolder {
+                    linkFolder(at: folder.folderURL)
                     return
                 }
                 Task { @MainActor in
@@ -419,22 +467,6 @@ struct AddInstrumentSheet: View {
                 onBrowseCodeShare()
                 dismiss()
             }
-        }
-    }
-
-    private var selectedHookPack: LumaCore.HookPack? {
-        guard let descriptor = selectedDescriptor, descriptor.kind == .hookPack else { return nil }
-        return engine.hookPacks.pack(withId: descriptor.sourceIdentifier)
-    }
-
-    @MainActor
-    private func forkSelectedPack(_ pack: LumaCore.HookPack) {
-        do {
-            let def = try engine.forkHookPackToCustomInstrument(folderURL: pack.folderURL)
-            selection = .customInstrumentFile(def.id, def.entrypoint)
-            dismiss()
-        } catch {
-            importErrorMessage = error.localizedDescription
         }
     }
 }

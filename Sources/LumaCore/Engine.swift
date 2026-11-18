@@ -66,7 +66,7 @@ public final class Engine {
     private var eventLogTask: Task<Void, Never>?
     private var eventStoreFlushTail: Task<Void, Never> = Task {}
 
-    public let hookPacks: HookPackLibrary
+    public let instrumentFolders: InstrumentFolderLibrary
     public let patterns: PatternLibrary
     public let patternDecoder: PatternDecoder
     private let patternGlobals = PatternGlobals()
@@ -113,6 +113,9 @@ public final class Engine {
     private var runningCustomInstrumentReloads: Set<UUID> = []
     private var pendingCustomInstrumentReloads: Set<UUID> = []
     private var customInstrumentReloadWaiters: [UUID: [CheckedContinuation<Void, Never>]] = [:]
+    public private(set) var instrumentFolderLinks: [UUID: InstrumentFolderLink] = [:]
+    public private(set) var instrumentFolderDrifts: [UUID: InstrumentFolderDrift] = [:]
+    @ObservationIgnored private var instrumentFolderMonitors: [UUID: InstrumentFolderMonitor] = [:]
     private var threadActionProviders: [ThreadActionProvider] = []
     @ObservationIgnored public var onSessionListChanged: (@MainActor (SessionListChange) -> Void)?
     @ObservationIgnored public var onREPLCellSaved: (@MainActor (REPLCell) -> Void)?
@@ -158,9 +161,9 @@ public final class Engine {
             )
         )
         self.compilerWorkspace = CompilerWorkspace(store: store)
-        let hookPacksDir = dataDirectory.appendingPathComponent("HookPacks", isDirectory: true)
-        try? FileManager.default.createDirectory(at: hookPacksDir, withIntermediateDirectories: true)
-        self.hookPacks = HookPackLibrary(directory: hookPacksDir)
+        let instrumentFoldersDir = dataDirectory.appendingPathComponent("Instruments", isDirectory: true)
+        try? FileManager.default.createDirectory(at: instrumentFoldersDir, withIntermediateDirectories: true)
+        self.instrumentFolders = InstrumentFolderLibrary(directory: instrumentFoldersDir)
         let workspace = try! Self.compilerWorkspacePaths(store: store, dataDirectory: dataDirectory)
         self.patterns = PatternLibrary(store: store, workspace: workspace)
         self.patternDecoder = PatternDecoder(
@@ -214,9 +217,6 @@ public final class Engine {
         #endif
 
         registerDescriptor(Self.tracerDescriptor)
-        for desc in hookPacks.descriptors() {
-            registerDescriptor(desc)
-        }
         customInstruments.start(store: store)
         for desc in customInstruments.descriptors() {
             registerDescriptor(desc)
@@ -224,8 +224,11 @@ public final class Engine {
         customInstruments.observers.append { [weak self] in
             self?.refreshCustomInstrumentDescriptors()
             self?.mirrorCustomInstrumentSources()
+            self?.restoreInstrumentFolderLinks()
+            self?.settleInstrumentFolders()
         }
         mirrorCustomInstrumentSources()
+        restoreInstrumentFolderLinks()
         bindCollaborationCallbacks()
         missionExecutor.liveDeltaSink = { [weak self] missionID, event in
             self?.handleMissionLiveEvent(missionID: missionID, event: event)
@@ -289,10 +292,10 @@ public final class Engine {
                 self.onMissionsChanged?(missions)
             }
         }
-        hookPacks.onError = { [weak self] message in
-            self?.emitEngineError(subsystem: "hookpacks", text: message)
+        instrumentFolders.onError = { [weak self] message in
+            self?.emitEngineError(subsystem: "instruments", text: message)
         }
-        hookPacks.reload()
+        instrumentFolders.reload()
         patterns.onChange = { [weak self] in
             self?.publishPatternGlobals()
         }
@@ -963,6 +966,7 @@ public final class Engine {
                 self.scheduleCustomInstrumentReload(defID: bundle.def.id)
             case .remove(let r):
                 try? self.store.deleteCustomInstrumentDef(id: r.defID)
+                self.unlinkInstrumentFolder(defID: r.defID)
             }
         }
 
@@ -984,6 +988,7 @@ public final class Engine {
             let local = (try? self.store.fetchCustomInstrumentDefs()) ?? []
             for stale in local where !serverIDs.contains(stale.id) {
                 try? self.store.deleteCustomInstrumentDef(id: stale.id)
+                self.unlinkInstrumentFolder(defID: stale.id)
             }
             let normalized = bundles.map { bundle -> CustomInstrumentBundle in
                 var copy = bundle
@@ -1748,6 +1753,9 @@ public final class Engine {
         missionsObservation = nil
         packagesObservation = nil
 
+        for monitor in instrumentFolderMonitors.values { monitor.stop() }
+        instrumentFolderMonitors.removeAll()
+
         for node in processNodes { node.stop() }
         processNodes.removeAll()
 
@@ -1983,23 +1991,10 @@ public final class Engine {
         descriptorsByID[descriptor.id] = descriptor
     }
 
-    public func reloadHookPacks() {
-        hookPacks.reload()
-        descriptors.removeAll { $0.kind == .hookPack }
-        for key in descriptorsByID.keys where key.hasPrefix("hook-pack:") {
-            descriptorsByID.removeValue(forKey: key)
-        }
-        for desc in hookPacks.descriptors() {
-            registerDescriptor(desc)
-        }
-    }
-
     public func descriptor(for instance: InstrumentInstance) -> InstrumentDescriptor {
         switch instance.kind {
         case .tracer:
             return descriptorsByID["tracer"] ?? Self.missingDescriptor(for: instance)
-        case .hookPack:
-            return descriptorsByID["hook-pack:\(instance.sourceIdentifier)"] ?? Self.missingDescriptor(for: instance)
         case .codeShare:
             return descriptorsByID["codeshare:\(instance.sourceIdentifier)"]
                 ?? makeCodeShareDescriptor(for: instance)
@@ -3799,12 +3794,6 @@ public final class Engine {
                 return
             }
 
-        case .hookPack:
-            let config = (try? HookPackConfig.decode(from: configJSON))
-                ?? HookPackConfig(packId: inst.sourceIdentifier, features: [:])
-            guard let pack = hookPacks.pack(withId: inst.sourceIdentifier) else { return }
-            configObject = config.toAgentJSON(features: pack.manifest.features)
-
         case .codeShare:
             configObject = (try? JSONSerialization.jsonObject(with: configJSON, options: []) as? JSONObject) ?? [:]
 
@@ -3845,18 +3834,6 @@ public final class Engine {
                     config: (try? TracerConfig.decode(from: configJSON)) ?? TracerConfig(),
                     sessionID: sessionID,
                     paths: try compilerWorkspacePaths()
-                )
-
-            case .hookPack:
-                guard let pack = hookPacks.pack(withId: sourceIdentifier) else { return }
-                if await skipIfIncompatible(instanceID: instanceID, compatibility: pack.manifest.compatibility, on: node) {
-                    return
-                }
-                try await loadHookPackInstrument(
-                    instanceID: instanceID,
-                    pack: pack,
-                    configJSON: configJSON,
-                    on: node
                 )
 
             case .codeShare:
@@ -4515,40 +4492,6 @@ public final class Engine {
         )
     }
 
-    public func loadHookPackInstrument(
-        instanceID: UUID,
-        pack: HookPack,
-        configJSON: Data,
-        on node: ProcessNode
-    ) async throws {
-        let config = try InstrumentConfigCodec.decode(HookPackConfig.self, from: configJSON)
-        let paths = try compilerWorkspacePaths()
-        let sourceSlug = "HookPacks/\(pack.id)"
-        let files = try Self.readHookPackFiles(folderURL: pack.folderURL, manifest: pack.manifest)
-        let compiledSource = try await compileTypeScriptInstrument(
-            sourceSlug: sourceSlug,
-            files: files,
-            entrypoint: pack.manifest.entrypoint,
-            dependencies: [:],
-            paths: paths,
-            diagnosticLabel: "hook pack \(pack.id)"
-        )
-
-        let digest = SHA256.hash(data: Data(compiledSource.utf8))
-        let hashHex = digest.map { String(format: "%02x", $0) }.joined()
-        let moduleName = "/\(sourceSlug)/\(hashHex).js"
-
-        let restored = hydrateRestoredState(instanceID: instanceID, widgets: pack.manifest.widgets, on: node)
-
-        try await node.loadInstrumentOnAgent(
-            instanceID: instanceID,
-            moduleName: moduleName,
-            source: compiledSource,
-            config: config.toAgentJSON(features: pack.manifest.features),
-            restored: restored
-        )
-    }
-
     public func loadCustomInstrument(
         instanceID: UUID,
         bundle: CustomInstrumentBundle,
@@ -4689,8 +4632,6 @@ public final class Engine {
                 let def = customInstruments.def(withId: defID)
             else { return [] }
             return def.widgets
-        case .hookPack:
-            return hookPacks.pack(withId: instance.sourceIdentifier)?.manifest.widgets ?? []
         default:
             return []
         }
@@ -4701,7 +4642,7 @@ public final class Engine {
         files: [(path: String, content: Data)],
         entrypoint: String,
         dependencies: [String: String],
-        ambientTypings: String? = nil,
+        ambientTypings: String,
         paths: CompilerWorkspacePaths,
         diagnosticLabel: String
     ) async throws -> String {
@@ -4762,14 +4703,10 @@ public final class Engine {
 
     private static func stageInstrumentEntry(
         userEntry: String,
-        ambientTypings: String?,
+        ambientTypings: String,
         in dirURL: URL,
         relativeTo dirRelPath: String
     ) throws -> String {
-        guard let ambientTypings else {
-            return "\(dirRelPath)/\(userEntry)"
-        }
-
         let typingsName = "luma-ambient-typings.ts"
         let wrapperName = "luma-entry.ts"
         try Data(ambientTypings.utf8).write(to: dirURL.appendingPathComponent(typingsName))
@@ -4779,32 +4716,6 @@ public final class Engine {
             """
         try Data(wrapper.utf8).write(to: dirURL.appendingPathComponent(wrapperName))
         return "\(dirRelPath)/\(wrapperName)"
-    }
-
-    private static func readHookPackFiles(
-        folderURL: URL,
-        manifest: HookPackManifest
-    ) throws -> [(path: String, content: Data)] {
-        let fm = FileManager.default
-        let iconPath: String? = if case .file(let p) = manifest.icon { p } else { nil }
-        let basePath = folderURL.standardizedFileURL.path
-        let enumerator = fm.enumerator(
-            at: folderURL,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        )
-        var result: [(path: String, content: Data)] = []
-        while let url = enumerator?.nextObject() as? URL {
-            let isDir = (try url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-            if isDir { continue }
-            let absolute = url.standardizedFileURL.path
-            let relativePath = String(absolute.dropFirst(basePath.count + 1))
-            if relativePath == "manifest.json" { continue }
-            if relativePath == iconPath { continue }
-            let data = try Data(contentsOf: url)
-            result.append((path: try CustomInstrumentFile.validateRelativePath(relativePath), content: data))
-        }
-        return result
     }
 
     private static func validatedCustomInstrumentBundle(_ bundle: CustomInstrumentBundle) throws -> CustomInstrumentBundle {
@@ -4993,111 +4904,161 @@ public final class Engine {
     }
 
     @discardableResult
-    public func forkHookPackToCustomInstrument(folderURL: URL) throws -> CustomInstrumentDef {
-        let manifestURL = folderURL.appendingPathComponent("manifest.json")
-        let manifestData = try Data(contentsOf: manifestURL)
-        let manifest = try JSONDecoder().decode(HookPackManifest.self, from: manifestData)
-
-        let icon: InstrumentIcon
-        switch manifest.icon {
-        case nil:
-            icon = .symbolic(InstrumentIconCatalog.default.id)
-        case .symbolic(let id):
-            icon = .symbolic(id)
-        case .file(let path):
-            let iconURL = folderURL.appendingPathComponent(try CustomInstrumentFile.validateRelativePath(path))
-            icon = .pixels(try Data(contentsOf: iconURL))
+    public func linkInstrumentFolder(at folderURL: URL) throws -> CustomInstrumentDef {
+        let folderURL = folderURL.standardizedFileURL
+        if let defID = customInstrumentID(linkedToFolderAt: folderURL) {
+            return try requireCustomInstrumentDef(defID: defID)
         }
-
-        let packFiles = try Self.readHookPackFiles(folderURL: folderURL, manifest: manifest)
 
         let now = Date()
-        let defID = UUID()
-        let files = try packFiles.map { pf in
-            CustomInstrumentFile(
-                defID: defID,
-                path: try CustomInstrumentFile.validateRelativePath(pf.path),
-                content: String(decoding: pf.content, as: UTF8.self)
-            )
-        }
-
-        var def = CustomInstrumentDef(
-            id: defID,
-            name: uniquedCustomInstrumentName(manifest.name),
-            icon: icon,
-            compatibility: manifest.compatibility,
-            entrypoint: try Self.validatedEntrypoint(manifest.entrypoint, files: files),
-            features: manifest.features,
-            widgets: manifest.widgets,
-            createdAt: now,
-            updatedAt: now
+        let bundle = try Self.validatedCustomInstrumentBundle(
+            InstrumentFolder(folderURL: folderURL).customInstrument(id: UUID(), createdAt: now, updatedAt: now)
         )
-        def.normalize()
+        try saveCustomInstrumentBundle(bundle)
+        try InstrumentFolder.writeTypings(for: bundle.def, to: folderURL)
+        setInstrumentFolderLink(InstrumentFolderLink(path: folderURL.path, synced: .init(of: bundle)), forDefID: bundle.def.id)
+        watchInstrumentFolder(defID: bundle.def.id)
+        return bundle.def
+    }
 
-        try store.save(def)
-        try store.replaceCustomInstrumentFiles(defID: defID, files: files)
-        registerDescriptor(customInstruments.descriptor(for: def))
-        broadcastCustomInstrumentUpsert(defID: defID)
+    public func customInstrumentID(linkedToFolderAt folderURL: URL) -> UUID? {
+        let path = folderURL.standardizedFileURL.path
+        return instrumentFolderLinks.first { $0.value.folderURL.standardizedFileURL.path == path }?.key
+    }
+
+    public func unlinkInstrumentFolder(defID: UUID) {
+        setInstrumentFolderLink(nil, forDefID: defID)
+        watchInstrumentFolder(defID: defID)
+    }
+
+    public func reloadCustomInstrumentFromFolder(defID: UUID) throws {
+        var link = try requireInstrumentFolderLink(defID: defID)
+        var bundle = try Self.validatedCustomInstrumentBundle(
+            folderContents(for: storedCustomInstrumentBundle(defID: defID).def, in: link.folderURL)
+        )
+        bundle.def.updatedAt = Date()
+        try saveCustomInstrumentBundle(bundle)
+        try InstrumentFolder.writeTypings(for: bundle.def, to: link.folderURL)
+        link.synced = .init(of: bundle)
+        setInstrumentFolderLink(link, forDefID: defID)
+        instrumentFolderDrifts[defID] = nil
+        scheduleCustomInstrumentReload(defID: defID)
+    }
+
+    public func writeCustomInstrumentToFolder(defID: UUID) throws {
+        try writeToFolder(storedCustomInstrumentBundle(defID: defID), link: requireInstrumentFolderLink(defID: defID))
+        settleInstrumentFolder(defID: defID)
+    }
+
+    public func exportCustomInstrument(defID: UUID, to folderURL: URL) throws {
+        try InstrumentFolder.write(exportableCustomInstrumentBundle(defID: defID), to: folderURL)
+    }
+
+    public func exportedFiles(forCustomInstrument defID: UUID) throws -> [InstrumentFolder.File] {
+        try InstrumentFolder.files(for: exportableCustomInstrumentBundle(defID: defID))
+    }
+
+    private func saveCustomInstrumentBundle(_ bundle: CustomInstrumentBundle) throws {
+        try store.save(bundle.def)
+        try store.replaceCustomInstrumentFiles(defID: bundle.def.id, files: bundle.files)
+        registerDescriptor(customInstruments.descriptor(for: bundle.def))
+        broadcastCustomInstrumentUpsert(defID: bundle.def.id)
         onSessionListChanged?(.customInstrumentDefsChanged)
-        return def
     }
 
-    public func buildHookPackBundle(for def: CustomInstrumentDef) throws -> HookPackBundle {
-        let iconAttachment: HookPackBundle.IconAttachment?
-        let manifestIcon: HookPackManifest.Icon?
-        switch def.icon {
-        case .symbolic(let id):
-            manifestIcon = .symbolic(id)
-            iconAttachment = nil
-        case .pixels(let data):
-            let iconName = "icon.png"
-            manifestIcon = .file(iconName)
-            iconAttachment = HookPackBundle.IconAttachment(filename: iconName, data: data)
-        }
-
-        let defFiles = try customInstruments.files(forDefID: def.id).map { file in
-            CustomInstrumentFile(
-                defID: file.defID,
-                path: try CustomInstrumentFile.validateRelativePath(file.path),
-                content: file.content
-            )
-        }
-        let entrypoint = try Self.validatedEntrypoint(def.entrypoint, files: defFiles)
-
-        let manifest = HookPackManifest(
-            name: def.name,
-            icon: manifestIcon,
-            compatibility: def.compatibility,
-            entrypoint: entrypoint,
-            features: def.features,
-            widgets: def.widgets
-        )
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let manifestData = try encoder.encode(manifest)
-
-        let bundleFiles = defFiles.map { HookPackBundle.File(path: $0.path, content: Data($0.content.utf8)) }
-
-        return HookPackBundle(
-            manifestData: manifestData,
-            files: bundleFiles,
-            icon: iconAttachment
-        )
+    private func setInstrumentFolderLink(_ link: InstrumentFolderLink?, forDefID defID: UUID) {
+        LumaAppState.shared.setInstrumentFolderLink(link, forDefID: defID)
+        instrumentFolderLinks[defID] = link
     }
 
-    public func exportCustomInstrumentAsHookPack(_ def: CustomInstrumentDef, to folderURL: URL) throws {
-        let bundle = try buildHookPackBundle(for: def)
-        let fm = FileManager.default
-        try fm.createDirectory(at: folderURL, withIntermediateDirectories: true)
-        try bundle.manifestData.write(to: folderURL.appendingPathComponent("manifest.json"))
-        for file in bundle.files {
-            let fileURL = folderURL.appendingPathComponent(file.path)
-            try fm.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try file.content.write(to: fileURL)
+    private func restoreInstrumentFolderLinks() {
+        for def in customInstruments.defs where instrumentFolderLinks[def.id] == nil {
+            guard let link = LumaAppState.shared.instrumentFolderLink(forDefID: def.id) else { continue }
+            instrumentFolderLinks[def.id] = link
+            watchInstrumentFolder(defID: def.id)
         }
-        if let icon = bundle.icon {
-            try icon.data.write(to: folderURL.appendingPathComponent(icon.filename))
+    }
+
+    private func watchInstrumentFolder(defID: UUID) {
+        instrumentFolderMonitors.removeValue(forKey: defID)?.stop()
+        guard let link = instrumentFolderLinks[defID] else {
+            instrumentFolderDrifts[defID] = nil
+            return
         }
+        instrumentFolderMonitors[defID] = InstrumentFolderMonitor(folderURL: link.folderURL) { [weak self] in
+            self?.settleInstrumentFolder(defID: defID)
+        }
+        settleInstrumentFolder(defID: defID)
+    }
+
+    private func settleInstrumentFolders() {
+        for defID in instrumentFolderLinks.keys {
+            settleInstrumentFolder(defID: defID)
+        }
+    }
+
+    private func settleInstrumentFolder(defID: UUID) {
+        instrumentFolderDrifts[defID] = try? writeThroughOrReportDrift(defID: defID)
+    }
+
+    private func writeThroughOrReportDrift(defID: UUID) throws -> InstrumentFolderDrift? {
+        var link = try requireInstrumentFolderLink(defID: defID)
+        let project = try storedCustomInstrumentBundle(defID: defID)
+        let inProject = InstrumentFolderLink.Snapshot(of: project)
+        let inFolder = InstrumentFolderLink.Snapshot(of: try folderContents(for: project.def, in: link.folderURL))
+
+        if inFolder == inProject {
+            link.synced = inProject
+            setInstrumentFolderLink(link, forDefID: defID)
+            return nil
+        }
+
+        if inFolder == link.synced {
+            do {
+                try writeToFolder(project, link: link)
+            } catch {
+                emitEngineError(
+                    subsystem: "instruments",
+                    text: "Failed to write \(project.def.name) to \(link.path): \(userFacingMessage(error))"
+                )
+            }
+            return nil
+        }
+
+        return inProject == link.synced ? .folderChanged : .diverged
+    }
+
+    private func writeToFolder(_ instrument: CustomInstrumentBundle, link: InstrumentFolderLink) throws {
+        try InstrumentFolder.write(
+            Self.validatedCustomInstrumentBundle(instrument),
+            to: link.folderURL,
+            replacing: link.synced.files.keys
+        )
+        var link = link
+        link.synced = .init(of: instrument)
+        setInstrumentFolderLink(link, forDefID: instrument.def.id)
+    }
+
+    private func requireInstrumentFolderLink(defID: UUID) throws -> InstrumentFolderLink {
+        guard let link = instrumentFolderLinks[defID] else {
+            throw LumaCoreError.invalidOperation("Custom instrument \(defID) is not linked to a folder.")
+        }
+        return link
+    }
+
+    private func folderContents(for def: CustomInstrumentDef, in folderURL: URL) throws -> CustomInstrumentBundle {
+        try InstrumentFolder(folderURL: folderURL).customInstrument(id: def.id, createdAt: def.createdAt, updatedAt: def.updatedAt)
+    }
+
+    private func exportableCustomInstrumentBundle(defID: UUID) throws -> CustomInstrumentBundle {
+        try Self.validatedCustomInstrumentBundle(storedCustomInstrumentBundle(defID: defID))
+    }
+
+    private func storedCustomInstrumentBundle(defID: UUID) throws -> CustomInstrumentBundle {
+        CustomInstrumentBundle(
+            def: try requireCustomInstrumentDef(defID: defID),
+            files: try store.fetchCustomInstrumentFiles(defID: defID).sorted { $0.path < $1.path }
+        )
     }
 
     public func clearWidget(instance: InstrumentInstance, widget: String) {
@@ -5268,6 +5229,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
             await removeInstrument(instance)
         }
         try? store.deleteCustomInstrumentDef(id: defID)
+        unlinkInstrumentFolder(defID: defID)
         broadcastCustomInstrumentRemove(defID: defID)
         onSessionListChanged?(.customInstrumentDefsChanged)
     }
@@ -5702,8 +5664,6 @@ public func deleteCustomInstrument(_ defID: UUID) async {
                 let def = customInstruments.def(withId: defID)
             else { return nil }
             return def.widgets.first { $0.id == widgetID }
-        case .hookPack:
-            return hookPacks.pack(withId: instance.sourceIdentifier)?.manifest.widgets.first { $0.id == widgetID }
         default:
             return nil
         }

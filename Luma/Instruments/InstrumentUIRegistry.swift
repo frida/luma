@@ -20,8 +20,6 @@ final class InstrumentUIRegistry {
         switch instance.kind {
         case .tracer:
             return uis["tracer"]
-        case .hookPack:
-            return uis["hook-pack:\(instance.sourceIdentifier)"]
         case .codeShare:
             return uis["codeshare:\(instance.sourceIdentifier)"] ?? uis["codeshare"]
         case .custom:

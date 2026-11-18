@@ -598,6 +598,7 @@ final class MainWindow: InstrumentUIHost {
         engine.onSessionListChanged = { [weak self] change in self?.handleSessionListChange(change) }
         observeModuleAnalysis()
         observeLoadedPackages()
+        observeInstrumentFolders()
         observeConnectionActivity()
         engine.onREPLCellSaved = { [weak self] cell in self?.currentREPLPane?.showCell(cell) }
         engine.onNotebookChanged = { [weak self] change in
@@ -1449,9 +1450,50 @@ final class MainWindow: InstrumentUIHost {
         label.halign = .start
         label.hexpand = true
         box.append(child: label)
+        if let drift = engine?.instrumentFolderDrifts[def.id] {
+            box.append(child: makeFolderDriftButton(def: def, drift: drift))
+        }
         row.set(child: box)
         attachCustomInstrumentContextMenu(row: row, anchor: box, def: def)
         return row
+    }
+
+    private func makeFolderDriftButton(def: LumaCore.CustomInstrumentDef, drift: InstrumentFolderDrift) -> Button {
+        let button = Button()
+        button.add(cssClass: "flat")
+        button.add(cssClass: "warning")
+        button.valign = .center
+        switch drift {
+        case .folderChanged:
+            button.set(iconName: "view-refresh-symbolic")
+            button.tooltipText = "Changed on disk \u{2014} reload"
+            button.onClicked { [weak self] _ in
+                MainActor.assumeIsolated { self?.reloadCustomInstrumentFromFolder(def: def) }
+            }
+        case .diverged:
+            button.set(iconName: "dialog-warning-symbolic")
+            button.tooltipText = "Changed both here and on disk"
+            button.onClicked { [weak self, weak button] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let button else { return }
+                    self.presentFolderDivergenceMenu(anchor: button, def: def)
+                }
+            }
+        }
+        return button
+    }
+
+    private func presentFolderDivergenceMenu(anchor: Widget, def: LumaCore.CustomInstrumentDef) {
+        ContextMenu.present([
+            [
+                .init("Reload from Folder, Discarding Edits Made Here") { [weak self] in
+                    self?.reloadCustomInstrumentFromFolder(def: def)
+                },
+                .init("Write to Folder, Discarding Changes on Disk") { [weak self] in
+                    self?.writeCustomInstrumentToFolder(def: def)
+                },
+            ]
+        ], at: anchor, x: 0, y: 0)
     }
 
     private func makeChevronSpacer() -> Widget {
@@ -1632,13 +1674,36 @@ final class MainWindow: InstrumentUIHost {
                     self.presentRenameEntrypointFileDialog(def: def)
                 },
             ],
-            [
-                .init("Export as Hookpack\u{2026}") { [weak self] in self?.presentExportHookPackDialog(def: def) },
-            ],
+            customInstrumentFolderMenuItems(def: def),
             [.init("Delete Custom Instrument", destructive: true) { [weak self] in
                 self?.confirmDeleteCustomInstrument(def: def)
             }],
         ], at: anchor, x: x, y: y)
+    }
+
+    private func customInstrumentFolderMenuItems(def: LumaCore.CustomInstrumentDef) -> [ContextMenu.Item] {
+        let export = ContextMenu.Item("Export to Folder\u{2026}") { [weak self] in self?.presentExportToFolderDialog(def: def) }
+        guard let engine, engine.instrumentFolderLinks[def.id] != nil else { return [export] }
+        let reload = ContextMenu.Item("Reload from Folder") { [weak self] in self?.reloadCustomInstrumentFromFolder(def: def) }
+        let write = ContextMenu.Item("Write to Folder") { [weak self] in self?.writeCustomInstrumentToFolder(def: def) }
+        let unlink = ContextMenu.Item("Unlink Folder") { [weak self] in self?.engine?.unlinkInstrumentFolder(defID: def.id) }
+        return engine.instrumentFolderDrifts[def.id] == .diverged ? [reload, write, unlink, export] : [reload, unlink, export]
+    }
+
+    private func reloadCustomInstrumentFromFolder(def: LumaCore.CustomInstrumentDef) {
+        do {
+            try engine?.reloadCustomInstrumentFromFolder(defID: def.id)
+        } catch {
+            presentCustomInstrumentError(message: error.localizedDescription)
+        }
+    }
+
+    private func writeCustomInstrumentToFolder(def: LumaCore.CustomInstrumentDef) {
+        do {
+            try engine?.writeCustomInstrumentToFolder(defID: def.id)
+        } catch {
+            presentCustomInstrumentError(message: error.localizedDescription)
+        }
     }
 
     private func attachCustomInstrumentFileContextMenu(
@@ -1755,23 +1820,23 @@ final class MainWindow: InstrumentUIHost {
         }
     }
 
-    private func presentExportHookPackDialog(def: LumaCore.CustomInstrumentDef) {
+    private func presentExportToFolderDialog(def: LumaCore.CustomInstrumentDef) {
         guard let parentPtr = window.window_ptr.map(UnsafeMutableRawPointer.init) else { return }
-        let context = HookPackExportContext(window: self, def: def)
+        let context = InstrumentFolderExportContext(window: self, def: def)
         let opaque = Unmanaged.passRetained(context).toOpaque()
-        let initialName = HookPackExportContext.suggestedFilename(for: def.name)
-        "Export as Hookpack".withCString { title in
+        let initialName = InstrumentFolderExportContext.suggestedFilename(for: def.name)
+        "Export to Folder".withCString { title in
             initialName.withCString { initial in
-                luma_file_dialog_save(parentPtr, title, initial, hookPackExportPathThunk, opaque)
+                luma_file_dialog_save(parentPtr, title, initial, instrumentFolderExportPathThunk, opaque)
             }
         }
     }
 
-    fileprivate func handleHookPackExport(def: LumaCore.CustomInstrumentDef, path: String) {
+    fileprivate func handleInstrumentFolderExport(def: LumaCore.CustomInstrumentDef, path: String) {
         guard let engine else { return }
         let folderURL = URL(fileURLWithPath: path)
         do {
-            try engine.exportCustomInstrumentAsHookPack(def, to: folderURL)
+            try engine.exportCustomInstrument(defID: def.id, to: folderURL)
         } catch {
             presentExportError(message: error.localizedDescription)
         }
@@ -2482,7 +2547,6 @@ final class MainWindow: InstrumentUIHost {
     private func registerInstrumentUIs() {
         let registry = InstrumentUIRegistry.shared
         registry.register(.tracer, ui: TracerUIKind())
-        registry.register(.hookPack, ui: HookPackUIKind())
         registry.register(.codeShare, ui: CodeShareUIKind())
         registry.register(.custom, ui: CustomUIKind())
     }
@@ -3661,6 +3725,20 @@ final class MainWindow: InstrumentUIHost {
         }
     }
 
+    private func observeInstrumentFolders() {
+        guard let engine else { return }
+        withObservationTracking {
+            _ = engine.instrumentFolderLinks
+            _ = engine.instrumentFolderDrifts
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.renderCustomInstruments()
+                self.observeInstrumentFolders()
+            }
+        }
+    }
+
     private func observeLoadedPackages() {
         guard let engine else { return }
         withObservationTracking {
@@ -4410,7 +4488,7 @@ final class MainWindow: InstrumentUIHost {
 }
 
 @MainActor
-fileprivate final class HookPackExportContext {
+fileprivate final class InstrumentFolderExportContext {
     let window: MainWindow
     let def: LumaCore.CustomInstrumentDef
 
@@ -4424,20 +4502,20 @@ fileprivate final class HookPackExportContext {
         let allowed = CharacterSet.alphanumerics.union(.init(charactersIn: "-_"))
         let slug = trimmed.lowercased().unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" }
         let collapsed = String(slug).split(separator: "-", omittingEmptySubsequences: true).joined(separator: "-")
-        return collapsed.isEmpty ? "hookpack" : collapsed
+        return collapsed.isEmpty ? "instrument" : collapsed
     }
 }
 
-private let hookPackExportPathThunk: @convention(c) (
+private let instrumentFolderExportPathThunk: @convention(c) (
     UnsafePointer<CChar>?,
     UnsafeMutableRawPointer?
 ) -> Void = { pathPtr, userData in
     guard let userData else { return }
-    let context = Unmanaged<HookPackExportContext>.fromOpaque(userData).takeRetainedValue()
+    let context = Unmanaged<InstrumentFolderExportContext>.fromOpaque(userData).takeRetainedValue()
     guard let pathPtr else { return }
     let path = String(cString: pathPtr)
     Task { @MainActor in
-        context.window.handleHookPackExport(def: context.def, path: path)
+        context.window.handleInstrumentFolderExport(def: context.def, path: path)
     }
 }
 

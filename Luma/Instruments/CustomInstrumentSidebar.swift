@@ -69,7 +69,7 @@ struct SidebarCustomInstrumentDefRow: View {
     @State private var isShowingDeleteConfirm = false
     @State private var addFilePrompt = AddFilePromptState()
     @State private var renameEntrypointPrompt = RenamePromptState()
-    @State private var exportBundle: HookPackExportBundle?
+    @State private var exportBundle: InstrumentFolderExportBundle?
     @State private var exportErrorMessage: String?
 
     var body: some View {
@@ -82,6 +82,9 @@ struct SidebarCustomInstrumentDefRow: View {
                 .padding(.trailing, sidebarIconToLabelSpacing)
             Text(def.name)
             Spacer()
+            if let drift = engine.instrumentFolderDrifts[def.id] {
+                folderDriftIndicator(drift)
+            }
         }
         .padding(.vertical, 2)
         .accessibilityIdentifier("sidebar.customInstrument.\(def.id.uuidString)")
@@ -123,10 +126,25 @@ struct SidebarCustomInstrumentDefRow: View {
                 Label("Rename Entrypoint File\u{2026}", systemImage: "pencil")
             }
             Divider()
+            if engine.instrumentFolderLinks[def.id] != nil {
+                Button(action: reloadFromFolder) {
+                    Label("Reload from Folder", systemImage: "arrow.clockwise")
+                }
+                if engine.instrumentFolderDrifts[def.id] == .diverged {
+                    Button(action: writeToFolder) {
+                        Label("Write to Folder", systemImage: "square.and.arrow.down")
+                    }
+                }
+                Button {
+                    engine.unlinkInstrumentFolder(defID: def.id)
+                } label: {
+                    Label("Unlink Folder", systemImage: "minus.circle")
+                }
+            }
             Button {
                 presentExportPicker()
             } label: {
-                Label("Export as Hookpack\u{2026}", systemImage: "square.and.arrow.up")
+                Label("Export to Folder\u{2026}", systemImage: "square.and.arrow.up")
             }
             Button(role: .destructive) {
                 isShowingDeleteConfirm = true
@@ -203,9 +221,9 @@ struct SidebarCustomInstrumentDefRow: View {
         }
         .fileExporter(
             isPresented: exportPickerBinding,
-            document: exportBundle.map(HookPackExportDocument.init),
+            document: exportBundle.map(InstrumentFolderExportDocument.init),
             contentType: .folder,
-            defaultFilename: HookPackExportDocument.suggestedFilename(for: def.name)
+            defaultFilename: InstrumentFolderExportDocument.suggestedFilename(for: def.name)
         ) { result in
             if case .failure(let error) = result {
                 exportErrorMessage = error.localizedDescription
@@ -216,6 +234,34 @@ struct SidebarCustomInstrumentDefRow: View {
             Button("OK") { exportErrorMessage = nil }
         } message: { message in
             Text(message)
+        }
+    }
+
+    @ViewBuilder
+    private func folderDriftIndicator(_ drift: InstrumentFolderDrift) -> some View {
+        switch drift {
+        case .folderChanged:
+            Button(action: reloadFromFolder) {
+                Image(systemName: "arrow.clockwise")
+                    .foregroundStyle(.orange)
+            }
+            .buttonStyle(.plain)
+            .help("Changed on disk \u{2014} reload")
+            .accessibilityLabel("Reload from folder")
+        case .diverged:
+            Menu {
+                Button("Reload from Folder, Discarding Edits Made Here", action: reloadFromFolder)
+                Button("Write to Folder, Discarding Changes on Disk", action: writeToFolder)
+            } label: {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Changed both here and on disk")
+            .accessibilityLabel("Resolve differences with folder")
         }
     }
 
@@ -253,8 +299,23 @@ struct SidebarCustomInstrumentDefRow: View {
 
     private func presentExportPicker() {
         do {
-            let bundle = try engine.buildHookPackBundle(for: def)
-            exportBundle = HookPackExportBundle(bundle: bundle)
+            exportBundle = InstrumentFolderExportBundle(files: try engine.exportedFiles(forCustomInstrument: def.id))
+        } catch {
+            exportErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func reloadFromFolder() {
+        do {
+            try engine.reloadCustomInstrumentFromFolder(defID: def.id)
+        } catch {
+            exportErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func writeToFolder() {
+        do {
+            try engine.writeCustomInstrumentToFolder(defID: def.id)
         } catch {
             exportErrorMessage = error.localizedDescription
         }
@@ -475,19 +536,19 @@ struct RenamePromptState {
     }
 }
 
-struct HookPackExportBundle: Identifiable {
+struct InstrumentFolderExportBundle: Identifiable {
     let id = UUID()
-    let bundle: HookPackBundle
+    let files: [InstrumentFolder.File]
 }
 
-struct HookPackExportDocument: FileDocument {
+struct InstrumentFolderExportDocument: FileDocument {
     static let readableContentTypes: [UTType] = []
     static let writableContentTypes: [UTType] = [.folder]
 
-    let bundle: HookPackBundle
+    let files: [InstrumentFolder.File]
 
-    init(_ exportBundle: HookPackExportBundle) {
-        self.bundle = exportBundle.bundle
+    init(_ exportBundle: InstrumentFolderExportBundle) {
+        self.files = exportBundle.files
     }
 
     init(configuration: ReadConfiguration) throws {
@@ -495,16 +556,9 @@ struct HookPackExportDocument: FileDocument {
     }
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        let root = FileWrapper(directoryWithFileWrappers: [
-            "manifest.json": FileWrapper(regularFileWithContents: bundle.manifestData)
-        ])
-        for file in bundle.files {
+        let root = FileWrapper(directoryWithFileWrappers: [:])
+        for file in files {
             addFileWrapper(at: file.path, data: file.content, to: root)
-        }
-        if let icon = bundle.icon {
-            let iconWrapper = FileWrapper(regularFileWithContents: icon.data)
-            iconWrapper.preferredFilename = icon.filename
-            root.addFileWrapper(iconWrapper)
         }
         return root
     }
@@ -533,7 +587,7 @@ struct HookPackExportDocument: FileDocument {
         let allowed = CharacterSet.alphanumerics.union(.init(charactersIn: "-_"))
         let slug = trimmed.lowercased().unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" }
         let collapsed = String(slug).split(separator: "-", omittingEmptySubsequences: true).joined(separator: "-")
-        return collapsed.isEmpty ? "hookpack" : collapsed
+        return collapsed.isEmpty ? "instrument" : collapsed
     }
 }
 

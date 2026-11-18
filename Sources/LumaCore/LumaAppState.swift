@@ -49,6 +49,7 @@ public final class LumaAppState {
         var providerBaseURLs: [String: String]?
         var missionDefaults: MissionDefaults?
         var externalMCPTrustsClient: Bool?
+        var instrumentFolderLinks: [String: InstrumentFolderLink]?
     }
 
     private var stored: Stored
@@ -165,6 +166,19 @@ public final class LumaAppState {
             stored.externalMCPTrustsClient = newValue
             persist()
         }
+    }
+
+    public func instrumentFolderLink(forDefID defID: UUID) -> InstrumentFolderLink? {
+        stored.instrumentFolderLinks?[defID.uuidString]
+    }
+
+    public func setInstrumentFolderLink(_ link: InstrumentFolderLink?, forDefID defID: UUID) {
+        var links = stored.instrumentFolderLinks ?? [:]
+        links[defID.uuidString] = link
+        let next: [String: InstrumentFolderLink]? = links.isEmpty ? nil : links
+        guard stored.instrumentFolderLinks != next else { return }
+        stored.instrumentFolderLinks = next
+        persist()
     }
 
     public func providerBaseURL(providerID: String) -> String? {

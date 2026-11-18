@@ -268,9 +268,12 @@ public enum CustomInstrumentTypings {
     }
 
     public static func compilerTypings(for def: CustomInstrumentDef, packages: [InstalledPackage]) -> String {
-        ([ambient.content]
-            + (featureMap(for: def).map { [$0.content] } ?? [])
-            + PackageAliasTypings.declarations(for: packages).map(\.content))
+        ([declarations(for: def)] + PackageAliasTypings.declarations(for: packages).map(\.content))
+            .joined(separator: "\n\n")
+    }
+
+    public static func declarations(for def: CustomInstrumentDef) -> String {
+        ([ambient.content] + (featureMap(for: def).map { [$0.content] } ?? []))
             .joined(separator: "\n\n")
     }
 

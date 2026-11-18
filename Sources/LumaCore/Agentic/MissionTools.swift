@@ -521,7 +521,7 @@ public enum MissionTools {
     private static func registerListSessionInstruments(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "list_session_instruments",
-            description: "List all instruments currently attached to a session: tracer hooks, custom instrument instances, hookpacks, and codeshare snippets. Returns id, kind, source_identifier, state (enabled/disabled), attachment (attached/detached), status (present when the instance failed to load/reload/validate), and component_statuses (per-hook compile failures on tracer instances). Use to understand what's already running and whether anything is in error before adding more.",
+            description: "List all instruments currently attached to a session: tracer hooks, custom instrument instances, and codeshare snippets. Returns id, kind, source_identifier, state (enabled/disabled), attachment (attached/detached), status (present when the instance failed to load/reload/validate), and component_statuses (per-hook compile failures on tracer instances). Use to understand what's already running and whether anything is in error before adding more.",
             inputSchemaJSON: """
                 {"type":"object","properties":{"session_id":{"type":"string"}},"required":["session_id"],"additionalProperties":false}
                 """,
@@ -1728,7 +1728,7 @@ public enum MissionTools {
     private static func registerListInstruments(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "list_instruments",
-            description: "List instrument definitions known to this project — both editable custom instruments and shipped hookpacks. Each entry has `id` (opaque descriptor id; pass to attach_instrument), `kind` (custom | hookpack), `name`, `icon`. Custom instruments also report `def_id` (UUID for the custom_instrument_file/def tools) and source counts.",
+            description: "List the instruments this project can attach. Each entry has `id` (opaque descriptor id; pass to attach_instrument), `kind` (tracer | custom), `name`, `icon`. Custom instruments also report `def_id` (UUID for the custom_instrument_file/def tools) and source counts.",
             inputSchemaJSON: """
                 {"type":"object","properties":{},"additionalProperties":false}
                 """,
@@ -1759,8 +1759,6 @@ public enum MissionTools {
             entry["def_id"] = defID.uuidString
             entry["feature_count"] = def.features.count
             entry["widget_count"] = def.widgets.count
-        case .hookPack:
-            entry["kind"] = "hookpack"
         case .codeShare:
             return nil
         }
@@ -2178,7 +2176,7 @@ public enum MissionTools {
     private static func registerAttachInstrument(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "attach_instrument",
-            description: "Attach an instrument (tracer, custom instrument, or hookpack) to a session. Pass the `id` returned by list_instruments. An instrument can only be attached once per session; calling again returns the existing instance with `already_attached: true`.",
+            description: "Attach an instrument (tracer or custom instrument) to a session. Pass the `id` returned by list_instruments. An instrument can only be attached once per session; calling again returns the existing instance with `already_attached: true`.",
             inputSchemaJSON: """
                 {"type":"object","properties":{"session_id":{"type":"string"},"id":{"type":"string","description":"Descriptor id from list_instruments"}},"required":["session_id","id"],"additionalProperties":false}
                 """,

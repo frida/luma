@@ -5,10 +5,6 @@ extension Engine {
     func attachInstrumentUIs() {
         guard enginesWithInstrumentUIs.insert(ObjectIdentifier(self)).inserted else { return }
 
-        let registry = InstrumentUIRegistry.shared
-        for pack in hookPacks.packs {
-            registry.register(for: "hook-pack:\(pack.id)", ui: HookPackUI(pack: pack))
-        }
         refreshCustomInstrumentUIs()
         customInstruments.observers.append { [weak self] in
             self?.refreshCustomInstrumentUIs()
