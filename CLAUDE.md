@@ -209,6 +209,8 @@ is gitignored — it is produced at build time.
   `TargetPickerState`, plus UI-state singletons `ProjectUIState` and
   per-session `SessionUIState`. Schema is created with `if not exists`
   on every open; pre-release, no migrations.
+  What has yet to reach a lab waits in one `outbox` table, a row per op
+  whatever its family (`OutboxOp`), and is replayed on the next join.
 - **`PatternLibrary`** — the project's patterns are rows, materialized
   into `patterns/` in the per-project compiler workspace beside its
   `node_modules`, so a pattern can import an installed package and a
