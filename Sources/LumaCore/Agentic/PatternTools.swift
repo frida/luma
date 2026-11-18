@@ -213,14 +213,18 @@ extension MissionTools {
         let spec = ActionSpec(
             name: "place_pattern",
             description: """
-                Decode a pattern type in a memory insight's view, so the user sees the fields outlined \
-                over its hex dump. 'offset' is relative to the insight's address. Pin the memory with \
-                pin_as_insight first. Requires user approval.
+                Decode a pattern type over bytes the user can see, so the fields are outlined over the hex dump. Name \
+                what holds the bytes with exactly one of 'insight_id' (a memory insight; pin the memory with \
+                pin_as_insight first), 'repl_cell_id' (as answered by eval_repl) or 'notebook_entry_id'. For a byte \
+                array inside a JavaScript value, such as what readByteArray() answers, also give 'bytes_address', the \
+                address those bytes were read at; leave it out for a hex dump. 'offset' is relative to the start of \
+                the bytes. Requires user approval.
                 """,
             inputSchemaJSON: """
                 {"type":"object","properties":{"session_id":{"type":"string"},"insight_id":{"type":"string"},\
+                "repl_cell_id":{"type":"string"},"notebook_entry_id":{"type":"string"},"bytes_address":{"type":"string"},\
                 "pattern_id":{"type":"string"},"type":{"type":"string"},"offset":{"type":"integer","minimum":0,"default":0}},\
-                "required":["session_id","insight_id","pattern_id","type"],"additionalProperties":false}
+                "required":["session_id","pattern_id","type"],"additionalProperties":false}
                 """,
             isObserve: false,
             requiresSession: true
@@ -229,25 +233,47 @@ extension MissionTools {
             guard let engine, let sessionID = parseSessionID(invocation.args) else {
                 return errorResult("missing or invalid session_id", code: .invalidInput)
             }
-            guard let idString = invocation.args["insight_id"] as? String, let insightID = UUID(uuidString: idString),
-                let insight = engine.insightsBySession[sessionID]?.first(where: { $0.id == insightID })
-            else {
-                return errorResult("no such insight on this session; see list_address_insights", code: .notFound)
-            }
-            guard insight.kind == .memory else {
-                return errorResult("patterns can only be placed on memory insights", code: .invalidInput)
-            }
             guard let patternID = invocation.args["pattern_id"] as? String, engine.patterns.source(withID: patternID) != nil,
                 let typeName = invocation.args["type"] as? String
             else {
                 return errorResult("pattern_id must name a library file and type is required", code: .invalidInput)
             }
             let placement = PatternPlacement(sourceID: patternID, typeName: typeName, offset: (invocation.args["offset"] as? Int) ?? 0)
-            engine.setPlacements(insight.placements + [placement], forInsight: insight)
-            return makeResult(
-                jsonObject: ["insight_id": insightID.uuidString, "placement_id": placement.id.uuidString],
-                summary: "Placed \(typeName) on \(engine.displayTitle(for: insight))")
+
+            if let insightID = uuid(named: "insight_id", in: invocation.args) {
+                guard let insight = engine.insightsBySession[sessionID]?.first(where: { $0.id == insightID }) else {
+                    return errorResult("no such insight on this session; see list_address_insights", code: .notFound)
+                }
+                guard insight.kind == .memory else {
+                    return errorResult("patterns can only be placed on memory insights", code: .invalidInput)
+                }
+                engine.setPlacements(insight.placements + [placement], forInsight: insight)
+                return makeResult(
+                    jsonObject: ["insight_id": insightID.uuidString, "placement_id": placement.id.uuidString],
+                    summary: "Placed \(typeName) on \(engine.displayTitle(for: insight))")
+            }
+
+            guard let holder = storedValue(namedIn: invocation.args, engine: engine) else {
+                return errorResult("name an existing insight_id, repl_cell_id or notebook_entry_id", code: .notFound)
+            }
+            let origin = (invocation.args["bytes_address"] as? String).flatMap(parseHexAddress)
+            engine.setPlacements(engine.placements(at: origin, in: holder) + [placement], at: origin, in: holder)
+            return makeResult(jsonObject: ["placement_id": placement.id.uuidString], summary: "Placed \(typeName)")
         }
+    }
+
+    private static func storedValue(namedIn args: [String: Any], engine: Engine) -> StoredValue? {
+        if let cellID = uuid(named: "repl_cell_id", in: args), (try? engine.store.fetchREPLCell(id: cellID)) != nil {
+            return .replCell(cellID)
+        }
+        if let entryID = uuid(named: "notebook_entry_id", in: args), engine.notebookEntries.contains(where: { $0.id == entryID }) {
+            return .notebookEntry(entryID)
+        }
+        return nil
+    }
+
+    private static func uuid(named key: String, in args: [String: Any]) -> UUID? {
+        (args[key] as? String).flatMap(UUID.init(uuidString:))
     }
 }
 
