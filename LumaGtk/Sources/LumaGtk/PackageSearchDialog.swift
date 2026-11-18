@@ -11,6 +11,7 @@ final class PackageSearchDialog {
     private weak var engine: Engine?
     private var hostDialog: Adw.Dialog?
     private var onInstalled: ((InstalledPackage) -> Void)?
+    private var onPicked: ((String, String) -> Void)?
 
     private let widget: Box
     private let searchEntry: Entry
@@ -141,7 +142,7 @@ final class PackageSearchDialog {
             let categoryDropdown = makeCategoryDropdown(initial: category) { [weak self] category in
                 guard let self else { return }
                 self.category = category
-                self.aliasRow.visible = category != .pattern
+                self.aliasRow.visible = category != .pattern && self.onPicked == nil
                 self.scheduleSearch(debounce: false)
             }
             searchRow.insertChildAfter(child: categoryDropdown, sibling: searchEntry)
@@ -326,6 +327,12 @@ final class PackageSearchDialog {
             return
         }
 
+        if let onPicked {
+            onPicked(name, versionSpec)
+            _ = hostDialog?.close()
+            return
+        }
+
         let aliasText = category == .pattern ? "" : (aliasEntry.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let alias: String? = aliasText.isEmpty ? nil : aliasText
 
@@ -367,20 +374,31 @@ final class PackageSearchDialog {
     static func present(from anchor: Widget, engine: Engine, category: PackageCategory, onInstalled: @escaping (InstalledPackage) -> Void) {
         let dialog = PackageSearchDialog(engine: engine, category: category)
         dialog.onInstalled = onInstalled
-        dialog.scheduleSearch(debounce: false)
+        dialog.present(from: anchor, title: category == .pattern ? "Add Pattern Package" : "Install Package")
+    }
+
+    static func presentDependencyPicker(from anchor: Widget, engine: Engine, onPicked: @escaping (String, String) -> Void) {
+        let dialog = PackageSearchDialog(engine: engine, category: .any)
+        dialog.onPicked = onPicked
+        dialog.aliasRow.visible = false
+        dialog.present(from: anchor, title: "Add Package")
+    }
+
+    private func present(from anchor: Widget, title: String) {
+        scheduleSearch(debounce: false)
 
         let adwDialog = Adw.Dialog()
-        adwDialog.set(title: category == .pattern ? "Add Pattern Package" : "Install Package")
+        adwDialog.set(title: title)
 
         let header = Adw.HeaderBar()
 
         let toolbarView = Adw.ToolbarView()
         toolbarView.addTopBar(widget: header)
-        toolbarView.set(content: dialog.widget)
+        toolbarView.set(content: widget)
         adwDialog.set(child: toolbarView)
 
-        dialog.hostDialog = adwDialog
-        adwDialog.own(dialog)
+        hostDialog = adwDialog
+        adwDialog.own(self)
         adwDialog.sizeToContent(within: WidgetRef(raw: anchor.root!.ptr))
 
         adwDialog.present(parent: anchor)
