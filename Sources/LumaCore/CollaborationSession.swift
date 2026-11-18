@@ -360,6 +360,7 @@ public final class CollaborationSession {
     public var onCustomInstrumentSnapshot: (([CustomInstrumentBundle]) -> Void)?
     public var onPatternSourceOpReceived: ((PatternSourceOp) -> Void)?
     public var onPatternSourcesSnapshot: (([PatternSourceRecord]) -> Void)?
+    public var onLabCreated: (() -> Void)?
     public var onWidgetStatesSnapshot: (([WidgetStateSnapshot]) -> Void)?
     public var onSessionOpRejected: ((UUID, String) -> Void)?
     public var onChatMessageReceived: ((ChatMessage) -> Void)?
@@ -1525,6 +1526,7 @@ public final class CollaborationSession {
                 try? self.store.savePatternSourceOutboxOps(patterns.map { .upsert(.init(record: $0)) })
                 self.replayOutbox()
                 self.onSessionsSnapshot?([])
+                self.onLabCreated?()
             case .failure(let failure):
                 self.setStatus(.error(message: failure.message))
             }

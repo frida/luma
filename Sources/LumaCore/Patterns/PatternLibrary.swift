@@ -29,6 +29,10 @@ public final class PatternLibrary {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
+    public nonisolated static func instrumentSourceIDPrefix(defID: UUID) -> String {
+        "instrument:\(defID.uuidString)/"
+    }
+
     public static func directory(in workspace: CompilerWorkspacePaths) -> URL {
         workspace.root.appendingPathComponent("patterns", isDirectory: true)
     }
@@ -197,7 +201,7 @@ public final class PatternLibrary {
                 guard let kind = PatternSource.Kind(path: file.path) else { return nil }
                 let workspacePath = "InstrumentSources/Custom/\(def.id.uuidString)/\(file.path)"
                 return PatternSource(
-                    id: "instrument:\(def.id.uuidString)/\(file.path)", name: def.name + "/" + (file.path as NSString).deletingPathExtension,
+                    id: Self.instrumentSourceIDPrefix(defID: def.id) + file.path, name: def.name + "/" + (file.path as NSString).deletingPathExtension,
                     kind: kind, origin: .instrument(def.name), url: workspace.root.appendingPathComponent(workspacePath),
                     workspacePath: workspacePath, text: file.content)
             }

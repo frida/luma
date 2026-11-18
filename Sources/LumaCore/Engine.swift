@@ -104,6 +104,7 @@ public final class Engine {
     public let placementHistory = PatternPlacementHistory()
 
     @ObservationIgnored private var placementSnapshotTasks: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored private var instrumentsEditedSinceSnapshots: Set<UUID> = []
     @ObservationIgnored private var typeScriptProjects: [TypeScriptProjectKey: Task<TypeScriptProject, Swift.Error>] = [:]
     private var addressActionProviders: [AddressActionProvider] = []
     @ObservationIgnored private var protectionRegionsBySession: [UUID: [ProtectionRegion]] = [:]
@@ -226,6 +227,7 @@ public final class Engine {
             self?.refreshCustomInstrumentDescriptors()
             self?.mirrorCustomInstrumentSources()
             self?.patterns.reloadInstrumentSources()
+            self?.republishPlacementSnapshotsOfEditedInstruments()
             self?.restoreInstrumentFolderLinks()
             self?.settleInstrumentFolders()
         }
@@ -303,7 +305,7 @@ public final class Engine {
         }
         patterns.onSaved = { [weak self] record in
             self?.collaboration.enqueuePatternSourceUpsert(record)
-            self?.republishPlacementSnapshots(decodedWith: record.id.uuidString)
+            self?.republishPlacementSnapshots { $0 == record.id.uuidString }
         }
         patterns.onDeleted = { [weak self] id in
             self?.collaboration.enqueuePatternSourceRemove(sourceID: id)
@@ -409,8 +411,14 @@ public final class Engine {
         publishPlacementSnapshots(of: updated)
     }
 
-    private func republishPlacementSnapshots(decodedWith sourceID: String) {
-        for entry in notebookEntries where entry.placements.contains(where: { $0.sourceID == sourceID }) {
+    private func republishPlacementSnapshotsOfEditedInstruments() {
+        let edited = instrumentsEditedSinceSnapshots.map(PatternLibrary.instrumentSourceIDPrefix(defID:))
+        instrumentsEditedSinceSnapshots.removeAll()
+        republishPlacementSnapshots { sourceID in edited.contains(where: sourceID.hasPrefix) }
+    }
+
+    private func republishPlacementSnapshots(decodedWith isAffected: (String) -> Bool) {
+        for entry in notebookEntries where entry.placements.contains(where: { isAffected($0.sourceID) }) {
             publishPlacementSnapshots(of: entry)
         }
     }
@@ -1031,6 +1039,10 @@ public final class Engine {
 
         collaboration.onPatternSourcesSnapshot = { [weak self] records in
             self?.patterns.replaceProjectSources(with: records)
+        }
+
+        collaboration.onLabCreated = { [weak self] in
+            self?.republishPlacementSnapshots { _ in true }
         }
 
         collaboration.onMissionOpReceived = { [weak self] op in
@@ -5411,6 +5423,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         let op = CustomInstrumentOp.remove(.init(defID: defID))
         try? store.saveCustomInstrumentOutboxOp(op)
         collaboration.sendCustomInstrumentOpIfJoined(op)
+        instrumentsEditedSinceSnapshots.insert(defID)
     }
 
     public func loadCodeShareInstrument(
