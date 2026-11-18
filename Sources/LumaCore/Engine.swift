@@ -1040,9 +1040,14 @@ public final class Engine {
             self.onNotebookChanged?(.snapshot(entries))
         }
 
-        collaboration.onEntryUpserted = { [weak self] entry in
+        collaboration.onEntryUpserted = { [weak self] upserted in
             guard let self else { return }
-            let existed = (try? self.store.fetchNotebookEntry(id: entry.id)) != nil
+            let existing = try? self.store.fetchNotebookEntry(id: upserted.id)
+            let existed = existing != nil
+            var entry = upserted
+            entry.binaryData = upserted.binaryData ?? existing?.binaryData
+            entry.pharoResultFuel = upserted.pharoResultFuel ?? existing?.pharoResultFuel
+            entry.sessionID = existing?.sessionID
             try? self.store.save(entry)
             if let i = self.notebookEntries.firstIndex(where: { $0.id == entry.id }) {
                 self.notebookEntries[i] = entry
