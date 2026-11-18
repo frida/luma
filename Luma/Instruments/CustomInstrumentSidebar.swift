@@ -128,11 +128,11 @@ struct SidebarCustomInstrumentDefRow: View {
             Divider()
             if engine.instrumentFolderLinks[def.id] != nil {
                 Button(action: reloadFromFolder) {
-                    Label("Reload from Folder", systemImage: "arrow.clockwise")
+                    Label("Reload from Folder", systemImage: "arrow.down.doc")
                 }
                 if engine.instrumentFolderDrifts[def.id] == .diverged {
                     Button(action: writeToFolder) {
-                        Label("Write to Folder", systemImage: "square.and.arrow.down")
+                        Label("Write to Folder", systemImage: "arrow.up.doc")
                     }
                 }
                 Button {
@@ -242,7 +242,7 @@ struct SidebarCustomInstrumentDefRow: View {
         switch drift {
         case .folderChanged:
             Button(action: reloadFromFolder) {
-                Image(systemName: "arrow.clockwise")
+                Image(systemName: "arrow.down.doc")
                     .foregroundStyle(.orange)
             }
             .buttonStyle(.plain)

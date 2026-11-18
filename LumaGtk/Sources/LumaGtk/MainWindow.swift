@@ -1465,7 +1465,7 @@ final class MainWindow: InstrumentUIHost {
         button.valign = .center
         switch drift {
         case .folderChanged:
-            button.set(iconName: "view-refresh-symbolic")
+            button.set(iconName: "document-revert-symbolic")
             button.tooltipText = "Changed on disk \u{2014} reload"
             button.onClicked { [weak self] _ in
                 MainActor.assumeIsolated { self?.reloadCustomInstrumentFromFolder(def: def) }
