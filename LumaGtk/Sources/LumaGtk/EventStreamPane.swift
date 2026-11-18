@@ -924,7 +924,7 @@ final class EventStreamPane {
 
     private func isStructured(_ value: JSInspectValue) -> Bool {
         switch value {
-        case .object, .array, .map, .set, .error:
+        case .object, .array, .map, .set, .error, .bytes:
             return true
         default:
             return false
