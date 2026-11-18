@@ -155,7 +155,9 @@ final class NotebookPane {
             }
             if changed == .placements, let decode = decodeViews[entry.id] {
                 decode.setPlacements(entry.placements.placed(at: nil))
-                break
+                if entry.jsValue == nil {
+                    break
+                }
             }
             if changed == .jsValue || changed == .placements, entryRows[entry.id]?.focusChild != nil {
                 break
