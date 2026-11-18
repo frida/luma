@@ -58,6 +58,7 @@ public enum NotebookOp: Sendable {
         public var pharoSnapshot: PharoSnapshot?
         public var jsValue: JSInspectValue?
         public var placements: [PatternPlacement]?
+        public var placementSnapshots: [PlacementSnapshot]?
 
         public init(
             opID: UUID = UUID(),
@@ -67,7 +68,8 @@ public enum NotebookOp: Sendable {
             processName: String? = nil,
             pharoSnapshot: PharoSnapshot? = nil,
             jsValue: JSInspectValue? = nil,
-            placements: [PatternPlacement]? = nil
+            placements: [PatternPlacement]? = nil,
+            placementSnapshots: [PlacementSnapshot]? = nil
         ) {
             self.opID = opID
             self.entryID = entryID
@@ -77,6 +79,7 @@ public enum NotebookOp: Sendable {
             self.pharoSnapshot = pharoSnapshot
             self.jsValue = jsValue
             self.placements = placements
+            self.placementSnapshots = placementSnapshots
         }
 
         public var changes: [String: String] {
@@ -138,6 +141,12 @@ public enum NotebookOp: Sendable {
             if let placements = u.placements {
                 changes["placements"] = placements.map { $0.toWireJSON() }
             }
+            if let snapshots = u.placementSnapshots,
+                let data = try? JSONEncoder().encode(snapshots),
+                let jsonObject = try? JSONSerialization.jsonObject(with: data)
+            {
+                changes["placement_snapshots"] = jsonObject
+            }
             obj["changes"] = changes
         case .remove(let r):
             obj["entry_id"] = r.entryID.uuidString
@@ -182,6 +191,13 @@ public enum NotebookOp: Sendable {
             {
                 jsValue = decoded
             }
+            var placementSnapshots: [PlacementSnapshot]? = nil
+            if let raw = changes["placement_snapshots"],
+                let data = try? JSONSerialization.data(withJSONObject: raw),
+                let decoded = try? JSONDecoder().decode([PlacementSnapshot].self, from: data)
+            {
+                placementSnapshots = decoded
+            }
             return .update(Update(
                 opID: opID,
                 entryID: entryID,
@@ -190,7 +206,8 @@ public enum NotebookOp: Sendable {
                 processName: changes["process_name"] as? String,
                 pharoSnapshot: snapshot,
                 jsValue: jsValue,
-                placements: (changes["placements"] as? [[String: Any]])?.compactMap(PatternPlacement.fromWireJSON)
+                placements: (changes["placements"] as? [[String: Any]])?.compactMap(PatternPlacement.fromWireJSON),
+                placementSnapshots: placementSnapshots
             ))
 
         case "remove":

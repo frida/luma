@@ -103,6 +103,7 @@ public final class Engine {
     public private(set) var installedPackages: [InstalledPackage] = []
     public let placementHistory = PatternPlacementHistory()
 
+    @ObservationIgnored private var placementSnapshotTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var typeScriptProjects: [TypeScriptProjectKey: Task<TypeScriptProject, Swift.Error>] = [:]
     private var addressActionProviders: [AddressActionProvider] = []
     @ObservationIgnored private var protectionRegionsBySession: [UUID: [ProtectionRegion]] = [:]
@@ -302,6 +303,7 @@ public final class Engine {
         }
         patterns.onSaved = { [weak self] record in
             self?.collaboration.enqueuePatternSourceUpsert(record)
+            self?.republishPlacementSnapshots(decodedWith: record.id.uuidString)
         }
         patterns.onDeleted = { [weak self] id in
             self?.collaboration.enqueuePatternSourceRemove(sourceID: id)
@@ -368,6 +370,9 @@ public final class Engine {
         notebookEntries.append(e)
         onNotebookChanged?(.added(e))
         collaboration.enqueueAdd(e)
+        if !e.placements.isEmpty {
+            publishPlacementSnapshots(of: e)
+        }
     }
 
     public func updateNotebookEntry(_ entry: NotebookEntry) {
@@ -400,6 +405,32 @@ public final class Engine {
         var updated = entry
         updated.placements = placements
         updateNotebookEntry(updated, changed: .placements)
+        publishPlacementSnapshots(of: updated)
+    }
+
+    private func republishPlacementSnapshots(decodedWith sourceID: String) {
+        for entry in notebookEntries where entry.placements.contains(where: { $0.sourceID == sourceID }) {
+            publishPlacementSnapshots(of: entry)
+        }
+    }
+
+    private func publishPlacementSnapshots(of entry: NotebookEntry) {
+        placementSnapshotTasks[entry.id]?.cancel()
+        guard collaboration.isCollaborative, let data = entry.binaryData, let baseAddress = entry.binaryMeta?.baseAddress else { return }
+        placementSnapshotTasks[entry.id] = Task { [weak self] in
+            guard let self else { return }
+            var snapshots: [PlacementSnapshot] = []
+            for placement in entry.placements {
+                do {
+                    let decoded = try await decode(placement, in: data, at: baseAddress, forSession: entry.sessionID)
+                    snapshots.append(PlacementSnapshot(of: placement, decoded: decoded, base: baseAddress))
+                } catch {
+                    snapshots.append(PlacementSnapshot(of: placement, problem: error.localizedDescription))
+                }
+            }
+            guard !Task.isCancelled else { return }
+            collaboration.enqueueUpdate(entryID: entry.id, placementSnapshots: snapshots)
+        }
     }
 
     public func deleteNotebookEntry(_ entry: NotebookEntry) {

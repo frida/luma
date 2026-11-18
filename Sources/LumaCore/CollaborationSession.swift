@@ -557,7 +557,8 @@ public final class CollaborationSession {
         processName: String? = nil,
         pharoSnapshot: PharoSnapshot? = nil,
         jsValue: JSInspectValue? = nil,
-        placements: [PatternPlacement]? = nil
+        placements: [PatternPlacement]? = nil,
+        placementSnapshots: [PlacementSnapshot]? = nil
     ) {
         guard isCollaborative else { return }
         let op = NotebookOp.update(.init(
@@ -567,7 +568,8 @@ public final class CollaborationSession {
             processName: processName,
             pharoSnapshot: pharoSnapshot,
             jsValue: jsValue,
-            placements: placements
+            placements: placements,
+            placementSnapshots: placementSnapshots
         ))
         try? store.saveOutboxOp(op)
         sendOpIfJoined(op)
