@@ -63,11 +63,12 @@ final class CustomInstrumentDefPane {
     private func applyRefresh(def: CustomInstrumentDef, file: CustomInstrumentFile) {
         let pathChanged = self.file.path != file.path
         let storedContentChanged = self.file.content != file.content
+        let takesStoredContent = pathChanged || (storedContentChanged && !isDirty())
         self.def = def
         self.file = file
         let packages = (try? engine?.store.fetchPackagesState().packages) ?? []
         sourceEditor.setProfile(currentProfile(def: def, file: file, packages: packages))
-        if pathChanged || (storedContentChanged && !isDirty()) {
+        if takesStoredContent {
             sourceEditor.setText(file.content)
             draftContent = file.content
             saveBar.setDirty(false)
