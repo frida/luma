@@ -28,6 +28,10 @@ public struct InstrumentFolder: Sendable {
         folderURL.lastPathComponent
     }
 
+    public var rootURL: URL {
+        manifest.luma?.root.map { folderURL.appendingPathComponent($0).standardizedFileURL } ?? folderURL.standardizedFileURL
+    }
+
     public init(folderURL: URL) throws {
         let manifest = try JSONDecoder().decode(
             Manifest.self,
@@ -38,6 +42,9 @@ public struct InstrumentFolder: Sendable {
         name = manifest.displayName ?? manifest.name
         icon = try Self.loadIcon(manifest.luma?.icon, in: folderURL)
         compatibility = manifest.luma?.compatibility ?? .universal
+        guard (folderURL.standardizedFileURL.path + "/").hasPrefix(rootURL.path + "/") else {
+            throw LumaCoreError.invalidArgument("The root in \(Self.manifestFileName) has to be a folder above it.")
+        }
     }
 
     public func customInstrument(id: UUID, createdAt: Date, updatedAt: Date) throws -> CustomInstrumentBundle {
@@ -45,7 +52,7 @@ public struct InstrumentFolder: Sendable {
             CustomInstrumentFile(
                 defID: id,
                 path: path,
-                content: String(decoding: try Data(contentsOf: folderURL.appendingPathComponent(path)), as: UTF8.self)
+                content: String(decoding: try Data(contentsOf: rootURL.appendingPathComponent(path)), as: UTF8.self)
             )
         }
         return CustomInstrumentBundle(def: definition(id: id, createdAt: createdAt, updatedAt: updatedAt), files: files)
@@ -57,7 +64,7 @@ public struct InstrumentFolder: Sendable {
             name: name,
             icon: icon,
             compatibility: compatibility,
-            entrypoint: manifest.main,
+            entrypoint: prefix + manifest.main,
             dependencies: manifest.dependencies ?? [:],
             features: manifest.luma?.features ?? [],
             widgets: manifest.luma?.widgets ?? [],
@@ -69,7 +76,13 @@ public struct InstrumentFolder: Sendable {
     }
 
     public func sourcePaths() throws -> [String] {
-        try Self.entries(in: folderURL).filter { !$0.isDirectory && !generatedPaths.contains($0.path) }.map(\.path).sorted()
+        let own = try Self.entries(in: folderURL).filter { !$0.isDirectory && !generatedPaths.contains($0.path) }.map { prefix + $0.path }
+        return (own + sharedPaths(importedBy: own)).sorted()
+    }
+
+    public func sharedDirectories() throws -> [URL] {
+        let shared = try sourcePaths().filter { !$0.hasPrefix(prefix) }
+        return Array(Set(shared.map { rootURL.appendingPathComponent($0).deletingLastPathComponent() }))
     }
 
     public static func directories(in folderURL: URL) throws -> [URL] {
@@ -85,17 +98,18 @@ public struct InstrumentFolder: Sendable {
         let def = instrument.def
 
         let existingManifest = fm.contents(atPath: folderURL.appendingPathComponent(manifestFileName).path)
-        var files = try files(for: instrument, mergingInto: existingManifest)
-        let described = (try? InstrumentFolder(folderURL: folderURL))?
-            .definition(id: def.id, createdAt: def.createdAt, updatedAt: def.updatedAt)
-        if described == def {
-            files.removeAll { $0.path == manifestFileName }
+        let existing = try? InstrumentFolder(folderURL: folderURL)
+        let rootURL = existing?.rootURL ?? folderURL
+        var generated = try generatedFiles(for: def, mergingInto: existingManifest, under: existing?.prefix ?? "")
+        if existing?.definition(id: def.id, createdAt: def.createdAt, updatedAt: def.updatedAt) == def {
+            generated.removeAll { $0.path == manifestFileName }
         }
-        try write(files, to: folderURL)
+        try write(generated, to: folderURL)
+        try write(sourceFiles(of: instrument), to: rootURL)
 
         let currentPaths = Set(instrument.files.map(\.path))
         for path in previousPaths where !currentPaths.contains(path) {
-            let fileURL = folderURL.appendingPathComponent(path)
+            let fileURL = rootURL.appendingPathComponent(path)
             if fm.fileExists(atPath: fileURL.path) {
                 try fm.removeItem(at: fileURL)
             }
@@ -107,20 +121,29 @@ public struct InstrumentFolder: Sendable {
     }
 
     public static func files(for instrument: CustomInstrumentBundle, mergingInto existingManifest: Data? = nil) throws -> [File] {
-        let def = instrument.def
-        var files = instrument.files.map { File(path: $0.path, content: Data($0.content.utf8)) }
+        try sourceFiles(of: instrument) + generatedFiles(for: instrument.def, mergingInto: existingManifest, under: "")
+    }
+
+    private static func sourceFiles(of instrument: CustomInstrumentBundle) -> [File] {
+        instrument.files.map { File(path: $0.path, content: Data($0.content.utf8)) }
+    }
+
+    private static func generatedFiles(for def: CustomInstrumentDef, mergingInto existingManifest: Data?, under prefix: String) throws -> [File] {
+        var files: [File] = []
+        let existing = existingManifest.flatMap { try? JSONDecoder().decode(Manifest.self, from: $0) }
 
         let icon: Manifest.Icon
         switch def.icon {
         case .symbolic(let id):
             icon = .symbolic(id)
         case .pixels(let data):
-            let iconPath = existingManifest.flatMap(iconFilePath(inManifest:)) ?? defaultIconFileName
+            let iconPath = existing?.luma?.iconFilePath ?? defaultIconFileName
             icon = .file(iconPath)
             files.append(File(path: iconPath, content: data))
         }
 
         let section = Manifest.Section(
+            root: existing?.luma?.root,
             icon: icon,
             compatibility: def.compatibility.isUniversal ? nil : def.compatibility,
             features: def.features,
@@ -133,7 +156,7 @@ public struct InstrumentFolder: Sendable {
                 ["name": packageName(for: def.name)]
             }
         package["displayName"] = def.name == package["name"] as? String ? nil : def.name
-        package["main"] = def.entrypoint
+        package["main"] = path(to: def.entrypoint, fromFolderUnder: prefix)
         package["dependencies"] = def.dependencies.isEmpty ? nil : def.dependencies
         package["luma"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(section))
         let manifestData = try JSONSerialization.data(
@@ -159,9 +182,51 @@ public struct InstrumentFolder: Sendable {
         }
     }
 
+    private var prefix: String {
+        let folderPath = folderURL.standardizedFileURL.path
+        return folderPath == rootURL.path ? "" : String(folderPath.dropFirst(rootURL.path.count + 1)) + "/"
+    }
+
+    private func sharedPaths(importedBy own: [String]) -> [String] {
+        var shared: Set<String> = []
+        var unread = prefix.isEmpty ? [] : own
+        while let path = unread.popLast() {
+            let fileURL = rootURL.appendingPathComponent(path)
+            guard let source = try? String(contentsOf: fileURL, encoding: .utf8) else { continue }
+            for specifier in Self.relativeImports(in: source) {
+                guard let imported = sourcePath(named: specifier, importedFrom: fileURL), !imported.hasPrefix(prefix),
+                    shared.insert(imported).inserted
+                else { continue }
+                unread.append(imported)
+            }
+        }
+        return Array(shared)
+    }
+
+    private func sourcePath(named specifier: String, importedFrom fileURL: URL) -> String? {
+        let named = fileURL.deletingLastPathComponent().appendingPathComponent(specifier).standardizedFileURL.path
+        let stem = named.hasSuffix(".js") ? String(named.dropLast(3)) : named
+        let candidates = [named, stem + ".ts", named + ".ts", named + "/index.ts"]
+        var isDirectory: ObjCBool = false
+        return candidates
+            .first { FileManager.default.fileExists(atPath: $0, isDirectory: &isDirectory) && !isDirectory.boolValue }
+            .flatMap { $0.hasPrefix(rootURL.path + "/") ? String($0.dropFirst(rootURL.path.count + 1)) : nil }
+    }
+
+    private static func relativeImports(in source: String) -> [String] {
+        source.matches(of: /(?:from|import|require)\s*\(?\s*["'](\.{1,2}\/[^"']+)["']/).map { String($0.output.1) }
+    }
+
+    private static func path(to entrypoint: String, fromFolderUnder prefix: String) -> String {
+        if entrypoint.hasPrefix(prefix) {
+            return String(entrypoint.dropFirst(prefix.count))
+        }
+        return String(repeating: "../", count: prefix.split(separator: "/").count) + entrypoint
+    }
+
     private var generatedPaths: Set<String> {
         var paths: Set = [Self.manifestFileName, Self.lockFileName, Self.typingsFileName]
-        if case .file(let iconPath) = manifest.luma?.icon {
+        if let iconPath = manifest.luma?.iconFilePath {
             paths.insert(iconPath)
         }
         return paths
@@ -197,13 +262,6 @@ public struct InstrumentFolder: Sendable {
         }
     }
 
-    private static func iconFilePath(inManifest data: Data) -> String? {
-        guard let manifest = try? JSONDecoder().decode(Manifest.self, from: data),
-            case .file(let path) = manifest.luma?.icon
-        else { return nil }
-        return path
-    }
-
     private static func packageName(for displayName: String) -> String {
         displayName
             .lowercased()
@@ -223,10 +281,18 @@ public struct InstrumentFolder: Sendable {
         let luma: Section?
 
         struct Section: Codable, Sendable {
+            var root: String?
             var icon: Icon?
             var compatibility: InstrumentCompatibility?
             var features: [CustomInstrumentDef.Feature]?
             var widgets: [InstrumentWidget]?
+
+            var iconFilePath: String? {
+                if case .file(let path) = icon {
+                    return path
+                }
+                return nil
+            }
         }
 
         enum Icon: Codable, Sendable {

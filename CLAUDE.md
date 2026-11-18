@@ -179,7 +179,10 @@ is gitignored — it is produced at build time.
   instrument as a folder on disk: its sources beside a `package.json`
   whose `main` is the entrypoint, whose `dependencies` are the packages
   it imports, and whose `luma` object carries name, icon,
-  compatibility, features and widgets. Linking one brings it into the
+  compatibility, features and widgets. Instruments in one repository
+  share code by naming a `luma.root` above their folders: what the
+  sources import by relative path from under that root comes along, and
+  the instrument's paths are then relative to it. Linking one brings it into the
   project as a custom instrument and remembers the folder in
   `LumaAppState`, outside the document, so collaborators get the
   instrument without needing the folder. The link remembers what both

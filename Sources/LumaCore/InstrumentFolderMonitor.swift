@@ -23,7 +23,9 @@ final class InstrumentFolderMonitor {
     }
 
     private func watchDirectories() {
-        let directories = Set((try? InstrumentFolder.directories(in: folderURL)) ?? [])
+        let own = (try? InstrumentFolder.directories(in: folderURL)) ?? []
+        let shared = (try? InstrumentFolder(folderURL: folderURL).sharedDirectories()) ?? []
+        let directories = Set(own + shared)
         for (directory, watch) in watches where !directories.contains(directory) {
             watch.cancel()
             watches.removeValue(forKey: directory)
