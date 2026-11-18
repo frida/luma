@@ -4964,13 +4964,10 @@ public final class Engine {
     }
 
     private func requireCustomInstrumentDef(defID: UUID) throws -> CustomInstrumentDef {
-        if let cached = customInstruments.def(withId: defID) {
-            return cached
+        guard let def = try store.fetchCustomInstrumentDef(id: defID) else {
+            throw LumaCoreError.invalidArgument("No custom instrument with id \(defID).")
         }
-        if let stored = try store.fetchCustomInstrumentDef(id: defID) {
-            return stored
-        }
-        throw LumaCoreError.invalidArgument("No custom instrument with id \(defID).")
+        return def
     }
 
     private func touchUpdatedAt(defID: UUID) throws -> CustomInstrumentDef {
