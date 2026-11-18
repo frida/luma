@@ -9,6 +9,7 @@ struct PackageSearchView: View {
     @Binding var selection: SidebarItemID?
 
     private let scope: PackageCategory
+    private let onPicked: ((String, String) -> Void)?
     @State private var category: PackageCategory
     @State private var query: String = ""
     @State private var results: [Package] = []
@@ -36,10 +37,16 @@ struct PackageSearchView: View {
 
     private let manager = PackageManager()
 
-    init(engine: Engine, selection: Binding<SidebarItemID?>, category: PackageCategory = .any) {
+    init(
+        engine: Engine,
+        selection: Binding<SidebarItemID?>,
+        category: PackageCategory = .any,
+        onPicked: ((String, String) -> Void)? = nil
+    ) {
         self.engine = engine
         _selection = selection
         scope = category
+        self.onPicked = onPicked
         _category = State(initialValue: category)
     }
 
@@ -107,7 +114,7 @@ struct PackageSearchView: View {
             .font(.callout)
             .help("Enter a package name or name@version to install.")
 
-            if category != .pattern {
+            if category != .pattern && onPicked == nil {
                 LabeledContent("Global alias:") {
                     TextField("optional, e.g. ObjC", text: $globalAlias)
                         .textFieldStyle(.roundedBorder)
@@ -219,6 +226,12 @@ struct PackageSearchView: View {
                 name = pkg.name
                 versionSpec = pkg.version
             } else {
+                return
+            }
+
+            if let onPicked {
+                onPicked(name, versionSpec)
+                dismiss()
                 return
             }
 

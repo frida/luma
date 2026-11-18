@@ -65,6 +65,7 @@ struct SidebarCustomInstrumentDefRow: View {
     @State private var isShowingCompatibility = false
     @State private var isShowingFeatures = false
     @State private var isShowingWidgets = false
+    @State private var isShowingPackages = false
     @State private var isShowingDeleteConfirm = false
     @State private var addFilePrompt = AddFilePromptState()
     @State private var renameEntrypointPrompt = RenamePromptState()
@@ -104,6 +105,11 @@ struct SidebarCustomInstrumentDefRow: View {
                 isShowingWidgets = true
             } label: {
                 Label("Widgets\u{2026}", systemImage: "chart.xyaxis.line")
+            }
+            Button {
+                isShowingPackages = true
+            } label: {
+                Label("Packages\u{2026}", systemImage: "shippingbox")
             }
             Divider()
             Button {
@@ -168,6 +174,13 @@ struct SidebarCustomInstrumentDefRow: View {
             CustomInstrumentWidgetsPopover(
                 def: def,
                 engine: engine
+            )
+        }
+        .popover(isPresented: $isShowingPackages, arrowEdge: .trailing) {
+            CustomInstrumentPackagesPopover(
+                def: def,
+                engine: engine,
+                selection: $selection
             )
         }
         .confirmationDialog(
