@@ -145,7 +145,7 @@ public enum NotebookOp: Sendable {
                 changes["js_value"] = jsonObject
             }
             if let placements = u.placements {
-                changes["placements"] = placements.map { $0.toWireJSON() }
+                changes["placements"] = placements.wireJSON
             }
             if let snapshots = u.placementSnapshots,
                 let data = try? JSONEncoder().encode(snapshots),
@@ -213,7 +213,7 @@ public enum NotebookOp: Sendable {
                 pharoSnapshot: snapshot,
                 pharoResultFuel: (changes["pharo_result_fuel"] as? String).flatMap { Data(base64Encoded: $0) },
                 jsValue: jsValue,
-                placements: (changes["placements"] as? [[String: Any]])?.compactMap(PatternPlacement.fromWireJSON),
+                placements: (changes["placements"] as? [[String: Any]]).map([PatternPlacement].init(wireJSON:)),
                 placementSnapshots: placementSnapshots
             ))
 

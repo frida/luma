@@ -10,8 +10,7 @@ final class InspectedBytesWidget {
     private let engine: Engine
     private let sessionID: UUID
     private let stored: StoredValue?
-    private let hexView: HexView
-    private let liveRow: Box
+    private let decodeView: PatternDecodeView
     private let problemLabel: Label
 
     private var data: Data
@@ -23,25 +22,20 @@ final class InspectedBytesWidget {
         self.stored = stored
         data = bytes.data
 
-        hexView = HexView(bytes: bytes.data, baseAddress: bytes.address ?? 0)
-        hexView.widget.hexpand = true
-        let rows = max(1, (bytes.data.count + 15) / 16)
-        hexView.widget.setSizeRequest(width: -1, height: min(220, rows * 18 + 20))
-
-        let hintLabel = Label(str: HexView.editingHint)
-        hintLabel.add(cssClass: "dim-label")
-        hintLabel.add(cssClass: "caption")
-        hintLabel.xalign = 0
-        hintLabel.hexpand = true
-        hintLabel.wrap = true
+        let home = bytes.address.flatMap { address in stored.map { (address: address, stored: $0) } }
+        decodeView = PatternDecodeView(
+            engine: engine, sessionID: sessionID, data: bytes.data, baseAddress: bytes.address,
+            placements: home.map { engine.placements(at: $0.address, in: $0.stored) } ?? [], sizing: .capped
+        ) { [weak engine] placements in
+            guard let home else { return }
+            engine?.setPlacements(placements, at: home.address, in: home.stored)
+        }
+        decodeView.widget.hexpand = true
 
         let rereadButton = Button(iconName: "view-refresh-symbolic")
         rereadButton.add(cssClass: "flat")
         rereadButton.tooltipText = "Reread from memory"
-
-        liveRow = Box(orientation: .horizontal, spacing: 8)
-        liveRow.append(child: hintLabel)
-        liveRow.append(child: rereadButton)
+        rereadButton.halign = .start
 
         problemLabel = Label(str: "")
         problemLabel.add(cssClass: "error")
@@ -54,13 +48,15 @@ final class InspectedBytesWidget {
         widget = Box(orientation: .vertical, spacing: 4)
         widget.hexpand = true
         widget.halign = .start
-        widget.append(child: hexView.widget)
-        widget.append(child: liveRow)
+        widget.append(child: decodeView.widget)
+        widget.append(child: rereadButton)
         widget.append(child: problemLabel)
 
         let isLive = bytes.address != nil && stored != nil && engine.node(forSessionID: sessionID) != nil
-        liveRow.visible = isLive
-        hexView.onWrite = isLive ? { [weak self] offset, bytes in self?.write(bytes, atOffset: offset) } : nil
+        rereadButton.visible = isLive
+        if isLive {
+            decodeView.memoryWriter = { [weak self] written, address in try await self?.write(written, at: address) }
+        }
         rereadButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.reread()
@@ -68,27 +64,18 @@ final class InspectedBytesWidget {
         }
     }
 
-    private func write(_ bytes: [UInt8], atOffset offset: Int) {
-        guard let address = self.bytes.address, let stored else { return }
-        attempt { [engine, sessionID] in
-            try await engine.writeMemory(bytes, at: address &+ UInt64(offset), forSessionID: sessionID, updating: stored)
-            return (bytes, offset)
-        }
+    private func write(_ written: [UInt8], at address: UInt64) async throws {
+        guard let stored else { return }
+        try await engine.writeMemory(written, at: address, forSessionID: sessionID, updating: stored)
+        show(written, at: address)
     }
 
     private func reread() {
-        guard let stored else { return }
-        attempt { [engine, sessionID, bytes] in
-            let fresh = try await engine.rereadMemory(of: bytes, forSessionID: sessionID, updating: stored)
-            return (fresh, 0)
-        }
-    }
-
-    private func attempt(_ operation: @escaping () async throws -> (bytes: [UInt8], offset: Int)) {
-        Task { @MainActor [weak self] in
+        guard let stored, let address = bytes.address else { return }
+        Task { @MainActor [weak self, engine, sessionID, bytes] in
             do {
-                let (bytes, offset) = try await operation()
-                self?.show(bytes, atOffset: offset)
+                let fresh = try await engine.rereadMemory(of: bytes, forSessionID: sessionID, updating: stored)
+                self?.show(fresh, at: address)
                 self?.showProblem(nil)
             } catch {
                 self?.showProblem(error.localizedDescription)
@@ -96,9 +83,11 @@ final class InspectedBytesWidget {
         }
     }
 
-    private func show(_ written: [UInt8], atOffset offset: Int) {
-        data.replaceSubrange(offset..<offset + written.count, with: written)
-        hexView.setBytes(data, baseAddress: bytes.address ?? 0)
+    private func show(_ fresh: [UInt8], at address: UInt64) {
+        guard let base = bytes.address else { return }
+        let offset = Int(address &- base)
+        data.replaceSubrange(offset..<offset + fresh.count, with: fresh)
+        decodeView.setData(data, baseAddress: base)
     }
 
     private func showProblem(_ text: String?) {

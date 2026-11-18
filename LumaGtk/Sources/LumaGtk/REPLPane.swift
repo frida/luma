@@ -158,7 +158,11 @@ final class REPLPane {
         let shown = cells[index]
         cells[index] = cell
         if cell.code == shown.code && cell.result == shown.result {
-            decodeViews[cell.id]?.setPlacements(cell.placements)
+            if let decode = decodeViews[cell.id] {
+                decode.setPlacements(cell.placements)
+            } else if cell.placements != shown.placements, let row = rows[cell.id] {
+                replaceRow(row, for: cell)
+            }
         } else if cell.code == shown.code, case .js = cell.result, let row = rows[cell.id] {
             replaceRow(row, for: cell)
         } else {

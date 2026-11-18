@@ -316,8 +316,8 @@ struct NotebookEntryRow: View {
                     sessionID: entry.sessionID,
                     engine: engine,
                     placements: Binding(
-                        get: { entry.placements },
-                        set: { engine.setPlacements($0, forNotebookEntry: entry) }
+                        get: { entry.placements.placed(at: nil) },
+                        set: { engine.setPlacements($0, at: nil, in: .notebookEntry(entry.id)) }
                     )
                 )
                 .fixedSize(horizontal: false, vertical: true)
@@ -522,7 +522,7 @@ struct NotebookEntryRow: View {
                 engine: engine,
                 selection: $selection
             )
-            .environment(\.storedValue, .notebookEntry(entry.id))
+            .stored(.notebookEntry(entry.id), placements: entry.placements)
             .font(.monospacedContent)
         } else if let styled = entry.styledDetails {
             Text(styled.attributed)

@@ -404,7 +404,7 @@ public final class Engine {
         }
     }
 
-    public func setPlacements(_ placements: [PatternPlacement], forNotebookEntry entry: NotebookEntry) {
+    private func setPlacements(_ placements: [PatternPlacement], forNotebookEntry entry: NotebookEntry) {
         var updated = entry
         updated.placements = placements
         updateNotebookEntry(updated, changed: .placements)
@@ -429,7 +429,7 @@ public final class Engine {
         placementSnapshotTasks[entry.id] = Task { [weak self] in
             guard let self else { return }
             var snapshots: [PlacementSnapshot] = []
-            for placement in entry.placements {
+            for placement in entry.placements.placed(at: nil) {
                 do {
                     let decoded = try await decode(placement, in: data, at: baseAddress, forSession: entry.sessionID)
                     snapshots.append(PlacementSnapshot(of: placement, decoded: decoded, base: baseAddress))
@@ -3025,6 +3025,36 @@ public final class Engine {
         emitInsightUpdated(updated)
     }
 
+    public func placements(at origin: UInt64?, in stored: StoredValue) -> [PatternPlacement] {
+        placements(in: stored).placed(at: origin)
+    }
+
+    public func setPlacements(_ placements: [PatternPlacement], at origin: UInt64?, in stored: StoredValue) {
+        let all = self.placements(in: stored).replacingThose(at: origin, with: placements)
+        switch stored {
+        case .replCell(let id):
+            setPlacements(all, forREPLCell: id)
+        case .notebookEntry(let id):
+            guard let entry = notebookEntries.first(where: { $0.id == id }) else { return }
+            setPlacements(all, forNotebookEntry: entry)
+        case .event(let id):
+            guard var event = eventLog.event(id: id) else { return }
+            event.placements = all
+            update(event)
+        }
+    }
+
+    private func placements(in stored: StoredValue) -> [PatternPlacement] {
+        switch stored {
+        case .replCell(let id):
+            return (try? store.fetchREPLCell(id: id))?.placements ?? []
+        case .notebookEntry(let id):
+            return notebookEntries.first { $0.id == id }?.placements ?? []
+        case .event(let id):
+            return eventLog.event(id: id)?.placements ?? []
+        }
+    }
+
     public func setPlacements(_ placements: [PatternPlacement], forREPLCell cellID: UUID) {
         guard let cell = storePlacements(placements, forREPLCell: cellID) else { return }
         collaboration.enqueueSetPlacements(placements, sessionID: cell.sessionID, on: .replCell(cellID))
@@ -3262,10 +3292,13 @@ public final class Engine {
 
     private func recordMemory(_ bytes: [UInt8], at address: UInt64, inEvent id: RuntimeEvent.ID) {
         guard let event = eventLog.event(id: id) else { return }
-        let updated = event.recordingMemory(bytes, at: address)
-        eventLog.update(updated)
-        if let sessionID = updated.sessionID, let collabID = collabSessionID(forSessionID: sessionID) {
-            collaboration.sendEventUpdate(sessionID: collabID, event: updated)
+        update(event.recordingMemory(bytes, at: address))
+    }
+
+    private func update(_ event: RuntimeEvent) {
+        eventLog.update(event)
+        if let sessionID = event.sessionID, let collabID = collabSessionID(forSessionID: sessionID) {
+            collaboration.sendEventUpdate(sessionID: collabID, event: event)
         }
     }
 
@@ -5417,13 +5450,13 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         let op = CustomInstrumentOp.upsert(.init(bundle: bundle))
         try? store.saveCustomInstrumentOutboxOp(op)
         collaboration.sendCustomInstrumentOpIfJoined(op)
+        instrumentsEditedSinceSnapshots.insert(defID)
     }
 
     private func broadcastCustomInstrumentRemove(defID: UUID) {
         let op = CustomInstrumentOp.remove(.init(defID: defID))
         try? store.saveCustomInstrumentOutboxOp(op)
         collaboration.sendCustomInstrumentOpIfJoined(op)
-        instrumentsEditedSinceSnapshots.insert(defID)
     }
 
     public func loadCodeShareInstrument(

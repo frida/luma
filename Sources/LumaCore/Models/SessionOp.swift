@@ -556,7 +556,7 @@ public enum SessionOp: Sendable {
             case .insight(let insightID):
                 obj["insight_id"] = insightID.uuidString
             }
-            obj["placements"] = s.placements.map { $0.toWireJSON() }
+            obj["placements"] = s.placements.wireJSON
         case .upsertTrace(let u):
             if let traceObj = u.trace.toWireJSON() {
                 obj["trace"] = traceObj
@@ -820,7 +820,7 @@ public enum SessionOp: Sendable {
                 opID: opID,
                 sessionID: sessionID,
                 subject: subject,
-                placements: placements.compactMap(PatternPlacement.fromWireJSON)
+                placements: [PatternPlacement](wireJSON: placements)
             ))
 
         case "upsert-trace":

@@ -720,7 +720,7 @@ struct EventRow: View, Equatable {
             }
 
             contentView
-                .environment(\.storedValue, .event(evt.id))
+                .stored(.event(evt.id), placements: evt.placements)
 
             Spacer(minLength: 8)
 

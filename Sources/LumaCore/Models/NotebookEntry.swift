@@ -166,7 +166,7 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
             obj["session_id"] = sessionID.uuidString
         }
 
-        obj["placements"] = placements.map { $0.toWireJSON() }
+        obj["placements"] = placements.wireJSON
 
         return obj
     }
@@ -232,7 +232,7 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
         let processName = obj["process_name"] as? String
 
         let baseAddress = (obj["base_address"] as? String).flatMap { UInt64($0.dropFirst(2), radix: 16) }
-        let placements = (obj["placements"] as? [[String: Any]] ?? []).compactMap(PatternPlacement.fromWireJSON)
+        let placements = [PatternPlacement](wireJSON: obj["placements"] as? [[String: Any]] ?? [])
 
         return NotebookEntry(
             id: uuid,

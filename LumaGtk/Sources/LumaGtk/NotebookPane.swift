@@ -153,11 +153,11 @@ final class NotebookPane {
                 cell.apply(entry, changed: changed)
                 break
             }
-            if changed == .jsValue, entryRows[entry.id]?.focusChild != nil {
+            if changed == .placements, let decode = decodeViews[entry.id] {
+                decode.setPlacements(entry.placements.placed(at: nil))
                 break
             }
-            if changed == .placements, let decode = decodeViews[entry.id] {
-                decode.setPlacements(entry.placements)
+            if changed == .jsValue || changed == .placements, entryRows[entry.id]?.focusChild != nil {
                 break
             }
             replaceRow(for: entry)
@@ -449,10 +449,9 @@ final class NotebookPane {
         if let data = entry.binaryData, !data.isEmpty, let engine {
             let decode = PatternDecodeView(
                 engine: engine, sessionID: entry.sessionID, data: data, baseAddress: entry.binaryMeta?.baseAddress,
-                placements: entry.placements, sizing: .capped
+                placements: entry.placements.placed(at: nil), sizing: .capped
             ) { [weak engine] placements in
-                guard let current = engine?.notebookEntries.first(where: { $0.id == entry.id }) else { return }
-                engine?.setPlacements(placements, forNotebookEntry: current)
+                engine?.setPlacements(placements, at: nil, in: .notebookEntry(entry.id))
             }
             decodeViews[entry.id] = decode
             inner.append(child: decode.widget)

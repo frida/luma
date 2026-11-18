@@ -7,6 +7,7 @@ public struct RuntimeEvent: Identifiable, Sendable {
     public let source: Source
     public let payload: Payload
     public let data: [UInt8]?
+    public var placements: [PatternPlacement] = []
     public internal(set) var revision = 0
 
     public enum Source: Sendable {
@@ -58,7 +59,9 @@ public struct RuntimeEvent: Identifiable, Sendable {
         case .jsError, .raw:
             return self
         }
-        return RuntimeEvent(id: id, timestamp: timestamp, sessionID: sessionID, source: source, payload: updated, data: data)
+        var recorded = RuntimeEvent(id: id, timestamp: timestamp, sessionID: sessionID, source: source, payload: updated, data: data)
+        recorded.placements = placements
+        return recorded
     }
 
     nonisolated(unsafe) private static let wireFormatter: ISO8601DateFormatter = {
@@ -80,6 +83,9 @@ public struct RuntimeEvent: Identifiable, Sendable {
         if let data {
             obj["data"] = Data(data).base64EncodedString()
         }
+        if !placements.isEmpty {
+            obj["placements"] = placements.wireJSON
+        }
         return obj
     }
 
@@ -99,10 +105,12 @@ public struct RuntimeEvent: Identifiable, Sendable {
         } else {
             data = nil
         }
-        return RuntimeEvent(
+        var event = RuntimeEvent(
             id: id, timestamp: timestamp, source: source,
             payload: payload, data: data
         )
+        event.placements = [PatternPlacement](wireJSON: obj["placements"] as? [[String: Any]] ?? [])
+        return event
     }
 
     public var logPayload: [String: Any] {
@@ -122,6 +130,9 @@ public struct RuntimeEvent: Identifiable, Sendable {
         }
         if let data {
             obj["data"] = Data(data).base64EncodedString()
+        }
+        if !placements.isEmpty {
+            obj["placements"] = placements.wireJSON
         }
         return obj
     }
@@ -143,10 +154,12 @@ public struct RuntimeEvent: Identifiable, Sendable {
         } else {
             data = nil
         }
-        return RuntimeEvent(
+        var event = RuntimeEvent(
             id: id, timestamp: timestamp, sessionID: sessionID,
             source: source, payload: payload, data: data
         )
+        event.placements = [PatternPlacement](wireJSON: obj["placements"] as? [[String: Any]] ?? [])
+        return event
     }
 
     private static func encodeSource(_ source: Source) -> [String: Any]? {

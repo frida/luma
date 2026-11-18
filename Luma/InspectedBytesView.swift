@@ -7,25 +7,28 @@ struct InspectedBytesView: View {
     let engine: Engine
 
     @Environment(\.storedValue) private var storedValue
+    @Environment(\.storedPlacements) private var storedPlacements
+    @State private var unstoredPlacements: [PatternPlacement] = []
     @State private var problem: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Bytes(\(bytes.kind.rawValue)[\(bytes.data.count)])")
                 .foregroundStyle(.mint)
-            HexView(data: bytes.data, baseAddress: bytes.address ?? 0, onWrite: hexWriter) {
-                if liveTarget != nil {
-                    Button("Reread", action: reread)
-                }
-            }
+            PatternDecodeView(
+                data: bytes.data,
+                baseAddress: bytes.address,
+                sessionID: sessionID,
+                engine: engine,
+                placements: placements,
+                memoryWriter: memoryWriter
+            )
+            .fixedSize(horizontal: false, vertical: true)
             if liveTarget != nil {
-                HStack(spacing: 8) {
-                    HexEditingCaption()
-                    Button("Reread", systemImage: "arrow.clockwise", action: reread)
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.borderless)
-                        .help("Reread from memory")
-                }
+                Button("Reread", systemImage: "arrow.clockwise", action: reread)
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .help("Reread from memory")
             }
             if let problem {
                 Text(problem)
@@ -36,18 +39,24 @@ struct InspectedBytesView: View {
         }
     }
 
+    private var placements: Binding<[PatternPlacement]> {
+        guard let storedValue, let address = bytes.address else { return $unstoredPlacements }
+        return Binding(
+            get: { storedPlacements.placed(at: address) },
+            set: { engine.setPlacements($0, at: address, in: storedValue) }
+        )
+    }
+
+    private var memoryWriter: ((_ bytes: [UInt8], _ address: UInt64) async throws -> Void)? {
+        guard let target = liveTarget else { return nil }
+        return { written, address in
+            try await engine.writeMemory(written, at: address, forSessionID: sessionID, updating: target.stored)
+        }
+    }
+
     private var liveTarget: (address: UInt64, stored: StoredValue)? {
         guard let address = bytes.address, let storedValue, engine.node(forSessionID: sessionID) != nil else { return nil }
         return (address, storedValue)
-    }
-
-    private var hexWriter: ((Int, [UInt8]) -> Void)? {
-        guard let target = liveTarget else { return nil }
-        return { offset, bytes in write(bytes, at: target.address &+ UInt64(offset), updating: target.stored) }
-    }
-
-    private func write(_ bytes: [UInt8], at address: UInt64, updating stored: StoredValue) {
-        attempt { try await engine.writeMemory(bytes, at: address, forSessionID: sessionID, updating: stored) }
     }
 
     private func reread() {
@@ -67,13 +76,29 @@ struct InspectedBytesView: View {
     }
 }
 
+extension View {
+    func stored(_ value: StoredValue, placements: [PatternPlacement]) -> some View {
+        environment(\.storedValue, value)
+            .environment(\.storedPlacements, placements)
+    }
+}
+
 extension EnvironmentValues {
     var storedValue: StoredValue? {
         get { self[StoredValueKey.self] }
         set { self[StoredValueKey.self] = newValue }
     }
+
+    var storedPlacements: [PatternPlacement] {
+        get { self[StoredPlacementsKey.self] }
+        set { self[StoredPlacementsKey.self] = newValue }
+    }
 }
 
 private struct StoredValueKey: EnvironmentKey {
     static let defaultValue: StoredValue? = nil
+}
+
+private struct StoredPlacementsKey: EnvironmentKey {
+    static let defaultValue: [PatternPlacement] = []
 }
