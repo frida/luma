@@ -162,6 +162,10 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
             obj["base_address"] = String(format: "0x%llx", baseAddress)
         }
 
+        if let sessionID {
+            obj["session_id"] = sessionID.uuidString
+        }
+
         obj["placements"] = placements.map { $0.toWireJSON() }
 
         return obj
@@ -245,6 +249,7 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
             binaryData: data.map { Data($0) },
             binaryMeta: baseAddress.map { REPLCell.Result.BinaryMeta(typedArray: nil, baseAddress: $0) },
             placements: placements,
+            sessionID: (obj["session_id"] as? String).flatMap(UUID.init(uuidString:)),
             processName: processName
         )
     }
