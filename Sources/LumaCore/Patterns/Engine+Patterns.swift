@@ -21,13 +21,18 @@ extension Engine {
 
     public func describePatternLibrary() async -> [[String: Any]] {
         var described: [[String: Any]] = []
-        for source in patterns.sources {
+        for source in patterns.placeableSources {
             var entry: [String: Any] = [
                 "id": source.id, "name": source.name, "kind": source.kind == .library ? "library" : "pattern",
                 "file": source.workspacePath,
             ]
-            if case .package(let package) = source.origin {
+            switch source.origin {
+            case .project:
+                break
+            case .package(let package):
                 entry["package"] = package
+            case .instrument(let instrument):
+                entry["instrument"] = instrument
             }
             if let summary = try? await patternDecoder.summary(of: source) {
                 entry.merge(summary.jsonObject) { _, new in new }

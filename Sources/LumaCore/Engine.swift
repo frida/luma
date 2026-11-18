@@ -224,6 +224,7 @@ public final class Engine {
         customInstruments.observers.append { [weak self] in
             self?.refreshCustomInstrumentDescriptors()
             self?.mirrorCustomInstrumentSources()
+            self?.patterns.reloadInstrumentSources()
             self?.restoreInstrumentFolderLinks()
             self?.settleInstrumentFolders()
         }

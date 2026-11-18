@@ -8,6 +8,7 @@ public final class PatternLibrary {
 
     public private(set) var projectSources: [PatternSource] = []
     public private(set) var packageSources: [PatternSource] = []
+    public private(set) var instrumentSources: [PatternSource] = []
 
     public let directory: URL
 
@@ -36,16 +37,25 @@ public final class PatternLibrary {
         projectSources + packageSources
     }
 
+    public var placeableSources: [PatternSource] {
+        sources + instrumentSources
+    }
+
     public func reload() {
         let records = (try? store.fetchPatternSources()) ?? []
         try? materialize(records)
         projectSources = records.map(projectSource(for:))
         packageSources = installedPatternPackages()
+        instrumentSources = customInstrumentPatterns()
         onChange?()
     }
 
+    public func reloadInstrumentSources() {
+        instrumentSources = customInstrumentPatterns()
+    }
+
     public func source(withID id: String) -> PatternSource? {
-        sources.first { $0.id == id }
+        placeableSources.first { $0.id == id }
     }
 
     @discardableResult
@@ -179,6 +189,21 @@ public final class PatternLibrary {
         }
     }
 
+    private func customInstrumentPatterns() -> [PatternSource] {
+        let defs = (try? store.fetchCustomInstrumentDefs()) ?? []
+        return defs.flatMap { def in
+            let files = (try? store.fetchCustomInstrumentFiles(defID: def.id)) ?? []
+            return files.compactMap { file -> PatternSource? in
+                guard let kind = PatternSource.Kind(path: file.path) else { return nil }
+                let workspacePath = "InstrumentSources/Custom/\(def.id.uuidString)/\(file.path)"
+                return PatternSource(
+                    id: "instrument:\(def.id.uuidString)/\(file.path)", name: def.name + "/" + (file.path as NSString).deletingPathExtension,
+                    kind: kind, origin: .instrument(def.name), url: workspace.root.appendingPathComponent(workspacePath),
+                    workspacePath: workspacePath, text: file.content)
+            }
+        }
+    }
+
     private func workspacePath(of url: URL) -> String {
         url.standardizedFileURL.path.replacingOccurrences(of: workspace.root.standardizedFileURL.path + "/", with: "")
     }
@@ -202,6 +227,7 @@ public struct PatternSource: Identifiable, Hashable, Sendable {
     public enum Origin: Hashable, Sendable {
         case project
         case package(String)
+        case instrument(String)
     }
 
     public enum Kind: String, Codable, Sendable {

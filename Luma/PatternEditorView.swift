@@ -69,7 +69,7 @@ struct PatternEditorView: View {
                     saveTooltip: "Save (\u{2318}S)",
                     onSave: save
                 )
-            case .package:
+            case .package, .instrument:
                 Button("Copy to Project", action: copyToProject)
                     .padding(8)
                     .help("Make an editable copy of this pattern in the project.")

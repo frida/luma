@@ -356,7 +356,7 @@ final class PatternSidebar {
                 [.init("Rename…") { [weak self] in self?.presentRename(source) }],
                 [.init("Delete", destructive: true) { [weak self] in self?.confirmDelete(source) }],
             ]
-        case .package:
+        case .package, .instrument:
             return [[.init("Copy to Project") { [weak self] in self?.copyToProject(source) }]]
         }
     }
@@ -470,7 +470,7 @@ extension PatternSource {
         switch origin {
         case .project:
             return kind.iconName
-        case .package:
+        case .package, .instrument:
             return "package-x-generic-symbolic"
         }
     }
@@ -479,8 +479,8 @@ extension PatternSource {
         switch origin {
         case .project:
             return workspacePath
-        case .package(let package):
-            return "From \(package)"
+        case .package(let origin), .instrument(let origin):
+            return "From \(origin)"
         }
     }
 }

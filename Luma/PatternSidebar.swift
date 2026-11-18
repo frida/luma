@@ -188,7 +188,7 @@ private struct SidebarPatternRow: View {
                 } label: {
                     Label("Delete", systemImage: "trash")
                 }
-            case .package:
+            case .package, .instrument:
                 Button(action: copyToProject) {
                     Label("Copy to Project", systemImage: "doc.on.doc")
                 }
@@ -293,7 +293,7 @@ extension PatternSource {
         switch origin {
         case .project:
             return kind.symbolName
-        case .package:
+        case .package, .instrument:
             return "shippingbox"
         }
     }
@@ -302,8 +302,8 @@ extension PatternSource {
         switch origin {
         case .project:
             return workspacePath
-        case .package(let package):
-            return "From \(package)"
+        case .package(let origin), .instrument(let origin):
+            return "From \(origin)"
         }
     }
 }

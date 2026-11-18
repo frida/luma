@@ -186,7 +186,7 @@ final class PatternDecodeView {
     }
 
     private func placementMenuSections() -> [[ContextMenu.Item]] {
-        guard let baseAddress, target != nil, !engine.patterns.sources.isEmpty else { return [] }
+        guard let baseAddress, target != nil, !engine.patterns.placeableSources.isEmpty else { return [] }
         let caret = hexView.caret
         let label = String(format: "Decode at 0x%llx as…", baseAddress &+ UInt64(caret))
         return [[.init(label) { [weak self] in self?.presentPlacementMenu(caret: caret) }]]
@@ -199,7 +199,7 @@ final class PatternDecodeView {
         Task { @MainActor [weak self] in
             guard let self else { return }
             var described: [String: PatternSummary] = [:]
-            for source in engine.patterns.sources {
+            for source in engine.patterns.placeableSources {
                 described[source.id] = try? await engine.patternDecoder.summary(of: source, platform: target.platform, arch: target.arch)
             }
             var sections: [[ContextMenu.Item]] = []
@@ -207,7 +207,7 @@ final class PatternDecodeView {
             if !recent.isEmpty {
                 sections.append([.init("Recent", enabled: false) {}] + recent)
             }
-            for source in engine.patterns.sources {
+            for source in engine.patterns.placeableSources {
                 guard let summary = described[source.id] else { continue }
                 sections.append(items(for: source, summary: summary, caret: caret))
             }
@@ -216,7 +216,7 @@ final class PatternDecodeView {
     }
 
     private func recentItems(caret: Int, summaries: [String: PatternSummary]) -> [ContextMenu.Item] {
-        let sources = engine.patterns.sources
+        let sources = engine.patterns.placeableSources
         return engine.placementHistory.recent.compactMap { entry in
             guard let source = sources.first(where: { $0.id == entry.sourceID }),
                 summaries[source.id]?.decodableTypes.contains(where: { $0.name == entry.typeName }) == true

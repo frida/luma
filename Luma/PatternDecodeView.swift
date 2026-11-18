@@ -33,11 +33,11 @@ struct PatternDecodeView: View {
     }
 
     private var canDecode: Bool {
-        baseAddress != nil && target != nil && !engine.patterns.sources.isEmpty
+        baseAddress != nil && target != nil && !engine.patterns.placeableSources.isEmpty
     }
 
     private var describeKey: DescribeKey? {
-        target.map { DescribeKey(sources: engine.patterns.sources, platform: $0.platform, arch: $0.arch) }
+        target.map { DescribeKey(sources: engine.patterns.placeableSources, platform: $0.platform, arch: $0.arch) }
     }
 
     private var decodeKey: DecodeKey {
@@ -115,7 +115,7 @@ struct PatternDecodeView: View {
             if canDecode {
                 Menu("Decode at \(caretLabel) as…") {
                     PlacementItems(
-                        sources: engine.patterns.sources, summaries: summaries, recent: engine.placementHistory.recent, caret: caret,
+                        sources: engine.patterns.placeableSources, summaries: summaries, recent: engine.placementHistory.recent, caret: caret,
                         place: place, browse: { browsingSource = $0 })
                 }
             }
@@ -404,7 +404,7 @@ struct PatternDecodeView: View {
     private func describeSources() async {
         guard let target else { return }
         var described: [String: PatternSummary] = [:]
-        for source in engine.patterns.sources {
+        for source in engine.patterns.placeableSources {
             do {
                 described[source.id] = try await engine.patternDecoder.summary(of: source, platform: target.platform, arch: target.arch)
             } catch {
