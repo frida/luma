@@ -56,9 +56,9 @@ public final class SystemDrainService {
         guard capable != false else { return nil }
 
         do {
-            let params = try await device.querySystemParameters()
-            guard (params["platform"] as? String) == "darwin",
-                (params["access"] as? String) == "full"
+            guard let system = SystemParameters(raw: try await device.querySystemParameters()),
+                system.platform == "darwin",
+                system.access == .full
             else {
                 capable = false
                 return nil

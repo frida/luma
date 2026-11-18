@@ -95,11 +95,13 @@ public struct SystemParameters: Hashable, Sendable {
     public let platform: String
     public let osID: String
     public let arch: String
+    public let access: SystemAccess
 
-    public init(platform: String, osID: String, arch: String) {
+    public init(platform: String, osID: String, arch: String, access: SystemAccess) {
         self.platform = platform
         self.osID = osID
         self.arch = arch
+        self.access = access
     }
 
     public init?(raw: [String: Any]) {
@@ -107,14 +109,21 @@ public struct SystemParameters: Hashable, Sendable {
             let platform = raw["platform"] as? String,
             let arch = raw["arch"] as? String,
             let os = raw["os"] as? [String: Any],
-            let osID = os["id"] as? String
+            let osID = os["id"] as? String,
+            let access = (raw["access"] as? String).flatMap(SystemAccess.init(rawValue:))
         else {
             return nil
         }
         self.platform = platform
         self.osID = osID
         self.arch = arch
+        self.access = access
     }
+}
+
+public enum SystemAccess: String, Hashable, Sendable {
+    case full
+    case jailed
 }
 
 extension Set {
