@@ -13,6 +13,10 @@ public final class PatternLibrary {
 
     @ObservationIgnored
     var onChange: (() -> Void)?
+    @ObservationIgnored
+    var onSaved: ((PatternSourceRecord) -> Void)?
+    @ObservationIgnored
+    var onDeleted: ((UUID) -> Void)?
 
     private let store: ProjectStore
     private let workspace: CompilerWorkspacePaths
@@ -77,6 +81,7 @@ public final class PatternLibrary {
         record.updatedAt = .now
         try store.save(record)
         reload()
+        onSaved?(record)
     }
 
     @discardableResult
@@ -87,6 +92,7 @@ public final class PatternLibrary {
         try ensureVacant(record.fileName, except: record.id)
         try store.save(record)
         reload()
+        onSaved?(record)
         return source(withID: id)!
     }
 
@@ -94,12 +100,29 @@ public final class PatternLibrary {
         let record = try editableRecord(id)
         try store.deletePatternSource(id: record.id)
         reload()
+        onDeleted?(record.id)
+    }
+
+    func adopt(_ record: PatternSourceRecord) {
+        try? store.save(record)
+        reload()
+    }
+
+    func discard(_ id: UUID) {
+        try? store.deletePatternSource(id: id)
+        reload()
+    }
+
+    func replaceProjectSources(with records: [PatternSourceRecord]) {
+        try? store.replacePatternSources(with: records)
+        reload()
     }
 
     private func add(_ record: PatternSourceRecord) throws -> PatternSource {
         try ensureVacant(record.fileName, except: record.id)
         try store.save(record)
         reload()
+        onSaved?(record)
         return source(withID: record.id.uuidString)!
     }
 

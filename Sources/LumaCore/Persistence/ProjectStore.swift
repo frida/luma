@@ -293,6 +293,7 @@ public final class ProjectStore: Sendable {
                 try NotebookOutboxRecord.deleteOne(db, key: key),
                 try SessionOutboxRecord.deleteOne(db, key: key),
                 try CustomInstrumentOutboxRecord.deleteOne(db, key: key),
+                try PatternSourceOutboxRecord.deleteOne(db, key: key),
                 try MissionOutboxRecord.deleteOne(db, key: key),
                 try AddressNoteOutboxRecord.deleteOne(db, key: key),
             ]
@@ -1227,6 +1228,38 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    public func replacePatternSources(with records: [PatternSourceRecord]) throws {
+        try db.write { db in
+            _ = try PatternSourceRecord.deleteAll(db)
+            for record in records {
+                try record.save(db)
+            }
+        }
+    }
+
+    public func savePatternSourceOutboxOps(_ ops: [PatternSourceOp]) throws {
+        try db.write { db in
+            for op in ops {
+                try PatternSourceOutboxRecord(op).save(db)
+            }
+        }
+    }
+
+    public func fetchPatternSourceOutboxOps() throws -> [PatternSourceOp] {
+        try db.read { db in
+            let rows = try PatternSourceOutboxRecord
+                .order(Column("created_at").asc, Column("op_id").asc)
+                .fetchAll(db)
+            return rows.compactMap { $0.toOp() }
+        }
+    }
+
+    public func removePatternSourceOutboxOp(opID: UUID) throws {
+        try db.write { db in
+            _ = try PatternSourceOutboxRecord.deleteOne(db, key: opID.uuidString)
+        }
+    }
+
     public func fetchPharoClassDefinitions() throws -> [PharoClassDefinition] {
         try db.read { db in
             try PharoClassDefinition.order(Column("updated_at").asc).fetchAll(db)
@@ -1918,6 +1951,14 @@ public final class ProjectStore: Sendable {
             t.primaryKey("op_id", .text).notNull()
             t.column("kind", .text).notNull()
             t.column("note_id", .text).notNull()
+            t.column("payload_json", .text).notNull()
+            t.column("created_at", .datetime).notNull()
+        }
+
+        try db.create(table: "pattern_source_outbox", ifNotExists: true) { t in
+            t.primaryKey("op_id", .text).notNull()
+            t.column("kind", .text).notNull()
+            t.column("source_id", .text).notNull()
             t.column("payload_json", .text).notNull()
             t.column("created_at", .datetime).notNull()
         }

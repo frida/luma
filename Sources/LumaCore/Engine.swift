@@ -299,6 +299,12 @@ public final class Engine {
         patterns.onChange = { [weak self] in
             self?.publishPatternGlobals()
         }
+        patterns.onSaved = { [weak self] record in
+            self?.collaboration.enqueuePatternSourceUpsert(record)
+        }
+        patterns.onDeleted = { [weak self] id in
+            self?.collaboration.enqueuePatternSourceRemove(sourceID: id)
+        }
         patterns.reload()
     }
 
@@ -968,6 +974,19 @@ public final class Engine {
                 try? self.store.deleteCustomInstrumentDef(id: r.defID)
                 self.unlinkInstrumentFolder(defID: r.defID)
             }
+        }
+
+        collaboration.onPatternSourceOpReceived = { [weak self] op in
+            switch op {
+            case .upsert(let u):
+                self?.patterns.adopt(u.record)
+            case .remove(let r):
+                self?.patterns.discard(r.sourceID)
+            }
+        }
+
+        collaboration.onPatternSourcesSnapshot = { [weak self] records in
+            self?.patterns.replaceProjectSources(with: records)
         }
 
         collaboration.onMissionOpReceived = { [weak self] op in

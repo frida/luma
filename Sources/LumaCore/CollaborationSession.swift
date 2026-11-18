@@ -357,6 +357,8 @@ public final class CollaborationSession {
     public var onAddressNoteOpReceived: ((AddressNoteOp) -> Void)?
     public var onMissionSnapshot: ((MissionSnapshot) -> Void)?
     public var onCustomInstrumentSnapshot: (([CustomInstrumentBundle]) -> Void)?
+    public var onPatternSourceOpReceived: ((PatternSourceOp) -> Void)?
+    public var onPatternSourcesSnapshot: (([PatternSourceRecord]) -> Void)?
     public var onWidgetStatesSnapshot: (([WidgetStateSnapshot]) -> Void)?
     public var onSessionOpRejected: ((UUID, String) -> Void)?
     public var onChatMessageReceived: ((ChatMessage) -> Void)?
@@ -678,6 +680,29 @@ public final class CollaborationSession {
         )
     }
 
+    public func enqueuePatternSourceUpsert(_ record: PatternSourceRecord) {
+        enqueuePatternSourceOp(.upsert(.init(record: record)))
+    }
+
+    public func enqueuePatternSourceRemove(sourceID: UUID) {
+        enqueuePatternSourceOp(.remove(.init(sourceID: sourceID)))
+    }
+
+    private func enqueuePatternSourceOp(_ op: PatternSourceOp) {
+        guard isCollaborative else { return }
+        try? store.savePatternSourceOutboxOps([op])
+        guard case .joined(let labID) = status else { return }
+        sendPatternSourceOpOverWire(op, labID: labID)
+    }
+
+    private func sendPatternSourceOpOverWire(_ op: PatternSourceOp, labID: String) {
+        sendNotification(
+            to: "/labs/\(labID)/patterns",
+            type: "+op",
+            payload: op.toJSON()
+        )
+    }
+
     /// Resend every op still in the outbox. Called after a successful
     /// join/create so unsynced mutations propagate. The server dedupes by
     /// `op_id`, so redundant replays are safe.
@@ -700,6 +725,11 @@ public final class CollaborationSession {
                 type: "+op",
                 payload: op.toJSON()
             )
+        }
+        let patternOps = (try? store.fetchPatternSourceOutboxOps()) ?? []
+        for op in patternOps {
+            replayedOpIDs.insert(op.opID)
+            sendPatternSourceOpOverWire(op, labID: labID)
         }
         let missionOps = (try? store.fetchMissionOutboxOps()) ?? []
         for op in missionOps {
@@ -1477,6 +1507,8 @@ public final class CollaborationSession {
                 let entries = (try? self.store.fetchNotebookEntries()) ?? []
                 let ops: [NotebookOp] = entries.map { .add(.init(entry: $0)) }
                 try? self.store.saveOutboxOps(ops)
+                let patterns = (try? self.store.fetchPatternSources()) ?? []
+                try? self.store.savePatternSourceOutboxOps(patterns.map { .upsert(.init(record: $0)) })
                 self.replayOutbox()
                 self.onSessionsSnapshot?([])
             case .failure(let failure):
@@ -1599,6 +1631,9 @@ public final class CollaborationSession {
         let customDicts = (payload["custom_instruments"] as? [JSONObject]) ?? []
         let customBundles = customDicts.compactMap(CustomInstrumentBundle.fromJSON)
         onCustomInstrumentSnapshot?(customBundles)
+
+        let patternDicts = (payload["patterns"] as? [JSONObject]) ?? []
+        onPatternSourcesSnapshot?(patternDicts.compactMap(PatternSourceRecord.fromWireJSON))
 
         let widgetStateDicts = (payload["widget_states"] as? [JSONObject]) ?? []
         let widgetSnapshots = widgetStateDicts.compactMap(WidgetStateSnapshot.fromWireJSON)
@@ -1802,6 +1837,15 @@ public final class CollaborationSession {
             guard let idStr = payload["op_id"] as? String,
                 let opID = UUID(uuidString: idStr) else { return }
             try? store.removeCustomInstrumentOutboxOp(opID: opID)
+
+        case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "patterns":
+            guard let op = PatternSourceOp.fromJSON(payload) else { return }
+            onPatternSourceOpReceived?(op)
+
+        case ("+op-rejected", let s) where s.count == 3 && s[0] == "labs" && s[2] == "patterns":
+            guard let idStr = payload["op_id"] as? String,
+                let opID = UUID(uuidString: idStr) else { return }
+            try? store.removePatternSourceOutboxOp(opID: opID)
 
         case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "missions":
             guard let op = MissionOp.fromJSON(payload) else { return }
