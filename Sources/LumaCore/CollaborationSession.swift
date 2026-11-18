@@ -9,6 +9,8 @@ import FoundationNetworking
 @Observable
 @MainActor
 public final class CollaborationSession {
+    public static let protocolVersion = 2
+
     public enum Status: Equatable, Sendable {
         case disconnected
         case connecting
@@ -1440,7 +1442,11 @@ public final class CollaborationSession {
         sendRequest(
             to: "/labs",
             type: ".create",
-            payload: ["title": title, "picture": ["content_type": pictureContentType]],
+            payload: [
+                "protocol": Self.protocolVersion,
+                "title": title,
+                "picture": ["content_type": pictureContentType],
+            ],
             data: [UInt8](pictureData)
         ) { [weak self] result in
             guard let self else { return }
@@ -1520,7 +1526,11 @@ public final class CollaborationSession {
 
     private func joinLab(labID: String) {
         setStatus(.connecting)
-        sendRequest(to: "/labs/\(labID)", type: ".join") { [weak self] result in
+        sendRequest(
+            to: "/labs/\(labID)",
+            type: ".join",
+            payload: ["protocol": Self.protocolVersion]
+        ) { [weak self] result in
             guard let self else { return }
             switch result {
             case .success(let payload):
@@ -1665,6 +1675,13 @@ public final class CollaborationSession {
 
         switch (type, segs) {
         case ("+welcome", ["session"]):
+            let theirs = (payload["protocol"] as? Int) ?? 1
+            guard theirs == Self.protocolVersion else {
+                setStatus(.error(message: theirs < Self.protocolVersion
+                    ? "This server is too old for this version of Luma."
+                    : "This version of Luma is too old for this server. Update Luma to continue."))
+                return
+            }
             if let userObj = payload["user"] as? JSONObject, let u = UserInfo.fromJSON(userObj) {
                 localUser = u
                 triggerJoinOrCreateIfReady()
