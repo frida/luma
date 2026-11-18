@@ -11,7 +11,13 @@ extension Adw.DialogProtocol {
             data: Unmanaged.passRetained(controller).toOpaque(),
             destroy: { data in Unmanaged<AnyObject>.fromOpaque(data!).release() })
         onClosed(flags: .after) { dialog in
-            GLibObject.ObjectRef(raw: dialog.ptr).setData(key: controllerKey, data: nil)
+            let object = GLibObject.ObjectRef(raw: dialog.ptr)
+            guard let data = object.getData(key: controllerKey) else { return }
+            nonisolated(unsafe) let keptUntilResponseIsEmitted = Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue()
+            object.setData(key: controllerKey, data: nil)
+            Task { @MainActor in
+                withExtendedLifetime(keptUntilResponseIsEmitted) {}
+            }
         }
     }
 }
