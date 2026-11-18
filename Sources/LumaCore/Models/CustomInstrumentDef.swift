@@ -99,7 +99,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
             "entrypoint": entrypoint,
             "dependencies": dependencies,
             "features": features.map(featureToJSON),
-            "widgets": widgetsJSONArray,
+            "widgets": widgets.map { $0.toWireJSON() },
             "created_at": ISO8601DateFormatter().string(from: createdAt),
             "updated_at": ISO8601DateFormatter().string(from: updatedAt),
         ]
@@ -172,22 +172,14 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         return decoded
     }
 
-    private var widgetsJSONArray: [Any] {
-        let data = try! JSONEncoder().encode(widgets)
-        return try! JSONSerialization.jsonObject(with: data) as! [Any]
-    }
-
     private static func parseFeatures(_ raw: Any?) -> [Feature] {
         guard let arr = raw as? [[String: Any]] else { return [] }
         return arr.compactMap(parseFeature)
     }
 
     private static func parseWidgets(_ raw: Any?) -> [InstrumentWidget] {
-        guard let arr = raw as? [Any],
-            let data = try? JSONSerialization.data(withJSONObject: arr),
-            let widgets = try? JSONDecoder().decode([InstrumentWidget].self, from: data)
-        else { return [] }
-        return widgets
+        guard let arr = raw as? [[String: Any]] else { return [] }
+        return arr.compactMap(InstrumentWidget.fromWireJSON)
     }
 
     private static func parseFeature(_ obj: [String: Any]) -> Feature? {

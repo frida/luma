@@ -160,6 +160,34 @@ public struct InstrumentWidget: Codable, Identifiable, Sendable, Equatable {
     }
 }
 
+extension InstrumentWidget {
+    private static let ownWireKeys = ["id", "name", "persistence"]
+
+    public func toWireJSON() -> [String: Any] {
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        var own = try! JSONSerialization.jsonObject(with: encoder.encode(self)) as! [String: Any]
+        let kind = own.removeValue(forKey: "kind") as! [String: Any]
+        var wire = kind["config"] as! [String: Any]
+        wire.merge(own) { _, own in own }
+        wire["kind"] = kind["kind"]
+        return wire
+    }
+
+    public static func fromWireJSON(_ wire: [String: Any]) -> InstrumentWidget? {
+        guard let kind = wire["kind"] as? String else { return nil }
+        var nested = wire.filter { ownWireKeys.contains($0.key) }
+        nested["kind"] = [
+            "kind": kind,
+            "config": wire.filter { !ownWireKeys.contains($0.key) && $0.key != "kind" },
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: nested) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try? decoder.decode(InstrumentWidget.self, from: data)
+    }
+}
+
 extension InstrumentWidget.Kind: Codable {
     private enum CodingKeys: String, CodingKey { case kind, config }
     private enum Tag: String, Codable { case counter, histogram, graph, list, table, hex, console }
