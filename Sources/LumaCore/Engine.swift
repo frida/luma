@@ -1042,6 +1042,10 @@ public final class Engine {
             self?.patterns.replaceProjectSources(with: records)
         }
 
+        collaboration.onPatternSourceNameTaken = { [weak self] record in
+            self?.patterns.keepUnderAnotherName(record)
+        }
+
         collaboration.onLabCreated = { [weak self] in
             self?.republishPlacementSnapshots { _ in true }
         }

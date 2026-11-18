@@ -360,6 +360,7 @@ public final class CollaborationSession {
     public var onCustomInstrumentSnapshot: (([CustomInstrumentBundle]) -> Void)?
     public var onPatternSourceOpReceived: ((PatternSourceOp) -> Void)?
     public var onPatternSourcesSnapshot: (([PatternSourceRecord]) -> Void)?
+    public var onPatternSourceNameTaken: ((PatternSourceRecord) -> Void)?
     public var onLabCreated: (() -> Void)?
     public var onWidgetStatesSnapshot: (([WidgetStateSnapshot]) -> Void)?
     public var onSessionOpRejected: ((UUID, String) -> Void)?
@@ -540,6 +541,8 @@ public final class CollaborationSession {
 
     /// True once this project has ever joined or created a lab. Local-only
     /// projects skip the outbox entirely so they never touch that table.
+    private static let patternNameTaken = "upsert: name taken"
+
     public var isCollaborative: Bool {
         (try? store.fetchCollaborationState())?.labID != nil
     }
@@ -1861,7 +1864,11 @@ public final class CollaborationSession {
         case ("+op-rejected", let s) where s.count == 3 && s[0] == "labs" && s[2] == "patterns":
             guard let idStr = payload["op_id"] as? String,
                 let opID = UUID(uuidString: idStr) else { return }
+            let rejected = (try? store.fetchPatternSourceOutboxOps())?.first { $0.opID == opID }
             try? store.removePatternSourceOutboxOp(opID: opID)
+            if case .upsert(let upsert) = rejected, payload["reason"] as? String == Self.patternNameTaken {
+                onPatternSourceNameTaken?(upsert.record)
+            }
 
         case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "missions":
             guard let op = MissionOp.fromJSON(payload) else { return }

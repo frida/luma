@@ -132,6 +132,17 @@ public final class PatternLibrary {
         reload()
     }
 
+    func keepUnderAnotherName(_ record: PatternSourceRecord) {
+        let others = ((try? store.fetchPatternSources()) ?? []).filter { $0.id != record.id && $0.kind == record.kind }
+        let taken = Set(others.map(\.name))
+        var kept = record
+        kept.name = (2...).lazy.map { "\(record.name) \($0)" }.first { !taken.contains($0) }!
+        kept.updatedAt = .now
+        try? store.save(kept)
+        reload()
+        onSaved?(kept)
+    }
+
     private func add(_ record: PatternSourceRecord) throws -> PatternSource {
         try ensureVacant(record.fileName, except: record.id)
         try store.save(record)
