@@ -286,6 +286,20 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    public func acknowledgeOutboxOp(opID: UUID) throws -> Bool {
+        try db.write { db in
+            let key = opID.uuidString
+            let removals = [
+                try NotebookOutboxRecord.deleteOne(db, key: key),
+                try SessionOutboxRecord.deleteOne(db, key: key),
+                try CustomInstrumentOutboxRecord.deleteOne(db, key: key),
+                try MissionOutboxRecord.deleteOne(db, key: key),
+                try AddressNoteOutboxRecord.deleteOne(db, key: key),
+            ]
+            return removals.contains(true)
+        }
+    }
+
     public func fetchOutboxOps() throws -> [NotebookOp] {
         try db.read { db in
             let rows = try NotebookOutboxRecord

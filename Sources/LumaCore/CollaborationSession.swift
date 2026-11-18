@@ -286,6 +286,7 @@ public final class CollaborationSession {
     private(set) public var labPictureContentType: String?
     private(set) public var localUser: UserInfo?
     private var pendingJoinLabID: String?
+    private var replayedOpIDs: Set<UUID> = []
     private var pendingCreateOrJoinDispatched: Bool = false
     private(set) public var members: [Member] = []
     private(set) public var chatMessages: [ChatMessage] = []
@@ -682,6 +683,7 @@ public final class CollaborationSession {
         guard case .joined(let labID) = status else { return }
         let notebookOps = (try? store.fetchOutboxOps()) ?? []
         for op in notebookOps {
+            replayedOpIDs.insert(op.opID)
             sendOpOverWire(op, labID: labID)
         }
         let sessionOps = (try? store.fetchSessionOutboxOps()) ?? []
@@ -690,6 +692,7 @@ public final class CollaborationSession {
         }
         let customOps = (try? store.fetchCustomInstrumentOutboxOps()) ?? []
         for op in customOps {
+            replayedOpIDs.insert(op.opID)
             sendNotification(
                 to: "/labs/\(labID)/custom-instruments",
                 type: "+op",
@@ -698,10 +701,12 @@ public final class CollaborationSession {
         }
         let missionOps = (try? store.fetchMissionOutboxOps()) ?? []
         for op in missionOps {
+            replayedOpIDs.insert(op.opID)
             sendMissionOpOverWire(op, labID: labID)
         }
         let addressNoteOps = (try? store.fetchAddressNoteOutboxOps()) ?? []
         for op in addressNoteOps {
+            replayedOpIDs.insert(op.opID)
             sendAddressNoteOpOverWire(op, labID: labID)
         }
     }
@@ -1400,7 +1405,6 @@ public final class CollaborationSession {
         case .remove(let r):
             onSessionRemoved?(r.sessionID)
         }
-        try? store.removeSessionOutboxOp(opID: op.opID)
     }
 
     private func triggerJoinOrCreateIfReady() {
@@ -1657,6 +1661,8 @@ public final class CollaborationSession {
         let segs = from.hasPrefix("/") ? from.dropFirst()
             .split(separator: "/", omittingEmptySubsequences: true).map(String.init) : []
 
+        if type == "+op", isEchoOfOpAlreadyApplied(payload) { return }
+
         switch (type, segs) {
         case ("+welcome", ["session"]):
             if let userObj = payload["user"] as? JSONObject, let u = UserInfo.fromJSON(userObj) {
@@ -1731,7 +1737,6 @@ public final class CollaborationSession {
 
         case ("+op", let s) where s.count == 4 && s[0] == "labs" && s[2] == "notebook" && s[3] == "entries":
             guard let kind = payload["kind"] as? String else { return }
-            let opID = (payload["op_id"] as? String).flatMap(UUID.init(uuidString:))
             switch kind {
             case "add":
                 if let entryObj = payload["entry"] as? JSONObject,
@@ -1758,9 +1763,12 @@ public final class CollaborationSession {
             default:
                 return
             }
-            if let opID {
-                try? store.removeOutboxOp(opID: opID)
-            }
+
+        case ("+op-ack", _):
+            guard let idStr = payload["op_id"] as? String,
+                let opID = UUID(uuidString: idStr) else { return }
+            _ = try? store.acknowledgeOutboxOp(opID: opID)
+            replayedOpIDs.remove(opID)
 
         case ("+op-rejected", let s) where s.count == 4 && s[0] == "labs" && s[2] == "notebook" && s[3] == "entries":
             guard let idStr = payload["op_id"] as? String,
@@ -1772,7 +1780,6 @@ public final class CollaborationSession {
         case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "custom-instruments":
             guard let op = CustomInstrumentOp.fromJSON(payload) else { return }
             onCustomInstrumentOpReceived?(op)
-            try? store.removeCustomInstrumentOutboxOp(opID: op.opID)
 
         case ("+op-rejected", let s) where s.count == 3 && s[0] == "labs" && s[2] == "custom-instruments":
             guard let idStr = payload["op_id"] as? String,
@@ -1782,7 +1789,6 @@ public final class CollaborationSession {
         case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "missions":
             guard let op = MissionOp.fromJSON(payload) else { return }
             onMissionOpReceived?(op)
-            try? store.removeMissionOutboxOp(opID: op.opID)
 
         case ("+op-rejected", let s) where s.count == 3 && s[0] == "labs" && s[2] == "missions":
             guard let idStr = payload["op_id"] as? String,
@@ -1792,7 +1798,6 @@ public final class CollaborationSession {
         case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "address-notes":
             guard let op = AddressNoteOp.fromJSON(payload) else { return }
             onAddressNoteOpReceived?(op)
-            try? store.removeAddressNoteOutboxOp(opID: op.opID)
 
         case ("+op-rejected", let s) where s.count == 3 && s[0] == "labs" && s[2] == "address-notes":
             guard let idStr = payload["op_id"] as? String,
@@ -1904,6 +1909,14 @@ public final class CollaborationSession {
         default:
             break
         }
+    }
+
+    private func isEchoOfOpAlreadyApplied(_ payload: JSONObject) -> Bool {
+        guard let idStr = payload["op_id"] as? String,
+            let opID = UUID(uuidString: idStr),
+            (try? store.acknowledgeOutboxOp(opID: opID)) == true
+        else { return false }
+        return replayedOpIDs.remove(opID) == nil
     }
 
     private func setStatus(_ newStatus: Status) {
