@@ -395,6 +395,7 @@ public final class Engine {
                 details: entry.details,
                 processName: entry.processName,
                 pharoSnapshot: changed.contains(.pharoSnapshot) ? entry.pharoSnapshot : nil,
+                pharoResultFuel: changed.contains(.pharoSnapshot) ? entry.pharoResultFuel : nil,
                 jsValue: changed.contains(.jsValue) ? entry.jsValue : nil,
                 placements: changed.contains(.placements) ? entry.placements : nil
             )

@@ -56,6 +56,7 @@ public enum NotebookOp: Sendable {
         public var processName: String?
 
         public var pharoSnapshot: PharoSnapshot?
+        public var pharoResultFuel: Data?
         public var jsValue: JSInspectValue?
         public var placements: [PatternPlacement]?
         public var placementSnapshots: [PlacementSnapshot]?
@@ -67,6 +68,7 @@ public enum NotebookOp: Sendable {
             details: String? = nil,
             processName: String? = nil,
             pharoSnapshot: PharoSnapshot? = nil,
+            pharoResultFuel: Data? = nil,
             jsValue: JSInspectValue? = nil,
             placements: [PatternPlacement]? = nil,
             placementSnapshots: [PlacementSnapshot]? = nil
@@ -77,6 +79,7 @@ public enum NotebookOp: Sendable {
             self.details = details
             self.processName = processName
             self.pharoSnapshot = pharoSnapshot
+            self.pharoResultFuel = pharoResultFuel
             self.jsValue = jsValue
             self.placements = placements
             self.placementSnapshots = placementSnapshots
@@ -131,6 +134,9 @@ public enum NotebookOp: Sendable {
                 let jsonObject = try? JSONSerialization.jsonObject(with: data)
             {
                 changes["pharo_snapshot"] = jsonObject
+            }
+            if let fuel = u.pharoResultFuel {
+                changes["pharo_result_fuel"] = fuel.base64EncodedString()
             }
             if let value = u.jsValue,
                 let data = try? JSONEncoder().encode(value),
@@ -205,6 +211,7 @@ public enum NotebookOp: Sendable {
                 details: changes["details"] as? String,
                 processName: changes["process_name"] as? String,
                 pharoSnapshot: snapshot,
+                pharoResultFuel: (changes["pharo_result_fuel"] as? String).flatMap { Data(base64Encoded: $0) },
                 jsValue: jsValue,
                 placements: (changes["placements"] as? [[String: Any]])?.compactMap(PatternPlacement.fromWireJSON),
                 placementSnapshots: placementSnapshots

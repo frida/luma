@@ -556,6 +556,7 @@ public final class CollaborationSession {
         details: String? = nil,
         processName: String? = nil,
         pharoSnapshot: PharoSnapshot? = nil,
+        pharoResultFuel: Data? = nil,
         jsValue: JSInspectValue? = nil,
         placements: [PatternPlacement]? = nil,
         placementSnapshots: [PlacementSnapshot]? = nil
@@ -567,6 +568,7 @@ public final class CollaborationSession {
             details: details,
             processName: processName,
             pharoSnapshot: pharoSnapshot,
+            pharoResultFuel: pharoResultFuel,
             jsValue: jsValue,
             placements: placements,
             placementSnapshots: placementSnapshots
