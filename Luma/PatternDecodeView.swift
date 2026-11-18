@@ -10,6 +10,7 @@ struct PatternDecodeView: View {
     var sizing: PatternDecodeSizing = .capped
     var memoryWriter: ((_ bytes: [UInt8], _ address: UInt64) async throws -> Void)? = nil
     var onTruncated: (() -> Void)? = nil
+    var onReread: (() -> Void)? = nil
 
     @State private var summaries: [String: PatternSummary] = [:]
     @State private var describeProblem: String?
@@ -115,6 +116,9 @@ struct PatternDecodeView: View {
                         sources: engine.patterns.placeableSources, summaries: summaries, recent: engine.placementHistory.recent, caret: caret,
                         place: place, browse: { browsingSource = $0 })
                 }
+            }
+            if let onReread {
+                Button("Reread", action: onReread)
             }
         }
         .fixedSize(horizontal: true, vertical: false)

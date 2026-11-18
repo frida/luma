@@ -21,7 +21,8 @@ struct InspectedBytesView: View {
                 sessionID: sessionID,
                 engine: engine,
                 placements: placements,
-                memoryWriter: memoryWriter
+                memoryWriter: memoryWriter,
+                onReread: rereadFromMenu
             )
             .fixedSize(horizontal: false, vertical: true)
             if liveTarget != nil {
@@ -52,6 +53,11 @@ struct InspectedBytesView: View {
         return { written, address in
             try await engine.writeMemory(written, at: address, forSessionID: sessionID, updating: target.stored)
         }
+    }
+
+    private var rereadFromMenu: (() -> Void)? {
+        guard liveTarget != nil else { return nil }
+        return { reread() }
     }
 
     private var liveTarget: (address: UInt64, stored: StoredValue)? {
