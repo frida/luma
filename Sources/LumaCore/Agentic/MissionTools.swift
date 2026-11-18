@@ -1770,7 +1770,7 @@ public enum MissionTools {
     private static func registerReadCustomInstrument(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "read_custom_instrument",
-            description: "Read a custom instrument's metadata: entrypoint, features, widgets, and the list of file paths. File contents are NOT included — call read_custom_instrument_file for each path you need.",
+            description: "Read a custom instrument's metadata: entrypoint, dependencies, features, widgets, and the list of file paths. File contents are NOT included — call read_custom_instrument_file for each path you need.",
             inputSchemaJSON: """
                 {"type":"object","properties":{"def_id":{"type":"string"}},"required":["def_id"],"additionalProperties":false}
                 """,
@@ -1788,9 +1788,9 @@ public enum MissionTools {
     private static func registerCreateCustomInstrument(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "create_custom_instrument",
-            description: "Create a custom instrument definition seeded with a `main.ts` file containing the canonical skeleton (the entrypoint). Use write_custom_instrument_file to replace its contents, and add helper files as needed. Optional 'icon' is a catalog id (e.g. wand-stars, bug, scope, network). Optional 'features' declares config toggles; 'widgets' declares live UI elements.",
+            description: "Create a custom instrument definition seeded with a `main.ts` file containing the canonical skeleton (the entrypoint). Use write_custom_instrument_file to replace its contents, and add helper files as needed. Optional 'icon' is a catalog id (e.g. wand-stars, bug, scope, network). Optional 'dependencies' names the npm packages the instrument imports; 'features' declares config toggles; 'widgets' declares live UI elements.",
             inputSchemaJSON: """
-                {"type":"object","properties":{"name":{"type":"string"},"icon":{"type":"string","description":"Catalog id like wand-stars, bug, scope, network — see list_custom_instrument_icons"},"compatibility":\(compatibilitySchemaJSON),"features":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"enabled_by_default":{"type":"boolean","default":true}},"required":["id","name"],"additionalProperties":false}},"widgets":\(widgetsSchemaJSON)},"required":["name"],"additionalProperties":false}
+                {"type":"object","properties":{"name":{"type":"string"},"icon":{"type":"string","description":"Catalog id like wand-stars, bug, scope, network — see list_custom_instrument_icons"},"compatibility":\(compatibilitySchemaJSON),"dependencies":{"type":"object","additionalProperties":{"type":"string"},"description":"npm packages this instrument imports, as name → version range (e.g. {\\"frida-java-bridge\\":\\"^7.0.0\\"}). Installed for this instrument alone, ahead of the project-wide packages."},"features":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"enabled_by_default":{"type":"boolean","default":true}},"required":["id","name"],"additionalProperties":false}},"widgets":\(widgetsSchemaJSON)},"required":["name"],"additionalProperties":false}
                 """,
             isObserve: false,
             requiresSession: false
@@ -1802,11 +1802,13 @@ public enum MissionTools {
             }
             let icon = parseIconArg(invocation.args["icon"] as? String)
             let compatibility = parseCompatibilityArg(invocation.args["compatibility"])
+            let dependencies = (invocation.args["dependencies"] as? [String: String]) ?? [:]
             let features = parseFeaturesArg(invocation.args["features"])
             let widgets = parseWidgetsArg(invocation.args["widgets"])
             var def = engine.createCustomInstrument(name: name, icon: icon)
-            if !compatibility.isUniversal || !features.isEmpty || !widgets.isEmpty {
+            if !compatibility.isUniversal || !dependencies.isEmpty || !features.isEmpty || !widgets.isEmpty {
                 def.compatibility = compatibility
+                def.dependencies = dependencies
                 def.features = features
                 def.widgets = widgets
                 engine.updateCustomInstrument(def)
@@ -1821,9 +1823,9 @@ public enum MissionTools {
     private static func registerUpdateCustomInstrument(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "update_custom_instrument",
-            description: "Update a custom instrument's metadata: name, icon, compatibility, features, or widgets. Only fields you pass change. Passing 'features' or 'widgets' replaces the entire list — pass an empty array to clear. File contents are managed via write_custom_instrument_file; the entrypoint via set_custom_instrument_entrypoint.",
+            description: "Update a custom instrument's metadata: name, icon, compatibility, dependencies, features, or widgets. Only fields you pass change. Passing 'dependencies', 'features' or 'widgets' replaces the whole set — pass an empty one to clear. File contents are managed via write_custom_instrument_file; the entrypoint via set_custom_instrument_entrypoint.",
             inputSchemaJSON: """
-                {"type":"object","properties":{"def_id":{"type":"string"},"name":{"type":"string"},"icon":{"type":"string"},"compatibility":\(compatibilitySchemaJSON),"features":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"enabled_by_default":{"type":"boolean","default":true}},"required":["id","name"],"additionalProperties":false}},"widgets":\(widgetsSchemaJSON)},"required":["def_id"],"additionalProperties":false}
+                {"type":"object","properties":{"def_id":{"type":"string"},"name":{"type":"string"},"icon":{"type":"string"},"compatibility":\(compatibilitySchemaJSON),"dependencies":{"type":"object","additionalProperties":{"type":"string"},"description":"npm packages this instrument imports, as name → version range (e.g. {\\"frida-java-bridge\\":\\"^7.0.0\\"}). Installed for this instrument alone, ahead of the project-wide packages."},"features":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"enabled_by_default":{"type":"boolean","default":true}},"required":["id","name"],"additionalProperties":false}},"widgets":\(widgetsSchemaJSON)},"required":["def_id"],"additionalProperties":false}
                 """,
             isObserve: false,
             requiresSession: false
@@ -1839,6 +1841,9 @@ public enum MissionTools {
                 }
                 if invocation.args["compatibility"] != nil {
                     def.compatibility = parseCompatibilityArg(invocation.args["compatibility"])
+                }
+                if let dependencies = invocation.args["dependencies"] as? [String: String] {
+                    def.dependencies = dependencies
                 }
                 if invocation.args["features"] != nil {
                     def.features = parseFeaturesArg(invocation.args["features"])
@@ -2903,6 +2908,7 @@ public enum MissionTools {
             "name": def.name,
             "icon": describeIcon(def.icon),
             "entrypoint": def.entrypoint,
+            "dependencies": def.dependencies,
             "paths": files.map(\.path).sorted(),
             "features": features,
             "widgets": widgets,

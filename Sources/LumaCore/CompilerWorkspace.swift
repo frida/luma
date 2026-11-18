@@ -19,6 +19,10 @@ public struct CompilerWorkspacePaths: Sendable {
     public var packageLockJSON: URL {
         root.appendingPathComponent("package-lock.json")
     }
+
+    public var dependencyArtifactNames: Set<String> {
+        Set([packageJSON, packageLockJSON, nodeModules].map(\.lastPathComponent))
+    }
 }
 
 @MainActor
@@ -171,6 +175,36 @@ public final class CompilerWorkspace {
 
             self.packageBundlesDirty = true
         }
+    }
+
+    public func installDependencies(_ dependencies: [String: String], in directory: URL) async throws {
+        try await packageOps.enqueue {
+            let fm = FileManager.default
+            let paths = CompilerWorkspacePaths(root: directory)
+
+            guard !dependencies.isEmpty else {
+                for url in [paths.packageJSON, paths.packageLockJSON, paths.nodeModules] {
+                    try? fm.removeItem(at: url)
+                }
+                return
+            }
+
+            if Self.dependencies(inManifestAt: paths.packageJSON) == dependencies, fm.fileExists(atPath: paths.nodeModules.path) {
+                return
+            }
+
+            try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+            try? fm.removeItem(at: paths.packageLockJSON)
+            try JSONSerialization.data(withJSONObject: ["dependencies": dependencies]).write(to: paths.packageJSON)
+            _ = try await self.packageManager.install(projectRoot: directory.path, role: .runtime)
+        }
+    }
+
+    private static func dependencies(inManifestAt url: URL) -> [String: String]? {
+        guard let data = FileManager.default.contents(atPath: url.path),
+            let manifest = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return manifest["dependencies"] as? [String: String]
     }
 
     public func currentPackageBundlesForAgent(paths: CompilerWorkspacePaths) async throws -> [[String: Any]] {

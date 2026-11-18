@@ -2035,8 +2035,12 @@ public final class Engine {
         guard let root = try? compilerWorkspacePaths().root else { return }
         let customRoot = root.appendingPathComponent("InstrumentSources/Custom", isDirectory: true)
         for def in customInstruments.defs {
+            let dirURL = customRoot.appendingPathComponent(def.id.uuidString, isDirectory: true)
             let files = customInstruments.files(forDefID: def.id).map { (path: $0.path, content: Data($0.content.utf8)) }
-            try? Self.syncInstrumentSources(files, into: customRoot.appendingPathComponent(def.id.uuidString, isDirectory: true))
+            try? Self.syncInstrumentSources(files, into: dirURL)
+            Task { [compilerWorkspace] in
+                try? await compilerWorkspace.installDependencies(def.dependencies, in: dirURL)
+            }
         }
     }
 
@@ -4525,6 +4529,7 @@ public final class Engine {
             sourceSlug: sourceSlug,
             files: files,
             entrypoint: pack.manifest.entrypoint,
+            dependencies: [:],
             paths: paths,
             diagnosticLabel: "hook pack \(pack.id)"
         )
@@ -4558,6 +4563,7 @@ public final class Engine {
             sourceSlug: sourceSlug,
             files: files,
             entrypoint: def.entrypoint,
+            dependencies: def.dependencies,
             ambientTypings: CustomInstrumentTypings.compilerTypings(for: def, packages: installedPackages),
             paths: paths,
             diagnosticLabel: "custom instrument \(def.id.uuidString)"
@@ -4694,6 +4700,7 @@ public final class Engine {
         sourceSlug: String,
         files: [(path: String, content: Data)],
         entrypoint: String,
+        dependencies: [String: String],
         ambientTypings: String? = nil,
         paths: CompilerWorkspacePaths,
         diagnosticLabel: String
@@ -4703,6 +4710,7 @@ public final class Engine {
         let dirRelPath = "InstrumentSources/\(sourceSlug)"
         let dirURL = paths.root.appendingPathComponent(dirRelPath, isDirectory: true)
         try Self.syncInstrumentSources(files, into: dirURL)
+        try await compilerWorkspace.installDependencies(dependencies, in: dirURL)
 
         let userEntry = try CustomInstrumentFile.validateRelativePath(entrypoint)
         let entryRelPath = try Self.stageInstrumentEntry(
@@ -4741,7 +4749,9 @@ public final class Engine {
             try file.content.write(to: fileURL)
         }
 
+        let dependencyArtifacts = CompilerWorkspacePaths(root: dirURL).dependencyArtifactNames
         for path in try fm.subpathsOfDirectory(atPath: dirURL.path) where !wanted.contains(path) {
+            if dependencyArtifacts.contains(String(path.prefix { $0 != "/" })) { continue }
             var isDirectory: ObjCBool = false
             let url = dirURL.appendingPathComponent(path)
             if fm.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue {
