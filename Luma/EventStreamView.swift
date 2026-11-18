@@ -719,8 +719,23 @@ struct EventRow: View, Equatable {
                     .help(Self.timestampFormatter.string(from: evt.timestamp))
             }
 
-            contentView
-                .stored(.event(evt.id), placements: evt.placements)
+            VStack(alignment: .leading, spacing: 4) {
+                contentView
+                    .stored(.event(evt.id), placements: evt.placements)
+                if let data = evt.data, !data.isEmpty {
+                    PatternDecodeView(
+                        data: Data(data),
+                        baseAddress: 0,
+                        sessionID: evt.sessionID,
+                        engine: engine,
+                        placements: Binding(
+                            get: { evt.placements.placed(at: nil) },
+                            set: { engine.setPlacements($0, at: nil, in: .event(evt.id)) }
+                        )
+                    )
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
 
             Spacer(minLength: 8)
 

@@ -513,11 +513,13 @@ final class EventStreamPane {
     }
 
     private var jsValueKeepers: [JSInspectValueWidget] = []
+    private var dataViews: [PatternDecodeView] = []
     private var rows: [Widget] = []
 
     private func refreshRows() {
         clearChildren(of: eventListBox)
         jsValueKeepers.removeAll()
+        dataViews.removeAll()
         rows.removeAll()
         var prevTimestamp: Date? = nil
         for event in filteredEvents {
@@ -705,14 +707,18 @@ final class EventStreamPane {
         delta.setSizeRequest(width: 64, height: -1)
         row.append(child: delta)
 
+        let content = Box(orientation: .vertical, spacing: 4)
+        content.hexpand = true
+        row.append(child: content)
+
         if let tracerWidget = makeTracerPayload(for: event) {
-            row.append(child: tracerWidget)
+            content.append(child: tracerWidget)
         } else if let errorWidget = makeJSErrorPayload(for: event) {
-            row.append(child: errorWidget)
+            content.append(child: errorWidget)
         } else if let consoleWidget = makeConsolePayload(for: event) {
-            row.append(child: consoleWidget)
+            content.append(child: consoleWidget)
         } else if let expandable = makeExpandablePayload(for: event) {
-            row.append(child: expandable)
+            content.append(child: expandable)
         } else {
             let payload = Label(str: payloadString(for: event))
             payload.halign = .fill
@@ -723,7 +729,10 @@ final class EventStreamPane {
             payload.ellipsize = .end
             payload.selectable = true
             payload.add(cssClass: "monospace")
-            row.append(child: payload)
+            content.append(child: payload)
+        }
+        if let dataView = makeDataView(for: event) {
+            content.append(child: dataView)
         }
 
         let badge = makeSourceBadge(for: event)
@@ -732,6 +741,19 @@ final class EventStreamPane {
 
         attachRowContextMenu(to: row, event: event)
         return row
+    }
+
+    private func makeDataView(for event: RuntimeEvent) -> Widget? {
+        guard let engine, let data = event.data, !data.isEmpty else { return nil }
+        let eventID = event.id
+        let decode = PatternDecodeView(
+            engine: engine, sessionID: event.sessionID, data: Data(data), baseAddress: 0,
+            placements: event.placements.placed(at: nil), sizing: .capped
+        ) { [weak engine] placements in
+            engine?.setPlacements(placements, at: nil, in: .event(eventID))
+        }
+        dataViews.append(decode)
+        return decode.widget
     }
 
     private func deltaText(from previous: Date?, to current: Date) -> String? {
