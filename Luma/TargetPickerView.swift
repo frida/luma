@@ -48,8 +48,12 @@ struct TargetPickerView: View {
     @State private var mode: Mode = .attach
     @State private var spawnSubmode: SpawnSubmode = .application
 
+    @State private var gadgetFlavor: GadgetFlavor?
+    @State private var commitTask: Task<Void, Never>?
+
     @State private var loadingApplications = false
     @State private var applications: [ApplicationDetails] = []
+    @State private var applicationGrouping: TargetGrouping = .flat
     @State private var applicationError: String?
     @State private var applicationSearchText: String = ""
     @State private var selectedApplicationIdentifier: String?
@@ -73,6 +77,7 @@ struct TargetPickerView: View {
     @State private var programAutoResume: Bool = true
 
     @State private var processes: [ProcessDetails] = []
+    @State private var processGrouping: TargetGrouping = .flat
     @State private var loadingProcesses = false
     @State private var processError: String?
     @State private var processSearchText: String = ""
@@ -149,7 +154,7 @@ struct TargetPickerView: View {
                 } label: {
                     Label("Spawn & Attach", systemImage: "play.circle")
                 }
-                .disabled(!canSpawn)
+                .disabled(!canSpawn || commitTask != nil)
             case .armForLaunch:
                 Button {
                     triggerArm()
@@ -300,6 +305,7 @@ struct TargetPickerView: View {
                 pickerState?.lastSpawnProgramPath = newValue
             }
         }
+        .onDisappear { commitTask?.cancel() }
     }
 
     @ViewBuilder
@@ -312,14 +318,7 @@ struct TargetPickerView: View {
             Divider()
 
             if let device = selectedDevice {
-                switch mode {
-                case .spawn:
-                    spawnDetailPane(for: device)
-                case .armForLaunch:
-                    armDetailPane(for: device)
-                case .attach:
-                    processDetailPane(for: device)
-                }
+                devicePane(for: device)
             } else if store.discoveryState == .discovering {
                 detailLoadingPlaceholder
             } else {
@@ -335,6 +334,31 @@ struct TargetPickerView: View {
         }
         .navigationTitle("New Session")
         .toolbar { sharedToolbar }
+    }
+
+    @ViewBuilder
+    private func devicePane(for device: Device) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            switch mode {
+            case .spawn:
+                spawnDetailPane(for: device)
+            case .armForLaunch:
+                armDetailPane(for: device)
+            case .attach:
+                processDetailPane(for: device)
+            }
+        }
+        .task(id: device.id) {
+            await loadGadget(for: device)
+        }
+    }
+
+    @ViewBuilder
+    private var gadgetStrip: some View {
+        if let gadgetFlavor {
+            Divider()
+            GadgetStrip(gadgets: engine.gadgets, flavor: gadgetFlavor)
+        }
     }
 
     @ViewBuilder
@@ -469,55 +493,14 @@ struct TargetPickerView: View {
         } else {
             VStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 8) {
-                    List(filteredApplications, id: \.identifier) { app in
-                        Button {
-                            selectedApplicationIdentifier = app.identifier
-                        } label: {
-                            HStack(spacing: 8) {
-                                if let firstIcon = app.icons.last {
-                                    firstIcon.swiftUIImage
-                                        .resizable()
-                                        .interpolation(.high)
-                                        .aspectRatio(contentMode: .fit)
-                                        .frame(width: 24, height: 24)
-                                        .cornerRadius(4)
-                                } else {
-                                    IconPlaceholderView(
-                                        seed: app.identifier,
-                                        displayName: app.name,
-                                        cornerRadius: 4
-                                    )
-                                    .frame(width: 24, height: 24)
-                                }
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(app.name)
-                                    Text(app.identifier)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-
-                                Spacer()
-
-                                if app.pid != 0 {
-                                    Text("Running (PID \(app.pid))")
-                                        .font(.caption2)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Color.secondary.opacity(0.15))
-                                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                                }
-                            }
-                            .padding(.vertical, 2)
+                    List {
+                        GroupedTargets(targets: filteredApplications, id: \.identifier, grouping: applicationGrouping) { app in
+                            applicationRow(app)
                         }
-                        .buttonStyle(.plain)
-                        .listRowBackground(
-                            selectedApplicationIdentifier == app.identifier
-                                ? Color.accentColor.opacity(0.12)
-                                : Color.clear
-                        )
                     }
                 }
+
+                gadgetStrip
 
                 Divider()
 
@@ -594,6 +577,55 @@ struct TargetPickerView: View {
                 }
             }
         }
+    }
+
+    private func applicationRow(_ app: ApplicationDetails) -> some View {
+        Button {
+            selectedApplicationIdentifier = app.identifier
+        } label: {
+            HStack(spacing: 8) {
+                if let firstIcon = app.icons.last {
+                    firstIcon.swiftUIImage
+                        .resizable()
+                        .interpolation(.high)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 24, height: 24)
+                        .cornerRadius(4)
+                } else {
+                    IconPlaceholderView(
+                        seed: app.identifier,
+                        displayName: app.name,
+                        cornerRadius: 4
+                    )
+                    .frame(width: 24, height: 24)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(app.name)
+                    Text(app.identifier)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                if app.pid != 0 {
+                    Text("Running (PID \(app.pid))")
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.15))
+                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                }
+            }
+            .padding(.vertical, 2)
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(
+            selectedApplicationIdentifier == app.identifier
+                ? Color.accentColor.opacity(0.12)
+                : Color.clear
+        )
     }
 
     @ViewBuilder
@@ -904,57 +936,9 @@ struct TargetPickerView: View {
                     Divider()
 
                     ScrollViewReader { proxy in
-                        List(filteredProcesses, id: \.pid, selection: $selectedProcessPID) { proc in
-                            HStack(spacing: 8) {
-                                if let firstIcon = proc.icons.last {
-                                    firstIcon.swiftUIImage
-                                        .resizable()
-                                        .interpolation(.high)
-                                        .aspectRatio(contentMode: .fit)
-                                        .frame(width: 24, height: 24)
-                                        .cornerRadius(4)
-                                } else if proc.pid == 0 {
-                                    Image(systemName: "cpu")
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fit)
-                                        .frame(width: 20, height: 20)
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 24, height: 24)
-                                } else {
-                                    IconPlaceholderView(
-                                        seed: proc.name,
-                                        displayName: proc.name,
-                                        cornerRadius: 4
-                                    )
-                                    .frame(width: 24, height: 24)
-                                }
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(proc.name)
-                                        .fontWeight(proc.pid == 0 ? .semibold : .regular)
-                                    Text(processSubtitle(for: proc))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
-                                        .help(processSubtitle(for: proc))
-                                }
-
-                                Spacer()
-
-                                if let id = pickerState?.lastSelectedProcessName,
-                                    id == proc.name
-                                {
-                                    Image(systemName: "checkmark")
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .padding(.vertical, 2)
-                            .contentShape(Rectangle())
-                            .tag(proc.pid)
-                            .accessibilityIdentifier("targetPicker.process.\(proc.name)")
-                            .onTapGesture {
-                                attach(to: device, process: proc)
+                        List(selection: $selectedProcessPID) {
+                            GroupedTargets(targets: filteredProcesses, id: \.pid, grouping: processGrouping) { proc in
+                                processRow(proc, on: device)
                             }
                         }
                         .focused($focusedField, equals: .processList)
@@ -978,11 +962,67 @@ struct TargetPickerView: View {
                             }
                         }
                     }
+
+                    gadgetStrip
                 }
             }
         }
         .task(id: device.id) {
             await loadProcesses(for: device)
+        }
+    }
+
+    private func processRow(_ proc: ProcessDetails, on device: Device) -> some View {
+        HStack(spacing: 8) {
+            if let firstIcon = proc.icons.last {
+                firstIcon.swiftUIImage
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 24, height: 24)
+                    .cornerRadius(4)
+            } else if proc.pid == 0 {
+                Image(systemName: "cpu")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 20, height: 20)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+            } else {
+                IconPlaceholderView(
+                    seed: proc.name,
+                    displayName: proc.name,
+                    cornerRadius: 4
+                )
+                .frame(width: 24, height: 24)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(proc.name)
+                    .fontWeight(proc.pid == 0 ? .semibold : .regular)
+                Text(processSubtitle(for: proc))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(processSubtitle(for: proc))
+            }
+
+            Spacer()
+
+            if let id = pickerState?.lastSelectedProcessName,
+                id == proc.name
+            {
+                Image(systemName: "checkmark")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .tag(proc.pid)
+        .accessibilityIdentifier("targetPicker.process.\(proc.name)")
+        .onTapGesture {
+            attach(to: device, process: proc)
         }
     }
 
@@ -1019,8 +1059,9 @@ struct TargetPickerView: View {
 
     private func triggerSpawn() {
         guard let device = selectedDevice, let config = currentSpawnConfig() else { return }
-        onSpawn(device, config)
-        dismiss()
+        commit(on: device) {
+            onSpawn(device, config)
+        }
     }
 
     private func triggerArm() {
@@ -1096,9 +1137,30 @@ struct TargetPickerView: View {
     }
 
     private func attach(to device: Device, process: ProcessDetails) {
-        pickerState?.lastSelectedProcessName = process.name
-        onAttach(device, process)
-        dismiss()
+        commit(on: device) {
+            pickerState?.lastSelectedProcessName = process.name
+            onAttach(device, process)
+        }
+    }
+
+    private func commit(on device: Device, _ start: @escaping () -> Void) {
+        guard commitTask == nil else { return }
+        commitTask = Task {
+            defer { commitTask = nil }
+            do {
+                try await ensureGadget(on: device)
+                try Task.checkCancellation()
+            } catch {
+                return
+            }
+            start()
+            dismiss()
+        }
+    }
+
+    private func ensureGadget(on device: Device) async throws {
+        guard let flavor = await engine.gadgetFlavor(for: device) else { return }
+        _ = try await engine.gadgets.ensure(flavor)
     }
 
     private func parseArguments(from text: String) -> [String] {
@@ -1115,16 +1177,33 @@ struct TargetPickerView: View {
         return result
     }
 
+    private func loadGadget(for device: Device) async {
+        gadgetFlavor = nil
+        guard let flavor = await engine.gadgetFlavor(for: device) else { return }
+        await engine.gadgets.loadInstalledVersion(for: flavor)
+        guard !Task.isCancelled else { return }
+        gadgetFlavor = flavor
+        await engine.fridaReleases.refresh()
+    }
+
     private func loadProcesses(for device: Device) async {
         loadingProcesses = true
         processes = []
+        processGrouping = .flat
         processError = nil
         defer { loadingProcesses = false }
 
         do {
-            let procs = try await device.enumerateProcesses(scope: .full)
+            async let grouping = groupProcesses(on: device)
+            let procs = try await device.enumerateProcesses(scope: .full).sortedWithKernelFirst()
 
-            processes = procs.sortedWithKernelFirst()
+            processGrouping = try await grouping
+            switch processGrouping {
+            case .flat:
+                processes = procs
+            case .debuggableFirst(let debuggability):
+                processes = debuggability.debuggableFirst(procs)
+            }
             processError = nil
         } catch {
             processes = []
@@ -1132,9 +1211,16 @@ struct TargetPickerView: View {
         }
     }
 
+    private func groupProcesses(on device: Device) async throws -> TargetGrouping {
+        guard await engine.gadgetFlavor(for: device) != nil else { return .flat }
+        let applications = try await device.enumerateApplications(scope: .metadata)
+        return .debuggableFirst(ApplicationDebuggability(applications: applications))
+    }
+
     private func loadApplications(for device: Device) async {
         loadingApplications = true
         applications = []
+        applicationGrouping = .flat
         applicationError = nil
         defer { loadingApplications = false }
 
@@ -1144,12 +1230,18 @@ struct TargetPickerView: View {
             applications = apps.sorted {
                 $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
             }
+            applicationGrouping = await groupApplications(applications, on: device)
 
             applicationError = nil
         } catch {
             applicationError = error.localizedDescription
             applications = []
         }
+    }
+
+    private func groupApplications(_ applications: [ApplicationDetails], on device: Device) async -> TargetGrouping {
+        guard await engine.gadgetFlavor(for: device) != nil else { return .flat }
+        return .debuggableFirst(ApplicationDebuggability(applications: applications))
     }
 
     @ViewBuilder
