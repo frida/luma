@@ -14,7 +14,7 @@ public enum ProjectStoreError: Error, LocalizedError {
 
 public final class ProjectStore: Sendable {
     public static let didCommitNotification = Notification.Name("LumaCore.ProjectStore.didCommit")
-    public static let currentSchemaVersion: Int = 1
+    public static let currentSchemaVersion: Int = 2
 
     public let instanceID = UUID()
     private let db: DatabaseQueue
@@ -1907,33 +1907,6 @@ public final class ProjectStore: Sendable {
             t.column("payload_json", .text).notNull()
             t.column("created_at", .datetime).notNull()
         }
-
-        try addColumnsForExistingDatabases(db)
-    }
-
-    private static func addColumnsForExistingDatabases(_ db: Database) throws {
-        let javascript = REPLLanguage.javascript.rawValue
-        try addColumnIfMissing(db, table: "repl_cell", column: "language", definition: "TEXT NOT NULL DEFAULT '\(javascript)'")
-        try addColumnIfMissing(db, table: "repl_cell", column: "placements", definition: "BLOB")
-        try addColumnIfMissing(db, table: "address_insight", column: "placements", definition: "BLOB")
-        try addColumnIfMissing(db, table: "notebook_entry", column: "styled_details", definition: "BLOB")
-        try addColumnIfMissing(db, table: "notebook_entry", column: "pharo_snapshot", definition: "BLOB")
-        try addColumnIfMissing(db, table: "notebook_entry", column: "pharo_result_fuel", definition: "BLOB")
-        try addColumnIfMissing(db, table: "project_ui_state", column: "pharo_snippets_json", definition: "TEXT")
-        try addColumnIfMissing(db, table: "project_ui_state", column: "pharo_page_width", definition: "DOUBLE")
-        try addColumnIfMissing(db, table: "project_ui_state", column: "pharo_page_maximized", definition: "BOOLEAN NOT NULL DEFAULT 0")
-        let collapsed = SidebarExpansion.collapsed.rawValue
-        try addColumnIfMissing(db, table: "session_ui_state", column: "modules_expansion", definition: "TEXT NOT NULL DEFAULT '\(collapsed)'")
-        try addColumnIfMissing(db, table: "session_ui_state", column: "threads_expansion", definition: "TEXT NOT NULL DEFAULT '\(collapsed)'")
-        try addColumnIfMissing(db, table: "session_ui_state", column: "collapsed_hook_instruments", definition: "TEXT NOT NULL DEFAULT '[]'")
-        try addColumnIfMissing(db, table: "session_ui_state", column: "repl_language", definition: "TEXT NOT NULL DEFAULT '\(javascript)'")
-        try addColumnIfMissing(db, table: "session_ui_state", column: "repl_draft", definition: "TEXT")
-        try addColumnIfMissing(db, table: "session_ui_state", column: "repl_seek_anchor", definition: "TEXT")
-    }
-
-    private static func addColumnIfMissing(_ db: Database, table: String, column: String, definition: String) throws {
-        guard try !db.columns(in: table).contains(where: { $0.name == column }) else { return }
-        try db.execute(sql: "ALTER TABLE \(table) ADD COLUMN \(column) \(definition)")
     }
 }
 

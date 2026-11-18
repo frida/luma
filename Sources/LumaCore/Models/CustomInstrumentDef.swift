@@ -113,10 +113,10 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         guard let idStr = obj["id"] as? String, let id = UUID(uuidString: idStr),
             let name = obj["name"] as? String,
             let icon = InstrumentIcon.fromJSON(obj["icon"]),
-            let entrypoint = obj["entrypoint"] as? String
+            let entrypoint = obj["entrypoint"] as? String,
+            let dependencies = obj["dependencies"] as? [String: String]
         else { return nil }
         let compatibility = parseCompatibility(obj["compatibility"])
-        let dependencies = (obj["dependencies"] as? [String: String]) ?? [:]
         let features = parseFeatures(obj["features"])
         let widgets = parseWidgets(obj["widgets"])
         let isoFmt = ISO8601DateFormatter()
