@@ -394,7 +394,7 @@ final class REPLPane {
         ContextMenu.present([
             [
                 .init("Add to Notebook") { [weak self] in
-                    self?.addCellToNotebook(cell)
+                    self?.engine?.pinToNotebook(cell)
                 },
             ],
             [
@@ -423,42 +423,6 @@ final class REPLPane {
         rows.removeAll()
         console.clearEntries()
         console.setHistory([])
-    }
-
-    private func addCellToNotebook(_ cell: LumaCore.REPLCell) {
-        guard let engine else { return }
-        let processName = engine.sessions.first { $0.id == sessionID }?.processName ?? ""
-
-        let details: String
-        var styled: LumaCore.StyledText? = nil
-        var binary: Data? = nil
-        var jsValue: LumaCore.JSInspectValue? = nil
-        switch cell.result {
-        case .text(let s):
-            details = s
-        case .styled(let s):
-            details = s.plainText
-            styled = s
-        case .js(let v):
-            details = ""
-            jsValue = v
-        case .binary(let data, let meta):
-            details = meta?.typedArray ?? ""
-            binary = data
-        }
-
-        var entry = LumaCore.NotebookEntry(
-            title: cell.code,
-            details: details,
-            styledDetails: styled,
-            binaryData: binary,
-            sessionID: sessionID,
-            processName: processName
-        )
-        if let jsValue {
-            entry.jsValue = jsValue
-        }
-        engine.addNotebookEntry(entry)
     }
 
     private func format(result: LumaCore.REPLCell.Result) -> String {

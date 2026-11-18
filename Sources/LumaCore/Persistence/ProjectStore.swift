@@ -14,7 +14,7 @@ public enum ProjectStoreError: Error, LocalizedError {
 
 public final class ProjectStore: Sendable {
     public static let didCommitNotification = Notification.Name("LumaCore.ProjectStore.didCommit")
-    public static let currentSchemaVersion: Int = 2
+    public static let currentSchemaVersion: Int = 3
 
     public let instanceID = UUID()
     private let db: DatabaseQueue
@@ -1554,6 +1554,8 @@ public final class ProjectStore: Sendable {
             t.column("pharo_snapshot", .blob)
             t.column("pharo_result_fuel", .blob)
             t.column("binary_data", .blob)
+            t.column("binary_meta", .blob)
+            t.column("placements", .blob).notNull()
             t.column("session_id", .text)
             t.column("process_name", .text)
         }

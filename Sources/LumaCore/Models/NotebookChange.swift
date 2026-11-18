@@ -11,8 +11,9 @@ public struct NotebookEntryFields: OptionSet, Sendable {
     public static let processName = NotebookEntryFields(rawValue: 1 << 2)
     public static let pharoSnapshot = NotebookEntryFields(rawValue: 1 << 3)
     public static let jsValue = NotebookEntryFields(rawValue: 1 << 4)
+    public static let placements = NotebookEntryFields(rawValue: 1 << 5)
 
-    public static let all: NotebookEntryFields = [.title, .details, .processName, .pharoSnapshot, .jsValue]
+    public static let all: NotebookEntryFields = [.title, .details, .processName, .pharoSnapshot, .jsValue, .placements]
 }
 
 public enum NotebookChange: Sendable {

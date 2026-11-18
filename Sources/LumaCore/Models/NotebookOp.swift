@@ -57,6 +57,7 @@ public enum NotebookOp: Sendable {
 
         public var pharoSnapshot: PharoSnapshot?
         public var jsValue: JSInspectValue?
+        public var placements: [PatternPlacement]?
 
         public init(
             opID: UUID = UUID(),
@@ -65,7 +66,8 @@ public enum NotebookOp: Sendable {
             details: String? = nil,
             processName: String? = nil,
             pharoSnapshot: PharoSnapshot? = nil,
-            jsValue: JSInspectValue? = nil
+            jsValue: JSInspectValue? = nil,
+            placements: [PatternPlacement]? = nil
         ) {
             self.opID = opID
             self.entryID = entryID
@@ -74,6 +76,7 @@ public enum NotebookOp: Sendable {
             self.processName = processName
             self.pharoSnapshot = pharoSnapshot
             self.jsValue = jsValue
+            self.placements = placements
         }
 
         public var changes: [String: String] {
@@ -132,6 +135,9 @@ public enum NotebookOp: Sendable {
             {
                 changes["js_value"] = jsonObject
             }
+            if let placements = u.placements {
+                changes["placements"] = placements.map { $0.toWireJSON() }
+            }
             obj["changes"] = changes
         case .remove(let r):
             obj["entry_id"] = r.entryID.uuidString
@@ -183,7 +189,8 @@ public enum NotebookOp: Sendable {
                 details: changes["details"] as? String,
                 processName: changes["process_name"] as? String,
                 pharoSnapshot: snapshot,
-                jsValue: jsValue
+                jsValue: jsValue,
+                placements: (changes["placements"] as? [[String: Any]])?.compactMap(PatternPlacement.fromWireJSON)
             ))
 
         case "remove":

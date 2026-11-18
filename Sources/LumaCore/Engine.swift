@@ -351,6 +351,10 @@ public final class Engine {
     /// so a drag-between-neighbors computes a non-degenerate midpoint.
     private static let notebookPositionStep: Double = 1000
 
+    public func pinToNotebook(_ cell: REPLCell) {
+        addNotebookEntry(NotebookEntry(pinning: cell, processName: session(id: cell.sessionID)?.processName ?? ""))
+    }
+
     public func addNotebookEntry(_ entry: NotebookEntry, after otherEntry: NotebookEntry? = nil) {
         var e = entry
         if let otherEntry {
@@ -379,16 +383,23 @@ public final class Engine {
             notebookEntries[i] = entry
         }
         onNotebookChanged?(.updated(entry, changed: changed))
-        if !changed.isDisjoint(with: [.title, .details, .processName, .pharoSnapshot, .jsValue]) {
+        if !changed.isDisjoint(with: [.title, .details, .processName, .pharoSnapshot, .jsValue, .placements]) {
             collaboration.enqueueUpdate(
                 entryID: entry.id,
                 title: entry.title,
                 details: entry.details,
                 processName: entry.processName,
                 pharoSnapshot: changed.contains(.pharoSnapshot) ? entry.pharoSnapshot : nil,
-                jsValue: changed.contains(.jsValue) ? entry.jsValue : nil
+                jsValue: changed.contains(.jsValue) ? entry.jsValue : nil,
+                placements: changed.contains(.placements) ? entry.placements : nil
             )
         }
+    }
+
+    public func setPlacements(_ placements: [PatternPlacement], forNotebookEntry entry: NotebookEntry) {
+        var updated = entry
+        updated.placements = placements
+        updateNotebookEntry(updated, changed: .placements)
     }
 
     public func deleteNotebookEntry(_ entry: NotebookEntry) {

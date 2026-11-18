@@ -131,7 +131,6 @@ struct REPLView: View {
                                 ForEach(orderedCells) { cell in
                                     REPLCellView(
                                         cell: cell,
-                                        processName: session?.processName ?? "",
                                         sessionID: sessionID,
                                         engine: engine,
                                         selection: $selection
@@ -456,7 +455,6 @@ private struct REPLEmptyState: View {
 
 private struct REPLCellView: View {
     let cell: LumaCore.REPLCell
-    let processName: String
     let sessionID: UUID
     let engine: Engine
     @Binding var selection: SidebarItemID?
@@ -562,52 +560,12 @@ private struct REPLCellView: View {
             .accessibilityIdentifier("repl.cell")
             .contextMenu {
                 Button {
-                    addToNotebook()
+                    engine.pinToNotebook(cell)
                 } label: {
                     Label("Add to Notebook", systemImage: "book.pages")
                 }
             }
         }
-    }
-
-    private func binaryMetaString(_ meta: LumaCore.REPLCell.Result.BinaryMeta?, dataCount: Int) -> String {
-        var parts: [String] = []
-        if let ta = meta?.typedArray { parts.append(ta) }
-        return parts.joined(separator: " • ")
-    }
-
-    private func addToNotebook() {
-        let (details, styled, binary, jsValue): (String, LumaCore.StyledText?, Data?, JSInspectValue?) = {
-            switch cell.result {
-            case .text(let s):
-                return (s, nil, nil, nil)
-
-            case .styled(let s):
-                return (s.plainText, s, nil, nil)
-
-            case .js(let v):
-                return ("", nil, nil, v)
-
-            case .binary(let data, let meta):
-                let header = binaryMetaString(meta, dataCount: data.count)
-                return (header, nil, data, nil)
-            }
-        }()
-
-        var entry = LumaCore.NotebookEntry(
-            title: cell.code,
-            details: details,
-            styledDetails: styled,
-            binaryData: binary,
-            sessionID: sessionID,
-            processName: processName
-        )
-
-        if let jsValue {
-            entry.jsValue = jsValue
-        }
-
-        engine.addNotebookEntry(entry)
     }
 }
 

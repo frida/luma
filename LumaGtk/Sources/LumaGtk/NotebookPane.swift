@@ -23,6 +23,7 @@ final class NotebookPane {
     private var autoEditedEntries: Set<UUID> = []
     private var draftEntries: Set<UUID> = []
     private var jsValueKeepers: [JSInspectValueWidget] = []
+    private var decodeViews: [UUID: PatternDecodeView] = [:]
     private var pharoCells: [UUID: PharoNotebookCell] = [:]
     private var entryRows: [UUID: Widget] = [:]
     private var timestampLabels: [UUID: Label] = [:]
@@ -155,12 +156,17 @@ final class NotebookPane {
             if changed == .jsValue, entryRows[entry.id]?.focusChild != nil {
                 break
             }
+            if changed == .placements, let decode = decodeViews[entry.id] {
+                decode.setPlacements(entry.placements)
+                break
+            }
             replaceRow(for: entry)
         case .removed(let id):
             if let row = entryRows.removeValue(forKey: id) {
                 entriesBox.remove(child: row)
             }
             pharoCells.removeValue(forKey: id)
+            decodeViews.removeValue(forKey: id)
             timestampLabels.removeValue(forKey: id)
             timestampDates.removeValue(forKey: id)
             editingEntries.remove(id)
@@ -194,6 +200,7 @@ final class NotebookPane {
         clearChildren(of: entriesBox)
         jsValueKeepers.removeAll()
         pharoCells.removeAll()
+        decodeViews.removeAll()
         entryRows.removeAll()
         timestampLabels.removeAll()
         timestampDates.removeAll()
@@ -439,8 +446,16 @@ final class NotebookPane {
             }
         }
 
-        if let data = entry.binaryData, !data.isEmpty {
-            inner.append(child: HexView(bytes: data).widget)
+        if let data = entry.binaryData, !data.isEmpty, let engine {
+            let decode = PatternDecodeView(
+                engine: engine, sessionID: entry.sessionID, data: data, baseAddress: entry.binaryMeta?.baseAddress,
+                placements: entry.placements, sizing: .capped
+            ) { [weak engine] placements in
+                guard let current = engine?.notebookEntries.first(where: { $0.id == entry.id }) else { return }
+                engine?.setPlacements(placements, forNotebookEntry: current)
+            }
+            decodeViews[entry.id] = decode
+            inner.append(child: decode.widget)
         }
 
         return card

@@ -310,8 +310,17 @@ struct NotebookEntryRow: View {
             }
 
             if let data = entry.binaryData, !data.isEmpty {
-                HexView(data: data)
-                    .fixedSize(horizontal: false, vertical: true)
+                PatternDecodeView(
+                    data: data,
+                    baseAddress: entry.binaryMeta?.baseAddress,
+                    sessionID: entry.sessionID,
+                    engine: engine,
+                    placements: Binding(
+                        get: { entry.placements },
+                        set: { engine.setPlacements($0, forNotebookEntry: entry) }
+                    )
+                )
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(10)

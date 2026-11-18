@@ -29,6 +29,8 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
     public var pharoSnapshot: PharoSnapshot?
     public var pharoResultFuel: Data?
     public var binaryData: Data?
+    public var binaryMeta: REPLCell.Result.BinaryMeta?
+    public var placements: [PatternPlacement]
     public var sessionID: UUID?
     public var processName: String?
 
@@ -47,6 +49,8 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
         case pharoSnapshot = "pharo_snapshot"
         case pharoResultFuel = "pharo_result_fuel"
         case binaryData = "binary_data"
+        case binaryMeta = "binary_meta"
+        case placements
         case sessionID = "session_id"
         case processName = "process_name"
     }
@@ -64,6 +68,8 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
         pharoSnapshot: PharoSnapshot? = nil,
         pharoResultFuel: Data? = nil,
         binaryData: Data? = nil,
+        binaryMeta: REPLCell.Result.BinaryMeta? = nil,
+        placements: [PatternPlacement] = [],
         sessionID: UUID? = nil,
         processName: String? = nil
     ) {
@@ -79,8 +85,27 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
         self.pharoSnapshot = pharoSnapshot
         self.pharoResultFuel = pharoResultFuel
         self.binaryData = binaryData
+        self.binaryMeta = binaryMeta
+        self.placements = placements
         self.sessionID = sessionID
         self.processName = processName
+    }
+
+    public init(pinning cell: REPLCell, processName: String) {
+        self.init(title: cell.code, details: "", placements: cell.placements, sessionID: cell.sessionID, processName: processName)
+        switch cell.result {
+        case .text(let text):
+            details = text
+        case .styled(let styled):
+            details = styled.plainText
+            styledDetails = styled
+        case .js(let value):
+            jsValue = value
+        case .binary(let data, let meta):
+            details = meta?.typedArray ?? ""
+            binaryData = data
+            binaryMeta = meta
+        }
     }
 
     public func toJSON() -> [String: Any] {
@@ -132,6 +157,12 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
         if let processName {
             obj["process_name"] = processName
         }
+
+        if let baseAddress = binaryMeta?.baseAddress {
+            obj["base_address"] = String(format: "0x%llx", baseAddress)
+        }
+
+        obj["placements"] = placements.map { $0.toWireJSON() }
 
         return obj
     }
@@ -196,6 +227,9 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
 
         let processName = obj["process_name"] as? String
 
+        let baseAddress = (obj["base_address"] as? String).flatMap { UInt64($0.dropFirst(2), radix: 16) }
+        let placements = (obj["placements"] as? [[String: Any]] ?? []).compactMap(PatternPlacement.fromWireJSON)
+
         return NotebookEntry(
             id: uuid,
             kind: kind,
@@ -209,6 +243,8 @@ public struct NotebookEntry: Codable, Identifiable, Sendable, FetchableRecord, P
             pharoSnapshot: pharoSnapshot,
             pharoResultFuel: pharoResultFuel,
             binaryData: data.map { Data($0) },
+            binaryMeta: baseAddress.map { REPLCell.Result.BinaryMeta(typedArray: nil, baseAddress: $0) },
+            placements: placements,
             processName: processName
         )
     }

@@ -25,7 +25,7 @@ final class PatternDecodeView {
     var onTruncated: (() -> Void)?
 
     private let engine: Engine
-    private let sessionID: UUID
+    private let sessionID: UUID?
     private let onPlacementsChanged: ([PatternPlacement]) -> Void
 
     private let hexView: HexView
@@ -58,7 +58,7 @@ final class PatternDecodeView {
 
     init(
         engine: Engine,
-        sessionID: UUID,
+        sessionID: UUID?,
         data: Data,
         baseAddress: UInt64?,
         placements: [PatternPlacement],
@@ -186,7 +186,7 @@ final class PatternDecodeView {
     }
 
     private func placementMenuSections() -> [[ContextMenu.Item]] {
-        guard let baseAddress, target != nil, !engine.patterns.placeableSources.isEmpty else { return [] }
+        guard let baseAddress, !engine.patterns.placeableSources.isEmpty else { return [] }
         let caret = hexView.caret
         let label = String(format: "Decode at 0x%llx as…", baseAddress &+ UInt64(caret))
         return [[.init(label) { [weak self] in self?.presentPlacementMenu(caret: caret) }]]
@@ -195,12 +195,11 @@ final class PatternDecodeView {
     private static let menuTypeLimit = 8
 
     private func presentPlacementMenu(caret: Int) {
-        guard let target else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
             var described: [String: PatternSummary] = [:]
             for source in engine.patterns.placeableSources {
-                described[source.id] = try? await engine.patternDecoder.summary(of: source, platform: target.platform, arch: target.arch)
+                described[source.id] = try? await engine.patternDecoder.summary(of: source, platform: target?.platform, arch: target?.arch)
             }
             var sections: [[ContextMenu.Item]] = []
             let recent = recentItems(caret: caret, summaries: described)
@@ -366,7 +365,7 @@ final class PatternDecodeView {
     }
 
     private func press(_ visualization: NodeVisualization, anchor: Widget) {
-        guard case .ready(.button(let function, _)) = visualization.outcome, let baseAddress, let target,
+        guard case .ready(.button(let function, _)) = visualization.outcome, let baseAddress,
             let source = engine.patterns.source(withID: visualization.placement.sourceID)
         else { return }
         let placement = visualization.placement
@@ -376,7 +375,7 @@ final class PatternDecodeView {
             do {
                 let printed = try await engine.patternDecoder.callFunction(
                     function, on: visualization.nodeID, of: source, typeName: placement.typeName, data: bytes(at: placement),
-                    address: baseAddress &+ UInt64(placement.offset), platform: target.platform, arch: target.arch)
+                    address: baseAddress &+ UInt64(placement.offset), platform: target?.platform, arch: target?.arch)
                 output = Label(str: printed.isEmpty ? "No output." : printed)
             } catch {
                 output = Label(str: error.localizedDescription)
@@ -494,7 +493,7 @@ final class PatternDecodeView {
 
     private func decode() {
         decodeTask?.cancel()
-        guard let baseAddress, let target else { return }
+        guard let baseAddress else { return }
         let placements = placements
         decodeTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -502,11 +501,11 @@ final class PatternDecodeView {
             var described: [String: PatternSummary] = [:]
             for placement in placements {
                 guard let source = engine.patterns.source(withID: placement.sourceID) else { continue }
-                described[source.id] = try? await engine.patternDecoder.summary(of: source, platform: target.platform, arch: target.arch)
+                described[source.id] = try? await engine.patternDecoder.summary(of: source, platform: target?.platform, arch: target?.arch)
                 do {
                     let value = try await engine.patternDecoder.decode(
                         source, typeName: placement.typeName, data: bytes(at: placement), address: baseAddress &+ UInt64(placement.offset),
-                        platform: target.platform, arch: target.arch)
+                        platform: target?.platform, arch: target?.arch)
                     results[placement.id] = .decoded(value)
                 } catch {
                     results[placement.id] = .failed(error.localizedDescription)
@@ -522,7 +521,7 @@ final class PatternDecodeView {
     }
 
     private var target: ProcessSession.ProcessInfo? {
-        engine.session(id: sessionID)?.processInfo
+        sessionID.flatMap(engine.session(id:))?.processInfo
     }
 
     private func bytes(at placement: PatternPlacement) -> Data {

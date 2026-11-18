@@ -4,7 +4,7 @@ import SwiftUI
 struct PatternDecodeView: View {
     let data: Data
     let baseAddress: UInt64?
-    let sessionID: UUID
+    let sessionID: UUID?
     let engine: Engine
     @Binding var placements: [PatternPlacement]
     var sizing: PatternDecodeSizing = .capped
@@ -29,15 +29,15 @@ struct PatternDecodeView: View {
     @FocusState private var isTreeFocused: Bool
 
     private var target: ProcessSession.ProcessInfo? {
-        engine.session(id: sessionID)?.processInfo
+        sessionID.flatMap(engine.session(id:))?.processInfo
     }
 
     private var canDecode: Bool {
-        baseAddress != nil && target != nil && !engine.patterns.placeableSources.isEmpty
+        baseAddress != nil && !engine.patterns.placeableSources.isEmpty
     }
 
-    private var describeKey: DescribeKey? {
-        target.map { DescribeKey(sources: engine.patterns.placeableSources, platform: $0.platform, arch: $0.arch) }
+    private var describeKey: DescribeKey {
+        DescribeKey(sources: engine.patterns.placeableSources, platform: target?.platform, arch: target?.arch)
     }
 
     private var decodeKey: DecodeKey {
@@ -362,14 +362,14 @@ struct PatternDecodeView: View {
 
     private func press(_ id: UUID) {
         guard let visualization = visualizations[id], case .ready(.button(let function, _)) = visualization.outcome,
-            let baseAddress, let target, let source = engine.patterns.source(withID: visualization.placement.sourceID)
+            let baseAddress, let source = engine.patterns.source(withID: visualization.placement.sourceID)
         else { return }
         let placement = visualization.placement
         Task {
             do {
                 let output = try await engine.patternDecoder.callFunction(
                     function, on: visualization.nodeID, of: source, typeName: placement.typeName, data: bytes(at: placement),
-                    address: baseAddress &+ UInt64(placement.offset), platform: target.platform, arch: target.arch)
+                    address: baseAddress &+ UInt64(placement.offset), platform: target?.platform, arch: target?.arch)
                 callOutcome = CallOutcome(rowID: id, text: output.isEmpty ? "No output." : output, isFailure: false)
             } catch {
                 callOutcome = CallOutcome(rowID: id, text: error.localizedDescription, isFailure: true)
@@ -402,11 +402,10 @@ struct PatternDecodeView: View {
     }
 
     private func describeSources() async {
-        guard let target else { return }
         var described: [String: PatternSummary] = [:]
         for source in engine.patterns.placeableSources {
             do {
-                described[source.id] = try await engine.patternDecoder.summary(of: source, platform: target.platform, arch: target.arch)
+                described[source.id] = try await engine.patternDecoder.summary(of: source, platform: target?.platform, arch: target?.arch)
             } catch {
                 describeProblem = "\(source.name): \(error.localizedDescription)"
             }
@@ -416,14 +415,14 @@ struct PatternDecodeView: View {
     }
 
     private func decodePlacements() async {
-        guard let baseAddress, let target else { return }
+        guard let baseAddress else { return }
         var results: [PatternPlacement.ID: PlacementResult] = [:]
         for placement in placements {
             guard let source = engine.patterns.source(withID: placement.sourceID) else { continue }
             do {
                 let value = try await engine.patternDecoder.decode(
                     source, typeName: placement.typeName, data: bytes(at: placement), address: baseAddress &+ UInt64(placement.offset),
-                    platform: target.platform, arch: target.arch)
+                    platform: target?.platform, arch: target?.arch)
                 results[placement.id] = .decoded(value)
             } catch {
                 results[placement.id] = .failed(error.localizedDescription)
@@ -671,8 +670,8 @@ private enum PlacementResult {
 
 private struct DescribeKey: Equatable {
     let sources: [PatternSource]
-    let platform: String
-    let arch: String
+    let platform: String?
+    let arch: String?
 }
 
 private struct DecodeKey: Equatable {
