@@ -426,11 +426,12 @@ public final class Engine {
 
     private func publishPlacementSnapshots(of entry: NotebookEntry) {
         placementSnapshotTasks[entry.id]?.cancel()
-        guard collaboration.isCollaborative, let data = entry.binaryData, let baseAddress = entry.binaryMeta?.baseAddress else { return }
+        guard collaboration.isCollaborative else { return }
         placementSnapshotTasks[entry.id] = Task { [weak self] in
             guard let self else { return }
             var snapshots: [PlacementSnapshot] = []
-            for placement in entry.placements.placed(at: nil) {
+            for placement in entry.placements {
+                guard let (data, baseAddress) = Self.bytes(placedOnBy: placement, in: entry) else { continue }
                 do {
                     let decoded = try await decode(placement, in: data, at: baseAddress, forSession: entry.sessionID)
                     snapshots.append(PlacementSnapshot(of: placement, decoded: decoded, base: baseAddress))
@@ -441,6 +442,13 @@ public final class Engine {
             guard !Task.isCancelled else { return }
             collaboration.enqueueUpdate(entryID: entry.id, placementSnapshots: snapshots)
         }
+    }
+
+    private static func bytes(placedOnBy placement: PatternPlacement, in entry: NotebookEntry) -> (data: Data, baseAddress: UInt64)? {
+        guard let origin = placement.origin else {
+            return entry.binaryData.flatMap { data in entry.binaryMeta?.baseAddress.map { (data, $0) } }
+        }
+        return entry.jsValue?.bytes(readAt: origin).map { ($0.data, origin) }
     }
 
     public func deleteNotebookEntry(_ entry: NotebookEntry) {

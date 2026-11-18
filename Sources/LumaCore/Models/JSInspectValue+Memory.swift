@@ -17,6 +17,26 @@ extension JSInspectValue {
             return self
         }
     }
+
+    public func bytes(readAt address: UInt64) -> Bytes? {
+        if case .bytes(let bytes) = self {
+            return bytes.address == address ? bytes : nil
+        }
+        return parts.lazy.compactMap { $0.bytes(readAt: address) }.first
+    }
+
+    private var parts: [JSInspectValue] {
+        switch self {
+        case .object(_, let properties):
+            return properties.flatMap { [$0.key, $0.value] }
+        case .map(_, let entries):
+            return entries.flatMap { [$0.key, $0.value] }
+        case .array(_, let elements), .set(_, let elements):
+            return elements
+        default:
+            return []
+        }
+    }
 }
 
 extension JSInspectValue.Property {

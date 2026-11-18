@@ -6,6 +6,7 @@ public struct PlacementSnapshot: Codable, Sendable {
     public let placementID: UUID
     public let typeName: String
     public let offset: Int
+    public let origin: String?
     public let root: Node?
     public let problem: String?
 
@@ -13,24 +14,26 @@ public struct PlacementSnapshot: Codable, Sendable {
         case placementID = "placement_id"
         case typeName = "type_name"
         case offset
+        case origin
         case root
         case problem
     }
 
     public init(of placement: PatternPlacement, decoded: DecodedPattern, base: UInt64) {
         var budget = Self.nodeLimit
-        placementID = placement.id
-        typeName = placement.typeName
-        offset = placement.offset
-        root = Node(decoded, base: base, budget: &budget)
-        problem = nil
+        self.init(of: placement, root: Node(decoded, base: base, budget: &budget), problem: nil)
     }
 
     public init(of placement: PatternPlacement, problem: String) {
+        self.init(of: placement, root: nil, problem: problem)
+    }
+
+    private init(of placement: PatternPlacement, root: Node?, problem: String?) {
         placementID = placement.id
         typeName = placement.typeName
         offset = placement.offset
-        root = nil
+        origin = placement.origin.map { String(format: "0x%llx", $0) }
+        self.root = root
         self.problem = problem
     }
 
