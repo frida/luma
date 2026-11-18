@@ -1050,6 +1050,10 @@ public final class Engine {
             self?.patterns.replaceProjectSources(with: records)
         }
 
+        collaboration.onOpRejected = { [weak self] reason in
+            self?.emitEngineWarning(subsystem: "collaboration", text: "The lab turned a change away: \(reason)")
+        }
+
         collaboration.onPatternSourceNameTaken = { [weak self] record in
             self?.patterns.keepUnderAnotherName(record)
         }

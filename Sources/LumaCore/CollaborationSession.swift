@@ -315,7 +315,7 @@ public final class CollaborationSession {
     public var onEntryUpserted: ((NotebookEntry) -> Void)?
     public var onEntryRemoved: ((UUID) -> Void)?
     public var onEntryRepositioned: ((UUID, Double) -> Void)?
-    public var onOpRejected: ((UUID, String) -> Void)?
+    public var onOpRejected: ((String) -> Void)?
     public var onMemberAdded: ((Member) -> Void)?
     public var onMemberRemoved: ((String) -> Void)?
     public var onMemberRoleChanged: ((String, Member.Role) -> Void)?
@@ -363,7 +363,6 @@ public final class CollaborationSession {
     public var onPatternSourceNameTaken: ((PatternSourceRecord) -> Void)?
     public var onLabCreated: (() -> Void)?
     public var onWidgetStatesSnapshot: (([WidgetStateSnapshot]) -> Void)?
-    public var onSessionOpRejected: ((UUID, String) -> Void)?
     public var onChatMessageReceived: ((ChatMessage) -> Void)?
     public var onChatMessageChange: ((ChatMessageChange) -> Void)?
 
@@ -1841,63 +1840,36 @@ public final class CollaborationSession {
             _ = try? store.removeOutboxOp(opID: opID)
             replayedOpIDs.remove(opID)
 
-        case ("+op-rejected", let s) where s.count == 4 && s[0] == "labs" && s[2] == "notebook" && s[3] == "entries":
-            guard let idStr = payload["op_id"] as? String,
-                let opID = UUID(uuidString: idStr) else { return }
+        case ("+op-rejected", _):
+            guard let opID = (payload["op_id"] as? String).flatMap(UUID.init(uuidString:)) else { return }
             let reason = (payload["reason"] as? String) ?? "rejected"
-            try? store.removeOutboxOp(opID: opID)
-            onOpRejected?(opID, reason)
+            let renamable = reason == Self.patternNameTaken ? (try? store.fetchOutboxOps(PatternSourceOp.self))?.first { $0.opID == opID } : nil
+            _ = try? store.removeOutboxOp(opID: opID)
+            if case .upsert(let upsert) = renamable {
+                onPatternSourceNameTaken?(upsert.record)
+            } else {
+                onOpRejected?(reason)
+            }
 
         case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "custom-instruments":
             guard let op = CustomInstrumentOp.fromJSON(payload) else { return }
             onCustomInstrumentOpReceived?(op)
 
-        case ("+op-rejected", let s) where s.count == 3 && s[0] == "labs" && s[2] == "custom-instruments":
-            guard let idStr = payload["op_id"] as? String,
-                let opID = UUID(uuidString: idStr) else { return }
-            try? store.removeOutboxOp(opID: opID)
-
         case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "patterns":
             guard let op = PatternSourceOp.fromJSON(payload) else { return }
             onPatternSourceOpReceived?(op)
-
-        case ("+op-rejected", let s) where s.count == 3 && s[0] == "labs" && s[2] == "patterns":
-            guard let idStr = payload["op_id"] as? String,
-                let opID = UUID(uuidString: idStr) else { return }
-            let rejected = (try? store.fetchOutboxOps(PatternSourceOp.self))?.first { $0.opID == opID }
-            try? store.removeOutboxOp(opID: opID)
-            if case .upsert(let upsert) = rejected, payload["reason"] as? String == Self.patternNameTaken {
-                onPatternSourceNameTaken?(upsert.record)
-            }
 
         case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "missions":
             guard let op = MissionOp.fromJSON(payload) else { return }
             onMissionOpReceived?(op)
 
-        case ("+op-rejected", let s) where s.count == 3 && s[0] == "labs" && s[2] == "missions":
-            guard let idStr = payload["op_id"] as? String,
-                let opID = UUID(uuidString: idStr) else { return }
-            try? store.removeOutboxOp(opID: opID)
-
         case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "address-notes":
             guard let op = AddressNoteOp.fromJSON(payload) else { return }
             onAddressNoteOpReceived?(op)
 
-        case ("+op-rejected", let s) where s.count == 3 && s[0] == "labs" && s[2] == "address-notes":
-            guard let idStr = payload["op_id"] as? String,
-                let opID = UUID(uuidString: idStr) else { return }
-            try? store.removeOutboxOp(opID: opID)
-
         case ("+op", let s) where s.count == 4 && s[0] == "labs" && s[2] == "sessions":
             guard let sessionID = UUID(uuidString: s[3]) else { return }
             applySessionOp(sessionID: sessionID, payload: payload)
-
-        case ("+op-rejected", let s) where s.count == 4 && s[0] == "labs" && s[2] == "sessions":
-            guard let idStr = payload["op_id"] as? String,
-                let opID = UUID(uuidString: idStr) else { return }
-            let reason = (payload["reason"] as? String) ?? "rejected"
-            try? store.removeOutboxOp(opID: opID)
-            onSessionOpRejected?(opID, reason)
 
         case ("+eval", let s)
             where s.count == 7 && s[0] == "labs" && s[2] == "sessions" && s[4] == "repl" && s[5] == "cells":
