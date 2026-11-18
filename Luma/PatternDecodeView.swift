@@ -38,7 +38,7 @@ struct PatternDecodeView: View {
     }
 
     private var decodeKey: DecodeKey {
-        DecodeKey(placements: placements, data: data)
+        DecodeKey(placements: placements, patterns: placements.map { engine.patterns.source(withID: $0.sourceID) }, data: data)
     }
 
     var body: some View {
@@ -662,6 +662,7 @@ private struct DescribeKey: Equatable {
 
 private struct DecodeKey: Equatable {
     let placements: [PatternPlacement]
+    let patterns: [PatternSource?]
     let data: Data
 }
 

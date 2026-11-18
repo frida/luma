@@ -6,6 +6,7 @@ import Gdk
 import GLibObject
 import Gtk
 import LumaCore
+import Observation
 
 enum PatternDecodeSizing {
     case capped
@@ -132,7 +133,7 @@ final class PatternDecodeView {
         hexView.menuSections = { [weak self] in self?.placementMenuSections() ?? [] }
         installTreeHandlers()
         showTree()
-        decode()
+        decodeAsPatternsChange()
     }
 
     func setData(_ data: Data, baseAddress: UInt64?) {
@@ -485,6 +486,17 @@ final class PatternDecodeView {
 
     private func showTree() {
         treeScroller.visible = !placements.isEmpty
+    }
+
+    private func decodeAsPatternsChange() {
+        withObservationTracking {
+            _ = engine.patterns.placeableSources
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.decodeAsPatternsChange()
+            }
+        }
+        decode()
     }
 
     private func decode() {
