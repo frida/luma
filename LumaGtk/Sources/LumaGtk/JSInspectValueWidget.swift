@@ -143,7 +143,6 @@ final class JSInspectValueWidget {
             row.hexpand = true
             let key = labelWithMarkup(span(escape(prop.displayKey + ":"), color: green))
             key.valign = .start
-            if isComposite(prop.value) { key.marginTop = 2 }
             row.append(child: key)
             let child = build(value: prop.value, depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
             child.hexpand = true
@@ -177,7 +176,6 @@ final class JSInspectValueWidget {
             row.hexpand = true
             let indexLabel = labelWithMarkup(span("[\(idx)]", color: dim))
             indexLabel.valign = .start
-            if isComposite(elements[idx]) { indexLabel.marginTop = 2 }
             row.append(child: indexLabel)
             let child = build(value: elements[idx], depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
             child.hexpand = true
@@ -215,7 +213,6 @@ final class JSInspectValueWidget {
             row.append(child: keyChild)
             let arrow = labelWithMarkup(span("→", color: dim))
             arrow.valign = .start
-            if isComposite(entry.value) { arrow.marginTop = 2 }
             row.append(child: arrow)
             let valChild = build(value: entry.value, depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
             valChild.hexpand = true
@@ -243,7 +240,6 @@ final class JSInspectValueWidget {
             row.hexpand = true
             let bullet = labelWithMarkup(span("•", color: dim))
             bullet.valign = .start
-            if isComposite(elements[idx]) { bullet.marginTop = 2 }
             row.append(child: bullet)
             let child = build(value: elements[idx], depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
             child.hexpand = true
@@ -300,9 +296,6 @@ final class JSInspectValueWidget {
         let initiallyExpanded = (depth == 0)
         expander.expanded = initiallyExpanded
         expander.halign = .start
-        if depth > 0 {
-            expander.marginStart = -6
-        }
         let titleLabel = Label(str: "")
         titleLabel.setMarkup(str: headerMarkup(title: title, preview: initiallyExpanded ? nil : preview, color: color))
         titleLabel.add(cssClass: "monospace")
