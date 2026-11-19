@@ -369,11 +369,12 @@ final class JSInspectValueWidget {
         sessionID: UUID
     ) -> Widget {
         let label = Label(str: "")
-        label.setMarkup(str: scalarMarkup(value))
+        label.setMarkup(str: "<span insert_hyphens=\"false\">\(scalarMarkup(value))</span>")
         label.add(cssClass: "monospace")
         label.halign = .start
         label.xalign = 0
         label.wrap = true
+        label.wrapMode = .wordChar
         if case .nativePointer(let pointerText) = value, let address = value.nativePointerAddress {
             label.selectable = false
             let wrapper = Box(orientation: .horizontal, spacing: 0)
