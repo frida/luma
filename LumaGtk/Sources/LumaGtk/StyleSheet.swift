@@ -306,7 +306,7 @@ enum StyleSheet {
         background: alpha(@theme_fg_color, 0.05);
     }
 
-    button.luma-js-show-more {
+    button.luma-link {
         background: none;
         border: none;
         box-shadow: none;
@@ -314,10 +314,10 @@ enum StyleSheet {
         min-height: 0;
         color: \(accentColor);
     }
-    button.luma-js-show-more:hover {
+    button.luma-link:hover {
         background: none;
     }
-    button.luma-js-show-more > label {
+    button.luma-link > label {
         text-decoration: underline;
     }
 

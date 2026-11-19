@@ -35,7 +35,7 @@ private final class ChunkedRowsPager {
     func installButton() {
         let button = Button(label: "")
         button.halign = .start
-        button.add(cssClass: "luma-js-show-more")
+        button.add(cssClass: "luma-link")
         button.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.advance()

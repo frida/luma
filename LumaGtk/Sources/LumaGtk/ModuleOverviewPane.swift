@@ -40,7 +40,7 @@ final class ModuleOverviewPane {
         titleLabel.halign = .start
         titleLabel.add(cssClass: "heading")
 
-        contentsBox = Box(orientation: .vertical, spacing: 2)
+        contentsBox = Box(orientation: .vertical, spacing: 6)
         contentsBox.halign = .start
 
         widget.append(child: titleLabel)
@@ -120,7 +120,7 @@ final class ModuleOverviewPane {
 
     private func makeLink(_ title: String, count: Int?, target: Target) -> Button {
         let button = Button(label: count.map { "\(title) (\($0))" } ?? title)
-        button.add(cssClass: "flat")
+        button.add(cssClass: "luma-link")
         button.halign = .start
         let onNavigate = onNavigate
         button.onClicked { _ in
