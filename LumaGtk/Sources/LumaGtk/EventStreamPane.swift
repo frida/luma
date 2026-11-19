@@ -705,6 +705,7 @@ final class EventStreamPane {
         delta.add(cssClass: "luma-event-delta")
         delta.halign = .start
         delta.setSizeRequest(width: 64, height: -1)
+        Self.centreOnFirstLine(delta)
         row.append(child: delta)
 
         let content = Box(orientation: .vertical, spacing: 4)
@@ -737,10 +738,28 @@ final class EventStreamPane {
 
         let badge = makeSourceBadge(for: event)
         badge.halign = .end
+        Self.centreOnFirstLine(badge)
         row.append(child: badge)
 
         attachRowContextMenu(to: row, event: event)
         return row
+    }
+
+    private static func centreOnFirstLine(_ widget: Widget) {
+        widget.valign = .start
+        widget.marginTop = max(0, (lineHeight - naturalSize(of: widget, along: .vertical)) / 2)
+    }
+
+    private static let lineHeight: Int = {
+        let line = Label(str: " ")
+        line.add(cssClass: "monospace")
+        return naturalSize(of: line, along: .vertical)
+    }()
+
+    private static func naturalSize(of widget: Widget, along orientation: Orientation) -> Int {
+        var size: gint = 0
+        widget.measure(orientation: orientation, for: -1, natural: &size)
+        return Int(size)
     }
 
     private func makeDataView(for event: RuntimeEvent) -> Widget? {
@@ -775,7 +794,6 @@ final class EventStreamPane {
         let label = Label(str: engine!.sourceLabel(for: event))
         label.add(cssClass: "luma-event-badge")
         label.add(cssClass: "luma-event-source-\(colorIndex(for: badgeColorKey(for: event)))")
-        label.valign = .center
         return label
     }
 
@@ -863,11 +881,9 @@ final class EventStreamPane {
         let row = Box(orientation: .horizontal, spacing: 8)
         row.hexpand = true
 
-        let level = message.level
-        let badge = Label(str: levelBadgeText(level).uppercased())
-        badge.add(cssClass: "luma-event-badge")
-        badge.add(cssClass: "luma-event-level-\(levelClass(level))")
-        badge.valign = .start
+        let badge = Self.makeLevelBadge(message.level)
+        badge.setSizeRequest(width: Self.levelBadgeWidth, height: -1)
+        Self.centreOnFirstLine(badge)
         row.append(child: badge)
 
         if let line = message.line {
@@ -908,16 +924,16 @@ final class EventStreamPane {
         return row
     }
 
-    private func levelBadgeText(_ level: ConsoleLevel) -> String {
-        switch level {
-        case .info: return "info"
-        case .debug: return "debug"
-        case .warning: return "warn"
-        case .error: return "error"
-        }
+    private static let levelBadgeWidth = ConsoleLevel.allCases.map { naturalSize(of: makeLevelBadge($0), along: .horizontal) }.max()!
+
+    private static func makeLevelBadge(_ level: ConsoleLevel) -> Label {
+        let badge = Label(str: level.badge)
+        badge.add(cssClass: "luma-event-badge")
+        badge.add(cssClass: "luma-event-level-\(levelClass(level))")
+        return badge
     }
 
-    private func levelClass(_ level: ConsoleLevel) -> String {
+    private static func levelClass(_ level: ConsoleLevel) -> String {
         switch level {
         case .info: return "info"
         case .debug: return "debug"

@@ -884,13 +884,19 @@ struct EventRow: View, Equatable {
 
         return AnyView(
             HStack(alignment: .top, spacing: 8) {
-                Text(message.level.badgeText.uppercased())
-                    .font(.caption2.weight(.semibold))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(message.level.badgeColor.opacity(0.15))
-                    .foregroundStyle(message.level.badgeColor)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                ZStack {
+                    ForEach(ConsoleLevel.allCases, id: \.self) { level in
+                        Text(level.badge)
+                            .hidden()
+                    }
+                    Text(message.level.badge)
+                }
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(message.level.badgeColor.opacity(0.15))
+                .foregroundStyle(message.level.badgeColor)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
 
                 valueView
             }
@@ -957,15 +963,6 @@ private struct EventSourceBadge: View {
 }
 
 extension ConsoleLevel {
-    fileprivate var badgeText: String {
-        switch self {
-        case .info: return "info"
-        case .debug: return "debug"
-        case .warning: return "warn"
-        case .error: return "error"
-        }
-    }
-
     fileprivate var badgeColor: Color {
         switch self {
         case .info: return .accentColor
