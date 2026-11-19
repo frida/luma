@@ -222,7 +222,7 @@ public enum MissionTools {
             name: "attach_to_process",
             description: "Attach Frida to an already-running process by pid. Idempotent: if a session for the same device and pid already exists, the existing session is reused (re-attaching when needed) instead of creating a duplicate. Requires user approval.",
             inputSchemaJSON: """
-                {"type":"object","properties":{"device_id":{"type":"string"},"pid":{"type":"integer","minimum":1}},"required":["device_id","pid"],"additionalProperties":false}
+                {"type":"object","properties":{"device_id":{"type":"string"},"pid":{"type":"integer","minimum":0}},"required":["device_id","pid"],"additionalProperties":false}
                 """,
             isObserve: false,
             requiresSession: false
@@ -232,7 +232,7 @@ public enum MissionTools {
             guard let deviceID = invocation.args["device_id"] as? String else {
                 return errorResult("missing device_id", code: .invalidInput)
             }
-            guard let pidNumber = invocation.args["pid"] as? Int, pidNumber > 0 else {
+            guard let pidNumber = invocation.args["pid"] as? Int, pidNumber >= 0 else {
                 return errorResult("missing or invalid pid", code: .invalidInput)
             }
             let pid = UInt(pidNumber)
