@@ -66,13 +66,21 @@ final class CollaborationPanel {
 
         widget.append(child: Separator(orientation: .horizontal))
 
+        let body = Box(orientation: .vertical, spacing: 8)
+        body.vexpand = true
+        let bodyScroll = ScrolledWindow()
+        bodyScroll.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
+        bodyScroll.vexpand = true
+        bodyScroll.set(child: body)
+        widget.append(child: bodyScroll)
+
         labSection = Box(orientation: .vertical, spacing: 6)
-        widget.append(child: labSection)
+        body.append(child: labSection)
 
         activeCollaboration = Box(orientation: .vertical, spacing: 8)
         activeCollaboration.vexpand = true
         activeCollaboration.visible = false
-        widget.append(child: activeCollaboration)
+        body.append(child: activeCollaboration)
 
         activeCollaboration.append(child: Separator(orientation: .horizontal))
 
@@ -117,7 +125,7 @@ final class CollaborationPanel {
         chatScroll = ScrolledWindow()
         chatScroll.hexpand = true
         chatScroll.vexpand = true
-        chatScroll.setSizeRequest(width: -1, height: 160)
+        chatScroll.setSizeRequest(width: -1, height: 80)
         chatScroll.set(child: chatListBox)
         chatScroller = BottomScroller(chatScroll)
         chatSection.append(child: chatScroll)
