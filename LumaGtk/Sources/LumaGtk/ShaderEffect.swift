@@ -221,8 +221,7 @@ final class ShaderEffect {
         // A widget made for a scene has no screen-filling source to link.
         guard let fragmentSource else { return }
 
-        let gles = widget.context?.api.contains(.gles) ?? false
-        screen = ScreenFilling(fragmentSource: fragmentSource, gles: gles)
+        screen = ScreenFilling(fragmentSource: fragmentSource)
     }
 
     private func unrealize() {
@@ -672,8 +671,8 @@ private final class ScreenFilling {
 
     private static let quad: [Float] = [-1, -1, 1, -1, -1, 1, 1, 1]
 
-    init(fragmentSource: String, gles: Bool) {
-        let version = gles ? "#version 300 es\nprecision highp float;\n" : "#version 150 core\n"
+    init(fragmentSource: String) {
+        let version = "\(String.desktopVersion)\n"
         guard let vertex = GLuint.compile(GLenum(GL_VERTEX_SHADER), version + Self.vertexSource),
               let fragment = GLuint.compile(
                   GLenum(GL_FRAGMENT_SHADER), version + Self.fragmentPreamble + fragmentSource)
@@ -738,7 +737,7 @@ extension GLuint {
 
     static func compile(_ kind: GLenum, _ source: String) -> GLuint? {
         let shader = epoxy_glCreateShader(kind)
-        source.withSmallFractionsAsExponents.withCString { text in
+        source.inDialectOfCurrentContext.withSmallFractionsAsExponents.withCString { text in
             var sources: [UnsafePointer<GLchar>?] = [text]
             epoxy_glShaderSource(shader, 1, &sources, nil)
         }
@@ -794,6 +793,13 @@ extension CanvasGeometry.Primitive {
 }
 
 extension String {
+    fileprivate static let desktopVersion = "#version 150 core"
+    private static let embeddedVersion = "#version 300 es\nprecision highp float;\nprecision highp int;"
+
+    fileprivate var inDialectOfCurrentContext: String {
+        epoxy_is_desktop_gl() ? self : replacingOccurrences(of: Self.desktopVersion, with: Self.embeddedVersion)
+    }
+
     /// VirtualBox's GL driver drops the zeros after the point of a literal
     /// below one -- `0.085` arrives as `0.85`, `.05e1` as `5` -- while
     /// exponent form arrives intact, so those are spelled that way: `85e-3`.
