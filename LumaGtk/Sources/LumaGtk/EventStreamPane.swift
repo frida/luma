@@ -1003,7 +1003,8 @@ final class EventStreamPane {
             let button = Button()
             button.set(child: Image(iconName: "view-list-symbolic"))
             button.add(cssClass: "flat")
-            button.valign = .start
+            button.add(cssClass: "luma-pattern-chevron")
+            button.centreOnFirstMonospaceLine()
             button.tooltipText = "Show backtrace"
             button.onClicked { [weak self] _ in
                 MainActor.assumeIsolated {
