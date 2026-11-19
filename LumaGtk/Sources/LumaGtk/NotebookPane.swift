@@ -404,11 +404,9 @@ final class NotebookPane {
             if isEditing {
                 inner.append(child: makeEditableBody(for: entry))
             } else if !entry.details.isEmpty {
-                let body = Label(str: entry.details)
+                let body = MarkdownWidget.make(markdown: entry.details)
                 body.halign = .start
                 body.hexpand = true
-                body.wrap = true
-                body.selectable = true
                 inner.append(child: body)
             }
         } else if entry.kind == .pharo, let engine {
