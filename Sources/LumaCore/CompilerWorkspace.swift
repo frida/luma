@@ -315,10 +315,10 @@ public final class CompilerWorkspace {
         pathDisplay: (@Sendable (String) -> String)? = nil,
         _ work: (Compiler) async throws -> T
     ) async throws -> T {
-        let compiler = Compiler()
+        var compiler: Compiler? = Compiler()
         let collector = DiagnosticCollector(pathDisplay: pathDisplay)
 
-        let stream = compiler.events
+        let stream = compiler!.events
         let eventsTask = Task { @MainActor in
             for await event in stream {
                 switch event {
@@ -334,10 +334,11 @@ public final class CompilerWorkspace {
 
         let outcome: Result<T, Swift.Error>
         do {
-            outcome = .success(try await work(compiler))
+            outcome = .success(try await work(compiler!))
         } catch {
             outcome = .failure(error)
         }
+        compiler = nil
 
         await eventsTask.value
         lastCompilerDiagnostics = collector.diagnostics
