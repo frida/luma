@@ -401,7 +401,7 @@ public final class MCPServer {
     }
     #endif
 
-    // MARK: - Soup impl (Linux/Windows)
+    // MARK: - Soup impl (Windows/Linux)
 
     #if canImport(CSoup)
     private func startSoup(preferredPort: UInt16?) async throws -> URL {
