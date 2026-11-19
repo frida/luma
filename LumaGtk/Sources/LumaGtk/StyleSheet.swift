@@ -1,8 +1,11 @@
+import CAdw
 import CGtk
 import Gtk
 
 @MainActor
 enum StyleSheet {
+    private static let accentColor = adw_get_minor_version() >= 6 ? "var(--accent-color)" : "@accent_color"
+
     static let css = """
     .luma-flush-sidebar-list {
         padding: 0;
@@ -309,7 +312,7 @@ enum StyleSheet {
         box-shadow: none;
         padding: 0;
         min-height: 0;
-        color: @accent_color;
+        color: \(accentColor);
     }
     button.luma-js-show-more:hover {
         background: none;
@@ -466,7 +469,7 @@ enum StyleSheet {
         font-size: 0.8em;
     }
     .luma-member-owner-badge {
-        color: @accent_color;
+        color: \(accentColor);
         min-width: 12px;
         min-height: 12px;
         background-color: @theme_base_color;
@@ -546,7 +549,7 @@ enum StyleSheet {
     }
     button.luma-itrace-pill.luma-itrace-pill-on {
         background-color: alpha(@accent_bg_color, 0.18);
-        color: @accent_color;
+        color: \(accentColor);
     }
     button.luma-itrace-pill.luma-itrace-pill-on:hover {
         background-color: alpha(@accent_bg_color, 0.28);
@@ -614,11 +617,11 @@ enum StyleSheet {
         margin: 2px 0;
     }
     box.luma-drop-zone {
-        border: 2px dashed @accent_color;
+        border: 2px dashed \(accentColor);
         border-radius: 12px;
         background-color: alpha(@window_bg_color, 0.92);
         background-image: linear-gradient(alpha(@accent_bg_color, 0.12), alpha(@accent_bg_color, 0.12));
-        color: @accent_color;
+        color: \(accentColor);
     }
     """
 
