@@ -372,6 +372,7 @@ final class JSInspectValueWidget {
         label.setMarkup(str: scalarMarkup(value))
         label.add(cssClass: "monospace")
         label.halign = .start
+        label.xalign = 0
         label.wrap = true
         if case .nativePointer(let pointerText) = value, let address = value.nativePointerAddress {
             label.selectable = false
