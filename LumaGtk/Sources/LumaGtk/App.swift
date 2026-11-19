@@ -54,9 +54,14 @@ final class LumaApplication {
     private func startup() {
         gtk_source_init()
         StyleSheet.install()
+        keepFocusedLabelsUnselected()
         registerDevelopmentIconPaths()
         installActions()
         purgeStaleWorkingCopies()
+    }
+
+    private func keepFocusedLabelsUnselected() {
+        SettingsRef(gtk_settings_get_default()).set(property: .gtkLabelSelectOnFocus, value: false)
     }
 
     private func purgeStaleWorkingCopies() {
