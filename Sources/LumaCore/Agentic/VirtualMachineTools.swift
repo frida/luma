@@ -128,7 +128,7 @@ extension MissionTools {
             guard let record = machineRecord(invocation.args, engine: engine) else {
                 return errorResult("no virtual machine with that vm_id; see list_vms", code: .notFound)
             }
-            guard engine.virtualMachines.machine(for: record) == nil else {
+            guard !engine.virtualMachines.isRunning(record), !engine.virtualMachines.isBooting(record) else {
                 return errorResult("\(record.name) is already running", code: .invalidInput)
             }
             do {
@@ -155,6 +155,9 @@ extension MissionTools {
             guard let engine else { return errorResult("engine unavailable", code: .unavailable) }
             guard let record = machineRecord(invocation.args, engine: engine) else {
                 return errorResult("no virtual machine with that vm_id; see list_vms", code: .notFound)
+            }
+            guard !engine.virtualMachines.isBooting(record) else {
+                return errorResult("\(record.name) is still booting; stop it once boot_vm returns", code: .invalidInput)
             }
             await engine.virtualMachines.stop(record)
             return makeResult(jsonObject: machineJSON(record, engine: engine), summary: "Stopped \(record.name)")

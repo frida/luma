@@ -14,7 +14,7 @@ public final class VirtualMachineManager {
     private var consoles: [UUID: VirtualMachineConsole] = [:]
     private var devices: [UUID: Device] = [:]
     private var booting: Set<UUID> = []
-    private var stopping: Set<UUID> = []
+    private var stops: [UUID: Task<Void, Never>] = [:]
 
     private let deviceManager: DeviceManager
     private let store: ProjectStore
@@ -74,6 +74,11 @@ public final class VirtualMachineManager {
         running[record.id]
     }
 
+    public func isRunning(_ record: VirtualMachineRecord) -> Bool {
+        guard let machine = running[record.id] else { return false }
+        return !machine.state.hasEnded
+    }
+
     public func console(for record: VirtualMachineRecord) -> VirtualMachineConsole? {
         consoles[record.id]
     }
@@ -119,6 +124,10 @@ public final class VirtualMachineManager {
     public func boot(_ record: VirtualMachineRecord, resumingFromReadySnapshot: Bool = true) async throws -> any VirtualMachine {
         guard let template = template(for: record), let backend = backend(for: template) else {
             throw VirtualMachineError.launchFailed(reason: "No template named \(record.templateID) is available")
+        }
+
+        if running[record.id]?.state.hasEnded == true {
+            await stop(record)
         }
 
         let machineDirectory = storageDirectory.appendingPathComponent(record.id.uuidString, isDirectory: true)
@@ -220,20 +229,27 @@ public final class VirtualMachineManager {
     }
 
     public func isStopping(_ record: VirtualMachineRecord) -> Bool {
-        stopping.contains(record.id)
+        stops[record.id] != nil
     }
 
     public func stop(_ record: VirtualMachineRecord) async {
-        guard let machine = running[record.id], !stopping.contains(record.id) else { return }
-        stopping.insert(record.id)
-        defer { stopping.remove(record.id) }
-
-        if let device = devices.removeValue(forKey: record.id) {
-            try? await deviceManager.removeBareboneDevice(device: device)
+        if let inFlight = stops[record.id] {
+            await inFlight.value
+            return
         }
+        guard let machine = running[record.id] else { return }
 
-        await machine.shutDown()
-        running.removeValue(forKey: record.id)
+        let id = record.id
+        let task = Task {
+            if let device = devices.removeValue(forKey: id) {
+                try? await deviceManager.removeBareboneDevice(device: device)
+            }
+            await machine.shutDown()
+            running.removeValue(forKey: id)
+        }
+        stops[id] = task
+        await task.value
+        stops[id] = nil
     }
 
     public func stopAll() async {

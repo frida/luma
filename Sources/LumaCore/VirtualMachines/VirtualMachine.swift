@@ -32,6 +32,15 @@ public enum VirtualMachineState: Sendable, Equatable {
     case restoringSnapshot
     case stopped
     case failed(reason: String)
+
+    public var hasEnded: Bool {
+        switch self {
+        case .stopped, .failed:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 public struct VirtualMachineCapabilities: OptionSet, Sendable {
