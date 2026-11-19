@@ -182,6 +182,7 @@ final class PharoListView {
 
     private func headerRow() -> Box {
         let row = Box(orientation: .horizontal, spacing: 0)
+        row.add(cssClass: "luma-pharo-table-header")
         row.marginStart = 8
         row.marginEnd = 8
         row.marginTop = 4
@@ -254,11 +255,11 @@ final class PharoListView {
         label.xalign = 0
         label.hexpand = expands
         label.marginEnd = expands ? 0 : 16
-        return label
         if expands {
             label.ellipsize = .end
             label.tooltipText = text
         }
+        return label
     }
 
     private func clearRows() {
