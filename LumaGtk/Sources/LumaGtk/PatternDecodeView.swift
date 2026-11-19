@@ -592,7 +592,7 @@ final class PatternDecodeView {
         visualizations = [:]
         for placement in placements {
             if case .decoded(let root) = results[placement.id] {
-                visualize(root, root: root, placement: placement)
+                visualize(root, rowID: placement.id, root: root, placement: placement)
             }
         }
         edits = memoryWriter == nil ? [:] : Self.edits(of: located, in: data)
@@ -617,7 +617,7 @@ final class PatternDecodeView {
         }
     }
 
-    private func visualize(_ node: DecodedPattern, root: DecodedPattern, placement: PatternPlacement) {
+    private func visualize(_ node: DecodedPattern, rowID: UUID, root: DecodedPattern, placement: PatternPlacement) {
         if let visualizer = node.visualizer {
             let outcome: NodeVisualization.Outcome
             do {
@@ -625,11 +625,11 @@ final class PatternDecodeView {
             } catch {
                 outcome = .failed(error.localizedDescription)
             }
-            visualizations[node.id] = NodeVisualization(
+            visualizations[rowID] = NodeVisualization(
                 placement: placement, nodeID: node.nodeID, presentation: visualizer.presentation, outcome: outcome)
         }
         for child in node.children {
-            visualize(child, root: root, placement: placement)
+            visualize(child, rowID: child.id, root: root, placement: placement)
         }
     }
 
@@ -720,6 +720,9 @@ final class PatternDecodeView {
             content.append(child: failure)
         }
         content.append(child: Self.spacer())
+        if case .decoded(let root) = results[placement.id], let visualization = visualizations[placement.id] {
+            appendVisualization(visualization, of: root, rowID: placement.id, to: content)
+        }
         let remove = Button(iconName: "window-close-symbolic")
         remove.add(cssClass: "flat")
         remove.add(cssClass: "luma-pattern-chevron")
@@ -743,19 +746,19 @@ final class PatternDecodeView {
         content.append(child: Self.label(node.typeName, classes: ["dim-label"]))
         content.append(child: Self.spacer())
         if let visualization = visualizations[node.id] {
-            appendVisualization(visualization, of: node, to: content)
+            appendVisualization(visualization, of: node, rowID: node.id, to: content)
         } else {
             appendSummary(of: node, to: content)
         }
         content.tooltipText = node.comment ?? String(format: "0x%llx", node.address)
     }
 
-    private func appendVisualization(_ visualization: NodeVisualization, of node: DecodedPattern, to content: Box) {
+    private func appendVisualization(_ visualization: NodeVisualization, of node: DecodedPattern, rowID: UUID, to content: Box) {
         if let inline = visualization.inline {
             let widget = inline.make { [weak self] anchor in
                 self?.press(visualization, anchor: anchor)
             }
-            visualizerAnchors[node.id] = widget
+            visualizerAnchors[rowID] = widget
             content.append(child: widget)
             return
         }
@@ -771,7 +774,7 @@ final class PatternDecodeView {
                 self.presentVisualizer(visualization, anchor: button)
             }
         }
-        visualizerAnchors[node.id] = button
+        visualizerAnchors[rowID] = button
         content.append(child: button)
     }
 

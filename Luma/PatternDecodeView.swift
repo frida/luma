@@ -215,8 +215,12 @@ struct PatternDecodeView: View {
                 title: title(of: placement),
                 address: (baseAddress ?? 0) &+ UInt64(placement.offset),
                 failure: failure(of: placement),
+                root: root(of: placement),
                 isExpanded: expanded.contains(row.id),
                 highlight: highlight(of: row.id),
+                visualization: visualizations[row.id],
+                isVisualizerOpen: openVisualizer == row.id,
+                callOutcome: callOutcome?.rowID == row.id ? callOutcome : nil,
                 actions: actions(for: row.id),
                 remove: { placements.removeAll { $0.id == placement.id } }
             )
@@ -247,6 +251,11 @@ struct PatternDecodeView: View {
     private func failure(of placement: PatternPlacement) -> String? {
         guard case .failed(let message) = results[placement.id] else { return nil }
         return message
+    }
+
+    private func root(of placement: PatternPlacement) -> DecodedPattern? {
+        guard case .decoded(let root) = results[placement.id] else { return nil }
+        return root
     }
 
     private func highlight(of id: UUID) -> RowHighlight {
@@ -458,13 +467,14 @@ struct PatternDecodeView: View {
         var visualized: [UUID: NodeVisualization] = [:]
         for placement in placements {
             guard case .decoded(let root) = results[placement.id] else { continue }
-            visualize(root, root: root, placement: placement, into: &visualized)
+            visualize(root, rowID: placement.id, root: root, placement: placement, into: &visualized)
         }
         return visualized
     }
 
     private func visualize(
-        _ node: DecodedPattern, root: DecodedPattern, placement: PatternPlacement, into visualized: inout [UUID: NodeVisualization]
+        _ node: DecodedPattern, rowID: UUID, root: DecodedPattern, placement: PatternPlacement,
+        into visualized: inout [UUID: NodeVisualization]
     ) {
         if let visualizer = node.visualizer {
             let outcome: NodeVisualization.Outcome
@@ -473,11 +483,11 @@ struct PatternDecodeView: View {
             } catch {
                 outcome = .failed(error.localizedDescription)
             }
-            visualized[node.id] = NodeVisualization(
+            visualized[rowID] = NodeVisualization(
                 placement: placement, nodeID: node.nodeID, presentation: visualizer.presentation, outcome: outcome)
         }
         for child in node.children {
-            visualize(child, root: root, placement: placement, into: &visualized)
+            visualize(child, rowID: child.id, root: root, placement: placement, into: &visualized)
         }
     }
 
@@ -683,14 +693,19 @@ private struct PlacementRow: View, Equatable {
     let title: String
     let address: UInt64
     let failure: String?
+    let root: DecodedPattern?
     let isExpanded: Bool
     let highlight: RowHighlight
+    let visualization: NodeVisualization?
+    let isVisualizerOpen: Bool
+    let callOutcome: CallOutcome?
     let actions: RowActions
     let remove: () -> Void
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id && lhs.title == rhs.title && lhs.address == rhs.address && lhs.failure == rhs.failure
-            && lhs.isExpanded == rhs.isExpanded && lhs.highlight == rhs.highlight
+            && lhs.root?.id == rhs.root?.id && lhs.isExpanded == rhs.isExpanded && lhs.highlight == rhs.highlight
+            && lhs.isVisualizerOpen == rhs.isVisualizerOpen && lhs.callOutcome == rhs.callOutcome
     }
 
     var body: some View {
@@ -708,6 +723,14 @@ private struct PlacementRow: View, Equatable {
                     .help(failure)
             }
             Spacer(minLength: 12)
+            if let root, let visualization {
+                VisualizationControl(
+                    visualization: visualization, isOpen: isVisualizerOpen, callOutcome: callOutcome, actions: actions
+                ) {
+                    Text(root.summary)
+                        .lineLimit(1)
+                }
+            }
             Button(action: remove) {
                 Image(systemName: "xmark.circle")
             }
@@ -760,37 +783,8 @@ private struct NodeRow: View, Equatable {
         if case .editing(let initial) = edit {
             NodeValueEditor(initial: initial, commit: actions.commitEdit, cancel: actions.cancelEdit)
         } else if let visualization {
-            if case .ready(let ready) = visualization.outcome, visualization.presentation == .inline, ready.isInline {
-                PatternInlineVisualizationView(visualization: ready, press: actions.press)
-                    .popover(isPresented: callOutcomeShown, arrowEdge: .bottom) {
-                        if let callOutcome {
-                            Text(callOutcome.text)
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundStyle(callOutcome.isFailure ? .red : .primary)
-                                .textSelection(.enabled)
-                                .padding(10)
-                        }
-                    }
-            } else {
+            VisualizationControl(visualization: visualization, isOpen: isVisualizerOpen, callOutcome: callOutcome, actions: actions) {
                 summary
-                Button {
-                    actions.showVisualizer(!isVisualizerOpen)
-                } label: {
-                    Image(systemName: symbolName(of: visualization))
-                }
-                .buttonStyle(.borderless)
-                .help("Visualize")
-                .popover(isPresented: visualizerShown, arrowEdge: .bottom) {
-                    switch visualization.outcome {
-                    case .ready(let ready):
-                        PatternVisualizationView(visualization: ready)
-                    case .failed(let message):
-                        Text(message)
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.red)
-                            .padding(10)
-                    }
-                }
             }
         } else {
             summary
@@ -813,14 +807,57 @@ private struct NodeRow: View, Equatable {
             .foregroundStyle(node.truncated ? AnyShapeStyle(.red) : AnyShapeStyle(.foreground))
             .lineLimit(1)
     }
+}
 
-    private func symbolName(of visualization: NodeVisualization) -> String {
+private struct VisualizationControl<Summary: View>: View {
+    let visualization: NodeVisualization
+    let isOpen: Bool
+    let callOutcome: CallOutcome?
+    let actions: RowActions
+    @ViewBuilder let summary: Summary
+
+    var body: some View {
+        if case .ready(let ready) = visualization.outcome, visualization.presentation == .inline, ready.isInline {
+            PatternInlineVisualizationView(visualization: ready, press: actions.press)
+                .popover(isPresented: callOutcomeShown, arrowEdge: .bottom) {
+                    if let callOutcome {
+                        Text(callOutcome.text)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(callOutcome.isFailure ? .red : .primary)
+                            .textSelection(.enabled)
+                            .padding(10)
+                    }
+                }
+        } else {
+            summary
+            Button {
+                actions.showVisualizer(!isOpen)
+            } label: {
+                Image(systemName: symbolName)
+            }
+            .buttonStyle(.borderless)
+            .help("Visualize")
+            .popover(isPresented: visualizerShown, arrowEdge: .bottom) {
+                switch visualization.outcome {
+                case .ready(let ready):
+                    PatternVisualizationView(visualization: ready)
+                case .failed(let message):
+                    Text(message)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.red)
+                        .padding(10)
+                }
+            }
+        }
+    }
+
+    private var symbolName: String {
         guard case .ready(let ready) = visualization.outcome else { return "exclamationmark.triangle" }
         return ready.symbolName
     }
 
     private var visualizerShown: Binding<Bool> {
-        Binding(get: { isVisualizerOpen }, set: actions.showVisualizer)
+        Binding(get: { isOpen }, set: actions.showVisualizer)
     }
 
     private var callOutcomeShown: Binding<Bool> {
