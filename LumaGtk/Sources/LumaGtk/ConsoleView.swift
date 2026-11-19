@@ -71,6 +71,7 @@ final class ConsoleView {
         cellsScroll.hexpand = true
         cellsScroll.vexpand = true
         cellsScroll.add(cssClass: "view")
+        cellsScroll.focusable = true
         cellsScroll.set(child: cellsBox)
         gtk_scrollable_set_vscroll_policy(
             UnsafeMutableRawPointer(gtk_scrolled_window_get_child(cellsScroll.scrolled_window_ptr))
@@ -144,7 +145,9 @@ final class ConsoleView {
     }
 
     func focusInput() {
-        _ = inputEntry.grabFocus()
+        if !inputEntry.grabFocus() {
+            _ = cellsScroll.grabFocus()
+        }
     }
 
     func setPromptMarkup(_ markup: String) {
