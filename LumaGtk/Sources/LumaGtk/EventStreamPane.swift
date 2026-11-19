@@ -747,20 +747,14 @@ final class EventStreamPane {
 
     private static func centreOnFirstLine(_ widget: Widget) {
         widget.valign = .start
-        widget.marginTop = max(0, (lineHeight - naturalSize(of: widget, along: .vertical)) / 2)
+        widget.marginTop = max(0, (lineHeight - widget.naturalSize(along: .vertical)) / 2)
     }
 
     private static let lineHeight: Int = {
         let line = Label(str: " ")
         line.add(cssClass: "monospace")
-        return naturalSize(of: line, along: .vertical)
+        return line.naturalSize(along: .vertical)
     }()
-
-    private static func naturalSize(of widget: Widget, along orientation: Orientation) -> Int {
-        var size: gint = 0
-        widget.measure(orientation: orientation, for: -1, natural: &size)
-        return Int(size)
-    }
 
     private func makeDataView(for event: RuntimeEvent) -> Widget? {
         guard let engine, let data = event.data, !data.isEmpty else { return nil }
@@ -924,7 +918,7 @@ final class EventStreamPane {
         return row
     }
 
-    private static let levelBadgeWidth = ConsoleLevel.allCases.map { naturalSize(of: makeLevelBadge($0), along: .horizontal) }.max()!
+    private static let levelBadgeWidth = ConsoleLevel.allCases.map { makeLevelBadge($0).naturalSize(along: .horizontal) }.max()!
 
     private static func makeLevelBadge(_ level: ConsoleLevel) -> Label {
         let badge = Label(str: level.badge)
