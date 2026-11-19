@@ -61,6 +61,8 @@ final class LumaApplication {
         registerDevelopmentIconPaths()
         installActions()
         purgeStaleWorkingCopies()
+        PangoGlyphAtlas.install()
+        GdkFrameEncoder.install()
         #if !os(Windows)
         shutDownWhenToldToTerminate()
         #endif
@@ -115,8 +117,6 @@ final class LumaApplication {
     }
 
     private func activate() {
-        PangoGlyphAtlas.install()
-        GdkFrameEncoder.install()
         if let directory = RenderTests.asked {
             exit(RenderTests.run(writingTo: directory))
         }
