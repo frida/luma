@@ -293,7 +293,7 @@ public enum PatternVisualization: Sendable {
         }
         return bitfield.fields.map { field in
             SignalSegment(
-                label: field.displayName ?? field.name,
+                label: field.title,
                 value: field.summary,
                 color: field.color,
                 bits: field.bits > 0 ? field.bits : (field.size ?? 0) * 8,

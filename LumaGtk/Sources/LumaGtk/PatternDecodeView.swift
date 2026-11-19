@@ -731,7 +731,7 @@ final class PatternDecodeView {
 
     private func fillNodeRow(_ content: Box, node: DecodedPattern) {
         content.append(child: Self.swatch(locations[node.id]?.color))
-        content.append(child: Self.label(node.displayName ?? node.name, classes: ["luma-pattern-name"]))
+        content.append(child: Self.label(node.title, classes: ["luma-pattern-name"]))
         content.append(child: Self.label(node.typeName, classes: ["dim-label"]))
         content.append(child: Self.spacer())
         if let visualization = visualizations[node.id] {

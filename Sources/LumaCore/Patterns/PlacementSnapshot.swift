@@ -57,7 +57,7 @@ public struct PlacementSnapshot: Codable, Sendable {
         }
 
         init(_ node: DecodedPattern, base: UInt64, budget: inout Int) {
-            name = node.displayName ?? node.name
+            name = node.title
             typeName = node.typeName
             offset = Int(truncatingIfNeeded: node.address &- base)
             size = node.size ?? 0

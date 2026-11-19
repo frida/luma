@@ -741,7 +741,7 @@ private struct NodeRow: View, Equatable {
             RoundedRectangle(cornerRadius: 2)
                 .fill(color ?? .clear)
                 .frame(width: 8, height: 8)
-            Text(node.displayName ?? node.name)
+            Text(node.title)
                 .fontWeight(.semibold)
             Text(node.typeName)
                 .foregroundStyle(.secondary)

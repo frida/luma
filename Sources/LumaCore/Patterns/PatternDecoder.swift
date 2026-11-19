@@ -306,8 +306,10 @@ public struct DecodedPattern: Identifiable, Sendable {
     public let elements: [DecodedPattern]
     public let truncated: Bool
     public let visualizer: DecodedVisualizer?
+    public let indexInArray: Int?
 
-    init(value: PatternValue) {
+    init(value: PatternValue, indexInArray: Int? = nil) {
+        self.indexInArray = indexInArray
         nodeID = value.id
         name = value.name
         typeName = value.typeName
@@ -325,14 +327,24 @@ public struct DecodedPattern: Identifiable, Sendable {
         sealed = value.sealed
         bitOffset = value.bitOffset < 0 ? nil : value.bitOffset
         bits = Int(value.bits)
-        fields = value.fields.map(DecodedPattern.init)
-        elements = value.elements.map(DecodedPattern.init)
+        fields = value.fields.map { DecodedPattern(value: $0) }
+        elements = value.elements.enumerated().map { DecodedPattern(value: $0.element, indexInArray: $0.offset) }
         truncated = value.truncated
         visualizer = value.visualizer.map(DecodedVisualizer.init)
     }
 
     public var children: [DecodedPattern] {
         fields.isEmpty ? elements : fields
+    }
+
+    public var title: String {
+        if let displayName {
+            return displayName
+        }
+        if name.isEmpty, let indexInArray {
+            return "[\(indexInArray)]"
+        }
+        return name
     }
 
     public func descendant(withNodeID wanted: UInt) -> DecodedPattern? {
