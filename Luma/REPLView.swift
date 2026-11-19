@@ -549,6 +549,7 @@ private struct REPLCellView: View {
                                 )
                             )
                             .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, -PatternDecodeView.riseOntoTextLine)
                         }
                     }
                     .font(.monospacedContent)

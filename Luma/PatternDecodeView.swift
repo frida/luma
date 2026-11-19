@@ -12,6 +12,8 @@ struct PatternDecodeView: View {
     var onTruncated: (() -> Void)? = nil
     var onReread: (() -> Void)? = nil
 
+    static let riseOntoTextLine = TreeMetrics.inset + HexMetrics.regular.slackAboveText
+
     @State private var summaries: [String: PatternSummary] = [:]
     @State private var describeProblem: String?
     @State private var results: [PatternPlacement.ID: PlacementResult] = [:]

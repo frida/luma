@@ -61,7 +61,13 @@ final class PatternDecodeView {
     private static let treeRowHeight = Int(HexView.rowHeight.rounded(.up))
     private static let treeInset = insetPlacingOnFirstHexRow(label("0", classes: []), centredInRowOf: treeRowHeight)
 
-    static func insetPlacingOnFirstHexRow(_ text: Label, centredInRowOf rowHeight: Int? = nil) -> Int {
+    static let riseOntoTextLine: Int = {
+        let line = Label(str: " ")
+        line.add(cssClass: "monospace")
+        return insetPlacingOnFirstHexRow(line)
+    }()
+
+    private static func insetPlacingOnFirstHexRow(_ text: Label, centredInRowOf rowHeight: Int? = nil) -> Int {
         var textHeight: gint = 0
         var textBaseline: gint = 0
         text.measure(orientation: .vertical, for: -1, natural: &textHeight, naturalBaseline: &textBaseline)

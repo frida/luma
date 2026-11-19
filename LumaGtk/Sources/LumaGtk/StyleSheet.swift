@@ -147,6 +147,10 @@ enum StyleSheet {
         background-color: alpha(@theme_fg_color, 0.14);
     }
 
+    .luma-dump-on-text-line {
+        margin-top: -\(PatternDecodeView.riseOntoTextLine)px;
+    }
+
     .luma-pattern-tree {
         background: transparent;
     }

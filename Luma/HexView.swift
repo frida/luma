@@ -503,6 +503,7 @@ struct HexMetrics: Equatable {
     let font: Font
     let advance: CGFloat
     let rowHeight: CGFloat
+    let slackAboveText: CGFloat
     let baseline: CGFloat
 
     static let regular = HexMetrics(.monospacedContent)
@@ -515,6 +516,7 @@ struct HexMetrics: Equatable {
         advance = ("0" as NSString).size(withAttributes: [.font: font]).width
         let lineHeight = font.ascender - font.descender + font.leading
         rowHeight = lineHeight.rounded(.up) + Self.rowGap
-        baseline = (rowHeight - lineHeight) / 2 + font.ascender
+        slackAboveText = (rowHeight - lineHeight) / 2
+        baseline = slackAboveText + font.ascender
     }
 }

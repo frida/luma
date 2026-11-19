@@ -337,7 +337,7 @@ final class REPLPane {
                     engine?.setPlacements(placements, forREPLCell: cellID)
                 }
                 decodeViews[cellID] = decode
-                resultArrow.marginTop = PatternDecodeView.insetPlacingOnFirstHexRow(resultArrow)
+                decode.widget.add(cssClass: "luma-dump-on-text-line")
                 resultWidget = decode.widget
                 fillsWidth = true
             case .text(let s):
