@@ -70,6 +70,12 @@ struct PatternDecodeView: View {
             }
         }
         .alignmentGuide(.firstTextBaseline) { _ in TreeMetrics.inset + HexMetrics.regular.baseline }
+        .onAppear {
+            expanded.formUnion(placements.map(\.id))
+        }
+        .onChange(of: placements.map(\.id)) { shown, placed in
+            expanded.formUnion(Set(placed).subtracting(shown))
+        }
         .task(id: describeKey) {
             await describeSources()
         }
@@ -387,7 +393,6 @@ struct PatternDecodeView: View {
 
     private func place(_ placement: PatternPlacement) {
         placements.append(placement)
-        expanded.insert(placement.id)
         engine.placementHistory.note(placement)
     }
 
