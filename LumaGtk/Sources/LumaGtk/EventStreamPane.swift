@@ -513,12 +513,14 @@ final class EventStreamPane {
     }
 
     private var jsValueKeepers: [JSInspectValueWidget] = []
+    private var revealKeepers: [RevealingText] = []
     private var dataViews: [PatternDecodeView] = []
     private var rows: [Widget] = []
 
     private func refreshRows() {
         clearChildren(of: eventListBox)
         jsValueKeepers.removeAll()
+        revealKeepers.removeAll()
         dataViews.removeAll()
         rows.removeAll()
         var prevTimestamp: Date? = nil
@@ -721,16 +723,7 @@ final class EventStreamPane {
         } else if let expandable = makeExpandablePayload(for: event) {
             content.append(child: expandable)
         } else {
-            let payload = Label(str: payloadString(for: event))
-            payload.halign = .fill
-            payload.xalign = 0
-            payload.hexpand = true
-            payload.lines = 3
-            payload.wrap = true
-            payload.ellipsize = .end
-            payload.selectable = true
-            payload.add(cssClass: "monospace")
-            content.append(child: payload)
+            content.append(child: makeClippedPayload(payloadString(for: event)))
         }
         if let dataView = makeDataView(for: event) {
             content.append(child: dataView)
@@ -870,16 +863,7 @@ final class EventStreamPane {
         row.append(child: badge)
 
         if let line = message.line {
-            let payload = Label(str: line)
-            payload.add(cssClass: "monospace")
-            payload.halign = .fill
-            payload.xalign = 0
-            payload.hexpand = true
-            payload.lines = 3
-            payload.wrap = true
-            payload.ellipsize = .end
-            payload.selectable = true
-            row.append(child: payload)
+            row.append(child: makeClippedPayload(line))
         } else if let engine, let sessionID = event.sessionID {
             let column = Box(orientation: .vertical, spacing: 4)
             column.hexpand = true
@@ -892,16 +876,7 @@ final class EventStreamPane {
             }
             row.append(child: column)
         } else {
-            let payload = Label(str: message.values.map { $0.inlineDescription }.joined(separator: " "))
-            payload.add(cssClass: "monospace")
-            payload.halign = .fill
-            payload.xalign = 0
-            payload.hexpand = true
-            payload.lines = 3
-            payload.wrap = true
-            payload.ellipsize = .end
-            payload.selectable = true
-            row.append(child: payload)
+            row.append(child: makeClippedPayload(message.values.map { $0.inlineDescription }.joined(separator: " ")))
         }
 
         return row
@@ -982,16 +957,7 @@ final class EventStreamPane {
             elems.count == 1,
             case .string(let s) = elems[0]
         {
-            let payload = Label(str: s)
-            payload.halign = .fill
-            payload.xalign = 0
-            payload.hexpand = true
-            payload.lines = 3
-            payload.wrap = true
-            payload.ellipsize = .end
-            payload.selectable = true
-            payload.add(cssClass: "monospace")
-            column.append(child: payload)
+            column.append(child: makeClippedPayload(s))
         } else {
             let wrapper = JSInspectValueWidget.make(value: parsed.message, engine: engine!, sessionID: sessionID, stored: .event(event.id))
             jsValueKeepers.append(wrapper)
@@ -1017,6 +983,12 @@ final class EventStreamPane {
         }
 
         return column
+    }
+
+    private func makeClippedPayload(_ text: String) -> Widget {
+        let reveal = RevealingText(LumaCore.StyledText(text), allowance: TextReveal.event, wraps: true)
+        revealKeepers.append(reveal)
+        return reveal.widget
     }
 
     private func attachRowContextMenu(to row: Box, event: RuntimeEvent) {

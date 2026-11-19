@@ -324,7 +324,7 @@ final class REPLPane {
                     resultWidget = makePlainResultLabel(text: format(result: cell.result))
                 }
             case .styled(let styled):
-                let view = REPLStyledResult(styled) { [weak self] in self?.console.pinToBottom() }
+                let view = RevealingText(styled, allowance: TextReveal.repl, wraps: false) { [weak self] in self?.console.pinToBottom() }
                 rowKeepers.append(view)
                 resultWidget = view.widget
                 fillsWidth = true
@@ -341,7 +341,7 @@ final class REPLPane {
                 resultWidget = decode.widget
                 fillsWidth = true
             case .text(let s):
-                let view = REPLStyledResult(LumaCore.StyledText(s)) { [weak self] in self?.console.pinToBottom() }
+                let view = RevealingText(LumaCore.StyledText(s), allowance: TextReveal.repl, wraps: false) { [weak self] in self?.console.pinToBottom() }
                 rowKeepers.append(view)
                 resultWidget = view.widget
                 fillsWidth = true

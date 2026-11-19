@@ -811,10 +811,8 @@ struct EventRow: View, Equatable {
             JSInspectValueView(value: value, sessionID: sessionID, engine: engine, selection: $selection)
                 .font(.monospacedContent)
         } else {
-            Text(rawEventText)
+            RevealingTextView(styled: LumaCore.StyledText(rawEventText), allowance: TextReveal.event, wraps: true)
                 .font(.system(.footnote, design: .monospaced))
-                .textSelection(.enabled)
-                .lineLimit(3)
         }
     }
 
@@ -861,10 +859,8 @@ struct EventRow: View, Equatable {
         let valueView: AnyView
         if let line = message.line {
             valueView = AnyView(
-                Text(line)
+                RevealingTextView(styled: LumaCore.StyledText(line), allowance: TextReveal.event, wraps: true)
                     .font(.system(.footnote, design: .monospaced))
-                    .textSelection(.enabled)
-                    .lineLimit(3)
             )
         } else {
             valueView = AnyView(

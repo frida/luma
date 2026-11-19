@@ -523,10 +523,10 @@ private struct REPLCellView: View {
 
                         switch cell.result {
                         case .text(let s):
-                            REPLResultText(styled: LumaCore.StyledText(s))
+                            RevealingTextView(styled: LumaCore.StyledText(s), allowance: TextReveal.repl, wraps: false)
 
                         case .styled(let s):
-                            REPLResultText(styled: s)
+                            RevealingTextView(styled: s, allowance: TextReveal.repl, wraps: false)
 
                         case .js(let v):
                             JSInspectValueView(
@@ -565,34 +565,6 @@ private struct REPLCellView: View {
                 } label: {
                     Label("Add to Notebook", systemImage: "book.pages")
                 }
-            }
-        }
-    }
-}
-
-private struct REPLResultText: View {
-    let styled: LumaCore.StyledText
-
-    private static let chunk = 4096
-    @State private var revealed = REPLResultText.chunk
-    @Environment(\.replExpandAction) private var onExpand
-
-    var body: some View {
-        let total = styled.plainText.count
-        let shown = min(revealed, total)
-        VStack(alignment: .leading, spacing: 2) {
-            ScrollView(.horizontal, showsIndicators: true) {
-                Text(styled.slice(charRange: 0..<shown).attributed)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: true, vertical: true)
-            }
-            if shown < total {
-                HStack(spacing: 12) {
-                    Button("Show more") { revealed = min(revealed + Self.chunk, total); onExpand() }
-                    Button("Show all") { revealed = total; onExpand() }
-                }
-                .font(.caption2)
-                .platformLinkButtonStyle()
             }
         }
     }
