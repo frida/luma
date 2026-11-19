@@ -22,6 +22,8 @@ final class FilesPane {
     private let uploadButton: Button
     private let problemLabel: Label
     private let list: ListBox
+    private let listArea: Overlay
+    private let detachedState: Adw.StatusPage
     private let dropZone: Box
     private let dropZoneLabel: Label
     private let transferList: Box
@@ -105,7 +107,7 @@ final class FilesPane {
         dropZone.visible = false
         dropZone.append(child: dropPrompt)
 
-        let listArea = Overlay()
+        listArea = Overlay()
         listArea.vexpand = true
         listArea.set(child: scroller)
         listArea.addOverlay(widget: dropZone)
@@ -118,8 +120,15 @@ final class FilesPane {
         content.marginEnd = 12
         content.marginBottom = 12
         content.vexpand = true
+        detachedState = MainWindow.makeEmptyState(
+            icon: "folder-symbolic",
+            title: "Not Attached",
+            subtitle: "Re-attach to browse this target\u{2019}s files."
+        )
+
         content.append(child: problemLabel)
         content.append(child: listArea)
+        content.append(child: detachedState)
         content.append(child: transferList)
 
         widget.append(child: content)
@@ -168,7 +177,11 @@ final class FilesPane {
     }
 
     func applySessionState() {
-        guard engine?.session(id: sessionID)?.phase == .attached, let node, node.id != loadedNodeID else { return }
+        let isAttached = engine?.session(id: sessionID)?.phase == .attached
+        toolbar.sensitive = isAttached
+        listArea.visible = isAttached
+        detachedState.visible = !isAttached
+        guard isAttached, let node, node.id != loadedNodeID else { return }
         loadedNodeID = node.id
         observeTransfers(of: node)
         _Concurrency.Task { @MainActor [weak self] in
