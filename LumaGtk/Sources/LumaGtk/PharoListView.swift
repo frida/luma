@@ -255,6 +255,10 @@ final class PharoListView {
         label.hexpand = expands
         label.marginEnd = expands ? 0 : 16
         return label
+        if expands {
+            label.ellipsize = .end
+            label.tooltipText = text
+        }
     }
 
     private func clearRows() {
