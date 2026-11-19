@@ -59,6 +59,8 @@ public enum PharoLumaBindings {
             items := aCollection'.
         records compile: 'items
             ^ items'.
+        records compile: 'printOn: aStream
+            aStream print: items size; nextPutAll: (items size = 1 ifTrue: [ '' item'' ] ifFalse: [ '' items'' ])'.
 
         sessions := records << #LumaSessions slots: {}; package: 'Luma'; install.
         sessions compile: 'gtSessionsFor: aView
