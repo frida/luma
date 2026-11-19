@@ -329,8 +329,6 @@ final class REPLPane {
                 fillsWidth = true
             case .binary(let data, let meta):
                 let column2 = Box(orientation: .vertical, spacing: 4)
-                column2.hexpand = true
-                column2.halign = .start
                 let kind = meta?.typedArray ?? "binary"
                 let header = Label(str: "<\(kind) \(data.count) bytes>")
                 header.add(cssClass: "monospace")
@@ -347,6 +345,7 @@ final class REPLPane {
                 decode.widget.hexpand = true
                 column2.append(child: decode.widget)
                 resultWidget = column2
+                fillsWidth = true
             case .text(let s):
                 let view = REPLStyledResult(LumaCore.StyledText(s)) { [weak self] in self?.console.pinToBottom() }
                 rowKeepers.append(view)
