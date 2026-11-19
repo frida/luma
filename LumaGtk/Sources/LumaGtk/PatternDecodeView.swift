@@ -722,9 +722,7 @@ final class PatternDecodeView {
     }
 
     private func fillNodeRow(_ content: Box, node: DecodedPattern) {
-        if let location = locations[node.id] {
-            content.append(child: Self.swatch(location.color))
-        }
+        content.append(child: Self.swatch(locations[node.id]?.color))
         content.append(child: Self.label(node.displayName ?? node.name, classes: ["luma-pattern-name"]))
         content.append(child: Self.label(node.typeName, classes: ["dim-label"]))
         content.append(child: Self.spacer())
@@ -798,10 +796,11 @@ final class PatternDecodeView {
         return spacer
     }
 
-    private static func swatch(_ color: GdkRGBA) -> DrawingArea {
+    private static func swatch(_ color: GdkRGBA?) -> DrawingArea {
         let swatch = DrawingArea()
         swatch.setSizeRequest(width: 8, height: 8)
         swatch.valign = .center
+        guard let color else { return swatch }
         swatch.setDrawFunc { _, ctx, width, height in
             MainActor.assumeIsolated {
                 drawSwatch(color, on: ctx, width: Double(width), height: Double(height))

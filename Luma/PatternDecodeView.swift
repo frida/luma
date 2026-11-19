@@ -738,11 +738,9 @@ private struct NodeRow: View, Equatable {
     var body: some View {
         HStack(spacing: 6) {
             DisclosureChevron(isExpanded: isExpanded, isVisible: isExpandable, toggle: actions.toggle)
-            if let color {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(color)
-                    .frame(width: 8, height: 8)
-            }
+            RoundedRectangle(cornerRadius: 2)
+                .fill(color ?? .clear)
+                .frame(width: 8, height: 8)
             Text(node.displayName ?? node.name)
                 .fontWeight(.semibold)
             Text(node.typeName)
