@@ -69,6 +69,7 @@ struct PatternDecodeView: View {
                     .textSelection(.enabled)
             }
         }
+        .alignmentGuide(.firstTextBaseline) { _ in TreeMetrics.inset + HexMetrics.regular.baseline }
         .task(id: describeKey) {
             await describeSources()
         }

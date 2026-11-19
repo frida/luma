@@ -503,6 +503,7 @@ struct HexMetrics: Equatable {
     let font: Font
     let advance: CGFloat
     let rowHeight: CGFloat
+    let baseline: CGFloat
 
     static let regular = HexMetrics(.monospacedContent)
     static let compact = HexMetrics(PlatformFont.monospacedSystemFont(ofSize: 9, weight: .regular))
@@ -512,6 +513,8 @@ struct HexMetrics: Equatable {
     private init(_ font: PlatformFont) {
         self.font = Font(font as CTFont)
         advance = ("0" as NSString).size(withAttributes: [.font: font]).width
-        rowHeight = (font.ascender - font.descender + font.leading).rounded(.up) + Self.rowGap
+        let lineHeight = font.ascender - font.descender + font.leading
+        rowHeight = lineHeight.rounded(.up) + Self.rowGap
+        baseline = (rowHeight - lineHeight) / 2 + font.ascender
     }
 }
