@@ -299,13 +299,9 @@ function encodeObjectTree(
 }
 
 function framesOf(err: Error): string {
-    const stack = err.stack ?? "";
-    const firstLineEnd = stack.indexOf("\n");
-    const firstLine = (firstLineEnd !== -1) ? stack.slice(0, firstLineEnd) : stack;
-    if (firstLine.trimStart().startsWith("at ")) {
-        return stack;
-    }
-    return (firstLineEnd !== -1) ? stack.slice(firstLineEnd + 1) : "";
+    const lines = (err.stack ?? "").split("\n");
+    const firstFrame = lines.findIndex(line => line.trimStart().startsWith("at "));
+    return (firstFrame !== -1) ? lines.slice(firstFrame).join("\n") : "";
 }
 
 // The pending list is walked from the back, so what a value holds is put there
