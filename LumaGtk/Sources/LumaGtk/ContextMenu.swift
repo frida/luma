@@ -18,6 +18,8 @@ enum ContextMenu {
         }
     }
 
+    private static let windowMargin = 24
+
     static func present(
         _ sections: [[Item]],
         at anchor: some WidgetProtocol,
@@ -49,7 +51,14 @@ enum ContextMenu {
             }
         }
 
-        popover.set(child: box)
+        let scroller = ScrolledWindow()
+        scroller.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
+        scroller.propagateNaturalWidth = true
+        scroller.propagateNaturalHeight = true
+        scroller.maxContentHeight = root.height - windowMargin * 2
+        scroller.set(child: box)
+
+        popover.set(child: scroller)
         popover.set(parent: root)
         popover.onClosed { closed in
             MainActor.assumeIsolated { closed.unparent() }
