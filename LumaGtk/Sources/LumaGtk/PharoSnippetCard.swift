@@ -103,7 +103,7 @@ final class PharoSnippetCard {
         turn.add(cssClass: "dim-label")
         turn.valign = .start
         resultRow = Box(orientation: .horizontal, spacing: 6)
-        resultRow.marginStart = 12
+        resultRow.marginStart = 10
         resultRow.marginEnd = 12
         resultRow.marginBottom = 4
         resultRow.append(child: turn)
