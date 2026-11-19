@@ -291,6 +291,20 @@ public struct RuntimeEvent: Identifiable, Sendable {
         return .raw(message: message, data: nil)
     }
 
+    public static func text(ofRawMessage message: Any) -> String {
+        let envelope = message as? [String: Any]
+        let sent = envelope?["type"] as? String == "send" ? envelope?["payload"] ?? message : message
+        if let text = sent as? String {
+            return text
+        }
+        guard JSONSerialization.isValidJSONObject(sent),
+            let json = try? JSONSerialization.data(withJSONObject: sent, options: [.sortedKeys, .withoutEscapingSlashes])
+        else {
+            return String(describing: sent)
+        }
+        return String(decoding: json, as: UTF8.self)
+    }
+
     private static func serializableMessage(_ message: Any) -> Any {
         if let s = message as? String { return s }
         if let n = message as? NSNumber { return n }

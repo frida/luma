@@ -1263,7 +1263,7 @@ final class EventStreamPane {
         case .jsValue(let value):
             return value.prettyDescription()
         case .raw(let message, _):
-            return String(describing: message)
+            return RuntimeEvent.text(ofRawMessage: message)
         }
     }
 
@@ -1276,7 +1276,7 @@ final class EventStreamPane {
         case .jsValue(let value):
             return value.inlineDescription
         case .raw(let message, _):
-            return String(describing: message)
+            return RuntimeEvent.text(ofRawMessage: message)
         }
     }
 

@@ -568,7 +568,7 @@ struct EventStreamView: View, Equatable {
 
         case .spawnGating:
             if case .raw(let message, _) = evt.payload {
-                return message as? String ?? String(describing: message)
+                return RuntimeEvent.text(ofRawMessage: message)
             }
             return String(describing: evt.payload)
 
@@ -820,7 +820,7 @@ struct EventRow: View, Equatable {
 
     private var rawEventText: String {
         if case .raw(let message, _) = evt.payload {
-            return message as? String ?? String(describing: message)
+            return RuntimeEvent.text(ofRawMessage: message)
         }
         return String(describing: evt.payload)
     }

@@ -60,7 +60,7 @@ extension Engine {
             }
             return transcriptText(ofArguments: [value])
         case .raw(let message, _):
-            return String(describing: message)
+            return RuntimeEvent.text(ofRawMessage: message)
         }
     }
 
