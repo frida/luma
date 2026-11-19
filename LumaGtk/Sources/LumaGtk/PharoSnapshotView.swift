@@ -48,21 +48,24 @@ final class PharoSnapshotView {
         box.marginTop = 8
         box.marginBottom = 8
 
-        let title = Label(str: snapshot.printString)
-        title.xalign = 0
-        title.wrap = true
-        title.lines = 2
-        title.ellipsize = .end
-        title.add(cssClass: "heading")
-
         let className = Label(str: snapshot.className)
         className.xalign = 0
         className.add(cssClass: "caption")
         className.add(cssClass: "dim-label")
 
-        box.append(child: title)
+        box.append(child: Self.title(snapshot.printString))
         box.append(child: className)
         return box
+    }
+
+    static func title(_ text: String) -> Label {
+        let title = Label(str: text.split(whereSeparator: \.isWhitespace).joined(separator: " "))
+        title.xalign = 0
+        title.wrap = true
+        title.lines = 2
+        title.ellipsize = .end
+        title.add(cssClass: "heading")
+        return title
     }
 
     private func content(of view: PharoSnapshot.View) -> Widget {

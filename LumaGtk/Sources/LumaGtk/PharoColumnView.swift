@@ -81,16 +81,11 @@ final class PharoColumnView {
     }
 
     private func header() -> Box {
-        let title = Label(str: titleInOneParagraph)
-        title.xalign = 0
+        let title = PharoSnapshotView.title("\(article(object.className)) \(object.className) \(object.display)")
         title.hexpand = true
-        title.wrap = true
-        title.lines = 2
-        title.ellipsize = .end
         title.marginStart = 8
         title.marginTop = 6
         title.marginBottom = 6
-        title.add(cssClass: "heading")
 
         let bar = Box(orientation: .horizontal, spacing: 2)
         bar.append(child: title)
@@ -400,12 +395,6 @@ final class PharoColumnView {
         let box = Box(orientation: .horizontal, spacing: 0)
         box.append(child: Label(str: title))
         return box
-    }
-
-    private var titleInOneParagraph: String {
-        "\(article(object.className)) \(object.className) \(object.display)"
-            .split(whereSeparator: \.isWhitespace)
-            .joined(separator: " ")
     }
 
     private func article(_ className: String) -> String {
