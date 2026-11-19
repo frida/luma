@@ -15,9 +15,7 @@ final class CollaborationPanel {
 
     private weak var engine: Engine?
     private weak var desktopNotifier: DesktopNotifier?
-    private let onClose: () -> Void
 
-    private let headerBox: Box
     private let headerAvatarHost: Box
     private let labSection: Box
     private let activeCollaboration: Box
@@ -49,7 +47,6 @@ final class CollaborationPanel {
     init(engine: Engine, desktopNotifier: DesktopNotifier, onClose: @escaping () -> Void) {
         self.engine = engine
         self.desktopNotifier = desktopNotifier
-        self.onClose = onClose
 
         widget = Box(orientation: .vertical, spacing: 8)
         widget.add(cssClass: "collaboration-panel")
@@ -64,20 +61,8 @@ final class CollaborationPanel {
         chatTimeFormatter = DateFormatter()
         chatTimeFormatter.dateFormat = "HH:mm"
 
-        headerBox = Box(orientation: .horizontal, spacing: 8)
-        let title = Label(str: "Collaboration")
-        title.add(cssClass: "title-4")
-        title.halign = .start
-        title.hexpand = true
-        headerBox.append(child: title)
-
         headerAvatarHost = Box(orientation: .horizontal, spacing: 0)
-        headerBox.append(child: headerAvatarHost)
-
-        let closeButton = Button(label: "✕")
-        closeButton.hasFrame = false
-        headerBox.append(child: closeButton)
-        widget.append(child: headerBox)
+        widget.append(child: SidePanelHeader.make(title: "Collaboration", accessory: headerAvatarHost, onClose: onClose))
 
         widget.append(child: Separator(orientation: .horizontal))
 
@@ -147,12 +132,6 @@ final class CollaborationPanel {
         chatSection.append(child: inputRow)
 
         activeCollaboration.append(child: chatSection)
-
-        closeButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.onClose()
-            }
-        }
 
         chatEntry.onActivate { [weak self] _ in
             MainActor.assumeIsolated {

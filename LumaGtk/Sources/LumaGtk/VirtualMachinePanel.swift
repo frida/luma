@@ -27,26 +27,11 @@ final class VirtualMachinePanel {
         widget = Box(orientation: .vertical, spacing: 0)
         widget.setSizeRequest(width: 320, height: -1)
 
-        let header = Box(orientation: .horizontal, spacing: 8)
+        let header = SidePanelHeader.make(title: "Machines", onClose: onClose)
         header.marginTop = 12
         header.marginStart = 12
         header.marginEnd = 12
         header.marginBottom = 8
-
-        let title = Label(str: "Machines")
-        title.add(cssClass: "heading")
-        title.hexpand = true
-        title.xalign = 0
-        header.append(child: title)
-
-        let close = Button()
-        close.iconName = "window-close-symbolic"
-        close.add(cssClass: "flat")
-        close.tooltipText = "Close"
-        close.onClicked { _ in
-            MainActor.assumeIsolated { onClose() }
-        }
-        header.append(child: close)
         widget.append(child: header)
 
         listBox = Box(orientation: .vertical, spacing: 12)
