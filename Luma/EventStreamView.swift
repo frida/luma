@@ -807,6 +807,9 @@ struct EventRow: View, Equatable {
             consoleView
         } else if let instrumentView = instrumentEventView {
             instrumentView
+        } else if case .jsValue(let value) = evt.payload, let sessionID = evt.sessionID {
+            JSInspectValueView(value: value, sessionID: sessionID, engine: engine, selection: $selection)
+                .font(.monospacedContent)
         } else {
             Text(rawEventText)
                 .font(.system(.footnote, design: .monospaced))
