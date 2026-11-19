@@ -76,6 +76,9 @@ enum ContextMenu {
         button.set(child: label)
         button.add(cssClass: "flat")
         button.add(cssClass: "luma-menu-item")
+        if item.isDestructive {
+            button.add(cssClass: "luma-menu-destructive")
+        }
         button.sensitive = item.isEnabled
 
         let handler = item.handler

@@ -4,7 +4,9 @@ import Gtk
 
 @MainActor
 enum StyleSheet {
-    private static let accentColor = adw_get_minor_version() >= 6 ? "var(--accent-color)" : "@accent_color"
+    private static let accentColor = adwaitaColor("accent")
+    private static let successColor = adwaitaColor("success")
+    private static let errorColor = adwaitaColor("error")
 
     static let css = """
     .luma-flush-sidebar-list {
@@ -42,7 +44,7 @@ enum StyleSheet {
         background-color: @theme_base_color;
     }
     .luma-live-dot {
-        color: @success_color;
+        color: \(successColor);
     }
     .luma-paused-dot {
         color: alpha(@theme_fg_color, 0.45);
@@ -373,20 +375,20 @@ enum StyleSheet {
         color: alpha(@theme_fg_color, 0.75);
     }
 
-    popover.menu button.luma-menu-destructive {
-        color: @error_color;
+    popover button.luma-menu-destructive {
+        color: \(errorColor);
         font-weight: normal;
         padding: 6px 12px;
         min-height: 0;
         margin: 0;
     }
-    popover.menu button.luma-menu-destructive:hover {
-        background-color: alpha(@error_color, 0.12);
+    popover button.luma-menu-destructive:hover {
+        background-color: alpha(\(errorColor), 0.12);
     }
-    popover.menu button.luma-menu-destructive:active {
-        background-color: alpha(@error_color, 0.22);
+    popover button.luma-menu-destructive:active {
+        background-color: alpha(\(errorColor), 0.22);
     }
-    popover.menu button.luma-menu-destructive label {
+    popover button.luma-menu-destructive label {
         padding-left: 0;
     }
 
@@ -462,7 +464,7 @@ enum StyleSheet {
         box-shadow: 0 0 0 2px @theme_base_color;
     }
     .luma-member-dot.online {
-        background-color: @success_color;
+        background-color: @success_bg_color;
     }
     .luma-member-dot.offline {
         background-color: alpha(@theme_fg_color, 0.4);
@@ -472,7 +474,7 @@ enum StyleSheet {
         min-height: 8px;
         margin: 4px;
         border-radius: 50%;
-        background-color: @error_color;
+        background-color: @error_bg_color;
         box-shadow: 0 0 0 2px @window_bg_color;
     }
     .luma-machine-log {
@@ -644,5 +646,9 @@ enum StyleSheet {
             provider.styleProvider.style_provider_ptr,
             UInt32(GTK_STYLE_PROVIDER_PRIORITY_APPLICATION)
         )
+    }
+
+    private static func adwaitaColor(_ name: String) -> String {
+        adw_get_minor_version() >= 6 ? "var(--\(name)-color)" : "@\(name)_color"
     }
 }
