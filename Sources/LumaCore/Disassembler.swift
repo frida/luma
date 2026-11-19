@@ -428,7 +428,7 @@ private func fetchFunctionEnd(hex: String) async -> UInt64? {
             await r2.config.set("asm.arch", string: Self.r2Arch(fromFridaArch: processInfo.arch))
             await r2.config.set("asm.bits", int: processInfo.pointerSize * 8)
 
-            await r2.cmd("o frida-mem://0x0 0 rx")
+            await r2.cmd("on frida-mem://0x0 0 rx")
             await r2.cmd("=!")
 
             await self.applyUserInsightNames()
