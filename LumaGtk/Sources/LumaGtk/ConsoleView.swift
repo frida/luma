@@ -72,6 +72,10 @@ final class ConsoleView {
         cellsScroll.vexpand = true
         cellsScroll.add(cssClass: "view")
         cellsScroll.set(child: cellsBox)
+        gtk_scrollable_set_vscroll_policy(
+            UnsafeMutableRawPointer(gtk_scrolled_window_get_child(cellsScroll.scrolled_window_ptr))
+                .assumingMemoryBound(to: GtkScrollable.self),
+            GTK_SCROLL_NATURAL)
         scroller = BottomScroller(cellsScroll, threshold: 2.0)
 
         contentSlot = Box(orientation: .vertical, spacing: 0)
