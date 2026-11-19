@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// What the image said went wrong, laid out like the content it stands in for
-/// so a pane keeps its shape instead of collapsing to centred text.
+/// so a pane keeps its shape instead of collapsing to centered text.
 struct PharoFailureView: View {
     let message: String
 

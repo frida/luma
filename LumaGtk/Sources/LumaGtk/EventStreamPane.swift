@@ -705,7 +705,7 @@ final class EventStreamPane {
         delta.add(cssClass: "luma-event-delta")
         delta.halign = .start
         delta.setSizeRequest(width: 64, height: -1)
-        delta.centreOnFirstMonospaceLine()
+        delta.centerOnFirstMonospaceLine()
         row.append(child: delta)
 
         let content = Box(orientation: .vertical, spacing: 4)
@@ -738,7 +738,7 @@ final class EventStreamPane {
 
         let badge = makeSourceBadge(for: event)
         badge.halign = .end
-        badge.centreOnFirstMonospaceLine()
+        badge.centerOnFirstMonospaceLine()
         row.append(child: badge)
 
         attachRowContextMenu(to: row, event: event)
@@ -866,7 +866,7 @@ final class EventStreamPane {
 
         let badge = Self.makeLevelBadge(message.level)
         badge.setSizeRequest(width: Self.levelBadgeWidth, height: -1)
-        badge.centreOnFirstMonospaceLine()
+        badge.centerOnFirstMonospaceLine()
         row.append(child: badge)
 
         if let line = message.line {
@@ -1004,7 +1004,7 @@ final class EventStreamPane {
             button.set(child: Image(iconName: "view-list-symbolic"))
             button.add(cssClass: "flat")
             button.add(cssClass: "luma-pattern-chevron")
-            button.centreOnFirstMonospaceLine()
+            button.centerOnFirstMonospaceLine()
             button.tooltipText = "Show backtrace"
             button.onClicked { [weak self] _ in
                 MainActor.assumeIsolated {

@@ -1,7 +1,7 @@
 import CLumaAudio
 import Foundation
 
-/// The host-side synthesiser both frontends share. Voices are mixed on the
+/// The host-side synthesizer both frontends share. Voices are mixed on the
 /// audio device's own thread by `SynthEngine`, reached only through a
 /// lock-free command queue, so nothing here can stall it.
 @MainActor
@@ -64,7 +64,7 @@ public final class Synth {
         SynthEngine.hush()
     }
 
-    /// Back to how it started: every channel's patch, colour and place, the
+    /// Back to how it started: every channel's patch, color and place, the
     /// echo, and the level.
     public func reset() {
         SynthEngine.reset(channel: nil)

@@ -106,7 +106,7 @@ enum MissionPalette {
         case .paused: return "Paused"
         case .completed: return "Completed"
         case .failed: return "Failed"
-        case .cancelled: return "Cancelled"
+        case .cancelled: return "Canceled"
         }
     }
 }

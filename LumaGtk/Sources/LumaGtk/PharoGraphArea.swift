@@ -9,7 +9,7 @@ import SwiftyPharo
 
 /// A `mondrian` graph the reader can walk and roam: single-click a node to
 /// select it and its edges, double-click to drill; arrow keys step to the
-/// neighbour in a direction, Return drills, Escape lets go. Drag to pan,
+/// neighbor in a direction, Return drills, Escape lets go. Drag to pan,
 /// Ctrl+scroll or pinch to zoom about the pointer, and the buttons zoom in and
 /// out or fit the whole graph. Mirrors the SwiftUI graph over the shared
 /// layout.

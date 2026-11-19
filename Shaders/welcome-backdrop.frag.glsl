@@ -34,7 +34,7 @@ void main() {
     lightColor -= contour * 0.020;
     darkColor += contour * vec3(0.060, 0.022, 0.018);
 
-    // Travelling sine ripple, nudges plasma slightly so it doesn't loop visibly.
+    // Traveling sine ripple, nudges plasma slightly so it doesn't loop visibly.
     float ripple = sin(p.x * 1.8 - p.y * 1.2 + u_time * 0.9) * 0.5 + 0.5;
     lightColor = mix(lightColor, lightColor * 0.985, ripple * 0.20);
     darkColor = mix(darkColor, darkColor * 1.080, ripple * 0.22);

@@ -16,7 +16,7 @@ public enum LinuxKernelImage {
         if packed.starts(with: Array("MZ".utf8)) {
             return try unwrap(try fromPortableExecutable(packed))
         }
-        throw LinuxKernelError.unrecognised
+        throw LinuxKernelError.unrecognized
     }
 
     /// A kernel carries its own version, and a distribution names the map of
@@ -91,14 +91,14 @@ public enum LinuxKernelImage {
 
     private static func fromSelfExtractingImage(_ image: Data) throws -> Data {
         guard let header = image.firstRange(of: Data("zimg".utf8)), header.lowerBound < 64 else {
-            throw LinuxKernelError.unrecognised
+            throw LinuxKernelError.unrecognized
         }
 
         let offset = Int(read32(image, at: header.upperBound))
         let size = Int(read32(image, at: header.upperBound + 4))
 
         guard offset > 0, size > 0, offset + size <= image.count else {
-            throw LinuxKernelError.unrecognised
+            throw LinuxKernelError.unrecognized
         }
         let payload = image.subdata(in: offset..<(offset + size))
 
@@ -190,13 +190,13 @@ enum ZstdArchive {
 }
 
 public enum LinuxKernelError: Swift.Error, LocalizedError {
-    case unrecognised
+    case unrecognized
     case unsupportedCompression(String)
     case corruptPayload
 
     public var errorDescription: String? {
         switch self {
-        case .unrecognised:
+        case .unrecognized:
             return "This does not look like an arm64 Linux kernel"
         case .unsupportedCompression(let kind):
             return "The kernel is packed with \(kind), which cannot be unpacked here"

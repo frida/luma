@@ -1098,7 +1098,7 @@ final class MainWindow: InstrumentUIHost {
         case .paused: return "Paused"
         case .completed: return "Completed · \(RelativeTime.string(from: mission.updatedAt))"
         case .failed: return "Failed"
-        case .cancelled: return "Cancelled"
+        case .cancelled: return "Canceled"
         case .drafting: return "Drafting"
         }
     }

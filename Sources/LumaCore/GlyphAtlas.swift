@@ -4,7 +4,7 @@ import Synchronization
 /// The printable range drawn into one picture, on a grid of equal cells, with
 /// what a caller needs to lay a string out over it.
 ///
-/// The host rasterises this, not the image: what fonts an image can reach is
+/// The host rasterizes this, not the image: what fonts an image can reach is
 /// its own business, and on one of ours the answer is a single bitmap size.
 public struct GlyphAtlas: Sendable {
     /// One word a pixel, in the order the renderers upload.
@@ -53,19 +53,19 @@ public struct GlyphAtlas: Sendable {
     }
 }
 
-/// Whoever can rasterise one. The frontends register their own on the way up
+/// Whoever can rasterize one. The frontends register their own on the way up
 /// -- Core Text on Apple platforms, Pango elsewhere -- since neither travels.
-public enum GlyphAtlasRasteriser {
+public enum GlyphAtlasRasterizer {
     private static let held = Mutex<[Int: GlyphAtlas]>([:])
     private static let nextHandle = Mutex(0)
 
     /// Set once by the host. Answers nil for a size it cannot draw.
-    public nonisolated(unsafe) static var rasterise: (@Sendable (_ pixelSize: Int) -> GlyphAtlas?)?
+    public nonisolated(unsafe) static var rasterize: (@Sendable (_ pixelSize: Int) -> GlyphAtlas?)?
 
-    /// Rasterises and keeps it, so the image can ask about it a field at a
+    /// Rasterizes and keeps it, so the image can ask about it a field at a
     /// time and then hand it to a drawable.
     public static func make(pixelSize: Int) -> Int {
-        guard let atlas = rasterise?(pixelSize) else { return 0 }
+        guard let atlas = rasterize?(pixelSize) else { return 0 }
 
         let handle = nextHandle.withLock { handle in
             handle += 1

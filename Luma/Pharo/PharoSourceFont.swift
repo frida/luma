@@ -11,7 +11,7 @@ enum PharoSourceFont {
 }
 
 extension PlatformColor {
-    /// An RRGGBB run colour from the image, read in the sRGB space it named it in.
+    /// An RRGGBB run color from the image, read in the sRGB space it named it in.
     convenience init(pharoHex hex: String) {
         let value = UInt32(hex, radix: 16) ?? 0
         let red = CGFloat((value >> 16) & 0xFF) / 255
@@ -24,7 +24,7 @@ extension PlatformColor {
         #endif
     }
 
-    /// A run colour that resolves its own light or dark shade as the appearance
+    /// A run color that resolves its own light or dark shade as the appearance
     /// changes, so a theme flip never has to rewrite the text's attributes.
     static func pharoRun(lightHex: String?, darkHex: String?) -> PlatformColor? {
         guard let lightHex, let darkHex else { return nil }

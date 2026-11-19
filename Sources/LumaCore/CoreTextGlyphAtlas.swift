@@ -7,7 +7,7 @@ import Foundation
 /// reach for fonts is its own business; this is the host's, and it has one.
 public enum CoreTextGlyphAtlas {
     public static func install() {
-        GlyphAtlasRasteriser.rasterise = { pixelSize in
+        GlyphAtlasRasterizer.rasterize = { pixelSize in
             make(pixelSize: pixelSize)
         }
     }
@@ -23,7 +23,7 @@ public enum CoreTextGlyphAtlas {
         let ascent = CTFontGetAscent(font)
         let descent = CTFontGetDescent(font)
         // A guard texel each side, so a cell is never sampled into its
-        // neighbour, and whole texels so it is sampled on its own grid.
+        // neighbor, and whole texels so it is sampled on its own grid.
         let widest = advances.max() ?? Float(pixelSize)
         let cellWidth = Int(widest.rounded(.up)) + 2
         let cellHeight = Int((ascent + descent).rounded(.up)) + 2

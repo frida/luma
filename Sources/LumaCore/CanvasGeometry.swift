@@ -57,7 +57,7 @@ public struct CanvasGeometry: Sendable, Equatable {
     /// Where the shader is headed. OpenGL takes the source as it stands, at a
     /// version with no explicit locations, and binds attributes by name.
     /// Metal's comes through glslang, which wants both.
-    public enum Flavour: Sendable {
+    public enum Flavor: Sendable {
         case openGL
         case metal
     }
@@ -65,40 +65,40 @@ public struct CanvasGeometry: Sendable, Equatable {
     /// Declares the author's attributes and varyings so their own shader body
     /// compiles against what the renderer binds.
     public func vertexPreamble(
-        _ flavour: Flavour,
+        _ flavor: Flavor,
         uniforms extra: [CanvasUniform] = [],
         buffers: [CanvasBuffer] = [],
         images: [CanvasImage] = []
     ) -> String {
         let inputs = attributes.enumerated().map { index, attribute in
-            declaration("in", attribute, at: index, flavour)
+            declaration("in", attribute, at: index, flavor)
         }
         let outputs = varyings.enumerated().map { index, varying in
-            declaration("out", varying, at: index, flavour)
+            declaration("out", varying, at: index, flavor)
         }
-        return (["#version \(flavour == .metal ? "450" : "150 core")"]
+        return (["#version \(flavor == .metal ? "450" : "150 core")"]
             + inputs + outputs
-            + [uniforms(flavour), declared(extra, flavour),
-               sampled(buffers, flavour), pictured(images, after: buffers.count, flavour), ""])
+            + [uniforms(flavor), declared(extra, flavor),
+               sampled(buffers, flavor), pictured(images, after: buffers.count, flavor), ""])
             .joined(separator: "\n")
     }
 
     public func fragmentPreamble(
-        _ flavour: Flavour,
+        _ flavor: Flavor,
         uniforms extra: [CanvasUniform] = [],
         buffers: [CanvasBuffer] = [],
         images: [CanvasImage] = []
     ) -> String {
         let inputs = varyings.enumerated().map { index, varying in
-            declaration("in", varying, at: index, flavour)
+            declaration("in", varying, at: index, flavor)
         }
-        let output = flavour == .metal
+        let output = flavor == .metal
             ? "layout(location = 0) out vec4 frag_color;"
             : "out vec4 frag_color;"
-        return (["#version \(flavour == .metal ? "450" : "150 core")"]
+        return (["#version \(flavor == .metal ? "450" : "150 core")"]
             + inputs
-            + [output, uniforms(flavour), declared(extra, flavour),
-               sampled(buffers, flavour), pictured(images, after: buffers.count, flavour), ""])
+            + [output, uniforms(flavor), declared(extra, flavor),
+               sampled(buffers, flavor), pictured(images, after: buffers.count, flavor), ""])
             .joined(separator: "\n")
     }
 
@@ -106,19 +106,19 @@ public struct CanvasGeometry: Sendable, Equatable {
         _ direction: String,
         _ attribute: ShaderAttribute,
         at index: Int,
-        _ flavour: Flavour
+        _ flavor: Flavor
     ) -> String {
-        let qualifier = flavour == .metal ? "layout(location = \(index)) " : ""
+        let qualifier = flavor == .metal ? "layout(location = \(index)) " : ""
         return "\(qualifier)\(direction) \(attribute.glslType) \(attribute.name);"
     }
 
     /// The author's own uniforms. OpenGL takes them loose and sets each by
     /// name; Metal wants a block, which the host packs to match.
-    private func declared(_ extra: [CanvasUniform], _ flavour: Flavour) -> String {
+    private func declared(_ extra: [CanvasUniform], _ flavor: Flavor) -> String {
         guard !extra.isEmpty else { return "" }
 
         let members = extra.map { "    \($0.glslType) \($0.name);" }
-        guard flavour == .metal else {
+        guard flavor == .metal else {
             return extra.map { "uniform \($0.glslType) \($0.name);" }.joined(separator: "\n")
         }
         return (["layout(binding = 1) uniform CanvasParams {"] + members + ["};"])
@@ -127,9 +127,9 @@ public struct CanvasGeometry: Sendable, Equatable {
 
     /// Each run gets a sampler and a reader, so the author says `dataAt` of
     /// their own buffer rather than working out where a texel sits.
-    private func sampled(_ buffers: [CanvasBuffer], _ flavour: Flavour) -> String {
+    private func sampled(_ buffers: [CanvasBuffer], _ flavor: Flavor) -> String {
         buffers.enumerated().map { index, buffer in
-            let binding = flavour == .metal ? "layout(binding = \(2 + index)) " : ""
+            let binding = flavor == .metal ? "layout(binding = \(2 + index)) " : ""
             // The row length is declared with the author's own uniforms, so
             // naming it here as well would redefine it -- and, for Metal,
             // put a non-opaque uniform outside a block.
@@ -146,15 +146,15 @@ public struct CanvasGeometry: Sendable, Equatable {
     /// A picture is sampled across rather than read by index, so it needs no
     /// reader of its own: the author says `texture` of it. Its bindings carry
     /// on from where the buffers left off, since both are samplers.
-    private func pictured(_ images: [CanvasImage], after buffers: Int, _ flavour: Flavour) -> String {
+    private func pictured(_ images: [CanvasImage], after buffers: Int, _ flavor: Flavor) -> String {
         images.enumerated().map { index, image in
-            let binding = flavour == .metal ? "layout(binding = \(2 + buffers + index)) " : ""
+            let binding = flavor == .metal ? "layout(binding = \(2 + buffers + index)) " : ""
             return "\(binding)uniform sampler2D \(image.name);"
         }.joined(separator: "\n")
     }
 
-    private func uniforms(_ flavour: Flavour) -> String {
-        guard flavour == .metal else {
+    private func uniforms(_ flavor: Flavor) -> String {
+        guard flavor == .metal else {
             return """
                 uniform vec2 u_resolution;
                 uniform float u_time;

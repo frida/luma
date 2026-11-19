@@ -334,7 +334,7 @@ public func luma_scene_key_down(_ scene: Int32, _ key: Int32) -> Int32 {
     CanvasRegistry.shared.input(Int(scene)).keysDown.contains(key) ? 1 : 0
 }
 
-/// Physical pixels to a logical one, for whoever is rasterising something the
+/// Physical pixels to a logical one, for whoever is rasterizing something the
 /// scene will draw. Zero until a view has drawn it.
 @_cdecl("luma_scene_scale")
 public func luma_scene_scale(_ scene: Int32) -> Float {
@@ -345,25 +345,25 @@ public func luma_scene_scale(_ scene: Int32) -> Float {
 /// where the host has nothing to draw with.
 @_cdecl("luma_glyphs_make")
 public func luma_glyphs_make(_ pixelSize: Int32) -> Int32 {
-    Int32(GlyphAtlasRasteriser.make(pixelSize: Int(pixelSize)))
+    Int32(GlyphAtlasRasterizer.make(pixelSize: Int(pixelSize)))
 }
 
 /// How many atlases the host is holding, so it can be seen letting go.
 @_cdecl("luma_glyphs_count")
 public func luma_glyphs_count() -> Int32 {
-    Int32(GlyphAtlasRasteriser.count)
+    Int32(GlyphAtlasRasterizer.count)
 }
 
 @_cdecl("luma_glyphs_discard")
 public func luma_glyphs_discard(_ atlas: Int32) {
-    GlyphAtlasRasteriser.discard(Int(atlas))
+    GlyphAtlasRasterizer.discard(Int(atlas))
 }
 
 /// What a caller needs to lay a string out: the cell it is drawn on, the grid
 /// it sits in, and the rows the ink touches.
 @_cdecl("luma_glyphs_metric")
 public func luma_glyphs_metric(_ atlas: Int32, _ which: Int32) -> Float {
-    guard let atlas = GlyphAtlasRasteriser.atlas(Int(atlas)) else { return 0 }
+    guard let atlas = GlyphAtlasRasterizer.atlas(Int(atlas)) else { return 0 }
 
     switch which {
     case 0: return Float(atlas.width)
@@ -379,7 +379,7 @@ public func luma_glyphs_metric(_ atlas: Int32, _ which: Int32) -> Float {
 
 @_cdecl("luma_glyphs_advance")
 public func luma_glyphs_advance(_ atlas: Int32, _ code: Int32) -> Float {
-    GlyphAtlasRasteriser.atlas(Int(atlas))?.advance(for: Int(code)) ?? 0
+    GlyphAtlasRasterizer.atlas(Int(atlas))?.advance(for: Int(code)) ?? 0
 }
 
 /// Hands the picture to a drawable, so the image never carries the pixels.
@@ -390,7 +390,7 @@ public func luma_glyphs_apply(
     _ drawable: Int32,
     _ name: UnsafePointer<CChar>
 ) {
-    guard let held = GlyphAtlasRasteriser.atlas(Int(atlas)) else { return }
+    guard let held = GlyphAtlasRasterizer.atlas(Int(atlas)) else { return }
 
     let image = CanvasImage(
         name: String(cString: name),

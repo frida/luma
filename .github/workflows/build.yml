@@ -86,7 +86,7 @@ jobs:
 
       # The examples are Smalltalk inside Swift string literals, and a patch
       # that has gone silent sounds fine to a compiler.
-      - name: Read the example catalogue
+      - name: Read the example catalog
         run: make check-examples
 
       - name: Play every patch

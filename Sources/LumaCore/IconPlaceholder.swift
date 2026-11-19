@@ -40,7 +40,7 @@ public enum IconPlaceholder {
     }
 
     /// FNV-1a 64-bit — keep it stable across runs and platforms so a
-    /// given seed renders the same colour everywhere. Swift's
+    /// given seed renders the same color everywhere. Swift's
     /// default `String.hashValue` is seeded per process.
     private static func fnv1a64(_ s: String) -> UInt64 {
         var hash: UInt64 = 0xcbf29ce484222325

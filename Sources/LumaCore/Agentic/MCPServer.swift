@@ -205,11 +205,11 @@ public final class MCPServer {
                 return jsonRPCResult(id: rpcID, result: toolCallPayload(toolCallID: toolCallID, body: message, isError: true))
             case .cancelled:
                 action.status = .failed
-                action.error = "mission cancelled while awaiting approval"
+                action.error = "mission canceled while awaiting approval"
                 action.completedAt = Date()
                 try? engine.store.save(action)
                 engine.collaboration.enqueueMissionAction(action)
-                return jsonRPCError(id: rpcID, code: -32_000, message: "tool call cancelled")
+                return jsonRPCError(id: rpcID, code: -32_000, message: "tool call canceled")
             case .approved:
                 break
             }
@@ -346,7 +346,7 @@ public final class MCPServer {
                 case .failed(let error):
                     cont.resume(throwing: error)
                 case .cancelled:
-                    cont.resume(throwing: MCPServerError.listenerFailed("cancelled before ready"))
+                    cont.resume(throwing: MCPServerError.listenerFailed("canceled before ready"))
                 default:
                     resumed.unflip()
                 }

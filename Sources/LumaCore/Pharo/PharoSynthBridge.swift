@@ -1,6 +1,6 @@
 import CLumaAudio
 
-/// What the image is allowed to do to the synthesiser. The mixer takes
+/// What the image is allowed to do to the synthesizer. The mixer takes
 /// commands through a lock-free queue, so the image calling these from its own
 /// thread needs no hop to the host's.
 ///
@@ -29,7 +29,7 @@ public func luma_synth_set_level(_ level: Float) {
     SynthEngine.level = level
 }
 
-/// What each channel is set to, so the colour of a voice can be changed
+/// What each channel is set to, so the color of a voice can be changed
 /// without restating the rest of it.
 private nonisolated(unsafe) var channelPatches = [SynthEngine.PatchValues](
     repeating: SynthEngine.PatchValues(), count: SynthEngine.channelCount)
@@ -53,8 +53,8 @@ public func luma_synth_use_preset(_ channel: Int32, _ name: UnsafePointer<CChar>
 /// What a voice does beyond its envelope and filter: the pulse it draws, the
 /// slow wave moving it, what the filter does when struck, and how driven it
 /// comes out.
-@_cdecl("luma_synth_set_colour")
-public func luma_synth_set_colour(
+@_cdecl("luma_synth_set_color")
+public func luma_synth_set_color(
     _ channel: Int32,
     _ pulseWidth: Float,
     _ lfoRate: Float,
@@ -99,7 +99,7 @@ public func luma_synth_reset(_ channel: Int32) {
         }
     } else {
         SynthEngine.reset(channel: Int(channel))
-        // The colour it was given is remembered here, so it has to go too or
+        // The color it was given is remembered here, so it has to go too or
         // the next patch would take it back.
         channelPatches[Int(channel)] = SynthEngine.PatchValues()
     }
@@ -139,7 +139,7 @@ public func luma_synth_set_patch(
     patch.cutoff = cutoff
     patch.resonance = resonance
     patch.gain = gain
-    // The colour it was last given stays put: only what was named changes.
+    // The color it was last given stays put: only what was named changes.
     let held = channelPatches[Int(channel)]
     patch.pulseWidth = held.pulseWidth
     patch.lfoRate = held.lfoRate

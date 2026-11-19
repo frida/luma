@@ -1,11 +1,11 @@
 import Foundation
 import SwiftyPharo
 
-/// Reads every example in the catalogue the way the image would, and says
+/// Reads every example in the catalog the way the image would, and says
 /// what it could not make sense of. The examples are Smalltalk in Swift string
 /// literals, which nothing else looks at: three of them have shipped broken.
 public enum PharoExampleCheck {
-    /// Answers a line per complaint, and nothing at all when the catalogue is
+    /// Answers a line per complaint, and nothing at all when the catalog is
     /// sound.
     public static func run(in runtime: PharoRuntime) async throws -> [String] {
         let report = try await runtime.evaluate(source)
@@ -67,7 +67,7 @@ public enum PharoExampleCheck {
         """
     }
 
-    /// The catalogue as a Smalltalk literal array, with its quotes doubled.
+    /// The catalog as a Smalltalk literal array, with its quotes doubled.
     private static func literals(of field: KeyPath<PharoExample, String>) -> String {
         PharoExampleCatalog.sections
             .flatMap(\.examples)

@@ -2,7 +2,7 @@ import CCairo
 import Cairo
 import Foundation
 
-/// Shared drawing bits for the moldable visualisations -- the graph and the
+/// Shared drawing bits for the moldable visualizations -- the graph and the
 /// chart each own their own area, but reach for the same font and label fitting.
 @MainActor
 enum PharoVisualArea {

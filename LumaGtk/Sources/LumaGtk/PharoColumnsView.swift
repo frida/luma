@@ -103,7 +103,7 @@ final class PharoColumnsView {
         }
     }
 
-    /// Point the leading arrow at the vertical centre of the snippet that opened
+    /// Point the leading arrow at the vertical center of the snippet that opened
     /// this inspection, measured in this pane's own space.
     func pointArrow(fromCenterOf source: WidgetRef) {
         var bounds = graphene_rect_t()
@@ -118,7 +118,7 @@ final class PharoColumnsView {
     /// The snippet's connector into the first column: a triangle when that column
     /// stands open, but when it is collapsed the stack steps into the arrow's
     /// place. Its own down-triangle -- not the whole stack -- lines up with the
-    /// snippet's centre, the way the open arrow does, and the squares hang below.
+    /// snippet's center, the way the open arrow does, and the squares hang below.
     private func positionLeadingConnector() {
         if let stack = leadingStack, let y = pointingFromY {
             arrowArea.visible = false

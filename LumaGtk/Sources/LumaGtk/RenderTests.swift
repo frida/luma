@@ -54,7 +54,7 @@ enum RenderTests {
                 .map { String(format: "%.2f", $0) }
                 .joined(separator: " ") ?? ""
             say("t+\(tick * 10)s  rss \(resident()) MB  scenes \(CanvasRegistry.shared.sceneCount)"
-                + "  atlases \(GlyphAtlasRasteriser.count)  at \(moving)")
+                + "  atlases \(GlyphAtlasRasterizer.count)  at \(moving)")
         }
         window.close()
         return 0
@@ -273,13 +273,13 @@ enum RenderTests {
         """
 
     /// A scene of the kind the image builds: lettering over the atlas the
-    /// host rasterised, which is what the examples lean on.
+    /// host rasterized, which is what the examples lean on.
     private static func lettering() -> ShaderEffect {
         let effect = ShaderEffect()
         effect.setClearColor(red: 0.05, green: 0.02, blue: 0.09)
 
-        let atlas = GlyphAtlasRasteriser.make(pixelSize: 48)
-        guard let sheet = GlyphAtlasRasteriser.atlas(atlas) else { return effect }
+        let atlas = GlyphAtlasRasterizer.make(pixelSize: 48)
+        guard let sheet = GlyphAtlasRasterizer.atlas(atlas) else { return effect }
 
         let drawable = effect.addDrawable()
         effect.setProgram(

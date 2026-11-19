@@ -691,7 +691,7 @@ public final class Engine {
             }
         } catch {
             action.status = .failed
-            action.error = (error is CancellationError) ? "Reply cancelled by user." : error.localizedDescription
+            action.error = (error is CancellationError) ? "Reply canceled by user." : error.localizedDescription
             action.completedAt = Date()
             try? store.save(action)
             collaboration.enqueueMissionAction(action)
@@ -6362,7 +6362,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         guard let missionID = sessionUIStates[sessionID]?.ambientMissionID else { return }
         let pending = (try? store.fetchPendingMissionActions(missionID: missionID)) ?? []
         for action in pending {
-            await rejectMissionAction(actionID: action.id, reason: "User cancelled the note reply.")
+            await rejectMissionAction(actionID: action.id, reason: "User canceled the note reply.")
         }
     }
 

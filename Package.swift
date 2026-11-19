@@ -51,7 +51,7 @@ let lumaBundlePluginTargets: [Target] = usesXcodePackageResolution ? [] : [
 #if canImport(Darwin)
 // Apple's mobile SDKs reach the audio session through AVFoundation, so the
 // device unit has to be Objective-C there. Desktop follows suit rather than
-// carry two behaviours.
+// carry two behaviors.
 let cLumaAudioSources = ["luma_audio_device.m"]
 let cLumaAudioLinkerSettings: [LinkerSetting] = [
     .linkedFramework("CoreAudio"),
@@ -122,7 +122,7 @@ let lumaCoreCompressionDeps: [Target.Dependency] = []
 // (see Scripts/make-shader-toolchain-xcframework.sh) and this names it.
 //
 // A locally made one short-circuits the published artifact, the way
-// SwiftyPharo honours PHARO_VM_ROOT: run that script and set
+// SwiftyPharo honors PHARO_VM_ROOT: run that script and set
 // SHADER_TOOLCHAIN_ROOT=artifacts/ShaderToolchain.xcframework, which SwiftPM
 // wants relative to the package. Asking the filesystem rather than being told
 // would not do -- a manifest is cached, so whichever answer it gave first

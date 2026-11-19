@@ -8,7 +8,7 @@ import SwiftyPharo
 
 /// One column of a moldable inspection: the object's print string over the views
 /// it declares about itself as tabs, a list row drilling into the element behind
-/// it, and a header of pane actions -- collapse, maximise, reload, close.
+/// it, and a header of pane actions -- collapse, maximize, reload, close.
 @MainActor
 final class PharoColumnView {
     let widget: Frame
@@ -221,7 +221,7 @@ final class PharoColumnView {
             }
             _ = notebook.appendPage(child: textPage(object.printString), tabLabel: tabLabel("Print"))
             // The image's own Meta view is dropped for the coder shown on the
-            // object's class, the way the SwiftUI inspector synthesises it.
+            // object's class, the way the SwiftUI inspector synthesizes it.
             if let receiverClass = try? await runtime.classObject(of: object) {
                 _ = notebook.appendPage(child: classBrowserBody(of: receiverClass), tabLabel: tabLabel("Meta"))
             }

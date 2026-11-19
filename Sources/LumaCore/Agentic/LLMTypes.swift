@@ -246,7 +246,7 @@ public enum LLMProviderError: LocalizedError, Sendable {
         case .capabilityUnsupported(let detail):
             return "Capability not supported: \(detail)"
         case .cancelled:
-            return "Cancelled."
+            return "Canceled."
         }
     }
 }

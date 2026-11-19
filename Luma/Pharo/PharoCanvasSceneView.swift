@@ -270,7 +270,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         depthState = view.device?.makeDepthStencilState(descriptor: depth)
 
         // Nearest, clamped: a value is read at its own index, never blended
-        // with a neighbour's.
+        // with a neighbor's.
         let exact = MTLSamplerDescriptor()
         exact.minFilter = .nearest
         exact.magFilter = .nearest

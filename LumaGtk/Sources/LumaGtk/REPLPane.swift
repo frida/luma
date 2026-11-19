@@ -294,7 +294,7 @@ final class REPLPane {
             from: cell.timestamp, dateStyle: .none, timeStyle: .short))
         timeLabel.add(cssClass: "caption")
         timeLabel.add(cssClass: "dim-label")
-        timeLabel.centreOnFirstMonospaceLine()
+        timeLabel.centerOnFirstMonospaceLine()
         timeLabel.tooltipText = DateFormatter.localizedString(
             from: cell.timestamp, dateStyle: .medium, timeStyle: .medium)
         codeRow.append(child: timeLabel)

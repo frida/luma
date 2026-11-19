@@ -1,7 +1,7 @@
 import Foundation
 import LumaCore
 
-/// Plays each patch offline and says what came out. A synthesiser is the one
+/// Plays each patch offline and says what came out. A synthesizer is the one
 /// thing here that cannot be checked by looking, and a patch that has gone
 /// silent or lost its character sounds fine to a compiler.
 ///

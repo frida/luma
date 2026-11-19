@@ -4,7 +4,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// Draws the icon a session shows in the sidebar when the process gave us
-/// none, so the image sees what the reader sees. Rasterising belongs to the
+/// none, so the image sees what the reader sees. Rasterizing belongs to the
 /// frontend; the seed and palette behind it are LumaCore's.
 @MainActor
 enum PharoSessionIcon {

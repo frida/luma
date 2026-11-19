@@ -31,7 +31,7 @@ void main() {
     lightColor -= bloom * vec3(0.030, 0.045, 0.022);
     darkColor += bloom * vec3(0.090, 0.038, 0.030);
 
-    // Quiet sessions settle toward the flat page colour.
+    // Quiet sessions settle toward the flat page color.
     float presence = 0.25 + u_activity * 0.75;
     lightColor = mix(LIGHT_A, lightColor, presence);
     darkColor = mix(DARK_A, darkColor, presence);

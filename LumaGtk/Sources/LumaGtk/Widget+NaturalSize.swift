@@ -2,7 +2,7 @@ import CGtk
 import Gtk
 
 extension Widget {
-    func centreOnFirstMonospaceLine() {
+    func centerOnFirstMonospaceLine() {
         valign = .start
         marginTop = max(0, (Self.monospaceLineHeight - naturalSize(along: .vertical)) / 2)
     }

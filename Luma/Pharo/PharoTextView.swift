@@ -297,8 +297,8 @@ final class PharoTextView: PharoTextViewBase, NSTextStorageDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
-    /// Paint the coloured runs GT would over the source, mapped past the mark
-    /// characters, on a plain label-coloured ground. Each run's colour resolves
+    /// Paint the colored runs GT would over the source, mapped past the mark
+    /// characters, on a plain label-colored ground. Each run's color resolves
     /// the light or dark shade itself, so a theme flip redraws without another
     /// attribute pass -- which would relayout and unsettle the marks.
     private func applyStyle() {

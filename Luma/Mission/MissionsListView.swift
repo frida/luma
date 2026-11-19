@@ -116,7 +116,7 @@ struct MissionStatusBadge: View {
         case .paused: "Paused"
         case .completed: "Completed"
         case .failed: "Failed"
-        case .cancelled: "Cancelled"
+        case .cancelled: "Canceled"
         }
     }
 

@@ -206,7 +206,7 @@ final class ShaderEffect {
         transform = values
     }
 
-    /// Colour shown until the effect's program has linked.
+    /// Color shown until the effect's program has linked.
     func setClearColor(red: Float, green: Float, blue: Float) {
         clearColor = (red, green, blue)
     }
@@ -440,7 +440,7 @@ private struct Sheet {
     }
 
     /// Nearest, clamped: a value is read at its own index, never blended with
-    /// a neighbour's.
+    /// a neighbor's.
     mutating func bind(unit: Int) {
         guard location >= 0, !values.isEmpty else { return }
 
@@ -652,7 +652,7 @@ private final class ScreenFilling {
     /// Where the pixel sits is worked out from the fragment's own position
     /// rather than handed down from the vertex stage: VirtualBox's GL driver
     /// loses the interpolated value after some thousands of frames of the
-    /// welcome backdrop, which then fades to a single colour.
+    /// welcome backdrop, which then fades to a single color.
     private static let fragmentPreamble = """
         out vec4 frag_color;
         uniform vec2 u_resolution;

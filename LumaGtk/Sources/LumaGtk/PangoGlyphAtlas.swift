@@ -7,7 +7,7 @@ import LumaCore
 /// for fonts is its own business; this is the host's, and it has one.
 enum PangoGlyphAtlas {
     static func install() {
-        GlyphAtlasRasteriser.rasterise = { pixelSize in
+        GlyphAtlasRasterizer.rasterize = { pixelSize in
             make(pixelSize: pixelSize)
         }
     }
@@ -29,7 +29,7 @@ enum PangoGlyphAtlas {
         let lineHeight = codes.map { size(of: $0, layout: layout).height }.max() ?? pixelSize
 
         // A guard texel each side, so a cell is never sampled into its
-        // neighbour, and whole texels so it is sampled on its own grid.
+        // neighbor, and whole texels so it is sampled on its own grid.
         let cellWidth = Int((advances.max() ?? Float(pixelSize)).rounded(.up)) + 2
         let cellHeight = lineHeight + 2
         let columns = 16

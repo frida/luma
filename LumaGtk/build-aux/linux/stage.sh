@@ -90,7 +90,7 @@ else
 fi
 # The VM's libraries alone: a plugin that links another resolves it by
 # soname along its own path, while frida-core finds its assets by locating
-# itself among the mapped modules, and no longer recognises the mapping
+# itself among the mapped modules, and no longer recognizes the mapping
 # once patchelf has moved its segments about.
 patchelf --set-rpath '$ORIGIN' "${pharo_libs[@]}"
 for so in "$luma_lib/frida-1.0"/*/*.so; do

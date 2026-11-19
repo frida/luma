@@ -133,7 +133,7 @@ public enum SynthEngine {
             right = min(max(right * storage.level, -1), 1)
 
             if channels == 1 {
-                // Both sides into one, at the level a centred voice had.
+                // Both sides into one, at the level a centered voice had.
                 frames[frame] = min(max((left + right) * 0.70710677, -1), 1)
             } else {
                 for channel in 0..<channels {
@@ -153,8 +153,8 @@ public enum SynthEngine {
         let delayedLeft = storage.echo[read]
         let delayedRight = storage.echoRight[read]
 
-        // What goes in enters one side only: fed to both, a centred voice
-        // would come back centred and the tap would never bounce.
+        // What goes in enters one side only: fed to both, a centered voice
+        // would come back centered and the tap would never bounce.
         storage.echo[storage.echoWrite] = (left + right) * 0.5 + delayedRight * storage.echoFeedback
         storage.echoRight[storage.echoWrite] = delayedLeft * storage.echoFeedback
         storage.echoWrite = (storage.echoWrite &+ 1) % echoCapacity

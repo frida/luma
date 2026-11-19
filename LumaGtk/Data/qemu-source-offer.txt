@@ -3,7 +3,7 @@ QEMU
 
 This directory contains QEMU 11.1.0, an independent program published
 by the QEMU project under the GNU General Public License, version 2.
-Its full licence terms are in COPYING and COPYING.LIB beside this file.
+Its full license terms are in COPYING and COPYING.LIB beside this file.
 
 Luma itself is MIT-licensed and does not link against QEMU. It starts
 the emulators here as separate processes and speaks to them over QMP

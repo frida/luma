@@ -31,14 +31,14 @@ enum VZPrivateAPI {
     }
 
     static func makeDebugStub(port: Int) -> NSObject? {
-        typealias Initialiser = @convention(c) (AnyObject, Selector, Int) -> AnyObject?
+        typealias Initializer = @convention(c) (AnyObject, Selector, Int) -> AnyObject?
         guard let stub = allocate("_VZGDBDebugStubConfiguration") else { return nil }
 
         let selector = NSSelectorFromString("initWithPort:")
         guard let method = stub.method(for: selector) else { return nil }
 
-        let initialise = unsafeBitCast(method, to: Initialiser.self)
-        return initialise(stub, selector, port) as? NSObject
+        let initialize = unsafeBitCast(method, to: Initializer.self)
+        return initialize(stub, selector, port) as? NSObject
     }
 
     static func setDebugStub(_ stub: NSObject, on configuration: VZVirtualMachineConfiguration) {
@@ -49,15 +49,15 @@ enum VZPrivateAPI {
         guard let coprocessor = allocate("_VZSEPCoprocessorConfiguration") else { return nil }
 
         let selector = NSSelectorFromString("initWithStorageURL:")
-        guard let initialised = send(coprocessor, selector, storage as NSURL) as? NSObject else { return nil }
+        guard let initialized = send(coprocessor, selector, storage as NSURL) as? NSObject else { return nil }
 
         if let rom {
-            _ = send(initialised, "setRomBinaryURL:", rom as NSURL)
+            _ = send(initialized, "setRomBinaryURL:", rom as NSURL)
         }
         if let debugStub {
-            _ = send(initialised, "setDebugStub:", debugStub)
+            _ = send(initialized, "setDebugStub:", debugStub)
         }
-        return initialised
+        return initialized
     }
 
     static func setCoprocessors(_ coprocessors: [NSObject], on configuration: VZVirtualMachineConfiguration) {

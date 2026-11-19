@@ -274,13 +274,13 @@ public enum PharoLumaBindings {
                 parameters: { TFBasicType sint. TFBasicType pointer }
                 return: TFBasicType sint
                 with: { aChannel. aName asString })'.
-        synth class compile: 'channel: aChannel colour: aDictionary
+        synth class compile: 'channel: aChannel color: aDictionary
             "What a voice does beyond its envelope: #pulseWidth #lfoRate
              #lfoToPitch #lfoToWidth #lfoToCutoff #cutoffEnvelope
              #cutoffDecay #sync #ring #drive. What is left out is left off."
             | at |
             at := [ :key :default | (aDictionary at: key ifAbsent: [ default ]) asFloat ].
-            ^ LumaHost invoke: ''luma_synth_set_colour''
+            ^ LumaHost invoke: ''luma_synth_set_color''
                 parameters: { TFBasicType sint.
                               TFBasicType float. TFBasicType float. TFBasicType float.
                               TFBasicType float. TFBasicType float. TFBasicType float.
@@ -304,13 +304,13 @@ public enum PharoLumaBindings {
             LumaTune hush.
             ^ LumaHost invoke: ''luma_synth_hush'''.
         synth class compile: 'reset
-            "Back to how it started: every channel''s patch, colour and place,
+            "Back to how it started: every channel''s patch, color and place,
              the echo, and the level."
             LumaTune hush.
             ^ LumaHost invoke: ''luma_synth_reset''
                 parameters: { TFBasicType sint } return: TFBasicType void with: { -1 }'.
         synth class compile: 'resetChannel: aChannel
-            "That channel''s patch, colour and place, and whatever it was
+            "That channel''s patch, color and place, and whatever it was
              playing."
             ^ LumaHost invoke: ''luma_synth_reset''
                 parameters: { TFBasicType sint } return: TFBasicType void with: { aChannel }'.
@@ -722,7 +722,7 @@ public enum PharoLumaBindings {
         label class compile: 'on: aDrawable pointSize: aSize
             "Lettering for a scene. The host draws the printable range into an
              atlas the shader samples, so saying something else costs a buffer
-             of corners rather than a rasterisation -- and what fonts this
+             of corners rather than a rasterization -- and what fonts this
              image can reach never comes into it."
             ^ self basicNew
                 setDrawable: aDrawable pointSize: aSize;
@@ -793,14 +793,14 @@ public enum PharoLumaBindings {
                     if (ink < 0.02) discard;
                     frag_color = vec4(tint * ink, ink); }'';
                 mesh: #() primitive: #triangles'.
-        label compile: 'pad: aPoint tint: aColour
+        label compile: 'pad: aPoint tint: aColor
             "Pixels from the top-left corner, both axes alike, so the gap
              above the lettering is the gap beside it whatever shape the
              view happens to be."
             padding := aPoint first @ aPoint last.
             ^ drawable
                 uniform: ''pad'' value: self padInPixels;
-                uniform: ''tint'' value: aColour'.
+                uniform: ''tint'' value: aColor'.
         label compile: 'padInPixels
             "What was asked for is in the units the interface uses; what the
              shader wants is the pixels a texel lands on."

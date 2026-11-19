@@ -308,19 +308,19 @@ public enum PharoExampleCatalog {
                     card
                         attribute: 'p' components: 2;
                         varying: 'uv' components: 2;
-                        uniform: 'centre' value: { angle sin * 0.55. angle cos * 0.55 };
+                        uniform: 'center' value: { angle sin * 0.55. angle cos * 0.55 };
                         image: 'icon' form: session icon;
                         vertexSource: 'void main() {
                             uv = vec2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
                             vec2 square = vec2(min(u_resolution.y / u_resolution.x, 1.0),
                                                min(u_resolution.x / u_resolution.y, 1.0));
-                            gl_Position = u_mvp * vec4((p * 0.2 + centre) * square, 0.0, 1.0); }'
+                            gl_Position = u_mvp * vec4((p * 0.2 + center) * square, 0.0, 1.0); }'
                         fragmentSource: 'void main() {
                             vec4 c = texture(icon, uv);
                             if (c.a < 0.01) discard;
                             frag_color = vec4(c.rgb * c.a, c.a); }';
                         mesh: #(-1 -1  1 -1  -1 1   1 -1  1 1  -1 1) primitive: #triangles;
-                        oscillate: 'centre'
+                        oscillate: 'center'
                             between: { angle sin * 0.55. angle cos * 0.55 }
                             and: { angle sin * 0.7. angle cos * 0.7 }
                             period: 4 ].
@@ -354,20 +354,20 @@ public enum PharoExampleCatalog {
                     card
                         attribute: 'p' components: 2;
                         varying: 'uv' components: 2;
-                        uniform: 'centre' value: { angle sin * 0.55. angle cos * 0.55 };
+                        uniform: 'center' value: { angle sin * 0.55. angle cos * 0.55 };
                         image: 'icon' form: session icon;
                         vertexSource: 'void main() {
                             uv = vec2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
                             vec2 square = vec2(min(u_resolution.y / u_resolution.x, 1.0),
                                                min(u_resolution.x / u_resolution.y, 1.0));
                             float beat = 1.0 + 0.12 * sin(u_time * 5.0);
-                            gl_Position = vec4((p * 0.2 * beat + centre) * square, 0.0, 1.0); }'
+                            gl_Position = vec4((p * 0.2 * beat + center) * square, 0.0, 1.0); }'
                         fragmentSource: 'void main() {
                             vec4 c = texture(icon, uv);
                             if (c.a < 0.01) discard;
                             frag_color = vec4(c.rgb * c.a, c.a); }';
                         mesh: #(-1 -1  1 -1  -1 1   1 -1  1 1  -1 1) primitive: #triangles;
-                        oscillate: 'centre'
+                        oscillate: 'center'
                             between: { angle sin * 0.5. angle cos * 0.5 }
                             and: { angle sin * 0.72. angle cos * 0.72 }
                             period: 3.2 ].
@@ -485,7 +485,7 @@ public enum PharoExampleCatalog {
                     mesh: quad primitive: #triangles.
 
                 "Half sizes, so a catch is judged on the edges rather than
-                 the centres, and on the step the faller crosses the paddle."
+                 the centers, and on the step the faller crosses the paddle."
                 tally := LumaText on: game addDrawable pointSize: 34.
                 tally pad: #(20 18) tint: #(1 0.95 0.8); show: 'SCORE 0'.
 
@@ -576,9 +576,9 @@ public enum PharoExampleCatalog {
             PharoExample(
                 title: "Lettering, drawn from an atlas",
                 code: """
-                "The glyphs are rasterised once into an atlas the shader
+                "The glyphs are rasterized once into an atlas the shader
                  samples. Saying something else costs a buffer of corners --
-                 no rasterising, no recompiling -- so it stands up to text
+                 no rasterizing, no recompiling -- so it stands up to text
                  that changes every frame."
                 words := LumaCanvas new.
                 sign := LumaText on: words addDrawable pointSize: 56.
@@ -590,7 +590,7 @@ public enum PharoExampleCatalog {
             PharoExample(
                 title: "Counting up, a fresh string every frame",
                 code: """
-                "Run the lettering example first. Nothing is rasterised here:
+                "Run the lettering example first. Nothing is rasterized here:
                  each new string is corners and nothing else."
                 ticking := LumaRun fork: [ 1 to: 600 do: [ :each |
                     sign show: 'FRAME ', each printString.
@@ -709,14 +709,14 @@ public enum PharoExampleCatalog {
                     play
                 """),
             PharoExample(
-                title: "Colour a voice yourself",
+                title: "Color a voice yourself",
                 code: """
                 "What a voice does beyond its envelope: the pulse it draws,
                  the slow wave moving it, what the filter does when struck,
                  and how driven it comes out. What is left out is left off."
                 LumaSynth start.
                 LumaSynth channel: 0 preset: #pwmLead.
-                LumaSynth channel: 0 colour: {
+                LumaSynth channel: 0 color: {
                     #pulseWidth -> 0.2.
                     #lfoRate -> 6.
                     #lfoToWidth -> 0.28.
@@ -732,7 +732,7 @@ public enum PharoExampleCatalog {
                 "Stuck droning? This stops every tune and every voice with
                  it, and leaves what the channels are set to alone:
                     LumaSynth hush
-                 Back to how the synth started -- patches, colours, places,
+                 Back to how the synth started -- patches, colors, places,
                  the echo and the level:
                     LumaSynth reset
                  Or just the channel that got away:

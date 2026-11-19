@@ -7,7 +7,7 @@ working with code in this repository.
 
 ```sh
 make                 # Incremental release build via xcodebuild → build/Luma.app
-make check-examples  # Read the Pharo example catalogue in the image
+make check-examples  # Read the Pharo example catalog in the image
 make check-patches   # Play every patch offline, and check panning and echo
 make check-editor    # Ask the compiler's language server what it completes
 make clean           # Remove build artifacts
@@ -56,7 +56,7 @@ so `CShaderTranslate` is not a target at all elsewhere.
 Or open `Luma.xcodeproj` in Xcode and build with Cmd+B (set
 destination to **My Mac**, or to a simulator for the iOS frontend).
 
-The agent bundles, the TypeScript typings and the shader catalogue are
+The agent bundles, the TypeScript typings and the shader catalog are
 generated Swift inside `LumaCore`, and the Pharo image is a resource
 staged into it. Xcode enumerates a package target's sources and
 resources when it loads the package graph -- before any build phase or
@@ -110,7 +110,7 @@ The Pharo surface -- the playground, the notebook cells, the source
 editor with its inline marks, the inspector columns and the canvas --
 is written once for both Apple platforms. `Luma/Platform*.swift` holds
 what the two frameworks name differently: a view, a representable, a
-hosting view, a font, a colour, and what the pointer becomes where
+hosting view, a font, a color, and what the pointer becomes where
 there is one. The source editor is the one place the two really part
 company: a text view is inside a scroll view on AppKit and is one on
 UIKit, the find bar is the app's on one and the system's on the other,
@@ -268,14 +268,14 @@ is gitignored — it is produced at build time.
   `TypeScriptEditorSession` opens a project for an `EditorProfile`. The
   server sees the compiler workspace's `node_modules` and the typings
   embedded in the compiler, so the editor and a build agree. Lexical
-  colouring is `TypeScriptLexer`, and `SourceSyntaxPalette` its colours,
+  coloring is `TypeScriptLexer`, and `SourceSyntaxPalette` its colors,
   shared by both frontends.
 - **Pharo bridges (`Sources/LumaCore/Pharo/`)** — `PharoAsyncBridge`
   carries the image's requests to the Engine and the answers back,
   one reply or a stream of them; `Engine+PharoRequests` answers for
   the project and `Engine+PharoSessionRequests` for a process.
   `PharoSynthBridge` and `PharoCanvasBridge` are the image's entry
-  points into the synthesiser and the canvas. `PharoLumaBindings`
+  points into the synthesizer and the canvas. `PharoLumaBindings`
   compiles the `Luma*` classes into the image on the way up, with
   `PharoSessionBindings` and `PharoPatternBindings` after it. Classes
   and methods written in the image are the project's: `LumaJournal`
@@ -323,7 +323,7 @@ host supplies (`v_uv`, `frag_color`, `u_resolution`, `u_time`,
 - **`CShaderTranslate`** does the same translation at *runtime*, for
   shaders written in a snippet, and answers what the compiler said
   when they will not compile.
-- **Two flavours, deliberately.** OpenGL takes the source as it
+- **Two flavors, deliberately.** OpenGL takes the source as it
   stands, at a version with no explicit locations, binding attributes
   by name; Metal's goes through glslang, which wants both. The
   generated preambles differ accordingly.
@@ -334,16 +334,16 @@ host supplies (`v_uv`, `frag_color`, `u_resolution`, `u_time`,
   of the range. Getting this wrong binds each buffer where another was
   expected, which no compiler will catch.
 
-`LumaText` letters a scene from a glyph atlas the **host** rasterises
+`LumaText` letters a scene from a glyph atlas the **host** rasterizes
 -- Core Text on macOS, Pango on GTK -- because what fonts an image can
 reach is its own business, and the bundled one finds no scalable
 family at all: every point size comes back as the same 14-pixel bitmap.
-The frontends register a `GlyphAtlasRasteriser` on the way up; each
+The frontends register a `GlyphAtlasRasterizer` on the way up; each
 string becomes two triangles a letter. Saying something else goes
 through `remesh:primitive:`, which sets vertices without a commit, so
-text that changes every frame costs a buffer rather than a rasterise
+text that changes every frame costs a buffer rather than a rasterize
 and a shader compile. Its point size is in the units the rest of
-the interface uses, and the atlas is rasterised to match: `u_scale`
+the interface uses, and the atlas is rasterized to match: `u_scale`
 carries how many physical pixels a logical one is worth, so the quads
 land on whole pixels instead of being scaled, which is what would
 make the lettering soft.
@@ -360,8 +360,8 @@ build cannot, a shader that compiles nowhere:
 
 ```sh
 swiftc -o gencheck Sources/LumaCore/{ShaderVocabulary,CanvasGeometry,CanvasScene,CanvasInput}.swift main.swift
-glslang -S frag generated.frag          # OpenGL flavour
-glslang -S frag -V generated.frag       # Metal flavour, as translated
+glslang -S frag generated.frag          # OpenGL flavor
+glslang -S frag -V generated.frag       # Metal flavor, as translated
 ```
 
 ### Symbol visibility (macOS)
@@ -375,7 +375,7 @@ The image resolves the host's `luma_*` entry points by name through
 dlsym, and nothing in Swift calls them. Two consequences, both of
 which have already caused bugs:
 
-- **Release** builds with link-time optimisation, which internalises
+- **Release** builds with link-time optimization, which internalizes
   anything unreferenced. `Luma/PharoBridgeExports.exp` names them so
   it cannot. That list is a *whitelist*, so it is set on the Release
   configuration only — on Debug it would hide the entry point the stub

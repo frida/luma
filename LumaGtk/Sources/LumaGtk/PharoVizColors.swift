@@ -1,6 +1,6 @@
 import Foundation
 
-/// The colours the moldable visualisations draw with, in light and dark, so a
+/// The colors the moldable visualizations draw with, in light and dark, so a
 /// graph or chart reads the same as the SwiftUI ones and follows the theme --
 /// a node is a card with contrasting text, not an inverted block.
 @MainActor
@@ -26,7 +26,7 @@ enum PharoVizColors {
         let label: RGBA
     }
 
-    /// Frida's brand colour, worn by a selected node and its edges, a mark on a
+    /// Frida's brand color, worn by a selected node and its edges, a mark on a
     /// chart -- the same in either theme.
     static let brand = RGBA(0.937, 0.392, 0.337)
 

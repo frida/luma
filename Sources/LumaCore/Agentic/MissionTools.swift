@@ -2389,7 +2389,7 @@ public enum MissionTools {
     private static func registerLookupFridaAPI(in catalog: ToolCatalog) {
         let spec = ActionSpec(
             name: "lookup_frida_api",
-            description: "Search Frida's GumJS TypeScript declarations. Returns matching declarations with their doc comments. Use this when the LLM training data may be stale (Frida 17 reorganised the Module API; symbols like findGlobalExportByName replaced the older findExportByName). Pass a function or class name as 'query' (case-insensitive substring match).",
+            description: "Search Frida's GumJS TypeScript declarations. Returns matching declarations with their doc comments. Use this when the LLM training data may be stale (Frida 17 reorganized the Module API; symbols like findGlobalExportByName replaced the older findExportByName). Pass a function or class name as 'query' (case-insensitive substring match).",
             inputSchemaJSON: """
                 {"type":"object","properties":{"query":{"type":"string"},"max_matches":{"type":"integer","minimum":1,"maximum":40,"default":12}},"required":["query"],"additionalProperties":false}
                 """,
