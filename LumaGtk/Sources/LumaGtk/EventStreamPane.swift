@@ -870,13 +870,8 @@ final class EventStreamPane {
         badge.valign = .start
         row.append(child: badge)
 
-        let allStrings = message.values.compactMap { value -> String? in
-            if case .string(let s) = value { return s }
-            return nil
-        }
-
-        if !message.values.isEmpty && allStrings.count == message.values.count {
-            let payload = Label(str: allStrings.joined(separator: " "))
+        if let line = message.line {
+            let payload = Label(str: line)
             payload.add(cssClass: "monospace")
             payload.halign = .fill
             payload.xalign = 0

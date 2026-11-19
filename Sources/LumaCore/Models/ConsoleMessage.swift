@@ -9,6 +9,22 @@ public struct ConsoleMessage: CustomStringConvertible, Codable, Sendable {
         self.values = values
     }
 
+    public var line: String? {
+        guard !values.isEmpty else { return nil }
+        var words: [String] = []
+        for value in values {
+            switch value {
+            case .string(let text):
+                words.append(text)
+            case .number, .boolean, .null, .undefined, .bigInt, .symbol:
+                words.append(value.inlineDescription)
+            default:
+                return nil
+            }
+        }
+        return words.joined(separator: " ")
+    }
+
     public var description: String {
         let body =
             values

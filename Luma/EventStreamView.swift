@@ -858,17 +858,10 @@ struct EventRow: View, Equatable {
             return nil
         }
 
-        let allStrings = message.values.compactMap { value -> String? in
-            if case .string(let s) = value {
-                return s
-            }
-            return nil
-        }
-
         let valueView: AnyView
-        if !message.values.isEmpty && allStrings.count == message.values.count {
+        if let line = message.line {
             valueView = AnyView(
-                Text(allStrings.joined(separator: " "))
+                Text(line)
                     .font(.system(.footnote, design: .monospaced))
                     .textSelection(.enabled)
                     .lineLimit(3)
