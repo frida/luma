@@ -180,7 +180,7 @@ struct CollaborationPanel: View {
                     }
 
                     HStack {
-                        Text(collaboration.isHost ? "You are hosting this lab." : "You joined this lab.")
+                        Text(collaboration.isOwner ? "You are hosting this lab." : "You joined this lab.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()

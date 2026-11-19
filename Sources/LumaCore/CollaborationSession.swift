@@ -294,7 +294,6 @@ public final class CollaborationSession {
     private(set) public var chatMessages: [ChatMessage] = []
     private(set) public var vapidPublicKey: String?
     private(set) public var registeredPushPlatforms: Set<String> = []
-    public var isHost = false
 
     public var isOwner: Bool {
         guard let localUser else { return false }
@@ -415,10 +414,7 @@ public final class CollaborationSession {
             try await device.bus.attach()
 
             if let existingLabID {
-                isHost = false
                 pendingJoinLabID = existingLabID
-            } else {
-                isHost = true
             }
             triggerJoinOrCreateIfReady()
         } catch {

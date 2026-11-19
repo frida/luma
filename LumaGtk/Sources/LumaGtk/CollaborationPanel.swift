@@ -629,7 +629,7 @@ final class CollaborationPanel {
             labSection.append(child: headerRow)
 
             let roleRow = Box(orientation: .horizontal, spacing: 6)
-            let roleLabel = Label(str: engine.collaboration.isHost ? "You are hosting this lab." : "You joined this lab.")
+            let roleLabel = Label(str: engine.collaboration.isOwner ? "You are hosting this lab." : "You joined this lab.")
             roleLabel.halign = .start
             roleLabel.hexpand = true
             roleLabel.add(cssClass: "caption")
