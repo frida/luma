@@ -31,6 +31,9 @@ final class NotebookPane {
     private var tickerTask: Task<Void, Never>?
     private let emptyStateActionHolder = ActionHolder()
 
+    private static let newNoteButtonMargin = 20
+    private static let clearanceUnderLastEntry = 80
+
     init(engine: Engine) {
         self.engine = engine
 
@@ -49,7 +52,7 @@ final class NotebookPane {
         entriesBox.marginStart = 16
         entriesBox.marginEnd = 16
         entriesBox.marginTop = 12
-        entriesBox.marginBottom = 16
+        entriesBox.marginBottom = Self.clearanceUnderLastEntry
         entriesBox.hexpand = true
 
         scroll = ScrolledWindow()
@@ -86,8 +89,8 @@ final class NotebookPane {
         newNoteButton.add(cssClass: "luma-notebook-fab")
         newNoteButton.halign = .end
         newNoteButton.valign = .end
-        newNoteButton.marginEnd = 20
-        newNoteButton.marginBottom = 20
+        newNoteButton.marginEnd = Self.newNoteButtonMargin
+        newNoteButton.marginBottom = Self.newNoteButtonMargin
         newNoteButton.visible = false
         overlay.addOverlay(widget: newNoteButton)
 
