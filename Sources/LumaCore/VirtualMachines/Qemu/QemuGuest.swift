@@ -503,11 +503,12 @@ enum QemuBoot {
             }
 
             // The hostlink is a port of the same virtio device the kernel's own console driver
-            // takes, and it takes it first.
+            // takes, and it takes it first, whether built in or loaded as a module.
             return [
                 "-kernel", kernel,
                 "-initrd", ramdisk,
-                "-append", "console=\(console) console=tty0 initcall_blacklist=virtio_console_init",
+                "-append",
+                "console=\(console) console=tty0 initcall_blacklist=virtio_console_init module_blacklist=virtio_console",
                 "-no-reboot",
             ]
         }
