@@ -349,18 +349,25 @@ public struct DecodedPattern: Identifiable, Sendable {
 
     public var summary: String {
         if let formatted {
-            return formatted
+            return Self.spellingOutControlCharacters(in: formatted)
         }
         if let label {
             return label
         }
         if let value {
-            return value.description
+            return Self.spellingOutControlCharacters(in: value.description)
         }
         if !elements.isEmpty {
             return "[\(elements.count)]"
         }
         return ""
+    }
+
+    private static func spellingOutControlCharacters(in text: String) -> String {
+        String(
+            text.unicodeScalars.flatMap { scalar -> [Character] in
+                scalar.properties.generalCategory == .control ? Array(String(format: "\\x%02X", scalar.value)) : [Character(scalar)]
+            })
     }
 }
 
