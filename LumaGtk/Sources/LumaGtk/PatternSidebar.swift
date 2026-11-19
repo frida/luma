@@ -221,6 +221,7 @@ final class PatternSidebar {
             chevron.set(child: chevronImage)
             chevron.add(cssClass: "flat")
             chevron.add(cssClass: "circular")
+            chevron.add(cssClass: "luma-sidebar-chevron")
             chevron.tooltipText = isExpanded ? "Hide patterns" : "Show patterns"
             chevron.onClicked { [weak self] _ in
                 MainActor.assumeIsolated {

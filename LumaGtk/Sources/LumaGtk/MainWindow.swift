@@ -1000,6 +1000,7 @@ final class MainWindow: InstrumentUIHost {
         chevronButton.set(child: chevron)
         chevronButton.add(cssClass: "flat")
         chevronButton.add(cssClass: "circular")
+        chevronButton.add(cssClass: "luma-sidebar-chevron")
         chevronButton.tooltipText = "Hide missions"
         chevronButton.visible = false
         chevronButton.onClicked { [weak self] _ in
