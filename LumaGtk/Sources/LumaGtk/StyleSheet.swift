@@ -11,6 +11,11 @@ enum StyleSheet {
         padding: 0;
     }
 
+    .luma-flush-sidebar-list > row {
+        margin-left: 4px;
+        margin-right: 4px;
+    }
+
     .luma-tight-sidebar > row {
         padding-left: 4px;
         padding-right: 4px;
