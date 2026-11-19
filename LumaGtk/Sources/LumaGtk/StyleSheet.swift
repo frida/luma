@@ -390,6 +390,13 @@ enum StyleSheet {
         background-color: alpha(@theme_fg_color, 0.12);
     }
 
+    button.luma-notebook-fab:not(.suggested-action) {
+        background-color: mix(@window_bg_color, @window_fg_color, 0.16);
+    }
+    button.luma-notebook-fab:not(.suggested-action):hover {
+        background-color: mix(@window_bg_color, @window_fg_color, 0.22);
+    }
+
     button.luma-fab {
         min-height: 0;
         padding: 6px 18px;

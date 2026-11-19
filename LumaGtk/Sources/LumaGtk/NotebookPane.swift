@@ -17,6 +17,7 @@ final class NotebookPane {
     private let joiningState: Box
     private let entriesBox: Box
     private let newNoteButton: Button
+    private let newEntryButtons: Box
     private let timeFormatter: DateFormatter
 
     private var editingEntries: Set<UUID> = []
@@ -31,7 +32,7 @@ final class NotebookPane {
     private var tickerTask: Task<Void, Never>?
     private let emptyStateActionHolder = ActionHolder()
 
-    private static let newNoteButtonMargin = 20
+    private static let newEntryButtonsMargin = 20
     private static let clearanceUnderLastEntry = 80
 
     init(engine: Engine) {
@@ -87,18 +88,31 @@ final class NotebookPane {
         newNoteButton.add(cssClass: "suggested-action")
         newNoteButton.add(cssClass: "pill")
         newNoteButton.add(cssClass: "luma-notebook-fab")
-        newNoteButton.halign = .end
-        newNoteButton.valign = .end
-        newNoteButton.marginEnd = Self.newNoteButtonMargin
-        newNoteButton.marginBottom = Self.newNoteButtonMargin
-        newNoteButton.visible = false
-        overlay.addOverlay(widget: newNoteButton)
+
+        let newPharoCellButton = Button(label: "New Pharo Cell")
+        newPharoCellButton.add(cssClass: "pill")
+        newPharoCellButton.add(cssClass: "luma-notebook-fab")
+
+        newEntryButtons = Box(orientation: .horizontal, spacing: 8)
+        newEntryButtons.halign = .end
+        newEntryButtons.valign = .end
+        newEntryButtons.marginEnd = Self.newEntryButtonsMargin
+        newEntryButtons.marginBottom = Self.newEntryButtonsMargin
+        newEntryButtons.visible = false
+        newEntryButtons.append(child: newNoteButton)
+        newEntryButtons.append(child: newPharoCellButton)
+        overlay.addOverlay(widget: newEntryButtons)
 
         widget.append(child: overlay)
 
         newNoteButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.addUserNote()
+            }
+        }
+        newPharoCellButton.onClicked { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.addPharoCell()
             }
         }
 
@@ -265,7 +279,7 @@ final class NotebookPane {
         joiningState.visible = isJoining
         emptyState.visible = !hasEntries && !isJoining
         scroll.visible = hasEntries
-        newNoteButton.visible = hasEntries && !anyEditing
+        newEntryButtons.visible = hasEntries && !anyEditing
     }
 
     private func addUserNote(after other: LumaCore.NotebookEntry? = nil) {
@@ -281,6 +295,17 @@ final class NotebookPane {
         autoEditedEntries.insert(note.id)
         draftEntries.insert(note.id)
         engine.addNotebookEntry(note, after: other)
+    }
+
+    private func addPharoCell() {
+        let cell = LumaCore.NotebookEntry(kind: .pharo, title: "", details: "", binaryData: nil, processName: nil)
+        autoEditedEntries.insert(cell.id)
+        engine?.addNotebookEntry(cell)
+    }
+
+    private func scrollToEnd() {
+        guard let adjustment = scroll.vadjustment else { return }
+        adjustment.value = adjustment.upper - adjustment.pageSize
     }
 
     private func deleteEntry(_ entry: LumaCore.NotebookEntry) {
@@ -416,6 +441,12 @@ final class NotebookPane {
             let cell = PharoNotebookCell(entry: entry, engine: engine)
             pharoCells[entry.id] = cell
             inner.append(child: cell.widget)
+            if autoEditedEntries.remove(entry.id) != nil {
+                Task { @MainActor [weak self] in
+                    cell.focus()
+                    self?.scrollToEnd()
+                }
+            }
         } else {
             if let jsValue = entry.jsValue, let engine {
                 let wrapper = JSInspectValueWidget.make(

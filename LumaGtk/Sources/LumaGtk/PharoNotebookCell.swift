@@ -19,6 +19,7 @@ final class PharoNotebookCell {
     private var entry: NotebookEntry
     private let engine: Engine
     private let buffer: GtkSource.Buffer
+    private let editor: GtkSource.View
     private let resultSlot = Box(orientation: .vertical, spacing: 0)
     private let failure = Label(str: "")
     private var completion: PharoCompletionController!
@@ -38,7 +39,7 @@ final class PharoNotebookCell {
         buffer.set(text: entry.details, len: Int(entry.details.utf8.count))
         PharoHighlighting.apply(to: buffer)
 
-        let editor = GtkSource.View(buffer: buffer)
+        editor = GtkSource.View(buffer: buffer)
         editor.monospace = true
         editor.enableSnippets = true
         editor.highlightCurrentLine = false
@@ -139,6 +140,10 @@ final class PharoNotebookCell {
         if changed.contains(.pharoSnapshot) {
             showSnapshot(entry.pharoSnapshot)
         }
+    }
+
+    func focus() {
+        _ = editor.grabFocus()
     }
 
     private func run() {
