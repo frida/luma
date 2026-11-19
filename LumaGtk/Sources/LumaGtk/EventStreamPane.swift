@@ -705,7 +705,7 @@ final class EventStreamPane {
         delta.add(cssClass: "luma-event-delta")
         delta.halign = .start
         delta.setSizeRequest(width: 64, height: -1)
-        Self.centreOnFirstLine(delta)
+        delta.centreOnFirstMonospaceLine()
         row.append(child: delta)
 
         let content = Box(orientation: .vertical, spacing: 4)
@@ -738,23 +738,12 @@ final class EventStreamPane {
 
         let badge = makeSourceBadge(for: event)
         badge.halign = .end
-        Self.centreOnFirstLine(badge)
+        badge.centreOnFirstMonospaceLine()
         row.append(child: badge)
 
         attachRowContextMenu(to: row, event: event)
         return row
     }
-
-    private static func centreOnFirstLine(_ widget: Widget) {
-        widget.valign = .start
-        widget.marginTop = max(0, (lineHeight - widget.naturalSize(along: .vertical)) / 2)
-    }
-
-    private static let lineHeight: Int = {
-        let line = Label(str: " ")
-        line.add(cssClass: "monospace")
-        return line.naturalSize(along: .vertical)
-    }()
 
     private func makeDataView(for event: RuntimeEvent) -> Widget? {
         guard let engine, let data = event.data, !data.isEmpty else { return nil }
@@ -877,7 +866,7 @@ final class EventStreamPane {
 
         let badge = Self.makeLevelBadge(message.level)
         badge.setSizeRequest(width: Self.levelBadgeWidth, height: -1)
-        Self.centreOnFirstLine(badge)
+        badge.centreOnFirstMonospaceLine()
         row.append(child: badge)
 
         if let line = message.line {
