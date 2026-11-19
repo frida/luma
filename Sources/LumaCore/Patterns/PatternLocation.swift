@@ -46,6 +46,14 @@ public enum PatternTint: Hashable, Sendable {
 
 extension DecodedPattern {
     public var visibleChildren: [DecodedPattern] {
-        sealed ? [] : children.filter { !$0.hidden }
+        guard !sealed else { return [] }
+        return children.filter { !$0.hidden && !$0.isPadding }.flatMap { child in
+            let lifted = child.inlined ? child.visibleChildren : []
+            return lifted.isEmpty ? [child] : lifted
+        }
+    }
+
+    private var isPadding: Bool {
+        name.isEmpty && typeName == "padding"
     }
 }
