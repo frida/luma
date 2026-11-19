@@ -210,7 +210,8 @@ public struct PatternSummary: Hashable, Sendable {
     }
 
     public var decodableTypes: [PatternTypeSummary] {
-        types.filter { $0.name != rootType && ($0.kind == .struct || $0.kind == .union || $0.kind == .bitfield) }
+        let decodable = types.filter { $0.name != rootType && ($0.kind == .struct || $0.kind == .union || $0.kind == .bitfield) }
+        return decodable.filter(\.isDeclaredInSource) + decodable.filter { !$0.isDeclaredInSource }
     }
 
     public var declaredTypes: [PatternTypeSummary] {
