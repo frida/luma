@@ -1367,8 +1367,9 @@ final class TargetPicker {
         }
         let textBox = Box(orientation: .vertical, spacing: 0)
         textBox.valign = .center
+        textBox.hexpand = true
         let nameLabel = Label(str: proc.name)
-        nameLabel.halign = .start
+        nameLabel.xalign = 0
         nameLabel.ellipsize = EllipsizeMode.end
         nameLabel.maxWidthChars = 64
         if proc.pid == 0 {
@@ -1376,7 +1377,6 @@ final class TargetPicker {
         }
         let subtitle = processSubtitle(for: proc)
         let subtitleLabel = Label(str: subtitle)
-        subtitleLabel.halign = .start
         subtitleLabel.ellipsize = EllipsizeMode.middle
         subtitleLabel.xalign = 0
         subtitleLabel.maxWidthChars = 64
