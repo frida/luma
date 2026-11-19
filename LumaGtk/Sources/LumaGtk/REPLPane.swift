@@ -329,12 +329,6 @@ final class REPLPane {
                 resultWidget = view.widget
                 fillsWidth = true
             case .binary(let data, let meta):
-                let column2 = Box(orientation: .vertical, spacing: 4)
-                let kind = meta?.typedArray ?? "binary"
-                let header = Label(str: "<\(kind) \(data.count) bytes>")
-                header.add(cssClass: "monospace")
-                header.halign = .start
-                column2.append(child: header)
                 let cellID = cell.id
                 let decode = PatternDecodeView(
                     engine: engine!, sessionID: sessionID, data: data, baseAddress: meta?.baseAddress,
@@ -343,9 +337,8 @@ final class REPLPane {
                     engine?.setPlacements(placements, forREPLCell: cellID)
                 }
                 decodeViews[cellID] = decode
-                decode.widget.hexpand = true
-                column2.append(child: decode.widget)
-                resultWidget = column2
+                resultArrow.marginTop = PatternDecodeView.insetPlacingOnFirstHexRow(resultArrow)
+                resultWidget = decode.widget
                 fillsWidth = true
             case .text(let s):
                 let view = REPLStyledResult(LumaCore.StyledText(s)) { [weak self] in self?.console.pinToBottom() }
