@@ -74,7 +74,6 @@ struct JSInspectValueView: View {
 }
 
 private struct JSInspectNodeView: View {
-    static let chunkSize = 5
 
     let value: JSInspectValue
     let depth: Int
@@ -84,7 +83,7 @@ private struct JSInspectNodeView: View {
     let selection: Binding<SidebarItemID?>
 
     @State private var isExpanded: Bool
-    @State private var childLimit: Int = Self.chunkSize
+    @State private var childLimit: Int = InspectedChildren.pageSize
 
     @Environment(\.replExpandAction) private var onExpand
     @Environment(\.errorPresenter) private var errorPresenter
@@ -147,7 +146,7 @@ private struct JSInspectNodeView: View {
                     }
 
                     if props.count > childLimit {
-                        showMoreButton(total: props.count, noun: "properties")
+                        showMoreButton(InspectedChildren(.properties, total: props.count))
                     }
                 }
                 .padding(.leading, 12)
@@ -161,11 +160,9 @@ private struct JSInspectNodeView: View {
         )
     }
 
-    private func showMoreButton(total: Int, noun: String) -> some View {
-        let remaining = total - childLimit
-        let next = min(Self.chunkSize, remaining)
-        return Button("Show \(next) more (\(remaining) \(noun) left)…") {
-            childLimit = min(childLimit + Self.chunkSize, total)
+    private func showMoreButton(_ children: InspectedChildren) -> some View {
+        Button(children.showMoreTitle(shown: childLimit)) {
+            childLimit = children.shown(afterMoreThan: childLimit)
             onExpand()
         }
         .platformLinkButtonStyle()
@@ -205,7 +202,7 @@ private struct JSInspectNodeView: View {
                     }
 
                     if elements.count > childLimit {
-                        showMoreButton(total: elements.count, noun: "items")
+                        showMoreButton(InspectedChildren(.items, total: elements.count))
                     }
                 }
                 .padding(.leading, 12)
@@ -250,7 +247,7 @@ private struct JSInspectNodeView: View {
                     }
 
                     if entries.count > childLimit {
-                        showMoreButton(total: entries.count, noun: "entries")
+                        showMoreButton(InspectedChildren(.entries, total: entries.count))
                     }
                 }
                 .padding(.leading, 12)
@@ -285,7 +282,7 @@ private struct JSInspectNodeView: View {
                     }
 
                     if elements.count > childLimit {
-                        showMoreButton(total: elements.count, noun: "items")
+                        showMoreButton(InspectedChildren(.items, total: elements.count))
                     }
                 }
                 .padding(.leading, 12)

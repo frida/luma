@@ -5,8 +5,7 @@ import LumaCore
 @MainActor
 private final class ChunkedRowsPager {
     private let body: Box
-    private let count: Int
-    private let noun: String
+    private let children: InspectedChildren
     private var shown: Int
     private let makeRow: (Int, inout [Any]) -> Widget
     private let onExpand: () -> Void
@@ -16,16 +15,14 @@ private final class ChunkedRowsPager {
 
     init(
         body: Box,
-        count: Int,
-        noun: String,
+        children: InspectedChildren,
         shown: Int,
         lastRow: Widget,
         onExpand: @escaping () -> Void,
         makeRow: @escaping (Int, inout [Any]) -> Widget
     ) {
         self.body = body
-        self.count = count
-        self.noun = noun
+        self.children = children
         self.shown = shown
         self.lastRow = lastRow
         self.onExpand = onExpand
@@ -48,14 +45,14 @@ private final class ChunkedRowsPager {
 
     private func advance() {
         guard let button = currentButton else { return }
-        let chunkEnd = min(shown + JSInspectValueWidget.chunkSize, count)
+        let chunkEnd = children.shown(afterMoreThan: shown)
         for idx in shown..<chunkEnd {
             let row = makeRow(idx, &deferredKeepers)
             body.insertChildAfter(child: row, sibling: lastRow)
             lastRow = row
         }
         shown = chunkEnd
-        if shown < count {
+        if shown < children.total {
             updateButtonLabel()
         } else {
             button.visible = false
@@ -65,9 +62,7 @@ private final class ChunkedRowsPager {
 
     private func updateButtonLabel() {
         guard let button = currentButton else { return }
-        let remaining = count - shown
-        let next = min(JSInspectValueWidget.chunkSize, remaining)
-        button.label = "Show \(next) more (\(remaining) \(noun) left)…"
+        button.label = children.showMoreTitle(shown: shown)
     }
 }
 
@@ -95,7 +90,6 @@ final class JSInspectValueWidget {
         self.keepAlive = keepers
     }
 
-    fileprivate static let chunkSize = 5
 
     private static func build(
         value: JSInspectValue,
@@ -143,7 +137,7 @@ final class JSInspectValueWidget {
             return labelWithMarkup(span("{}", color: cyan))
         }
         let body = makeBodyBox()
-        appendChunkedRows(into: body, count: props.count, noun: "properties", onExpand: onExpand, keepAlive: &keepAlive) { idx, keepers in
+        appendChunkedRows(into: body, children: InspectedChildren(.properties, total: props.count), onExpand: onExpand, keepAlive: &keepAlive) { idx, keepers in
             let prop = props[idx]
             let row = Box(orientation: .horizontal, spacing: 4)
             row.hexpand = true
@@ -178,7 +172,7 @@ final class JSInspectValueWidget {
             return labelWithMarkup(span("[]", color: cyan))
         }
         let body = makeBodyBox()
-        appendChunkedRows(into: body, count: elements.count, noun: "items", onExpand: onExpand, keepAlive: &keepAlive) { idx, keepers in
+        appendChunkedRows(into: body, children: InspectedChildren(.items, total: elements.count), onExpand: onExpand, keepAlive: &keepAlive) { idx, keepers in
             let row = Box(orientation: .horizontal, spacing: 4)
             row.hexpand = true
             let indexLabel = labelWithMarkup(span("[\(idx)]", color: dim))
@@ -212,7 +206,7 @@ final class JSInspectValueWidget {
             return labelWithMarkup(span("Map{}", color: cyan))
         }
         let body = makeBodyBox()
-        appendChunkedRows(into: body, count: entries.count, noun: "entries", onExpand: onExpand, keepAlive: &keepAlive) { idx, keepers in
+        appendChunkedRows(into: body, children: InspectedChildren(.entries, total: entries.count), onExpand: onExpand, keepAlive: &keepAlive) { idx, keepers in
             let entry = entries[idx]
             let row = Box(orientation: .horizontal, spacing: 4)
             row.hexpand = true
@@ -244,7 +238,7 @@ final class JSInspectValueWidget {
             return labelWithMarkup(span("Set{}", color: cyan))
         }
         let body = makeBodyBox()
-        appendChunkedRows(into: body, count: elements.count, noun: "items", onExpand: onExpand, keepAlive: &keepAlive) { idx, keepers in
+        appendChunkedRows(into: body, children: InspectedChildren(.items, total: elements.count), onExpand: onExpand, keepAlive: &keepAlive) { idx, keepers in
             let row = Box(orientation: .horizontal, spacing: 4)
             row.hexpand = true
             let bullet = labelWithMarkup(span("•", color: dim))
@@ -275,24 +269,22 @@ final class JSInspectValueWidget {
 
     private static func appendChunkedRows(
         into body: Box,
-        count: Int,
-        noun: String,
+        children: InspectedChildren,
         onExpand: @escaping () -> Void,
         keepAlive: inout [Any],
         makeRow: @escaping (Int, inout [Any]) -> Widget
     ) {
-        let initial = min(count, chunkSize)
+        let initial = children.initiallyShown
         var lastRow: Widget?
         for idx in 0..<initial {
             let row = makeRow(idx, &keepAlive)
             body.append(child: row)
             lastRow = row
         }
-        guard count > initial, let lastRow else { return }
+        guard children.total > initial, let lastRow else { return }
         let pager = ChunkedRowsPager(
             body: body,
-            count: count,
-            noun: noun,
+            children: children,
             shown: initial,
             lastRow: lastRow,
             onExpand: onExpand,
