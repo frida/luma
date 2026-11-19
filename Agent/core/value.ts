@@ -185,8 +185,7 @@ function encodeObjectTree(
             const err = obj as Error;
             const name = err.name ?? "Error";
             const message = err.message ?? "";
-            const stack = err.stack ?? "";
-            return [ValueTag.Error, name, message, stack];
+            return [ValueTag.Error, name, message, framesOf(err)];
         }
 
         if (obj instanceof Date) {
@@ -297,6 +296,16 @@ function encodeObjectTree(
         expectAll(pending, wanted);
         return [ValueTag.Object, id, entries];
     }
+}
+
+function framesOf(err: Error): string {
+    const stack = err.stack ?? "";
+    const firstLineEnd = stack.indexOf("\n");
+    const firstLine = (firstLineEnd !== -1) ? stack.slice(0, firstLineEnd) : stack;
+    if (firstLine.trimStart().startsWith("at ")) {
+        return stack;
+    }
+    return (firstLineEnd !== -1) ? stack.slice(firstLineEnd + 1) : "";
 }
 
 // The pending list is walked from the back, so what a value holds is put there
