@@ -319,6 +319,7 @@ final class REPLPane {
                     }
                     rowKeepers.append(wrapper)
                     resultWidget = wrapper.widget
+                    fillsWidth = true
                 } else {
                     resultWidget = makePlainResultLabel(text: format(result: cell.result))
                 }

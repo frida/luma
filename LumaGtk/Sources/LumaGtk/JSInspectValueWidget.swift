@@ -333,7 +333,6 @@ final class JSInspectValueWidget {
     private static func makeBytesView(bytes: JSInspectValue.Bytes, engine: Engine, sessionID: UUID, stored: StoredValue?, keepAlive: inout [Any]) -> Widget {
         let column = Box(orientation: .vertical, spacing: 4)
         column.hexpand = true
-        column.halign = .start
 
         let header = labelWithMarkup(
             span("Bytes(", color: mint)

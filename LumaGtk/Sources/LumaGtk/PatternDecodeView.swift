@@ -32,7 +32,6 @@ final class PatternDecodeView {
     private let hexView: HexView
     private let hexScroller: ScrolledWindow
     private let treeScroller: ScrolledWindow
-    private let treePane: Widget
     private let treeList: ListBox
     private let hintLabel: Label
     private let problemLabel: Label
@@ -92,6 +91,7 @@ final class PatternDecodeView {
         hexScroller = ScrolledWindow()
         hexScroller.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
         hexScroller.set(child: hexView.widget)
+        hexScroller.hexpand = false
 
         treeList = ListBox()
         treeList.selectionMode = .single
@@ -103,10 +103,9 @@ final class PatternDecodeView {
         treeScroller.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
         treeScroller.set(child: treeList)
         treeScroller.hexpand = true
-        treeScroller.setSizeRequest(width: 360, height: -1)
+        treeScroller.setSizeRequest(width: Self.treeMinimumWidth, height: -1)
 
-        let panes: Widget
-        (panes, treePane) = Self.arrange(hexScroller, beside: treeScroller, sizing: sizing)
+        let panes = Self.arrange(hexScroller, beside: treeScroller, sizing: sizing)
 
         hintLabel = Label(str: HexView.editingHint)
         hintLabel.add(cssClass: "dim-label")
@@ -146,29 +145,38 @@ final class PatternDecodeView {
         decodeAsPatternsChange()
     }
 
-    private static func arrange(_ hex: Widget, beside tree: Widget, sizing: PatternDecodeSizing) -> (panes: Widget, treePane: Widget) {
+    private static func arrange(_ hex: Widget, beside tree: Widget, sizing: PatternDecodeSizing) -> Widget {
+        let panes = Box(orientation: .horizontal, spacing: spacingSideBySide)
+        panes.append(child: hex)
+        panes.append(child: tree)
         switch sizing {
         case .capped:
-            let panes = FlowBox()
-            panes.selectionMode = .none
-            panes.minChildrenPerLine = 1
-            panes.maxChildrenPerLine = 2
-            panes.columnSpacing = 16
-            panes.rowSpacing = 6
-            let wrapped = [hex, tree].map { pane -> FlowBoxChild in
-                let child = FlowBoxChild()
-                child.focusable = false
-                child.set(child: pane)
-                panes.append(child: child)
-                return child
-            }
-            return (panes, wrapped[1])
+            return stackingWhenNarrow(panes, leadingWith: hex)
         case .fill:
-            let panes = Box(orientation: .horizontal, spacing: 16)
-            panes.append(child: hex)
-            panes.append(child: tree)
-            return (panes, tree)
+            return panes
         }
+    }
+
+    private static func stackingWhenNarrow(_ panes: Box, leadingWith hex: Widget) -> ScrolledWindow {
+        let frame = ScrolledWindow()
+        frame.setPolicy(hscrollbarPolicy: .external, vscrollbarPolicy: .never)
+        frame.propagateNaturalWidth = true
+        frame.propagateNaturalHeight = true
+        frame.set(child: panes)
+        frame.hadjustment.onChanged { available in
+            MainActor.assumeIsolated {
+                var hexWidth: gint = 0
+                hex.measure(orientation: .horizontal, for: -1, natural: &hexWidth)
+                let fitsSideBySide = Int(available.pageSize) >= Int(hexWidth) + spacingSideBySide + treeMinimumWidth
+                let orientation: Orientation = fitsSideBySide ? .horizontal : .vertical
+                guard panes.orientation != orientation else { return }
+                Task { @MainActor in
+                    panes.orientation = orientation
+                    panes.spacing = fitsSideBySide ? spacingSideBySide : spacingStacked
+                }
+            }
+        }
+        return frame
     }
 
     func setData(_ data: Data, baseAddress: UInt64?) {
@@ -520,7 +528,7 @@ final class PatternDecodeView {
     }
 
     private func showTree() {
-        treePane.visible = !placements.isEmpty
+        treeScroller.visible = !placements.isEmpty
     }
 
     private func decodeAsPatternsChange() {

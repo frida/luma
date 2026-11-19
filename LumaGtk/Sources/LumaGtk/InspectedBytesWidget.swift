@@ -47,7 +47,6 @@ final class InspectedBytesWidget {
 
         widget = Box(orientation: .vertical, spacing: 4)
         widget.hexpand = true
-        widget.halign = .start
         widget.append(child: decodeView.widget)
         widget.append(child: rereadButton)
         widget.append(child: problemLabel)
