@@ -102,16 +102,16 @@ final class JSInspectValueWidget {
     ) -> Widget {
         switch value {
         case .object(_, let props):
-            return makeObjectExpander(props: props, depth: depth, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepAlive)
+            return makeObjectExpander(props: props, preview: value.inlinePreview, depth: depth, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepAlive)
 
         case .array(_, let elements):
-            return makeArrayExpander(elements: elements, depth: depth, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepAlive)
+            return makeArrayExpander(elements: elements, preview: value.inlinePreview, depth: depth, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepAlive)
 
         case .map(_, let entries):
-            return makeMapExpander(entries: entries, depth: depth, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepAlive)
+            return makeMapExpander(entries: entries, preview: value.inlinePreview, depth: depth, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepAlive)
 
         case .set(_, let elements):
-            return makeSetExpander(elements: elements, depth: depth, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepAlive)
+            return makeSetExpander(elements: elements, preview: value.inlinePreview, depth: depth, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepAlive)
 
         case .bytes(let bytes):
             return makeBytesView(bytes: bytes, engine: engine, sessionID: sessionID, stored: stored, keepAlive: &keepAlive)
@@ -126,6 +126,7 @@ final class JSInspectValueWidget {
 
     private static func makeObjectExpander(
         props: [JSInspectValue.Property],
+        preview: String?,
         depth: Int,
         engine: Engine,
         sessionID: UUID,
@@ -151,7 +152,7 @@ final class JSInspectValueWidget {
         }
         return makeExpander(
             title: "Object{\(props.count)}",
-            preview: inlinePreview(forObjectProps: props),
+            preview: preview,
             color: cyan,
             depth: depth,
             body: body
@@ -160,6 +161,7 @@ final class JSInspectValueWidget {
 
     private static func makeArrayExpander(
         elements: [JSInspectValue],
+        preview: String?,
         depth: Int,
         engine: Engine,
         sessionID: UUID,
@@ -184,7 +186,7 @@ final class JSInspectValueWidget {
         }
         return makeExpander(
             title: "Array[\(elements.count)]",
-            preview: inlinePreview(forArrayElements: elements),
+            preview: preview,
             color: cyan,
             depth: depth,
             body: body
@@ -193,6 +195,7 @@ final class JSInspectValueWidget {
 
     private static func makeMapExpander(
         entries: [JSInspectValue.Property],
+        preview: String?,
         depth: Int,
         engine: Engine,
         sessionID: UUID,
@@ -219,11 +222,12 @@ final class JSInspectValueWidget {
             row.append(child: valChild)
             return row
         }
-        return makeExpander(title: "Map{\(entries.count)}", preview: nil, color: cyan, depth: depth, body: body)
+        return makeExpander(title: "Map{\(entries.count)}", preview: preview, color: cyan, depth: depth, body: body)
     }
 
     private static func makeSetExpander(
         elements: [JSInspectValue],
+        preview: String?,
         depth: Int,
         engine: Engine,
         sessionID: UUID,
@@ -246,7 +250,7 @@ final class JSInspectValueWidget {
             row.append(child: child)
             return row
         }
-        return makeExpander(title: "Set{\(elements.count)}", preview: nil, color: cyan, depth: depth, body: body)
+        return makeExpander(title: "Set{\(elements.count)}", preview: preview, color: cyan, depth: depth, body: body)
     }
 
     private static func isComposite(_ value: JSInspectValue) -> Bool {
@@ -457,15 +461,4 @@ final class JSInspectValueWidget {
         return label
     }
 
-    private static func inlinePreview(forObjectProps props: [JSInspectValue.Property]) -> String? {
-        if props.isEmpty { return nil }
-        let parts = props.prefix(3).map { "\($0.displayKey): \($0.value.inlineDescription)" }
-        return "{" + parts.joined(separator: ", ") + (props.count > 3 ? ", …}" : "}")
-    }
-
-    private static func inlinePreview(forArrayElements elements: [JSInspectValue]) -> String? {
-        if elements.isEmpty { return nil }
-        let parts = elements.prefix(3).map { $0.inlineDescription }
-        return "[" + parts.joined(separator: ", ") + (elements.count > 3 ? ", …]" : "]")
-    }
 }

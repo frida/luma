@@ -154,7 +154,7 @@ private struct JSInspectNodeView: View {
             label: {
                 disclosureLabel(
                     typeText: "Object{\(props.count)}\(anchorSuffix())",
-                    preview: isExpanded ? nil : inlinePreview(value)
+                    preview: isExpanded ? nil : value.inlinePreview
                 )
             }
         )
@@ -210,7 +210,7 @@ private struct JSInspectNodeView: View {
             label: {
                 disclosureLabel(
                     typeText: "Array[\(elements.count)]\(anchorSuffix())",
-                    preview: isExpanded ? nil : inlinePreview(value)
+                    preview: isExpanded ? nil : value.inlinePreview
                 )
             }
         )
@@ -255,7 +255,7 @@ private struct JSInspectNodeView: View {
             label: {
                 disclosureLabel(
                     typeText: "Map{\(entries.count)}\(anchorSuffix())",
-                    preview: isExpanded ? nil : inlinePreview(value)
+                    preview: isExpanded ? nil : value.inlinePreview
                 )
             }
         )
@@ -290,7 +290,7 @@ private struct JSInspectNodeView: View {
             label: {
                 disclosureLabel(
                     typeText: "Set{\(elements.count)}\(anchorSuffix())",
-                    preview: isExpanded ? nil : inlinePreview(value)
+                    preview: isExpanded ? nil : value.inlinePreview
                 )
             }
         )
@@ -344,40 +344,6 @@ private struct JSInspectNodeView: View {
         return ""
     }
 
-    private func inlinePreview(_ value: JSInspectValue) -> String? {
-        switch value {
-        case .object(_, let props):
-            let preview =
-                props.prefix(3)
-                .map { "\($0.displayKey): \($0.value.inlineDescription)" }
-                .joined(separator: ", ")
-            return props.isEmpty ? nil : "{\(preview)\(props.count > 3 ? ", …" : "")}"
-
-        case .array(_, let elements):
-            let preview =
-                elements.prefix(3)
-                .map { $0.inlineDescription }
-                .joined(separator: ", ")
-            return elements.isEmpty ? nil : "[\(preview)\(elements.count > 3 ? ", …" : "")]"
-
-        case .map(_, let entries):
-            let preview =
-                entries.prefix(3)
-                .map { "\($0.key.inlineDescription) => \($0.value.inlineDescription)" }
-                .joined(separator: ", ")
-            return entries.isEmpty ? nil : "{\(preview)\(entries.count > 3 ? ", …" : "")}"
-
-        case .set(_, let elements):
-            let preview =
-                elements.prefix(3)
-                .map { $0.inlineDescription }
-                .joined(separator: ", ")
-            return elements.isEmpty ? nil : "{\(preview)\(elements.count > 3 ? ", …" : "")}"
-
-        default:
-            return nil
-        }
-    }
 }
 
 private final class CircularAnchorStore: ObservableObject {

@@ -69,6 +69,21 @@ extension JSInspectValue {
         }
     }
 
+    public var inlinePreview: String? {
+        switch self {
+        case .object(_, let props):
+            return props.isEmpty ? nil : enclosed(props.map { "\($0.displayKey): \($0.value.inlineDescription)" }, in: ("{", "}"))
+        case .array(_, let elements):
+            return elements.isEmpty ? nil : enclosed(elements.map(\.inlineDescription), in: ("[", "]"))
+        case .map(_, let entries):
+            return entries.isEmpty ? nil : enclosed(entries.map { "\($0.key.inlineDescription) => \($0.value.inlineDescription)" }, in: ("{", "}"))
+        case .set(_, let elements):
+            return elements.isEmpty ? nil : enclosed(elements.map(\.inlineDescription), in: ("{", "}"))
+        default:
+            return nil
+        }
+    }
+
     private func appendPretty(into output: inout String, indentLevel: Int, bytesPresentation: BytesPresentation) {
         let indent = String(repeating: "  ", count: indentLevel)
         let childIndent = String(repeating: "  ", count: indentLevel + 1)
@@ -149,6 +164,11 @@ extension JSInspectValue {
             }
             output += "\(indent)]"
         }
+    }
+
+    private func enclosed(_ parts: [String], in brackets: (open: String, close: String)) -> String {
+        let shown = parts.prefix(3).joined(separator: ", ")
+        return brackets.open + shown + (parts.count > 3 ? ", …" : "") + brackets.close
     }
 }
 
