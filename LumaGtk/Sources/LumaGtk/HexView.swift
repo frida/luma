@@ -11,6 +11,7 @@ public final class HexView {
     public let widget: ScrolledWindow
 
     static var rowHeight: Double { HexMetrics.shared.rowHeight }
+    static var firstBaseline: Double { HexLayout.marginY + HexMetrics.shared.baselineOffset }
 
     static let editingHint = "Live memory: type hex or text over the selected byte to change it. Tab switches column."
 

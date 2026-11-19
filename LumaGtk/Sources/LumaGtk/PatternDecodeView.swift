@@ -56,7 +56,17 @@ final class PatternDecodeView {
     private var decodeTask: Task<Void, Never>?
 
     private static let cappedHeight = 400
-    private static let treeInset = 4
+    private static let treeMinimumWidth = 360
+    private static let spacingSideBySide = 16
+    private static let spacingStacked = 6
+    private static let treeRowHeight = Int(HexView.rowHeight.rounded(.up))
+    private static let treeInset: Int = {
+        var textHeight: gint = 0
+        var textBaseline: gint = 0
+        label("0", classes: []).measure(orientation: .vertical, for: -1, natural: &textHeight, naturalBaseline: &textBaseline)
+        let baselineInRow = Double(treeRowHeight - Int(textHeight)) / 2 + Double(textBaseline)
+        return Int((HexView.firstBaseline - baselineInRow).rounded())
+    }()
 
     init(
         engine: Engine,
@@ -666,7 +676,7 @@ final class PatternDecodeView {
         let listRow = ListBoxRow()
         listRow.set(child: content)
         listRow.add(cssClass: "luma-pattern-row")
-        listRow.setSizeRequest(width: -1, height: Int(HexView.rowHeight.rounded(.up)))
+        listRow.setSizeRequest(width: -1, height: Self.treeRowHeight)
         return listRow
     }
 
