@@ -193,7 +193,7 @@ final class EventStreamPane {
         scroll = ScrolledWindow()
         scroll.hexpand = true
         scroll.vexpand = true
-        scroll.set(child: eventListBox)
+        scroll.set(naturallyTallChild: eventListBox)
         scroller = BottomScroller(scroll, threshold: 20.0)
 
         emptyStateBox = Box(orientation: .vertical, spacing: 6)

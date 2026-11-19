@@ -55,7 +55,7 @@ final class NotebookPane {
         scroll = ScrolledWindow()
         scroll.hexpand = true
         scroll.vexpand = true
-        scroll.set(child: entriesBox)
+        scroll.set(naturallyTallChild: entriesBox)
 
         emptyState = NotebookPane.makeWalkthroughEmptyState(
             onNewNote: { [emptyStateActionHolder] in
