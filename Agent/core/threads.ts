@@ -11,9 +11,13 @@ export function getThreadSnapshot(id: ThreadId): ThreadSnapshot | null {
         return null;
     }
 
-    const context = details.context as unknown as { toJSON(): Record<string, RegisterValue> };
-    const registers: Array<[string, string]> = Object.entries(context.toJSON())
-        .map(([name, value]) => [name, formatRegisterValue(value)]);
+    const context = details.context as unknown as { toJSON(): Record<string, RegisterValue | null> };
+    const registers: Array<[string, string]> = [];
+    for (const [name, value] of Object.entries(context.toJSON())) {
+        if (value !== null) {
+            registers.push([name, formatRegisterValue(value)]);
+        }
+    }
 
     return {
         id: details.id,
