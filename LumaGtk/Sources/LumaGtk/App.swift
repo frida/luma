@@ -25,6 +25,9 @@ final class LumaApplication {
     private let maxRecentSlots = 10
     private var welcomeModel: WelcomeModel?
     private var activeWelcome: WelcomeWindow?
+    #if !os(Windows)
+    private var terminationSignals: [DispatchSourceSignal] = []
+    #endif
 
     init() {
         guard let app = Adw.Application(id: "re.frida.Luma", flags: .handlesOpen) else {
@@ -58,7 +61,31 @@ final class LumaApplication {
         registerDevelopmentIconPaths()
         installActions()
         purgeStaleWorkingCopies()
+        #if !os(Windows)
+        shutDownWhenToldToTerminate()
+        #endif
     }
+
+    #if !os(Windows)
+    private func shutDownWhenToldToTerminate() {
+        for number in [SIGTERM, SIGINT, SIGHUP] {
+            signal(number, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
+            source.setEventHandler { [weak self] in
+                Task { @MainActor in await self?.shutDownAndQuit() }
+            }
+            source.resume()
+            terminationSignals.append(source)
+        }
+    }
+
+    private func shutDownAndQuit() async {
+        for entry in openDocuments.values {
+            await entry.engine.shutdown()
+        }
+        app.quit()
+    }
+    #endif
 
     private func keepFocusedLabelsUnselected() {
         SettingsRef(gtk_settings_get_default()).set(property: .gtkLabelSelectOnFocus, value: false)
