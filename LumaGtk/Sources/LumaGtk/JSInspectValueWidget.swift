@@ -153,7 +153,6 @@ final class JSInspectValueWidget {
             row.append(child: key)
             let child = build(value: prop.value, depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
             child.hexpand = true
-            child.halign = .start
             row.append(child: child)
             return row
         }
@@ -188,7 +187,6 @@ final class JSInspectValueWidget {
             row.append(child: indexLabel)
             let child = build(value: elements[idx], depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
             child.hexpand = true
-            child.halign = .start
             row.append(child: child)
             return row
         }
@@ -227,7 +225,6 @@ final class JSInspectValueWidget {
             row.append(child: arrow)
             let valChild = build(value: entry.value, depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
             valChild.hexpand = true
-            valChild.halign = .start
             row.append(child: valChild)
             return row
         }
@@ -256,7 +253,6 @@ final class JSInspectValueWidget {
             row.append(child: bullet)
             let child = build(value: elements[idx], depth: depth + 1, engine: engine, sessionID: sessionID, stored: stored, onExpand: onExpand, keepAlive: &keepers)
             child.hexpand = true
-            child.halign = .start
             row.append(child: child)
             return row
         }
