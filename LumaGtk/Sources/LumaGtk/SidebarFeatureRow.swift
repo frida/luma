@@ -81,7 +81,7 @@ enum SidebarFeatureRow {
     }
 
     private static let iconColumnWidth = 16
-    private static let chevronColumnWidth = 16
+    private static let chevronColumnWidth = 24
     private static let spacing = 6
 
     private static func makeGrandchildRowBox(depth: Int, disclosure: Disclosure?) -> (rowBox: Box, iconHost: Box) {
