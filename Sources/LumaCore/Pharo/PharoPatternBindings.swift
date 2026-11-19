@@ -46,6 +46,8 @@ enum PharoPatternBindings {
             ^ id'.
         pattern compile: 'name
             ^ name'.
+        pattern compile: 'fileName
+            ^ name, (kind = ''library'' ifTrue: [ ''.pat'' ] ifFalse: [ ''.hexpat'' ])'.
         pattern compile: 'types
             ^ types'.
         pattern compile: 'rootType
@@ -101,8 +103,10 @@ enum PharoPatternBindings {
                 column: ''Message'' text: [ :each | each at: ''message'' ]'.
 
         patterns := LumaRecords << #LumaPatterns slots: {}; package: 'Luma'; install.
-        patterns compile: 'at: anID
-            ^ items detect: [ :each | each id = anID ]'.
+        patterns compile: 'at: aName
+            ^ items
+                detect: [ :each | each id = aName or: [ each name = aName or: [ each fileName = aName ] ] ]
+                ifNone: [ self error: ''There is no pattern called '', aName, '' in this project.'' ]'.
         patterns compile: 'gtPatternsFor: aView
             <gtView>
             ^ aView columnedList

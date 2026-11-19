@@ -157,17 +157,17 @@ public enum PharoExampleCatalog {
             PharoExample(
                 title: "Decode bytes with a pattern",
                 code: """
-                (LumaProject patterns at: 'macho.hexpat')
+                (LumaPattern fromSource: 'struct MachHeader { u32 magic; u32 cputype; u32 cpusubtype; u32 filetype; u32 ncmds; u32 sizeofcmds; u32 flags; u32 reserved; };')
                     decode: 'MachHeader'
                     from: #[16rCF 16rFA 16rED 16rFE 16r0C 16r00 16r00 16r01 16r00 16r00 16r00 16r00 16r02 16r00 16r00 16r00 16r11 16r00 16r00 16r00 16r20 16r04 16r00 16r00 16r85 16r00 16r20 16r00 16r00 16r00 16r00 16r00]
                     at: 16r100000000
                 """),
             PharoExample(
-                title: "Decode a session's main module header",
+                title: "Decode a session's main module with a pattern from the project \u{2014} put your own pattern's name in",
                 code: """
                 | session |
                 session := LumaProject sessions items first.
-                (LumaProject patterns at: 'macho.hexpat') decodeIn: session at: 16r100000000
+                (LumaProject patterns at: 'macho') decodeIn: session at: session modules items first base
                 """),
             PharoExample(
                 title: "A pattern written here, decoded where the main module starts",
