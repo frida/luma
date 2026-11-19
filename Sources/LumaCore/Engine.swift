@@ -5185,8 +5185,13 @@ public final class Engine {
             to: link.folderURL,
             replacing: link.synced.files.keys
         )
+        let written = try folderContents(for: instrument.def, in: link.folderURL)
+        let writtenSnapshot = InstrumentFolderLink.Snapshot(of: written)
+        if writtenSnapshot != InstrumentFolderLink.Snapshot(of: instrument) {
+            try saveCustomInstrumentBundle(written)
+        }
         var link = link
-        link.synced = .init(of: instrument)
+        link.synced = writtenSnapshot
         setInstrumentFolderLink(link, forDefID: instrument.def.id)
     }
 
