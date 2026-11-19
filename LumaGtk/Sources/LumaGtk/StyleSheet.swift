@@ -324,6 +324,7 @@ enum StyleSheet {
     }
     button.luma-link > label {
         text-decoration: underline;
+        font-weight: normal;
     }
 
     .luma-session-icon {
