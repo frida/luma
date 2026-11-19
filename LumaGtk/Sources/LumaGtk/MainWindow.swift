@@ -829,13 +829,7 @@ final class MainWindow: InstrumentUIHost {
             }
         }
 
-        let label = Label(str: "📓  Notebook")
-        label.halign = .start
-        label.marginStart = 12
-        label.marginEnd = 12
-        label.marginTop = 6
-        label.marginBottom = 6
-        notebookRow.set(child: label)
+        notebookRow.set(child: SidebarFeatureRow.makeSectionHeading(iconName: "x-office-address-book-symbolic", title: "Notebook"))
         notebookListBox.append(child: notebookRow)
         notebookListBox.select(row: notebookRow)
 
@@ -859,13 +853,7 @@ final class MainWindow: InstrumentUIHost {
             }
         }
 
-        let label = Label(str: "🧪  Playground")
-        label.halign = .start
-        label.marginStart = 12
-        label.marginEnd = 12
-        label.marginTop = 6
-        label.marginBottom = 6
-        pharoRow.set(child: label)
+        pharoRow.set(child: SidebarFeatureRow.makeSectionHeading(iconName: "applications-science-symbolic", title: "Playground"))
         pharoListBox.append(child: pharoRow)
 
         let wrapper = Box(orientation: .vertical, spacing: 0)
@@ -1001,21 +989,7 @@ final class MainWindow: InstrumentUIHost {
     }
 
     private func installMissionsHeaderRow() {
-        let box = Box(orientation: .horizontal, spacing: 8)
-        box.marginStart = 12
-        box.marginEnd = 6
-        box.marginTop = 6
-        box.marginBottom = 6
-
-        let icon = Gtk.Image(iconName: "applications-engineering-symbolic")
-        icon.pixelSize = 16
-        icon.add(cssClass: "accent")
-        box.append(child: icon)
-
-        let label = Label(str: "Missions")
-        label.halign = .start
-        label.hexpand = true
-        box.append(child: label)
+        let box = SidebarFeatureRow.makeSectionHeading(iconName: "applications-engineering-symbolic", title: "Missions")
 
         let chevron = Gtk.Image(iconName: "pan-down-symbolic")
         chevron.pixelSize = 12

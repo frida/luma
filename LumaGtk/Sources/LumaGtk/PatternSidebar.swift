@@ -206,21 +206,7 @@ final class PatternSidebar {
     }
 
     private func makeHeaderRow(sourceCount: Int) -> ListBoxRow {
-        let box = Box(orientation: .horizontal, spacing: 8)
-        box.marginStart = 12
-        box.marginEnd = 6
-        box.marginTop = 6
-        box.marginBottom = 6
-
-        let icon = Gtk.Image(iconName: "view-grid-symbolic")
-        icon.pixelSize = 16
-        icon.add(cssClass: "accent")
-        box.append(child: icon)
-
-        let label = Label(str: "Patterns")
-        label.halign = .start
-        label.hexpand = true
-        box.append(child: label)
+        let box = SidebarFeatureRow.makeSectionHeading(iconName: "view-grid-symbolic", title: "Patterns")
 
         if sourceCount > 0 {
             let count = Label(str: "\(sourceCount)")

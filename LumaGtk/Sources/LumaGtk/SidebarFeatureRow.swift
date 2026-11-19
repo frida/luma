@@ -11,6 +11,26 @@ enum SidebarFeatureRow {
         let onToggle: @MainActor () -> Void
     }
 
+    static func makeSectionHeading(iconName: String, title: String) -> Box {
+        let box = Box(orientation: .horizontal, spacing: 8)
+        box.marginStart = 12
+        box.marginEnd = 6
+        box.marginTop = 6
+        box.marginBottom = 6
+
+        let icon = Gtk.Image(iconName: iconName)
+        icon.pixelSize = 16
+        icon.add(cssClass: "accent")
+        box.append(child: icon)
+
+        let label = Label(str: title)
+        label.halign = .start
+        label.hexpand = true
+        box.append(child: label)
+
+        return box
+    }
+
     static func make(
         icon: Widget,
         title: String,
