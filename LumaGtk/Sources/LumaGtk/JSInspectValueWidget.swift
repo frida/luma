@@ -339,10 +339,13 @@ final class JSInspectValueWidget {
                 + span(escape(bytes.kind.rawValue), color: cyan)
                 + span("[\(bytes.data.count)])", color: mint)
         )
-        column.append(child: header)
-
         let inspected = InspectedBytesWidget(bytes: bytes, engine: engine, sessionID: sessionID, stored: stored)
         keepAlive.append(inspected)
+
+        let heading = Box(orientation: .horizontal, spacing: 6)
+        heading.append(child: header)
+        heading.append(child: inspected.rereadButton)
+        column.append(child: heading)
         column.append(child: inspected.widget)
         return column
     }

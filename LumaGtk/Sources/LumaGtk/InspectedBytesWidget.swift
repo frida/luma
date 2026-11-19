@@ -5,6 +5,7 @@ import LumaCore
 @MainActor
 final class InspectedBytesWidget {
     let widget: Box
+    let rereadButton: Button
 
     private let bytes: JSInspectValue.Bytes
     private let engine: Engine
@@ -32,10 +33,11 @@ final class InspectedBytesWidget {
         }
         decodeView.widget.hexpand = true
 
-        let rereadButton = Button(iconName: "view-refresh-symbolic")
+        rereadButton = Button(iconName: "view-refresh-symbolic")
         rereadButton.add(cssClass: "flat")
+        rereadButton.add(cssClass: "luma-pattern-chevron")
         rereadButton.tooltipText = "Reread from memory"
-        rereadButton.halign = .start
+        rereadButton.valign = .center
 
         problemLabel = Label(str: "")
         problemLabel.add(cssClass: "error")
@@ -48,7 +50,6 @@ final class InspectedBytesWidget {
         widget = Box(orientation: .vertical, spacing: 4)
         widget.hexpand = true
         widget.append(child: decodeView.widget)
-        widget.append(child: rereadButton)
         widget.append(child: problemLabel)
 
         let isLive = bytes.address != nil && stored != nil && engine.node(forSessionID: sessionID) != nil

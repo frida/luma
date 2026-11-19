@@ -13,8 +13,16 @@ struct InspectedBytesView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Bytes(\(bytes.kind.rawValue)[\(bytes.data.count)])")
-                .foregroundStyle(.mint)
+            HStack(spacing: 6) {
+                Text("Bytes(\(bytes.kind.rawValue)[\(bytes.data.count)])")
+                    .foregroundStyle(.mint)
+                if liveTarget != nil {
+                    Button("Reread", systemImage: "arrow.clockwise", action: reread)
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderless)
+                        .help("Reread from memory")
+                }
+            }
             PatternDecodeView(
                 data: bytes.data,
                 baseAddress: bytes.address,
@@ -25,12 +33,6 @@ struct InspectedBytesView: View {
                 onReread: rereadFromMenu
             )
             .fixedSize(horizontal: false, vertical: true)
-            if liveTarget != nil {
-                Button("Reread", systemImage: "arrow.clockwise", action: reread)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-                    .help("Reread from memory")
-            }
             if let problem {
                 Text(problem)
                     .font(.caption)
