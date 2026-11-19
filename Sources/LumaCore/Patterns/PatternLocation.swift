@@ -8,7 +8,7 @@ public struct PatternLocation: Sendable {
     public let isLeaf: Bool
 
     public static func locateFields(of root: DecodedPattern, under ancestor: UUID, base: UInt64, into located: inout [UUID: PatternLocation]) {
-        for (index, field) in root.children.enumerated() where !field.hidden {
+        for (index, field) in root.visibleChildren.enumerated() {
             locate(field, ancestors: [ancestor], tint: PatternTint(node: field, index: index), base: base, into: &located)
         }
     }
