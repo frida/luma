@@ -2895,10 +2895,11 @@ final class MainWindow: InstrumentUIHost {
         headerBox.marginBottom = 4
 
         let expansion = engine?.sidebarExpansion(forSessionID: session.id) ?? .expanded
-        let chevron = makeSessionChevron(expansion: expansion) { [weak self] in
+        let chevron = makeDisclosureChevron(expansion: expansion) { [weak self] in
             self?.toggleSessionExpansion(sessionID: session.id)
         }
         sessionChevronImages[session.id] = chevron.image
+        chevron.button.tooltipText = "Toggle session"
         chevron.button.marginEnd = MainWindow.sidebarChevronToIconSpacing
         headerBox.append(child: chevron.button)
 
@@ -2976,7 +2977,7 @@ final class MainWindow: InstrumentUIHost {
         reconcileGroupChildren(sessionID: session.id, group: .threads)
     }
 
-    private func makeSessionChevron(
+    private func makeDisclosureChevron(
         expansion: SidebarExpansion,
         onToggle: @escaping () -> Void
     ) -> (button: Button, image: Gtk.Image) {
@@ -2988,7 +2989,6 @@ final class MainWindow: InstrumentUIHost {
         button.add(cssClass: "flat")
         button.add(cssClass: "luma-sidebar-chevron")
         button.valign = .center
-        button.tooltipText = "Toggle session"
         button.onClicked { _ in
             MainActor.assumeIsolated { onToggle() }
         }
@@ -3772,7 +3772,7 @@ final class MainWindow: InstrumentUIHost {
         rowBox.marginTop = 2
         rowBox.marginBottom = 2
 
-        let chevron = makeSessionChevron(expansion: expansion, onToggle: onToggle)
+        let chevron = makeDisclosureChevron(expansion: expansion, onToggle: onToggle)
         chevron.button.setSizeRequest(width: MainWindow.sidebarChevronColumnWidth, height: -1)
         chevron.button.marginEnd = MainWindow.sidebarChevronToIconSpacing
         rowBox.append(child: chevron.button)
