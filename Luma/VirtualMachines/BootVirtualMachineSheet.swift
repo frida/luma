@@ -454,15 +454,9 @@ struct BootVirtualMachineSheet: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(machine == nil || isMarkingReady)
             } else {
-                Button("Boot") {
-                    if let record {
-                        boot(record)
-                    } else {
-                        boot()
-                    }
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(record == nil && !isReadyToBoot)
+                Button("Boot") { boot() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!isReadyToBoot)
             }
         }
     }
@@ -484,14 +478,6 @@ struct BootVirtualMachineSheet: View {
         dismiss()
     }
 
-    private func boot(_ record: VirtualMachineRecord) {
-        isBooting = true
-        perform {
-            defer { isBooting = false }
-            machine = try await engine.virtualMachines.boot(record)
-        }
-    }
-
     private func boot() {
         guard let template = selectedTemplate else { return }
 
@@ -506,15 +492,20 @@ struct BootVirtualMachineSheet: View {
                     bootParameters[parameter] = .text(path.path)
                 }
             }
-            let record = try engine.virtualMachines.add(
-                template: template,
-                name: machineName,
-                parameters: bootParameters,
-                agentPath: agentPath
-            )
-            self.record = record
-            engine.setSidePanel(.virtualMachines)
-            machine = try await engine.virtualMachines.boot(record)
+            do {
+                machine = try await engine.virtualMachines.create(
+                    template: template,
+                    name: machineName,
+                    parameters: bootParameters,
+                    agentPath: agentPath
+                ) { record in
+                    self.record = record
+                    engine.setSidePanel(.virtualMachines)
+                }
+            } catch {
+                record = nil
+                throw error
+            }
         }
     }
 

@@ -115,12 +115,20 @@ public final class VirtualMachineManager {
         template: VirtualMachineTemplate,
         name: String,
         parameters: [String: VirtualMachineParameterValue],
-        agentPath: URL?
+        agentPath: URL?,
+        onAdded: (VirtualMachineRecord) -> Void = { _ in }
     ) async throws -> any VirtualMachine {
-        try await boot(add(template: template, name: name, parameters: parameters, agentPath: agentPath))
+        let record = try add(template: template, name: name, parameters: parameters, agentPath: agentPath)
+        onAdded(record)
+        do {
+            return try await boot(record)
+        } catch {
+            await forget(record)
+            throw error
+        }
     }
 
-    public func add(
+    private func add(
         template: VirtualMachineTemplate,
         name: String,
         parameters: [String: VirtualMachineParameterValue],

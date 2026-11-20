@@ -26,6 +26,7 @@ final class BootVirtualMachineDialog {
     private let commandLineGroup: Adw.PreferencesGroup
     private let commandLineLabel: Label
     private let failureLabel: Label
+    private let form: Box
     private let cancelButton: Button
     private let bootButton: Button
     private let scroll: ScrolledWindow
@@ -38,7 +39,6 @@ final class BootVirtualMachineDialog {
     private var versionsRequested = false
     private var installedVersionFlavor: BareboneAgentFlavor?
     private var pendingFileParameter: String?
-    private var record: VirtualMachineRecord?
     private var machine: (any VirtualMachine)?
     private var view: VirtualMachineView?
 
@@ -108,27 +108,30 @@ final class BootVirtualMachineDialog {
         failureLabel.add(cssClass: "error")
         failureLabel.wrap = true
         failureLabel.xalign = 0
+        failureLabel.marginStart = 18
+        failureLabel.marginEnd = 18
+        failureLabel.marginTop = 12
         failureLabel.visible = false
 
-        let body = Box(orientation: .vertical, spacing: 18)
-        body.marginStart = 18
-        body.marginEnd = 18
-        body.marginTop = 12
-        body.marginBottom = 18
-        body.append(child: machineGroup)
-        body.append(child: starterGroup)
-        body.append(child: parameterGroup)
-        body.append(child: agentGroup)
-        body.append(child: commandLineGroup)
-        body.append(child: failureLabel)
+        form = Box(orientation: .vertical, spacing: 18)
+        form.marginStart = 18
+        form.marginEnd = 18
+        form.marginTop = 12
+        form.marginBottom = 18
+        form.append(child: machineGroup)
+        form.append(child: starterGroup)
+        form.append(child: parameterGroup)
+        form.append(child: agentGroup)
+        form.append(child: commandLineGroup)
 
         scroll = ScrolledWindow()
         scroll.hexpand = true
         scroll.vexpand = true
-        scroll.child = WidgetRef(body)
+        scroll.child = WidgetRef(form)
 
         let column = Box(orientation: .vertical, spacing: 0)
         column.append(child: header)
+        column.append(child: failureLabel)
         column.append(child: scroll)
         dialog.set(child: column)
 
@@ -140,8 +143,6 @@ final class BootVirtualMachineDialog {
                 guard let self else { return }
                 if let machine = self.machine {
                     self.markReady(machine)
-                } else if let record = self.record {
-                    self.boot(record)
                 } else {
                     self.boot()
                 }
@@ -509,19 +510,23 @@ final class BootVirtualMachineDialog {
                         parameters[parameterID] = .text(url.path)
                     }
                 }
-                let record = try engine.virtualMachines.add(
+                self.machine = try await engine.virtualMachines.create(
                     template: template,
                     name: name,
                     parameters: parameters,
-                    agentPath: agentPath.map { URL(fileURLWithPath: $0) })
-                self.record = record
-                self.showBootingView(record)
-                engine.setSidePanel(.virtualMachines)
-                self.boot(record)
+                    agentPath: agentPath.map { URL(fileURLWithPath: $0) }
+                ) { record in
+                    self.showBootingView(record)
+                    engine.setSidePanel(.virtualMachines)
+                }
+                bootButton.label = "Mark Ready"
             } catch {
+                if let view = self.view {
+                    self.showForm(replacing: view)
+                }
                 showFailure(error.localizedDescription)
-                bootButton.sensitive = true
             }
+            bootButton.sensitive = true
         }
     }
 
@@ -547,32 +552,26 @@ final class BootVirtualMachineDialog {
         hint.xalign = 0
         content.append(child: hint)
 
-        failureLabel.unparent()
-        content.append(child: failureLabel)
-
         scroll.child = WidgetRef(content)
+    }
+
+    private func showForm(replacing view: VirtualMachineView) {
+        cancelButton.label = "Cancel"
+
+        header.remove(child: view.pageToggle)
+        self.view = nil
+
+        dialog.followsContentSize = false
+        scroll.propagateNaturalWidth = false
+        scroll.propagateNaturalHeight = false
+
+        scroll.child = WidgetRef(form)
     }
 
     private func fitToScreen() {
         dialog.followsContentSize = true
         scroll.propagateNaturalWidth = true
         scroll.propagateNaturalHeight = true
-    }
-
-    private func boot(_ record: VirtualMachineRecord) {
-        failureLabel.visible = false
-        bootButton.label = "Mark Ready"
-        bootButton.sensitive = false
-
-        Task { @MainActor in
-            do {
-                self.machine = try await engine.virtualMachines.boot(record)
-            } catch {
-                showFailure(error.localizedDescription)
-                bootButton.label = "Boot"
-            }
-            bootButton.sensitive = true
-        }
     }
 
     private func markReady(_ machine: any VirtualMachine) {
