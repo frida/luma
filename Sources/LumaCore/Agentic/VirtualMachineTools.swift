@@ -4,6 +4,7 @@ extension MissionTools {
     static func registerVirtualMachines(in catalog: ToolCatalog, engine: Engine) {
         registerListVMTemplates(in: catalog, engine: engine)
         registerListVMs(in: catalog, engine: engine)
+        registerVMCommandLine(in: catalog, engine: engine)
         registerCreateVM(in: catalog, engine: engine)
         registerBootVM(in: catalog, engine: engine)
         registerStopVM(in: catalog, engine: engine)
@@ -70,6 +71,55 @@ extension MissionTools {
         }
     }
 
+    private static func registerVMCommandLine(in catalog: ToolCatalog, engine: Engine) {
+        let spec = ActionSpec(
+            name: "vm_command_line",
+            description: """
+                Show the command line a virtual machine is started with: pass 'vm_id' for one in this \
+                project, or 'template_id' and 'parameters' as for create_vm to see what a new one would \
+                run. The debugger port and the socket directory are chosen at boot, so they show as \
+                placeholders.
+                """,
+            inputSchemaJSON: """
+                {"type":"object","properties":{"vm_id":{"type":"string"},"template_id":{"type":"string"},\
+                "parameters":{"type":"object","additionalProperties":{"type":["string","integer","boolean","array"],"items":{"type":"string"}}}},\
+                "additionalProperties":false}
+                """,
+            isObserve: true,
+            requiresSession: false
+        )
+        catalog.register(spec: spec) { [weak engine] invocation in
+            guard let engine else { return errorResult("engine unavailable", code: .unavailable) }
+            let manager = engine.virtualMachines
+            let commandLine: VirtualMachineCommandLine?
+            do {
+                if let record = machineRecord(invocation.args, engine: engine) {
+                    commandLine = try manager.commandLine(for: record)
+                } else if let templateID = invocation.args["template_id"] as? String,
+                    let template = manager.templates.first(where: { $0.id == templateID })
+                {
+                    let given = (invocation.args["parameters"] as? [String: Any] ?? [:]).compactMapValues(parameterValue)
+                    commandLine = try manager.commandLine(
+                        for: template, parameters: template.defaultParameterValues.merging(given) { _, new in new })
+                } else {
+                    return errorResult("pass a vm_id from list_vms or a template_id from list_vm_templates", code: .notFound)
+                }
+            } catch {
+                return errorResult(error.localizedDescription, code: .invalidInput)
+            }
+            guard let commandLine else {
+                return errorResult("this kind of machine is not started from a command line", code: .unavailable)
+            }
+            return makeResult(
+                jsonObject: [
+                    "executable": commandLine.executable.path,
+                    "arguments": commandLine.arguments,
+                    "text": commandLine.text,
+                ],
+                summary: commandLine.executable.lastPathComponent)
+        }
+    }
+
     private static func registerCreateVM(in catalog: ToolCatalog, engine: Engine) {
         let spec = ActionSpec(
             name: "create_vm",
@@ -79,7 +129,7 @@ extension MissionTools {
                 """,
             inputSchemaJSON: """
                 {"type":"object","properties":{"template_id":{"type":"string"},"name":{"type":"string"},\
-                "parameters":{"type":"object","additionalProperties":{"type":["string","integer","boolean"]}}},\
+                "parameters":{"type":"object","additionalProperties":{"type":["string","integer","boolean","array"],"items":{"type":"string"}}}},\
                 "required":["template_id","name"],"additionalProperties":false}
                 """,
             isObserve: false,
@@ -333,6 +383,9 @@ extension MissionTools {
         case .toggle(let value):
             entry["kind"] = "toggle"
             entry["default"] = value
+        case .textList:
+            entry["kind"] = "text_list"
+            entry["default"] = [String]()
         }
         return entry
     }
@@ -365,6 +418,8 @@ extension MissionTools {
             return .number(number)
         case let text as String:
             return .text(text)
+        case let texts as [String]:
+            return .textList(texts)
         default:
             return nil
         }
@@ -419,6 +474,8 @@ extension MissionTools {
             return number
         case .toggle(let flag):
             return flag
+        case .textList(let texts):
+            return texts
         }
     }
 

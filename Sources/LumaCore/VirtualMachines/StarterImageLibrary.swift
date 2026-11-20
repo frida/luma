@@ -105,6 +105,14 @@ public final class StarterImageLibrary {
         return paths
     }
 
+    public func destinations(for images: StarterImages) -> [String: URL] {
+        var paths = Dictionary(uniqueKeysWithValues: images.files.map { ($0.parameterID, path(for: $0)) })
+        if let symbols = images.symbols {
+            paths[symbols.parameterID] = path(for: symbols)
+        }
+        return paths
+    }
+
     public func download(_ images: StarterImages) async throws -> [String: URL] {
         states[images.name] = .downloading(fraction: nil)
 
@@ -145,7 +153,7 @@ public final class StarterImageLibrary {
         describing kernel: URL,
         reporting report: @escaping @MainActor (Double?) -> Void
     ) async throws -> URL {
-        let destination = directory.appendingPathComponent(symbols.storedAs, isDirectory: false)
+        let destination = path(for: symbols)
         guard !FileManager.default.fileExists(atPath: destination.path) else { return destination }
 
         let image = try Data(contentsOf: kernel, options: .mappedIfSafe)
@@ -195,6 +203,10 @@ public final class StarterImageLibrary {
 
     private func path(for file: StarterImageFile) -> URL {
         directory.appendingPathComponent(file.storedAs, isDirectory: false)
+    }
+
+    private func path(for symbols: StarterImageSymbols) -> URL {
+        directory.appendingPathComponent(symbols.storedAs, isDirectory: false)
     }
 }
 

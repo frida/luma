@@ -168,6 +168,7 @@ public enum VirtualMachineParameterKind: Sendable, Equatable {
     case filePath(extensions: [String])
     case choice(options: [VirtualMachineParameterOption], default: String)
     case toggle(default: Bool)
+    case textList
 
     var defaultValue: VirtualMachineParameterValue {
         switch self {
@@ -181,6 +182,8 @@ public enum VirtualMachineParameterKind: Sendable, Equatable {
             return .text(value)
         case .toggle(let value):
             return .toggle(value)
+        case .textList:
+            return .textList([])
         }
     }
 }
@@ -199,6 +202,7 @@ public enum VirtualMachineParameterValue: Sendable, Equatable, Codable {
     case text(String)
     case number(Int)
     case toggle(Bool)
+    case textList([String])
 
     public var text: String? {
         guard case .text(let value) = self else { return nil }
@@ -212,6 +216,11 @@ public enum VirtualMachineParameterValue: Sendable, Equatable, Codable {
 
     public var toggle: Bool? {
         guard case .toggle(let value) = self else { return nil }
+        return value
+    }
+
+    public var textList: [String]? {
+        guard case .textList(let value) = self else { return nil }
         return value
     }
 }

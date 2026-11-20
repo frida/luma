@@ -26,6 +26,7 @@ struct BootVirtualMachineSheet: View {
     @State private var isImporting = false
     @State private var awaitedImport: String?
     @State private var importingParameter: VirtualMachineParameter?
+    @State private var isShowingCommandLine = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -128,6 +129,8 @@ struct BootVirtualMachineSheet: View {
                     if let flavor = template.variant(for: effectiveParameters).agentFlavor {
                         agentSection(flavor)
                     }
+
+                    commandLineSection(template)
                 }
                 .formStyle(.grouped)
                 .contentMargins(.top, 0)
@@ -178,6 +181,15 @@ struct BootVirtualMachineSheet: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
+                    if parameters[parameter.id]?.text?.isEmpty == false {
+                        Button {
+                            parameters[parameter.id] = .text("")
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Clear")
+                    }
                     Button("Choose…") {
                         awaitedImport = parameter.id
                         importingParameter = parameter
@@ -195,6 +207,39 @@ struct BootVirtualMachineSheet: View {
 
         case .toggle:
             Toggle(parameter.name, isOn: toggleBinding(parameter))
+
+        case .textList:
+            textListSection(parameter)
+        }
+    }
+
+    private func textListSection(_ parameter: VirtualMachineParameter) -> some View {
+        Section(parameter.name) {
+            ForEach(textList(parameter).indices, id: \.self) { index in
+                HStack {
+                    TextField("Argument", text: textListBinding(parameter, at: index))
+                        .labelsHidden()
+                        .font(.system(.body, design: .monospaced))
+
+                    Button {
+                        var list = textList(parameter)
+                        list.remove(at: index)
+                        parameters[parameter.id] = .textList(list)
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .help("Remove")
+                }
+            }
+
+            Button {
+                parameters[parameter.id] = .textList(textList(parameter) + [""])
+            } label: {
+                Label("Add Argument", systemImage: "plus")
+            }
+            .buttonStyle(.borderless)
         }
     }
 
@@ -292,6 +337,43 @@ struct BootVirtualMachineSheet: View {
         case .failed(let reason):
             return reason
         }
+    }
+
+    @ViewBuilder
+    private func commandLineSection(_ template: VirtualMachineTemplate) -> some View {
+        switch Result(catching: { try engine.virtualMachines.commandLine(for: template, parameters: previewParameters) }) {
+        case .success(nil):
+            EmptyView()
+        case .success(let commandLine?):
+            commandLineDisclosure(
+                Text(commandLine.text)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            )
+        case .failure(let error):
+            commandLineDisclosure(
+                Text(error.localizedDescription)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            )
+        }
+    }
+
+    private func commandLineDisclosure(_ content: some View) -> some View {
+        Section {
+            DisclosureGroup("Command Line", isExpanded: $isShowingCommandLine) {
+                content
+            }
+        }
+    }
+
+    private var previewParameters: [String: VirtualMachineParameterValue] {
+        guard imageSource == .starter, let images = selectedStarterImages else { return parameters }
+        let starterPaths = engine.virtualMachines.starterImages.destinations(for: images).mapValues {
+            VirtualMachineParameterValue.text($0.path)
+        }
+        return parameters.merging(starterPaths) { _, starter in starter }
     }
 
     private enum ImageSource {
@@ -527,6 +609,21 @@ struct BootVirtualMachineSheet: View {
         Binding(
             get: { parameters[parameter.id]?.toggle ?? false },
             set: { parameters[parameter.id] = .toggle($0) }
+        )
+    }
+
+    private func textList(_ parameter: VirtualMachineParameter) -> [String] {
+        parameters[parameter.id]?.textList ?? []
+    }
+
+    private func textListBinding(_ parameter: VirtualMachineParameter, at index: Int) -> Binding<String> {
+        Binding(
+            get: { textList(parameter).indices.contains(index) ? textList(parameter)[index] : "" },
+            set: {
+                var list = textList(parameter)
+                list[index] = $0
+                parameters[parameter.id] = .textList(list)
+            }
         )
     }
 }

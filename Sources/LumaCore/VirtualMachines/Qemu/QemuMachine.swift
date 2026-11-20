@@ -42,9 +42,8 @@ final class QemuMachine: VirtualMachine {
     private var displayConnection: QemuDisplayConnection?
     private var hasReadySnapshot: Bool
 
-    init(guest: QemuGuest, executable: URL, request: VirtualMachineLaunchRequest) {
+    init(guest: QemuGuest, request: VirtualMachineLaunchRequest) {
         self.guest = guest
-        self.executable = executable
         self.request = request
         self.id = request.id
         self.name = request.name
@@ -57,7 +56,17 @@ final class QemuMachine: VirtualMachine {
 
     func start() async throws {
         let gdbPort = try Self.reserveGdbPort()
-        let snapshotDisk = try createSnapshotDisk()
+        let commandLine = try guest.commandLine(
+            parameters: request.parameters,
+            storageDirectory: request.storageDirectory,
+            resumesFromReadySnapshot: request.resumesFromReadySnapshot,
+            endpoints: QemuEndpoints(
+                gdbPort: String(gdbPort),
+                qmpSocket: qmpSocketPath.path,
+                agentQmpSocket: agentQmpSocketPath.path
+            )
+        )
+        try createSnapshotDisk()
 
         let serial = Pipe()
         let complaints = Pipe()
@@ -67,16 +76,9 @@ final class QemuMachine: VirtualMachine {
         request.console.follow(serial.fileHandleForReading)
         collectComplaints(from: complaints.fileHandleForReading)
 
-        process.executableURL = executable
-        process.environment = QemuExecutable.environment(beside: executable)
-        process.arguments = try guest.arguments(
-            for: request,
-            firmwareDirectory: QemuExecutable.firmwareDirectory(beside: executable),
-            gdbPort: gdbPort,
-            qmpPath: qmpSocketPath,
-            agentQmpPath: agentQmpSocketPath,
-            snapshotDisk: snapshotDisk
-        )
+        process.executableURL = commandLine.executable
+        process.environment = QemuExecutable.environment(beside: commandLine.executable)
+        process.arguments = commandLine.arguments
 
         do {
             try process.run()
@@ -222,9 +224,9 @@ final class QemuMachine: VirtualMachine {
         try await Task.sleep(for: .milliseconds(50))
     }
 
-    private func createSnapshotDisk() throws -> URL {
-        let disk = request.storageDirectory.appendingPathComponent("snapshots.qcow2")
-        guard !FileManager.default.fileExists(atPath: disk.path) else { return disk }
+    private func createSnapshotDisk() throws {
+        let disk = Self.snapshotDisk(in: request.storageDirectory)
+        guard !FileManager.default.fileExists(atPath: disk.path) else { return }
 
         guard let qemuImage = QemuExecutable.path(for: "qemu-img") else {
             throw VirtualMachineError.launchFailed(reason: "qemu-img is not installed")
@@ -246,19 +248,25 @@ final class QemuMachine: VirtualMachine {
                 .split(separator: "\n").last.map(String.init)
             throw VirtualMachineError.launchFailed(reason: reason ?? "qemu-img could not make room for snapshots")
         }
-        return disk
+    }
+
+    nonisolated static func snapshotDisk(in storageDirectory: URL) -> URL {
+        storageDirectory.appendingPathComponent("snapshots.qcow2")
     }
 
     /// A QMP server hands its socket to one client at a time, and this one
     /// keeps its own for as long as the machine runs, so the agent's transport
     /// is given a monitor of its own to talk to.
     private var agentQmpSocketPath: URL {
-        runtimeDirectory.appendingPathComponent("qmp-agent.sock")
+        runtimeDirectory.appendingPathComponent(Self.agentQmpSocketName)
     }
 
     private var qmpSocketPath: URL {
-        runtimeDirectory.appendingPathComponent("qmp.sock")
+        runtimeDirectory.appendingPathComponent(Self.qmpSocketName)
     }
+
+    nonisolated static let qmpSocketName = "qmp.sock"
+    nonisolated static let agentQmpSocketName = "qmp-agent.sock"
 
     private static let snapshotDiskSize = "8G"
     private static let hostlinkRemovalSeconds: TimeInterval = 5

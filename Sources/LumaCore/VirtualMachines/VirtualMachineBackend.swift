@@ -15,6 +15,13 @@ public protocol VirtualMachineBackend: AnyObject {
         for template: VirtualMachineTemplate,
         parameters: [String: VirtualMachineParameterValue]
     ) -> [String: VirtualMachineParameterValue]
+
+    func commandLine(
+        for template: VirtualMachineTemplate,
+        parameters: [String: VirtualMachineParameterValue],
+        storageDirectory: URL,
+        resumesFromReadySnapshot: Bool
+    ) throws -> VirtualMachineCommandLine?
 }
 
 extension VirtualMachineBackend {
@@ -25,6 +32,15 @@ extension VirtualMachineBackend {
         parameters: [String: VirtualMachineParameterValue]
     ) -> [String: VirtualMachineParameterValue] {
         parameters
+    }
+
+    public func commandLine(
+        for template: VirtualMachineTemplate,
+        parameters: [String: VirtualMachineParameterValue],
+        storageDirectory: URL,
+        resumesFromReadySnapshot: Bool
+    ) throws -> VirtualMachineCommandLine? {
+        nil
     }
 }
 

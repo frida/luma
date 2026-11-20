@@ -25,16 +25,33 @@ public final class QemuBackend: VirtualMachineBackend {
     }
 
     public func launch(_ request: VirtualMachineLaunchRequest) async throws -> any VirtualMachine {
-        guard let guest = QemuGuest.guest(for: request.template.id, parameters: request.parameters) else {
-            throw VirtualMachineError.launchFailed(reason: "Unknown guest \(request.template.id)")
-        }
-        guard let executable = QemuExecutable.path(for: guest.emulator) else {
-            throw VirtualMachineError.launchFailed(reason: "\(guest.emulator) is not installed")
-        }
-
-        let machine = QemuMachine(guest: guest, executable: executable, request: request)
+        let machine = QemuMachine(guest: try guest(for: request.template, parameters: request.parameters), request: request)
         try await machine.start()
         return machine
+    }
+
+    public func commandLine(
+        for template: VirtualMachineTemplate,
+        parameters: [String: VirtualMachineParameterValue],
+        storageDirectory: URL,
+        resumesFromReadySnapshot: Bool
+    ) throws -> VirtualMachineCommandLine? {
+        try guest(for: template, parameters: parameters).commandLine(
+            parameters: parameters,
+            storageDirectory: storageDirectory,
+            resumesFromReadySnapshot: resumesFromReadySnapshot,
+            endpoints: .decidedAtBoot
+        )
+    }
+
+    private func guest(
+        for template: VirtualMachineTemplate,
+        parameters: [String: VirtualMachineParameterValue]
+    ) throws -> QemuGuest {
+        guard let guest = QemuGuest.guest(for: template.id, parameters: parameters) else {
+            throw VirtualMachineError.launchFailed(reason: "Unknown guest \(template.id)")
+        }
+        return guest
     }
 }
 

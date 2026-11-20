@@ -237,7 +237,7 @@ struct QemuGuest {
             },
             parameters: [architectureParameter(guests)] + primary.boot.parameters + [
                 memoryParameter(default: primary.defaultMemory)
-            ]
+            ] + emulatorParameters
         )
     }
 
@@ -306,7 +306,7 @@ struct QemuGuest {
             operatingSystem: operatingSystem,
             architecture: architecture,
             agentFlavor: agentFlavor,
-            parameters: boot.parameters + [Self.memoryParameter(default: defaultMemory)],
+            parameters: boot.parameters + [Self.memoryParameter(default: defaultMemory)] + Self.emulatorParameters,
             starterImages: starterImages
         )
     }
@@ -319,6 +319,11 @@ struct QemuGuest {
         )
     }
 
+    private static let emulatorParameters = [
+        VirtualMachineParameter(id: QemuParameter.emulator, name: "QEMU binary", kind: .filePath(extensions: [])),
+        VirtualMachineParameter(id: QemuParameter.extraArguments, name: "Extra arguments", kind: .textList),
+    ]
+
     private var serialConsole: String {
         switch architecture {
         case .arm64, .arm: return "ttyAMA0"
@@ -326,17 +331,16 @@ struct QemuGuest {
         }
     }
 
-    func arguments(
-        for request: VirtualMachineLaunchRequest,
-        firmwareDirectory: URL?,
-        gdbPort: UInt16,
-        qmpPath: URL,
-        agentQmpPath: URL,
-        snapshotDisk: URL
-    ) throws -> [String] {
-        var arguments = ["-machine", machine, "-m", String(request.number(QemuParameter.memory) ?? defaultMemory)]
+    func commandLine(
+        parameters: [String: VirtualMachineParameterValue],
+        storageDirectory: URL,
+        resumesFromReadySnapshot: Bool,
+        endpoints: QemuEndpoints
+    ) throws -> VirtualMachineCommandLine {
+        let executable = try executable(choosing: parameters[QemuParameter.emulator]?.text ?? "")
+        var arguments = ["-machine", machine, "-m", String(parameters[QemuParameter.memory]?.number ?? defaultMemory)]
 
-        if let firmwareDirectory {
+        if let firmwareDirectory = QemuExecutable.firmwareDirectory(beside: executable) {
             arguments += ["-L", firmwareDirectory.path]
         }
 
@@ -344,11 +348,14 @@ struct QemuGuest {
             arguments += ["-cpu", cpu]
         }
 
-        arguments += try boot.arguments(for: request, console: serialConsole)
-        if request.resumesFromReadySnapshot {
+        arguments += try boot.arguments(for: parameters, console: serialConsole)
+        if resumesFromReadySnapshot {
             arguments += ["-loadvm", QemuIdentifier.readySnapshot]
         }
-        arguments += ["-drive", "file=\(snapshotDisk.path),format=qcow2,if=none,id=\(QemuIdentifier.snapshotDisk)"]
+        arguments += [
+            "-drive",
+            "file=\(QemuMachine.snapshotDisk(in: storageDirectory).path),format=qcow2,if=none,id=\(QemuIdentifier.snapshotDisk)",
+        ]
         arguments += input.arguments(plugging: usb)
         // A 32-bit Arm guest has no PCI host driver, so it reaches its devices over
         // virtio-mmio; the display goes there too, speaking modern virtio.
@@ -361,7 +368,7 @@ struct QemuGuest {
         if architecture == .x86 || architecture == .x86_64 {
             arguments += [
                 "-chardev",
-                "file,id=\(QemuIdentifier.agentLogChardev),path=\(request.storageDirectory.appendingPathComponent("agent.log").path)",
+                "file,id=\(QemuIdentifier.agentLogChardev),path=\(storageDirectory.appendingPathComponent("agent.log").path)",
                 "-device", "isa-debugcon,iobase=0xe9,chardev=\(QemuIdentifier.agentLogChardev)",
             ]
         }
@@ -372,13 +379,40 @@ struct QemuGuest {
             "-display", "dbus,p2p=yes",
             "-monitor", "none",
             "-no-shutdown",
-            "-qmp", "unix:\(qmpPath.path),server=on,wait=off",
-            "-qmp", "unix:\(agentQmpPath.path),server=on,wait=off",
-            "-chardev", "socket,id=\(QemuIdentifier.gdbChardev),host=127.0.0.1,port=\(gdbPort),server=on,wait=off,nodelay=on",
+            "-qmp", "unix:\(endpoints.qmpSocket),server=on,wait=off",
+            "-qmp", "unix:\(endpoints.agentQmpSocket),server=on,wait=off",
+            "-chardev",
+            "socket,id=\(QemuIdentifier.gdbChardev),host=127.0.0.1,port=\(endpoints.gdbPort),server=on,wait=off,nodelay=on",
             "-gdb", "chardev:\(QemuIdentifier.gdbChardev)",
         ]
-        return arguments
+        arguments += (parameters[QemuParameter.extraArguments]?.textList ?? []).filter { !$0.isEmpty }
+        return VirtualMachineCommandLine(executable: executable, arguments: arguments)
     }
+
+    private func executable(choosing chosen: String) throws -> URL {
+        guard chosen.isEmpty else {
+            guard FileManager.default.isExecutableFile(atPath: chosen) else {
+                throw VirtualMachineError.launchFailed(reason: "\(chosen) is not something that can be run")
+            }
+            return URL(fileURLWithPath: chosen)
+        }
+        guard let installed = QemuExecutable.path(for: emulator) else {
+            throw VirtualMachineError.launchFailed(reason: "\(emulator) is not installed")
+        }
+        return installed
+    }
+}
+
+struct QemuEndpoints {
+    let gdbPort: String
+    let qmpSocket: String
+    let agentQmpSocket: String
+
+    static let decidedAtBoot = QemuEndpoints(
+        gdbPort: "<port>",
+        qmpSocket: "<sockets>/\(QemuMachine.qmpSocketName)",
+        agentQmpSocket: "<sockets>/\(QemuMachine.agentQmpSocketName)"
+    )
 }
 
 enum QemuInputDevices {
@@ -470,15 +504,15 @@ enum QemuBoot {
         }
     }
 
-    func arguments(for request: VirtualMachineLaunchRequest, console: String) throws -> [String] {
+    func arguments(for parameters: [String: VirtualMachineParameterValue], console: String) throws -> [String] {
         switch self {
         case .diskImage:
-            guard let image = request.text(QemuParameter.diskImage), !image.isEmpty else {
+            guard let image = parameters[QemuParameter.diskImage]?.text, !image.isEmpty else {
                 throw VirtualMachineError.launchFailed(reason: "No disk image was chosen")
             }
             let drive = "file=\(image),format=\(QemuDiskImageFormat.of(image).rawValue)"
 
-            let interface = QemuDiskInterface(rawValue: request.text(QemuParameter.diskInterface) ?? "") ?? .ide
+            let interface = QemuDiskInterface(rawValue: parameters[QemuParameter.diskInterface]?.text ?? "") ?? .ide
             switch interface {
             case .ide:
                 return ["-drive", drive + ",if=ide"]
@@ -490,15 +524,15 @@ enum QemuBoot {
                 ]
             }
         case .kernelImage:
-            guard let kernel = request.text(QemuParameter.kernelImage), !kernel.isEmpty else {
+            guard let kernel = parameters[QemuParameter.kernelImage]?.text, !kernel.isEmpty else {
                 throw VirtualMachineError.launchFailed(reason: "No kernel image was chosen")
             }
             return ["-kernel", kernel, "-append", "console=\(console) panic=0", "-no-reboot"]
         case .linuxKernel:
-            guard let kernel = request.text(QemuParameter.kernelImage), !kernel.isEmpty else {
+            guard let kernel = parameters[QemuParameter.kernelImage]?.text, !kernel.isEmpty else {
                 throw VirtualMachineError.launchFailed(reason: "No kernel image was chosen")
             }
-            guard let ramdisk = request.text(QemuParameter.ramdisk), !ramdisk.isEmpty else {
+            guard let ramdisk = parameters[QemuParameter.ramdisk]?.text, !ramdisk.isEmpty else {
                 throw VirtualMachineError.launchFailed(reason: "No ramdisk was chosen")
             }
 
@@ -527,6 +561,8 @@ enum QemuParameter {
     static let ramdisk = "ramdisk"
     static let symbols = "symbols"
     static let memory = "memory"
+    static let emulator = "emulator"
+    static let extraArguments = "extra-arguments"
 }
 
 enum QemuIdentifier {

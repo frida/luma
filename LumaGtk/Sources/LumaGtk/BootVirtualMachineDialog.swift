@@ -23,6 +23,8 @@ final class BootVirtualMachineDialog {
     private let systemRow: Adw.ComboRow
     private let parameterGroup: Adw.PreferencesGroup
     private let agentGroup: Adw.PreferencesGroup
+    private let commandLineGroup: Adw.PreferencesGroup
+    private let commandLineLabel: Label
     private let failureLabel: Label
     private let cancelButton: Button
     private let bootButton: Button
@@ -84,6 +86,24 @@ final class BootVirtualMachineDialog {
         agentGroup = Adw.PreferencesGroup()
         agentGroup.title = "Barebone Agent"
 
+        commandLineLabel = Label(str: "")
+        commandLineLabel.add(cssClass: "monospace")
+        commandLineLabel.selectable = true
+        commandLineLabel.wrap = true
+        commandLineLabel.wrapMode = .wordChar
+        commandLineLabel.xalign = 0
+        commandLineLabel.marginStart = 12
+        commandLineLabel.marginEnd = 12
+        commandLineLabel.marginTop = 12
+        commandLineLabel.marginBottom = 12
+
+        let commandLineRow = Adw.ExpanderRow()
+        commandLineRow.title = "Command Line"
+        commandLineRow.addRow(child: commandLineLabel)
+
+        commandLineGroup = Adw.PreferencesGroup()
+        commandLineGroup.add(child: commandLineRow)
+
         failureLabel = Label(str: "")
         failureLabel.add(cssClass: "error")
         failureLabel.wrap = true
@@ -99,6 +119,7 @@ final class BootVirtualMachineDialog {
         body.append(child: starterGroup)
         body.append(child: parameterGroup)
         body.append(child: agentGroup)
+        body.append(child: commandLineGroup)
         body.append(child: failureLabel)
 
         scroll = ScrolledWindow()
@@ -203,6 +224,7 @@ final class BootVirtualMachineDialog {
         let variant = template.variant(for: currentParameterValues())
         refreshSystemRow(variant.starterImages)
         rebuildAgentRow(variant.agentFlavor)
+        refreshCommandLine()
     }
 
     private func refreshSystemRow(_ images: StarterImages?) {
@@ -352,6 +374,30 @@ final class BootVirtualMachineDialog {
         }
     }
 
+    private func refreshCommandLine() {
+        guard let template = selectedTemplate else { return }
+        do {
+            guard let commandLine = try engine.virtualMachines.commandLine(for: template, parameters: previewParameterValues(for: template))
+            else {
+                commandLineGroup.visible = false
+                return
+            }
+            commandLineLabel.label = commandLine.text
+        } catch {
+            commandLineLabel.label = error.localizedDescription
+        }
+        commandLineGroup.visible = true
+    }
+
+    private func previewParameterValues(for template: VirtualMachineTemplate) -> [String: VirtualMachineParameterValue] {
+        let parameters = currentParameterValues()
+        guard imageSource == .starter, let images = template.variant(for: parameters).starterImages else { return parameters }
+        let starterPaths = engine.virtualMachines.starterImages.destinations(for: images).mapValues {
+            VirtualMachineParameterValue.text($0.path)
+        }
+        return parameters.merging(starterPaths) { _, starter in starter }
+    }
+
     private enum ImageSource {
         case starter
         case own
@@ -368,17 +414,22 @@ final class BootVirtualMachineDialog {
     }
 
     private func makeRow(for parameter: VirtualMachineParameter) -> ParameterRow {
+        let refresh: () -> Void = { [weak self] in
+            MainActor.assumeIsolated { self?.refreshCommandLine() }
+        }
         switch parameter.kind {
         case .text(let initial):
             let row = Adw.EntryRow()
             row.title = parameter.name
             row.text = initial
+            row.onChanged { _ in refresh() }
             return ParameterRow(widget: row) { .text(row.text ?? "") }
 
         case .number(let initial, let minimum, let maximum, let unit):
             let row = Adw.SpinRow(range: Double(minimum), max: Double(maximum), step: 1)
             row.title = unit.map { "\(parameter.name) (\($0))" } ?? parameter.name
             row.value = Double(initial)
+            row.onNotifyValue { _, _ in refresh() }
             return ParameterRow(widget: row) { .number(Int(row.value)) }
 
         case .choice(let options, let initial):
@@ -386,6 +437,7 @@ final class BootVirtualMachineDialog {
             row.title = parameter.name
             row.set(model: makeStringList(options.map(\.name)))
             row.selected = options.firstIndex { $0.id == initial } ?? 0
+            row.onNotifySelected { _, _ in refresh() }
             return ParameterRow(widget: row) {
                 let index = Int(row.selected)
                 return .text(options.indices.contains(index) ? options[index].id : initial)
@@ -395,6 +447,7 @@ final class BootVirtualMachineDialog {
             let row = Adw.SwitchRow()
             row.title = parameter.name
             row.active = initial
+            row.onNotifyActive { _, _ in refresh() }
             return ParameterRow(widget: row) { .toggle(row.active) }
 
         case .filePath(let extensions):
@@ -410,7 +463,12 @@ final class BootVirtualMachineDialog {
                 MainActor.assumeIsolated { self?.browse(for: parameter.id, named: parameter.name) }
             }
             row.addSuffix(widget: browse)
+            row.onChanged { _ in refresh() }
             return ParameterRow(widget: row) { .text(row.text ?? "") }
+
+        case .textList:
+            let list = ArgumentList(title: parameter.name, changed: refresh)
+            return ParameterRow(widget: list.row) { .textList(list.arguments) }
         }
     }
 
@@ -549,6 +607,78 @@ final class BootVirtualMachineDialog {
 private struct ParameterRow {
     let widget: Widget
     let value: () -> VirtualMachineParameterValue
+}
+
+@MainActor
+private final class ArgumentList {
+    let row: Adw.ExpanderRow
+    private let changed: () -> Void
+    private var entries: [Adw.EntryRow] = []
+
+    init(title: String, changed: @escaping () -> Void) {
+        row = Adw.ExpanderRow()
+        row.title = title
+        row.subtitleLines = 1
+        self.changed = changed
+
+        let add = Button(iconName: "list-add-symbolic")
+        add.add(cssClass: "flat")
+        add.valign = .center
+        add.tooltipText = "Add Argument"
+        add.onClicked { [weak self] _ in
+            MainActor.assumeIsolated { self?.addArgument() }
+        }
+        row.addSuffix(widget: add)
+
+        refreshSummary()
+    }
+
+    var arguments: [String] {
+        entries.map { $0.text ?? "" }
+    }
+
+    private func addArgument() {
+        let entry = Adw.EntryRow()
+        entry.title = "Argument"
+
+        let remove = Button(iconName: "list-remove-symbolic")
+        remove.add(cssClass: "flat")
+        remove.valign = .center
+        remove.tooltipText = "Remove"
+        remove.onClicked { [weak self, weak entry] _ in
+            MainActor.assumeIsolated {
+                guard let entry else { return }
+                self?.remove(entry)
+            }
+        }
+        entry.addSuffix(widget: remove)
+        entry.onChanged { [weak self] _ in
+            MainActor.assumeIsolated { self?.noteChange() }
+        }
+
+        row.addRow(child: entry)
+        entries.append(entry)
+        row.expanded = true
+        noteChange()
+        _ = entry.grabFocus()
+    }
+
+    private func remove(_ entry: Adw.EntryRow) {
+        row.remove(child: entry)
+        entries.removeAll { $0 === entry }
+        noteChange()
+    }
+
+    private func noteChange() {
+        refreshSummary()
+        changed()
+    }
+
+    private func refreshSummary() {
+        let given = arguments.filter { !$0.isEmpty }
+        row.subtitle = given.isEmpty ? "None" : given.joined(separator: " ")
+        row.enableExpansion = !entries.isEmpty
+    }
 }
 
 private let bootVirtualMachineFileThunk: @convention(c) (

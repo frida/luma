@@ -70,6 +70,30 @@ public final class VirtualMachineManager {
         backend(for: template)?.resolvedParameters(for: template, parameters: parameters) ?? parameters
     }
 
+    public func commandLine(
+        for template: VirtualMachineTemplate,
+        parameters: [String: VirtualMachineParameterValue]
+    ) throws -> VirtualMachineCommandLine? {
+        try backend(for: template)?.commandLine(
+            for: template,
+            parameters: resolvedParameters(for: template, parameters: parameters),
+            storageDirectory: storageDirectory.appendingPathComponent("<id>", isDirectory: true),
+            resumesFromReadySnapshot: false
+        )
+    }
+
+    public func commandLine(for record: VirtualMachineRecord) throws -> VirtualMachineCommandLine? {
+        guard let template = template(for: record) else {
+            throw VirtualMachineError.launchFailed(reason: "No template named \(record.templateID) is available")
+        }
+        return try backend(for: template)?.commandLine(
+            for: template,
+            parameters: record.parameters,
+            storageDirectory: machineDirectory(for: record),
+            resumesFromReadySnapshot: record.hasReadySnapshot
+        )
+    }
+
     public func machine(for record: VirtualMachineRecord) -> (any VirtualMachine)? {
         running[record.id]
     }
@@ -130,7 +154,7 @@ public final class VirtualMachineManager {
             await stop(record)
         }
 
-        let machineDirectory = storageDirectory.appendingPathComponent(record.id.uuidString, isDirectory: true)
+        let machineDirectory = machineDirectory(for: record)
         try FileManager.default.createDirectory(at: machineDirectory, withIntermediateDirectories: true)
 
         let console = VirtualMachineConsole(transcript: machineDirectory.appendingPathComponent("console.log"))
@@ -263,7 +287,11 @@ public final class VirtualMachineManager {
         try? store.deleteVirtualMachine(id: record.id)
         consoles[record.id] = nil
         records.removeAll { $0.id == record.id }
-        try? FileManager.default.removeItem(at: storageDirectory.appendingPathComponent(record.id.uuidString, isDirectory: true))
+        try? FileManager.default.removeItem(at: machineDirectory(for: record))
+    }
+
+    private func machineDirectory(for record: VirtualMachineRecord) -> URL {
+        storageDirectory.appendingPathComponent(record.id.uuidString, isDirectory: true)
     }
 
     private func agentPath(for record: VirtualMachineRecord, template: VirtualMachineTemplate) -> URL? {
