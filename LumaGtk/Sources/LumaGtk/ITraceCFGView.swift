@@ -917,11 +917,9 @@ final class ITraceCFGView {
         contentSize: (width: Int, height: Int)
     ) {
         let avail = availableSizeRightOf(node: node)
-        let width = min(contentSize.width, avail.width)
-        let height = min(contentSize.height, avail.height)
         scroll.setSizeRequest(
-            width: max(Self.registerPopoverMinWidth, width),
-            height: max(Self.registerPopoverMinHeight, height)
+            width: min(contentSize.width, avail.width),
+            height: min(contentSize.height, avail.height)
         )
     }
 
