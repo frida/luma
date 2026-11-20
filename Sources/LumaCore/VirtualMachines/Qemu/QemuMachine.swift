@@ -53,6 +53,7 @@ final class QemuMachine: VirtualMachine {
     }
 
     private var complaints: [String] = []
+    private var complaintsCollected: Task<Void, Never>?
 
     func start() async throws {
         let gdbPort = try Self.reserveGdbPort()
@@ -88,7 +89,8 @@ final class QemuMachine: VirtualMachine {
         }
 
         do {
-            let monitor = try await QemuMonitor(socketPath: qmpSocketPath, deadline: Date().addingTimeInterval(10))
+            let monitor = try await QemuMonitor(
+                socketPath: qmpSocketPath, servedBy: process, deadline: Date().addingTimeInterval(10))
             self.monitor = monitor
             displayConnection = try await QemuDisplayConnection(
                 monitor: monitor, pointerIsAbsolute: guest.input.pointerIsAbsolute,
@@ -96,6 +98,7 @@ final class QemuMachine: VirtualMachine {
             display = displayConnection.map { .frames($0) }
         } catch {
             await shutDown()
+            await complaintsCollected?.value
             let failure = VirtualMachineError.launchFailure(lastComplaint ?? error.localizedDescription, from: error)
             state = .failed(reason: failure.reason)
             throw failure
@@ -123,7 +126,7 @@ final class QemuMachine: VirtualMachine {
     /// What QEMU itself said about a failed boot -- a locked disk image, an
     /// unreadable one -- beats any guess made from this side of the pipe.
     private func collectComplaints(from handle: FileHandle) {
-        Task { [weak self] in
+        complaintsCollected = Task { [weak self] in
             for await line in handle.lines {
                 guard let self else { return }
                 request.console.append(line)

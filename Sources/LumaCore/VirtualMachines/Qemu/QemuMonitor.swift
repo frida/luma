@@ -6,8 +6,8 @@ final class QemuMonitor: @unchecked Sendable {
     private let queue = DispatchQueue(label: "re.frida.luma.qemu-monitor")
     private var pending = Data()
 
-    init(socketPath: URL, deadline: Date) async throws {
-        socket = try await Self.connect(to: socketPath, deadline: deadline)
+    init(socketPath: URL, servedBy process: ChildProcess, deadline: Date) async throws {
+        socket = try await Self.connect(to: socketPath, servedBy: process, deadline: deadline)
         try await handshake()
     }
 
@@ -114,12 +114,12 @@ final class QemuMonitor: @unchecked Sendable {
         return request + "}\n"
     }
 
-    private static func connect(to socketPath: URL, deadline: Date) async throws -> GLib.Socket {
+    private static func connect(to socketPath: URL, servedBy process: ChildProcess, deadline: Date) async throws -> GLib.Socket {
         while true {
             do {
                 return try GLib.Socket.connect(unixPath: socketPath.path)
             } catch {
-                guard Date() < deadline else {
+                guard process.isRunning, Date() < deadline else {
                     throw QmpError.monitorUnavailable
                 }
                 try await Task.sleep(for: .milliseconds(50))
