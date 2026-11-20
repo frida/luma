@@ -281,12 +281,7 @@ enum StyleSheet {
         padding: 0 4px;
         min-height: 0;
     }
-    scrolledwindow.luma-popover-scroll > viewport { color: #2e3436; }
-    .luma-cfg-reg-changed { color: #1c71d8; font-weight: bold; }
-    @media (prefers-color-scheme: dark) {
-        scrolledwindow.luma-popover-scroll > viewport { color: #deddda; }
-        .luma-cfg-reg-changed { color: #78aeed; }
-    }
+    .luma-cfg-reg-changed { color: @accent_color; font-weight: bold; }
 
     .luma-js-expander {
         margin: 0;
