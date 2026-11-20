@@ -89,17 +89,19 @@ final class BootVirtualMachineDialog {
         commandLineLabel = Label(str: "")
         commandLineLabel.add(cssClass: "monospace")
         commandLineLabel.selectable = true
-        commandLineLabel.wrap = true
-        commandLineLabel.wrapMode = .wordChar
         commandLineLabel.xalign = 0
         commandLineLabel.marginStart = 12
         commandLineLabel.marginEnd = 12
         commandLineLabel.marginTop = 12
         commandLineLabel.marginBottom = 12
 
+        let commandLineScroll = ScrolledWindow()
+        commandLineScroll.setPolicy(hscrollbarPolicy: .automatic, vscrollbarPolicy: .never)
+        commandLineScroll.child = WidgetRef(commandLineLabel)
+
         let commandLineRow = Adw.ExpanderRow()
         commandLineRow.title = "Command Line"
-        commandLineRow.addRow(child: commandLineLabel)
+        commandLineRow.addRow(child: commandLineScroll)
 
         commandLineGroup = Adw.PreferencesGroup()
         commandLineGroup.add(child: commandLineRow)

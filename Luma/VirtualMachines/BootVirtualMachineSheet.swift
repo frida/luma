@@ -346,10 +346,13 @@ struct BootVirtualMachineSheet: View {
             EmptyView()
         case .success(let commandLine?):
             commandLineDisclosure(
-                Text(commandLine.text)
-                    .font(.system(.caption, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                ScrollView(.horizontal) {
+                    Text(commandLine.text)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .fixedSize()
+                        .padding(.bottom, 8)
+                }
             )
         case .failure(let error):
             commandLineDisclosure(
