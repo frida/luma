@@ -56,6 +56,7 @@ final class PatternDecodeView {
 
     private static let cappedHeight = 400
     private static let treeMinimumWidth = 360
+    private static let treeMaximumWidth = 640
     private static let spacingSideBySide = 16
     private static let spacingStacked = 6
     private static let treeRowHeight = Int(HexView.rowHeight.rounded(.up))
@@ -110,7 +111,9 @@ final class PatternDecodeView {
         treeScroller = ScrolledWindow()
         treeScroller.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
         treeScroller.set(child: treeList)
-        treeScroller.hexpand = true
+        treeScroller.halign = .start
+        treeScroller.propagateNaturalWidth = true
+        treeScroller.maxContentWidth = Self.treeMaximumWidth
         treeScroller.setSizeRequest(width: Self.treeMinimumWidth, height: -1)
 
         let panes = Self.arrange(hexScroller, beside: treeScroller, sizing: sizing)
