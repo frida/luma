@@ -44,6 +44,17 @@ public final class QemuBackend: VirtualMachineBackend {
         )
     }
 
+    public func implicitValue(
+        of parameter: VirtualMachineParameter,
+        for template: VirtualMachineTemplate,
+        parameters: [String: VirtualMachineParameterValue]
+    ) -> String? {
+        guard parameter.id == QemuParameter.emulator, let guest = try? guest(for: template, parameters: parameters) else {
+            return nil
+        }
+        return QemuExecutable.path(for: guest.emulator)?.path
+    }
+
     private func guest(
         for template: VirtualMachineTemplate,
         parameters: [String: VirtualMachineParameterValue]

@@ -94,6 +94,15 @@ public final class VirtualMachineManager {
         )
     }
 
+    public func implicitValue(
+        of parameter: VirtualMachineParameter,
+        for template: VirtualMachineTemplate,
+        parameters: [String: VirtualMachineParameterValue]
+    ) -> String? {
+        backend(for: template)?.implicitValue(
+            of: parameter, for: template, parameters: resolvedParameters(for: template, parameters: parameters))
+    }
+
     public func machine(for record: VirtualMachineRecord) -> (any VirtualMachine)? {
         running[record.id]
     }

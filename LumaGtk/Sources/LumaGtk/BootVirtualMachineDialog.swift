@@ -227,7 +227,7 @@ final class BootVirtualMachineDialog {
         let variant = template.variant(for: currentParameterValues())
         refreshSystemRow(variant.starterImages)
         rebuildAgentRow(variant.agentFlavor)
-        refreshCommandLine()
+        noteParameterChange()
     }
 
     private func refreshSystemRow(_ images: StarterImages?) {
@@ -377,6 +377,20 @@ final class BootVirtualMachineDialog {
         }
     }
 
+    private func noteParameterChange() {
+        refreshImplicitValues()
+        refreshCommandLine()
+    }
+
+    private func refreshImplicitValues() {
+        guard let template = selectedTemplate else { return }
+        let parameters = currentParameterValues()
+        for parameter in template.parameters {
+            parameterRows[parameter.id]?.showImplicitValue(
+                engine.virtualMachines.implicitValue(of: parameter, for: template, parameters: parameters))
+        }
+    }
+
     private func refreshCommandLine() {
         guard let template = selectedTemplate else { return }
         do {
@@ -418,7 +432,7 @@ final class BootVirtualMachineDialog {
 
     private func makeRow(for parameter: VirtualMachineParameter) -> ParameterRow {
         let refresh: () -> Void = { [weak self] in
-            MainActor.assumeIsolated { self?.refreshCommandLine() }
+            MainActor.assumeIsolated { self?.noteParameterChange() }
         }
         switch parameter.kind {
         case .text(let initial):
@@ -459,6 +473,10 @@ final class BootVirtualMachineDialog {
             if !extensions.isEmpty {
                 row.tooltipText = extensions.map { ".\($0)" }.joined(separator: " ")
             }
+            let implicit = Label(str: "")
+            implicit.add(cssClass: "dim-label")
+            implicit.valign = .center
+            row.addSuffix(widget: implicit)
             let browse = Button(label: "Browse\u{2026}")
             browse.add(cssClass: "flat")
             browse.valign = .center
@@ -467,7 +485,11 @@ final class BootVirtualMachineDialog {
             }
             row.addSuffix(widget: browse)
             row.onChanged { _ in refresh() }
-            return ParameterRow(widget: row) { .text(row.text ?? "") }
+            return ParameterRow(widget: row, value: { .text(row.text ?? "") }) { value in
+                implicit.label = value.map { "Default: \(URL(fileURLWithPath: $0).lastPathComponent)" } ?? ""
+                implicit.tooltipText = value
+                implicit.visible = value != nil && (row.text ?? "").isEmpty
+            }
 
         case .textList:
             let list = ArgumentList(title: parameter.name, changed: refresh)
@@ -608,6 +630,7 @@ final class BootVirtualMachineDialog {
 private struct ParameterRow {
     let widget: Widget
     let value: () -> VirtualMachineParameterValue
+    var showImplicitValue: (String?) -> Void = { _ in }
 }
 
 @MainActor

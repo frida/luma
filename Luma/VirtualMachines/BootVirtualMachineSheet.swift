@@ -179,6 +179,11 @@ struct BootVirtualMachineSheet: View {
                             .lineLimit(1)
                             .truncationMode(.head)
                             .foregroundStyle(.secondary)
+                    } else if let implicit = implicitValue(of: parameter) {
+                        Text("Default: \(implicit)")
+                            .lineLimit(1)
+                            .truncationMode(.head)
+                            .foregroundStyle(.tertiary)
                     }
                     Spacer()
                     if parameters[parameter.id]?.text?.isEmpty == false {
@@ -597,6 +602,11 @@ struct BootVirtualMachineSheet: View {
             get: { parameters[parameter.id]?.number ?? 0 },
             set: { parameters[parameter.id] = .number($0) }
         )
+    }
+
+    private func implicitValue(of parameter: VirtualMachineParameter) -> String? {
+        guard let selectedTemplate else { return nil }
+        return engine.virtualMachines.implicitValue(of: parameter, for: selectedTemplate, parameters: parameters)
     }
 
     private func toggleBinding(_ parameter: VirtualMachineParameter) -> Binding<Bool> {

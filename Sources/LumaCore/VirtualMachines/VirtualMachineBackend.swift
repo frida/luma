@@ -22,6 +22,12 @@ public protocol VirtualMachineBackend: AnyObject {
         storageDirectory: URL,
         resumesFromReadySnapshot: Bool
     ) throws -> VirtualMachineCommandLine?
+
+    func implicitValue(
+        of parameter: VirtualMachineParameter,
+        for template: VirtualMachineTemplate,
+        parameters: [String: VirtualMachineParameterValue]
+    ) -> String?
 }
 
 extension VirtualMachineBackend {
@@ -40,6 +46,14 @@ extension VirtualMachineBackend {
         storageDirectory: URL,
         resumesFromReadySnapshot: Bool
     ) throws -> VirtualMachineCommandLine? {
+        nil
+    }
+
+    public func implicitValue(
+        of parameter: VirtualMachineParameter,
+        for template: VirtualMachineTemplate,
+        parameters: [String: VirtualMachineParameterValue]
+    ) -> String? {
         nil
     }
 }
