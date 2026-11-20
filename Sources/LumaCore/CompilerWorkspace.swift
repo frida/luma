@@ -279,7 +279,7 @@ public final class CompilerWorkspace {
     public func buildPatternBundle(for source: PatternSource, paths: CompilerWorkspacePaths) async throws -> String {
         _ = try await ensureReady(paths: paths)
 
-        let wrapperRelPath = "PatternGlobals/\(source.id).entry.js"
+        let wrapperRelPath = "PatternGlobals/\(Self.fileName(for: source.id)).entry.js"
         let wrapperURL = paths.root.appendingPathComponent(wrapperRelPath)
 
         try FileManager.default.createDirectory(
@@ -308,6 +308,10 @@ public final class CompilerWorkspace {
 
         let modules = try ESMBundleParser.parse(bundle)
         return modules.modules[modules.order[0]]!
+    }
+
+    private static func fileName(for sourceID: String) -> String {
+        String(sourceID.map { $0.isLetter || $0.isNumber || $0 == "-" ? $0 : "_" })
     }
 
     public func withCompilerDiagnostics<T>(
