@@ -281,7 +281,7 @@ enum StyleSheet {
         padding: 0 4px;
         min-height: 0;
     }
-    .luma-cfg-reg-changed { color: @accent_color; font-weight: bold; }
+    .luma-cfg-reg-changed { color: var(--accent-color); font-weight: bold; }
 
     .luma-js-expander {
         margin: 0;
