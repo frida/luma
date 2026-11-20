@@ -14,6 +14,7 @@ struct FilesView: View {
     @State private var isLoading = false
     @State private var problem: String?
     @State private var lacksFilesystem = false
+    @FocusState private var isTableFocused: Bool
     @State private var isChoosingUploads = false
     @State private var isDropTargeted = false
     @State private var pendingDeletion: [RemoteFileEntry] = []
@@ -204,6 +205,8 @@ struct FilesView: View {
                 open(entry)
             }
         }
+        .focused($isTableFocused)
+        .onChange(of: selectedNames) { isTableFocused = true }
         .onKeyPress(action: handleKey)
         .dropDestination(for: URL.self) { urls, _ in
             guard acceptsUploads else { return false }
@@ -224,7 +227,7 @@ struct FilesView: View {
     private func handleKey(_ press: KeyPress) -> KeyPress.Result {
         let command = press.modifiers.contains(.command)
         switch press.key {
-        case .delete where command:
+        case .delete where command, Self.backspace where command:
             pendingDeletion = entries.filter { selectedNames.contains($0.name) }
         case .return, .downArrow where command:
             guard let entry = selectedEntry else { return .ignored }
@@ -236,13 +239,15 @@ struct FilesView: View {
         case "l":
             guard let entry = selectedEntry, entry.opensAsDirectory else { return .ignored }
             open(entry)
-        case "h", .delete, .upArrow where command:
+        case "h", .delete, Self.backspace, .upArrow where command:
             navigate(to: RemotePath.parent(of: path))
         default:
             return .ignored
         }
         return .handled
     }
+
+    private static let backspace: KeyEquivalent = "\u{7F}"
 
     private var selectedEntry: RemoteFileEntry? {
         entries.first { selectedNames.contains($0.name) }
