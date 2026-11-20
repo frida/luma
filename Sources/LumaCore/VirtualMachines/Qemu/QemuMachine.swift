@@ -30,11 +30,11 @@ final class QemuMachine: VirtualMachine {
     }
 
     var kernelSymbols: BareboneKernelSymbols? {
-        request.text(QemuParameter.symbols).map { .linuxSystemMap(URL(fileURLWithPath: $0)) }
+        guard let symbols = request.text(QemuParameter.symbols), !symbols.isEmpty else { return nil }
+        return .linuxSystemMap(URL(fileURLWithPath: symbols))
     }
 
     private let guest: QemuGuest
-    private let executable: URL
     private let request: VirtualMachineLaunchRequest
     private let process = ChildProcess()
     private let runtimeDirectory: URL
