@@ -9,6 +9,8 @@ import Darwin
 import Glibc
 #endif
 
+#if os(Windows) || os(macOS) || os(Linux)
+
 final class QemuDisplayListener: GLib.DBusObjectHandler, @unchecked Sendable {
     var onScanout: (@Sendable (VirtualMachineFrame) -> Void)?
     var onUpdate: (@Sendable () -> Void)?
@@ -390,3 +392,4 @@ extension VirtualMachinePointerButton {
     }
 }
 
+#endif

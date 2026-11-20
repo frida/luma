@@ -1,5 +1,7 @@
 import Foundation
 
+#if os(Windows) || os(macOS) || os(Linux)
+
 enum QemuDiskImageFormat: String {
     case qcow2
     case vmdk
@@ -24,3 +26,5 @@ enum QemuDiskImageFormat: String {
         return .raw
     }
 }
+
+#endif

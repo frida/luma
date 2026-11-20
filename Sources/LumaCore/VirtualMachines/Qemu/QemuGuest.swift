@@ -1,5 +1,7 @@
 import Foundation
 
+#if os(Windows) || os(macOS) || os(Linux)
+
 struct QemuGuest {
     let id: String
     let name: String
@@ -639,3 +641,4 @@ enum QemuIdentifier {
     static let readySnapshot = "luma-ready"
 }
 
+#endif

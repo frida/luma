@@ -1,6 +1,8 @@
 import Foundation
 import Observation
 
+#if os(Windows) || os(macOS) || os(Linux)
+
 @Observable
 @MainActor
 final class QemuDisplayConnection: VirtualMachineFrameSource {
@@ -44,3 +46,4 @@ final class QemuDisplayConnection: VirtualMachineFrameSource {
     }
 }
 
+#endif
