@@ -173,6 +173,7 @@ public final class VirtualMachineManager {
 
         let machine: any VirtualMachine
         do {
+            try await ensureAgent(for: record, template: template)
             machine = try await backend.launch(
                 VirtualMachineLaunchRequest(
                     id: record.id,
@@ -300,6 +301,11 @@ public final class VirtualMachineManager {
 
     private func machineDirectory(for record: VirtualMachineRecord) -> URL {
         storageDirectory.appendingPathComponent(record.id.uuidString, isDirectory: true)
+    }
+
+    private func ensureAgent(for record: VirtualMachineRecord, template: VirtualMachineTemplate) async throws {
+        guard record.agentPath == nil, let flavor = template.variant(for: record.parameters).agentFlavor else { return }
+        _ = try await agents.ensure(flavor)
     }
 
     private func agentPath(for record: VirtualMachineRecord, template: VirtualMachineTemplate) -> URL? {

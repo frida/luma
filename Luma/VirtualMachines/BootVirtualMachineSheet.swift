@@ -122,12 +122,12 @@ struct BootVirtualMachineSheet: View {
                         imageSourcePicker(starterImages)
                     }
 
-                    ForEach(template.parameters.filter { !hiddenParameterIDs.contains($0.id) }) { parameter in
-                        parameterField(parameter)
-                    }
-
                     if let flavor = template.variant(for: effectiveParameters).agentFlavor {
                         agentSection(flavor)
+                    }
+
+                    ForEach(template.parameters.filter { !hiddenParameterIDs.contains($0.id) }) { parameter in
+                        parameterField(parameter)
                     }
 
                     commandLineSection(template)
@@ -333,7 +333,7 @@ struct BootVirtualMachineSheet: View {
         case .downloading(let fraction):
             return downloadingLabel(fraction)
         case .missing:
-            return "Not downloaded yet"
+            return "Downloaded when you boot"
         case .failed(let reason):
             return reason
         }

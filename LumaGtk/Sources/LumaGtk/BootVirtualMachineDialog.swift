@@ -122,8 +122,8 @@ final class BootVirtualMachineDialog {
         form.marginBottom = 18
         form.append(child: machineGroup)
         form.append(child: starterGroup)
-        form.append(child: parameterGroup)
         form.append(child: agentGroup)
+        form.append(child: parameterGroup)
         form.append(child: commandLineGroup)
 
         scroll = ScrolledWindow()
@@ -350,7 +350,7 @@ final class BootVirtualMachineDialog {
         case .downloading(let fraction):
             return downloadingLabel(fraction)
         case .missing:
-            return "Not downloaded yet"
+            return "Downloaded when you boot"
         case .failed(let reason):
             return reason
         }
