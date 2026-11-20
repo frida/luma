@@ -204,11 +204,7 @@ struct FilesView: View {
                 open(entry)
             }
         }
-        #if os(macOS)
-            .onDeleteCommand {
-                pendingDeletion = entries.filter { selectedNames.contains($0.name) }
-            }
-        #endif
+        .onKeyPress(action: handleKey)
         .dropDestination(for: URL.self) { urls, _ in
             guard acceptsUploads else { return false }
             upload(urls)
@@ -223,6 +219,40 @@ struct FilesView: View {
                 ProgressView()
             }
         }
+    }
+
+    private func handleKey(_ press: KeyPress) -> KeyPress.Result {
+        let command = press.modifiers.contains(.command)
+        switch press.key {
+        case .delete where command:
+            pendingDeletion = entries.filter { selectedNames.contains($0.name) }
+        case .return, .downArrow where command:
+            guard let entry = selectedEntry else { return .ignored }
+            open(entry)
+        case "j":
+            moveSelection(by: 1)
+        case "k":
+            moveSelection(by: -1)
+        case "l":
+            guard let entry = selectedEntry, entry.opensAsDirectory else { return .ignored }
+            open(entry)
+        case "h", .delete, .upArrow where command:
+            navigate(to: RemotePath.parent(of: path))
+        default:
+            return .ignored
+        }
+        return .handled
+    }
+
+    private var selectedEntry: RemoteFileEntry? {
+        entries.first { selectedNames.contains($0.name) }
+    }
+
+    private func moveSelection(by delta: Int) {
+        guard !entries.isEmpty else { return }
+        let current = entries.firstIndex { selectedNames.contains($0.name) } ?? -1
+        let target = min(max(current + delta, 0), entries.count - 1)
+        selectedNames = [entries[target].name]
     }
 
     private var dropHighlight: some View {

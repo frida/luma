@@ -82,6 +82,7 @@ final class FilesPane {
 
         list = ListBox()
         list.selectionMode = .multiple
+        list.activateOnSingleClick = false
         list.add(cssClass: "boxed-list")
         list.valign = .start
 
@@ -179,7 +180,7 @@ final class FilesPane {
         }
         installDropTarget(on: listArea)
         installDragSource()
-        installDeleteKey()
+        installKeys()
 
         applySessionState()
     }
@@ -268,16 +269,44 @@ final class FilesPane {
         list.add(controller: source)
     }
 
-    private func installDeleteKey() {
+    private func installKeys() {
         let keys = EventControllerKey()
         keys.onKeyPressed { [weak self] _, keyval, _, _ in
-            MainActor.assumeIsolated {
-                guard let self, Int32(keyval) == Gdk.keyDelete, !self.selectedEntries.isEmpty else { return false }
-                self.confirmDeletion(of: self.selectedEntries)
-                return true
-            }
+            MainActor.assumeIsolated { self?.handleKey(Int32(keyval)) ?? false }
         }
         list.add(controller: keys)
+    }
+
+    private func handleKey(_ key: Int32) -> Bool {
+        switch key {
+        case Gdk.keyDelete:
+            guard !selectedEntries.isEmpty else { return false }
+            confirmDeletion(of: selectedEntries)
+        case Gdk.keyj:
+            moveCursor(by: 1)
+        case Gdk.keyk:
+            moveCursor(by: -1)
+        case Gdk.keyl:
+            guard let index = cursorIndex, entries[index].opensAsDirectory else { return false }
+            open(entries[index])
+        case Gdk.keyh, Gdk.keyBackSpace:
+            navigate(to: RemotePath.parent(of: path))
+        default:
+            return false
+        }
+        return true
+    }
+
+    private var cursorIndex: Int? {
+        rows.firstIndex { $0.isFocus } ?? rows.firstIndex { $0.isSelected }
+    }
+
+    private func moveCursor(by delta: Int) {
+        guard !rows.isEmpty else { return }
+        let target = min(max((cursorIndex ?? -1) + delta, 0), rows.count - 1)
+        list.unselectAll()
+        list.select(row: rows[target])
+        _ = rows[target].grabFocus()
     }
 
     private func observeTransfers(of node: LumaCore.ProcessNode) {
