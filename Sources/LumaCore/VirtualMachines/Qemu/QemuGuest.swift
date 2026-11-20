@@ -27,7 +27,7 @@ struct QemuGuest {
             iconName: "windows-9x",
             operatingSystem: .windows,
             emulator: "qemu-system-i386",
-            machine: "pc,accel=tcg",
+            machine: "pc",
             cpu: "pentium3",
             vga: "cirrus",
             architecture: .x86,
@@ -46,7 +46,7 @@ struct QemuGuest {
             iconName: "windows-nt",
             operatingSystem: .windows,
             emulator: "qemu-system-i386",
-            machine: "pc,accel=tcg",
+            machine: "pc",
             cpu: "core2duo",
             vga: "std",
             architecture: .x86,
@@ -65,7 +65,7 @@ struct QemuGuest {
             iconName: "windows-nt",
             operatingSystem: .windows,
             emulator: "qemu-system-x86_64",
-            machine: "pc,accel=tcg",
+            machine: "pc",
             cpu: "core2duo",
             vga: "std",
             architecture: .x86_64,
@@ -109,7 +109,7 @@ struct QemuGuest {
             iconName: "linux",
             operatingSystem: .linux,
             emulator: "qemu-system-x86_64",
-            machine: "pc,accel=tcg",
+            machine: "pc",
             cpu: nil,
             vga: "std",
             architecture: .x86_64,
@@ -153,7 +153,7 @@ struct QemuGuest {
             iconName: "linux",
             operatingSystem: .linux,
             emulator: "qemu-system-i386",
-            machine: "pc,accel=tcg",
+            machine: "pc",
             cpu: nil,
             vga: "std",
             architecture: .x86,
@@ -236,7 +236,8 @@ struct QemuGuest {
                 )
             },
             parameters: [architectureParameter(guests)] + primary.boot.parameters + [
-                memoryParameter(default: primary.defaultMemory)
+                memoryParameter(default: primary.defaultMemory),
+                acceleratorParameter,
             ] + emulatorParameters
         )
     }
@@ -306,7 +307,8 @@ struct QemuGuest {
             operatingSystem: operatingSystem,
             architecture: architecture,
             agentFlavor: agentFlavor,
-            parameters: boot.parameters + [Self.memoryParameter(default: defaultMemory)] + Self.emulatorParameters,
+            parameters: boot.parameters + [Self.memoryParameter(default: defaultMemory), Self.acceleratorParameter]
+                + Self.emulatorParameters,
             starterImages: starterImages
         )
     }
@@ -318,6 +320,15 @@ struct QemuGuest {
             kind: .number(default: value, min: 32, max: 16384, unit: "MB")
         )
     }
+
+    private static let acceleratorParameter = VirtualMachineParameter(
+        id: QemuParameter.accelerator,
+        name: "Acceleration",
+        kind: .choice(
+            options: QemuAccelerator.onThisHost.map { VirtualMachineParameterOption(id: $0.rawValue, name: $0.name) },
+            default: QemuAccelerator.tcg.rawValue
+        )
+    )
 
     private static let emulatorParameters = [
         VirtualMachineParameter(id: QemuParameter.emulator, name: "QEMU binary", kind: .filePath(extensions: [])),
@@ -338,7 +349,12 @@ struct QemuGuest {
         endpoints: QemuEndpoints
     ) throws -> VirtualMachineCommandLine {
         let executable = try executable(choosing: parameters[QemuParameter.emulator]?.text ?? "")
-        var arguments = ["-machine", machine, "-m", String(parameters[QemuParameter.memory]?.number ?? defaultMemory)]
+        let accelerator = try accelerator(choosing: parameters[QemuParameter.accelerator]?.text)
+        var arguments = [
+            "-machine", machine,
+            "-accel", accelerator.rawValue,
+            "-m", String(parameters[QemuParameter.memory]?.number ?? defaultMemory),
+        ]
 
         if let firmwareDirectory = QemuExecutable.firmwareDirectory(beside: executable) {
             arguments += ["-L", firmwareDirectory.path]
@@ -400,6 +416,22 @@ struct QemuGuest {
             throw VirtualMachineError.launchFailed(reason: "\(emulator) is not installed")
         }
         return installed
+    }
+
+    private func accelerator(choosing chosen: String?) throws -> QemuAccelerator {
+        guard let chosen else { return .tcg }
+        guard let accelerator = QemuAccelerator(rawValue: chosen), QemuAccelerator.onThisHost.contains(accelerator) else {
+            throw VirtualMachineError.launchFailed(reason: "\(chosen) is not an accelerator this host has")
+        }
+        guard accelerator == .tcg || hypervisorCanRun else {
+            throw VirtualMachineError.launchFailed(
+                reason: "\(accelerator.name) cannot run \(architecture.displayName) guests on this host")
+        }
+        return accelerator
+    }
+
+    private var hypervisorCanRun: Bool {
+        architecture == Self.nativeArchitecture || (Self.nativeArchitecture == .x86_64 && architecture == .x86)
     }
 }
 
@@ -549,6 +581,32 @@ enum QemuBoot {
     }
 }
 
+enum QemuAccelerator: String {
+    case tcg
+    case kvm
+    case hvf
+    case whpx
+
+    static var onThisHost: [QemuAccelerator] {
+        #if os(Windows)
+        [.tcg, .whpx]
+        #elseif os(macOS)
+        [.tcg, .hvf]
+        #else
+        [.tcg, .kvm]
+        #endif
+    }
+
+    var name: String {
+        switch self {
+        case .tcg: return "Emulation (TCG)"
+        case .kvm: return "KVM"
+        case .hvf: return "Hypervisor.framework"
+        case .whpx: return "Windows Hypervisor Platform"
+        }
+    }
+}
+
 enum QemuDiskInterface: String {
     case ide
     case lsi
@@ -561,6 +619,7 @@ enum QemuParameter {
     static let ramdisk = "ramdisk"
     static let symbols = "symbols"
     static let memory = "memory"
+    static let accelerator = "accelerator"
     static let emulator = "emulator"
     static let extraArguments = "extra-arguments"
 }
