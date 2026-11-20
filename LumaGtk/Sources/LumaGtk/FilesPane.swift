@@ -24,11 +24,13 @@ final class FilesPane {
     private let list: ListBox
     private let listArea: Overlay
     private let detachedState: Adw.StatusPage
+    private let noFilesystemState: Adw.StatusPage
     private let dropZone: Box
     private let dropZoneLabel: Label
     private let transferList: Box
 
     private var roots: RemoteFilesystemRoots?
+    private var lacksFilesystem = false
     private var loadedNodeID: UUID?
     private var path = ""
     private var entries: [RemoteFileEntry] = []
@@ -125,10 +127,16 @@ final class FilesPane {
             title: "Not Attached",
             subtitle: "Re-attach to browse this target\u{2019}s files."
         )
+        noFilesystemState = MainWindow.makeEmptyState(
+            icon: "folder-symbolic",
+            title: "No File System",
+            subtitle: RemoteFilesystemRoots.absenceExplanation
+        )
 
         content.append(child: problemLabel)
         content.append(child: listArea)
         content.append(child: detachedState)
+        content.append(child: noFilesystemState)
         content.append(child: transferList)
 
         widget.append(child: content)
@@ -178,9 +186,11 @@ final class FilesPane {
 
     func applySessionState() {
         let isAttached = engine?.session(id: sessionID)?.phase == .attached
-        toolbar.sensitive = isAttached
-        listArea.visible = isAttached
+        let isBrowsable = isAttached && !lacksFilesystem
+        toolbar.sensitive = isBrowsable
+        listArea.visible = isBrowsable
         detachedState.visible = !isAttached
+        noFilesystemState.visible = isAttached && lacksFilesystem
         guard isAttached, let node, node.id != loadedNodeID else { return }
         loadedNodeID = node.id
         observeTransfers(of: node)
@@ -284,7 +294,11 @@ final class FilesPane {
     private func start() async {
         guard let node else { return }
         do {
-            let roots = try await node.filesystemRoots()
+            guard let roots = try await node.filesystemRoots() else {
+                lacksFilesystem = true
+                applySessionState()
+                return
+            }
             self.roots = roots
             navigate(to: roots.currentDirectory ?? roots.root)
         } catch {

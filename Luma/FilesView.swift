@@ -13,6 +13,7 @@ struct FilesView: View {
     @State private var selectedNames: Set<String> = []
     @State private var isLoading = false
     @State private var problem: String?
+    @State private var lacksFilesystem = false
     @State private var isChoosingUploads = false
     @State private var isDropTargeted = false
     @State private var pendingDeletion: [RemoteFileEntry] = []
@@ -39,21 +40,29 @@ struct FilesView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            header
-            if let problem {
-                Text(problem)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .textSelection(.enabled)
-            }
-            table
-            if let transfers = node?.fileTransfers, !transfers.isEmpty {
-                VStack(spacing: 6) {
-                    ForEach(transfers) { transfer in
-                        FileTransferRow(transfer: transfer)
-                    }
+            if lacksFilesystem {
+                ContentUnavailableView(
+                    "No File System",
+                    systemImage: "folder.badge.questionmark",
+                    description: Text(RemoteFilesystemRoots.absenceExplanation)
+                )
+            } else {
+                header
+                if let problem {
+                    Text(problem)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .textSelection(.enabled)
                 }
-                .padding(.bottom, 8)
+                table
+                if let transfers = node?.fileTransfers, !transfers.isEmpty {
+                    VStack(spacing: 6) {
+                        ForEach(transfers) { transfer in
+                            FileTransferRow(transfer: transfer)
+                        }
+                    }
+                    .padding(.bottom, 8)
+                }
             }
         }
         .padding(.horizontal, 12)
@@ -241,7 +250,10 @@ struct FilesView: View {
     private func start() async {
         guard let node else { return }
         do {
-            let roots = try await node.filesystemRoots()
+            guard let roots = try await node.filesystemRoots() else {
+                lacksFilesystem = true
+                return
+            }
             self.roots = roots
             navigate(to: path.isEmpty ? roots.currentDirectory ?? roots.root : path)
         } catch {

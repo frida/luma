@@ -8,13 +8,22 @@ export interface FilesystemRoots {
     tmp: string | null;
 }
 
-export function getFilesystemRoots(): FilesystemRoots {
+export function getFilesystemRoots(): FilesystemRoots | null {
+    if (!hasFilesystemApi()) {
+        return null;
+    }
     return {
         root: (Process.platform === "windows") ? "C:\\" : "/",
         home: existingDirectory(() => Process.getHomeDir()),
         cwd: existingDirectory(() => Process.getCurrentDir()),
         tmp: existingDirectory(() => Process.getTmpDir()),
     };
+}
+
+function hasFilesystemApi(): boolean {
+    return (Process.platform === "windows")
+        ? Process.findModuleByName("kernel32.dll") !== null
+        : Module.findGlobalExportByName("opendir") !== null;
 }
 
 function existingDirectory(read: () => string): string | null {

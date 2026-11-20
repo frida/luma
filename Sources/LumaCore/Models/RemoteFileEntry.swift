@@ -77,6 +77,11 @@ public struct RemoteFilesystemRoots: Sendable {
     public let currentDirectory: String?
     public let temporaryDirectory: String?
 
+    public static let absenceExplanation = """
+        This process has no file system API that Luma can use. In a kernel session, attach to one of \
+        the guest’s processes to browse its files.
+        """
+
     static func fromJSON(_ dict: [String: Any]) -> RemoteFilesystemRoots? {
         guard let root = dict["root"] as? String else { return nil }
         return RemoteFilesystemRoots(

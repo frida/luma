@@ -968,8 +968,9 @@ public final class ProcessNode: Identifiable {
         return bytes
     }
 
-    public func filesystemRoots() async throws -> RemoteFilesystemRoots {
+    public func filesystemRoots() async throws -> RemoteFilesystemRoots? {
         let raw = try await script.exports.getFilesystemRoots()
+        if raw is NSNull { return nil }
         guard let dict = raw as? [String: Any], let roots = RemoteFilesystemRoots.fromJSON(dict) else {
             throw LumaCoreError.protocolViolation("getFilesystemRoots: unexpected response shape")
         }
