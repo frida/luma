@@ -50,7 +50,7 @@ struct PatternDecodeView: View {
                 HStack(alignment: .top, spacing: 16) {
                     hexPane
                     if !placements.isEmpty {
-                        treePane.frame(minWidth: 360, maxWidth: .infinity, alignment: .topLeading)
+                        treePane.frame(minWidth: 360, maxWidth: 640, alignment: .topLeading)
                     }
                 }
                 VStack(alignment: .leading, spacing: 6) {
