@@ -354,12 +354,24 @@ final class FilesPane {
     }
 
     private func render() {
+        let hadFocus = list.isFocus || list.focusChild != nil
         while let child = list.firstChild {
             list.remove(child: child)
         }
         rows = entries.map(makeRow)
         for row in rows {
             list.append(child: row)
+        }
+        if hadFocus {
+            keepFocus()
+        }
+    }
+
+    private func keepFocus() {
+        if let first = rows.first {
+            _ = first.grabFocus()
+        } else {
+            _ = list.grabFocus()
         }
     }
 
