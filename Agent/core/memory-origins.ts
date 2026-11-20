@@ -19,10 +19,10 @@ function recordReads(reader: MemoryReader): void {
     const proto = NativePointer.prototype;
     const original = proto[reader];
 
-    proto[reader] = function (this: NativePointer, length: number): ArrayBuffer | null {
-        const buffer = original.call(this, length);
+    proto[reader] = function (this: NativePointer, length: number, offset: number = 0): ArrayBuffer | null {
+        const buffer = original.call(this, length, offset);
         if (buffer !== null) {
-            origins.set(buffer, this);
+            origins.set(buffer, this.add(offset));
         }
         return buffer;
     };
