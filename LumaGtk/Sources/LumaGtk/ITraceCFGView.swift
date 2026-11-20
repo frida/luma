@@ -7,6 +7,7 @@ import Foundation
 import Gdk
 import Gtk
 import LumaCore
+import Pango
 
 struct NodeRegisterInfo {
     let stateBeforeBlock: RegisterState
@@ -60,9 +61,13 @@ final class ITraceCFGView {
     private var offsetBaseX: Double = 0
     private var offsetBaseY: Double = 0
 
-    private let nodeWidth: Double = 360
+    private let nodeWidth = ITraceCFGView.measuredNodeWidth()
     private let baseNodeHeight: Double = 30
     private let padding: Double = 20
+
+    private static let instructionFont = "monospace 9"
+    private static let instructionColumns = 64
+    private static let nodeChrome: Double = 40
 
     init(
         decoded: DecodedITrace,
@@ -314,7 +319,7 @@ final class ITraceCFGView {
 
     private func relayout() {
         let keys = graph.nodes
-        graph.assignPositions { [nodeHeights, baseNodeHeight] key in
+        graph.assignPositions(nodeWidth: nodeWidth) { [nodeHeights, baseNodeHeight] key in
             nodeHeights[key] ?? baseNodeHeight
         }
         _ = keys
@@ -407,12 +412,10 @@ final class ITraceCFGView {
             let row = ListBoxRow()
             row.add(cssClass: "luma-cfg-instr")
             let label = Label(str: "")
-            label.setMarkup(str: StyledTextPango.markup(for: line))
+            label.setMarkup(str: "<span font_desc=\"\(Self.instructionFont)\">\(StyledTextPango.markup(for: line))</span>")
             label.halign = .start
             label.xalign = 0
             label.hexpand = true
-            label.add(cssClass: "monospace")
-            label.add(cssClass: "caption")
             label.ellipsize = .end
             label.marginStart = 4
             label.marginEnd = 4
@@ -1102,5 +1105,13 @@ final class ITraceCFGView {
         if !row.isEmpty { gpr.append(row) }
 
         return RegisterLayout(gpr: gpr, vec: [])
+    }
+
+    private static func measuredNodeWidth() -> Double {
+        let layout = Label(str: "").createPangoLayout(text: String(repeating: "0", count: instructionColumns))!
+        layout.setFontDescription(desc: Pango.fontDescriptionFromString(str: instructionFont))
+        var width: gint = 0
+        layout.getPixelSize(width: &width)
+        return Double(width) + nodeChrome
     }
 }

@@ -153,6 +153,8 @@ public struct CFGGraph {
 
     // MARK: - Layout
 
+    public static let defaultNodeWidth: Double = 360
+
     public mutating func layout() {
         assignLayers()
         assignPositions()
@@ -221,8 +223,7 @@ public struct CFGGraph {
         }
     }
 
-    public mutating func assignPositions(nodeHeights: ((UInt64) -> Double)? = nil) {
-        let nodeWidth: Double = 360
+    public mutating func assignPositions(nodeWidth: Double = defaultNodeWidth, nodeHeights: ((UInt64) -> Double)? = nil) {
         let hSpacing: Double = 40
         let vSpacing: Double = 20
         let sectionGap: Double = 80
