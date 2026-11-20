@@ -57,6 +57,7 @@ final class PatternDecodeView {
     private static let cappedHeight = 400
     private static let treeMinimumWidth = 360
     private static let treeMaximumWidth = 640
+    private static let scrollbarClearance = 14
     private static let spacingSideBySide = 16
     private static let spacingStacked = 6
     private static let treeRowHeight = Int(HexView.rowHeight.rounded(.up))
@@ -107,6 +108,7 @@ final class PatternDecodeView {
         treeList.add(cssClass: "luma-pattern-tree")
         treeList.marginTop = Self.treeInset
         treeList.marginBottom = Self.treeInset
+        treeList.marginEnd = Self.scrollbarClearance
 
         treeScroller = ScrolledWindow()
         treeScroller.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
