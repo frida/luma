@@ -28,14 +28,14 @@ final class PatternGlobals {
         var update = Update()
 
         var wanted: [String: PatternSource] = [:]
-        var sourceIDsByGlobal: [String: String] = [:]
+        var sourcesByGlobal: [String: PatternSource] = [:]
         for source in sources where source.kind == .pattern {
             let global = Self.globalName(for: source.name)
-            if let claimant = sourceIDsByGlobal[global] {
+            if let claimant = sourcesByGlobal[global] {
                 recordFailure(of: source, PatternGlobalError.sharesGlobal(global, with: claimant), in: &update)
                 continue
             }
-            sourceIDsByGlobal[global] = source.id
+            sourcesByGlobal[global] = source
             wanted[source.id] = source
         }
 
@@ -102,15 +102,24 @@ final class PatternGlobals {
 }
 
 enum PatternGlobalError: LocalizedError {
-    case sharesGlobal(String, with: String)
+    case sharesGlobal(String, with: PatternSource)
     case wouldReplace(String)
 
     var errorDescription: String? {
         switch self {
         case .sharesGlobal(let global, let claimant):
-            return "\(claimant) is already the REPL's \(global)."
+            return "\(Self.describe(claimant)) is already the REPL's \(global)."
         case .wouldReplace(let global):
             return "The process already has a global named \(global)."
+        }
+    }
+
+    private static func describe(_ source: PatternSource) -> String {
+        switch source.origin {
+        case .project:
+            return "The project's \(source.name)"
+        case .package(let name), .instrument(let name):
+            return "\(name)'s \(source.name)"
         }
     }
 }
