@@ -126,8 +126,10 @@ struct BootVirtualMachineSheet: View {
                         agentSection(flavor)
                     }
 
-                    ForEach(template.parameters.filter { !hiddenParameterIDs.contains($0.id) }) { parameter in
-                        parameterField(parameter)
+                    Section("Parameters") {
+                        ForEach(template.parameters.filter { !hiddenParameterIDs.contains($0.id) }) { parameter in
+                            parameterField(parameter)
+                        }
                     }
 
                     commandLineSection(template)
@@ -214,37 +216,39 @@ struct BootVirtualMachineSheet: View {
             Toggle(parameter.name, isOn: toggleBinding(parameter))
 
         case .textList:
-            textListSection(parameter)
+            textListRows(parameter)
         }
     }
 
-    private func textListSection(_ parameter: VirtualMachineParameter) -> some View {
-        Section(parameter.name) {
-            ForEach(textList(parameter).indices, id: \.self) { index in
-                HStack {
-                    TextField("Argument", text: textListBinding(parameter, at: index))
-                        .labelsHidden()
-                        .font(.system(.body, design: .monospaced))
-
-                    Button {
-                        var list = textList(parameter)
-                        list.remove(at: index)
-                        parameters[parameter.id] = .textList(list)
-                    } label: {
-                        Image(systemName: "minus.circle.fill")
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.secondary)
-                    .help("Remove")
-                }
-            }
-
+    @ViewBuilder
+    private func textListRows(_ parameter: VirtualMachineParameter) -> some View {
+        LabeledContent(parameter.name) {
             Button {
                 parameters[parameter.id] = .textList(textList(parameter) + [""])
             } label: {
-                Label("Add Argument", systemImage: "plus")
+                Image(systemName: "plus")
             }
             .buttonStyle(.borderless)
+            .help("Add Argument")
+        }
+
+        ForEach(textList(parameter).indices, id: \.self) { index in
+            HStack {
+                TextField("Argument", text: textListBinding(parameter, at: index))
+                    .labelsHidden()
+                    .font(.system(.body, design: .monospaced))
+
+                Button {
+                    var list = textList(parameter)
+                    list.remove(at: index)
+                    parameters[parameter.id] = .textList(list)
+                } label: {
+                    Image(systemName: "minus.circle.fill")
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .help("Remove")
+            }
         }
     }
 
