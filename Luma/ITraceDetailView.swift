@@ -145,7 +145,10 @@ struct ITraceDetailView: View {
             }
         }
         .onChange(of: colorScheme) { _, _ in
+            var seen = Set<UInt64>()
+            let shown = (decoded?.entries ?? []).filter { disasmCache[$0.blockAddress] != nil && seen.insert($0.blockAddress).inserted }
             disasmCache.removeAll()
+            shown.forEach(fetchDisasmIfNeeded)
         }
     }
 

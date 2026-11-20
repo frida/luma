@@ -409,7 +409,14 @@ extension ITraceCFGView {
         var nodeRegisterInfo: [CFGGraph.NodeKey: NodeRegisterInfo] = [:]
         var registerNames: [String] = []
         var currentSection: Int = 0
-        var themeAppearance: Appearance = .dark
+        var themeAppearance: Appearance = .dark {
+            didSet {
+                guard themeAppearance != oldValue else { return }
+                disasmRaw.removeAll()
+                disasmRendered.removeAll()
+                fetchDisasmForVisibleNodes()
+            }
+        }
         private var isDarkMode: Bool { themeAppearance == .dark }
         var onNavigateFunction: ((Int) -> Void)?
         var onJumpToFunction: ((Int) -> Void)?
