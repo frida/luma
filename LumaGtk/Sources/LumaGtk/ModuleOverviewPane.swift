@@ -44,7 +44,7 @@ final class ModuleOverviewPane {
         contentsBox.halign = .start
 
         widget.append(child: titleLabel)
-        widget.append(child: makeFacts())
+        widget.append(child: makeFacts(engine: engine))
         widget.append(child: Separator(orientation: .horizontal))
         widget.append(child: contentsBox)
 
@@ -56,31 +56,36 @@ final class ModuleOverviewPane {
         loadTask?.cancel()
     }
 
-    private func makeFacts() -> Grid {
+    private func makeFacts(engine: Engine) -> Grid {
         let grid = Grid()
         grid.columnSpacing = 12
         grid.rowSpacing = 6
-        let facts: [(String, String, Bool)] = [
-            ("Path", module.path, false),
-            ("Base", String(format: "0x%llx", module.base), true),
-            ("Size", String(format: "0x%llx", module.size), true),
-            ("Analysis", analysisTitle, false),
+        let base = String(format: "0x%llx", module.base)
+        let facts: [(String, Label)] = [
+            ("Path", makeFactValue(module.path, monospaced: false)),
+            ("Base", PointerValueLabel.make(value: base, engine: engine, sessionID: sessionID, address: module.base)),
+            ("Size", makeFactValue(String(format: "0x%llx", module.size), monospaced: true)),
+            ("Analysis", makeFactValue(analysisTitle, monospaced: false)),
         ]
-        for (row, (label, value, monospaced)) in facts.enumerated() {
+        for (row, (label, value)) in facts.enumerated() {
             let key = Label(str: label)
             key.halign = .end
             key.add(cssClass: "dim-label")
-            let valueLabel = Label(str: value)
-            valueLabel.halign = .start
-            valueLabel.selectable = true
-            valueLabel.ellipsize = .middle
-            if monospaced {
-                valueLabel.add(cssClass: "monospace")
-            }
             grid.attach(child: key, column: 0, row: row, width: 1, height: 1)
-            grid.attach(child: valueLabel, column: 1, row: row, width: 1, height: 1)
+            grid.attach(child: value, column: 1, row: row, width: 1, height: 1)
         }
         return grid
+    }
+
+    private func makeFactValue(_ value: String, monospaced: Bool) -> Label {
+        let label = Label(str: value)
+        label.halign = .start
+        label.selectable = true
+        label.ellipsize = .middle
+        if monospaced {
+            label.add(cssClass: "monospace")
+        }
+        return label
     }
 
     private var analysisTitle: String {

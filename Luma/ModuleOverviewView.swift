@@ -29,7 +29,16 @@ struct ModuleOverviewView: View {
     private var facts: some View {
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 6) {
             factRow("Path", module.path)
-            factRow("Base", String(format: "0x%llx", module.base), monospaced: true)
+            GridRow {
+                factLabel("Base")
+                PointerValueText(
+                    engine: engine,
+                    sessionID: sessionID,
+                    value: String(format: "0x%llx", module.base),
+                    address: module.base,
+                    selection: $selection
+                )
+            }
             factRow("Size", String(format: "0x%llx", module.size), monospaced: true)
             factRow("Analysis", analysisTitle)
         }
@@ -37,13 +46,17 @@ struct ModuleOverviewView: View {
 
     private func factRow(_ label: String, _ value: String, monospaced: Bool = false) -> some View {
         GridRow {
-            Text(label)
-                .foregroundStyle(.secondary)
-                .gridColumnAlignment(.trailing)
+            factLabel(label)
             Text(value)
                 .font(monospaced ? .system(.body, design: .monospaced) : .body)
                 .textSelection(.enabled)
         }
+    }
+
+    private func factLabel(_ label: String) -> some View {
+        Text(label)
+            .foregroundStyle(.secondary)
+            .gridColumnAlignment(.trailing)
     }
 
     private var analysisTitle: String {
