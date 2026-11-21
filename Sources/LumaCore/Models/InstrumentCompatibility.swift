@@ -17,6 +17,19 @@ public struct InstrumentCompatibility: Codable, Hashable, Sendable {
         self.archs = archs?.nilIfEmpty
     }
 
+    enum CodingKeys: String, CodingKey {
+        case platforms
+        case osIDs
+        case archs
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(platforms?.sorted(), forKey: .platforms)
+        try container.encodeIfPresent(osIDs?.sorted(), forKey: .osIDs)
+        try container.encodeIfPresent(archs?.sorted(), forKey: .archs)
+    }
+
     public var isUniversal: Bool {
         platforms == nil && osIDs == nil && archs == nil
     }

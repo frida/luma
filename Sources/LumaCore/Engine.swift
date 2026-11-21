@@ -1077,6 +1077,10 @@ public final class Engine {
             self?.applyRemoteMissionSnapshot(snapshot)
         }
 
+        collaboration.onAddressNotesSnapshot = { [weak self] threads, labSessions in
+            self?.adoptAddressNotes(threads, ofLabSessions: labSessions)
+        }
+
         collaboration.onCustomInstrumentSnapshot = { [weak self] bundles in
             guard let self else { return }
             let serverIDs = Set(bundles.map(\.def.id))
@@ -1597,6 +1601,11 @@ public final class Engine {
                 processName: session.processName,
                 createdAt: ISO8601DateFormatter().string(from: session.createdAt)
             )
+            if let info = session.processInfo {
+                collaboration.enqueueUpdateProcessInfo(sessionID: session.id, info: info)
+            }
+            collaboration.enqueueUpdateSessionModules(sessionID: session.id, delta: ModuleDelta(added: session.lastKnownModules ?? []))
+            collaboration.enqueueUpdateSessionThreads(sessionID: session.id, delta: ThreadDelta(added: session.lastKnownThreads ?? []))
             announceLocalSessionChildren(sessionID: session.id)
         }
     }
@@ -1621,11 +1630,16 @@ public final class Engine {
                 await self?.uploadTraceDelta(trace, collabSessionID: sessionID)
             }
         }
+        for note in addressNotes(sessionID: sessionID) {
+            collaboration.enqueueAddressNoteUpsert(note)
+            for message in addressNoteMessages(noteID: note.id) {
+                collaboration.enqueueAddressNoteMessageAppend(message)
+            }
+        }
     }
 
     private func adoptRemoteSession(_ session: CollaborationSession.Session) {
-        if let idx = sessions.firstIndex(where: { $0.id == session.id }) {
-            var record = sessions[idx]
+        if var record = (try? store.fetchSession(id: session.id)) ?? nil {
             record.host = session.host
             record.phase = session.phase.toProcessSessionPhase
             record.armingState = session.armingState
@@ -1711,34 +1725,22 @@ public final class Engine {
         phase: CollaborationSession.Session.Phase,
         reason: String?
     ) {
-        guard let idx = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
-        var updated = sessions[idx]
-        updated.phase = phase.toProcessSessionPhase
-        saveSession(updated)
+        updateSession(id: sessionID) { $0.phase = phase.toProcessSessionPhase }
     }
 
     private func applyRemoteSessionArming(
         sessionID: UUID,
         armingState: ProcessSession.ArmingState
     ) {
-        guard let idx = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
-        var updated = sessions[idx]
-        updated.armingState = armingState
-        saveSession(updated)
+        updateSession(id: sessionID) { $0.armingState = armingState }
     }
 
     private func applyRemoteSessionModules(sessionID: UUID, delta: ModuleDelta) {
-        guard let idx = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
-        var updated = sessions[idx]
-        updated.lastKnownModules = delta.applied(to: updated.lastKnownModules)
-        saveSession(updated)
+        updateSession(id: sessionID) { $0.lastKnownModules = delta.applied(to: $0.lastKnownModules) }
     }
 
     private func applyRemoteSessionThreads(sessionID: UUID, delta: ThreadDelta) {
-        guard let idx = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
-        var updated = sessions[idx]
-        updated.lastKnownThreads = delta.applied(to: updated.lastKnownThreads)
-        saveSession(updated)
+        updateSession(id: sessionID) { $0.lastKnownThreads = delta.applied(to: $0.lastKnownThreads) }
     }
 
     private func applyRemoteSessionHostChange(
@@ -1756,17 +1758,16 @@ public final class Engine {
             removeNode(node)
         }
 
-        guard let idx = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
-        var updated = sessions[idx]
-        updated.host = host
-        updated.deviceID = deviceID
-        updated.deviceName = deviceName
-        updated.processName = processName
-        updated.lastKnownPID = pid
-        updated.lastKnownMainModule = nil
-        updated.lastKnownModules = nil
-        updated.lastKnownThreads = nil
-        saveSession(updated)
+        updateSession(id: sessionID) { updated in
+            updated.host = host
+            updated.deviceID = deviceID
+            updated.deviceName = deviceName
+            updated.processName = processName
+            updated.lastKnownPID = pid
+            updated.lastKnownMainModule = nil
+            updated.lastKnownModules = nil
+            updated.lastKnownThreads = nil
+        }
     }
 
     private func applyRemoteSessionReplCell(sessionID: UUID, cell: REPLCell) {
@@ -2379,6 +2380,9 @@ public final class Engine {
                 )
                 try? store.save(cell)
                 onREPLCellSaved?(cell)
+                if let sid = collabSessionID(forNode: node) {
+                    collaboration.enqueueAddReplCell(sessionID: sid, cell: cell)
+                }
             }
 
             updateSession(id: s.id) {
@@ -6485,6 +6489,39 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         for action in snapshot.actions { try? store.save(action) }
         for finding in snapshot.findings { try? store.save(finding) }
         for evidence in snapshot.evidence { try? store.save(evidence) }
+    }
+
+    private func adoptAddressNotes(_ threads: [AddressNoteThread], ofLabSessions labSessions: Set<UUID>) {
+        let labNoteIDs = Set(threads.map(\.note.id))
+        let pending = subjectsOfPendingOps(AddressNoteOp.self)
+        for sessionID in labSessions {
+            for stale in addressNotes(sessionID: sessionID) where !labNoteIDs.contains(stale.id) && !pending.contains(stale.id) {
+                try? store.deleteAddressNote(id: stale.id)
+                onAddressNoteChanged?(.noteRemoved(stale))
+            }
+        }
+        for thread in threads {
+            adoptAddressNote(thread)
+        }
+        for sessionID in labSessions {
+            rebuildAddressAnnotations(sessionID: sessionID)
+        }
+    }
+
+    private func adoptAddressNote(_ thread: AddressNoteThread) {
+        let existed = (try? store.fetchAddressNote(id: thread.note.id)) != nil
+        try? store.save(thread.note)
+        onAddressNoteChanged?(existed ? .noteUpdated(thread.note) : .noteAdded(thread.note))
+        let local = addressNoteMessages(noteID: thread.note.id)
+        let labMessageIDs = Set(thread.messages.map(\.id))
+        for stale in local where !labMessageIDs.contains(stale.id) {
+            try? store.deleteAddressNoteMessage(id: stale.id)
+            onAddressNoteChanged?(.messageRemoved(stale))
+        }
+        for message in thread.messages {
+            try? store.save(message)
+            onAddressNoteChanged?(local.contains { $0.id == message.id } ? .messageEdited(message) : .messageAppended(message))
+        }
     }
 
     private func applyRemoteAddressNoteOp(_ op: AddressNoteOp) {

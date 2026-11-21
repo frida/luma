@@ -159,6 +159,17 @@ public enum AddressNoteOp: Sendable {
     }
 }
 
+public struct AddressNoteThread: Sendable {
+    public let note: AddressNote
+    public let messages: [AddressNoteMessage]
+
+    public static func fromWireJSON(_ obj: [String: Any]) -> AddressNoteThread? {
+        guard let note: AddressNote = decodeRow(obj) else { return nil }
+        let messageRows = (obj["messages"] as? [[String: Any]]) ?? []
+        return AddressNoteThread(note: note, messages: messageRows.compactMap { decodeRow($0) })
+    }
+}
+
 private let wireEncoder: JSONEncoder = {
     let e = JSONEncoder()
     e.dateEncodingStrategy = .iso8601

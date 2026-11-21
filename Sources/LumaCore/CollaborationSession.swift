@@ -361,6 +361,7 @@ public final class CollaborationSession {
     public var onLabCreated: (() -> Void)?
     public var onWidgetStatesSnapshot: (([WidgetStateSnapshot]) -> Void)?
     public var onWidgetPlacementsSnapshot: (([UUID: [String: [PatternPlacement]]]) -> Void)?
+    public var onAddressNotesSnapshot: (([AddressNoteThread], Set<UUID>) -> Void)?
     public var onChatMessageReceived: ((ChatMessage) -> Void)?
     public var onChatMessageChange: ((ChatMessageChange) -> Void)?
 
@@ -1525,8 +1526,23 @@ public final class CollaborationSession {
         })
         let patterns = (try? store.fetchPatternSources()) ?? []
         try? store.saveOutboxOps(patterns.map { PatternSourceOp.upsert(.init(record: $0)) })
+        for mission in (try? store.fetchMissions()) ?? [] {
+            try? store.saveOutboxOps(missionOps(announcing: mission))
+        }
         let entries = (try? store.fetchNotebookEntries()) ?? []
         try? store.saveOutboxOps(entries.map { NotebookOp.add(.init(entry: $0)) })
+    }
+
+    private func missionOps(announcing mission: Mission) -> [MissionOp] {
+        let turns = (try? store.fetchMissionTurns(missionID: mission.id)) ?? []
+        let actions = (try? store.fetchMissionActions(missionID: mission.id)) ?? []
+        let findings = (try? store.fetchMissionFindings(missionID: mission.id)) ?? []
+        let evidence = findings.flatMap { (try? store.fetchMissionEvidence(findingID: $0.id)) ?? [] }
+        return [.missionUpsert(.init(mission: mission))]
+            + turns.map { .turnAppend(.init(turn: $0)) }
+            + actions.map { .actionUpsert(.init(action: $0)) }
+            + findings.map { .findingUpsert(.init(finding: $0)) }
+            + evidence.map { .evidenceAdd(.init(missionID: mission.id, evidence: $0)) }
     }
 
     private struct AvatarBytes {
@@ -1651,6 +1667,9 @@ public final class CollaborationSession {
 
         let widgetPlacementDicts = (payload["widget_placements"] as? [JSONObject]) ?? []
         onWidgetPlacementsSnapshot?(Self.widgetPlacements(of: sessions, from: widgetPlacementDicts))
+
+        let noteDicts = (payload["address_notes"] as? [JSONObject]) ?? []
+        onAddressNotesSnapshot?(noteDicts.compactMap(AddressNoteThread.fromWireJSON), Set(sessions.map(\.id)))
 
         let missionsArr = (payload["missions"] as? [JSONObject]) ?? []
         let turnsArr = (payload["mission_turns"] as? [JSONObject]) ?? []
