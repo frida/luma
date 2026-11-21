@@ -102,3 +102,94 @@ struct GitHubSignInSheet: View {
         .frame(width: 320)
     }
 }
+
+extension View {
+    func gitHubSignInSheet(auth: GitHubAuth, precedence: GitHubSignInSheetPrecedence) -> some View {
+        modifier(GitHubSignInSheetHost(auth: auth, precedence: precedence))
+    }
+}
+
+enum GitHubSignInSheetPrecedence {
+    case ambient
+    case foremost
+}
+
+private struct GitHubSignInSheetHost: ViewModifier {
+    let auth: GitHubAuth
+    let precedence: GitHubSignInSheetPrecedence
+
+    @Environment(\.appearsActive) private var appearsActive
+    @State private var hostID = UUID()
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: isPresented) {
+                GitHubSignInSheet(auth: auth)
+            }
+            .onAppear {
+                GitHubSignInHosts.shared.register(hostID, precedence: precedence, appearsActive: appearsActive)
+            }
+            .onChange(of: appearsActive) {
+                GitHubSignInHosts.shared.update(hostID, appearsActive: appearsActive)
+            }
+            .onChange(of: auth.isPresentingSignIn) {
+                GitHubSignInHosts.shared.follow(signInPresentation: auth.isPresentingSignIn)
+            }
+            .onDisappear {
+                GitHubSignInHosts.shared.release(hostID)
+            }
+    }
+
+    private var isPresented: Binding<Bool> {
+        Binding(
+            get: { auth.isPresentingSignIn && GitHubSignInHosts.shared.presents(hostID) },
+            set: { if !$0 { auth.dismissSignIn() } }
+        )
+    }
+}
+
+@Observable
+@MainActor
+private final class GitHubSignInHosts {
+    static let shared = GitHubSignInHosts()
+
+    private var hosts: [Host] = []
+    private var chosenHostID: UUID?
+
+    private struct Host {
+        let id: UUID
+        let precedence: GitHubSignInSheetPrecedence
+        var appearsActive: Bool
+    }
+
+    func register(_ hostID: UUID, precedence: GitHubSignInSheetPrecedence, appearsActive: Bool) {
+        hosts.append(Host(id: hostID, precedence: precedence, appearsActive: appearsActive))
+    }
+
+    func update(_ hostID: UUID, appearsActive: Bool) {
+        guard let index = hosts.firstIndex(where: { $0.id == hostID }) else { return }
+        hosts[index].appearsActive = appearsActive
+    }
+
+    func follow(signInPresentation isPresenting: Bool) {
+        chosenHostID = isPresenting ? (chosenHostID ?? hostBeingActedIn?.id) : nil
+    }
+
+    func release(_ hostID: UUID) {
+        hosts.removeAll { $0.id == hostID }
+    }
+
+    func presents(_ hostID: UUID) -> Bool {
+        presenterID == hostID
+    }
+
+    private var presenterID: UUID? {
+        hosts.first { $0.id == chosenHostID }?.id ?? hostBeingActedIn?.id
+    }
+
+    private var hostBeingActedIn: Host? {
+        let activeHosts = hosts.filter(\.appearsActive)
+        let candidates = activeHosts.isEmpty ? hosts : activeHosts
+        return candidates.last { $0.precedence == .foremost } ?? candidates.last
+    }
+}

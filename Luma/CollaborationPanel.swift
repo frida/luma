@@ -55,14 +55,7 @@ struct CollaborationPanel: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(12)
         .background(.ultraThickMaterial)
-        .sheet(
-            isPresented: Binding(
-                get: { engine.gitHubAuth.isPresentingSignIn },
-                set: { if !$0 { engine.gitHubAuth.dismissSignIn() } }
-            )
-        ) {
-            GitHubSignInSheet(auth: engine.gitHubAuth)
-        }
+        .gitHubSignInSheet(auth: engine.gitHubAuth, precedence: .ambient)
         .onAppear {
             if case .joined = collaboration.status {
                 focusChatField = true

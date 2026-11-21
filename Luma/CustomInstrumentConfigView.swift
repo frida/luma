@@ -51,6 +51,9 @@ struct CustomInstrumentConfigView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(8)
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            StoreUpdateBanner(defID: defID, engine: engine)
+        }
     }
 
     private var header: some View {

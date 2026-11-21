@@ -81,6 +81,11 @@ struct SidebarCustomInstrumentDefRow: View {
                 .frame(width: sidebarParentIconWidth, alignment: .center)
                 .padding(.trailing, sidebarIconToLabelSpacing)
             Text(def.name)
+            if let newerItem = engine.storefront.newerItem(forCustomInstrument: def.id) {
+                StoreUpdateMark(item: newerItem)
+                    .padding(.leading, 6)
+                    .accessibilityIdentifier("sidebar.customInstrumentUpdate.\(def.id.uuidString)")
+            }
             Spacer()
             if let drift = engine.instrumentFolderDrifts[def.id] {
                 folderDriftIndicator(drift)

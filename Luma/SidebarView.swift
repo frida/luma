@@ -828,6 +828,11 @@ private struct SidebarInstrumentRow: View {
                 InstrumentStatusIndicator(status: status)
                     .padding(.leading, 6)
             }
+            if let newerItem = engine.storefront.newerItem(forInstrument: instance) {
+                StoreUpdateMark(item: newerItem)
+                    .padding(.leading, 6)
+                    .accessibilityIdentifier("sidebar.instrumentUpdate.\(instance.id.uuidString)")
+            }
             Spacer()
         }
         .font(.callout)

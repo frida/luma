@@ -477,6 +477,12 @@ private struct InstrumentRow: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                if engine.storefront.newerItem(forInstrument: instance) != nil {
+                    Text("Update available")
+                        .font(.caption)
+                        .foregroundStyle(Color.accentColor)
+                        .accessibilityIdentifier("session.instrumentUpdate.\(instance.id.uuidString)")
+                }
             }
             Spacer()
             Image(systemName: "chevron.right")

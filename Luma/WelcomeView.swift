@@ -8,11 +8,8 @@ struct WelcomeView: View {
     let onCreateFromLab: (WelcomeModel.LabSummary) -> Void
 
     var body: some View {
-        @Bindable var auth = welcome.gitHubAuth
         contentBody
-            .sheet(isPresented: $auth.isPresentingSignIn) {
-                GitHubSignInSheet(auth: welcome.gitHubAuth)
-            }
+            .gitHubSignInSheet(auth: welcome.gitHubAuth, precedence: .ambient)
             .onChange(of: welcome.gitHubAuth.token) { _, newToken in
                 if newToken != nil {
                     Task { await welcome.refreshLabs() }

@@ -93,6 +93,9 @@ struct CustomInstrumentEditorView: View {
         .padding(.top, 8)
         .padding(.leading, 8)
         .padding(.bottom, 8)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            StoreUpdateBanner(defID: defID, engine: engine, prepareForUpdate: saveDraftIfDirty)
+        }
         .onAppear {
             isEditorFocused = true
         }
@@ -184,6 +187,12 @@ struct CustomInstrumentEditorView: View {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    private func saveDraftIfDirty() throws {
+        guard isDirty, let file = displayedFile else { return }
+        _ = try engine.writeCustomInstrumentFile(defID: defID, path: file.path, content: draftContent)
+        isDirty = false
     }
 
     private func flushDraftIfNeeded() {

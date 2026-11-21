@@ -11,6 +11,7 @@ struct CustomInstrumentMetadataMenu: View {
     @State private var isShowingFeaturesEditor = false
     @State private var isShowingWidgetsEditor = false
     @State private var isShowingDeleteConfirm = false
+    @State private var isShowingPublish = false
     @State private var renameEntrypointPrompt = RenamePromptState()
     @State private var errorMessage: String?
 
@@ -50,6 +51,15 @@ struct CustomInstrumentMetadataMenu: View {
                             Label("Rename Entrypoint File\u{2026}", systemImage: "pencil")
                         }
                     }
+                    if engine.instrumentFolderLinks[defID] != nil {
+                        Divider()
+                        Button {
+                            isShowingPublish = true
+                        } label: {
+                            Label("Publish to Store\u{2026}", systemImage: "storefront")
+                        }
+                        .accessibilityIdentifier("customInstrument.publishToStore")
+                    }
                     Divider()
                     Button(role: .destructive) {
                         isShowingDeleteConfirm = true
@@ -81,6 +91,9 @@ struct CustomInstrumentMetadataMenu: View {
             if let def {
                 CustomInstrumentWidgetsPopover(def: def, engine: engine)
             }
+        }
+        .sheet(isPresented: $isShowingPublish) {
+            StorePublishSheet(defID: defID, engine: engine)
         }
         .alert("Rename Entrypoint File", isPresented: $renameEntrypointPrompt.isPresented) {
             TextField("path/to/file.ts", text: $renameEntrypointPrompt.draft)

@@ -354,6 +354,12 @@ private struct CustomInstrumentsBrowser: View {
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                         .truncationMode(.middle)
+                                    if engine.storefront.newerItem(forCustomInstrument: def.id) != nil {
+                                        Text("Update available")
+                                            .font(.caption)
+                                            .foregroundStyle(Color.accentColor)
+                                            .accessibilityIdentifier("customInstruments.update.\(def.id.uuidString)")
+                                    }
                                 }
                                 Spacer()
                                 Image(systemName: "chevron.right")
