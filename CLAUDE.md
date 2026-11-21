@@ -272,13 +272,17 @@ is gitignored — it is produced at build time.
   then leases the portal connection and fetches the account, kept current by the
   server's `+update` rather than by asking. The same lease hears the `+update`
   sent for an item whenever a version of it is published, which replaces what is
-  known of it, installed or listed. A sign-in already stored fetches the account
-  without asking, when the store opens or, with something installed, when the
-  engine starts, as does one made later by any route while something is
-  installed; until there is one, and again after a sign-out, whether a sponsor
-  item is the user's is unknown rather than no. The lease is let go of when the
-  browsing or publishing that wanted it closes, unless there is a sign-in and
-  something is installed: then it is held until the project closes, so that
+  known of it, installed or listed. The account is fetched once whenever there
+  is a sign-in, the one stored when the engine starts or one made later by any
+  route, and again when the store opens; until there is one, and again after a
+  sign-out, whether a sponsor item is the user's is unknown rather than no. Its
+  `partnerContact` is whether the user lets NowSecure, who sponsor Luma, contact
+  them: unanswered until `answerPartnerContact(_:)` says, which may be asked
+  anywhere and answered again later. That never asks for a sign-in, being
+  offered only to a user who has one, and `BackendConfig.privacyPolicyURL` is
+  what to show beside the question. The lease is let go of when the fetch,
+  answer, browsing or publishing that wanted it ends, unless there is a sign-in
+  and something is installed: then it is held until the project closes, so that
   updates arrive by themselves. A lost connection is not retried; the next thing
   that needs the store connects again. Items install into the instrument library
   as folders named after the item id, which projects then link like any other.

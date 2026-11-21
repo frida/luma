@@ -5,6 +5,7 @@ public enum BackendConfig {
     public static let inviteLinkBase = "https://luma.frida.re/l/"
     public static let pushEnrollURL = "https://luma.frida.re/push-enroll"
     public static let storeCatalogURL = URL(string: localOverride("LUMA_STORE_CATALOG_URL") ?? "https://luma.frida.re/api/store/")!
+    public static let privacyPolicyURL = URL(string: "https://luma.frida.re/privacy")!
 
     public static func labID(fromInviteLink url: URL) -> String? {
         guard url.absoluteString.hasPrefix(inviteLinkBase) else { return nil }

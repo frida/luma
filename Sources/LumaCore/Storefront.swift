@@ -72,6 +72,7 @@ public final class Storefront {
     @ObservationIgnored private var lease: PortalConnection.Lease?
     @ObservationIgnored private var accountLoading: Task<Void, Never>?
     @ObservationIgnored private var accountConnection: Task<StoreAccount, Swift.Error>?
+    @ObservationIgnored private var answersUnderway = 0
     @ObservationIgnored private var signInWatch: SignInWatch = .stopped
 
     private static let laterPageSize = 24
@@ -88,9 +89,9 @@ public final class Storefront {
         installed.reconcile()
         signInWatch = .watching
         watchForSignIn()
+        queueAccountLoading()
         guard !installed.isEmpty else { return }
         installedItemsRefresh = Task { try? await self.refreshInstalledItems() }
-        queueAccountLoading()
     }
 
     func stop() async {
@@ -306,6 +307,15 @@ public final class Storefront {
         return try await loadAccount(token: token)
     }
 
+    public func answerPartnerContact(_ choice: PartnerContactChoice) async throws {
+        guard let token = engine.gitHubAuth.token else { throw StorefrontError.notSignedIn }
+        answersUnderway += 1
+        let answering = await Task { try await self.sendPartnerContactAnswer(choice, token: token) }.result
+        answersUnderway -= 1
+        await releaseLeaseUnlessNeeded()
+        try answering.get()
+    }
+
     private func watchForSignIn() {
         withObservationTracking {
             _ = engine.gitHubAuth.token
@@ -319,7 +329,9 @@ public final class Storefront {
     private func hearTokenChange() {
         guard signInWatch == .watching else { return }
         watchForSignIn()
-        if listensForUpdates {
+        if needsSignIn {
+            account = nil
+        } else {
             queueAccountLoading()
         }
     }
@@ -351,8 +363,9 @@ public final class Storefront {
     private func loadAccountIfSignedIn() async {
         let auth = engine.gitHubAuth
         await auth.loadPersistedToken()
-        guard let token = auth.token else { return }
+        guard let token = auth.token, needsLease || account == nil else { return }
         _ = try? await loadAccount(token: token)
+        await releaseLeaseUnlessNeeded()
     }
 
     private func loadInstalledItemsAndCategories() async throws {
@@ -445,19 +458,30 @@ public final class Storefront {
     }
 
     private var needsLease: Bool {
-        state != .closed || listensForUpdates
+        state != .closed || listensForUpdates || answersUnderway > 0
     }
 
     private var listensForUpdates: Bool {
         !needsSignIn && !installed.isEmpty
     }
 
+    private func sendPartnerContactAnswer(_ choice: PartnerContactChoice, token: String) async throws {
+        _ = try await loadAccount(token: token)
+        let reply = try await request(
+            to: "/store/account",
+            type: ".answer-partner-contact",
+            payload: ["choice": choice.rawValue, "client": Self.client]
+        )
+        guard let account = StoreAccount.fromWireJSON(reply["account"]) else { throw StorefrontError.malformedReply }
+        self.account = account
+    }
+
     private func loadAccount(token: String) async throws -> StoreAccount {
-        if let account {
-            return account
-        }
         if let accountConnection {
             return try await accountConnection.value
+        }
+        if lease != nil, let account {
+            return account
         }
         let connection = Task { try await self.connect(token: token) }
         accountConnection = connection
@@ -499,7 +523,6 @@ public final class Storefront {
             hearUpdate(from: notification.from, payload: notification.payload)
         case .detached:
             lease = nil
-            account = nil
         }
     }
 
@@ -529,7 +552,6 @@ public final class Storefront {
     private func releaseLease() async {
         let releasedLease = lease
         lease = nil
-        account = nil
         await releasedLease?.release()
     }
 
@@ -584,6 +606,7 @@ public final class Storefront {
 
 public enum StorefrontError: Swift.Error, LocalizedError, Equatable {
     case signInCancelled
+    case notSignedIn
     case disconnected
     case localChanges(itemID: StoreItem.ID)
     case notLinkedToFolder
@@ -617,6 +640,8 @@ public enum StorefrontError: Swift.Error, LocalizedError, Equatable {
         switch self {
         case .signInCancelled:
             return "Signing in was cancelled."
+        case .notSignedIn:
+            return "Not signed in."
         case .disconnected:
             return "Lost the connection to the store."
         case .localChanges:
