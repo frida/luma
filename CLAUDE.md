@@ -249,6 +249,35 @@ is gitignored — it is produced at build time.
   for everyone when `GitHubAuth` signs out. It keeps the `+welcome` for
   whoever arrives later, numbers requests across all users, and hands every
   notification and the detach to each of them.
+- **`Storefront`** — the store, reached as `engine.storefront`. The catalog
+  is plain HTTP under `BackendConfig.storeCatalogURL`, so anyone may browse it
+  without signing in. `open(for:showing:)` takes the device an instrument is
+  being added to, since the server ranks what fits it first and then what is
+  trending, and how many results the frontend has room for before its own
+  instruments, and loads that first page beside the categories and the items
+  already installed, which are asked for by id because they may be anywhere in
+  the ranking. `results` leaves the installed ones out, `installedItems` holds
+  them, and an install or uninstall moves an item between the two without
+  asking again. `search(_:)` and `filter(by:)` replace the results with the
+  first page for the new text and category, cancelling whatever was still
+  being fetched so a late reply cannot overwrite a newer one; `loadMore()`
+  appends a longer page while `moreResults` says there is one. An item's
+  picture is a request of its own, so `icon(of:)` fetches it once per item and
+  version and answers the default symbol when it cannot. Only installing and
+  publishing ask for a sign-in, through `requireAccount()`, which then leases
+  the portal connection until `close()` and fetches the account, kept current
+  by the server's `+update` rather than by asking. A sign-in already stored
+  when the store opens fetches the account without asking; until there is
+  one, whether a sponsor item is the user's is unknown rather than no. Items
+  install into the instrument library as folders named after the item id,
+  which projects then link like any other. What was installed is remembered
+  in `LumaAppState` with a snapshot of the folder, so an update can tell an
+  edited copy from a pristine one and asks before replacing it. A project
+  whose linked library folder disappears is unlinked and keeps its copy.
+  Publishing reads a linked instrument's folder: `version` and `luma.store`
+  (summary, category, access) in its `package.json`, and its `README.md` as
+  the description; every version carries release notes. `loadCategories()`
+  gives the publish form the categories without loading a page.
 
 - **Canvas (`CanvasScene`, `CanvasDrawable`, `CanvasRegistry`)** — a
   scene the image holds by handle and changes; the host draws it.

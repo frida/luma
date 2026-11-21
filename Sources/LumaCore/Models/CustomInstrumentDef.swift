@@ -162,7 +162,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
 
-    private static func parseCompatibility(_ raw: Any?) -> InstrumentCompatibility {
+    static func parseCompatibility(_ raw: Any?) -> InstrumentCompatibility {
         guard let obj = raw as? [String: Any],
             let data = try? JSONSerialization.data(withJSONObject: obj),
             let decoded = try? JSONDecoder().decode(InstrumentCompatibility.self, from: data)

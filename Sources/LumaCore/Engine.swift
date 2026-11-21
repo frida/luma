@@ -85,6 +85,11 @@ public final class Engine {
 
     public let collaboration: CollaborationSession
     public let gitHubAuth: GitHubAuth
+    @ObservationIgnored public private(set) lazy var storefront = Storefront(
+        engine: self,
+        portal: .shared,
+        catalogURL: BackendConfig.storeCatalogURL
+    )
     public let dataDirectory: URL
 
     public private(set) var addressAnnotations: [UUID: [UInt64: AddressAnnotation]] = [:]
@@ -1868,6 +1873,7 @@ public final class Engine {
         drainServices.removeAll()
 
         await collaboration.stop()
+        await storefront.close()
     }
 
     @ObservationIgnored private var hasShutDown = false
@@ -4864,7 +4870,7 @@ public final class Engine {
         }.joined()
     }
 
-    private static func validatedCustomInstrumentBundle(_ bundle: CustomInstrumentBundle) throws -> CustomInstrumentBundle {
+    static func validatedCustomInstrumentBundle(_ bundle: CustomInstrumentBundle) throws -> CustomInstrumentBundle {
         let files = try bundle.files.map { file in
             CustomInstrumentFile(
                 defID: file.defID,
@@ -5144,7 +5150,17 @@ public final class Engine {
     }
 
     private func settleInstrumentFolder(defID: UUID) {
+        if let link = instrumentFolderLinks[defID], isRemovedFromLibrary(link) {
+            unlinkInstrumentFolder(defID: defID)
+            return
+        }
         instrumentFolderDrifts[defID] = try? writeThroughOrReportDrift(defID: defID)
+    }
+
+    private func isRemovedFromLibrary(_ link: InstrumentFolderLink) -> Bool {
+        let parentPath = link.folderURL.deletingLastPathComponent().standardizedFileURL.path
+        let isInLibrary = parentPath == instrumentFolders.directory.standardizedFileURL.path
+        return isInLibrary && !FileManager.default.fileExists(atPath: link.folderURL.path)
     }
 
     private func writeThroughOrReportDrift(defID: UUID) throws -> InstrumentFolderDrift? {
