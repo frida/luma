@@ -15,6 +15,7 @@ final class CollaborationPanel {
 
     private weak var engine: Engine?
     private weak var desktopNotifier: DesktopNotifier?
+    private let signInParent: Gtk.Window
 
     private let headerAvatarHost: Box
     private let labSection: Box
@@ -44,9 +45,10 @@ final class CollaborationPanel {
     private static let participantAvatarSize: Int = 28
     private static let chatAvatarSize: Int = 20
 
-    init(engine: Engine, desktopNotifier: DesktopNotifier, onClose: @escaping () -> Void) {
+    init(engine: Engine, desktopNotifier: DesktopNotifier, signInParent: Gtk.Window, onClose: @escaping () -> Void) {
         self.engine = engine
         self.desktopNotifier = desktopNotifier
+        self.signInParent = signInParent
 
         widget = Box(orientation: .vertical, spacing: 8)
         widget.add(cssClass: "collaboration-panel")
@@ -224,7 +226,7 @@ final class CollaborationPanel {
         let wants = engine.gitHubAuth.isPresentingSignIn
         if wants && signInWindow == nil {
             let window = GitHubSignInSheet.present(
-                from: widget,
+                from: signInParent,
                 gitHubAuth: engine.gitHubAuth,
                 onClosed: { [weak self] in
                     self?.signInWindow = nil

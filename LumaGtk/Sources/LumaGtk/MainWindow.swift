@@ -669,6 +669,7 @@ final class MainWindow: InstrumentUIHost {
         let panel = CollaborationPanel(
             engine: engine,
             desktopNotifier: desktopNotifier,
+            signInParent: window,
             onClose: { [weak self] in
                 self?.setCollaborationVisible(false)
             }
@@ -1662,7 +1663,9 @@ final class MainWindow: InstrumentUIHost {
         let reload = ContextMenu.Item("Reload from Folder") { [weak self] in self?.reloadCustomInstrumentFromFolder(def: def) }
         let write = ContextMenu.Item("Write to Folder") { [weak self] in self?.writeCustomInstrumentToFolder(def: def) }
         let unlink = ContextMenu.Item("Unlink Folder") { [weak self] in self?.engine?.unlinkInstrumentFolder(defID: def.id) }
-        return engine.instrumentFolderDrifts[def.id] == .diverged ? [reload, write, unlink, export] : [reload, unlink, export]
+        let publish = ContextMenu.Item("Publish to Store\u{2026}") { [weak self] in self?.presentStorePublishDialog(def: def) }
+        let folderItems = engine.instrumentFolderDrifts[def.id] == .diverged ? [reload, write, unlink, export] : [reload, unlink, export]
+        return folderItems + [publish]
     }
 
     private func reloadCustomInstrumentFromFolder(def: LumaCore.CustomInstrumentDef) {
@@ -1679,6 +1682,11 @@ final class MainWindow: InstrumentUIHost {
         } catch {
             presentCustomInstrumentError(message: error.localizedDescription)
         }
+    }
+
+    private func presentStorePublishDialog(def: LumaCore.CustomInstrumentDef) {
+        guard let engine else { return }
+        StorePublishDialog(storefront: engine.storefront, def: def).present(over: window)
     }
 
     private func attachCustomInstrumentFileContextMenu(
@@ -2406,7 +2414,7 @@ final class MainWindow: InstrumentUIHost {
         let disabledDescriptorIDs = Set(existing.map { engine.descriptor(for: $0).id })
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let incompatibilityReasons = await self.resolveIncompatibilityReasons(
+            let systemParameters = await self.resolveSystemParameters(
                 engine: engine,
                 sessionID: sessionID
             )
@@ -2416,7 +2424,7 @@ final class MainWindow: InstrumentUIHost {
                 sessionID: sessionID,
                 descriptors: engine.descriptors,
                 disabledDescriptorIDs: disabledDescriptorIDs,
-                incompatibilityReasons: incompatibilityReasons
+                systemParameters: systemParameters
             ) { [weak self] instance in
                 guard let self else { return }
                 if instance.kind == .custom, let defID = UUID(uuidString: instance.sourceIdentifier) {
@@ -2430,21 +2438,14 @@ final class MainWindow: InstrumentUIHost {
         }
     }
 
-    private func resolveIncompatibilityReasons(
+    private func resolveSystemParameters(
         engine: Engine,
         sessionID: UUID
-    ) async -> [String: String] {
-        guard let session = engine.sessions.first(where: { $0.id == sessionID }) else { return [:] }
+    ) async -> SystemParameters? {
+        guard let session = engine.sessions.first(where: { $0.id == sessionID }) else { return nil }
         let devices = await engine.deviceManager.currentDevices()
-        guard let device = devices.first(where: { $0.id == session.deviceID }) else { return [:] }
-        guard let params = await engine.systemParameters.parameters(for: device) else { return [:] }
-        var reasons: [String: String] = [:]
-        for descriptor in engine.descriptors {
-            if let reason = descriptor.compatibility.incompatibilityReason(for: params) {
-                reasons[descriptor.id] = reason
-            }
-        }
-        return reasons
+        guard let device = devices.first(where: { $0.id == session.deviceID }) else { return nil }
+        return await engine.systemParameters.parameters(for: device)
     }
 
     func reestablishSession(id: UUID) {

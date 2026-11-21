@@ -4,31 +4,57 @@ import CLuma
 import Foundation
 import Gtk
 import LumaCore
+import Observation
 
 @MainActor
 final class AddInstrumentDialog {
     typealias OnAdded = (LumaCore.InstrumentInstance) -> Void
+
+    private static let storeResultsShownAtFirst = 4
 
     private let dialog: Adw.Dialog
     private let parentWindow: Gtk.Window
     private let descriptors: [LumaCore.InstrumentDescriptor]
     private let libraryFolders: [LumaCore.InstrumentFolder]
     private let disabledDescriptorIDs: Set<String>
-    private let incompatibilityReasons: [String: String]
+    private let systemParameters: SystemParameters?
     private let onAdded: OnAdded?
     private let engine: Engine
+    private let storefront: Storefront
     private let sessionID: UUID
 
     private let listBox: ListBox
+    private let searchEntry: SearchEntry
     private let addButton: Button
     private let detailContainer: Box
+    private let storeHeaderRow: StoreSectionHeaderRow
+    private let storeLoadingRow: ListBoxRow
+    private let storeUnreachableRow: ListBoxRow
+    private let storeNoMatchesRow: ListBoxRow
+    private let moreStoreResultsRow: StoreMoreResultsRow
+    private let customHeaderRow: ListBoxRow
+    private let customDescriptorCount: Int
 
     private var selectedIndex: Int?
     private var pendingConfigJSON: Data = Data()
     private var tracerEditor: TracerConfigEditor?
     private var customFeatureEditors: [FeatureValueEditor] = []
     private var codeShareEditor: CodeEditor?
-    private var rowKinds: [RowKind] = []
+    private var rowKinds: [UnsafeMutableRawPointer: RowKind] = [:]
+    private var descriptorRows: [ListBoxRow] = []
+    private var libraryFolderRows: [ListBoxRow] = []
+    private var searchText = ""
+    private var shownStoreSection: StoreSection = .closed
+    private var storeResultRows: [StoreItemRow] = []
+    private var installedItemRows: [StoreItemRow] = []
+    private var storeItemPane: StoreItemPane?
+    private var storeActivity: StoreItemPane.Activity = .idle {
+        didSet {
+            listBox.sensitive = storeActivity == .idle
+            dialog.set(canClose: storeActivity == .idle)
+            refreshStoreItemDetail()
+        }
+    }
 
     private enum RowKind {
         case descriptor(Int)
@@ -36,6 +62,36 @@ final class AddInstrumentDialog {
         case libraryFolder(Int)
         case newCustom
         case linkFolder
+        case storeStatus
+        case storeItem(StoreItem.ID)
+        case moreStoreResults
+    }
+
+    private enum StoreSection: Equatable {
+        case closed
+        case loading
+        case unreachable(message: String)
+        case listed
+        case noMatchesInCategory
+        case empty
+
+        var isLoaded: Bool {
+            switch self {
+            case .listed, .noMatchesInCategory, .empty:
+                return true
+            case .closed, .loading, .unreachable:
+                return false
+            }
+        }
+
+        var isShown: Bool {
+            switch self {
+            case .loading, .unreachable, .listed, .noMatchesInCategory:
+                return true
+            case .closed, .empty:
+                return false
+            }
+        }
     }
 
     init(
@@ -44,16 +100,18 @@ final class AddInstrumentDialog {
         sessionID: UUID,
         descriptors: [LumaCore.InstrumentDescriptor],
         disabledDescriptorIDs: Set<String> = [],
-        incompatibilityReasons: [String: String] = [:],
+        systemParameters: SystemParameters? = nil,
         onAdded: OnAdded? = nil
     ) {
         self.descriptors = descriptors
         engine.instrumentFolders.reload()
         libraryFolders = engine.instrumentFolders.folders.filter { engine.customInstrumentID(linkedToFolderAt: $0.folderURL) == nil }
         self.disabledDescriptorIDs = disabledDescriptorIDs
-        self.incompatibilityReasons = incompatibilityReasons
+        self.systemParameters = systemParameters
         self.onAdded = onAdded
         self.engine = engine
+        let storefront = engine.storefront
+        self.storefront = storefront
         self.sessionID = sessionID
         self.parentWindow = parent
 
@@ -64,6 +122,13 @@ final class AddInstrumentDialog {
         listBox.selectionMode = .single
         listBox.add(cssClass: "navigation-sidebar")
 
+        searchEntry = SearchEntry()
+        searchEntry.placeholderText = "Search Instruments"
+        searchEntry.marginStart = 12
+        searchEntry.marginEnd = 12
+        searchEntry.marginTop = 8
+        searchEntry.marginBottom = 4
+
         addButton = Button(label: "Add")
         addButton.add(cssClass: "suggested-action")
         addButton.sensitive = false
@@ -71,6 +136,18 @@ final class AddInstrumentDialog {
         detailContainer = Box(orientation: .vertical, spacing: 0)
         detailContainer.hexpand = true
         detailContainer.vexpand = true
+
+        storeHeaderRow = StoreSectionHeaderRow { category in
+            Task { await storefront.filter(by: category) }
+        }
+        storeLoadingRow = Self.makeStoreLoadingRow()
+        storeUnreachableRow = Self.makeStoreUnreachableRow(storefront: storefront)
+        storeNoMatchesRow = Self.makeStoreNoMatchesRow()
+        moreStoreResultsRow = StoreMoreResultsRow {
+            Task { await storefront.loadMore() }
+        }
+        customHeaderRow = Self.makeSectionHeaderRow(title: "Custom Instruments")
+        customDescriptorCount = descriptors.filter { $0.kind == .custom }.count
 
         let header = Adw.HeaderBar()
         let browseButton = Button(label: "Browse CodeShare\u{2026}")
@@ -87,6 +164,10 @@ final class AddInstrumentDialog {
         listScroll.propagateNaturalWidth = true
         listScroll.set(child: listBox)
 
+        let listPane = Box(orientation: .vertical, spacing: 0)
+        listPane.append(child: searchEntry)
+        listPane.append(child: listScroll)
+
         let detailScroll = ScrolledWindow()
         detailScroll.hexpand = true
         detailScroll.vexpand = true
@@ -97,7 +178,7 @@ final class AddInstrumentDialog {
         paned.position = 280
         paned.hexpand = true
         paned.vexpand = true
-        paned.startChild = WidgetRef(listScroll)
+        paned.startChild = WidgetRef(listPane)
         paned.endChild = WidgetRef(detailScroll)
         paned.shrinkStartChild = false
         paned.shrinkEndChild = false
@@ -108,41 +189,54 @@ final class AddInstrumentDialog {
         dialog.set(child: toolbarView)
         dialog.set(defaultWidget: addButton)
 
-        var sawCustom = false
-        for (descriptorIndex, descriptor) in descriptors.enumerated() {
-            if descriptor.kind == .custom, !sawCustom {
-                listBox.append(child: makeCustomInstrumentsHeaderRow())
-                rowKinds.append(.header)
-                sawCustom = true
-            }
-            let row = makeDescriptorRow(
+        descriptorRows = descriptors.map { descriptor in
+            makeDescriptorRow(
                 descriptor: descriptor,
                 alreadyAdded: disabledDescriptorIDs.contains(descriptor.id),
-                incompatibilityReason: incompatibilityReasons[descriptor.id]
+                incompatibilityReason: incompatibilityReason(for: descriptor.compatibility)
             )
-            listBox.append(child: row)
-            rowKinds.append(.descriptor(descriptorIndex))
+        }
+        for (descriptorIndex, descriptor) in descriptors.enumerated() where descriptor.kind != .custom {
+            append(descriptorRows[descriptorIndex], as: .descriptor(descriptorIndex))
         }
 
-        if !sawCustom {
-            listBox.append(child: makeCustomInstrumentsHeaderRow())
-            rowKinds.append(.header)
+        append(storeHeaderRow.row, as: .header)
+        append(storeLoadingRow, as: .storeStatus)
+        append(storeUnreachableRow, as: .storeStatus)
+        append(storeNoMatchesRow, as: .storeStatus)
+        append(moreStoreResultsRow.row, as: .moreStoreResults)
+
+        append(customHeaderRow, as: .header)
+        for (descriptorIndex, descriptor) in descriptors.enumerated() where descriptor.kind == .custom {
+            append(descriptorRows[descriptorIndex], as: .descriptor(descriptorIndex))
         }
 
         for (folderIndex, folder) in libraryFolders.enumerated() {
-            listBox.append(child: makeLibraryFolderRow(folder: folder))
-            rowKinds.append(.libraryFolder(folderIndex))
+            let row = makeLibraryFolderRow(folder: folder)
+            append(row, as: .libraryFolder(folderIndex))
+            libraryFolderRows.append(row)
         }
 
-        let newCustomRow = makeActionRow(iconName: "list-add-symbolic", title: "New Custom Instrument\u{2026}")
-        listBox.append(child: newCustomRow)
-        rowKinds.append(.newCustom)
-
-        let linkFolderRow = makeActionRow(iconName: "folder-symbolic", title: "Link Folder\u{2026}")
-        listBox.append(child: linkFolderRow)
-        rowKinds.append(.linkFolder)
+        append(makeActionRow(iconName: "list-add-symbolic", title: "New Custom Instrument\u{2026}"), as: .newCustom)
+        append(makeActionRow(iconName: "folder-symbolic", title: "Link Folder\u{2026}"), as: .linkFolder)
 
         showPlaceholder(message: "Select an instrument to configure.")
+
+        searchEntry.onSearchChanged { [weak self] entry in
+            MainActor.assumeIsolated { self?.search(for: entry.text) }
+        }
+        searchEntry.onStopSearch { [weak self] entry in
+            MainActor.assumeIsolated {
+                guard entry.text.isEmpty else {
+                    entry.text = ""
+                    return
+                }
+                self?.close()
+            }
+        }
+        searchEntry.onMap { entry in
+            _ = entry.grabFocus()
+        }
 
         listBox.onRowSelected { [weak self] _, row in
             MainActor.assumeIsolated {
@@ -155,9 +249,8 @@ final class AddInstrumentDialog {
                     self.showPlaceholder(message: "Select an instrument to configure.")
                     return
                 }
-                let kind = self.rowKinds[Int(row.index)]
-                switch kind {
-                case .header:
+                switch self.kind(of: row) {
+                case .header, .storeStatus, .moreStoreResults:
                     return
                 case .newCustom:
                     self.selectedIndex = nil
@@ -177,23 +270,346 @@ final class AddInstrumentDialog {
                 case .descriptor(let descriptorIndex):
                     self.selectedIndex = descriptorIndex
                     let descriptor = self.descriptors[descriptorIndex]
-                    let reason = self.incompatibilityReasons[descriptor.id]
+                    let reason = self.incompatibilityReason(for: descriptor.compatibility)
                     self.addButton.sensitive = reason == nil
                     self.addButton.label = "Add"
                     self.refreshDetail()
+                case .storeItem(let itemID):
+                    self.selectedIndex = nil
+                    self.addButton.label = "Add"
+                    self.showStoreItemDetail(self.storeItem(withID: itemID))
                 }
+            }
+        }
+
+        listBox.onRowActivated { [weak self] _, row in
+            MainActor.assumeIsolated {
+                guard let self, case .moreStoreResults = self.kind(of: row) else { return }
+                Task { await storefront.loadMore() }
             }
         }
 
         addButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.commit() }
         }
+
+        dialog.onClosed { _ in
+            Task { @MainActor in await storefront.close() }
+        }
     }
 
     func present() {
         dialog.own(self)
+        refreshStore()
         dialog.sizeToContent(within: parentWindow)
         dialog.present(parent: parentWindow)
+        observeStorefront()
+        let systemParameters = self.systemParameters
+        Task { await storefront.open(for: systemParameters, showing: Self.storeResultsShownAtFirst) }
+    }
+
+    private func refreshStore() {
+        let reselectedItemID = selectedStoreItemID
+        refreshStoreSection()
+        installedItemRows = reconciledRows(installedItemRows, with: storefront.installedItems, from: installedItemRowsStart)
+        refreshSearchMatches()
+        reselectStoreItem(withID: reselectedItemID)
+        refreshStoreItemDetail()
+    }
+
+    private var selectedStoreItemID: StoreItem.ID? {
+        guard let row = listBox.selectedRow, case .storeItem(let itemID) = kind(of: row) else { return nil }
+        return itemID
+    }
+
+    private func refreshStoreSection() {
+        let section = nextStoreSection
+        shownStoreSection = section
+        storeHeaderRow.row.visible = section.isShown
+        storeHeaderRow.showReloading(section.isLoaded && storefront.state == .loading)
+        refreshCategoryFilter()
+        storeLoadingRow.visible = section == .loading
+        showUnreachability(in: section)
+        storeNoMatchesRow.visible = section == .noMatchesInCategory
+        storeResultRows = reconciledRows(storeResultRows, with: section == .listed ? storefront.results : [], from: storeResultRowsStart)
+        refreshMoreStoreResultsRow(in: section)
+    }
+
+    private var nextStoreSection: StoreSection {
+        switch storefront.state {
+        case .closed:
+            return .closed
+        case .loading:
+            return shownStoreSection.isLoaded ? shownStoreSection : .loading
+        case .failed(let message):
+            return .unreachable(message: message)
+        case .loaded:
+            guard storefront.results.isEmpty else { return .listed }
+            return storefront.category == nil ? .empty : .noMatchesInCategory
+        }
+    }
+
+    private func refreshCategoryFilter() {
+        let offeredCategories = storefront.categories.filter { $0.itemCount > 0 || $0.id == storefront.category }
+        guard categoryFilterEarnsItsPlace(offering: offeredCategories) else {
+            storeHeaderRow.hideCategoryFilter()
+            return
+        }
+        storeHeaderRow.showCategoryFilter(offering: offeredCategories, selected: storefront.category)
+    }
+
+    private func categoryFilterEarnsItsPlace(offering categories: [StoreCategory]) -> Bool {
+        guard storefront.category == nil else { return true }
+        let catalogSize = categories.reduce(0) { $0 + $1.itemCount }
+        return categories.count > 1 && catalogSize > storefront.firstPageSize
+    }
+
+    private func showUnreachability(in section: StoreSection) {
+        guard case .unreachable(let message) = section else {
+            storeUnreachableRow.visible = false
+            return
+        }
+        storeUnreachableRow.tooltipText = message
+        storeUnreachableRow.visible = true
+    }
+
+    private var storeResultRowsStart: Int {
+        Int(storeNoMatchesRow.index) + 1
+    }
+
+    private func refreshMoreStoreResultsRow(in section: StoreSection) {
+        let moreResults = storefront.moreResults
+        moreStoreResultsRow.row.visible = section == .listed && moreResults != .allLoaded
+        moreStoreResultsRow.show(moreResults, remaining: storefront.remainingResults)
+    }
+
+    private func reconciledRows(_ rows: [StoreItemRow], with items: [StoreItem], from start: Int) -> [StoreItemRow] {
+        let reusableRows = rowsKeepingTheirOrder(rows, in: items)
+        let reusableItemIDs = Set(reusableRows.map(\.item.id))
+        for row in rows where !reusableItemIDs.contains(row.item.id) {
+            remove(row.row)
+        }
+        let reusableRowsByItemID = Dictionary(uniqueKeysWithValues: reusableRows.map { ($0.item.id, $0) })
+        return items.enumerated().map { offset, item in
+            if let row = reusableRowsByItemID[item.id] {
+                row.show(item, installState: storefront.installState(of: item))
+                return row
+            }
+            let row = makeStoreItemRow(item: item)
+            insert(row.row, at: start + offset, as: .storeItem(item.id))
+            return row
+        }
+    }
+
+    private func rowsKeepingTheirOrder(_ rows: [StoreItemRow], in items: [StoreItem]) -> [StoreItemRow] {
+        let itemIDs = Set(items.map(\.id))
+        let survivingRows = rows.filter { itemIDs.contains($0.item.id) }
+        let survivingItemIDs = Set(survivingRows.map(\.item.id))
+        let orderInItems = items.map(\.id).filter(survivingItemIDs.contains)
+        return survivingRows.map(\.item.id) == orderInItems ? survivingRows : []
+    }
+
+    private func makeStoreItemRow(item: StoreItem) -> StoreItemRow {
+        StoreItemRow(
+            item: item,
+            storefront: storefront,
+            incompatibilityReason: incompatibilityReason(for: item.compatibility),
+            alreadyAdded: isAlreadyAdded(item)
+        )
+    }
+
+    private func isAlreadyAdded(_ item: StoreItem) -> Bool {
+        let folderURL = storefront.installationFolderURL(for: item.id)
+        guard let defID = engine.customInstrumentID(linkedToFolderAt: folderURL),
+            let def = engine.customInstruments.def(withId: defID)
+        else { return false }
+        return disabledDescriptorIDs.contains(engine.customInstruments.descriptor(for: def).id)
+    }
+
+    private var installedItemRowsStart: Int {
+        Int(customHeaderRow.index) + 1 + customDescriptorCount
+    }
+
+    private func refreshSearchMatches() {
+        let installedItemRowsByLinkedInstrument = self.installedItemRowsByLinkedInstrument
+        for (descriptor, row) in zip(descriptors, descriptorRows) {
+            let installedItemRow = linkedInstrumentID(of: descriptor).flatMap { installedItemRowsByLinkedInstrument[$0] }
+            show(row, named: descriptor.displayName, unlessListedAs: installedItemRow)
+        }
+        for installedItemRow in installedItemRows {
+            installedItemRow.row.visible = matchesSearch(installedItemRow.item.name)
+        }
+        let installedItemRowsByFolderPath = Dictionary(
+            uniqueKeysWithValues: installedItemRows.map { (storefront.installationFolderURL(for: $0.item.id).standardizedFileURL.path, $0) }
+        )
+        for (folder, row) in zip(libraryFolders, libraryFolderRows) {
+            show(row, named: folder.name, unlessListedAs: installedItemRowsByFolderPath[folder.folderURL.standardizedFileURL.path])
+        }
+    }
+
+    private var installedItemRowsByLinkedInstrument: [UUID: StoreItemRow] {
+        Dictionary(
+            uniqueKeysWithValues: installedItemRows.compactMap { row in
+                engine.customInstrumentID(linkedToFolderAt: storefront.installationFolderURL(for: row.item.id)).map { ($0, row) }
+            }
+        )
+    }
+
+    private func linkedInstrumentID(of descriptor: LumaCore.InstrumentDescriptor) -> UUID? {
+        guard descriptor.kind == .custom else { return nil }
+        return UUID(uuidString: descriptor.sourceIdentifier)
+    }
+
+    private func show(_ row: ListBoxRow, named name: String, unlessListedAs installedItemRow: StoreItemRow?) {
+        row.visible = installedItemRow == nil && matchesSearch(name)
+        guard let installedItemRow, row.isSelected else { return }
+        listBox.select(row: installedItemRow.row)
+    }
+
+    private func matchesSearch(_ name: String) -> Bool {
+        searchText.isEmpty || name.localizedStandardContains(searchText)
+    }
+
+    private func reselectStoreItem(withID itemID: StoreItem.ID?) {
+        guard let itemID, listBox.selectedRow == nil,
+            let row = (installedItemRows + storeResultRows).first(where: { $0.item.id == itemID })
+        else { return }
+        listBox.select(row: row.row)
+    }
+
+    private func refreshStoreItemDetail() {
+        guard let storeItemPane, let item = storeItems.first(where: { $0.id == storeItemPane.item.id }) else { return }
+        storeItemPane.show(item, activity: storeActivity)
+        addButton.sensitive = canAdd(item)
+    }
+
+    private func observeStorefront() {
+        withObservationTracking {
+            _ = storefront.state
+            _ = storefront.results
+            _ = storefront.totalResults
+            _ = storefront.moreResults
+            _ = storefront.installedItems
+            _ = storefront.categories
+            _ = storefront.installations
+            _ = storefront.account
+            _ = storefront.needsSignIn
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.refreshStore()
+                self.observeStorefront()
+            }
+        }
+    }
+
+    private func search(for text: String) {
+        let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query != searchText else { return }
+        searchText = query
+        refreshSearchMatches()
+        let storefront = self.storefront
+        Task { await storefront.search(query) }
+    }
+
+    private func storeItem(withID itemID: StoreItem.ID) -> StoreItem {
+        storeItems.first { $0.id == itemID }!
+    }
+
+    private var storeItems: [StoreItem] {
+        storefront.installedItems + storefront.results
+    }
+
+    private func canAdd(_ item: StoreItem) -> Bool {
+        guard storeActivity == .idle, incompatibilityReason(for: item.compatibility) == nil else { return false }
+        guard storefront.installState(of: item).requiresInstall else { return true }
+        if case .sponsorshipNeeded = storefront.entitlement(for: item) {
+            return false
+        }
+        return true
+    }
+
+    private func incompatibilityReason(for compatibility: InstrumentCompatibility) -> String? {
+        systemParameters.flatMap { compatibility.incompatibilityReason(for: $0) }
+    }
+
+    private func kind(of row: some ListBoxRowProtocol) -> RowKind {
+        rowKinds[row.ptr]!
+    }
+
+    private func append(_ row: ListBoxRow, as kind: RowKind) {
+        listBox.append(child: row)
+        rowKinds[row.ptr] = kind
+    }
+
+    private func insert(_ row: ListBoxRow, at position: Int, as kind: RowKind) {
+        listBox.insert(child: row, position: position)
+        rowKinds[row.ptr] = kind
+    }
+
+    private func remove(_ row: ListBoxRow) {
+        rowKinds[row.ptr] = nil
+        listBox.remove(child: row)
+    }
+
+    private static func makeStoreLoadingRow() -> ListBoxRow {
+        let row = ListBoxRow()
+        row.sensitive = false
+        row.selectable = false
+        let rowBox = makeStoreStatusBox()
+        rowBox.append(child: makeSpinner())
+        rowBox.append(child: makeStoreStatusLabel("Loading\u{2026}"))
+        row.set(child: rowBox)
+        return row
+    }
+
+    private static func makeStoreUnreachableRow(storefront: Storefront) -> ListBoxRow {
+        let row = ListBoxRow()
+        row.selectable = false
+        row.activatable = false
+        let rowBox = makeStoreStatusBox()
+        let label = makeStoreStatusLabel("The store could not be reached.")
+        label.hexpand = true
+        label.xalign = 0
+        label.wrap = true
+        rowBox.append(child: label)
+        let retryButton = Button(label: "Retry")
+        retryButton.add(cssClass: "flat")
+        retryButton.valign = .center
+        retryButton.onClicked { _ in
+            Task { @MainActor in await storefront.reload() }
+        }
+        rowBox.append(child: retryButton)
+        row.set(child: rowBox)
+        return row
+    }
+
+    private static func makeStoreNoMatchesRow() -> ListBoxRow {
+        let row = ListBoxRow()
+        row.sensitive = false
+        row.selectable = false
+        let rowBox = makeStoreStatusBox()
+        rowBox.append(child: makeStoreStatusLabel("No matches in this category."))
+        row.set(child: rowBox)
+        return row
+    }
+
+    private static func makeStoreStatusBox() -> Box {
+        let rowBox = Box(orientation: .horizontal, spacing: 8)
+        rowBox.marginStart = 12
+        rowBox.marginEnd = 12
+        rowBox.marginTop = 6
+        rowBox.marginBottom = 6
+        rowBox.valign = .center
+        return rowBox
+    }
+
+    private static func makeStoreStatusLabel(_ text: String) -> Label {
+        let label = Label(str: text)
+        label.halign = .start
+        label.add(cssClass: "caption")
+        label.add(cssClass: "dim-label")
+        return label
     }
 
     private func makeDescriptorRow(
@@ -237,11 +653,11 @@ final class AddInstrumentDialog {
         return row
     }
 
-    private func makeCustomInstrumentsHeaderRow() -> ListBoxRow {
+    private static func makeSectionHeaderRow(title: String) -> ListBoxRow {
         let row = ListBoxRow()
         row.sensitive = false
         row.selectable = false
-        let label = Label(str: "Custom Instruments")
+        let label = Label(str: title)
         label.halign = .start
         label.add(cssClass: "caption-heading")
         label.add(cssClass: "dim-label")
@@ -319,6 +735,7 @@ final class AddInstrumentDialog {
 
     private func clearDetail() {
         tracerEditor = nil
+        storeItemPane = nil
         while let child = detailContainer.firstChild {
             detailContainer.remove(child: child)
         }
@@ -354,7 +771,7 @@ final class AddInstrumentDialog {
 
         clearDetail()
 
-        if let reason = incompatibilityReasons[descriptor.id] {
+        if let reason = incompatibilityReason(for: descriptor.compatibility) {
             appendIncompatibilityBanner(reason: reason)
         }
 
@@ -530,6 +947,19 @@ final class AddInstrumentDialog {
         detailContainer.append(child: box)
     }
 
+    private func showStoreItemDetail(_ item: StoreItem) {
+        clearDetail()
+        if let reason = incompatibilityReason(for: item.compatibility) {
+            appendIncompatibilityBanner(reason: reason)
+        }
+        let pane = StoreItemPane(storefront: storefront, item: item, activity: storeActivity) { [weak self] item in
+            self?.uninstallStoreItem(item)
+        }
+        storeItemPane = pane
+        detailContainer.append(child: pane.widget)
+        addButton.sensitive = canAdd(item)
+    }
+
     private func buildTracerEditor(descriptor: LumaCore.InstrumentDescriptor) {
         guard let config = try? TracerConfig.decode(from: pendingConfigJSON) else {
             showPlaceholder(message: "Failed to decode tracer config.")
@@ -696,9 +1126,12 @@ final class AddInstrumentDialog {
 
     private func commit() {
         if let row = listBox.selectedRow {
-            switch rowKinds[Int(row.index)] {
+            switch kind(of: row) {
             case .newCustom:
                 commitNewCustom()
+                return
+            case .storeItem(let itemID):
+                commitStoreItem(storeItem(withID: itemID))
                 return
             case .libraryFolder(let folderIndex):
                 linkFolderAndAdd(libraryFolders[folderIndex].folderURL)
@@ -706,7 +1139,7 @@ final class AddInstrumentDialog {
             case .linkFolder:
                 presentLinkFolderPicker()
                 return
-            case .header, .descriptor:
+            case .header, .storeStatus, .moreStoreResults, .descriptor:
                 break
             }
         }
@@ -753,6 +1186,74 @@ final class AddInstrumentDialog {
         close()
     }
 
+    private func commitStoreItem(_ item: StoreItem, localChanges: Storefront.LocalChanges = .keep) {
+        let folderURL = storefront.installationFolderURL(for: item.id)
+        guard storefront.installState(of: item).requiresInstall else {
+            linkFolderAndAdd(folderURL)
+            return
+        }
+        storeActivity = .installing
+        Task { @MainActor in
+            let isInstalled = await install(item, localChanges: localChanges)
+            storeActivity = .idle
+            if isInstalled {
+                linkFolderAndAdd(folderURL)
+            }
+        }
+    }
+
+    private func install(_ item: StoreItem, localChanges: Storefront.LocalChanges) async -> Bool {
+        do {
+            try await storefront.install(item, localChanges: localChanges)
+            return true
+        } catch StorefrontError.signInCancelled {
+        } catch StorefrontError.rejected(.sponsorshipRequired, _) {
+        } catch StorefrontError.localChanges {
+            confirmDiscardingLocalChanges(
+                heading: "Replace Your Edits?",
+                body: "\(item.name) has been edited since it was installed. Installing \(item.version) replaces those edits.",
+                discardLabel: "_Replace"
+            ) { [weak self] in
+                self?.commitStoreItem(item, localChanges: .discard)
+            }
+        } catch {
+            presentError(heading: "Could not add \(item.name)", message: error.localizedDescription)
+        }
+        return false
+    }
+
+    private func uninstallStoreItem(_ item: StoreItem, localChanges: Storefront.LocalChanges = .keep) {
+        do {
+            try storefront.uninstall(itemID: item.id, localChanges: localChanges)
+        } catch StorefrontError.localChanges {
+            confirmDiscardingLocalChanges(
+                heading: "Delete Your Edits?",
+                body: "\(item.name) has been edited since it was installed. Uninstalling it deletes those edits.",
+                discardLabel: "_Uninstall"
+            ) { [weak self] in
+                self?.uninstallStoreItem(item, localChanges: .discard)
+            }
+        } catch {
+            presentError(heading: "Could not uninstall \(item.name)", message: error.localizedDescription)
+        }
+    }
+
+    private func confirmDiscardingLocalChanges(heading: String, body: String, discardLabel: String, onDiscard: @escaping () -> Void) {
+        let alert = Adw.AlertDialog(heading: heading, body: body)
+        alert.addResponse(id: "cancel", label: "_Cancel")
+        alert.addResponse(id: "discard", label: discardLabel)
+        alert.setResponseAppearance(response: "discard", appearance: .destructive)
+        alert.setDefault(response: "cancel")
+        alert.setClose(response: "cancel")
+        alert.onResponse { _, responseID in
+            MainActor.assumeIsolated {
+                guard responseID == "discard" else { return }
+                onDiscard()
+            }
+        }
+        alert.present(parent: parentWindow)
+    }
+
     private func presentLinkFolderPicker() {
         guard let parentPtr = parentWindow.window_ptr.map(UnsafeMutableRawPointer.init) else { return }
         let context = Unmanaged.passRetained(self).toOpaque()
@@ -789,12 +1290,12 @@ final class AddInstrumentDialog {
             }
             close()
         } catch {
-            presentImportError(message: error.localizedDescription)
+            presentError(heading: "Could not link folder", message: error.localizedDescription)
         }
     }
 
-    private func presentImportError(message: String) {
-        let alert = Adw.AlertDialog(heading: "Could not link folder", body: message)
+    private func presentError(heading: String, message: String) {
+        let alert = Adw.AlertDialog(heading: heading, body: message)
         alert.addResponse(id: "ok", label: "OK")
         alert.setDefault(response: "ok")
         alert.setClose(response: "ok")
