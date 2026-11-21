@@ -28,6 +28,18 @@ public struct InstrumentFolder: Sendable {
         folderURL.lastPathComponent
     }
 
+    public var packageName: String {
+        manifest.name
+    }
+
+    public var version: String? {
+        manifest.version
+    }
+
+    public var storeListing: StoreListing? {
+        manifest.luma?.store
+    }
+
     public var rootURL: URL {
         manifest.luma?.root.map { folderURL.appendingPathComponent($0).standardizedFileURL } ?? folderURL.standardizedFileURL
     }
@@ -124,6 +136,23 @@ public struct InstrumentFolder: Sendable {
         try sourceFiles(of: instrument) + generatedFiles(for: instrument.def, mergingInto: existingManifest, under: "")
     }
 
+    static func stampPackage(name: String, version: StoreVersion, in folderURL: URL) throws {
+        try updateManifest(in: folderURL) { package in
+            package["name"] = name
+            package["version"] = version.description
+        }
+    }
+
+    static func writeStoreRelease(version: StoreVersion, listing: StoreListing, in folderURL: URL) throws {
+        let listingObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(listing))
+        try updateManifest(in: folderURL) { package in
+            var section = (package["luma"] as? [String: Any]) ?? [:]
+            section["store"] = listingObject
+            package["version"] = version.description
+            package["luma"] = section
+        }
+    }
+
     private static func sourceFiles(of instrument: CustomInstrumentBundle) -> [File] {
         instrument.files.map { File(path: $0.path, content: Data($0.content.utf8)) }
     }
@@ -144,6 +173,7 @@ public struct InstrumentFolder: Sendable {
 
         let section = Manifest.Section(
             root: existing?.luma?.root,
+            store: existing?.luma?.store,
             icon: icon,
             compatibility: def.compatibility.isUniversal ? nil : def.compatibility,
             features: def.features,
@@ -159,15 +189,27 @@ public struct InstrumentFolder: Sendable {
         package["main"] = path(to: def.entrypoint, fromFolderUnder: prefix)
         package["dependencies"] = def.dependencies.isEmpty ? nil : def.dependencies
         package["luma"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(section))
-        let manifestData = try JSONSerialization.data(
-            withJSONObject: package,
-            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        )
-        files.append(File(path: manifestFileName, content: manifestData))
+        files.append(File(path: manifestFileName, content: try manifestData(for: package)))
 
         files.append(typingsFile(for: def))
 
         return files
+    }
+
+    private static func updateManifest(in folderURL: URL, _ change: (inout [String: Any]) -> Void) throws {
+        let manifestURL = folderURL.appendingPathComponent(manifestFileName)
+        var package: [String: Any] =
+            if let existing = FileManager.default.contents(atPath: manifestURL.path) {
+                try JSONSerialization.jsonObject(with: existing) as! [String: Any]
+            } else {
+                [:]
+            }
+        change(&package)
+        try write([File(path: manifestFileName, content: try manifestData(for: package))], to: folderURL)
+    }
+
+    private static func manifestData(for package: [String: Any]) throws -> Data {
+        try JSONSerialization.data(withJSONObject: package, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
     }
 
     private static func loadIcon(_ icon: Manifest.Icon?, in folderURL: URL) throws -> InstrumentIcon {
@@ -276,12 +318,14 @@ public struct InstrumentFolder: Sendable {
     private struct Manifest: Decodable, Sendable {
         let name: String
         let displayName: String?
+        let version: String?
         let main: String
         let dependencies: [String: String]?
         let luma: Section?
 
         struct Section: Codable, Sendable {
             var root: String?
+            var store: StoreListing?
             var icon: Icon?
             var compatibility: InstrumentCompatibility?
             var features: [CustomInstrumentDef.Feature]?

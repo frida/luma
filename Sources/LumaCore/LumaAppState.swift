@@ -50,6 +50,7 @@ public final class LumaAppState {
         var missionDefaults: MissionDefaults?
         var externalMCPTrustsClient: Bool?
         var instrumentFolderLinks: [String: InstrumentFolderLink]?
+        var storeInstallations: [String: StoreInstallation]?
     }
 
     private var stored: Stored
@@ -178,6 +179,19 @@ public final class LumaAppState {
         let next: [String: InstrumentFolderLink]? = links.isEmpty ? nil : links
         guard stored.instrumentFolderLinks != next else { return }
         stored.instrumentFolderLinks = next
+        persist()
+    }
+
+    public var storeInstallations: [String: StoreInstallation] {
+        stored.storeInstallations ?? [:]
+    }
+
+    public func setStoreInstallation(_ installation: StoreInstallation?, forItemID itemID: String) {
+        var installations = stored.storeInstallations ?? [:]
+        installations[itemID] = installation
+        let next: [String: StoreInstallation]? = installations.isEmpty ? nil : installations
+        guard stored.storeInstallations != next else { return }
+        stored.storeInstallations = next
         persist()
     }
 

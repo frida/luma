@@ -249,6 +249,54 @@ is gitignored — it is produced at build time.
   for everyone when `GitHubAuth` signs out. It keeps the `+welcome` for
   whoever arrives later, numbers requests across all users, and hands every
   notification and the detach to each of them.
+- **`Storefront`** — the store, reached as `engine.storefront`. The catalog is
+  plain HTTP under `BackendConfig.storeCatalogURL`, so anyone may browse it
+  without signing in. Browsing is a session from `open(for:showing:)` to
+  `close()`: `open` takes the device an instrument is being added to, since the
+  server ranks what fits it first and then what is trending, and how many
+  results the frontend has room for before its own instruments, and loads that
+  first page beside the categories. `search(_:)` and `filter(by:)` replace the
+  results with the first page for the new text and category, cancelling whatever
+  was still being fetched so a late reply cannot overwrite a newer one;
+  `loadMore()` appends a longer page while `moreResults` says there is one. What
+  is installed, kept by `InstalledStoreItems`, lasts as long as the project
+  instead: when the engine starts with anything installed, those items are asked
+  for by id, quietly, since they may be anywhere in the ranking, and opening the
+  store asks again; a reply that does not come leaves the latest version
+  unknown, and one that is older than what was since heard is not taken.
+  `results` leaves the installed ones out, `installedItems` holds them, and an
+  install or uninstall moves an item between the two without asking again. An
+  item's picture is a request of its own, so `icon(of:)` fetches it once per
+  item and version and answers the default symbol when it cannot. Only
+  installing and publishing ask for a sign-in, through `requireAccount()`, which
+  then leases the portal connection and fetches the account, kept current by the
+  server's `+update` rather than by asking. The same lease hears the `+update`
+  sent for an item whenever a version of it is published, which replaces what is
+  known of it, installed or listed. A sign-in already stored fetches the account
+  without asking, when the store opens or, with something installed, when the
+  engine starts, as does one made later by any route while something is
+  installed; until there is one, and again after a sign-out, whether a sponsor
+  item is the user's is unknown rather than no. The lease is let go of when the
+  browsing or publishing that wanted it closes, unless there is a sign-in and
+  something is installed: then it is held until the project closes, so that
+  updates arrive by themselves. A lost connection is not retried; the next thing
+  that needs the store connects again. Items install into the instrument library
+  as folders named after the item id, which projects then link like any other.
+  `linkedInstallation(ofCustomInstrument:)` says which item a linked instrument
+  was installed from and whether a newer version is known, and
+  `versionsSinceInstalled(of:)` gives the release notes of what updating would
+  bring. An install over an item whose folder this project links reloads this
+  project's copy from the folder, since that is what was asked for, so updating
+  an instrument where it lives is `install` of the newer item; other projects
+  linking the folder are offered the reload as for any change made on disk. What
+  was installed is remembered in `LumaAppState` with a snapshot of the folder,
+  so an update can tell an edited copy from a pristine one and asks before
+  replacing it. A project whose linked library folder disappears is unlinked and
+  keeps its copy. Publishing reads a linked instrument's folder: `version` and
+  `luma.store` (summary, category, access) in its `package.json`, and its
+  `README.md` as the description; every version carries release notes.
+  `loadCategories()` gives the publish form the categories without loading a
+  page.
 
 - **Canvas (`CanvasScene`, `CanvasDrawable`, `CanvasRegistry`)** — a
   scene the image holds by handle and changes; the host draws it.
