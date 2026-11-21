@@ -216,7 +216,7 @@ public final class CodeEditor {
         semanticHighlighter.setTokens([], to: text)
         folding.setRanges([], in: text)
         swatches.setColors([], in: text)
-        guard let engine else { return }
+        guard let engine, profile.syntax != .plainText else { return }
         let profile = profile
         let text = text
         Task { @MainActor in

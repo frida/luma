@@ -30,7 +30,14 @@ public struct EditorProfile: Sendable, Equatable {
     public var ambientDeclarations: [AmbientDeclarations]
 
     public var syntax: SourceSyntax {
-        languageId == "hexpat" ? .pattern : .typeScript
+        switch languageId {
+        case "hexpat":
+            return .pattern
+        case "plaintext":
+            return .plainText
+        default:
+            return .typeScript
+        }
     }
 
     public init(
@@ -74,33 +81,56 @@ extension EditorProfile {
         files: [CustomInstrumentFile] = [],
         activePath: String? = nil
     ) -> EditorProfile {
-        let projectFiles = files.map { file in
-            EditorProjectFile(
-                path: CustomInstrumentFile.workspaceRelativePath(defID: file.defID, path: file.path),
-                text: file.content,
-                languageId: file.patternKind != nil ? "hexpat" : nil
-            )
-        }
-        if let activePath, PatternSource.Kind(path: activePath) != nil {
+        let projectFiles = files.compactMap(languageServerFile(of:))
+        switch activePath.map(SourceSyntax.init(path:)) ?? .typeScript {
+        case .pattern:
             return EditorProfile(
                 languageId: "hexpat",
                 projectFiles: projectFiles.filter { $0.languageId == "hexpat" },
                 activePath: activePath)
+        case .plainText:
+            return EditorProfile(languageId: "plaintext", activePath: activePath)
+        case .typeScript:
+            return EditorProfile(
+                languageId: "typescript",
+                projectFiles: projectFiles,
+                activePath: activePath,
+                ambientDeclarations: [CustomInstrumentTypings.ambient]
+                    + (def.flatMap(CustomInstrumentTypings.featureMap(for:)).map { [$0] } ?? [])
+                    + PackageAliasTypings.declarations(for: packages)
+            )
         }
-        return EditorProfile(
-            languageId: "typescript",
-            projectFiles: projectFiles,
-            activePath: activePath,
-            ambientDeclarations: [CustomInstrumentTypings.ambient]
-                + (def.flatMap(CustomInstrumentTypings.featureMap(for:)).map { [$0] } ?? [])
-                + PackageAliasTypings.declarations(for: packages)
-        )
+    }
+
+    private static func languageServerFile(of file: CustomInstrumentFile) -> EditorProjectFile? {
+        let path = CustomInstrumentFile.workspaceRelativePath(defID: file.defID, path: file.path)
+        switch SourceSyntax(path: file.path) {
+        case .typeScript:
+            return EditorProjectFile(path: path, text: file.content)
+        case .pattern:
+            return EditorProjectFile(path: path, text: file.content, languageId: "hexpat")
+        case .plainText:
+            return nil
+        }
     }
 }
 
 public enum SourceSyntax: Hashable, Sendable {
     case typeScript
     case pattern
+    case plainText
+
+    public init(path: String) {
+        if PatternSource.Kind(path: path) != nil {
+            self = .pattern
+        } else if Self.scriptExtensions.contains((path as NSString).pathExtension.lowercased()) {
+            self = .typeScript
+        } else {
+            self = .plainText
+        }
+    }
+
+    private static let scriptExtensions: Set<String> = ["ts", "mts", "cts", "tsx", "js", "mjs", "cjs", "jsx"]
 
     public func tokenize(_ text: String) -> [TypeScriptToken] {
         switch self {
@@ -108,6 +138,8 @@ public enum SourceSyntax: Hashable, Sendable {
             return TypeScriptLexer.tokenize(text)
         case .pattern:
             return PatternLexer.tokenize(text)
+        case .plainText:
+            return []
         }
     }
 }

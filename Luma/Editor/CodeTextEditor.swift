@@ -140,6 +140,7 @@ struct CodeTextEditor: PlatformViewRepresentable {
             if let previous {
                 previous.close()
             }
+            guard profile.syntax != .plainText else { return }
             let text = view?.source ?? parent.text
             Task { @MainActor in
                 guard let session = try? await TypeScriptEditorSession.open(engine: engine, profile: profile, text: text),

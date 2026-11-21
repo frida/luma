@@ -328,7 +328,10 @@ is gitignored — it is produced at build time.
   server sees the compiler workspace's `node_modules` and the typings
   embedded in the compiler, so the editor and a build agree. Lexical
   coloring is `TypeScriptLexer`, and `SourceSyntaxPalette` its colors,
-  shared by both frontends.
+  shared by both frontends. A file in an instrument is edited as what
+  `SourceSyntax(path:)` says it is: scripts as TypeScript, patterns as
+  patterns, and anything else as plain text, which no server is asked
+  about.
 - **Pharo bridges (`Sources/LumaCore/Pharo/`)** — `PharoAsyncBridge`
   carries the image's requests to the Engine and the answers back,
   one reply or a stream of them; `Engine+PharoRequests` answers for
