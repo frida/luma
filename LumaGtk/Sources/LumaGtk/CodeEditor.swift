@@ -111,6 +111,9 @@ public final class CodeEditor {
                 self.onCaretMove?(self.caretPosition)
             }
         }
+        editor.onUnmap { [weak self] _ in
+            MainActor.assumeIsolated { self?.abandonLookups() }
+        }
         applyStyleScheme()
         themeSubscription = ThemeWatcher.subscribe(owner: self) { $0.retheme() }
         restartSession()
@@ -131,8 +134,15 @@ public final class CodeEditor {
     deinit {
         ThemeWatcher.unsubscribe(handlerID: themeSubscription)
         MainActor.assumeIsolated {
+            abandonLookups()
             session?.close()
         }
+    }
+
+    private func abandonLookups() {
+        hover.cancelPending()
+        signatureHelp.dismiss()
+        completion.cancelPendingCall()
     }
 
     public func attach(engine: Engine) {
@@ -488,6 +498,11 @@ final class CodeHoverTooltip {
                 self?.answer(tooltip, x: x, y: y) ?? false
             }
         }
+    }
+
+    func cancelPending() {
+        pending?.cancel()
+        pending = nil
     }
 
     private func answer(_ tooltip: TooltipRef, x: Int, y: Int) -> Bool {

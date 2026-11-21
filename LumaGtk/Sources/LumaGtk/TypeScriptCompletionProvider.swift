@@ -19,6 +19,7 @@ final class TypeScriptCompletionProvider: CompletionProviderImplementation {
     private var proposals: [CompletionProposalImplementation] = []
     private var lastStore: GIO.ListStore?
     private var lastKey: String?
+    private var pendingCall: _Concurrency.Task<Void, Never>?
 
     init(buffer: GtkSource.Buffer, view: GtkSource.View) {
         self.buffer = buffer
@@ -110,6 +111,11 @@ final class TypeScriptCompletionProvider: CompletionProviderImplementation {
         apply(items[index], context: CompletionContextRef(context))
     }
 
+    func cancelPendingCall() {
+        pendingCall?.cancel()
+        pendingCall = nil
+    }
+
     private func refresh(_ context: CompletionContextRef) async throws {
         guard let document else { return }
         let text = buffer.text
@@ -168,9 +174,10 @@ final class TypeScriptCompletionProvider: CompletionProviderImplementation {
         guard let document else { return }
         let text = buffer.text
         let position = LineMap(text: text).position(ofUTF16Offset: CharacterOffsets(text: text).utf16Offset(ofCharacter: cursorOffset()))
-        _Concurrency.Task { @MainActor in
+        pendingCall?.cancel()
+        pendingCall = _Concurrency.Task { @MainActor in
             let parameters = (try? await document.signatureHelp(at: position))?.requiredParameterNames ?? []
-            guard buffer.text == text else { return }
+            guard !_Concurrency.Task.isCancelled, buffer.text == text else { return }
             let template = CallTemplate(name: name, parameters: parameters)
             deleteRange(from: start, to: cursorOffset())
             if parameters.isEmpty {

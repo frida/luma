@@ -50,13 +50,12 @@ final class CodeTextView: CodeTextViewBase {
     private var semanticTokens: [SemanticToken] = []
     private var fetched: [LSP.CompletionItem] = []
     private var isReplacingSource = false
+    private var lookups: [Lookup: Task<Void, Never>] = [:]
 
     #if canImport(AppKit)
         private let completionPanel = CodeCompletionPanel()
         private let hover = CodeInfoPopover()
         private let signature = CodeInfoPopover()
-        private var hoverRequest: DispatchWorkItem?
-        private var signatureRequest: Task<Void, Never>?
         private var argumentPlaceholders: [NSRange] = []
         private var completionWordStart = 0
 
@@ -239,11 +238,31 @@ final class CodeTextView: CodeTextViewBase {
         guard let document = session?.document else { return }
         let text = source
         let position = caretPosition
-        Task { @MainActor in
-            guard let list = try? await document.completions(at: position, triggerCharacter: trigger), self.source == text else { return }
+        startLookup(.completions) { [self] in
+            guard let list = try? await document.completions(at: position, triggerCharacter: trigger), !Task.isCancelled, source == text
+            else { return }
             fetched = list.items.sorted { ($0.sortText ?? $0.label, $0.label) < ($1.sortText ?? $1.label, $1.label) }
             offerCompletions()
         }
+    }
+
+    private enum Lookup {
+        case completions
+        case hover
+        case signatureHelp
+        case callParameters
+    }
+
+    private func startLookup(_ lookup: Lookup, _ work: @escaping @MainActor () async -> Void) {
+        lookups[lookup]?.cancel()
+        lookups[lookup] = Task { @MainActor in await work() }
+    }
+
+    private func cancelLookups() {
+        for task in lookups.values {
+            task.cancel()
+        }
+        lookups.removeAll()
     }
 
     private func matchingCandidates() -> [LSP.CompletionItem] {
@@ -289,6 +308,14 @@ final class CodeTextView: CodeTextViewBase {
             completionPanel.dismiss()
             signature.dismiss()
             return super.resignFirstResponder()
+        }
+
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            super.viewWillMove(toWindow: newWindow)
+            cancelLookups()
+            completionPanel.dismiss()
+            hover.dismiss()
+            signature.dismiss()
         }
 
         override func didChangeText() {
@@ -538,9 +565,9 @@ final class CodeTextView: CodeTextViewBase {
             replace(range, with: name + "(")
             let text = source
             let position = caretPosition
-            Task { @MainActor in
+            startLookup(.callParameters) { [self] in
                 let parameters = (try? await document.signatureHelp(at: position))?.requiredParameterNames ?? []
-                guard source == text else { return }
+                guard !Task.isCancelled, source == text else { return }
                 layDownCall(CallTemplate(name: name, parameters: parameters), from: range.location)
             }
         }
@@ -585,8 +612,7 @@ final class CodeTextView: CodeTextViewBase {
             guard let document = session?.document else { return }
             let text = source
             let position = caretPosition
-            signatureRequest?.cancel()
-            signatureRequest = Task { @MainActor in
+            startLookup(.signatureHelp) { [self] in
                 let help = try? await document.signatureHelp(at: position)
                 guard !Task.isCancelled, source == text else { return }
                 guard let help, !help.signatures.isEmpty else {
@@ -669,8 +695,7 @@ final class CodeTextView: CodeTextViewBase {
 
         override func mouseExited(with event: NSEvent) {
             super.mouseExited(with: event)
-            hoverRequest?.cancel()
-            hover.dismiss()
+            endHover()
         }
 
         override func keyDown(with event: NSEvent) {
@@ -691,19 +716,26 @@ final class CodeTextView: CodeTextViewBase {
         }
 
         private func scheduleHover(at offset: Int) {
-            hoverRequest?.cancel()
+            lookups[.hover]?.cancel()
             guard offset < storage.length else {
                 hover.dismiss()
                 return
             }
             if hover.isShowing(key: offset) { return }
             hover.dismiss()
-            let work = DispatchWorkItem { [weak self] in self?.requestHover(at: offset) }
-            hoverRequest = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+            startLookup(.hover) { [self] in
+                try? await Task.sleep(for: .milliseconds(350))
+                guard !Task.isCancelled else { return }
+                await lookUpHover(at: offset)
+            }
         }
 
-        private func requestHover(at offset: Int) {
+        private func endHover() {
+            lookups[.hover]?.cancel()
+            hover.dismiss()
+        }
+
+        private func lookUpHover(at offset: Int) async {
             let text = source
             let messages = diagnostics(atUTF16Offset: offset)
             guard let document = session?.document else {
@@ -711,16 +743,14 @@ final class CodeTextView: CodeTextViewBase {
                 return
             }
             let position = LineMap(text: text).position(ofUTF16Offset: offset)
-            Task { @MainActor in
-                let answer = try? await document.hover(at: position)
-                guard self.source == text else { return }
-                var segments: [(HoverMarkdown.Segment, [SemanticToken])] = []
-                for segment in HoverMarkdown.segments(answer?.contents.text ?? "") {
-                    segments.append((segment, segment.isCode ? await document.classify(segment.text) : []))
-                }
-                guard self.source == text else { return }
-                showHover(hoverText(messages: messages, segments: segments), at: offset)
+            let answer = try? await document.hover(at: position)
+            guard !Task.isCancelled, source == text else { return }
+            var segments: [(HoverMarkdown.Segment, [SemanticToken])] = []
+            for segment in HoverMarkdown.segments(answer?.contents.text ?? "") {
+                segments.append((segment, segment.isCode ? await document.classify(segment.text) : []))
             }
+            guard !Task.isCancelled, source == text else { return }
+            showHover(hoverText(messages: messages, segments: segments), at: offset)
         }
 
         private func hoverText(messages: [String], segments: [(HoverMarkdown.Segment, [SemanticToken])]) -> NSAttributedString {
@@ -853,6 +883,11 @@ final class CodeTextView: CodeTextViewBase {
             let became = super.becomeFirstResponder()
             if became { onFocused?() }
             return became
+        }
+
+        override func willMove(toWindow newWindow: UIWindow?) {
+            super.willMove(toWindow: newWindow)
+            cancelLookups()
         }
 
         override func insertText(_ text: String) {
