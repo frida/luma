@@ -58,7 +58,7 @@ struct StoreCatalog: Sendable {
 
     func iconPixels(of item: StoreItem) async throws -> Data {
         let iconURL = url(of: item).appendingPathComponent("icon")
-        return try await fetch(iconURL.withQuery(Self.encodedQuery([("v", item.version.description)])))
+        return try await fetch(iconURL.withQuery(Self.encodedQuery([("v", item.version.description)])), cached: .asServed)
     }
 
     private var itemsURL: URL {
@@ -82,25 +82,39 @@ struct StoreCatalog: Sendable {
     )
 
     private func fetchJSON(_ url: URL) async throws -> JSONObject {
-        let data = try await fetch(url)
+        let data = try await fetch(url, cached: .never)
         guard let body = try? JSONSerialization.jsonObject(with: data) as? JSONObject else {
             throw StorefrontError.malformedReply
         }
         return body
     }
 
-    private func fetch(_ url: URL) async throws -> Data {
-        let (data, response) = try await download(url)
+    private func fetch(_ url: URL, cached caching: Caching) async throws -> Data {
+        let (data, response) = try await download(url, cached: caching)
         let status = (response as! HTTPURLResponse).statusCode
         guard status == 200 else { throw failure(status: status, body: try? JSONSerialization.jsonObject(with: data) as? JSONObject) }
         return data
     }
 
-    private func download(_ url: URL) async throws -> (Data, URLResponse) {
+    private func download(_ url: URL, cached caching: Caching) async throws -> (Data, URLResponse) {
         do {
-            return try await URLSession.shared.data(from: url)
+            return try await URLSession.shared.data(for: URLRequest(url: url, cachePolicy: caching.policy))
         } catch let error as URLError where error.code == .cancelled {
             throw CancellationError()
+        }
+    }
+
+    private enum Caching {
+        case asServed
+        case never
+
+        var policy: URLRequest.CachePolicy {
+            switch self {
+            case .asServed:
+                return .useProtocolCachePolicy
+            case .never:
+                return .reloadIgnoringLocalCacheData
+            }
         }
     }
 
