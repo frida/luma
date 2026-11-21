@@ -280,11 +280,20 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    public func fetchOutbox() throws -> [QueuedOp] {
+        try db.read { db in
+            try OutboxRecord
+                .order(Column.rowID)
+                .fetchAll(db)
+                .compactMap { $0.toQueuedOp() }
+        }
+    }
+
     public func fetchOutboxOps<Op: OutboxOp>(_ type: Op.Type) throws -> [Op] {
         try db.read { db in
             try OutboxRecord
                 .filter(Column("family") == Op.outboxFamily)
-                .order(Column("created_at").asc, Column("op_id").asc)
+                .order(Column.rowID)
                 .fetchAll(db)
                 .compactMap { $0.toOp(type) }
         }

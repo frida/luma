@@ -287,6 +287,7 @@ public final class CollaborationSession {
     private(set) public var localUser: UserInfo?
     private var pendingJoinLabID: String?
     private var replayedOpIDs: Set<UUID> = []
+    private var opsOverridingJoinSnapshot: [UUID: SessionOp] = [:]
     private var pendingCreateOrJoinDispatched: Bool = false
     private(set) public var members: [Member] = []
     private(set) public var chatMessages: [ChatMessage] = []
@@ -416,6 +417,7 @@ public final class CollaborationSession {
         labPictureContentType = nil
         localUser = nil
         pendingJoinLabID = nil
+        opsOverridingJoinSnapshot = [:]
         pendingCreateOrJoinDispatched = false
         members = []
         chatMessages = []
@@ -550,9 +552,14 @@ public final class CollaborationSession {
         sendOpIfJoined(op)
     }
 
-    public func sendCustomInstrumentOpIfJoined(_ op: CustomInstrumentOp) {
+    public func enqueueCustomInstrumentOp(_ op: CustomInstrumentOp) {
         guard isCollaborative else { return }
+        try? store.saveOutboxOps([op])
         guard case .joined(let labID) = status else { return }
+        sendCustomInstrumentOpOverWire(op, labID: labID)
+    }
+
+    private func sendCustomInstrumentOpOverWire(_ op: CustomInstrumentOp, labID: String) {
         sendNotification(
             to: "/labs/\(labID)/custom-instruments",
             type: "+op",
@@ -676,41 +683,44 @@ public final class CollaborationSession {
         )
     }
 
-    /// Resend every op still in the outbox. Called after a successful
-    /// join/create so unsynced mutations propagate. The server dedupes by
-    /// `op_id`, so redundant replays are safe.
-    public func replayOutbox() {
+    private func replayOutbox(knownSessions: Set<UUID>, announcingTheRest announce: () -> Void) {
         guard case .joined(let labID) = status else { return }
-        let notebookOps = (try? store.fetchOutboxOps(NotebookOp.self)) ?? []
-        for op in notebookOps {
+        let queued = (try? store.fetchOutbox()) ?? []
+        let awaitingAnnouncement = queued.filter { Self.isOp($0, ofSessionOtherThan: knownSessions) }
+        for op in queued where !Self.isOp(op, ofSessionOtherThan: knownSessions) {
+            if case .session(let sessionOp) = op {
+                opsOverridingJoinSnapshot[sessionOp.opID] = sessionOp
+            }
+            replay(op, labID: labID)
+        }
+        announce()
+        for op in awaitingAnnouncement {
+            replay(op, labID: labID)
+        }
+    }
+
+    private static func isOp(_ op: QueuedOp, ofSessionOtherThan sessionIDs: Set<UUID>) -> Bool {
+        guard case .session(let sessionOp) = op else { return false }
+        return !sessionIDs.contains(sessionOp.sessionID)
+    }
+
+    private func replay(_ op: QueuedOp, labID: String) {
+        switch op {
+        case .notebook(let op):
             replayedOpIDs.insert(op.opID)
             sendOpOverWire(op, labID: labID)
-        }
-        let sessionOps = (try? store.fetchOutboxOps(SessionOp.self)) ?? []
-        for op in sessionOps {
+        case .session(let op):
             sendSessionOpOverWire(op, labID: labID)
-        }
-        let customOps = (try? store.fetchOutboxOps(CustomInstrumentOp.self)) ?? []
-        for op in customOps {
+        case .customInstrument(let op):
             replayedOpIDs.insert(op.opID)
-            sendNotification(
-                to: "/labs/\(labID)/custom-instruments",
-                type: "+op",
-                payload: op.toJSON()
-            )
-        }
-        let patternOps = (try? store.fetchOutboxOps(PatternSourceOp.self)) ?? []
-        for op in patternOps {
+            sendCustomInstrumentOpOverWire(op, labID: labID)
+        case .pattern(let op):
             replayedOpIDs.insert(op.opID)
             sendPatternSourceOpOverWire(op, labID: labID)
-        }
-        let missionOps = (try? store.fetchOutboxOps(MissionOp.self)) ?? []
-        for op in missionOps {
+        case .mission(let op):
             replayedOpIDs.insert(op.opID)
             sendMissionOpOverWire(op, labID: labID)
-        }
-        let addressNoteOps = (try? store.fetchOutboxOps(AddressNoteOp.self)) ?? []
-        for op in addressNoteOps {
+        case .addressNote(let op):
             replayedOpIDs.insert(op.opID)
             sendAddressNoteOpOverWire(op, labID: labID)
         }
@@ -1335,6 +1345,10 @@ public final class CollaborationSession {
 
     private func applySessionOp(sessionID: UUID, payload: JSONObject) {
         guard let op = SessionOp.fromJSON(payload, sessionID: sessionID) else { return }
+        apply(op)
+    }
+
+    private func apply(_ op: SessionOp) {
         switch op {
         case .add(let a):
             let session = Session(
@@ -1484,18 +1498,25 @@ public final class CollaborationSession {
                     joinedAt: now,
                     lastSeenAt: now
                 )]
-                let entries = (try? self.store.fetchNotebookEntries()) ?? []
-                let ops: [NotebookOp] = entries.map { .add(.init(entry: $0)) }
-                try? self.store.saveOutboxOps(ops)
-                let patterns = (try? self.store.fetchPatternSources()) ?? []
-                try? self.store.saveOutboxOps(patterns.map { PatternSourceOp.upsert(.init(record: $0)) })
-                self.replayOutbox()
-                self.onSessionsSnapshot?([])
+                self.queueProjectForNewLab()
+                self.replayOutbox(knownSessions: []) { self.onSessionsSnapshot?([]) }
                 self.onLabCreated?()
             case .failure(let failure):
                 self.setStatus(.error(message: failure.message))
             }
         }
+    }
+
+    private func queueProjectForNewLab() {
+        let definitions = (try? store.fetchCustomInstrumentDefs()) ?? []
+        try? store.saveOutboxOps(definitions.map { def in
+            let files = (try? store.fetchCustomInstrumentFiles(defID: def.id)) ?? []
+            return CustomInstrumentOp.upsert(.init(bundle: CustomInstrumentBundle(def: def, files: files)))
+        })
+        let patterns = (try? store.fetchPatternSources()) ?? []
+        try? store.saveOutboxOps(patterns.map { PatternSourceOp.upsert(.init(record: $0)) })
+        let entries = (try? store.fetchNotebookEntries()) ?? []
+        try? store.saveOutboxOps(entries.map { NotebookOp.add(.init(entry: $0)) })
     }
 
     private struct AvatarBytes {
@@ -1548,7 +1569,6 @@ public final class CollaborationSession {
             switch result {
             case .success(let reply):
                 self.ingestJoinSnapshot(payload: reply.payload, data: reply.data, labID: labID)
-                self.replayOutbox()
             case .failure(let failure):
                 self.setStatus(.error(message: failure.message))
             }
@@ -1605,7 +1625,7 @@ public final class CollaborationSession {
 
         let sessionDicts = (payload["sessions"] as? [JSONObject]) ?? []
         let sessions = sessionDicts.compactMap(Session.fromJSON)
-        onSessionsSnapshot?(sessions)
+        replayOutbox(knownSessions: Set(sessions.map(\.id))) { onSessionsSnapshot?(sessions) }
 
         let customDicts = (payload["custom_instruments"] as? [JSONObject]) ?? []
         let customBundles = customDicts.compactMap(CustomInstrumentBundle.fromJSON)
@@ -1793,10 +1813,14 @@ public final class CollaborationSession {
                 let opID = UUID(uuidString: idStr) else { return }
             _ = try? store.removeOutboxOp(opID: opID)
             replayedOpIDs.remove(opID)
+            if let op = opsOverridingJoinSnapshot.removeValue(forKey: opID) {
+                apply(op)
+            }
 
         case ("+op-rejected", _):
             guard let opID = (payload["op_id"] as? String).flatMap(UUID.init(uuidString:)) else { return }
             let reason = (payload["reason"] as? String) ?? "rejected"
+            opsOverridingJoinSnapshot.removeValue(forKey: opID)
             let renamable = reason == Self.patternNameTaken ? (try? store.fetchOutboxOps(PatternSourceOp.self))?.first { $0.opID == opID } : nil
             _ = try? store.removeOutboxOp(opID: opID)
             if case .upsert(let upsert) = renamable {

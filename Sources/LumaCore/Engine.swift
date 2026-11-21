@@ -1050,7 +1050,7 @@ public final class Engine {
         }
 
         collaboration.onPatternSourcesSnapshot = { [weak self] records in
-            self?.patterns.replaceProjectSources(with: records)
+            self?.adoptPatternSources(records)
         }
 
         collaboration.onOpRejected = { [weak self] reason in
@@ -1081,7 +1081,8 @@ public final class Engine {
             guard let self else { return }
             let serverIDs = Set(bundles.map(\.def.id))
             let local = (try? self.store.fetchCustomInstrumentDefs()) ?? []
-            for stale in local where !serverIDs.contains(stale.id) {
+            let pending = self.subjectsOfPendingOps(CustomInstrumentOp.self)
+            for stale in local where !serverIDs.contains(stale.id) && !pending.contains(stale.id) {
                 try? self.store.deleteCustomInstrumentDef(id: stale.id)
             }
             let normalized = bundles.map { bundle -> CustomInstrumentBundle in
@@ -1099,20 +1100,7 @@ public final class Engine {
         }
 
         collaboration.onNotebookSnapshot = { [weak self] entries in
-            guard let self else { return }
-            // Snapshot is authoritative: replace local state with it. Any
-            // locally-made mutations that aren't reflected here still live
-            // in the outbox and will replay once status flips to .joined.
-            let existingIDs = self.notebookEntries.map(\.id)
-            for id in existingIDs {
-                try? self.store.deleteNotebookEntry(id: id)
-            }
-            self.notebookEntries.removeAll()
-            for entry in entries {
-                try? self.store.save(entry)
-                self.notebookEntries.append(entry)
-            }
-            self.onNotebookChanged?(.snapshot(entries))
+            self?.adoptNotebook(entries)
         }
 
         collaboration.onEntryUpserted = { [weak self] upserted in
@@ -1316,6 +1304,31 @@ public final class Engine {
         collaboration.onSessionRemoved = { [weak self] sessionID in
             self?.applyRemoteSessionRemoval(sessionID: sessionID)
         }
+    }
+
+    private func adoptPatternSources(_ labRecords: [PatternSourceRecord]) {
+        let pending = subjectsOfPendingOps(PatternSourceOp.self)
+        let labIDs = Set(labRecords.map(\.id))
+        let unsent = ((try? store.fetchPatternSources()) ?? []).filter { pending.contains($0.id) && !labIDs.contains($0.id) }
+        patterns.replaceProjectSources(with: labRecords + unsent)
+    }
+
+    private func adoptNotebook(_ labEntries: [NotebookEntry]) {
+        let pending = subjectsOfPendingOps(NotebookOp.self)
+        let labIDs = Set(labEntries.map(\.id))
+        let unsent = notebookEntries.filter { pending.contains($0.id) && !labIDs.contains($0.id) }
+        for entry in notebookEntries where !unsent.contains(where: { $0.id == entry.id }) {
+            try? store.deleteNotebookEntry(id: entry.id)
+        }
+        for entry in labEntries {
+            try? store.save(entry)
+        }
+        notebookEntries = (labEntries + unsent).sorted { ($0.position, $0.id.uuidString) < ($1.position, $1.id.uuidString) }
+        onNotebookChanged?(.snapshot(notebookEntries))
+    }
+
+    private func subjectsOfPendingOps<Op: OutboxOp>(_ type: Op.Type) -> Set<UUID> {
+        Set(((try? store.fetchOutboxOps(type)) ?? []).map(\.outboxSubject))
     }
 
     private func markReplCellTimedOut(cellID: UUID) {
@@ -5514,16 +5527,12 @@ public func deleteCustomInstrument(_ defID: UUID) async {
             let files = try? store.fetchCustomInstrumentFiles(defID: defID)
         else { return }
         let bundle = CustomInstrumentBundle(def: def, files: files)
-        let op = CustomInstrumentOp.upsert(.init(bundle: bundle))
-        try? store.saveOutboxOps([op])
-        collaboration.sendCustomInstrumentOpIfJoined(op)
+        collaboration.enqueueCustomInstrumentOp(.upsert(.init(bundle: bundle)))
         instrumentsEditedSinceSnapshots.insert(defID)
     }
 
     private func broadcastCustomInstrumentRemove(defID: UUID) {
-        let op = CustomInstrumentOp.remove(.init(defID: defID))
-        try? store.saveOutboxOps([op])
-        collaboration.sendCustomInstrumentOpIfJoined(op)
+        collaboration.enqueueCustomInstrumentOp(.remove(.init(defID: defID)))
     }
 
     public func loadCodeShareInstrument(
@@ -6467,7 +6476,8 @@ public func deleteCustomInstrument(_ defID: UUID) async {
     private func applyRemoteMissionSnapshot(_ snapshot: MissionSnapshot) {
         let serverMissionIDs = Set(snapshot.missions.map(\.id))
         let localMissions = (try? store.fetchMissions()) ?? []
-        for stale in localMissions where !serverMissionIDs.contains(stale.id) {
+        let pending = subjectsOfPendingOps(MissionOp.self)
+        for stale in localMissions where !serverMissionIDs.contains(stale.id) && !pending.contains(stale.id) {
             try? store.deleteMission(id: stale.id)
         }
         for mission in snapshot.missions { try? store.save(mission) }

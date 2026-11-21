@@ -15,6 +15,15 @@ extension OutboxOp {
     public var outboxBinary: Data? { nil }
 }
 
+public enum QueuedOp: Sendable {
+    case notebook(NotebookOp)
+    case session(SessionOp)
+    case customInstrument(CustomInstrumentOp)
+    case pattern(PatternSourceOp)
+    case mission(MissionOp)
+    case addressNote(AddressNoteOp)
+}
+
 struct OutboxRecord: Codable, Sendable, FetchableRecord, PersistableRecord {
     static let databaseTableName = "outbox"
 
@@ -45,6 +54,18 @@ struct OutboxRecord: Codable, Sendable, FetchableRecord, PersistableRecord {
         payloadJSON = String(decoding: payload, as: UTF8.self)
         binaryData = op.outboxBinary
         createdAt = Date()
+    }
+
+    func toQueuedOp() -> QueuedOp? {
+        switch family {
+        case NotebookOp.outboxFamily: toOp(NotebookOp.self).map(QueuedOp.notebook)
+        case SessionOp.outboxFamily: toOp(SessionOp.self).map(QueuedOp.session)
+        case CustomInstrumentOp.outboxFamily: toOp(CustomInstrumentOp.self).map(QueuedOp.customInstrument)
+        case PatternSourceOp.outboxFamily: toOp(PatternSourceOp.self).map(QueuedOp.pattern)
+        case MissionOp.outboxFamily: toOp(MissionOp.self).map(QueuedOp.mission)
+        case AddressNoteOp.outboxFamily: toOp(AddressNoteOp.self).map(QueuedOp.addressNote)
+        default: nil
+        }
     }
 
     func toOp<Op: OutboxOp>(_ type: Op.Type) -> Op? {
