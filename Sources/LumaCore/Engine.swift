@@ -176,12 +176,7 @@ public final class Engine {
         self.gadgets = GadgetLibrary(catalog: fridaReleases)
         self.virtualMachines = VirtualMachineManager(
             deviceManager: deviceManager, store: store, dataDirectory: dataDirectory, releases: fridaReleases)
-        self.collaboration = CollaborationSession(
-            deviceManager: deviceManager,
-            store: store,
-            portalAddress: BackendConfig.portalAddress,
-            portalCertificate: BackendConfig.certificate
-        )
+        self.collaboration = CollaborationSession(connection: .shared, store: store)
 
         let resolvedTokenStore = tokenStore ?? defaultTokenStore(dataDirectory: dataDirectory)
 

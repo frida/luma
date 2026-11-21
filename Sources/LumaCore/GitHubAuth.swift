@@ -119,6 +119,7 @@ public final class GitHubAuth {
         token = nil
         currentUser = nil
         state = .signedOut
+        await PortalConnection.shared.disconnect()
     }
 
     private func refreshCurrentUser() async {

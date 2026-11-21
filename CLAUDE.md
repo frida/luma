@@ -242,6 +242,13 @@ is gitignored — it is produced at build time.
   the OAuth device flow and token storage; `Engine.startCollaboration`
   awaits `gitHubAuth.requestToken()`, which suspends until the host
   finishes presenting the sign-in sheet.
+- **`PortalConnection`** — the one connection to the portal, shared by
+  every lab, the welcome screen and the store, since frida-core keeps one
+  device per address and the server one lab per connection. Users retain a
+  `Lease` and release it; the device goes away when the last one does, or
+  for everyone when `GitHubAuth` signs out. It keeps the `+welcome` for
+  whoever arrives later, numbers requests across all users, and hands every
+  notification and the detach to each of them.
 
 - **Canvas (`CanvasScene`, `CanvasDrawable`, `CanvasRegistry`)** — a
   scene the image holds by handle and changes; the host draws it.
