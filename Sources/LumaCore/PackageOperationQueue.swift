@@ -17,6 +17,7 @@ public final class PackageOperationQueue {
             }
 
             if !isRunning {
+                isRunning = true
                 Task { [self] in
                     await runNext()
                 }
@@ -30,7 +31,6 @@ public final class PackageOperationQueue {
             return
         }
 
-        isRunning = true
         let op = pending.removeFirst()
         await op()
         await runNext()
