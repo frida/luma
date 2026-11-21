@@ -6,13 +6,11 @@ struct ModuleSidebarChildren: View {
     let engine: Engine
     @Binding var selection: SidebarItemID?
 
-    @State private var expanded: Set<ProcessModule.ID> = []
-
     var body: some View {
         let modules = engine.session(id: sessionID)?.lastKnownModules ?? []
         let highlights = modules.sidebarHighlights(mainModule: mainModule, selectedID: selectedModuleID)
         ForEach(highlights) { module in
-            let isExpanded = expanded.contains(module.id)
+            let isExpanded = engine.sidebarExpansion(forSessionID: sessionID, moduleID: module.id) == .expanded
             ModuleSidebarRow(
                 sessionID: sessionID,
                 module: module,
@@ -24,11 +22,6 @@ struct ModuleSidebarChildren: View {
             .sidebarItemTag(SidebarItemID.module(sessionID, module.id))
             if isExpanded {
                 ModuleContentsSidebarRows(sessionID: sessionID, module: module, engine: engine, selection: $selection)
-            }
-        }
-        .onChange(of: selection, initial: true) {
-            if let id = selection?.moduleLocation?.moduleID {
-                expanded.insert(id)
             }
         }
         if modules.count > highlights.count {
@@ -53,11 +46,8 @@ struct ModuleSidebarChildren: View {
     }
 
     private func toggle(_ moduleID: ProcessModule.ID) {
-        if expanded.contains(moduleID) {
-            expanded.remove(moduleID)
-        } else {
-            expanded.insert(moduleID)
-        }
+        let current = engine.sidebarExpansion(forSessionID: sessionID, moduleID: moduleID)
+        engine.setSidebarExpansion(sessionID: sessionID, moduleID: moduleID, current == .expanded ? .collapsed : .expanded)
     }
 }
 
@@ -119,17 +109,11 @@ private struct ModuleContentsSidebarRows: View {
     @Binding var selection: SidebarItemID?
 
     @State private var outline: ModuleOutline?
-    @State private var areSwiftTypesExpanded = false
 
     var body: some View {
         categoryRow(.exports)
             .task(id: outlineKey) {
                 await loadOutline()
-            }
-            .onChange(of: selection, initial: true) {
-                if case .swiftType(sessionID, module.id, _) = selection {
-                    areSwiftTypesExpanded = true
-                }
             }
         categoryRow(.imports)
         categoryRow(.symbols)
@@ -138,7 +122,7 @@ private struct ModuleContentsSidebarRows: View {
             swiftTypesRow(count: nil, canExpand: false)
         case .available(let types):
             swiftTypesRow(count: types.count, canExpand: !types.isEmpty)
-            if areSwiftTypesExpanded {
+            if swiftTypesExpansion == .expanded {
                 SwiftTypeSidebarChildren(sessionID: sessionID, module: module, types: types, selection: $selection)
             }
         case .absent, nil:
@@ -165,13 +149,22 @@ private struct ModuleContentsSidebarRows: View {
         )
         .overlay(alignment: .leading) {
             SidebarDisclosure(
-                isExpanded: areSwiftTypesExpanded,
+                isExpanded: swiftTypesExpansion == .expanded,
                 canToggle: canExpand,
                 indent: sidebarGreatGrandchildIndent,
-                onToggle: { areSwiftTypesExpanded.toggle() }
+                onToggle: toggleSwiftTypes
             )
         }
         .sidebarItemTag(SidebarItemID.swiftTypes(sessionID, module.id))
+    }
+
+    private var swiftTypesExpansion: SidebarExpansion {
+        engine.swiftTypesExpansion(forSessionID: sessionID, moduleID: module.id)
+    }
+
+    private func toggleSwiftTypes() {
+        let next: SidebarExpansion = swiftTypesExpansion == .expanded ? .collapsed : .expanded
+        engine.setSwiftTypesExpansion(sessionID: sessionID, moduleID: module.id, next)
     }
 
     private var outlineKey: String {

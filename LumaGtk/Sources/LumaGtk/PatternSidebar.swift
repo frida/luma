@@ -34,8 +34,6 @@ final class PatternSidebar {
     private let window: Gtk.Window
     private var rows: [Row] = []
     private var outlines: [String: [PatternTypeSummary]] = [:]
-    private var expandedSources: Set<String> = []
-    private var isExpanded = true
     private var selection: PatternSidebarSelection?
     private var isSelectingProgrammatically = false
 
@@ -76,8 +74,8 @@ final class PatternSidebar {
     func select(_ newSelection: PatternSidebarSelection) {
         selection = newSelection
         if let sourceID = newSelection.sourceID {
-            isExpanded = true
-            expandedSources.insert(sourceID)
+            engine.setSidebarExpansion(section: .patterns, .expanded)
+            engine.setSidebarExpansion(patternSourceID: sourceID, .expanded)
         }
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -150,8 +148,12 @@ final class PatternSidebar {
         return [.header] + (isExpanded ? sources.flatMap(rows(of:)) : [])
     }
 
+    private var isExpanded: Bool {
+        engine.sidebarExpansion(of: .patterns) == .expanded
+    }
+
     private func rows(of source: PatternSource) -> [Row] {
-        guard expandedSources.contains(source.id) else { return [.source(source.id)] }
+        guard engine.sidebarExpansion(forPatternSourceID: source.id) == .expanded else { return [.source(source.id)] }
         let types = outlines[source.id] ?? []
         let highlights = types.sidebarHighlights(selectedID: selectedTypeName(in: source.id))
         let typeRows = highlights.map { Row.type(sourceID: source.id, name: $0.name) }
@@ -226,7 +228,7 @@ final class PatternSidebar {
             chevron.onClicked { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self else { return }
-                    self.isExpanded.toggle()
+                    self.engine.setSidebarExpansion(section: .patterns, self.isExpanded ? .collapsed : .expanded)
                     self.render()
                 }
             }
@@ -301,8 +303,8 @@ final class PatternSidebar {
         guard outlines[source.id]?.isEmpty == false else {
             return Box(orientation: .horizontal, spacing: 0)
         }
-        let isSourceExpanded = expandedSources.contains(source.id)
-        let image = Gtk.Image(iconName: isSourceExpanded ? "pan-down-symbolic" : "pan-end-symbolic")
+        let sourceExpansion = engine.sidebarExpansion(forPatternSourceID: source.id)
+        let image = Gtk.Image(iconName: sourceExpansion == .expanded ? "pan-down-symbolic" : "pan-end-symbolic")
         image.pixelSize = 12
         image.add(cssClass: "dim-label")
         let button = Button()
@@ -313,11 +315,7 @@ final class PatternSidebar {
         button.onClicked { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                if isSourceExpanded {
-                    self.expandedSources.remove(source.id)
-                } else {
-                    self.expandedSources.insert(source.id)
-                }
+                self.engine.setSidebarExpansion(patternSourceID: source.id, sourceExpansion == .expanded ? .collapsed : .expanded)
                 self.render()
             }
         }
@@ -446,7 +444,6 @@ final class PatternSidebar {
             }
             guard let self else { return }
             self.outlines = outlined
-            self.expandedSources.formIntersection(sources.map(\.id))
             self.render()
         }
     }

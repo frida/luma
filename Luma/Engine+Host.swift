@@ -4,7 +4,30 @@ import LumaCore
 extension Engine {
     var selectedSidebarItem: SidebarItemID? {
         get { decodedSidebarItem(from: projectUIState.selectedItemJSON) }
-        set { setSelectedItemJSON(encodedSidebarItem(newValue)) }
+        set {
+            if let newValue {
+                revealInSidebar(newValue)
+            }
+            setSelectedItemJSON(encodedSidebarItem(newValue))
+        }
+    }
+
+    private func revealInSidebar(_ item: SidebarItemID) {
+        if let sessionID = item.sessionID {
+            setSidebarExpansion(sessionID: sessionID, .expanded)
+        }
+        if let location = item.moduleLocation {
+            setSidebarExpansion(sessionID: location.sessionID, moduleID: location.moduleID, .expanded)
+        }
+        switch item {
+        case .swiftType(let sessionID, let moduleID, _):
+            setSwiftTypesExpansion(sessionID: sessionID, moduleID: moduleID, .expanded)
+        case .pattern(let sourceID), .patternType(let sourceID, _):
+            setSidebarExpansion(section: .patterns, .expanded)
+            setSidebarExpansion(patternSourceID: sourceID, .expanded)
+        default:
+            break
+        }
     }
 
     private func decodedSidebarItem(from json: String?) -> SidebarItemID? {

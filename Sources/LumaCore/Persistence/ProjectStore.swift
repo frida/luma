@@ -310,6 +310,19 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    public func fetchAllSessionSidebarStates() throws -> [UUID: SessionSidebarState] {
+        try db.read { db in
+            let rows = try SessionSidebarState.fetchAll(db)
+            return Dictionary(uniqueKeysWithValues: rows.map { ($0.sessionID, $0) })
+        }
+    }
+
+    public func save(_ state: SessionSidebarState) throws {
+        try db.write { db in
+            try state.save(db)
+        }
+    }
+
     public func fetchAllCustomInstrumentDefUIStates() throws -> [UUID: CustomInstrumentDefUIState] {
         try db.read { db in
             let rows = try CustomInstrumentDefUIState.fetchAll(db)
@@ -1233,6 +1246,18 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    public func fetchProjectSidebarState() throws -> ProjectSidebarState {
+        try db.read { db in
+            try ProjectSidebarState.fetchOne(db) ?? ProjectSidebarState()
+        }
+    }
+
+    public func save(_ state: ProjectSidebarState) throws {
+        try db.write { db in
+            try state.save(db)
+        }
+    }
+
     public func fetchTargetPickerState() throws -> TargetPickerState {
         try db.read { db in
             try TargetPickerState.fetchOne(db) ?? TargetPickerState()
@@ -1355,6 +1380,13 @@ public final class ProjectStore: Sendable {
             t.column("repl_language", .text).notNull().defaults(to: REPLLanguage.javascript.rawValue)
             t.column("repl_draft", .text)
             t.column("repl_seek_anchor", .text)
+        }
+
+        try db.create(table: "session_sidebar_state", ifNotExists: true) { t in
+            t.primaryKey("session_id", .text).notNull()
+                .references("process_session", onDelete: .cascade)
+            t.column("expanded_modules", .text).notNull().defaults(to: "[]")
+            t.column("expanded_swift_type_lists", .text).notNull().defaults(to: "[]")
         }
 
         try db.create(table: "address_insight", ifNotExists: true) { t in
@@ -1586,6 +1618,12 @@ public final class ProjectStore: Sendable {
             t.column("pharo_snippets_json", .text)
             t.column("pharo_page_width", .double)
             t.column("pharo_page_maximized", .boolean).notNull().defaults(to: false)
+        }
+
+        try db.create(table: "project_sidebar_state", ifNotExists: true) { t in
+            t.primaryKey("id", .text).notNull()
+            t.column("collapsed_sections", .text).notNull().defaults(to: "[]")
+            t.column("expanded_pattern_sources", .text).notNull().defaults(to: "[]")
         }
 
         try db.create(table: "target_picker_state", ifNotExists: true) { t in

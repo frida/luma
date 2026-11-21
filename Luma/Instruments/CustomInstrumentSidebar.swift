@@ -5,12 +5,13 @@ import UniformTypeIdentifiers
 struct CustomInstrumentsSidebarSection: View {
     let engine: Engine
     @Binding var selection: SidebarItemID?
+    @Binding var isSectionExpanded: Bool
 
     private var defs: [LumaCore.CustomInstrumentDef] { engine.customInstruments.defs }
 
     var body: some View {
         if !defs.isEmpty {
-            Section("Custom Instruments") {
+            Section("Custom Instruments", isExpanded: $isSectionExpanded) {
                 ForEach(defs) { def in
                     let auxiliaryFiles = auxiliaryFiles(for: def)
                     let isExpanded = engine.sidebarExpansion(forCustomInstrumentDefID: def.id) == .expanded

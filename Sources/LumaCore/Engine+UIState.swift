@@ -123,6 +123,42 @@ extension Engine {
         }
     }
 
+    public func setSidebarExpansion(sessionID: UUID, moduleID: String, _ expansion: SidebarExpansion) {
+        mutateSessionSidebarState(sessionID: sessionID) { state in
+            switch expansion {
+            case .expanded: state.expandedModules.insert(moduleID)
+            case .collapsed: state.expandedModules.remove(moduleID)
+            }
+        }
+    }
+
+    public func setSwiftTypesExpansion(sessionID: UUID, moduleID: String, _ expansion: SidebarExpansion) {
+        mutateSessionSidebarState(sessionID: sessionID) { state in
+            switch expansion {
+            case .expanded: state.expandedSwiftTypeLists.insert(moduleID)
+            case .collapsed: state.expandedSwiftTypeLists.remove(moduleID)
+            }
+        }
+    }
+
+    public func setSidebarExpansion(section: SidebarSection, _ expansion: SidebarExpansion) {
+        mutateProjectSidebarState { state in
+            switch expansion {
+            case .expanded: state.collapsedSections.remove(section)
+            case .collapsed: state.collapsedSections.insert(section)
+            }
+        }
+    }
+
+    public func setSidebarExpansion(patternSourceID: String, _ expansion: SidebarExpansion) {
+        mutateProjectSidebarState { state in
+            switch expansion {
+            case .expanded: state.expandedPatternSources.insert(patternSourceID)
+            case .collapsed: state.expandedPatternSources.remove(patternSourceID)
+            }
+        }
+    }
+
     public func setLastSelectedModuleID(sessionID: UUID, moduleID: String?) {
         mutateSessionUIState(sessionID: sessionID) { $0.lastSelectedModuleID = moduleID }
     }
@@ -155,6 +191,30 @@ extension Engine {
         }
     }
 
+    private func mutateSessionSidebarState(sessionID: UUID, _ mutate: (inout SessionSidebarState) -> Void) {
+        var state = sessionSidebarStates[sessionID] ?? SessionSidebarState(sessionID: sessionID)
+        mutate(&state)
+        guard state != sessionSidebarStates[sessionID] else { return }
+        sessionSidebarStates[sessionID] = state
+
+        let saved = state
+        Task { @MainActor [weak self] in
+            try? self?.store.save(saved)
+        }
+    }
+
+    private func mutateProjectSidebarState(_ mutate: (inout ProjectSidebarState) -> Void) {
+        var state = projectSidebarState
+        mutate(&state)
+        guard state != projectSidebarState else { return }
+        projectSidebarState = state
+
+        let saved = state
+        Task { @MainActor [weak self] in
+            try? self?.store.save(saved)
+        }
+    }
+
     public func sidebarExpansion(forSessionID sessionID: UUID) -> SidebarExpansion {
         sessionUIStates[sessionID]?.sidebarExpansion ?? .expanded
     }
@@ -174,6 +234,24 @@ extension Engine {
     public func hooksExpansion(forSessionID sessionID: UUID, instrumentID: UUID) -> SidebarExpansion {
         let collapsed = sessionUIStates[sessionID]?.collapsedHookInstruments.contains(instrumentID) ?? false
         return collapsed ? .collapsed : .expanded
+    }
+
+    public func sidebarExpansion(forSessionID sessionID: UUID, moduleID: String) -> SidebarExpansion {
+        let isExpanded = sessionSidebarStates[sessionID]?.expandedModules.contains(moduleID) ?? false
+        return isExpanded ? .expanded : .collapsed
+    }
+
+    public func swiftTypesExpansion(forSessionID sessionID: UUID, moduleID: String) -> SidebarExpansion {
+        let isExpanded = sessionSidebarStates[sessionID]?.expandedSwiftTypeLists.contains(moduleID) ?? false
+        return isExpanded ? .expanded : .collapsed
+    }
+
+    public func sidebarExpansion(of section: SidebarSection) -> SidebarExpansion {
+        projectSidebarState.collapsedSections.contains(section) ? .collapsed : .expanded
+    }
+
+    public func sidebarExpansion(forPatternSourceID sourceID: String) -> SidebarExpansion {
+        projectSidebarState.expandedPatternSources.contains(sourceID) ? .expanded : .collapsed
     }
 
     public func lastSelectedModuleID(forSessionID sessionID: UUID) -> String? {

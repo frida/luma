@@ -27,6 +27,26 @@ enum SidebarItemID: Codable, Hashable {
 }
 
 extension SidebarItemID {
+    var sessionID: UUID? {
+        switch self {
+        case .session(let id),
+            .repl(let id),
+            .files(let id),
+            .module(let id, _),
+            .moduleSymbols(let id, _, _),
+            .swiftTypes(let id, _),
+            .swiftType(let id, _, _),
+            .thread(let id, _),
+            .instrument(let id, _),
+            .instrumentComponent(let id, _, _),
+            .insight(let id, _),
+            .itrace(let id, _):
+            return id
+        default:
+            return nil
+        }
+    }
+
     var moduleLocation: (sessionID: UUID, moduleID: String)? {
         switch self {
         case .module(let sessionID, let moduleID),

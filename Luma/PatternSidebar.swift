@@ -7,14 +7,13 @@ struct PatternsSidebarRows: View {
     @Binding var selection: SidebarItemID?
 
     @State private var outlines: [String: [PatternTypeSummary]] = [:]
-    @State private var expanded: Set<String> = []
-    @AppStorage("sidebar.patterns.expansion") private var expansion: SidebarExpansion = .expanded
 
     private var sources: [PatternSource] { engine.patterns.sources }
+    private var expansion: SidebarExpansion { engine.sidebarExpansion(of: .patterns) }
 
     var body: some View {
         SidebarPatternsRow(count: sources.count, isExpanded: expansion == .expanded) {
-            expansion = expansion == .expanded ? .collapsed : .expanded
+            engine.setSidebarExpansion(section: .patterns, expansion == .expanded ? .collapsed : .expanded)
         }
         .sidebarItemTag(SidebarItemID.patterns)
         if sources.isEmpty {
@@ -22,7 +21,7 @@ struct PatternsSidebarRows: View {
         }
         ForEach(expansion == .expanded ? sources : []) { source in
             let types = outlines[source.id] ?? []
-            let isExpanded = expanded.contains(source.id)
+            let isExpanded = engine.sidebarExpansion(forPatternSourceID: source.id) == .expanded
             SidebarPatternRow(
                 source: source,
                 engine: engine,
@@ -39,29 +38,11 @@ struct PatternsSidebarRows: View {
         .task(id: sources) {
             await outline()
         }
-        .onChange(of: selection, initial: true) {
-            if let selectedSource {
-                expansion = .expanded
-                expanded.insert(selectedSource)
-            }
-        }
-    }
-
-    private var selectedSource: String? {
-        switch selection {
-        case .pattern(let id), .patternType(let id, _):
-            return id
-        default:
-            return nil
-        }
     }
 
     private func toggle(_ sourceID: String) {
-        if expanded.contains(sourceID) {
-            expanded.remove(sourceID)
-        } else {
-            expanded.insert(sourceID)
-        }
+        let current = engine.sidebarExpansion(forPatternSourceID: sourceID)
+        engine.setSidebarExpansion(patternSourceID: sourceID, current == .expanded ? .collapsed : .expanded)
     }
 
     private func outline() async {
@@ -72,7 +53,6 @@ struct PatternsSidebarRows: View {
         }
         guard !Task.isCancelled else { return }
         outlines = outlined
-        expanded.formIntersection(sources.map(\.id))
     }
 }
 

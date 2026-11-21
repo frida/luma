@@ -29,7 +29,6 @@ struct SidebarView: View {
         ScrollViewReader { proxy in
             sidebarList
                 .onChange(of: selection) { _, newSelection in
-                    ensureSessionExpanded(for: newSelection)
                     ensureVisible(newSelection, using: proxy)
                 }
         }
@@ -51,7 +50,7 @@ struct SidebarView: View {
                 PatternsSidebarRows(engine: engine, selection: $selection)
             }
 
-            Section("Sessions") {
+            Section("Sessions", isExpanded: expansionBinding(for: .sessions)) {
                 ForEach(sessions) { session in
                     let node = engine.node(forSessionID: session.id)
                     let instruments = engine.instrumentsBySession[session.id] ?? []
@@ -122,10 +121,14 @@ struct SidebarView: View {
 
             }
 
-            CustomInstrumentsSidebarSection(engine: engine, selection: $selection)
+            CustomInstrumentsSidebarSection(
+                engine: engine,
+                selection: $selection,
+                isSectionExpanded: expansionBinding(for: .customInstruments)
+            )
 
             if !packages.isEmpty {
-                Section("Packages") {
+                Section("Packages", isExpanded: expansionBinding(for: .packages)) {
                     ForEach(packages) { pkg in
                         SidebarPackageRow(package: pkg)
                             .sidebarItemTag(SidebarItemID.package(pkg.id))
@@ -136,37 +139,17 @@ struct SidebarView: View {
         .listStyle(.sidebar)
     }
 
+    private func expansionBinding(for section: SidebarSection) -> Binding<Bool> {
+        Binding(
+            get: { engine.sidebarExpansion(of: section) == .expanded },
+            set: { engine.setSidebarExpansion(section: section, $0 ? .expanded : .collapsed) }
+        )
+    }
+
     private func ensureVisible(_ selection: SidebarItemID?, using proxy: ScrollViewProxy) {
         guard let selection else { return }
         DispatchQueue.main.async {
             proxy.scrollTo(selection, anchor: nil)
-        }
-    }
-
-    private func ensureSessionExpanded(for newSelection: SidebarItemID?) {
-        guard let sessionID = sessionID(in: newSelection),
-            engine.sidebarExpansion(forSessionID: sessionID) == .collapsed
-        else { return }
-        engine.setSidebarExpansion(sessionID: sessionID, .expanded)
-    }
-
-    private func sessionID(in selection: SidebarItemID?) -> UUID? {
-        switch selection {
-        case .session(let id),
-            .repl(let id),
-            .files(let id),
-            .module(let id, _),
-            .moduleSymbols(let id, _, _),
-            .swiftTypes(let id, _),
-            .swiftType(let id, _, _),
-            .thread(let id, _),
-            .instrument(let id, _),
-            .instrumentComponent(let id, _, _),
-            .insight(let id, _),
-            .itrace(let id, _):
-            return id
-        default:
-            return nil
         }
     }
 

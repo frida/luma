@@ -38,7 +38,7 @@ final class MainWindow: InstrumentUIHost {
     private let missionsHeaderRow: ListBoxRow
     private var missionsExpansionChevron: Gtk.Image!
     private var missionsExpansionButton: Button!
-    private var missionsExpanded: Bool = true
+    private var sectionExpanders: [LumaCore.SidebarSection: Expander] = [:]
     private var isReconcilingSidebar: Bool = false
     private var pendingSidebarGroupReconciles: [String: Bool] = [:]
     private var sidebarGroupReconcileTask: Task<Void, Never>?
@@ -78,8 +78,6 @@ final class MainWindow: InstrumentUIHost {
     private var currentITraceDetail: ITraceDetailView?
     private var currentITraceID: UUID?
     private var currentModulePane: AnyObject?
-    private var expandedModules: Set<String> = []
-    private var expandedSwiftTypeLists: Set<String> = []
     private var moduleOutlines: [String: ModuleOutline] = [:]
     private var pendingModuleOutlines: Set<String> = []
     private var currentThreadPane: ThreadDetailPane?
@@ -649,6 +647,8 @@ final class MainWindow: InstrumentUIHost {
         renderPackages(engine.installedPackages)
         let initialMissions = (try? engine.store.fetchMissions()) ?? []
         renderMissions(initialMissions)
+        applyMissionsExpansion()
+        applySectionExpansions(engine)
         engine.onMissionsChanged = { [weak self] missions in
             self?.renderMissions(missions)
         }
@@ -945,7 +945,7 @@ final class MainWindow: InstrumentUIHost {
                 missionsListBox.remove(child: stale)
             }
             let row = makeMissionSidebarRow(mission)
-            row.visible = missionsExpanded
+            row.visible = missionsExpansion == .expanded
             missionSidebarRows[mission.id] = row
             missionsListBox.insert(child: row, position: index + 1)
         }
@@ -958,7 +958,7 @@ final class MainWindow: InstrumentUIHost {
         missionSidebarRows.removeAll()
         for mission in missions {
             let row = makeMissionSidebarRow(mission)
-            row.visible = missionsExpanded
+            row.visible = missionsExpansion == .expanded
             missionSidebarRows[mission.id] = row
             missionsListBox.append(child: row)
         }
@@ -1086,13 +1086,22 @@ final class MainWindow: InstrumentUIHost {
     }
 
     private func toggleMissionsExpansion() {
-        missionsExpanded.toggle()
-        let iconName = missionsExpanded ? "pan-down-symbolic" : "pan-end-symbolic"
-        missionsExpansionChevron.set(name: iconName)
-        missionsExpansionButton.tooltipText = missionsExpanded ? "Hide missions" : "Show missions"
+        guard let engine else { return }
+        engine.setSidebarExpansion(section: .missions, missionsExpansion == .expanded ? .collapsed : .expanded)
+        applyMissionsExpansion()
+    }
+
+    private func applyMissionsExpansion() {
+        let isExpanded = missionsExpansion == .expanded
+        missionsExpansionChevron.set(name: isExpanded ? "pan-down-symbolic" : "pan-end-symbolic")
+        missionsExpansionButton.tooltipText = isExpanded ? "Hide missions" : "Show missions"
         for index in missionRowIDs.indices {
-            missionsListBox.getRowAt(index: index + 1)?.visible = missionsExpanded
+            missionsListBox.getRowAt(index: index + 1)?.visible = isExpanded
         }
+    }
+
+    private var missionsExpansion: SidebarExpansion {
+        engine?.sidebarExpansion(of: .missions) ?? .expanded
     }
 
     private func missionDisplayTitle(_ mission: Mission) -> String {
@@ -1290,12 +1299,7 @@ final class MainWindow: InstrumentUIHost {
         headerLabel.add(cssClass: "dim-label")
         sessionsHeaderLabel = headerLabel
 
-        let expander = Expander(label: "")
-        expander.set(labelWidget: headerLabel)
-        expander.set(child: sessionsList)
-        expander.expanded = true
-        expander.marginStart = 4
-        expander.marginEnd = 4
+        let expander = makeSectionExpander(.sessions, headerLabel: headerLabel, child: sessionsList)
 
         let column = Box(orientation: .vertical, spacing: 0)
         column.marginTop = 12
@@ -1326,12 +1330,7 @@ final class MainWindow: InstrumentUIHost {
         headerLabel.add(cssClass: "dim-label")
         customInstrumentsHeaderLabel = headerLabel
 
-        let expander = Expander(label: "")
-        expander.set(labelWidget: headerLabel)
-        expander.set(child: customInstrumentsList)
-        expander.expanded = true
-        expander.marginStart = 4
-        expander.marginEnd = 4
+        let expander = makeSectionExpander(.customInstruments, headerLabel: headerLabel, child: customInstrumentsList)
 
         let column = Box(orientation: .vertical, spacing: 0)
         column.marginTop = 12
@@ -1913,18 +1912,35 @@ final class MainWindow: InstrumentUIHost {
         headerLabel.add(cssClass: "dim-label")
         packagesHeaderLabel = headerLabel
 
-        let expander = Expander(label: "")
-        expander.set(labelWidget: headerLabel)
-        expander.set(child: packagesList)
-        expander.expanded = true
-        expander.marginStart = 4
-        expander.marginEnd = 4
+        let expander = makeSectionExpander(.packages, headerLabel: headerLabel, child: packagesList)
 
         packagesSection.marginTop = 12
         packagesSection.append(child: expander)
         packagesSection.visible = false
         packagesSidebarSection = packagesSection
         return packagesSection
+    }
+
+    private func makeSectionExpander(_ section: LumaCore.SidebarSection, headerLabel: Label, child: ListBox) -> Expander {
+        let expander = Expander(label: "")
+        expander.set(labelWidget: headerLabel)
+        expander.set(child: child)
+        expander.expanded = true
+        expander.marginStart = 4
+        expander.marginEnd = 4
+        expander.onNotifyExpanded { [weak self] expander, _ in
+            MainActor.assumeIsolated {
+                self?.engine?.setSidebarExpansion(section: section, expander.expanded ? .expanded : .collapsed)
+            }
+        }
+        sectionExpanders[section] = expander
+        return expander
+    }
+
+    private func applySectionExpansions(_ engine: Engine) {
+        for (section, expander) in sectionExpanders {
+            expander.expanded = engine.sidebarExpansion(of: section) == .expanded
+        }
     }
 
     private func buildDetailPane() -> Adw.ToolbarView {
@@ -3032,8 +3048,7 @@ final class MainWindow: InstrumentUIHost {
             guard kind.sessionID == sessionID,
                 let row = sessionsList.getRowAt(index: index)
             else { continue }
-            if case .session = kind { continue }
-            row.visible = expansion == .expanded
+            row.visible = isRowVisible(kind)
         }
     }
 
@@ -3329,7 +3344,7 @@ final class MainWindow: InstrumentUIHost {
         for module in highlights {
             let status = engine.moduleAnalysisStatus(sessionID: sessionID, modulePath: module.path)
             let moduleID = module.id
-            let isExpanded = expandedModules.contains(moduleExpansionKey(sessionID: sessionID, moduleID: moduleID))
+            let isExpanded = engine.sidebarExpansion(forSessionID: sessionID, moduleID: moduleID) == .expanded
             let disclosure = SidebarFeatureRow.Disclosure(expansion: isExpanded ? .expanded : .collapsed) { [weak self] in
                 self?.toggleModuleExpansion(sessionID: sessionID, moduleID: moduleID)
             }
@@ -3382,7 +3397,7 @@ final class MainWindow: InstrumentUIHost {
                 onActivate: selectSwiftTypes
             ))
         case .available(let types):
-            let isExpanded = expandedSwiftTypeLists.contains(moduleExpansionKey(sessionID: sessionID, moduleID: moduleID))
+            let isExpanded = engine?.swiftTypesExpansion(forSessionID: sessionID, moduleID: moduleID) == .expanded
             let disclosure = types.isEmpty
                 ? nil
                 : SidebarFeatureRow.Disclosure(expansion: isExpanded ? .expanded : .collapsed) { [weak self] in
@@ -3455,12 +3470,16 @@ final class MainWindow: InstrumentUIHost {
     }
 
     private func toggleModuleExpansion(sessionID: UUID, moduleID: String) {
-        expandedModules.formSymmetricDifference([moduleExpansionKey(sessionID: sessionID, moduleID: moduleID)])
+        guard let engine else { return }
+        let current = engine.sidebarExpansion(forSessionID: sessionID, moduleID: moduleID)
+        engine.setSidebarExpansion(sessionID: sessionID, moduleID: moduleID, current == .expanded ? .collapsed : .expanded)
         scheduleGroupChildrenReconcile(sessionID: sessionID, group: .modules, force: true)
     }
 
     private func toggleSwiftTypesExpansion(sessionID: UUID, moduleID: String) {
-        expandedSwiftTypeLists.formSymmetricDifference([moduleExpansionKey(sessionID: sessionID, moduleID: moduleID)])
+        guard let engine else { return }
+        let current = engine.swiftTypesExpansion(forSessionID: sessionID, moduleID: moduleID)
+        engine.setSwiftTypesExpansion(sessionID: sessionID, moduleID: moduleID, current == .expanded ? .collapsed : .expanded)
         scheduleGroupChildrenReconcile(sessionID: sessionID, group: .modules, force: true)
     }
 
@@ -3622,11 +3641,10 @@ final class MainWindow: InstrumentUIHost {
     }
 
     private func revealModuleContents(of selection: SidebarSelection) {
-        guard let location = selection.moduleLocation else { return }
-        let key = moduleExpansionKey(sessionID: location.sessionID, moduleID: location.moduleID)
-        expandedModules.insert(key)
+        guard let location = selection.moduleLocation, let engine else { return }
+        engine.setSidebarExpansion(sessionID: location.sessionID, moduleID: location.moduleID, .expanded)
         if case .swiftType = selection {
-            expandedSwiftTypeLists.insert(key)
+            engine.setSwiftTypesExpansion(sessionID: location.sessionID, moduleID: location.moduleID, .expanded)
         }
     }
 
