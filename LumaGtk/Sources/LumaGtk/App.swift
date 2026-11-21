@@ -79,7 +79,7 @@ final class LumaApplication {
         for number in [SIGTERM, SIGINT, SIGHUP] {
             signal(number, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
-            source.setEventHandler { [weak self] in
+            source.setEventHandler { @Sendable [weak self] in
                 Task { @MainActor in await self?.shutDownAndQuit() }
             }
             source.resume()
