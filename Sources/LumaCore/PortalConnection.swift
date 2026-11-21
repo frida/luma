@@ -108,7 +108,7 @@ public final class PortalConnection {
 
     private let deviceManager: DeviceManager
     private let address: String
-    private let certificate: String
+    private let certificate: String?
     private var phase: Phase = .idle
     private var generation = 0
     private var greeting: Greeting = .pending
@@ -117,7 +117,7 @@ public final class PortalConnection {
     private var nextRequestID = 0
     private var busTask: Task<Void, Never>?
 
-    public init(deviceManager: DeviceManager, address: String, certificate: String) {
+    public init(deviceManager: DeviceManager, address: String, certificate: String?) {
         self.deviceManager = deviceManager
         self.address = address
         self.certificate = certificate
