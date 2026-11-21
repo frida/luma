@@ -1222,7 +1222,7 @@ jobs:
           name: luma-${{ env.LUMA_VERSION }}-ubuntu-26.04-x86_64.deb
 
       - name: Prepare container
-        uses: pkgforge-dev/anylinux-setup-action@v2
+        uses: pkgforge-dev/anylinux-setup-action@v6
 
       - name: Make AppImage
         run: /bin/sh ./LumaGtk/build-aux/appimage/make-appimage.sh
