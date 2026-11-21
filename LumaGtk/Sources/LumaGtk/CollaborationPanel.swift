@@ -495,8 +495,7 @@ final class CollaborationPanel {
         menuBox.marginTop = 6
         menuBox.marginBottom = 6
 
-        let profileButton = Button(label: "View GitHub Profile")
-        profileButton.add(cssClass: "flat")
+        let profileButton = Self.makeMenuItem("View GitHub Profile")
         profileButton.onClicked { [weak self] button in
             MainActor.assumeIsolated {
                 self?.openGitHubProfile(for: user)
@@ -505,8 +504,19 @@ final class CollaborationPanel {
         }
         menuBox.append(child: profileButton)
 
-        let signOutButton = Button(label: "Sign out")
-        signOutButton.add(cssClass: "flat")
+        let partnerContactHost = Box(orientation: .vertical, spacing: 0)
+        menuBox.append(child: partnerContactHost)
+
+        let privacyPolicyButton = Self.makeMenuItem("Privacy Policy")
+        privacyPolicyButton.onClicked { button in
+            MainActor.assumeIsolated {
+                PrivacyPolicyLink.open(from: button)
+                Self.popdownPopover(containing: button)
+            }
+        }
+        menuBox.append(child: privacyPolicyButton)
+
+        let signOutButton = Self.makeMenuItem("Sign out")
         signOutButton.add(cssClass: "luma-menu-destructive")
         signOutButton.onClicked { [weak self] button in
             MainActor.assumeIsolated {
@@ -521,9 +531,52 @@ final class CollaborationPanel {
         menuBox.append(child: signOutButton)
 
         popover.set(child: menuBox)
+        popover.onShow { [weak self, partnerContactHost] _ in
+            MainActor.assumeIsolated { self?.showPartnerContactItem(in: partnerContactHost) }
+        }
         menuButton.set(popover: popover)
 
         headerAvatarHost.append(child: menuButton)
+    }
+
+    private func showPartnerContactItem(in host: Box) {
+        clearChildren(of: host)
+        guard let engine, let account = engine.storefront.account else {
+            host.visible = false
+            return
+        }
+        host.append(child: makePartnerContactToggle(for: account))
+        host.visible = true
+    }
+
+    private func makePartnerContactToggle(for account: StoreAccount) -> CheckButton {
+        let toggle = CheckButton(label: "NowSecure May Contact Me")
+        toggle.add(cssClass: "flat")
+        toggle.active = account.partnerContact == .allowed
+        let choice: PartnerContactChoice = account.partnerContact == .allowed ? .declined : .allowed
+        toggle.onToggled { [weak self] toggle in
+            MainActor.assumeIsolated {
+                guard let self, let engine = self.engine else { return }
+                Self.popdownPopover(containing: toggle)
+                let panel = self.widget
+                Task { @MainActor in
+                    await engine.storefront.answerPartnerContact(choice, reportingFailureOver: panel)
+                }
+            }
+        }
+        return toggle
+    }
+
+    private static func makeMenuItem(_ title: String) -> Button {
+        let label = Label(str: title)
+        label.halign = .start
+        label.xalign = 0
+        label.hexpand = true
+
+        let item = Button()
+        item.set(child: label)
+        item.add(cssClass: "flat")
+        return item
     }
 
     private func refreshLab() {
@@ -1102,8 +1155,8 @@ final class CollaborationPanel {
         }
     }
 
-    private static func popdownPopover(containing button: ButtonRef) {
-        PopoverRef(raw: button.getAncestor(widgetType: gtk_popover_get_type()).ptr).popdown()
+    private static func popdownPopover(containing item: some WidgetProtocol) {
+        PopoverRef(raw: item.getAncestor(widgetType: gtk_popover_get_type()).ptr).popdown()
     }
 }
 

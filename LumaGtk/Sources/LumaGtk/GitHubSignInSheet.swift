@@ -136,6 +136,17 @@ final class GitHubSignInSheet {
         cancelButton.marginTop = 4
         contentBox.append(child: cancelButton)
 
+        let disclosureLabel = Label(str: "")
+        disclosureLabel.setMarkup(
+            str: PrivacyPolicyLink.markup(following: "Signing in gives Luma\u{2019}s server your GitHub profile and email address.")
+        )
+        disclosureLabel.add(cssClass: "caption")
+        disclosureLabel.add(cssClass: "dim-label")
+        disclosureLabel.halign = .center
+        disclosureLabel.justify = .center
+        disclosureLabel.wrap = true
+        contentBox.append(child: disclosureLabel)
+
         copyCodeButton.onClicked { [weak self] _ in
             MainActor.assumeIsolated { self?.copyCode() }
         }

@@ -27,6 +27,7 @@ final class AddInstrumentDialog {
     private let searchEntry: SearchEntry
     private let addButton: Button
     private let detailContainer: Box
+    private let detailBottomBar: Box
     private let storeHeaderRow: StoreSectionHeaderRow
     private let storeLoadingRow: ListBoxRow
     private let storeUnreachableRow: ListBoxRow
@@ -137,6 +138,8 @@ final class AddInstrumentDialog {
         detailContainer.hexpand = true
         detailContainer.vexpand = true
 
+        detailBottomBar = Box(orientation: .vertical, spacing: 0)
+
         storeHeaderRow = StoreSectionHeaderRow { category in
             Task { await storefront.filter(by: category) }
         }
@@ -174,12 +177,16 @@ final class AddInstrumentDialog {
         detailScroll.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
         detailScroll.set(child: detailContainer)
 
+        let detailColumn = Box(orientation: .vertical, spacing: 0)
+        detailColumn.append(child: detailScroll)
+        detailColumn.append(child: detailBottomBar)
+
         let paned = Paned(orientation: .horizontal)
         paned.position = 280
         paned.hexpand = true
         paned.vexpand = true
         paned.startChild = WidgetRef(listPane)
-        paned.endChild = WidgetRef(detailScroll)
+        paned.endChild = WidgetRef(detailColumn)
         paned.shrinkStartChild = false
         paned.shrinkEndChild = false
 
@@ -739,6 +746,9 @@ final class AddInstrumentDialog {
         while let child = detailContainer.firstChild {
             detailContainer.remove(child: child)
         }
+        while let child = detailBottomBar.firstChild {
+            detailBottomBar.remove(child: child)
+        }
         detailContainer.marginStart = 0
         detailContainer.marginEnd = 0
         detailContainer.marginTop = 0
@@ -957,6 +967,7 @@ final class AddInstrumentDialog {
         }
         storeItemPane = pane
         detailContainer.append(child: pane.widget)
+        detailBottomBar.append(child: pane.bottomBar)
         addButton.sensitive = canAdd(item)
     }
 

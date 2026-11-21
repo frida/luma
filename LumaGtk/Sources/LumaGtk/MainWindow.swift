@@ -54,6 +54,7 @@ final class MainWindow: InstrumentUIHost {
     private let detailContainer: Box
     private let detailTopBar = Box(orientation: .vertical, spacing: 0)
     private var detailToolbar: Box?
+    private var partnerContactQuestion: PartnerContactQuestion?
     private lazy var sessionBanner = SessionDetachedBanner(
         actions: SessionDetachedBanner.Actions(
             reattach: { [weak self] in self?.reestablishSession(id: $0.id) },
@@ -594,6 +595,7 @@ final class MainWindow: InstrumentUIHost {
         self.engine = engine
         actionQueuePopover.attach(engine: engine)
         observeProjectCommits(storeInstanceID: engine.store.instanceID)
+        showPartnerContactQuestion(for: engine.storefront)
 
         eventStreamPane.setInitialCollapsed(engine.projectUIState.isEventStreamCollapsed)
         applyEventStreamLayout()
@@ -691,6 +693,12 @@ final class MainWindow: InstrumentUIHost {
         if case .notebook = selection {
             renderDetail()
         }
+    }
+
+    private func showPartnerContactQuestion(for storefront: Storefront) {
+        let question = PartnerContactQuestion(storefront: storefront)
+        partnerContactQuestion = question
+        detailTopBar.prepend(child: question.widget)
     }
 
     private func observeProjectCommits(storeInstanceID: UUID) {

@@ -1,10 +1,14 @@
+import Adw
 import Foundation
 import Gtk
 import LumaCore
 
 extension Storefront {
-    static func signInNote(_ subject: String) -> String {
-        "\(subject) signs you in with GitHub. Luma\u{2019}s server records your GitHub profile, your email address and what you download."
+    static func signInNoteMarkup(_ subject: String) -> String {
+        PrivacyPolicyLink.markup(
+            following: "\(subject) signs you in with GitHub. Luma\u{2019}s server records your GitHub profile, your email address "
+                + "and what you download."
+        )
     }
 
     func sponsorshipText(for item: StoreItem) -> String? {
@@ -29,5 +33,17 @@ extension Storefront {
         let launcher = UriLauncher(uri: account.sponsorURL.absoluteString)
         let parentWindow = anchor.root?.ptr.map { Gtk.WindowRef(raw: $0) }
         launcher.launch(parent: parentWindow, cancellable: nil, callback: nil, userData: nil)
+    }
+
+    func answerPartnerContact(_ choice: PartnerContactChoice, reportingFailureOver anchor: some Gtk.WidgetProtocol) async {
+        do {
+            try await answerPartnerContact(choice)
+        } catch {
+            let alert = Adw.AlertDialog(heading: "Could not save your answer", body: error.localizedDescription)
+            alert.addResponse(id: "ok", label: "OK")
+            alert.setDefault(response: "ok")
+            alert.setClose(response: "ok")
+            alert.present(parent: anchor)
+        }
     }
 }

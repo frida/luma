@@ -101,7 +101,7 @@ final class StoreUpdateBanner {
         details.append(child: sponsorshipLabel)
 
         signInNote = Self.makeNote()
-        signInNote.label = Storefront.signInNote("Updating")
+        signInNote.setMarkup(str: Storefront.signInNoteMarkup("Updating"))
         details.append(child: signInNote)
 
         notesHost = Box(orientation: .vertical, spacing: 8)

@@ -13,6 +13,10 @@ final class StoreItemPane {
     let widget: Box
     private(set) var item: StoreItem
 
+    var bottomBar: Box {
+        partnerContactQuestion.widget
+    }
+
     private let storefront: Storefront
     private let onUninstall: (StoreItem) -> Void
 
@@ -23,6 +27,7 @@ final class StoreItemPane {
     private let installationLabel: Label
     private let sponsorshipLabel: Label
     private let signInNote: Label
+    private let partnerContactQuestion: PartnerContactQuestion
     private let actions: Box
     private let sponsorButton: Button
     private let uninstallButton: Button
@@ -75,8 +80,10 @@ final class StoreItemPane {
         widget.append(child: sponsorshipLabel)
 
         signInNote = Self.makeParagraph(cssClasses: ["caption", "dim-label"])
-        signInNote.label = Storefront.signInNote("Adding it")
+        signInNote.setMarkup(str: Storefront.signInNoteMarkup("Adding it"))
         widget.append(child: signInNote)
+
+        partnerContactQuestion = PartnerContactQuestion(storefront: storefront)
 
         actions = Box(orientation: .horizontal, spacing: 8)
         sponsorButton = Button(label: "")
