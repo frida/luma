@@ -274,9 +274,17 @@ private struct WidgetCanvas: View {
 
     @ViewBuilder
     private func hexView() -> some View {
-        if let hex = state.hex {
-            HexView(data: hex.bytes)
-                .frame(maxHeight: 240)
+        if let instance, let hex = state.hex {
+            PatternDecodeView(
+                data: hex.bytes,
+                baseAddress: hex.baseAddress,
+                sessionID: instance.sessionID,
+                engine: engine,
+                placements: Binding(
+                    get: { engine.placements(forWidget: widget.id, of: instance.id) },
+                    set: { engine.setPlacements($0, forWidget: widget.id, of: instance.id) }
+                )
+            )
         } else {
             Text("No data.").font(.caption).foregroundStyle(.secondary)
         }

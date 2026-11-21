@@ -4,6 +4,7 @@ import Foundation
 import Gdk
 import Gtk
 import LumaCore
+import Observation
 import Pango
 
 @MainActor
@@ -30,7 +31,7 @@ final class InstrumentWidgetsRenderer {
                 definition: definition,
                 snapshot: snapshot,
                 engine: engine,
-                sessionID: instance.sessionID,
+                instance: instance,
                 onAction: { [weak self] action, item in
                     self?.invoke(widget: definition.id, action: action, item: item)
                 },
@@ -107,14 +108,14 @@ private final class WidgetCanvas {
     private var graphView: GraphView?
     private var listView: ListView?
     private var tableView: TableView?
-    private var hexView: HexValueView?
+    private var hexView: HexWidgetView?
     private var consoleWidget: ConsoleWidget?
 
     init(
         definition: InstrumentWidget,
         snapshot: WidgetState,
         engine: Engine,
-        sessionID: UUID,
+        instance: LumaCore.InstrumentInstance,
         onAction: @escaping (_ action: String, _ item: String?) -> Void,
         onClear: @escaping () -> Void,
         onConsoleSubmit: @escaping (_ text: String) -> Void
@@ -170,7 +171,7 @@ private final class WidgetCanvas {
             tableView = view
             column.append(child: view.widget)
         case .hex:
-            let view = HexValueView(initial: snapshot.hex)
+            let view = HexWidgetView(initial: snapshot.hex, engine: engine, instance: instance, widgetID: definition.id)
             hexView = view
             column.append(child: view.widget)
         case .console(let cfg):
@@ -179,7 +180,7 @@ private final class WidgetCanvas {
                 initialEntries: snapshot.consoleEntries,
                 widgetName: definition.name,
                 engine: engine,
-                sessionID: sessionID,
+                sessionID: instance.sessionID,
                 onSubmit: onConsoleSubmit
             )
             consoleWidget = view
@@ -953,36 +954,36 @@ private final class HistogramView {
 }
 
 @MainActor
-private final class HexValueView {
+private final class HexWidgetView {
     let widget: Box
-    private let textView: TextView
+    private let engine: Engine
+    private let instanceID: UUID
+    private let widgetID: String
+    private let decodeView: PatternDecodeView
+    private let emptyLabel: Label
 
-    init(initial: WidgetHexState?) {
+    init(initial: WidgetHexState?, engine: Engine, instance: LumaCore.InstrumentInstance, widgetID: String) {
+        self.engine = engine
+        instanceID = instance.id
+        self.widgetID = widgetID
+        decodeView = PatternDecodeView(
+            engine: engine, sessionID: instance.sessionID, data: initial?.bytes ?? Data(), baseAddress: initial?.baseAddress,
+            placements: engine.placements(forWidget: widgetID, of: instance.id), sizing: .capped
+        ) { [weak engine] placements in
+            engine?.setPlacements(placements, forWidget: widgetID, of: instance.id)
+        }
+        decodeView.widget.hexpand = true
+
+        emptyLabel = Label(str: "No data.")
+        emptyLabel.add(cssClass: "dim-label")
+        emptyLabel.halign = .start
+
         widget = Box(orientation: .vertical, spacing: 0)
+        widget.append(child: decodeView.widget)
+        widget.append(child: emptyLabel)
 
-        let scrolled = ScrolledWindow()
-        scrolled.hexpand = true
-        scrolled.vexpand = true
-        scrolled.setSizeRequest(width: -1, height: 220)
-
-        textView = TextView()
-        textView.editable = false
-        textView.cursorVisible = false
-        textView.monospace = true
-        textView.add(cssClass: "monospace")
-        scrolled.set(child: textView)
-
-        widget.append(child: scrolled)
-
-        if let initial { set(state: initial) }
-    }
-
-    func set(state: WidgetHexState) {
-        textView.buffer.text = format(state: state)
-    }
-
-    func clear() {
-        textView.buffer.text = ""
+        replace(state: initial)
+        followPlacements()
     }
 
     func replace(state: WidgetHexState?) {
@@ -993,19 +994,25 @@ private final class HexValueView {
         }
     }
 
-    private func format(state: WidgetHexState) -> String {
-        let bytes = [UInt8](state.bytes)
-        var lines: [String] = []
-        var offset = 0
-        while offset < bytes.count {
-            let end = min(offset + 16, bytes.count)
-            let row = bytes[offset..<end]
-            let hex = row.map { String(format: "%02x", $0) }.joined(separator: " ")
-            let ascii = row.map { (32...126).contains($0) ? String(UnicodeScalar($0)) : "." }.joined()
-            let address = state.baseAddress &+ UInt64(offset)
-            lines.append(String(format: "%016llx  %-47s  %@", address, hex, ascii) as String)
-            offset = end
+    func set(state: WidgetHexState) {
+        decodeView.setData(state.bytes, baseAddress: state.baseAddress)
+        decodeView.widget.visible = true
+        emptyLabel.visible = false
+    }
+
+    func clear() {
+        decodeView.widget.visible = false
+        emptyLabel.visible = true
+    }
+
+    private func followPlacements() {
+        let placements = withObservationTracking {
+            engine.placements(forWidget: widgetID, of: instanceID)
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.followPlacements()
+            }
         }
-        return lines.joined(separator: "\n")
+        decodeView.setPlacements(placements)
     }
 }

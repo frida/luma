@@ -1234,6 +1234,46 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    public func fetchWidgetPlacements() throws -> [UUID: [String: [PatternPlacement]]] {
+        try db.read { db in
+            var result: [UUID: [String: [PatternPlacement]]] = [:]
+            for row in try Row.fetchAll(db, sql: "SELECT instance_id, widget_id, placements FROM widget_placement") {
+                let instanceID: UUID = row["instance_id"]
+                let widgetID: String = row["widget_id"]
+                result[instanceID, default: [:]][widgetID] = try JSONDecoder().decode([PatternPlacement].self, from: row["placements"])
+            }
+            return result
+        }
+    }
+
+    public func saveWidgetPlacements(_ placements: [PatternPlacement], instanceID: UUID, widgetID: String) throws {
+        let encoded = try JSONEncoder().encode(placements)
+        try db.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO widget_placement (instance_id, widget_id, placements)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(instance_id, widget_id) DO UPDATE SET placements = excluded.placements
+                    """,
+                arguments: [instanceID, widgetID, encoded]
+            )
+        }
+    }
+
+    public func replaceWidgetPlacements(_ placements: [UUID: [String: [PatternPlacement]]]) throws {
+        try db.write { db in
+            for (instanceID, byWidget) in placements {
+                try db.execute(sql: "DELETE FROM widget_placement WHERE instance_id = ?", arguments: [instanceID])
+                for (widgetID, widgetPlacements) in byWidget {
+                    try db.execute(
+                        sql: "INSERT INTO widget_placement (instance_id, widget_id, placements) VALUES (?, ?, ?)",
+                        arguments: [instanceID, widgetID, try JSONEncoder().encode(widgetPlacements)]
+                    )
+                }
+            }
+        }
+    }
+
     public func fetchProjectUIState() throws -> ProjectUIState {
         try db.read { db in
             try ProjectUIState.fetchOne(db) ?? ProjectUIState()
@@ -1606,6 +1646,14 @@ public final class ProjectStore: Sendable {
             t.column("session_id", .text).notNull()
             t.column("state_json", .text).notNull()
             t.column("updated_at", .datetime).notNull()
+            t.primaryKey(["instance_id", "widget_id"])
+        }
+
+        try db.create(table: "widget_placement", ifNotExists: true) { t in
+            t.column("instance_id", .text).notNull()
+                .references("instrument_instance", onDelete: .cascade)
+            t.column("widget_id", .text).notNull()
+            t.column("placements", .blob).notNull()
             t.primaryKey(["instance_id", "widget_id"])
         }
 

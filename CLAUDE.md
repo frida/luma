@@ -225,14 +225,17 @@ is gitignored — it is produced at build time.
   root and defines `__MEMORY__`, since Luma only decodes process memory.
   A lab shares the project's patterns, since a placement is no use to a
   collaborator without the pattern it names. Placements live on a REPL
-  cell, an insight, a notebook entry or an event, and any member may
-  set them. One on a byte array inside a JavaScript value names where
-  those bytes were read (`origin`), which is how several arrays in one
-  value keep theirs apart; one with no origin is on the holder's own
-  dump. Every hex view that can be decoded is the one decode view, and
-  decoding itself is the engine's. The lab's web page cannot decode,
-  so a pinned entry also sends a `PlacementSnapshot` of what its
-  placements decode to.
+  cell, an insight, a notebook entry, an event or a custom instrument's
+  hex widget, and any member may set them. A widget's are kept per
+  instance and widget and applied to whatever bytes it shows; like a
+  cell's and an insight's they travel as `set-placements`, and the join
+  reply carries them as `widget_placements`. One on a byte array inside
+  a JavaScript value names where those bytes were read (`origin`),
+  which is how several arrays in one value keep theirs apart; one with
+  no origin is on the holder's own dump. Every hex view that can be
+  decoded is the one decode view, and decoding itself is the engine's.
+  The lab's web page cannot decode, so a pinned entry also sends a
+  `PlacementSnapshot` of what its placements decode to.
 - **`TraceStore`** — file-backed blob store for raw ITrace data.
   Engine routes reads through `loadTraceData(traceID:sessionID:expectedSize:)`,
   which checks live in-memory pending state, then the local file,

@@ -406,6 +406,21 @@ public enum SessionOp: Sendable {
         public enum Subject: Sendable {
             case replCell(UUID)
             case insight(UUID)
+            case widget(instanceID: UUID, widget: String)
+
+            init?(wireJSON obj: [String: Any]) {
+                if let cellID = (obj["cell_id"] as? String).flatMap(UUID.init(uuidString:)) {
+                    self = .replCell(cellID)
+                } else if let insightID = (obj["insight_id"] as? String).flatMap(UUID.init(uuidString:)) {
+                    self = .insight(insightID)
+                } else if let instanceID = (obj["instance_id"] as? String).flatMap(UUID.init(uuidString:)),
+                    let widget = obj["widget"] as? String
+                {
+                    self = .widget(instanceID: instanceID, widget: widget)
+                } else {
+                    return nil
+                }
+            }
         }
 
         public init(opID: UUID = UUID(), sessionID: UUID, subject: Subject, placements: [PatternPlacement]) {
@@ -555,6 +570,9 @@ public enum SessionOp: Sendable {
                 obj["cell_id"] = cellID.uuidString
             case .insight(let insightID):
                 obj["insight_id"] = insightID.uuidString
+            case .widget(let instanceID, let widget):
+                obj["instance_id"] = instanceID.uuidString
+                obj["widget"] = widget
             }
             obj["placements"] = s.placements.wireJSON
         case .upsertTrace(let u):
@@ -811,9 +829,7 @@ public enum SessionOp: Sendable {
             ))
 
         case "set-placements":
-            let cellID = (obj["cell_id"] as? String).flatMap(UUID.init(uuidString:))
-            let insightID = (obj["insight_id"] as? String).flatMap(UUID.init(uuidString:))
-            guard let subject = cellID.map(SetPlacements.Subject.replCell) ?? insightID.map(SetPlacements.Subject.insight),
+            guard let subject = SetPlacements.Subject(wireJSON: obj),
                 let placements = obj["placements"] as? [[String: Any]]
             else { return nil }
             return .setPlacements(SetPlacements(

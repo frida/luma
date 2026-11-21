@@ -54,6 +54,7 @@ public final class Engine {
     private let _widgetUpdates = AsyncEventSource<WidgetUpdate>()
     public var widgetUpdates: AsyncStream<WidgetUpdate> { _widgetUpdates.makeStream() }
     private var widgetStates: [UUID: [String: WidgetState]] = [:]
+    private var widgetPlacements: [UUID: [String: [PatternPlacement]]] = [:]
 
     public let eventLog = EventLog()
     public let eventChime = EventChime()
@@ -1245,6 +1246,8 @@ public final class Engine {
             case .insight(let insightID):
                 guard let insight = try? store.fetchInsights(sessionID: sessionID).first(where: { $0.id == insightID }) else { return }
                 storePlacements(placements, forInsight: insight)
+            case .widget(let instanceID, let widget):
+                storePlacements(placements, forWidget: widget, of: instanceID)
             }
         }
 
@@ -1300,6 +1303,10 @@ public final class Engine {
 
         collaboration.onWidgetStatesSnapshot = { [weak self] snapshots in
             self?.applyWidgetStateSnapshots(snapshots)
+        }
+
+        collaboration.onWidgetPlacementsSnapshot = { [weak self] placements in
+            self?.adoptWidgetPlacements(placements)
         }
 
         collaboration.onReplEvalTimedOut = { [weak self] cellID in
@@ -1414,6 +1421,7 @@ public final class Engine {
 
     private func applyRemoteSessionInstrumentRemoved(sessionID: UUID, instanceID: UUID) {
         try? store.deleteInstrument(id: instanceID)
+        widgetPlacements.removeValue(forKey: instanceID)
         onSessionListChanged?(.instrumentRemoved(id: instanceID, sessionID: sessionID))
     }
 
@@ -1587,6 +1595,9 @@ public final class Engine {
         for instance in (try? store.fetchInstruments(sessionID: sessionID)) ?? [] {
             let status = node(forSessionID: sessionID)?.instruments.first(where: { $0.id == instance.id })?.status
             collaboration.enqueueAddInstrument(sessionID: sessionID, instance: instance, runtimeStatus: status)
+            for (widget, placements) in widgetPlacements[instance.id] ?? [:] where !placements.isEmpty {
+                collaboration.enqueueSetPlacements(placements, sessionID: sessionID, on: .widget(instanceID: instance.id, widget: widget))
+            }
         }
         for insight in (try? store.fetchInsights(sessionID: sessionID)) ?? [] {
             collaboration.enqueueAddInsight(sessionID: sessionID, insight: insight)
@@ -1784,6 +1795,7 @@ public final class Engine {
         }
         #endif
         notebookEntries = (try? store.fetchNotebookEntries()) ?? []
+        widgetPlacements = (try? store.fetchWidgetPlacements()) ?? [:]
         sessions = (try? store.fetchSessions()) ?? []
         for session in sessions {
             rebuildAddressAnnotations(sessionID: session.id)
@@ -3868,6 +3880,7 @@ public final class Engine {
         try? store.deleteInstrument(id: instance.id)
         try? store.deleteWidgetStates(instanceID: instance.id)
         widgetStates.removeValue(forKey: instance.id)
+        widgetPlacements.removeValue(forKey: instance.id)
         onSessionListChanged?(.instrumentRemoved(id: instance.id, sessionID: instance.sessionID))
         rebuildAddressAnnotations(sessionID: instance.sessionID)
         if let sid {
@@ -4743,6 +4756,23 @@ public final class Engine {
         widgetStates[instanceID]?[widget] ?? WidgetState()
     }
 
+    public func placements(forWidget widget: String, of instanceID: UUID) -> [PatternPlacement] {
+        widgetPlacements[instanceID]?[widget] ?? []
+    }
+
+    public func setPlacements(_ placements: [PatternPlacement], forWidget widget: String, of instanceID: UUID) {
+        guard let instance = storePlacements(placements, forWidget: widget, of: instanceID) else { return }
+        collaboration.enqueueSetPlacements(placements, sessionID: instance.sessionID, on: .widget(instanceID: instanceID, widget: widget))
+    }
+
+    @discardableResult
+    private func storePlacements(_ placements: [PatternPlacement], forWidget widget: String, of instanceID: UUID) -> InstrumentInstance? {
+        guard let instance = try? store.fetchInstrument(id: instanceID) else { return nil }
+        widgetPlacements[instanceID, default: [:]][widget] = placements
+        try? store.saveWidgetPlacements(placements, instanceID: instanceID, widgetID: widget)
+        return instance
+    }
+
     private func hydrateWidgetStatesFromStore(_ grouped: [UUID: [InstrumentInstance]]) {
         for instances in grouped.values {
             for instance in instances {
@@ -5262,6 +5292,11 @@ public final class Engine {
                 kind: .snapshot(snapshot.state)
             ))
         }
+    }
+
+    private func adoptWidgetPlacements(_ labPlacements: [UUID: [String: [PatternPlacement]]]) {
+        widgetPlacements.merge(labPlacements) { _, lab in lab }
+        try? store.replaceWidgetPlacements(labPlacements)
     }
 
     private func applyWidgetUpdate(_ update: WidgetUpdate, sessionID: UUID, origin: WidgetUpdateOrigin) {

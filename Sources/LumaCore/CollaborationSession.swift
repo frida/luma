@@ -359,6 +359,7 @@ public final class CollaborationSession {
     public var onPatternSourceNameTaken: ((PatternSourceRecord) -> Void)?
     public var onLabCreated: (() -> Void)?
     public var onWidgetStatesSnapshot: (([WidgetStateSnapshot]) -> Void)?
+    public var onWidgetPlacementsSnapshot: (([UUID: [String: [PatternPlacement]]]) -> Void)?
     public var onChatMessageReceived: ((ChatMessage) -> Void)?
     public var onChatMessageChange: ((ChatMessageChange) -> Void)?
 
@@ -1617,6 +1618,9 @@ public final class CollaborationSession {
         let widgetSnapshots = widgetStateDicts.compactMap(WidgetStateSnapshot.fromWireJSON)
         onWidgetStatesSnapshot?(widgetSnapshots)
 
+        let widgetPlacementDicts = (payload["widget_placements"] as? [JSONObject]) ?? []
+        onWidgetPlacementsSnapshot?(Self.widgetPlacements(of: sessions, from: widgetPlacementDicts))
+
         let missionsArr = (payload["missions"] as? [JSONObject]) ?? []
         let turnsArr = (payload["mission_turns"] as? [JSONObject]) ?? []
         let actionsArr = (payload["mission_actions"] as? [JSONObject]) ?? []
@@ -1641,6 +1645,19 @@ public final class CollaborationSession {
             start + length <= data.count
         else { return nil }
         return Array(data[start..<start + length])
+    }
+
+    private static func widgetPlacements(of sessions: [Session], from entries: [JSONObject]) -> [UUID: [String: [PatternPlacement]]] {
+        let instanceIDs = sessions.flatMap(\.instruments).map(\.id)
+        var placements = Dictionary(uniqueKeysWithValues: instanceIDs.map { ($0, [String: [PatternPlacement]]()) })
+        for entry in entries {
+            guard let instanceID = (entry["instance_id"] as? String).flatMap(UUID.init(uuidString:)),
+                let widget = entry["widget"] as? String,
+                let placementObjs = entry["placements"] as? [[String: Any]]
+            else { continue }
+            placements[instanceID]?[widget] = [PatternPlacement](wireJSON: placementObjs)
+        }
+        return placements
     }
 
     private func handlePortalEvent(_ event: PortalConnection.Event) {
