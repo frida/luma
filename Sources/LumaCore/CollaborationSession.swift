@@ -37,7 +37,7 @@ public final class CollaborationSession {
     }
 
     public struct Member: Identifiable, Hashable, Sendable {
-        public enum Role: String, Sendable { case owner, member }
+        public enum Role: String, Codable, Sendable { case owner, member }
         public enum Presence: String, Sendable { case online, offline }
 
         public let user: UserInfo
@@ -285,6 +285,7 @@ public final class CollaborationSession {
     private(set) public var labPictureData: Data?
     private(set) public var labPictureContentType: String?
     private(set) public var localUser: UserInfo?
+    private var membership: LabMembership?
     private var pendingJoinLabID: String?
     private var replayedOpIDs: Set<UUID> = []
     private var opsOverridingJoinSnapshot: [UUID: SessionOp] = [:]
@@ -295,8 +296,7 @@ public final class CollaborationSession {
     private(set) public var registeredPushPlatforms: Set<String> = []
 
     public var isOwner: Bool {
-        guard let localUser else { return false }
-        return members.contains { $0.user.id == localUser.id && $0.role == .owner }
+        membership?.role == .owner
     }
 
     public func isSelf(_ userID: String) -> Bool {
@@ -375,6 +375,8 @@ public final class CollaborationSession {
     public init(connection: PortalConnection, store: ProjectStore) {
         self.connection = connection
         self.store = store
+        membership = (try? store.fetchCollaborationState().labID).flatMap { try? store.fetchLabMembership(labID: $0) }
+        localUser = membership?.user
     }
 
     public func start(token: String, existingLabID: String?) async {
@@ -415,7 +417,7 @@ public final class CollaborationSession {
         labTitle = nil
         labPictureData = nil
         labPictureContentType = nil
-        localUser = nil
+        localUser = membership?.user
         pendingJoinLabID = nil
         opsOverridingJoinSnapshot = [:]
         pendingCreateOrJoinDispatched = false
@@ -916,6 +918,8 @@ public final class CollaborationSession {
         var collabState = try! store.fetchCollaborationState()
         collabState.labID = nil
         try! store.save(collabState)
+        try! store.deleteLabMemberships()
+        membership = nil
         await stop()
     }
 
@@ -1435,7 +1439,7 @@ public final class CollaborationSession {
 
     private func triggerJoinOrCreateIfReady() {
         guard !pendingCreateOrJoinDispatched else { return }
-        guard localUser != nil else { return }
+        guard case .connecting = status else { return }
         pendingCreateOrJoinDispatched = true
         if let labID = pendingJoinLabID {
             pendingJoinLabID = nil
@@ -1489,6 +1493,7 @@ public final class CollaborationSession {
                 var collabState = try! self.store.fetchCollaborationState()
                 collabState.labID = labID
                 try! self.store.save(collabState)
+                self.remember(LabMembership(labID: labID, user: localUser, role: .owner))
                 self.setStatus(.joined(labID: labID))
                 let now = ISO8601DateFormatter().string(from: Date())
                 self.members = [Member(
@@ -1505,6 +1510,11 @@ public final class CollaborationSession {
                 self.setStatus(.error(message: failure.message))
             }
         }
+    }
+
+    private func remember(_ membership: LabMembership) {
+        try! store.save(membership)
+        self.membership = membership
     }
 
     private func queueProjectForNewLab() {
@@ -1604,8 +1614,9 @@ public final class CollaborationSession {
                 self.labPictureContentType = nil
             }
         }
-        setStatus(.joined(labID: labID))
         members = memberDicts.compactMap(Member.fromJSON)
+        remember(LabMembership(labID: labID, user: localUser, role: members.first { $0.user.id == localUser.id }!.role))
+        setStatus(.joined(labID: labID))
         chatMessages = chatMsgs.compactMap { ChatMessage.fromJSON($0, localUser: localUser) }
         onChatMessageChange?(.reset)
 
@@ -1763,6 +1774,10 @@ public final class CollaborationSession {
                 let idx = members.firstIndex(where: { $0.user.id == userID })
             else { return }
             members[idx].role = role
+            if isSelf(userID), var mine = membership {
+                mine.role = role
+                remember(mine)
+            }
             onMemberRoleChanged?(userID, role)
 
         case ("+presence", let s) where s.count == 3 && s[0] == "labs" && s[2] == "members":

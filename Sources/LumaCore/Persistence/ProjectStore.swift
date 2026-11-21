@@ -973,6 +973,24 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    public func fetchLabMembership(labID: String) throws -> LabMembership? {
+        try db.read { db in
+            try LabMembership.fetchOne(db, key: labID)
+        }
+    }
+
+    public func save(_ membership: LabMembership) throws {
+        try db.write { db in
+            try membership.save(db)
+        }
+    }
+
+    public func deleteLabMemberships() throws {
+        try db.write { db in
+            _ = try LabMembership.deleteAll(db)
+        }
+    }
+
     public func observeCustomInstrumentDefs(
         onChange: @escaping @Sendable ([CustomInstrumentDef]) -> Void
     ) -> StoreObservation {
@@ -1620,6 +1638,12 @@ public final class ProjectStore: Sendable {
         try db.create(table: "project_collaboration_state", ifNotExists: true) { t in
             t.primaryKey("id", .text).notNull()
             t.column("lab_id", .text)
+        }
+
+        try db.create(table: "lab_membership", ifNotExists: true) { t in
+            t.primaryKey("lab_id", .text).notNull()
+            t.column("user", .text).notNull()
+            t.column("role", .text).notNull()
         }
 
         try db.create(table: "custom_instrument_def", ifNotExists: true) { t in
