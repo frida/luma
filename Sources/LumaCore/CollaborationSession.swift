@@ -276,10 +276,8 @@ public final class CollaborationSession {
         }()
     }
 
-    private let deviceManager: DeviceManager
+    private let connection: PortalConnection
     private let store: ProjectStore
-    private let portalAddress: String
-    private let portalCertificate: String
 
     private(set) public var status: Status = .disconnected
     private(set) public var labID: String?
@@ -304,8 +302,7 @@ public final class CollaborationSession {
         userID == localUser?.id
     }
 
-    private var portalDevice: Device?
-    private var portalBusTask: Task<Void, Never>?
+    private var portalLease: PortalConnection.Lease?
 
     private let _statusChanges = AsyncEventSource<Status>()
     public var statusChanges: AsyncStream<Status> { _statusChanges.makeStream() }
@@ -373,19 +370,9 @@ public final class CollaborationSession {
     }
     public var onAuthRejected: ((AuthFailure) async -> Void)?
 
-    private var nextRequestId = 0
-    private var pendingRequests: [String: (Result<JSONObject, AuthFailure>) -> Void] = [:]
-
-    public init(
-        deviceManager: DeviceManager,
-        store: ProjectStore,
-        portalAddress: String,
-        portalCertificate: String
-    ) {
-        self.deviceManager = deviceManager
+    public init(connection: PortalConnection, store: ProjectStore) {
+        self.connection = connection
         self.store = store
-        self.portalAddress = portalAddress
-        self.portalCertificate = portalCertificate
     }
 
     public func start(token: String, existingLabID: String?) async {
@@ -393,29 +380,19 @@ public final class CollaborationSession {
         setStatus(.connecting)
 
         do {
-            let device = try await deviceManager.addRemoteDevice(
-                address: portalAddress,
-                certificate: portalCertificate,
-                origin: nil,
-                token: token,
-                keepaliveInterval: nil
-            )
-            portalDevice = device
-
-            let busEvents = device.bus.events
-            portalBusTask?.cancel()
-            portalBusTask = Task { @MainActor [weak self] in
-                guard let self else { return }
-                for await event in busEvents {
-                    await self.handleBusEvent(event)
-                }
+            let lease = try await connection.retain(token: token) { [weak self] event in
+                self?.handlePortalEvent(event)
             }
-
-            try await device.bus.attach()
+            guard case .connecting = status else {
+                await lease.release()
+                return
+            }
+            portalLease = lease
 
             if let existingLabID {
                 pendingJoinLabID = existingLabID
             }
+            applyWelcome(lease.welcome)
             triggerJoinOrCreateIfReady()
         } catch {
             if let failure = AuthFailure.fromError(error), failure.isAuthRejection {
@@ -428,11 +405,8 @@ public final class CollaborationSession {
     }
 
     public func stop() async {
-        try? await deviceManager.removeRemoteDevice(address: portalAddress)
-
-        portalBusTask?.cancel()
-        portalBusTask = nil
-        portalDevice = nil
+        await portalLease?.release()
+        portalLease = nil
 
         setStatus(.disconnected)
         labID = nil
@@ -447,7 +421,6 @@ public final class CollaborationSession {
         onChatMessageChange?(.reset)
         vapidPublicKey = nil
         registeredPushPlatforms = []
-        pendingRequests.removeAll()
     }
 
     private func sendRequest(
@@ -455,15 +428,10 @@ public final class CollaborationSession {
         type: String,
         payload: JSONObject = [:],
         data: [UInt8]? = nil,
-        onResult: @escaping (Result<JSONObject, AuthFailure>) -> Void
+        onResult: @escaping (Result<PortalConnection.Reply, AuthFailure>) -> Void
     ) {
-        guard let device = portalDevice else { return }
-        nextRequestId += 1
-        let id = "r\(nextRequestId)"
-        pendingRequests[id] = onResult
-        var msg: JSONObject = ["to": path, "type": type, "id": id]
-        if !payload.isEmpty { msg["payload"] = payload }
-        device.bus.post(msg, data: data)
+        guard let portalLease else { return }
+        portalLease.request(to: path, type: type, payload: payload, data: data, onReply: onResult)
     }
 
     private func sendNotification(
@@ -472,10 +440,8 @@ public final class CollaborationSession {
         payload: JSONObject,
         data: [UInt8]? = nil
     ) {
-        guard let device = portalDevice else { return }
-        var msg: JSONObject = ["to": path, "type": type]
-        if !payload.isEmpty { msg["payload"] = payload }
-        device.bus.post(msg, data: data)
+        guard let portalLease else { return }
+        portalLease.notify(to: path, type: type, payload: payload, data: data)
     }
 
     public func sendChat(_ text: String) async throws {
@@ -502,8 +468,8 @@ public final class CollaborationSession {
                 payload: ["messages": [["id": message.id.uuidString, "text": message.text]]]
             ) { result in
                 switch result {
-                case .success(let payload):
-                    guard let msgs = payload["messages"] as? [JSONObject],
+                case .success(let reply):
+                    guard let msgs = reply.payload["messages"] as? [JSONObject],
                         let first = msgs.first,
                         let parsed = ChatMessage.fromJSON(first, localUser: localUser)
                     else {
@@ -809,9 +775,9 @@ public final class CollaborationSession {
                 type: ".create"
             ) { result in
                 switch result {
-                case .success(let payload):
-                    guard let token = payload["token"] as? String,
-                        let vapid = payload["vapid_public_key"] as? String
+                case .success(let reply):
+                    guard let token = reply.payload["token"] as? String,
+                        let vapid = reply.payload["vapid_public_key"] as? String
                     else {
                         cont.resume(throwing: AuthFailure(
                             domain: "portal",
@@ -1148,11 +1114,11 @@ public final class CollaborationSession {
                 to: "/labs/\(labID)/sessions/\(sessionID.uuidString)",
                 type: "+fetch-memory-page",
                 payload: payload
-            ) { [weak self] result in
+            ) { result in
                 switch result {
                 case .success(let reply):
-                    let present = (reply["present"] as? Bool) ?? false
-                    let bytes = self?.lastMessageData ?? []
+                    let present = (reply.payload["present"] as? Bool) ?? false
+                    let bytes = reply.data ?? []
                     continuation.resume(returning: present ? Data(bytes) : nil)
                 case .failure:
                     continuation.resume(returning: nil)
@@ -1193,11 +1159,11 @@ public final class CollaborationSession {
                 to: "/labs/\(labID)/sessions/\(sessionID.uuidString)/traces/\(traceID.uuidString)",
                 type: "+fetch",
                 payload: payload
-            ) { [weak self] result in
+            ) { result in
                 switch result {
-                case .success(let payload):
-                    let total = (payload["total_size"] as? Int) ?? 0
-                    let bytes = self?.lastMessageData ?? []
+                case .success(let reply):
+                    let total = (reply.payload["total_size"] as? Int) ?? 0
+                    let bytes = reply.data ?? []
                     continuation.resume(returning: (Data(bytes), total))
                 case .failure(let failure):
                     continuation.resume(throwing: failure)
@@ -1494,8 +1460,8 @@ public final class CollaborationSession {
         ) { [weak self] result in
             guard let self else { return }
             switch result {
-            case .success(let payload):
-                guard let labObj = payload["lab"] as? JSONObject,
+            case .success(let reply):
+                guard let labObj = reply.payload["lab"] as? JSONObject,
                     let labID = labObj["id"] as? String,
                     let localUser = self.localUser
                 else { Task { await self.stop() }; return }
@@ -1579,8 +1545,8 @@ public final class CollaborationSession {
         ) { [weak self] result in
             guard let self else { return }
             switch result {
-            case .success(let payload):
-                self.ingestJoinSnapshot(payload: payload, labID: labID)
+            case .success(let reply):
+                self.ingestJoinSnapshot(payload: reply.payload, data: reply.data, labID: labID)
                 self.replayOutbox()
             case .failure(let failure):
                 self.setStatus(.error(message: failure.message))
@@ -1588,7 +1554,7 @@ public final class CollaborationSession {
         }
     }
 
-    private func ingestJoinSnapshot(payload: JSONObject, labID: String) {
+    private func ingestJoinSnapshot(payload: JSONObject, data: [UInt8]?, labID: String) {
         guard let localUser = self.localUser,
             let memberDicts = payload["members"] as? [JSONObject],
             let chatObj = payload["chat"] as? JSONObject,
@@ -1608,7 +1574,7 @@ public final class CollaborationSession {
                let contentType = picture["content_type"] as? String,
                let offset = picture["offset"] as? Int,
                let length = picture["length"] as? Int,
-               let all = lastMessageData,
+               let all = data,
                offset >= 0, offset + length <= all.count {
                 self.labPictureData = Data(all[offset..<offset + length])
                 self.labPictureContentType = contentType
@@ -1626,11 +1592,9 @@ public final class CollaborationSession {
         collabState.labID = labID
         try! store.save(collabState)
 
-        // Note: .join response data (binary blob) is fetched separately via
-        // the last-data on the message; see handleBusEvent.
         var snapshot: [NotebookEntry] = []
         for (i, obj) in notebookEntries.enumerated() {
-            let bin: [UInt8]? = extractBinary(indices: binaryIndices, at: i, from: lastMessageData)
+            let bin: [UInt8]? = extractBinary(indices: binaryIndices, at: i, from: data)
             guard let entry = NotebookEntry.fromJSON(obj, binaryData: bin) else {
                 continue
             }
@@ -1668,8 +1632,6 @@ public final class CollaborationSession {
         onMissionSnapshot?(missionSnapshot)
     }
 
-    private var lastMessageData: [UInt8]? = nil
-
     private func extractBinary(indices: [Any], at i: Int, from data: [UInt8]?) -> [UInt8]? {
         guard i < indices.count else { return nil }
         guard let idx = indices[i] as? JSONObject,
@@ -1681,38 +1643,38 @@ public final class CollaborationSession {
         return Array(data[start..<start + length])
     }
 
-    private func handleBusEvent(_ event: Bus.Event) async {
+    private func handlePortalEvent(_ event: PortalConnection.Event) {
         switch event {
         case .detached:
-            await stop()
+            Task { await stop() }
+        case .notification(let notification):
+            handleNotification(
+                from: notification.from,
+                type: notification.type,
+                payload: notification.payload,
+                data: notification.data
+            )
+        }
+    }
 
-        case .message(message: let anyValue, let data):
-            guard let dict = anyValue as? JSONObject,
-                let type = dict["type"] as? String
-            else { await stop(); return }
-
-            let id = dict["id"] as? String
-            let payload = (dict["payload"] as? JSONObject) ?? [:]
-            let errorObj = dict["error"] as? JSONObject
-
-            if type == "+result" || type == "+error" {
-                guard let id, let cont = pendingRequests.removeValue(forKey: id) else { return }
-                if type == "+result" {
-                    self.lastMessageData = data
-                    cont(.success(payload))
-                    self.lastMessageData = nil
-                } else {
-                    let code = errorObj?["code"] as? String ?? "unknown"
-                    let msg = errorObj?["message"] as? String ?? "request failed"
-                    cont(.failure(AuthFailure(domain: "portal", code: code, message: msg)))
-                }
-                return
+    private func applyWelcome(_ payload: JSONObject) {
+        let theirs = (payload["protocol"] as? Int) ?? 1
+        guard theirs == Self.protocolVersion else {
+            setStatus(.error(message: theirs < Self.protocolVersion
+                ? "This server is too old for this version of Luma."
+                : "This version of Luma is too old for this server. Update Luma to continue."))
+            return
+        }
+        if let userObj = payload["user"] as? JSONObject, let u = UserInfo.fromJSON(userObj) {
+            localUser = u
+        }
+        if let push = payload["push"] as? JSONObject {
+            if let key = push["vapid_public_key"] as? String {
+                vapidPublicKey = key
             }
-
-            guard let from = dict["from"] as? String else { return }
-            lastMessageData = data
-            handleNotification(from: from, type: type, payload: payload, data: data)
-            lastMessageData = nil
+            if let list = push["registered"] as? [String] {
+                registeredPushPlatforms = Set(list)
+            }
         }
     }
 
@@ -1723,27 +1685,6 @@ public final class CollaborationSession {
         if type == "+op", isEchoOfOpAlreadyApplied(payload) { return }
 
         switch (type, segs) {
-        case ("+welcome", ["session"]):
-            let theirs = (payload["protocol"] as? Int) ?? 1
-            guard theirs == Self.protocolVersion else {
-                setStatus(.error(message: theirs < Self.protocolVersion
-                    ? "This server is too old for this version of Luma."
-                    : "This version of Luma is too old for this server. Update Luma to continue."))
-                return
-            }
-            if let userObj = payload["user"] as? JSONObject, let u = UserInfo.fromJSON(userObj) {
-                localUser = u
-                triggerJoinOrCreateIfReady()
-            }
-            if let push = payload["push"] as? JSONObject {
-                if let key = push["vapid_public_key"] as? String {
-                    vapidPublicKey = key
-                }
-                if let list = push["registered"] as? [String] {
-                    registeredPushPlatforms = Set(list)
-                }
-            }
-
         case ("+update", let s) where s.count == 2 && s[0] == "labs":
             if let title = payload["title"] as? String {
                 labTitle = title

@@ -1,5 +1,4 @@
 import Foundation
-import Frida
 import Observation
 
 @Observable
@@ -29,9 +28,7 @@ public final class WelcomeModel {
     public private(set) var labs: [LabSummary] = []
     public private(set) var labsState: LabsState = .idle
 
-    private let portalAddress = BackendConfig.portalAddress
-    private let portalCertificate = BackendConfig.certificate
-    private let deviceManager = DeviceManager.shared
+    private let portal = PortalConnection.shared
     private var fetchTask: Task<Void, Never>?
     private var didBootstrap = false
 
@@ -103,28 +100,16 @@ public final class WelcomeModel {
     }
 
     private func fetchSummaries(token: String) async throws -> [LabSummary] {
-        let device = try await deviceManager.addRemoteDevice(
-            address: portalAddress,
-            certificate: portalCertificate,
-            origin: nil,
-            token: token,
-            keepaliveInterval: nil
-        )
-        defer {
-            Task { try? await deviceManager.removeRemoteDevice(address: portalAddress) }
+        let lease = try await portal.retain(token: token) { _ in }
+        do {
+            let reply = try await lease.request(to: "/labs", type: ".list")
+            await lease.release()
+            let items = (reply.payload["labs"] as? [JSONObject]) ?? []
+            return items.compactMap { LabSummary.fromJSON($0, payloadData: reply.data) }
+        } catch {
+            await lease.release()
+            throw error
         }
-
-        let listener = LabListListener()
-        let busTask = Task { @MainActor in
-            for await event in device.bus.events {
-                if Task.isCancelled { return }
-                listener.handle(event)
-            }
-        }
-        defer { busTask.cancel() }
-
-        try await device.bus.attach()
-        return try await listener.requestList(via: device.bus)
     }
 }
 
@@ -161,54 +146,5 @@ extension WelcomeModel.LabSummary {
             pictureContentType: pictureContentType,
             pictureData: pictureData
         )
-    }
-}
-
-@MainActor
-private final class LabListListener {
-    private let requestId = "welcome-list-labs"
-    private var continuation: CheckedContinuation<[WelcomeModel.LabSummary], Swift.Error>?
-
-    func requestList(via bus: Bus) async throws -> [WelcomeModel.LabSummary] {
-        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<[WelcomeModel.LabSummary], Swift.Error>) in
-            continuation = cont
-            bus.post(["to": "/labs", "type": ".list", "id": requestId], data: nil)
-        }
-    }
-
-    func handle(_ event: Bus.Event) {
-        switch event {
-        case .detached:
-            resume(throwing: AuthFailure(domain: "portal", code: "detached", message: "Bus detached"))
-
-        case .message(let anyValue, let data):
-            guard let dict = anyValue as? JSONObject,
-                  let id = dict["id"] as? String,
-                  id == requestId,
-                  let type = dict["type"] as? String
-            else { return }
-            if type == "+result" {
-                let payload = (dict["payload"] as? JSONObject) ?? [:]
-                let items = (payload["labs"] as? [JSONObject]) ?? []
-                resume(returning: items.compactMap {
-                    WelcomeModel.LabSummary.fromJSON($0, payloadData: data)
-                })
-            } else if type == "+error" {
-                let err = (dict["error"] as? JSONObject) ?? [:]
-                let code = (err["code"] as? String) ?? "unknown"
-                let message = (err["message"] as? String) ?? "request failed"
-                resume(throwing: AuthFailure(domain: "portal", code: code, message: message))
-            }
-        }
-    }
-
-    private func resume(returning value: [WelcomeModel.LabSummary]) {
-        continuation?.resume(returning: value)
-        continuation = nil
-    }
-
-    private func resume(throwing error: Swift.Error) {
-        continuation?.resume(throwing: error)
-        continuation = nil
     }
 }
