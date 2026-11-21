@@ -719,7 +719,7 @@ private let bootVirtualMachineFileThunk: @convention(c) (
 }
 
 @MainActor
-private func makeStringList(_ labels: [String]) -> StringList {
+func makeStringList(_ labels: [String]) -> StringList {
     let list = StringList(strings: nil)
     for label in labels {
         list.append(string: label)

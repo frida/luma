@@ -16,6 +16,7 @@ final class CustomInstrumentDefPane {
     private weak var engine: Engine?
     private let sourceEditor: CodeEditor
     private let saveBar: SaveBar
+    private let updateBanner: StoreUpdateBanner
     private var draftContent: String
     private var pendingDef: CustomInstrumentDef?
     private var pendingFile: CustomInstrumentFile?
@@ -36,6 +37,8 @@ final class CustomInstrumentDefPane {
         widget.hexpand = true
         widget.vexpand = true
 
+        updateBanner = StoreUpdateBanner(storefront: engine.storefront, defID: def.id)
+
         var box: CustomInstrumentDefPane?
         saveBar = SaveBar(saveTooltip: "Save current file") {
             box?.commit()
@@ -43,6 +46,9 @@ final class CustomInstrumentDefPane {
 
         layout()
         box = self
+        updateBanner.prepareForUpdate = { [weak self] in
+            try self?.saveDraft()
+        }
     }
 
     func focusEditor() {
@@ -143,6 +149,7 @@ final class CustomInstrumentDefPane {
         overlay.vexpand = true
         overlay.set(child: container)
         overlay.addOverlay(widget: saveBar.widget)
+        widget.append(child: updateBanner.widget)
         widget.append(child: overlay)
     }
 
@@ -155,6 +162,13 @@ final class CustomInstrumentDefPane {
             _ = try? engine.writeCustomInstrumentFile(defID: defID, path: path, content: content)
             self.saveBar.setDirty(false)
         }
+    }
+
+    private func saveDraft() throws {
+        guard isDirty(), let engine else { return }
+        _ = try engine.writeCustomInstrumentFile(defID: def.id, path: file.path, content: draftContent)
+        file.content = draftContent
+        saveBar.setDirty(false)
     }
 
     func flushDraftIfNeeded() {

@@ -6,6 +6,46 @@ import LumaCore
 import Observation
 
 @MainActor
+final class GitHubSignInPresenter {
+    private let gitHubAuth: GitHubAuth
+    private let application: Gtk.Application
+    private var sheet: Adw.Dialog?
+
+    init(gitHubAuth: GitHubAuth, application: Gtk.Application) {
+        self.gitHubAuth = gitHubAuth
+        self.application = application
+        observe()
+    }
+
+    private func observe() {
+        withObservationTracking {
+            _ = gitHubAuth.isPresentingSignIn
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.syncSheet()
+                self.observe()
+            }
+        }
+    }
+
+    private func syncSheet() {
+        if gitHubAuth.isPresentingSignIn && sheet == nil {
+            sheet = GitHubSignInSheet.present(
+                from: application.activeWindow,
+                gitHubAuth: gitHubAuth,
+                onClosed: { [weak self] in
+                    self?.sheet = nil
+                }
+            )
+        } else if !gitHubAuth.isPresentingSignIn, let sheet {
+            self.sheet = nil
+            _ = sheet.close()
+        }
+    }
+}
+
+@MainActor
 final class GitHubSignInSheet {
     private weak var dialog: Adw.Dialog?
     private let gitHubAuth: GitHubAuth
@@ -212,11 +252,10 @@ final class GitHubSignInSheet {
 
 @MainActor
 extension GitHubSignInSheet {
-    @discardableResult
     static func present(
-        from anchor: Widget,
+        from window: Gtk.WindowRef,
         gitHubAuth: GitHubAuth,
-        onClosed: (() -> Void)? = nil
+        onClosed: @escaping () -> Void
     ) -> Adw.Dialog {
         let sheet = GitHubSignInSheet(gitHubAuth: gitHubAuth)
 
@@ -225,6 +264,8 @@ extension GitHubSignInSheet {
         dialog.set(contentWidth: 380)
 
         let header = Adw.HeaderBar()
+        header.showStartTitleButtons = false
+        header.showEndTitleButtons = false
 
         let toolbarView = Adw.ToolbarView()
         toolbarView.addTopBar(widget: header)
@@ -244,14 +285,14 @@ extension GitHubSignInSheet {
                     gitHubAuth.cancelSignIn()
                 }
                 gitHubAuth.dismissSignIn()
-                onClosed?()
+                onClosed()
             }
         }
 
         sheet.refresh()
         sheet.observe()
 
-        dialog.present(parent: anchor)
+        dialog.present(parent: window)
 
         return dialog
     }

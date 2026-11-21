@@ -26,6 +26,7 @@ private final class CustomDetailUI: InstrumentDetailUI {
     private let outer: Box
     private var featureEditors: [FeatureValueEditor] = []
     private var widgetRenderer: InstrumentWidgetsRenderer?
+    private let updateBanner: StoreUpdateBanner?
 
     init(engine: Engine, instrument: LumaCore.InstrumentInstance) {
         self.engine = engine
@@ -44,7 +45,14 @@ private final class CustomDetailUI: InstrumentDetailUI {
         scroll.vexpand = true
         scroll.setPolicy(hscrollbarPolicy: .never, vscrollbarPolicy: .automatic)
         scroll.set(child: outer)
-        widget = scroll
+
+        let column = Box(orientation: .vertical, spacing: 0)
+        updateBanner = UUID(uuidString: instrument.sourceIdentifier).map { StoreUpdateBanner(storefront: engine.storefront, defID: $0) }
+        if let updateBanner {
+            column.append(child: updateBanner.widget)
+        }
+        column.append(child: scroll)
+        widget = column
 
         rebuild()
     }

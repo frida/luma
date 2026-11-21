@@ -253,12 +253,14 @@ final class SessionDetachedBanner {
 
 enum LumaBannerStyle {
     case info
+    case news
     case warning
     case error
 
     var cssClass: String {
         switch self {
         case .info: return "luma-banner-info"
+        case .news: return "luma-banner-news"
         case .warning: return "luma-banner-warning"
         case .error: return "luma-banner-error"
         }

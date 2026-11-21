@@ -25,6 +25,7 @@ final class LumaApplication {
     private let maxRecentSlots = 10
     private var welcomeModel: WelcomeModel?
     private var activeWelcome: WelcomeWindow?
+    private var signInPresenter: GitHubSignInPresenter?
     #if !os(Windows)
     private var terminationSignals: [DispatchSourceSignal] = []
     #endif
@@ -63,9 +64,14 @@ final class LumaApplication {
         purgeStaleWorkingCopies()
         PangoGlyphAtlas.install()
         GdkFrameEncoder.install()
+        presentSignInWhenAsked()
         #if !os(Windows)
         shutDownWhenToldToTerminate()
         #endif
+    }
+
+    private func presentSignInWhenAsked() {
+        signInPresenter = GitHubSignInPresenter(gitHubAuth: ensuredWelcomeModel().gitHubAuth, application: app)
     }
 
     #if !os(Windows)

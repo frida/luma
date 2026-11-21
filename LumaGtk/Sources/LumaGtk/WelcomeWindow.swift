@@ -35,7 +35,6 @@ final class WelcomeWindow {
 
     private var quickActionHandlers: [UInt: () -> Void] = [:]
     private var labRowsByIdentifier: [UInt: WelcomeModel.LabSummary] = [:]
-    private var openSignInDialog: Adw.Dialog?
     private var backdropWidget: ShaderEffect?
     private var wordmarkLabel: Label?
     private var themeToken: gulong = 0
@@ -386,19 +385,8 @@ final class WelcomeWindow {
             }
         }
         signInButton.onClicked { [weak self] _ in
-            MainActor.assumeIsolated { self?.beginSignIn() }
+            MainActor.assumeIsolated { self?.welcome.signIn() }
         }
-    }
-
-    private func beginSignIn() {
-        welcome.signIn()
-        openSignInDialog = GitHubSignInSheet.present(
-            from: window,
-            gitHubAuth: welcome.gitHubAuth,
-            onClosed: { [weak self] in
-                self?.openSignInDialog = nil
-            }
-        )
     }
 
     private func createBlank() {

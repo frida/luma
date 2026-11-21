@@ -34,7 +34,6 @@ final class CollaborationPanel {
     private var copiedToastLabel: Label?
     private var copiedToastResetTask: Task<Void, Never>?
     private var lastChatCount = 0
-    private var signInWindow: Adw.Dialog?
     private var isEditingLabTitle: Bool = false
     private var chatRows: [UUID: ListBoxRow] = [:]
     private var chatTimestamps: [UUID: (label: Label, date: Date)] = [:]
@@ -163,7 +162,6 @@ final class CollaborationPanel {
         refreshParticipants()
         refreshChat()
         refreshNotificationsButton()
-        syncSignInSheet()
         observeIdentity()
         observeLab()
         observeParticipants()
@@ -207,33 +205,13 @@ final class CollaborationPanel {
         withObservationTracking {
             _ = engine.gitHubAuth.currentUser
             _ = engine.gitHubAuth.state
-            _ = engine.gitHubAuth.isPresentingSignIn
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
                 self.refreshIdentity()
                 self.refreshLab()
-                self.syncSignInSheet()
                 self.observeIdentity()
             }
-        }
-    }
-
-    private func syncSignInSheet() {
-        guard let engine else { return }
-        let wants = engine.gitHubAuth.isPresentingSignIn
-        if wants && signInWindow == nil {
-            let window = GitHubSignInSheet.present(
-                from: widget,
-                gitHubAuth: engine.gitHubAuth,
-                onClosed: { [weak self] in
-                    self?.signInWindow = nil
-                }
-            )
-            signInWindow = window
-        } else if !wants, let window = signInWindow {
-            signInWindow = nil
-            _ = window.close()
         }
     }
 

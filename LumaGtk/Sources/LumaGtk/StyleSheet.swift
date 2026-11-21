@@ -95,6 +95,10 @@ enum StyleSheet {
         background-color: rgba(255, 204, 0, 0.15);
         border-bottom: 1px solid rgba(255, 204, 0, 0.30);
     }
+    .luma-banner.luma-banner-news {
+        background-color: alpha(@accent_bg_color, 0.12);
+        border-bottom: 1px solid alpha(@accent_bg_color, 0.30);
+    }
     .luma-banner.luma-banner-warning {
         background-color: rgba(255, 149, 0, 0.15);
         border-bottom: 1px solid rgba(255, 149, 0, 0.40);
