@@ -23,6 +23,32 @@ public struct CompilerWorkspacePaths: Sendable {
     public var dependencyArtifactNames: Set<String> {
         Set([packageJSON, packageLockJSON, nodeModules].map(\.lastPathComponent))
     }
+
+    public var stagingAreas: URL {
+        root.appendingPathComponent("Staging", isDirectory: true)
+    }
+}
+
+public struct CompilerStagingArea: Sendable {
+    public let relativePath: String
+    public let url: URL
+
+    init(in paths: CompilerWorkspacePaths) {
+        let name = UUID().uuidString
+        relativePath = "\(paths.stagingAreas.lastPathComponent)/\(name)"
+        url = paths.stagingAreas.appendingPathComponent(name, isDirectory: true)
+    }
+
+    @discardableResult
+    public func write(_ content: String, named name: String) throws -> String {
+        try Data(content.utf8).write(to: url.appendingPathComponent(name))
+        return "\(relativePath)/\(name)"
+    }
+
+    public func importSpecifier(ofWorkspacePath path: String) -> String {
+        let pathToWorkspaceRoot = relativePath.split(separator: "/").map { _ in ".." }.joined(separator: "/")
+        return "\(pathToWorkspaceRoot)/\(path)"
+    }
 }
 
 @MainActor
@@ -53,6 +79,7 @@ public final class CompilerWorkspace {
                     try fm.createDirectory(at: paths.root, withIntermediateDirectories: true)
                 }
 
+                try? fm.removeItem(at: paths.stagingAreas)
                 try self.discardOrphanedDiskState(packagesState: packagesState, paths: paths)
 
                 if packagesState.packageJSON != nil || packagesState.packageLockJSON != nil {
@@ -312,6 +339,14 @@ public final class CompilerWorkspace {
 
     private static func fileName(for sourceID: String) -> String {
         String(sourceID.map { $0.isLetter || $0.isNumber || $0 == "-" ? $0 : "_" })
+    }
+
+    public func withStagingArea<T>(paths: CompilerWorkspacePaths, _ work: (CompilerStagingArea) async throws -> T) async throws -> T {
+        let fm = FileManager.default
+        let area = CompilerStagingArea(in: paths)
+        try fm.createDirectory(at: area.url, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: area.url) }
+        return try await work(area)
     }
 
     public func withCompilerDiagnostics<T>(

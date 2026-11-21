@@ -4565,51 +4565,38 @@ public final class Engine {
         tsSource: String,
         paths: CompilerWorkspacePaths
     ) async throws -> String {
-        let fm = FileManager.default
-
-        let dirRelPath = "TracerHooks"
-        let dirURL = paths.root.appendingPathComponent(dirRelPath, isDirectory: true)
-
-        if !fm.fileExists(atPath: dirURL.path) {
-            try fm.createDirectory(at: dirURL, withIntermediateDirectories: true)
-        }
-
-        let moduleRelPath = "\(dirRelPath)/\(id.uuidString).ts"
-        let entryRelPath = "\(dirRelPath)/\(id.uuidString).entry.ts"
-
-        let moduleURL = paths.root.appendingPathComponent(moduleRelPath)
-        let entryURL = paths.root.appendingPathComponent(entryRelPath)
-
-        try tsSource.write(to: moduleURL, atomically: true, encoding: .utf8)
-
-        let ambientTypings = EditorProfile.fridaTracerHook(packages: installedPackages).ambientDeclarations
-        let entrySource = try Self.importsOfStaged(ambientTypings, in: dirURL) + """
-            import "./\(id.uuidString).ts";
-            export {};
-            """
-        try entrySource.write(to: entryURL, atomically: true, encoding: .utf8)
-
         let hookID = id.uuidString
-        let userPath = "TracerHooks/\(hookID).ts"
-        let entryPath = "TracerHooks/\(hookID).entry.ts"
-        let bundle = try await compilerWorkspace.withCompilerDiagnostics(
-            label: "tracer hook \(hookID)",
-            pathDisplay: { path in
-                if path.hasSuffix(userPath) || path.hasSuffix(entryPath) {
-                    return displayName
-                }
-                return path
-            }
-        ) { compiler in
-            try await compiler.build(
-                entrypoint: entryRelPath,
-                projectRoot: paths.root.path,
-                sourceMaps: .omitted,
-                compression: .terser)
-        }
+        let ambientTypings = EditorProfile.fridaTracerHook(packages: installedPackages).ambientDeclarations
 
-        let modules = try ESMBundleParser.parse(bundle)
-        return modules.modules[modules.order[0]]!
+        return try await compilerWorkspace.withStagingArea(paths: paths) { area in
+            let hookName = "\(hookID).ts"
+            let hookPath = try area.write(tsSource, named: hookName)
+            let entrySource = try Self.importsOfStaged(ambientTypings, in: area) + """
+                import "./\(hookName)";
+                export {};
+                """
+            let entryPath = try area.write(entrySource, named: "luma-entry.ts")
+
+            let areaPrefix = "\(area.relativePath)/"
+            let bundle = try await compilerWorkspace.withCompilerDiagnostics(
+                label: "tracer hook \(hookID)",
+                pathDisplay: { path in
+                    if path.hasSuffix(hookPath) || path.hasSuffix(entryPath) {
+                        return displayName
+                    }
+                    return Self.displayPath(of: path, strippingAnyOf: [areaPrefix])
+                }
+            ) { compiler in
+                try await compiler.build(
+                    entrypoint: entryPath,
+                    projectRoot: paths.root.path,
+                    sourceMaps: .omitted,
+                    compression: .terser)
+            }
+
+            let modules = try ESMBundleParser.parse(bundle)
+            return modules.modules[modules.order[0]]!
+        }
     }
 
     public func loadTracerInstrument(
@@ -4798,32 +4785,32 @@ public final class Engine {
     ) async throws -> String {
         _ = try await compilerWorkspace.ensureReady(paths: paths)
 
-        let dirRelPath = "InstrumentSources/\(sourceSlug)"
-        let dirURL = paths.root.appendingPathComponent(dirRelPath, isDirectory: true)
-        try Self.syncInstrumentSources(files, into: dirURL)
-        try await compilerWorkspace.installDependencies(dependencies, in: dirURL)
+        let sourcesRelPath = "InstrumentSources/\(sourceSlug)"
+        let sourcesURL = paths.root.appendingPathComponent(sourcesRelPath, isDirectory: true)
+        try Self.syncInstrumentSources(files, into: sourcesURL)
+        try await compilerWorkspace.installDependencies(dependencies, in: sourcesURL)
 
         let userEntry = try CustomInstrumentFile.validateRelativePath(entrypoint)
-        let entryRelPath = try Self.stageInstrumentEntry(
-            userEntry: userEntry, ambientTypings: ambientTypings, in: dirURL, relativeTo: dirRelPath)
+        let userEntryPath = "\(sourcesRelPath)/\(userEntry)"
 
-        let sourcePrefix = "\(dirRelPath)/"
-        let bundle = try await compilerWorkspace.withCompilerDiagnostics(
-            label: diagnosticLabel,
-            pathDisplay: { path in
-                guard let range = path.range(of: sourcePrefix) else { return path }
-                return String(path[range.upperBound...])
+        return try await compilerWorkspace.withStagingArea(paths: paths) { area in
+            let entryPath = try Self.stageInstrumentEntry(reexporting: userEntryPath, ambientTypings: ambientTypings, in: area)
+
+            let displayedPrefixes = ["\(sourcesRelPath)/", "\(area.relativePath)/"]
+            let bundle = try await compilerWorkspace.withCompilerDiagnostics(
+                label: diagnosticLabel,
+                pathDisplay: { path in Self.displayPath(of: path, strippingAnyOf: displayedPrefixes) }
+            ) { compiler in
+                try await compiler.build(
+                    entrypoint: entryPath,
+                    projectRoot: paths.root.path,
+                    sourceMaps: .omitted,
+                    compression: .terser)
             }
-        ) { compiler in
-            try await compiler.build(
-                entrypoint: entryRelPath,
-                projectRoot: paths.root.path,
-                sourceMaps: .omitted,
-                compression: .terser)
-        }
 
-        let modules = try ESMBundleParser.parse(bundle)
-        return modules.modules[modules.order[0]]!
+            let modules = try ESMBundleParser.parse(bundle)
+            return modules.modules[modules.order[0]]!
+        }
     }
 
     private static func syncInstrumentSources(_ files: [(path: String, content: Data)], into dirURL: URL) throws {
@@ -4852,23 +4839,26 @@ public final class Engine {
     }
 
     private static func stageInstrumentEntry(
-        userEntry: String,
+        reexporting userEntryPath: String,
         ambientTypings: [AmbientDeclarations],
-        in dirURL: URL,
-        relativeTo dirRelPath: String
+        in area: CompilerStagingArea
     ) throws -> String {
-        let wrapperName = "luma-entry.ts"
-        let wrapper = try importsOfStaged(ambientTypings, in: dirURL) + "export * from \"./\(userEntry)\";\n"
-        try Data(wrapper.utf8).write(to: dirURL.appendingPathComponent(wrapperName))
-        return "\(dirRelPath)/\(wrapperName)"
+        let wrapper = try importsOfStaged(ambientTypings, in: area)
+            + "export * from \"\(area.importSpecifier(ofWorkspacePath: userEntryPath))\";\n"
+        return try area.write(wrapper, named: "luma-entry.ts")
     }
 
-    private static func importsOfStaged(_ typings: [AmbientDeclarations], in dirURL: URL) throws -> String {
+    private static func importsOfStaged(_ typings: [AmbientDeclarations], in area: CompilerStagingArea) throws -> String {
         try typings.map { declarations in
             let name = "luma-" + declarations.fileName.replacingOccurrences(of: ".d.ts", with: ".ts")
-            try Data(declarations.content.utf8).write(to: dirURL.appendingPathComponent(name))
+            try area.write(declarations.content, named: name)
             return "import \"./\(name)\";\n"
         }.joined()
+    }
+
+    nonisolated private static func displayPath(of path: String, strippingAnyOf prefixes: [String]) -> String {
+        guard let range = prefixes.lazy.compactMap({ path.range(of: $0) }).first else { return path }
+        return String(path[range.upperBound...])
     }
 
     static func validatedCustomInstrumentBundle(_ bundle: CustomInstrumentBundle) throws -> CustomInstrumentBundle {
