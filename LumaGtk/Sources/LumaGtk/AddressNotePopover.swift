@@ -603,7 +603,7 @@ final class AddressNotePopover {
         while let child = box.firstChild {
             box.remove(child: child)
         }
-        box.append(child: MarkdownWidget.make(markdown: markdown))
+        box.append(child: MarkdownWidget.make(markdown: markdown, as: .conversation))
     }
 
     private func installUserMessageActions(row: Box, body: Box, message: AddressNoteMessage) {

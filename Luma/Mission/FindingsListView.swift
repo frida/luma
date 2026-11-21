@@ -58,7 +58,7 @@ private struct FindingCard: View {
                 Spacer()
                 ConfidencePill(confidence: finding.confidence)
             }
-            MarkdownView(finding.bodyMarkdown).font(.callout)
+            MarkdownView(finding.bodyMarkdown, as: .conversation).font(.callout)
 
             if !evidence.isEmpty {
                 DisclosureGroup("\(evidence.count) evidence") {

@@ -5,8 +5,8 @@ import LumaCore
 
 @MainActor
 enum MarkdownWidget {
-    static func make(markdown: String, dimmed: Bool = false) -> Widget {
-        let box = make(blocks: MarkdownParser.parse(markdown))
+    static func make(markdown: String, as dialect: MarkdownDialect, dimmed: Bool = false) -> Widget {
+        let box = make(blocks: MarkdownParser.parse(markdown, as: dialect))
         if dimmed {
             box.add(cssClass: "dim-label")
         }

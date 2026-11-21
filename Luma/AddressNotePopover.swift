@@ -543,7 +543,7 @@ private struct MessageRow: View {
                     .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.secondary.opacity(0.3)))
                     .frame(height: 120)
             } else {
-                MarkdownView(message.bodyMarkdown)
+                MarkdownView(message.bodyMarkdown, as: .conversation)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
                     .background(background, in: RoundedRectangle(cornerRadius: 8, style: .continuous))

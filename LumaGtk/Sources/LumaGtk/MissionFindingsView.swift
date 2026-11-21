@@ -271,7 +271,7 @@ private final class FindingCard {
     func update(finding: MissionFinding) {
         currentFinding = finding
         titleLabel.label = finding.title
-        replaceContents(of: bodySlot, with: MarkdownWidget.make(markdown: finding.bodyMarkdown))
+        replaceContents(of: bodySlot, with: MarkdownWidget.make(markdown: finding.bodyMarkdown, as: .conversation))
 
         replaceContents(of: confidenceSlot, with: MissionPill.makeConfidence(finding.confidence))
         replaceContents(of: statusSlot, with: MissionPill.makeFindingStatus(finding.status))

@@ -147,10 +147,10 @@ private struct BlockView: View {
     var body: some View {
         switch block.content {
         case .text(let text):
-            MarkdownView(text)
+            MarkdownView(text, as: .conversation)
         case .thinking(let text, _):
             DisclosureGroup("Thinking") {
-                MarkdownView(text).font(.callout).foregroundStyle(.secondary)
+                MarkdownView(text, as: .conversation).font(.callout).foregroundStyle(.secondary)
             }
         case .redactedThinking:
             Text("[redacted thinking]").italic().foregroundStyle(.secondary)
@@ -233,7 +233,7 @@ private struct TurnLiveCard: View {
                 Text("Streaming…").font(.caption.weight(.semibold)).foregroundStyle(.blue)
                 Spacer()
             }
-            MarkdownView(stableText)
+            MarkdownView(stableText, as: .conversation)
         }
         .padding()
         .background(Color.blue.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))

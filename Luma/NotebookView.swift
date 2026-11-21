@@ -509,7 +509,7 @@ struct NotebookEntryRow: View {
     @ViewBuilder
     private var readOnlyUserNoteBody: some View {
         if !entry.details.isEmpty {
-            MarkdownView(entry.details)
+            MarkdownView(entry.details, as: .conversation)
         }
     }
 

@@ -1,25 +1,28 @@
 import Foundation
 
 public enum MarkdownParser {
-    public static func parse(_ text: String) -> [MarkdownBlock] {
-        var parser = Parser(text: text)
+    public static func parse(_ text: String, as dialect: MarkdownDialect) -> [MarkdownBlock] {
+        var parser = Parser(text: text, dialect: dialect)
         return parser.run()
     }
 
     private struct Parser {
         let lines: [Substring]
+        let dialect: MarkdownDialect
         var index = 0
         var blocks: [MarkdownBlock] = []
         var textBuffer: [Substring] = []
 
-        init(text: String) {
+        init(text: String, dialect: MarkdownDialect) {
             lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+            self.dialect = dialect
         }
 
         mutating func run() -> [MarkdownBlock] {
             while index < lines.count {
                 let line = lines[index]
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if consumeParagraphBreak(trimmed) { continue }
                 if consumeCodeFence(trimmed) { continue }
                 if consumeBlockquote(line) { continue }
                 if consumeHeading(trimmed) { continue }
@@ -28,7 +31,7 @@ public enum MarkdownParser {
                 if consumeOrderedList(trimmed) { continue }
                 if consumeBulletList(trimmed) { continue }
                 if consumeFootnotes(trimmed) { continue }
-                if consumeTable(trimmed) { continue }
+                if consumeTable() { continue }
                 textBuffer.append(line)
                 index += 1
             }
@@ -36,22 +39,49 @@ public enum MarkdownParser {
             return blocks
         }
 
+        mutating func consumeParagraphBreak(_ trimmed: String) -> Bool {
+            guard dialect == .document, trimmed.isEmpty else { return false }
+            flushText()
+            index += 1
+            return true
+        }
+
         mutating func flushText() {
-            let joined = textBuffer.joined(separator: "\n").trimmingCharacters(in: .newlines)
+            let text = paragraphText(textBuffer)
             textBuffer.removeAll()
-            guard !joined.isEmpty else { return }
-            blocks.append(.paragraph(InlineMarkdownParser.parse(joined)))
+            guard !text.isEmpty else { return }
+            blocks.append(.paragraph(InlineMarkdownParser.parse(text)))
+        }
+
+        func paragraphText(_ paragraphLines: some Sequence<Substring>) -> String {
+            switch dialect {
+            case .conversation:
+                return paragraphLines.joined(separator: "\n").trimmingCharacters(in: .newlines)
+            case .document:
+                return paragraphLines.map(reflowedLine).joined().trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+
+        func reflowedLine(_ line: Substring) -> String {
+            let content = line.trimmingCharacters(in: .whitespaces)
+            if line.hasSuffix("  ") {
+                return content + "\n"
+            }
+            if content.hasSuffix("\\") {
+                return String(content.dropLast()) + "\n"
+            }
+            return content + " "
         }
 
         mutating func consumeCodeFence(_ trimmed: String) -> Bool {
-            guard trimmed.hasPrefix("```") else { return false }
+            guard isCodeFence(trimmed) else { return false }
             flushText()
             let language = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
             var body: [Substring] = []
             index += 1
             while index < lines.count {
                 let line = lines[index]
-                if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+                if isCodeFence(line.trimmingCharacters(in: .whitespaces)) {
                     index += 1
                     break
                 }
@@ -62,6 +92,10 @@ public enum MarkdownParser {
             return true
         }
 
+        func isCodeFence(_ trimmed: String) -> Bool {
+            trimmed.hasPrefix("```")
+        }
+
         mutating func consumeBlockquote(_ line: Substring) -> Bool {
             guard quotedContent(line) != nil else { return false }
             flushText()
@@ -70,7 +104,7 @@ public enum MarkdownParser {
                 inner.append(content)
                 index += 1
             }
-            blocks.append(.blockquote(MarkdownParser.parse(inner.joined(separator: "\n"))))
+            blocks.append(.blockquote(MarkdownParser.parse(inner.joined(separator: "\n"), as: dialect)))
             return true
         }
 
@@ -82,39 +116,42 @@ public enum MarkdownParser {
         }
 
         mutating func consumeHeading(_ trimmed: String) -> Bool {
-            guard trimmed.hasPrefix("#") else { return false }
-            let level = trimmed.prefix(while: { $0 == "#" }).count
-            guard (1...6).contains(level), trimmed.count > level else { return false }
-            let separator = trimmed.index(trimmed.startIndex, offsetBy: level)
-            guard trimmed[separator] == " " else { return false }
-            let content = trimmed[trimmed.index(after: separator)...].trimmingCharacters(in: .whitespaces)
-            guard !content.isEmpty else { return false }
+            guard let heading = heading(trimmed) else { return false }
             flushText()
-            blocks.append(.heading(level: level, content: InlineMarkdownParser.parse(content)))
+            blocks.append(heading)
             index += 1
             return true
         }
 
+        func heading(_ trimmed: String) -> MarkdownBlock? {
+            guard trimmed.hasPrefix("#") else { return nil }
+            let level = trimmed.prefix(while: { $0 == "#" }).count
+            guard (1...6).contains(level), trimmed.count > level else { return nil }
+            let separator = trimmed.index(trimmed.startIndex, offsetBy: level)
+            guard trimmed[separator] == " " else { return nil }
+            let content = trimmed[trimmed.index(after: separator)...].trimmingCharacters(in: .whitespaces)
+            guard !content.isEmpty else { return nil }
+            return .heading(level: level, content: InlineMarkdownParser.parse(content))
+        }
+
         mutating func consumeHorizontalRule(_ trimmed: String) -> Bool {
-            let markers: Set<Character> = ["-", "_", "*"]
-            guard let first = trimmed.first, markers.contains(first), trimmed.count >= 3,
-                trimmed.allSatisfy({ $0 == first })
-            else { return false }
+            guard isHorizontalRule(trimmed) else { return false }
             flushText()
             blocks.append(.horizontalRule)
             index += 1
             return true
         }
 
+        func isHorizontalRule(_ trimmed: String) -> Bool {
+            let markers: Set<Character> = ["-", "_", "*"]
+            guard let first = trimmed.first, markers.contains(first), trimmed.count >= 3 else { return false }
+            return trimmed.allSatisfy({ $0 == first })
+        }
+
         mutating func consumeTaskList(_ trimmed: String) -> Bool {
             guard taskItem(trimmed) != nil else { return false }
             flushText()
-            var items: [TaskListItem] = []
-            while index < lines.count, let item = taskItem(lines[index].trimmingCharacters(in: .whitespaces)) {
-                items.append(item)
-                index += 1
-            }
-            blocks.append(.taskList(items))
+            blocks.append(.taskList(consumeItems(parsedBy: taskItem)))
             return true
         }
 
@@ -134,14 +171,9 @@ public enum MarkdownParser {
         }
 
         mutating func consumeOrderedList(_ trimmed: String) -> Bool {
-            guard orderedItem(trimmed) != nil else { return false }
+            guard let first = orderedItem(trimmed), canOpenOrderedList(startingWith: first) else { return false }
             flushText()
-            var items: [OrderedListItem] = []
-            while index < lines.count, let item = orderedItem(lines[index].trimmingCharacters(in: .whitespaces)) {
-                items.append(item)
-                index += 1
-            }
-            blocks.append(.orderedList(items))
+            blocks.append(.orderedList(consumeItems(parsedBy: orderedItem)))
             return true
         }
 
@@ -160,15 +192,19 @@ public enum MarkdownParser {
             )
         }
 
+        func canOpenOrderedList(startingWith first: OrderedListItem) -> Bool {
+            switch dialect {
+            case .conversation:
+                return true
+            case .document:
+                return textBuffer.isEmpty || first.number == 1
+            }
+        }
+
         mutating func consumeBulletList(_ trimmed: String) -> Bool {
             guard bulletItem(trimmed) != nil else { return false }
             flushText()
-            var items: [[InlineSpan]] = []
-            while index < lines.count, let item = bulletItem(lines[index].trimmingCharacters(in: .whitespaces)) {
-                items.append(item)
-                index += 1
-            }
-            blocks.append(.bulletList(items))
+            blocks.append(.bulletList(consumeItems(parsedBy: bulletItem)))
             return true
         }
 
@@ -183,12 +219,7 @@ public enum MarkdownParser {
         mutating func consumeFootnotes(_ trimmed: String) -> Bool {
             guard footnote(trimmed) != nil else { return false }
             flushText()
-            var items: [FootnoteItem] = []
-            while index < lines.count, let item = footnote(lines[index].trimmingCharacters(in: .whitespaces)) {
-                items.append(item)
-                index += 1
-            }
-            blocks.append(.footnotes(items))
+            blocks.append(.footnotes(consumeItems(parsedBy: footnote)))
             return true
         }
 
@@ -200,12 +231,8 @@ public enum MarkdownParser {
             return FootnoteItem(key: String(key), content: InlineMarkdownParser.parse(content))
         }
 
-        mutating func consumeTable(_ trimmed: String) -> Bool {
-            guard trimmed.contains("|"), index + 1 < lines.count,
-                let alignments = tableAlignments(lines[index + 1].trimmingCharacters(in: .whitespaces))
-            else { return false }
-            let headers = splitRow(trimmed)
-            guard headers.count == alignments.count, !headers.isEmpty else { return false }
+        mutating func consumeTable() -> Bool {
+            guard let head = tableHead(at: index) else { return false }
             flushText()
             index += 2
             var rows: [[[InlineSpan]]] = []
@@ -213,14 +240,24 @@ public enum MarkdownParser {
                 let rowTrimmed = lines[index].trimmingCharacters(in: .whitespaces)
                 guard rowTrimmed.contains("|"), tableAlignments(rowTrimmed) == nil else { break }
                 var cells = splitRow(rowTrimmed)
-                while cells.count < headers.count { cells.append([]) }
-                rows.append(Array(cells.prefix(headers.count)))
+                while cells.count < head.headers.count { cells.append([]) }
+                rows.append(Array(cells.prefix(head.headers.count)))
                 index += 1
             }
             blocks.append(
-                .table(MarkdownTable(headers: headers, rows: rows, alignments: alignments))
+                .table(MarkdownTable(headers: head.headers, rows: rows, alignments: head.alignments))
             )
             return true
+        }
+
+        func tableHead(at position: Int) -> (headers: [[InlineSpan]], alignments: [ColumnAlignment])? {
+            let trimmed = lines[position].trimmingCharacters(in: .whitespaces)
+            guard trimmed.contains("|"), position + 1 < lines.count,
+                let alignments = tableAlignments(lines[position + 1].trimmingCharacters(in: .whitespaces))
+            else { return nil }
+            let headers = splitRow(trimmed)
+            guard headers.count == alignments.count, !headers.isEmpty else { return nil }
+            return (headers, alignments)
         }
 
         func tableAlignments(_ trimmed: String) -> [ColumnAlignment]? {
@@ -264,6 +301,42 @@ public enum MarkdownParser {
             }
             cells.append(current)
             return cells
+        }
+
+        mutating func consumeItems<Item>(parsedBy item: (String) -> Item?) -> [Item] {
+            var items: [Item] = []
+            while index < lines.count {
+                let itemLines = lines[index..<itemEnd(from: index)]
+                guard let parsed = item(paragraphText(itemLines).trimmingCharacters(in: .whitespaces)) else { break }
+                items.append(parsed)
+                index = nextItemStart(after: itemLines.endIndex, parsedBy: item)
+            }
+            return items
+        }
+
+        func itemEnd(from start: Int) -> Int {
+            switch dialect {
+            case .conversation:
+                return start + 1
+            case .document:
+                return (start + 1..<lines.count).first(where: endsItem) ?? lines.count
+            }
+        }
+
+        func endsItem(at position: Int) -> Bool {
+            let line = lines[position]
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            return trimmed.isEmpty || isCodeFence(trimmed) || quotedContent(line) != nil || heading(trimmed) != nil
+                || isHorizontalRule(trimmed) || taskItem(trimmed) != nil || orderedItem(trimmed) != nil
+                || bulletItem(trimmed) != nil || footnote(trimmed) != nil || tableHead(at: position) != nil
+        }
+
+        func nextItemStart<Item>(after end: Int, parsedBy item: (String) -> Item?) -> Int {
+            guard dialect == .document,
+                let next = (end..<lines.count).first(where: { !lines[$0].allSatisfy(\.isWhitespace) }),
+                item(lines[next].trimmingCharacters(in: .whitespaces)) != nil
+            else { return end }
+            return next
         }
     }
 }

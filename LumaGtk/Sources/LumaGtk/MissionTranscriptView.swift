@@ -331,13 +331,13 @@ private func renderBlockEntry(
 ) -> TurnBlockEntry {
     switch block.content {
     case .text(let text):
-        let widget = MarkdownWidget.make(markdown: text)
+        let widget = MarkdownWidget.make(markdown: text, as: .conversation)
         return TurnBlockEntry(block: block, widget: widget, toolBlock: nil)
     case .thinking(let text, _):
         let widget = MissionDisclosure.make(
             title: "Thinking",
             iconName: "view-reveal-symbolic",
-            child: MarkdownWidget.make(markdown: text, dimmed: true)
+            child: MarkdownWidget.make(markdown: text, as: .conversation, dimmed: true)
         )
         return TurnBlockEntry(block: block, widget: widget, toolBlock: nil)
     case .redactedThinking:
@@ -408,7 +408,7 @@ private final class LiveCard {
         while let child = bodySlot.firstChild {
             bodySlot.remove(child: child)
         }
-        bodySlot.append(child: MarkdownWidget.make(markdown: MarkdownStreaming.stablePrefix(of: text)))
+        bodySlot.append(child: MarkdownWidget.make(markdown: MarkdownStreaming.stablePrefix(of: text), as: .conversation))
     }
 }
 

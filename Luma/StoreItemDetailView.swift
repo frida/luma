@@ -126,7 +126,7 @@ struct StoreItemDetailView: View {
                 .help(message)
         case .loaded(let loaded):
             if !loaded.description.isEmpty {
-                MarkdownView(loaded.description)
+                MarkdownView(loaded.description, as: .document)
             }
             if !loaded.versions.isEmpty {
                 versionHistory(loaded.versions)

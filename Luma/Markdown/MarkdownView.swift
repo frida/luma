@@ -4,8 +4,8 @@ import SwiftUI
 struct MarkdownView: View {
     let blocks: [MarkdownBlock]
 
-    init(_ text: String) {
-        blocks = MarkdownParser.parse(text)
+    init(_ text: String, as dialect: MarkdownDialect) {
+        blocks = MarkdownParser.parse(text, as: dialect)
     }
 
     init(blocks: [MarkdownBlock]) {

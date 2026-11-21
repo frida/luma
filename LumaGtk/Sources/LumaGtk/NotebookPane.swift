@@ -432,7 +432,7 @@ final class NotebookPane {
             if isEditing {
                 inner.append(child: makeEditableBody(for: entry))
             } else if !entry.details.isEmpty {
-                let body = MarkdownWidget.make(markdown: entry.details)
+                let body = MarkdownWidget.make(markdown: entry.details, as: .conversation)
                 body.halign = .start
                 body.hexpand = true
                 inner.append(child: body)

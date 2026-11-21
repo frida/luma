@@ -184,7 +184,7 @@ final class StoreItemPane {
     private func showDetail(_ detail: StoreItemDetail) {
         detailHost.remove(child: detailLoadingRow)
         if !detail.description.isEmpty {
-            detailHost.append(child: MarkdownWidget.make(markdown: detail.description))
+            detailHost.append(child: MarkdownWidget.make(markdown: detail.description, as: .document))
         }
         guard !detail.versions.isEmpty else { return }
         let versionsHeading = Label(str: "Version History")
@@ -211,7 +211,7 @@ final class StoreItemPane {
         entry.append(child: title)
 
         if !version.notes.isEmpty {
-            entry.append(child: MarkdownWidget.make(markdown: version.notes, dimmed: true))
+            entry.append(child: MarkdownWidget.make(markdown: version.notes, as: .conversation, dimmed: true))
         }
         return entry
     }
