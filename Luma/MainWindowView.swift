@@ -202,6 +202,9 @@ private struct ProjectContentView: View {
         .onGeometryChange(for: CGFloat.self) { Self.maxSidePanelWidth(forDetailWidth: $0.size.width) } action: {
             maxSidePanelWidth = $0
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            PartnerContactQuestion(storefront: engine.storefront)
+        }
     }
 
     @ViewBuilder

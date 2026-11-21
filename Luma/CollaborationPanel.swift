@@ -16,6 +16,7 @@ struct CollaborationPanel: View {
 
     @State private var didCopyInvite = false
     @State private var showLeaveLabConfirmation = false
+    @State private var partnerContactFailure: UIError?
 
     @State private var focusChatField = false
     @State private var isPinnedToBottom = true
@@ -71,6 +72,7 @@ struct CollaborationPanel: View {
         } message: {
             Text("You'll lose access to the lab's shared state. The lab keeps going for everyone else.")
         }
+        .partnerContactFailureAlert($partnerContactFailure)
     }
 
     private var header: some View {
@@ -84,6 +86,7 @@ struct CollaborationPanel: View {
                     Button("View GitHub Profile") {
                         openGitHubProfile(for: user)
                     }
+                    PartnerContactMenuItems(storefront: engine.storefront, failure: $partnerContactFailure)
                     Button("Sign out", role: .destructive) {
                         Task { @MainActor in
                             await engine.gitHubAuth.signOut()

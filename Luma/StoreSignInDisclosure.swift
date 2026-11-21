@@ -9,9 +9,17 @@ struct StoreSignInDisclosure: View {
     }
 
     var body: some View {
-        Label(text, systemImage: "person.badge.key")
-            .font(.callout)
-            .foregroundStyle(.secondary)
+        Label {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(text)
+                    .foregroundStyle(.secondary)
+                PrivacyPolicyLink()
+            }
+        } icon: {
+            Image(systemName: "person.badge.key")
+                .foregroundStyle(.secondary)
+        }
+        .font(.callout)
     }
 
     private var text: String {

@@ -97,9 +97,22 @@ struct GitHubSignInSheet: View {
                 auth.cancelSignIn()
             }
             .keyboardShortcut(.cancelAction)
+
+            privacyNote
         }
         .padding(24)
         .frame(width: 320)
+    }
+
+    private var privacyNote: some View {
+        VStack(spacing: 2) {
+            Text("Signing in gives Luma\u{2019}s server your GitHub profile and email address.")
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            PrivacyPolicyLink()
+        }
+        .font(.caption)
     }
 }
 

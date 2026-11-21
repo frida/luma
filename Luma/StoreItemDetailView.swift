@@ -29,8 +29,12 @@ struct StoreItemDetailView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if storefront.needsSignIn && storefront.installState(of: item).needsDownload {
-                signInNote
+            VStack(spacing: 0) {
+                if storefront.needsSignIn && storefront.installState(of: item).needsDownload {
+                    signInNote
+                }
+                PartnerContactQuestion(storefront: storefront)
+                    .background(.bar)
             }
         }
         .task { await loadDetail() }

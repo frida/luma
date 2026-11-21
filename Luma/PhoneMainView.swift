@@ -156,6 +156,10 @@ private struct PhoneContentView: View {
                     }
                 }
             }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                PartnerContactQuestion(storefront: engine.storefront)
+                    .background(.bar)
+            }
         }
         .environment(picker)
         .task {
@@ -330,7 +334,9 @@ private struct DrawerHost<Content: View>: View {
                 title: kind.title,
                 expanded: $expanded,
                 onClose: close
-            )
+            ) {
+                accessory(for: kind)
+            }
             Divider()
 
             switch kind {
@@ -354,12 +360,23 @@ private struct DrawerHost<Content: View>: View {
             expanded = false
         }
     }
+
+    @ViewBuilder
+    private func accessory(for kind: DrawerKind) -> some View {
+        switch kind {
+        case .events:
+            EmptyView()
+        case .collab:
+            DrawerAccountMenu(storefront: engine.storefront)
+        }
+    }
 }
 
-private struct DrawerHeader: View {
+private struct DrawerHeader<Accessory: View>: View {
     let title: String
     @Binding var expanded: Bool
     let onClose: () -> Void
+    @ViewBuilder let accessory: () -> Accessory
 
     var body: some View {
         HStack(spacing: 12) {
@@ -378,6 +395,8 @@ private struct DrawerHeader: View {
 
             Spacer()
 
+            accessory()
+
             Button(action: onClose) {
                 Image(systemName: "xmark")
             }
@@ -386,6 +405,24 @@ private struct DrawerHeader: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+    }
+}
+
+private struct DrawerAccountMenu: View {
+    let storefront: Storefront
+
+    @State private var failure: UIError?
+
+    var body: some View {
+        Menu {
+            PartnerContactMenuItems(storefront: storefront, failure: $failure)
+        } label: {
+            Image(systemName: "person.crop.circle")
+        }
+        .font(.body)
+        .accessibilityLabel("Account")
+        .accessibilityIdentifier("collaboration.accountMenu")
+        .partnerContactFailureAlert($failure)
     }
 }
 
