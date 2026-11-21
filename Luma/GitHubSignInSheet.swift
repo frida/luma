@@ -102,3 +102,68 @@ struct GitHubSignInSheet: View {
         .frame(width: 320)
     }
 }
+
+extension View {
+    func gitHubSignInSheet(auth: GitHubAuth, precedence: GitHubSignInSheetPrecedence) -> some View {
+        modifier(GitHubSignInSheetHost(auth: auth, precedence: precedence))
+    }
+}
+
+enum GitHubSignInSheetPrecedence {
+    case ambient
+    case foremost
+}
+
+private struct GitHubSignInSheetHost: ViewModifier {
+    let auth: GitHubAuth
+    let precedence: GitHubSignInSheetPrecedence
+
+    @State private var hostID = UUID()
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: isPresented) {
+                GitHubSignInSheet(auth: auth)
+            }
+            .onAppear {
+                if precedence == .foremost {
+                    ForemostGitHubSignInHosts.shared.claim(hostID)
+                }
+            }
+            .onDisappear {
+                ForemostGitHubSignInHosts.shared.release(hostID)
+            }
+    }
+
+    private var isPresented: Binding<Bool> {
+        Binding(
+            get: { auth.isPresentingSignIn && ForemostGitHubSignInHosts.shared.presents(hostID, precedence: precedence) },
+            set: { if !$0 { auth.dismissSignIn() } }
+        )
+    }
+}
+
+@Observable
+@MainActor
+private final class ForemostGitHubSignInHosts {
+    static let shared = ForemostGitHubSignInHosts()
+
+    private var claimants: [UUID] = []
+
+    func claim(_ hostID: UUID) {
+        claimants.append(hostID)
+    }
+
+    func release(_ hostID: UUID) {
+        claimants.removeAll { $0 == hostID }
+    }
+
+    func presents(_ hostID: UUID, precedence: GitHubSignInSheetPrecedence) -> Bool {
+        switch precedence {
+        case .ambient:
+            return claimants.isEmpty
+        case .foremost:
+            return claimants.last == hostID
+        }
+    }
+}

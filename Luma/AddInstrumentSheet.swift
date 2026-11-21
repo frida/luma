@@ -21,6 +21,10 @@ struct AddInstrumentSheet: View {
     @State private var isShowingImportPicker = false
     @State private var importErrorMessage: String?
     @State private var alreadyAddedDescriptorIDs: Set<InstrumentDescriptor.ID> = []
+    @State private var storeItemBeingAdded: StoreItem.ID?
+    @State private var editedStoreCopyAction: EditedStoreCopyAction?
+    @State private var storeFailure: UIError?
+    @State private var searchText = ""
 
     #if canImport(UIKit)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -42,14 +46,64 @@ struct AddInstrumentSheet: View {
     }
 
     private var libraryFolders: [InstrumentFolder] {
-        engine.instrumentFolders.folders.filter { engine.customInstrumentID(linkedToFolderAt: $0.folderURL) == nil }
+        let storeFolderPaths = Set(storefront.installedItems.map { storefront.installationFolderURL(for: $0.id).standardizedFileURL.path })
+        return engine.instrumentFolders.folders.filter {
+            engine.customInstrumentID(linkedToFolderAt: $0.folderURL) == nil
+                && !storeFolderPaths.contains($0.folderURL.standardizedFileURL.path)
+        }
     }
 
+    private var storefront: Storefront {
+        engine.storefront
+    }
+
+    private var storeItems: [StoreItem] {
+        storefront.installedItems + storefront.results
+    }
+
+    private var shownBuiltinDescriptors: [InstrumentDescriptor] {
+        builtinDescriptors.filter { matchesSearch($0.displayName) }
+    }
+
+    private var shownCustomDescriptors: [InstrumentDescriptor] {
+        let representedByStoreRows = customInstrumentIDsOfInstalledStoreItems
+        return customDescriptors.filter { !representedByStoreRows.contains($0.sourceIdentifier) && matchesSearch($0.displayName) }
+    }
+
+    private var customInstrumentIDsOfInstalledStoreItems: Set<String> {
+        Set(
+            storefront.installedItems.compactMap {
+                engine.customInstrumentID(linkedToFolderAt: storefront.installationFolderURL(for: $0.id))?.uuidString
+            }
+        )
+    }
+
+    private var shownInstalledStoreItems: [StoreItem] {
+        storefront.installedItems.filter { matchesSearch($0.name) }
+    }
+
+    private var shownLibraryFolders: [InstrumentFolder] {
+        libraryFolders.filter { matchesSearch($0.name) }
+    }
+
+    private func matchesSearch(_ name: String) -> Bool {
+        searchQuery.isEmpty || name.localizedStandardContains(searchQuery)
+    }
+
+    private var searchQuery: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static let storeResultsShownAtFirst = 6
     private static let newCustomDescriptorID: String = "custom:__new__"
     private static let linkFolderDescriptorID: String = "custom:__link__"
 
     private static func libraryFolderDescriptorID(_ folder: InstrumentFolder) -> String {
         "folder:\(folder.folderURL.path)"
+    }
+
+    private static func storeItemDescriptorID(_ item: StoreItem) -> String {
+        "store:\(item.id)"
     }
 
     private var selectedDescriptor: InstrumentDescriptor? {
@@ -62,6 +116,11 @@ struct AddInstrumentSheet: View {
         return libraryFolders.first { Self.libraryFolderDescriptorID($0) == id }
     }
 
+    private var selectedStoreItem: StoreItem? {
+        guard let id = selectedDescriptorID else { return nil }
+        return storeItems.first { Self.storeItemDescriptorID($0) == id }
+    }
+
     private var confirmActionLabel: String {
         selectedDescriptorID == Self.linkFolderDescriptorID ? "Choose Folder\u{2026}" : "Add"
     }
@@ -70,18 +129,36 @@ struct AddInstrumentSheet: View {
         if selectedDescriptorID == Self.newCustomDescriptorID { return false }
         if selectedDescriptorID == Self.linkFolderDescriptorID { return false }
         if selectedLibraryFolder != nil { return false }
+        if let item = selectedStoreItem { return !canAdd(item) }
         guard let descriptor = selectedDescriptor else { return true }
         if isAlreadyAdded(descriptor) { return true }
         return incompatibilityReason(for: descriptor) != nil
+    }
+
+    private func canAdd(_ item: StoreItem) -> Bool {
+        guard storeItemBeingAdded == nil, !isAlreadyAdded(item), incompatibilityReason(for: item.compatibility) == nil else { return false }
+        if case .sponsorshipNeeded = storefront.entitlementToAdd(item) { return false }
+        return true
     }
 
     private func isAlreadyAdded(_ descriptor: InstrumentDescriptor) -> Bool {
         alreadyAddedDescriptorIDs.contains(descriptor.id)
     }
 
+    private func isAlreadyAdded(_ item: StoreItem) -> Bool {
+        guard let defID = engine.customInstrumentID(linkedToFolderAt: storefront.installationFolderURL(for: item.id)),
+            let descriptor = customDescriptors.first(where: { $0.sourceIdentifier == defID.uuidString })
+        else { return false }
+        return isAlreadyAdded(descriptor)
+    }
+
     private func incompatibilityReason(for descriptor: InstrumentDescriptor) -> String? {
+        incompatibilityReason(for: descriptor.compatibility)
+    }
+
+    private func incompatibilityReason(for compatibility: InstrumentCompatibility) -> String? {
         guard let systemParams else { return nil }
-        return descriptor.compatibility.incompatibilityReason(for: systemParams)
+        return compatibility.incompatibilityReason(for: systemParams)
     }
 
     private func refreshAlreadyAdded() {
@@ -89,10 +166,21 @@ struct AddInstrumentSheet: View {
         alreadyAddedDescriptorIDs = Set(existing.map { engine.descriptor(for: $0).id })
     }
 
+    private func openStore() async {
+        await resolveSystemParameters()
+        await storefront.open(for: systemParams, showing: Self.storeResultsShownAtFirst)
+        await searchStore()
+    }
+
     private func resolveSystemParameters() async {
         let devices = await engine.deviceManager.currentDevices()
         guard let device = devices.first(where: { $0.id == session.deviceID }) else { return }
         systemParams = await engine.systemParameters.parameters(for: device)
+    }
+
+    private func searchStore() async {
+        guard storefront.searchText != searchQuery else { return }
+        await storefront.search(searchQuery)
     }
 
     var body: some View {
@@ -103,7 +191,7 @@ struct AddInstrumentSheet: View {
                 regularBody
             }
         }
-        .frame(minWidth: isCompactWidth ? 0 : 800, minHeight: isCompactWidth ? 0 : 420)
+        .frame(minWidth: isCompactWidth ? 0 : 800, minHeight: isCompactWidth ? 0 : 420, idealHeight: isCompactWidth ? nil : 540)
         .fileImporter(
             isPresented: $isShowingImportPicker,
             allowedContentTypes: [.folder]
@@ -117,9 +205,30 @@ struct AddInstrumentSheet: View {
         } message: { message in
             Text(message)
         }
-        .task(id: session.deviceID) { await resolveSystemParameters() }
+        .confirmationDialog(
+            editedStoreCopyAction?.title ?? "",
+            isPresented: editedStoreCopyBinding,
+            titleVisibility: .visible,
+            presenting: editedStoreCopyAction
+        ) { action in
+            Button(action.confirmTitle, role: .destructive) {
+                discardEditedStoreCopy(action)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { action in
+            Text(action.message)
+        }
+        .alert(storeFailure?.title ?? "", isPresented: storeFailureBinding, presenting: storeFailure) { _ in
+            Button("OK") { storeFailure = nil }
+        } message: { failure in
+            Text(failure.message)
+        }
+        .gitHubSignInSheet(auth: engine.gitHubAuth, precedence: .foremost)
+        .task(id: session.deviceID) { await openStore() }
+        .onChange(of: searchQuery) { Task { await searchStore() } }
         .task(id: session.id) { refreshAlreadyAdded() }
         .task { engine.instrumentFolders.reload() }
+        .onDisappear { Task { await storefront.close() } }
     }
 
     private var importErrorBinding: Binding<Bool> {
@@ -129,23 +238,52 @@ struct AddInstrumentSheet: View {
         )
     }
 
+    private var editedStoreCopyBinding: Binding<Bool> {
+        Binding(
+            get: { editedStoreCopyAction != nil },
+            set: { if !$0 { editedStoreCopyAction = nil } }
+        )
+    }
+
+    private func discardEditedStoreCopy(_ action: EditedStoreCopyAction) {
+        switch action {
+        case .replace(let item):
+            addStoreItem(item, localChanges: .discard)
+        case .remove(let item):
+            uninstallStoreItem(item, localChanges: .discard)
+        }
+    }
+
+    private var storeFailureBinding: Binding<Bool> {
+        Binding(
+            get: { storeFailure != nil },
+            set: { if !$0 { storeFailure = nil } }
+        )
+    }
+
     private var compactBody: some View {
         NavigationStack(path: $compactPath) {
             List {
                 Section {
-                    ForEach(builtinDescriptors) { descriptor in
+                    ForEach(shownBuiltinDescriptors) { descriptor in
                         NavigationLink(value: descriptor.id) {
                             descriptorRow(descriptor)
                         }
                     }
                 }
+                StoreResultsSection(storefront: storefront) { item in
+                    storeItemLink(item)
+                }
                 Section("Custom Instruments") {
-                    ForEach(customDescriptors) { descriptor in
+                    ForEach(shownCustomDescriptors) { descriptor in
                         NavigationLink(value: descriptor.id) {
                             descriptorRow(descriptor)
                         }
                     }
-                    ForEach(libraryFolders, id: \.folderURL) { folder in
+                    ForEach(shownInstalledStoreItems) { item in
+                        storeItemLink(item)
+                    }
+                    ForEach(shownLibraryFolders, id: \.folderURL) { folder in
                         Button {
                             linkFolder(at: folder.folderURL)
                         } label: {
@@ -168,6 +306,7 @@ struct AddInstrumentSheet: View {
                     .accessibilityIdentifier("addInstrument.descriptor.\(Self.linkFolderDescriptorID)")
                 }
             }
+            .searchable(text: $searchText)
             .navigationTitle("Add Instrument")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -188,23 +327,43 @@ struct AddInstrumentSheet: View {
                                 initialConfigJSON = descriptor.makeInitialConfigJSON()
                             }
                         }
+                } else if let item = storeItems.first(where: { Self.storeItemDescriptorID($0) == id }) {
+                    storeItemDetail(item)
+                        .navigationTitle(item.name)
+                        #if canImport(UIKit)
+                        .navigationBarTitleDisplayMode(.inline)
+                        #endif
+                        .toolbar { sharedToolbar }
+                        .onAppear { selectedDescriptorID = id }
                 }
             }
+        }
+    }
+
+    private func storeItemLink(_ item: StoreItem) -> some View {
+        NavigationLink(value: Self.storeItemDescriptorID(item)) {
+            storeItemRow(item)
         }
     }
 
     @ViewBuilder
     private var descriptorList: some View {
         Section {
-            ForEach(builtinDescriptors) { descriptor in
+            ForEach(shownBuiltinDescriptors) { descriptor in
                 descriptorRow(descriptor).tag(descriptor.id)
             }
         }
+        StoreResultsSection(storefront: storefront) { item in
+            storeItemRow(item).tag(Self.storeItemDescriptorID(item))
+        }
         Section("Custom Instruments") {
-            ForEach(customDescriptors) { descriptor in
+            ForEach(shownCustomDescriptors) { descriptor in
                 descriptorRow(descriptor).tag(descriptor.id)
             }
-            ForEach(libraryFolders, id: \.folderURL) { folder in
+            ForEach(shownInstalledStoreItems) { item in
+                storeItemRow(item).tag(Self.storeItemDescriptorID(item))
+            }
+            ForEach(shownLibraryFolders, id: \.folderURL) { folder in
                 libraryFolderRow(folder).tag(Self.libraryFolderDescriptorID(folder))
             }
             HStack {
@@ -226,11 +385,14 @@ struct AddInstrumentSheet: View {
 
     private var regularBody: some View {
         NavigationSplitView {
-            List(selection: $selectedDescriptorID) {
-                descriptorList
+            VStack(spacing: 0) {
+                searchField
+                List(selection: $selectedDescriptorID) {
+                    descriptorList
+                }
+                .listStyle(.sidebar)
             }
             .frame(minWidth: 240, idealWidth: 260)
-            .listStyle(.sidebar)
             .navigationTitle("Add Instrument")
         } detail: {
             Group {
@@ -240,6 +402,8 @@ struct AddInstrumentSheet: View {
                     linkFolderDetail
                 } else if let folder = selectedLibraryFolder {
                     libraryFolderDetail(folder)
+                } else if let item = selectedStoreItem {
+                    storeItemDetail(item)
                 } else if let descriptor = selectedDescriptor {
                     detailContent(descriptor: descriptor)
                 } else {
@@ -258,6 +422,19 @@ struct AddInstrumentSheet: View {
             }
             initialConfigJSON = desc.makeInitialConfigJSON()
         }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Search", text: $searchText)
+                .textFieldStyle(.roundedBorder)
+                .autocorrectionDisabled()
+                .accessibilityIdentifier("addInstrument.search")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
     }
 
     @MainActor
@@ -354,11 +531,7 @@ struct AddInstrumentSheet: View {
     @ViewBuilder
     private func detailContent(descriptor: InstrumentDescriptor) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            if isAlreadyAdded(descriptor) {
-                incompatibilityBanner(reason: "This instrument is already added to the session.")
-            } else if let reason = incompatibilityReason(for: descriptor) {
-                incompatibilityBanner(reason: reason)
-            }
+            unavailabilityBanner(isAlreadyAdded: isAlreadyAdded(descriptor), compatibility: descriptor.compatibility)
             if let ui = InstrumentUIRegistry.shared.ui(for: descriptor.id) {
                 ui.makeConfigEditor(
                     configJSON: $initialConfigJSON,
@@ -374,6 +547,25 @@ struct AddInstrumentSheet: View {
                     .foregroundStyle(.secondary)
                     .padding()
             }
+        }
+    }
+
+    private func storeItemDetail(_ item: StoreItem) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            unavailabilityBanner(isAlreadyAdded: isAlreadyAdded(item), compatibility: item.compatibility)
+            StoreItemDetailView(item: item, storefront: storefront) {
+                uninstallStoreItem(item, localChanges: .keep)
+            }
+            .id(item.id)
+        }
+    }
+
+    @ViewBuilder
+    private func unavailabilityBanner(isAlreadyAdded: Bool, compatibility: InstrumentCompatibility) -> some View {
+        if isAlreadyAdded {
+            incompatibilityBanner(reason: "This instrument is already added to the session.")
+        } else if let reason = incompatibilityReason(for: compatibility) {
+            incompatibilityBanner(reason: reason)
         }
     }
 
@@ -422,11 +614,52 @@ struct AddInstrumentSheet: View {
         .accessibilityIdentifier("addInstrument.descriptor.\(Self.libraryFolderDescriptorID(folder))")
     }
 
+    private func storeItemRow(_ item: StoreItem) -> some View {
+        let reason = incompatibilityReason(for: item.compatibility)
+        let alreadyAdded = isAlreadyAdded(item)
+        let dimmed = reason != nil || alreadyAdded
+        let helpText = reason ?? (alreadyAdded ? "Already added" : "")
+        return HStack {
+            StoreItemIconView(item: item, storefront: storefront, pointSize: 12)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.name)
+                Text(item.publisher.name)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 4)
+            if dimmed {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11))
+            }
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(item.access.listingTitle)
+                if let badgeTitle = storefront.installState(of: item).badgeTitle {
+                    Text(badgeTitle)
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .opacity(dimmed ? 0.5 : 1)
+        .help(helpText)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("addInstrument.descriptor.\(Self.storeItemDescriptorID(item))")
+    }
+
     @ToolbarContentBuilder
     private var sharedToolbar: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
             Button("Cancel") {
                 dismiss()
+            }
+        }
+        if storeItemBeingAdded != nil {
+            ToolbarItem(placement: .confirmationAction) {
+                ProgressView()
+                    .controlSize(.small)
             }
         }
         ToolbarItem(placement: .confirmationAction) {
@@ -438,6 +671,10 @@ struct AddInstrumentSheet: View {
                 }
                 if let folder = selectedLibraryFolder {
                     linkFolder(at: folder.folderURL)
+                    return
+                }
+                if let item = selectedStoreItem {
+                    addStoreItem(item, localChanges: .keep)
                     return
                 }
                 Task { @MainActor in
@@ -467,6 +704,66 @@ struct AddInstrumentSheet: View {
                 onBrowseCodeShare()
                 dismiss()
             }
+        }
+    }
+
+    private func addStoreItem(_ item: StoreItem, localChanges: Storefront.LocalChanges) {
+        Task { @MainActor in
+            storeItemBeingAdded = item.id
+            defer { storeItemBeingAdded = nil }
+            do {
+                if storefront.installState(of: item).needsDownload {
+                    try await storefront.install(item, localChanges: localChanges)
+                }
+                linkFolder(at: storefront.installationFolderURL(for: item.id))
+            } catch StorefrontError.signInCancelled, StorefrontError.rejected(.sponsorshipRequired, _) {
+            } catch StorefrontError.localChanges {
+                editedStoreCopyAction = .replace(item)
+            } catch {
+                storeFailure = UIError(title: "Could not add \(item.name)", message: error.localizedDescription)
+            }
+        }
+    }
+
+    private func uninstallStoreItem(_ item: StoreItem, localChanges: Storefront.LocalChanges) {
+        do {
+            try storefront.uninstall(itemID: item.id, localChanges: localChanges)
+        } catch StorefrontError.localChanges {
+            editedStoreCopyAction = .remove(item)
+        } catch {
+            storeFailure = UIError(title: "Could not uninstall \(item.name)", message: error.localizedDescription)
+        }
+    }
+}
+
+private enum EditedStoreCopyAction {
+    case replace(StoreItem)
+    case remove(StoreItem)
+
+    var title: String {
+        switch self {
+        case .replace:
+            return "Replace Your Edited Copy?"
+        case .remove:
+            return "Remove Your Edited Copy?"
+        }
+    }
+
+    var confirmTitle: String {
+        switch self {
+        case .replace:
+            return "Replace"
+        case .remove:
+            return "Uninstall"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .replace(let item):
+            return "\(item.name) has been edited since it was installed. Adding it replaces the edited copy, and those edits are lost."
+        case .remove(let item):
+            return "\(item.name) has been edited since it was installed. Uninstalling removes the edited copy, and those edits are lost."
         }
     }
 }
