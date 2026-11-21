@@ -88,7 +88,7 @@ public final class GitHubAuth {
         signInTask?.cancel()
         signInTask = nil
         state = .signedOut
-        isPresentingSignIn = false
+        dismissSignIn()
     }
 
     public func resetState() {
