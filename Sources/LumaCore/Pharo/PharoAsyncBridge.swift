@@ -51,6 +51,10 @@ public final class PharoAsyncBridge: @unchecked Sendable {
             return strdup(#"{"error":"no reply for this ticket"}"#)
         }
         let reply = pending.replies.removeFirst()
+        if pending.replies.isEmpty {
+            pending.taken?.resume()
+            pending.taken = nil
+        }
         tickets[ticket] = pending.replies.isEmpty && pending.isClosed ? nil : pending
         return strdup(reply.json)
     }
@@ -60,6 +64,7 @@ public final class PharoAsyncBridge: @unchecked Sendable {
         defer { lock.unlock() }
         guard let pending = tickets.removeValue(forKey: ticket) else { return }
         pending.answering.cancel()
+        pending.taken?.resume()
         for reply in pending.replies {
             reply.discard()
         }
@@ -75,6 +80,12 @@ public final class PharoAsyncBridge: @unchecked Sendable {
                 deliver(Self.encode(["result": item]), for: ticket, signalling: semaphore, closing: false)
             }
             deliver(Self.encode(["end": true]), for: ticket, signalling: semaphore, closing: true)
+        case .pulled(let next):
+            while let item = await next() {
+                deliver(Self.encode(["result": item]), for: ticket, signalling: semaphore, closing: false)
+                await untilTaken(ticket)
+            }
+            deliver(Self.encode(["end": true]), for: ticket, signalling: semaphore, closing: true)
         }
     }
 
@@ -88,6 +99,9 @@ public final class PharoAsyncBridge: @unchecked Sendable {
             let result = try await handler(request)
             if let streamed = result as? PharoStreamedResult {
                 return .stream(streamed.items)
+            }
+            if let pulled = result as? PharoPulledResult {
+                return .pulled(pulled.next)
             }
             if let held = result as? PharoHeldResult {
                 return .once(encode(["result": held.value], discard: held.release))
@@ -119,15 +133,30 @@ public final class PharoAsyncBridge: @unchecked Sendable {
         _ = Self.signalSemaphore(semaphore)
     }
 
+    private func untilTaken(_ ticket: Int32) async {
+        await withCheckedContinuation { (taken: CheckedContinuation<Void, Never>) in
+            lock.lock()
+            defer { lock.unlock() }
+            guard var pending = tickets[ticket], !pending.replies.isEmpty else {
+                taken.resume()
+                return
+            }
+            pending.taken = taken
+            tickets[ticket] = pending
+        }
+    }
+
     private struct Ticket {
         let answering: Task<Void, Never>
         var replies: [Reply] = []
         var isClosed = false
+        var taken: CheckedContinuation<Void, Never>?
     }
 
     private enum Outcome {
         case once(Reply)
         case stream(AsyncStream<Any>)
+        case pulled(@MainActor () async -> Any?)
     }
 
     private struct Reply {
@@ -151,6 +180,14 @@ public struct PharoStreamedResult: @unchecked Sendable {
 
     public init(items: AsyncStream<Any>) {
         self.items = items
+    }
+}
+
+public struct PharoPulledResult: @unchecked Sendable {
+    public let next: @MainActor () async -> Any?
+
+    public init(next: @escaping @MainActor () async -> Any?) {
+        self.next = next
     }
 }
 
