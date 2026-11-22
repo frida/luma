@@ -443,7 +443,8 @@ enum RenderTests {
         effect.setImage(
             drawable, name: "glyphs", pixels: sheet.pixels,
             width: sheet.width, height: sheet.height)
-        effect.setVertices(drawable, corners(for: "HELLO", in: sheet), primitive: .triangles)
+        effect.setGeometry(
+            drawable, vertices: CanvasBytes(copying: corners(for: "HELLO", in: sheet)), indices: nil, primitive: .triangles)
         return effect
     }
 

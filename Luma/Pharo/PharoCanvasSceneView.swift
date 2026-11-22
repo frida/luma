@@ -427,15 +427,16 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
     private var byIndex: MTLSamplerState?
     private var acrossPicture: MTLSamplerState?
     private var built: [Int: Built] = [:]
+    private var gpuBuffers: CanvasBufferStore?
     private let startTime = CACurrentMediaTime()
     private var tracedAt: CFTimeInterval = 0
 
     private struct Built {
         var pipeline: MTLRenderPipelineState
-        var vertexBuffer: MTLBuffer?
         var vertexMetal: String
         var fragmentMetal: String
-        var vertices: [Float]
+        var geometry: CanvasGeometry?
+        var buffers: CanvasGeometryBuffers?
         /// What the runs of values and pictures were stamped when their
         /// textures were made, so a frame tells them apart by the stamp
         /// rather than by reading every pixel back.
@@ -447,6 +448,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         self.view = view
         sceneHandle = handle
         commandQueue = view.device?.makeCommandQueue()
+        gpuBuffers = view.device.map(CanvasBufferStore.init)
 
         let depth = MTLDepthStencilDescriptor()
         depth.depthCompareFunction = .less
@@ -508,10 +510,11 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         trace(view, scale: scale, uniformWidth: uniforms[0], uniformHeight: uniforms[1])
 
         let frameTime = CanvasDriver.now
+        var drawn: [CanvasGeometry] = []
         for handle in scene.order {
             guard let subject = scene.drawables[handle], subject.isVisible,
                   let record = record(for: handle, subject, device: device),
-                  let vertexBuffer = record.vertexBuffer
+                  let buffers = record.buffers
             else { continue }
 
             for (offset, value) in subject.transform.prefix(16).enumerated() {
@@ -537,16 +540,17 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
                 encoder.setFragmentSamplerState(sampler, index: index)
                 encoder.setVertexSamplerState(sampler, index: index)
             }
-            encoder.setVertexBuffer(vertexBuffer, offset: 0, index: ShaderEffectRenderer.vertexBufferIndex)
-            encoder.drawPrimitives(
-                type: Self.primitive(subject.geometry.primitive),
-                vertexStart: 0,
-                vertexCount: subject.geometry.vertexCount)
+            encoder.draw(subject.geometry, from: buffers)
+            drawn.append(subject.geometry)
         }
 
         encoder.endEncoding()
         buffer.present(drawable)
+        buffer.addCompletedHandler { _ in
+            withExtendedLifetime(drawn) {}
+        }
         buffer.commit()
+        forgetWhatIsNotShown()
         self.view?.followMotion(after: frameTime)
     }
 
@@ -576,9 +580,9 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         if var existing = built[handle],
            existing.vertexMetal == subject.vertexMetal,
            existing.fragmentMetal == subject.fragmentMetal {
-            if existing.vertices != subject.geometry.vertices {
-                existing.vertexBuffer = Self.buffer(for: subject, device: device)
-                existing.vertices = subject.geometry.vertices
+            if existing.geometry != subject.geometry {
+                existing.buffers = CanvasGeometryBuffers(subject.geometry, from: gpuBuffers!)
+                existing.geometry = subject.geometry
                 built[handle] = existing
             }
             if existing.stamps != Self.stamps(of: subject) {
@@ -616,14 +620,28 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
 
         let record = Built(
             pipeline: pipeline,
-            vertexBuffer: Self.buffer(for: subject, device: device),
             vertexMetal: subject.vertexMetal,
             fragmentMetal: subject.fragmentMetal,
-            vertices: subject.geometry.vertices,
+            geometry: subject.geometry,
+            buffers: CanvasGeometryBuffers(subject.geometry, from: gpuBuffers!),
             stamps: Self.stamps(of: subject),
             textures: Self.textures(for: subject, device: device))
         built[handle] = record
         return record
+    }
+
+    private func forgetWhatIsNotShown() {
+        for (handle, record) in built {
+            guard let subject = scene.drawables[handle] else {
+                built[handle] = nil
+                continue
+            }
+            if !subject.isVisible, record.geometry != subject.geometry {
+                built[handle]?.geometry = nil
+                built[handle]?.buffers = nil
+            }
+        }
+        gpuBuffers?.keep(onlyWhat: built.values.compactMap(\.geometry))
     }
 
     private static func stamps(of subject: CanvasDrawable) -> [UInt64] {
@@ -669,13 +687,6 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         return texture
     }
 
-    private static func buffer(for subject: CanvasDrawable, device: MTLDevice) -> MTLBuffer? {
-        device.makeBuffer(
-            bytes: subject.geometry.vertices,
-            length: max(subject.geometry.vertices.count, 1) * MemoryLayout<Float>.stride,
-            options: [])
-    }
-
     private static func vertexDescriptor(for geometry: CanvasGeometry) -> MTLVertexDescriptor {
         let descriptor = MTLVertexDescriptor()
         var offset = 0
@@ -695,16 +706,6 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         case 2: return .float2
         case 3: return .float3
         default: return .float4
-        }
-    }
-
-    private static func primitive(_ primitive: CanvasGeometry.Primitive) -> MTLPrimitiveType {
-        switch primitive {
-        case .points: return .point
-        case .lines: return .line
-        case .lineStrip: return .lineStrip
-        case .triangles: return .triangle
-        case .triangleStrip: return .triangleStrip
         }
     }
 }

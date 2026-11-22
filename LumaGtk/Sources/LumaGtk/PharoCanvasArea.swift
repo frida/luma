@@ -22,7 +22,7 @@ final class PharoCanvasArea {
         var handle: Int32
         var vertexGLSL: String
         var fragmentGLSL: String
-        var vertices: [Float]
+        var geometry: CanvasGeometry?
         var stamps: [UInt64] = []
     }
 
@@ -61,7 +61,7 @@ final class PharoCanvasArea {
             guard let drawable = scene.drawables[handle], !drawable.vertexGLSL.isEmpty else { continue }
 
             var record = built[handle] ?? Built(
-                handle: area.addDrawable(), vertexGLSL: "", fragmentGLSL: "", vertices: [])
+                handle: area.addDrawable(), vertexGLSL: "", fragmentGLSL: "")
 
             if record.vertexGLSL != drawable.vertexGLSL || record.fragmentGLSL != drawable.fragmentGLSL {
                 area.setProgram(
@@ -72,14 +72,13 @@ final class PharoCanvasArea {
                 }
                 record.vertexGLSL = drawable.vertexGLSL
                 record.fragmentGLSL = drawable.fragmentGLSL
-                record.vertices = []
             }
 
-            if record.vertices != drawable.geometry.vertices {
-                area.setVertices(
-                    record.handle, drawable.geometry.vertices,
+            if record.geometry != drawable.geometry {
+                area.setGeometry(
+                    record.handle, vertices: drawable.geometry.vertices, indices: drawable.geometry.indices,
                     primitive: drawable.geometry.primitive)
-                record.vertices = drawable.geometry.vertices
+                record.geometry = drawable.geometry
             }
 
             area.setTransform(record.handle, drawable.transform)

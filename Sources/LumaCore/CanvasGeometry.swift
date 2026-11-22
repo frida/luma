@@ -32,18 +32,21 @@ public struct CanvasGeometry: Sendable, Equatable {
     public var varyings: [ShaderAttribute]
     public var primitive: Primitive
     /// Interleaved, one run of components per attribute per vertex.
-    public var vertices: [Float]
+    public var vertices: CanvasBytes?
+    public var indices: CanvasBytes?
 
     public init(
         attributes: [ShaderAttribute],
         varyings: [ShaderAttribute] = [],
         primitive: Primitive = .triangles,
-        vertices: [Float] = []
+        vertices: CanvasBytes? = nil,
+        indices: CanvasBytes? = nil
     ) {
         self.attributes = attributes
         self.varyings = varyings
         self.primitive = primitive
         self.vertices = vertices
+        self.indices = indices
     }
 
     public var stride: Int {
@@ -51,7 +54,15 @@ public struct CanvasGeometry: Sendable, Equatable {
     }
 
     public var vertexCount: Int {
-        stride == 0 ? 0 : vertices.count / stride
+        stride == 0 ? 0 : (vertices?.count ?? 0) / (stride * MemoryLayout<Float>.stride)
+    }
+
+    public var indexCount: Int {
+        (indices?.count ?? 0) / MemoryLayout<UInt32>.stride
+    }
+
+    public var drawsTriangleEdges: Bool {
+        indices != nil && primitive == .lines
     }
 
     /// Where the shader is headed. OpenGL takes the source as it stands, at a
@@ -169,5 +180,29 @@ public struct CanvasGeometry: Sendable, Equatable {
                 """
         }
         return ShaderVocabulary.uniformBlock
+    }
+}
+
+public struct CanvasBytes: Sendable, Equatable {
+    public let bytes: SharedBytes
+    public let offset: Int
+    public let count: Int
+
+    public init(bytes: SharedBytes, offset: Int, count: Int) {
+        self.bytes = bytes
+        self.offset = offset
+        self.count = count
+    }
+
+    public init(copying values: UnsafeBufferPointer<Float>) {
+        self.init(bytes: SharedBytes(copying: UnsafeRawBufferPointer(values)), offset: 0, count: values.count * MemoryLayout<Float>.stride)
+    }
+
+    public init(copying values: [Float]) {
+        self = values.withUnsafeBufferPointer { CanvasBytes(copying: $0) }
+    }
+
+    public func withUnsafeBytes<Result>(_ body: (UnsafeRawBufferPointer) throws -> Result) rethrows -> Result {
+        try bytes.withUnsafeBytes { try body(UnsafeRawBufferPointer(rebasing: $0[offset..<(offset + count)])) }
     }
 }

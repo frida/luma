@@ -96,9 +96,10 @@ public func luma_drawable_set_vertices(
     _ count: Int32,
     _ primitive: Int32
 ) {
-    let vertices = Array(UnsafeBufferPointer(start: values, count: Int(max(count, 0))))
+    let vertices = CanvasBytes(copying: UnsafeBufferPointer(start: values, count: Int(max(count, 0))))
     guard CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
         subject.geometry.vertices = vertices
+        subject.geometry.indices = nil
         subject.geometry.primitive = CanvasGeometry.Primitive(rawValue: primitive) ?? .triangles
         subject.primitive = subject.geometry.primitive
     }) != nil else { return }
@@ -127,13 +128,13 @@ public func luma_drawable_set_vertex_bytes(
         return 0
     }
 
-    let vertices: [Float]
+    let runs: (vertices: CanvasBytes, indices: CanvasBytes?)
     do throws(CanvasVertexBytes.Failure) {
-        vertices = try CanvasVertexBytes(
+        runs = try CanvasVertexBytes(
             stride: subject.geometry.stride,
             vertices: (Int(blob), Int(offset), Int(count)),
             indices: indexBlob < 0 ? nil : (Int(indexBlob), Int(indexOffset), Int(indexCount))
-        ).floats(for: primitive)
+        ).checked()
     } catch {
         canvasError.withLock { $0 = error.message }
         return 0
@@ -141,7 +142,8 @@ public func luma_drawable_set_vertex_bytes(
     canvasError.withLock { $0 = "" }
 
     guard CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
-        subject.geometry.vertices = vertices
+        subject.geometry.vertices = runs.vertices
+        subject.geometry.indices = runs.indices
         subject.geometry.primitive = primitive
         subject.primitive = primitive
     }) != nil else { return 0 }
@@ -481,55 +483,42 @@ private struct CanvasVertexBytes {
         let message: String
     }
 
-    func floats(for primitive: CanvasGeometry.Primitive) throws(Failure) -> [Float] {
+    func checked() throws(Failure) -> (vertices: CanvasBytes, indices: CanvasBytes?) {
         guard stride > 0 else { throw Failure(message: "declare the drawable's attributes before handing it vertices") }
         let vertexBytes = stride * MemoryLayout<Float>.stride
         guard vertices.count % vertexBytes == 0 else {
             throw Failure(message: "\(vertices.count) bytes are not a whole number of \(vertexBytes)-byte vertices")
         }
-        guard let indices else { return try read(vertices) { $0.loadedArray(as: Float.self) } }
+        let held = try Self.aligned(vertices)
+        guard let indices else { return (held, nil) }
 
-        let corners = try read(indices) { $0.loadedArray(as: UInt32.self) }
-        guard corners.count % 3 == 0 else { throw Failure(message: "\(corners.count) indices are not a whole number of triangles") }
+        let indexBytes = MemoryLayout<UInt32>.stride
+        guard indices.count % indexBytes == 0 else {
+            throw Failure(message: "\(indices.count) bytes are not a whole number of \(indexBytes)-byte indices")
+        }
+        let corners = try Self.aligned(indices)
+        let cornerCount = corners.count / indexBytes
+        guard cornerCount % 3 == 0 else { throw Failure(message: "\(cornerCount) indices are not a whole number of triangles") }
         let vertexCount = vertices.count / vertexBytes
-        if let stray = corners.first(where: { Int($0) >= vertexCount }) {
+        if let stray = Self.largest(of: corners), Int(stray) >= vertexCount {
             throw Failure(message: "index \(stray) is past the last of \(vertexCount) vertices")
         }
-        let order = primitive == .lines ? Self.edges(of: corners) : corners
-        return try read(vertices) { bytes in
-            var gathered = [Float](repeating: 0, count: order.count * stride)
-            gathered.withUnsafeMutableBytes { out in
-                for (at, corner) in order.enumerated() {
-                    out.baseAddress!.advanced(by: at * vertexBytes)
-                        .copyMemory(from: bytes.baseAddress!.advanced(by: Int(corner) * vertexBytes), byteCount: vertexBytes)
-                }
-            }
-            return gathered
-        }
+        return (held, corners)
     }
 
-    private static func edges(of corners: [UInt32]) -> [UInt32] {
-        var edges: [UInt32] = []
-        edges.reserveCapacity(corners.count * 2)
-        for at in Swift.stride(from: 0, to: corners.count, by: 3) {
-            let (a, b, c) = (corners[at], corners[at + 1], corners[at + 2])
-            edges += [a, b, b, c, c, a]
-        }
-        return edges
-    }
-
-    private func read<T>(_ range: Range, _ body: (UnsafeRawBufferPointer) -> T) throws(Failure) -> T {
-        guard let result = PharoBlobRegistry.shared.withBytes(range.blob, offset: range.offset, count: range.count, body) else {
+    private static func aligned(_ range: Range) throws(Failure) -> CanvasBytes {
+        guard let bytes = PharoBlobRegistry.shared.bytes(range.blob),
+              range.offset >= 0, range.count >= 0, range.offset + range.count <= bytes.count
+        else {
             throw Failure(message: "those bytes are not held any more")
         }
-        return result
+        let run = CanvasBytes(bytes: bytes, offset: range.offset, count: range.count)
+        guard range.offset % MemoryLayout<UInt32>.alignment != 0 else { return run }
+        return run.withUnsafeBytes { CanvasBytes(bytes: SharedBytes(copying: $0), offset: 0, count: range.count) }
     }
-}
 
-extension UnsafeRawBufferPointer {
-    fileprivate func loadedArray<T>(as type: T.Type) -> [T] {
-        let count = self.count / MemoryLayout<T>.stride
-        return (0..<count).map { loadUnaligned(fromByteOffset: $0 * MemoryLayout<T>.stride, as: T.self) }
+    private static func largest(of corners: CanvasBytes) -> UInt32? {
+        corners.withUnsafeBytes { $0.withMemoryRebound(to: UInt32.self) { $0.max() } }
     }
 }
 

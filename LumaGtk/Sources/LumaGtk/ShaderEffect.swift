@@ -23,6 +23,7 @@ final class ShaderEffect {
     private let fragmentSource: String?
     private var screen: ScreenFilling?
     private var drawables: [Drawable] = []
+    private let buffers = GLBufferStore()
     private var nextHandle: Int32 = 1
 
     private var startedAt: gint64 = 0
@@ -130,22 +131,23 @@ final class ShaderEffect {
         drawable.vertexSource = vertex
         drawable.fragmentSource = fragment
         drawable.attributes = []
-        drawable.changed = true
+        drawable.needsLink = true
     }
 
     func addAttribute(_ handle: Int32, name: String, components: Int) {
         guard let drawable = drawable(handle) else { return }
 
         drawable.attributes.append(Attribute(name: name, components: components))
-        drawable.changed = true
+        drawable.needsLink = true
     }
 
-    func setVertices(_ handle: Int32, _ values: [Float], primitive: CanvasGeometry.Primitive) {
+    func setGeometry(_ handle: Int32, vertices: CanvasBytes?, indices: CanvasBytes?, primitive: CanvasGeometry.Primitive) {
         guard let drawable = drawable(handle) else { return }
 
-        drawable.vertices = values
+        drawable.vertices = vertices
+        drawable.indices = indices
         drawable.primitive = primitive
-        drawable.changed = true
+        drawable.needsUpload = true
     }
 
     func setUniform(_ handle: Int32, name: String, values: [Float]) {
@@ -158,7 +160,7 @@ final class ShaderEffect {
         var param = Param(name: name)
         param.values = Array(values.prefix(16))
         drawable.params.append(param)
-        drawable.changed = true
+        drawable.needsLocations = true
     }
 
     /// A run of values the shader reads by index, held as a texture of the
@@ -173,7 +175,7 @@ final class ShaderEffect {
         var sheet = Sheet(name: name)
         sheet.adopt(values: values, width: width, height: height)
         drawable.sheets.append(sheet)
-        drawable.changed = true
+        drawable.needsLocations = true
     }
 
     /// A picture the shader samples across, one word per pixel.
@@ -187,7 +189,7 @@ final class ShaderEffect {
         var picture = Picture(name: name)
         picture.adopt(pixels: pixels, width: width, height: height)
         drawable.pictures.append(picture)
-        drawable.changed = true
+        drawable.needsLocations = true
     }
 
     /// What a named value should do over time. Worked out on the frame clock,
@@ -204,7 +206,7 @@ final class ShaderEffect {
 
         let at = drawable.params.firstIndex(where: { $0.name == name }) ?? {
             drawable.params.append(Param(name: name))
-            drawable.changed = true
+            drawable.needsLocations = true
             return drawable.params.count - 1
         }()
         drawable.params[at].drive(kind: kind, from: from, to: to, seconds: seconds)
@@ -220,6 +222,12 @@ final class ShaderEffect {
     }
 
     func removeDrawable(_ handle: Int32) {
+        guard let drawable = drawable(handle) else { return }
+
+        if widget.realized {
+            widget.makeCurrent()
+            drawable.releaseResources()
+        }
         drawables.removeAll { $0.handle == handle }
     }
 
@@ -279,6 +287,7 @@ final class ShaderEffect {
         for drawable in drawables {
             drawable.releaseResources()
         }
+        buffers.releaseAll()
     }
 
     private func render() -> Bool {
@@ -295,6 +304,9 @@ final class ShaderEffect {
         activity *= expf(-sinceRender / Self.activityHalfLife)
 
         let showing = drawables.filter(\.isVisible)
+        for drawable in drawables where !drawable.isVisible && drawable.needsUpload {
+            drawable.releaseGeometry()
+        }
 
         epoxy_glClearColor(clearColor.red, clearColor.green, clearColor.blue, 1)
         if showing.isEmpty {
@@ -316,6 +328,7 @@ final class ShaderEffect {
             for drawable in showing {
                 draw(drawable, width: width, height: height, elapsed: elapsed, pulse: pulse)
             }
+            buffers.keep(onlyWhat: drawables.flatMap(\.uploadedBytes))
             epoxy_glUseProgram(0)
             capture(width: width, height: height)
             return true
@@ -362,10 +375,8 @@ final class ShaderEffect {
         elapsed: Float,
         pulse: Float
     ) {
-        if drawable.changed {
-            drawable.rebuild()
-        }
-        guard drawable.program != 0, !drawable.vertices.isEmpty, drawable.stride != 0 else { return }
+        drawable.prepare(storingIn: buffers)
+        guard drawable.program != 0, drawable.vertexCount > 0 else { return }
 
         epoxy_glUseProgram(drawable.program)
         drawable.bindTextures()
@@ -374,8 +385,7 @@ final class ShaderEffect {
             drawable.locations, transform: drawable.transform,
             width: width, height: height, elapsed: elapsed, pulse: pulse)
         epoxy_glBindVertexArray(drawable.vao)
-        epoxy_glDrawArrays(
-            drawable.primitive.glPrimitive, 0, GLsizei(drawable.vertices.count / drawable.stride))
+        drawable.drawElements()
         epoxy_glBindVertexArray(0)
     }
 
@@ -631,11 +641,14 @@ private struct Picture {
 private final class Drawable {
     let handle: Int32
     var isVisible = true
-    var changed = false
+    var needsLink = false
+    var needsLocations = false
+    var needsUpload = false
     var vertexSource = ""
     var fragmentSource = ""
     var attributes: [Attribute] = []
-    var vertices: [Float] = []
+    var vertices: CanvasBytes?
+    var indices: CanvasBytes?
     var primitive: CanvasGeometry.Primitive = .triangles
     var transform = CanvasDrawable.identity
     var params: [Param] = []
@@ -644,7 +657,17 @@ private final class Drawable {
     private(set) var program: GLuint = 0
     private(set) var vao: GLuint = 0
     private(set) var locations = Locations()
-    private var vbo: GLuint = 0
+    private(set) var uploadedBytes: [SharedBytes] = []
+    private var edgeBuffer: GLuint = 0
+    private var elementCount = 0
+    private var elementOffset = 0
+    private var drawing = Drawing.arrays
+
+    private enum Drawing {
+        case arrays
+        case elements(GLenum)
+        case triangleOutlines
+    }
 
     init(handle: Int32) {
         self.handle = handle
@@ -654,54 +677,41 @@ private final class Drawable {
         attributes.reduce(0) { $0 + $1.components }
     }
 
+    var vertexCount: Int {
+        stride == 0 ? 0 : (vertices?.count ?? 0) / (stride * MemoryLayout<Float>.stride)
+    }
+
     /// Lays the author's own attributes out over their vertices, binding each
     /// by the name they gave it, so their shader needs no layout qualifier
     /// that the GLSL version here would refuse.
-    func rebuild() {
-        changed = false
-        guard !vertexSource.isEmpty, !vertices.isEmpty else { return }
+    func prepare(storingIn buffers: GLBufferStore) {
+        guard !vertexSource.isEmpty, let vertices else { return }
 
-        if program != 0 {
-            epoxy_glDeleteProgram(program)
+        if needsLink {
+            link()
         }
-        program = link()
         guard program != 0 else { return }
 
-        locations = Locations(program: program)
-        for at in params.indices {
-            params[at].location = program.location(params[at].name)
+        if needsLocations {
+            locate()
         }
-        for at in sheets.indices {
-            sheets[at].location = program.location(sheets[at].name)
-            sheets[at].isDirty = true
+        if needsUpload {
+            upload(vertices, storingIn: buffers)
         }
-        for at in pictures.indices {
-            pictures[at].location = program.location(pictures[at].name)
-            pictures[at].isDirty = true
-        }
+    }
 
-        if vao == 0 {
-            epoxy_glGenVertexArrays(1, &vao)
+    func drawElements() {
+        switch drawing {
+        case .arrays:
+            epoxy_glDrawArrays(primitive.glPrimitive, 0, GLsizei(vertexCount))
+        case .elements(let mode):
+            epoxy_glDrawElements(mode, GLsizei(elementCount), GLenum(GL_UNSIGNED_INT), UnsafeRawPointer(bitPattern: elementOffset))
+        case .triangleOutlines:
+            epoxy_glPolygonMode(GLenum(GL_FRONT_AND_BACK), GLenum(GL_LINE))
+            epoxy_glDrawElements(
+                GLenum(GL_TRIANGLES), GLsizei(elementCount), GLenum(GL_UNSIGNED_INT), UnsafeRawPointer(bitPattern: elementOffset))
+            epoxy_glPolygonMode(GLenum(GL_FRONT_AND_BACK), GLenum(GL_FILL))
         }
-        if vbo == 0 {
-            epoxy_glGenBuffers(1, &vbo)
-        }
-        epoxy_glBindVertexArray(vao)
-        epoxy_glBindBuffer(GLenum(GL_ARRAY_BUFFER), vbo)
-        epoxy_glBufferData(
-            GLenum(GL_ARRAY_BUFFER), GLsizeiptr(vertices.count * MemoryLayout<Float>.stride),
-            vertices, GLenum(GL_STATIC_DRAW))
-
-        var offset = 0
-        for (index, attribute) in attributes.enumerated() {
-            epoxy_glEnableVertexAttribArray(GLuint(index))
-            epoxy_glVertexAttribPointer(
-                GLuint(index), GLint(attribute.components), GLenum(GL_FLOAT), GLboolean(GL_FALSE),
-                GLsizei(stride * MemoryLayout<Float>.stride),
-                UnsafeRawPointer(bitPattern: offset * MemoryLayout<Float>.stride))
-            offset += attribute.components
-        }
-        epoxy_glBindVertexArray(0)
     }
 
     /// The runs of values first, then the pictures, which is the order the
@@ -726,11 +736,9 @@ private final class Drawable {
         if program != 0 {
             epoxy_glDeleteProgram(program)
             program = 0
+            needsLink = true
         }
-        if vbo != 0 {
-            epoxy_glDeleteBuffers(1, &vbo)
-            vbo = 0
-        }
+        releaseGeometry()
         if vao != 0 {
             epoxy_glDeleteVertexArrays(1, &vao)
             vao = 0
@@ -738,14 +746,26 @@ private final class Drawable {
         for at in sheets.indices where sheets[at].texture != 0 {
             epoxy_glDeleteTextures(1, &sheets[at].texture)
             sheets[at].texture = 0
+            sheets[at].isDirty = true
         }
         for at in pictures.indices where pictures[at].texture != 0 {
             epoxy_glDeleteTextures(1, &pictures[at].texture)
             pictures[at].texture = 0
+            pictures[at].isDirty = true
         }
     }
 
-    private func link() -> GLuint {
+    private func link() {
+        needsLink = false
+        if program != 0 {
+            epoxy_glDeleteProgram(program)
+        }
+        program = compiled()
+        needsLocations = true
+        needsUpload = true
+    }
+
+    private func compiled() -> GLuint {
         guard let vertex = GLuint.compile(GLenum(GL_VERTEX_SHADER), vertexSource),
               let fragment = GLuint.compile(GLenum(GL_FRAGMENT_SHADER), fragmentSource)
         else { return 0 }
@@ -755,6 +775,137 @@ private final class Drawable {
                 epoxy_glBindAttribLocation(program, GLuint(index), attribute.name)
             }
         }
+    }
+
+    private func locate() {
+        needsLocations = false
+        locations = Locations(program: program)
+        for at in params.indices {
+            params[at].location = program.location(params[at].name)
+        }
+        for at in sheets.indices {
+            sheets[at].location = program.location(sheets[at].name)
+            sheets[at].isDirty = true
+        }
+        for at in pictures.indices {
+            pictures[at].location = program.location(pictures[at].name)
+            pictures[at].isDirty = true
+        }
+    }
+
+    private func upload(_ vertices: CanvasBytes, storingIn buffers: GLBufferStore) {
+        needsUpload = false
+        if vao == 0 {
+            epoxy_glGenVertexArrays(1, &vao)
+        }
+        let vertexBuffer = buffers.name(holding: vertices.bytes)
+        epoxy_glBindVertexArray(vao)
+        epoxy_glBindBuffer(GLenum(GL_ARRAY_BUFFER), vertexBuffer)
+
+        var offset = 0
+        for (index, attribute) in attributes.enumerated() {
+            epoxy_glEnableVertexAttribArray(GLuint(index))
+            epoxy_glVertexAttribPointer(
+                GLuint(index), GLint(attribute.components), GLenum(GL_FLOAT), GLboolean(GL_FALSE),
+                GLsizei(stride * MemoryLayout<Float>.stride),
+                UnsafeRawPointer(bitPattern: vertices.offset + offset * MemoryLayout<Float>.stride))
+            offset += attribute.components
+        }
+        uploadedBytes = [vertices.bytes]
+
+        uploadElements(storingIn: buffers)
+        epoxy_glBindVertexArray(0)
+    }
+
+    private func uploadElements(storingIn buffers: GLBufferStore) {
+        guard let indices else {
+            drawing = .arrays
+            epoxy_glBindBuffer(GLenum(GL_ELEMENT_ARRAY_BUFFER), 0)
+            return
+        }
+
+        let outlinesTriangles = primitive == .lines
+        guard outlinesTriangles, !epoxy_is_desktop_gl() else {
+            epoxy_glBindBuffer(GLenum(GL_ELEMENT_ARRAY_BUFFER), buffers.name(holding: indices.bytes))
+            uploadedBytes.append(indices.bytes)
+            elementCount = indices.count / MemoryLayout<UInt32>.stride
+            elementOffset = indices.offset
+            drawing = outlinesTriangles ? .triangleOutlines : .elements(primitive.glPrimitive)
+            return
+        }
+
+        if edgeBuffer == 0 {
+            epoxy_glGenBuffers(1, &edgeBuffer)
+        }
+        epoxy_glBindBuffer(GLenum(GL_ELEMENT_ARRAY_BUFFER), edgeBuffer)
+        let edges = Self.edges(of: indices)
+        edges.withUnsafeBytes { bytes in
+            epoxy_glBufferData(
+                GLenum(GL_ELEMENT_ARRAY_BUFFER), GLsizeiptr(bytes.count), bytes.baseAddress, GLenum(GL_STATIC_DRAW))
+        }
+        elementCount = edges.count
+        elementOffset = 0
+        drawing = .elements(GLenum(GL_LINES))
+    }
+
+    private static func edges(of indices: CanvasBytes) -> [UInt32] {
+        indices.withUnsafeBytes { bytes in
+            bytes.withMemoryRebound(to: UInt32.self) { corners in
+                [UInt32](unsafeUninitializedCapacity: corners.count * 2) { edges, initialized in
+                    for at in Swift.stride(from: 0, to: corners.count, by: 3) {
+                        let (a, b, c) = (corners[at], corners[at + 1], corners[at + 2])
+                        edges[at * 2] = a
+                        edges[at * 2 + 1] = b
+                        edges[at * 2 + 2] = b
+                        edges[at * 2 + 3] = c
+                        edges[at * 2 + 4] = c
+                        edges[at * 2 + 5] = a
+                    }
+                    initialized = corners.count * 2
+                }
+            }
+        }
+    }
+
+    func releaseGeometry() {
+        if edgeBuffer != 0 {
+            epoxy_glDeleteBuffers(1, &edgeBuffer)
+            edgeBuffer = 0
+        }
+        uploadedBytes = []
+        needsUpload = true
+    }
+}
+
+@MainActor
+private final class GLBufferStore {
+    private var held: [ObjectIdentifier: (bytes: SharedBytes, name: GLuint)] = [:]
+
+    func name(holding bytes: SharedBytes) -> GLuint {
+        if let existing = held[ObjectIdentifier(bytes)] {
+            return existing.name
+        }
+        var name: GLuint = 0
+        epoxy_glGenBuffers(1, &name)
+        epoxy_glBindBuffer(GLenum(GL_ARRAY_BUFFER), name)
+        bytes.withUnsafeBytes { held in
+            epoxy_glBufferData(GLenum(GL_ARRAY_BUFFER), GLsizeiptr(held.count), held.baseAddress, GLenum(GL_STATIC_DRAW))
+        }
+        held[ObjectIdentifier(bytes)] = (bytes, name)
+        return name
+    }
+
+    func keep(onlyWhat wanted: [SharedBytes]) {
+        let kept = Set(wanted.map(ObjectIdentifier.init))
+        for (key, entry) in held where !kept.contains(key) {
+            var name = entry.name
+            epoxy_glDeleteBuffers(1, &name)
+            held[key] = nil
+        }
+    }
+
+    func releaseAll() {
+        keep(onlyWhat: [])
     }
 }
 

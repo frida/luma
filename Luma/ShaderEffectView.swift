@@ -201,7 +201,7 @@ nonisolated final class ShaderEffectPainter: @unchecked Sendable {
     private let layer: CAMetalLayer
     private let commandQueue: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
-    private let vertexBuffer: MTLBuffer?
+    private let buffers: CanvasGeometryBuffers?
     private let depthState: MTLDepthStencilState?
     private let depthFormat: MTLPixelFormat
     private let startTime = CACurrentMediaTime()
@@ -225,7 +225,7 @@ nonisolated final class ShaderEffectPainter: @unchecked Sendable {
         self.layer = layer
         commandQueue = queue
         pipeline = built.pipeline
-        vertexBuffer = built.vertexBuffer
+        buffers = built.buffers
         depthState = built.depthState
         depthFormat = view.depthStencilPixelFormat
     }
@@ -268,15 +268,11 @@ nonisolated final class ShaderEffectPainter: @unchecked Sendable {
         encoder.setFragmentBytes(&uniforms, length: uniformLength, index: 0)
         encoder.setVertexBytes(&uniforms, length: uniformLength, index: 0)
 
-        if case let .geometry(_, _, _, _, geometry) = program, let vertexBuffer {
+        if case let .geometry(_, _, _, _, geometry) = program, let buffers {
             if let depthState {
                 encoder.setDepthStencilState(depthState)
             }
-            encoder.setVertexBuffer(vertexBuffer, offset: 0, index: ShaderEffectRenderer.vertexBufferIndex)
-            encoder.drawPrimitives(
-                type: Self.metalPrimitive(geometry.primitive),
-                vertexStart: 0,
-                vertexCount: geometry.vertexCount)
+            encoder.draw(geometry, from: buffers)
         } else {
             encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         }
@@ -323,11 +319,11 @@ nonisolated final class ShaderEffectPainter: @unchecked Sendable {
         program: ShaderEffectProgram,
         device: MTLDevice,
         view: MTKView
-    ) -> (pipeline: MTLRenderPipelineState, vertexBuffer: MTLBuffer?, depthState: MTLDepthStencilState?)? {
+    ) -> (pipeline: MTLRenderPipelineState, buffers: CanvasGeometryBuffers?, depthState: MTLDepthStencilState?)? {
         let desc = MTLRenderPipelineDescriptor()
         desc.colorAttachments[0].pixelFormat = view.colorPixelFormat
         desc.depthAttachmentPixelFormat = view.depthStencilPixelFormat
-        var vertexBuffer: MTLBuffer?
+        var buffers: CanvasGeometryBuffers?
         var depthState: MTLDepthStencilState?
 
         if case let .geometry(vertexMetal, vertexName, fragmentMetal, fragmentName, geometry) = program {
@@ -340,10 +336,7 @@ nonisolated final class ShaderEffectPainter: @unchecked Sendable {
             desc.vertexFunction = vertex
             desc.fragmentFunction = fragment
             desc.vertexDescriptor = vertexDescriptor(for: geometry)
-            vertexBuffer = device.makeBuffer(
-                bytes: geometry.vertices,
-                length: max(geometry.vertices.count, 1) * MemoryLayout<Float>.stride,
-                options: [])
+            buffers = CanvasGeometryBuffers(geometry, from: CanvasBufferStore(device: device))
 
             let depth = MTLDepthStencilDescriptor()
             depth.depthCompareFunction = .less
@@ -359,7 +352,7 @@ nonisolated final class ShaderEffectPainter: @unchecked Sendable {
         }
 
         guard let state = try? device.makeRenderPipelineState(descriptor: desc) else { return nil }
-        return (state, vertexBuffer, depthState)
+        return (state, buffers, depthState)
     }
 
     private static func vertexDescriptor(for geometry: CanvasGeometry) -> MTLVertexDescriptor {
@@ -396,16 +389,6 @@ nonisolated final class ShaderEffectPainter: @unchecked Sendable {
         case 2: return .float2
         case 3: return .float3
         default: return .float4
-        }
-    }
-
-    private static func metalPrimitive(_ primitive: CanvasGeometry.Primitive) -> MTLPrimitiveType {
-        switch primitive {
-        case .points: return .point
-        case .lines: return .line
-        case .lineStrip: return .lineStrip
-        case .triangles: return .triangle
-        case .triangleStrip: return .triangleStrip
         }
     }
 }
