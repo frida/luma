@@ -62,7 +62,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
     }
 
     public init(row: Row) throws {
-        id = UUID(uuidString: row["id"])!
+        id = row["id"]
         name = row["name"]
         icon = InstrumentIcon.decodedJSONString(row["icon"])
         let compatibilityJSON: String = row["compatibility_json"]
@@ -79,7 +79,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
     }
 
     public func encode(to container: inout PersistenceContainer) {
-        container["id"] = id.uuidString
+        container["id"] = id
         container["name"] = name
         container["icon"] = icon.encodedJSONString()
         container["compatibility_json"] = compatibilityJSONString

@@ -14,10 +14,6 @@ public struct CustomInstrumentDefUIState: Codable, Equatable, Identifiable, Send
         case sidebarExpansion = "sidebar_expansion"
     }
 
-    public static func databaseUUIDEncodingStrategy(for column: String) -> DatabaseUUIDEncodingStrategy {
-        .uppercaseString
-    }
-
     public init(
         defID: UUID,
         sidebarExpansion: SidebarExpansion = .expanded

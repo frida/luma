@@ -27,10 +27,10 @@ public enum QueuedOp: Sendable {
 struct OutboxRecord: Codable, Sendable, FetchableRecord, PersistableRecord {
     static let databaseTableName = "outbox"
 
-    var opID: String
+    var opID: UUID
     var family: String
     var kind: String
-    var subjectID: String
+    var subjectID: UUID
     var payloadJSON: String
     var binaryData: Data?
     var createdAt: Date
@@ -47,10 +47,10 @@ struct OutboxRecord: Codable, Sendable, FetchableRecord, PersistableRecord {
 
     init<Op: OutboxOp>(_ op: Op) throws {
         let payload = try JSONSerialization.data(withJSONObject: op.toJSON(), options: [.sortedKeys])
-        opID = op.opID.uuidString
+        opID = op.opID
         family = Op.outboxFamily
         kind = op.kind
-        subjectID = op.outboxSubject.uuidString
+        subjectID = op.outboxSubject
         payloadJSON = String(decoding: payload, as: UTF8.self)
         binaryData = op.outboxBinary
         createdAt = Date()
@@ -69,10 +69,8 @@ struct OutboxRecord: Codable, Sendable, FetchableRecord, PersistableRecord {
     }
 
     func toOp<Op: OutboxOp>(_ type: Op.Type) -> Op? {
-        guard let payload = try? JSONSerialization.jsonObject(with: Data(payloadJSON.utf8)) as? [String: Any],
-            let subject = UUID(uuidString: subjectID)
-        else { return nil }
-        return Op.fromOutbox(payload, subject: subject, binary: binaryData)
+        guard let payload = try? JSONSerialization.jsonObject(with: Data(payloadJSON.utf8)) as? [String: Any] else { return nil }
+        return Op.fromOutbox(payload, subject: subjectID, binary: binaryData)
     }
 }
 

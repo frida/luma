@@ -15,13 +15,13 @@ public struct CustomInstrumentFile: Sendable, Equatable, FetchableRecord, Persis
     }
 
     public init(row: Row) throws {
-        defID = UUID(uuidString: row["def_id"])!
+        defID = row["def_id"]
         path = row["path"]
         content = row["content"]
     }
 
     public func encode(to container: inout PersistenceContainer) {
-        container["def_id"] = defID.uuidString
+        container["def_id"] = defID
         container["path"] = path
         container["content"] = content
     }

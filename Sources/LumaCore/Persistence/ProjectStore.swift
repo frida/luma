@@ -305,7 +305,7 @@ public final class ProjectStore: Sendable {
     @discardableResult
     public func removeOutboxOp(opID: UUID) throws -> Bool {
         try db.write { db in
-            try OutboxRecord.deleteOne(db, key: opID.uuidString)
+            try OutboxRecord.deleteOne(db, key: opID)
         }
     }
 
@@ -805,7 +805,7 @@ public final class ProjectStore: Sendable {
             let max = try Int.fetchOne(
                 db,
                 sql: "SELECT MAX(\"index\") FROM mission_turn WHERE mission_id = ?",
-                arguments: [missionID.uuidString]
+                arguments: [missionID]
             ) ?? -1
             return max + 1
         }
@@ -825,7 +825,7 @@ public final class ProjectStore: Sendable {
             try Int.fetchOne(
                 db,
                 sql: "SELECT COUNT(*) FROM mission_action WHERE mission_id = ?",
-                arguments: [missionID.uuidString]
+                arguments: [missionID]
             ) ?? 0
         }
     }
@@ -835,7 +835,7 @@ public final class ProjectStore: Sendable {
             let count = try Int.fetchOne(
                 db,
                 sql: "SELECT 1 FROM mission_action WHERE mission_id = ? AND status = ? LIMIT 1",
-                arguments: [missionID.uuidString, MissionActionStatus.pending.rawValue]
+                arguments: [missionID, MissionActionStatus.pending.rawValue]
             )
             return count != nil
         }
@@ -1019,7 +1019,7 @@ public final class ProjectStore: Sendable {
     public func fetchCustomInstrumentDef(id: UUID) throws -> CustomInstrumentDef? {
         try db.read { db in
             try CustomInstrumentDef
-                .filter(Column("id") == id.uuidString)
+                .filter(key: id)
                 .fetchOne(db)
         }
     }
@@ -1033,7 +1033,7 @@ public final class ProjectStore: Sendable {
     public func deleteCustomInstrumentDef(id: UUID) throws {
         try db.write { db in
             _ = try CustomInstrumentDef
-                .filter(Column("id") == id.uuidString)
+                .filter(key: id)
                 .deleteAll(db)
         }
     }
@@ -1157,7 +1157,7 @@ public final class ProjectStore: Sendable {
     public func fetchCustomInstrumentFiles(defID: UUID) throws -> [CustomInstrumentFile] {
         try db.read { db in
             try CustomInstrumentFile
-                .filter(Column("def_id") == defID.uuidString)
+                .filter(Column("def_id") == defID)
                 .order(Column("path").asc)
                 .fetchAll(db)
         }
@@ -1166,7 +1166,7 @@ public final class ProjectStore: Sendable {
     public func fetchCustomInstrumentFile(defID: UUID, path: String) throws -> CustomInstrumentFile? {
         try db.read { db in
             try CustomInstrumentFile
-                .filter(Column("def_id") == defID.uuidString && Column("path") == path)
+                .filter(Column("def_id") == defID && Column("path") == path)
                 .fetchOne(db)
         }
     }
@@ -1181,7 +1181,7 @@ public final class ProjectStore: Sendable {
         try db.write { db in
             try db.execute(
                 sql: "DELETE FROM custom_instrument_file WHERE def_id = ? AND path = ?",
-                arguments: [defID.uuidString, path]
+                arguments: [defID, path]
             )
         }
     }
@@ -1190,7 +1190,7 @@ public final class ProjectStore: Sendable {
         try db.write { db in
             try db.execute(
                 sql: "UPDATE custom_instrument_file SET path = ? WHERE def_id = ? AND path = ?",
-                arguments: [to, defID.uuidString, from]
+                arguments: [to, defID, from]
             )
         }
     }
@@ -1199,7 +1199,7 @@ public final class ProjectStore: Sendable {
         try db.write { db in
             try db.execute(
                 sql: "DELETE FROM custom_instrument_file WHERE def_id = ?",
-                arguments: [defID.uuidString]
+                arguments: [defID]
             )
             for file in files {
                 try file.save(db)
@@ -1212,7 +1212,7 @@ public final class ProjectStore: Sendable {
             let rows = try Row.fetchAll(
                 db,
                 sql: "SELECT widget_id, state_json FROM widget_state WHERE instance_id = ?",
-                arguments: [instanceID.uuidString]
+                arguments: [instanceID]
             )
             var result: [String: WidgetState] = [:]
             for row in rows {
@@ -1241,7 +1241,7 @@ public final class ProjectStore: Sendable {
                         session_id = excluded.session_id,
                         updated_at = excluded.updated_at
                     """,
-                arguments: [instanceID.uuidString, widgetID, sessionID.uuidString, json, Date()]
+                arguments: [instanceID, widgetID, sessionID, json, Date()]
             )
         }
     }
@@ -1250,7 +1250,7 @@ public final class ProjectStore: Sendable {
         try db.write { db in
             try db.execute(
                 sql: "DELETE FROM widget_state WHERE instance_id = ? AND widget_id = ?",
-                arguments: [instanceID.uuidString, widgetID]
+                arguments: [instanceID, widgetID]
             )
         }
     }
@@ -1259,7 +1259,7 @@ public final class ProjectStore: Sendable {
         try db.write { db in
             try db.execute(
                 sql: "DELETE FROM widget_state WHERE instance_id = ?",
-                arguments: [instanceID.uuidString]
+                arguments: [instanceID]
             )
         }
     }
@@ -1374,7 +1374,7 @@ public final class ProjectStore: Sendable {
 
     private static func createSchema(_ db: Database) throws {
         try db.create(table: "process_session") { t in
-            t.primaryKey("id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
             t.column("kind", .blob).notNull()
             t.column("host", .blob)
             t.column("device_id", .text).notNull()
@@ -1396,8 +1396,8 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "instrument_instance") { t in
-            t.primaryKey("id", .text).notNull()
-            t.column("session_id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
+            t.column("session_id", .blob).notNull()
                 .references("process_session", onDelete: .cascade)
             t.column("kind", .text).notNull()
             t.column("source_identifier", .text).notNull()
@@ -1406,8 +1406,8 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "repl_cell") { t in
-            t.primaryKey("id", .text).notNull()
-            t.column("session_id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
+            t.column("session_id", .blob).notNull()
                 .references("process_session", onDelete: .cascade)
             t.column("author", .blob)
             t.column("code", .text).notNull()
@@ -1419,7 +1419,7 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "notebook_entry") { t in
-            t.primaryKey("id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
             t.column("kind", .text).notNull()
             t.column("editors", .blob).notNull()
             t.column("timestamp", .datetime).notNull()
@@ -1433,13 +1433,13 @@ public final class ProjectStore: Sendable {
             t.column("binary_data", .blob)
             t.column("binary_meta", .blob)
             t.column("placements", .blob).notNull()
-            t.column("session_id", .text)
+            t.column("session_id", .blob)
             t.column("process_name", .text)
         }
 
         try db.create(table: "itrace") { t in
-            t.primaryKey("id", .text).notNull()
-            t.column("session_id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
+            t.column("session_id", .blob).notNull()
                 .references("process_session", onDelete: .cascade)
             t.column("origin", .blob).notNull()
             t.column("display_name", .text).notNull()
@@ -1451,7 +1451,7 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "session_ui_state") { t in
-            t.primaryKey("session_id", .text).notNull()
+            t.primaryKey("session_id", .blob).notNull()
                 .references("process_session", onDelete: .cascade)
             t.column("sidebar_expansion", .text).notNull().defaults(to: SidebarExpansion.expanded.rawValue)
             t.column("modules_expansion", .text).notNull().defaults(to: SidebarExpansion.collapsed.rawValue)
@@ -1460,22 +1460,22 @@ public final class ProjectStore: Sendable {
             t.column("detail_section", .text)
             t.column("last_selected_module_id", .text)
             t.column("last_selected_thread_id", .integer)
-            t.column("ambient_mission_id", .text)
+            t.column("ambient_mission_id", .blob)
             t.column("repl_language", .text).notNull().defaults(to: REPLLanguage.javascript.rawValue)
             t.column("repl_draft", .text)
             t.column("repl_seek_anchor", .text)
         }
 
         try db.create(table: "session_sidebar_state") { t in
-            t.primaryKey("session_id", .text).notNull()
+            t.primaryKey("session_id", .blob).notNull()
                 .references("process_session", onDelete: .cascade)
             t.column("expanded_modules", .text).notNull().defaults(to: "[]")
             t.column("expanded_swift_type_lists", .text).notNull().defaults(to: "[]")
         }
 
         try db.create(table: "address_insight") { t in
-            t.primaryKey("id", .text).notNull()
-            t.column("session_id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
+            t.column("session_id", .blob).notNull()
                 .references("process_session", onDelete: .cascade)
             t.column("created_at", .datetime).notNull()
             t.column("user_title", .text)
@@ -1484,12 +1484,12 @@ public final class ProjectStore: Sendable {
             t.column("byte_count", .integer).notNull()
             t.column("placements", .blob)
             t.column("last_resolved_address", .integer)
-            t.column("parent_insight_id", .text)
+            t.column("parent_insight_id", .blob)
         }
 
         try db.create(table: "address_note") { t in
-            t.primaryKey("id", .text).notNull()
-            t.column("session_id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
+            t.column("session_id", .blob).notNull()
                 .references("process_session", onDelete: .cascade)
             t.column("anchor", .blob).notNull()
             t.column("title", .text)
@@ -1499,8 +1499,8 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "address_note_message") { t in
-            t.primaryKey("id", .text).notNull()
-            t.column("note_id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
+            t.column("note_id", .blob).notNull()
                 .references("address_note", onDelete: .cascade)
             t.column("index", .integer).notNull()
             t.column("role", .text).notNull()
@@ -1508,12 +1508,12 @@ public final class ProjectStore: Sendable {
             t.column("body_markdown", .text).notNull()
             t.column("provider_id", .text)
             t.column("model_id", .text)
-            t.column("action_id", .text)
+            t.column("action_id", .blob)
             t.column("created_at", .datetime).notNull()
         }
 
         try db.create(table: "memory_page_module") { t in
-            t.column("session_id", .text).notNull()
+            t.column("session_id", .blob).notNull()
                 .references("process_session", onDelete: .cascade)
             t.column("module_uuid", .text).notNull()
             t.column("offset", .integer).notNull()
@@ -1523,7 +1523,7 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "memory_page_anon") { t in
-            t.column("session_id", .text).notNull()
+            t.column("session_id", .blob).notNull()
                 .references("process_session", onDelete: .cascade)
             t.column("process_identity", .text).notNull()
             t.column("address", .integer).notNull()
@@ -1533,7 +1533,7 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "module_analysis") { t in
-            t.column("session_id", .text).notNull()
+            t.column("session_id", .blob).notNull()
                 .references("process_session", onDelete: .cascade)
             t.column("module_path", .text).notNull()
             t.column("module_uuid", .text)
@@ -1543,7 +1543,7 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "module_analysis_function") { t in
-            t.column("session_id", .text).notNull()
+            t.column("session_id", .blob).notNull()
             t.column("module_path", .text).notNull()
             t.column("offset", .integer).notNull()
             t.column("name", .text)
@@ -1558,7 +1558,7 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "module_analysis_block") { t in
-            t.column("session_id", .text).notNull()
+            t.column("session_id", .blob).notNull()
             t.column("module_path", .text).notNull()
             t.column("function_offset", .integer).notNull()
             t.column("offset", .integer).notNull()
@@ -1579,7 +1579,7 @@ public final class ProjectStore: Sendable {
         )
 
         try db.create(table: "module_symbol") { t in
-            t.column("session_id", .text).notNull()
+            t.column("session_id", .blob).notNull()
                 .references("process_session", onDelete: .cascade)
             t.column("module_path", .text).notNull()
             t.column("offset", .integer).notNull()
@@ -1588,7 +1588,7 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "remote_device_config") { t in
-            t.primaryKey("id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
             t.column("address", .text).notNull()
             t.column("certificate", .text)
             t.column("origin", .text)
@@ -1597,7 +1597,7 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "virtual_machine") { t in
-            t.primaryKey("id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
             t.column("name", .text).notNull()
             t.column("template_id", .text).notNull()
             t.column("parameters_json", .text).notNull()
@@ -1606,14 +1606,14 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "project_packages_state") { t in
-            t.primaryKey("id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
             t.column("package_json", .blob)
             t.column("package_lock_json", .blob)
         }
 
         try db.create(table: "installed_package") { t in
-            t.primaryKey("id", .text).notNull()
-            t.column("packages_state_id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
+            t.column("packages_state_id", .blob).notNull()
                 .references("project_packages_state", onDelete: .cascade)
             t.column("name", .text).notNull()
             t.column("version", .text).notNull()
@@ -1622,7 +1622,7 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "pattern_source") { t in
-            t.primaryKey("id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
             t.column("name", .text).notNull()
             t.column("kind", .text).notNull()
             t.column("text", .text).notNull()
@@ -1652,7 +1652,7 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "project_collaboration_state") { t in
-            t.primaryKey("id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
             t.column("lab_id", .text)
         }
 
@@ -1663,7 +1663,7 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "custom_instrument_def") { t in
-            t.primaryKey("id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
             t.column("name", .text).notNull()
             t.column("icon", .text).notNull()
             t.column("compatibility_json", .text).notNull().defaults(to: "{}")
@@ -1676,7 +1676,7 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "custom_instrument_file") { t in
-            t.column("def_id", .text).notNull()
+            t.column("def_id", .blob).notNull()
                 .references("custom_instrument_def", onDelete: .cascade)
             t.column("path", .text).notNull()
             t.column("content", .text).notNull()
@@ -1684,22 +1684,22 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "custom_instrument_def_ui_state") { t in
-            t.primaryKey("def_id", .text).notNull()
+            t.primaryKey("def_id", .blob).notNull()
                 .references("custom_instrument_def", onDelete: .cascade)
             t.column("sidebar_expansion", .text).notNull().defaults(to: SidebarExpansion.expanded.rawValue)
         }
 
         try db.create(table: "widget_state") { t in
-            t.column("instance_id", .text).notNull()
+            t.column("instance_id", .blob).notNull()
             t.column("widget_id", .text).notNull()
-            t.column("session_id", .text).notNull()
+            t.column("session_id", .blob).notNull()
             t.column("state_json", .text).notNull()
             t.column("updated_at", .datetime).notNull()
             t.primaryKey(["instance_id", "widget_id"])
         }
 
         try db.create(table: "widget_placement") { t in
-            t.column("instance_id", .text).notNull()
+            t.column("instance_id", .blob).notNull()
                 .references("instrument_instance", onDelete: .cascade)
             t.column("widget_id", .text).notNull()
             t.column("placements", .blob).notNull()
@@ -1707,7 +1707,7 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "project_ui_state") { t in
-            t.primaryKey("id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
             t.column("selected_item_json", .text)
             t.column("event_stream_collapsed", .boolean).notNull().defaults(to: true)
             t.column("event_stream_bottom_height", .double).notNull().defaults(to: 0)
@@ -1718,13 +1718,13 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "project_sidebar_state") { t in
-            t.primaryKey("id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
             t.column("collapsed_sections", .text).notNull().defaults(to: "[]")
             t.column("expanded_pattern_sources", .text).notNull().defaults(to: "[]")
         }
 
         try db.create(table: "target_picker_state") { t in
-            t.primaryKey("id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
             t.column("last_selected_device_id", .text)
             t.column("last_mode_raw", .text)
             t.column("last_spawn_submode_raw", .text)
@@ -1734,7 +1734,7 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "mission") { t in
-            t.primaryKey("id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
             t.column("editors", .blob).notNull()
             t.column("created_at", .datetime).notNull()
             t.column("updated_at", .datetime).notNull()
@@ -1757,8 +1757,8 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "mission_turn") { t in
-            t.primaryKey("id", .text).notNull()
-            t.column("mission_id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
+            t.column("mission_id", .blob).notNull()
                 .references("mission", onDelete: .cascade)
             t.column("index", .integer).notNull()
             t.column("created_at", .datetime).notNull()
@@ -1773,16 +1773,16 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "mission_action") { t in
-            t.primaryKey("id", .text).notNull()
-            t.column("mission_id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
+            t.column("mission_id", .blob).notNull()
                 .references("mission", onDelete: .cascade)
-            t.column("turn_id", .text)
+            t.column("turn_id", .blob)
                 .references("mission_turn", onDelete: .setNull)
             t.column("tool_name", .text).notNull()
             t.column("args_json", .text).notNull()
             t.column("status", .text).notNull()
             t.column("is_observe", .boolean).notNull().defaults(to: false)
-            t.column("session_id", .text)
+            t.column("session_id", .blob)
             t.column("requested_at", .datetime).notNull()
             t.column("decided_at", .datetime)
             t.column("completed_at", .datetime)
@@ -1796,8 +1796,8 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "mission_finding") { t in
-            t.primaryKey("id", .text).notNull()
-            t.column("mission_id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
+            t.column("mission_id", .blob).notNull()
                 .references("mission", onDelete: .cascade)
             t.column("created_at", .datetime).notNull()
             t.column("title", .text).notNull()
@@ -1805,14 +1805,14 @@ public final class ProjectStore: Sendable {
             t.column("confidence", .text).notNull()
             t.column("kind", .text).notNull()
             t.column("status", .text).notNull()
-            t.column("session_id", .text)
+            t.column("session_id", .blob)
             t.column("anchor_json", .text)
-            t.column("pinned_insight_id", .text)
+            t.column("pinned_insight_id", .blob)
         }
 
         try db.create(table: "mission_evidence") { t in
-            t.primaryKey("id", .text).notNull()
-            t.column("finding_id", .text).notNull()
+            t.primaryKey("id", .blob).notNull()
+            t.column("finding_id", .blob).notNull()
                 .references("mission_finding", onDelete: .cascade)
             t.column("kind", .text).notNull()
             t.column("ref_json", .text).notNull()
@@ -1820,10 +1820,10 @@ public final class ProjectStore: Sendable {
         }
 
         try db.create(table: "outbox") { t in
-            t.primaryKey("op_id", .text).notNull()
+            t.primaryKey("op_id", .blob).notNull()
             t.column("family", .text).notNull()
             t.column("kind", .text).notNull()
-            t.column("subject_id", .text).notNull()
+            t.column("subject_id", .blob).notNull()
             t.column("payload_json", .text).notNull()
             t.column("binary_data", .blob)
             t.column("created_at", .datetime).notNull()
