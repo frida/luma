@@ -16,7 +16,8 @@ public enum PharoLumaBindings {
     /// fields, so opening one shows what the host knows about it rather than
     /// the line it would have printed.
     private static let source = """
-        | record event records sessions entries events hostError host run subscription view project definitions classDefinition methodDefinition journal synth voice tune canvas drawable label |
+        | record event records sessions entries events hostError host runOwner run subscription view project definitions
+          classDefinition methodDefinition journal synth voice tune canvas drawable label |
         record := Object << #LumaRecord slots: { #fields. #icon }; package: 'Luma'; install.
         record compile: 'setFields: aDictionary icon: anIcon
             fields := aDictionary.
@@ -157,28 +158,46 @@ public enum PharoLumaBindings {
             reply at: ''error'' ifPresent: [ :message | LumaHostError signal: message ].
             ^ reply at: ''result'''.
 
+        runOwner := ProcessLocalVariable << #LumaRunOwner slots: {}; package: 'Luma'; install.
+        runOwner compile: 'isInheritable
+            ^ true'.
         run := Object << #LumaRun slots: {}; sharedVariables: { #Current. #Owned }; package: 'Luma'; install.
-        run class compile: 'owned
-            Owned ifNil: [ Owned := Dictionary new ].
-            ^ Owned'.
         run class compile: 'begin: anOwner
             self stop: anOwner.
             Current := anOwner'.
         run class compile: 'end
             Current := nil'.
-        run class compile: 'adopt: aThing
-            Current ifNotNil: [ :owner |
-                (self owned at: owner ifAbsentPut: [ OrderedCollection new ]) addIfNotPresent: aThing ].
-            ^ aThing'.
-        run class compile: 'fork: aBlock
-            ^ self adopt: aBlock fork'.
-        run class compile: 'stop: anOwner
-            (self owned removeKey: anOwner ifAbsent: [ ^ self ]) do: [ :each |
-                [ (each isKindOf: Process) ifTrue: [ each terminate ] ifFalse: [ each stop ] ]
-                    on: Error
-                    do: [ :failure | failure return ] ]'.
         run class compile: 'stopAll
             self owned keys do: [ :each | self stop: each ]'.
+        run class compile: 'stop: anOwner
+            (self owned removeKey: anOwner ifAbsent: [ #() ]) do: [ :each |
+                [ (each isKindOf: Process) ifTrue: [ each terminate ] ifFalse: [ each stop ] ]
+                    on: Error
+                    do: [ :failure | failure return ] ].
+            (self processesOwnedBy: anOwner) do: [ :each | each terminate ]'.
+        run class compile: 'fork: aBlock
+            | owner |
+            owner := self current.
+            ^ self adopt: [ self on: owner do: aBlock ] fork'.
+        run class compile: 'adopt: aThing
+            self current ifNotNil: [ :owner |
+                (self owned at: owner ifAbsentPut: [ OrderedCollection new ]) addIfNotPresent: aThing ].
+            ^ aThing'.
+        run class compile: 'on: anOwner do: aBlock
+            | previous |
+            previous := LumaRunOwner value.
+            LumaRunOwner value: anOwner.
+            ^ aBlock ensure: [ LumaRunOwner value: previous ]'.
+        run class compile: 'current
+            ^ LumaRunOwner value ifNil: [ Current ]'.
+        run class compile: 'processesOwnedBy: anOwner
+            | slot |
+            slot := LumaRunOwner soleInstance index.
+            ^ Process allSubInstances select: [ :each |
+                each ~~ Processor activeProcess and: [ each isTerminated not and: [ (each psValueAt: slot) = anOwner ] ] ]'.
+        run class compile: 'owned
+            Owned ifNil: [ Owned := Dictionary new ].
+            ^ Owned'.
 
         subscription := Object << #LumaSubscription
             slots: { #ticket. #semaphore. #block. #process. #error };

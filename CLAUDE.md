@@ -348,8 +348,11 @@ is gitignored — it is produced at build time.
   `PharoWorkspace` replays into the image on the next start. An object
   that says `lumaChanged` has every inspector column showing it reload,
   through `PharoObjectChanges`. A cell evaluates as a `LumaRun` named by
-  its id: the subscriptions, tunes, voices and `LumaRun fork:` processes
-  it starts stop when the cell runs again or is deleted. See the
+  its id: the subscriptions, tunes and voices it starts, and every process
+  it forks, plainly or with `LumaRun fork:` and forks of those included,
+  stop when the cell runs again or is deleted. Who owns what a process
+  starts is the process's (`LumaRun on:do:`), and every fork inherits it.
+  See the
   symbol-visibility note below: nothing in Swift calls these
   `@_cdecl` exports, and that has bitten twice.
 
