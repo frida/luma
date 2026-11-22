@@ -181,6 +181,10 @@ final class CanvasSceneInputView: OnScreenMTKView {
             deliver(.move, at: location(of: event))
         }
 
+        override func otherMouseDragged(with event: NSEvent) {
+            deliver(.move, at: location(of: event))
+        }
+
         override func mouseExited(with event: NSEvent) {
             report { $0.isPointerInside = false }
             deliver(.leave, at: location(of: event))
@@ -207,6 +211,20 @@ final class CanvasSceneInputView: OnScreenMTKView {
             report { $0.buttons &= ~(1 << 1) }
             release(1 << 1, at: location(of: event))
         }
+
+        override func otherMouseDown(with event: NSEvent) {
+            guard event.buttonNumber == Self.middleButtonNumber else { return super.otherMouseDown(with: event) }
+            report { $0.buttons |= 1 << 2 }
+            press(1 << 2, at: location(of: event))
+        }
+
+        override func otherMouseUp(with event: NSEvent) {
+            guard event.buttonNumber == Self.middleButtonNumber else { return super.otherMouseUp(with: event) }
+            report { $0.buttons &= ~(1 << 2) }
+            release(1 << 2, at: location(of: event))
+        }
+
+        private static let middleButtonNumber = 2
 
         override func scrollWheel(with event: NSEvent) {
             deliver(.scroll, at: location(of: event), dx: Float(event.scrollingDeltaX), dy: Float(event.scrollingDeltaY))
