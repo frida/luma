@@ -253,7 +253,7 @@ enum RenderTests {
             try? await PharoRuntime.shared.runningState()
             try? await PharoLumaBindings.install(into: PharoRuntime.shared)
             let handle = try? await PharoRuntime.shared.evaluate(snippet)
-            answer.scene = handle.flatMap { Int($0.printString.trimmingCharacters(in: .whitespaces)) }
+            answer.scene = handle.flatMap { Int($0.printString.filter(\.isNumber)) }
         }
 
         // Booting an image takes a while, and none of it happens unless the
@@ -269,7 +269,7 @@ enum RenderTests {
         canvas := LumaCanvas new.
         sign := LumaText on: canvas addDrawable pointSize: 34.
         sign pad: #(20 18) tint: #(0.2 0.95 0.75); show: 'GTK'.
-        canvas handle
+        canvas
         """
 
     /// A scene of the kind the image builds: lettering over the atlas the
