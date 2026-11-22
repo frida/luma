@@ -21,11 +21,16 @@ public struct CanvasDrawable: Sendable, Equatable {
     public var buffers: [CanvasBuffer] = []
     public var images: [CanvasImage] = []
     public var isVisible = true
+    public var readsTime = false
 
     public static let identity: [Float] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 
     public init(geometry: CanvasGeometry = CanvasGeometry(attributes: [])) {
         self.geometry = geometry
+    }
+
+    public func isMoving(at now: Double) -> Bool {
+        readsTime || drivers.contains { $0.isMoving(at: now) }
     }
 
     /// The uniforms as they stand at a reading of the clock, so a moving value
@@ -150,6 +155,15 @@ public struct CanvasDriver: Sendable, Equatable {
         self.startedAt = startedAt
     }
 
+    public func isMoving(at now: Double) -> Bool {
+        switch kind {
+        case .ramp:
+            return now < startedAt + Double(seconds)
+        case .oscillate:
+            return true
+        }
+    }
+
     public func value(at now: Double) -> [Float] {
         let elapsed = Float(now - startedAt)
         let fraction: Float
@@ -205,6 +219,10 @@ public struct CanvasScene: Sendable, Equatable {
     public var order: [Int] = []
 
     public init() {}
+
+    public func isMoving(at now: Double) -> Bool {
+        ordered.contains { $0.isMoving(at: now) }
+    }
 
     public var ordered: [CanvasDrawable] {
         order.compactMap { drawables[$0] }.filter(\.isVisible)

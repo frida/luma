@@ -5,11 +5,13 @@
 public enum ShaderVocabulary {
     public static let header = "#version 450"
 
+    public static let time = "u_time"
+
     /// The uniforms every shader may read, whichever stage it is.
     public static let uniformBlock = """
         layout(binding = 0) uniform ShaderEffectUniforms {
             vec2 u_resolution;
-            float u_time;
+            float \(time);
             float u_scheme;
             float u_activity;
             float u_pulse;
@@ -26,4 +28,9 @@ public enum ShaderVocabulary {
         };
         float dataAt(int i) { return u_data[i >> 2][i & 3]; }
         """
+
+    public static func reads(_ name: String, in source: String) -> Bool {
+        let code = source.replacing(#/\/\/[^\n]*|\/\*[\s\S]*?\*\//#, with: " ")
+        return code.split { !($0.isLetter || $0.isNumber || $0 == "_") }.contains { $0 == name }
+    }
 }

@@ -28,7 +28,7 @@ final class PharoCanvasArea {
 
     init(scene: Int) {
         self.scene = scene
-        area = ShaderEffect()
+        area = ShaderEffect(pacing: .onChange)
 
         let box = Box(orientation: .vertical, spacing: 0)
         box.hexpand = true
@@ -113,6 +113,11 @@ final class PharoCanvasArea {
         for (handle, record) in built where scene.drawables[handle] == nil {
             area.removeDrawable(record.handle)
             built[handle] = nil
+        }
+
+        let readsTime = scene.ordered.contains(where: \.readsTime)
+        area.redraw { [weak area] in
+            readsTime || area?.hasMovingDriver == true
         }
     }
 

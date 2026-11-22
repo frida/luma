@@ -47,7 +47,7 @@ struct PharoCanvasSceneView: PlatformViewRepresentable {
 
 /// Reports what the pointer and keyboard are doing, for whoever drives the
 /// scene to read.
-final class CanvasSceneInputView: MTKView {
+final class CanvasSceneInputView: OnScreenMTKView {
     private let scene: Int
     private var pressed: Int32 = 0
 
@@ -58,6 +58,11 @@ final class CanvasSceneInputView: MTKView {
     init(scene: Int) {
         self.scene = scene
         super.init(frame: .zero, device: nil)
+        holdStill()
+        visibilityChanged = { [weak self] _ in
+            self?.sceneChanged()
+        }
+        CanvasSceneViews.register(self, for: scene)
         #if canImport(UIKit)
             isMultipleTouchEnabled = true
             let pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinched))
@@ -73,6 +78,29 @@ final class CanvasSceneInputView: MTKView {
 
     required init(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    func sceneChanged() {
+        #if canImport(AppKit)
+            needsDisplay = true
+        #else
+            setNeedsDisplay()
+        #endif
+        followMotion(after: CanvasDriver.now)
+    }
+
+    func followMotion(after frameTime: Double) {
+        guard visibility == .onScreen, CanvasRegistry.shared.scene(scene)?.isMoving(at: frameTime) == true else {
+            holdStill()
+            return
+        }
+        enableSetNeedsDisplay = false
+        isPaused = false
+    }
+
+    private func holdStill() {
+        isPaused = true
+        enableSetNeedsDisplay = true
     }
 
     #if canImport(AppKit)
@@ -333,7 +361,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
     var scene = CanvasScene()
 
     private var sceneHandle = 0
-    private weak var view: MTKView?
+    private weak var view: CanvasSceneInputView?
     private var commandQueue: MTLCommandQueue?
     private var depthState: MTLDepthStencilState?
     private var byIndex: MTLSamplerState?
@@ -355,7 +383,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         var textures: [MTLTexture] = []
     }
 
-    func attach(to view: MTKView, scene handle: Int) {
+    func attach(to view: CanvasSceneInputView, scene handle: Int) {
         self.view = view
         sceneHandle = handle
         commandQueue = view.device?.makeCommandQueue()
@@ -419,6 +447,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         CanvasRegistry.shared.reportScale(sceneHandle, scale)
         trace(view, scale: scale, uniformWidth: uniforms[0], uniformHeight: uniforms[1])
 
+        let frameTime = CanvasDriver.now
         for handle in scene.order {
             guard let subject = scene.drawables[handle], subject.isVisible,
                   let record = record(for: handle, subject, device: device),
@@ -433,7 +462,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
             let length = uniforms.count * MemoryLayout<Float>.stride
             encoder.setVertexBytes(&uniforms, length: length, index: 0)
             encoder.setFragmentBytes(&uniforms, length: length, index: 0)
-            var params = subject.packedParams(at: CanvasDriver.now)
+            var params = subject.packedParams(at: frameTime)
             if !params.isEmpty {
                 let paramsLength = params.count * MemoryLayout<Float>.stride
                 encoder.setVertexBytes(&params, length: paramsLength,
@@ -458,6 +487,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         encoder.endEncoding()
         buffer.present(drawable)
         buffer.commit()
+        self.view?.followMotion(after: frameTime)
     }
 
     /// What a scene is actually being drawn with, for when what it looks like
@@ -615,6 +645,36 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         case .lineStrip: return .lineStrip
         case .triangles: return .triangle
         case .triangleStrip: return .triangleStrip
+        }
+    }
+}
+
+@MainActor
+enum CanvasSceneViews {
+    private static var views: [Int: [WeakView]] = [:]
+    private static var listening = false
+
+    private struct WeakView {
+        weak var view: CanvasSceneInputView?
+    }
+
+    static func register(_ view: CanvasSceneInputView, for scene: Int) {
+        listenOnce()
+        views[scene, default: []].append(WeakView(view: view))
+    }
+
+    private static func listenOnce() {
+        guard !listening else { return }
+        listening = true
+        CanvasRegistry.onChange = { handle, _ in
+            changed(handle)
+        }
+    }
+
+    private static func changed(_ handle: Int) {
+        views[handle] = views[handle]?.filter { $0.view != nil }
+        for entry in views[handle] ?? [] {
+            entry.view?.sceneChanged()
         }
     }
 }

@@ -38,9 +38,22 @@ final class ShaderEffect {
     var wantsCapture = false
     private(set) var captured: (pixels: [UInt8], width: Int, height: Int)?
 
+    enum Pacing {
+        case everyFrame
+        case onChange
+    }
+
+    private enum FrameClock {
+        case idle
+        case ticking
+    }
+
+    private var isMoving: () -> Bool = { false }
+    private var frameClock = FrameClock.idle
+
     /// Pass no source to make a widget that draws a scene rather than a
     /// screen-filling effect.
-    init(fragmentSource: String? = nil) {
+    init(fragmentSource: String? = nil, pacing: Pacing = .everyFrame) {
         self.fragmentSource = fragmentSource
 
         widget = GLArea()
@@ -59,14 +72,28 @@ final class ShaderEffect {
         widget.onRender { [weak self] _, _ in
             MainActor.assumeIsolated { self?.render() ?? false }
         }
-        gtk_widget_add_tick_callback(
-            widget.widget_ptr!,
-            { widget, _, _ in
-                gtk_gl_area_queue_render(
-                    UnsafeMutableRawPointer(widget!).assumingMemoryBound(to: GtkGLArea.self))
-                return gboolean(1)
-            },
-            nil, nil)
+        switch pacing {
+        case .everyFrame:
+            isMoving = { true }
+            startTicking()
+        case .onChange:
+            break
+        }
+    }
+
+    func redraw(whileMoving isMoving: @escaping () -> Bool) {
+        self.isMoving = isMoving
+        widget.queueRender()
+        if isMoving() {
+            startTicking()
+        }
+    }
+
+    var hasMovingDriver: Bool {
+        let now = CanvasDriver.now
+        return drawables.contains { drawable in
+            drawable.params.contains { $0.driver?.isMoving(at: now) == true }
+        }
     }
 
     /// A widget draws as many of these as the author made, in the order they
@@ -347,6 +374,25 @@ final class ShaderEffect {
         epoxy_glUniform1f(locations.dataCount, Float(dataCount))
         epoxy_glUniform4fv(locations.data, 16, data)
         epoxy_glUniformMatrix4fv(locations.mvp, 1, GLboolean(GL_FALSE), transform)
+    }
+
+    private func startTicking() {
+        guard frameClock == .idle else { return }
+        frameClock = .ticking
+        gtk_widget_add_tick_callback(
+            widget.widget_ptr!,
+            { _, _, target in
+                let target = Unmanaged<TickTarget>.fromOpaque(target!).takeUnretainedValue()
+                return MainActor.assumeIsolated { target.effect?.tick() ?? false } ? gboolean(1) : gboolean(0)
+            },
+            Unmanaged.passRetained(TickTarget(effect: self)).toOpaque(),
+            { target in Unmanaged<TickTarget>.fromOpaque(target!).release() })
+    }
+
+    private func tick() -> Bool {
+        widget.queueRender()
+        frameClock = isMoving() ? .ticking : .idle
+        return frameClock == .ticking
     }
 
     private func drawable(_ handle: Int32) -> Drawable? {
@@ -709,6 +755,15 @@ private final class ScreenFilling {
         if program != 0 {
             epoxy_glDeleteProgram(program)
         }
+    }
+}
+
+@MainActor
+private final class TickTarget {
+    weak var effect: ShaderEffect?
+
+    init(effect: ShaderEffect) {
+        self.effect = effect
     }
 }
 

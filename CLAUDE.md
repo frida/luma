@@ -420,7 +420,7 @@ Keep `gl_Position.z` within 0..1. OpenGL's clip space runs -1..1 and
 Metal's runs 0..1, so a negative depth draws on GTK and is clipped
 away on macOS -- which no compiler will catch either.
 
-A shader effect's view is an `OnScreenMTKView` and stops
+A Metal view that draws by itself is an `OnScreenMTKView` and stops
 while its window is not visible. A covered, hidden, minimized or
 ordered-out window's layer hands its drawables back late, so asking for
 the next one blocks for up to a second at a time; a screen's display
@@ -428,7 +428,11 @@ link fires regardless. Nor is a visible window safe: one that is mostly
 covered can hold its drawables just as long. So a shader effect paints
 from its display link's own thread (`DisplayLinkThread`), at up to 60
 Hz, which an ambient effect has no use for more than, and only that
-thread ever waits.
+thread ever waits. A canvas draws when its scene is committed and, for
+as long as `CanvasScene.isMoving` says a driver or `u_time` keeps it
+moving, on every frame; a still scene costs nothing between changes.
+GTK ticks from the widget's frame clock instead, which stops once the
+widget is unmapped, and paces a canvas the same way.
 
 The preambles are generated text, and generated text is worth
 compiling. `ShaderVocabulary`, `CanvasGeometry` and `CanvasScene`

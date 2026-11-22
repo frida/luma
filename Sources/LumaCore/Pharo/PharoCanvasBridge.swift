@@ -115,7 +115,8 @@ public func luma_drawable_set_transform(
     _ values: UnsafePointer<Float>
 ) {
     let transform = Array(UnsafeBufferPointer(start: values, count: 16))
-    CanvasRegistry.shared.update(Int(drawable), in: Int(scene)) { $0.transform = transform }
+    guard CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { $0.transform = transform }) != nil else { return }
+    CanvasRegistry.shared.publish(Int(scene))
 }
 
 @_cdecl("luma_drawable_set_visible")
@@ -166,11 +167,15 @@ public func luma_drawable_commit(_ scene: Int32, _ drawable: Int32) -> Int32 {
     #endif
     canvasError.withLock { $0 = "" }
 
+    let readsTime = [subject.authorVertex, subject.authorFragment].contains {
+        ShaderVocabulary.reads(ShaderVocabulary.time, in: $0)
+    }
     guard CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
         subject.vertexGLSL = vertexGLSL
         subject.fragmentGLSL = fragmentGLSL
         subject.vertexMetal = vertexMetal
         subject.fragmentMetal = fragmentMetal
+        subject.readsTime = readsTime
     }) != nil else { return 0 }
 
     CanvasRegistry.shared.publish(Int(scene))
