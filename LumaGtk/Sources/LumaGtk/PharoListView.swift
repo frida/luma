@@ -13,8 +13,7 @@ import SwiftyPharo
 final class PharoListView {
     let widget: Box
 
-    private let runtime: PharoRuntime
-    private let object: PharoObject
+    private let source: any PharoViewSource
     private let selector: String
     private let titles: [String]
     private let onDrill: (PharoObject) -> Void
@@ -34,9 +33,8 @@ final class PharoListView {
     private let pageSize = 50
     private let searchThreshold = 12
 
-    init(runtime: PharoRuntime, object: PharoObject, view: PharoViewDeclaration, onDrill: @escaping (PharoObject) -> Void) {
-        self.runtime = runtime
-        self.object = object
+    init(source: any PharoViewSource, view: PharoViewDeclaration, onDrill: @escaping (PharoObject) -> Void) {
+        self.source = source
         self.selector = view.methodSelector
         self.titles = view.columns ?? []
         self.onDrill = onDrill
@@ -141,8 +139,7 @@ final class PharoListView {
         let token = reloadToken
         Task { @MainActor in
             do {
-                let page = try await runtime.items(
-                    of: object, view: selector, from: loaded + 1, count: pageSize, filter: filter)
+                let page = try await source.items(view: selector, from: loaded + 1, count: pageSize, filter: filter)
                 guard token == self.reloadToken else { return }
                 for cells in page.items {
                     rows.append(child: itemRow(cells))
@@ -171,7 +168,7 @@ final class PharoListView {
         let filter = filter
         Task { @MainActor in
             do {
-                let element = try await runtime.drillInto(object, view: selector, index: index + 1, filter: filter)
+                let element = try await source.drill(view: selector, index: index + 1, filter: filter)
                 onDrill(element)
             } catch {
                 failureLabel.setText(str: error.localizedDescription)

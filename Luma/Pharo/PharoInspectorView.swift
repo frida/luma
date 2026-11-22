@@ -511,53 +511,12 @@ struct PharoObjectColumn: View {
         }
     }
 
-    @ViewBuilder
     private func declaredBody(of declaration: PharoViewDeclaration) -> some View {
-        switch declaration.viewName {
-        case "list", "columnedList", "tree":
-            PharoItemsList(
-                runtime: runtime,
-                object: object,
-                view: declaration.methodSelector,
-                columns: declaration.columns ?? [],
-                reloadToken: reloadToken,
-                onSelect: onSelect)
-        case "text":
-            ScrollView {
-                Text(declaration.text ?? "")
-                    .font(.system(.body, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
-            }
-        case "graph":
-            if let graph = declaration.graph {
-                PharoGraphView(
-                    graph: graph,
-                    onDrill: { try? await runtime.drillInto(object, view: declaration.methodSelector, index: $0 + 1) },
-                    onSelect: onSelect)
-            }
-        case "chart":
-            if let chart = declaration.chart {
-                PharoChartView(
-                    chart: chart,
-                    onDrill: { try? await runtime.drillInto(object, view: declaration.methodSelector, index: $0 + 1) },
-                    onSelect: onSelect)
-            }
-        case "canvas":
-            if let canvas = declaration.canvas {
-                PharoCanvasSceneView(scene: canvas.scene)
-            }
-        case "lumaBytes":
-            PharoBytesView(reference: declaration.text ?? "")
-        case "lumaPatternBytes":
-            PharoPatternView(kind: .bytes, reference: declaration.text ?? "")
-        case "lumaPatternVisualization":
-            PharoPatternView(kind: .visualization, reference: declaration.text ?? "")
-        default:
-            ContentUnavailableView(
-                "\(declaration.viewName) views are not rendered yet", systemImage: "square.dashed")
-        }
+        PharoDeclaredView(
+            declaration: declaration,
+            source: PharoObjectViews(runtime: runtime, object: object),
+            reloadToken: reloadToken,
+            onSelect: onSelect)
     }
 
     private var shownDeclaration: PharoViewDeclaration? {
@@ -588,6 +547,60 @@ struct PharoObjectColumn: View {
             shown = declarations.first?.methodSelector
         } catch {
             declared = .failed(error.localizedDescription)
+        }
+    }
+}
+
+struct PharoDeclaredView: View {
+    let declaration: PharoViewDeclaration
+    let source: any PharoViewSource
+    let reloadToken: Int
+    let onSelect: (PharoObject) -> Void
+
+    var body: some View {
+        switch declaration.viewName {
+        case "list", "columnedList", "tree":
+            PharoItemsList(
+                source: source,
+                view: declaration.methodSelector,
+                columns: declaration.columns ?? [],
+                reloadToken: reloadToken,
+                onSelect: onSelect)
+        case "text":
+            ScrollView {
+                Text(declaration.text ?? "")
+                    .font(.system(.body, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+            }
+        case "graph":
+            if let graph = declaration.graph {
+                PharoGraphView(
+                    graph: graph,
+                    onDrill: { try? await source.drill(view: declaration.methodSelector, index: $0 + 1, filter: nil) },
+                    onSelect: onSelect)
+            }
+        case "chart":
+            if let chart = declaration.chart {
+                PharoChartView(
+                    chart: chart,
+                    onDrill: { try? await source.drill(view: declaration.methodSelector, index: $0 + 1, filter: nil) },
+                    onSelect: onSelect)
+            }
+        case "canvas":
+            if let canvas = declaration.canvas {
+                PharoCanvasSceneView(scene: canvas.scene)
+            }
+        case "lumaBytes":
+            PharoBytesView(reference: declaration.text ?? "")
+        case "lumaPatternBytes":
+            PharoPatternView(kind: .bytes, reference: declaration.text ?? "")
+        case "lumaPatternVisualization":
+            PharoPatternView(kind: .visualization, reference: declaration.text ?? "")
+        default:
+            ContentUnavailableView(
+                "\(declaration.viewName) views are not rendered yet", systemImage: "square.dashed")
         }
     }
 }
@@ -665,8 +678,7 @@ extension PharoSearchField.Coordinator: NSSearchFieldDelegate {
 /// Pages its rows in as they are needed, so a large collection costs only the
 /// rows that have been looked at.
 private struct PharoItemsList: View {
-    let runtime: PharoRuntime
-    let object: PharoObject
+    let source: any PharoViewSource
     let view: String
     let columns: [String]
     let reloadToken: Int
@@ -794,7 +806,7 @@ private struct PharoItemsList: View {
 
     private func drill(into index: Int) async {
         do {
-            onSelect(try await runtime.drillInto(object, view: view, index: index + 1, filter: filter))
+            onSelect(try await source.drill(view: view, index: index + 1, filter: filter))
         } catch {
             failure = error.localizedDescription
         }
@@ -809,8 +821,7 @@ private struct PharoItemsList: View {
 
     private func loadNextPage() async {
         do {
-            let page = try await runtime.items(
-                of: object, view: view, from: loaded.rows.count + 1, count: pageSize, filter: filter)
+            let page = try await source.items(view: view, from: loaded.rows.count + 1, count: pageSize, filter: filter)
             let rows = page.items.enumerated().map { offset, cells in
                 Row(id: loaded.rows.count + offset, cells: cells)
             }

@@ -51,6 +51,7 @@ public final class LumaAppState {
         var externalMCPTrustsClient: Bool?
         var instrumentFolderLinks: [String: InstrumentFolderLink]?
         var storeInstallations: [String: StoreInstallation]?
+        var approvedHostCode: Set<String>?
     }
 
     private var stored: Stored
@@ -192,6 +193,17 @@ public final class LumaAppState {
         let next: [String: StoreInstallation]? = installations.isEmpty ? nil : installations
         guard stored.storeInstallations != next else { return }
         stored.storeInstallations = next
+        persist()
+    }
+
+    public func isHostCodeApproved(_ digest: String) -> Bool {
+        stored.approvedHostCode?.contains(digest) ?? false
+    }
+
+    public func approveHostCode(_ digest: String) {
+        var approved = stored.approvedHostCode ?? []
+        guard approved.insert(digest).inserted else { return }
+        stored.approvedHostCode = approved
         persist()
     }
 

@@ -108,6 +108,48 @@ public func luma_drawable_set_vertices(
     CanvasRegistry.shared.publish(Int(scene))
 }
 
+@_cdecl("luma_drawable_set_vertex_bytes")
+public func luma_drawable_set_vertex_bytes(
+    _ scene: Int32,
+    _ drawable: Int32,
+    _ blob: Int32,
+    _ offset: Int64,
+    _ count: Int64,
+    _ indexBlob: Int32,
+    _ indexOffset: Int64,
+    _ indexCount: Int64,
+    _ primitiveName: UnsafePointer<CChar>
+) -> Int32 {
+    guard let subject = CanvasRegistry.shared.scene(Int(scene))?.drawables[Int(drawable)] else { return 0 }
+    let name = String(cString: primitiveName)
+    guard let primitive = CanvasGeometry.Primitive(named: name) else {
+        canvasError.withLock { $0 = "#\(name) is not a primitive" }
+        return 0
+    }
+
+    let vertices: [Float]
+    do throws(CanvasVertexBytes.Failure) {
+        vertices = try CanvasVertexBytes(
+            stride: subject.geometry.stride,
+            vertices: (Int(blob), Int(offset), Int(count)),
+            indices: indexBlob < 0 ? nil : (Int(indexBlob), Int(indexOffset), Int(indexCount))
+        ).floats(for: primitive)
+    } catch {
+        canvasError.withLock { $0 = error.message }
+        return 0
+    }
+    canvasError.withLock { $0 = "" }
+
+    guard CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
+        subject.geometry.vertices = vertices
+        subject.geometry.primitive = primitive
+        subject.primitive = primitive
+    }) != nil else { return 0 }
+
+    CanvasRegistry.shared.publish(Int(scene))
+    return 1
+}
+
 @_cdecl("luma_drawable_set_transform")
 public func luma_drawable_set_transform(
     _ scene: Int32,
@@ -413,4 +455,80 @@ public func luma_glyphs_apply(
     }) != nil else { return }
 
     CanvasRegistry.shared.publish(Int(scene))
+}
+
+private struct CanvasVertexBytes {
+    typealias Range = (blob: Int, offset: Int, count: Int)
+
+    let stride: Int
+    let vertices: Range
+    let indices: Range?
+
+    struct Failure: Error {
+        let message: String
+    }
+
+    func floats(for primitive: CanvasGeometry.Primitive) throws(Failure) -> [Float] {
+        guard stride > 0 else { throw Failure(message: "declare the drawable's attributes before handing it vertices") }
+        let vertexBytes = stride * MemoryLayout<Float>.stride
+        guard vertices.count % vertexBytes == 0 else {
+            throw Failure(message: "\(vertices.count) bytes are not a whole number of \(vertexBytes)-byte vertices")
+        }
+        guard let indices else { return try read(vertices) { $0.loadedArray(as: Float.self) } }
+
+        let corners = try read(indices) { $0.loadedArray(as: UInt32.self) }
+        guard corners.count % 3 == 0 else { throw Failure(message: "\(corners.count) indices are not a whole number of triangles") }
+        let vertexCount = vertices.count / vertexBytes
+        if let stray = corners.first(where: { Int($0) >= vertexCount }) {
+            throw Failure(message: "index \(stray) is past the last of \(vertexCount) vertices")
+        }
+        let order = primitive == .lines ? Self.edges(of: corners) : corners
+        return try read(vertices) { bytes in
+            var gathered = [Float](repeating: 0, count: order.count * stride)
+            gathered.withUnsafeMutableBytes { out in
+                for (at, corner) in order.enumerated() {
+                    out.baseAddress!.advanced(by: at * vertexBytes)
+                        .copyMemory(from: bytes.baseAddress!.advanced(by: Int(corner) * vertexBytes), byteCount: vertexBytes)
+                }
+            }
+            return gathered
+        }
+    }
+
+    private static func edges(of corners: [UInt32]) -> [UInt32] {
+        var edges: [UInt32] = []
+        edges.reserveCapacity(corners.count * 2)
+        for at in Swift.stride(from: 0, to: corners.count, by: 3) {
+            let (a, b, c) = (corners[at], corners[at + 1], corners[at + 2])
+            edges += [a, b, b, c, c, a]
+        }
+        return edges
+    }
+
+    private func read<T>(_ range: Range, _ body: (UnsafeRawBufferPointer) -> T) throws(Failure) -> T {
+        guard let result = PharoBlobRegistry.shared.withBytes(range.blob, offset: range.offset, count: range.count, body) else {
+            throw Failure(message: "those bytes are not held any more")
+        }
+        return result
+    }
+}
+
+extension UnsafeRawBufferPointer {
+    fileprivate func loadedArray<T>(as type: T.Type) -> [T] {
+        let count = self.count / MemoryLayout<T>.stride
+        return (0..<count).map { loadUnaligned(fromByteOffset: $0 * MemoryLayout<T>.stride, as: T.self) }
+    }
+}
+
+private extension CanvasGeometry.Primitive {
+    init?(named name: String) {
+        switch name {
+        case "points": self = .points
+        case "lines": self = .lines
+        case "lineStrip": self = .lineStrip
+        case "triangles": self = .triangles
+        case "triangleStrip": self = .triangleStrip
+        default: return nil
+        }
+    }
 }

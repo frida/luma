@@ -11,7 +11,7 @@ export interface Instrument<C = unknown, R = unknown> {
 export interface InstrumentContext {
     instanceId: string;
     emit(payload: unknown): void;
-    post(type: string, payload: object, data?: ArrayBuffer | number[] | null): void;
+    post(type: string, payload: object, data?: ArrayBuffer | ArrayBufferView | number[] | null): void;
     widget(id: string): WidgetHandle;
 }
 
@@ -30,8 +30,12 @@ export interface WidgetHandle {
     appendError(text: string): void;
     appendValue(value: unknown): void;
     appendImage(image: ConsoleImage): void;
+    setState(value: unknown, data?: ViewData | null): void;
+    sendEvent(value: unknown, data?: ViewData | null): void;
     clear(): void;
 }
+
+export type ViewData = ArrayBuffer | ArrayBufferView | number[];
 
 export interface CounterValue {
     value: number;
@@ -93,6 +97,13 @@ export interface ConsoleInput {
     text: string;
 }
 
+export interface ViewMessage {
+    widget: string;
+    value: unknown;
+    data: ArrayBuffer | null;
+    from?: { id: string; name: string };
+}
+
 export interface ConsoleResponder {
     output(text: string): void;
     error(text: string): void;
@@ -104,6 +115,7 @@ export interface InstrumentHandle<C = unknown> {
     updateConfig?(config: C): Promise<void> | void;
     onAction?(action: WidgetAction): Promise<void> | void;
     onConsoleInput?(input: ConsoleInput, respond: ConsoleResponder): Promise<void> | void;
+    onViewMessage?(message: ViewMessage): Promise<void> | void;
     dispose?(): Promise<void> | void;
 }
 
@@ -119,6 +131,41 @@ interface InstrumentModule {
 
 const instruments = new Map<string, InstrumentController>();
 const modules = new Map<string, Instrument>();
+
+const viewLimits = {
+    valueBytes: 256 * 1024,
+    stateDataBytes: 64 * 1024 * 1024,
+    eventDataBytes: 1024 * 1024,
+    stateDataPieceBytes: 4 * 1024 * 1024 - 64 * 1024,
+};
+
+declare global {
+    function send(message: any, data?: ArrayBuffer | ArrayBufferView | number[] | null): void;
+}
+
+interface ViewMessageEnvelope {
+    instance_id: string;
+    widget: string;
+    value: unknown;
+    from?: { id: string; name: string };
+}
+
+function receiveViewMessages(): void {
+    recv("luma:view-message", (message: ViewMessageEnvelope, data: ArrayBuffer | null) => {
+        receiveViewMessages();
+        const handle = instruments.get(message.instance_id)?.handle;
+        if (handle?.onViewMessage === undefined) {
+            return;
+        }
+        const delivered: ViewMessage = { widget: message.widget, value: message.value, data };
+        if (message.from !== undefined) {
+            delivered.from = message.from;
+        }
+        handle.onViewMessage(delivered);
+    });
+}
+
+receiveViewMessages();
 
 export async function loadInstrument({ instanceId, moduleName, source, config, restored }: {
     instanceId: string,
@@ -257,12 +304,6 @@ function makeConsoleResponder(
     };
 }
 
-function consoleImageBuffer(bytes: ArrayBuffer | Uint8Array | number[]): ArrayBuffer {
-    if (bytes instanceof ArrayBuffer) return bytes;
-    if (bytes instanceof Uint8Array) return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-    return new Uint8Array(bytes).buffer;
-}
-
 async function loadInstrumentModule(
     moduleName: string,
     source: string
@@ -289,7 +330,7 @@ function parseInstrumentModule(ns: unknown, name: string): Instrument {
 }
 
 function makeInstrumentContext(instanceId: string): InstrumentContext {
-    const post = (type: string, payload: object, data?: ArrayBuffer | number[] | null) => {
+    const post = (type: string, payload: object, data?: ArrayBuffer | ArrayBufferView | number[] | null) => {
         send({
             type,
             instance_id: instanceId,
@@ -377,12 +418,65 @@ function makeInstrumentContext(instanceId: string): InstrumentContext {
                         },
                     }, consoleImageBuffer(image.bytes));
                 },
+                setState(value, data) {
+                    const [payload, bytes] = viewPayload("state", value, data, viewLimits.stateDataBytes);
+                    post("widget-view-state", { widget: id, ...payload, data_size: bytes?.byteLength ?? 0 });
+                    for (const piece of viewDataPieces(bytes)) {
+                        post("widget-view-state-data", { widget: id }, piece);
+                    }
+                },
+                sendEvent(value, data) {
+                    const [payload, bytes] = viewPayload("event", value, data, viewLimits.eventDataBytes);
+                    post("widget-view-event", { widget: id, ...payload }, bytes);
+                },
                 clear() {
                     post("widget-clear", { widget: id });
                 },
             };
         },
     };
+}
+
+function viewPayload(kind: string, value: unknown, data: ViewData | null | undefined, maxDataBytes: number): [object, Uint8Array | null] {
+    const json = JSON.stringify(value ?? null);
+    const jsonBytes = utf8Length(json);
+    if (jsonBytes > viewLimits.valueBytes) {
+        throw new Error(`A view ${kind} value is ${jsonBytes} bytes of JSON as UTF-8; the most is ${viewLimits.valueBytes}`);
+    }
+    const bytes = (data === undefined || data === null) ? null : viewDataBytes(data);
+    if (bytes !== null && bytes.byteLength > maxDataBytes) {
+        throw new Error(`A view ${kind} carries ${bytes.byteLength} bytes of data; the most is ${maxDataBytes}`);
+    }
+    return [{ json }, bytes];
+}
+
+function viewDataPieces(bytes: Uint8Array | null): Uint8Array[] {
+    const pieces: Uint8Array[] = [];
+    for (let offset = 0; bytes !== null && offset < bytes.byteLength; offset += viewLimits.stateDataPieceBytes) {
+        pieces.push(bytes.subarray(offset, offset + viewLimits.stateDataPieceBytes));
+    }
+    return pieces;
+}
+
+function utf8Length(text: string): number {
+    let length = 0;
+    for (const character of text) {
+        const code = character.codePointAt(0)!;
+        length += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
+    }
+    return length;
+}
+
+function viewDataBytes(data: ViewData): Uint8Array {
+    if (data instanceof ArrayBuffer) return new Uint8Array(data);
+    if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    return new Uint8Array(data);
+}
+
+function consoleImageBuffer(bytes: ArrayBuffer | Uint8Array | number[]): ArrayBuffer {
+    if (bytes instanceof ArrayBuffer) return bytes;
+    if (bytes instanceof Uint8Array) return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    return new Uint8Array(bytes).buffer;
 }
 
 function makeId(): string {

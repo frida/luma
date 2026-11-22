@@ -44,6 +44,20 @@ struct StoreCatalog: Sendable {
         return entries.compactMap(StoreItem.fromWireJSON)
     }
 
+    func publishedItems(withHostCode digest: String) async throws -> [StoreHostCodeRelease] {
+        let url = baseURL.appendingPathComponent("host-code").appendingPathComponent(digest)
+        let (data, response) = try await download(url, cached: .never)
+        let status = (response as! HTTPURLResponse).statusCode
+        if status == 404 {
+            return []
+        }
+        guard status == 200 else { throw failure(status: status, body: try? JSONSerialization.jsonObject(with: data) as? JSONObject) }
+        guard let reply = try? JSONSerialization.jsonObject(with: data) as? JSONObject, let entries = reply["items"] as? [JSONObject] else {
+            throw StorefrontError.malformedReply
+        }
+        return entries.compactMap(StoreHostCodeRelease.init(wireJSON:))
+    }
+
     func categories() async throws -> [StoreCategory] {
         guard let entries = try await fetchJSON(baseURL.appendingPathComponent("categories"))["categories"] as? [JSONObject] else {
             throw StorefrontError.malformedReply
@@ -132,6 +146,17 @@ struct StoreCatalogPage: Sendable {
     let total: Int
     let nextOffset: Int
     let hasMore: Bool
+}
+
+struct StoreHostCodeRelease: Sendable {
+    let itemID: StoreItem.ID
+    let version: String
+
+    init?(wireJSON: JSONObject) {
+        guard let itemID = wireJSON["id"] as? String, let version = wireJSON["version"] as? String else { return nil }
+        self.itemID = itemID
+        self.version = version
+    }
 }
 
 extension URL {

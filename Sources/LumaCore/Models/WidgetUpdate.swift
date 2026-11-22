@@ -28,6 +28,9 @@ public struct WidgetUpdate: Sendable, Identifiable {
         /// replies for `inputEntryID`. Lets request/response waiters exit
         /// before their timeout elapses.
         case consoleReplyDone(inputEntryID: String)
+        case viewState(WidgetViewState)
+        case viewEvent(WidgetViewPayload)
+        case viewRefused(String)
         case clear
         /// In-memory snapshot replay. Emitted locally when widget state is
         /// hydrated from disk so listening views can refresh in one shot.
@@ -86,6 +89,8 @@ public struct WidgetUpdate: Sendable, Identifiable {
             obj["reply_to"] = inputEntryID
         case .clear:
             obj["kind"] = "clear"
+        case .viewState, .viewEvent, .viewRefused:
+            preconditionFailure("A view's state and events travel on their own path")
         case .snapshot:
             preconditionFailure("WidgetUpdate.snapshot is in-memory only")
         }
@@ -246,6 +251,82 @@ public struct WidgetHexState: Codable, Sendable, Equatable {
     public init(bytes: Data, baseAddress: UInt64 = 0) {
         self.bytes = bytes
         self.baseAddress = baseAddress
+    }
+}
+
+public struct WidgetViewPayload: Sendable, Equatable {
+    public static let maxJSONBytes = 256 * 1024
+    public static let maxEventDataBytes = 1024 * 1024
+    public static let maxStateDataBytes = 64 * 1024 * 1024
+
+    public var json: String
+    public var data: SharedBytes?
+
+    public init(json: String, data: SharedBytes? = nil) {
+        self.json = json
+        self.data = data
+    }
+
+    public init(value: Any?, data: SharedBytes?) {
+        let encoded = try! JSONSerialization.data(withJSONObject: value ?? NSNull(), options: [.fragmentsAllowed, .withoutEscapingSlashes])
+        self.init(json: String(decoding: encoded, as: UTF8.self), data: data)
+    }
+
+    public func checking(atMost maxDataBytes: Int) throws(WidgetViewRefusal) -> WidgetViewPayload {
+        let jsonBytes = json.utf8.count
+        guard jsonBytes <= Self.maxJSONBytes else { throw .value(bytes: jsonBytes, most: Self.maxJSONBytes) }
+        return try checkingData(atMost: maxDataBytes)
+    }
+
+    public func checkingData(atMost maxDataBytes: Int) throws(WidgetViewRefusal) -> WidgetViewPayload {
+        if let data, data.count > maxDataBytes {
+            throw .data(bytes: data.count, most: maxDataBytes)
+        }
+        return self
+    }
+
+    public var value: Any {
+        (try? JSONSerialization.jsonObject(with: Data(json.utf8), options: [.fragmentsAllowed])) ?? NSNull()
+    }
+}
+
+public enum WidgetViewRefusal: Error, Sendable {
+    case value(bytes: Int, most: Int)
+    case data(bytes: Int, most: Int)
+
+    public var message: String {
+        switch self {
+        case .value(let bytes, let most):
+            "its value is \(bytes) bytes of JSON as UTF-8; the most is \(most)"
+        case .data(let bytes, let most):
+            "its data is \(bytes) bytes; the most is \(most)"
+        }
+    }
+}
+
+public struct WidgetViewState: Codable, Sendable, Equatable {
+    public var revision: Int
+    public var payload: WidgetViewPayload
+
+    public init(revision: Int, payload: WidgetViewPayload) {
+        self.revision = revision
+        self.payload = payload
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case revision, json
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        revision = try c.decode(Int.self, forKey: .revision)
+        payload = WidgetViewPayload(json: try c.decode(String.self, forKey: .json))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(revision, forKey: .revision)
+        try c.encode(payload.json, forKey: .json)
     }
 }
 
@@ -461,6 +542,7 @@ public struct WidgetState: Codable, Sendable, Equatable {
     public var tableRows: [WidgetTableRow]
     public var hex: WidgetHexState?
     public var consoleEntries: [WidgetConsoleEntry]
+    public var view: WidgetViewState?
 
     public init(
         counter: WidgetCounterValue? = nil,
@@ -469,7 +551,8 @@ public struct WidgetState: Codable, Sendable, Equatable {
         listItems: [WidgetListItem] = [],
         tableRows: [WidgetTableRow] = [],
         hex: WidgetHexState? = nil,
-        consoleEntries: [WidgetConsoleEntry] = []
+        consoleEntries: [WidgetConsoleEntry] = [],
+        view: WidgetViewState? = nil
     ) {
         self.counter = counter
         self.histogram = histogram
@@ -478,6 +561,7 @@ public struct WidgetState: Codable, Sendable, Equatable {
         self.tableRows = tableRows
         self.hex = hex
         self.consoleEntries = consoleEntries
+        self.view = view
     }
 
     public mutating func apply(_ kind: WidgetUpdate.Kind) {
@@ -518,8 +602,10 @@ public struct WidgetState: Codable, Sendable, Equatable {
             hex = value
         case .consoleAppend(let entry):
             consoleEntries.append(entry)
-        case .consoleReplyDone:
+        case .consoleReplyDone, .viewEvent, .viewRefused:
             break
+        case .viewState(let value):
+            view = value
         case .clear:
             counter = nil
             histogram.removeAll()
@@ -528,6 +614,7 @@ public struct WidgetState: Codable, Sendable, Equatable {
             tableRows.removeAll()
             hex = nil
             consoleEntries.removeAll()
+            view = nil
         case .snapshot:
             break
         }
@@ -565,6 +652,8 @@ public struct WidgetState: Codable, Sendable, Equatable {
             if consoleEntries.count > cfg.maxEntries {
                 consoleEntries = Array(consoleEntries.suffix(cfg.maxEntries))
             }
+        case .view:
+            break
         }
     }
 }

@@ -2021,7 +2021,7 @@ public enum MissionTools {
                     return errorResult("missing content", code: .invalidInput)
                 }
                 do {
-                    let writtenPath = try engine.writeCustomInstrumentFile(defID: defID, path: path, content: content)
+                    let writtenPath = try engine.writeCustomInstrumentFile(defID: defID, path: path, content: content, by: .mission)
                     await engine.awaitCustomInstrumentReload(defID: defID)
                     return customInstrumentEditResult(
                         engine: engine,
@@ -2072,7 +2072,7 @@ public enum MissionTools {
                     return errorResult(message, code: .invalidInput)
                 }
                 do {
-                    let writtenPath = try engine.writeCustomInstrumentFile(defID: defID, path: file.path, content: updated)
+                    let writtenPath = try engine.writeCustomInstrumentFile(defID: defID, path: file.path, content: updated, by: .mission)
                     await engine.awaitCustomInstrumentReload(defID: defID)
                     return customInstrumentEditResult(
                         engine: engine,
@@ -2103,7 +2103,7 @@ public enum MissionTools {
                     return errorResult("cannot delete entrypoint '\(file.path)' — re-point with set_custom_instrument_entrypoint first", code: .invalidInput)
                 }
                 do {
-                    try engine.deleteCustomInstrumentFile(defID: defID, path: file.path)
+                    try engine.deleteCustomInstrumentFile(defID: defID, path: file.path, by: .mission)
                     await engine.awaitCustomInstrumentReload(defID: defID)
                     return customInstrumentEditResult(
                         engine: engine,
@@ -2139,7 +2139,7 @@ public enum MissionTools {
                     return errorResult("no file '\(from)'", code: .notFound)
                 }
                 do {
-                    let renamedPath = try engine.renameCustomInstrumentFile(defID: defID, from: from, to: to)
+                    let renamedPath = try engine.renameCustomInstrumentFile(defID: defID, from: from, to: to, by: .mission)
                     await engine.awaitCustomInstrumentReload(defID: defID)
                     return customInstrumentEditResult(
                         engine: engine,
@@ -2886,7 +2886,7 @@ public enum MissionTools {
     }
 
     private static let widgetsSchemaJSON: String = """
-        {"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"kind":{"type":"string","enum":["counter","histogram","graph","list","table","hex","console"]},"persistence":{"type":"string","enum":["none","session"],"default":"none","description":"'none' = data lives in memory, lost on detach. 'session' = data survives reattach and app restart, replayed to create() via the `restored` argument."},"max_points":{"type":"integer","minimum":1,"default":5000,"description":"For kind=graph: rolling cap per series. Oldest points drop when exceeded."},"max_items":{"type":"integer","minimum":1,"default":1000,"description":"For kind=list: rolling cap. Oldest items drop when exceeded."},"max_rows":{"type":"integer","minimum":1,"default":1000,"description":"For kind=table: rolling cap on rows."},"max_buckets":{"type":"integer","minimum":1,"default":100,"description":"For kind=histogram: rolling cap on bucket count."},"max_bytes":{"type":"integer","minimum":1,"default":16384,"description":"For kind=hex: trailing-window cap on bytes shown."},"max_entries":{"type":"integer","minimum":1,"default":1000,"description":"For kind=console: rolling cap on entries shown. Oldest entries drop when exceeded."},"unit":{"type":"string","description":"For kind=counter: optional default unit label rendered next to the value."},"prompt":{"type":"string","description":"For kind=console: optional prompt glyph rendered before each entry and on the input row (default '›')."},"placeholder":{"type":"string","description":"For kind=console: optional placeholder text shown in the input field."},"run_button_label":{"type":"string","description":"For kind=console: optional label for the submit button (default 'Run')."},"series":{"type":"array","description":"For kind=graph: line series the agent will push points to.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":false}},"columns":{"type":"array","description":"For kind=table: ordered columns; each row's cells map column id to string.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"alignment":{"type":"string","enum":["leading","trailing"],"default":"leading"}},"required":["id","name"],"additionalProperties":false}},"actions":{"type":"array","description":"For kind=list/table: per-item action buttons; clicks invoke onAction with {widget,action,item}.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":false}}},"required":["id","name","kind"],"additionalProperties":false}}
+        {"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"kind":{"type":"string","enum":["counter","histogram","graph","list","table","hex","console","view"]},"persistence":{"type":"string","enum":["none","session"],"default":"none","description":"'none' = data lives in memory, lost on detach. 'session' = data survives reattach and app restart, replayed to create() via the `restored` argument."},"max_points":{"type":"integer","minimum":1,"default":5000,"description":"For kind=graph: rolling cap per series. Oldest points drop when exceeded."},"max_items":{"type":"integer","minimum":1,"default":1000,"description":"For kind=list: rolling cap. Oldest items drop when exceeded."},"max_rows":{"type":"integer","minimum":1,"default":1000,"description":"For kind=table: rolling cap on rows."},"max_buckets":{"type":"integer","minimum":1,"default":100,"description":"For kind=histogram: rolling cap on bucket count."},"max_bytes":{"type":"integer","minimum":1,"default":16384,"description":"For kind=hex: trailing-window cap on bytes shown."},"max_entries":{"type":"integer","minimum":1,"default":1000,"description":"For kind=console: rolling cap on entries shown. Oldest entries drop when exceeded."},"unit":{"type":"string","description":"For kind=counter: optional default unit label rendered next to the value."},"prompt":{"type":"string","description":"For kind=console: optional prompt glyph rendered before each entry and on the input row (default '›')."},"placeholder":{"type":"string","description":"For kind=console: optional placeholder text shown in the input field."},"run_button_label":{"type":"string","description":"For kind=console: optional label for the submit button (default 'Run')."},"class":{"type":"string","description":"For kind=view: the class, defined in the instrument's Tonel .st files, whose instance shows the widget inside Luma. The agent feeds it with setState(value, data?) and sendEvent(value, data?); it answers through onViewMessage."},"height":{"type":"integer","minimum":1,"default":360,"description":"For kind=view: the widget's height in points."},"series":{"type":"array","description":"For kind=graph: line series the agent will push points to.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":false}},"columns":{"type":"array","description":"For kind=table: ordered columns; each row's cells map column id to string.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"alignment":{"type":"string","enum":["leading","trailing"],"default":"leading"}},"required":["id","name"],"additionalProperties":false}},"actions":{"type":"array","description":"For kind=list/table: per-item action buttons; clicks invoke onAction with {widget,action,item}.","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":false}}},"required":["id","name","kind"],"additionalProperties":false}}
         """
 
     private static func parseWidgetsArg(_ raw: Any?) -> [InstrumentWidget] {
@@ -2924,6 +2924,11 @@ public enum MissionTools {
                     maxEntriesRaw: obj["max_entries"]
                 )
                 return InstrumentWidget(id: id, name: name, kind: .console(cfg), persistence: persistence)
+            case "view":
+                guard let className = obj["class"] as? String else { return nil }
+                let height = (obj["height"] as? Int) ?? InstrumentWidget.ViewConfig.defaultHeight
+                let cfg = InstrumentWidget.ViewConfig(className: className, height: max(1, height))
+                return InstrumentWidget(id: id, name: name, kind: .view(cfg), persistence: persistence)
             default:
                 return nil
             }
@@ -3073,6 +3078,10 @@ public enum MissionTools {
             if let placeholder = cfg.placeholder { obj["placeholder"] = placeholder }
             if let label = cfg.runButtonLabel { obj["run_button_label"] = label }
             obj["max_entries"] = cfg.maxEntries
+        case .view(let cfg):
+            obj["kind"] = "view"
+            obj["class"] = cfg.className
+            obj["height"] = cfg.height
         }
         return obj
     }

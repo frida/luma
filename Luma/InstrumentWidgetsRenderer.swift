@@ -22,7 +22,7 @@ struct InstrumentWidgetsRenderer: View {
                             selection: selection
                         )
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .disabled(!isLive)
+                        .disabled(!isLive && !widget.kind.isView)
                     } label: {
                         widgetHeader(widget: widget)
                     }
@@ -80,6 +80,10 @@ private struct WidgetCanvas: View {
                 hexView()
             case .console(let cfg):
                 consoleView(cfg)
+            case .view(let cfg):
+                if let instance {
+                    InstrumentViewWidget(key: .init(instanceID: instance.id, widget: widget.id), config: cfg, engine: engine)
+                }
             }
         }
         .task(id: instance?.id) { await consumeUpdates() }

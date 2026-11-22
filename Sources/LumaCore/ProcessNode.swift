@@ -92,6 +92,7 @@ public final class ProcessNode: Identifiable {
     public var detachEvents: AsyncStream<SessionDetachReason> { _detachEvents.makeStream() }
     public var widgetUpdates: AsyncStream<WidgetUpdate> { _widgetUpdates.makeStream() }
 
+    private var assemblingViewStates: [InstrumentViews.Key: AssemblingViewState] = [:]
     private var scriptEventsStarted = false
     private var scriptEventsStartWaiters: [CheckedContinuation<Void, Never>] = []
     private var moduleSnapshotState: ModuleSnapshotState = .pending
@@ -471,6 +472,28 @@ public final class ProcessNode: Identifiable {
                 _widgetUpdates.yield(update)
                 return true
 
+            case "widget-view-state":
+                guard let context = decodeWidgetContext(dict),
+                    let json = dict["json"] as? String,
+                    let size = dict["data_size"] as? Int
+                else { return false }
+                if let update = startViewState(json: json, size: size, of: context) {
+                    _widgetUpdates.yield(update)
+                }
+                return true
+
+            case "widget-view-state-data":
+                guard let context = decodeWidgetContext(dict) else { return false }
+                if let update = continueViewState(with: data ?? [], of: context) {
+                    _widgetUpdates.yield(update)
+                }
+                return true
+
+            case "widget-view-event":
+                guard let update = decodeViewEvent(dict, data: data) else { return false }
+                _widgetUpdates.yield(update)
+                return true
+
             case "widget-clear":
                 guard let update = decodeClearUpdate(dict) else { return false }
                 _widgetUpdates.yield(update)
@@ -659,6 +682,61 @@ public final class ProcessNode: Identifiable {
             widget: context.widget,
             kind: .consoleReplyDone(inputEntryID: replyTo)
         )
+    }
+
+    private func startViewState(json: String, size: Int, of context: (instanceID: UUID, widget: String)) -> WidgetUpdate? {
+        let key = InstrumentViews.Key(instanceID: context.instanceID, widget: context.widget)
+        assemblingViewStates[key] = nil
+        let kind: WidgetUpdate.Kind
+        do throws(WidgetViewRefusal) {
+            let value = try WidgetViewPayload(json: json).checking(atMost: WidgetViewPayload.maxStateDataBytes)
+            guard (0...WidgetViewPayload.maxStateDataBytes).contains(size) else {
+                throw .data(bytes: size, most: WidgetViewPayload.maxStateDataBytes)
+            }
+            guard size > 0 else {
+                return WidgetUpdate(
+                    instanceID: context.instanceID, widget: context.widget,
+                    kind: .viewState(WidgetViewState(revision: 0, payload: value)))
+            }
+            assemblingViewStates[key] = AssemblingViewState(json: json, data: SharedBytesAssembly(count: size))
+            return nil
+        } catch {
+            kind = .viewRefused("setState was refused: \(error.message)")
+        }
+        return WidgetUpdate(instanceID: context.instanceID, widget: context.widget, kind: kind)
+    }
+
+    private func continueViewState(with piece: [UInt8], of context: (instanceID: UUID, widget: String)) -> WidgetUpdate? {
+        let key = InstrumentViews.Key(instanceID: context.instanceID, widget: context.widget)
+        guard let assembling = assemblingViewStates[key] else { return nil }
+
+        let data = assembling.data
+        guard piece.count <= data.count - data.written else {
+            assemblingViewStates[key] = nil
+            return WidgetUpdate(
+                instanceID: context.instanceID, widget: context.widget,
+                kind: .viewRefused("setState was refused: its data ran past the \(data.count) bytes it said it carries"))
+        }
+        piece.withUnsafeBytes { data.append($0) }
+        guard data.isComplete else { return nil }
+
+        assemblingViewStates[key] = nil
+        let payload = WidgetViewPayload(json: assembling.json, data: data.finish())
+        return WidgetUpdate(
+            instanceID: context.instanceID, widget: context.widget,
+            kind: .viewState(WidgetViewState(revision: 0, payload: payload)))
+    }
+
+    private func decodeViewEvent(_ dict: [String: Any], data: [UInt8]?) -> WidgetUpdate? {
+        guard let context = decodeWidgetContext(dict), let json = dict["json"] as? String else { return nil }
+        let decoded: WidgetUpdate.Kind
+        do throws(WidgetViewRefusal) {
+            let payload = WidgetViewPayload(json: json, data: data.map { SharedBytes(copying: $0) })
+            decoded = .viewEvent(try payload.checking(atMost: WidgetViewPayload.maxEventDataBytes))
+        } catch {
+            decoded = .viewRefused("sendEvent was refused: \(error.message)")
+        }
+        return WidgetUpdate(instanceID: context.instanceID, widget: context.widget, kind: decoded)
     }
 
     private func decodeClearUpdate(_ dict: [String: Any]) -> WidgetUpdate? {
@@ -1496,6 +1574,7 @@ public final class ProcessNode: Identifiable {
     }
 
     public func disposeInstrumentOnAgent(instanceID: UUID) async throws {
+        assemblingViewStates = assemblingViewStates.filter { $0.key.instanceID != instanceID }
         _ = try await script.exports.disposeInstrument(["instanceId": instanceID.uuidString])
     }
 
@@ -1514,6 +1593,19 @@ public final class ProcessNode: Identifiable {
         ]
         if let item { payload["item"] = item }
         _ = try await script.exports.invokeWidgetAction(JSValue(payload))
+    }
+
+    public func postViewMessage(instanceID: UUID, widget: String, payload: WidgetViewPayload, from sender: CollaborationSession.UserInfo?) {
+        var message: [String: Any] = [
+            "type": "luma:view-message",
+            "instance_id": instanceID.uuidString,
+            "widget": widget,
+            "value": payload.value,
+        ]
+        if let sender {
+            message["from"] = ["id": sender.id, "name": sender.name]
+        }
+        script.post(message, data: payload.data?.array)
     }
 
     public func submitConsoleInput(instanceID: UUID, widget: String, entryID: String, text: String) async throws {
@@ -1799,4 +1891,9 @@ extension CollaborationSession.Session.Phase {
         case .detached: return .idle
         }
     }
+}
+
+private struct AssemblingViewState {
+    let json: String
+    let data: SharedBytesAssembly
 }

@@ -30,6 +30,8 @@ extension Engine {
             return try await patternDecoder.summary(ofText: try pharoArgument("source", of: request)).jsonObject
         case "decode":
             return try await decodeForPharo(request)
+        case let operation where operation.hasPrefix("view_"):
+            return try await instrumentViews.answer(operation, request)
         default:
             return try await answerPharoSessionRequest(operation, request)
         }

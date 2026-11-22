@@ -65,7 +65,13 @@ final class InstalledStoreItems {
         let previousPaths = (try? InstrumentFolder(folderURL: folderURL).sourcePaths()) ?? []
         try InstrumentFolder.stampPackage(name: item.slug, version: item.version, in: folderURL)
         try InstrumentFolder.write(instrument, to: folderURL, replacing: previousPaths)
-        record(StoreInstallation(itemID: item.id, version: item.version, snapshot: try snapshot(of: folderURL)), forItemID: item.id)
+        let installation = StoreInstallation(
+            itemID: item.id,
+            version: item.version,
+            snapshot: try snapshot(of: folderURL),
+            hostCodeDigest: HostCode(files: instrument.files)?.digest
+        )
+        record(installation, forItemID: item.id)
         library.reload()
     }
 

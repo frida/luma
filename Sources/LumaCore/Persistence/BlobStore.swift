@@ -6,6 +6,7 @@ public enum BlobKind: String, Sendable, Codable, CaseIterable {
     case trace
     case pharoFuel = "pharo_fuel"
     case pharoSnapshot = "pharo_snapshot"
+    case viewState = "view_state"
 }
 
 /// A file-backed blob store keyed by id and kind. The three-tier load in
@@ -23,8 +24,19 @@ public final class BlobStore: Sendable {
         try data.write(to: url(id: id, kind: kind), options: .atomic)
     }
 
+    public func write(_ bytes: SharedBytes, id: UUID, kind: BlobKind) throws {
+        try bytes.withUnsafeBytes { held in
+            try Data(bytesNoCopy: UnsafeMutableRawPointer(mutating: held.baseAddress!), count: held.count, deallocator: .none)
+                .write(to: url(id: id, kind: kind), options: .atomic)
+        }
+    }
+
     public func load(id: UUID, kind: BlobKind) throws -> Data {
         try Data(contentsOf: url(id: id, kind: kind), options: .mappedIfSafe)
+    }
+
+    public func map(id: UUID, kind: BlobKind) throws -> SharedBytes {
+        try SharedBytes(mapping: url(id: id, kind: kind))
     }
 
     public func exists(id: UUID, kind: BlobKind) -> Bool {

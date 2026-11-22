@@ -328,6 +328,46 @@ is gitignored — it is produced at build time.
   `loadCategories()` gives the publish form the categories without loading a
   page.
 
+- **Instrument views (`Sources/LumaCore/InstrumentViews/`)** — a custom
+  instrument's `.st` files are Tonel classes it ships, and a widget of
+  kind `view` names one of them. `InstrumentViews` (`engine.instrumentViews`)
+  makes one instance per instrument instance and widget once a frontend
+  shows the widget, and keeps it until the instance goes, its Smalltalk
+  changes or the project closes; across a detach it goes on showing the
+  state it was last given. The classes are anonymous, made once per
+  instrument definition, session and version of its code, in a
+  `LumaInstrumentEnvironment` of their own that resolves their class
+  names: instances of one instrument in one session share class-side
+  state, as they share the agent's module, and nothing else does.
+  Instruments never clash, nothing is left behind in `Smalltalk globals`
+  and `LumaJournal` never hears of them. A view runs on a
+  `LumaSubscription` process of its own, opened in a `LumaRun` named by
+  the view so that stopping it stops nothing else, and fed by a pulled
+  stream (`PharoPulledResult`): the host hands it the next item only once it
+  took the last, which is what lets moves, scrolls and states coalesce
+  while it is busy. Every call into the instrument's object runs under a
+  three-second deadline in the image, and anything it raises stops the
+  view with the error in its widget, naming the `<gtView>` method when
+  one raised it or answered no view. Nothing can show an action button,
+  so `SwpView`'s `action…` declarations are replaced in the image: in a
+  view's process (`LumaViewing`) they raise `LumaViewRefusal`, which no
+  `on: Error` swallows and which stops the view naming the declaration,
+  and anywhere else they still do nothing. The
+  agent's `setState`/`sendEvent` arrive as `.viewState`/`.viewEvent`
+  widget updates, an event's bytes as its message data and a state's in
+  pieces after its value; the image reaches those bytes as `LumaBytes`
+  lent by `PharoBlobRegistry`, which a drawable can take as vertices
+  directly. A value is measured as the UTF-8 bytes of its
+  JSON: the agent throws over 256 KiB, and whatever the host refuses all
+  the same stops the view with the reason in its widget, once it runs: a
+  refusal that arrives sooner waits, so the widget asks for **Allow**
+  before it reports anything. A state's bytes
+  are persisted in the blob store (`BlobKind.viewState`), not in the
+  state's JSON. Whether an instrument's
+  Smalltalk may run is `HostCodeTrust`'s: its digest (`HostCode`) is
+  allowed when the store published it, when the user approved it on this
+  machine (`LumaAppState`), or when the user produced it in Luma's editor
+  from an allowed one; anything else waits in the widget for **Allow**.
 - **Canvas (`CanvasScene`, `CanvasDrawable`, `CanvasRegistry`)** — a
   scene the image holds by handle and changes; the host draws it.
   A drawable carries the author's own vertex and fragment stages,
@@ -374,8 +414,9 @@ is gitignored — it is produced at build time.
   its id: the subscriptions, tunes and voices it starts, and every process
   it forks, plainly or with `LumaRun fork:` and forks of those included,
   stop when the cell runs again or is deleted. Who owns what a process
-  starts is the process's (`LumaRun on:do:`), and every fork inherits it.
-  See the
+  starts is the process's (`LumaRun on:do:`), and every fork inherits it,
+  so an instrument view's own process adopts what it starts long after
+  the evaluation that opened it returned. See the
   symbol-visibility note below: nothing in Swift calls these
   `@_cdecl` exports, and that has bitten twice.
 

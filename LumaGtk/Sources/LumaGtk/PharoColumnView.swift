@@ -188,6 +188,7 @@ final class PharoColumnView {
     }
 
     private var notebook = Notebook()
+    private var pages: PharoViewPages?
 
     private func tabs() -> Notebook {
         notebook.hexpand = true
@@ -203,192 +204,28 @@ final class PharoColumnView {
         while notebook.getNPages() > 0 {
             notebook.removePage(pageNum: notebook.getNPages() - 1)
         }
-        listViews.removeAll()
-        canvasAreas.removeAll()
-        patternPages.removeAll()
-        graphAreas.removeAll()
-        chartAreas.removeAll()
+        let pages = PharoViewPages(source: PharoObjectViews(runtime: runtime, object: object)) { [weak self] element in
+            self?.onDrill(element)
+        }
+        self.pages = pages
         Task { @MainActor in
             let views: [PharoViewDeclaration]
             do {
                 views = try await runtime.views(of: object).sorted(by: { $0.priority < $1.priority })
             } catch {
-                _ = notebook.appendPage(child: failurePage(error.localizedDescription), tabLabel: tabLabel("Error"))
+                _ = notebook.appendPage(child: PharoViewPages.failurePage(error.localizedDescription), tabLabel: tabLabel("Error"))
                 return
             }
             for view in views where view.title != "Meta" {
-                _ = notebook.appendPage(child: page(for: view), tabLabel: tabLabel(view.title))
+                _ = notebook.appendPage(child: pages.page(for: view), tabLabel: tabLabel(view.title))
             }
-            _ = notebook.appendPage(child: textPage(object.printString), tabLabel: tabLabel("Print"))
+            _ = notebook.appendPage(child: PharoViewPages.textPage(object.printString), tabLabel: tabLabel("Print"))
             // The image's own Meta view is dropped for the coder shown on the
             // object's class, the way the SwiftUI inspector synthesizes it.
             if let receiverClass = try? await runtime.classObject(of: object) {
                 _ = notebook.appendPage(child: classBrowserBody(of: receiverClass), tabLabel: tabLabel("Meta"))
             }
         }
-    }
-
-    private func page(for view: PharoViewDeclaration) -> Widget {
-        switch view.viewName {
-        case "list", "columnedList", "tree":
-            return listPage(for: view)
-        case "text":
-            return textPage(view.text ?? "")
-        case "graph":
-            guard let graph = view.graph else { return textPage("Empty graph.") }
-            return graphPage(graph, selector: view.methodSelector)
-        case "chart":
-            guard let chart = view.chart else { return textPage("Empty chart.") }
-            return chartPage(chart, selector: view.methodSelector)
-        case "canvas":
-            guard let canvas = view.canvas else { return textPage("Empty canvas.") }
-            return canvasPage(scene: canvas.scene)
-        case "lumaBytes":
-            guard let bytes = PharoBytesReference(view.text ?? "") else { return textPage("These bytes could not be read.") }
-            return bytesPage(bytes)
-        case "lumaPatternBytes":
-            guard let target = PharoPatternTarget(reference: view.text ?? "") else { return textPage(Self.releasedPattern) }
-            return patternBytesPage(target)
-        case "lumaPatternVisualization":
-            guard let target = PharoPatternTarget(reference: view.text ?? "") else { return textPage(Self.releasedPattern) }
-            return patternVisualizationPage(target)
-        default:
-            return textPage("\(view.viewName) views are not drawn yet.")
-        }
-    }
-
-    private func listPage(for view: PharoViewDeclaration) -> Widget {
-        let list = PharoListView(runtime: runtime, object: object, view: view) { [weak self] element in
-            self?.onDrill(element)
-        }
-        listViews.append(list)
-        return list.widget
-    }
-
-    /// The scene is the host's already; the view only says which one, and the
-    /// widget follows it as the image changes it.
-    private func canvasPage(scene: Int) -> Widget {
-        let canvas = PharoCanvasArea(scene: scene)
-        canvasAreas.append(canvas)
-        return canvas.widget
-    }
-
-    private func bytesPage(_ bytes: PharoBytesReference) -> Widget {
-        let hexView = HexView(bytes: bytes.data, baseAddress: bytes.address)
-        hexView.widget.marginStart = 8
-        hexView.widget.marginTop = 8
-        patternPages.append(hexView)
-        let scroll = ScrolledWindow()
-        scroll.setPolicy(hscrollbarPolicy: .automatic, vscrollbarPolicy: .automatic)
-        scroll.hexpand = true
-        scroll.vexpand = true
-        scroll.set(child: hexView.widget)
-        return scroll
-    }
-
-    private func patternBytesPage(_ target: PharoPatternTarget) -> Widget {
-        let page = PharoPatternBytesPage(target: target)
-        patternPages.append(page)
-        return page.widget
-    }
-
-    private func patternVisualizationPage(_ target: PharoPatternTarget) -> Widget {
-        let visualization: PatternVisualization
-        do {
-            visualization = try PatternVisualization(target.node.visualizer!, of: target.node, in: target.decoding.root)
-        } catch {
-            return failurePage(error.localizedDescription)
-        }
-        let view = PatternVisualizationWidget(visualization)
-        patternPages.append(view)
-        let scroll = ScrolledWindow()
-        scroll.hexpand = true
-        scroll.vexpand = true
-        scroll.set(child: view.widget)
-        return scroll
-    }
-
-    private static let releasedPattern = "The host no longer holds this value."
-
-    private var canvasAreas: [PharoCanvasArea] = []
-    private var patternPages: [AnyObject] = []
-    private var listViews: [PharoListView] = []
-    private var graphAreas: [PharoGraphArea] = []
-    private var chartAreas: [PharoChartArea] = []
-
-    private func graphPage(_ graph: PharoGraph, selector: String) -> Box {
-        let area = PharoGraphArea(graph: graph)
-        area.onDrill = { [weak self] index in
-            guard let self else { return }
-            Task { @MainActor in
-                if let element = try? await self.runtime.drillInto(self.object, view: selector, index: index + 1) {
-                    self.onDrill(element)
-                }
-            }
-        }
-        graphAreas.append(area)
-        return area.widget
-    }
-
-    private func chartPage(_ chart: PharoChart, selector: String) -> Box {
-        let area = PharoChartArea(chart: chart)
-        area.onDrill = { [weak self] index in
-            guard let self else { return }
-            Task { @MainActor in
-                if let element = try? await self.runtime.drillInto(self.object, view: selector, index: index + 1) {
-                    self.onDrill(element)
-                }
-            }
-        }
-        chartAreas.append(area)
-        return area.widget
-    }
-
-    /// What the image said went wrong, laid out like the content it stands in
-    /// for so the pane keeps its shape rather than swallowing the complaint.
-    private func failurePage(_ message: String) -> Box {
-        let label = Label(str: message)
-        label.selectable = true
-        label.wrap = true
-        label.xalign = 0
-        label.yalign = 0
-        label.marginStart = 12
-        label.marginEnd = 12
-        label.marginTop = 8
-        label.marginBottom = 8
-        label.add(cssClass: "monospace")
-        label.add(cssClass: "error")
-
-        let scroll = ScrolledWindow()
-        scroll.hexpand = true
-        scroll.vexpand = true
-        scroll.set(child: label)
-
-        let page = Box(orientation: .vertical, spacing: 0)
-        page.append(child: scroll)
-        return page
-    }
-
-    private func textPage(_ text: String) -> Box {
-        let label = Label(str: text)
-        label.selectable = true
-        label.wrap = true
-        label.xalign = 0
-        label.yalign = 0
-        label.marginStart = 12
-        label.marginEnd = 12
-        label.marginTop = 8
-        label.marginBottom = 8
-        label.add(cssClass: "monospace")
-
-        let scroll = ScrolledWindow()
-        scroll.hexpand = true
-        scroll.vexpand = true
-        scroll.set(child: label)
-
-        let page = Box(orientation: .vertical, spacing: 0)
-        page.append(child: scroll)
-        return page
     }
 
     private func tabLabel(_ title: String) -> Box {

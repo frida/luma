@@ -79,6 +79,8 @@ public final class Engine {
     /// The image the playground, the notebook cells and the mission tools all
     /// talk to. The frontend says where it lives; see `PharoWorkspace`.
     @ObservationIgnored public private(set) lazy var pharo = PharoWorkspace(engine: self)
+    @ObservationIgnored public private(set) lazy var instrumentViews = InstrumentViews(
+        engine: self, catalogURL: BackendConfig.storeCatalogURL)
 
     @ObservationIgnored private var disassemblers: [UUID: Disassembler] = [:]
     @ObservationIgnored private var seekRestoredSessions: Set<UUID> = []
@@ -1828,6 +1830,7 @@ public final class Engine {
             Task { @MainActor in
                 self?.instrumentsBySession = grouped
                 self?.hydrateWidgetStatesFromStore(grouped)
+                self?.instrumentViews.reconcile(with: grouped)
             }
         }
         insightsObservation = store.observeAllInsights { [weak self] grouped in
@@ -1844,6 +1847,7 @@ public final class Engine {
             }
         }
         patterns.reload()
+        instrumentViews.start()
         Task { [weak self] in
             guard let self, let paths = try? compilerWorkspacePaths() else { return }
             _ = try? await compilerWorkspace.ensureReady(paths: paths)
@@ -1890,6 +1894,8 @@ public final class Engine {
 
         for monitor in instrumentFolderMonitors.values { monitor.stop() }
         instrumentFolderMonitors.removeAll()
+
+        await instrumentViews.stopAll()
 
         for node in processNodes { node.stop() }
         processNodes.removeAll()
@@ -3891,6 +3897,7 @@ public final class Engine {
             node.removeInstrument(id: instance.id)
         }
         try? store.deleteInstrument(id: instance.id)
+        forgetViewData(of: instance)
         widgetStates.removeValue(forKey: instance.id)
         widgetPlacements.removeValue(forKey: instance.id)
         onSessionListChanged?(.instrumentRemoved(id: instance.id, sessionID: instance.sessionID))
@@ -4700,7 +4707,7 @@ public final class Engine {
     ) -> [String: Any] {
         let persistentWidgets = widgets.filter { $0.persistence == .session }
         guard !persistentWidgets.isEmpty else { return [:] }
-        let states = (try? store.fetchWidgetStates(instanceID: instanceID)) ?? [:]
+        let states = persistedWidgetStates(instanceID: instanceID)
         let persistentIDs = Set(persistentWidgets.map(\.id))
         widgetStates[instanceID] = states.filter { persistentIDs.contains($0.key) }
         for widget in persistentWidgets {
@@ -4759,6 +4766,8 @@ public final class Engine {
                 }
             case .console:
                 restored[widget.id] = ["entries": state.consoleEntries.map { $0.toWireJSON() }]
+            case .view:
+                restored[widget.id] = ["state": state.view?.payload.value ?? NSNull()]
             }
         }
         return restored
@@ -4792,7 +4801,7 @@ public final class Engine {
                 let widgets = widgets(forInstance: instance)
                 let persistent = widgets.filter { $0.persistence == .session }
                 guard !persistent.isEmpty else { continue }
-                let states = (try? store.fetchWidgetStates(instanceID: instance.id)) ?? [:]
+                let states = persistedWidgetStates(instanceID: instance.id)
                 let persistentIDs = Set(persistent.map(\.id))
                 let filtered = states.filter { persistentIDs.contains($0.key) }
                 widgetStates[instance.id] = filtered
@@ -4980,36 +4989,50 @@ public final class Engine {
     }
 
     @discardableResult
-    public func addCustomInstrumentFile(defID: UUID, path: String) throws -> String {
-        try writeCustomInstrumentFile(defID: defID, path: path, content: PatternSource.Kind(path: path)?.template ?? "")
+    public func addCustomInstrumentFile(defID: UUID, path: String, by author: CustomInstrumentAuthor = .localUser) throws -> String {
+        try writeCustomInstrumentFile(defID: defID, path: path, content: PatternSource.Kind(path: path)?.template ?? "", by: author)
     }
 
     @discardableResult
-    public func writeCustomInstrumentFile(defID: UUID, path: String, content: String) throws -> String {
+    public func writeCustomInstrumentFile(
+        defID: UUID,
+        path: String,
+        content: String,
+        by author: CustomInstrumentAuthor = .localUser
+    ) throws -> String {
         let validatedPath = try CustomInstrumentFile.validateRelativePath(path)
         let file = CustomInstrumentFile(defID: defID, path: validatedPath, content: content)
         _ = try requireCustomInstrumentDef(defID: defID)
-        try store.save(file)
+        try noteHostCodeEdit(ofCustomInstrument: defID, by: author) {
+            try store.save(file)
+        }
         try store.save(touchUpdatedAt(defID: defID))
         broadcastCustomInstrumentUpsert(defID: defID)
         scheduleCustomInstrumentReload(defID: defID)
         return validatedPath
     }
 
-    public func deleteCustomInstrumentFile(defID: UUID, path: String) throws {
+    public func deleteCustomInstrumentFile(defID: UUID, path: String, by author: CustomInstrumentAuthor = .localUser) throws {
         let validatedPath = try CustomInstrumentFile.validateRelativePath(path)
         let def = try requireCustomInstrumentDef(defID: defID)
         guard def.entrypoint != validatedPath else {
             throw LumaCoreError.invalidOperation("Cannot delete the entrypoint file.")
         }
-        try store.deleteCustomInstrumentFile(defID: defID, path: validatedPath)
+        try noteHostCodeEdit(ofCustomInstrument: defID, by: author) {
+            try store.deleteCustomInstrumentFile(defID: defID, path: validatedPath)
+        }
         try store.save(touchUpdatedAt(defID: defID))
         broadcastCustomInstrumentUpsert(defID: defID)
         scheduleCustomInstrumentReload(defID: defID)
     }
 
     @discardableResult
-    public func renameCustomInstrumentFile(defID: UUID, from: String, to: String) throws -> String {
+    public func renameCustomInstrumentFile(
+        defID: UUID,
+        from: String,
+        to: String,
+        by author: CustomInstrumentAuthor = .localUser
+    ) throws -> String {
         let fromPath = try CustomInstrumentFile.validateRelativePath(from)
         let toPath = try CustomInstrumentFile.validateRelativePath(to)
         guard try store.fetchCustomInstrumentFile(defID: defID, path: fromPath) != nil else {
@@ -5019,7 +5042,9 @@ public final class Engine {
         if renamesEntrypoint {
             try Self.requireEntrypointCandidate(toPath)
         }
-        try store.renameCustomInstrumentFile(defID: defID, from: fromPath, to: toPath)
+        try noteHostCodeEdit(ofCustomInstrument: defID, by: author) {
+            try store.renameCustomInstrumentFile(defID: defID, from: fromPath, to: toPath)
+        }
         var def = try touchUpdatedAt(defID: defID)
         if renamesEntrypoint {
             def.entrypoint = toPath
@@ -5043,6 +5068,13 @@ public final class Engine {
         broadcastCustomInstrumentUpsert(defID: defID)
         scheduleCustomInstrumentReload(defID: defID)
         return validatedPath
+    }
+
+    private func noteHostCodeEdit(ofCustomInstrument defID: UUID, by author: CustomInstrumentAuthor, _ edit: () throws -> Void) throws {
+        let previous = HostCode(files: try store.fetchCustomInstrumentFiles(defID: defID))
+        try edit()
+        let next = HostCode(files: try store.fetchCustomInstrumentFiles(defID: defID))
+        instrumentViews.noteEdit(ofCustomInstrument: defID, from: previous, to: next, by: author)
     }
 
     private func scheduleCustomInstrumentReload(defID: UUID) {
@@ -5103,6 +5135,7 @@ public final class Engine {
         let bundle = try Self.validatedCustomInstrumentBundle(
             InstrumentFolder(folderURL: folderURL).customInstrument(id: UUID(), createdAt: now, updatedAt: now)
         )
+        instrumentViews.noteArrival(ofCustomInstrument: bundle.def.id, from: .folder(path: folderURL.path))
         try saveCustomInstrumentBundle(bundle)
         try InstrumentFolder.writeTypings(for: bundle.def, to: folderURL)
         setInstrumentFolderLink(InstrumentFolderLink(path: folderURL.path, synced: .init(of: bundle)), forDefID: bundle.def.id)
@@ -5126,6 +5159,7 @@ public final class Engine {
             folderContents(for: storedCustomInstrumentBundle(defID: defID).def, in: link.folderURL)
         )
         bundle.def.updatedAt = Date()
+        instrumentViews.noteArrival(ofCustomInstrument: defID, from: .folder(path: link.path))
         try saveCustomInstrumentBundle(bundle)
         try InstrumentFolder.writeTypings(for: bundle.def, to: link.folderURL)
         link.synced = .init(of: bundle)
@@ -5321,12 +5355,20 @@ public final class Engine {
         widgetStates[update.instanceID] = states
         _widgetUpdates.yield(update)
 
-        if widgetDef?.persistence == .session {
+        if let widgetDef, widgetDef.persistence == .session, !update.kind.isTransient {
             try? store.saveWidgetState(instanceID: update.instanceID, widgetID: update.widget, state: state)
+            if widgetDef.kind.isView {
+                persistViewData(of: state.view, instanceID: update.instanceID, widget: update.widget)
+            }
         }
 
         if origin == .local, let collabSID = collabSessionID(forSessionID: sessionID) {
-            collaboration.sendWidgetUpdate(sessionID: collabSID, update: update)
+            switch update.kind {
+            case .viewState, .viewEvent, .viewRefused:
+                break
+            default:
+                collaboration.sendWidgetUpdate(sessionID: collabSID, update: update)
+            }
         }
     }
 
@@ -5451,6 +5493,7 @@ public func deleteCustomInstrument(_ defID: UUID) async {
     }
 
     private func reloadCustomInstrumentInstances(defID: UUID) async {
+        instrumentViews.reload(customInstrument: defID)
         guard let def = try? store.fetchCustomInstrumentDef(id: defID),
             let storeFiles = try? store.fetchCustomInstrumentFiles(defID: defID)
         else { return }

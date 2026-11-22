@@ -33,6 +33,7 @@ public struct InstrumentWidget: Codable, Identifiable, Sendable, Equatable {
         case table(TableConfig)
         case hex(HexConfig)
         case console(ConsoleConfig)
+        case view(ViewConfig)
     }
 
     public struct CounterConfig: Codable, Sendable, Equatable {
@@ -149,6 +150,29 @@ public struct InstrumentWidget: Codable, Identifiable, Sendable, Equatable {
         }
     }
 
+    public struct ViewConfig: Codable, Sendable, Equatable {
+        public static let defaultHeight: Int = 360
+
+        public var className: String
+        public var height: Int
+
+        public init(className: String, height: Int = Self.defaultHeight) {
+            self.className = className
+            self.height = height
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case className = "class"
+            case height
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            className = try c.decode(String.self, forKey: .className)
+            height = try c.decodeIfPresent(Int.self, forKey: .height) ?? Self.defaultHeight
+        }
+    }
+
     public struct Action: Codable, Identifiable, Sendable, Equatable {
         public var id: String
         public var name: String
@@ -157,6 +181,13 @@ public struct InstrumentWidget: Codable, Identifiable, Sendable, Equatable {
             self.id = id
             self.name = name
         }
+    }
+}
+
+extension InstrumentWidget.Kind {
+    public var isView: Bool {
+        if case .view = self { return true }
+        return false
     }
 }
 
@@ -190,7 +221,7 @@ extension InstrumentWidget {
 
 extension InstrumentWidget.Kind: Codable {
     private enum CodingKeys: String, CodingKey { case kind, config }
-    private enum Tag: String, Codable { case counter, histogram, graph, list, table, hex, console }
+    private enum Tag: String, Codable { case counter, histogram, graph, list, table, hex, console, view }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -209,6 +240,8 @@ extension InstrumentWidget.Kind: Codable {
             self = .hex(try c.decode(InstrumentWidget.HexConfig.self, forKey: .config))
         case .console:
             self = .console(try c.decode(InstrumentWidget.ConsoleConfig.self, forKey: .config))
+        case .view:
+            self = .view(try c.decode(InstrumentWidget.ViewConfig.self, forKey: .config))
         }
     }
 
@@ -235,6 +268,9 @@ extension InstrumentWidget.Kind: Codable {
             try c.encode(h, forKey: .config)
         case .console(let cfg):
             try c.encode(Tag.console, forKey: .kind)
+            try c.encode(cfg, forKey: .config)
+        case .view(let cfg):
+            try c.encode(Tag.view, forKey: .kind)
             try c.encode(cfg, forKey: .config)
         }
     }

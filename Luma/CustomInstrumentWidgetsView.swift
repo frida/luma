@@ -168,7 +168,7 @@ struct CustomInstrumentWidgetsPopover: View {
 private enum NewWidgetField: Hashable { case id, name }
 
 enum WidgetKindChoice: String, CaseIterable, Identifiable {
-    case counter, histogram, graph, list, table, hex, console
+    case counter, histogram, graph, list, table, hex, console, view
 
     var id: String { rawValue }
 
@@ -181,6 +181,7 @@ enum WidgetKindChoice: String, CaseIterable, Identifiable {
         case .table: return "Table"
         case .hex: return "Hex Dump"
         case .console: return "Console"
+        case .view: return "Smalltalk View"
         }
     }
 
@@ -193,6 +194,7 @@ enum WidgetKindChoice: String, CaseIterable, Identifiable {
         case .table: self = .table
         case .hex: self = .hex
         case .console: self = .console
+        case .view: self = .view
         }
     }
 
@@ -205,6 +207,7 @@ enum WidgetKindChoice: String, CaseIterable, Identifiable {
         case .table: return .table(InstrumentWidget.TableConfig())
         case .hex: return .hex(InstrumentWidget.HexConfig())
         case .console: return .console(InstrumentWidget.ConsoleConfig())
+        case .view: return .view(InstrumentWidget.ViewConfig(className: ""))
         }
     }
 }
@@ -258,6 +261,13 @@ private struct WidgetRow: View {
         .background(RoundedRectangle(cornerRadius: 6).fill(Color.gray.opacity(0.08)))
     }
 
+    private var kindBinding: Binding<WidgetKindChoice> {
+        Binding(
+            get: { WidgetKindChoice(from: widget.kind) },
+            set: { widget.kind = $0.defaultKind() }
+        )
+    }
+
     private var persistencePicker: some View {
         HStack(spacing: 8) {
             Text("Persistence").font(.subheadline).frame(width: 96, alignment: .leading)
@@ -271,6 +281,13 @@ private struct WidgetRow: View {
             .frame(width: 130)
             Spacer()
         }
+    }
+
+    private var persistenceBinding: Binding<InstrumentWidget.Persistence> {
+        Binding(
+            get: { widget.persistence },
+            set: { widget.persistence = $0 }
+        )
     }
 
     @ViewBuilder
@@ -310,70 +327,47 @@ private struct WidgetRow: View {
                 consoleTextRow(label: "Placeholder", binding: consolePlaceholderBinding)
                 consoleTextRow(label: "Run button label", binding: consoleRunLabelBinding)
             }
-        }
-    }
-
-    private func consoleTextRow(label: String, binding: Binding<String>) -> some View {
-        HStack(spacing: 8) {
-            Text(label).font(.subheadline).frame(width: 160, alignment: .leading)
-            TextField("(optional)", text: binding)
-                .textFieldStyle(.roundedBorder)
-            Spacer()
-        }
-    }
-
-    private var consoleMaxEntriesBinding: Binding<Int> {
-        Binding(
-            get: {
-                if case .console(let cfg) = widget.kind { return cfg.maxEntries }
-                return InstrumentWidget.ConsoleConfig.defaultMaxEntries
-            },
-            set: { newValue in
-                if case .console(var cfg) = widget.kind {
-                    cfg.maxEntries = max(1, newValue)
-                    widget.kind = .console(cfg)
+        case .view:
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Text("Class").font(.subheadline).frame(width: 160, alignment: .leading)
+                    TextField("A class from the instrument's .st files", text: viewClassBinding)
+                        .textFieldStyle(.roundedBorder)
+                    Spacer()
                 }
+                capRow(label: "Height", binding: viewHeightBinding)
             }
-        )
+        }
     }
 
-    private var consolePromptBinding: Binding<String> {
-        consoleStringBinding(keyPath: \.prompt)
-    }
-
-    private var consolePlaceholderBinding: Binding<String> {
-        consoleStringBinding(keyPath: \.placeholder)
-    }
-
-    private var consoleRunLabelBinding: Binding<String> {
-        consoleStringBinding(keyPath: \.runButtonLabel)
-    }
-
-    private func consoleStringBinding(
-        keyPath: WritableKeyPath<InstrumentWidget.ConsoleConfig, String?>
-    ) -> Binding<String> {
+    private var counterUnitBinding: Binding<String> {
         Binding(
             get: {
-                if case .console(let cfg) = widget.kind { return cfg[keyPath: keyPath] ?? "" }
+                if case .counter(let cfg) = widget.kind { return cfg.unit ?? "" }
                 return ""
             },
             set: { newValue in
-                if case .console(var cfg) = widget.kind {
-                    cfg[keyPath: keyPath] = newValue.isEmpty ? nil : newValue
-                    widget.kind = .console(cfg)
+                if case .counter(var cfg) = widget.kind {
+                    cfg.unit = newValue.isEmpty ? nil : newValue
+                    widget.kind = .counter(cfg)
                 }
             }
         )
     }
 
-    private func capRow(label: String, binding: Binding<Int>) -> some View {
-        HStack(spacing: 8) {
-            Text(label).font(.subheadline).frame(width: 160, alignment: .leading)
-            TextField("", value: binding, formatter: capFormatter)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 120)
-            Spacer()
-        }
+    private var histogramMaxBucketsBinding: Binding<Int> {
+        Binding(
+            get: {
+                if case .histogram(let cfg) = widget.kind { return cfg.maxBuckets }
+                return InstrumentWidget.HistogramConfig.defaultMaxBuckets
+            },
+            set: { newValue in
+                if case .histogram(var cfg) = widget.kind {
+                    cfg.maxBuckets = max(1, newValue)
+                    widget.kind = .histogram(cfg)
+                }
+            }
+        )
     }
 
     private var graphMaxPointsBinding: Binding<Int> {
@@ -391,6 +385,16 @@ private struct WidgetRow: View {
         )
     }
 
+    private var graphSeriesBinding: Binding<[InstrumentWidget.Series]> {
+        Binding(
+            get: {
+                if case .graph(let cfg) = widget.kind { return cfg.series }
+                return []
+            },
+            set: { widget.kind = .graph(InstrumentWidget.GraphConfig(series: $0)) }
+        )
+    }
+
     private var listMaxItemsBinding: Binding<Int> {
         Binding(
             get: {
@@ -403,6 +407,16 @@ private struct WidgetRow: View {
                     widget.kind = .list(cfg)
                 }
             }
+        )
+    }
+
+    private var listActionsBinding: Binding<[InstrumentWidget.Action]> {
+        Binding(
+            get: {
+                if case .list(let cfg) = widget.kind { return cfg.actions }
+                return []
+            },
+            set: { widget.kind = .list(InstrumentWidget.ListConfig(actions: $0)) }
         )
     }
 
@@ -451,36 +465,6 @@ private struct WidgetRow: View {
         )
     }
 
-    private var counterUnitBinding: Binding<String> {
-        Binding(
-            get: {
-                if case .counter(let cfg) = widget.kind { return cfg.unit ?? "" }
-                return ""
-            },
-            set: { newValue in
-                if case .counter(var cfg) = widget.kind {
-                    cfg.unit = newValue.isEmpty ? nil : newValue
-                    widget.kind = .counter(cfg)
-                }
-            }
-        )
-    }
-
-    private var histogramMaxBucketsBinding: Binding<Int> {
-        Binding(
-            get: {
-                if case .histogram(let cfg) = widget.kind { return cfg.maxBuckets }
-                return InstrumentWidget.HistogramConfig.defaultMaxBuckets
-            },
-            set: { newValue in
-                if case .histogram(var cfg) = widget.kind {
-                    cfg.maxBuckets = max(1, newValue)
-                    widget.kind = .histogram(cfg)
-                }
-            }
-        )
-    }
-
     private var hexMaxBytesBinding: Binding<Int> {
         Binding(
             get: {
@@ -496,38 +480,97 @@ private struct WidgetRow: View {
         )
     }
 
-    private var persistenceBinding: Binding<InstrumentWidget.Persistence> {
-        Binding(
-            get: { widget.persistence },
-            set: { widget.persistence = $0 }
-        )
-    }
-
-    private var kindBinding: Binding<WidgetKindChoice> {
-        Binding(
-            get: { WidgetKindChoice(from: widget.kind) },
-            set: { widget.kind = $0.defaultKind() }
-        )
-    }
-
-    private var graphSeriesBinding: Binding<[InstrumentWidget.Series]> {
+    private var consoleMaxEntriesBinding: Binding<Int> {
         Binding(
             get: {
-                if case .graph(let cfg) = widget.kind { return cfg.series }
-                return []
+                if case .console(let cfg) = widget.kind { return cfg.maxEntries }
+                return InstrumentWidget.ConsoleConfig.defaultMaxEntries
             },
-            set: { widget.kind = .graph(InstrumentWidget.GraphConfig(series: $0)) }
+            set: { newValue in
+                if case .console(var cfg) = widget.kind {
+                    cfg.maxEntries = max(1, newValue)
+                    widget.kind = .console(cfg)
+                }
+            }
         )
     }
 
-    private var listActionsBinding: Binding<[InstrumentWidget.Action]> {
+    private var consolePromptBinding: Binding<String> {
+        consoleStringBinding(keyPath: \.prompt)
+    }
+
+    private var consolePlaceholderBinding: Binding<String> {
+        consoleStringBinding(keyPath: \.placeholder)
+    }
+
+    private var consoleRunLabelBinding: Binding<String> {
+        consoleStringBinding(keyPath: \.runButtonLabel)
+    }
+
+    private func consoleStringBinding(
+        keyPath: WritableKeyPath<InstrumentWidget.ConsoleConfig, String?>
+    ) -> Binding<String> {
         Binding(
             get: {
-                if case .list(let cfg) = widget.kind { return cfg.actions }
-                return []
+                if case .console(let cfg) = widget.kind { return cfg[keyPath: keyPath] ?? "" }
+                return ""
             },
-            set: { widget.kind = .list(InstrumentWidget.ListConfig(actions: $0)) }
+            set: { newValue in
+                if case .console(var cfg) = widget.kind {
+                    cfg[keyPath: keyPath] = newValue.isEmpty ? nil : newValue
+                    widget.kind = .console(cfg)
+                }
+            }
         )
+    }
+
+    private var viewClassBinding: Binding<String> {
+        Binding(
+            get: {
+                if case .view(let cfg) = widget.kind { return cfg.className }
+                return ""
+            },
+            set: { newValue in
+                if case .view(var cfg) = widget.kind {
+                    cfg.className = newValue.trimmingCharacters(in: .whitespaces)
+                    widget.kind = .view(cfg)
+                }
+            }
+        )
+    }
+
+    private var viewHeightBinding: Binding<Int> {
+        Binding(
+            get: {
+                if case .view(let cfg) = widget.kind { return cfg.height }
+                return InstrumentWidget.ViewConfig.defaultHeight
+            },
+            set: { newValue in
+                if case .view(var cfg) = widget.kind {
+                    cfg.height = max(1, newValue)
+                    widget.kind = .view(cfg)
+                }
+            }
+        )
+    }
+
+    private func capRow(label: String, binding: Binding<Int>) -> some View {
+        HStack(spacing: 8) {
+            Text(label).font(.subheadline).frame(width: 160, alignment: .leading)
+            TextField("", value: binding, formatter: capFormatter)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 120)
+            Spacer()
+        }
+    }
+
+    private func consoleTextRow(label: String, binding: Binding<String>) -> some View {
+        HStack(spacing: 8) {
+            Text(label).font(.subheadline).frame(width: 160, alignment: .leading)
+            TextField("(optional)", text: binding)
+                .textFieldStyle(.roundedBorder)
+            Spacer()
+        }
     }
 }
 

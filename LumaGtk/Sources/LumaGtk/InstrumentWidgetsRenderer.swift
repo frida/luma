@@ -110,6 +110,7 @@ private final class WidgetCanvas {
     private var tableView: TableView?
     private var hexView: HexWidgetView?
     private var consoleWidget: ConsoleWidget?
+    private var viewWidget: InstrumentViewWidget?
 
     init(
         definition: InstrumentWidget,
@@ -185,6 +186,10 @@ private final class WidgetCanvas {
             )
             consoleWidget = view
             column.append(child: view.widget)
+        case .view(let cfg):
+            let view = InstrumentViewWidget(engine: engine, key: .init(instanceID: instance.id, widget: definition.id), config: cfg)
+            viewWidget = view
+            column.append(child: view.widget)
         }
     }
 
@@ -214,7 +219,7 @@ private final class WidgetCanvas {
             hexView?.set(state: state)
         case .consoleAppend(let entry):
             consoleWidget?.append(entry: entry)
-        case .consoleReplyDone:
+        case .consoleReplyDone, .viewState, .viewEvent, .viewRefused:
             break
         case .clear:
             counterView?.clear()

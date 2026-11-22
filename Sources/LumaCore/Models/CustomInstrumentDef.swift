@@ -292,6 +292,10 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         //                (objects, NativePointer, ArrayBuffer, …) using
         //                the same inspector the REPL uses,
         //                appendConsole({ kind, text }), clear()
+        //   - view:      setState(value, data?), sendEvent(value, data?),
+        //                clear() — shown by a class from the instrument's
+        //                Smalltalk (.st files), which may answer through
+        //                onViewMessage({ widget, value, data })
         //
         // Action buttons on a list or table widget invoke onAction({
         // widget, action, item }) on the handle. Submissions from a

@@ -298,6 +298,8 @@ final class CustomInstrumentWidgetsDialog {
             body.append(child: hexEditor(initial: cfg, index: index))
         case .console(let cfg):
             body.append(child: consoleEditor(initial: cfg, index: index))
+        case .view(let cfg):
+            body.append(child: viewEditor(initial: cfg, index: index))
         }
         column.append(child: body)
 
@@ -888,6 +890,29 @@ final class CustomInstrumentWidgetsDialog {
         return row
     }
 
+    private func hexEditor(initial: InstrumentWidget.HexConfig, index: Int) -> Box {
+        let row = Box(orientation: .horizontal, spacing: 8)
+        let label = Label(str: "Max bytes")
+        label.halign = .start
+        label.setSizeRequest(width: 160, height: -1)
+        row.append(child: label)
+        let entry = Entry()
+        entry.text = String(initial.maxBytes)
+        entry.setSizeRequest(width: 120, height: -1)
+        entry.onChanged { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, index < self.draftWidgets.count,
+                    case .hex(var cfg) = self.draftWidgets[index].kind,
+                    let value = Int(entry.text ?? ""), value >= 1
+                else { return }
+                cfg.maxBytes = value
+                self.draftWidgets[index].kind = .hex(cfg)
+            }
+        }
+        row.append(child: entry)
+        return row
+    }
+
     private func consoleEditor(initial: InstrumentWidget.ConsoleConfig, index: Int) -> Box {
         let outer = Box(orientation: .vertical, spacing: 4)
 
@@ -961,27 +986,51 @@ final class CustomInstrumentWidgetsDialog {
         return row
     }
 
-    private func hexEditor(initial: InstrumentWidget.HexConfig, index: Int) -> Box {
-        let row = Box(orientation: .horizontal, spacing: 8)
-        let label = Label(str: "Max bytes")
-        label.halign = .start
-        label.setSizeRequest(width: 160, height: -1)
-        row.append(child: label)
-        let entry = Entry()
-        entry.text = String(initial.maxBytes)
-        entry.setSizeRequest(width: 120, height: -1)
-        entry.onChanged { [weak self] _ in
+    private func viewEditor(initial: InstrumentWidget.ViewConfig, index: Int) -> Box {
+        let editor = Box(orientation: .vertical, spacing: 4)
+
+        let classRow = Box(orientation: .horizontal, spacing: 8)
+        let classLabel = Label(str: "Class")
+        classLabel.halign = .start
+        classLabel.setSizeRequest(width: 160, height: -1)
+        classRow.append(child: classLabel)
+        let classEntry = Entry()
+        classEntry.text = initial.className
+        classEntry.placeholderText = "A class from the instrument's .st files"
+        classEntry.hexpand = true
+        classEntry.onChanged { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, index < self.draftWidgets.count,
-                    case .hex(var cfg) = self.draftWidgets[index].kind,
-                    let value = Int(entry.text ?? ""), value >= 1
+                    case .view(var cfg) = self.draftWidgets[index].kind
                 else { return }
-                cfg.maxBytes = value
-                self.draftWidgets[index].kind = .hex(cfg)
+                cfg.className = (classEntry.text ?? "").trimmingCharacters(in: .whitespaces)
+                self.draftWidgets[index].kind = .view(cfg)
             }
         }
-        row.append(child: entry)
-        return row
+        classRow.append(child: classEntry)
+        editor.append(child: classRow)
+
+        let heightRow = Box(orientation: .horizontal, spacing: 8)
+        let heightLabel = Label(str: "Height")
+        heightLabel.halign = .start
+        heightLabel.setSizeRequest(width: 160, height: -1)
+        heightRow.append(child: heightLabel)
+        let heightEntry = Entry()
+        heightEntry.text = String(initial.height)
+        heightEntry.setSizeRequest(width: 120, height: -1)
+        heightEntry.onChanged { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, index < self.draftWidgets.count,
+                    case .view(var cfg) = self.draftWidgets[index].kind,
+                    let value = Int(heightEntry.text ?? ""), value >= 1
+                else { return }
+                cfg.height = value
+                self.draftWidgets[index].kind = .view(cfg)
+            }
+        }
+        heightRow.append(child: heightEntry)
+        editor.append(child: heightRow)
+        return editor
     }
 
     private func applyExpansion(to newID: String?) {
@@ -996,7 +1045,7 @@ final class CustomInstrumentWidgetsDialog {
 }
 
 enum WidgetKindChoice: CaseIterable {
-    case counter, histogram, graph, list, table, hex, console
+    case counter, histogram, graph, list, table, hex, console, view
 
     var label: String {
         switch self {
@@ -1007,6 +1056,7 @@ enum WidgetKindChoice: CaseIterable {
         case .table: return "Table"
         case .hex: return "Hex Dump"
         case .console: return "Console"
+        case .view: return "Smalltalk View"
         }
     }
 
@@ -1023,6 +1073,7 @@ enum WidgetKindChoice: CaseIterable {
         case .table: self = .table
         case .hex: self = .hex
         case .console: self = .console
+        case .view: self = .view
         }
     }
 
@@ -1035,6 +1086,7 @@ enum WidgetKindChoice: CaseIterable {
         case .table: return .table(InstrumentWidget.TableConfig())
         case .hex: return .hex(InstrumentWidget.HexConfig())
         case .console: return .console(InstrumentWidget.ConsoleConfig())
+        case .view: return .view(InstrumentWidget.ViewConfig(className: ""))
         }
     }
 }

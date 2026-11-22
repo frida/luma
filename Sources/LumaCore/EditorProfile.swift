@@ -201,6 +201,14 @@ public enum CustomInstrumentTypings {
             clear(): void;
         }
 
+        declare type CustomInstrumentViewData = ArrayBuffer | ArrayBufferView | number[];
+
+        declare interface CustomInstrumentViewWidget {
+            setState(value: unknown, data?: CustomInstrumentViewData | null): void;
+            sendEvent(value: unknown, data?: CustomInstrumentViewData | null): void;
+            clear(): void;
+        }
+
         declare interface CustomInstrumentWidgetMap {
         }
 
@@ -217,6 +225,13 @@ public enum CustomInstrumentTypings {
             [K in keyof CustomInstrumentWidgetMap]:
                 CustomInstrumentWidgetMap[K] extends CustomInstrumentConsoleWidget
                     ? { widget: K; entryId: string; text: string }
+                    : never
+        }[keyof CustomInstrumentWidgetMap];
+
+        declare type CustomInstrumentViewMessage = {
+            [K in keyof CustomInstrumentWidgetMap]:
+                CustomInstrumentWidgetMap[K] extends CustomInstrumentViewWidget
+                    ? { widget: K; value: unknown; data: ArrayBuffer | null; from?: { id: string; name: string } }
                     : never
         }[keyof CustomInstrumentWidgetMap];
 
@@ -243,6 +258,7 @@ public enum CustomInstrumentTypings {
                 input: CustomInstrumentConsoleInput,
                 respond: CustomInstrumentConsoleResponder
             ): void | Promise<void>;
+            onViewMessage?(message: CustomInstrumentViewMessage): void | Promise<void>;
             dispose?(): void | Promise<void>;
         }
 
@@ -272,6 +288,10 @@ public enum CustomInstrumentTypings {
 
         declare interface CustomInstrumentConsoleSnapshot {
             entries: Array<{ id: string; kind: "input" | "output" | "error"; text: string }>;
+        }
+
+        declare interface CustomInstrumentViewSnapshot {
+            state: unknown | null;
         }
 
         declare interface CustomInstrumentRestoredState {
@@ -370,6 +390,8 @@ public enum CustomInstrumentTypings {
             return "CustomInstrumentHexWidget"
         case .console:
             return "CustomInstrumentConsoleWidget"
+        case .view:
+            return "CustomInstrumentViewWidget"
         }
     }
 
@@ -389,6 +411,8 @@ public enum CustomInstrumentTypings {
             return "CustomInstrumentHexSnapshot"
         case .console:
             return "CustomInstrumentConsoleSnapshot"
+        case .view:
+            return "CustomInstrumentViewSnapshot"
         }
     }
 
