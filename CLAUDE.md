@@ -224,8 +224,13 @@ is gitignored — it is produced at build time.
   `PatternSourceRecord`, `PharoClassDefinition`, `PharoMethodDefinition`,
   `ProjectCollaborationState`,
   `TargetPickerState`, plus UI-state singletons `ProjectUIState` and
-  per-session `SessionUIState`. Schema is created with `if not exists`
-  on every open; pre-release, no migrations.
+  per-session `SessionUIState`. The schema is defined once, in
+  `ProjectStore`, and created only in a new database, together with the
+  format version in `PRAGMA user_version`, which is bumped whenever the
+  schema changes. A project at any other version is refused, saying
+  whether an earlier or a newer Luma made it. There are deliberately no
+  migrations or compatibility paths while the foundations are still
+  moving.
   What has yet to reach a lab waits in one `outbox` table, a row per op
   whatever its family (`OutboxOp`), and is replayed on the next join.
 - **`PatternLibrary`** — the project's patterns are rows, materialized

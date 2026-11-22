@@ -2,19 +2,22 @@ import Foundation
 import GRDB
 
 public enum ProjectStoreError: Error, LocalizedError {
-    case schemaVersionMismatch(expected: Int, found: Int)
+    case madeByEarlierLuma
+    case savedByNewerLuma
 
     public var errorDescription: String? {
         switch self {
-        case .schemaVersionMismatch(let expected, let found):
-            return "Project database schema version \(found) does not match expected \(expected). Open with an older build or recreate the project."
+        case .madeByEarlierLuma:
+            return "This project was made with an earlier version of Luma (Luma 2 or older), which this version cannot open."
+        case .savedByNewerLuma:
+            return "This project was saved by a newer version of Luma. Update Luma to open it."
         }
     }
 }
 
 public final class ProjectStore: Sendable {
     public static let didCommitNotification = Notification.Name("LumaCore.ProjectStore.didCommit")
-    public static let currentSchemaVersion: Int = 4
+    private static let formatVersion = 6
 
     public let instanceID = UUID()
     private let db: DatabaseQueue
@@ -24,7 +27,7 @@ public final class ProjectStore: Sendable {
         config.foreignKeysEnabled = true
         config.busyMode = .timeout(5)
         db = try DatabaseQueue(path: path, configuration: config)
-        try db.write(Self.openSchema)
+        try Self.prepareSchema(of: db)
 
         let id = instanceID
         let observer = CommitNotifyingObserver(instanceID: id)
@@ -1337,26 +1340,40 @@ public final class ProjectStore: Sendable {
         }
     }
 
-    private static func openSchema(_ db: Database) throws {
-        let storedVersion = try Int.fetchOne(db, sql: "PRAGMA user_version") ?? 0
+    private enum Format {
+        case new
+        case current
+        case earlier
+        case later
+    }
 
-        if try !db.tableExists("process_session") {
-            try createSchema(db)
-            try db.execute(sql: "PRAGMA user_version = \(currentSchemaVersion)")
-            return
+    private static func prepareSchema(of db: DatabaseQueue) throws {
+        switch try db.read(format) {
+        case .new:
+            try db.write(createSchema)
+        case .current:
+            break
+        case .earlier:
+            throw ProjectStoreError.madeByEarlierLuma
+        case .later:
+            throw ProjectStoreError.savedByNewerLuma
         }
+    }
 
-        guard storedVersion == currentSchemaVersion else {
-            throw ProjectStoreError.schemaVersionMismatch(
-                expected: currentSchemaVersion,
-                found: storedVersion
-            )
+    private static func format(of db: Database) throws -> Format {
+        let version = try Int.fetchOne(db, sql: "PRAGMA user_version")!
+        if version == formatVersion {
+            return .current
         }
-        try createSchema(db)
+        if version > formatVersion {
+            return .later
+        }
+        let isEmpty = try Int.fetchOne(db, sql: "SELECT count(*) FROM sqlite_master")! == 0
+        return isEmpty ? .new : .earlier
     }
 
     private static func createSchema(_ db: Database) throws {
-        try db.create(table: "process_session", ifNotExists: true) { t in
+        try db.create(table: "process_session") { t in
             t.primaryKey("id", .text).notNull()
             t.column("kind", .blob).notNull()
             t.column("host", .blob)
@@ -1378,7 +1395,7 @@ public final class ProjectStore: Sendable {
             t.column("last_known_threads", .blob)
         }
 
-        try db.create(table: "instrument_instance", ifNotExists: true) { t in
+        try db.create(table: "instrument_instance") { t in
             t.primaryKey("id", .text).notNull()
             t.column("session_id", .text).notNull()
                 .references("process_session", onDelete: .cascade)
@@ -1388,7 +1405,7 @@ public final class ProjectStore: Sendable {
             t.column("config_json", .blob).notNull()
         }
 
-        try db.create(table: "repl_cell", ifNotExists: true) { t in
+        try db.create(table: "repl_cell") { t in
             t.primaryKey("id", .text).notNull()
             t.column("session_id", .text).notNull()
                 .references("process_session", onDelete: .cascade)
@@ -1401,7 +1418,7 @@ public final class ProjectStore: Sendable {
             t.column("is_session_boundary", .boolean).notNull().defaults(to: false)
         }
 
-        try db.create(table: "notebook_entry", ifNotExists: true) { t in
+        try db.create(table: "notebook_entry") { t in
             t.primaryKey("id", .text).notNull()
             t.column("kind", .text).notNull()
             t.column("editors", .blob).notNull()
@@ -1420,7 +1437,7 @@ public final class ProjectStore: Sendable {
             t.column("process_name", .text)
         }
 
-        try db.create(table: "itrace", ifNotExists: true) { t in
+        try db.create(table: "itrace") { t in
             t.primaryKey("id", .text).notNull()
             t.column("session_id", .text).notNull()
                 .references("process_session", onDelete: .cascade)
@@ -1433,7 +1450,7 @@ public final class ProjectStore: Sendable {
             t.column("lost", .integer).notNull().defaults(to: 0)
         }
 
-        try db.create(table: "session_ui_state", ifNotExists: true) { t in
+        try db.create(table: "session_ui_state") { t in
             t.primaryKey("session_id", .text).notNull()
                 .references("process_session", onDelete: .cascade)
             t.column("sidebar_expansion", .text).notNull().defaults(to: SidebarExpansion.expanded.rawValue)
@@ -1449,14 +1466,14 @@ public final class ProjectStore: Sendable {
             t.column("repl_seek_anchor", .text)
         }
 
-        try db.create(table: "session_sidebar_state", ifNotExists: true) { t in
+        try db.create(table: "session_sidebar_state") { t in
             t.primaryKey("session_id", .text).notNull()
                 .references("process_session", onDelete: .cascade)
             t.column("expanded_modules", .text).notNull().defaults(to: "[]")
             t.column("expanded_swift_type_lists", .text).notNull().defaults(to: "[]")
         }
 
-        try db.create(table: "address_insight", ifNotExists: true) { t in
+        try db.create(table: "address_insight") { t in
             t.primaryKey("id", .text).notNull()
             t.column("session_id", .text).notNull()
                 .references("process_session", onDelete: .cascade)
@@ -1470,7 +1487,7 @@ public final class ProjectStore: Sendable {
             t.column("parent_insight_id", .text)
         }
 
-        try db.create(table: "address_note", ifNotExists: true) { t in
+        try db.create(table: "address_note") { t in
             t.primaryKey("id", .text).notNull()
             t.column("session_id", .text).notNull()
                 .references("process_session", onDelete: .cascade)
@@ -1481,7 +1498,7 @@ public final class ProjectStore: Sendable {
             t.column("updated_at", .datetime).notNull()
         }
 
-        try db.create(table: "address_note_message", ifNotExists: true) { t in
+        try db.create(table: "address_note_message") { t in
             t.primaryKey("id", .text).notNull()
             t.column("note_id", .text).notNull()
                 .references("address_note", onDelete: .cascade)
@@ -1495,7 +1512,7 @@ public final class ProjectStore: Sendable {
             t.column("created_at", .datetime).notNull()
         }
 
-        try db.create(table: "memory_page_module", ifNotExists: true) { t in
+        try db.create(table: "memory_page_module") { t in
             t.column("session_id", .text).notNull()
                 .references("process_session", onDelete: .cascade)
             t.column("module_uuid", .text).notNull()
@@ -1505,7 +1522,7 @@ public final class ProjectStore: Sendable {
             t.primaryKey(["session_id", "module_uuid", "offset"])
         }
 
-        try db.create(table: "memory_page_anon", ifNotExists: true) { t in
+        try db.create(table: "memory_page_anon") { t in
             t.column("session_id", .text).notNull()
                 .references("process_session", onDelete: .cascade)
             t.column("process_identity", .text).notNull()
@@ -1515,7 +1532,7 @@ public final class ProjectStore: Sendable {
             t.primaryKey(["session_id", "process_identity", "address"])
         }
 
-        try db.create(table: "module_analysis", ifNotExists: true) { t in
+        try db.create(table: "module_analysis") { t in
             t.column("session_id", .text).notNull()
                 .references("process_session", onDelete: .cascade)
             t.column("module_path", .text).notNull()
@@ -1525,7 +1542,7 @@ public final class ProjectStore: Sendable {
             t.primaryKey(["session_id", "module_path"])
         }
 
-        try db.create(table: "module_analysis_function", ifNotExists: true) { t in
+        try db.create(table: "module_analysis_function") { t in
             t.column("session_id", .text).notNull()
             t.column("module_path", .text).notNull()
             t.column("offset", .integer).notNull()
@@ -1540,7 +1557,7 @@ public final class ProjectStore: Sendable {
             )
         }
 
-        try db.create(table: "module_analysis_block", ifNotExists: true) { t in
+        try db.create(table: "module_analysis_block") { t in
             t.column("session_id", .text).notNull()
             t.column("module_path", .text).notNull()
             t.column("function_offset", .integer).notNull()
@@ -1558,11 +1575,10 @@ public final class ProjectStore: Sendable {
         try db.create(
             index: "idx_module_analysis_block_lookup",
             on: "module_analysis_block",
-            columns: ["session_id", "module_path", "offset"],
-            ifNotExists: true
+            columns: ["session_id", "module_path", "offset"]
         )
 
-        try db.create(table: "module_symbol", ifNotExists: true) { t in
+        try db.create(table: "module_symbol") { t in
             t.column("session_id", .text).notNull()
                 .references("process_session", onDelete: .cascade)
             t.column("module_path", .text).notNull()
@@ -1571,7 +1587,7 @@ public final class ProjectStore: Sendable {
             t.primaryKey(["session_id", "module_path", "offset"])
         }
 
-        try db.create(table: "remote_device_config", ifNotExists: true) { t in
+        try db.create(table: "remote_device_config") { t in
             t.primaryKey("id", .text).notNull()
             t.column("address", .text).notNull()
             t.column("certificate", .text)
@@ -1580,7 +1596,7 @@ public final class ProjectStore: Sendable {
             t.column("keepalive_interval", .integer)
         }
 
-        try db.create(table: "virtual_machine", ifNotExists: true) { t in
+        try db.create(table: "virtual_machine") { t in
             t.primaryKey("id", .text).notNull()
             t.column("name", .text).notNull()
             t.column("template_id", .text).notNull()
@@ -1589,13 +1605,13 @@ public final class ProjectStore: Sendable {
             t.column("has_ready_snapshot", .boolean).notNull().defaults(to: false)
         }
 
-        try db.create(table: "project_packages_state", ifNotExists: true) { t in
+        try db.create(table: "project_packages_state") { t in
             t.primaryKey("id", .text).notNull()
             t.column("package_json", .blob)
             t.column("package_lock_json", .blob)
         }
 
-        try db.create(table: "installed_package", ifNotExists: true) { t in
+        try db.create(table: "installed_package") { t in
             t.primaryKey("id", .text).notNull()
             t.column("packages_state_id", .text).notNull()
                 .references("project_packages_state", onDelete: .cascade)
@@ -1605,7 +1621,7 @@ public final class ProjectStore: Sendable {
             t.column("added_at", .datetime).notNull()
         }
 
-        try db.create(table: "pattern_source", ifNotExists: true) { t in
+        try db.create(table: "pattern_source") { t in
             t.primaryKey("id", .text).notNull()
             t.column("name", .text).notNull()
             t.column("kind", .text).notNull()
@@ -1614,7 +1630,7 @@ public final class ProjectStore: Sendable {
             t.column("updated_at", .datetime).notNull()
         }
 
-        try db.create(table: "pharo_class", ifNotExists: true) { t in
+        try db.create(table: "pharo_class") { t in
             t.primaryKey("name", .text).notNull()
             t.column("superclass", .text).notNull()
             t.column("package", .text).notNull()
@@ -1625,7 +1641,7 @@ public final class ProjectStore: Sendable {
             t.column("updated_at", .datetime).notNull()
         }
 
-        try db.create(table: "pharo_method", ifNotExists: true) { t in
+        try db.create(table: "pharo_method") { t in
             t.column("class_name", .text).notNull()
             t.column("side", .text).notNull()
             t.column("selector", .text).notNull()
@@ -1635,18 +1651,18 @@ public final class ProjectStore: Sendable {
             t.primaryKey(["class_name", "side", "selector"])
         }
 
-        try db.create(table: "project_collaboration_state", ifNotExists: true) { t in
+        try db.create(table: "project_collaboration_state") { t in
             t.primaryKey("id", .text).notNull()
             t.column("lab_id", .text)
         }
 
-        try db.create(table: "lab_membership", ifNotExists: true) { t in
+        try db.create(table: "lab_membership") { t in
             t.primaryKey("lab_id", .text).notNull()
             t.column("user", .text).notNull()
             t.column("role", .text).notNull()
         }
 
-        try db.create(table: "custom_instrument_def", ifNotExists: true) { t in
+        try db.create(table: "custom_instrument_def") { t in
             t.primaryKey("id", .text).notNull()
             t.column("name", .text).notNull()
             t.column("icon", .text).notNull()
@@ -1659,7 +1675,7 @@ public final class ProjectStore: Sendable {
             t.column("updated_at", .datetime).notNull()
         }
 
-        try db.create(table: "custom_instrument_file", ifNotExists: true) { t in
+        try db.create(table: "custom_instrument_file") { t in
             t.column("def_id", .text).notNull()
                 .references("custom_instrument_def", onDelete: .cascade)
             t.column("path", .text).notNull()
@@ -1667,13 +1683,13 @@ public final class ProjectStore: Sendable {
             t.primaryKey(["def_id", "path"])
         }
 
-        try db.create(table: "custom_instrument_def_ui_state", ifNotExists: true) { t in
+        try db.create(table: "custom_instrument_def_ui_state") { t in
             t.primaryKey("def_id", .text).notNull()
                 .references("custom_instrument_def", onDelete: .cascade)
             t.column("sidebar_expansion", .text).notNull().defaults(to: SidebarExpansion.expanded.rawValue)
         }
 
-        try db.create(table: "widget_state", ifNotExists: true) { t in
+        try db.create(table: "widget_state") { t in
             t.column("instance_id", .text).notNull()
             t.column("widget_id", .text).notNull()
             t.column("session_id", .text).notNull()
@@ -1682,7 +1698,7 @@ public final class ProjectStore: Sendable {
             t.primaryKey(["instance_id", "widget_id"])
         }
 
-        try db.create(table: "widget_placement", ifNotExists: true) { t in
+        try db.create(table: "widget_placement") { t in
             t.column("instance_id", .text).notNull()
                 .references("instrument_instance", onDelete: .cascade)
             t.column("widget_id", .text).notNull()
@@ -1690,7 +1706,7 @@ public final class ProjectStore: Sendable {
             t.primaryKey(["instance_id", "widget_id"])
         }
 
-        try db.create(table: "project_ui_state", ifNotExists: true) { t in
+        try db.create(table: "project_ui_state") { t in
             t.primaryKey("id", .text).notNull()
             t.column("selected_item_json", .text)
             t.column("event_stream_collapsed", .boolean).notNull().defaults(to: true)
@@ -1701,13 +1717,13 @@ public final class ProjectStore: Sendable {
             t.column("pharo_page_maximized", .boolean).notNull().defaults(to: false)
         }
 
-        try db.create(table: "project_sidebar_state", ifNotExists: true) { t in
+        try db.create(table: "project_sidebar_state") { t in
             t.primaryKey("id", .text).notNull()
             t.column("collapsed_sections", .text).notNull().defaults(to: "[]")
             t.column("expanded_pattern_sources", .text).notNull().defaults(to: "[]")
         }
 
-        try db.create(table: "target_picker_state", ifNotExists: true) { t in
+        try db.create(table: "target_picker_state") { t in
             t.primaryKey("id", .text).notNull()
             t.column("last_selected_device_id", .text)
             t.column("last_mode_raw", .text)
@@ -1717,7 +1733,7 @@ public final class ProjectStore: Sendable {
             t.column("last_selected_process_name", .text)
         }
 
-        try db.create(table: "mission", ifNotExists: true) { t in
+        try db.create(table: "mission") { t in
             t.primaryKey("id", .text).notNull()
             t.column("editors", .blob).notNull()
             t.column("created_at", .datetime).notNull()
@@ -1740,7 +1756,7 @@ public final class ProjectStore: Sendable {
             t.column("temperature", .double)
         }
 
-        try db.create(table: "mission_turn", ifNotExists: true) { t in
+        try db.create(table: "mission_turn") { t in
             t.primaryKey("id", .text).notNull()
             t.column("mission_id", .text).notNull()
                 .references("mission", onDelete: .cascade)
@@ -1756,7 +1772,7 @@ public final class ProjectStore: Sendable {
             t.column("cache_create_tokens", .integer).notNull().defaults(to: 0)
         }
 
-        try db.create(table: "mission_action", ifNotExists: true) { t in
+        try db.create(table: "mission_action") { t in
             t.primaryKey("id", .text).notNull()
             t.column("mission_id", .text).notNull()
                 .references("mission", onDelete: .cascade)
@@ -1779,7 +1795,7 @@ public final class ProjectStore: Sendable {
             t.column("tool_call_id", .text)
         }
 
-        try db.create(table: "mission_finding", ifNotExists: true) { t in
+        try db.create(table: "mission_finding") { t in
             t.primaryKey("id", .text).notNull()
             t.column("mission_id", .text).notNull()
                 .references("mission", onDelete: .cascade)
@@ -1794,7 +1810,7 @@ public final class ProjectStore: Sendable {
             t.column("pinned_insight_id", .text)
         }
 
-        try db.create(table: "mission_evidence", ifNotExists: true) { t in
+        try db.create(table: "mission_evidence") { t in
             t.primaryKey("id", .text).notNull()
             t.column("finding_id", .text).notNull()
                 .references("mission_finding", onDelete: .cascade)
@@ -1803,7 +1819,7 @@ public final class ProjectStore: Sendable {
             t.column("note", .text)
         }
 
-        try db.create(table: "outbox", ifNotExists: true) { t in
+        try db.create(table: "outbox") { t in
             t.primaryKey("op_id", .text).notNull()
             t.column("family", .text).notNull()
             t.column("kind", .text).notNull()
@@ -1813,12 +1829,13 @@ public final class ProjectStore: Sendable {
             t.column("created_at", .datetime).notNull()
         }
 
-        try db.create(table: "recent_placement", ifNotExists: true) { t in
+        try db.create(table: "recent_placement") { t in
             t.primaryKey("position", .integer).notNull()
             t.column("source_id", .text).notNull()
             t.column("type_name", .text).notNull()
         }
 
+        try db.execute(sql: "PRAGMA user_version = \(formatVersion)")
     }
 }
 
