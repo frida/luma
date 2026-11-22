@@ -26,8 +26,8 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
         public init(
             id: String,
             name: String,
-            schema: FeatureSchema = .boolean(default: true),
-            optional: Bool = true,
+            schema: FeatureSchema = .boolean(default: false),
+            optional: Bool = false,
             enabledByDefault: Bool = true
         ) {
             self.id = id
@@ -42,8 +42,8 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
             self.init(
                 id: try c.decode(String.self, forKey: .id),
                 name: try c.decode(String.self, forKey: .name),
-                schema: try c.decodeIfPresent(FeatureSchema.self, forKey: .schema) ?? .boolean(default: true),
-                optional: try c.decodeIfPresent(Bool.self, forKey: .optional) ?? true,
+                schema: try c.decodeIfPresent(FeatureSchema.self, forKey: .schema) ?? .boolean(default: false),
+                optional: try c.decodeIfPresent(Bool.self, forKey: .optional) ?? false,
                 enabledByDefault: try c.decodeIfPresent(Bool.self, forKey: .enabledByDefault) ?? true)
         }
     }
@@ -205,7 +205,7 @@ public struct CustomInstrumentDef: Codable, Identifiable, Sendable, Equatable, F
     private static func parseFeature(_ obj: [String: Any]) -> Feature? {
         guard let id = obj["id"] as? String, let name = obj["name"] as? String else { return nil }
         let schema = parseFeatureSchema(obj["schema"]) ?? .boolean(default: false)
-        let optional = (obj["optional"] as? Bool) ?? true
+        let optional = (obj["optional"] as? Bool) ?? false
         let enabledByDefault = (obj["enabled_by_default"] as? Bool) ?? true
         return Feature(id: id, name: name, schema: schema, optional: optional, enabledByDefault: enabledByDefault)
     }
