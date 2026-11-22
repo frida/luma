@@ -1063,6 +1063,7 @@ public final class Engine {
 
         collaboration.onLabCreated = { [weak self] in
             self?.republishPlacementSnapshots { _ in true }
+            self?.reconcileWidgetStates(with: [])
         }
 
         collaboration.onMissionOpReceived = { [weak self] op in
@@ -1294,7 +1295,7 @@ public final class Engine {
         }
 
         collaboration.onWidgetStatesSnapshot = { [weak self] snapshots in
-            self?.applyWidgetStateSnapshots(snapshots)
+            self?.reconcileWidgetStates(with: snapshots)
         }
 
         collaboration.onWidgetPlacementsSnapshot = { [weak self] placements in
@@ -5329,15 +5330,36 @@ public final class Engine {
         }
     }
 
-    private func applyWidgetStateSnapshots(_ snapshots: [WidgetStateSnapshot]) {
-        for snapshot in snapshots {
-            widgetStates[snapshot.instanceID, default: [:]][snapshot.widget] = snapshot.state
-            _widgetUpdates.yield(WidgetUpdate(
+    private func reconcileWidgetStates(with lab: [WidgetStateSnapshot]) {
+        publishWidgetStates(newerThan: lab)
+        for snapshot in lab {
+            let update = WidgetUpdate(
                 instanceID: snapshot.instanceID,
                 widget: snapshot.widget,
-                kind: .snapshot(snapshot.state)
-            ))
+                kind: .snapshot(snapshot.state),
+                revision: snapshot.state.revision
+            )
+            applyWidgetUpdate(update, sessionID: snapshot.sessionID, origin: .remote)
         }
+    }
+
+    private func publishWidgetStates(newerThan lab: [WidgetStateSnapshot]) {
+        let labRevisions = Dictionary(
+            lab.map { (InstrumentViews.Key(instanceID: $0.instanceID, widget: $0.widget), $0.state.revision) },
+            uniquingKeysWith: max)
+        for session in sessions where session.host != nil && localUserHosts(session) {
+            for instance in instrumentsBySession[session.id] ?? [] {
+                for (widget, state) in widgetStates[instance.id] ?? [:]
+                where state.revision > labRevisions[InstrumentViews.Key(instanceID: instance.id, widget: widget)] ?? 0 {
+                    publish(state, of: instance.id, widget: widget, sessionID: session.id)
+                }
+            }
+        }
+    }
+
+    private func publish(_ state: WidgetState, of instanceID: UUID, widget: String, sessionID: UUID) {
+        let update = WidgetUpdate(instanceID: instanceID, widget: widget, kind: .snapshot(state), revision: state.revision)
+        collaboration.sendWidgetUpdate(sessionID: sessionID, update: update)
     }
 
     private func adoptWidgetPlacements(_ labPlacements: [UUID: [String: [PatternPlacement]]]) {
@@ -5345,11 +5367,22 @@ public final class Engine {
         try? store.replaceWidgetPlacements(labPlacements)
     }
 
-    private func applyWidgetUpdate(_ update: WidgetUpdate, sessionID: UUID, origin: WidgetUpdateOrigin) {
-        let widgetDef = widget(forInstanceID: update.instanceID, widgetID: update.widget)
-        var states = widgetStates[update.instanceID, default: [:]]
-        var state = states[update.widget, default: WidgetState()]
+    private func applyWidgetUpdate(_ proposed: WidgetUpdate, sessionID: UUID, origin: WidgetUpdateOrigin) {
+        let widgetDef = widget(forInstanceID: proposed.instanceID, widgetID: proposed.widget)
+        var states = widgetStates[proposed.instanceID, default: [:]]
+        var state = states[proposed.widget, default: WidgetState()]
+        let update: WidgetUpdate
+        switch origin {
+        case .local:
+            update = localUserHosts(sessionID) ? stamped(proposed, after: state) : proposed
+        case .remote:
+            guard proposed.supersedes(state) else { return }
+            update = proposed
+        }
         state.apply(update.kind)
+        if !update.kind.isTransient {
+            state.revision = max(state.revision, update.revision)
+        }
         if let widgetDef { state.cap(to: widgetDef.kind) }
         states[update.widget] = state
         widgetStates[update.instanceID] = states
@@ -5370,6 +5403,17 @@ public final class Engine {
                 collaboration.sendWidgetUpdate(sessionID: collabSID, update: update)
             }
         }
+    }
+
+    private func stamped(_ update: WidgetUpdate, after state: WidgetState) -> WidgetUpdate {
+        guard !update.kind.isTransient else { return update }
+        let revision = state.revision + 1
+        var kind = update.kind
+        if case .viewState(var next) = kind {
+            next.revision = revision
+            kind = .viewState(next)
+        }
+        return WidgetUpdate(id: update.id, instanceID: update.instanceID, widget: update.widget, kind: kind, revision: revision)
     }
 
     public func submitConsoleInput(

@@ -100,3 +100,16 @@ extension WidgetUpdate.Kind {
         }
     }
 }
+
+extension WidgetUpdate {
+    func supersedes(_ state: WidgetState) -> Bool {
+        switch kind {
+        case .viewEvent, .viewRefused:
+            return true
+        case .viewState(let view):
+            return revision > state.revision || (revision == state.revision && state.view?.revision != view.revision)
+        default:
+            return revision > state.revision
+        }
+    }
+}

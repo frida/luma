@@ -233,6 +233,9 @@ is gitignored — it is produced at build time.
   moving.
   What has yet to reach a lab waits in one `outbox` table, a row per op
   whatever its family (`OutboxOp`), and is replayed on the next join.
+  Widget state carries a revision that the session's host advances with
+  every change; on joining, the side holding the higher one gives its
+  state to the other.
 - **`PatternLibrary`** — the project's patterns are rows, materialized
   into `patterns/` in the per-project compiler workspace beside its
   `node_modules`, so a pattern can import an installed package and a

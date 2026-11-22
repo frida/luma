@@ -5,12 +5,14 @@ public struct WidgetUpdate: Sendable, Identifiable {
     public let instanceID: UUID
     public let widget: String
     public let kind: Kind
+    public let revision: Int
 
-    public init(id: UUID = UUID(), instanceID: UUID, widget: String, kind: Kind) {
+    public init(id: UUID = UUID(), instanceID: UUID, widget: String, kind: Kind, revision: Int = 0) {
         self.id = id
         self.instanceID = instanceID
         self.widget = widget
         self.kind = kind
+        self.revision = revision
     }
 
     public enum Kind: Sendable {
@@ -32,68 +34,14 @@ public struct WidgetUpdate: Sendable, Identifiable {
         case viewEvent(WidgetViewPayload)
         case viewRefused(String)
         case clear
-        /// In-memory snapshot replay. Emitted locally when widget state is
-        /// hydrated from disk so listening views can refresh in one shot.
-        /// Never serialized over the wire.
         case snapshot(WidgetState)
     }
 
     public func toWireJSON() -> [String: Any] {
-        var obj: [String: Any] = [
-            "instance_id": instanceID.uuidString,
-            "widget": widget,
-        ]
-        switch kind {
-        case .counterSet(let value):
-            obj["kind"] = "counter-set"
-            var counter: [String: Any] = ["value": value.value]
-            if let unit = value.unit { counter["unit"] = unit }
-            if let delta = value.delta { counter["delta"] = delta }
-            obj["counter"] = counter
-        case .histogramSet(let buckets):
-            obj["kind"] = "histogram-set"
-            obj["buckets"] = buckets.map { ["label": $0.label, "count": $0.count] }
-        case .histogramIncrement(let label, let by):
-            obj["kind"] = "histogram-increment"
-            obj["label"] = label
-            obj["by"] = by
-        case .graphPoint(let point):
-            obj["kind"] = "graph-point"
-            obj["point"] = ["series": point.series, "x": point.x, "y": point.y]
-        case .listUpsert(let item):
-            obj["kind"] = "list-upsert"
-            var itemObj: [String: Any] = ["id": item.id, "title": item.title]
-            if let s = item.subtitle { itemObj["subtitle"] = s }
-            if let a = item.accessory { itemObj["accessory"] = a }
-            obj["item"] = itemObj
-        case .listRemove(let itemID):
-            obj["kind"] = "list-remove"
-            obj["item"] = itemID
-        case .tableUpsert(let row):
-            obj["kind"] = "table-upsert"
-            obj["row"] = ["id": row.id, "cells": row.cells]
-        case .tableRemove(let rowID):
-            obj["kind"] = "table-remove"
-            obj["row"] = rowID
-        case .hexSet(let state):
-            obj["kind"] = "hex-set"
-            obj["hex"] = [
-                "bytes": state.bytes.base64EncodedString(),
-                "base_address": state.baseAddress,
-            ]
-        case .consoleAppend(let entry):
-            obj["kind"] = "console-append"
-            obj["entry"] = entry.toWireJSON()
-        case .consoleReplyDone(let inputEntryID):
-            obj["kind"] = "console-reply-done"
-            obj["reply_to"] = inputEntryID
-        case .clear:
-            obj["kind"] = "clear"
-        case .viewState, .viewEvent, .viewRefused:
-            preconditionFailure("A view's state and events travel on their own path")
-        case .snapshot:
-            preconditionFailure("WidgetUpdate.snapshot is in-memory only")
-        }
+        var obj = kind.wireJSON
+        obj["instance_id"] = instanceID.uuidString
+        obj["widget"] = widget
+        obj["revision"] = revision
         return obj
     }
 
@@ -101,10 +49,11 @@ public struct WidgetUpdate: Sendable, Identifiable {
         guard let instanceIDStr = obj["instance_id"] as? String,
             let instanceID = UUID(uuidString: instanceIDStr),
             let widget = obj["widget"] as? String,
-            let kindStr = obj["kind"] as? String
+            let kindStr = obj["kind"] as? String,
+            let revision = obj["revision"] as? Int
         else { return nil }
         guard let kind = decodeKind(kindStr, from: obj) else { return nil }
-        return WidgetUpdate(instanceID: instanceID, widget: widget, kind: kind)
+        return WidgetUpdate(instanceID: instanceID, widget: widget, kind: kind, revision: revision)
     }
 
     private static func decodeKind(_ kindStr: String, from obj: [String: Any]) -> Kind? {
@@ -175,6 +124,9 @@ public struct WidgetUpdate: Sendable, Identifiable {
             return .consoleReplyDone(inputEntryID: replyTo)
         case "clear":
             return .clear
+        case "replace":
+            guard let state = obj["state"] as? [String: Any] else { return nil }
+            return .snapshot(WidgetState(wireJSON: state))
         default:
             return nil
         }
@@ -183,6 +135,65 @@ public struct WidgetUpdate: Sendable, Identifiable {
     private static func decodeDouble(_ raw: Any?) -> Double? {
         if let n = raw as? NSNumber { return n.doubleValue }
         return nil
+    }
+}
+
+extension WidgetUpdate.Kind {
+    var wireJSON: [String: Any] {
+        var obj: [String: Any] = [:]
+        switch self {
+        case .counterSet(let value):
+            obj["kind"] = "counter-set"
+            var counter: [String: Any] = ["value": value.value]
+            if let unit = value.unit { counter["unit"] = unit }
+            if let delta = value.delta { counter["delta"] = delta }
+            obj["counter"] = counter
+        case .histogramSet(let buckets):
+            obj["kind"] = "histogram-set"
+            obj["buckets"] = buckets.map { ["label": $0.label, "count": $0.count] }
+        case .histogramIncrement(let label, let by):
+            obj["kind"] = "histogram-increment"
+            obj["label"] = label
+            obj["by"] = by
+        case .graphPoint(let point):
+            obj["kind"] = "graph-point"
+            obj["point"] = ["series": point.series, "x": point.x, "y": point.y]
+        case .listUpsert(let item):
+            obj["kind"] = "list-upsert"
+            var itemObj: [String: Any] = ["id": item.id, "title": item.title]
+            if let s = item.subtitle { itemObj["subtitle"] = s }
+            if let a = item.accessory { itemObj["accessory"] = a }
+            obj["item"] = itemObj
+        case .listRemove(let itemID):
+            obj["kind"] = "list-remove"
+            obj["item"] = itemID
+        case .tableUpsert(let row):
+            obj["kind"] = "table-upsert"
+            obj["row"] = ["id": row.id, "cells": row.cells]
+        case .tableRemove(let rowID):
+            obj["kind"] = "table-remove"
+            obj["row"] = rowID
+        case .hexSet(let state):
+            obj["kind"] = "hex-set"
+            obj["hex"] = [
+                "bytes": state.bytes.base64EncodedString(),
+                "base_address": state.baseAddress,
+            ]
+        case .consoleAppend(let entry):
+            obj["kind"] = "console-append"
+            obj["entry"] = entry.toWireJSON()
+        case .consoleReplyDone(let inputEntryID):
+            obj["kind"] = "console-reply-done"
+            obj["reply_to"] = inputEntryID
+        case .clear:
+            obj["kind"] = "clear"
+        case .viewState, .viewEvent, .viewRefused:
+            preconditionFailure("A view's state and events travel on their own path")
+        case .snapshot(let state):
+            obj["kind"] = "replace"
+            obj["state"] = state.wireJSON
+        }
+        return obj
     }
 }
 
@@ -445,9 +456,50 @@ public struct WidgetStateSnapshot: Sendable {
             let instanceStr = obj["instance_id"] as? String,
             let instanceID = UUID(uuidString: instanceStr),
             let widget = obj["widget"] as? String,
-            let stateObj = obj["state"] as? [String: Any]
+            let stateObj = obj["state"] as? [String: Any],
+            let revision = obj["revision"] as? Int
         else { return nil }
 
+        var state = WidgetState(wireJSON: stateObj)
+        state.revision = revision
+        return WidgetStateSnapshot(sessionID: sessionID, instanceID: instanceID, widget: widget, state: state)
+    }
+}
+
+public struct WidgetState: Codable, Sendable, Equatable {
+    public var counter: WidgetCounterValue?
+    public var histogram: [WidgetHistogramBucket]
+    public var graphSeries: [String: [WidgetGraphPoint]]
+    public var listItems: [WidgetListItem]
+    public var tableRows: [WidgetTableRow]
+    public var hex: WidgetHexState?
+    public var consoleEntries: [WidgetConsoleEntry]
+    public var view: WidgetViewState?
+    public var revision: Int
+
+    public init(
+        counter: WidgetCounterValue? = nil,
+        histogram: [WidgetHistogramBucket] = [],
+        graphSeries: [String: [WidgetGraphPoint]] = [:],
+        listItems: [WidgetListItem] = [],
+        tableRows: [WidgetTableRow] = [],
+        hex: WidgetHexState? = nil,
+        consoleEntries: [WidgetConsoleEntry] = [],
+        view: WidgetViewState? = nil,
+        revision: Int = 0
+    ) {
+        self.counter = counter
+        self.histogram = histogram
+        self.graphSeries = graphSeries
+        self.listItems = listItems
+        self.tableRows = tableRows
+        self.hex = hex
+        self.consoleEntries = consoleEntries
+        self.view = view
+        self.revision = revision
+    }
+
+    init(wireJSON stateObj: [String: Any]) {
         var counter: WidgetCounterValue?
         if let c = stateObj["counter"] as? [String: Any], let value = (c["value"] as? NSNumber)?.doubleValue {
             counter = WidgetCounterValue(
@@ -517,51 +569,15 @@ public struct WidgetStateSnapshot: Sendable {
             }
         }
 
-        return WidgetStateSnapshot(
-            sessionID: sessionID,
-            instanceID: instanceID,
-            widget: widget,
-            state: WidgetState(
-                counter: counter,
-                histogram: histogram,
-                graphSeries: graphSeries,
-                listItems: listItems,
-                tableRows: tableRows,
-                hex: hex,
-                consoleEntries: consoleEntries
-            )
+        self.init(
+            counter: counter,
+            histogram: histogram,
+            graphSeries: graphSeries,
+            listItems: listItems,
+            tableRows: tableRows,
+            hex: hex,
+            consoleEntries: consoleEntries
         )
-    }
-}
-
-public struct WidgetState: Codable, Sendable, Equatable {
-    public var counter: WidgetCounterValue?
-    public var histogram: [WidgetHistogramBucket]
-    public var graphSeries: [String: [WidgetGraphPoint]]
-    public var listItems: [WidgetListItem]
-    public var tableRows: [WidgetTableRow]
-    public var hex: WidgetHexState?
-    public var consoleEntries: [WidgetConsoleEntry]
-    public var view: WidgetViewState?
-
-    public init(
-        counter: WidgetCounterValue? = nil,
-        histogram: [WidgetHistogramBucket] = [],
-        graphSeries: [String: [WidgetGraphPoint]] = [:],
-        listItems: [WidgetListItem] = [],
-        tableRows: [WidgetTableRow] = [],
-        hex: WidgetHexState? = nil,
-        consoleEntries: [WidgetConsoleEntry] = [],
-        view: WidgetViewState? = nil
-    ) {
-        self.counter = counter
-        self.histogram = histogram
-        self.graphSeries = graphSeries
-        self.listItems = listItems
-        self.tableRows = tableRows
-        self.hex = hex
-        self.consoleEntries = consoleEntries
-        self.view = view
     }
 
     public mutating func apply(_ kind: WidgetUpdate.Kind) {
@@ -655,5 +671,39 @@ public struct WidgetState: Codable, Sendable, Equatable {
         case .view:
             break
         }
+    }
+
+    var wireJSON: [String: Any] {
+        let updates = rebuildingUpdates.map(\.wireJSON)
+        var obj: [String: Any] = [
+            "points": updates.compactMap { $0["point"] },
+            "items": updates.compactMap { $0["item"] },
+            "rows": updates.compactMap { $0["row"] },
+            "buckets": updates.compactMap { $0["buckets"] }.first ?? [Any](),
+            "entries": updates.compactMap { $0["entry"] },
+        ]
+        obj["counter"] = updates.compactMap { $0["counter"] }.first
+        obj["hex"] = updates.compactMap { $0["hex"] }.first
+        return obj
+    }
+
+    public var rebuildingUpdates: [WidgetUpdate.Kind] {
+        var updates: [WidgetUpdate.Kind] = []
+        if let counter {
+            updates.append(.counterSet(counter))
+        }
+        if !histogram.isEmpty {
+            updates.append(.histogramSet(histogram))
+        }
+        for series in graphSeries.keys.sorted() {
+            updates += graphSeries[series]!.map(WidgetUpdate.Kind.graphPoint)
+        }
+        updates += listItems.map(WidgetUpdate.Kind.listUpsert)
+        updates += tableRows.map(WidgetUpdate.Kind.tableUpsert)
+        if let hex {
+            updates.append(.hexSet(hex))
+        }
+        updates += consoleEntries.map(WidgetUpdate.Kind.consoleAppend)
+        return updates
     }
 }
