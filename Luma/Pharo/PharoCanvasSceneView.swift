@@ -38,7 +38,6 @@ struct PharoCanvasSceneView: PlatformViewRepresentable {
         view.device = MTLCreateSystemDefaultDevice()
         view.colorPixelFormat = .bgra8Unorm
         view.depthStencilPixelFormat = .depth32Float
-        view.clearColor = MTLClearColor(red: 0.994, green: 0.991, blue: 0.986, alpha: 1)
         view.delegate = context.coordinator
         context.coordinator.attach(to: view, scene: scene)
         return view
@@ -49,7 +48,27 @@ struct PharoCanvasSceneView: PlatformViewRepresentable {
 /// scene to read.
 final class CanvasSceneInputView: OnScreenMTKView {
     private let scene: Int
+    private(set) var scheme = Scheme.light
     private var pressed: Int32 = 0
+
+    enum Scheme {
+        case light
+        case dark
+
+        var uniform: Float {
+            switch self {
+            case .light: 1
+            case .dark: 0
+            }
+        }
+
+        var clearColor: MTLClearColor {
+            switch self {
+            case .light: MTLClearColor(red: 0.994, green: 0.991, blue: 0.986, alpha: 1)
+            case .dark: MTLClearColor(red: 0.075, green: 0.050, blue: 0.065, alpha: 1)
+            }
+        }
+    }
 
     #if canImport(AppKit)
         private var tracking: NSTrackingArea?
@@ -63,7 +82,11 @@ final class CanvasSceneInputView: OnScreenMTKView {
             self?.sceneChanged()
         }
         CanvasSceneViews.register(self, for: scene)
+        followAppearance()
         #if canImport(UIKit)
+            registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (view: CanvasSceneInputView, _) in
+                view.followAppearance()
+            }
             isMultipleTouchEnabled = true
             let pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinched))
             let scroll = UIPanGestureRecognizer(target: self, action: #selector(scrolled))
@@ -103,8 +126,27 @@ final class CanvasSceneInputView: OnScreenMTKView {
         enableSetNeedsDisplay = true
     }
 
+    private func followAppearance() {
+        scheme = currentScheme
+        clearColor = scheme.clearColor
+        sceneChanged()
+    }
+
+    private var currentScheme: Scheme {
+        #if canImport(AppKit)
+            effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .dark : .light
+        #else
+            traitCollection.userInterfaceStyle == .dark ? .dark : .light
+        #endif
+    }
+
     #if canImport(AppKit)
         override var acceptsFirstResponder: Bool { true }
+
+        override func viewDidChangeEffectiveAppearance() {
+            super.viewDidChangeEffectiveAppearance()
+            followAppearance()
+        }
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
@@ -436,7 +478,7 @@ final class CanvasSceneRenderer: NSObject, MTKViewDelegate {
         uniforms[0] = Float(view.drawableSize.width)
         uniforms[1] = Float(view.drawableSize.height)
         uniforms[2] = Float(CACurrentMediaTime() - startTime)
-        uniforms[3] = 1
+        uniforms[3] = (view as! CanvasSceneInputView).scheme.uniform
         // What the view is actually drawing into against what it covers:
         // the window is not always there to be asked, and this is the ratio
         // that matters either way.
