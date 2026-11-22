@@ -2,6 +2,7 @@ import Foundation
 
 public enum ProjectSnapshot {
     public static func snapshot(from workingURL: URL, to destination: URL) throws {
+        BlobStore.settle()
         let fm = FileManager.default
         try fm.createDirectory(at: destination, withIntermediateDirectories: true)
 

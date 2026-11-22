@@ -15,47 +15,66 @@ public enum BlobKind: String, Sendable, Codable, CaseIterable {
 public final class BlobStore: Sendable {
     private let directory: URL
 
+    private static let writes = DispatchQueue(label: "luma.blob-store")
+
+    public static func settle() {
+        writes.sync {}
+    }
+
     public init(directory: URL) throws {
         self.directory = directory
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
     public func write(_ data: Data, id: UUID, kind: BlobKind) throws {
+        Self.settle()
         try data.write(to: url(id: id, kind: kind), options: .atomic)
     }
 
-    public func write(_ bytes: SharedBytes, id: UUID, kind: BlobKind) throws {
-        try bytes.withUnsafeBytes { held in
-            try Data(bytesNoCopy: UnsafeMutableRawPointer(mutating: held.baseAddress!), count: held.count, deallocator: .none)
-                .write(to: url(id: id, kind: kind), options: .atomic)
+    public func write(_ bytes: SharedBytes, id: UUID, kind: BlobKind) {
+        let destination = url(id: id, kind: kind)
+        Self.writes.async {
+            bytes.withUnsafeBytes { held in
+                try? Data(bytesNoCopy: UnsafeMutableRawPointer(mutating: held.baseAddress!), count: held.count, deallocator: .none)
+                    .write(to: destination, options: .atomic)
+            }
         }
     }
 
     public func load(id: UUID, kind: BlobKind) throws -> Data {
-        try Data(contentsOf: url(id: id, kind: kind), options: .mappedIfSafe)
+        Self.settle()
+        return try Data(contentsOf: url(id: id, kind: kind), options: .mappedIfSafe)
     }
 
     public func map(id: UUID, kind: BlobKind) throws -> SharedBytes {
-        try SharedBytes(mapping: url(id: id, kind: kind))
+        Self.settle()
+        return try SharedBytes(mapping: url(id: id, kind: kind))
     }
 
     public func exists(id: UUID, kind: BlobKind) -> Bool {
-        FileManager.default.fileExists(atPath: url(id: id, kind: kind).path)
+        Self.settle()
+        return FileManager.default.fileExists(atPath: url(id: id, kind: kind).path)
     }
 
     public func size(id: UUID, kind: BlobKind) -> Int? {
+        Self.settle()
         let path = url(id: id, kind: kind).path
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: path) else { return nil }
         return attrs[.size] as? Int
     }
 
     public func delete(id: UUID, kind: BlobKind) {
-        try? FileManager.default.removeItem(at: url(id: id, kind: kind))
+        let doomed = url(id: id, kind: kind)
+        Self.writes.async {
+            try? FileManager.default.removeItem(at: doomed)
+        }
     }
 
     public func deleteAll() {
-        try? FileManager.default.removeItem(at: directory)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        Self.writes.sync {
+            try? FileManager.default.removeItem(at: directory)
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
     }
 
     /// A trace keeps its bare-id name so captures written before the store was

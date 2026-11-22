@@ -75,7 +75,7 @@ extension Engine {
     func persistViewData(of view: WidgetViewState?, instanceID: UUID, widget: String) {
         let blob = Self.viewDataBlobID(instanceID: instanceID, widget: widget)
         if let data = view?.payload.data {
-            try? blobs.write(data, id: blob, kind: .viewState)
+            blobs.write(data, id: blob, kind: .viewState)
         } else {
             blobs.delete(id: blob, kind: .viewState)
         }
