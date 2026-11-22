@@ -268,9 +268,13 @@ is gitignored — it is produced at build time.
   every lab, the welcome screen and the store, since frida-core keeps one
   device per address and the server one lab per connection. Users retain a
   `Lease` and release it; the device goes away when the last one does, or
-  for everyone when `GitHubAuth` signs out. It keeps the `+welcome` for
-  whoever arrives later, numbers requests across all users, and hands every
-  notification and the detach to each of them.
+  for everyone when `GitHubAuth` signs out. Before the first lease it
+  checks that the `+welcome` names its protocol and says `.hello` with the
+  platform and Luma version; a server on another protocol, or one that
+  turns this Luma away, fails the connection with the message to show,
+  as `unsupported_protocol` and never an auth failure. It keeps the
+  `+welcome` for whoever arrives later, numbers requests across all users,
+  and hands every notification and the detach to each of them.
 - **`Storefront`** — the store, reached as `engine.storefront`. The catalog is
   plain HTTP under `BackendConfig.storeCatalogURL`, so anyone may browse it
   without signing in. Browsing is a session from `open(for:showing:)` to

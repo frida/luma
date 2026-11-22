@@ -238,7 +238,7 @@ public final class Storefront {
         let reply = try await request(
             to: item.path,
             type: ".download",
-            payload: ["version": item.version.description, "client": Self.client]
+            payload: ["version": item.version.description]
         )
         guard let bundle = (reply["bundle"] as? JSONObject).flatMap(CustomInstrumentBundle.fromJSON),
             let latest = StoreItem.fromWireJSON(reply["item"])
@@ -470,7 +470,7 @@ public final class Storefront {
         let reply = try await request(
             to: "/store/account",
             type: ".answer-partner-contact",
-            payload: ["choice": choice.rawValue, "client": Self.client]
+            payload: ["choice": choice.rawValue]
         )
         guard let account = StoreAccount.fromWireJSON(reply["account"]) else { throw StorefrontError.malformedReply }
         self.account = account
@@ -583,24 +583,6 @@ public final class Storefront {
 
     private func readme(in folderURL: URL) -> String? {
         try? String(contentsOf: folderURL.appendingPathComponent("README.md"), encoding: .utf8)
-    }
-
-    private static var client: JSONObject {
-        var client: JSONObject = ["platform": platform]
-        client["app_version"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-        return client
-    }
-
-    private static var platform: String {
-        #if os(Windows)
-        "windows"
-        #elseif os(macOS)
-        "macos"
-        #elseif os(Linux)
-        "linux"
-        #elseif os(iOS)
-        "ios"
-        #endif
     }
 }
 

@@ -9,6 +9,8 @@ public final class PortalConnection {
         certificate: BackendConfig.certificate
     )
 
+    static let protocolVersion = 3
+
     public enum Event {
         case notification(Notification)
         case detached
@@ -79,8 +81,18 @@ public final class PortalConnection {
     }
 
     private struct PendingReply {
-        let lease: Lease
+        let requester: Requester
         let completion: Completion
+    }
+
+    private enum Requester {
+        case connection
+        case lease(Lease)
+
+        func isLease(_ lease: Lease) -> Bool {
+            guard case .lease(let requester) = self else { return false }
+            return requester === lease
+        }
     }
 
     @MainActor
@@ -155,12 +167,7 @@ public final class PortalConnection {
             completion.abandon()
             return
         }
-        nextRequestID += 1
-        let id = "r\(nextRequestID)"
-        pendingReplies[id] = PendingReply(lease: lease, completion: completion)
-        var envelope = Self.envelope(to: path, type: type, payload: payload)
-        envelope["id"] = id
-        device.bus.post(envelope, data: data)
+        request(to: path, type: type, payload: payload, data: data, on: device, from: .lease(lease), completion: completion)
     }
 
     fileprivate func post(to path: String, type: String, payload: JSONObject, data: [UInt8]?, from lease: Lease) {
@@ -171,7 +178,7 @@ public final class PortalConnection {
     fileprivate func release(_ lease: Lease) async {
         guard let index = leases.firstIndex(where: { $0 === lease }) else { return }
         leases.remove(at: index)
-        abandonReplies { $0.lease === lease }
+        abandonReplies { $0.requester.isLease(lease) }
         if leases.isEmpty {
             await beginClosing().value
         }
@@ -206,6 +213,8 @@ public final class PortalConnection {
             listen(to: device.bus)
             try await device.bus.attach()
             let welcome = try await awaitWelcome()
+            try Self.checkProtocol(of: welcome)
+            try await sayHello(on: device)
             phase = .connected(device, welcome: welcome)
         } catch {
             busTask?.cancel()
@@ -231,6 +240,66 @@ public final class PortalConnection {
         }
         guard case .received(let welcome) = greeting else { throw Self.detachedFailure }
         return welcome
+    }
+
+    private static func checkProtocol(of welcome: JSONObject) throws {
+        switch welcome["protocol"] as? Int {
+        case protocolVersion?:
+            return
+        case let theirs? where theirs > protocolVersion:
+            throw unsupportedProtocol("This version of Luma is too old for this server. Update Luma to continue.")
+        default:
+            throw unsupportedProtocol("This server is too old for this version of Luma.")
+        }
+    }
+
+    private static func unsupportedProtocol(_ message: String) -> AuthFailure {
+        AuthFailure(domain: "portal", code: "unsupported_protocol", message: message)
+    }
+
+    private func sayHello(on device: Device) async throws {
+        let client: JSONObject = ["platform": Self.platform, "app_version": LumaVersion.string]
+        let payload: JSONObject = ["protocol": Self.protocolVersion, "client": client]
+        _ = try await withCheckedThrowingContinuation { continuation in
+            request(
+                to: "/session",
+                type: ".hello",
+                payload: payload,
+                data: nil,
+                on: device,
+                from: .connection,
+                completion: .resuming(continuation)
+            )
+        }
+    }
+
+    private static var platform: String {
+        #if os(Windows)
+        "windows"
+        #elseif os(macOS)
+        "macos"
+        #elseif os(Linux)
+        "linux"
+        #elseif os(iOS)
+        "ios"
+        #endif
+    }
+
+    private func request(
+        to path: String,
+        type: String,
+        payload: JSONObject,
+        data: [UInt8]?,
+        on device: Device,
+        from requester: Requester,
+        completion: Completion
+    ) {
+        nextRequestID += 1
+        let id = "r\(nextRequestID)"
+        pendingReplies[id] = PendingReply(requester: requester, completion: completion)
+        var envelope = Self.envelope(to: path, type: type, payload: payload)
+        envelope["id"] = id
+        device.bus.post(envelope, data: data)
     }
 
     private func handle(_ event: Bus.Event) {
@@ -286,6 +355,7 @@ public final class PortalConnection {
         switch phase {
         case .connecting:
             loseGreeting()
+            abandonReplies { _ in true }
         case .connected:
             dropConnection()
         case .idle, .closing:

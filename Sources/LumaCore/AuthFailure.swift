@@ -5,7 +5,7 @@ import Frida
 /// authentication delegate packs this JSON envelope into the thrown error
 /// message so clients can tell an auth rejection (domain == "auth") apart
 /// from a transient upstream issue (domain == "github").
-public struct AuthFailure: Sendable, Decodable, Swift.Error {
+public struct AuthFailure: Sendable, Decodable, LocalizedError {
     public let domain: String
     public let code: String
     public let message: String
@@ -17,6 +17,8 @@ public struct AuthFailure: Sendable, Decodable, Swift.Error {
     }
 
     public var isAuthRejection: Bool { domain == "auth" }
+
+    public var errorDescription: String? { message }
 
     /// Marker the server prefixes its base64-encoded JSON envelope with.
     /// Must match `LumaServer.AuthFailure.marker`.

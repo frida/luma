@@ -9,8 +9,6 @@ import FoundationNetworking
 @Observable
 @MainActor
 public final class CollaborationSession {
-    public static let protocolVersion = 2
-
     public enum Status: Equatable, Sendable {
         case disconnected
         case connecting
@@ -1472,7 +1470,6 @@ public final class CollaborationSession {
             to: "/labs",
             type: ".create",
             payload: [
-                "protocol": Self.protocolVersion,
                 "title": title,
                 "picture": ["content_type": pictureContentType],
             ],
@@ -1588,8 +1585,7 @@ public final class CollaborationSession {
         setStatus(.connecting)
         sendRequest(
             to: "/labs/\(labID)",
-            type: ".join",
-            payload: ["protocol": Self.protocolVersion]
+            type: ".join"
         ) { [weak self] result in
             guard let self else { return }
             switch result {
@@ -1725,13 +1721,6 @@ public final class CollaborationSession {
     }
 
     private func applyWelcome(_ payload: JSONObject) {
-        let theirs = (payload["protocol"] as? Int) ?? 1
-        guard theirs == Self.protocolVersion else {
-            setStatus(.error(message: theirs < Self.protocolVersion
-                ? "This server is too old for this version of Luma."
-                : "This version of Luma is too old for this server. Update Luma to continue."))
-            return
-        }
         if let userObj = payload["user"] as? JSONObject, let u = UserInfo.fromJSON(userObj) {
             localUser = u
         }
