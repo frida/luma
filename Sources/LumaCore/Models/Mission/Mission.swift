@@ -14,7 +14,6 @@ public struct Mission: Codable, Identifiable, Sendable, FetchableRecord, Persist
     public var status: MissionStatus
     public var providerID: String
     public var modelID: String
-    public var systemPromptHash: String?
     public var tokenBudgetInput: Int
     public var tokenBudgetOutput: Int
     public var tokensUsedInput: Int
@@ -38,7 +37,6 @@ public struct Mission: Codable, Identifiable, Sendable, FetchableRecord, Persist
         case status
         case providerID = "provider_id"
         case modelID = "model_id"
-        case systemPromptHash = "system_prompt_hash"
         case tokenBudgetInput = "token_budget_input"
         case tokenBudgetOutput = "token_budget_output"
         case tokensUsedInput = "tokens_used_input"
@@ -72,7 +70,6 @@ public struct Mission: Codable, Identifiable, Sendable, FetchableRecord, Persist
         self.status = .drafting
         self.providerID = providerID
         self.modelID = modelID
-        self.systemPromptHash = nil
         self.tokenBudgetInput = tokenBudgetInput
         self.tokenBudgetOutput = tokenBudgetOutput
         self.tokensUsedInput = 0

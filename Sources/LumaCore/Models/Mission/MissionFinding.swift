@@ -13,7 +13,6 @@ public struct MissionFinding: Codable, Identifiable, Sendable, FetchableRecord, 
     public var kind: String
     public var status: MissionFindingStatus
     public var sessionID: UUID?
-    public var anchorJSON: String?
     public var pinnedInsightID: UUID?
 
     enum CodingKeys: String, CodingKey {
@@ -26,7 +25,6 @@ public struct MissionFinding: Codable, Identifiable, Sendable, FetchableRecord, 
         case kind
         case status
         case sessionID = "session_id"
-        case anchorJSON = "anchor_json"
         case pinnedInsightID = "pinned_insight_id"
     }
 
@@ -37,8 +35,7 @@ public struct MissionFinding: Codable, Identifiable, Sendable, FetchableRecord, 
         bodyMarkdown: String,
         confidence: MissionFindingConfidence,
         kind: String,
-        sessionID: UUID? = nil,
-        anchorJSON: String? = nil
+        sessionID: UUID? = nil
     ) {
         self.id = id
         self.missionID = missionID
@@ -49,7 +46,6 @@ public struct MissionFinding: Codable, Identifiable, Sendable, FetchableRecord, 
         self.kind = kind
         self.status = .proposed
         self.sessionID = sessionID
-        self.anchorJSON = anchorJSON
         self.pinnedInsightID = nil
     }
 }

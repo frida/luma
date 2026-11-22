@@ -1408,7 +1408,6 @@ public final class ProjectStore: Sendable {
             t.column("collapsed_hook_instruments", .text).notNull().defaults(to: "[]")
             t.column("expanded_modules", .text).notNull().defaults(to: "[]")
             t.column("expanded_swift_type_lists", .text).notNull().defaults(to: "[]")
-            t.column("detail_section", .text)
             t.column("last_selected_module_id", .text)
             t.column("last_selected_thread_id", .integer)
             t.column("ambient_mission_id", .blob)
@@ -1683,7 +1682,6 @@ public final class ProjectStore: Sendable {
             t.column("status", .text).notNull()
             t.column("provider_id", .text).notNull()
             t.column("model_id", .text).notNull()
-            t.column("system_prompt_hash", .text)
             t.column("token_budget_input", .integer).notNull().defaults(to: 0)
             t.column("token_budget_output", .integer).notNull().defaults(to: 0)
             t.column("tokens_used_input", .integer).notNull().defaults(to: 0)
@@ -1745,7 +1743,6 @@ public final class ProjectStore: Sendable {
             t.column("kind", .text).notNull()
             t.column("status", .text).notNull()
             t.column("session_id", .blob)
-            t.column("anchor_json", .text)
             t.column("pinned_insight_id", .blob)
         }
 
