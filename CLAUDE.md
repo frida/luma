@@ -243,6 +243,8 @@ is gitignored — it is produced at build time.
   acknowledgments of our own. On joining, something the project holds and
   the lab lacks is uploaded when the lab never knew it, and dropped when it
   did, since a member then removed it.
+  A change the lab refuses is undone: the client reads the lab again with
+  `.snapshot` and takes its copy.
 - **`PatternLibrary`** — the project's patterns are rows, materialized
   into `patterns/` in the per-project compiler workspace beside its
   `node_modules`, so a pattern can import an installed package and a

@@ -1872,12 +1872,16 @@ public final class CollaborationSession {
             guard let opID = (payload["op_id"] as? String).flatMap(UUID.init(uuidString:)) else { return }
             let reason = (payload["reason"] as? String) ?? "rejected"
             opsOverridingJoinSnapshot.removeValue(forKey: opID)
-            let renamable = reason == Self.patternNameTaken ? (try? store.fetchOutboxOps(PatternSourceOp.self))?.first { $0.opID == opID } : nil
+            let rejected = try? store.fetchOutboxOp(opID: opID)
             _ = try? store.removeOutboxOp(opID: opID)
-            if case .upsert(let upsert) = renamable {
+            if reason == Self.patternNameTaken, case .pattern(.upsert(let upsert)) = rejected {
                 onPatternSourceNameTaken?(upsert.record)
             } else {
+                if let rejected {
+                    markKnown(rejected.labSubject)
+                }
                 onOpRejected?(reason)
+                resyncWithLab()
             }
 
         case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "custom-instruments":
@@ -2032,6 +2036,14 @@ public final class CollaborationSession {
             markKnown(settled.labSubject)
         }
         return (try? store.removeOutboxOp(opID: opID)) == true
+    }
+
+    private func resyncWithLab() {
+        guard case .joined(let labID) = status else { return }
+        sendRequest(to: "/labs/\(labID)", type: ".snapshot") { [weak self] result in
+            guard case .success(let reply) = result else { return }
+            self?.ingestJoinSnapshot(payload: reply.payload, data: reply.data, labID: labID)
+        }
     }
 
     private func markKnown(_ subject: LabSubject) {
