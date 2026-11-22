@@ -1224,42 +1224,16 @@ public final class ProjectStore: Sendable {
         }
     }
 
-    public func saveWidgetState(
-        instanceID: UUID,
-        widgetID: String,
-        sessionID: UUID,
-        state: WidgetState
-    ) throws {
+    public func saveWidgetState(instanceID: UUID, widgetID: String, state: WidgetState) throws {
         let json = String(decoding: try JSONEncoder().encode(state), as: UTF8.self)
         try db.write { db in
             try db.execute(
                 sql: """
-                    INSERT INTO widget_state (instance_id, widget_id, session_id, state_json, updated_at)
-                    VALUES (?, ?, ?, ?, ?)
-                    ON CONFLICT(instance_id, widget_id) DO UPDATE SET
-                        state_json = excluded.state_json,
-                        session_id = excluded.session_id,
-                        updated_at = excluded.updated_at
+                    INSERT INTO widget_state (instance_id, widget_id, state_json)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(instance_id, widget_id) DO UPDATE SET state_json = excluded.state_json
                     """,
-                arguments: [instanceID, widgetID, sessionID, json, Date()]
-            )
-        }
-    }
-
-    public func deleteWidgetState(instanceID: UUID, widgetID: String) throws {
-        try db.write { db in
-            try db.execute(
-                sql: "DELETE FROM widget_state WHERE instance_id = ? AND widget_id = ?",
-                arguments: [instanceID, widgetID]
-            )
-        }
-    }
-
-    public func deleteWidgetStates(instanceID: UUID) throws {
-        try db.write { db in
-            try db.execute(
-                sql: "DELETE FROM widget_state WHERE instance_id = ?",
-                arguments: [instanceID]
+                arguments: [instanceID, widgetID, json]
             )
         }
     }
@@ -1691,10 +1665,9 @@ public final class ProjectStore: Sendable {
 
         try db.create(table: "widget_state") { t in
             t.column("instance_id", .blob).notNull()
+                .references("instrument_instance", onDelete: .cascade)
             t.column("widget_id", .text).notNull()
-            t.column("session_id", .blob).notNull()
             t.column("state_json", .text).notNull()
-            t.column("updated_at", .datetime).notNull()
             t.primaryKey(["instance_id", "widget_id"])
         }
 

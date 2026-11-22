@@ -3895,7 +3895,6 @@ public final class Engine {
             node.removeInstrument(id: instance.id)
         }
         try? store.deleteInstrument(id: instance.id)
-        try? store.deleteWidgetStates(instanceID: instance.id)
         widgetStates.removeValue(forKey: instance.id)
         widgetPlacements.removeValue(forKey: instance.id)
         onSessionListChanged?(.instrumentRemoved(id: instance.id, sessionID: instance.sessionID))
@@ -5327,12 +5326,7 @@ public final class Engine {
         _widgetUpdates.yield(update)
 
         if widgetDef?.persistence == .session {
-            try? store.saveWidgetState(
-                instanceID: update.instanceID,
-                widgetID: update.widget,
-                sessionID: sessionID,
-                state: state
-            )
+            try? store.saveWidgetState(instanceID: update.instanceID, widgetID: update.widget, state: state)
         }
 
         if origin == .local, let collabSID = collabSessionID(forSessionID: sessionID) {
