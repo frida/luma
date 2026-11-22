@@ -169,10 +169,8 @@ extension FeatureSchema: Codable {
         case .regex:
             self = .regex(default: try c.decode(String.self, forKey: .default))
         case .combo:
-            self = .combo(
-                choices: try c.decode([ComboChoice].self, forKey: .choices),
-                default: try c.decodeIfPresent(String.self, forKey: .default)
-            )
+            let choices = try c.decode([ComboChoice].self, forKey: .choices)
+            self = .combo(choices: choices, default: try Self.decodeComboDefault(from: c, among: choices))
         case .object:
             self = .object(fields: try c.decode([ObjectField].self, forKey: .fields))
         case .array:
@@ -181,6 +179,14 @@ extension FeatureSchema: Codable {
                 default: try c.decode([FeatureValue].self, forKey: .default)
             )
         }
+    }
+
+    private static func decodeComboDefault(from c: KeyedDecodingContainer<CodingKeys>, among choices: [ComboChoice]) throws -> String? {
+        guard let d = try c.decodeIfPresent(String.self, forKey: .default) else { return nil }
+        guard choices.contains(where: { $0.id == d }) else {
+            throw DecodingError.dataCorruptedError(forKey: .default, in: c, debugDescription: "'\(d)' is none of the choices")
+        }
+        return d
     }
 
     public func encode(to encoder: Encoder) throws {
