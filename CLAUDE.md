@@ -371,6 +371,11 @@ is gitignored — it is produced at build time.
   allowed when the store published it, when the user approved it on this
   machine (`LumaAppState`), or when the user produced it in Luma's editor
   from an allowed one; anything else waits in the widget for **Allow**.
+  In a lab every member's Luma runs the view: the host uploads a state's
+  bytes in chunks that members fetch by range, events are relayed, and a
+  view's message reaches the host's agent only from a lab owner, as widget
+  actions do. Who last changed a definition in a lab (`changed_by`) is what
+  the widget names when it asks.
 - **Canvas (`CanvasScene`, `CanvasDrawable`, `CanvasRegistry`)** — a
   scene the image holds by handle and changes; the host draws it.
   A drawable carries the author's own vertex and fragment stages,

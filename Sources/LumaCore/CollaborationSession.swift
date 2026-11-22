@@ -346,13 +346,17 @@ public final class CollaborationSession {
     public var onSessionEventUpdated: ((UUID, RuntimeEvent) -> Void)?
     public var onSessionWidgetUpdateReceived: ((UUID, WidgetUpdate) -> Void)?
     public var onSessionWidgetActionRequested: ((UUID, UUID, String, String, String?) -> Void)?
+    public var onSessionViewStateReceived: ((UUID, UUID, String, WidgetViewState) -> Void)?
+    public var onSessionViewEventReceived: ((UUID, UUID, String, WidgetViewPayload) -> Void)?
+    public var onSessionViewMessageReceived: ((UUID, UUID, String, WidgetViewPayload, UserInfo) -> Void)?
+    public var onSessionViewRefused: ((UUID, UUID, String, String) -> Void)?
     public var onReplEvalTimedOut: ((UUID) -> Void)?
     public var onSessionRemoved: ((UUID) -> Void)?
-    public var onCustomInstrumentOpReceived: ((CustomInstrumentOp) -> Void)?
+    public var onCustomInstrumentOpReceived: ((CustomInstrumentOp, UserInfo?) -> Void)?
     public var onMissionOpReceived: ((MissionOp) -> Void)?
     public var onAddressNoteOpReceived: ((AddressNoteOp) -> Void)?
     public var onMissionSnapshot: ((MissionSnapshot) -> Void)?
-    public var onCustomInstrumentSnapshot: (([CustomInstrumentBundle]) -> Void)?
+    public var onCustomInstrumentSnapshot: (([CustomInstrumentBundle], [UUID: UserInfo]) -> Void)?
     public var onPatternSourceOpReceived: ((PatternSourceOp) -> Void)?
     public var onPatternSourcesSnapshot: (([PatternSourceRecord]) -> Void)?
     public var onPatternSourceNameTaken: ((PatternSourceRecord) -> Void)?
@@ -427,7 +431,7 @@ public final class CollaborationSession {
         registeredPushPlatforms = []
     }
 
-    private func sendRequest(
+    func sendRequest(
         to path: String,
         type: String,
         payload: JSONObject = [:],
@@ -438,7 +442,7 @@ public final class CollaborationSession {
         portalLease.request(to: path, type: type, payload: payload, data: data, onReply: onResult)
     }
 
-    private func sendNotification(
+    func sendNotification(
         to path: String,
         type: String,
         payload: JSONObject,
@@ -1652,14 +1656,16 @@ public final class CollaborationSession {
 
         let customDicts = (payload["custom_instruments"] as? [JSONObject]) ?? []
         let customBundles = customDicts.compactMap(CustomInstrumentBundle.fromJSON)
-        onCustomInstrumentSnapshot?(customBundles)
+        onCustomInstrumentSnapshot?(customBundles, Self.customInstrumentEditors(in: customDicts))
 
         let patternDicts = (payload["patterns"] as? [JSONObject]) ?? []
         onPatternSourcesSnapshot?(patternDicts.compactMap(PatternSourceRecord.fromWireJSON))
 
         let widgetStateDicts = (payload["widget_states"] as? [JSONObject]) ?? []
-        let widgetSnapshots = widgetStateDicts.compactMap(WidgetStateSnapshot.fromWireJSON)
-        onWidgetStatesSnapshot?(widgetSnapshots)
+        let viewStateDicts = (payload["view_states"] as? [JSONObject]) ?? []
+        onWidgetStatesSnapshot?(widgetStateDicts.compactMap(WidgetStateSnapshot.fromWireJSON))
+
+        ingestViewStates(viewStateDicts, labID: labID)
 
         let widgetPlacementDicts = (payload["widget_placements"] as? [JSONObject]) ?? []
         onWidgetPlacementsSnapshot?(Self.widgetPlacements(of: sessions, from: widgetPlacementDicts))
@@ -1854,7 +1860,8 @@ public final class CollaborationSession {
 
         case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "custom-instruments":
             guard let op = CustomInstrumentOp.fromJSON(payload) else { return }
-            onCustomInstrumentOpReceived?(op)
+            let editor = ((payload["bundle"] as? JSONObject)?["changed_by"] as? JSONObject).flatMap(UserInfo.fromJSON)
+            onCustomInstrumentOpReceived?(op, editor.flatMap { $0.id == localUser?.id ? nil : $0 })
 
         case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "patterns":
             guard let op = PatternSourceOp.fromJSON(payload) else { return }
@@ -1942,6 +1949,23 @@ public final class CollaborationSession {
                 let update = WidgetUpdate.fromWireJSON(payload)
             else { return }
             onSessionWidgetUpdateReceived?(sessionID, update)
+
+        case ("+set", let s) where s.count == 5 && s[0] == "labs" && s[2] == "sessions" && s[4] == "view-states":
+            guard let sessionID = UUID(uuidString: s[3]) else { return }
+            receiveViewState(payload, data: data, sessionID: sessionID, labID: s[1])
+
+        case ("+event", let s) where s.count == 5 && s[0] == "labs" && s[2] == "sessions" && s[4] == "view-events":
+            guard let sessionID = UUID(uuidString: s[3]), let target = Self.viewTarget(of: payload) else { return }
+            let event = WidgetViewPayload(value: payload["value"], data: data.map { SharedBytes(copying: $0) })
+            onSessionViewEventReceived?(sessionID, target.instanceID, target.widget, event)
+
+        case ("+message", let s) where s.count == 5 && s[0] == "labs" && s[2] == "sessions" && s[4] == "view-messages":
+            guard let sessionID = UUID(uuidString: s[3]),
+                let target = Self.viewTarget(of: payload),
+                let sender = (payload["from"] as? JSONObject).flatMap(UserInfo.fromJSON)
+            else { return }
+            let message = WidgetViewPayload(value: payload["value"], data: data.map { SharedBytes(copying: $0) })
+            onSessionViewMessageReceived?(sessionID, target.instanceID, target.widget, message, sender)
 
         case ("+widget-action", let s)
             where s.count == 5 && s[0] == "labs" && s[2] == "sessions" && s[4] == "widget-actions":

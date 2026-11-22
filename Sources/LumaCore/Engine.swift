@@ -1025,12 +1025,15 @@ public final class Engine {
             await self?.gitHubAuth.signOut()
         }
 
-        collaboration.onCustomInstrumentOpReceived = { [weak self] op in
+        collaboration.onCustomInstrumentOpReceived = { [weak self] op, editor in
             guard let self else { return }
             switch op {
             case .upsert(let u):
                 guard var bundle = try? Self.validatedCustomInstrumentBundle(u.bundle) else { return }
                 bundle.def.normalize()
+                if let editor {
+                    self.instrumentViews.noteArrival(ofCustomInstrument: bundle.def.id, from: .labMember(name: editor.name))
+                }
                 try? self.store.save(bundle.def)
                 try? self.store.replaceCustomInstrumentFiles(defID: bundle.def.id, files: bundle.files)
                 self.scheduleCustomInstrumentReload(defID: bundle.def.id)
@@ -1082,8 +1085,11 @@ public final class Engine {
             self?.adoptAddressNotes(threads, ofLabSessions: labSessions)
         }
 
-        collaboration.onCustomInstrumentSnapshot = { [weak self] bundles in
+        collaboration.onCustomInstrumentSnapshot = { [weak self] bundles, editors in
             guard let self else { return }
+            for (defID, editor) in editors where editor.id != self.collaboration.localUser?.id {
+                self.instrumentViews.noteArrival(ofCustomInstrument: defID, from: .labMember(name: editor.name))
+            }
             let serverIDs = Set(bundles.map(\.def.id))
             let local = (try? self.store.fetchCustomInstrumentDefs()) ?? []
             let pending = self.subjectsOfPendingOps(CustomInstrumentOp.self)
@@ -1282,6 +1288,32 @@ public final class Engine {
 
         collaboration.onSessionWidgetUpdateReceived = { [weak self] sessionID, update in
             self?.applyWidgetUpdate(update, sessionID: sessionID, origin: .remote)
+        }
+        collaboration.onSessionViewStateReceived = { [weak self] sessionID, instanceID, widget, state in
+            let update = WidgetUpdate(instanceID: instanceID, widget: widget, kind: .viewState(state), revision: state.revision)
+            self?.applyWidgetUpdate(update, sessionID: sessionID, origin: .remote)
+        }
+        collaboration.onSessionViewEventReceived = { [weak self] sessionID, instanceID, widget, event in
+            let kind: WidgetUpdate.Kind
+            do throws(WidgetViewRefusal) {
+                kind = .viewEvent(try event.checkingData(atMost: WidgetViewPayload.maxEventDataBytes))
+            } catch {
+                kind = .viewRefused("An event from the lab was refused: \(error.message)")
+            }
+            self?.applyWidgetUpdate(WidgetUpdate(instanceID: instanceID, widget: widget, kind: kind), sessionID: sessionID, origin: .remote)
+        }
+        collaboration.onSessionViewMessageReceived = { [weak self] sessionID, instanceID, widget, message, sender in
+            do throws(WidgetViewRefusal) {
+                let checked = try message.checkingData(atMost: InstrumentViews.messageDataLimit)
+                self?.deliverViewMessage(checked, sessionID: sessionID, instanceID: instanceID, widget: widget, from: sender)
+            } catch {
+                self?.emitEngineWarning(
+                    subsystem: "collaboration", text: "A message from \(sender.name)'s view was refused: \(error.message)")
+            }
+        }
+        collaboration.onSessionViewRefused = { [weak self] sessionID, instanceID, widget, message in
+            let refused = WidgetUpdate(instanceID: instanceID, widget: widget, kind: .viewRefused(message))
+            self?.applyWidgetUpdate(refused, sessionID: sessionID, origin: .remote)
         }
 
         collaboration.onSessionWidgetActionRequested = { [weak self] sessionID, instanceID, widget, action, item in
@@ -5358,8 +5390,12 @@ public final class Engine {
     }
 
     private func publish(_ state: WidgetState, of instanceID: UUID, widget: String, sessionID: UUID) {
-        let update = WidgetUpdate(instanceID: instanceID, widget: widget, kind: .snapshot(state), revision: state.revision)
-        collaboration.sendWidgetUpdate(sessionID: sessionID, update: update)
+        if let view = state.view {
+            collaboration.sendViewState(view, sessionID: sessionID, instanceID: instanceID, widget: widget)
+        } else {
+            let update = WidgetUpdate(instanceID: instanceID, widget: widget, kind: .snapshot(state), revision: state.revision)
+            collaboration.sendWidgetUpdate(sessionID: sessionID, update: update)
+        }
     }
 
     private func adoptWidgetPlacements(_ labPlacements: [UUID: [String: [PatternPlacement]]]) {
@@ -5397,7 +5433,11 @@ public final class Engine {
 
         if origin == .local, let collabSID = collabSessionID(forSessionID: sessionID) {
             switch update.kind {
-            case .viewState, .viewEvent, .viewRefused:
+            case .viewState(let viewState):
+                collaboration.sendViewState(viewState, sessionID: collabSID, instanceID: update.instanceID, widget: update.widget)
+            case .viewEvent(let payload):
+                collaboration.sendViewEvent(payload, sessionID: collabSID, instanceID: update.instanceID, widget: update.widget)
+            case .viewRefused:
                 break
             default:
                 collaboration.sendWidgetUpdate(sessionID: collabSID, update: update)

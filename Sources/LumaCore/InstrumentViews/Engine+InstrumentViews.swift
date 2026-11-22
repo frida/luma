@@ -41,11 +41,26 @@ extension Engine {
     }
 
     func sendViewMessage(_ payload: WidgetViewPayload, from key: InstrumentViews.Key) -> Bool {
-        guard let instance = instance(withID: key.instanceID), canSendViewMessage(from: instance),
-            let node = node(forSessionID: instance.sessionID)
-        else { return false }
-        node.postViewMessage(instanceID: instance.id, widget: key.widget, payload: payload, from: nil)
+        guard let instance = instance(withID: key.instanceID), canSendViewMessage(from: instance) else { return false }
+        if let node = node(forSessionID: instance.sessionID) {
+            node.postViewMessage(instanceID: instance.id, widget: key.widget, payload: payload, from: nil)
+        } else {
+            collaboration.sendViewMessage(payload, sessionID: instance.sessionID, instanceID: instance.id, widget: key.widget)
+        }
         return true
+    }
+
+    func deliverViewMessage(
+        _ payload: WidgetViewPayload,
+        sessionID: UUID,
+        instanceID: UUID,
+        widget: String,
+        from sender: CollaborationSession.UserInfo
+    ) {
+        guard let node = node(forSessionID: sessionID),
+            node.instruments.first(where: { $0.id == instanceID })?.attachment == .attached
+        else { return }
+        node.postViewMessage(instanceID: instanceID, widget: widget, payload: payload, from: sender)
     }
 
     func persistedWidgetStates(instanceID: UUID) -> [String: WidgetState] {
@@ -78,8 +93,10 @@ extension Engine {
     }
 
     private func canSendViewMessage(from instance: InstrumentInstance) -> Bool {
-        guard let node = node(forSessionID: instance.sessionID) else { return false }
-        return node.instruments.first(where: { $0.id == instance.id })?.attachment == .attached
+        if let node = node(forSessionID: instance.sessionID) {
+            return node.instruments.first(where: { $0.id == instance.id })?.attachment == .attached
+        }
+        return isHostedRemotelyLive(instance.sessionID) && collaboration.isOwner
     }
 
     private static func viewDataBlobID(instanceID: UUID, widget: String) -> UUID {
