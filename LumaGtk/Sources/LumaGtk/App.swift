@@ -232,7 +232,7 @@ final class LumaApplication {
             recordDocumentOpened(document)
         } catch {
             window.present()
-            window.showFatalError("Failed to open project: \(error)")
+            window.showFatalError("Failed to open project: \(error.localizedDescription)")
             openDocuments[key] = nil
         }
     }
