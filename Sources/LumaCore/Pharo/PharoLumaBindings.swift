@@ -622,37 +622,40 @@ public enum PharoLumaBindings {
                         (LumaCanvas primitives indexOf: aSymbol) - 1 }.
             array free'.
         drawable compile: 'uniform: aName value: aValue
-            "A uniform of the author''s own naming. A number or a collection
-             of up to sixteen; the host declares it and packs it to match."
-            | values array |
+            "A uniform of the author''s own naming. A number, or a collection of
+             2, 3 or 4, or 16 for a matrix; the host declares it and packs it to
+             match."
+            | values array set |
             values := aValue isCollection ifTrue: [ aValue ] ifFalse: [ Array with: aValue ].
             array := FFIExternalArray externalNewType: ''float'' size: values size.
             values doWithIndex: [ :each :index | array at: index put: each asFloat ].
-            LumaHost invoke: ''luma_drawable_set_uniform''
+            set := LumaHost invoke: ''luma_drawable_set_uniform''
                 parameters: { TFBasicType sint. TFBasicType sint. TFBasicType pointer.
                               TFBasicType pointer. TFBasicType sint }
-                return: TFBasicType void
+                return: TFBasicType sint
                 with: { scene. handle. aName. array getHandle. values size }.
-            array free'.
+            array free.
+            ^ set = 1'.
         drawable compile: 'drive: aName kind: aKind from: aFrom to: aTo seconds: aSeconds
             "Says what a value should do; the renderers work it out on their
              own clock, so nothing here runs per frame."
-            | from to source target |
+            | from to source target driven |
             from := aFrom isCollection ifTrue: [ aFrom ] ifFalse: [ Array with: aFrom ].
             to := aTo isCollection ifTrue: [ aTo ] ifFalse: [ Array with: aTo ].
             source := FFIExternalArray externalNewType: ''float'' size: from size.
             target := FFIExternalArray externalNewType: ''float'' size: to size.
             from doWithIndex: [ :each :index | source at: index put: each asFloat ].
             to doWithIndex: [ :each :index | target at: index put: each asFloat ].
-            LumaHost invoke: ''luma_drawable_drive_uniform''
+            driven := LumaHost invoke: ''luma_drawable_drive_uniform''
                 parameters: { TFBasicType sint. TFBasicType sint. TFBasicType pointer.
                               TFBasicType sint. TFBasicType pointer. TFBasicType pointer.
                               TFBasicType sint. TFBasicType float }
-                return: TFBasicType void
+                return: TFBasicType sint
                 with: { scene. handle. aName. aKind.
                         source getHandle. target getHandle. from size. aSeconds asFloat }.
             source free.
-            target free'.
+            target free.
+            ^ driven = 1'.
         drawable compile: 'buffer: aName values: aCollection
             "A run of values the shader reads by index through <name>At(i).
              Held as a texture, so it can be far larger than a uniform, and

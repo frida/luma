@@ -53,11 +53,7 @@ public struct CanvasDrawable: Sendable, Equatable {
         for uniform in uniforms(at: now) {
             let padding = (uniform.alignment - packed.count % uniform.alignment) % uniform.alignment
             packed.append(contentsOf: repeatElement(0, count: padding))
-            packed.append(contentsOf: uniform.values.prefix(uniform.components))
-            if uniform.values.count < uniform.components {
-                packed.append(contentsOf: repeatElement(
-                    0, count: uniform.components - uniform.values.count))
-            }
+            packed.append(contentsOf: uniform.values)
         }
         // A block is rounded up to a whole vec4.
         let tail = (4 - packed.count % 4) % 4
@@ -190,11 +186,17 @@ public struct CanvasUniform: Sendable, Equatable {
         self.values = values
     }
 
-    var components: Int { min(max(values.count, 1), 16) }
+    public static func refusal(ofCount count: Int, for name: String) -> String? {
+        guard !acceptedCounts.contains(count) else { return nil }
+        return "'\(name)' has \(count) values, and a uniform holds 1, 2, 3 or 4, or 16 for a matrix; "
+            + "a longer run of values belongs in a buffer"
+    }
 
-    /// Floats it occupies, and what it must start on, by std140's rules.
+    private static let acceptedCounts: Set = [1, 2, 3, 4, 16]
+
+    /// What it must start on, by std140's rules.
     var alignment: Int {
-        switch components {
+        switch values.count {
         case 1: return 1
         case 2: return 2
         default: return 4
@@ -202,12 +204,12 @@ public struct CanvasUniform: Sendable, Equatable {
     }
 
     var glslType: String {
-        switch components {
+        switch values.count {
         case 1: return "float"
         case 2: return "vec2"
         case 3: return "vec3"
-        case 16: return "mat4"
-        default: return "vec4"
+        case 4: return "vec4"
+        default: return "mat4"
         }
     }
 }

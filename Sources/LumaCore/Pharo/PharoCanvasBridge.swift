@@ -233,10 +233,15 @@ public func luma_drawable_set_uniform(
     _ name: UnsafePointer<CChar>,
     _ values: UnsafePointer<Float>,
     _ count: Int32
-) {
+) -> Int32 {
     let uniform = CanvasUniform(
         name: String(cString: name),
         values: Array(UnsafeBufferPointer(start: values, count: Int(max(count, 0)))))
+    if let refusal = CanvasUniform.refusal(ofCount: uniform.values.count, for: uniform.name) {
+        canvasError.withLock { $0 = refusal }
+        return 0
+    }
+    canvasError.withLock { $0 = "" }
 
     guard CanvasRegistry.shared.update(Int(drawable), in: Int(scene), { subject in
         if let existing = subject.uniforms.firstIndex(where: { $0.name == uniform.name }) {
@@ -244,9 +249,10 @@ public func luma_drawable_set_uniform(
         } else {
             subject.uniforms.append(uniform)
         }
-    }) != nil else { return }
+    }) != nil else { return 0 }
 
     CanvasRegistry.shared.publish(Int(scene))
+    return 1
 }
 
 /// What a named value should do over time. Said once: the renderers work it
@@ -261,10 +267,16 @@ public func luma_drawable_drive_uniform(
     _ to: UnsafePointer<Float>,
     _ count: Int32,
     _ seconds: Float
-) {
+) -> Int32 {
     let width = Int(max(count, 0))
+    let driverName = String(cString: name)
+    if let refusal = CanvasUniform.refusal(ofCount: width, for: driverName) {
+        canvasError.withLock { $0 = refusal }
+        return 0
+    }
+    canvasError.withLock { $0 = "" }
     let driver = CanvasDriver(
-        name: String(cString: name),
+        name: driverName,
         kind: CanvasDriver.Kind(rawValue: kind) ?? .ramp,
         from: Array(UnsafeBufferPointer(start: from, count: width)),
         to: Array(UnsafeBufferPointer(start: to, count: width)),
@@ -278,9 +290,10 @@ public func luma_drawable_drive_uniform(
         if !subject.uniforms.contains(where: { $0.name == driver.name }) {
             subject.uniforms.append(CanvasUniform(name: driver.name, values: driver.from))
         }
-    }) != nil else { return }
+    }) != nil else { return 0 }
 
     CanvasRegistry.shared.publish(Int(scene))
+    return 1
 }
 
 /// A run of values the shader reads by index. Handing over a fresh window is
