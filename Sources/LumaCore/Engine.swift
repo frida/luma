@@ -105,8 +105,6 @@ public final class Engine {
     public internal(set) var projectUIState: ProjectUIState = ProjectUIState()
     public internal(set) var sessionUIStates: [UUID: SessionUIState] = [:]
     public internal(set) var customInstrumentDefUIStates: [UUID: CustomInstrumentDefUIState] = [:]
-    public internal(set) var projectSidebarState: ProjectSidebarState = ProjectSidebarState()
-    public internal(set) var sessionSidebarStates: [UUID: SessionSidebarState] = [:]
     public private(set) var missions: [Mission] = []
     public private(set) var installedPackages: [InstalledPackage] = []
     public let placementHistory: PatternPlacementHistory
@@ -1817,8 +1815,6 @@ public final class Engine {
         projectUIState = (try? store.fetchProjectUIState()) ?? ProjectUIState()
         sessionUIStates = (try? store.fetchAllSessionUIStates()) ?? [:]
         customInstrumentDefUIStates = (try? store.fetchAllCustomInstrumentDefUIStates()) ?? [:]
-        projectSidebarState = (try? store.fetchProjectSidebarState()) ?? ProjectSidebarState()
-        sessionSidebarStates = (try? store.fetchAllSessionSidebarStates()) ?? [:]
 
         sessionsObservation = store.observeSessions { [weak self] sessions in
             Task { @MainActor in

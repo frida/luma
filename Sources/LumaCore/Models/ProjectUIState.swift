@@ -6,6 +6,8 @@ public struct ProjectUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
 
     public var id: UUID
     public var selectedItemJSON: String?
+    public var collapsedSections: Set<SidebarSection>
+    public var expandedPatternSources: Set<String>
     public var isEventStreamCollapsed: Bool
     public var eventStreamBottomHeight: Double
     public var sidePanel: SidePanel?
@@ -16,6 +18,8 @@ public struct ProjectUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
     enum CodingKeys: String, CodingKey {
         case id
         case selectedItemJSON = "selected_item_json"
+        case collapsedSections = "collapsed_sections"
+        case expandedPatternSources = "expanded_pattern_sources"
         case isEventStreamCollapsed = "event_stream_collapsed"
         case eventStreamBottomHeight = "event_stream_bottom_height"
         case sidePanel = "side_panel"
@@ -27,6 +31,8 @@ public struct ProjectUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
     public init(
         id: UUID = UUID(),
         selectedItemJSON: String? = nil,
+        collapsedSections: Set<SidebarSection> = [],
+        expandedPatternSources: Set<String> = [],
         isEventStreamCollapsed: Bool = true,
         eventStreamBottomHeight: Double = 0,
         sidePanel: SidePanel? = nil,
@@ -36,6 +42,8 @@ public struct ProjectUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
     ) {
         self.id = id
         self.selectedItemJSON = selectedItemJSON
+        self.collapsedSections = collapsedSections
+        self.expandedPatternSources = expandedPatternSources
         self.isEventStreamCollapsed = isEventStreamCollapsed
         self.eventStreamBottomHeight = eventStreamBottomHeight
         self.sidePanel = sidePanel
@@ -43,6 +51,14 @@ public struct ProjectUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
         self.pharoPageWidth = pharoPageWidth
         self.pharoPageMaximized = pharoPageMaximized
     }
+}
+
+public enum SidebarSection: String, Codable, Sendable {
+    case missions
+    case patterns
+    case sessions
+    case customInstruments = "custom_instruments"
+    case packages
 }
 
 public enum SidePanel: String, Codable, Sendable {

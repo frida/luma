@@ -19,6 +19,8 @@ public struct SessionUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
     public var modulesExpansion: SidebarExpansion
     public var threadsExpansion: SidebarExpansion
     public var collapsedHookInstruments: Set<UUID>
+    public var expandedModules: Set<String>
+    public var expandedSwiftTypeLists: Set<String>
     public var detailSection: String?
     public var lastSelectedModuleID: String?
     public var lastSelectedThreadID: UInt?
@@ -35,6 +37,8 @@ public struct SessionUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
         case modulesExpansion = "modules_expansion"
         case threadsExpansion = "threads_expansion"
         case collapsedHookInstruments = "collapsed_hook_instruments"
+        case expandedModules = "expanded_modules"
+        case expandedSwiftTypeLists = "expanded_swift_type_lists"
         case detailSection = "detail_section"
         case lastSelectedModuleID = "last_selected_module_id"
         case lastSelectedThreadID = "last_selected_thread_id"
@@ -50,6 +54,8 @@ public struct SessionUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
         modulesExpansion: SidebarExpansion = .collapsed,
         threadsExpansion: SidebarExpansion = .collapsed,
         collapsedHookInstruments: Set<UUID> = [],
+        expandedModules: Set<String> = [],
+        expandedSwiftTypeLists: Set<String> = [],
         detailSection: String? = nil,
         lastSelectedModuleID: String? = nil,
         lastSelectedThreadID: UInt? = nil,
@@ -63,6 +69,8 @@ public struct SessionUIState: Codable, Equatable, Identifiable, Sendable, Fetcha
         self.modulesExpansion = modulesExpansion
         self.threadsExpansion = threadsExpansion
         self.collapsedHookInstruments = collapsedHookInstruments
+        self.expandedModules = expandedModules
+        self.expandedSwiftTypeLists = expandedSwiftTypeLists
         self.detailSection = detailSection
         self.lastSelectedModuleID = lastSelectedModuleID
         self.lastSelectedThreadID = lastSelectedThreadID

@@ -124,7 +124,7 @@ extension Engine {
     }
 
     public func setSidebarExpansion(sessionID: UUID, moduleID: String, _ expansion: SidebarExpansion) {
-        mutateSessionSidebarState(sessionID: sessionID) { state in
+        mutateSessionUIState(sessionID: sessionID) { state in
             switch expansion {
             case .expanded: state.expandedModules.insert(moduleID)
             case .collapsed: state.expandedModules.remove(moduleID)
@@ -133,7 +133,7 @@ extension Engine {
     }
 
     public func setSwiftTypesExpansion(sessionID: UUID, moduleID: String, _ expansion: SidebarExpansion) {
-        mutateSessionSidebarState(sessionID: sessionID) { state in
+        mutateSessionUIState(sessionID: sessionID) { state in
             switch expansion {
             case .expanded: state.expandedSwiftTypeLists.insert(moduleID)
             case .collapsed: state.expandedSwiftTypeLists.remove(moduleID)
@@ -142,7 +142,7 @@ extension Engine {
     }
 
     public func setSidebarExpansion(section: SidebarSection, _ expansion: SidebarExpansion) {
-        mutateProjectSidebarState { state in
+        mutateProjectUIState { state in
             switch expansion {
             case .expanded: state.collapsedSections.remove(section)
             case .collapsed: state.collapsedSections.insert(section)
@@ -151,7 +151,7 @@ extension Engine {
     }
 
     public func setSidebarExpansion(patternSourceID: String, _ expansion: SidebarExpansion) {
-        mutateProjectSidebarState { state in
+        mutateProjectUIState { state in
             switch expansion {
             case .expanded: state.expandedPatternSources.insert(patternSourceID)
             case .collapsed: state.expandedPatternSources.remove(patternSourceID)
@@ -179,42 +179,6 @@ extension Engine {
         mutateSessionUIState(sessionID: sessionID) { $0.replSeekAnchor = anchor }
     }
 
-    private func mutateSessionUIState(sessionID: UUID, _ mutate: (inout SessionUIState) -> Void) {
-        var state = sessionUIStates[sessionID] ?? SessionUIState(sessionID: sessionID)
-        mutate(&state)
-        guard state != sessionUIStates[sessionID] else { return }
-        sessionUIStates[sessionID] = state
-
-        let saved = state
-        Task { @MainActor [weak self] in
-            try? self?.store.save(saved)
-        }
-    }
-
-    private func mutateSessionSidebarState(sessionID: UUID, _ mutate: (inout SessionSidebarState) -> Void) {
-        var state = sessionSidebarStates[sessionID] ?? SessionSidebarState(sessionID: sessionID)
-        mutate(&state)
-        guard state != sessionSidebarStates[sessionID] else { return }
-        sessionSidebarStates[sessionID] = state
-
-        let saved = state
-        Task { @MainActor [weak self] in
-            try? self?.store.save(saved)
-        }
-    }
-
-    private func mutateProjectSidebarState(_ mutate: (inout ProjectSidebarState) -> Void) {
-        var state = projectSidebarState
-        mutate(&state)
-        guard state != projectSidebarState else { return }
-        projectSidebarState = state
-
-        let saved = state
-        Task { @MainActor [weak self] in
-            try? self?.store.save(saved)
-        }
-    }
-
     public func sidebarExpansion(forSessionID sessionID: UUID) -> SidebarExpansion {
         sessionUIStates[sessionID]?.sidebarExpansion ?? .expanded
     }
@@ -237,21 +201,21 @@ extension Engine {
     }
 
     public func sidebarExpansion(forSessionID sessionID: UUID, moduleID: String) -> SidebarExpansion {
-        let isExpanded = sessionSidebarStates[sessionID]?.expandedModules.contains(moduleID) ?? false
+        let isExpanded = sessionUIStates[sessionID]?.expandedModules.contains(moduleID) ?? false
         return isExpanded ? .expanded : .collapsed
     }
 
     public func swiftTypesExpansion(forSessionID sessionID: UUID, moduleID: String) -> SidebarExpansion {
-        let isExpanded = sessionSidebarStates[sessionID]?.expandedSwiftTypeLists.contains(moduleID) ?? false
+        let isExpanded = sessionUIStates[sessionID]?.expandedSwiftTypeLists.contains(moduleID) ?? false
         return isExpanded ? .expanded : .collapsed
     }
 
     public func sidebarExpansion(of section: SidebarSection) -> SidebarExpansion {
-        projectSidebarState.collapsedSections.contains(section) ? .collapsed : .expanded
+        projectUIState.collapsedSections.contains(section) ? .collapsed : .expanded
     }
 
     public func sidebarExpansion(forPatternSourceID sourceID: String) -> SidebarExpansion {
-        projectSidebarState.expandedPatternSources.contains(sourceID) ? .expanded : .collapsed
+        projectUIState.expandedPatternSources.contains(sourceID) ? .expanded : .collapsed
     }
 
     public func lastSelectedModuleID(forSessionID sessionID: UUID) -> String? {
@@ -272,5 +236,29 @@ extension Engine {
 
     public func replSeekAnchor(forSessionID sessionID: UUID) -> AddressAnchor? {
         sessionUIStates[sessionID]?.replSeekAnchor
+    }
+
+    private func mutateSessionUIState(sessionID: UUID, _ mutate: (inout SessionUIState) -> Void) {
+        var state = sessionUIStates[sessionID] ?? SessionUIState(sessionID: sessionID)
+        mutate(&state)
+        guard state != sessionUIStates[sessionID] else { return }
+        sessionUIStates[sessionID] = state
+
+        let saved = state
+        Task { @MainActor [weak self] in
+            try? self?.store.save(saved)
+        }
+    }
+
+    private func mutateProjectUIState(_ mutate: (inout ProjectUIState) -> Void) {
+        var state = projectUIState
+        mutate(&state)
+        guard state != projectUIState else { return }
+        projectUIState = state
+
+        let saved = state
+        Task { @MainActor [weak self] in
+            try? self?.store.save(saved)
+        }
     }
 }
