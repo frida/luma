@@ -302,10 +302,39 @@ public final class ProjectStore: Sendable {
         }
     }
 
+    public func fetchOutboxOp(opID: UUID) throws -> QueuedOp? {
+        try db.read { db in
+            try OutboxRecord.fetchOne(db, key: opID)?.toQueuedOp()
+        }
+    }
+
     @discardableResult
     public func removeOutboxOp(opID: UUID) throws -> Bool {
         try db.write { db in
             try OutboxRecord.deleteOne(db, key: opID)
+        }
+    }
+
+    public func markKnownToLab(_ subjects: [LabSubject]) throws {
+        try db.write { db in
+            for subject in subjects {
+                try db.execute(
+                    sql: "INSERT OR IGNORE INTO lab_known_subject (family, subject_id) VALUES (?, ?)",
+                    arguments: [subject.family.rawValue, subject.id]
+                )
+            }
+        }
+    }
+
+    public func subjectsKnownToLab(_ family: LabSubject.Family) throws -> Set<UUID> {
+        try db.read { db in
+            try Set(UUID.fetchAll(db, sql: "SELECT subject_id FROM lab_known_subject WHERE family = ?", arguments: [family.rawValue]))
+        }
+    }
+
+    public func forgetLabKnowledge() throws {
+        try db.write { db in
+            try db.execute(sql: "DELETE FROM lab_known_subject")
         }
     }
 
@@ -1776,6 +1805,12 @@ public final class ProjectStore: Sendable {
             t.column("payload_json", .text).notNull()
             t.column("binary_data", .blob)
             t.column("created_at", .datetime).notNull()
+        }
+
+        try db.create(table: "lab_known_subject") { t in
+            t.column("family", .text).notNull()
+            t.column("subject_id", .blob).notNull()
+            t.primaryKey(["family", "subject_id"])
         }
 
         try db.create(table: "recent_placement") { t in

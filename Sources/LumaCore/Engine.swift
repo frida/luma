@@ -1093,7 +1093,11 @@ public final class Engine {
             let serverIDs = Set(bundles.map(\.def.id))
             let local = (try? self.store.fetchCustomInstrumentDefs()) ?? []
             let pending = self.subjectsOfPendingOps(CustomInstrumentOp.self)
-            for stale in local where !serverIDs.contains(stale.id) && !pending.contains(stale.id) {
+            let known = self.knownToLab(.definition)
+            for absent in local where !serverIDs.contains(absent.id) && !pending.contains(absent.id) && !known.contains(absent.id) {
+                self.broadcastCustomInstrumentUpsert(defID: absent.id)
+            }
+            for stale in local where !serverIDs.contains(stale.id) && !pending.contains(stale.id) && known.contains(stale.id) {
                 try? self.store.deleteCustomInstrumentDef(id: stale.id)
             }
             let normalized = bundles.map { bundle -> CustomInstrumentBundle in
@@ -1345,15 +1349,25 @@ public final class Engine {
 
     private func adoptPatternSources(_ labRecords: [PatternSourceRecord]) {
         let pending = subjectsOfPendingOps(PatternSourceOp.self)
+        let known = knownToLab(.pattern)
         let labIDs = Set(labRecords.map(\.id))
-        let unsent = ((try? store.fetchPatternSources()) ?? []).filter { pending.contains($0.id) && !labIDs.contains($0.id) }
+        let unsent = ((try? store.fetchPatternSources()) ?? []).filter {
+            !labIDs.contains($0.id) && (pending.contains($0.id) || !known.contains($0.id))
+        }
         patterns.replaceProjectSources(with: labRecords + unsent)
+        for record in unsent where !pending.contains(record.id) {
+            collaboration.enqueuePatternSourceUpsert(record)
+        }
     }
 
     private func adoptNotebook(_ labEntries: [NotebookEntry]) {
         let pending = subjectsOfPendingOps(NotebookOp.self)
+        let known = knownToLab(.entry)
         let labIDs = Set(labEntries.map(\.id))
-        let unsent = notebookEntries.filter { pending.contains($0.id) && !labIDs.contains($0.id) }
+        let unsent = notebookEntries.filter { !labIDs.contains($0.id) && (pending.contains($0.id) || !known.contains($0.id)) }
+        for entry in unsent where !pending.contains(entry.id) {
+            collaboration.enqueueAdd(entry)
+        }
         for entry in notebookEntries where !unsent.contains(where: { $0.id == entry.id }) {
             try? store.deleteNotebookEntry(id: entry.id)
         }
@@ -1366,6 +1380,10 @@ public final class Engine {
 
     private func subjectsOfPendingOps<Op: OutboxOp>(_ type: Op.Type) -> Set<UUID> {
         Set(((try? store.fetchOutboxOps(type)) ?? []).map(\.outboxSubject))
+    }
+
+    private func knownToLab(_ family: LabSubject.Family) -> Set<UUID> {
+        (try? store.subjectsKnownToLab(family)) ?? []
     }
 
     private func markReplCellTimedOut(cellID: UUID) {
@@ -1601,9 +1619,55 @@ public final class Engine {
         }
         for session in snapshot {
             adoptRemoteSession(session)
+            reconcileChildren(of: session)
         }
         markOrphanedHostsDetached(serverKnown: serverKnown)
         announceMissingLocalSessions(serverKnown: serverKnown)
+    }
+
+    private func reconcileChildren(of labSession: CollaborationSession.Session) {
+        let sessionID = labSession.id
+        let pending = Set(((try? store.fetchOutboxOps(SessionOp.self)) ?? []).map(\.labSubject))
+        let hostedHere = labSession.host.id == collaboration.localUser?.id
+        let lab = Set(labSession.labSubjects)
+        let absent = { (subject: LabSubject) in !lab.contains(subject) && !pending.contains(subject) }
+        let families: [LabSubject.Family] = [.replCell, .instrument, .insight, .trace]
+        let knownByFamily = Dictionary(uniqueKeysWithValues: families.map { ($0, knownToLab($0)) })
+        let known = { (subject: LabSubject) in knownByFamily[subject.family]!.contains(subject.id) }
+
+        for cell in (try? store.fetchREPLCells(sessionID: sessionID)) ?? [] {
+            let subject = LabSubject(.replCell, cell.id)
+            if absent(subject), hostedHere, !known(subject) {
+                collaboration.enqueueAddReplCell(sessionID: sessionID, cell: cell)
+            }
+        }
+        for instance in (try? store.fetchInstruments(sessionID: sessionID)) ?? [] {
+            let subject = LabSubject(.instrument, instance.id)
+            guard absent(subject) else { continue }
+            if known(subject) {
+                applyRemoteSessionInstrumentRemoved(sessionID: sessionID, instanceID: instance.id)
+            } else if hostedHere {
+                announce(instance, sessionID: sessionID)
+            }
+        }
+        for insight in (try? store.fetchInsights(sessionID: sessionID)) ?? [] {
+            let subject = LabSubject(.insight, insight.id)
+            guard absent(subject) else { continue }
+            if known(subject) {
+                applyRemoteSessionInsightRemoved(sessionID: sessionID, insightID: insight.id)
+            } else if hostedHere {
+                collaboration.enqueueAddInsight(sessionID: sessionID, insight: insight)
+            }
+        }
+        for trace in (try? store.fetchITraces(sessionID: sessionID)) ?? [] {
+            let subject = LabSubject(.trace, trace.id)
+            guard absent(subject) else { continue }
+            if known(subject) {
+                applyRemoteSessionTraceRemoved(sessionID: sessionID, traceID: trace.id)
+            } else if hostedHere {
+                announce(trace, sessionID: sessionID)
+            }
+        }
     }
 
     private func markOrphanedHostsDetached(serverKnown: Set<UUID>) {
@@ -1622,7 +1686,14 @@ public final class Engine {
 
     private func announceMissingLocalSessions(serverKnown: Set<UUID>) {
         guard collaboration.isOwner, let localUser = collaboration.localUser else { return }
-        for session in sessions where session.host == nil && !serverKnown.contains(session.id) {
+        let pending = subjectsOfPendingOps(SessionOp.self)
+        let known = knownToLab(.session)
+        for session in sessions where !serverKnown.contains(session.id) && !pending.contains(session.id) {
+            if session.host?.id == localUser.id, known.contains(session.id) {
+                applyRemoteSessionRemoval(sessionID: session.id)
+                continue
+            }
+            guard session.host == nil || session.host?.id == localUser.id else { continue }
             var promoted = session
             promoted.host = localUser
             saveSession(promoted)
@@ -1648,26 +1719,38 @@ public final class Engine {
             collaboration.enqueueAddReplCell(sessionID: sessionID, cell: cell)
         }
         for instance in (try? store.fetchInstruments(sessionID: sessionID)) ?? [] {
-            let status = node(forSessionID: sessionID)?.instruments.first(where: { $0.id == instance.id })?.status
-            collaboration.enqueueAddInstrument(sessionID: sessionID, instance: instance, runtimeStatus: status)
-            for (widget, placements) in widgetPlacements[instance.id] ?? [:] where !placements.isEmpty {
-                collaboration.enqueueSetPlacements(placements, sessionID: sessionID, on: .widget(instanceID: instance.id, widget: widget))
-            }
+            announce(instance, sessionID: sessionID)
         }
         for insight in (try? store.fetchInsights(sessionID: sessionID)) ?? [] {
             collaboration.enqueueAddInsight(sessionID: sessionID, insight: insight)
         }
         for trace in (try? store.fetchITraces(sessionID: sessionID)) ?? [] {
-            collaboration.enqueueUpsertTrace(sessionID: sessionID, trace: trace)
-            Task { @MainActor [weak self] in
-                await self?.uploadTraceDelta(trace, collabSessionID: sessionID)
-            }
+            announce(trace, sessionID: sessionID)
         }
         for note in addressNotes(sessionID: sessionID) {
-            collaboration.enqueueAddressNoteUpsert(note)
-            for message in addressNoteMessages(noteID: note.id) {
-                collaboration.enqueueAddressNoteMessageAppend(message)
-            }
+            announce(note)
+        }
+    }
+
+    private func announce(_ instance: InstrumentInstance, sessionID: UUID) {
+        let status = node(forSessionID: sessionID)?.instruments.first(where: { $0.id == instance.id })?.status
+        collaboration.enqueueAddInstrument(sessionID: sessionID, instance: instance, runtimeStatus: status)
+        for (widget, placements) in widgetPlacements[instance.id] ?? [:] where !placements.isEmpty {
+            collaboration.enqueueSetPlacements(placements, sessionID: sessionID, on: .widget(instanceID: instance.id, widget: widget))
+        }
+    }
+
+    private func announce(_ trace: ITrace, sessionID: UUID) {
+        collaboration.enqueueUpsertTrace(sessionID: sessionID, trace: trace)
+        Task { @MainActor [weak self] in
+            await self?.uploadTraceDelta(trace, collabSessionID: sessionID)
+        }
+    }
+
+    private func announce(_ note: AddressNote) {
+        collaboration.enqueueAddressNoteUpsert(note)
+        for message in addressNoteMessages(noteID: note.id) {
+            collaboration.enqueueAddressNoteMessageAppend(message)
         }
     }
 
@@ -6605,8 +6688,13 @@ public func deleteCustomInstrument(_ defID: UUID) async {
         let serverMissionIDs = Set(snapshot.missions.map(\.id))
         let localMissions = (try? store.fetchMissions()) ?? []
         let pending = subjectsOfPendingOps(MissionOp.self)
-        for stale in localMissions where !serverMissionIDs.contains(stale.id) && !pending.contains(stale.id) {
-            try? store.deleteMission(id: stale.id)
+        let known = knownToLab(.mission)
+        for absent in localMissions where !serverMissionIDs.contains(absent.id) && !pending.contains(absent.id) {
+            if known.contains(absent.id) {
+                try? store.deleteMission(id: absent.id)
+            } else {
+                collaboration.enqueueMission(absent)
+            }
         }
         for mission in snapshot.missions { try? store.save(mission) }
         for turn in snapshot.turns { try? store.save(turn) }
@@ -6618,10 +6706,15 @@ public func deleteCustomInstrument(_ defID: UUID) async {
     private func adoptAddressNotes(_ threads: [AddressNoteThread], ofLabSessions labSessions: Set<UUID>) {
         let labNoteIDs = Set(threads.map(\.note.id))
         let pending = subjectsOfPendingOps(AddressNoteOp.self)
+        let known = knownToLab(.addressNote)
         for sessionID in labSessions {
-            for stale in addressNotes(sessionID: sessionID) where !labNoteIDs.contains(stale.id) && !pending.contains(stale.id) {
-                try? store.deleteAddressNote(id: stale.id)
-                onAddressNoteChanged?(.noteRemoved(stale))
+            for absent in addressNotes(sessionID: sessionID) where !labNoteIDs.contains(absent.id) && !pending.contains(absent.id) {
+                if known.contains(absent.id) {
+                    try? store.deleteAddressNote(id: absent.id)
+                    onAddressNoteChanged?(.noteRemoved(absent))
+                } else {
+                    announce(absent)
+                }
             }
         }
         for thread in threads {

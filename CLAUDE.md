@@ -238,6 +238,11 @@ is gitignored — it is produced at build time.
   Widget state carries a revision that the session's host advances with
   every change; on joining, the side holding the higher one gives its
   state to the other.
+  What the lab has ever held is kept in `lab_known_subject`, a row per
+  `LabSubject`, from the join reply, the ops heard from the lab and the
+  acknowledgments of our own. On joining, something the project holds and
+  the lab lacks is uploaded when the lab never knew it, and dropped when it
+  did, since a member then removed it.
 - **`PatternLibrary`** — the project's patterns are rows, materialized
   into `patterns/` in the per-project compiler workspace beside its
   `node_modules`, so a pattern can import an installed package and a

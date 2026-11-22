@@ -579,6 +579,12 @@ public final class CollaborationSession {
         sendOpIfJoined(op)
     }
 
+    public func enqueueMission(_ mission: Mission) {
+        for op in missionOps(announcing: mission) {
+            enqueueMissionOp(op)
+        }
+    }
+
     public func enqueueMissionUpsert(_ mission: Mission) {
         enqueueMissionOp(.missionUpsert(.init(mission: mission)))
     }
@@ -1352,6 +1358,7 @@ public final class CollaborationSession {
 
     private func applySessionOp(sessionID: UUID, payload: JSONObject) {
         guard let op = SessionOp.fromJSON(payload, sessionID: sessionID) else { return }
+        markKnown(op.labSubject)
         apply(op)
     }
 
@@ -1505,6 +1512,7 @@ public final class CollaborationSession {
                     joinedAt: now,
                     lastSeenAt: now
                 )]
+                try? self.store.forgetLabKnowledge()
                 self.queueProjectForNewLab()
                 self.replayOutbox(knownSessions: []) { self.onSessionsSnapshot?([]) }
                 self.onLabCreated?()
@@ -1637,6 +1645,9 @@ public final class CollaborationSession {
         onChatMessageChange?(.reset)
 
         var collabState = try! store.fetchCollaborationState()
+        if collabState.labID != labID {
+            try? store.forgetLabKnowledge()
+        }
         collabState.labID = labID
         try! store.save(collabState)
 
@@ -1648,18 +1659,28 @@ public final class CollaborationSession {
             }
             snapshot.append(entry)
         }
-        onNotebookSnapshot?(snapshot)
-
         let sessionDicts = (payload["sessions"] as? [JSONObject]) ?? []
         let sessions = sessionDicts.compactMap(Session.fromJSON)
-        replayOutbox(knownSessions: Set(sessions.map(\.id))) { onSessionsSnapshot?(sessions) }
-
         let customDicts = (payload["custom_instruments"] as? [JSONObject]) ?? []
         let customBundles = customDicts.compactMap(CustomInstrumentBundle.fromJSON)
-        onCustomInstrumentSnapshot?(customBundles, Self.customInstrumentEditors(in: customDicts))
-
         let patternDicts = (payload["patterns"] as? [JSONObject]) ?? []
-        onPatternSourcesSnapshot?(patternDicts.compactMap(PatternSourceRecord.fromWireJSON))
+        let patterns = patternDicts.compactMap(PatternSourceRecord.fromWireJSON)
+        let noteDicts = (payload["address_notes"] as? [JSONObject]) ?? []
+        let notes = noteDicts.compactMap(AddressNoteThread.fromWireJSON)
+        let missionDicts = (payload["missions"] as? [JSONObject]) ?? []
+        let missions = missionDicts.compactMap(Mission.fromWireJSON)
+        var heldByLab = snapshot.map { LabSubject(.entry, $0.id) }
+        heldByLab += sessions.flatMap(\.labSubjects)
+        heldByLab += customBundles.map { LabSubject(.definition, $0.def.id) }
+        heldByLab += patterns.map { LabSubject(.pattern, $0.id) }
+        heldByLab += notes.map { LabSubject(.addressNote, $0.note.id) }
+        heldByLab += missions.map { LabSubject(.mission, $0.id) }
+        try? store.markKnownToLab(heldByLab)
+
+        onNotebookSnapshot?(snapshot)
+        onCustomInstrumentSnapshot?(customBundles, Self.customInstrumentEditors(in: customDicts))
+        onPatternSourcesSnapshot?(patterns)
+        replayOutbox(knownSessions: Set(sessions.map(\.id))) { onSessionsSnapshot?(sessions) }
 
         let widgetStateDicts = (payload["widget_states"] as? [JSONObject]) ?? []
         let viewStateDicts = (payload["view_states"] as? [JSONObject]) ?? []
@@ -1670,16 +1691,14 @@ public final class CollaborationSession {
         let widgetPlacementDicts = (payload["widget_placements"] as? [JSONObject]) ?? []
         onWidgetPlacementsSnapshot?(Self.widgetPlacements(of: sessions, from: widgetPlacementDicts))
 
-        let noteDicts = (payload["address_notes"] as? [JSONObject]) ?? []
-        onAddressNotesSnapshot?(noteDicts.compactMap(AddressNoteThread.fromWireJSON), Set(sessions.map(\.id)))
+        onAddressNotesSnapshot?(notes, Set(sessions.map(\.id)))
 
-        let missionsArr = (payload["missions"] as? [JSONObject]) ?? []
         let turnsArr = (payload["mission_turns"] as? [JSONObject]) ?? []
         let actionsArr = (payload["mission_actions"] as? [JSONObject]) ?? []
         let findingsArr = (payload["mission_findings"] as? [JSONObject]) ?? []
         let evidenceArr = (payload["mission_evidence"] as? [JSONObject]) ?? []
         let missionSnapshot = MissionSnapshot(
-            missions: missionsArr.compactMap(Mission.fromWireJSON),
+            missions: missions,
             turns: turnsArr.compactMap(MissionTurn.fromWireJSON),
             actions: actionsArr.compactMap(MissionAction.fromWireJSON),
             findings: findingsArr.compactMap(MissionFinding.fromWireJSON),
@@ -1814,16 +1833,19 @@ public final class CollaborationSession {
             case "add":
                 if let entryObj = payload["entry"] as? JSONObject,
                    let entry = NotebookEntry.fromJSON(entryObj, binaryData: data) {
+                    markKnown(LabSubject(.entry, entry.id))
                     onEntryUpserted?(entry)
                 }
             case "update":
                 if let entryObj = payload["entry"] as? JSONObject,
                    let entry = NotebookEntry.fromJSON(entryObj, binaryData: nil) {
+                    markKnown(LabSubject(.entry, entry.id))
                     onEntryUpserted?(entry)
                 }
             case "remove":
                 if let idStr = payload["entry_id"] as? String,
                    let id = UUID(uuidString: idStr) {
+                    markKnown(LabSubject(.entry, id))
                     onEntryRemoved?(id)
                 }
             case "reorder":
@@ -1840,7 +1862,7 @@ public final class CollaborationSession {
         case ("+op-ack", _):
             guard let idStr = payload["op_id"] as? String,
                 let opID = UUID(uuidString: idStr) else { return }
-            _ = try? store.removeOutboxOp(opID: opID)
+            settleOutboxOp(opID: opID)
             replayedOpIDs.remove(opID)
             if let op = opsOverridingJoinSnapshot.removeValue(forKey: opID) {
                 apply(op)
@@ -1860,19 +1882,23 @@ public final class CollaborationSession {
 
         case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "custom-instruments":
             guard let op = CustomInstrumentOp.fromJSON(payload) else { return }
+            markKnown(QueuedOp.customInstrument(op).labSubject)
             let editor = ((payload["bundle"] as? JSONObject)?["changed_by"] as? JSONObject).flatMap(UserInfo.fromJSON)
             onCustomInstrumentOpReceived?(op, editor.flatMap { $0.id == localUser?.id ? nil : $0 })
 
         case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "patterns":
             guard let op = PatternSourceOp.fromJSON(payload) else { return }
+            markKnown(QueuedOp.pattern(op).labSubject)
             onPatternSourceOpReceived?(op)
 
         case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "missions":
             guard let op = MissionOp.fromJSON(payload) else { return }
+            markKnown(QueuedOp.mission(op).labSubject)
             onMissionOpReceived?(op)
 
         case ("+op", let s) where s.count == 3 && s[0] == "labs" && s[2] == "address-notes":
             guard let op = AddressNoteOp.fromJSON(payload) else { return }
+            markKnown(QueuedOp.addressNote(op).labSubject)
             onAddressNoteOpReceived?(op)
 
         case ("+op", let s) where s.count == 4 && s[0] == "labs" && s[2] == "sessions":
@@ -1995,9 +2021,21 @@ public final class CollaborationSession {
     private func isEchoOfOpAlreadyApplied(_ payload: JSONObject) -> Bool {
         guard let idStr = payload["op_id"] as? String,
             let opID = UUID(uuidString: idStr),
-            (try? store.removeOutboxOp(opID: opID)) == true
+            settleOutboxOp(opID: opID)
         else { return false }
         return replayedOpIDs.remove(opID) == nil
+    }
+
+    @discardableResult
+    private func settleOutboxOp(opID: UUID) -> Bool {
+        if let settled = try? store.fetchOutboxOp(opID: opID) {
+            markKnown(settled.labSubject)
+        }
+        return (try? store.removeOutboxOp(opID: opID)) == true
+    }
+
+    private func markKnown(_ subject: LabSubject) {
+        try? store.markKnownToLab([subject])
     }
 
     private func setStatus(_ newStatus: Status) {
